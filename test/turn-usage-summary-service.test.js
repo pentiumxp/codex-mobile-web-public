@@ -300,8 +300,9 @@ test("thread detail usage read targets returned turns beyond the rollout tail", 
   assert.match(serverJs, /targetCached && Date\.now\(\) - targetCached\.cachedAt <= RUNTIME_CONTEXT_CACHE_TTL_MS\s*&& missingUsageTurnIds\(targetCached\.payload, targetTurnIds\)\.length === 0/);
   assert.match(serverJs, /if \(missingUsageTurnIds\(payload, targetTurnIds\)\.length > 0\) \{\s*payload = collectTurnUsageSummariesFromEntries\(readRolloutEnrichmentEntries\(rolloutPath\)\);/);
   assert.match(serverJs, /readRolloutTurnUsageSummaries\(rolloutPath, \{\s*targetTurnIds: out\.turns\.map\(\(turn\) => turn && turn\.id\)\.filter\(Boolean\),\s*\}\)/);
-  assert.match(serverJs, /const mergedResult = Object\.assign\(\{\}, cached\.result, \{\s*thread: mergeThreadDisplaySummary\(cached\.result\.thread, summary\) \|\| cached\.result\.thread,/);
-  assert.match(serverJs, /compactThreadReadResult\(mergedResult, \{ maxTurns: MAX_FULL_THREAD_TURNS \}\)/);
+  assert.match(serverJs, /createThreadDetailProjectionResultService/);
+  assert.match(serverJs, /const threadDetailProjectionResultService = createThreadDetailProjectionResultService\(\{\s*maxTurns: MAX_FULL_THREAD_TURNS,\s*compactThreadReadResult,\s*mergeThreadDisplaySummary,/);
+  assert.match(serverJs, /return threadDetailProjectionResultService\.prepareProjectedThreadReadResult\(cached, summary, runtimeSettings\);/);
 });
 
 test("thread detail rollout scans stay bounded for very large sessions", () => {

@@ -13,12 +13,17 @@ process.env.CODEX_MOBILE_DISABLE_AUTH = "1";
 const {
   attachPendingServerRequestsToResult,
   approvalResponsePayload,
+  buildThreadTaskCardCreatePayload,
+  codeGraphMcpElicitationToolName,
+  codeGraphReadOnlyMcpElicitationDecision,
+  createThreadTaskCardsFromSourceThread,
   dynamicToolTextResponse,
   publicServerRequest,
   resolveThreadTaskCardTargetReference,
   resolvedThreadTaskCardTargetIds,
   serverRequestResponsePayload,
 } = require("../server");
+const { createThreadTaskCardService } = require("../adapters/thread-task-card-service");
 
 const repoRoot = path.resolve(__dirname, "..");
 const muxPath = path.join(repoRoot, "codex-app-server-mux.js");
@@ -108,66 +113,243 @@ test("dynamic tool error responses report unsuccessful contentItems output", () 
   });
 });
 
-test("source-thread task cards target only current visible canonical threads", () => {
+test("source-thread task cards allow exact same-workspace thread targets", () => {
   const sourceThreadId = "10000000-0000-4000-8000-000000000001";
-  const staleThreadId = "10000000-0000-4000-8000-000000000002";
-  const currentThreadId = "10000000-0000-4000-8000-000000000003";
+  const pluginAuditThreadId = "10000000-0000-4000-8000-000000000002";
+  const platformAuditThreadId = "10000000-0000-4000-8000-000000000003";
+  const crossWorkspaceThreadId = "10000000-0000-4000-8000-000000000004";
+  const archivedThreadId = "10000000-0000-4000-8000-000000000005";
+  const directSummaryThreadId = "10000000-0000-4000-8000-000000000006";
+  const subagentThreadId = "10000000-0000-4000-8000-000000000007";
+  const hiddenWorkspaceThreadId = "10000000-0000-4000-8000-000000000008";
   const currentCwd = "/tmp/codex-mobile-fixtures/current-project";
+  const hiddenCwd = "/tmp/codex-mobile-fixtures/hidden-project";
   const visibleThreads = [
     {
-      id: currentThreadId,
-      name: "Current Project",
+      id: platformAuditThreadId,
+      name: "Home AI Platform Audit",
+      cwd: currentCwd,
+      updatedAt: 300,
+      status: { type: "idle" },
+    },
+    {
+      id: pluginAuditThreadId,
+      name: "Plugin Workspace Audit",
       cwd: currentCwd,
       updatedAt: 200,
       status: { type: "idle" },
     },
     {
-      id: "10000000-0000-4000-8000-000000000004",
+      id: crossWorkspaceThreadId,
       name: "Other Project",
       cwd: "/tmp/codex-mobile-fixtures/other-project",
       updatedAt: 190,
       status: { type: "idle" },
     },
+    {
+      id: subagentThreadId,
+      name: "Implementation subagent",
+      cwd: currentCwd,
+      updatedAt: 180,
+      agentNickname: "audit-worker",
+      status: { type: "idle" },
+    },
   ];
   const options = {
+    globalState: {
+      "active-workspace-roots": [
+        currentCwd,
+        "/tmp/codex-mobile-fixtures/other-project",
+      ],
+    },
     visibleThreads,
     readThreadSummary(threadId) {
-      if (threadId !== staleThreadId) return null;
+      if (threadId === directSummaryThreadId) {
+        return {
+          id: directSummaryThreadId,
+          name: "Readable Project",
+          cwd: currentCwd,
+          updatedAt: 120,
+          status: { type: "idle" },
+        };
+      }
+      if (threadId === hiddenWorkspaceThreadId) {
+        return {
+          id: hiddenWorkspaceThreadId,
+          name: "Hidden Workspace Project",
+          cwd: hiddenCwd,
+          updatedAt: 110,
+          status: { type: "idle" },
+        };
+      }
+      if (threadId === subagentThreadId) {
+        return {
+          id: subagentThreadId,
+          name: "Implementation subagent",
+          cwd: currentCwd,
+          updatedAt: 180,
+          agentNickname: "audit-worker",
+          status: { type: "idle" },
+        };
+      }
+      if (threadId !== archivedThreadId) return null;
       return {
-        id: staleThreadId,
-        name: "Stale Project",
+        id: archivedThreadId,
+        name: "Archived Project",
         cwd: currentCwd,
         updatedAt: 100,
-        status: { type: "completed" },
+        archived: true,
+        status: { type: "idle" },
       };
     },
   };
 
   assert.equal(
-    resolveThreadTaskCardTargetReference(currentCwd, sourceThreadId, options),
-    currentThreadId,
+    resolveThreadTaskCardTargetReference(pluginAuditThreadId, sourceThreadId, options),
+    pluginAuditThreadId,
   );
   assert.equal(
-    resolveThreadTaskCardTargetReference("Current Project", sourceThreadId, options),
-    currentThreadId,
+    resolveThreadTaskCardTargetReference("Plugin Workspace Audit", sourceThreadId, options),
+    pluginAuditThreadId,
+  );
+  assert.equal(
+    resolveThreadTaskCardTargetReference(crossWorkspaceThreadId, sourceThreadId, options),
+    crossWorkspaceThreadId,
+  );
+  assert.equal(
+    resolveThreadTaskCardTargetReference(currentCwd, sourceThreadId, options),
+    platformAuditThreadId,
   );
   assert.deepEqual(
-    resolvedThreadTaskCardTargetIds({ targetCwd: currentCwd }, sourceThreadId, options),
-    [currentThreadId],
+    resolvedThreadTaskCardTargetIds({ targetThreadId: pluginAuditThreadId, targetCwd: currentCwd }, sourceThreadId, options),
+    [pluginAuditThreadId],
+  );
+  assert.deepEqual(
+    resolvedThreadTaskCardTargetIds({ targetThreadIds: [pluginAuditThreadId, "Plugin Workspace Audit", pluginAuditThreadId] }, sourceThreadId, options),
+    [pluginAuditThreadId],
+  );
+  assert.equal(
+    resolveThreadTaskCardTargetReference(directSummaryThreadId, sourceThreadId, options),
+    directSummaryThreadId,
   );
   assert.throws(
-    () => resolveThreadTaskCardTargetReference(staleThreadId, sourceThreadId, options),
+    () => resolveThreadTaskCardTargetReference(sourceThreadId, sourceThreadId, options),
+    (err) => err && err.code === "target_thread_self" && err.statusCode === 400,
+  );
+  assert.throws(
+    () => resolveThreadTaskCardTargetReference(archivedThreadId, sourceThreadId, options),
     (err) => err
-      && err.code === "stale_target_thread"
+      && err.code === "target_thread_archived"
       && err.statusCode === 409
       && err.details
-      && err.details.currentTarget
-      && err.details.currentTarget.threadId === currentThreadId,
+      && err.details.requestedTarget
+      && err.details.requestedTarget.threadId === archivedThreadId,
+  );
+  assert.throws(
+    () => resolveThreadTaskCardTargetReference(hiddenWorkspaceThreadId, sourceThreadId, options),
+    (err) => err
+      && err.code === "target_thread_not_visible"
+      && err.statusCode === 404
+      && err.details
+      && err.details.requestedTarget
+      && err.details.requestedTarget.threadId === hiddenWorkspaceThreadId,
+  );
+  assert.throws(
+    () => resolveThreadTaskCardTargetReference(subagentThreadId, sourceThreadId, options),
+    (err) => err
+      && err.code === "target_thread_not_visible"
+      && err.statusCode === 404
+      && err.details
+      && err.details.requestedTarget
+      && err.details.requestedTarget.threadId === subagentThreadId,
   );
   assert.throws(
     () => resolveThreadTaskCardTargetReference("10000000-0000-4000-8000-000000009999", sourceThreadId, options),
     (err) => err && err.code === "target_thread_not_visible" && err.statusCode === 404,
   );
+});
+
+test("source-thread task-card creation uses exact target resolver and source-direct service path", async () => {
+  const sourceThreadId = "10000000-0000-4000-8000-000000000101";
+  const exactTargetId = "10000000-0000-4000-8000-000000000102";
+  const newerSameCwdThreadId = "10000000-0000-4000-8000-000000000103";
+  const cwd = "/tmp/codex-mobile-fixtures/shared-workspace";
+  const visibleThreads = [
+    {
+      id: newerSameCwdThreadId,
+      name: "Newer implementation thread",
+      cwd,
+      updatedAt: 300,
+      status: { type: "idle" },
+    },
+    {
+      id: exactTargetId,
+      name: "Plugin Workspace Audit",
+      cwd,
+      updatedAt: 200,
+      status: { type: "idle" },
+    },
+  ];
+  const byId = new Map([
+    [sourceThreadId, {
+      id: sourceThreadId,
+      name: "Home AI 06-22",
+      cwd,
+      updatedAt: 250,
+      status: { type: "idle" },
+    }],
+    ...visibleThreads.map((thread) => [thread.id, thread]),
+  ]);
+  const resolverOptions = {
+    globalState: {
+      "active-workspace-roots": [cwd],
+    },
+    visibleThreads,
+    readThreadSummary(threadId) {
+      return byId.get(threadId) || null;
+    },
+  };
+
+  const payload = buildThreadTaskCardCreatePayload({
+    targetThreadId: exactTargetId,
+    targetCwd: cwd,
+    title: "Audit request",
+    body: "Read-only audit body.",
+  }, sourceThreadId, resolverOptions);
+  assert.deepEqual(payload.targetThreadIds, [exactTargetId]);
+  assert.equal(payload.targetWorkspaceIds[exactTargetId], cwd);
+  assert.equal(payload.sourceThreadTitle, "Home AI 06-22");
+
+  const storageFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-task-card-route-")), "cards.json");
+  const service = createThreadTaskCardService({
+    storageFile,
+    idGenerator: () => "ttc_exact_target",
+    executeApprovedCard: async (card) => ({
+      threadId: card.target.threadId,
+      turnId: "turn_exact_target",
+    }),
+  });
+  const result = await createThreadTaskCardsFromSourceThread(sourceThreadId, {
+    targetThreadId: exactTargetId,
+    targetCwd: cwd,
+    title: "Audit request",
+    body: "Read-only audit body.",
+    direct: true,
+    autoApprove: true,
+  }, Object.assign({}, resolverOptions, {
+    threadTaskCardService: service,
+    workspaceDelegation: { enabled: true },
+  }));
+
+  assert.equal(result.ok, true);
+  assert.equal(result.direct, true);
+  assert.equal(result.cards.length, 1);
+  assert.equal(result.cards[0].id, "ttc_exact_target");
+  assert.equal(result.cards[0].status, "approved");
+  assert.equal(result.cards[0].target.threadId, exactTargetId);
+  assert.equal(result.cards[0].delivery.targetApprovalBypassed, true);
+  assert.equal(result.cards[0].injectedTurnId, "turn_exact_target");
+  assert.equal(service.get("ttc_exact_target", sourceThreadId).target.threadId, exactTargetId);
 });
 
 test("stdio app-server mux does not overwrite an available shared endpoint", async (t) => {
@@ -406,6 +588,9 @@ test("mux honors mobile replay notification limit", async (t) => {
   const replayed = secondMessages.filter((message) => message.method === "thread/status/changed");
   assert.equal(replayed.length, 1);
   assert.equal(replayed[0].params.status.index, 2);
+  assert.equal(replayed[0].params.mobileReplay, true);
+  assert.equal(typeof replayed[0].params.mobileReplayReceivedAtMs, "number");
+  assert.equal(typeof replayed[0].params.mobileReplaySeq, "number");
 });
 
 test("mux keeps mobile new-turn synthetic user messages off desktop clients", async (t) => {
@@ -553,6 +738,7 @@ test("mux keeps mobile active-turn synthetic user messages off desktop clients",
     && message.params.item.type === "userMessage"));
   assert.match(mobileEchoed.params.item.id, /^mux-user-thread-active-turn-active-submission-1$/);
   assert.equal(mobileEchoed.params.item.content[0].text, "steer from phone");
+  assert.equal(mobileEchoed.params.item.clientSubmissionId, "submission-1");
   await delay(100);
   assert.equal(
     desktopMessages.some((message) => message.method === "item/completed"
@@ -737,4 +923,41 @@ test("MCP elicitation server requests accept and decline", () => {
     serverRequestResponsePayload(request, { action: "decline" }),
     { result: { action: "decline", content: null } },
   );
+});
+
+test("CodeGraph read-only MCP elicitation is auto-allowable", () => {
+  const request = {
+    id: 3,
+    method: "mcpServer/elicitation/request",
+    status: "waiting",
+    params: {
+      message: 'Allow the codegraph MCP server to run tool "codegraph_search"?',
+    },
+  };
+
+  assert.equal(codeGraphMcpElicitationToolName(request), "codegraph_search");
+  assert.deepEqual(codeGraphReadOnlyMcpElicitationDecision(request), {
+    action: "allow",
+    toolName: "codegraph_search",
+  });
+  assert.deepEqual(serverRequestResponsePayload(request, { action: "accept" }), {
+    result: { action: "accept", content: {} },
+  });
+});
+
+test("CodeGraph MCP elicitation auto-allow rejects unknown tools and other servers", () => {
+  assert.equal(codeGraphReadOnlyMcpElicitationDecision({
+    id: 4,
+    method: "mcpServer/elicitation/request",
+    params: {
+      message: 'Allow the codegraph MCP server to run tool "codegraph_mutate"?',
+    },
+  }), null);
+  assert.equal(codeGraphReadOnlyMcpElicitationDecision({
+    id: 5,
+    method: "mcpServer/elicitation/request",
+    params: {
+      message: 'Allow the browser MCP server to run tool "codegraph_search"?',
+    },
+  }), null);
 });

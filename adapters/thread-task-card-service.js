@@ -114,17 +114,47 @@ function defaultStore() {
   return { cards: [], workflows: [] };
 }
 
+function storeError(message, details = {}, statusCode = 503) {
+  const err = errorWithStatus(message, statusCode);
+  err.code = message;
+  err.details = Object.fromEntries(Object.entries(details || {}).filter(([, value]) => value !== undefined && value !== ""));
+  return err;
+}
+
 function loadStore(file) {
+  let raw;
   try {
-    const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
-    if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.cards)) return defaultStore();
-    return {
-      cards: parsed.cards,
-      workflows: Array.isArray(parsed.workflows) ? parsed.workflows : [],
-    };
-  } catch (_) {
-    return defaultStore();
+    raw = fs.readFileSync(file, "utf8");
+  } catch (err) {
+    if (err && err.code === "ENOENT") return defaultStore();
+    throw storeError("task_card_store_unreadable", {
+      reason: err && err.code ? err.code : "read_failed",
+    });
   }
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (_) {
+    throw storeError("task_card_store_malformed_json", {
+      bytes: Buffer.byteLength(String(raw || ""), "utf8"),
+    });
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || !Array.isArray(parsed.cards)) {
+    throw storeError("task_card_store_invalid_shape", {
+      hasObject: Boolean(parsed && typeof parsed === "object" && !Array.isArray(parsed)),
+      cardsType: Array.isArray(parsed && parsed.cards) ? "array" : typeof (parsed && parsed.cards),
+    });
+  }
+  if (parsed.workflows !== undefined && !Array.isArray(parsed.workflows)) {
+    throw storeError("task_card_store_invalid_shape", {
+      hasObject: true,
+      workflowsType: typeof parsed.workflows,
+    });
+  }
+  return {
+    cards: parsed.cards,
+    workflows: Array.isArray(parsed.workflows) ? parsed.workflows : [],
+  };
 }
 
 function saveStore(file, data) {
@@ -360,6 +390,7 @@ function injectedMessageText(card) {
     "",
     `Source workspace: ${card.source.workspaceId}`,
     `Source thread: ${card.source.title || card.source.threadId}`,
+    `Source thread id: ${card.source.threadId}`,
     card.message && card.message.title ? `Title: ${card.message.title}` : "",
     sourceDirect ? "Approval: target approval bypassed by the thread-callable interface." : "",
     autonomous ? `Workflow mode: ${card.workflow.mode}` : "",

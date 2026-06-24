@@ -1,5 +1,152 @@
 # Codex Mobile Web
 
+## 中文总览
+
+Codex Mobile Web 是一个面向手机、平板和嵌入式 Home AI 插件场景的
+Codex 本地 Web 客户端。它通过本机的 Codex app-server 读取和控制
+Codex 线程，支持移动端查看线程、发送消息、上传图片和文件、观察实时
+命令/工具状态、跨线程任务卡协作、Home AI embedded iframe 运行、
+Web Push/Action Inbox 通知，以及与 Codex Desktop 共享 app-server
+mux 的实时同步。
+
+这个仓库的近期工作重点不是增加单点功能，而是修复长期演进后暴露出的
+架构问题：线程详情投影、线程列表内存缓存、跨线程任务卡、移动端
+Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经变成
+核心路径。当前版本按 Home AI 的 root-cause-first 规则处理这些问题：
+先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
+避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
+
+## 2026-06-24 公开发布说明
+
+本次 public 发布是在 Mac production 已先部署并通过用户验证后的同步。
+发布内容覆盖最近几轮生产修复和第一阶段架构重构，核心目标是让
+Codex Mobile 在大线程、任务卡协作和移动端实时状态下更稳定、更可解释。
+
+### 1. 第一阶段架构重构
+
+早期 Codex Mobile Web 的需求比较简单，很多逻辑集中在 `server.js` 和
+`public/app.js`。随着投影缓存、任务卡、Home AI 插件模式、MCP 工具集、
+线程列表内存缓存和移动端状态同步持续加入，入口文件已经承担了过多状态
+规则。第一阶段重构先处理后端最容易反复出问题的边界：
+
+- `adapters/thread-task-card-routing-service.js`：跨线程任务卡目标解析、
+  exact thread id/title、同 workspace 多线程投递、归档/隐藏/sidecar/
+  subagent 拒绝规则。
+- `adapters/thread-turn-compaction-policy-service.js`：线程详情中哪些 turn
+  保留完整 operation、哪些只保留 receipt/Usage 的服务端压缩策略。
+- `adapters/thread-detail-projection-input-service.js`：projection cache
+  输入签名，包括 rollout path/size/mtime、summary 状态和 retained-turn
+  window。
+- `adapters/thread-detail-projection-result-service.js`：projection cache hit
+  后如何合并 summary、标题、runtime model/effort、read mode 和公开元数据。
+- `adapters/thread-list-fallback-cache-service.js`：线程列表 fallback cache
+  的进程内 baseline、TTL 诊断开关和增量 status/title/archive update。
+- `adapters/thread-detail-summary-service.js`：详情 summary lookup 顺序，
+  保持 state DB -> started-cache -> rollout-session -> app-server 的可解释
+  顺序。
+
+这轮重构不是“大爆炸重写”。`server.js` 仍是 HTTP 路由和 app-server
+编排入口，`public/app.js` 仍然很大；但高风险策略已经开始服务化，并有
+聚焦测试覆盖。后续重构会继续按问题热区推进，而不是一次性改完整个系统。
+
+### 2. 吸收式合并 PR #78
+
+PR #78 的价值点是：线程列表上的 running/unread 状态不能只看最后一次
+刷新结果，还要考虑用户是否已经查看线程、Mobile 端提交后的短期处理中
+状态、以及 mux replay 事件的时间顺序。这个方向是正确的。
+
+本次没有原样合并 PR #78，而是按当前架构吸收其有效设计：
+
+- 新增 `public/thread-status-hints.js`，把线程 running/unread/viewed/
+  submitted-processing/mux replay freshness 规则做成纯前端策略模块。
+- `public/app.js` 记录 `codexMobileThreadViewedAtById`，进入线程后更新
+  viewed 时间，避免已读线程继续显示错误未读点。
+- 发送消息后保留短期 submitted-processing 状态，防止 app-server 或
+  replay 事件还没追上时线程列表不显示“已启动/处理中”。
+- `codex-app-server-mux.js` 给 Mobile notification replay 增加
+  `mobileReplay`、`mobileReplayReceivedAtMs`、`mobileReplaySeq`，客户端
+  可以识别断线重放的旧 completion，避免旧事件清掉新的 running 状态。
+
+这属于“吸收式合并”：保留 PR #78 中对状态 freshness 的正确洞察，但把
+实现融入本仓库已有的状态所有权和测试体系，而不是直接复制 PR 代码。
+
+### 3. 为什么没有合并 PR #78 的大 session 首屏 deferred enrichment
+
+PR #78 里另一个方向是大 session 首屏先返回不完整 detail，再通过后续
+enrichment 或二次刷新补齐。这个方案短期可能让首屏看起来更快，但它把
+用户可见页面变成“两阶段事实”：第一阶段先缺一部分内容，第二阶段再替换
+或补齐。对 Codex Mobile 当前的问题形态来说，这会重新引入我们刚修过的
+抖动、回执替换、Usage 迟到、任务卡淹没和图片投影不一致等风险。
+
+所以本次明确不合并这一部分。大 session 首屏慢应该继续归属到服务端
+projection/cache/cold-path 体系内解决，而不是由前端接受一个临时不完整
+页面再靠刷新补齐。当前策略是：
+
+- 线程列表 fallback cache 只在服务冷启动/重启后建立 baseline，后续靠
+  增量事件同步，不再普通刷新反复全量重扫。
+- 详情 projection cache 的 input/result/summary 边界已经拆出，后续可以
+  精确测量慢在 rollout 扫描、projection seed、app-server read 还是 DOM
+  patch。
+- 首屏优化必须保持“返回内容就是当前权威内容”的不变量。允许局部骨架和
+  bounded loading 状态，但不允许用缺失最终回执、缺 Usage、缺任务卡详情
+  的页面作为正常完成态。
+
+### 4. 最近用户可见修复
+
+- v402：修正移动端 operation bubble 仍然闪一下的问题。现在同一线程的
+  最后一个真实 command/file/tool/search 气泡会至少停留 500ms；到期只刷新
+  dock，不再调用整线程 `renderCurrentThread()`，减少 Composer 和上方消息区
+  联动闪动。
+- v401：吸收 PR #78 的线程状态 freshness 设计，修复断线 replay 或提交后
+  短窗口导致线程列表不显示运行状态、未读点错误的问题。
+- v400：修正任务卡来源线程标题，避免续接 bootstrap 文本被当作来源线程名；
+  同时自动接受 CodeGraph 只读 MCP elicitation，减少无意义授权弹窗。
+- v399/v398：跨线程任务卡不再按普通 `You` 消息显示，长卡片默认折叠，只在
+  头部展示来源线程、目标和摘要，避免长任务卡把回执和 Usage 淹没。
+- 同 workspace 多线程任务卡投递已修正：exact `targetThreadId` 是线程身份；
+  只要目标未归档、未隐藏、非 sidecar/subagent，就允许同 cwd 投递。归档目标
+  会显式拒绝。
+
+### 5. 后续计划
+
+后续目标分四层推进：
+
+1. **大 session 性能闭环**：建立冷启动和 warm cache 的分层耗时证据，分别
+   测量 thread list fallback、thread detail summary、projection seed/cache、
+   rollout enrichment、app-server read 和前端 DOM patch。只有确认慢点后才做
+   结构优化。
+2. **继续拆 `public/app.js`**：优先拆 thread detail merge、conversation patch、
+   composer/viewport、operation dock/bubble、task-card UI 这几块，把状态机变成
+   可测试 helper，而不是继续堆在单个入口文件里。
+3. **补强持久化失败处理**：任务卡 store 和其他 workflow-critical store 不能在
+   corrupt/unreadable 时静默当空状态；需要 fail-closed 或 bounded diagnostic，
+   并保留可恢复证据。
+4. **增强真实 UI 覆盖**：补 DOM/browser/视觉 smoke，覆盖移动端闪动、图片上传与
+   generated image 渲染、PWA shell refresh、任务卡展开折叠和 Home AI embedded
+   proxy-safe URL。
+
+发布顺序保持不变：先本地/private workspace 实现和验证，再部署 Mac production，
+用户确认后才同步 public。public 发布不包含 `.agent-context`、runtime state、
+本地密钥、上传内容、日志、访问 key 或机器特定诊断。
+
+## 近期逐版本记录
+
+- 中文说明：v402 修正移动端 operation bubble 仍会闪一下的问题。v399 的 500ms 保护只在 DOM 上已经存在气泡时生效；短命令如果在同一轮刷新里先结束，后续状态可能在气泡落 DOM 前把 dock 清空。现在 dock 状态会保存同一线程最后一个 mobile bubble HTML 和最短可见截止时间，短操作结束后仍保持至少 500ms；到期刷新只更新 dock，不再调用整线程 `renderCurrentThread()`，减少 Composer 附近和上方消息区的联动闪动。PWA shell cache 升级到 `codex-mobile-shell-v402`。
+- 中文说明：v401 吸收 PR #78 中可取的线程状态 freshness 设计，但按当前架构重写为独立 `thread-status-hints` 策略模块。移动端线程列表现在记录已读时间、短期提交处理中状态和 mux replay 时间戳，避免断线重放的旧 completion 把正在运行提示清掉或制造错误未读点；本次不引入大 session deferred enrichment，避免用二次刷新掩盖服务端缓存/投影根因。PWA shell cache 升级到 `codex-mobile-shell-v401`。
+- 中文说明：v400 修正跨线程任务卡的来源线程标题，并收窄处理 CodeGraph 只读 MCP 授权。任务卡创建和注入时不再接受 `# Continuation Bootstrap Index` 这类续接 bootstrap 文本作为来源线程名，而是优先使用真实显示标题、Mobile session index 标题或 thread id；新注入正文同时包含 `Source thread id`，避免标题异常时只剩不可恢复文本。CodeGraph MCP 的只读 `codegraph_search/explore/node/callers` elicitation 会在服务端自动接受，不再显示给用户；其他 MCP server 或未知工具仍需显式处理。PWA shell cache 升级到 `codex-mobile-shell-v400`。
+- 中文说明：v399 调整跨线程任务卡注入消息的手机端显示语义。注入卡不再按普通用户消息显示 `You`，而是使用独立任务卡外观；卡片头部显示来源线程和任务目的，完整任务卡正文仍可展开查看。移动端 operation bubble 增加 500ms 最小可见时间，避免短命令只闪一下。PWA shell cache 升级到 `codex-mobile-shell-v399`。
+- 中文说明：v398 将注入到目标线程的跨线程任务卡用户消息改为默认折叠。长任务卡只在消息流里显示来源线程、任务目的和长度摘要，点击可展开，展开内容在卡片内部滚动并可再次收起，避免任务卡正文把后续回执和 Usage 淹没。PWA shell cache 升级到 `codex-mobile-shell-v398`。
+- 中文说明：v397 修正手机端 operation bubble 展开详情不稳定的问题。用户点开气泡后，详情 sheet 会进入 pinned 状态，即使当前 command/file/tool operation 很快完成、后续刷新只剩 reasoning/status，也会保留最后一条 operation 详情，直到用户下拉或再次收起；展开 sheet/card 改为不透明 panel 背景，避免底下对话内容透出影响阅读。PWA shell cache 升级到 `codex-mobile-shell-v397`。
+- 中文说明：v396 修复移动端发送用户消息后，思考过程中同一条用户消息可能出现两张相同卡片的问题。服务端 mux-local `userMessage` echo 和 pending steer echo 现在携带 `clientSubmissionId`；前端线程合并会用提交 id、本地 `local-user-*` id、确定性 `mux-user-*` id 后缀和内容签名收敛同一次提交，只保留优先级更高的 mux/durable 用户消息，同时保留用户后来真正重复发送的同文消息。PWA shell cache 升级到 `codex-mobile-shell-v396`。
+- 中文说明：server-only 修正同一工作区多个正常线程之间无法发任务卡的问题。`/api/threads/:sourceThreadId/task-cards` 现在把精确 `targetThreadId` / `targetThreadTitle` 视为线程身份，只要目标存在且未归档、未删除、非隐藏/子代理，就允许同 cwd 投递；不会再因为另一个同 cwd 线程更新时间更新而拒绝或改投。`targetCwd` / `targetWorkspace` 仍是模糊 workspace 目标，才会选择该 workspace 的当前可见线程。传入源线程自身会返回 `target_thread_self`，归档目标返回 `target_thread_archived`；本次不改变 PWA shell cache。
+- 中文说明：v395 将手机端底部 Command dock 改为悬浮 operation bubble。手机窄屏不再为纯 reasoning 或命令状态常驻占用一行纵向空间；只有真实 command/file/tool/search 正在运行时才在 composer 上方显示一个不参与布局的气泡，内容只保留操作类型、短摘要和运行时长。点击或上滑气泡会展开当前操作详情 sheet，可查看完整命令和参数。桌面和 iPad 宽屏继续保留原一行 Command dock。PWA shell cache 升级到 `codex-mobile-shell-v395`。
+
+- 中文说明：server-only 跟进修正 v394 后 Mac 上 Command 详情仍为空的问题。实测 `/api/threads/:id?mode=recent` 返回的 `commandExecution.command` 本身为空，失败层不是前端 dock 渲染，而是服务端 raw-operation fallback 只解析 rollout `function_call.arguments.command`，没有解析 Mac `exec_command` 常见的 `arguments.cmd`。现在服务端投影同时支持 `command`、`cmd`、`shellCommand`、`shell_command`，且支持 `arguments` 为对象或 JSON 字符串；本次不改变 PWA shell cache。
+
+- 中文说明：v394 调整 v393 的底部 dock 语义，并修复 Mac 上 Command 详情为空。底部 dock 仍会在 active turn 全程保留一行高度，避免 reasoning ↔ command/tool 阶段切换导致 composer 上方布局跳动；但 reasoning-only 阶段的 synthetic 占位行只显示 `Command` 空状态，不再显示 `思考`，避免和右上角 turn 状态重复。Command 详情提取现在同时支持 `item.command` 和 Mac/新协议常见的 `item.arguments` JSON 里的 `command`/`cmd`/`shellCommand` 字段；真实 command/tool/file 操作仍优先显示在 dock。compact dock 高度从 54px 降到 40px，内部卡片从 44px 降到 32px，只保留一行文字和少量边距。PWA shell cache 升级到 `codex-mobile-shell-v394`。
+
+- 中文说明：v393 恢复 active turn 期间底部状态行恒定。v392 后底部 live operation dock 只在最新 live turn 存在 active command/tool/search 项时渲染；当 turn 处于 reasoning-only “思考”阶段时 dock 会消失，进入命令阶段再出现，导致 composer 上方高度变化并可能造成剩余画面颤动。现在 latest live turn 没有 active operational item 时也会渲染 synthetic `liveTurnStatus` 行，显示 `思考`/`运行` 等 live activity label；真正的 command/tool 到来时仍优先显示对应操作项。PWA shell cache 升级到 `codex-mobile-shell-v393`。
+
 - 中文说明：v392 继续修正完成回执出现后的画面闪烁。v391 已处理同一 turn 内较短完成回执接管旧 receipt 节点，但 post-completion refresh 仍会因为 `mobileProjectionRevision` / `mobileVisibleItemKeys` 变化而绕过局部 patch，退回较大的 conversation/article patch。现在 refresh patch 判断改用只包含外壳可见因素的 `conversationPatchShellSignature`，并允许 latest turn 在完成态追加 Usage 或更新 receipt 时保留已有 item key 做局部 patch；只有删除、重排或外壳结构变化才回退完整渲染。PWA shell cache 升级到 `codex-mobile-shell-v392`。
 
 - 中文说明：v391 修正完成回执替换造成的短暂画面颤动。v390 会在 completed 服务端投影带回最终 `agentMessage` 和 `Usage` 后丢弃本地 active 阶段的 local-only 回执；但如果服务端最终回执是实时回执的较短前缀，旧逻辑会先移除较长本地回执再插入较短服务端回执，导致同一位置高度瞬间少一行。现在 completed incoming turn 的权威回执会在同类型、同前缀且重合度足够时接管已有可见回执节点，沿用旧 id 和较完整文本，同时保留 Usage 归并，避免 DOM 节点重建和高度缩短。PWA shell cache 升级到 `codex-mobile-shell-v391`。
@@ -57,7 +204,7 @@
 - 中文说明：server-only 二次修正后台 turn 已经启动但线程列表/详情摘要又被 `idle` 覆盖的问题。Mobile Web 自己发起的 `turn/start` 成功返回后，现在会记录 bounded 服务端 active overlay，并把它统一应用到 `/api/threads` 和 `/api/threads/:id` 的状态合成；后续 state-db/app-server 暂时返回 `idle` 时不会洗掉运行标志。overlay 会在收到 `turn/completed`、rollout 尾部出现 `task_complete`，或 TTL 到期时清理。仍会广播轻量 `thread/status/changed active`，覆盖普通消息、source-direct/自动任务卡注入、auto-recover、side-chat apply、continuation handoff/bootstrap 和新线程首 turn。本次不改变 PWA shell cache。
 - 中文说明：v375 缓解大线程打开期间的后台列表补拉卡顿。线程列表首屏仍可用 `fallback=defer` 快速返回，但完整 fallback rollout 扫描不再 800ms 后立即启动；前端现在把它作为可取消、可推迟的后台任务，等待线程详情首屏稳定、没有列表请求在跑、且没有 workspace/search 过滤时再补拉。这样 Music 这类 200MB rollout 线程在服务重启后不会因为后台列表恢复马上扫大文件而拖慢首屏。PWA shell cache 升级到 `codex-mobile-shell-v375`。
 - 中文说明：v374 修正首次打开已完成线程时 Usage 卡片可能缺失、退出再进才出现的问题。线程详情首屏如果命中较旧投影缓存，且最新 completed turn 已有最终回执但还没有 Usage，前端现在会立即启动已有的 bounded Usage backfill 刷新；后台刷新拿到 `turnUsageSummary` 后会在当前页面补出 Usage，不再依赖重新进入线程。PWA shell cache 升级到 `codex-mobile-shell-v374`。
-- 中文说明：server-only 收紧 source-thread 任务卡目标校验，防止动态工具或 fallback 脚本把卡发到旧线程/隐藏线程。`/api/threads/:sourceThreadId/task-cards` 现在只接受当前可见、非归档、非子代理的目标线程；同一 cwd/workspace 有多个线程时，只允许最新可见 canonical 线程。传入旧 date-suffixed 线程、只存在 rollout fallback 的线程或不可见 id 会返回 `stale_target_thread` / `target_thread_not_visible`，并带上当前可投递线程信息；服务端不会自动改投。本次不改变 PWA shell cache。
+- 中文说明：历史说明：曾经为防止动态工具或 fallback 脚本把任务卡发到旧线程/隐藏线程，source-thread 任务卡目标校验把同一 cwd/workspace 收敛到最新可见 canonical 线程。该规则已被后续同工作区多线程修正收窄；当前规则是 exact `targetThreadId` / `targetThreadTitle` 按线程身份投递，归档/删除/隐藏/子代理目标仍会被拒绝。
 - 中文说明：server-only 修正 `codex_mobile.delegate_to_thread` 动态工具响应仍被 app-server 判为无效的问题。mux 真实错误显示当前 app-server 需要 `result.success` 和 camelCase `result.contentItems[{ type:"inputText" }]`，不是 `content_items/input_text`；错误响应会返回 `success:false`。任务卡幂等 seed 继续使用显式 requestId 或 source/target/title/body/workflow 语义字段，避免模型重试重复发卡。本次不改变 PWA shell cache。
 - 中文说明：server-only 修正 `跨工作区委派` 写保护没有覆盖直接工具调用的问题。开启后，普通插件线程默认使用真实 `workspace-write`/managed profile 和 `approvalPolicy:on-request`，并把当前 `.git` 同时加入 sandbox writable roots，确保当前工作区源码、当前 `.git`、读取、MCP 和网络继续可用；如果 app-server 对当前 `.git` 或普通读写发出审批，Mobile Web 会自动允许；如果尝试 `apply_patch`、文件变更、写类 shell 或写类文件系统授权到其他已知源码根，会自动拒绝。Home AI 中央控制平面提供的 AI Ops、平台检查、视觉核验和 `deploy:macos` 脚本被识别为官方工具命令，可以从插件线程调用；但直接修改、提交 Home AI 源码仍会被拦截。旧的 `danger-full-access` approval-proxy-only 兼容模式仅在显式设置 `CODEX_MOBILE_WORKSPACE_DELEGATION_APPROVAL_PROXY_ONLY=1` 时启用。本次不改变 PWA shell cache。
 - 中文说明：v373 修正 Profile 切换到目标账号时，额度接口临时失败会让切换进度消失并停住的问题。目标 app-server 初始化成功后，`account/rateLimits/read` 的网络/服务端临时失败会降级为警告继续切换，只有明确的 401/token 失效才阻止切换；失败响应会把 requestId/progress 带回前端，Profile 行会保留“切换失败：原因”和失败阶段，不再几秒后清空。PWA shell cache 升级到 `codex-mobile-shell-v373`。
@@ -457,12 +604,14 @@ app-server dynamic tool `codex_mobile.delegate_to_thread` into `thread/start`
 and `turn/start`. This is the model-visible path for ordinary Codex turns: the
 model decides whether a request needs another workspace/thread, calls the tool
 with an exact target thread id/title or exact target cwd, and the server creates
-the task card through the same source-thread route. The dynamic tool response is
+the task card through the same source-thread route. Exact thread ids/titles are
+thread identity, so multiple normal threads may share one cwd; archived,
+deleted, hidden, subagent, or non-detail-readable targets are still rejected.
+`targetCwd` / `targetWorkspace` remain fuzzy workspace targets and choose a
+current visible thread for that workspace. The dynamic tool response is
 serialized as app-server dynamic-tool output, `result.content_items` with an
 `input_text` item, not MCP `content` text. Source-thread task-card creation only
-accepts current visible target threads. If several threads share the same cwd,
-the latest visible thread is the canonical target; stale/hidden/old-rollout ids
-are rejected with a bounded error instead of being silently auto-retargeted.
+accepts deliverable target threads and rejects self-cards explicitly.
 The same start/turn runtime guidance also includes a local script fallback for
 agents that do not see the dynamic tool. App-server dynamic tools may not appear
 in deferred discovery surfaces such as `tool_search`, so that absence is not

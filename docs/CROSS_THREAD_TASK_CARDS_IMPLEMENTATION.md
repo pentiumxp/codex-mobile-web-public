@@ -133,16 +133,16 @@ cannot be inferred, the server returns a bounded error to the model instead of
 hanging the turn.
 
 Source-thread task-card creation has a stricter target resolver than the manual
-pending-card API. The resolver only accepts current visible target threads from
-the non-archived Mobile thread list. Hidden, archived, sub-agent, old rollout
-fallback, and non-detail-readable thread ids are rejected. When several visible
-threads share the same cwd/workspace, the latest visible thread is the canonical
-target for that cwd; older date-suffixed threads return `stale_target_thread`
-with a bounded `currentTarget` object instead of being silently retargeted.
-Completely invisible or unknown ids return `target_thread_not_visible`. This
-same guard applies to both the app-server dynamic tool and the
-`scripts/create-thread-task-card.js` fallback because both use
-`POST /api/threads/:sourceThreadId/task-cards`.
+pending-card API. Exact `targetThreadId` and exact `targetThreadTitle` are
+treated as thread identity: multiple normal threads may share the same
+cwd/workspace and still receive task cards independently. Archived, deleted,
+hidden, sub-agent, and non-detail-readable thread ids are rejected; exact
+self-cards to the source thread are rejected with `target_thread_self`.
+`targetCwd` / `targetWorkspace` remain fuzzy workspace targets and choose a
+current visible thread for that workspace. Completely invisible or unknown ids
+return `target_thread_not_visible`. This same guard applies to both the
+app-server dynamic tool and the `scripts/create-thread-task-card.js` fallback
+because both use `POST /api/threads/:sourceThreadId/task-cards`.
 
 The same runtime path appends a short developer-instruction fallback to
 `thread/start` and `turn/start`. If the app-server dynamic tool is not visible

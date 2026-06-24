@@ -67,8 +67,10 @@ Implementation path:
 4. If app-server `thread/list` can omit rows, merge bounded state DB and
    session-index fallback rows, then dedupe by thread id and reapply filters.
 5. Browser changes require a `CLIENT_BUILD_ID` / `public/sw.js` cache bump.
-6. Test with `test/thread-visibility.test.js` and `test/mobile-viewport.test.js`;
-   add thread detail or render tests if the detail shape changes.
+6. Test with `test/thread-visibility.test.js`,
+   `test/thread-list-fallback-cache-service.test.js`, and
+   `test/mobile-viewport.test.js`; add thread detail or render tests if the
+   detail shape changes.
 
 ## Workspace Token Usage Ledger
 
@@ -127,6 +129,10 @@ Implementation path:
 12. Existing v3 behavior still uses
     `test/thread-item-timestamp-enrichment.test.js`,
     `test/conversation-render.test.js`, `test/collab-agent-render.test.js`,
+    `test/thread-turn-compaction-policy-service.test.js`,
+    `test/thread-detail-summary-service.test.js`,
+    `test/thread-detail-projection-input-service.test.js`,
+    `test/thread-detail-projection-result-service.test.js`,
     `test/message-timestamp.test.js`, `test/turn-scroll-controls.test.js`,
     `test/turn-usage-summary-service.test.js`, and
     `test/mobile-viewport.test.js`.
@@ -432,6 +438,7 @@ Implementation path:
    auto-return creation.
 11. The current implementation uses:
    - `adapters/thread-task-card-service.js`
+   - `adapters/thread-task-card-routing-service.js`
    - `POST /api/thread-task-cards`
    - `POST /api/threads/:sourceThreadId/task-cards`
    - `GET /api/thread-task-cards/:id`
@@ -446,7 +453,8 @@ Implementation path:
     `跨工作区委派` is enabled. Do not enable that bypass for ordinary browser
     composer or `#` draft-created cards.
 13. Keep `test/thread-task-card-harness.test.js` green, and cover real behavior
-   with `test/thread-task-card-service.test.js` and
+   with `test/thread-task-card-service.test.js`,
+   `test/thread-task-card-routing-service.test.js`, and
    `test/thread-task-card-route.test.js`.
 14. Composer input is routed into the natural-language task-card flow when it
     starts with a leading non-empty `#` command. Plain `# ...` is the manual

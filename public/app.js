@@ -68,6 +68,10 @@ const buildRefreshPolicy = window.CodexBuildRefreshPolicy || {
     return true;
   },
 };
+const threadStatusHintPolicy = window.CodexThreadStatusHints;
+if (!threadStatusHintPolicy) {
+  throw new Error("CodexThreadStatusHints policy script failed to load");
+}
 const INITIAL_PLUGIN_EMBED = pluginEmbedApi.detect(window.location.href);
 const INITIAL_PLUGIN_LAUNCH_KEY = INITIAL_PLUGIN_EMBED.launchKey || initialPluginLaunchKeyFromUrl();
 
@@ -146,6 +150,7 @@ const state = {
   threadListRenderFrame: null,
   threadNotificationThrottle: new Map(),
   recentSubmittedUserMessages: new Map(),
+  submittedProcessingThreadHintedAtById: {},
   sendProgressWatchdog: null,
   sendProgressStartAt: 0,
   sendProgressWarned: false,
@@ -199,6 +204,12 @@ const state = {
   subagentPanelOpen: false,
   liveOperationDockMode: "compact",
   liveOperationDockGesture: null,
+  liveOperationDockPinned: false,
+  liveOperationDockPinnedThreadId: "",
+  liveOperationDockCompactVisibleUntilMs: 0,
+  liveOperationDockCompactHtml: "",
+  liveOperationDockCompactThreadId: "",
+  liveOperationDockCompactTimer: null,
   threadSideChats: new Map(),
   sideChatLoadingThreadId: "",
   sideChatError: "",
@@ -335,6 +346,7 @@ const state = {
   runningThreadIds: loadStringSetStorage("codexMobileRunningThreadIds"),
   runningThreadHintedAtById: loadNumberMapStorage("codexMobileRunningThreadHintedAtById", {}),
   unreadThreadIds: loadStringSetStorage("codexMobileUnreadThreadIds"),
+  threadViewedAtById: loadNumberMapStorage("codexMobileThreadViewedAtById", {}),
   rolloutWarningDismissals: loadStringSetStorage("codexMobileDismissedRolloutWarnings"),
   codexFastMode: false,
   fontSize: localStorage.getItem("codexMobileFontSize")
@@ -388,7 +400,8 @@ const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v392";
+const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = 500;
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v402";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -418,6 +431,8 @@ const PERF_EVENT_THROTTLE_MS = 2000;
 const PERF_RENDER_REPORT_MIN_MS = 16;
 const PERF_SLOW_RENDER_REPORT_MS = 50;
 const RUNNING_THREAD_HINT_STALE_MS = 20 * 60 * 1000;
+const SUBMITTED_PROCESSING_HINT_STALE_MS = threadStatusHintPolicy.DEFAULT_SUBMITTED_PROCESSING_HINT_STALE_MS;
+const STATUS_EVENT_FRESHNESS_TOLERANCE_MS = threadStatusHintPolicy.DEFAULT_STATUS_EVENT_FRESHNESS_TOLERANCE_MS;
 const AUTO_TURN_RECOVERY_COOLDOWN_MS = 120000;
 const GITHUB_LINK_PREVIEW_TIMEOUT_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -433,6 +448,7 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/image-compressor.js",
   "/plugin-embed.js",
   "/plugin-voice-input.js",
+  "/thread-status-hints.js",
   "/build-refresh-policy.js",
   "/app.js",
   "/manifest.json",
@@ -449,6 +465,7 @@ const STORAGE_CONTINUATION_JOB = "codexMobileContinuationJobId";
 const STORAGE_RUNNING_THREAD_IDS = "codexMobileRunningThreadIds";
 const STORAGE_RUNNING_THREAD_HINTED_AT = "codexMobileRunningThreadHintedAtById";
 const STORAGE_UNREAD_THREAD_IDS = "codexMobileUnreadThreadIds";
+const STORAGE_THREAD_VIEWED_AT = "codexMobileThreadViewedAtById";
 const STORAGE_DISMISSED_ROLLOUT_WARNINGS = "codexMobileDismissedRolloutWarnings";
 const STORAGE_FONT_SIZE = "codexMobileFontSize";
 const STORAGE_CODEX_FAST_MODE = "codexMobileCodexFastMode";
@@ -1336,10 +1353,38 @@ function saveThreadStatusHints() {
   saveStringSetStorage(STORAGE_RUNNING_THREAD_IDS, state.runningThreadIds);
   saveNumberMapStorage(STORAGE_RUNNING_THREAD_HINTED_AT, state.runningThreadHintedAtById);
   saveStringSetStorage(STORAGE_UNREAD_THREAD_IDS, state.unreadThreadIds);
+  saveNumberMapStorage(STORAGE_THREAD_VIEWED_AT, state.threadViewedAtById);
+}
+
+function isRecoverableThreadDisplayTitle(value, threadId = "") {
+  const text = String(value || "").trim();
+  const id = String(threadId || "").trim();
+  if (!text) return true;
+  if (id && text === id) return true;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(text)
+    || /^#\s*Continuation Bootstrap Index\b/i.test(text)
+    || /This thread is a same-workspace continuation created by Codex Mobile Web/i.test(text);
+}
+
+function preferredThreadDisplayTitle(thread) {
+  if (!thread || typeof thread !== "object") return "";
+  const id = String(thread.id || thread.threadId || "");
+  for (const value of [
+    thread.displayTitle,
+    thread.threadTitle,
+    thread.thread_name,
+    thread.name,
+    thread.title,
+    thread.preview,
+  ]) {
+    const text = String(value || "").trim();
+    if (text && !isRecoverableThreadDisplayTitle(text, id)) return text;
+  }
+  return id;
 }
 
 function threadDisplayName(thread) {
-  return String(thread && (thread.name || thread.preview || thread.id || "") || "");
+  return preferredThreadDisplayTitle(thread);
 }
 
 function isPwaMode() {
@@ -1449,11 +1494,39 @@ function showCompletionAlert(threadId, threadName) {
   playCompletionTone({ audible: true });
 }
 
-function markThreadViewed(threadId) {
+function threadForStatusHint(threadId, inputThread = null) {
   const id = String(threadId || "");
-  if (!id || !state.unreadThreadIds.has(id)) return;
-  state.unreadThreadIds.delete(id);
-  saveThreadStatusHints();
+  if (!id) return inputThread || null;
+  if (inputThread && String(inputThread.id || id) === id) return inputThread;
+  if (state.currentThread && String(state.currentThread.id || "") === id) return state.currentThread;
+  return state.threads.find((thread) => String(thread && thread.id || "") === id) || inputThread || null;
+}
+
+function threadViewedAtMs(threadId) {
+  return Number(state.threadViewedAtById[String(threadId || "")] || 0);
+}
+
+function markThreadViewed(threadId, thread = null, viewedAtMs = Date.now()) {
+  const id = String(threadId || "");
+  if (!id) return;
+  const viewedThread = threadForStatusHint(id, thread);
+  const nowMs = Date.now();
+  const explicitViewedAt = Math.min(numericTimestampMs(viewedAtMs), nowMs);
+  const viewedAt = Math.max(explicitViewedAt || 0, nowMs);
+  let changed = false;
+  if (state.unreadThreadIds.delete(id)) changed = true;
+  if (Number.isFinite(viewedAt) && viewedAt > 0 && viewedAt > threadViewedAtMs(id)) {
+    state.threadViewedAtById[id] = viewedAt;
+    changed = true;
+  }
+  const status = viewedThread && viewedThread.status;
+  const staleActive = isStaleActiveStatus(status) || Boolean(viewedThread && viewedThread.mobileStaleActiveTurn);
+  const freshSettled = isThreadListSettledStatus(status)
+    && !shouldKeepRunningHintForSettledStatus(id, viewedThread, status, {
+      eventAtMs: threadUpdatedAtMs(viewedThread),
+    });
+  if ((staleActive || freshSettled) && clearRunningThreadHint(id)) changed = true;
+  if (changed) saveThreadStatusHints();
 }
 
 function noteRunningThreadHint(threadId, nowMs = Date.now()) {
@@ -1472,6 +1545,23 @@ function noteRunningThreadHint(threadId, nowMs = Date.now()) {
   return changed;
 }
 
+function noteSubmittedProcessingThreadHint(threadId, nowMs = Date.now()) {
+  const id = String(threadId || "");
+  if (!id) return false;
+  const previous = Number(state.submittedProcessingThreadHintedAtById[id] || 0);
+  if (previous && Math.abs(nowMs - previous) <= 1000) return false;
+  state.submittedProcessingThreadHintedAtById[id] = nowMs;
+  return true;
+}
+
+function clearSubmittedProcessingThreadHint(threadId) {
+  const id = String(threadId || "");
+  if (!id) return false;
+  if (!Object.prototype.hasOwnProperty.call(state.submittedProcessingThreadHintedAtById, id)) return false;
+  delete state.submittedProcessingThreadHintedAtById[id];
+  return true;
+}
+
 function clearRunningThreadHint(threadId) {
   const id = String(threadId || "");
   if (!id) return false;
@@ -1481,58 +1571,172 @@ function clearRunningThreadHint(threadId) {
     delete state.runningThreadHintedAtById[id];
     changed = true;
   }
+  if (clearSubmittedProcessingThreadHint(id)) changed = true;
   return changed;
 }
 
 function threadUpdatedAtMs(thread) {
-  return numericTimestampMs(thread && (thread.updatedAtMs || thread.updatedAt || thread.updated_at_ms || thread.updated_at));
+  return threadStatusHintPolicy.threadUpdatedAtMs(thread);
+}
+
+function threadStatusNotificationDurableEventAtMs(params = {}) {
+  return threadStatusHintPolicy.notificationDurableEventAtMs(params);
+}
+
+function threadStatusNotificationEventAtMs(params = {}, fallbackMs = 0, options = {}) {
+  return threadStatusHintPolicy.notificationEventAtMs(params, fallbackMs, options);
+}
+
+function threadLatestTerminalTurnAtMs(thread) {
+  return threadStatusHintPolicy.latestTerminalTurnAtMs(thread);
+}
+
+function currentThreadAllowsLiveTurn() {
+  const thread = state.currentThread;
+  if (!thread) return true;
+  const status = thread.status;
+  if (isStaleActiveStatus(status) || thread.mobileStaleActiveTurn) return false;
+  if (isThreadListSettledStatus(status)) return false;
+  return true;
+}
+
+function currentLiveTurnSupportsThreadStatusHint(threadId = "") {
+  const id = String(threadId || "");
+  return Boolean(id && id === state.currentThreadId && currentThreadAllowsLiveTurn() && currentLiveTurn());
+}
+
+function shouldKeepRunningHintForSettledStatus(threadId, thread = null, status = null, options = {}) {
+  const id = String(threadId || "");
+  const inputThread = threadForStatusHint(id, thread);
+  return threadStatusHintPolicy.shouldKeepRunningHintForSettledStatus({
+    threadId: id,
+    thread: inputThread,
+    status: status || (inputThread && inputThread.status),
+    isRunningHinted: state.runningThreadIds.has(id),
+    runningHintedAtMs: state.runningThreadHintedAtById[id],
+    submittedProcessingHintedAtMs: state.submittedProcessingThreadHintedAtById[id],
+    submittedProcessingHintStaleMs: SUBMITTED_PROCESSING_HINT_STALE_MS,
+    currentThreadId: state.currentThreadId,
+    currentThreadSettled: !currentThreadAllowsLiveTurn(),
+    currentThreadHasLiveTurn: currentLiveTurnSupportsThreadStatusHint(id),
+    eventAtMs: options.eventAtMs,
+    eventIsTerminal: Boolean(options.eventIsTerminal),
+    mobileReplay: Boolean(options.mobileReplay),
+    allowLocalProcessing: options.allowLocalProcessing !== false,
+    freshnessToleranceMs: STATUS_EVENT_FRESHNESS_TOLERANCE_MS,
+    nowMs: options.nowMs,
+  });
+}
+
+function shouldMarkThreadUnread(threadId, thread = null, status = null, options = {}) {
+  const id = String(threadId || "");
+  const inputThread = threadForStatusHint(id, thread);
+  return threadStatusHintPolicy.shouldMarkThreadUnread({
+    threadId: id,
+    currentThreadId: state.currentThreadId,
+    thread: inputThread,
+    status: status || (inputThread && inputThread.status),
+    viewedAtMs: state.threadViewedAtById[id],
+    wasRunning: Boolean(options.wasRunning),
+    runningHintedAtMs: options.hintedAtMs || state.runningThreadHintedAtById[id],
+    eventAtMs: options.eventAtMs,
+    eventIsTerminal: Boolean(options.eventIsTerminal),
+    mobileReplay: Boolean(options.mobileReplay),
+    freshnessToleranceMs: STATUS_EVENT_FRESHNESS_TOLERANCE_MS,
+  });
 }
 
 function runningThreadHintAgeMs(threadId, thread, nowMs = Date.now()) {
-  const hintedAt = Number(state.runningThreadHintedAtById[String(threadId || "")] || 0);
-  if (hintedAt > 0) return nowMs - hintedAt;
-  const updatedAt = threadUpdatedAtMs(thread);
-  if (updatedAt > 0) return nowMs - updatedAt;
-  return RUNNING_THREAD_HINT_STALE_MS + 1;
+  return threadStatusHintPolicy.runningHintAgeMs({
+    threadId: String(threadId || ""),
+    thread,
+    runningHintedAtMs: state.runningThreadHintedAtById[String(threadId || "")],
+    runningHintStaleMs: RUNNING_THREAD_HINT_STALE_MS,
+    nowMs,
+  });
 }
 
 function shouldExpireRunningThreadHint(threadId, thread, nowMs = Date.now()) {
   const id = String(threadId || "");
-  if (!id || !state.runningThreadIds.has(id)) return false;
-  if (isStaleActiveStatus(thread && thread.status) || (thread && thread.mobileStaleActiveTurn)) return true;
-  if (isRunningStatus(thread && thread.status) || isCompletedStatus(thread && thread.status)) return false;
-  if (id === state.currentThreadId && state.activeTurnId) return false;
-  return runningThreadHintAgeMs(id, thread, nowMs) > RUNNING_THREAD_HINT_STALE_MS;
+  const inputThread = threadForStatusHint(id, thread);
+  return threadStatusHintPolicy.shouldExpireRunningThreadHint({
+    threadId: id,
+    thread: inputThread,
+    status: inputThread && inputThread.status,
+    isRunningHinted: state.runningThreadIds.has(id),
+    runningHintedAtMs: state.runningThreadHintedAtById[id],
+    submittedProcessingHintedAtMs: state.submittedProcessingThreadHintedAtById[id],
+    submittedProcessingHintStaleMs: SUBMITTED_PROCESSING_HINT_STALE_MS,
+    currentThreadId: state.currentThreadId,
+    currentThreadSettled: !currentThreadAllowsLiveTurn(),
+    currentThreadHasLiveTurn: currentLiveTurnSupportsThreadStatusHint(id),
+    freshnessToleranceMs: STATUS_EVENT_FRESHNESS_TOLERANCE_MS,
+    runningHintStaleMs: RUNNING_THREAD_HINT_STALE_MS,
+    nowMs,
+  });
 }
 
 function updateThreadStatusHints(threadId, previousStatus, nextStatus, options = {}) {
   const id = String(threadId || "");
   if (!id) return;
+  const thread = threadForStatusHint(id, options.thread);
+  const nextThread = thread ? Object.assign({}, thread, { status: nextStatus || thread.status }) : null;
   const wasRunning = state.runningThreadIds.has(id) || isRunningStatus(previousStatus);
   const isRunning = isRunningStatus(nextStatus);
   const staleActive = isStaleActiveStatus(nextStatus);
+  const eventIsTerminal = isThreadListTerminalStatus(nextStatus);
   let changed = false;
   let shouldAlert = false;
   if (isRunning) {
     if (noteRunningThreadHint(id)) changed = true;
     if (state.unreadThreadIds.delete(id)) changed = true;
   } else if (wasRunning) {
-    if (clearRunningThreadHint(id)) changed = true;
-    if (!staleActive && id !== state.currentThreadId && !state.unreadThreadIds.has(id)) {
+    const hintedAtMs = Number(state.runningThreadHintedAtById[id] || 0);
+    const keepRunningHint = shouldKeepRunningHintForSettledStatus(id, nextThread, nextStatus, {
+      eventAtMs: options.eventAtMs,
+      eventIsTerminal,
+      mobileReplay: Boolean(options.mobileReplay),
+      allowLocalProcessing: options.allowLocalProcessing !== false,
+    });
+    const shouldUnread = !keepRunningHint
+      && !staleActive
+      && !state.unreadThreadIds.has(id)
+      && shouldMarkThreadUnread(id, nextThread, nextStatus, {
+        wasRunning,
+        eventAtMs: options.eventAtMs,
+        eventIsTerminal,
+        hintedAtMs,
+        mobileReplay: Boolean(options.mobileReplay),
+      });
+    if (!keepRunningHint && clearRunningThreadHint(id)) changed = true;
+    if (shouldUnread) {
       state.unreadThreadIds.add(id);
       changed = true;
       shouldAlert = true;
     }
+  } else if (!state.unreadThreadIds.has(id)
+    && shouldMarkThreadUnread(id, nextThread, nextStatus, {
+      wasRunning,
+      eventAtMs: options.eventAtMs,
+      eventIsTerminal,
+      mobileReplay: Boolean(options.mobileReplay),
+    })) {
+    state.unreadThreadIds.add(id);
+    changed = true;
+    shouldAlert = true;
   }
   if (changed) saveThreadStatusHints();
   if (shouldAlert && options.notify) {
-    showCompletionAlert(id, options.threadName || threadDisplayName(options.thread));
+    showCompletionAlert(id, options.threadName || threadDisplayName(thread));
   }
 }
 
 function isThreadListSettledStatus(status) {
-  const text = statusText(status).toLowerCase();
-  return /^(idle|completed|complete|done|failed|failure|cancelled|canceled|cancel|error|interrupted|stopped|stop)$/.test(text);
+  return threadStatusHintPolicy.isSettledStatus(status);
+}
+
+function isThreadListTerminalStatus(status) {
+  return threadStatusHintPolicy.isTerminalStatus(status);
 }
 
 function reconcileThreadStatusHints(threads) {
@@ -1546,18 +1750,47 @@ function reconcileThreadStatusHints(threads) {
     const isRunning = !staleActive && isRunningStatus(thread.status);
     if (isRunning && !wasRunning) {
       if (noteRunningThreadHint(id, nowMs)) changed = true;
-      state.unreadThreadIds.delete(id);
+      if (state.unreadThreadIds.delete(id)) changed = true;
     } else if (isRunning) {
       if (noteRunningThreadHint(id, nowMs)) changed = true;
+      if (state.unreadThreadIds.delete(id)) changed = true;
     } else if (wasRunning && staleActive) {
       if (clearRunningThreadHint(id)) changed = true;
     } else if (wasRunning && isThreadListSettledStatus(thread.status)) {
-      if (id === state.currentThreadId && currentLiveTurn()) {
+      const terminalAtMs = threadLatestTerminalTurnAtMs(thread);
+      if (currentLiveTurnSupportsThreadStatusHint(id)) {
         if (noteRunningThreadHint(id, nowMs)) changed = true;
         continue;
       }
+      const hintedAtMs = Number(state.runningThreadHintedAtById[id] || 0);
+      if (shouldKeepRunningHintForSettledStatus(id, thread, thread.status, {
+        eventAtMs: threadUpdatedAtMs(thread),
+        eventIsTerminal: Boolean(terminalAtMs),
+      })) {
+        if (shouldExpireRunningThreadHint(id, thread, nowMs) && clearRunningThreadHint(id)) changed = true;
+        continue;
+      }
       if (clearRunningThreadHint(id)) changed = true;
-      if (id !== state.currentThreadId) state.unreadThreadIds.add(id);
+      if (!state.unreadThreadIds.has(id)
+        && shouldMarkThreadUnread(id, thread, thread.status, {
+          wasRunning,
+          eventAtMs: terminalAtMs,
+          eventIsTerminal: Boolean(terminalAtMs),
+          hintedAtMs,
+        })) {
+        state.unreadThreadIds.add(id);
+        changed = true;
+      }
+    } else if (!wasRunning && !state.unreadThreadIds.has(id)) {
+      const terminalAtMs = threadLatestTerminalTurnAtMs(thread);
+      if (shouldMarkThreadUnread(id, thread, thread.status, {
+        wasRunning,
+        eventAtMs: terminalAtMs,
+        eventIsTerminal: Boolean(terminalAtMs),
+      })) {
+        state.unreadThreadIds.add(id);
+        changed = true;
+      }
     } else if (shouldExpireRunningThreadHint(id, thread, nowMs)) {
       if (clearRunningThreadHint(id)) changed = true;
     }
@@ -1572,11 +1805,15 @@ function statusIconInfo(status, threadId = "") {
   if (/active|running|queued|processing|inprogress|in_progress|in-progress|pending|started/.test(normalized)) {
     return { kind: "running", label: text || "running", symbol: "" };
   }
-  if (threadId && state.runningThreadIds.has(String(threadId))
-    && (!isThreadListSettledStatus(status) || (String(threadId) === state.currentThreadId && currentLiveTurn()))) {
+  const id = String(threadId || "");
+  const hintThread = id ? threadForStatusHint(id) : null;
+  if (id && state.runningThreadIds.has(id)
+    && (!isThreadListSettledStatus(status)
+      || currentLiveTurnSupportsThreadStatusHint(id)
+      || shouldKeepRunningHintForSettledStatus(id, hintThread, status))) {
     return { kind: "running", label: text && text !== "notLoaded" ? text : "running", symbol: "" };
   }
-  if (threadId && state.unreadThreadIds.has(String(threadId))) {
+  if (id && state.unreadThreadIds.has(id)) {
     return { kind: "unread", label: "completed, unread", symbol: "" };
   }
   return null;
@@ -4255,6 +4492,7 @@ function markThreadOptimisticallyActive(threadId) {
   const id = String(threadId || "");
   if (!id) return;
   const runningStatus = { type: "active" };
+  noteSubmittedProcessingThreadHint(id);
   const listThread = state.threads.find((entry) => String(entry && entry.id || "") === id) || null;
   const currentMatches = Boolean(state.currentThread && String(state.currentThread.id || "") === id);
   const previousStatus = currentMatches ? state.currentThread.status : listThread && listThread.status;
@@ -4702,7 +4940,16 @@ function currentLiveOperationEntry(thread) {
     const item = items[index];
     if (isActiveOperationalItem(item)) return { turn, item, sourceIndex: index };
   }
-  return null;
+  return { turn, item: liveTurnStatusDockItem(turn), sourceIndex: -1 };
+}
+
+function liveTurnStatusDockItem(turn) {
+  return {
+    id: `live-turn-status-${turn && (turn.id || turn.startedAt || "active")}`,
+    type: "liveTurnStatus",
+    status: "",
+    title: "Command",
+  };
 }
 
 function visibleItemSignature(item, turn = null) {
@@ -4733,7 +4980,7 @@ function visibleItemSignature(item, turn = null) {
       startedAtMs: item.startedAtMs || item.startedAt || item.started_at_ms || item.started_at || "",
       completedAtMs: item.completedAtMs || item.completedAt || item.completed_at_ms || item.completed_at || "",
       durationMs: item.durationMs || item.duration_ms || item.elapsedMs || item.elapsed_ms || "",
-      command: item.command || "",
+      command: operationCommandText(item),
       fileNames: Array.isArray(item.fileNames) ? item.fileNames : [],
       tool: item.tool || "",
       server: item.server || "",
@@ -4840,6 +5087,31 @@ function isMuxUserMessage(item) {
 
 function isOptimisticUserMessage(item) {
   return Boolean(item && item.type === "userMessage" && (item.mobilePendingSubmission || /^local-user-/.test(String(item.id || "")) || isMuxUserMessage(item)));
+}
+
+function userMessageSubmissionIdCandidates(item) {
+  if (!item || item.type !== "userMessage") return [];
+  const values = [];
+  const explicit = String(item.clientSubmissionId || "").trim();
+  if (explicit) values.push(explicit);
+  const local = String(item.id || "").match(/^local-user-(.+)$/);
+  if (local && local[1]) values.push(local[1]);
+  return [...new Set(values)];
+}
+
+function userMessageHasSubmissionId(item, submissionId) {
+  const value = String(submissionId || "").trim();
+  if (!value || !item || item.type !== "userMessage") return false;
+  if (userMessageSubmissionIdCandidates(item).includes(value)) return true;
+  const id = String(item.id || "");
+  return Boolean(id && id.endsWith(`-${value}`));
+}
+
+function userMessagesShareSubmissionId(left, right) {
+  const leftValues = userMessageSubmissionIdCandidates(left);
+  const rightValues = userMessageSubmissionIdCandidates(right);
+  return leftValues.some((value) => userMessageHasSubmissionId(right, value))
+    || rightValues.some((value) => userMessageHasSubmissionId(left, value));
 }
 
 function isTurnUsageSummaryItem(item) {
@@ -5076,21 +5348,32 @@ function normalizeThreadVisibleUserMessages(thread) {
     if (!turn || !Array.isArray(turn.items)) continue;
     turn.items = removeShadowedMuxUserMessages(dedupeLikelySameUserMessages(turn.items));
   }
+  const userMessages = threadUserMessageEntries(thread.turns);
   const durableUserMessages = [];
-  for (let turnIndex = 0; turnIndex < thread.turns.length; turnIndex += 1) {
-    const turn = thread.turns[turnIndex];
-    const items = Array.isArray(turn && turn.items) ? turn.items : [];
-    for (const item of items) {
-      if (item && item.type === "userMessage" && !isOptimisticUserMessage(item)) durableUserMessages.push({ item, turnIndex });
-    }
+  for (const entry of userMessages) {
+    if (entry && entry.item && !isOptimisticUserMessage(entry.item)) durableUserMessages.push(entry);
   }
-  if (!durableUserMessages.length) return thread;
+  if (!durableUserMessages.length && userMessages.length < 2) return thread;
   for (let turnIndex = 0; turnIndex < thread.turns.length; turnIndex += 1) {
     const turn = thread.turns[turnIndex];
     if (!turn || !Array.isArray(turn.items)) continue;
-    turn.items = turn.items.filter((item) => !shouldDropOptimisticUserMessageForDurable(item, turnIndex, durableUserMessages));
+    turn.items = turn.items.filter((item, itemIndex) => !shouldDropOptimisticUserMessageForDurable(item, turnIndex, durableUserMessages)
+      && !shouldDropOptimisticUserMessageForHigherPriorityEcho(item, turnIndex, itemIndex, userMessages));
   }
   return thread;
+}
+
+function threadUserMessageEntries(turns) {
+  const entries = [];
+  for (let turnIndex = 0; turnIndex < (turns || []).length; turnIndex += 1) {
+    const turn = turns[turnIndex];
+    const items = Array.isArray(turn && turn.items) ? turn.items : [];
+    for (let itemIndex = 0; itemIndex < items.length; itemIndex += 1) {
+      const item = items[itemIndex];
+      if (item && item.type === "userMessage") entries.push({ item, turnIndex, itemIndex });
+    }
+  }
+  return entries;
 }
 
 function shouldDropOptimisticUserMessageForDurable(item, turnIndex, durableUserMessages) {
@@ -5100,6 +5383,22 @@ function shouldDropOptimisticUserMessageForDurable(item, turnIndex, durableUserM
     if (!userMessagesCanShadow(real.item, item)) return false;
     if (real.turnIndex >= turnIndex) return true;
     return userMessageHasVisualAttachment(real.item) && userMessageHasVisualAttachment(item);
+  });
+}
+
+function shouldDropOptimisticUserMessageForHigherPriorityEcho(item, turnIndex, itemIndex, userMessages) {
+  if (!isOptimisticUserMessage(item) || item.mobileSendError || !Array.isArray(userMessages)) return false;
+  const itemPriority = userMessageShadowPriority(item);
+  if (itemPriority <= 0 || itemPriority >= 3) return false;
+  return userMessages.some((candidate) => {
+    if (!candidate || !candidate.item || candidate.item === item || candidate.item.id === item.id) return false;
+    if (userMessageShadowPriority(candidate.item) <= itemPriority) return false;
+    const sameSubmission = userMessagesShareSubmissionId(candidate.item, item);
+    if (!sameSubmission) {
+      if (candidate.turnIndex < turnIndex) return false;
+      if (candidate.turnIndex === turnIndex && candidate.itemIndex <= itemIndex) return false;
+    }
+    return userMessagesCanShadow(candidate.item, item);
   });
 }
 
@@ -5157,7 +5456,7 @@ function v4ThreadHasPendingMatch(thread, pendingItem) {
   for (const turn of Array.isArray(thread && thread.turns) ? thread.turns : []) {
     for (const item of Array.isArray(turn && turn.items) ? turn.items : []) {
       if (!item || item.type !== "userMessage") continue;
-      if (submissionId && String(item.clientSubmissionId || "").trim() === submissionId) return true;
+      if (submissionId && userMessageHasSubmissionId(item, submissionId)) return true;
       if (!isOptimisticUserMessage(item) && userMessagesCanShadow(item, pendingItem)) return true;
     }
   }
@@ -5169,7 +5468,7 @@ function appendV4PendingOverlayItem(turn, item) {
   turn.items = Array.isArray(turn.items) ? turn.items : [];
   const submissionId = String(item.clientSubmissionId || "").trim();
   const alreadyPresent = turn.items.some((existing) => existing && (
-    (submissionId && String(existing.clientSubmissionId || "").trim() === submissionId)
+    (submissionId && userMessageHasSubmissionId(existing, submissionId))
     || existing.id === item.id
     || userMessagesCanShadow(existing, item)
   ));
@@ -9727,7 +10026,7 @@ function threadById(threadId) {
 }
 
 function threadTitleForDisplay(thread) {
-  return String(thread && (thread.name || thread.preview || thread.id) || "").trim();
+  return preferredThreadDisplayTitle(thread);
 }
 
 function updateThreadNameLocally(threadId, name) {
@@ -10590,17 +10889,104 @@ function updateCurrentThreadHeader(thread = state.currentThread) {
   if (metaEl) metaEl.textContent = "";
 }
 
+function shouldPreservePinnedLiveOperationDock(dock, html = "") {
+  if (!dock || !state.liveOperationDockPinned) return false;
+  if (normalizeLiveOperationDockMode(state.liveOperationDockMode) !== "expanded") return false;
+  if (String(state.liveOperationDockPinnedThreadId || "") !== String(state.currentThreadId || "")) return false;
+  if (!dock.querySelector(".mobile-operation-sheet")) return false;
+  return !String(html || "").includes("mobile-operation-bubble");
+}
+
+function preservePinnedLiveOperationDock(dock) {
+  if (!dock) return false;
+  dock.hidden = false;
+  dock.dataset.mode = "expanded";
+  dock.dataset.mobileVisible = "true";
+  dock.querySelectorAll("[data-live-operation-dock-toggle]").forEach((button) => {
+    button.setAttribute("aria-expanded", "true");
+    button.setAttribute("aria-label", "收起 Command 框");
+    button.setAttribute("title", "收起 Command 框");
+    if (!button.classList.contains("mobile-operation-bubble")) button.textContent = "↓";
+  });
+  return true;
+}
+
+function clearCompactLiveOperationBubbleState() {
+  state.liveOperationDockCompactVisibleUntilMs = 0;
+  state.liveOperationDockCompactHtml = "";
+  state.liveOperationDockCompactThreadId = "";
+}
+
+function rememberCompactLiveOperationBubbleHtml(html = "") {
+  state.liveOperationDockCompactVisibleUntilMs = Math.max(
+    Number(state.liveOperationDockCompactVisibleUntilMs || 0),
+    Date.now() + LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS,
+  );
+  state.liveOperationDockCompactHtml = String(html || "");
+  state.liveOperationDockCompactThreadId = String(state.currentThreadId || "");
+}
+
+function renderLiveOperationDockOnly() {
+  state.nowMs = Date.now();
+  const html = state.currentThread && !state.newThreadDraft
+    ? renderLiveOperationDock(state.currentThread, existingConversationRenderKeys())
+    : "";
+  updateLiveOperationDockHtml(html);
+  updateOperationDurationBadges();
+}
+
+function scheduleLiveOperationDockCompactMinimumRefresh(delayMs = LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS) {
+  if (state.liveOperationDockCompactTimer) clearTimeout(state.liveOperationDockCompactTimer);
+  const delay = Math.max(0, Number(delayMs) || 0);
+  state.liveOperationDockCompactTimer = setTimeout(() => {
+    state.liveOperationDockCompactTimer = null;
+    renderLiveOperationDockOnly();
+  }, delay + 16);
+}
+
+function shouldPreserveCompactLiveOperationBubble(dock, html = "") {
+  if (!dock || String(html || "").includes("mobile-operation-bubble")) return false;
+  const remainingMs = Number(state.liveOperationDockCompactVisibleUntilMs || 0) - Date.now();
+  if (remainingMs <= 0) return false;
+  const savedHtml = String(state.liveOperationDockCompactHtml || "");
+  const savedThreadId = String(state.liveOperationDockCompactThreadId || "");
+  const sameThread = savedThreadId && savedThreadId === String(state.currentThreadId || "");
+  if (!sameThread) return false;
+  if (!dock.querySelector(".mobile-operation-bubble") && !savedHtml.includes("mobile-operation-bubble")) return false;
+  if (sameThread && savedHtml && !dock.querySelector(".mobile-operation-bubble")) {
+    dock.hidden = false;
+    dock.dataset.mode = "compact";
+    dock.dataset.mobileVisible = "true";
+    if (dock.innerHTML !== savedHtml) patchHtml(dock, savedHtml);
+  }
+  scheduleLiveOperationDockCompactMinimumRefresh(remainingMs);
+  return true;
+}
+
 function updateLiveOperationDockHtml(html = "") {
   const dock = $("liveOperationDock");
   if (!dock) return false;
   const next = String(html || "");
+  if (next.includes("mobile-operation-bubble")) {
+    rememberCompactLiveOperationBubbleHtml(next);
+  }
+  if (shouldPreservePinnedLiveOperationDock(dock, next)) return preservePinnedLiveOperationDock(dock);
+  if (shouldPreserveCompactLiveOperationBubble(dock, next)) return true;
+  if (!next.includes("mobile-operation-bubble")) {
+    state.liveOperationDockPinned = false;
+    state.liveOperationDockPinnedThreadId = "";
+    state.liveOperationDockMode = "compact";
+    clearCompactLiveOperationBubbleState();
+  }
   if (!next) {
     if (dock.innerHTML) dock.innerHTML = "";
     dock.hidden = true;
+    delete dock.dataset.mobileVisible;
     return true;
   }
   dock.hidden = false;
   dock.dataset.mode = normalizeLiveOperationDockMode(state.liveOperationDockMode);
+  dock.dataset.mobileVisible = next.includes("mobile-operation-bubble") ? "true" : "false";
   if (dock.innerHTML !== next) patchHtml(dock, next);
   return true;
 }
@@ -10614,16 +11000,19 @@ function normalizeLiveOperationDockMode(mode) {
 function setLiveOperationDockMode(mode) {
   const next = normalizeLiveOperationDockMode(mode);
   state.liveOperationDockMode = next;
+  state.liveOperationDockPinned = next === "expanded";
+  state.liveOperationDockPinnedThreadId = state.liveOperationDockPinned ? String(state.currentThreadId || "") : "";
   const dock = $("liveOperationDock");
   if (!dock) return;
   dock.dataset.mode = next;
-  const button = dock.querySelector("[data-live-operation-dock-toggle]");
-  if (button) {
+  dock.querySelectorAll("[data-live-operation-dock-toggle]").forEach((button) => {
     button.setAttribute("aria-expanded", String(next === "expanded"));
     button.setAttribute("aria-label", next === "expanded" ? "收起 Command 框" : "展开 Command 框");
     button.setAttribute("title", next === "expanded" ? "收起 Command 框" : "展开 Command 框");
-    button.textContent = next === "expanded" ? "↓" : "↑";
-  }
+    if (!button.classList.contains("mobile-operation-bubble")) {
+      button.textContent = next === "expanded" ? "↓" : "↑";
+    }
+  });
 }
 
 function beginLiveOperationDockGesture(event) {
@@ -12476,11 +12865,17 @@ function renderLiveOperationDock(thread, previousKeys = new Set()) {
   if (!entry) return "";
   const mode = normalizeLiveOperationDockMode(state.liveOperationDockMode);
   const expanded = mode === "expanded";
+  const mobileOperation = entry.item && entry.item.type !== "liveTurnStatus"
+    ? renderMobileOperationStack(entry.item, entry.turn, previousKeys, entry.sourceIndex, expanded)
+    : "";
   return `<div class="live-operation-dock-inner">
-    <div class="live-operation-dock-controls">
-      <button type="button" data-live-operation-dock-toggle aria-expanded="${String(expanded)}" title="${expanded ? "收起 Command 框" : "展开 Command 框"}" aria-label="${expanded ? "收起 Command 框" : "展开 Command 框"}">${expanded ? "↓" : "↑"}</button>
+    ${mobileOperation}
+    <div class="live-operation-dock-desktop">
+      <div class="live-operation-dock-controls">
+        <button type="button" data-live-operation-dock-toggle aria-expanded="${String(expanded)}" title="${expanded ? "收起 Command 框" : "展开 Command 框"}" aria-label="${expanded ? "收起 Command 框" : "展开 Command 框"}">${expanded ? "↓" : "↑"}</button>
+      </div>
+      ${renderLiveOperation(entry.item, entry.turn, previousKeys, entry.sourceIndex)}
     </div>
-    ${renderLiveOperation(entry.item, entry.turn, previousKeys, entry.sourceIndex)}
   </div>`;
 }
 
@@ -12520,7 +12915,9 @@ function renderTurn(turn, previousKeys = new Set()) {
 }
 
 function renderLiveOperation(item, turn, previousKeys = new Set(), index = 0) {
-  const status = statusText(item.status) || (item.completedAtMs ? "completed" : "running");
+  const status = item && item.type === "liveTurnStatus"
+    ? ""
+    : statusText(item.status) || (item.completedAtMs ? "completed" : "running");
   const key = stableOperationRenderKey(turn, item, index);
   return renderOperationCard(item, key, { status });
 }
@@ -12542,13 +12939,46 @@ function renderOperationCard(item, key, options = {}) {
     type,
   ].filter(Boolean).map(escapeHtml).join(" ");
   const body = `<div class="operation-detail-line${detail ? "" : " empty"}"><span class="operation-detail">${detail ? escapeHtml(detail) : "&nbsp;"}</span></div>`;
+  const statusHtml = String(status || "").trim()
+    ? `<span class="operation-status">${escapeHtml(status)}</span>`
+    : "";
   return `<section class="${classes}" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}">
-    <div class="operation-meta-line"><span class="operation-meta-main"><span class="operation-title">${escapeHtml(title)}</span><span class="operation-status">${escapeHtml(status)}</span></span>${duration}</div>
+    <div class="operation-meta-line"><span class="operation-meta-main"><span class="operation-title">${escapeHtml(title)}</span>${statusHtml}</span>${duration}</div>
     ${body}
   </section>`;
 }
 
+function operationDurationHtml(item, status = "", className = "operation-duration") {
+  const durationData = operationDurationData(item, status);
+  return durationData
+    ? `<time class="${escapeHtml(className)}" ${operationDurationAttrs(durationData)} title="${escapeHtml(`Elapsed ${durationData.text}`)}">${escapeHtml(durationData.text)}</time>`
+    : "";
+}
+
+function operationBubbleSummary(item) {
+  return truncateSingleLine(operationSummaryLines(item).filter(Boolean).join(" | "), 52);
+}
+
+function renderMobileOperationStack(item, turn, previousKeys = new Set(), index = 0, expanded = false) {
+  const status = statusText(item.status) || (item.completedAtMs ? "completed" : "running");
+  const key = stableOperationRenderKey(turn, item, index);
+  const title = operationTitle(item);
+  const summary = operationBubbleSummary(item);
+  const duration = operationDurationHtml(item, status, "operation-duration mobile-operation-bubble-duration");
+  return `<div class="mobile-operation-stack">
+    <div class="mobile-operation-sheet" role="region" aria-label="Command 详情">
+      ${renderOperationCard(item, key, { status, extraClass: "mobile-operation-sheet-card" })}
+    </div>
+    <button class="mobile-operation-bubble" type="button" data-live-operation-dock-toggle aria-expanded="${String(expanded)}" title="${expanded ? "收起 Command 框" : "展开 Command 框"}" aria-label="${expanded ? "收起 Command 框" : "展开 Command 框"}">
+      <span class="mobile-operation-bubble-title">${escapeHtml(title)}</span>
+      ${summary ? `<span class="mobile-operation-bubble-summary">${escapeHtml(summary)}</span>` : ""}
+      ${duration}
+    </button>
+  </div>`;
+}
+
 function operationTitle(item) {
+  if (item && item.title) return item.title;
   return labelForItem(item);
 }
 
@@ -12576,8 +13006,30 @@ function stripMatchingOuterQuotes(value) {
   return text;
 }
 
+function operationArgumentsObject(item) {
+  const value = item && item.arguments;
+  if (!value) return null;
+  if (typeof value === "object" && !Array.isArray(value)) return value;
+  if (typeof value !== "string") return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function operationCommandText(item) {
+  const direct = Array.isArray(item && item.command)
+    ? item.command.join(" ")
+    : String(item && item.command || "");
+  if (direct.trim()) return direct;
+  const args = operationArgumentsObject(item);
+  return String(args && (args.command || args.cmd || args.shellCommand || args.shell_command) || "");
+}
+
 function operationCommandSummary(item) {
-  const raw = String(item && item.command || "").replace(/\s+/g, " ").trim();
+  const raw = operationCommandText(item).replace(/\s+/g, " ").trim();
   if (!raw) return "";
   const commandMatch = raw.match(/(?:^|\s)-(?:Command|c)\s+([\s\S]+)$/i);
   if (commandMatch && /(?:powershell|pwsh)(?:\.exe)?/i.test(raw.slice(0, commandMatch.index + commandMatch[0].length))) {
@@ -12591,7 +13043,7 @@ function operationCommandSummary(item) {
 }
 
 function operationCommandName(item) {
-  const raw = String(item && item.command || "").trim();
+  const raw = operationCommandText(item).trim();
   if (!raw) return "";
   const quoted = raw.match(/^["']([^"']+)["']/);
   const token = quoted ? quoted[1] : raw.split(/\s+/, 1)[0];
@@ -12624,7 +13076,7 @@ function operationGroupKey(item) {
     .filter(Boolean)
     .sort();
   if (fileNames.length) return `${type}:files:${stableTextHash(fileNames.join("|"))}`;
-  if (item.command) return `${type}:command:${stableTextHash(normalizeOperationIdentityValue(operationCommandGroupText(item)))}`;
+  if (operationCommandText(item)) return `${type}:command:${stableTextHash(normalizeOperationIdentityValue(operationCommandGroupText(item)))}`;
   const searchSummary = isWebSearchLikeItem(item) ? operationSearchSummary(item) : "";
   if (searchSummary) return `${type}:search:${stableTextHash(normalizeOperationIdentityValue(searchSummary))}`;
   const toolParts = [item.server, item.namespace, item.tool].map(normalizeOperationIdentityValue).filter(Boolean);
@@ -12666,11 +13118,12 @@ function operationSearchSummary(item) {
 }
 
 function operationSummaryLines(item) {
+  if (item.type === "liveTurnStatus") return item.detail ? [item.detail] : [];
   if (item.type === "fileChange") {
     const names = operationFileNames(item);
     return names.length ? [names.join(", ")] : [];
   }
-  if (item.command) return [operationCommandSummary(item)];
+  if (operationCommandText(item)) return [operationCommandSummary(item)];
   const searchSummary = isWebSearchLikeItem(item) ? operationSearchSummary(item) : "";
   if (searchSummary) return [truncateMiddle(searchSummary, 180, "search")];
   const names = operationFileNames(item);
@@ -12701,6 +13154,8 @@ function renderItem(item, turn = null, previousKeys = new Set(), index = 0) {
       <div class="item-body">${renderTurnUsageSummary(item)}</div>
     </section>`;
   }
+  const injectedTaskCardText = injectedThreadTaskCardTextForItem(item);
+  if (injectedTaskCardText) return renderInjectedThreadTaskCardItem(item, turn, previousKeys, index, injectedTaskCardText);
   const itemCopyKey = rememberCopyText(copyTextForItem(item));
   const itemCopyButton = copyButtonHtml(itemCopyKey, "复制全文", "item-copy-button");
   const timestampHtml = renderItemTimestampHtml(item, turn);
@@ -12710,6 +13165,24 @@ function renderItem(item, turn = null, previousKeys = new Set(), index = 0) {
       <span class="item-head-actions">${timestampHtml}<span>${escapeHtml(item.status ? statusText(item.status) : "")}</span>${itemCopyButton}</span>
     </div>
     <div class="item-body">${renderItemBody(item, turn)}</div>
+  </section>`;
+}
+
+function renderInjectedThreadTaskCardItem(item, turn = null, previousKeys = new Set(), index = 0, text = "") {
+  const key = stableItemKey(turn, item, index);
+  const metadata = injectedThreadTaskCardMetadata(text);
+  const itemCopyKey = rememberCopyText(copyTextForItem(item));
+  const itemCopyButton = copyButtonHtml(itemCopyKey, "复制全文", "item-copy-button");
+  const timestampHtml = renderItemTimestampHtml(item, turn);
+  return `<section class="item${entryAnimationClass(key, previousKeys)} thread-task-card-injected" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}" data-thread-task-card-item>
+    <div class="item-head thread-task-card-message-head">
+      <span class="thread-task-card-message-heading">
+        <span class="thread-task-card-message-source">来源：${escapeHtml(metadata.source)}</span>
+        <span class="thread-task-card-message-purpose">目的：${escapeHtml(metadata.purpose)}</span>
+      </span>
+      <span class="item-head-actions">${timestampHtml}${itemCopyButton}</span>
+    </div>
+    <div class="item-body">${renderInjectedThreadTaskCardBody(text, metadata)}</div>
   </section>`;
 }
 
@@ -12936,8 +13409,82 @@ function canRenderImageAttachment(attachment) {
   return Boolean(attachment && attachment.isImage && isLikelyAbsoluteLocalPath(attachment.path));
 }
 
+function isInjectedThreadTaskCardMessage(text) {
+  const value = String(text || "").trimStart();
+  return value.startsWith("[Cross-thread task card sent by source thread]")
+    || value.startsWith("[Cross-thread task card approved]");
+}
+
+function injectedThreadTaskCardLineValue(lines, label) {
+  const pattern = new RegExp(`^${label}:\\s*`, "i");
+  const line = (Array.isArray(lines) ? lines : []).find((entry) => pattern.test(entry));
+  return line ? line.replace(pattern, "").trim() : "";
+}
+
+function injectedThreadTaskCardPurpose(lines) {
+  const title = injectedThreadTaskCardLineValue(lines, "Title");
+  if (title) return title;
+  const bodyLine = (Array.isArray(lines) ? lines : []).find((line) => {
+    const text = String(line || "").trim();
+    return text
+      && !text.startsWith("[Cross-thread task card")
+      && !/^(Source workspace|Source thread|Approval|Workflow mode|Workflow id|Auto-return):/i.test(text);
+  });
+  return bodyLine ? bodyLine.replace(/^#+\s*/, "").trim() : "Cross-thread task card";
+}
+
+function injectedThreadTaskCardMetadata(text) {
+  const value = String(text || "").replace(/\r\n?/g, "\n").trim();
+  const lines = value.split("\n");
+  return {
+    value,
+    source: injectedThreadTaskCardLineValue(lines, "Source thread") || "source thread",
+    purpose: injectedThreadTaskCardPurpose(lines),
+    charCount: value.length.toLocaleString(),
+  };
+}
+
+function injectedThreadTaskCardSummary(text) {
+  const metadata = injectedThreadTaskCardMetadata(text);
+  return `来源：${truncateSingleLine(metadata.source, 72)} · 目的：${truncateSingleLine(metadata.purpose, 96)}`;
+}
+
+function injectedThreadTaskCardTextForItem(item) {
+  if (!item || item.type !== "userMessage") return "";
+  const content = Array.isArray(item.content) ? item.content : [];
+  for (const part of content) {
+    if (!part) continue;
+    const text = isInputTextPart(part) ? inputTextValue(part) : "";
+    if (isInjectedThreadTaskCardMessage(text)) return text;
+  }
+  return "";
+}
+
+function renderInjectedThreadTaskCardBody(text, metadata = null) {
+  const details = metadata || injectedThreadTaskCardMetadata(text);
+  if (!isInjectedThreadTaskCardMessage(details.value)) return "";
+  return `<details class="thread-task-card-message" data-thread-task-card-message>
+    <summary><span>完整任务卡</span><small>${escapeHtml(`${details.charCount} chars`)}</small></summary>
+    <pre class="thread-task-card-message-body">${escapeHtml(details.value)}</pre>
+  </details>`;
+}
+
+function renderInjectedThreadTaskCardMessage(text) {
+  const metadata = injectedThreadTaskCardMetadata(text);
+  if (!isInjectedThreadTaskCardMessage(metadata.value)) return "";
+  return `<div class="thread-task-card-message-standalone" data-thread-task-card-standalone>
+    <div class="thread-task-card-message-overview">
+      <div><span>来源</span><strong>${escapeHtml(metadata.source)}</strong></div>
+      <div><span>目的</span><strong>${escapeHtml(metadata.purpose)}</strong></div>
+    </div>
+    ${renderInjectedThreadTaskCardBody(metadata.value, metadata)}
+  </div>`;
+}
+
 function renderInputText(text) {
   if (!String(text || "").trim()) return "";
+  const taskCardMessage = renderInjectedThreadTaskCardMessage(text);
+  if (taskCardMessage) return taskCardMessage;
   return `<div class="input-text">${escapeHtml(text)}</div>`;
 }
 
@@ -15439,18 +15986,25 @@ function applyNotification(method, params) {
     return;
   }
   if (method === "thread/status/changed") {
+    const replayed = Boolean(params.mobileReplay);
+    const runningNotification = isRunningStatus(params.status);
+    const eventAtMs = threadStatusNotificationEventAtMs(params, runningNotification ? Date.now() : 0, {
+      allowReplayReceivedAt: !replayed || runningNotification,
+    });
     const thread = state.threads.find((x) => x.id === params.threadId);
     const previousStatus = thread ? thread.status : null;
     updateThreadStatusHints(params.threadId, previousStatus, params.status, {
       thread,
       notify: true,
       threadName: threadDisplayName(thread),
+      eventAtMs,
+      mobileReplay: replayed,
     });
     if (thread) thread.status = params.status;
     pruneHiddenThreads();
     if (state.currentThread && state.currentThread.id === params.threadId) {
-      markThreadViewed(params.threadId);
       state.currentThread.status = params.status;
+      markThreadViewed(params.threadId, state.currentThread, eventAtMs);
       renderCurrentThread();
       scheduleLivePollIfNeeded(1400);
     }
@@ -15494,12 +16048,18 @@ function applyNotification(method, params) {
   }
   if (!state.currentThread || params.threadId !== state.currentThread.id) return;
   if (method === "turn/started") {
+    const replayed = Boolean(params.mobileReplay);
+    const eventAtMs = threadStatusNotificationEventAtMs(params, Date.now(), {
+      allowReplayReceivedAt: true,
+    });
     const runningStatus = { type: "active" };
     state.activeTurnId = params.turn.id;
     updateThreadStatusHints(params.threadId, state.currentThread.status, runningStatus, {
       thread: state.currentThread,
       threadName: threadDisplayName(state.currentThread),
       notify: false,
+      eventAtMs,
+      mobileReplay: replayed,
     });
     updateThreadListStatus(params.threadId, runningStatus);
     clearRecentCompletedReplyAnchor();
@@ -15515,6 +16075,10 @@ function applyNotification(method, params) {
     return;
   }
   if (method === "turn/completed") {
+    const replayed = Boolean(params.mobileReplay);
+    const eventAtMs = threadStatusNotificationEventAtMs(params, Date.now(), {
+      allowReplayReceivedAt: !replayed,
+    });
     const completedStatus = (params.turn && params.turn.status) || { type: "completed" };
     const turn = ensureTurn(params.turn.id);
     Object.assign(turn, mergeTurnPreservingVisibleItems(turn, params.turn));
@@ -15524,6 +16088,8 @@ function applyNotification(method, params) {
       thread: state.currentThread,
       threadName: threadDisplayName(state.currentThread),
       notify: true,
+      eventAtMs,
+      mobileReplay: replayed,
     });
     updateThreadListStatus(params.threadId, completedStatus);
     state.activeTurnId = "";

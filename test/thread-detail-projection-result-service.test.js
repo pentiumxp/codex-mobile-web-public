@@ -1,0 +1,144 @@
+"use strict";
+
+const assert = require("node:assert/strict");
+const { test } = require("node:test");
+
+const {
+  createThreadDetailProjectionResultService,
+} = require("../adapters/thread-detail-projection-result-service");
+
+test("projection result returns null for missing cached thread or compacted thread", () => {
+  const service = createThreadDetailProjectionResultService({
+    maxTurns: 10,
+    compactThreadReadResult() {
+      return {};
+    },
+  });
+
+  assert.equal(service.prepareProjectedThreadReadResult(null, {}, {}), null);
+  assert.equal(service.prepareProjectedThreadReadResult({ result: {} }, {}, {}), null);
+  assert.equal(service.prepareProjectedThreadReadResult({
+    result: { thread: { id: "thread-1" } },
+  }, {}, {}), null);
+});
+
+test("projection result decorates cached thread detail with summary, runtime, title, and public settings", () => {
+  const calls = [];
+  const service = createThreadDetailProjectionResultService({
+    maxTurns: 25,
+    now: () => 2000,
+    compactThreadReadResult(result, options) {
+      calls.push(["compact", options]);
+      assert.equal(result.thread.name, "Summary title");
+      return Object.assign({}, result, {
+        thread: Object.assign({}, result.thread, {
+          compactedMaxTurns: options.maxTurns,
+        }),
+      });
+    },
+    mergeThreadDisplaySummary(thread, summary) {
+      calls.push(["merge", summary.name]);
+      return Object.assign({}, thread, {
+        name: summary.name,
+        mobileProjectionVersion: "v3",
+      });
+    },
+    readSessionIndexEntries() {
+      calls.push(["readSessionIndex"]);
+      return new Map([["thread-1", { title: "Session index title" }]]);
+    },
+    applySessionIndexTitleToThread(thread, entry) {
+      calls.push(["applySessionIndex", entry.title]);
+      return Object.assign({}, thread, { title: entry.title });
+    },
+    mergeThreadRuntimeFromStateDb(thread, summary) {
+      calls.push(["runtime", summary.model]);
+      return Object.assign({}, thread, { model: summary.model });
+    },
+    normalizeThreadSummaryLiveStatus(thread) {
+      calls.push(["normalize"]);
+      return Object.assign({}, thread, { normalizedLiveStatus: true });
+    },
+    publicRuntimeSettings(settings) {
+      calls.push(["publicSettings", settings.privateValue]);
+      return { safeValue: settings.safeValue };
+    },
+  });
+
+  const result = service.prepareProjectedThreadReadResult({
+    cachedAtMs: 1200,
+    updatedAtMs: 1500,
+    dynamic: false,
+    result: {
+      thread: {
+        id: "thread-1",
+        name: "Cached title",
+        mobileProjection: { retained: true },
+      },
+    },
+  }, {
+    name: "Summary title",
+    model: "gpt-test",
+  }, {
+    safeValue: true,
+    privateValue: "hidden",
+  });
+
+  assert.equal(result.thread.id, "thread-1");
+  assert.equal(result.thread.title, "Session index title");
+  assert.equal(result.thread.name, "Summary title");
+  assert.equal(result.thread.model, "gpt-test");
+  assert.equal(result.thread.compactedMaxTurns, 25);
+  assert.equal(result.thread.normalizedLiveStatus, true);
+  assert.deepEqual(result.thread.runtimeSettings, { safeValue: true });
+  assert.equal(result.thread.mobileReadMode, "projection-cache");
+  assert.deepEqual(result.thread.mobileProjection, {
+    retained: true,
+    source: "cache",
+    version: "v3",
+    cachedAtMs: 1200,
+    updatedAtMs: 1500,
+    ageMs: 500,
+  });
+  assert.deepEqual(calls, [
+    ["merge", "Summary title"],
+    ["compact", { maxTurns: 25 }],
+    ["readSessionIndex"],
+    ["applySessionIndex", "Session index title"],
+    ["runtime", "gpt-test"],
+    ["normalize"],
+    ["publicSettings", "hidden"],
+  ]);
+});
+
+test("projection result read mode follows cache source and v4 version", () => {
+  const service = createThreadDetailProjectionResultService({
+    maxTurns: 5,
+    now: () => 1000,
+  });
+
+  const dynamic = service.prepareProjectedThreadReadResult({
+    dynamic: true,
+    version: "v4",
+    cachedAtMs: 900,
+    result: { thread: { id: "thread-1" } },
+  }, {}, {});
+  assert.equal(dynamic.thread.mobileReadMode, "projection-v4-dynamic");
+  assert.deepEqual(dynamic.thread.mobileProjection, {
+    source: "dynamic",
+    version: "v4",
+    cachedAtMs: 900,
+    updatedAtMs: 900,
+    ageMs: null,
+  });
+
+  const cache = service.prepareProjectedThreadReadResult({
+    dynamic: false,
+    version: "v4",
+    cachedAtMs: 800,
+    updatedAtMs: 950,
+    result: { thread: { id: "thread-2" } },
+  }, {}, {});
+  assert.equal(cache.thread.mobileReadMode, "projection-v4-cache");
+  assert.equal(cache.thread.mobileProjection.ageMs, 50);
+});

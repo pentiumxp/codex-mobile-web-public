@@ -85,6 +85,7 @@ function evaluatedInputContentRenderer() {
 function evaluatedInputContentRendererWithKey(key = "", options = {}) {
   const sources = [
     "escapeHtml",
+    "truncateSingleLine",
     "shortPath",
     "threadTaskCardRequestMarkerMatch",
     "visibleThreadTaskCardCommandText",
@@ -120,6 +121,13 @@ function evaluatedInputContentRendererWithKey(key = "", options = {}) {
     "localAttachmentPreviewUrl",
     "imageSourceForPart",
     "compactStructuredForSignature",
+    "isInjectedThreadTaskCardMessage",
+    "injectedThreadTaskCardLineValue",
+    "injectedThreadTaskCardPurpose",
+    "injectedThreadTaskCardMetadata",
+    "injectedThreadTaskCardSummary",
+    "renderInjectedThreadTaskCardBody",
+    "renderInjectedThreadTaskCardMessage",
     "renderInputText",
     "renderInputImage",
     "renderInputAttachment",
@@ -191,6 +199,53 @@ return {
   currentLiveCandidate: () => latestLiveTurnCandidate(),
   latestIsLive: () => isLiveTurn(latestTurn()),
 };
+`)();
+}
+
+function evaluatedLiveOperationDockEntryHarness() {
+  const sources = [
+    "liveTurnStatusDockItem",
+    "currentLiveOperationEntry",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`
+const state = {
+  nowMs: 2000,
+  activityAtMs: 0,
+  currentThread: null,
+};
+function isLatestTurn(turn) {
+  return Boolean(state.currentThread && Array.isArray(state.currentThread.turns)
+    && state.currentThread.turns[state.currentThread.turns.length - 1] === turn);
+}
+function isLiveTurn(turn) { return Boolean(turn && turn.live); }
+function isActiveOperationalItem(item) { return Boolean(item && item.activeOperation); }
+function liveActivityLabelForTurn(turn) { return String(turn && turn.activityLabel || ""); }
+function liveTurnFallbackActivityLabel() { return "运行"; }
+function liveTurnStartedAtMs(turn) { return Number(turn && turn.startedAtMs || 0); }
+function turnStartedAtMs() { return 0; }
+${sources.join("\n")}
+return { state, currentLiveOperationEntry };
+`)();
+}
+
+function evaluatedOperationCommandHarness() {
+  const sources = [
+    "truncateSingleLine",
+    "stripMatchingOuterQuotes",
+    "operationArgumentsObject",
+    "operationCommandText",
+    "operationCommandSummary",
+    "operationCommandName",
+    "operationCommandGroupText",
+    "operationSummaryLines",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`
+function shortPath(value) {
+  if (!value) return "";
+  return String(value).replace(/^\\\\\\\\\\?\\\\/, "").replace(/^.*[\\\\/]/, "");
+}
+${sources.join("\n")}
+return { operationCommandText, operationCommandSummary, operationSummaryLines };
 `)();
 }
 
@@ -430,6 +485,9 @@ function evaluatedUserMessagesLikelySame() {
     "canRenderImageAttachment",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
+    "userMessageSubmissionIdCandidates",
+    "userMessageHasSubmissionId",
+    "userMessagesShareSubmissionId",
     "isTurnUsageSummaryItem",
     "dedupeTurnUsageSummaryItems",
     "normalizeComparableText",
@@ -459,6 +517,9 @@ function evaluatedMergeItemsPreservingLocalVisible() {
     "canRenderImageAttachment",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
+    "userMessageSubmissionIdCandidates",
+    "userMessageHasSubmissionId",
+    "userMessagesShareSubmissionId",
     "isTurnUsageSummaryItem",
     "dedupeTurnUsageSummaryItems",
     "normalizeComparableText",
@@ -529,6 +590,9 @@ function evaluatedMergeItemsPreservingLocalVisibleWithRealVisibleWeight() {
     "canRenderImageAttachment",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
+    "userMessageSubmissionIdCandidates",
+    "userMessageHasSubmissionId",
+    "userMessagesShareSubmissionId",
     "isTurnUsageSummaryItem",
     "dedupeTurnUsageSummaryItems",
     "normalizeComparableText",
@@ -606,6 +670,9 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "canRenderImageAttachment",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
+    "userMessageSubmissionIdCandidates",
+    "userMessageHasSubmissionId",
+    "userMessagesShareSubmissionId",
     "isTurnUsageSummaryItem",
     "normalizeComparableText",
     "userMessageComparableParts",
@@ -633,7 +700,9 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "dedupeLikelySameUserMessages",
     "userMessageHasVisualAttachment",
     "normalizeThreadVisibleUserMessages",
+    "threadUserMessageEntries",
     "shouldDropOptimisticUserMessageForDurable",
+    "shouldDropOptimisticUserMessageForHigherPriorityEcho",
     "threadDurableUserMessages",
     "shouldDropInitialSubmissionEchoTurn",
     "threadHasInitialSubmissionEcho",
@@ -724,6 +793,9 @@ function evaluatedNormalizeThreadVisibleUserMessages() {
     "canRenderImageAttachment",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
+    "userMessageSubmissionIdCandidates",
+    "userMessageHasSubmissionId",
+    "userMessagesShareSubmissionId",
     "normalizeComparableText",
     "userMessageComparableParts",
     "userMessagePathOverlap",
@@ -740,7 +812,9 @@ function evaluatedNormalizeThreadVisibleUserMessages() {
     "dedupeLikelySameUserMessages",
     "userMessageHasVisualAttachment",
     "normalizeThreadVisibleUserMessages",
+    "threadUserMessageEntries",
     "shouldDropOptimisticUserMessageForDurable",
+    "shouldDropOptimisticUserMessageForHigherPriorityEcho",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
 function itemVisibleWeight(item) { return JSON.stringify(item || {}).length; }
@@ -768,6 +842,9 @@ function evaluatedLiveUserMessageUpsert() {
     "canRenderImageAttachment",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
+    "userMessageSubmissionIdCandidates",
+    "userMessageHasSubmissionId",
+    "userMessagesShareSubmissionId",
     "isTurnUsageSummaryItem",
     "normalizeComparableText",
     "userMessageComparableParts",
@@ -784,7 +861,9 @@ function evaluatedLiveUserMessageUpsert() {
     "dedupeLikelySameUserMessages",
     "userMessageHasVisualAttachment",
     "normalizeThreadVisibleUserMessages",
+    "threadUserMessageEntries",
     "shouldDropOptimisticUserMessageForDurable",
+    "shouldDropOptimisticUserMessageForHigherPriorityEcho",
     "upsertItem",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
@@ -834,6 +913,9 @@ function evaluatedVisibleItemsForTurn() {
     "canRenderImageAttachment",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
+    "userMessageSubmissionIdCandidates",
+    "userMessageHasSubmissionId",
+    "userMessagesShareSubmissionId",
     "isTurnUsageSummaryItem",
     "normalizeComparableText",
     "userMessageComparableParts",
@@ -937,6 +1019,9 @@ function evaluatedLocalSubmissionInserter() {
     "insertLocalSubmittedUserMessage",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
+    "userMessageSubmissionIdCandidates",
+    "userMessageHasSubmissionId",
+    "userMessagesShareSubmissionId",
     "isTurnUsageSummaryItem",
     "dedupeTurnUsageSummaryItems",
     "normalizeComparableText",
@@ -955,7 +1040,9 @@ function evaluatedLocalSubmissionInserter() {
     "dedupeLikelySameUserMessages",
     "userMessageHasVisualAttachment",
     "normalizeThreadVisibleUserMessages",
+    "threadUserMessageEntries",
     "shouldDropOptimisticUserMessageForDurable",
+    "shouldDropOptimisticUserMessageForHigherPriorityEcho",
     "mergeSubmittedUserItemIntoTurn",
     "reconcileSubmittedUserMessageTurn",
   ].map((name) => functionSourceFrom(appJs, name));
@@ -1127,6 +1214,58 @@ test("visible turn items keep source order after live operations move to the doc
   assert.match(body, /return \{ html, sourceIndex, order: 1 \};/);
   assert.match(body, /\.sort\(\(a, b\) => \(a\.sourceIndex - b\.sourceIndex\) \|\| \(a\.order - b\.order\)\)/);
   assert.match(functionBody("visibleItemsForTurn"), /if \(isOperationalItem\(item\)\) \{[\s\S]*return;/);
+});
+
+test("live operation dock keeps a status row while active turn is reasoning only", () => {
+  assert.match(appJs, /function liveTurnStatusDockItem\(turn\)/);
+  assert.match(functionBody("currentLiveOperationEntry"), /liveTurnStatusDockItem\(turn\)/);
+  assert.match(functionBody("liveTurnStatusDockItem"), /title: "Command"/);
+  assert.doesNotMatch(functionBody("liveTurnStatusDockItem"), /liveActivityLabelForTurn/);
+  assert.match(functionBody("operationTitle"), /if \(item && item\.title\) return item\.title;/);
+  assert.match(functionBody("operationSummaryLines"), /item\.type === "liveTurnStatus"/);
+  assert.match(functionBody("renderLiveOperation"), /item && item\.type === "liveTurnStatus"[\s\S]*\? ""/);
+
+  const harness = evaluatedLiveOperationDockEntryHarness();
+  const turn = {
+    id: "turn-reasoning",
+    live: true,
+    activityLabel: "思考",
+    startedAtMs: 1000,
+    items: [{ id: "reasoning-1", type: "reasoning" }],
+  };
+  harness.state.currentThread = { id: "thread-1", turns: [turn] };
+
+  const statusEntry = harness.currentLiveOperationEntry(harness.state.currentThread);
+  assert.equal(statusEntry.turn, turn);
+  assert.equal(statusEntry.sourceIndex, -1);
+  assert.equal(statusEntry.item.type, "liveTurnStatus");
+  assert.equal(statusEntry.item.title, "Command");
+  assert.equal(statusEntry.item.status, "");
+  assert.equal(statusEntry.item.startedAtMs, undefined);
+
+  const command = { id: "cmd-1", type: "commandExecution", activeOperation: true };
+  turn.items.push(command);
+  const commandEntry = harness.currentLiveOperationEntry(harness.state.currentThread);
+  assert.equal(commandEntry.item, command);
+  assert.equal(commandEntry.sourceIndex, 1);
+});
+
+test("command operation detail reads command from serialized arguments on macOS", () => {
+  assert.match(appJs, /function operationCommandText\(item\)/);
+  assert.match(functionBody("operationCommandText"), /args\.command \|\| args\.cmd \|\| args\.shellCommand \|\| args\.shell_command/);
+  assert.match(functionBody("operationCommandSummary"), /operationCommandText\(item\)/);
+  assert.match(functionBody("operationCommandName"), /operationCommandText\(item\)/);
+  assert.match(functionBody("operationSummaryLines"), /operationCommandText\(item\)/);
+  assert.match(functionBody("visibleItemSignature"), /command: operationCommandText\(item\)/);
+
+  const harness = evaluatedOperationCommandHarness();
+  const item = {
+    type: "commandExecution",
+    arguments: JSON.stringify({ cmd: "npm run check" }),
+  };
+  assert.equal(harness.operationCommandText(item), "npm run check");
+  assert.equal(harness.operationCommandSummary(item), "npm run check");
+  assert.deepEqual(harness.operationSummaryLines(item), ["npm run check"]);
 });
 
 test("superseded live usage-only shells do not render as blank completed receipts", () => {
@@ -1556,8 +1695,8 @@ test("loading and thread-list state preserve locally visible live turns", () => 
   assert.match(functionBody("conversationRootSignature"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) return `loading\\|/);
   assert.match(functionBody("renderCurrentThread"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) \{/);
   assert.match(functionBody("renderCurrentThread"), /const loadingNote = thread\.mobileLoading/);
-  assert.match(functionBody("reconcileThreadStatusHints"), /id === state\.currentThreadId && currentLiveTurn\(\)/);
-  assert.match(functionBody("statusIconInfo"), /state\.runningThreadIds\.has\(String\(threadId\)\)[\s\S]*currentLiveTurn\(\)/);
+  assert.match(functionBody("reconcileThreadStatusHints"), /currentLiveTurnSupportsThreadStatusHint\(id\)/);
+  assert.match(functionBody("statusIconInfo"), /state\.runningThreadIds\.has\(id\)[\s\S]*currentLiveTurnSupportsThreadStatusHint\(id\)/);
 });
 
 test("long agent messages keep a stable render path when a turn completes", () => {
@@ -1667,6 +1806,46 @@ test("thread task card request prompts render only the original hash command in 
   assert.match(html, /# 发给 Hermes 05-26/);
   assert.doesNotMatch(html, /codex-mobile-thread-task-card-request/);
   assert.doesNotMatch(html, /Return only one XML block/);
+});
+
+test("injected cross-thread task card user messages render collapsed", () => {
+  const renderInputContent = evaluatedInputContentRenderer();
+  const longBody = Array.from({ length: 24 }, (_, index) => `Task detail line ${index + 1}`).join("\n");
+  const html = renderInputContent([
+    {
+      type: "input_text",
+      text: [
+        "[Cross-thread task card sent by source thread]",
+        "",
+        "Source workspace: /Users/hermes-dev/HermesMobileDev/app",
+        "Source thread: Home AI 06-22",
+        "Title: Audit Music plugin workspace",
+        "Approval: target approval bypassed by the thread-callable interface.",
+        "",
+        longBody,
+      ].join("\n"),
+    },
+  ]);
+
+  assert.match(html, /class="thread-task-card-message"/);
+  assert.match(html, /data-thread-task-card-message/);
+  assert.match(html, /data-thread-task-card-standalone/);
+  assert.match(html, /<span>来源<\/span><strong>Home AI 06-22<\/strong>/);
+  assert.match(html, /<span>目的<\/span><strong>Audit Music plugin workspace<\/strong>/);
+  assert.match(html, /完整任务卡/);
+  assert.match(html, /Audit Music plugin workspace/);
+  assert.match(html, /class="thread-task-card-message-body"/);
+  assert.doesNotMatch(html, /class="input-text"/);
+});
+
+test("injected cross-thread task card items use dedicated card chrome instead of You", () => {
+  assert.match(functionBody("renderItem"), /injectedThreadTaskCardTextForItem\(item\)/);
+  assert.match(functionBody("renderInjectedThreadTaskCardItem"), /thread-task-card-injected/);
+  assert.match(functionBody("renderInjectedThreadTaskCardItem"), /data-thread-task-card-item/);
+  assert.match(functionBody("renderInjectedThreadTaskCardItem"), /来源：\$\{escapeHtml\(metadata\.source\)\}/);
+  assert.match(functionBody("renderInjectedThreadTaskCardItem"), /目的：\$\{escapeHtml\(metadata\.purpose\)\}/);
+  assert.match(stylesCss, /\.item\.thread-task-card-injected/);
+  assert.match(stylesCss, /\.thread-task-card-message-heading/);
 });
 
 test("user message text before upload summaries still renders jpg thumbnails", () => {
@@ -2951,6 +3130,80 @@ test("v4 projection merge preserves local pending message when server refresh ha
   assert.equal(merged.mobileProjectionVersion, "v4");
 });
 
+test("v4 projection merge removes local pending message after matching mux echo arrives", () => {
+  const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
+  const existingThread = {
+    id: "thread-new",
+    turns: [{
+      id: "local-turn-submit-current",
+      status: { type: "active" },
+      items: [{
+        id: "local-user-submit-current",
+        type: "userMessage",
+        mobilePendingSubmission: true,
+        clientSubmissionId: "submit-current",
+        content: [{ type: "text", text: "current guidance" }],
+      }],
+    }],
+  };
+  const incomingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 3,
+    turns: [{
+      id: "real-active-turn",
+      status: { type: "active" },
+      items: [
+        {
+          id: "mux-user-thread-new-real-active-turn-submit-current",
+          type: "userMessage",
+          content: [{ type: "text", text: "current   guidance" }],
+        },
+        { id: "agent-progress", type: "agentMessage", text: "working" },
+      ],
+    }],
+  };
+
+  const merged = mergeThreadPreservingVisibleItems(existingThread, incomingThread);
+
+  assert.deepEqual(merged.turns.map((turn) => turn.id), ["real-active-turn"]);
+  assert.deepEqual(merged.turns[0].items.map((item) => item.id), [
+    "mux-user-thread-new-real-active-turn-submit-current",
+    "agent-progress",
+  ]);
+});
+
+test("cross-turn normalization keeps later local repeat when only earlier mux text matches", () => {
+  const normalizeThreadVisibleUserMessages = evaluatedNormalizeThreadVisibleUserMessages();
+  const thread = {
+    turns: [
+      {
+        id: "turn-1",
+        items: [{
+          id: "mux-user-thread-1-turn-1-submit-old",
+          type: "userMessage",
+          content: [{ type: "input_text", text: "repeat prompt" }],
+        }],
+      },
+      {
+        id: "turn-2",
+        items: [{
+          id: "local-user-submit-new",
+          type: "userMessage",
+          mobilePendingSubmission: true,
+          clientSubmissionId: "submit-new",
+          content: [{ type: "text", text: "repeat   prompt" }],
+        }],
+      },
+    ],
+  };
+
+  normalizeThreadVisibleUserMessages(thread);
+
+  assert.deepEqual(thread.turns[0].items.map((item) => item.id), ["mux-user-thread-1-turn-1-submit-old"]);
+  assert.deepEqual(thread.turns[1].items.map((item) => item.id), ["local-user-submit-new"]);
+});
+
 test("live turn merge keeps displayed assistant receipt when backfill has more stale items", () => {
   const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
   const existingThread = {
@@ -3425,16 +3678,21 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(appJs, /function mergeThreadIntoThreadList\(/);
   assert.match(appJs, /const RUNNING_THREAD_HINT_STALE_MS = 20 \* 60 \* 1000;/);
   assert.match(appJs, /runningThreadHintedAtById: loadNumberMapStorage\("codexMobileRunningThreadHintedAtById", \{\}\)/);
+  assert.match(appJs, /threadViewedAtById: loadNumberMapStorage\("codexMobileThreadViewedAtById", \{\}\)/);
+  assert.match(appJs, /submittedProcessingThreadHintedAtById: \{\}/);
   assert.match(functionBody("saveThreadStatusHints"), /saveNumberMapStorage\(STORAGE_RUNNING_THREAD_HINTED_AT, state\.runningThreadHintedAtById\)/);
+  assert.match(functionBody("saveThreadStatusHints"), /saveNumberMapStorage\(STORAGE_THREAD_VIEWED_AT, state\.threadViewedAtById\)/);
   assert.match(appJs, /function isThreadListSettledStatus\(status\)/);
-  assert.match(functionBody("isThreadListSettledStatus"), /idle\|completed\|complete\|done\|failed/);
+  assert.match(functionBody("isThreadListSettledStatus"), /threadStatusHintPolicy\.isSettledStatus\(status\)/);
+  assert.match(appJs, /function isThreadListTerminalStatus\(status\)/);
+  assert.match(functionBody("isThreadListTerminalStatus"), /threadStatusHintPolicy\.isTerminalStatus\(status\)/);
   assert.match(appJs, /function isStaleActiveStatus\(status\)/);
   assert.match(functionBody("isStaleActiveStatus"), /mobileStaleActiveTurn/);
-  assert.match(functionBody("shouldExpireRunningThreadHint"), /isStaleActiveStatus\(thread && thread\.status\)/);
+  assert.match(functionBody("shouldExpireRunningThreadHint"), /threadStatusHintPolicy\.shouldExpireRunningThreadHint/);
   assert.match(functionBody("updateThreadStatusHints"), /const staleActive = isStaleActiveStatus\(nextStatus\)/);
-  assert.match(functionBody("updateThreadStatusHints"), /if \(!staleActive && id !== state\.currentThreadId/);
+  assert.match(functionBody("updateThreadStatusHints"), /shouldMarkThreadUnread\(id, nextThread, nextStatus/);
   assert.match(functionBody("statusIconInfo"), /if \(isStaleActiveStatus\(status\)\) return null;/);
-  assert.match(functionBody("statusIconInfo"), /state\.runningThreadIds\.has\(String\(threadId\)\)[\s\S]*currentLiveTurn\(\)/);
+  assert.match(functionBody("statusIconInfo"), /state\.runningThreadIds\.has\(id\)[\s\S]*currentLiveTurnSupportsThreadStatusHint\(id\)/);
   assert.match(functionBody("reconcileThreadStatusHints"), /const staleActive = isStaleActiveStatus\(thread\.status\) \|\| Boolean\(thread\.mobileStaleActiveTurn\)/);
   assert.match(functionBody("reconcileThreadStatusHints"), /const isRunning = !staleActive && isRunningStatus\(thread\.status\)/);
   assert.match(functionBody("reconcileThreadStatusHints"), /else if \(wasRunning && staleActive\)/);
@@ -3447,6 +3705,7 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(listMergeBody, /Object\.assign\(\{\}, entry, summary\)/);
   const optimisticBody = functionBody("markThreadOptimisticallyActive");
   assert.match(optimisticBody, /const runningStatus = \{ type: "active" \};/);
+  assert.match(optimisticBody, /noteSubmittedProcessingThreadHint\(id\)/);
   assert.match(optimisticBody, /updateThreadStatusHints\(id, previousStatus, runningStatus/);
   assert.match(optimisticBody, /updateThreadListStatus\(id, runningStatus\)/);
   assert.match(optimisticBody, /mergeThreadIntoThreadList\(state\.currentThread\)/);
@@ -3472,8 +3731,8 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.doesNotMatch(taskCardSendBody, /!steering/);
 
   const expireBody = functionBody("shouldExpireRunningThreadHint");
-  assert.match(expireBody, /id === state\.currentThreadId && state\.activeTurnId/);
-  assert.match(expireBody, /runningThreadHintAgeMs\(id, thread, nowMs\) > RUNNING_THREAD_HINT_STALE_MS/);
+  assert.match(expireBody, /currentThreadHasLiveTurn: currentLiveTurnSupportsThreadStatusHint\(id\)/);
+  assert.match(expireBody, /runningHintStaleMs: RUNNING_THREAD_HINT_STALE_MS/);
 
   const notificationBody = functionBody("applyNotification");
   assert.match(notificationBody, /const runningStatus = \{ type: "active" \};/);

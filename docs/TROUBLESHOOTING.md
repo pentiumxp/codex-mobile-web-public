@@ -20,6 +20,7 @@ Interpretation:
 | Mobile Web offline | `GET /api/public-config`, 8787 listener PID, startup log |
 | Messages not visible in Desktop | `/api/status` endpoint vs `endpoint.json`, Desktop launched through shared launcher |
 | Send appears accepted then disappears | active turn id, recent turn history, pending echo, latest rollout growth |
+| Same submitted user message appears twice while the turn is thinking | Inspect whether one item is a browser `local-user-*` echo and the other is a server `mux-user-*` or durable `userMessage` echo for the same `clientSubmissionId`. Clients after `codex-mobile-shell-v396` merge these at the thread-normalization layer using submission id, deterministic mux id suffix, and content signature; if duplication remains, compare `/api/threads/:id?mode=recent` against the open shell before adding render-layer filtering. |
 | Thread looks stuck | rollout size/mtime, pending approvals, live command/tool process, latest turn status |
 | Old command appears running | latest turn id vs raw operation fallback call id/turn id, app version includes raw-operation fix |
 | PWA still shows old UI | `/api/public-config.clientBuildId`, browser shell cache, service worker cache name |
@@ -29,6 +30,8 @@ Interpretation:
 | First open after completion lacks the latest receipt | `/api/threads/:id?mode=recent` read mode, whether the latest rollout EOF line is a complete `task_complete` JSON object without a trailing newline, and whether enrichment index exposes a provisional entry |
 | Same turn shows two final receipts and only one has Usage | Compare `/api/threads/:id?mode=recent` service projection against the open client shell. If the API has one `agentMessage` plus one `turnUsageSummary` but the page shows two receipts, the failure layer is browser V4 local-visible merge; current clients after `codex-mobile-shell-v390` drop local-only live receipts once a completed server turn has an authoritative receipt. |
 | Final receipt appears, disappears, then returns one line shorter | Compare the live active receipt text and completed service projection receipt text for the same turn, then inspect `/api/client-events` for `thread_refresh_ms.locallyPatchedDetail`. Clients after `codex-mobile-shell-v391` preserve same-prefix completed receipt identity; clients after `codex-mobile-shell-v392` also keep post-completion refreshes on the local item patch path when only receipt/Usage items change. |
+| Bottom Command/status row disappears during a running turn | Check viewport first. Wide clients after `codex-mobile-shell-v394` keep the one-line dock stable during reasoning-only active turns. Phone-width clients after `codex-mobile-shell-v395` intentionally do not reserve a bottom row: pure reasoning is shown only by the top-right timer, and real command/file/tool/search activity appears as a floating operation bubble above the composer with short summary and elapsed time. Clients after `codex-mobile-shell-v402` keep the last same-thread operation bubble visible for at least 500ms even when the operation finishes before the next full thread render, and the expiry refresh updates only the dock instead of rerendering the conversation. |
+| Command row has no detail on macOS | First inspect `/api/threads/:id?mode=recent`: if `commandExecution.command` is empty, the failure layer is server raw-operation projection from rollout `function_call.arguments`; current server code reads `command`/`cmd`/`shellCommand`/`shell_command` from object or JSON-string arguments. If the API has a non-empty command but the dock/bubble is blank, inspect the v394+ frontend `operationCommandText()` path. |
 | Continuation fails because source thread cannot reply | continuation job progress `handoff-fallback`, generated `.agent-context/thread-handoffs/*.md` mode, `/api/status` profile/quota |
 | Profile switch hides workspaces or threads | active `codexProfiles.activeCodexHome`, non-default profile shared-state links, `/api/threads?limit=10` |
 | Quota chips show the previous account after switch | `/api/status.rateLimits`, browser quota localStorage, profile-switch cache clearing, shared `sessions/` quota fallback |
@@ -936,13 +939,16 @@ ambiguous failure instead of a bounded task-card diagnostic.
 
 For source-thread direct task-card creation through
 `/api/threads/:sourceThreadId/task-cards`, target resolution is intentionally
-stricter than the manual pending-card API. `409 stale_target_thread` means the
-requested thread exists or was found in fallback state, but it is not the latest
-visible canonical thread for that cwd/workspace; use `details.currentTarget`.
-`404 target_thread_not_visible` means the id/title/cwd is not currently
-deliverable from the non-archived visible thread list. Dynamic tool calls and
-`scripts/create-thread-task-card.js` share this same guard, so fallback cannot
-bypass stale-target rejection.
+stricter than the manual pending-card API. Exact `targetThreadId` and exact
+`targetThreadTitle` are thread identity and may point to any normal
+non-archived thread, even when several threads share the same cwd/workspace.
+`400 target_thread_self` means the caller tried to send a card to the same
+source thread. `409 target_thread_archived` means the target is archived,
+deleted, or otherwise not deliverable. `404 target_thread_not_visible` means
+the id/title/cwd is not currently deliverable. `targetCwd` /
+`targetWorkspace` are fuzzy workspace targets and choose a current visible
+thread for that workspace. Dynamic tool calls and
+`scripts/create-thread-task-card.js` share this same guard.
 
 ## `#` Task-card Command Does Not Parse
 
