@@ -3453,12 +3453,143 @@ html.keyboard-open .side-chat-form textarea {
   display: none;
 }
 
+.thread-tile-toggle.hidden {
+  display: none !important;
+}
+
+.thread-tile-toggle.active {
+  color: var(--text-on-accent);
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
 .conversation {
   min-height: 0;
   min-width: 0;
   overflow: auto;
   padding: 20px 20px 28px;
   scroll-behavior: auto;
+}
+
+.conversation.thread-tile-mode {
+  overflow: hidden;
+  padding: 12px;
+}
+
+.thread-tile-board {
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(var(--thread-tile-columns, 2), minmax(0, 1fr));
+  gap: 10px;
+}
+
+.thread-tile-pane {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+}
+
+.thread-tile-pane.active {
+  border-color: rgba(122, 199, 167, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(122, 199, 167, 0.16);
+}
+
+.thread-tile-pane-header {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--control-muted-bg);
+}
+
+.thread-tile-pane-title-wrap {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.thread-tile-pane-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 760;
+  line-height: 1.2;
+}
+
+.thread-tile-pane-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.thread-tile-status-icon {
+  margin: 0;
+}
+
+.thread-tile-open {
+  min-height: 30px;
+  padding: 5px 9px;
+  color: var(--text);
+  background: var(--control-bg);
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 720;
+  line-height: 1;
+}
+
+.thread-tile-pane-body {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 10px;
+}
+
+.thread-tile-pane .turn {
+  margin: 0 0 10px;
+}
+
+.thread-tile-pane .item {
+  padding: 9px 10px;
+}
+
+.thread-tile-pane .item-head,
+.thread-tile-pane .thread-task-card-message-heading {
+  font-size: 11px;
+}
+
+.thread-tile-pane .item-body {
+  font-size: calc(var(--content-font-size) * 0.94);
+  line-height: 1.5;
+}
+
+.thread-tile-empty {
+  padding: 18px 8px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.thread-tile-empty.error {
+  color: var(--danger);
 }
 
 .scroll-bottom-button {

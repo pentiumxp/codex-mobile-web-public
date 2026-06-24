@@ -147,12 +147,13 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v408/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v408"/);
+  assert.match(swJs, /codex-mobile-shell-v409/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v409"/);
   assert.match(swJs, /"\/thread-status-hints\.js"/);
   assert.match(swJs, /"\/thread-performance-metrics\.js"/);
   assert.match(swJs, /"\/live-operation-dock-state\.js"/);
   assert.match(swJs, /"\/thread-detail-state\.js"/);
+  assert.match(swJs, /"\/thread-tile-layout\.js"/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
   assert.match(stylesCss, /\.thread-side-panel\.no-subagents\s*{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\);/);
@@ -355,6 +356,7 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(swJs, /"\/thread-performance-metrics\.js"/);
   assert.match(swJs, /"\/live-operation-dock-state\.js"/);
   assert.match(swJs, /"\/thread-detail-state\.js"/);
+  assert.match(swJs, /"\/thread-tile-layout\.js"/);
   assert.match(swJs, /"\/build-refresh-policy\.js"/);
   assert.match(appJs, /"\/viewport-metrics\.js"/);
   assert.match(appJs, /"\/conversation-scroll\.js"/);
@@ -363,6 +365,7 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /"\/thread-performance-metrics\.js"/);
   assert.match(appJs, /"\/live-operation-dock-state\.js"/);
   assert.match(appJs, /"\/thread-detail-state\.js"/);
+  assert.match(appJs, /"\/thread-tile-layout\.js"/);
   assert.match(appJs, /"\/build-refresh-policy\.js"/);
   assert.match(appJs, /navigator\.serviceWorker\.register\("\/sw\.js"\)/);
   assert.match(appJs, /state\.serviceWorkerRegistration\.update\(\)\.catch/);

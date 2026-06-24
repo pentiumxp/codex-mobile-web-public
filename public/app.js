@@ -84,6 +84,10 @@ const threadDetailStateApi = window.CodexThreadDetailState;
 if (!threadDetailStateApi) {
   throw new Error("CodexThreadDetailState policy script failed to load");
 }
+const threadTileLayoutPolicy = window.CodexThreadTileLayout;
+if (!threadTileLayoutPolicy) {
+  throw new Error("CodexThreadTileLayout policy script failed to load");
+}
 const INITIAL_PLUGIN_EMBED = pluginEmbedApi.detect(window.location.href);
 const INITIAL_PLUGIN_LAUNCH_KEY = INITIAL_PLUGIN_EMBED.launchKey || initialPluginLaunchKeyFromUrl();
 
@@ -136,6 +140,11 @@ const state = {
   threads: [],
   currentThread: null,
   currentThreadId: "",
+  threadTileMode: localStorage.getItem("codexMobileThreadTileMode") === "true",
+  threadTileDetails: new Map(),
+  threadTileLoadingIds: new Set(),
+  threadTileErrors: new Map(),
+  threadTileControllers: new Map(),
   newThreadDraft: false,
   newThreadTitle: "",
   activeTurnId: "",
@@ -429,7 +438,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v408";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v409";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -480,6 +489,7 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/thread-performance-metrics.js",
   "/live-operation-dock-state.js",
   "/thread-detail-state.js",
+  "/thread-tile-layout.js",
   "/build-refresh-policy.js",
   "/app.js",
   "/manifest.json",
@@ -506,6 +516,7 @@ const STORAGE_PUBLIC_PR_PROMPT = "codexMobilePublicPrPromptKey";
 const STORAGE_TASK_CARD_DRAFT_STATES = "codexMobileThreadTaskCardDraftStates";
 const STORAGE_RESTART_AUTO_RECOVER_THREADS = "codexMobileRestartAutoRecoverThreads";
 const STORAGE_COMPOSER_INTENT_DRAFTS = "codexMobileComposerIntentDrafts";
+const STORAGE_THREAD_TILE_MODE = "codexMobileThreadTileMode";
 const PUBLIC_PR_REVIEW_THREAD_TITLE = "Codex Mobile Public PR";
 const MERMAID_SCRIPT_URL = "/vendor/mermaid.min.js";
 const MERMAID_MIN_SCALE = 0.65;
@@ -11019,6 +11030,238 @@ function updateCurrentThreadHeader(thread = state.currentThread) {
   if (metaEl) metaEl.textContent = "";
 }
 
+function viewportPixelSize() {
+  const visualViewport = window.visualViewport;
+  return {
+    width: Math.round((visualViewport && visualViewport.width) || window.innerWidth || document.documentElement.clientWidth || 0),
+    height: Math.round((visualViewport && visualViewport.height) || window.innerHeight || document.documentElement.clientHeight || 0),
+  };
+}
+
+function isCoarsePointerViewport() {
+  return Boolean(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+}
+
+function threadTileLayout(options = {}) {
+  const viewport = viewportPixelSize();
+  const sidebar = $("sidebar");
+  const sidebarWidth = sidebar && !isMenuOverlayMode()
+    ? Math.round(sidebar.getBoundingClientRect().width || 0)
+    : 0;
+  return threadTileLayoutPolicy.layoutForViewport({
+    enabled: Object.prototype.hasOwnProperty.call(options, "enabled") ? options.enabled === true : state.threadTileMode,
+    viewportWidth: viewport.width,
+    viewportHeight: viewport.height,
+    sidebarWidth,
+    coarsePointer: isCoarsePointerViewport(),
+    menuOverlay: isMenuOverlayMode(),
+    maxPanes: threadTileLayoutPolicy.DEFAULT_MAX_PANES,
+    verticalChromePx: Math.max(120, Number(state.composerHeightPx || 0) + 64),
+  });
+}
+
+function threadTileCandidateIds(layout = threadTileLayout()) {
+  const threadIds = visibleThreads(state.threads).map((thread) => thread && thread.id).filter(Boolean);
+  return threadTileLayoutPolicy.selectThreadTileIds({
+    currentThreadId: state.currentThreadId,
+    threadIds,
+    maxPanes: layout.maxPanes,
+  });
+}
+
+function threadTileSummary(threadId) {
+  return threadById(threadId) || (state.currentThread && String(state.currentThread.id || "") === String(threadId || "") ? state.currentThread : null);
+}
+
+function threadTileDisplayThread(threadId) {
+  const id = String(threadId || "");
+  if (state.currentThread && String(state.currentThread.id || "") === id) return state.currentThread;
+  return state.threadTileDetails.get(id) || threadTileSummary(id) || { id, name: id, preview: id, turns: [] };
+}
+
+function threadTileError(threadId) {
+  return state.threadTileErrors.get(String(threadId || "")) || "";
+}
+
+function setThreadTileConversationMode(active, layout = null) {
+  const conversation = $("conversation");
+  if (!conversation) return;
+  conversation.classList.toggle("thread-tile-mode", Boolean(active));
+  if (active && layout && layout.columns) conversation.style.setProperty("--thread-tile-columns", String(layout.columns));
+  else conversation.style.removeProperty("--thread-tile-columns");
+}
+
+function abortThreadTileLoads() {
+  for (const controller of state.threadTileControllers.values()) {
+    try {
+      controller.abort();
+    } catch (_) {}
+  }
+  state.threadTileControllers.clear();
+  state.threadTileLoadingIds.clear();
+}
+
+async function loadThreadTileDetail(threadId) {
+  const id = String(threadId || "");
+  if (!id) return;
+  if (state.currentThread && String(state.currentThread.id || "") === id && !state.currentThread.mobileLoading) return;
+  if (state.threadTileLoadingIds.has(id)) return;
+  const cached = state.threadTileDetails.get(id);
+  if (cached && !cached.mobileLoading && !cached.mobileLoadError) return;
+  const controller = new AbortController();
+  state.threadTileControllers.set(id, controller);
+  state.threadTileLoadingIds.add(id);
+  state.threadTileErrors.delete(id);
+  scheduleRenderCurrentThread();
+  try {
+    const result = await api(threadDetailApiPath(id, { mode: "recent" }), {
+      timeoutMs: 20000,
+      signal: controller.signal,
+    });
+    if (controller.signal.aborted) return;
+    if (result && result.thread) {
+      state.threadTileDetails.set(id, result.thread);
+      mergeThreadIntoThreadList(result.thread);
+    }
+  } catch (err) {
+    if (!controller.signal.aborted) state.threadTileErrors.set(id, err && err.message ? err.message : String(err));
+  } finally {
+    if (state.threadTileControllers.get(id) === controller) state.threadTileControllers.delete(id);
+    state.threadTileLoadingIds.delete(id);
+    scheduleRenderCurrentThread();
+  }
+}
+
+function ensureThreadTileDetails(ids = []) {
+  if (!state.threadTileMode) return;
+  const activeIds = new Set(ids.map((id) => String(id || "")).filter(Boolean));
+  for (const [id, controller] of Array.from(state.threadTileControllers.entries())) {
+    if (activeIds.has(id)) continue;
+    controller.abort();
+    state.threadTileControllers.delete(id);
+    state.threadTileLoadingIds.delete(id);
+  }
+  for (const id of activeIds) loadThreadTileDetail(id).catch(showError);
+}
+
+function renderThreadTileTurn(thread, turn, previousKeys = new Set()) {
+  const renderedItems = visibleItemsForTurn(turn).map((entry, index) => {
+    const item = entry && entry.item;
+    const sourceIndex = Number.isInteger(entry && entry.sourceIndex) && entry.sourceIndex >= 0 ? entry.sourceIndex : index;
+    return renderVisibleItemPatchHtml(turn, item, previousKeys, sourceIndex);
+  }).filter(Boolean).join("");
+  if (!renderedItems.trim()) return "";
+  const threadId = String(thread && thread.id || "");
+  const turnId = String(turn && (turn.id || turn.startedAt || "turn") || "turn");
+  const duration = turn && turn.durationMs ? ` | ${formatElapsedTime(Math.round(turn.durationMs / 1000))}` : "";
+  return `<article class="turn thread-tile-turn" data-thread-tile-turn="${escapeHtml(turnId)}" data-render-key="${escapeHtml(`tile-turn|${threadId}|${turnId}`)}">
+    ${renderedItems}
+    <div class="turn-status">${escapeHtml(displayTurnStatus(turn))}${duration}</div>
+  </article>`;
+}
+
+function renderThreadTilePane(threadId, layout, previousKeys = new Set()) {
+  const thread = threadTileDisplayThread(threadId);
+  const id = String(threadId || thread && thread.id || "");
+  const title = threadTitleForDisplay(thread) || id;
+  const status = statusIconHtml(thread && thread.status, "thread-tile-status-icon", id);
+  const summary = threadTileSummary(id);
+  const pathText = shortPath((thread && thread.cwd) || (summary && summary.cwd) || "") || "聊天";
+  const updatedAt = Number((thread && thread.updatedAt) || (summary && summary.updatedAt) || 0);
+  const meta = [pathText, updatedAt ? formatTime(updatedAt, state.nowMs) : "", rolloutSizeText(thread || summary)].filter(Boolean).join(" | ");
+  const error = threadTileError(id);
+  const loading = state.threadTileLoadingIds.has(id) || (thread && thread.mobileLoading && !threadHasVisibleConversationTurns(thread));
+  const readWarning = threadReadWarningMessage(thread);
+  const turns = visibleTurnsForConversation(thread);
+  const omitted = Number(thread && thread.mobileOmittedTurnCount || 0) + Math.max(0, ((thread && thread.turns) || []).length - turns.length);
+  const body = error
+    ? `<div class="thread-tile-empty error">Thread failed: ${escapeHtml(error)}</div>`
+    : loading
+      ? `<div class="thread-tile-empty">Loading thread...</div>`
+      : [
+        omitted > 0 ? `<div class="history-note">Older history hidden: ${escapeHtml(omitted.toLocaleString())} turn(s).</div>` : "",
+        readWarning ? `<div class="history-note">${escapeHtml(readWarning)}</div>` : "",
+        turns.map((turn) => renderThreadTileTurn(thread, turn, previousKeys)).join("") || `<div class="thread-tile-empty">No visible turns.</div>`,
+      ].join("");
+  const active = id && id === state.currentThreadId ? " active" : "";
+  return `<section class="thread-tile-pane${active}" data-thread-tile-pane="${escapeHtml(id)}" data-render-key="${escapeHtml(`thread-tile|${id}`)}">
+    <header class="thread-tile-pane-header">
+      <div class="thread-tile-pane-title-wrap">
+        <div class="thread-tile-pane-title">${escapeHtml(title)}</div>
+        <div class="thread-tile-pane-meta">${escapeHtml(meta)}</div>
+      </div>
+      ${status}
+      <button class="thread-tile-open" type="button" data-thread-tile-open="${escapeHtml(id)}" title="打开为当前线程">打开</button>
+    </header>
+    <div class="thread-tile-pane-body">${body}</div>
+  </section>`;
+}
+
+function renderThreadTileLayout(layout, options = {}) {
+  const ids = threadTileCandidateIds(layout);
+  if (!ids.length) return false;
+  ensureThreadTileDetails(ids);
+  state.nowMs = Date.now();
+  const previousKeys = existingConversationRenderKeys();
+  const html = `<div class="thread-tile-board" data-thread-tile-board data-render-key="thread-tile-board">
+    ${ids.map((id) => renderThreadTilePane(id, layout, previousKeys)).join("")}
+  </div>`;
+  const signature = JSON.stringify({
+    view: "thread-tiles",
+    columns: layout.columns,
+    rows: layout.rows,
+    ids,
+    loading: ids.filter((id) => state.threadTileLoadingIds.has(id)),
+    errors: ids.map((id) => [id, threadTileError(id)]),
+    threads: ids.map((id) => conversationRenderSignature(threadTileDisplayThread(id))),
+  });
+  setThreadTileConversationMode(true, layout);
+  updateConversationHtml(html, signature, { stickToBottom: options.stickToBottom === true });
+  bindThreadTileActions();
+  return true;
+}
+
+function bindThreadTileActions() {
+  const conversation = $("conversation");
+  if (!conversation) return;
+  conversation.querySelectorAll("[data-thread-tile-open]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      const threadId = button.getAttribute("data-thread-tile-open") || "";
+      if (threadId) loadThread(threadId, { source: "thread-tile" }).catch(showError);
+    });
+  });
+}
+
+function syncThreadTileToggle() {
+  const button = $("threadTileToggle");
+  if (!button) return;
+  const layout = threadTileLayout({ enabled: true });
+  const canEnable = layout.enabled || state.threadTileMode;
+  button.classList.toggle("active", Boolean(state.threadTileMode));
+  button.classList.toggle("hidden", !canEnable);
+  button.setAttribute("aria-pressed", state.threadTileMode ? "true" : "false");
+  button.setAttribute("title", state.threadTileMode ? "退出线程平铺" : "平铺多个线程");
+  button.setAttribute("aria-label", state.threadTileMode ? "退出线程平铺" : "平铺多个线程");
+}
+
+function setThreadTileMode(enabled) {
+  state.threadTileMode = enabled === true;
+  if (state.threadTileMode) localStorage.setItem(STORAGE_THREAD_TILE_MODE, "true");
+  else {
+    localStorage.removeItem(STORAGE_THREAD_TILE_MODE);
+    abortThreadTileLoads();
+    setThreadTileConversationMode(false);
+  }
+  syncThreadTileToggle();
+  renderCurrentThread({ stickToBottom: true });
+}
+
+function handleThreadTileToggle(event) {
+  if (event) event.preventDefault();
+  setThreadTileMode(!state.threadTileMode);
+}
+
 function shouldPreservePinnedLiveOperationDock(dock, html = "") {
   return liveOperationDockPolicy.shouldPreservePinned({
     pinned: state.liveOperationDockPinned,
@@ -11478,6 +11721,7 @@ function patchCurrentThreadDetailFromRefresh(previousThread, nextThread, previou
 }
 
 function renderHome() {
+  setThreadTileConversationMode(false);
   clearInterval(state.tickTimer);
   state.tickTimer = null;
   state.subagentPanelOpen = false;
@@ -11655,8 +11899,10 @@ function renderThreadHistoryNote(thread, omitted, previousKeys = new Set()) {
 
 function renderCurrentThread(options = {}) {
   syncThreadDetailLayoutState();
+  syncThreadTileToggle();
   state.nowMs = Date.now();
   if (state.newThreadDraft) {
+    setThreadTileConversationMode(false);
     renderNewThreadDraft();
     return;
   }
@@ -11682,6 +11928,17 @@ function renderCurrentThread(options = {}) {
         && (options.stickToBottom === true || nearBottom)));
   const previousKeys = existingConversationRenderKeys();
   updateCurrentThreadHeader(thread);
+  const tileLayout = threadTileLayout();
+  if (tileLayout.enabled) {
+    const liveOperationDock = renderLiveOperationDock(thread, previousKeys);
+    updateLiveOperationDockHtml(liveOperationDock);
+    if (renderThreadTileLayout(tileLayout, options)) {
+      updateTickTimer();
+      publishPluginNavigationState();
+      return;
+    }
+  }
+  setThreadTileConversationMode(false);
   if (threadIsLoadingWithoutVisibleTurns(thread)) {
     updateLiveOperationDockHtml("");
     updateConversationHtml(
@@ -11748,6 +12005,7 @@ function renderCurrentThread(options = {}) {
 }
 
 function renderNewThreadDraft() {
+  setThreadTileConversationMode(false);
   clearInterval(state.tickTimer);
   state.tickTimer = null;
   state.subagentPanelOpen = false;
@@ -19346,6 +19604,7 @@ function wireUi() {
   if ($("goalDialog")) $("goalDialog").addEventListener("click", (event) => {
     if (event.target === $("goalDialog")) closeThreadGoalDialog(false);
   });
+  if ($("threadTileToggle")) $("threadTileToggle").addEventListener("click", handleThreadTileToggle);
   if ($("themeSettingsToggle")) $("themeSettingsToggle").addEventListener("click", () => {
     loadCodexProfiles().catch(showError);
     setTimeout(() => publishPluginNavigationState({ force: true }), 0);
@@ -19840,6 +20099,8 @@ function wireUi() {
     updateViewportVars();
     updateComposerHeightVar();
     positionComposerIntentMenu();
+    syncThreadTileToggle();
+    if (state.threadTileMode) scheduleRenderCurrentThread();
     if (!isHermesKeyboardInputActive()) {
       followViewportChangeToBottom("resize");
       scheduleViewportBottomFollowScroll();
@@ -19851,6 +20112,8 @@ function wireUi() {
       updateViewportVars();
       updateComposerHeightVar();
       positionComposerIntentMenu();
+      syncThreadTileToggle();
+      if (state.threadTileMode) scheduleRenderCurrentThread();
       if (!isHermesKeyboardInputActive()) {
         followViewportChangeToBottom("visual-viewport-resize");
         scheduleViewportBottomFollowScroll();

@@ -148,7 +148,14 @@ Implementation path:
     authoritative completed-receipt detection, and local-only item retention
     covered by `test/thread-detail-state.test.js`; `public/app.js` should only
     create the policy with local classifiers and delegate merge calls.
-16. Existing v3 behavior still uses
+16. Wide-screen multi-thread reading layout belongs in
+    `public/thread-tile-layout.js`. Keep viewport/sidebar/orientation to
+    columns/rows/maxPanes decisions covered by `test/thread-tile-layout.test.js`,
+    including iPad portrait single-thread mode and iPad landscape two/three-pane
+    rules. `public/app.js` may own DOM assembly and event binding, but tile
+    panes are read-only recent-detail windows; composer, interrupt, approvals,
+    and live operation dock state remain bound to the current active thread.
+17. Existing v3 behavior still uses
     `test/thread-completion-diagnostic-service.test.js`,
     `test/thread-item-timestamp-enrichment.test.js`,
     `test/conversation-render.test.js`, `test/collab-agent-render.test.js`,

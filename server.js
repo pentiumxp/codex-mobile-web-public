@@ -1165,6 +1165,7 @@ function appShellBuildId(cacheName = readServiceWorkerCacheName()) {
     "thread-performance-metrics.js",
     "live-operation-dock-state.js",
     "thread-detail-state.js",
+    "thread-tile-layout.js",
     "app.js",
     "sw.js",
     "manifest.json",

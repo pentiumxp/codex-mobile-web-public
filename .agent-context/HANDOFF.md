@@ -1,3 +1,48 @@
+# 2026-06-24 - v409 wide thread tile reading mode deployed to Mac production
+
+- Scope:
+  - Committed locally and deployed to Mac production.
+  - Not pushed to Public.
+  - Previous v408 extraction was committed separately as
+    `ea3387a refactor: extract visible text render identity policy`.
+- Change:
+  - Added `public/thread-tile-layout.js` as a pure browser policy for
+    viewport/sidebar/orientation to thread-tile columns/rows/maxPanes.
+  - The first version is a read-only multi-thread reading workspace, not
+    simultaneous multi-thread editing:
+    - phones and iPad portrait stay single-thread;
+    - iPad landscape supports at least two panes, and 1366px-class landscape
+      can use three panes;
+    - desktop wide screens can use up to four columns and two rows, capped by
+      `DEFAULT_MAX_PANES`;
+    - composer, interrupt controls, approvals, and operation dock/bubble remain
+      bound to the current active thread.
+  - Added a topbar `threadTileToggle`; the mode is persisted in
+    `localStorage` and recalculated on `resize` / `visualViewport.resize`.
+  - `public/app.js` now fetches recent detail for tile panes through
+    `mode=recent`, renders panes as read-only detail windows, and only switches
+    current thread when the pane `打开` button is clicked.
+  - Added tile layout CSS and PWA shell asset wiring; shell bumped to
+    `codex-mobile-shell-v409`.
+  - Updated `README.md`, `docs/MODULES.md`, and
+    `docs/COMPLEX_FEATURE_PATHS.md` with the ownership and release boundary.
+- Validation:
+  - `node --check public/thread-tile-layout.js && node --check public/app.js && node --check public/sw.js && node --test test/thread-tile-layout.test.js test/thread-tile-layout-ui.test.js test/app-update.test.js test/mobile-viewport.test.js test/plugin-voice-input.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+  - `npm run check`
+  - `npm test` passed (`730` tests).
+  - `npm run check:macos`
+  - `git diff --check`
+- Production deploy:
+  - Used the Home AI central deploy script directly:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart-label com.hermesmobile.plugin.codex-mobile --health-url http://127.0.0.1:8787/api/public-config --execute --json`.
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Health check returned HTTP `200` with
+    `clientBuildId=0.1.11|codex-mobile-shell-v409`,
+    `shellCacheName=codex-mobile-shell-v409`, and
+    `workspacePath=/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - `launchctl print system/com.hermesmobile.plugin.codex-mobile` reported
+    the service running.
+
 # 2026-06-24 - v408 visible text render identity policy ready locally
 
 - Scope:
