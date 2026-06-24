@@ -101,6 +101,8 @@ test("live operation cards dock on wide screens and become a mobile bubble", () 
   assert.match(appJs, /function rememberCompactLiveOperationBubbleHtml\(/);
   assert.match(appJs, /function renderLiveOperationRecallDockHtml\(/);
   assert.match(appJs, /function clearCompactLiveOperationBubbleState\(/);
+  assert.match(appJs, /function clearLiveOperationDockRuntimeState\(/);
+  assert.match(appJs, /function clearThreadTileOperationBubble\(/);
   assert.match(appJs, /function renderLiveOperationDockOnly\(/);
   assert.match(appJs, /function scheduleLiveOperationDockCompactMinimumRefresh\(/);
   assert.match(appJs, /function shouldPreserveCompactLiveOperationBubble\(/);
@@ -125,6 +127,10 @@ test("live operation cards dock on wide screens and become a mobile bubble", () 
   assert.match(functionBody("clearCompactLiveOperationBubbleState"), /state\.liveOperationDockCompactVisibleUntilMs = 0/);
   assert.match(functionBody("clearCompactLiveOperationBubbleState"), /state\.liveOperationDockCompactHtml = ""/);
   assert.match(functionBody("clearCompactLiveOperationBubbleState"), /state\.liveOperationDockCompactThreadId = ""/);
+  assert.match(functionBody("clearLiveOperationDockRuntimeState"), /state\.liveOperationDockRecallHtml = ""/);
+  assert.match(functionBody("clearLiveOperationDockRuntimeState"), /state\.liveOperationDockPinned = false/);
+  assert.match(appJs, /if \(\(method === "turn\/started" \|\| method === "turn\/completed"\) && params\.threadId\) \{\s*clearThreadTileOperationBubble\(params\.threadId\);/);
+  assert.match(functionBody("applyNotification"), /if \(method === "turn\/started"\)[\s\S]*clearLiveOperationDockRuntimeState\(\);[\s\S]*if \(method === "turn\/completed"\)[\s\S]*clearLiveOperationDockRuntimeState\(\);/);
   assert.match(functionBody("scheduleLiveOperationDockCompactMinimumRefresh"), /setTimeout\(\(\) => \{[\s\S]*renderLiveOperationDockOnly\(\);[\s\S]*\}, delay \+ 16\)/);
   assert.match(functionBody("shouldPreserveCompactLiveOperationBubble"), /querySelector\("\.mobile-operation-bubble"\)/);
   assert.match(functionBody("shouldPreserveCompactLiveOperationBubble"), /liveOperationDockPolicy\.compactBubblePreservation/);
@@ -135,6 +141,7 @@ test("live operation cards dock on wide screens and become a mobile bubble", () 
   assert.match(functionBody("setLiveOperationDockMode"), /state\.liveOperationDockPinned = next === "expanded"/);
   assert.match(functionBody("setLiveOperationDockMode"), /state\.liveOperationDockPinnedThreadId = state\.liveOperationDockPinned \? String\(state\.currentThreadId \|\| ""\) : ""/);
   assert.match(functionBody("shouldPreservePinnedLiveOperationDock"), /liveOperationDockPolicy\.shouldPreservePinned/);
+  assert.match(functionBody("shouldPreservePinnedLiveOperationDock"), /liveTurnActive:\s*Boolean\(currentLiveTurn\(\)\)/);
   assert.match(functionBody("shouldPreservePinnedLiveOperationDock"), /dock\.querySelector\("\.mobile-operation-sheet"\)/);
   assert.match(functionBody("setLiveOperationDockMode"), /querySelectorAll\("\[data-live-operation-dock-toggle\]"\)/);
   assert.match(functionBody("setLiveOperationDockMode"), /!button\.classList\.contains\("mobile-operation-bubble"\)/);
@@ -215,7 +222,7 @@ test("live operation cards dock on wide screens and become a mobile bubble", () 
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.mobile-operation-recall\s*{[\s\S]*display:\s*grid;[\s\S]*width:\s*var\(--mobile-floating-control-size\);[\s\S]*height:\s*var\(--mobile-floating-control-size\);/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.mobile-operation-recall-dot\s*{[\s\S]*width:\s*7px;[\s\S]*height:\s*7px;/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.scroll-bottom-button\s*{[\s\S]*right:\s*var\(--mobile-floating-control-right\);[\s\S]*bottom:\s*calc\(var\(--composer-height, 92px\) \+ 8px \+ var\(--mobile-floating-control-size\) \+ var\(--mobile-floating-control-gap\)\);[\s\S]*width:\s*var\(--mobile-floating-control-size\);[\s\S]*height:\s*var\(--mobile-floating-control-size\);/);
-  assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.scroll-turn-reply-button\s*{[\s\S]*right:\s*calc\(var\(--mobile-floating-control-right\) \+ var\(--mobile-floating-control-size\) \+ 8px\);/);
+  assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.scroll-turn-reply-button\s*{[\s\S]*right:\s*var\(--mobile-floating-control-right\);/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.mobile-operation-sheet\s*{[\s\S]*background:\s*var\(--panel\);[\s\S]*border:\s*1px solid var\(--line\);/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.mobile-operation-sheet\s*{[\s\S]*isolation:\s*isolate;/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.live-operation-dock\[data-mode="expanded"\] \.mobile-operation-sheet\s*{[\s\S]*display:\s*block;/);

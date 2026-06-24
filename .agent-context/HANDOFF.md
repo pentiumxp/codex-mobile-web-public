@@ -1,3 +1,48 @@
+# 2026-06-24 - Mobile floating controls v420 local fix
+
+- Scope:
+  - Implemented and validated in the private workspace.
+  - Not committed, not deployed, not pushed Public.
+- Trigger:
+  - User reported the right-bottom upward arrow still appearing in the wrong
+    position after several fixes. The screenshot showed the `scrollToTurnReply`
+    current-turn receipt jump button, not the operation recall dot.
+- Root cause:
+  - The scroll-down button and scroll-to-current-turn-receipt button were still
+    separate floating controls. CSS gave `.scroll-turn-reply-button` its own
+    right offset, and `updateScrollToBottomButton()` computed both visibility
+    predicates independently, so the two controls could appear together.
+  - The mobile operation dock remembered recent operation bubble/recall state
+    by thread. Without an explicit live-turn boundary, stale command UI could
+    survive turn completion or reappear on the next live turn in the same
+    thread.
+- Change:
+  - `public/styles.css` now gives `scrollToTurnReply` the same right slot as
+    `scrollToBottom`.
+  - `public/app.js` makes `scrollToTurnReply` visible only when
+    `scrollToBottom` is not visible; the downward jump wins when both
+    predicates are true.
+  - `public/live-operation-dock-state.js` requires live-turn state for compact
+    bubble preservation, pinned sheet preservation, and recall visibility.
+  - `public/app.js` clears global and tile operation runtime caches on
+    `turn/started` and `turn/completed`, preventing old command recall from
+    leaking into a completed or next turn.
+  - PWA shell cache bumped to `codex-mobile-shell-v420`.
+- Docs updated:
+  - `README.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/MODULES.md`
+- Validation:
+  - `node --check public/app.js`
+  - `node --check public/live-operation-dock-state.js`
+  - `node --check public/sw.js`
+  - `node --test test/turn-scroll-controls.test.js test/live-operation-dock-state.test.js test/collab-agent-render.test.js test/mobile-viewport.test.js`
+  - `node --test test/thread-tile-layout-ui.test.js test/thread-tile-layout.test.js test/app-update.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js`
+  - `git diff --check`
+  - `npm run check`
+  - `npm run check:macos`
+  - `npm test --silent` (`742` tests passed)
+
 # 2026-06-24 - Large-session dynamic projection and bounded-window cold path deployed
 
 - Scope:

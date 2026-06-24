@@ -34,11 +34,12 @@ function assertInOrder(text, patterns) {
   }
 }
 
-test("upward user scroll can jump back to the current turn final receipt", () => {
+test("current-turn reply jump shares one floating slot with the bottom jump", () => {
   assert.match(indexHtml, /id="scrollToTurnReply"/);
   assert.match(indexHtml, /title="&#22238;&#21040;&#26412;&#36718;&#24635;&#32467;"/);
   assert.match(stylesCss, /\.scroll-turn-reply-button/);
-  assert.match(stylesCss, /\.scroll-turn-reply-button\s*\{\s*right: 74px;/);
+  assert.doesNotMatch(stylesCss, /\.scroll-turn-reply-button\s*\{[^}]*right:\s*74px;/);
+  assert.doesNotMatch(stylesCss, /\.scroll-turn-reply-button\s*\{[^}]*right:\s*calc\(var\(--mobile-floating-control-right\) \+ var\(--mobile-floating-control-size\) \+ 8px\)/);
   assert.match(appJs, /const TURN_REPLY_JUMP_WINDOW_MS = 10 \* 60 \* 1000;/);
   assert.match(appJs, /function rememberRecentCompletedTurnReply\(turnId\)/);
   assert.match(appJs, /rememberRecentCompletedTurnReply\(params\.turn\.id\)/);
@@ -85,6 +86,7 @@ test("upward user scroll can jump back to the current turn final receipt", () =>
   assert.match(appJs, /function isNodeStartAboveConversationViewport\(node\)/);
   assert.match(appJs, /return rect\.top < viewport\.top \+ 24;/);
   assert.match(appJs, /isNodeStartAboveConversationViewport\(replyNode\)/);
+  assert.match(functionBody("updateScrollToBottomButton"), /const shouldShowReply = Boolean\(\s*!shouldShow/);
   assert.match(appJs, /scrollToTurnReply"\)\)\s*\$\("scrollToTurnReply"\)\.addEventListener\("click", scrollConversationToTurnReply\)/);
   assert.match(appJs, /function ensureUsageSummaryExpandedVisible\(summary\)/);
   assert.match(appJs, /function handleUsageSummaryToggle\(event\)/);

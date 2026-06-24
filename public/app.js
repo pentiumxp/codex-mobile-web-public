@@ -452,7 +452,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v419";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v420";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -11756,6 +11756,12 @@ function recentThreadTileOperationBubble(threadId) {
   return String(record.html || "");
 }
 
+function clearThreadTileOperationBubble(threadId) {
+  const id = String(threadId || "");
+  if (!id) return;
+  state.threadTileOperationBubblesById.delete(id);
+}
+
 function renderThreadTileOperationDock(thread, previousKeys = new Set()) {
   const id = String(thread && thread.id || "");
   if (!id) return "";
@@ -11763,7 +11769,7 @@ function renderThreadTileOperationDock(thread, previousKeys = new Set()) {
   const mode = normalizeLiveOperationDockMode(state.threadTileOperationModesById.get(id) || "compact");
   const expanded = mode === "expanded";
   if (!entry || !entry.item || entry.item.type === "liveTurnStatus") {
-    return recentThreadTileOperationBubble(id);
+    return latestLiveTurnForThread(thread) ? recentThreadTileOperationBubble(id) : "";
   }
   const html = `<div class="thread-tile-operation-dock" data-thread-tile-operation-dock="${escapeHtml(id)}" data-mode="${escapeHtml(mode)}">
     <div class="live-operation-dock-inner">
@@ -12054,6 +12060,7 @@ function shouldPreservePinnedLiveOperationDock(dock, html = "") {
     currentThreadId: state.currentThreadId,
     dockHasSheet: Boolean(dock && dock.querySelector(".mobile-operation-sheet")),
     nextHtml: html,
+    liveTurnActive: Boolean(currentLiveTurn()),
   });
 }
 
@@ -12075,6 +12082,20 @@ function clearCompactLiveOperationBubbleState() {
   state.liveOperationDockCompactVisibleUntilMs = 0;
   state.liveOperationDockCompactHtml = "";
   state.liveOperationDockCompactThreadId = "";
+}
+
+function clearLiveOperationDockRuntimeState() {
+  if (state.liveOperationDockCompactTimer) {
+    clearTimeout(state.liveOperationDockCompactTimer);
+    state.liveOperationDockCompactTimer = null;
+  }
+  state.liveOperationDockPinned = false;
+  state.liveOperationDockPinnedThreadId = "";
+  state.liveOperationDockMode = "compact";
+  clearCompactLiveOperationBubbleState();
+  state.liveOperationDockRecallHtml = "";
+  state.liveOperationDockRecallThreadId = "";
+  state.liveOperationDockRecallAtMs = 0;
 }
 
 function rememberCompactLiveOperationBubbleHtml(html = "") {
@@ -12102,6 +12123,7 @@ function renderLiveOperationRecallDockHtml() {
     currentThreadId: state.currentThreadId,
     recallThreadId: state.liveOperationDockRecallThreadId,
     recallHtml: savedHtml,
+    liveTurnActive: Boolean(currentLiveTurn()),
   })) return "";
   const root = firstElementFromHtml(savedHtml);
   if (!root) return "";
@@ -12151,6 +12173,7 @@ function shouldPreserveCompactLiveOperationBubble(dock, html = "") {
     savedThreadId: state.liveOperationDockCompactThreadId,
     currentThreadId: state.currentThreadId,
     dockHasBubble,
+    liveTurnActive: Boolean(currentLiveTurn()),
   });
   if (!preservation.preserve) return false;
   if (preservation.patchSavedHtml) {
@@ -17238,6 +17261,9 @@ function applyNotification(method, params) {
     return;
   }
   if (shouldThrottleThreadNotification(method, params)) return;
+  if ((method === "turn/started" || method === "turn/completed") && params.threadId) {
+    clearThreadTileOperationBubble(params.threadId);
+  }
   if (method === "thread/started" && params.thread) {
     if (isHiddenThread(params.thread)) {
       state.threads = state.threads.filter((thread) => thread.id !== params.thread.id);
@@ -17347,6 +17373,7 @@ function applyNotification(method, params) {
     updateThreadListStatus(params.threadId, runningStatus);
     clearRecentCompletedReplyAnchor();
     clearConversationAutoScrollHold();
+    clearLiveOperationDockRuntimeState();
     markActivity("开始");
     $("interruptTurn").disabled = false;
     updateComposerControls();
@@ -17376,6 +17403,7 @@ function applyNotification(method, params) {
     });
     updateThreadListStatus(params.threadId, completedStatus);
     state.activeTurnId = "";
+    clearLiveOperationDockRuntimeState();
     markActivity("完成");
     if (completedPendingSteer) setSteerFeedback("completed", { turnId: String(params.turn.id) });
     $("interruptTurn").disabled = true;
@@ -18248,7 +18276,8 @@ function updateScrollToBottomButton() {
   const replyAnchor = currentRecentCompletedReplyAnchor();
   const replyNode = turnFinalReceiptNode(replyAnchor);
   const shouldShowReply = Boolean(
-    state.currentThread
+    !shouldShow
+      && state.currentThread
       && !state.currentThread.mobileLoading
       && !state.currentThread.mobileLoadError
       && isScrollable

@@ -3875,7 +3875,6 @@ html.keyboard-open .side-chat-form textarea {
 }
 
 .scroll-turn-reply-button {
-  right: 74px;
   color: var(--accent-strong);
   background: var(--control-bg);
   border-color: var(--accent);
@@ -7756,7 +7755,7 @@ html.embed-hermes #openMenu.split-return-visible {
   }
 
   .scroll-turn-reply-button {
-    right: calc(var(--mobile-floating-control-right) + var(--mobile-floating-control-size) + 8px);
+    right: var(--mobile-floating-control-right);
   }
 
   .new-thread-page {
