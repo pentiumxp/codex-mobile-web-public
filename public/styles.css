@@ -2940,6 +2940,18 @@ html.visual-recovering body::before {
     var(--bg);
 }
 
+.main.thread-tile-main {
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+}
+
+.main.thread-tile-main .topbar {
+  min-height: 0;
+  height: 0;
+  padding: 0;
+  border-bottom: 0;
+  overflow: hidden;
+}
+
 .topbar {
   justify-content: flex-start;
   min-width: 0;
@@ -3474,7 +3486,7 @@ html.keyboard-open .side-chat-form textarea {
 
 .conversation.thread-tile-mode {
   overflow: hidden;
-  padding: 12px;
+  padding: 4px 8px 8px;
 }
 
 .thread-tile-board {
@@ -3505,20 +3517,37 @@ html.keyboard-open .side-chat-form textarea {
 }
 
 .thread-tile-pane-header {
+  position: relative;
+  z-index: 5;
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
-  padding: 9px 10px;
+  padding: 6px 8px;
   border-bottom: 1px solid var(--line-soft);
   background: var(--control-muted-bg);
 }
 
 .thread-tile-pane-title-wrap {
+  position: relative;
   min-width: 0;
-  display: grid;
-  gap: 3px;
+}
+
+.thread-tile-pane-title-button {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  min-width: 0;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  text-align: left;
 }
 
 .thread-tile-pane-title {
@@ -3531,48 +3560,102 @@ html.keyboard-open .side-chat-form textarea {
   line-height: 1.2;
 }
 
-.thread-tile-pane-meta {
+.thread-tile-switch-menu {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 0;
+  z-index: 12;
+  width: min(320px, calc(100vw - 28px));
+  max-height: min(52vh, 360px);
+  display: grid;
+  gap: 4px;
+  padding: 6px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.36);
+  overflow: auto;
+}
+
+.thread-tile-switch-option {
+  appearance: none;
+  -webkit-appearance: none;
+  min-width: 0;
+  width: 100%;
+  min-height: 42px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 8px;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  text-align: left;
+}
+
+.thread-tile-switch-option.selected {
+  background: var(--selected-bg);
+  border-color: rgba(122, 199, 167, 0.56);
+}
+
+.thread-tile-switch-main {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.thread-tile-switch-title,
+.thread-tile-switch-meta {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.thread-tile-switch-title {
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.thread-tile-switch-meta {
   color: var(--muted);
-  font-size: 11px;
-  line-height: 1.2;
+  font-size: 10px;
 }
 
-.thread-tile-pane-state {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--accent-strong);
-  font-size: 11px;
-  font-weight: 680;
-  line-height: 1.2;
-}
-
-.thread-tile-status-icon {
+.thread-tile-switch-status {
   margin: 0;
 }
 
-.thread-tile-open {
-  min-height: 30px;
-  padding: 5px 9px;
-  color: var(--text);
+.thread-tile-pane-state {
+  display: none;
+  max-width: min(42vw, 210px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 5px 7px;
+  color: var(--muted-code-text);
   background: var(--control-bg);
   border: 1px solid var(--line-soft);
   border-radius: 7px;
-  font-size: 12px;
-  font-weight: 720;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.2);
+  font-family: "Cascadia Mono", "Consolas", "Microsoft YaHei", monospace;
+  font-size: 10.5px;
+  font-weight: 700;
   line-height: 1;
+}
+
+.thread-tile-pane-state.visible {
+  display: block;
 }
 
 .thread-tile-pane-body {
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  padding: 10px 10px 48px;
+  padding: 8px 8px 42px;
 }
 
 .thread-tile-pane-content {

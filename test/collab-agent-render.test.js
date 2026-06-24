@@ -54,8 +54,10 @@ test("collab agent tool calls render as compact summary cards", () => {
 
 test("live operation cards dock on wide screens and become a mobile bubble", () => {
   assert.match(appJs, /function currentLiveOperationEntry\(thread\)/);
-  assert.match(functionBody("currentLiveOperationEntry"), /const turn = thread\.turns\[thread\.turns\.length - 1\]/);
-  assert.match(functionBody("currentLiveOperationEntry"), /if \(!turn \|\| !isLatestTurn\(turn\) \|\| !isLiveTurn\(turn\)\) return null;/);
+  assert.match(functionBody("currentLiveOperationEntry"), /const turn = latestTurnForThread\(thread\);/);
+  assert.match(functionBody("currentLiveOperationEntry"), /if \(!turn \|\| !isLiveTurnForThread\(thread, turn\)\) return null;/);
+  assert.match(appJs, /function latestTurnForThread\(thread\)/);
+  assert.match(appJs, /function isLiveTurnForThread\(thread, turn\)/);
   assert.match(appJs, /function isActiveOperationalItem\(item\)/);
   assert.match(functionBody("currentLiveOperationEntry"), /if \(isActiveOperationalItem\(item\)\) return \{ turn, item, sourceIndex: index \};/);
   assert.match(functionBody("currentLiveOperationEntry"), /return \{ turn, item: liveTurnStatusDockItem\(turn\), sourceIndex: -1 \};/);
@@ -248,9 +250,16 @@ function isLatestTurn(turn) {
 function isLiveTurn(turn) {
   return Boolean(turn && !isTurnComplete(turn) && isRunningStatus(turn.status));
 }
+function isIncompleteInterruptedTurn() { return false; }
+function turnHasActiveLiveItems(turn) {
+  const items = Array.isArray(turn && turn.items) ? turn.items : [];
+  return items.some(isActiveOperationalItem);
+}
 function turnStartedAtMs() { return 0; }
 ${functionSource("isActiveOperationalItem")}
 ${functionSource("liveTurnStatusDockItem")}
+${functionSource("latestTurnForThread")}
+${functionSource("isLiveTurnForThread")}
 ${functionSource("currentLiveOperationEntry")}
 return (thread) => {
   state.currentThread = thread;

@@ -147,7 +147,9 @@ const state = {
   threadTileControllers: new Map(),
   threadTileLoadedAtById: new Map(),
   threadTileActiveIds: [],
+  threadTilePinnedIds: [],
   threadTileSelectedThreadId: "",
+  threadTileSwitchMenuPaneId: "",
   threadTileRefreshTimer: null,
   threadTileOperationModesById: new Map(),
   threadTileOperationBubblesById: new Map(),
@@ -446,7 +448,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v415";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v416";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -5053,8 +5055,8 @@ function visibleItemsForTurn(turn) {
 
 function currentLiveOperationEntry(thread) {
   if (!thread || !Array.isArray(thread.turns) || !thread.turns.length) return null;
-  const turn = thread.turns[thread.turns.length - 1];
-  if (!turn || !isLatestTurn(turn) || !isLiveTurn(turn)) return null;
+  const turn = latestTurnForThread(thread);
+  if (!turn || !isLiveTurnForThread(thread, turn)) return null;
   const items = Array.isArray(turn.items) ? turn.items : [];
   for (let index = items.length - 1; index >= 0; index -= 1) {
     const item = items[index];
@@ -6215,9 +6217,17 @@ function latestTurnForThread(thread) {
   return turns.length ? turns[turns.length - 1] : null;
 }
 
+function isLiveTurnForThread(thread, turn) {
+  if (!turn || isTurnComplete(turn)) return false;
+  return isRunningStatus(turn && turn.status)
+    || isIncompleteInterruptedTurn(turn)
+    || turnHasActiveLiveItems(turn)
+    || (latestTurnForThread(thread) === turn && isRunningStatus(thread && thread.status));
+}
+
 function latestLiveTurnForThread(thread) {
   const latest = latestTurnForThread(thread);
-  return latest && isLiveTurn(latest) ? latest : null;
+  return latest && isLiveTurnForThread(thread, latest) ? latest : null;
 }
 
 function activeTurnIdForThread(thread) {
@@ -11146,12 +11156,8 @@ function updateCurrentThreadHeader(thread = state.currentThread) {
 function updateThreadTileGlobalHeader(layout = null, ids = []) {
   const titleEl = $("threadTitle");
   const metaEl = $("threadMeta");
-  if (titleEl) titleEl.textContent = "平铺视图";
-  if (metaEl) {
-    const count = Array.isArray(ids) ? ids.length : 0;
-    const columns = Number(layout && layout.columns || 0);
-    metaEl.textContent = [count ? `${count} 个线程` : "", columns ? `${columns} 栏` : ""].filter(Boolean).join(" | ");
-  }
+  if (titleEl) titleEl.textContent = "";
+  if (metaEl) metaEl.textContent = "";
 }
 
 function viewportPixelSize() {
@@ -11186,13 +11192,25 @@ function threadTileLayout(options = {}) {
   });
 }
 
-function threadTileCandidateIds(layout = threadTileLayout()) {
+function defaultThreadTileCandidateIds(layout = threadTileLayout()) {
   const threadIds = visibleThreads(state.threads).map((thread) => thread && thread.id).filter(Boolean);
   return threadTileLayoutPolicy.selectThreadTileIds({
     currentThreadId: state.currentThreadId,
     threadIds,
     maxPanes: layout.maxPanes,
   });
+}
+
+function threadTileCandidateIds(layout = threadTileLayout()) {
+  const defaults = defaultThreadTileCandidateIds(layout);
+  const visibleIds = new Set(visibleThreads(state.threads).map((thread) => String(thread && thread.id || "")).filter(Boolean));
+  if (state.currentThreadId) visibleIds.add(String(state.currentThreadId));
+  const maxPanes = Math.max(1, Number(layout && layout.maxPanes || defaults.length || 1));
+  const pinned = (state.threadTilePinnedIds || [])
+    .map((id) => String(id || ""))
+    .filter((id) => id && visibleIds.has(id));
+  if (!pinned.length) return defaults;
+  return Array.from(new Set([...pinned, ...defaults])).slice(0, maxPanes);
 }
 
 function threadTileSummary(threadId) {
@@ -11222,6 +11240,77 @@ function setThreadTileSelectedThread(threadId, options = {}) {
   renderComposerSettings();
   updateComposerControls();
   if (options.render !== false) scheduleRenderCurrentThread();
+  return true;
+}
+
+function threadTileVisibleThreadOptions(currentId = "") {
+  const current = String(currentId || "");
+  const visible = visibleThreads(state.threads);
+  const running = visible
+    .filter((thread) => thread && isRunningStatus(thread.status))
+    .map((thread) => String(thread.id || ""))
+    .filter(Boolean);
+  return Array.from(new Set([
+    current,
+    ...state.threadTileActiveIds,
+    ...running,
+    ...visible.map((thread) => String(thread && thread.id || "")).filter(Boolean),
+  ])).filter(Boolean);
+}
+
+function renderThreadTileSwitchMenu(currentId) {
+  const current = String(currentId || "");
+  if (!current || state.threadTileSwitchMenuPaneId !== current) return "";
+  const options = threadTileVisibleThreadOptions(current);
+  if (!options.length) return "";
+  return `<div class="thread-tile-switch-menu" role="listbox" aria-label="切换此窗口线程">
+    ${options.map((threadId) => {
+      const thread = threadTileDisplayThread(threadId);
+      const title = threadDisplayName(thread) || threadId;
+      const summary = threadTileSummary(threadId) || thread;
+      const pathText = shortPath((thread && thread.cwd) || (summary && summary.cwd) || "") || "聊天";
+      const timeText = formatTime((thread && thread.updatedAt) || (summary && summary.updatedAt), state.nowMs);
+      const status = statusIconHtml(thread && thread.status, "thread-tile-switch-status", threadId);
+      const selected = threadId === current;
+      return `<button class="thread-tile-switch-option${selected ? " selected" : ""}" type="button" role="option" aria-selected="${selected ? "true" : "false"}" data-thread-tile-switch-target="${escapeHtml(threadId)}">
+        <span class="thread-tile-switch-main"><span class="thread-tile-switch-title">${escapeHtml(title)}</span><span class="thread-tile-switch-meta">${escapeHtml([pathText, timeText].filter(Boolean).join(" | "))}</span></span>
+        ${status}
+      </button>`;
+    }).join("")}
+  </div>`;
+}
+
+function replaceThreadTilePaneThread(fromThreadId, toThreadId) {
+  const from = String(fromThreadId || "").trim();
+  const to = String(toThreadId || "").trim();
+  if (!from || !to || !state.threadTileMode) return false;
+  const layout = threadTileLayout();
+  const ids = threadTileCandidateIds(layout);
+  const index = ids.indexOf(from);
+  if (index < 0) return false;
+  saveCurrentDraftNow();
+  const nextIds = ids.slice();
+  const duplicateIndex = nextIds.indexOf(to);
+  if (duplicateIndex >= 0 && duplicateIndex !== index) nextIds[duplicateIndex] = from;
+  nextIds[index] = to;
+  state.threadTilePinnedIds = nextIds;
+  state.threadTileActiveIds = nextIds;
+  state.threadTileSelectedThreadId = to;
+  state.threadTileSwitchMenuPaneId = "";
+  restoreDraftForCurrentTarget();
+  renderComposerSettings();
+  updateComposerControls();
+  loadThreadTileDetail(to, { force: true, source: "tile-switch" }).catch(showError);
+  scheduleRenderCurrentThread();
+  return true;
+}
+
+function toggleThreadTileSwitchMenu(threadId) {
+  const id = String(threadId || "").trim();
+  if (!id || !state.threadTileMode) return false;
+  setThreadTileSelectedThread(id, { render: false });
+  state.threadTileSwitchMenuPaneId = state.threadTileSwitchMenuPaneId === id ? "" : id;
+  scheduleRenderCurrentThread();
   return true;
 }
 
@@ -11269,6 +11358,8 @@ function threadTilePaneIsVisible(threadId) {
 
 function setThreadTileConversationMode(active, layout = null) {
   const conversation = $("conversation");
+  const main = document.querySelector(".main");
+  if (main) main.classList.toggle("thread-tile-main", Boolean(active));
   if (!conversation) return;
   conversation.classList.toggle("thread-tile-mode", Boolean(active));
   if (active && layout && layout.columns) conversation.style.setProperty("--thread-tile-columns", String(layout.columns));
@@ -11276,6 +11367,7 @@ function setThreadTileConversationMode(active, layout = null) {
     conversation.style.removeProperty("--thread-tile-columns");
     state.threadTileActiveIds = [];
     state.threadTileSelectedThreadId = "";
+    state.threadTileSwitchMenuPaneId = "";
     clearThreadTileRefreshTimer();
     if (state.threadTileOperationRefreshTimer) {
       clearTimeout(state.threadTileOperationRefreshTimer);
@@ -11306,9 +11398,33 @@ function scrollThreadTilePaneBodyToBottom(body, options = {}) {
   const top = Math.max(0, Number(body.scrollHeight || 0));
   if (options.smooth && typeof body.scrollTo === "function") {
     body.scrollTo({ top, behavior: "smooth" });
+    setTimeout(() => updateThreadTileBottomButtonForBody(body), 220);
     return;
   }
   body.scrollTop = top;
+  updateThreadTileBottomButtonForBody(body);
+}
+
+function isThreadTilePaneNearBottom(body) {
+  if (!body) return true;
+  return Math.max(0, Number(body.scrollHeight || 0) - Number(body.clientHeight || 0) - Number(body.scrollTop || 0)) <= 48;
+}
+
+function updateThreadTileBottomButtonForBody(body) {
+  const pane = body && body.closest && body.closest("[data-thread-tile-pane]");
+  const button = pane && pane.querySelector("[data-thread-tile-bottom]");
+  if (!button || !body) return;
+  const isScrollable = Number(body.scrollHeight || 0) - Number(body.clientHeight || 0) > 96;
+  const shouldShow = Boolean(isScrollable && !isThreadTilePaneNearBottom(body));
+  button.classList.toggle("hidden", !shouldShow);
+  button.setAttribute("aria-hidden", shouldShow ? "false" : "true");
+  button.tabIndex = shouldShow ? 0 : -1;
+}
+
+function updateThreadTileBottomButtons() {
+  const conversation = $("conversation");
+  if (!conversation) return;
+  conversation.querySelectorAll(".thread-tile-pane-body").forEach(updateThreadTileBottomButtonForBody);
 }
 
 function restoreThreadTilePaneScrollState(scrollState = new Map()) {
@@ -11321,6 +11437,7 @@ function restoreThreadTilePaneScrollState(scrollState = new Map()) {
     const previous = scrollState.get(id);
     if (previous && !previous.nearBottom) {
       body.scrollTop = Math.max(0, Number(body.scrollHeight || 0) - Number(body.clientHeight || 0) - Number(previous.distanceFromBottom || 0));
+      updateThreadTileBottomButtonForBody(body);
       return;
     }
     scrollThreadTilePaneBodyToBottom(body);
@@ -11448,10 +11565,8 @@ function renderThreadTileTurn(thread, turn, previousKeys = new Set()) {
     if (!renderedItems.trim()) return "";
     const threadId = String(thread && thread.id || "");
     const turnId = String(turn && (turn.id || turn.startedAt || "turn") || "turn");
-    const duration = turn && turn.durationMs ? ` | ${formatElapsedTime(Math.round(turn.durationMs / 1000))}` : "";
     return `<article class="turn thread-tile-turn" data-thread-tile-turn="${escapeHtml(turnId)}" data-render-key="${escapeHtml(`tile-turn|${threadId}|${turnId}`)}">
       ${renderedItems}
-      <div class="turn-status">${escapeHtml(displayTurnStatus(turn))}${duration}</div>
     </article>`;
   } finally {
     state.renderContextThreadId = previousRenderThreadId;
@@ -11528,11 +11643,7 @@ function renderThreadTilePane(threadId, layout, previousKeys = new Set()) {
   const thread = threadTileDisplayThread(threadId);
   const id = String(threadId || thread && thread.id || "");
   const title = threadTitleForDisplay(thread) || id;
-  const status = statusIconHtml(thread && thread.status, "thread-tile-status-icon", id);
   const summary = threadTileSummary(id);
-  const pathText = shortPath((thread && thread.cwd) || (summary && summary.cwd) || "") || "聊天";
-  const updatedAt = Number((thread && thread.updatedAt) || (summary && summary.updatedAt) || 0);
-  const meta = [pathText, updatedAt ? formatTime(updatedAt, state.nowMs) : "", rolloutSizeText(thread || summary)].filter(Boolean).join(" | ");
   const paneState = threadTilePaneStatusText(thread || summary);
   const error = threadTileError(id);
   const loading = state.threadTileLoadingIds.has(id) || (thread && thread.mobileLoading && !threadHasVisibleConversationTurns(thread));
@@ -11550,19 +11661,21 @@ function renderThreadTilePane(threadId, layout, previousKeys = new Set()) {
       ].join("");
   const active = id && id === effectiveThreadTileSelectedThreadId() ? " active" : "";
   const operationDock = renderThreadTileOperationDock(thread, previousKeys);
+  const switchMenu = renderThreadTileSwitchMenu(id);
+  const paneStatusClass = paneState ? " visible" : "";
   return `<section class="thread-tile-pane${active}" data-thread-tile-pane="${escapeHtml(id)}" data-render-key="${escapeHtml(`thread-tile|${id}`)}">
     <header class="thread-tile-pane-header">
       <div class="thread-tile-pane-title-wrap">
-        <div class="thread-tile-pane-title">${escapeHtml(title)}</div>
-        <div class="thread-tile-pane-meta">${escapeHtml(meta)}</div>
-        <div class="thread-tile-pane-state" data-thread-tile-pane-state="${escapeHtml(id)}">${escapeHtml(paneState)}</div>
+        <button class="thread-tile-pane-title-button" type="button" data-thread-tile-title="${escapeHtml(id)}" aria-haspopup="listbox" aria-expanded="${state.threadTileSwitchMenuPaneId === id ? "true" : "false"}">
+          <span class="thread-tile-pane-title">${escapeHtml(title)}</span>
+        </button>
+        ${switchMenu}
       </div>
-      ${status}
-      <button class="thread-tile-open" type="button" data-thread-tile-open="${escapeHtml(id)}" title="打开为当前线程">打开</button>
+      <div class="thread-tile-pane-state${paneStatusClass}" data-thread-tile-pane-state="${escapeHtml(id)}">${escapeHtml(paneState)}</div>
     </header>
     <div class="thread-tile-pane-body"><div class="thread-tile-pane-content">${body}</div></div>
     ${operationDock}
-    <button class="thread-tile-bottom-button" type="button" data-thread-tile-bottom="${escapeHtml(id)}" aria-label="跳到此线程底部" title="跳到底部">↓</button>
+    <button class="thread-tile-bottom-button hidden" type="button" data-thread-tile-bottom="${escapeHtml(id)}" aria-label="跳到此线程底部" title="跳到底部" aria-hidden="true" tabindex="-1">↓</button>
   </section>`;
 }
 
@@ -11593,7 +11706,10 @@ function renderThreadTileLayout(layout, options = {}) {
   bindThreadTileActions();
   restoreThreadTilePaneScrollState(scrollState);
   if (typeof window.requestAnimationFrame === "function") {
-    window.requestAnimationFrame(() => restoreThreadTilePaneScrollState(scrollState));
+    window.requestAnimationFrame(() => {
+      restoreThreadTilePaneScrollState(scrollState);
+      updateThreadTileBottomButtons();
+    });
   }
   return true;
 }
@@ -11606,11 +11722,20 @@ function bindThreadTileActions() {
     pane.addEventListener("pointerdown", selectPane, { passive: true });
     pane.addEventListener("focusin", selectPane);
   });
-  conversation.querySelectorAll("[data-thread-tile-open]").forEach((button) => {
+  conversation.querySelectorAll("[data-thread-tile-title]").forEach((button) => {
     button.addEventListener("click", (event) => {
       event.preventDefault();
-      const threadId = button.getAttribute("data-thread-tile-open") || "";
-      if (threadId) loadThread(threadId, { source: "thread-tile" }).catch(showError);
+      event.stopPropagation();
+      toggleThreadTileSwitchMenu(button.getAttribute("data-thread-tile-title") || "");
+    });
+  });
+  conversation.querySelectorAll("[data-thread-tile-switch-target]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const pane = button.closest("[data-thread-tile-pane]");
+      const fromId = pane && pane.getAttribute("data-thread-tile-pane") || "";
+      replaceThreadTilePaneThread(fromId, button.getAttribute("data-thread-tile-switch-target") || "");
     });
   });
   conversation.querySelectorAll("[data-thread-tile-bottom]").forEach((button) => {
@@ -11618,6 +11743,9 @@ function bindThreadTileActions() {
       event.preventDefault();
       scrollThreadTilePaneToBottom(button.getAttribute("data-thread-tile-bottom") || "", { smooth: true });
     });
+  });
+  conversation.querySelectorAll(".thread-tile-pane-body").forEach((body) => {
+    body.addEventListener("scroll", () => updateThreadTileBottomButtonForBody(body), { passive: true });
   });
   conversation.querySelectorAll("[data-thread-tile-operation-toggle]").forEach((button) => {
     button.addEventListener("click", (event) => {

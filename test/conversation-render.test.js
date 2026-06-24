@@ -207,6 +207,8 @@ function evaluatedLiveOperationDockEntryHarness() {
   const sources = [
     "liveTurnStatusDockItem",
     "currentLiveOperationEntry",
+    "latestTurnForThread",
+    "isLiveTurnForThread",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
 const state = {
@@ -219,6 +221,10 @@ function isLatestTurn(turn) {
     && state.currentThread.turns[state.currentThread.turns.length - 1] === turn);
 }
 function isLiveTurn(turn) { return Boolean(turn && turn.live); }
+function isTurnComplete(turn) { return Boolean(turn && turn.complete); }
+function isRunningStatus(status) { return Boolean(status && (status === "running" || status.type === "active" || status.type === "running")); }
+function isIncompleteInterruptedTurn() { return false; }
+function turnHasActiveLiveItems(turn) { return Boolean(turn && turn.live); }
 function isActiveOperationalItem(item) { return Boolean(item && item.activeOperation); }
 function liveActivityLabelForTurn(turn) { return String(turn && turn.activityLabel || ""); }
 function liveTurnFallbackActivityLabel() { return "运行"; }

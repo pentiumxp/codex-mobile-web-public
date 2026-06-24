@@ -113,11 +113,12 @@ Target:
   pane-local composer.
 - Keep the current automatic tile policy as the interim capability gate for
   iPad/desktop width, not as the final interaction model.
-- Preserve action ownership: v415 already routes the shared bottom Composer's
+- Preserve action ownership: v416 routes the shared bottom Composer's
   draft key, send target, Stop/steer state, local echo, and failure receipt to
-  the selected active pane, and operation bubble state is pane-local. Future
-  work should continue that ownership model instead of falling back to the
-  first/current global thread.
+  the selected active pane, operation bubble state is pane-local, and pane
+  title thread switching replaces only that pane's slot. Future work should
+  continue that ownership model instead of falling back to the first/current
+  global thread.
 - Add a dedicated pane-state helper before expanding `public/app.js`: pane ids,
   widths, ordering, active pane, per-pane drafts, max concurrent detail reads,
   pane-local send/approval/interrupt ownership, command/operation bubble state,

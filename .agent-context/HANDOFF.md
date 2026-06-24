@@ -1,3 +1,67 @@
+# 2026-06-24 - v416 tile pane compact header and slot-local thread switch completed locally
+
+- Scope:
+  - Implemented, validated, committed locally, and deployed to Mac production.
+  - Not pushed to Public.
+  - Commit: `7cbce28 feat: compact thread tile panes`.
+- Trigger:
+  - User clarified that tile mode should preserve vertical space: no global
+    `平铺视图` strip, no pane path/time/open button chrome, no per-turn
+    Active/Completed footer rows, and no always-visible pane bottom arrow.
+  - User also requested pane-local thread switching: click a pane title to open
+    a thread list and replace only that pane's thread.
+- Change:
+  - PWA shell bumped to `codex-mobile-shell-v416`.
+  - Tile mode adds `threadTilePinnedIds` and `threadTileSwitchMenuPaneId` so a
+    pane can replace its thread slot without being overwritten by automatic
+    candidate selection on the next render.
+  - Tile global header now writes empty title/meta and `.main.thread-tile-main`
+    collapses the topbar, leaving only compact top padding around the tile
+    board.
+  - Pane header now renders a clickable thread title and compact `本轮` status
+    pill. The old path/time meta and `打开` button are removed.
+  - Clicking the title opens a pane-local, opaque thread switch menu ordered by
+    current pane, visible panes, running threads, then the ordinary visible
+    thread list. Selecting an option replaces only that pane id.
+  - Tile turn rendering no longer emits the bottom `turn-status` row, so
+    Active/Completed labels no longer consume vertical space in panes.
+  - Pane bottom arrow now starts hidden and appears only when that pane is
+    scrollable and not near bottom.
+  - `currentLiveOperationEntry(thread)` and tile live-turn checks now evaluate
+    the passed thread's latest turn instead of relying on global
+    `state.currentThread`, so non-current pane operation/status rendering is
+    owned by the pane's thread.
+- Docs updated:
+  - `README.md`
+  - `docs/COMPLEX_FEATURE_PATHS.md`
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`
+- Validation:
+  - `node --check public/app.js`
+  - `node --test test/thread-tile-layout-ui.test.js test/thread-tile-layout.test.js test/mobile-viewport.test.js test/live-operation-dock-state.test.js`
+  - `node --test test/conversation-render.test.js test/thread-tile-layout-ui.test.js test/mobile-viewport.test.js`
+  - `node --test test/thread-goal-service.test.js test/thread-task-card-route.test.js test/new-thread-route.test.js test/turn-scroll-controls.test.js test/chatgpt-pro-bridge-service.test.js test/composer-draft.test.js test/live-operation-dock-state.test.js test/thread-tile-layout.test.js`
+  - `node --test test/collab-agent-render.test.js`
+  - `npm test` (`734` tests passed)
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+  - Local temporary server smoke:
+    `CODEX_MOBILE_PORT=8799 CODEX_MOBILE_HOST=127.0.0.1 node server.js`;
+    `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v416` and
+    `shellCacheName=codex-mobile-shell-v416`; fetched `app.js`/`styles.css`
+    contained the v416 tile switch/status selectors.
+  - Central deploy script:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart-label com.hermesmobile.plugin.codex-mobile --health-url http://127.0.0.1:8787/api/public-config --execute --json`
+  - Production health returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v416`,
+    `shellCacheName=codex-mobile-shell-v416`,
+    `workspacePath=/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`,
+    and `activeProfileId=default`.
+- Next:
+  - Wait for production/user verification. Public push remains blocked until
+    explicitly requested.
+
 # 2026-06-24 - v415 tile active-pane composer and pane-local operation bubble completed locally
 
 - Scope:
