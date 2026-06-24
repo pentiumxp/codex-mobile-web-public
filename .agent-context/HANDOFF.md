@@ -1,3 +1,64 @@
+# 2026-06-24 - v418 tile pane menu, active runtime toolbar, and pane-local refresh deployed
+
+- Scope:
+  - Implemented, locally validated, committed, and deployed to Mac production.
+  - Not pushed to Public.
+  - Commit: this local commit (`fix: stabilize tiled pane controls`).
+- Trigger:
+  - User reported pane title still did not open the thread list in tile mode.
+  - User requested tile refresh to be pane-local/incremental where possible to
+    reduce whole-screen jitter.
+  - User clarified the existing Composer runtime toolbar should be reused for
+    Fast/model/reasoning/permission/quota, with the toolbar bound to the active
+    pane like the shared Composer. Quota remains global display.
+  - User reported tile panes with new content should sink to bottom like
+    single-window mobile mode unless the user has scrolled away in that pane.
+  - User reported long operation summaries clipped the elapsed seconds.
+- Change:
+  - PWA shell bumped to `codex-mobile-shell-v418`.
+  - Tile render signature now includes the open switch-menu pane id, and title
+    pointer handling toggles the pane switch menu through delegated handlers and
+    pane-local patching.
+  - Tile detail refresh, selected-pane changes, switch menu updates, and
+    operation minimum-dwell refreshes now prefer pane-local DOM replacement
+    instead of re-rendering the whole tile board.
+  - Added per-pane scroll-hold state: panes follow new content to bottom unless
+    the user explicitly scrolled away in that pane.
+  - Existing Composer runtime controls follow the active pane. Switching panes
+    saves the previous pane runtime draft, restores the active pane draft, and
+    clears stale runtime overrides when the new pane has no draft.
+  - Operation bubble duration reserves `8ch` so `HH:MM:SS` seconds stay visible
+    when command summaries are long.
+- Docs updated:
+  - `README.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/COMPLEX_FEATURE_PATHS.md`
+- Validation:
+  - `node --test test/thread-tile-layout-ui.test.js test/thread-tile-layout.test.js test/composer-draft.test.js test/composer-quota.test.js test/collab-agent-render.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    (`50` tests passed)
+  - `node --check public/app.js && node --check public/sw.js`
+  - `npm test` (`734` tests passed)
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+  - Visual note: Chrome headless, Computer Use Chrome capture, macOS
+    screencapture, and Safari WebDriver were unavailable or blocked in this
+    session. A temporary QuickLook preview confirmed the menu and full elapsed
+    seconds visually, but it is weak evidence rather than browser-level visual
+    verification. User then explicitly requested direct deployment.
+  - First central deployment attempt synced and restarted the service, then
+    failed the post-deploy `codex-auth-profile-audit` because `lowgw1/lowgw2`
+    shared-auth ACLs were stale. The deploy script's bounded shared-auth repair
+    corrected the ACL state; a follow-up bounded audit showed
+    `codex_auth_*` issue count `0`.
+  - Second central deploy script run returned `ok: true`; post-deploy health
+    returned `clientBuildId=0.1.11|codex-mobile-shell-v418`,
+    `shellCacheName=codex-mobile-shell-v418`, and
+    `workspacePath=/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+- Next:
+  - Wait for iPad/production user verification.
+  - Public push remains blocked until explicitly requested.
+
 # 2026-06-24 - v417 tile safe-area, timer reuse, and touch dock fix in progress
 
 - Scope:

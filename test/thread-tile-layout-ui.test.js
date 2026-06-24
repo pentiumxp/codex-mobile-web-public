@@ -36,6 +36,8 @@ test("thread tile layout is wired as an explicit shell policy", () => {
   assert.match(appJs, /threadTileSelectedThreadId: ""/);
   assert.match(appJs, /threadTileSwitchMenuPaneId: ""/);
   assert.match(appJs, /threadTileRefreshTimer: null/);
+  assert.match(appJs, /threadTilePaneRenderFramesById: new Map\(\)/);
+  assert.match(appJs, /threadTilePaneScrollHoldById: new Map\(\)/);
   assert.match(appJs, /threadTileOperationModesById: new Map\(\)/);
   assert.match(appJs, /THREAD_TILE_REFRESH_INTERVAL_MS/);
   assert.match(appJs, /STORAGE_LEGACY_THREAD_TILE_MODE = "codexMobileThreadTileMode"/);
@@ -74,7 +76,9 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(tileLayoutBody, /ensureThreadTileDetails\(ids\)/);
   assert.match(tileLayoutBody, /bindThreadTileActions\(\)/);
   assert.match(tileLayoutBody, /restoreThreadTilePaneScrollState\(scrollState\)/);
-  assert.match(tileLayoutBody, /view: "thread-tiles"/);
+  assert.match(tileLayoutBody, /threadTileRenderSignature\(layout, ids\)/);
+  assert.match(functionBody(appJs, "threadTileRenderSignature"), /view: "thread-tiles"/);
+  assert.match(functionBody(appJs, "threadTileRenderSignature"), /switchMenuPaneId: state\.threadTileSwitchMenuPaneId \|\| ""/);
 
   const ensureBody = functionBody(appJs, "ensureThreadTileDetails");
   assert.match(ensureBody, /state\.threadTileActiveIds = Array\.from\(activeIds\)/);
@@ -107,7 +111,12 @@ test("thread tile rendering is read-only and separate from full conversation ren
   const tileActionsBody = functionBody(appJs, "bindThreadTileActions");
   assert.match(tileActionsBody, /data-thread-tile-pane/);
   assert.match(tileActionsBody, /setThreadTileSelectedThread/);
-  assert.match(tileActionsBody, /closest\("\[data-thread-tile-title\], \[data-thread-tile-switch-target\], \.thread-tile-switch-menu"\)/);
+  assert.match(tileActionsBody, /conversation\.dataset\.threadTileActionsBound/);
+  assert.match(tileActionsBody, /conversation\.addEventListener\("pointerdown"/);
+  assert.match(tileActionsBody, /conversation\.addEventListener\("click"/);
+  assert.match(tileActionsBody, /conversation\.addEventListener\("scroll"/);
+  assert.match(tileActionsBody, /updateThreadTileBottomButtonForBody\(body\)/);
+  assert.match(tileActionsBody, /toggleThreadTileSwitchMenu\(titleButton\.getAttribute\("data-thread-tile-title"\) \|\| ""\)/);
   assert.match(tileActionsBody, /data-thread-tile-title/);
   assert.match(tileActionsBody, /data-thread-tile-switch-target/);
   assert.match(tileActionsBody, /replaceThreadTilePaneThread/);
@@ -147,6 +156,16 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(appJs, /function turnTimerStateFromThread\(/);
   assert.match(appJs, /function turnTimerStateHtml\(/);
   assert.match(appJs, /function threadTilePaneTimerState\(/);
+  assert.match(appJs, /function patchThreadTilePane\(/);
+  assert.match(appJs, /function scheduleRenderThreadTilePane\(/);
+  assert.match(appJs, /function rememberThreadTilePaneScrollPosition\(/);
+  assert.match(functionBody(appJs, "captureThreadTilePaneScrollState"), /hold: state\.threadTilePaneScrollHoldById\.get\(id\) === true/);
+  assert.match(functionBody(appJs, "rememberThreadTilePaneScrollPosition"), /state\.threadTilePaneScrollHoldById\.set\(id, true\)/);
+  assert.match(functionBody(appJs, "rememberThreadTilePaneScrollPosition"), /state\.threadTilePaneScrollHoldById\.delete\(id\)/);
+  assert.match(functionBody(appJs, "restoreThreadTilePaneElementScrollState"), /!hold/);
+  assert.match(functionBody(appJs, "toggleThreadTileSwitchMenu"), /patchThreadTilePane\(id, \{ preserveScroll: true \}\)/);
+  assert.match(functionBody(appJs, "loadThreadTileDetail"), /scheduleRenderThreadTilePane\(id, \{ preserveScroll: true \}\)/);
+  assert.match(functionBody(appJs, "setThreadTileSelectedThread"), /patchThreadTilePane\(id, \{ preserveScroll: true \}\)/);
   assert.match(functionBody(appJs, "updateTurnTimer"), /applyTurnTimerState\(el, currentThreadTurnTimerState\(\)\)/);
   assert.match(functionBody(appJs, "updateThreadTilePaneStatusBadges"), /turnTimerStateHtml\(threadTilePaneTimerState\(threadTileDisplayThread\(id\)\)\)/);
   assert.match(stylesCss, /\.conversation\.thread-tile-mode\s*{/);

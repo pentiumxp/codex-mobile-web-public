@@ -55,6 +55,14 @@ test("switching targets saves the previous draft and restores the next draft", (
   assert.match(newThreadBody, /saveCurrentDraftNow\(\)/);
   assert.match(newThreadBody, /clearCurrentThreadSelection\(\{ saveDraft: false \}\)/);
   assert.match(newThreadBody, /restoreDraftForCurrentTarget\(\)/);
+
+  const tileSelectBody = functionBody("setThreadTileSelectedThread");
+  assert.match(tileSelectBody, /saveCurrentDraftNow\(\)/);
+  assert.match(tileSelectBody, /restoreDraftForCurrentTarget\(\{ resetRuntimeWhenMissingDraft: true \}\)/);
+
+  const tileReplaceBody = functionBody("replaceThreadTilePaneThread");
+  assert.match(tileReplaceBody, /saveCurrentDraftNow\(\)/);
+  assert.match(tileReplaceBody, /restoreDraftForCurrentTarget\(\{ resetRuntimeWhenMissingDraft: true \}\)/);
 });
 
 test("composer runtime selections persist without typed text", () => {
@@ -92,7 +100,10 @@ test("composer runtime selections persist without typed text", () => {
   assert.match(restoreBody, /const hasDraft = Boolean\(draft && typeof draft === "object"\)/);
   assert.match(restoreBody, /state\.codexFastMode = Boolean\(draft && draft\.fastMode === true\)/);
   assert.doesNotMatch(restoreBody, /localStorage\.setItem\(STORAGE_CODEX_FAST_MODE/);
-  assert.match(restoreBody, /if \(!hasDraft\) return;/, "same-thread refresh without a draft must not clear model, effort, or permission selections");
+  assert.match(restoreBody, /options\.resetRuntimeWhenMissingDraft === true/, "target switching can clear stale runtime overrides when the new target has no draft");
+  assert.match(restoreBody, /state\.composerModel = "";/);
+  assert.match(restoreBody, /state\.composerEffort = "";/);
+  assert.match(restoreBody, /state\.composerPermissionMode = "";/);
 
   const resetBody = functionBody("resetComposerRuntimeSelection");
   assert.match(resetBody, /state\.codexFastMode = false;/, "switching targets should clear Fast until that target draft is restored");

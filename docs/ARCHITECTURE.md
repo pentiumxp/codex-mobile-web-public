@@ -644,12 +644,27 @@ Browser-selected model, reasoning effort, permission mode, and the Fast tag are
 persisted in the browser draft store by thread/workspace key even when the
 composer text is empty. Reopening the app or switching away and back should
 restore that runtime selection for the current target only; Fast is not a global
-browser flag. Once an existing-thread non-steering send succeeds, Mobile Web
-clears only text and attachments, then writes the runtime-only draft back under
-the thread key. New-thread send captures selected runtime values before creation
-and writes them back under the newly created thread key after the thread id is
-known. This avoids an immediate UI fallback to stale thread metadata while the
-new turn is starting and before app-server state DB metadata catches up.
+browser flag. In wide-screen tile mode, the existing Composer runtime row is
+not duplicated per pane; it follows the selected active pane exactly like the
+shared Composer target. Switching the active pane saves the previous pane's
+runtime draft, restores the new pane's thread-keyed draft, and clears stale
+pending runtime overrides when the new pane has no draft so controls fall back
+to that thread's own metadata. Quota remains a global display in the reused
+toolbar, not pane-local state. Once an existing-thread non-steering send
+succeeds, Mobile Web clears only text and attachments, then writes the
+runtime-only draft back under the thread key. New-thread send captures selected
+runtime values before creation and writes them back under the newly created
+thread key after the thread id is known. This avoids an immediate UI fallback
+to stale thread metadata while the new turn is starting and before app-server
+state DB metadata catches up.
+
+Tile-mode pane refreshes are local by default. The browser keeps per-pane
+detail cache, operation bubble state, and scroll-bottom hold state keyed by
+thread id. Pane selection, title switch menus, background recent-detail refresh,
+and operation bubble changes should patch the affected pane only when pane ids
+and column layout are unchanged. A pane follows new content to the bottom unless
+the user has explicitly scrolled away from the bottom; in that case Mobile Web
+preserves distance from bottom until the user scrolls back down.
 
 The latest durable live turn must not be auto-interrupted only because it is quiet or ended with a completed operation/context marker. User guidance during a real latest live turn should steer that turn.
 

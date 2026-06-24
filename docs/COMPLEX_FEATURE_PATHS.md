@@ -167,17 +167,31 @@ Implementation path:
     across refresh, visible non-current panes refresh through bounded
     recent-detail reads plus notification-triggered updates, and command/tool
     status appears inside that pane through the same compact mobile operation
-    bubble/sheet vocabulary. Pane header run state should reuse the same
+    bubble/sheet vocabulary. Pane-level changes should patch only the affected
+    pane where possible: selected-pane border, title switch menu, background
+    recent-detail refresh, and operation bubble updates must not require a full
+    tile-board repaint unless the pane id set or column layout changes. Each
+    pane must track whether the user has intentionally scrolled away from the
+    bottom. If not, new content and background refreshes should follow the
+    bottom like the single-thread mobile page; if yes, preserve distance from
+    bottom until the user returns. Operation bubble duration text must reserve
+    enough fixed tabular width for `HH:MM:SS`; long command text may shrink only
+    the summary region, not the elapsed-time seconds. Pane header run state
+    should reuse the same
     turn-timer vocabulary as the single-thread page (`本轮`, elapsed time, and
     thinking/output/running/settled detail) instead of inventing a separate
-    status string. The current v417 middle state keeps one shared
-    bottom Composer, but its draft key, send target, Stop/steer state, local
-    echo, failure receipt, task-card command source, and ChatGPT Pro source
-    thread must follow the selected active pane without reordering the tile
-    board. Pane thread switching is slot-local: selecting a thread from a pane
-    title replaces that pane's thread id and must not navigate the whole page
-    into single-thread mode; title/menu pointer handling must not trigger a
-    pane-select re-render before the click opens the menu. Do not reintroduce
+    status string. The current v418 middle state keeps one shared
+    bottom Composer and one shared Composer runtime row, but their draft key,
+    send target, Stop/steer state, local echo, failure receipt, task-card
+    command source, ChatGPT Pro source thread, Fast tag, model, reasoning
+    effort, and permission controls must follow the selected active pane
+    without reordering the tile board. Quota remains a global display in that
+    reused toolbar; do not create pane-local quota state. Pane thread switching
+    is slot-local: selecting a thread from a pane title replaces that pane's
+    thread id and must not navigate the whole page into single-thread mode;
+    title/menu pointer handling must not trigger a pane-select re-render before
+    the menu opens, and the menu-open state must be part of the tile render
+    signature or a pane-local patch. Do not reintroduce
     a global iPad command dock,
     global tile title strip, per-turn Active/Completed footer, or always-visible
     pane bottom button in tile mode. On touch wide screens, command state is a

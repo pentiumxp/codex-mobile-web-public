@@ -3737,9 +3737,13 @@ html.keyboard-open .side-chat-form textarea {
 }
 
 .thread-tile-operation-dock .mobile-operation-bubble-duration {
+  flex: 0 0 8ch;
+  min-width: 8ch;
   margin-left: 0;
   color: var(--accent-strong);
   font-size: calc(var(--content-small-font-size) * 0.88);
+  overflow: visible;
+  text-align: right;
 }
 
 .thread-tile-operation-dock .mobile-operation-sheet {
@@ -4798,9 +4802,13 @@ html.keyboard-open .side-chat-form textarea {
   }
 
   .mobile-operation-bubble-duration {
+    flex: 0 0 8ch;
+    min-width: 8ch;
     margin-left: 0;
     color: var(--accent-strong);
     font-size: calc(var(--content-small-font-size) * 0.9);
+    overflow: visible;
+    text-align: right;
   }
 
   .mobile-operation-recall {
@@ -7649,9 +7657,13 @@ html.embed-hermes #openMenu.split-return-visible {
   }
 
   .mobile-operation-bubble-duration {
+    flex: 0 0 8ch;
+    min-width: 8ch;
     margin-left: 0;
     color: var(--accent-strong);
     font-size: calc(var(--content-small-font-size) * 0.9);
+    overflow: visible;
+    text-align: right;
   }
 
   .mobile-operation-recall {
