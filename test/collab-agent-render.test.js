@@ -201,7 +201,7 @@ test("live operation cards dock on wide screens and become a mobile bubble", () 
   assert.match(stylesCss, /\.operation-status\s*{[\s\S]*font-size:\s*calc\(var\(--content-small-font-size\) \* 0\.92\);/);
   assert.match(stylesCss, /\.operation-duration\s*{[\s\S]*font-variant-numeric:\s*tabular-nums;/);
   assert.match(stylesCss, /\.mobile-operation-bubble-duration\s*{[\s\S]*flex:\s*0 0 8ch;[\s\S]*min-width:\s*8ch;[\s\S]*text-align:\s*right;/);
-  assert.match(stylesCss, /\.thread-tile-operation-dock \.mobile-operation-bubble-duration\s*{[\s\S]*flex:\s*0 0 8ch;[\s\S]*min-width:\s*8ch;[\s\S]*text-align:\s*right;/);
+  assert.match(stylesCss, /\.thread-tile-operation-dock \.mobile-operation-bubble-duration\s*{[\s\S]*flex:\s*0 0 9\.5ch;[\s\S]*min-width:\s*9\.5ch;[\s\S]*text-align:\s*right;/);
   assert.match(stylesCss, /\.item\.live-operation\.entry-animate\s*{[\s\S]*animation:\s*none;/);
   assert.match(stylesCss, /\.operation-detail-line\s*{[\s\S]*overflow:\s*hidden;/);
   assert.match(stylesCss, /\.live-operation-dock \.operation-detail-line\s*{[\s\S]*display:\s*none;/);

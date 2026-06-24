@@ -59,7 +59,7 @@
     const rawColumns = Math.floor(availableWidth / minPaneWidth);
     const rawRows = Math.floor(availableHeight / minPaneHeight);
     const minimumColumns = tabletLandscape ? 2 : 2;
-    const maximumColumns = tabletLandscape ? 3 : 4;
+    const maximumColumns = 4;
     const columns = Math.max(minimumColumns, Math.min(maximumColumns, rawColumns || 0));
     if (columns < minimumColumns || availableWidth < minPaneWidth * minimumColumns * 0.86) {
       return { enabled: false, reason: "insufficient-width", columns: 1, rows: 1, maxPanes: 1, availableWidth, availableHeight };

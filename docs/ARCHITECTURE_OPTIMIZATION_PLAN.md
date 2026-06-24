@@ -139,6 +139,11 @@ Target:
   split-screen reader where the user can add panes, close panes, drag widths,
   decide how many threads stay visible, and type into each pane through a
   pane-local composer.
+- Current interim state: v421 persists `单线程` / `平铺`, ordered pane thread ids,
+  and the selected pane thread id in server runtime `settings.json`
+  `threadDisplay`. Device width still decides how many persisted slots are
+  visible, so an iPad can show the first two/three slots while a wider Android
+  tablet can show the first four without changing the shared slot order.
 - Keep the current automatic tile policy as the interim capability gate for
   iPad/desktop width, not as the final interaction model.
 - Preserve action ownership: v417 routes the shared bottom Composer's

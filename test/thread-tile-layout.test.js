@@ -137,6 +137,23 @@ test("thread tile layout gives iPad Pro 11 landscape three panes after sidebar",
   assert.equal(layout.maxPanes, 3);
 });
 
+test("thread tile layout allows four panes on wide Android tablets", () => {
+  const layout = tile.layoutForViewport({
+    enabled: true,
+    viewportWidth: 1500,
+    viewportHeight: 900,
+    sidebarWidth: 0,
+    coarsePointer: true,
+    orientation: "landscape",
+    menuOverlay: true,
+  });
+
+  assert.equal(layout.enabled, true);
+  assert.equal(layout.reason, "tablet-landscape");
+  assert.equal(layout.columns, 4);
+  assert.equal(layout.maxPanes, 4);
+});
+
 test("thread tile id selection starts with current thread then fills recents", () => {
   assert.deepEqual(tile.selectThreadTileIds({
     currentThreadId: "thread-2",

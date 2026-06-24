@@ -131,6 +131,9 @@ test("tablet landscape composer controls stay compact with Fast bolt", () => {
 test("composer control row uses fixed heights", () => {
   assert.match(stylesCss, /--composer-control-height:\s*44px;/);
   assert.match(stylesCss, /\.composer-control-card\s*{[\s\S]*height:\s*var\(--composer-control-height\);/);
+  assert.match(stylesCss, /\.composer-control-card\s*{[\s\S]*font-size:\s*clamp\(9px,\s*calc\(var\(--content-small-font-size\) \* 0\.88\),\s*11px\);/);
+  assert.match(stylesCss, /\.composer-control-card > \*\s*{[\s\S]*min-width:\s*0;/);
+  assert.match(stylesCss, /\.composer-chip-value\s*{[\s\S]*font-size:\s*clamp\(9\.5px,\s*calc\(var\(--content-small-font-size\) \* 0\.86\),\s*12px\);/);
   assert.match(stylesCss, /\.composer-runtime-menu/);
   assert.match(stylesCss, /\.quota-detail-panel/);
   assert.match(stylesCss, /\.composer-runtime-menu,[\s\S]*\.quota-detail-panel\s*\{[\s\S]*z-index:\s*130;/);

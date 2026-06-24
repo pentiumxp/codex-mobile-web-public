@@ -3740,17 +3740,18 @@ html.keyboard-open .side-chat-form textarea {
 
 .thread-tile-operation-dock .mobile-operation-bubble-summary {
   flex: 1 1 auto;
-  max-width: 22vw;
+  max-width: min(18vw, 14rem);
   color: var(--muted-code-text);
   font-family: "Cascadia Mono", "Consolas", "Microsoft YaHei", monospace;
 }
 
 .thread-tile-operation-dock .mobile-operation-bubble-duration {
-  flex: 0 0 8ch;
-  min-width: 8ch;
+  flex: 0 0 9.5ch;
+  min-width: 9.5ch;
   margin-left: 0;
   color: var(--accent-strong);
-  font-size: calc(var(--content-small-font-size) * 0.88);
+  font-size: clamp(9px, calc(var(--content-small-font-size) * 0.78), 11px);
+  font-variant-numeric: tabular-nums;
   overflow: visible;
   text-align: right;
 }
@@ -6711,7 +6712,7 @@ html.keyboard-open .composer {
   background: var(--control-bg);
   border: 1px solid var(--line-soft);
   border-radius: 7px;
-  font-size: 11px;
+  font-size: clamp(9px, calc(var(--content-small-font-size) * 0.88), 11px);
   line-height: 1.15;
   text-transform: none;
   letter-spacing: 0;
@@ -6730,6 +6731,7 @@ html.keyboard-open .composer {
   cursor: pointer;
   text-align: left;
   -webkit-tap-highlight-color: transparent;
+  min-width: 0;
 }
 
 .composer-control-card:hover,
@@ -6748,6 +6750,11 @@ html.keyboard-open .composer {
 .composer-control-card:disabled {
   cursor: default;
   opacity: 0.62;
+}
+
+.composer-control-card > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .composer-fast-toggle {
@@ -6806,9 +6813,12 @@ html.keyboard-open .composer {
 
 .composer-chip-label {
   color: var(--muted);
-  font-size: 9.5px;
+  font-size: clamp(8px, calc(var(--content-small-font-size) * 0.72), 9.5px);
   font-weight: 600;
   line-height: 1;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -6817,7 +6827,7 @@ html.keyboard-open .composer {
   min-width: 0;
   overflow: hidden;
   color: var(--text);
-  font-size: 12px;
+  font-size: clamp(9.5px, calc(var(--content-small-font-size) * 0.86), 12px);
   font-weight: 650;
   line-height: 1.1;
   text-overflow: ellipsis;
@@ -7869,7 +7879,7 @@ html.embed-hermes #openMenu.split-return-visible {
   .quota-chip-main {
     width: auto;
     flex: 1 1 auto;
-    font-size: 10.5px;
+    font-size: clamp(9px, calc(var(--content-small-font-size) * 0.78), 10.5px);
   }
 
   .quota-chip-main {

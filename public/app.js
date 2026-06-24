@@ -140,7 +140,10 @@ const state = {
   threads: [],
   currentThread: null,
   currentThreadId: "",
-  threadTileMode: localStorage.getItem("codexMobileThreadDisplayMode") === "tile",
+  threadTileMode: false,
+  threadDisplaySettingsLoaded: false,
+  threadDisplaySettingsSaveTimer: null,
+  threadDisplaySettingsSaveInFlight: false,
   threadTileDetails: new Map(),
   threadTileLoadingIds: new Set(),
   threadTileErrors: new Map(),
@@ -452,7 +455,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v420";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v421";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -624,6 +627,7 @@ const THREAD_TASK_CARD_REQUEST_TAG = "codex-mobile-thread-task-card-request";
 const THREAD_TASK_CARD_DRAFT_TAG = "codex-mobile-thread-task-card-draft";
 const THREAD_TILE_REFRESH_INTERVAL_MS = 2400;
 const THREAD_TILE_REFRESH_MIN_INTERVAL_MS = 1100;
+const THREAD_TILE_SETTINGS_SAVE_DEBOUNCE_MS = 500;
 const THEME_VALUES = new Set(["system", "dark", "light"]);
 const FONT_SIZE_VALUES = new Set(["small", "default", "large", "xlarge", "xxlarge"]);
 const MENU_OVERLAY_MEDIA = "(max-width: 1180px), (pointer: coarse) and (max-width: 1400px)";
@@ -7703,6 +7707,13 @@ async function bootstrap() {
     durationMs: roundedDurationMs(workspacesStartedAt),
     workspaceCount: Array.isArray(state.workspaces) ? state.workspaces.length : 0,
   });
+  const threadDisplayStartedAt = nowPerfMs();
+  await loadThreadDisplaySettings({ render: false }).catch(showError);
+  postStartupStage("thread_display_done", bootstrapStartedAt, {
+    durationMs: roundedDurationMs(threadDisplayStartedAt),
+    mode: state.threadTileMode ? "tile" : "single",
+    paneCount: normalizeThreadTilePinnedIds(state.threadTilePinnedIds).length,
+  });
   const threadsStartedAt = nowPerfMs();
   await loadThreads({ silent: startupThreadOpenPending, deferFallback: true });
   postStartupStage("threads_done", bootstrapStartedAt, {
@@ -8267,6 +8278,13 @@ async function loadThreads(options = {}) {
     reconcileThreadStatusHints(state.threads);
     renderWorkspaceTokenUsage();
     renderThreads(result);
+    if (state.currentThread && state.threadTileMode && !isThreadTileKeyboardFocusActive()) {
+      const tileLayout = threadTileLayout();
+      if (tileLayout.enabled) {
+        const nextTileIds = threadTileCandidateIds(tileLayout);
+        if (!threadTileIdsEqual(nextTileIds, state.threadTileActiveIds)) renderCurrentThread({ stickToBottom: true });
+      }
+    }
     restoreConnectionState(result.mobileFallback ? "Recovered from session index" : "Connected");
     scheduleVisiblePageRefreshCheck(500);
     if (result && result.mobileDeferredFallback && !state.selectedCwd && !search) {
@@ -11300,16 +11318,140 @@ function defaultThreadTileCandidateIds(layout = threadTileLayout()) {
   });
 }
 
-function threadTileCandidateIds(layout = threadTileLayout()) {
-  const defaults = defaultThreadTileCandidateIds(layout);
+function normalizeThreadTilePinnedIds(values = []) {
+  const seen = new Set();
+  const ids = [];
+  for (const value of Array.isArray(values) ? values : []) {
+    const id = String(value || "").trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+    if (ids.length >= threadTileLayoutPolicy.DEFAULT_MAX_PANES * 2) break;
+  }
+  return ids;
+}
+
+function threadTileVisibleIdSet() {
   const visibleIds = new Set(visibleThreads(state.threads).map((thread) => String(thread && thread.id || "")).filter(Boolean));
   if (state.currentThreadId) visibleIds.add(String(state.currentThreadId));
+  return visibleIds;
+}
+
+function threadTileIdsEqual(a = [], b = []) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  return a.every((id, index) => String(id || "") === String(b[index] || ""));
+}
+
+function threadTileCandidateIds(layout = threadTileLayout()) {
+  const defaults = defaultThreadTileCandidateIds(layout);
+  const visibleIds = threadTileVisibleIdSet();
   const maxPanes = Math.max(1, Number(layout && layout.maxPanes || defaults.length || 1));
   const pinned = (state.threadTilePinnedIds || [])
     .map((id) => String(id || ""))
     .filter((id) => id && visibleIds.has(id));
   if (!pinned.length) return defaults;
   return Array.from(new Set([...pinned, ...defaults])).slice(0, maxPanes);
+}
+
+function threadDisplaySettingsPayload() {
+  return {
+    displayMode: state.threadTileMode ? "tile" : "single",
+    paneThreadIds: normalizeThreadTilePinnedIds(state.threadTilePinnedIds),
+    selectedThreadId: String(state.threadTileSelectedThreadId || ""),
+  };
+}
+
+function localThreadDisplayMode() {
+  try {
+    return localStorage.getItem(STORAGE_THREAD_DISPLAY_MODE) === "tile"
+      || localStorage.getItem(STORAGE_LEGACY_THREAD_TILE_MODE) === "true"
+      ? "tile"
+      : "single";
+  } catch (_) {
+    return "single";
+  }
+}
+
+function mirrorThreadDisplayModeToLocalStorage() {
+  try {
+    localStorage.removeItem(STORAGE_LEGACY_THREAD_TILE_MODE);
+    if (state.threadTileMode) localStorage.setItem(STORAGE_THREAD_DISPLAY_MODE, "tile");
+    else localStorage.removeItem(STORAGE_THREAD_DISPLAY_MODE);
+  } catch (_) {}
+}
+
+function applyThreadDisplaySettings(settings = {}, options = {}) {
+  const displayMode = String(settings.displayMode || (settings.threadTileMode ? "tile" : "single")).toLowerCase() === "tile"
+    ? "tile"
+    : "single";
+  state.threadTileMode = displayMode === "tile";
+  state.threadTilePinnedIds = normalizeThreadTilePinnedIds(settings.paneThreadIds || settings.threadTilePinnedIds || []);
+  const selected = String(settings.selectedThreadId || "").trim();
+  state.threadTileSelectedThreadId = selected && state.threadTilePinnedIds.includes(selected) ? selected : "";
+  mirrorThreadDisplayModeToLocalStorage();
+  syncThreadTileToggle();
+  if (options.render === true) renderCurrentThread({ stickToBottom: true });
+}
+
+async function loadThreadDisplaySettings(options = {}) {
+  try {
+    const result = await api("/api/settings/thread-display");
+    const settings = result && result.threadDisplay && typeof result.threadDisplay === "object" ? result.threadDisplay : {};
+    state.threadDisplaySettingsLoaded = true;
+    if (settings.source !== "runtime" && localThreadDisplayMode() === "tile") {
+      applyThreadDisplaySettings({ displayMode: "tile", paneThreadIds: [], selectedThreadId: "" }, { render: options.render === true });
+      await saveThreadDisplaySettingsNow();
+      return;
+    }
+    applyThreadDisplaySettings(settings, { render: options.render === true });
+  } catch (err) {
+    state.threadDisplaySettingsLoaded = true;
+    if (localThreadDisplayMode() === "tile") applyThreadDisplaySettings({ displayMode: "tile" }, { render: options.render === true });
+    throw err;
+  }
+}
+
+async function saveThreadDisplaySettingsNow() {
+  if (state.threadDisplaySettingsSaveTimer) {
+    clearTimeout(state.threadDisplaySettingsSaveTimer);
+    state.threadDisplaySettingsSaveTimer = null;
+  }
+  if (state.threadDisplaySettingsSaveInFlight) return null;
+  state.threadDisplaySettingsSaveInFlight = true;
+  try {
+    const result = await api("/api/settings/thread-display", {
+      method: "POST",
+      body: JSON.stringify(threadDisplaySettingsPayload()),
+    });
+    const settings = result && result.threadDisplay && typeof result.threadDisplay === "object" ? result.threadDisplay : null;
+    if (settings) applyThreadDisplaySettings(settings, { render: false });
+    return result;
+  } finally {
+    state.threadDisplaySettingsSaveInFlight = false;
+  }
+}
+
+function scheduleThreadDisplaySettingsSave() {
+  if (!state.threadDisplaySettingsLoaded) return;
+  if (state.threadDisplaySettingsSaveTimer) clearTimeout(state.threadDisplaySettingsSaveTimer);
+  state.threadDisplaySettingsSaveTimer = setTimeout(() => {
+    state.threadDisplaySettingsSaveTimer = null;
+    saveThreadDisplaySettingsNow().catch(showError);
+  }, THREAD_TILE_SETTINGS_SAVE_DEBOUNCE_MS);
+}
+
+function syncThreadTilePinnedIdsFromActiveIds(activeIds = []) {
+  const ids = normalizeThreadTilePinnedIds(activeIds);
+  if (!state.threadTileMode || !ids.length) return false;
+  const visibleIds = threadTileVisibleIdSet();
+  const existingVisible = normalizeThreadTilePinnedIds(state.threadTilePinnedIds)
+    .filter((id) => visibleIds.has(id));
+  if (threadTileIdsEqual(existingVisible.slice(0, ids.length), ids)) return false;
+  const remaining = normalizeThreadTilePinnedIds(state.threadTilePinnedIds)
+    .filter((id) => !ids.includes(id));
+  state.threadTilePinnedIds = normalizeThreadTilePinnedIds([...ids, ...remaining]);
+  scheduleThreadDisplaySettingsSave();
+  return true;
 }
 
 function threadTileSummary(threadId) {
@@ -11396,16 +11538,20 @@ function replaceThreadTilePaneThread(fromThreadId, toThreadId) {
   if (index < 0) return false;
   const sourcePane = threadTilePaneElement(from);
   saveCurrentDraftNow();
-  const nextIds = ids.slice();
+  const nextIds = normalizeThreadTilePinnedIds(state.threadTilePinnedIds).length
+    ? normalizeThreadTilePinnedIds(state.threadTilePinnedIds)
+    : ids.slice();
+  while (nextIds.length < ids.length) nextIds.push(ids[nextIds.length]);
   const duplicateIndex = nextIds.indexOf(to);
   if (duplicateIndex >= 0 && duplicateIndex !== index) nextIds[duplicateIndex] = from;
   nextIds[index] = to;
-  state.threadTilePinnedIds = nextIds;
-  state.threadTileActiveIds = nextIds;
+  state.threadTilePinnedIds = normalizeThreadTilePinnedIds(nextIds);
+  state.threadTileActiveIds = threadTileCandidateIds(layout);
   state.threadTileSelectedThreadId = to;
   state.threadTileSwitchMenuPaneId = "";
   state.threadTilePaneScrollHoldById.delete(from);
   state.threadTilePaneScrollHoldById.delete(to);
+  scheduleThreadDisplaySettingsSave();
   restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
   renderComposerSettings();
   updateComposerControls();
@@ -11689,6 +11835,7 @@ function ensureThreadTileDetails(ids = []) {
   if (!state.threadTileMode) return;
   const activeIds = new Set(ids.map((id) => String(id || "")).filter(Boolean));
   state.threadTileActiveIds = Array.from(activeIds);
+  syncThreadTilePinnedIdsFromActiveIds(state.threadTileActiveIds);
   syncThreadTileSelectedThread(state.threadTileActiveIds);
   for (const [id, controller] of Array.from(state.threadTileControllers.entries())) {
     if (activeIds.has(id)) continue;
@@ -12031,16 +12178,13 @@ function syncThreadTileToggle() {
 
 function setThreadTileMode(enabled) {
   state.threadTileMode = enabled === true;
-  try {
-    localStorage.removeItem(STORAGE_LEGACY_THREAD_TILE_MODE);
-    if (state.threadTileMode) localStorage.setItem(STORAGE_THREAD_DISPLAY_MODE, "tile");
-    else localStorage.removeItem(STORAGE_THREAD_DISPLAY_MODE);
-  } catch (_) {}
+  mirrorThreadDisplayModeToLocalStorage();
   if (!state.threadTileMode) {
     abortThreadTileLoads();
     state.threadTileSelectedThreadId = "";
     setThreadTileConversationMode(false);
   }
+  scheduleThreadDisplaySettingsSave();
   syncThreadTileToggle();
   renderCurrentThread({ stickToBottom: true });
 }

@@ -39,6 +39,27 @@ test("thread status hints keep running state for stale replayed completion", () 
   }), false);
 });
 
+test("thread status hints clear running state for fresh completed events", () => {
+  const thread = {
+    id: "thread-a",
+    status: { type: "completed" },
+    updatedAtMs: 2500,
+    turns: [
+      { id: "turn-a", status: { type: "completed" }, completedAtMs: 2500 },
+    ],
+  };
+
+  assert.equal(policy.shouldKeepRunningHintForSettledStatus({
+    threadId: "thread-a",
+    thread,
+    status: thread.status,
+    isRunningHinted: true,
+    runningHintedAtMs: 2000,
+    eventAtMs: 2500,
+    mobileReplay: false,
+  }), false);
+});
+
 test("thread status hints mark unread only when terminal activity is newer than the view", () => {
   const thread = {
     id: "thread-a",

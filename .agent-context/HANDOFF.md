@@ -1,3 +1,65 @@
+# 2026-06-24 - Thread-display persistence and tile stability v421 local
+
+- Scope:
+  - Implemented and locally validated.
+  - Not committed, not deployed, not pushed Public.
+- Trigger:
+  - User reported that after PR #78 absorption, outer thread-list status could
+    stay refreshing after a thread had ended.
+  - User also reported tile-mode pane positions changing by themselves,
+    tile-mode display choice being lost after Home AI/PWA refresh, wide Android
+    tablet landscape only showing three panes, tile command durations being
+    clipped, and Composer runtime controls overflowing when the app font size
+    is large.
+- Root cause:
+  - Server-generated background `thread/status/changed` notifications derived
+    from `turn/completed` did not carry a fresh completion event time, so the
+    browser freshness guard could treat the terminal status as stale replay and
+    keep the running hint.
+  - Tile mode had `threadTilePinnedIds` only in browser runtime. The display
+    mode was browser-local, and pane candidates could still be influenced by
+    recent thread-list ordering.
+  - Tablet landscape tile policy capped tablet columns at three even when
+    available width could support four.
+  - Tile operation bubble duration used an 8ch slot and runtime toolbar text
+    did not sufficiently constrain child widths under large font settings.
+- Change:
+  - `server.js` now adds `eventAtMs` to `thread/status/changed` payloads
+    derived from real turn start/completion timestamps; replayed completions do
+    not invent a fresh timestamp.
+  - Added authenticated `GET/POST /api/settings/thread-display` backed by
+    runtime `settings.json` `threadDisplay`. It stores `displayMode`, ordered
+    `paneThreadIds`, and `selectedThreadId` only.
+  - `public/app.js` loads server thread-display settings before the initial
+    thread list, migrates legacy local tile mode once, and persists pane slot
+    order only after actual tile ids are chosen or the user manually switches a
+    pane title menu. Thread-list recent sorting can fill empty pane slots but
+    cannot reorder existing slots.
+  - `public/thread-tile-layout.js` allows tablet landscape up to four columns
+    when width permits.
+  - `public/styles.css` widens tile operation duration to 9.5ch and clamps
+    Composer runtime control fonts/children so large app font settings do not
+    overflow the fixed toolbar cards.
+  - PWA shell cache bumped to `codex-mobile-shell-v421`.
+- Docs updated:
+  - `README.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`
+  - `docs/MODULES.md`
+  - `docs/TROUBLESHOOTING.md`
+- Validation:
+  - `node --check server.js && node --check public/app.js`
+  - Focused suite:
+    `node --test test/thread-visibility.test.js test/thread-status-hints.test.js test/thread-tile-layout.test.js test/thread-tile-layout-ui.test.js test/composer-quota.test.js test/collab-agent-render.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    (`95` tests passed)
+  - `npm test` (`747` tests passed)
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+- Operational notes:
+  - Browser/PWA clients must load v421 shell to exercise the frontend changes.
+  - Production still had v420 at the time this handoff entry was written.
+
 # 2026-06-24 - Mobile floating controls v420 committed and deployed
 
 - Scope:
