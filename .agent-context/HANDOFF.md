@@ -1,3 +1,80 @@
+# 2026-06-26 - v469 thread tile pane count/close effects policy deployed
+
+- Scope:
+  - Continued Phase C pane-state / split-screen architecture work.
+  - This slice moves pane count and close-pane side-effect execution into the
+    existing `paneSlotMutationEffectsPlan` /
+    `applyThreadTilePaneSlotEffects` path.
+  - It does not change server projection, task-card behavior, Home AI
+    diagnostic dispatch, message merge, image projection, pane layout, or
+    visual pane design. No fallback or UI-only masking was added.
+- Root-cause boundary:
+  - Before v469, `public/thread-tile-state.js` already owned pane count/close
+    planning, but `public/app.js` still executed those two actions through
+    dedicated branches that wrote pane count, pinned ids, selection fallback,
+    scroll-hold cleanup, settings save, draft restore, Composer refresh, and
+    board render directly.
+  - That left count/close outside the unified pane slot mutation executor and
+    made future pane actions easy to drift from the "pane as scaled
+    single-thread window" execution contract.
+- Change:
+  - Extended `paneSlotMutationEffectsPlan` to emit count/close effect metadata:
+    pane-selection fallback policy, optional no-render behavior for count
+    changes, close-pane draft save/restore, Composer refresh, scroll reset,
+    and full board render intent.
+  - `setThreadTilePaneCount` and `closeThreadTilePane` now delegate to
+    `paneSlotMutationEffectsPlan` and `applyThreadTilePaneSlotEffects` instead
+    of directly writing state and render side effects.
+  - `applyThreadTilePaneSlotEffects` now owns `pane-selection` fallback after
+    applying pane count/pinned/split writes.
+  - Bumped `CLIENT_BUILD_ID` and service worker cache to
+    `codex-mobile-shell-v469`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Commit:
+  - Runtime/docs commit: `728b005 refactor thread tile pane count effects`.
+- Validation in source workspace:
+  - Focused suite passed: `67` tests across
+    `test/thread-tile-state.test.js`,
+    `test/thread-tile-layout-ui.test.js`,
+    `test/thread-tile-layout.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-task-card-route.test.js`,
+    `test/thread-goal-service.test.js`, and
+    `test/composer-draft.test.js`.
+  - `npm test` passed: `857` tests.
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+- Production deploy:
+  - Deployed through Home AI central macOS production script.
+  - Reason: `codex-mobile-thread-tile-pane-count-effects-v469`.
+  - Source ref at deploy: `728b005319cf`, dirty `false`.
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T191702Z-plugin-codex-mobile-web-codex-mobile-thread-tile-pane-count-effects-v469`.
+  - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` reported
+    running and manifest/profile health checks passed.
+- Production readback:
+  - `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v469`,
+    `shellCacheName=codex-mobile-shell-v469`, and `version=0.1.11`.
+  - Source/prod SHA-256 parity matched for:
+    `public/thread-tile-state.js`, `test/thread-tile-state.test.js`,
+    `test/thread-tile-layout-ui.test.js`, `test/composer-draft.test.js`,
+    `public/app.js`, `public/sw.js`, `README.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and `docs/MODULES.md`.
+  - Production focused suite passed: same `67` tests listed above with
+    production dependencies.
+- Next architecture boundary:
+  - Continue Phase C by extracting detail read side effects, command detail
+    panels, split sizing, and remaining active-pane execution ownership from
+    `public/app.js`.
+  - Phase B large-session cold/warm path remains separate and should be
+    tackled with timing evidence before changing cache behavior.
+- Public:
+  - Not pushed to Public. Follow release-order rule: wait for production/user
+    validation or explicit Public instruction before syncing/pushing.
+
 # 2026-06-26 - v468 thread tile pane slot effects policy deployed
 
 - Scope:
