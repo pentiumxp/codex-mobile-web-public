@@ -1,3 +1,71 @@
+# 2026-06-26 - v465 thread tile selected pane action policy deployed
+
+- Scope:
+  - Continued Phase C pane-state / split-screen architecture work.
+  - This slice moves explicit selected-pane action planning into
+    `public/thread-tile-state.js`.
+  - It does not change server projection, task-card behavior, Home AI
+    diagnostic dispatch, message merge, image projection, pane layout, or the
+    visual pane design. No fallback or UI-only masking was added.
+- Root-cause boundary:
+  - Before v465, `public/app.js` still directly owned explicit pane-selection
+    validation, unchanged detection, previous/next pane patch target
+    selection, and selected-pane state write planning.
+  - That kept active-pane execution policy coupled to draft save/restore,
+    Composer control updates, pane patching, and full-render fallback.
+- Change:
+  - Added pure `selectPanePlan` to `public/thread-tile-state.js`.
+  - `public/app.js` now delegates `setThreadTileSelectedThread` decision
+    logic to `threadTileStatePolicy.selectPanePlan`.
+  - `public/app.js` still owns saving/restoring drafts, Composer updates,
+    pane patch execution, and full-render fallback if pane patching fails.
+  - Bumped `CLIENT_BUILD_ID` and service worker cache to
+    `codex-mobile-shell-v465`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Commit:
+  - Runtime/docs commit: `0445b4b refactor thread tile selected pane policy`.
+- Validation in source workspace:
+  - Focused suite passed: `60` tests across
+    `test/thread-tile-state.test.js`,
+    `test/thread-tile-layout-ui.test.js`,
+    `test/thread-tile-layout.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-task-card-route.test.js`, and
+    `test/thread-goal-service.test.js`.
+  - `npm test` passed: `854` tests.
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+- Production deploy:
+  - Deployed through Home AI central macOS production script.
+  - Reason: `codex-mobile-thread-tile-selected-pane-v465`.
+  - Source ref at deploy: `0445b4b05831`, dirty `false`.
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T184841Z-plugin-codex-mobile-web-codex-mobile-thread-tile-selected-pane-v465`.
+  - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` reported
+    running and manifest/profile health checks passed.
+- Production readback:
+  - `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v465`,
+    `shellCacheName=codex-mobile-shell-v465`, and `version=0.1.11`.
+  - Source/prod SHA-256 parity matched for:
+    `public/thread-tile-state.js`, `test/thread-tile-state.test.js`,
+    `test/thread-tile-layout-ui.test.js`, `public/app.js`, `public/sw.js`,
+    `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+  - Production focused suite passed: same `60` tests listed above with
+    production dependencies.
+- Next architecture boundary:
+  - Continue Phase C by extracting broader pane action execution
+    side-effect plans, detail read side effects, command detail panels, split
+    sizing, and remaining active-pane execution ownership from `public/app.js`.
+  - Phase B large-session cold/warm path remains separate and should be
+    tackled with timing evidence before changing cache behavior.
+- Public:
+  - Not pushed to Public. Follow release-order rule: wait for production/user
+    validation or explicit Public instruction before syncing/pushing.
+
 # 2026-06-26 - v464 thread tile active pane sync policy deployed
 
 - Scope:
