@@ -1,3 +1,71 @@
+# 2026-06-25 - v449 refresh DOM patch application plan deployed
+
+- Optimization phase:
+  - Phase A second slice. v448 made refresh choose one terminal render
+    outcome; v449 moves the single-thread turn-level DOM patch action plan out
+    of `public/app.js`.
+- Root-cause boundary:
+  - Before v449, `patchCurrentThreadDetailFromRefresh` iterated next turns and
+    decided inline whether each turn should be item-patched, inserted,
+    replaced, removed after render failure, or treated as failed.
+  - That kept patch application policy mixed with DOM execution, making it
+    harder to reason about missing/duplicate/old message states during refresh.
+- Runtime change:
+  - `public/thread-detail-patch-plan.js` adds
+    `planThreadDetailRefreshDomPatch`, which produces explicit `item-patch`,
+    `insert-turn`, and `replace-turn` operations from bounded turn patch
+    entries.
+  - `public/app.js` now builds bounded turn patch entries and executes the
+    helper plan. It still owns DOM lookup, rendering, patch/insert execution,
+    hydration, and scroll completion.
+  - If a turn patch plan or DOM operation cannot explain the current shape,
+    local patch rejects with a bounded reason and the existing full-render path
+    remains responsible. The old implicit "render source missing => remove
+    article and continue" behavior was removed from this refresh patch path.
+  - Removed the unused `patchVisibleItemsOnlyFromRefresh` wrapper after
+    splitting item-level planning and application into
+    `planVisibleItemsOnlyFromRefresh` and `applyVisibleItemsOnlyRefreshPatch`.
+  - `CLIENT_BUILD_ID` and service-worker cache are bumped to
+    `codex-mobile-shell-v449`.
+- Docs/tests:
+  - `README.md` records the v449 architecture slice.
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` records that turn-level refresh
+    patch action planning now lives in `thread-detail-patch-plan`.
+  - Focused tests cover `item-patch`, `insert-turn`, `replace-turn`, invalid
+    turn entries, and app wiring to the helper plan.
+- Validation:
+  - Focused source suite passed:
+    `node --test test/thread-detail-patch-plan.test.js
+    test/conversation-render.test.js test/mobile-viewport.test.js
+    test/thread-task-card-route.test.js test/thread-goal-service.test.js
+    test/app-update.test.js test/plugin-voice-input.test.js
+    test/thread-tile-layout-ui.test.js` (`146` tests).
+  - Full `npm test` passed (`807` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Commit/deploy:
+  - Runtime commit: `92c110a` (`refactor thread detail dom patch planning`).
+  - Deployed with Home AI central macOS script:
+    `deploy-macos-production.js --plugin codex-mobile --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --reason codex-mobile-dom-patch-plan-v449 --execute --json`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T163411Z-plugin-codex-mobile-web-codex-mobile-dom-patch-plan-v449`.
+  - Production `/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v449`,
+    `shellCacheName=codex-mobile-shell-v449`, `version=0.1.11`, and
+    active profile `previous`.
+  - Source/prod SHA-256 parity confirmed for changed runtime/test/doc files.
+  - Production focused suite passed with `NODE_PATH` pointed at production
+    dependencies (`146` tests).
+- Production observation:
+  - Log-tail aggregation immediately after deploy still showed no v449
+    `thread_refresh_ms` client events; the tail contained old clients only
+    (`codex-mobile-shell-v447` or missing build id).
+  - After clients reload v449, inspect patch reject reasons and refresh render
+    action distribution before deciding whether this slice reduced DOM churn.
+- Follow-up:
+  - Continue Phase A with the next remaining DOM boundary: node lookup /
+    creation helpers, hydration ownership, and scroll completion policy.
+  - Keep app.js as the executor, not the policy owner.
+
 # 2026-06-25 - v448 refresh render outcome policy deployed
 
 - Optimization phase:
