@@ -16,6 +16,27 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v466 Thread Tile Candidate Pane Id Policy
+
+v466 继续 Phase C，把平铺窗口候选线程 ID 的选择策略迁到
+`public/thread-tile-state.js`。这次处理的是 `threadTileCandidateIds` 中的
+固定 pane 过滤、默认候选回退、layout selector 委托，以及无 selector 时把当前线程
+补入候选窗口的规则。
+
+本次新增的纯策略是 `candidatePaneIdsPlan`：
+
+- 固定 pane 只接受当前可见线程，避免过期/隐藏线程重新占用 slot。
+- 没有可用固定 pane 时直接回到默认候选线程列表。
+- 有 `threadTileLayoutPolicy.selectPinnedThreadTileIds` 时保持 selector 作为布局策略入口。
+- 无 selector 时按固定 pane + 默认候选去重，并保持当前线程仍能进入候选窗口。
+
+`public/app.js` 仍负责收集当前可见线程、默认候选、当前线程和布局 selector；策略层只返回
+候选 ID 计划。这个切片不改变 pane layout、thread detail API、server projection、
+任务卡或诊断上报。`CLIENT_BUILD_ID` 和 PWA shell cache 升级到
+`codex-mobile-shell-v466`。`test/thread-tile-state.test.js` 覆盖 candidate pane id
+planning；`test/thread-tile-layout-ui.test.js` 约束 app 层必须通过
+`candidatePaneIdsPlan`。
+
 ## 2026-06-26 v465 Thread Tile Selected Pane Action Policy
 
 v465 继续 Phase C，把用户显式选中某个平铺窗口的执行计划迁到

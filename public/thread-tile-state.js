@@ -63,6 +63,58 @@
     return a.every((id, index) => String(id || "") === String(b[index] || ""));
   }
 
+  function candidatePaneIdsPlan(input = {}, options = {}) {
+    const maxPanes = Math.max(1, normalizePaneCount(input.maxPanes, {
+      fallback: 1,
+      maxPanes: options.maxPanes || DEFAULT_USER_MAX_PANES,
+    }) || 1);
+    const defaultIds = uniqueIds(input.defaultIds || input.threadIds || []).slice(0, maxPanes);
+    const visibleIds = new Set(uniqueIds(input.visibleIds || []));
+    const pinnedIds = normalizePinnedIds(input.pinnedIds || input.threadTilePinnedIds || [], {
+      maxPanes: options.maxPanes || DEFAULT_USER_MAX_PANES,
+    }).filter((id) => visibleIds.has(id));
+    const currentThreadId = text(input.currentThreadId).trim();
+
+    if (!pinnedIds.length) {
+      return {
+        action: "candidate-pane-ids",
+        reason: "defaults",
+        ids: defaultIds,
+        pinnedIds,
+        defaultIds,
+        maxPanes,
+      };
+    }
+
+    if (typeof options.selectPinnedThreadTileIds === "function") {
+      const selectedIds = uniqueIds(options.selectPinnedThreadTileIds({
+        currentThreadId,
+        pinnedThreadIds: pinnedIds,
+        threadIds: defaultIds,
+        maxPanes,
+      })).slice(0, maxPanes);
+      return {
+        action: "candidate-pane-ids",
+        reason: "selector",
+        ids: selectedIds,
+        pinnedIds,
+        defaultIds,
+        maxPanes,
+      };
+    }
+
+    const ids = uniqueIds([...pinnedIds, ...defaultIds]).slice(0, maxPanes);
+    if (currentThreadId && !ids.includes(currentThreadId)) ids[Math.max(0, ids.length - 1)] = currentThreadId;
+    return {
+      action: "candidate-pane-ids",
+      reason: "fallback",
+      ids: uniqueIds(ids).slice(0, maxPanes),
+      pinnedIds,
+      defaultIds,
+      maxPanes,
+    };
+  }
+
   function normalizeSplitPairs(values = [], ids = [], options = {}) {
     const visibleIds = normalizePinnedIds(ids, { maxPanes: options.maxPanes });
     const normalize = typeof options.normalizeSplitPairs === "function"
@@ -603,6 +655,7 @@
     DEFAULT_OPERATION_BUBBLE_MIN_VISIBLE_MS,
     DEFAULT_USER_MAX_PANES,
     activePaneSyncPlan,
+    candidatePaneIdsPlan,
     closePanePlan,
     displaySettingsPayload,
     dropPaneIntent,

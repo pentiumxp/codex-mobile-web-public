@@ -192,6 +192,56 @@ test("thread tile state plans active pane sync as one policy boundary", () => {
   });
 });
 
+test("thread tile state plans candidate pane ids without app globals", () => {
+  assert.deepEqual(state.candidatePaneIdsPlan({
+    pinnedIds: ["hidden"],
+    defaultIds: ["a", "b"],
+    visibleIds: ["a", "b"],
+    currentThreadId: "a",
+    maxPanes: 2,
+  }, { maxPanes: 12 }), {
+    action: "candidate-pane-ids",
+    reason: "defaults",
+    ids: ["a", "b"],
+    pinnedIds: [],
+    defaultIds: ["a", "b"],
+    maxPanes: 2,
+  });
+
+  assert.deepEqual(state.candidatePaneIdsPlan({
+    pinnedIds: ["p1", "p2"],
+    defaultIds: ["a", "b"],
+    visibleIds: ["p1", "p2", "a", "b"],
+    currentThreadId: "current",
+    maxPanes: 3,
+  }, { maxPanes: 12 }), {
+    action: "candidate-pane-ids",
+    reason: "fallback",
+    ids: ["p1", "p2", "current"],
+    pinnedIds: ["p1", "p2"],
+    defaultIds: ["a", "b"],
+    maxPanes: 3,
+  });
+
+  assert.deepEqual(state.candidatePaneIdsPlan({
+    pinnedIds: ["p1", "p2"],
+    defaultIds: ["a", "b"],
+    visibleIds: ["p1", "p2", "a", "b"],
+    currentThreadId: "p2",
+    maxPanes: 3,
+  }, {
+    maxPanes: 12,
+    selectPinnedThreadTileIds: ({ pinnedThreadIds, threadIds, maxPanes }) => [threadIds[0], ...pinnedThreadIds].slice(0, maxPanes),
+  }), {
+    action: "candidate-pane-ids",
+    reason: "selector",
+    ids: ["a", "p1", "p2"],
+    pinnedIds: ["p1", "p2"],
+    defaultIds: ["a", "b"],
+    maxPanes: 3,
+  });
+});
+
 test("thread tile state updates split pairs without keeping stale ids", () => {
   const removed = state.removeSplitPairsForIds([
     { anchorId: "a", childId: "b" },

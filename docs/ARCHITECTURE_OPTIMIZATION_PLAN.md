@@ -142,7 +142,10 @@ selected-pane fallback are pure policy. Active pane sync planning is also in
 that helper: active pane ids, pinned slot sync, split-pair prune, selected-pane
 fallback, and display-settings save eligibility are computed as one policy
 and explicit selected-pane action planning now emits the previous/next pane
-patch set while `public/app.js` keeps DOM, rendering, network save, timers, API reads,
+patch set. Candidate pane id planning also now lives there: visible pinned
+filtering, default-candidate fallback, layout-selector delegation, and current
+thread replacement are computed as one policy while `public/app.js` keeps DOM,
+rendering, network save, timers, API reads,
 AbortController ownership, draft restore, detail-load side effects, and other
 side effects. App code can no
 longer fall through from tile mode into the
@@ -171,7 +174,8 @@ Target:
   dwell/mode policy are now outside app.js. Pane-local detail refresh planning,
   pane slot mutation planning, pane count/close planning, and active pane sync
   planning are now outside app.js; explicit selected-pane action planning is
-  also outside app.js; broader action execution, detail read side effects,
+  also outside app.js; candidate pane id planning is also outside app.js;
+  broader action execution, detail read side effects,
   command detail panels, and split sizing remain the next boundary.
 - Keep `public/app.js` responsible for DOM wiring, patch application, and event
   binding only.
@@ -321,7 +325,9 @@ Target:
   including active ids, pinned slot sync, split-pair prune, selected-pane
   fallback, and display-settings save eligibility. Explicit selected-pane
   action planning also now lives there, including skip reasons and previous/
-  next pane patch ids. Continue moving pane widths, active
+  next pane patch ids. Candidate pane id planning also now lives there,
+  including visible pinned filtering, default-candidate fallback,
+  layout-selector delegation, and current-thread replacement. Continue moving pane widths, active
   pane execution, per-pane drafts, max concurrent detail reads, pane-local
   send/approval/interrupt ownership, command detail panels, and mobile collapse
   behavior into testable helpers without DOM side effects.

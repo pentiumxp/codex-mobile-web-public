@@ -143,13 +143,14 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(ensureBody, /scheduleThreadTileRefresh\(\)/);
 
   const candidateBody = functionBody(appJs, "threadTileCandidateIds");
-  assert.match(candidateBody, /state\.threadTilePinnedIds/);
+  assert.match(candidateBody, /threadTileStatePolicy\.candidatePaneIdsPlan/);
+  assert.match(candidateBody, /pinnedIds: state\.threadTilePinnedIds/);
   assert.match(candidateBody, /effectiveThreadTilePaneCount\(layout\)/);
-  assert.match(candidateBody, /defaultThreadTileCandidateIds\(layout, \{ maxPanes \}\)/);
-  assert.match(candidateBody, /threadTileVisibleIdSet\(\)/);
-  assert.match(candidateBody, /threadTileLayoutPolicy\.selectPinnedThreadTileIds/);
+  assert.match(candidateBody, /defaultIds: defaultThreadTileCandidateIds\(layout, \{ maxPanes \}\)/);
+  assert.match(candidateBody, /visibleIds: Array\.from\(threadTileVisibleIdSet\(\)\)/);
   assert.match(candidateBody, /currentThreadId: state\.currentThreadId/);
-  assert.match(candidateBody, /ids\[Math\.max\(0, ids\.length - 1\)\] = current/);
+  assert.match(candidateBody, /selectPinnedThreadTileIds: threadTileLayoutPolicy\.selectPinnedThreadTileIds/);
+  assert.match(candidateBody, /return plan\.ids/);
   assert.match(functionBody(appJs, "threadTileMaximumPaneCount"), /THREAD_TILE_USER_MAX_PANES/);
   assert.match(functionBody(appJs, "defaultThreadTileCandidateIds"), /THREAD_TILE_USER_MAX_PANES/);
 
