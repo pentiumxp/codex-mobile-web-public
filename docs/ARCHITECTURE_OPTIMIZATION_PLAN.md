@@ -141,7 +141,11 @@ Single-thread full-render shell planning now also lives in
 content ordering, empty/read-warning state selection, plugin-refresh notice
 placement, and operation-dock clearing intent are structured helper output
 while app code keeps header/tile switching, real DOM writes, retry event
-binding, scroll/bottom-follow, hydration, and action binding.
+binding, hydration, and action binding. Single-thread full-render
+bottom-follow planning now lives in `public/conversation-scroll.js` through
+`planFullRenderScroll`: app code supplies near-bottom/user-reading/auto-hold
+and follow-lease inputs, while the helper owns the final `stickToBottom`
+decision and bounded reason for full conversation renders.
 Thread detail click action recognition now
 lives in `public/thread-detail-actions.js`: app code still owns event listener
 wiring and business execution, but selector priority, root containment,

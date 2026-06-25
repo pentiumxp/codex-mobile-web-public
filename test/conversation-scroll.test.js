@@ -160,3 +160,80 @@ test("local patch scroll completion follows bottom only when policy allows", () 
     reason: "not-following-bottom",
   });
 });
+
+test("full render scroll planning preserves bottom-follow precedence", () => {
+  assert.deepEqual(conversationScroll.planFullRenderScroll({
+    stickToBottom: false,
+    nearBottom: true,
+    submittedMessageFollow: true,
+  }), {
+    stickToBottom: false,
+    explicitNoStickToBottom: true,
+    shouldFollowBottom: false,
+    reason: "explicit-no-stick",
+  });
+
+  assert.deepEqual(conversationScroll.planFullRenderScroll({
+    sustainedSubmittedFollow: true,
+    userReadingCurrentTurn: true,
+  }), {
+    stickToBottom: true,
+    explicitNoStickToBottom: false,
+    shouldFollowBottom: true,
+    reason: "sustained-submitted-message-follow",
+  });
+
+  assert.deepEqual(conversationScroll.planFullRenderScroll({
+    submittedMessageFollow: true,
+    autoScrollHold: true,
+  }), {
+    stickToBottom: true,
+    explicitNoStickToBottom: false,
+    shouldFollowBottom: true,
+    reason: "submitted-message-follow",
+  });
+
+  assert.deepEqual(conversationScroll.planFullRenderScroll({
+    viewportFollow: true,
+  }), {
+    stickToBottom: true,
+    explicitNoStickToBottom: false,
+    shouldFollowBottom: true,
+    reason: "viewport-follow",
+  });
+
+  assert.deepEqual(conversationScroll.planFullRenderScroll({
+    stickToBottom: true,
+    autoScrollHold: true,
+  }), {
+    stickToBottom: false,
+    explicitNoStickToBottom: false,
+    shouldFollowBottom: false,
+    reason: "auto-scroll-hold",
+  });
+
+  assert.deepEqual(conversationScroll.planFullRenderScroll({
+    stickToBottom: true,
+  }), {
+    stickToBottom: true,
+    explicitNoStickToBottom: false,
+    shouldFollowBottom: false,
+    reason: "requested-stick",
+  });
+
+  assert.deepEqual(conversationScroll.planFullRenderScroll({
+    nearBottom: true,
+  }), {
+    stickToBottom: true,
+    explicitNoStickToBottom: false,
+    shouldFollowBottom: false,
+    reason: "near-bottom",
+  });
+
+  assert.deepEqual(conversationScroll.planFullRenderScroll({}), {
+    stickToBottom: false,
+    explicitNoStickToBottom: false,
+    shouldFollowBottom: false,
+    reason: "not-following-bottom",
+  });
+});

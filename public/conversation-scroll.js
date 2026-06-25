@@ -121,6 +121,70 @@
     };
   }
 
+  function planFullRenderScroll(options = {}) {
+    const explicitNoStickToBottom = options.stickToBottom === false || Boolean(options.scrollToTurnReceiptStart);
+    const shouldFollowBottom = !explicitNoStickToBottom
+      && Boolean(options.sustainedSubmittedFollow || options.submittedMessageFollow || options.viewportFollow);
+    if (explicitNoStickToBottom) {
+      return {
+        stickToBottom: false,
+        explicitNoStickToBottom: true,
+        shouldFollowBottom: false,
+        reason: "explicit-no-stick",
+      };
+    }
+    if (shouldFollowBottom) {
+      return {
+        stickToBottom: true,
+        explicitNoStickToBottom: false,
+        shouldFollowBottom: true,
+        reason: options.sustainedSubmittedFollow
+          ? "sustained-submitted-message-follow"
+          : options.submittedMessageFollow
+            ? "submitted-message-follow"
+            : "viewport-follow",
+      };
+    }
+    if (options.userReadingCurrentTurn) {
+      return {
+        stickToBottom: false,
+        explicitNoStickToBottom: false,
+        shouldFollowBottom: false,
+        reason: "user-reading-current-turn",
+      };
+    }
+    if (options.autoScrollHold) {
+      return {
+        stickToBottom: false,
+        explicitNoStickToBottom: false,
+        shouldFollowBottom: false,
+        reason: "auto-scroll-hold",
+      };
+    }
+    if (options.stickToBottom === true) {
+      return {
+        stickToBottom: true,
+        explicitNoStickToBottom: false,
+        shouldFollowBottom: false,
+        reason: "requested-stick",
+      };
+    }
+    if (options.nearBottom) {
+      return {
+        stickToBottom: true,
+        explicitNoStickToBottom: false,
+        shouldFollowBottom: false,
+        reason: "near-bottom",
+      };
+    }
+    return {
+      stickToBottom: false,
+      explicitNoStickToBottom: false,
+      shouldFollowBottom: false,
+      reason: "not-following-bottom",
+    };
+  }
+
   return {
     DEFAULT_NEAR_BOTTOM_PX,
     DEFAULT_SUBMIT_FOLLOW_MS,
@@ -130,6 +194,7 @@
     extendSubmittedMessageFollow,
     createViewportFollow,
     isNearBottom,
+    planFullRenderScroll,
     planLocalPatchScrollCompletion,
     shouldFollowViewport,
     shouldFollowSubmittedMessage,

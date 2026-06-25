@@ -16,6 +16,33 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v482 Full-Render Scroll Planning
+
+v482 继续推进 Phase A 的前端 render/patch ownership 收敛。
+
+本次切片把单线程 full-render 的 bottom-follow/沉底决策从
+`public/app.js` 推进到 `public/conversation-scroll.js` 的
+`planFullRenderScroll`。新的 helper 接收 near-bottom、用户是否正在读当前
+turn、auto-scroll hold、submitted-message follow、viewport follow 和显式
+`stickToBottom`/receipt-start 请求，输出结构化的 `stickToBottom` 决策和
+reason。`public/app.js` 仍然负责采集 DOM/运行态观测值、执行真实滚动和
+DOM 写入，但不再内联 full-render 沉底公式。
+
+修复边界：
+
+- 症状/风险：`renderCurrentThread()` 仍直接拥有 full-render 是否沉底的
+  组合判断，和全量渲染、live SSE、submitted echo、viewport resize、用户
+  手动阅读状态耦合，属于正文闪动/错误沉底复发的高风险点。
+- 失败层：前端 single-thread full-render scroll ownership。
+- 不变量：full-render 滚动决策必须由可测试 helper 给出；`app.js` 只能
+  提供观测输入并执行结果，不能在渲染编排函数里重新组合隐藏公式。
+- 闭环验证：`test/conversation-scroll.test.js` 覆盖显式不沉底、submitted
+  follow、viewport follow、auto-scroll hold、显式沉底、near-bottom 和默认
+  不跟随；`test/turn-scroll-controls.test.js` 验证 `renderCurrentThread`
+  委托 `planFullRenderScroll` 并消费 `fullRenderScrollPlan.stickToBottom`。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v482`。
+
 ## 2026-06-26 v481 Single-Thread Full-Render Shell Planning
 
 v481 继续推进 Phase A 的前端 render/patch ownership 收敛。

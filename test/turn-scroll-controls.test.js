@@ -103,8 +103,10 @@ test("manual conversation scroll pauses live auto-stick until the user returns t
   assert.match(appJs, /function hasRecentConversationScrollIntent\(nowMs = Date\.now\(\)\)/);
   assert.match(appJs, /const userReadingCurrentTurn = isUserReadingCurrentTurn\(\{ nearBottom \}\);/);
   assert.match(appJs, /const sustainedSubmittedFollow = !explicitNoStickToBottom[\s\S]*sustainSubmittedMessageBottomFollowFromThread\(thread\);/);
-  assert.match(appJs, /const shouldFollowBottom = !explicitNoStickToBottom\s*&& \(sustainedSubmittedFollow \|\| shouldFollowSubmittedMessageToBottom\(\) \|\| shouldFollowViewportChangeToBottom\(\)\);/);
-  assert.match(appJs, /const shouldStickToBottom = !explicitNoStickToBottom\s*&& \(shouldFollowBottom/);
+  assert.match(appJs, /const fullRenderScrollPlan = conversationScroll\.planFullRenderScroll\(\{/);
+  assert.match(appJs, /submittedMessageFollow: shouldFollowSubmittedMessageToBottom\(\),/);
+  assert.match(appJs, /viewportFollow: shouldFollowViewportChangeToBottom\(\),/);
+  assert.match(appJs, /const shouldStickToBottom = Boolean\(fullRenderScrollPlan\.stickToBottom\);/);
   assert.match(appJs, /if \(isUserReadingCurrentTurn\(\)\) \{\s*clearSubmittedMessageBottomFollow\(\);\s*return false;\s*\}/);
   assert.match(appJs, /if \(isUserReadingCurrentTurn\(\)\) \{\s*clearViewportBottomFollow\(\);\s*return false;\s*\}/);
   assert.match(appJs, /function updateConversationAutoScrollHoldFromScroll\(\)/);
@@ -149,7 +151,9 @@ test("successful message submit follows the new turn to the bottom", () => {
   assert.match(appJs, /latestLiveTurnForThread\(thread\)/);
   assert.match(appJs, /visibleItemsForTurn\(liveTurn\)[\s\S]*item\.type !== "userMessage"/);
   assert.match(appJs, /const sustainedSubmittedFollow = !explicitNoStickToBottom[\s\S]*sustainSubmittedMessageBottomFollowFromThread\(thread\)/);
-  assert.match(appJs, /sustainedSubmittedFollow \|\| shouldFollowSubmittedMessageToBottom\(\) \|\| shouldFollowViewportChangeToBottom\(\)/);
+  assert.match(appJs, /sustainedSubmittedFollow,/);
+  assert.match(appJs, /submittedMessageFollow: shouldFollowSubmittedMessageToBottom\(\),/);
+  assert.match(appJs, /viewportFollow: shouldFollowViewportChangeToBottom\(\),/);
   assert.match(appJs, /function scheduleSubmittedMessageBottomFollowScroll\(\)/);
   assert.match(appJs, /scheduleBottomFollowScroll\(shouldFollowSubmittedMessageToBottom\);/);
   assert.match(appJs, /if \(shouldFollow\(\)\) scheduleConversationToBottom\(\);/);
@@ -173,8 +177,10 @@ test("live and final message renders stay anchored when the user is at bottom", 
     /const nearBottom = isConversationNearBottom\(\);/,
     /const userReadingCurrentTurn = isUserReadingCurrentTurn\(\{ nearBottom \}\);/,
     /const sustainedSubmittedFollow = !explicitNoStickToBottom[\s\S]*sustainSubmittedMessageBottomFollowFromThread\(thread\);/,
-    /const shouldFollowBottom = !explicitNoStickToBottom\s*&& \(sustainedSubmittedFollow \|\| shouldFollowSubmittedMessageToBottom\(\) \|\| shouldFollowViewportChangeToBottom\(\)\);/,
-    /const shouldStickToBottom = !explicitNoStickToBottom\s*&& \(shouldFollowBottom[\s\S]*\(options\.stickToBottom === true \|\| nearBottom\)\)\);/,
+    /const fullRenderScrollPlan = conversationScroll\.planFullRenderScroll\(\{/,
+    /autoScrollHold: shouldHoldAutoScrollForCurrentTurn\(\),/,
+    /viewportFollow: shouldFollowViewportChangeToBottom\(\),/,
+    /const shouldStickToBottom = Boolean\(fullRenderScrollPlan\.stickToBottom\);/,
     /updateConversationHtml\(shellPlan\.html, conversationRenderSignature\(thread\), \{[\s\S]*stickToBottom: shouldStickToBottom,[\s\S]*patchShellSignature: conversationPatchShellSignature\(thread\),[\s\S]*\}\);/,
   ]);
 
