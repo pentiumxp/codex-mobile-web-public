@@ -782,9 +782,14 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.doesNotMatch(cacheServiceJs, /fileFingerprint/);
   assert.match(cacheServiceJs, /ttlMs > 0/);
   assert.match(cacheServiceJs, /diagnostics\.cacheHit = true/);
+  assert.match(cacheServiceJs, /diagnostics\.cacheDecision = "hit"/);
+  assert.match(cacheServiceJs, /diagnostics\.cacheBuildReason = missDecision/);
   assert.match(cacheServiceJs, /diagnostics\.cacheIncrementalUpdates = cached\.incrementalUpdates/);
   assert.match(routeBody, /mobileDiagnostics[\s\S]*threadListTimings/);
   assert.match(routeBody, /fallbackCacheHit: Boolean\(fallbackDiagnostics\.cacheHit\)/);
+  assert.match(routeBody, /fallbackCacheDecision: String\(fallbackDiagnostics\.cacheDecision \|\| ""\)/);
+  assert.match(routeBody, /fallbackCacheKeyHash: String\(fallbackDiagnostics\.cacheKeyHash \|\| ""\)/);
+  assert.match(routeBody, /fallbackCacheBuildCount: Number\(fallbackDiagnostics\.cacheBuildCount \|\| 0\)/);
   assert.match(routeBody, /appServerMs/);
   assert.match(routeBody, /fallbackMs/);
   assert.match(routeBody, /mergeMs/);

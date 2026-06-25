@@ -5,6 +5,16 @@ function clonePlainJson(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function shortStableHash(value) {
+  const text = String(value || "");
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619) >>> 0;
+  }
+  return hash.toString(36).padStart(6, "0").slice(0, 10);
+}
+
 function createThreadListFallbackCacheService(options = {}) {
   const ttlMs = Math.max(0, Number(options.ttlMs || 0));
   const maxEntries = Math.max(1, Number(options.maxEntries || 12));
@@ -45,6 +55,7 @@ function createThreadListFallbackCacheService(options = {}) {
     : () => [];
 
   const cache = new Map();
+  let buildCount = 0;
 
   function clear() {
     cache.clear();
@@ -144,9 +155,11 @@ function createThreadListFallbackCacheService(options = {}) {
   function remember(key, threads, timings = {}, rememberOptions = {}) {
     if (!key) return;
     const nowMs = now();
+    buildCount += 1;
     cache.set(key, {
       cachedAt: nowMs,
       updatedAt: nowMs,
+      buildNumber: buildCount,
       limit: Math.max(1, Math.min(200, Number(rememberOptions.limit || 80))),
       filters: cloneFilters(rememberOptions.filters || {}),
       threads: clonePlainJson(Array.isArray(threads) ? threads : []),
@@ -159,21 +172,60 @@ function createThreadListFallbackCacheService(options = {}) {
     }
   }
 
-  function read(key) {
+  function assignReadDiagnostics(diagnostics, values = {}) {
+    if (!diagnostics || typeof diagnostics !== "object") return;
+    Object.assign(diagnostics, values);
+  }
+
+  function read(key, diagnostics = null) {
+    const keyHash = shortStableHash(key);
+    const baseDiagnostics = {
+      cacheKeyHash: key ? keyHash : "",
+      cacheEntryCount: cache.size,
+      cacheTtlMs: ttlMs,
+      cacheBuildCount: buildCount,
+    };
     if (!key) return null;
     const cached = cache.get(key);
-    if (!cached) return null;
-    if (ttlMs > 0
-      && cached.cachedAt
-      && now() - Number(cached.cachedAt || 0) > ttlMs) {
-      cache.delete(key);
+    if (!cached) {
+      assignReadDiagnostics(diagnostics, Object.assign({}, baseDiagnostics, {
+        cacheDecision: "miss",
+      }));
       return null;
     }
+    const nowMs = now();
+    const cachedAt = Number(cached.cachedAt || 0);
+    const updatedAt = Number(cached.updatedAt || cached.cachedAt || 0);
+    const cacheAgeMs = cachedAt ? Math.max(0, nowMs - cachedAt) : 0;
+    const cacheUpdatedAgeMs = updatedAt ? Math.max(0, nowMs - updatedAt) : 0;
+    if (ttlMs > 0
+      && cachedAt
+      && cacheAgeMs > ttlMs) {
+      cache.delete(key);
+      assignReadDiagnostics(diagnostics, Object.assign({}, baseDiagnostics, {
+        cacheDecision: "expired",
+        cacheAgeMs,
+        cacheUpdatedAgeMs,
+        cacheEntryCount: cache.size,
+        cacheBuildNumber: Number(cached.buildNumber || 0),
+        cacheIncrementalUpdates: Number(cached.incrementalUpdates || 0),
+      }));
+      return null;
+    }
+    assignReadDiagnostics(diagnostics, Object.assign({}, baseDiagnostics, {
+      cacheDecision: "hit",
+      cacheAgeMs,
+      cacheUpdatedAgeMs,
+      cacheBuildNumber: Number(cached.buildNumber || 0),
+      cacheIncrementalUpdates: Number(cached.incrementalUpdates || 0),
+      cachedSourceTimings: Object.assign({}, cached.timings || {}),
+    }));
     return {
       threads: clonePlainJson(cached.threads || []),
       timings: Object.assign({}, cached.timings || {}),
-      cachedAt: Number(cached.cachedAt || 0),
-      updatedAt: Number(cached.updatedAt || cached.cachedAt || 0),
+      cachedAt,
+      updatedAt,
+      buildNumber: Number(cached.buildNumber || 0),
       incrementalUpdates: Number(cached.incrementalUpdates || 0),
     };
   }
@@ -181,20 +233,28 @@ function createThreadListFallbackCacheService(options = {}) {
   function readFallback(limit = 80, filters = {}) {
     const diagnostics = filters.diagnostics && typeof filters.diagnostics === "object" ? filters.diagnostics : null;
     const key = cacheKey(limit, filters);
-    const cached = read(key);
+    const cached = read(key, diagnostics);
     if (cached) {
       if (diagnostics) {
         diagnostics.cacheHit = true;
+        diagnostics.cacheDecision = "hit";
         diagnostics.stateDbMs = 0;
         diagnostics.rolloutMs = 0;
         diagnostics.sessionIndexMs = 0;
         diagnostics.cachedSourceTimings = cached.timings;
         diagnostics.cacheAgeMs = cached.updatedAt ? Math.max(0, now() - cached.updatedAt) : 0;
+        diagnostics.cacheBaselineAgeMs = cached.cachedAt ? Math.max(0, now() - cached.cachedAt) : 0;
+        diagnostics.cacheBuildNumber = cached.buildNumber || 0;
         diagnostics.cacheIncrementalUpdates = cached.incrementalUpdates || 0;
       }
       return cached.threads;
     }
-    if (diagnostics) diagnostics.cacheHit = false;
+    if (diagnostics) {
+      diagnostics.cacheHit = false;
+      const missDecision = diagnostics.cacheDecision || "miss";
+      diagnostics.cacheBuildReason = missDecision;
+      diagnostics.cacheDecision = missDecision === "expired" ? "expired-rebuild" : "miss-rebuild";
+    }
     const stateDbStartedAtMs = now();
     const stateDbFallback = readStateDbFallback(limit, filters);
     if (diagnostics) diagnostics.stateDbMs = Math.max(0, now() - stateDbStartedAtMs);
@@ -217,6 +277,14 @@ function createThreadListFallbackCacheService(options = {}) {
       limit,
       filters,
     });
+    if (diagnostics) {
+      diagnostics.cacheEntryCount = cache.size;
+      diagnostics.cacheBuildCount = buildCount;
+      diagnostics.cacheBuildNumber = buildCount;
+      diagnostics.cacheIncrementalUpdates = 0;
+      diagnostics.cacheBaselineAgeMs = 0;
+      diagnostics.cacheAgeMs = 0;
+    }
     return threads;
   }
 

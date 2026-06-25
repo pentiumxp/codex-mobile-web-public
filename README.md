@@ -16,6 +16,31 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v476 Thread List Fallback Cache Decision Diagnostics
+
+v476 转入 Phase B 的一个小切片：把线程列表 fallback cache 的冷/热路径证据补完整。
+此前 `/api/threads` 的 `mobileDiagnostics.threadListTimings` 已有 `fallbackCacheHit`、
+`fallbackStateDbMs`、`fallbackRolloutMs`、`fallbackSessionIndexMs`、`cacheAgeMs` 等字段，
+但缺少结构化的“为什么这次命中/为什么重建”结论。用户看到线程列表有时快有时慢时，
+只能看到 fallback 耗时，不能稳定区分服务冷启动首建、TTL 过期、cache miss、还是正常 warm hit。
+
+本次不改变任何缓存策略，只增加 bounded evidence：
+
+- `fallbackCacheDecision`：`hit`、`miss-rebuild` 或 `expired-rebuild`。
+- `fallbackCacheBuildReason`：重建前的原始原因，例如 `miss` 或 `expired`。
+- `fallbackCacheKeyHash`：只暴露短 hash，不暴露 cwd、workspace roots 或 projectless thread ids。
+- `fallbackCacheAgeMs` / `fallbackCacheBaselineAgeMs` / `fallbackCacheUpdatedAgeMs`：
+  区分 baseline 年龄和增量更新后的年龄。
+- `fallbackCacheBuildCount` / `fallbackCacheBuildNumber` /
+  `fallbackCacheIncrementalUpdates` / `fallbackCacheEntryCount`：判断普通刷新是否在反复重建，
+  还是进程内 baseline 经过增量同步继续复用。
+
+`public/thread-performance-metrics.js` 也会把 thread-list phase 细分为
+`warm-fallback-cache`、`cold-fallback-miss-build`、`cold-fallback-expired-rebuild`、
+`deferred-fallback` 和 `app-server-only`。这让 Phase B 后续排查大 session 首屏和线程列表慢
+可以先读结构化 evidence，再决定是否调整 cache/rollout scan/read path。
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v476`。
+
 ## 2026-06-26 v475 Thread Tile Operation Dock Render Policy
 
 v475 继续 Phase C，在 v474 把 operation mode toggle 迁出 app 层之后，继续把平铺窗口

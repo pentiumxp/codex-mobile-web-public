@@ -99,6 +99,12 @@ test("readFallback uses cached fallback list after the first complete pass", () 
   const first = service.readFallback(10, { diagnostics: firstDiagnostics });
   assert.deepEqual(first.map((thread) => thread.id), ["thread-session", "thread-rollout", "thread-state"]);
   assert.equal(firstDiagnostics.cacheHit, false);
+  assert.equal(firstDiagnostics.cacheDecision, "miss-rebuild");
+  assert.equal(firstDiagnostics.cacheBuildReason, "miss");
+  assert.match(firstDiagnostics.cacheKeyHash, /^[a-z0-9]{6,10}$/);
+  assert.equal(firstDiagnostics.cacheBuildCount, 1);
+  assert.equal(firstDiagnostics.cacheBuildNumber, 1);
+  assert.equal(firstDiagnostics.cacheEntryCount, 1);
   assert.deepEqual(calls, { stateDb: 1, rollout: 1, sessionIndex: 1 });
 
   first[0].name = "mutated caller copy";
@@ -107,7 +113,13 @@ test("readFallback uses cached fallback list after the first complete pass", () 
   const second = service.readFallback(10, { diagnostics: secondDiagnostics });
   assert.deepEqual(calls, { stateDb: 1, rollout: 1, sessionIndex: 1 });
   assert.equal(secondDiagnostics.cacheHit, true);
+  assert.equal(secondDiagnostics.cacheDecision, "hit");
+  assert.equal(secondDiagnostics.cacheBuildCount, 1);
+  assert.equal(secondDiagnostics.cacheBuildNumber, 1);
+  assert.equal(secondDiagnostics.cacheEntryCount, 1);
   assert.equal(secondDiagnostics.cacheAgeMs, 250);
+  assert.equal(secondDiagnostics.cacheBaselineAgeMs, 250);
+  assert.equal(secondDiagnostics.cacheTtlMs, 0);
   assert.equal(second[0].name, "Session");
   assert.deepEqual(secondDiagnostics.cachedSourceTimings, {
     stateDbMs: 0,
@@ -118,13 +130,24 @@ test("readFallback uses cached fallback list after the first complete pass", () 
 
 test("fallback cache ttl is opt-in and expires cached entries when configured", () => {
   const { calls, service, setNow } = createService({ ttlMs: 10 });
-  service.readFallback(10, {});
+  const firstDiagnostics = {};
+  service.readFallback(10, { diagnostics: firstDiagnostics });
+  assert.equal(firstDiagnostics.cacheDecision, "miss-rebuild");
   setNow(1005);
-  service.readFallback(10, {});
+  const hitDiagnostics = {};
+  service.readFallback(10, { diagnostics: hitDiagnostics });
+  assert.equal(hitDiagnostics.cacheDecision, "hit");
+  assert.equal(hitDiagnostics.cacheTtlMs, 10);
   assert.deepEqual(calls, { stateDb: 1, rollout: 1, sessionIndex: 1 });
 
   setNow(1015);
-  service.readFallback(10, {});
+  const expiredDiagnostics = {};
+  service.readFallback(10, { diagnostics: expiredDiagnostics });
+  assert.equal(expiredDiagnostics.cacheDecision, "expired-rebuild");
+  assert.equal(expiredDiagnostics.cacheBuildReason, "expired");
+  assert.equal(expiredDiagnostics.cacheTtlMs, 10);
+  assert.equal(expiredDiagnostics.cacheBuildCount, 2);
+  assert.equal(expiredDiagnostics.cacheBuildNumber, 2);
   assert.deepEqual(calls, { stateDb: 2, rollout: 2, sessionIndex: 2 });
 });
 
@@ -143,7 +166,9 @@ test("status updates patch cached rows without adding missing threads", () => {
   const diagnostics = {};
   const threads = service.readFallback(10, { diagnostics });
   assert.equal(diagnostics.cacheHit, true);
+  assert.equal(diagnostics.cacheDecision, "hit");
   assert.equal(diagnostics.cacheIncrementalUpdates, 1);
+  assert.equal(diagnostics.cacheBuildNumber, 1);
   assert.deepEqual(threads, [{
     id: "thread-1",
     name: "One",

@@ -53,15 +53,26 @@ AI, not independently by Codex Mobile:
 
 ### Phase 1: Evidence And Boundary Cleanup
 
-Status: in progress. The latest slice adds bounded `detailShape` counts to
+Status: in progress. Earlier slices added bounded `detailShape` counts to
 thread-detail performance events, so large-session investigations can compare
 server phase timings with client render/merge timings and visible item shape
-without collecting message bodies or file contents.
+without collecting message bodies or file contents. The latest Phase B slice
+extends thread-list fallback-cache diagnostics with explicit cache decision
+metadata so cold/warm thread-list behavior can be read from
+`mobileDiagnostics.threadListTimings` without inspecting private cache keys or
+raw thread data.
 
 - Keep large-session timing evidence in `mobileDiagnostics.threadDetailTimings`
   and client `performancePhase` events. Client events now also carry
   `detailShape` counts for turns, items, visible items, image items, operation
   items, receipt items, usage items, diagnostics, and completed/active turns.
+- Keep thread-list fallback cache evidence in
+  `mobileDiagnostics.threadListTimings`. The cache now reports
+  `fallbackCacheDecision` (`hit`, `miss-rebuild`, `expired-rebuild`), bounded
+  cache key hash, cache age/update age, build count/number, entry count, and
+  incremental-update count. These fields prove whether an observed slow list
+  load is a first baseline build, TTL expiry, cache miss, deferred fallback, or
+  warm in-process reuse.
 - Move deterministic completed-turn diagnostics out of `server.js` into a
   service module.
 - Preserve the rule that explicit empty final assistant messages produce
@@ -266,6 +277,12 @@ Remaining target:
   disk-backed projection or `turns-list-large`, with `threadReadMs=0`; full
   `thread/read` should only remain for small/non-rollout threads or bounded
   turns-list failure.
+- For thread-list cold/warm behavior, use `fallbackCacheDecision`,
+  `fallbackCacheBuildCount`, `fallbackCacheBuildNumber`, and
+  `fallbackCacheIncrementalUpdates` before changing cache invalidation. Normal
+  refreshes should trend toward `hit` after the first process-lifetime baseline
+  build; repeated `miss-rebuild` or `expired-rebuild` is the evidence needed
+  for the next cache-boundary repair.
 
 ### Phase 4: Browser And Visual Coverage
 
