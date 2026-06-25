@@ -71,3 +71,95 @@ test("thread diagnostic events bound invalid counts and labels", () => {
   assert.equal(event.counts.previous_count, 0);
   assert.equal(event.counts.visible_count, 100000);
 });
+
+test("thread diagnostic events build render signature mismatch payloads", () => {
+  const snapshot = {
+    renderedSignature: "old",
+    currentSignature: "new",
+    context: {
+      surface: "conversation-render",
+      action: "refresh-metadata",
+      route_kind: "thread-tile",
+      read_mode: "mixed",
+      render_mode: "metadata-only",
+      unsafe_message: "private text ignored",
+    },
+    counts: {
+      dom_count: 7.8,
+      duplicate_count: 0,
+      visible_count: 12.4,
+      turn_count: 3,
+      pane_count: 2,
+    },
+  };
+  const event = diagnostics.renderSignatureMismatchDiagnosticEvent(snapshot);
+
+  assert.equal(diagnostics.hasRenderSignatureMismatch(snapshot), true);
+  assert.equal(event.category, "conversation_projection_mismatch");
+  assert.equal(event.diagnostic_type, "render_signature_mismatch");
+  assert.equal(event.severity_hint, "H2");
+  assert.equal(event.evidence_confidence, 0.74);
+  assert.deepEqual(event.context, {
+    surface: "conversation-render",
+    action: "refresh-metadata",
+    route_kind: "thread-tile",
+    read_mode: "mixed",
+    render_mode: "metadata-only",
+  });
+  assert.deepEqual(event.counts, {
+    dom_count: 7,
+    duplicate_count: 0,
+    visible_count: 12,
+    turn_count: 3,
+    pane_count: 2,
+  });
+  assert.deepEqual(event.breadcrumbs[0].fields, {
+    read_mode: "mixed",
+    render_mode: "metadata-only",
+    dom_count: 7,
+    visible_count: 12,
+  });
+  assert.equal(JSON.stringify(event).includes("private"), false);
+});
+
+test("thread diagnostic events build duplicate render-key payloads and success inputs", () => {
+  const snapshot = {
+    renderedSignature: "same",
+    currentSignature: "same",
+    context: {
+      surface: "conversation-render",
+      action: "first-paint",
+      read_mode: "projection-cache",
+      render_mode: "first-paint",
+    },
+    counts: {
+      dom_count: 5,
+      duplicate_count: 2,
+      visible_count: 4,
+      turn_count: 1,
+    },
+  };
+  const duplicate = diagnostics.duplicateRenderKeysDiagnosticEvent(snapshot);
+
+  assert.equal(diagnostics.hasRenderSignatureMismatch(snapshot), false);
+  assert.equal(diagnostics.hasDuplicateRenderKeys(snapshot), true);
+  assert.equal(duplicate.diagnostic_type, "duplicate_render_keys");
+  assert.equal(duplicate.evidence_confidence, 0.78);
+  assert.deepEqual(duplicate.breadcrumbs[0].fields, {
+    duplicate_count: 2,
+    dom_count: 5,
+    visible_count: 4,
+  });
+  assert.deepEqual(diagnostics.renderSignatureMismatchDiagnosticSuccess(snapshot), {
+    category: "conversation_projection_mismatch",
+    diagnostic_type: "render_signature_mismatch",
+    error_code: "render_signature_mismatch",
+    context: duplicate.context,
+  });
+  assert.deepEqual(diagnostics.duplicateRenderKeysDiagnosticSuccess(snapshot), {
+    category: "conversation_projection_mismatch",
+    diagnostic_type: "duplicate_render_keys",
+    error_code: "duplicate_render_keys",
+    context: duplicate.context,
+  });
+});

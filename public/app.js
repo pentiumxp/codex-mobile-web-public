@@ -508,7 +508,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v490";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v491";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -6870,64 +6870,15 @@ function checkConversationProjectionConsistency(source, extra = {}) {
   if (!state.currentThread || state.currentThread.mobileLoading || state.currentThread.mobileLoadError) return;
   const snapshot = conversationProjectionDiagnosticSnapshot(source, extra);
   if (!snapshot) return;
-  const baseContext = snapshot.context;
-  const counts = snapshot.counts;
-  if (snapshot.renderedSignature && snapshot.renderedSignature !== snapshot.currentSignature) {
-    recordHomeAiDiagnosticFailure({
-      category: "conversation_projection_mismatch",
-      diagnostic_type: "render_signature_mismatch",
-      severity_hint: "H2",
-      evidence_confidence: 0.74,
-      error_code: "render_signature_mismatch",
-      context: baseContext,
-      counts,
-      breadcrumbs: [{
-        kind: "conversation-render",
-        code: "signature-check",
-        status: "failed",
-        fields: {
-          read_mode: baseContext.read_mode,
-          render_mode: baseContext.render_mode,
-          dom_count: counts.dom_count,
-          visible_count: counts.visible_count,
-        },
-      }],
-    });
+  if (threadDiagnosticEventsApi.hasRenderSignatureMismatch(snapshot)) {
+    recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.renderSignatureMismatchDiagnosticEvent(snapshot));
   } else {
-    recordHomeAiDiagnosticSuccess({
-      category: "conversation_projection_mismatch",
-      diagnostic_type: "render_signature_mismatch",
-      error_code: "render_signature_mismatch",
-      context: baseContext,
-    });
+    recordHomeAiDiagnosticSuccess(threadDiagnosticEventsApi.renderSignatureMismatchDiagnosticSuccess(snapshot));
   }
-  if (counts.duplicate_count > 0) {
-    recordHomeAiDiagnosticFailure({
-      category: "conversation_projection_mismatch",
-      diagnostic_type: "duplicate_render_keys",
-      severity_hint: "H2",
-      evidence_confidence: 0.78,
-      error_code: "duplicate_render_keys",
-      context: baseContext,
-      counts,
-      breadcrumbs: [{
-        kind: "conversation-render",
-        code: "render-key-check",
-        status: "failed",
-        fields: {
-          duplicate_count: counts.duplicate_count,
-          dom_count: counts.dom_count,
-          visible_count: counts.visible_count,
-        },
-      }],
-    });
+  if (threadDiagnosticEventsApi.hasDuplicateRenderKeys(snapshot)) {
+    recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.duplicateRenderKeysDiagnosticEvent(snapshot));
   } else {
-    recordHomeAiDiagnosticSuccess({
-      category: "conversation_projection_mismatch",
-      diagnostic_type: "duplicate_render_keys",
-      error_code: "duplicate_render_keys",
-      context: baseContext,
-    });
+    recordHomeAiDiagnosticSuccess(threadDiagnosticEventsApi.duplicateRenderKeysDiagnosticSuccess(snapshot));
   }
 }
 

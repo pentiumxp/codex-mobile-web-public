@@ -16,6 +16,38 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v491 Projection Consistency Diagnostic Event Planning
+
+v491 继续推进 Phase A 的前端 render/patch ownership 收敛，这次把
+`checkConversationProjectionConsistency()` 中剩余的 projection mismatch
+诊断事件结构也收进 `public/thread-diagnostic-events.js`。
+
+本次切片新增 `renderSignatureMismatchDiagnosticEvent()`、
+`renderSignatureMismatchDiagnosticSuccess()`、
+`duplicateRenderKeysDiagnosticEvent()` 和
+`duplicateRenderKeysDiagnosticSuccess()`，统一生成
+`conversation_projection_mismatch/render_signature_mismatch` 与
+`conversation_projection_mismatch/duplicate_render_keys` 的 failure/success
+输入。`public/app.js` 保留 DOM snapshot、signature 对比触发点、失败计数和
+Home AI transport，不再内联这两类诊断事件的 category、diagnostic type、
+counts 和 breadcrumbs。
+
+修复边界：
+
+- 症状/风险：v490 已经收敛 patch reject，但 signature mismatch 和 duplicate
+  render-key 的 payload 仍在 `app.js` 中手工拼装。后续修改 tile/single
+  render consistency 或 snapshot 形状时，诊断事件字段容易再次漂移。
+- 失败层：前端 conversation projection consistency diagnostic event ownership。
+- 不变量：projection consistency 诊断只记录 bounded context、reason/status
+  code、DOM/visible/duplicate/pane 计数；不记录消息正文、任务卡正文、上传内容、
+  私有路径、cookie/token 或长日志。
+- 闭环验证：`test/thread-diagnostic-events.test.js` 覆盖 signature mismatch、
+  duplicate render-key 和 success input；`test/conversation-render.test.js`
+  验证 `checkConversationProjectionConsistency()` 已委托 helper，而不再内联
+  这两类 payload。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v491`。
+
 ## 2026-06-26 v490 Patch-Reject Diagnostic Event Planning
 
 v490 继续推进 Phase A 的前端 render/patch ownership 收敛，这次聚焦

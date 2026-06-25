@@ -2924,6 +2924,19 @@ test("conversation projection diagnostics use the single-thread signature outsid
   assert.deepEqual(helpers.calls().filter((entry) => entry[0] === "tile"), []);
 });
 
+test("conversation projection consistency delegates report payloads to diagnostic helpers", () => {
+  const body = functionBody("checkConversationProjectionConsistency");
+  assert.match(body, /threadDiagnosticEventsApi\.hasRenderSignatureMismatch\(snapshot\)/);
+  assert.match(body, /recordHomeAiDiagnosticFailure\(threadDiagnosticEventsApi\.renderSignatureMismatchDiagnosticEvent\(snapshot\)\)/);
+  assert.match(body, /recordHomeAiDiagnosticSuccess\(threadDiagnosticEventsApi\.renderSignatureMismatchDiagnosticSuccess\(snapshot\)\)/);
+  assert.match(body, /threadDiagnosticEventsApi\.hasDuplicateRenderKeys\(snapshot\)/);
+  assert.match(body, /recordHomeAiDiagnosticFailure\(threadDiagnosticEventsApi\.duplicateRenderKeysDiagnosticEvent\(snapshot\)\)/);
+  assert.match(body, /recordHomeAiDiagnosticSuccess\(threadDiagnosticEventsApi\.duplicateRenderKeysDiagnosticSuccess\(snapshot\)\)/);
+  assert.doesNotMatch(body, /diagnostic_type: "render_signature_mismatch"/);
+  assert.doesNotMatch(body, /diagnostic_type: "duplicate_render_keys"/);
+  assert.match(appJs, /const threadDiagnosticEventsApi = window\.CodexThreadDiagnosticEvents;/);
+});
+
 test("thread tile local patch paths refresh the pane instead of writing a single-thread signature", () => {
   assert.match(appJs, /function threadDetailDomPatchSurface\(/);
   assert.match(functionBody("threadDetailDomPatchSurface"), /threadDetailPatchPlanApi\.planThreadDetailDomPatchSurface\(/);

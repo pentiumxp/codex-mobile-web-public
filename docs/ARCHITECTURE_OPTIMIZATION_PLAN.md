@@ -191,6 +191,13 @@ counter, and Home AI report transport, while the diagnostic evidence shape is
 owned by a focused helper. The Home AI diagnostic sanitizer now explicitly
 allows these bounded reason/count fields so they are not lost before the Owner
 diagnostic loop receives them.
+Projection consistency diagnostic event planning now also lives in the same
+module: `renderSignatureMismatchDiagnosticEvent`,
+`renderSignatureMismatchDiagnosticSuccess`, `duplicateRenderKeysDiagnosticEvent`,
+and `duplicateRenderKeysDiagnosticSuccess` build the bounded failure/success
+inputs for render-signature mismatch and duplicate render-key reports.
+`checkConversationProjectionConsistency()` now owns snapshot acquisition and
+reporter calls only, not event shape construction.
 Single-thread full-render shell planning now also lives in
 `public/thread-detail-render-plan.js`: loading, load-error retry, detail
 content ordering, empty/read-warning state selection, plugin-refresh notice
