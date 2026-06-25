@@ -92,6 +92,30 @@ test("thread tile layout exposes a separate user pane ceiling", () => {
   assert.equal(tile.DEFAULT_MIN_DESKTOP_MANUAL_PANE_WIDTH, 300);
 });
 
+test("thread tile column groups split only the overflow column", () => {
+  assert.deepEqual(tile.threadTileColumnGroups({
+    ids: ["a", "b", "c", "d", "e"],
+    columns: 4,
+  }), [["a"], ["b"], ["c"], ["d", "e"]]);
+  assert.deepEqual(tile.threadTileColumnGroups({
+    ids: ["a", "b", "c", "d", "e", "f"],
+    columns: 4,
+  }), [["a"], ["b"], ["c", "f"], ["d", "e"]]);
+});
+
+test("thread tile column groups honor explicit split pairs without moving unrelated panes", () => {
+  assert.deepEqual(tile.threadTileColumnGroups({
+    ids: ["a", "b", "c", "d", "e"],
+    columns: 4,
+    splitPairs: [{ anchorId: "b", childId: "e" }],
+  }), [["a"], ["b", "e"], ["c"], ["d"]]);
+  assert.deepEqual(tile.normalizeSplitPairs([
+    { anchorId: "b", childId: "e" },
+    { anchorId: "b", childId: "c" },
+    { anchorId: "x", childId: "d" },
+  ], ["a", "b", "c", "d", "e"]), [{ anchorId: "b", childId: "e" }]);
+});
+
 test("thread tile layout keeps iPad portrait in single-thread mode", () => {
   const layout = tile.layoutForViewport({
     enabled: true,

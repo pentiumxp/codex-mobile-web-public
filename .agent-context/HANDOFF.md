@@ -1,3 +1,45 @@
+# 2026-06-25 - v431 tile local split columns and header drag pending deploy
+
+- Scope:
+  - Implemented a split-screen reader layout improvement for wide tile mode.
+  - Not committed, deployed, or pushed Public yet.
+- Change:
+  - `public/thread-tile-layout.js` now builds column groups for tile panes. If
+    the visible pane count exceeds physical column capacity, overflow panes are
+    placed inside existing columns as local vertical splits instead of creating
+    a sparse second full row.
+  - Example: 5 panes on a 4-column desktop becomes three full-height columns
+    plus one column split into two panes, not 4 panes on row one and one lonely
+    pane on row two.
+  - `public/app.js` renders `.thread-tile-column` wrappers and persists
+    `paneSplitPairs` in the existing `/api/settings/thread-display` settings.
+  - Pane title buttons are draggable. Dropping onto a target pane's center pairs
+    the dragged pane with that target as an up/down split; dropping on the
+    target pane's left or right edge moves the dragged pane before or after the
+    target.
+  - `server.js` normalizes and persists `paneSplitPairs` alongside
+    `paneThreadIds`, `paneCount`, and `selectedThreadId`.
+  - PWA shell cache bumped to `codex-mobile-shell-v431`.
+  - `README.md`, `docs/MODULES.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` document the behavior.
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js && node --check public/thread-tile-layout.js && node --check server.js`
+    passed.
+  - `node --test test/thread-tile-layout.test.js test/thread-tile-layout-ui.test.js test/thread-visibility.test.js test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js`
+    passed (`84` tests).
+  - Expanded focused run passed:
+    `node --test test/thread-tile-layout.test.js test/thread-tile-layout-ui.test.js test/thread-visibility.test.js test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js test/app-update.test.js test/plugin-voice-input.test.js`
+    (`98` tests).
+  - `git diff --check` passed.
+  - A temporary source-workspace server was started on `127.0.0.1:8891` for
+    browser smoke, then stopped. Browser automation through Node REPL failed
+    with a tool `sandboxCwd` error, and direct local Playwright smoke was not
+    run because this workspace does not have a `playwright` dependency. Use the
+    Home AI central visual tool after deployment if live visual evidence is
+    required.
+- Next:
+  - Commit if ready, and deploy only if requested.
+
 # 2026-06-25 - v430 architecture optimization slice pending deploy
 
 - Scope:

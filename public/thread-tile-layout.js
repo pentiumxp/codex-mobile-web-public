@@ -116,6 +116,46 @@
     return ids.slice(0, maxPanes);
   }
 
+  function normalizeSplitPairs(values = [], ids = []) {
+    const idSet = new Set(uniqueThreadIds(ids));
+    const used = new Set();
+    const pairs = [];
+    for (const value of Array.isArray(values) ? values : []) {
+      const anchorId = String(Array.isArray(value) ? value[0] : value && (value.anchorId || value.topId || value.primaryId) || "").trim();
+      const childId = String(Array.isArray(value) ? value[1] : value && (value.childId || value.bottomId || value.secondaryId) || "").trim();
+      if (!anchorId || !childId || anchorId === childId) continue;
+      if (idSet.size && (!idSet.has(anchorId) || !idSet.has(childId))) continue;
+      if (used.has(anchorId) || used.has(childId)) continue;
+      used.add(anchorId);
+      used.add(childId);
+      pairs.push({ anchorId, childId });
+    }
+    return pairs;
+  }
+
+  function threadTileColumnGroups(input = {}) {
+    const ids = uniqueThreadIds(input.ids || input.threadIds || []);
+    const columns = clampInteger(input.columns || 1, 1, DEFAULT_USER_MAX_PANES);
+    if (!ids.length) return [];
+    const pairs = normalizeSplitPairs(input.splitPairs || input.paneSplitPairs || [], ids);
+    const pairByAnchor = new Map(pairs.map((pair) => [pair.anchorId, pair.childId]));
+    const childIds = new Set(pairs.map((pair) => pair.childId));
+    const atomicGroups = [];
+    for (const id of ids) {
+      if (childIds.has(id)) continue;
+      const childId = pairByAnchor.get(id);
+      atomicGroups.push(childId ? [id, childId] : [id]);
+    }
+    const targetColumns = Math.max(1, Math.min(columns, atomicGroups.length));
+    const groups = atomicGroups.slice(0, targetColumns).map((group) => group.slice());
+    const overflow = atomicGroups.slice(targetColumns);
+    overflow.forEach((group, index) => {
+      const targetIndex = Math.max(0, targetColumns - 1 - (index % targetColumns));
+      groups[targetIndex].push(...group);
+    });
+    return groups.filter((group) => group.length);
+  }
+
   return {
     DEFAULT_MAX_PANES,
     DEFAULT_USER_MAX_PANES,
@@ -126,6 +166,8 @@
     DEFAULT_MIN_PANE_HEIGHT,
     DEFAULT_MIN_TABLET_PANE_WIDTH,
     layoutForViewport,
+    normalizeSplitPairs,
     selectThreadTileIds,
+    threadTileColumnGroups,
   };
 }));

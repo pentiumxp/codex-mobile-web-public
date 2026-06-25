@@ -6959,6 +6959,24 @@ function normalizeThreadDisplayPaneCount(value, fallback = 0) {
   return Math.max(0, Math.min(THREAD_DISPLAY_MAX_PANES, parsed));
 }
 
+function normalizeThreadDisplaySplitPairs(values = [], paneThreadIds = []) {
+  const idSet = new Set((paneThreadIds || []).map(normalizeThreadDisplayThreadId).filter(Boolean));
+  const used = new Set();
+  const pairs = [];
+  for (const value of Array.isArray(values) ? values : []) {
+    const anchorId = normalizeThreadDisplayThreadId(Array.isArray(value) ? value[0] : value && (value.anchorId || value.topId || value.primaryId));
+    const childId = normalizeThreadDisplayThreadId(Array.isArray(value) ? value[1] : value && (value.childId || value.bottomId || value.secondaryId));
+    if (!anchorId || !childId || anchorId === childId) continue;
+    if (idSet.size && (!idSet.has(anchorId) || !idSet.has(childId))) continue;
+    if (used.has(anchorId) || used.has(childId)) continue;
+    used.add(anchorId);
+    used.add(childId);
+    pairs.push({ anchorId, childId });
+    if (pairs.length >= Math.floor(THREAD_DISPLAY_MAX_PANES / 2)) break;
+  }
+  return pairs;
+}
+
 function normalizeThreadDisplayMode(value, fallback = "single") {
   const text = String(value || "").trim().toLowerCase();
   if (text === "tile" || text === "tiles" || text === "tiled") return "tile";
@@ -6993,6 +7011,10 @@ function normalizeThreadDisplaySettings(raw = {}, options = {}) {
         : input.tilePaneCount,
     0,
   );
+  const paneSplitPairs = normalizeThreadDisplaySplitPairs(
+    input.paneSplitPairs || input.threadTileSplitPairs || input.splitPairs,
+    paneThreadIds,
+  );
   const updatedAt = String(input.updatedAt || "").trim();
   const updatedAtMs = timestampToMs(input.updatedAtMs || updatedAt);
   return {
@@ -7000,6 +7022,7 @@ function normalizeThreadDisplaySettings(raw = {}, options = {}) {
     threadTileMode: displayMode === "tile",
     paneThreadIds,
     paneCount,
+    paneSplitPairs,
     selectedThreadId,
     updatedAt,
     updatedAtMs,
@@ -7029,6 +7052,7 @@ function setThreadDisplaySettings(patch = {}) {
       displayMode: next.displayMode,
       paneThreadIds: next.paneThreadIds,
       paneCount: next.paneCount,
+      paneSplitPairs: next.paneSplitPairs,
       selectedThreadId: next.selectedThreadId,
       updatedAt: next.updatedAt,
       updatedAtMs: next.updatedAtMs,

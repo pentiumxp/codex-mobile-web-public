@@ -183,6 +183,11 @@ test("thread display settings normalize tile mode and stable pane slots", () => 
     displayMode: "tile",
     paneThreadIds: ["thread-a", "thread-b", "thread-a", "", "thread-c"],
     paneCount: 4.8,
+    paneSplitPairs: [
+      { anchorId: "thread-a", childId: "thread-c" },
+      { anchorId: "thread-a", childId: "thread-b" },
+      { anchorId: "missing", childId: "thread-b" },
+    ],
     selectedThreadId: "thread-b",
   });
 
@@ -190,6 +195,7 @@ test("thread display settings normalize tile mode and stable pane slots", () => 
   assert.equal(settings.threadTileMode, true);
   assert.deepEqual(settings.paneThreadIds.slice(0, 3), ["thread-a", "thread-b", "thread-c"]);
   assert.equal(settings.paneCount, 4);
+  assert.deepEqual(settings.paneSplitPairs, [{ anchorId: "thread-a", childId: "thread-c" }]);
   assert.equal(settings.selectedThreadId, "thread-b");
   assert.equal(threadDisplayPublicSettings().source, "runtime");
   assert.equal(threadDisplayPublicSettings().paneCount, 4);

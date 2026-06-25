@@ -156,10 +156,14 @@ Target:
   the wider default pane width, while manual mode derives pane width from the
   requested pane count and current available CSS width. Wide desktop screens
   keep five or six requested panes in one row when the CSS width allows it;
-  wrapping happens only after the requested pane count exceeds physical column
-  capacity. When the user explicitly opens a non-visible thread from the outer
-  thread list, the last visible pane is replaced and that slot order is saved;
-  background recent ordering still cannot move fixed panes.
+  after the requested pane count exceeds physical column capacity, overflow panes
+  are packed into existing columns as local up/down splits instead of creating a
+  sparse second full row. v431 adds persisted `paneSplitPairs`: dragging a pane
+  title onto another pane can either move the pane before/after the target or
+  pair the two panes into one vertical split column. When the user explicitly
+  opens a non-visible thread from the outer thread list, the last visible pane is
+  replaced and that slot order is saved; background recent ordering still cannot
+  move fixed panes.
 - Keep the current automatic tile policy as the interim capability gate for
   iPad/desktop width, not as the final interaction model. Manual pane count is
   now the owner of "how many windows should be visible" until draggable split

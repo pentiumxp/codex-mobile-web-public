@@ -158,6 +158,8 @@ const state = {
   threadTileLoadedAtById: new Map(),
   threadTileActiveIds: [],
   threadTilePinnedIds: [],
+  threadTileSplitPairs: [],
+  threadTileDraggingThreadId: "",
   threadTilePaneCount: 0,
   threadTileSelectedThreadId: "",
   threadTileSwitchMenuPaneId: "",
@@ -463,7 +465,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v430";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v431";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -11352,11 +11354,19 @@ function threadTileDisplayLayout(layout = threadTileLayout(), ids = []) {
   const count = Math.max(1, Array.isArray(ids) && ids.length ? ids.length : effectiveThreadTilePaneCount(layout));
   const capacityColumns = Math.max(1, Math.floor(Number(layout && layout.columns || 1)) || 1);
   const columns = Math.max(1, Math.min(capacityColumns, count));
+  const columnGroups = threadTileLayoutPolicy.threadTileColumnGroups
+    ? threadTileLayoutPolicy.threadTileColumnGroups({
+      ids,
+      columns,
+      splitPairs: threadTilePrunedSplitPairs(ids),
+    })
+    : (ids || []).slice(0, count).map((id) => [id]);
   return Object.assign({}, layout, {
     capacityPanes: threadTileLayoutCapacity(layout),
     visiblePanes: count,
-    columns,
-    rows: Math.max(1, Math.ceil(count / columns)),
+    columns: Math.max(1, columnGroups.length || columns),
+    rows: Math.max(1, ...columnGroups.map((group) => group.length || 1)),
+    columnGroups,
   });
 }
 
@@ -11371,6 +11381,44 @@ function normalizeThreadTilePinnedIds(values = []) {
     if (ids.length >= THREAD_TILE_USER_MAX_PANES * 2) break;
   }
   return ids;
+}
+
+function normalizeThreadTileSplitPairs(values = [], ids = []) {
+  const visibleSet = new Set((ids || []).map((id) => String(id || "").trim()).filter(Boolean));
+  const normalized = threadTileLayoutPolicy.normalizeSplitPairs
+    ? threadTileLayoutPolicy.normalizeSplitPairs(values, Array.from(visibleSet))
+    : [];
+  return normalized.map((pair) => ({
+    anchorId: String(pair.anchorId || ""),
+    childId: String(pair.childId || ""),
+  })).filter((pair) => pair.anchorId && pair.childId);
+}
+
+function threadTilePrunedSplitPairs(ids = threadTileCandidateIds()) {
+  return normalizeThreadTileSplitPairs(state.threadTileSplitPairs, ids);
+}
+
+function removeThreadTileSplitPairsForIds(ids = []) {
+  const remove = new Set((ids || []).map((id) => String(id || "")).filter(Boolean));
+  if (!remove.size) return false;
+  const next = (state.threadTileSplitPairs || []).filter((pair) => (
+    pair && !remove.has(String(pair.anchorId || "")) && !remove.has(String(pair.childId || ""))
+  ));
+  const changed = JSON.stringify(next) !== JSON.stringify(state.threadTileSplitPairs || []);
+  if (changed) state.threadTileSplitPairs = next;
+  return changed;
+}
+
+function setThreadTileSplitPair(anchorId, childId) {
+  const anchor = String(anchorId || "").trim();
+  const child = String(childId || "").trim();
+  if (!anchor || !child || anchor === child) return false;
+  const next = (state.threadTileSplitPairs || []).filter((pair) => (
+    pair && ![anchor, child].includes(String(pair.anchorId || "")) && ![anchor, child].includes(String(pair.childId || ""))
+  ));
+  next.unshift({ anchorId: anchor, childId: child });
+  state.threadTileSplitPairs = normalizeThreadTileSplitPairs(next, threadTileCandidateIds());
+  return true;
 }
 
 function threadTileVisibleIdSet() {
@@ -11396,10 +11444,12 @@ function threadTileCandidateIds(layout = threadTileLayout()) {
 }
 
 function threadDisplaySettingsPayload() {
+  const paneThreadIds = normalizeThreadTilePinnedIds(state.threadTilePinnedIds);
   return {
     displayMode: state.threadTileMode ? "tile" : "single",
-    paneThreadIds: normalizeThreadTilePinnedIds(state.threadTilePinnedIds),
+    paneThreadIds,
     paneCount: normalizeThreadTilePaneCount(state.threadTilePaneCount, 0),
+    paneSplitPairs: normalizeThreadTileSplitPairs(state.threadTileSplitPairs, paneThreadIds),
     selectedThreadId: String(state.threadTileSelectedThreadId || ""),
   };
 }
@@ -11429,6 +11479,7 @@ function applyThreadDisplaySettings(settings = {}, options = {}) {
     : "single";
   state.threadTileMode = displayMode === "tile";
   state.threadTilePinnedIds = normalizeThreadTilePinnedIds(settings.paneThreadIds || settings.threadTilePinnedIds || []);
+  state.threadTileSplitPairs = normalizeThreadTileSplitPairs(settings.paneSplitPairs || settings.threadTileSplitPairs || settings.splitPairs || [], state.threadTilePinnedIds);
   const paneCountInput = Object.prototype.hasOwnProperty.call(settings, "paneCount")
     ? settings.paneCount
     : Object.prototype.hasOwnProperty.call(settings, "threadTilePaneCount")
@@ -11499,6 +11550,7 @@ function syncThreadTilePinnedIdsFromActiveIds(activeIds = []) {
   const remaining = normalizeThreadTilePinnedIds(state.threadTilePinnedIds)
     .filter((id) => !ids.includes(id));
   state.threadTilePinnedIds = normalizeThreadTilePinnedIds([...ids, ...remaining]);
+  state.threadTileSplitPairs = normalizeThreadTileSplitPairs(state.threadTileSplitPairs, state.threadTilePinnedIds);
   scheduleThreadDisplaySettingsSave();
   return true;
 }
@@ -11620,6 +11672,71 @@ function replaceThreadTilePaneThread(fromThreadId, toThreadId) {
   if (duplicateIndex >= 0 && duplicateIndex !== index) scheduleRenderCurrentThread();
   else if (!patchThreadTilePane(to, { paneElement: sourcePane, stickToBottom: true })) scheduleRenderCurrentThread();
   return true;
+}
+
+function moveThreadTilePaneRelative(fromThreadId, toThreadId, placement = "after") {
+  const from = String(fromThreadId || "").trim();
+  const to = String(toThreadId || "").trim();
+  if (!from || !to || from === to || !state.threadTileMode) return false;
+  const layout = threadTileLayout();
+  const ids = threadTileCandidateIds(layout);
+  if (!ids.includes(from) || !ids.includes(to)) return false;
+  const withoutFrom = ids.filter((id) => id !== from);
+  const targetIndex = withoutFrom.indexOf(to);
+  if (targetIndex < 0) return false;
+  const insertAt = placement === "before" ? targetIndex : targetIndex + 1;
+  withoutFrom.splice(insertAt, 0, from);
+  saveCurrentDraftNow();
+  removeThreadTileSplitPairsForIds([from]);
+  state.threadTilePinnedIds = normalizeThreadTilePinnedIds(withoutFrom);
+  state.threadTileSplitPairs = normalizeThreadTileSplitPairs(state.threadTileSplitPairs, state.threadTilePinnedIds);
+  state.threadTileSelectedThreadId = from;
+  state.threadTileSwitchMenuPaneId = "";
+  scheduleThreadDisplaySettingsSave();
+  restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
+  renderComposerSettings();
+  updateComposerControls();
+  renderCurrentThread({ stickToBottom: true });
+  return true;
+}
+
+function splitThreadTilePaneWithTarget(fromThreadId, toThreadId, placement = "below") {
+  const from = String(fromThreadId || "").trim();
+  const to = String(toThreadId || "").trim();
+  if (!from || !to || from === to || !state.threadTileMode) return false;
+  const layout = threadTileLayout();
+  const ids = threadTileCandidateIds(layout);
+  if (!ids.includes(from) || !ids.includes(to)) return false;
+  saveCurrentDraftNow();
+  const targetIndex = ids.indexOf(to);
+  const nextIds = ids.filter((id) => id !== from && id !== to);
+  nextIds.splice(Math.max(0, targetIndex), 0, ...(placement === "above" ? [from, to] : [to, from]));
+  state.threadTilePinnedIds = normalizeThreadTilePinnedIds(nextIds);
+  if (placement === "above") setThreadTileSplitPair(from, to);
+  else setThreadTileSplitPair(to, from);
+  state.threadTileSelectedThreadId = from;
+  state.threadTileSwitchMenuPaneId = "";
+  scheduleThreadDisplaySettingsSave();
+  restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
+  renderComposerSettings();
+  updateComposerControls();
+  renderCurrentThread({ stickToBottom: true });
+  return true;
+}
+
+function dropThreadTilePane(fromThreadId, toThreadId, event) {
+  const from = String(fromThreadId || "").trim();
+  const to = String(toThreadId || "").trim();
+  const pane = event && event.target && event.target.closest ? event.target.closest("[data-thread-tile-pane]") : null;
+  if (!from || !to || from === to || !pane) return false;
+  const rect = pane.getBoundingClientRect();
+  const width = Math.max(1, rect.width || 1);
+  const height = Math.max(1, rect.height || 1);
+  const x = (Number(event.clientX || 0) - rect.left) / width;
+  const y = (Number(event.clientY || 0) - rect.top) / height;
+  if (x < 0.24) return moveThreadTilePaneRelative(from, to, "before");
+  if (x > 0.76) return moveThreadTilePaneRelative(from, to, "after");
+  return splitThreadTilePaneWithTarget(from, to, y < 0.5 ? "above" : "below");
 }
 
 function replaceLastThreadTilePaneForThreadListOpen(threadId, options = {}) {
@@ -12132,7 +12249,7 @@ function renderThreadTilePane(threadId, layout, previousKeys = new Set()) {
   return `<section class="thread-tile-pane${active}" data-thread-tile-pane="${escapeHtml(id)}" data-render-key="${escapeHtml(`thread-tile|${id}`)}">
     <header class="thread-tile-pane-header">
       <div class="thread-tile-pane-title-wrap">
-        <button class="thread-tile-pane-title-button" type="button" data-thread-tile-title="${escapeHtml(id)}" aria-haspopup="listbox" aria-expanded="${state.threadTileSwitchMenuPaneId === id ? "true" : "false"}">
+        <button class="thread-tile-pane-title-button" type="button" draggable="true" data-thread-tile-drag-handle="${escapeHtml(id)}" data-thread-tile-title="${escapeHtml(id)}" aria-haspopup="listbox" aria-expanded="${state.threadTileSwitchMenuPaneId === id ? "true" : "false"}">
           <span class="thread-tile-pane-title">${escapeHtml(title)}</span>
         </button>
         ${switchMenu}
@@ -12160,6 +12277,8 @@ function threadTileRenderSignature(layout, ids) {
     visiblePanes: layout.visiblePanes || ids.length,
     capacityPanes: layout.capacityPanes || layout.maxPanes,
     desiredPaneCount: normalizeThreadTilePaneCount(state.threadTilePaneCount, 0),
+    columnGroups: layout.columnGroups || [],
+    splitPairs: threadTilePrunedSplitPairs(ids),
     ids,
     selected: effectiveThreadTileSelectedThreadId(ids),
     loading: ids.filter((id) => state.threadTileLoadingIds.has(id)),
@@ -12229,8 +12348,13 @@ function renderThreadTileLayout(layout, options = {}) {
   updateThreadTileGlobalHeader(displayLayout, ids);
   state.nowMs = Date.now();
   const previousKeys = existingConversationRenderKeys();
+  const columnGroups = Array.isArray(displayLayout.columnGroups) && displayLayout.columnGroups.length
+    ? displayLayout.columnGroups
+    : ids.map((id) => [id]);
   const html = `<div class="thread-tile-board" data-thread-tile-board data-render-key="thread-tile-board">
-    ${ids.map((id) => renderThreadTilePane(id, displayLayout, previousKeys)).join("")}
+    ${columnGroups.map((group, index) => `<div class="thread-tile-column" data-thread-tile-column="${escapeHtml(String(index))}" style="--thread-tile-column-rows: ${escapeHtml(String(Math.max(1, group.length)))}">
+      ${group.map((id) => renderThreadTilePane(id, displayLayout, previousKeys)).join("")}
+    </div>`).join("")}
   </div>`;
   const signature = threadTileRenderSignature(displayLayout, ids);
   setThreadTileConversationMode(true, displayLayout);
@@ -12257,9 +12381,8 @@ function bindThreadTileActions() {
   conversation.addEventListener("pointerdown", (event) => {
     const titleButton = closestTileTarget(event.target, "[data-thread-tile-title]");
     if (titleButton && conversation.contains(titleButton)) {
-      event.preventDefault();
-      event.stopPropagation();
-      toggleThreadTileSwitchMenu(titleButton.getAttribute("data-thread-tile-title") || "");
+      const pane = titleButton.closest("[data-thread-tile-pane]");
+      if (pane && conversation.contains(pane)) setThreadTileSelectedThread(pane.getAttribute("data-thread-tile-pane") || "");
       return;
     }
     if (closestTileTarget(event.target, "[data-thread-tile-switch-target], .thread-tile-switch-menu, [data-thread-tile-bottom], [data-thread-tile-operation-toggle], [data-thread-tile-pane-count], [data-thread-tile-close-pane]")) {
@@ -12326,6 +12449,48 @@ function bindThreadTileActions() {
     const body = closestTileTarget(event.target, ".thread-tile-pane-body");
     if (body && conversation.contains(body)) updateThreadTileBottomButtonForBody(body);
   }, { passive: true, capture: true });
+  conversation.addEventListener("dragstart", (event) => {
+    const handle = closestTileTarget(event.target, "[data-thread-tile-drag-handle]");
+    if (!handle || !conversation.contains(handle)) return;
+    const id = handle.getAttribute("data-thread-tile-drag-handle") || "";
+    if (!id) return;
+    state.threadTileDraggingThreadId = id;
+    state.threadTileSwitchMenuPaneId = "";
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", id);
+    }
+    const pane = handle.closest("[data-thread-tile-pane]");
+    if (pane) pane.classList.add("dragging");
+  });
+  conversation.addEventListener("dragover", (event) => {
+    const pane = closestTileTarget(event.target, "[data-thread-tile-pane]");
+    const dragging = state.threadTileDraggingThreadId || "";
+    const targetId = pane && pane.getAttribute("data-thread-tile-pane") || "";
+    if (!dragging || !targetId || dragging === targetId || !conversation.contains(pane)) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    pane.classList.add("drag-over");
+  });
+  conversation.addEventListener("dragleave", (event) => {
+    const pane = closestTileTarget(event.target, "[data-thread-tile-pane]");
+    if (pane && conversation.contains(pane)) pane.classList.remove("drag-over");
+  });
+  conversation.addEventListener("drop", (event) => {
+    const pane = closestTileTarget(event.target, "[data-thread-tile-pane]");
+    const dragging = state.threadTileDraggingThreadId || event.dataTransfer && event.dataTransfer.getData("text/plain") || "";
+    const targetId = pane && pane.getAttribute("data-thread-tile-pane") || "";
+    if (!dragging || !targetId || dragging === targetId || !conversation.contains(pane)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    document.querySelectorAll(".thread-tile-pane.drag-over, .thread-tile-pane.dragging").forEach((entry) => entry.classList.remove("drag-over", "dragging"));
+    state.threadTileDraggingThreadId = "";
+    dropThreadTilePane(dragging, targetId, event);
+  });
+  conversation.addEventListener("dragend", () => {
+    state.threadTileDraggingThreadId = "";
+    document.querySelectorAll(".thread-tile-pane.drag-over, .thread-tile-pane.dragging").forEach((entry) => entry.classList.remove("drag-over", "dragging"));
+  });
 }
 
 function threadTileLayoutStatusText(layout) {
