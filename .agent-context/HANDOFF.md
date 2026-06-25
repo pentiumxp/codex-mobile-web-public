@@ -34,9 +34,45 @@
     `node --test test/thread-detail-read-orchestration-service.test.js test/thread-detail-performance-service.test.js test/thread-detail-projection-input-service.test.js test/thread-detail-projection-service.test.js`
     (`29` tests).
 - Release state:
-  - Local changes are not yet committed/deployed.
-  - Next: run broader detail/projection tests, standard checks, commit, deploy,
-    and read back production public-config plus cold-path diagnostics.
+  - Runtime commit:
+    `0669520 fix large thread cold read decision`.
+  - Deployed through the Home AI central plugin deploy script with reason
+    `codex-mobile-large-cold-read-decision`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T144935Z-plugin-codex-mobile-web-codex-mobile-large-cold-read-decision`.
+  - This is server-only; `/api/public-config` still reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v441` and
+    `shellCacheName=codex-mobile-shell-v441`.
+  - Broader local validation passed:
+    - `node --test test/thread-detail-read-orchestration-service.test.js test/thread-detail-performance-service.test.js test/thread-detail-summary-service.test.js test/thread-detail-projection-input-service.test.js test/thread-detail-projection-result-service.test.js test/thread-detail-projection-service.test.js test/thread-detail-projection-v4-service.test.js test/thread-visibility.test.js`
+      (`83` tests).
+    - `npm run check`
+    - `npm run check:macos`
+    - `npm test` (`793` tests).
+    - `git diff --check`
+  - Production validation passed:
+    - Same focused 83-test suite.
+    - `npm run check`
+    - `npm run check:macos`
+    - Source/production short SHA-256 samples matched for `server.js`,
+      `adapters/thread-detail-read-orchestration-service.js`,
+      `adapters/thread-detail-performance-service.js`, `README.md`,
+      `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and the two focused tests.
+  - Production bounded readback after deploy:
+    - Current Codex Mobile large thread `019eee6c...` returned
+      `mobileReadMode=turns-list-large`, phase `bounded-large-thread-window`,
+      `threadReadMs=0`, `turnsListBeforeFullMs=780`,
+      `largeReadProtected=true`, `largeReadSource=projection`,
+      `largeReadReason=large-rollout`, rollout size `108905442`, threshold
+      `8388608`.
+    - Home AI large thread `019eed86...` returned
+      `mobileReadMode=projection-v4-dynamic`, phase `warm-projection-dynamic`,
+      `threadReadMs=0`.
+  - Remaining goal work:
+    - Gather/verify active-writer cold-open and static-large-thread cold-open
+      evidence over real usage.
+    - Continue Phase 2 frontend DOM patch extraction, Phase 5 pane-state
+      service, and Phase 4 visual/DOM regression coverage.
 
 # 2026-06-25 - v441 thread-tile local patch signature boundary repaired
 
