@@ -16,6 +16,31 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v461 Thread Tile Detail Refresh Policy
+
+v461 继续 Phase C，把平铺窗口的 pane-local detail refresh 决策从
+`public/app.js` 迁到 `public/thread-tile-state.js`。这次仍然不是完整分屏重构，
+而是收敛“哪些 pane 要刷新、什么时候安排下一次刷新、单个 pane 是否应该发起
+detail load”的纯状态判断。
+
+本次新增的纯策略包括：
+
+- `refreshSchedulePlan`：决定 tile refresh timer 是否应安排、跳过或清理。
+- `refreshTargetIds`：从 active pane ids 中选出真正需要后台刷新的 pane，排除当前
+  主线程和不可见 pane。
+- `detailLoadPlan`：统一判断 missing id、当前线程已加载、已有 controller、已有
+  loading、cached ready、最小刷新间隔、background refresh 和 loading refresh。
+- `uniqueIds` / `refreshDelayMs`：把去重和最小 delay 规则从 app 层移出。
+
+`public/app.js` 仍负责真实副作用：AbortController、API 请求、loading/error Map、
+render scheduling、thread list merge 和 DOM patch。这个切片没有改变 thread detail
+API、投影缓存或前端刷新策略，只是把 refresh ownership 的判断变成可测试计划。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v461`。
+`test/thread-tile-state.test.js` 覆盖 refresh scheduling、refresh target selection 和
+detail load planning；`test/thread-tile-layout-ui.test.js` 约束 app 层必须调用这些
+policy helpers。
+
 ## 2026-06-26 v460 Thread Tile Operation State Policy
 
 v460 接续 v459，继续 Phase C。v459 已经把 pane count、pinned ids、split pairs、

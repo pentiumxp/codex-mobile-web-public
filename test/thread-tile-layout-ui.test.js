@@ -138,9 +138,11 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(functionBody(appJs, "defaultThreadTileCandidateIds"), /THREAD_TILE_USER_MAX_PANES/);
 
   const loadBody = functionBody(appJs, "loadThreadTileDetail");
-  assert.match(loadBody, /const force = options\.force === true/);
-  assert.match(loadBody, /state\.threadTileControllers\.has\(id\)/);
+  assert.match(loadBody, /threadTileStatePolicy\.detailLoadPlan/);
+  assert.match(loadBody, /controllerActive: state\.threadTileControllers\.has\(id\)/);
+  assert.match(loadBody, /loadingActive: state\.threadTileLoadingIds\.has\(id\)/);
   assert.match(loadBody, /THREAD_TILE_REFRESH_MIN_INTERVAL_MS/);
+  assert.match(loadBody, /if \(plan\.action !== "load"\) return;/);
   assert.match(loadBody, /state\.threadTileDetails\.set\(id, result\.thread\)/);
 
   const tilePaneBody = functionBody(appJs, "renderThreadTilePane");
@@ -239,6 +241,8 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(appJs, /function patchThreadTilePane\(/);
   assert.match(appJs, /function scheduleRenderThreadTilePane\(/);
   assert.match(appJs, /function rememberThreadTilePaneScrollPosition\(/);
+  assert.match(functionBody(appJs, "scheduleThreadTileRefresh"), /threadTileStatePolicy\.refreshSchedulePlan/);
+  assert.match(functionBody(appJs, "refreshThreadTileDetails"), /threadTileStatePolicy\.refreshTargetIds/);
   assert.match(functionBody(appJs, "captureThreadTilePaneScrollState"), /hold: state\.threadTilePaneScrollHoldById\.get\(id\) === true/);
   assert.match(functionBody(appJs, "rememberThreadTilePaneScrollPosition"), /state\.threadTilePaneScrollHoldById\.set\(id, true\)/);
   assert.match(functionBody(appJs, "rememberThreadTilePaneScrollPosition"), /state\.threadTilePaneScrollHoldById\.delete\(id\)/);

@@ -503,7 +503,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v460";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v461";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -12526,25 +12526,40 @@ function clearThreadTileRefreshTimer() {
 }
 
 function scheduleThreadTileRefresh(delayMs = THREAD_TILE_REFRESH_INTERVAL_MS) {
-  if (!state.threadTileMode || document.visibilityState === "hidden") {
+  const plan = threadTileStatePolicy.refreshSchedulePlan({
+    enabled: state.threadTileMode,
+    visibilityState: document.visibilityState,
+    activeIds: state.threadTileActiveIds,
+    hasTimer: Boolean(state.threadTileRefreshTimer),
+    delayMs,
+  }, {
+    defaultDelayMs: THREAD_TILE_REFRESH_INTERVAL_MS,
+    minDelayMs: 500,
+  });
+  if (plan.clearTimer) {
     clearThreadTileRefreshTimer();
     return;
   }
-  if (!state.threadTileActiveIds.length || state.threadTileRefreshTimer) return;
+  if (!plan.schedule) return;
   state.threadTileRefreshTimer = setTimeout(() => {
     state.threadTileRefreshTimer = null;
     if (!state.threadTileMode || document.visibilityState === "hidden") return;
     refreshThreadTileDetails(state.threadTileActiveIds, { source: "tile-refresh" }).catch(showError);
     scheduleThreadTileRefresh();
-  }, Math.max(500, Number(delayMs) || THREAD_TILE_REFRESH_INTERVAL_MS));
+  }, plan.delayMs);
 }
 
 async function refreshThreadTileDetails(ids = [], options = {}) {
-  const uniqueIds = Array.from(new Set((ids || []).map((id) => String(id || "")).filter(Boolean)));
-  if (!state.threadTileMode || !uniqueIds.length) return;
-  await Promise.all(uniqueIds.map((id) => {
-    if (!threadTilePaneIsVisible(id)) return Promise.resolve();
-    if (state.currentThread && String(state.currentThread.id || "") === id) return Promise.resolve();
+  const uniqueIds = threadTileStatePolicy.uniqueIds(ids);
+  const visibleIds = uniqueIds.filter((id) => threadTilePaneIsVisible(id));
+  const targetIds = threadTileStatePolicy.refreshTargetIds({
+    enabled: state.threadTileMode,
+    ids: uniqueIds,
+    visibleIds,
+    currentThreadId: state.currentThread && state.currentThread.id,
+  });
+  if (!targetIds.length) return;
+  await Promise.all(targetIds.map((id) => {
     return loadThreadTileDetail(id, {
       force: true,
       background: true,
@@ -12573,23 +12588,30 @@ function abortThreadTileLoads() {
 
 async function loadThreadTileDetail(threadId, options = {}) {
   const id = String(threadId || "");
-  if (!id) return;
-  if (state.currentThread && String(state.currentThread.id || "") === id && !state.currentThread.mobileLoading) return;
-  if (state.threadTileControllers.has(id)) return;
-  if (state.threadTileLoadingIds.has(id)) return;
   const cached = state.threadTileDetails.get(id);
-  const force = options.force === true;
-  const background = options.background === true && cached && !cached.mobileLoading && !cached.mobileLoadError;
-  const lastLoadedAt = Number(state.threadTileLoadedAtById.get(id) || 0);
-  if (!force && cached && !cached.mobileLoading && !cached.mobileLoadError) return;
-  if (force && Date.now() - lastLoadedAt < THREAD_TILE_REFRESH_MIN_INTERVAL_MS) return;
+  const currentThreadId = state.currentThread && String(state.currentThread.id || "");
+  const plan = threadTileStatePolicy.detailLoadPlan({
+    threadId: id,
+    currentThreadId,
+    currentThreadLoaded: Boolean(currentThreadId === id && state.currentThread && !state.currentThread.mobileLoading),
+    controllerActive: state.threadTileControllers.has(id),
+    loadingActive: state.threadTileLoadingIds.has(id),
+    cachedReady: Boolean(cached && !cached.mobileLoading && !cached.mobileLoadError),
+    force: options.force === true,
+    backgroundRequested: options.background === true,
+    lastLoadedAt: Number(state.threadTileLoadedAtById.get(id) || 0),
+    nowMs: Date.now(),
+    minIntervalMs: THREAD_TILE_REFRESH_MIN_INTERVAL_MS,
+  });
+  if (plan.action !== "load") return;
+  const background = plan.background;
   const controller = new AbortController();
   state.threadTileControllers.set(id, controller);
-  if (!background) {
+  if (plan.markLoading) {
     state.threadTileLoadingIds.add(id);
     if (!scheduleRenderThreadTilePane(id, { preserveScroll: true })) scheduleRenderCurrentThread();
   }
-  if (!background) state.threadTileErrors.delete(id);
+  if (plan.clearError) state.threadTileErrors.delete(id);
   try {
     const result = await api(threadDetailApiPath(id, { mode: "recent" }), {
       timeoutMs: 20000,

@@ -207,3 +207,145 @@ test("thread tile state owns operation mode and signature policy", () => {
     entry: null,
   });
 });
+
+test("thread tile state plans pane refresh scheduling without DOM state", () => {
+  assert.deepEqual(state.refreshSchedulePlan({
+    enabled: false,
+    visibilityState: "visible",
+    activeIds: ["a"],
+  }, { defaultDelayMs: 1000 }), {
+    schedule: false,
+    clearTimer: true,
+    reason: "disabled",
+    activeIds: ["a"],
+    delayMs: 0,
+  });
+  assert.deepEqual(state.refreshSchedulePlan({
+    enabled: true,
+    visibilityState: "hidden",
+    activeIds: ["a"],
+  }, { defaultDelayMs: 1000 }), {
+    schedule: false,
+    clearTimer: true,
+    reason: "hidden",
+    activeIds: ["a"],
+    delayMs: 0,
+  });
+  assert.deepEqual(state.refreshSchedulePlan({
+    enabled: true,
+    visibilityState: "visible",
+    activeIds: ["a", "a", "b"],
+    hasTimer: false,
+    delayMs: 200,
+  }, { defaultDelayMs: 1000, minDelayMs: 500 }), {
+    schedule: true,
+    clearTimer: false,
+    reason: "schedule",
+    activeIds: ["a", "b"],
+    delayMs: 500,
+  });
+  assert.deepEqual(state.refreshSchedulePlan({
+    enabled: true,
+    visibilityState: "visible",
+    activeIds: ["a"],
+    hasTimer: true,
+  }, { defaultDelayMs: 1000 }), {
+    schedule: false,
+    clearTimer: false,
+    reason: "timer-active",
+    activeIds: ["a"],
+    delayMs: 0,
+  });
+});
+
+test("thread tile state chooses pane refresh targets without app globals", () => {
+  assert.deepEqual(state.refreshTargetIds({
+    enabled: false,
+    ids: ["a", "b"],
+  }), []);
+  assert.deepEqual(state.refreshTargetIds({
+    enabled: true,
+    ids: ["a", "b", "a", "c"],
+    visibleIds: ["a", "c"],
+    currentThreadId: "a",
+  }), ["c"]);
+  assert.deepEqual(state.refreshTargetIds({
+    enabled: true,
+    ids: ["a", "b"],
+    currentThreadId: "",
+  }), ["a", "b"]);
+});
+
+test("thread tile state plans detail loads and skips stale work", () => {
+  assert.deepEqual(state.detailLoadPlan({ threadId: "" }), {
+    action: "skip",
+    reason: "missing-id",
+    id: "",
+  });
+  assert.deepEqual(state.detailLoadPlan({
+    threadId: "a",
+    currentThreadId: "a",
+    currentThreadLoaded: true,
+  }), {
+    action: "skip",
+    reason: "current-thread-loaded",
+    id: "a",
+  });
+  assert.deepEqual(state.detailLoadPlan({
+    threadId: "a",
+    controllerActive: true,
+  }), {
+    action: "skip",
+    reason: "controller-active",
+    id: "a",
+  });
+  assert.deepEqual(state.detailLoadPlan({
+    threadId: "a",
+    cachedReady: true,
+    force: false,
+  }), {
+    action: "skip",
+    reason: "cached-ready",
+    id: "a",
+  });
+  assert.deepEqual(state.detailLoadPlan({
+    threadId: "a",
+    cachedReady: true,
+    force: true,
+    backgroundRequested: true,
+    lastLoadedAt: 1000,
+    nowMs: 2000,
+    minIntervalMs: 500,
+  }), {
+    action: "load",
+    reason: "background-refresh",
+    id: "a",
+    background: true,
+    markLoading: false,
+    clearError: false,
+  });
+  assert.deepEqual(state.detailLoadPlan({
+    threadId: "a",
+    cachedReady: false,
+    force: true,
+    backgroundRequested: true,
+    lastLoadedAt: 1000,
+    nowMs: 1100,
+    minIntervalMs: 500,
+  }), {
+    action: "skip",
+    reason: "min-refresh-interval",
+    id: "a",
+  });
+  assert.deepEqual(state.detailLoadPlan({
+    threadId: "a",
+    cachedReady: false,
+  }), {
+    action: "load",
+    reason: "load",
+    id: "a",
+    background: false,
+    markLoading: true,
+    clearError: true,
+  });
+});

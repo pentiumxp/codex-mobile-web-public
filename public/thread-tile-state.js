@@ -46,6 +46,18 @@
     return ids;
   }
 
+  function uniqueIds(values = []) {
+    const seen = new Set();
+    const ids = [];
+    for (const value of Array.isArray(values) ? values : []) {
+      const id = text(value).trim();
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      ids.push(id);
+    }
+    return ids;
+  }
+
   function idsEqual(a = [], b = []) {
     if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
     return a.every((id, index) => String(id || "") === String(b[index] || ""));
@@ -205,6 +217,77 @@
     };
   }
 
+  function refreshDelayMs(value, options = {}) {
+    const defaultDelayMs = Math.max(0, Number(options.defaultDelayMs || 0));
+    const minDelayMs = Math.max(0, Number(options.minDelayMs || 500));
+    const parsed = Number(value);
+    return Math.max(minDelayMs, Number.isFinite(parsed) ? parsed : defaultDelayMs);
+  }
+
+  function refreshSchedulePlan(input = {}, options = {}) {
+    const activeIds = uniqueIds(input.activeIds || []);
+    const hiddenValue = text(options.hiddenVisibilityState || "hidden");
+    if (input.enabled !== true) {
+      return { schedule: false, clearTimer: true, reason: "disabled", activeIds, delayMs: 0 };
+    }
+    if (text(input.visibilityState) === hiddenValue) {
+      return { schedule: false, clearTimer: true, reason: "hidden", activeIds, delayMs: 0 };
+    }
+    if (!activeIds.length) {
+      return { schedule: false, clearTimer: false, reason: "no-active-panes", activeIds, delayMs: 0 };
+    }
+    if (input.hasTimer === true) {
+      return { schedule: false, clearTimer: false, reason: "timer-active", activeIds, delayMs: 0 };
+    }
+    return {
+      schedule: true,
+      clearTimer: false,
+      reason: "schedule",
+      activeIds,
+      delayMs: refreshDelayMs(input.delayMs, options),
+    };
+  }
+
+  function refreshTargetIds(input = {}) {
+    if (input.enabled !== true) return [];
+    const ids = uniqueIds(input.ids || input.activeIds || []);
+    const visibleInput = input.visibleIds;
+    const visibleIds = Array.isArray(visibleInput) ? new Set(uniqueIds(visibleInput)) : null;
+    const currentThreadId = text(input.currentThreadId).trim();
+    return ids.filter((id) => {
+      if (visibleIds && !visibleIds.has(id)) return false;
+      return !currentThreadId || id !== currentThreadId;
+    });
+  }
+
+  function detailLoadPlan(input = {}) {
+    const id = text(input.threadId).trim();
+    if (!id) return { action: "skip", reason: "missing-id", id: "" };
+    if (text(input.currentThreadId).trim() === id && input.currentThreadLoaded === true) {
+      return { action: "skip", reason: "current-thread-loaded", id };
+    }
+    if (input.controllerActive === true) return { action: "skip", reason: "controller-active", id };
+    if (input.loadingActive === true) return { action: "skip", reason: "loading-active", id };
+    const cachedReady = input.cachedReady === true;
+    const force = input.force === true;
+    const nowMs = nowValue(input.nowMs);
+    const lastLoadedAt = Number(input.lastLoadedAt || 0);
+    const minIntervalMs = Math.max(0, Number(input.minIntervalMs || 0));
+    if (!force && cachedReady) return { action: "skip", reason: "cached-ready", id };
+    if (force && lastLoadedAt && nowMs - lastLoadedAt < minIntervalMs) {
+      return { action: "skip", reason: "min-refresh-interval", id };
+    }
+    const background = Boolean(input.backgroundRequested === true && cachedReady);
+    return {
+      action: "load",
+      reason: background ? "background-refresh" : "load",
+      id,
+      background,
+      markLoading: !background,
+      clearError: !background,
+    };
+  }
+
   return {
     DEFAULT_OPERATION_BUBBLE_MIN_VISIBLE_MS,
     DEFAULT_USER_MAX_PANES,
@@ -220,8 +303,13 @@
     operationBubbleSnapshot,
     operationSignature,
     prependSplitPair,
+    detailLoadPlan,
+    refreshDelayMs,
+    refreshSchedulePlan,
+    refreshTargetIds,
     removeSplitPairsForIds,
     syncPinnedIdsFromActiveIds,
     toggleOperationMode,
+    uniqueIds,
   };
 }));
