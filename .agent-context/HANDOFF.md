@@ -1,3 +1,26 @@
+# 2026-06-25 - v433 tile composer target hint pending deploy
+
+- Scope:
+  - Small tile-mode UX guard to reduce accidental sends to the wrong pane.
+  - Validated locally. Not deployed and not pushed Public at the time this note
+    was written.
+- Change:
+  - Added `#composerTargetHint` / `#composerTargetName` to the shared Composer.
+  - `renderComposerTargetHint()` displays `发送到 · <thread name>` when
+    `threadTileMode` is active and the Composer is bound to an existing thread.
+  - The hint uses the same `currentComposerThreadId()` and
+    `composerTargetThread()` path as send, task-card draft, Stop, and steer
+    controls; it does not introduce a separate target calculation.
+  - Single-thread mode and new-thread draft mode keep the hint hidden.
+  - PWA shell cache bumped to `codex-mobile-shell-v433`.
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js` passed.
+  - Focused run passed:
+    `node --test test/composer-quota.test.js test/thread-tile-layout-ui.test.js test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js`
+    (`34` tests).
+  - `npm run check` passed.
+  - `git diff --check` passed.
+
 # 2026-06-25 - v432 thread detail render-plan slice pending commit/deploy
 
 - Scope:

@@ -16,6 +16,18 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-25 v433 平铺模式 Composer 发送目标提示
+
+v433 在平铺模式下给共享 Composer 增加一行紧凑目标提示：
+`发送到 · 当前线程名`。平铺模式下 Composer 的实际发送目标仍然由当前
+active pane 决定；这次不改变发送路径，只把当前目标直接显示出来，减少用户
+忘记选中窗口或误以为正在给另一个 pane 发消息的风险。
+
+提示使用现有 `currentComposerThreadId()` / `composerTargetThread()` 目标来源，
+因此与真正发送、task-card 草稿、Stop/引导按钮使用同一套 active pane 绑定。
+单线程模式和新线程草稿不显示这行提示。PWA shell cache 升级到
+`codex-mobile-shell-v433`。
+
 ## 2026-06-25 v432 线程详情刷新渲染计划拆分
 
 v432 继续第二阶段前端状态边界优化，不改变服务端投影、线程读取策略或

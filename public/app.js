@@ -469,7 +469,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v432";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v433";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -19843,7 +19843,27 @@ function toggleQuotaDetails(anchor) {
   }
 }
 
+function renderComposerTargetHint() {
+  const hint = $("composerTargetHint");
+  const nameEl = $("composerTargetName");
+  if (!hint || !nameEl) return;
+  const targetThreadId = currentComposerThreadId();
+  const targetThread = composerTargetThread();
+  const shouldShow = Boolean(state.threadTileMode && !state.newThreadDraft && targetThreadId && targetThread);
+  hint.hidden = !shouldShow;
+  hint.classList.toggle("is-visible", shouldShow);
+  if (!shouldShow) {
+    nameEl.textContent = "";
+    hint.removeAttribute("title");
+    return;
+  }
+  const title = threadDisplayName(targetThread) || targetThreadId;
+  nameEl.textContent = title;
+  hint.title = `当前 Composer 会发送到：${title}`;
+}
+
 function renderComposerSettings() {
+  renderComposerTargetHint();
   const commandControl = $("composerCommandControl");
   const modelControl = $("composerModelControl");
   const effortControl = $("composerEffortControl");

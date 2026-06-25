@@ -6743,6 +6743,41 @@ html.keyboard-open .composer {
   gap: 6px;
 }
 
+.composer-target-hint {
+  display: none;
+  min-width: 0;
+  min-height: 24px;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid rgba(122, 199, 167, 0.34);
+  border-radius: 8px;
+  background: rgba(122, 199, 167, 0.1);
+  color: var(--text);
+  font-size: clamp(10px, calc(var(--content-small-font-size) * 0.9), 12px);
+  line-height: 1.15;
+  overflow: hidden;
+}
+
+.composer-target-hint.is-visible {
+  display: flex;
+}
+
+.composer-target-label {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.composer-target-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 760;
+}
+
 .composer-select-wrap {
   min-width: 0;
   height: var(--composer-control-height);
@@ -7527,6 +7562,7 @@ html.embed-hermes #openMenu.split-return-visible {
     display: grid;
     grid-template-columns: 52px minmax(0, 1fr) max-content;
     grid-template-areas:
+      "target target target"
       "controls controls controls"
       "attachments attachments attachments"
       "attach input send";
@@ -7535,6 +7571,12 @@ html.embed-hermes #openMenu.split-return-visible {
 
   .composer-body {
     display: contents;
+  }
+
+  .composer-target-hint {
+    grid-area: target;
+    min-height: 22px;
+    padding: 3px 7px;
   }
 
   .composer-controls {
@@ -7863,6 +7905,7 @@ html.embed-hermes #openMenu.split-return-visible {
     display: grid;
     grid-template-columns: 52px minmax(0, 1fr) max-content;
     grid-template-areas:
+      "target target target"
       "controls controls controls"
       "attachments attachments attachments"
       "attach input send";
@@ -7884,6 +7927,12 @@ html.embed-hermes #openMenu.split-return-visible {
 
   .composer-body {
     display: contents;
+  }
+
+  .composer-target-hint {
+    grid-area: target;
+    min-height: 21px;
+    padding: 3px 7px;
   }
 
   .composer-controls {

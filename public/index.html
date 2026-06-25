@@ -451,6 +451,10 @@
           <input id="fileInput" class="file-input" type="file" multiple disabled aria-label="Attach files" tabindex="-1">
         </div>
         <div class="composer-body">
+          <div id="composerTargetHint" class="composer-target-hint" aria-live="polite" hidden>
+            <span class="composer-target-label">发送到</span>
+            <span id="composerTargetName" class="composer-target-name"></span>
+          </div>
           <div class="composer-controls">
             <button id="composerCommandControl" class="composer-fast-toggle" type="button" aria-pressed="false" title="Fast tag off for this thread" aria-label="Fast tag off for this thread">
               <svg class="composer-fast-icon" aria-hidden="true" viewBox="0 0 16 16" focusable="false">
