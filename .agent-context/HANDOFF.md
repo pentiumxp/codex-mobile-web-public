@@ -9819,3 +9819,64 @@ The previous full handoff was archived and should be opened only when old proven
     parity.
 - Release:
   - Public was not pushed for v482.
+
+## 2026-06-26 - v483 conversation HTML update plan deployed
+
+- Latest code commit:
+  - `140eb77 extract conversation html update plan`
+- v483 change:
+  - `public/thread-detail-dom-patch.js` now owns
+    `planConversationHtmlUpdate`, a pure planning boundary for single-thread
+    conversation HTML updates.
+  - The planner decides stable-signature hydration versus changed-signature DOM
+    patch/full `innerHTML`, patch-shell signature updates, hydration options,
+    and scroll action.
+  - `public/app.js` still owns the live DOM write, patch fallback, state
+    assignment, real hydration callbacks, scroll execution, and performance
+    reporting.
+  - Static build/cache: `0.1.11|codex-mobile-shell-v483` /
+    `codex-mobile-shell-v483`.
+- Root-cause boundary:
+  - Symptom/risk: `updateConversationHtml()` still mixed signature comparison,
+    patch-shell signature state, DOM update strategy, rich-hydration skipping,
+    and bottom-follow behavior in one UI function. That made repeated message
+    disappearance/flicker regressions harder to isolate.
+  - Failing layer: frontend single-thread conversation DOM update ownership.
+  - Invariant: update planning should be pure and executable-testable; app code
+    should execute the plan against the actual DOM.
+- Validation:
+  - Source focused suite passed:
+    `test/thread-detail-dom-patch.test.js`,
+    `test/turn-scroll-controls.test.js`, `test/conversation-render.test.js`,
+    `test/mobile-viewport.test.js`, `test/app-update.test.js`,
+    `test/thread-goal-service.test.js`,
+    `test/thread-task-card-route.test.js`,
+    `test/github-link-preview-ui.test.js`, and
+    `test/mermaid-render.test.js` (`176` tests).
+  - Full source `npm test` passed (`883` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Production deploy:
+  - Deployed through Home AI central macOS plugin deploy path with reason
+    `codex-mobile-conversation-html-update-plan-v483`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T213931Z-plugin-codex-mobile-web-codex-mobile-conversation-html-update-plan-v483`
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v483`,
+    `shellCacheName=codex-mobile-shell-v483`, `version=0.1.11`,
+    `authRequired=true`.
+  - Source/production SHA parity verified for:
+    `public/app.js`, `public/thread-detail-dom-patch.js`, `public/sw.js`,
+    `test/thread-detail-dom-patch.test.js`,
+    `test/turn-scroll-controls.test.js`, `test/mobile-viewport.test.js`,
+    `test/github-link-preview-ui.test.js`, `test/mermaid-render.test.js`,
+    `test/thread-goal-service.test.js`,
+    `test/thread-task-card-route.test.js`, `README.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and `docs/MODULES.md`.
+  - Production focused suite passed (`176` tests).
+- Browser/visual note:
+  - Browser automation remains unavailable in the current tool list. v483
+    closure evidence is source focused tests, full source tests, production
+    focused tests, production public-config readback, and source/prod SHA
+    parity.
+- Release:
+  - Public was not pushed for v483.
