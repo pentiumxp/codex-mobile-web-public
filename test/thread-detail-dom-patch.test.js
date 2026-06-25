@@ -129,6 +129,80 @@ test("create turn article element returns null for missing inputs or render fail
   }), null);
 });
 
+test("rendered surface hydration runs injected callbacks in order", () => {
+  const root = { id: "root" };
+  const calls = [];
+
+  const result = domPatch.hydrateRenderedSurface({
+    root,
+    hydrateGitHubLinks(surface) {
+      calls.push(["github", surface]);
+    },
+    hydrateMermaid(surface) {
+      calls.push(["mermaid", surface]);
+    },
+    scheduleImageScan(surface) {
+      calls.push(["scan", surface]);
+    },
+  });
+
+  assert.deepEqual(result, {
+    ok: true,
+    reason: "hydrated",
+    reused: 0,
+    patched: 0,
+    inserted: 0,
+    githubHydrated: 1,
+    mermaidHydrated: 1,
+    imageScans: 1,
+  });
+  assert.deepEqual(calls, [
+    ["github", root],
+    ["mermaid", root],
+    ["scan", root],
+  ]);
+});
+
+test("rendered surface hydration preserves image scan delay arguments", () => {
+  const root = { id: "root" };
+  const delays = [0, 180];
+  const calls = [];
+
+  const result = domPatch.hydrateRenderedSurface({
+    root,
+    imageScanDelays: delays,
+    scheduleImageScan(surface, scanDelays) {
+      calls.push({ surface, scanDelays });
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.imageScans, 1);
+  assert.deepEqual(calls, [{ surface: root, scanDelays: delays }]);
+});
+
+test("rendered surface hydration returns bounded missing-root result", () => {
+  assert.deepEqual(domPatch.hydrateRenderedSurface({}), {
+    ok: false,
+    reason: "missing-root",
+    reused: 0,
+    patched: 0,
+    inserted: 0,
+    githubHydrated: 0,
+    mermaidHydrated: 0,
+    imageScans: 0,
+  });
+});
+
+test("rendered surface hydration propagates callback failures", () => {
+  assert.throws(() => domPatch.hydrateRenderedSurface({
+    root: { id: "root" },
+    hydrateGitHubLinks() {
+      throw new Error("hydrate failed");
+    },
+  }), /hydrate failed/);
+});
+
 test("turn article lookup finds an article by stable render key", () => {
   const expected = createNode("turn-a");
   const calls = [];

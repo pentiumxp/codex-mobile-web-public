@@ -40,7 +40,9 @@ test("client hydrates GitHub preview card shells from a server endpoint", () => 
   assert.match(appJs, /function hydrateGitHubLinkCards\(/);
   assert.match(appJs, /ensureInlineGitHubLinkPreviews\(root\);/);
   assert.ok(appJs.includes("root.querySelectorAll('[data-github-link-preview-url]:not([data-github-link-preview-deferred=\"true\"])')"));
-  assert.match(appJs, /hydrateGitHubLinkCards\(conversation\);/);
+  assert.match(appJs, /function hydrateThreadDetailSurface\(/);
+  assert.match(appJs, /hydrateGitHubLinks:\s*options\.skipRichHydration \? null : hydrateGitHubLinkCards/);
+  assert.match(appJs, /hydrateThreadDetailSurface\(conversation\)/);
   assert.match(appJs, /hydrateGitHubLinkCards\(\$\("filePreviewBody"\)\);/);
 });
 

@@ -16,6 +16,29 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v456 Thread Detail Hydration Orchestration
+
+v456 接续 v455，继续 Phase A。v455 已经把 turn article creation 推进到
+`public/thread-detail-dom-patch.js`，但 thread detail patch 后的 hydration 调度仍
+散落在 `public/app.js`：full conversation render、tile pane patch、local patch
+completion 分别直接调用 GitHub link hydrate、Mermaid hydrate 和 image scan。
+
+本次把 thread detail surface hydration 调度推进到 `public/thread-detail-dom-patch.js`：
+
+- 新增 `hydrateRenderedSurface`。
+- `public/app.js` 新增薄包装 `hydrateThreadDetailSurface`，只注入现有
+  `hydrateGitHubLinkCards`、`hydrateMermaidDiagrams`、`scheduleFailedAppImageScan`。
+- full conversation render、thread tile pane patch、local patch completion 统一通过
+  `hydrateThreadDetailSurface`。
+- same-signature render 维持旧行为，只触发 image scan，不额外触发 GitHub/Mermaid hydrate。
+- helper 不吞 callback 异常，不新增隐藏 fallback、不跳过 refresh、不改变图片或 Markdown
+  渲染规则。
+- `CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v456`。
+
+`test/thread-detail-dom-patch.test.js` 覆盖 hydration 调用顺序、image scan delay
+参数、missing root 和 callback error propagation；`test/mobile-viewport.test.js`
+约束 thread detail patch 路径必须委托 helper。
+
 ## 2026-06-26 v455 Turn Article Creation
 
 v455 接续 v454，继续 Phase A。v454 已经把 `turnArticleNode` 的

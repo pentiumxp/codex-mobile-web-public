@@ -113,14 +113,18 @@ by stable render key now also lives in the same helper:
 app code injects `stableTurnKey` and selector escaping. Turn article element
 creation now also lives in the same helper: app code injects `renderTurn` and
 `document`, while `createTurnArticleElement` owns rendered-HTML-to-element
-creation for insert/replace operations. App code can no
+creation for insert/replace operations. Thread detail hydration orchestration
+now also lives in the same helper: app code injects GitHub-card hydration,
+Mermaid hydration, and image scan callbacks while `hydrateRenderedSurface`
+owns the call order and image-scan delay forwarding for full render, tile-pane
+patch, and local patch completion. App code can no
 longer fall through from tile mode into the
 single-thread patch path without an explicit policy decision, fall through from
 a successful tile pane patch into full conversation render, silently choose
 turn-level patch actions inside the application loop, inline the local-patch
 scroll-completion policy, own the visible-item patch operation loop, or own the
 turn-level patch operation loop, insertion anchoring loop, or turn article
-render-key lookup selector or creation step.
+render-key lookup selector, creation step, or hydration callback sequence.
 
 Target:
 
@@ -131,7 +135,8 @@ Target:
   visible-item and turn-level patch operation loops are now outside app.js;
   turn article anchoring and render-key lookup are also outside app.js; turn
   node creation is now outside app.js for turn article insert/replace paths;
-  hydration and action binding remain the next boundaries.
+  hydration orchestration is now outside app.js for thread detail surfaces;
+  action binding remains the next boundary.
 - Keep `public/app.js` responsible for DOM wiring, patch application, and event
   binding only.
 - Cover user-message echo convergence, live receipt preservation, completed

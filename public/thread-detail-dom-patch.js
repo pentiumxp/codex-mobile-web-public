@@ -89,6 +89,33 @@
     });
   }
 
+  function hasOwn(object, key) {
+    return Object.prototype.hasOwnProperty.call(object, key);
+  }
+
+  function hydrateRenderedSurface(input = {}) {
+    const root = input.root || input.surface || null;
+    if (!root) return result(false, "missing-root", { githubHydrated: 0, mermaidHydrated: 0, imageScans: 0 });
+    const hydrateGitHubLinks = typeof input.hydrateGitHubLinks === "function" ? input.hydrateGitHubLinks : null;
+    const hydrateMermaid = typeof input.hydrateMermaid === "function" ? input.hydrateMermaid : null;
+    const scheduleImageScan = typeof input.scheduleImageScan === "function" ? input.scheduleImageScan : null;
+    const counts = { githubHydrated: 0, mermaidHydrated: 0, imageScans: 0 };
+    if (hydrateGitHubLinks) {
+      hydrateGitHubLinks(root);
+      counts.githubHydrated += 1;
+    }
+    if (hydrateMermaid) {
+      hydrateMermaid(root);
+      counts.mermaidHydrated += 1;
+    }
+    if (scheduleImageScan) {
+      if (hasOwn(input, "imageScanDelays")) scheduleImageScan(root, input.imageScanDelays);
+      else scheduleImageScan(root);
+      counts.imageScans += 1;
+    }
+    return result(true, "hydrated", counts);
+  }
+
   function defaultEscapeSelectorAttr(value) {
     return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
   }
@@ -252,6 +279,7 @@
     createTurnArticleElement,
     findElementByRenderKey,
     findTurnArticleElement,
+    hydrateRenderedSurface,
     insertTurnArticleElement,
     normalizeOperation,
     normalizeTurnOperation,

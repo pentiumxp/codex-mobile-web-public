@@ -2281,7 +2281,7 @@ test("failed conversation images collapse into a neutral fallback", () => {
   assert.equal(image.dataset.imageLoadError, "1");
   assert.match(appJs, /\$\("conversation"\)\.addEventListener\("error", handleConversationImageError, true\)/);
   assert.match(appJs, /\$\("conversation"\)\.addEventListener\("load", handleConversationImageLoad, true\)/);
-  assert.match(functionBody("updateConversationHtml"), /scheduleFailedAppImageScan\(conversation/);
+  assert.match(functionBody("updateConversationHtml"), /hydrateThreadDetailSurface\(conversation/);
   assert.match(functionBody("scheduleFailedAppImageScan"), /hydrateProtectedAppImages\(root, "scheduled-scan"\)/);
   assert.match(functionBody("handleConversationImageError"), /handleProtectedAppImageError\(image\)/);
   assert.match(functionBody("shouldHydrateProtectedAppImage"), /isIosWebKitBrowser\(\) \|\| imageDiagnosticSourceKind\(src\) === "upload" \|\| shouldRenderProtectedImageDirectly\(src\)/);

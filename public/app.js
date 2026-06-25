@@ -491,7 +491,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v455";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v456";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -11740,7 +11740,7 @@ function updateConversationHtml(html, signature, options = {}) {
   const patchShellSignature = String(options.patchShellSignature || "");
   if (state.renderedConversationSignature === signature) {
     if (patchShellSignature) state.renderedConversationPatchShellSignature = patchShellSignature;
-    scheduleFailedAppImageScan(conversation, [0, 180]);
+    hydrateThreadDetailSurface(conversation, { imageScanDelays: [0, 180], skipRichHydration: true });
     if (options.stickToBottom) scheduleConversationToBottom();
     else scheduleScrollToBottomButtonUpdate();
     return false;
@@ -11754,9 +11754,7 @@ function updateConversationHtml(html, signature, options = {}) {
     console.warn("Conversation patch failed; falling back to full render.", err);
     conversation.innerHTML = html;
   }
-  hydrateGitHubLinkCards(conversation);
-  hydrateMermaidDiagrams(conversation);
-  scheduleFailedAppImageScan(conversation);
+  hydrateThreadDetailSurface(conversation);
   state.renderedConversationSignature = signature;
   state.renderedConversationPatchShellSignature = patchShellSignature;
   if (options.stickToBottom) scheduleConversationToBottom();
@@ -12887,9 +12885,7 @@ function patchThreadTilePane(threadId, options = {}) {
   const sourcePane = template.content.firstElementChild;
   if (!sourcePane) return false;
   const patchedPane = patchNode(pane, sourcePane);
-  hydrateGitHubLinkCards(patchedPane);
-  hydrateMermaidDiagrams(patchedPane);
-  scheduleFailedAppImageScan(patchedPane, [0, 180]);
+  hydrateThreadDetailSurface(patchedPane, { imageScanDelays: [0, 180] });
   restoreThreadTilePaneElementScrollState(patchedPane, previousScroll, options);
   if (typeof window.requestAnimationFrame === "function") {
     window.requestAnimationFrame(() => updateThreadTileBottomButtonForBody(patchedPane.querySelector(".thread-tile-pane-body")));
@@ -13421,14 +13417,20 @@ function firstElementFromHtml(html) {
   return threadDetailDomPatchApi.createElementFromHtml({ document, html });
 }
 
+function hydrateThreadDetailSurface(root, options = {}) {
+  return threadDetailDomPatchApi.hydrateRenderedSurface({
+    root,
+    hydrateGitHubLinks: options.skipRichHydration ? null : hydrateGitHubLinkCards,
+    hydrateMermaid: options.skipRichHydration ? null : hydrateMermaidDiagrams,
+    scheduleImageScan: scheduleFailedAppImageScan,
+    ...(Object.prototype.hasOwnProperty.call(options, "imageScanDelays") ? { imageScanDelays: options.imageScanDelays } : {}),
+  });
+}
+
 function completeLocalConversationDomUpdate(root, wasNearBottom, userReadingCurrentTurn) {
   if (patchCurrentThreadTilePaneFromState({ preserveScroll: true })) return true;
   if (!canPatchSingleThreadConversationDom()) return false;
-  if (root) {
-    hydrateGitHubLinkCards(root);
-    hydrateMermaidDiagrams(root);
-    scheduleFailedAppImageScan(root);
-  }
+  if (root) hydrateThreadDetailSurface(root);
   state.renderedConversationSignature = conversationRenderSignature(state.currentThread);
   state.renderedConversationPatchShellSignature = conversationPatchShellSignature(state.currentThread);
   const scrollPlan = conversationScroll.planLocalPatchScrollCompletion({
