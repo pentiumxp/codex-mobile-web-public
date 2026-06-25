@@ -9710,3 +9710,47 @@ The previous full handoff was archived and should be opened only when old proven
     production public-config readback, and source/prod SHA parity.
 - Release:
   - Public was not pushed for v480.
+
+## 2026-06-26 - v481 local architecture slice and Home AI return-event verification
+
+- Local architecture commit:
+  - `2241183 extract single-thread render shell plan`
+- v481 change:
+  - `public/thread-detail-render-plan.js` now owns single-thread full-render
+    shell planning for loading, load-error, and detail/empty-state render
+    outcomes.
+  - `public/app.js` still owns live DOM writes, retry binding, scroll/bottom
+    follow, hydration, and action binding.
+  - Static build/cache was bumped locally to
+    `0.1.11|codex-mobile-shell-v481` / `codex-mobile-shell-v481`.
+- v481 validation:
+  - Source `npm test` passed (`880` tests).
+  - Source `npm run check`, `npm run check:macos`, and `git diff --check`
+    passed.
+  - v481 has not been production deployed yet; production still reported
+    `0.1.11|codex-mobile-shell-v480` during this turn.
+- Home AI Autonomous Delivery return-card event task:
+  - Task card `ttc_a8ab1599a96e2e92ed` requested wiring terminal return
+    cards into Home AI `/api/autonomous-delivery/return-card-events`.
+  - Inspection found this protocol already implemented by prior commit
+    `64d3b30 wire return cards to Home AI delivery events` and deployed in the
+    current production mirror.
+  - Source and production SHA-256 matched for
+    `adapters/home-ai-autonomous-delivery-return-service.js`,
+    `adapters/thread-task-card-service.js`, `server.js`,
+    `scripts/codex-mobile-mcp-server.js`, `scripts/return-thread-task-card.js`,
+    `docs/CROSS_THREAD_TASK_CARDS_IMPLEMENTATION.md`,
+    `docs/CROSS_THREAD_TASK_CARDS_DESIGN.md`,
+    `test/home-ai-autonomous-delivery-return-service.test.js`, and
+    `test/thread-task-card-service.test.js`.
+  - Focused return-card event tests passed in both source and production
+    directories:
+    `test/home-ai-autonomous-delivery-return-service.test.js`,
+    `test/thread-task-card-service.test.js`, and
+    `test/codex-mobile-mcp-server.test.js` (`39` tests each).
+  - No new task-specific code changes were required for the Home AI return-event
+    card in this continuation. The original task had already been replied to:
+    `ttc_25262fb1d46a151f36` is the terminal completed return card.
+  - A duplicate `return_to_source` attempt in this continuation was rejected
+    with `task_card_not_returnable:replied`, which is the expected idempotency
+    guard and prevented a duplicate return-card loop.
