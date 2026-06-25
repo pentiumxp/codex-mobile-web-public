@@ -16,6 +16,30 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v457 Thread Detail Action Recognition
+
+v457 接续 v456，继续 Phase A。v456 已经把 thread detail surface hydration
+编排推进到 `public/thread-detail-dom-patch.js`，但 conversation click listener
+仍在 `public/app.js` 中直接按 selector 顺序识别图片、复制、文件预览、Mermaid、
+GitHub 预览、审批、任务卡和 server-response 动作。
+
+本次新增 `public/thread-detail-actions.js`，把 thread detail 点击动作识别推进到
+可测试 helper：
+
+- `previewableImageFromTarget` 统一识别可预览图片，并继续排除 GitHub card 内图片。
+- `resolveRichContentClickAction` 识别复制、local file preview、Mermaid action 和
+  GitHub preview toggle。
+- `resolveThreadDetailClickAction` 在 rich content 基础上识别 approval answer、
+  task-card reply/mutate/draft dismiss、server response 和 request decline。
+- `public/app.js` 仍负责调用真实业务函数，不改变任务卡、审批、图片预览或文件预览语义。
+- 新 helper 加入 `index.html`、PWA shell cache、client shell asset list、server
+  public-config asset list 和 `npm run check`。
+- `CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v457`。
+
+`test/thread-detail-actions.test.js` 覆盖 action plan、selector priority、root containment
+和任务卡/server-response 分类；既有 UI wiring tests 约束 conversation click path 必须通过
+`CodexThreadDetailActions`。
+
 ## 2026-06-26 v456 Thread Detail Hydration Orchestration
 
 v456 接续 v455，继续 Phase A。v455 已经把 turn article creation 推进到

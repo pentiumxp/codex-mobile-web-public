@@ -148,8 +148,8 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v456/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v456"/);
+  assert.match(swJs, /codex-mobile-shell-v457/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v457"/);
   assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(swJs, /"\/thread-status-hints\.js"/);
@@ -160,6 +160,7 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(swJs, /"\/thread-detail-merge-state\.js"/);
   assert.match(swJs, /"\/thread-detail-patch-plan\.js"/);
   assert.match(swJs, /"\/thread-detail-dom-patch\.js"/);
+  assert.match(swJs, /"\/thread-detail-actions\.js"/);
   assert.match(swJs, /"\/thread-tile-layout\.js"/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
@@ -406,6 +407,7 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(swJs, /"\/thread-detail-merge-state\.js"/);
   assert.match(swJs, /"\/thread-detail-patch-plan\.js"/);
   assert.match(swJs, /"\/thread-detail-dom-patch\.js"/);
+  assert.match(swJs, /"\/thread-detail-actions\.js"/);
   assert.match(swJs, /"\/thread-tile-layout\.js"/);
   assert.match(swJs, /"\/build-refresh-policy\.js"/);
   assert.match(appJs, /"\/viewport-metrics\.js"/);
@@ -420,6 +422,7 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /"\/thread-detail-merge-state\.js"/);
   assert.match(appJs, /"\/thread-detail-patch-plan\.js"/);
   assert.match(appJs, /"\/thread-detail-dom-patch\.js"/);
+  assert.match(appJs, /"\/thread-detail-actions\.js"/);
   assert.match(appJs, /"\/thread-tile-layout\.js"/);
   assert.match(appJs, /"\/build-refresh-policy\.js"/);
   assert.match(appJs, /navigator\.serviceWorker\.register\("\/sw\.js"\)/);

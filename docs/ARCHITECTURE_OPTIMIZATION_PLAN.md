@@ -117,14 +117,20 @@ creation for insert/replace operations. Thread detail hydration orchestration
 now also lives in the same helper: app code injects GitHub-card hydration,
 Mermaid hydration, and image scan callbacks while `hydrateRenderedSurface`
 owns the call order and image-scan delay forwarding for full render, tile-pane
-patch, and local patch completion. App code can no
+patch, and local patch completion. Thread detail click action recognition now
+lives in `public/thread-detail-actions.js`: app code still owns event listener
+wiring and business execution, but selector priority, root containment,
+previewable-image detection, rich-content actions, task-card actions, approval
+answers, and server-response action classification are covered by a focused
+helper. App code can no
 longer fall through from tile mode into the
 single-thread patch path without an explicit policy decision, fall through from
 a successful tile pane patch into full conversation render, silently choose
 turn-level patch actions inside the application loop, inline the local-patch
 scroll-completion policy, own the visible-item patch operation loop, or own the
 turn-level patch operation loop, insertion anchoring loop, or turn article
-render-key lookup selector, creation step, or hydration callback sequence.
+render-key lookup selector, creation step, hydration callback sequence, or
+conversation click-action selector priority.
 
 Target:
 
@@ -136,7 +142,8 @@ Target:
   turn article anchoring and render-key lookup are also outside app.js; turn
   node creation is now outside app.js for turn article insert/replace paths;
   hydration orchestration is now outside app.js for thread detail surfaces;
-  action binding remains the next boundary.
+  click-action recognition is now outside app.js for conversation surfaces;
+  action execution and thread-tile action recognition remain the next boundary.
 - Keep `public/app.js` responsible for DOM wiring, patch application, and event
   binding only.
 - Cover user-message echo convergence, live receipt preservation, completed

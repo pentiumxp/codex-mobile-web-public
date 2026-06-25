@@ -1185,6 +1185,7 @@ function appShellBuildId(cacheName = readServiceWorkerCacheName()) {
     "thread-detail-merge-state.js",
     "thread-detail-patch-plan.js",
     "thread-detail-dom-patch.js",
+    "thread-detail-actions.js",
     "thread-tile-layout.js",
     "app.js",
     "sw.js",

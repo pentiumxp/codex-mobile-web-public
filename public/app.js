@@ -111,6 +111,10 @@ const threadDetailDomPatchApi = window.CodexThreadDetailDomPatch;
 if (!threadDetailDomPatchApi) {
   throw new Error("CodexThreadDetailDomPatch script failed to load");
 }
+const threadDetailActionsApi = window.CodexThreadDetailActions;
+if (!threadDetailActionsApi) {
+  throw new Error("CodexThreadDetailActions script failed to load");
+}
 const threadTileLayoutPolicy = window.CodexThreadTileLayout;
 if (!threadTileLayoutPolicy) {
   throw new Error("CodexThreadTileLayout policy script failed to load");
@@ -491,7 +495,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v456";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v457";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -547,6 +551,7 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/thread-detail-merge-state.js",
   "/thread-detail-patch-plan.js",
   "/thread-detail-dom-patch.js",
+  "/thread-detail-actions.js",
   "/thread-tile-layout.js",
   "/build-refresh-policy.js",
   "/app.js",
@@ -22031,14 +22036,21 @@ function wireUi() {
     maybeLoadOlderThreadTurnsFromScroll();
   }, { passive: true });
   $("conversation").addEventListener("click", (event) => {
-    const previewImage = previewableImageFromEvent(event);
+    const conversationRoot = event.currentTarget || $("conversation");
+    const previewImage = threadDetailActionsApi.previewableImageFromTarget(event.target, conversationRoot);
     if (previewImage && openImagePreviewFromImage(previewImage)) {
       event.preventDefault();
       event.stopPropagation();
       return;
     }
-    const copyButton = event.target.closest("[data-copy-key]");
-    if (copyButton) {
+    const actionPlan = threadDetailActionsApi.resolveThreadDetailClickAction({
+      target: event.target,
+      root: conversationRoot,
+    });
+    if (actionPlan.preventDefault) event.preventDefault();
+    if (actionPlan.stopPropagation) event.stopPropagation();
+    if (actionPlan.action === "copy") {
+      const copyButton = actionPlan.button || actionPlan.target;
       event.preventDefault();
       event.stopPropagation();
       handleCopyButtonClick(copyButton).catch(() => {
@@ -22049,60 +22061,48 @@ function wireUi() {
       });
       return;
     }
-    const localFileLink = event.target.closest("[data-local-file-path]");
-    if (localFileLink) {
+    if (actionPlan.action === "local-file-preview") {
       event.preventDefault();
       event.stopPropagation();
-      openLocalFilePreview(localFileLink).catch(showError);
+      openLocalFilePreview(actionPlan.link || actionPlan.target).catch(showError);
       return;
     }
-    const mermaidButton = event.target.closest("[data-mermaid-action]");
-    if (mermaidButton) {
+    if (actionPlan.action === "mermaid") {
       event.preventDefault();
       event.stopPropagation();
-      handleMermaidAction(mermaidButton);
+      handleMermaidAction(actionPlan.button || actionPlan.target);
       return;
     }
-    const githubPreviewExpand = event.target.closest("[data-github-link-preview-expand]");
-    if (githubPreviewExpand) {
+    if (actionPlan.action === "github-preview-toggle") {
       event.preventDefault();
       event.stopPropagation();
-      toggleGitHubLinkPreview(githubPreviewExpand);
+      toggleGitHubLinkPreview(actionPlan.button || actionPlan.target);
       return;
     }
-    const button = event.target.closest("[data-approval-action]");
-    if (button) {
-      answerApproval(button.dataset.approvalId, button.dataset.approvalAction).catch(showError);
+    if (actionPlan.action === "approval-answer") {
+      answerApproval(actionPlan.approvalId, actionPlan.approvalAction).catch(showError);
       return;
     }
-    const taskButton = event.target.closest("[data-task-card-action]");
-    if (taskButton) {
-      const action = taskButton.dataset.taskCardAction || "";
-      const cardId = taskButton.dataset.taskCardId || "";
-      if (action === "reply") {
-        replyTaskCard(cardId).catch(showError);
-      } else if (action === "approve" || action === "delete" || action === "revoke") {
-        mutateThreadTaskCard(cardId, action).catch(showError);
-      }
+    if (actionPlan.action === "task-card-reply") {
+      replyTaskCard(actionPlan.cardId).catch(showError);
       return;
     }
-    const taskDraftButton = event.target.closest("[data-task-card-draft-action]");
-    if (taskDraftButton) {
-      const action = String(taskDraftButton.dataset.taskCardDraftAction || "");
-      const draftKey = String(taskDraftButton.dataset.taskCardDraftKey || "");
-      if (action === "dismiss") dismissThreadTaskCardDraft(draftKey);
+    if (actionPlan.action === "task-card-mutate") {
+      mutateThreadTaskCard(actionPlan.cardId, actionPlan.taskCardAction).catch(showError);
       return;
     }
-    const option = event.target.closest("[data-server-response-text]");
-    if (option) {
-      const requestId = option.dataset.serverRequestId;
-      const request = state.pendingApprovals.get(requestId !== null && requestId !== undefined ? String(requestId) : "");
-      answerServerRequest(requestId, serverRequestPayload(request, option.dataset.serverResponseText || "", option.dataset.serverQuestionId || "answer")).catch(showError);
+    if (actionPlan.action === "task-card-unknown") return;
+    if (actionPlan.action === "task-card-draft") {
+      if (actionPlan.draftAction === "dismiss") dismissThreadTaskCardDraft(actionPlan.draftKey);
       return;
     }
-    const decline = event.target.closest("[data-server-request-decline]");
-    if (decline) {
-      declineServerRequest(decline.dataset.serverRequestId).catch(showError);
+    if (actionPlan.action === "server-response") {
+      const request = state.pendingApprovals.get(actionPlan.requestId !== null && actionPlan.requestId !== undefined ? String(actionPlan.requestId) : "");
+      answerServerRequest(actionPlan.requestId, serverRequestPayload(request, actionPlan.responseText || "", actionPlan.questionId || "answer")).catch(showError);
+      return;
+    }
+    if (actionPlan.action === "server-request-decline") {
+      declineServerRequest(actionPlan.requestId).catch(showError);
     }
   });
   $("conversation").addEventListener("submit", (event) => {

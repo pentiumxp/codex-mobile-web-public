@@ -1756,6 +1756,7 @@ test("live detail refresh can patch changed visible items without replacing the 
   assert.match(appJs, /function applyVisibleItemsOnlyRefreshPatch\(/);
   assert.match(appJs, /const threadDetailPatchPlanApi = window\.CodexThreadDetailPatchPlan/);
   assert.match(appJs, /const threadDetailDomPatchApi = window\.CodexThreadDetailDomPatch/);
+  assert.match(appJs, /const threadDetailActionsApi = window\.CodexThreadDetailActions/);
   assert.match(functionBody("visibleItemPatchShapePreservesExisting"), /threadDetailPatchPlanApi\.visibleItemPatchShapePreservesExisting\(previousEntries, nextEntries\)/);
   assert.match(functionBody("planVisibleItemsOnlyFromRefresh"), /!isLatestTurn\(nextTurn\)/);
   assert.doesNotMatch(functionBody("planVisibleItemsOnlyFromRefresh"), /!isLiveTurn\(nextTurn\)/);
