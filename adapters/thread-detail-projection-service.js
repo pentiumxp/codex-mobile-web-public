@@ -601,14 +601,17 @@ function createThreadDetailProjectionService(options = {}) {
     const existing = entryForThread(threadId);
     const partial = optionsForSeed.partial === true;
     if (partial && existing && !existing.partial) {
-      return {
-        cachedAtMs: existing.cachedAtMs,
-        dynamic: existing.dynamic,
-        partial: false,
-        signatureHash: existing.signatureHash,
-        skipped: true,
-        reason: "full-cache-exists",
-      };
+      const reusableFull = get(input);
+      if (reusableFull && reusableFull.partial !== true) {
+        return {
+          cachedAtMs: existing.cachedAtMs,
+          dynamic: existing.dynamic,
+          partial: false,
+          signatureHash: existing.signatureHash,
+          skipped: true,
+          reason: "full-cache-exists",
+        };
+      }
     }
     const entry = {
       threadId,

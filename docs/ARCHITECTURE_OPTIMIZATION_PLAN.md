@@ -390,7 +390,9 @@ can return `projection-v4-partial` without another app-server turns-list read.
 - `mode=recent` can seed and reuse a memory-only partial projection. Partial
   projections carry `partial:true` / `partialKind:recent-window`, are only
   returned when the coordinator explicitly passes `allowPartial`, are never
-  persisted to disk, and cannot overwrite an existing full projection cache.
+  persisted to disk, and cannot overwrite a reusable full projection cache.
+  A stale full cache whose signature no longer matches must not block the
+  recent partial warm path.
   The v4 projection wrapper must pass those seed/get options through to the
   base projection cache; otherwise production v4 would turn a recent window into
   an incorrect full `projection-v4-cache`. This optimizes repeated recent opens

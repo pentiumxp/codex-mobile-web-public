@@ -111,6 +111,50 @@ test("v4 projection service preserves partial recent-window opt-in semantics", (
   }
 });
 
+test("v4 projection service lets partial recent windows replace stale full cache", () => {
+  const service = createThreadDetailProjectionV4Service({
+    cacheDir: "",
+    policyVersion: "test-v4",
+    maxTurns: 3,
+    now: () => 2000,
+  });
+  service.seed(signatureInput(), {
+    thread: {
+      id: "thread-1",
+      turns: [{
+        id: "turn-full",
+        items: [{ id: "user-full", type: "userMessage" }],
+      }],
+    },
+  });
+
+  const changedSignature = signatureInput({
+    rolloutStats: { sizeBytes: 4096, mtimeMs: 3000 },
+    summaryUpdatedAtMs: 3000,
+  });
+  assert.equal(service.get(changedSignature), null);
+
+  const seeded = service.seed(changedSignature, {
+    thread: {
+      id: "thread-1",
+      turns: [{
+        id: "turn-partial",
+        items: [{ id: "user-partial", type: "userMessage" }],
+      }],
+    },
+  }, {
+    partial: true,
+    partialKind: "recent-window",
+  });
+
+  assert.equal(seeded.partial, true);
+  assert.equal(seeded.version, "v4");
+  const cached = service.get(changedSignature, { allowPartial: true });
+  assert.ok(cached);
+  assert.equal(cached.partial, true);
+  assert.deepEqual(cached.result.thread.mobileVisibleItemKeys, ["turn-partial:user:user-partial"]);
+});
+
 test("v4 projection service preserves context compaction notices across dynamic refreshes", () => {
   const service = createThreadDetailProjectionV4Service({
     cacheDir: "",
