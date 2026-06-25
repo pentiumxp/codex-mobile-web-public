@@ -175,12 +175,14 @@ test("live and final message renders stay anchored when the user is at bottom", 
     /const sustainedSubmittedFollow = !explicitNoStickToBottom[\s\S]*sustainSubmittedMessageBottomFollowFromThread\(thread\);/,
     /const shouldFollowBottom = !explicitNoStickToBottom\s*&& \(sustainedSubmittedFollow \|\| shouldFollowSubmittedMessageToBottom\(\) \|\| shouldFollowViewportChangeToBottom\(\)\);/,
     /const shouldStickToBottom = !explicitNoStickToBottom\s*&& \(shouldFollowBottom[\s\S]*\(options\.stickToBottom === true \|\| nearBottom\)\)\);/,
-    /updateConversationHtml\(html, conversationRenderSignature\(thread\), \{ stickToBottom: shouldStickToBottom \}\);/,
+    /updateConversationHtml\(html, conversationRenderSignature\(thread\), \{[\s\S]*stickToBottom: shouldStickToBottom,[\s\S]*patchShellSignature: conversationPatchShellSignature\(thread\),[\s\S]*\}\);/,
   ]);
 
   const updateBody = functionBody("updateConversationHtml");
   assert.match(updateBody, /if \(state\.renderedConversationSignature === signature\) \{[\s\S]*if \(options\.stickToBottom\) scheduleConversationToBottom\(\);/);
+  assert.match(updateBody, /const patchShellSignature = String\(options\.patchShellSignature \|\| ""\);/);
   assert.match(updateBody, /state\.renderedConversationSignature = signature;[\s\S]*if \(options\.stickToBottom\) scheduleConversationToBottom\(\);/);
+  assert.match(updateBody, /state\.renderedConversationPatchShellSignature = patchShellSignature;/);
 
   const appendBody = functionBody("appendToItem");
   assertInOrder(appendBody, [

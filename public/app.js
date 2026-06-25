@@ -245,6 +245,7 @@ const state = {
   pollStableCount: 0,
   lastThreadSignature: "",
   renderedConversationSignature: "",
+  renderedConversationPatchShellSignature: "",
   renderedThreadListSignature: "",
   tickTimer: null,
   relativeTimeTimer: null,
@@ -485,7 +486,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v445";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v446";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -7795,6 +7796,7 @@ function showPluginEmbedRecovering(message = "") {
   $("threadMeta").textContent = "Waiting for Hermes Mobile to relaunch Codex";
   $("conversation").innerHTML = `<div class="empty-state entry-animate">${escapeHtml(message || "Refreshing Codex Mobile plugin session...")}</div>`;
   state.renderedConversationSignature = `plugin-recovering|${String(message || "").slice(0, 120)}`;
+  state.renderedConversationPatchShellSignature = "";
   $("connectionState").classList.remove("error");
   $("connectionState").textContent = message || "Refreshing Codex Mobile plugin session...";
   publishPluginNavigationState({ force: true });
@@ -9111,6 +9113,8 @@ async function refreshCurrentThread(options = {}) {
     previousConversationSignature,
     nextConversationSignature,
     renderedConversationSignature: state.renderedConversationSignature,
+    previousPatchShellSignature: conversationPatchShellSignature(state.currentThread),
+    renderedPatchShellSignature: state.renderedConversationPatchShellSignature,
   });
   const shouldRenderDetail = renderPlan.shouldRenderDetail;
   mergeThreadIntoThreadList(state.currentThread);
@@ -11698,7 +11702,9 @@ function patchHtml(target, html) {
 
 function updateConversationHtml(html, signature, options = {}) {
   const conversation = $("conversation");
+  const patchShellSignature = String(options.patchShellSignature || "");
   if (state.renderedConversationSignature === signature) {
+    if (patchShellSignature) state.renderedConversationPatchShellSignature = patchShellSignature;
     scheduleFailedAppImageScan(conversation, [0, 180]);
     if (options.stickToBottom) scheduleConversationToBottom();
     else scheduleScrollToBottomButtonUpdate();
@@ -11717,6 +11723,7 @@ function updateConversationHtml(html, signature, options = {}) {
   hydrateMermaidDiagrams(conversation);
   scheduleFailedAppImageScan(conversation);
   state.renderedConversationSignature = signature;
+  state.renderedConversationPatchShellSignature = patchShellSignature;
   if (options.stickToBottom) scheduleConversationToBottom();
   else scheduleScrollToBottomButtonUpdate();
   const renderElapsedMs = roundedDurationMs(startedAt);
@@ -12855,6 +12862,7 @@ function patchThreadTilePane(threadId, options = {}) {
     updateThreadTileBottomButtonForBody(patchedPane.querySelector(".thread-tile-pane-body"));
   }
   state.renderedConversationSignature = threadTileRenderSignature(displayLayout, ids);
+  state.renderedConversationPatchShellSignature = "";
   bindThreadTileActions();
   return true;
 }
@@ -12924,7 +12932,7 @@ function renderThreadTileLayout(layout, options = {}) {
   </div>`;
   const signature = threadTileRenderSignature(displayLayout, ids);
   setThreadTileConversationMode(true, displayLayout);
-  updateConversationHtml(html, signature, { stickToBottom: options.stickToBottom === true });
+  updateConversationHtml(html, signature, { stickToBottom: options.stickToBottom === true, patchShellSignature: "" });
   bindThreadTileActions();
   restoreThreadTilePaneScrollState(scrollState);
   if (typeof window.requestAnimationFrame === "function") {
@@ -13389,6 +13397,7 @@ function completeLocalConversationDomUpdate(root, wasNearBottom, userReadingCurr
     scheduleFailedAppImageScan(root);
   }
   state.renderedConversationSignature = conversationRenderSignature(state.currentThread);
+  state.renderedConversationPatchShellSignature = conversationPatchShellSignature(state.currentThread);
   if (!userReadingCurrentTurn && !shouldHoldAutoScrollForCurrentTurn() && (wasNearBottom || shouldFollowSubmittedMessageToBottom() || shouldFollowViewportChangeToBottom())) {
     scheduleConversationToBottom();
   } else {
@@ -13581,8 +13590,11 @@ function patchCurrentThreadDetailFromRefresh(previousThread, nextThread, previou
   if (patchCurrentThreadTilePaneFromState({ threadId: nextThread.id || state.currentThreadId, preserveScroll: true })) return true;
   if (!canPatchSingleThreadConversationDom({ threadId: nextThread.id || state.currentThreadId })) return false;
   if (previousThread.mobileLoading || previousThread.mobileLoadError || nextThread.mobileLoading || nextThread.mobileLoadError) return false;
-  if (state.renderedConversationSignature !== previousConversationSignature) return false;
-  if (conversationPatchShellSignature(previousThread) !== conversationPatchShellSignature(nextThread)) return false;
+  const previousPatchShellSignature = conversationPatchShellSignature(previousThread);
+  const renderedPatchShellSignature = String(state.renderedConversationPatchShellSignature || "");
+  if (state.renderedConversationSignature !== previousConversationSignature
+    && (!renderedPatchShellSignature || renderedPatchShellSignature !== previousPatchShellSignature)) return false;
+  if (previousPatchShellSignature !== conversationPatchShellSignature(nextThread)) return false;
   const wasNearBottom = isConversationNearBottom();
   const userReadingCurrentTurn = isUserReadingCurrentTurn({ nearBottom: wasNearBottom });
   const previousKeys = existingConversationRenderKeys();
@@ -13682,7 +13694,7 @@ function renderHome() {
       isRolloutOverThreshold(thread),
     ]),
   });
-  if (!updateConversationHtml(html, signature)) {
+  if (!updateConversationHtml(html, signature, { patchShellSignature: "home" })) {
     publishPluginNavigationState();
     return;
   }
@@ -13706,6 +13718,7 @@ function renderStartupThreadOpening() {
   $("threadMeta").textContent = "Restoring your current conversation";
   $("conversation").innerHTML = `<div class="empty-state entry-animate">Opening thread...</div>`;
   state.renderedConversationSignature = "startup-thread-open-pending";
+  state.renderedConversationPatchShellSignature = "";
   publishPluginNavigationState();
 }
 
@@ -13836,7 +13849,7 @@ function renderCurrentThread(options = {}) {
     updateConversationHtml(
       `<div class="empty-state entry-animate">Loading thread...</div>`,
       conversationRenderSignature(thread),
-      { stickToBottom: shouldStickToBottom },
+      { stickToBottom: shouldStickToBottom, patchShellSignature: conversationPatchShellSignature(thread) },
     );
     updateTickTimer();
     publishPluginNavigationState();
@@ -13850,7 +13863,7 @@ function renderCurrentThread(options = {}) {
         <button id="retryCurrentThread" class="retry-button" type="button">Retry</button>
       </div>`,
       conversationRenderSignature(thread),
-      { stickToBottom: shouldStickToBottom },
+      { stickToBottom: shouldStickToBottom, patchShellSignature: conversationPatchShellSignature(thread) },
     );
     const retry = $("retryCurrentThread");
     if (retry) retry.onclick = () => loadThread(thread.id || state.currentThreadId, { source: "retry" }).catch(showError);
@@ -13888,7 +13901,10 @@ function renderCurrentThread(options = {}) {
     : "No visible turns.";
     const html = goalCard + rolloutWarning + loadingNote + taskToolbar + omittedBanner + readWarning + (turnsHtml || approvalsHtml || taskCardsHtml ? `${turnsHtml}${approvalsHtml}${taskCardsHtml}${pluginRefreshNotice}` : `${pluginRefreshNotice || ""}<div class="empty-state entry-animate">${escapeHtml(emptyMessage)}</div>`);
   updateLiveOperationDockHtml(liveOperationDock);
-  updateConversationHtml(html, conversationRenderSignature(thread), { stickToBottom: shouldStickToBottom });
+  updateConversationHtml(html, conversationRenderSignature(thread), {
+    stickToBottom: shouldStickToBottom,
+    patchShellSignature: conversationPatchShellSignature(thread),
+  });
   bindCurrentThreadActions();
   if (options.scrollToTurnReceiptStart) scrollConversationToTurnReceiptStart(options.scrollToTurnReceiptStart);
   applyPendingPluginRouteHintFocus();
@@ -13935,7 +13951,9 @@ function renderNewThreadDraft() {
       </div>
     </div>
   </div>`;
-  updateConversationHtml(html, `new-thread|${state.selectedCwd}|${state.workspaces.length}|${selectedModel}|${selectedEffort}|${selectedPermission}`);
+  updateConversationHtml(html, `new-thread|${state.selectedCwd}|${state.workspaces.length}|${selectedModel}|${selectedEffort}|${selectedPermission}`, {
+    patchShellSignature: "",
+  });
   const selectButton = $("newThreadWorkspaceSelect");
   const workspaceMenu = $("newThreadWorkspaceMenu");
   const shouldDisableWorkspaceSelect = !hasWorkspaceOptions;

@@ -1,3 +1,54 @@
+# 2026-06-25 - v446 patch-shell signature fix in progress
+
+- User follow-up after v445:
+  - User cancelled the prior goal because the phone UI did not show replies for
+    a period.
+  - User also reported that typing in the Composer still sometimes causes the
+    Composer and screen above it to flicker, while other times it is stable.
+- Bounded evidence:
+  - v445 production logs showed new live content was present in render input:
+    `conversation_render_ms` `htmlChars` kept increasing.
+  - There were no immediate new `conversation_projection_mismatch` /
+    `detail_patch_rejected` matches in the sampled window, but live-poll still
+    frequently reported `detailRenderMode=full-render`.
+  - Therefore the remaining flicker is not the old server projection missing
+    the active turn. It is conversation DOM replacement during live-poll,
+    especially visible while the keyboard/Composer is active.
+- Root cause:
+  - `refreshCurrentThread` used the full `conversationRenderSignature` as both
+    the "content changed" signal and the "DOM can be patched safely" signal.
+  - The full signature includes projection metadata such as
+    `mobileProjectionRevision` and `mobileVisibleItemKeys`, which can change
+    during active projection refreshes even when the visible turn shell remains
+    patchable.
+  - Those metadata-only signature changes made the render plan choose
+    `full-render`, causing avoidable conversation DOM replacement and visible
+    flicker.
+- Local runtime change:
+  - `public/app.js` adds `renderedConversationPatchShellSignature`.
+  - Single-thread conversation renders write the patch-shell signature; home,
+    new-thread, plugin-recovery, and tile surfaces clear it.
+  - `refreshCurrentThread` passes both full signatures and patch-shell
+    signatures to `thread-detail-render-plan`.
+  - `patchCurrentThreadDetailFromRefresh` accepts a stale full rendered
+    signature only when the rendered patch-shell signature still matches the
+    previous thread shell.
+  - `public/thread-detail-render-plan.js` adds `patch-shell-stable`, allowing a
+    patch when only projection metadata makes the full signature stale.
+  - `CLIENT_BUILD_ID` and service-worker cache are bumped to
+    `codex-mobile-shell-v446`.
+- Local validation completed so far:
+  - Syntax check passed for `public/app.js` and
+    `public/thread-detail-render-plan.js`.
+  - Focused suite passed:
+    `node --test test/thread-detail-render-plan.test.js
+    test/mobile-viewport.test.js test/turn-scroll-controls.test.js
+    test/conversation-render.test.js` (`118` tests).
+- Pending:
+  - Run broader validation, commit, deploy through Home AI central macOS plugin
+    deployment, and confirm production readback reports
+    `codex-mobile-shell-v446`.
+
 # 2026-06-25 - v445 phone single-thread live visibility fix deployed
 
 - User correction after v444:

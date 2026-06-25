@@ -59,11 +59,30 @@ test("thread detail refresh render plan requires full render when DOM signature 
   });
 });
 
+test("thread detail refresh render plan can patch when only projection metadata makes the full signature stale", () => {
+  const plan = renderPlan.planThreadDetailRefreshRender({
+    previousConversationSignature: "sig-a",
+    nextConversationSignature: "sig-b",
+    renderedConversationSignature: "sig-old",
+    previousPatchShellSignature: "shell-a",
+    renderedPatchShellSignature: "shell-a",
+  });
+
+  assert.deepEqual(plan, {
+    shouldRenderDetail: true,
+    canPatch: true,
+    detailRenderMode: "patch",
+    reason: "patch-shell-stable",
+  });
+});
+
 test("thread detail refresh render plan can disable patch explicitly", () => {
   const plan = renderPlan.planThreadDetailRefreshRender({
     previousConversationSignature: "sig-a",
     nextConversationSignature: "sig-b",
     renderedConversationSignature: "sig-a",
+    previousPatchShellSignature: "shell-a",
+    renderedPatchShellSignature: "shell-a",
     allowPatch: false,
   });
 

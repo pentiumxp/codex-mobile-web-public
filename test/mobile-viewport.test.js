@@ -148,8 +148,8 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v445/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v445"/);
+  assert.match(swJs, /codex-mobile-shell-v446/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v446"/);
   assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(swJs, /"\/thread-status-hints\.js"/);
@@ -313,7 +313,7 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /api\(threadDetailApiPath\(threadId, requestedMode === "recent" \? \{ mode: "recent" \} : \{\}\)/);
   assert.match(appJs, /const previousConversationSignature = conversationRenderSignature\(state\.currentThread\);/);
   assert.match(appJs, /const threadDetailRenderPlanApi = window\.CodexThreadDetailRenderPlan;/);
-  assert.match(appJs, /threadDetailRenderPlanApi\.planThreadDetailRefreshRender\(\{[\s\S]*previousConversationSignature,[\s\S]*nextConversationSignature,[\s\S]*renderedConversationSignature: state\.renderedConversationSignature,[\s\S]*\}\);/);
+  assert.match(appJs, /threadDetailRenderPlanApi\.planThreadDetailRefreshRender\(\{[\s\S]*previousConversationSignature,[\s\S]*nextConversationSignature,[\s\S]*renderedConversationSignature: state\.renderedConversationSignature,[\s\S]*previousPatchShellSignature: conversationPatchShellSignature\(state\.currentThread\),[\s\S]*renderedPatchShellSignature: state\.renderedConversationPatchShellSignature,[\s\S]*\}\);/);
   assert.match(functionBody("refreshCurrentThread"), /const shouldRenderDetail = renderPlan\.shouldRenderDetail;/);
   assert.match(functionBody("refreshCurrentThread"), /let detailRenderMode = renderPlan\.detailRenderMode;/);
   assert.match(functionBody("refreshCurrentThread"), /const tileSurfaceRefresh = Boolean\([\s\S]*state\.threadTileMode[\s\S]*isThreadTileConversationSurface\(\)[\s\S]*tilePatchPlan && tilePatchPlan\.surface === "thread-tile-pane"[\s\S]*\);/);
@@ -325,6 +325,9 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /locallyPatchedDetail,/);
   assert.match(appJs, /function conversationRootSignature\(thread\)/);
   assert.match(appJs, /function conversationPatchShellSignature\(thread\)/);
+  assert.match(appJs, /renderedConversationPatchShellSignature: ""/);
+  assert.match(functionBody("updateConversationHtml"), /const patchShellSignature = String\(options\.patchShellSignature \|\| ""\);/);
+  assert.match(functionBody("updateConversationHtml"), /state\.renderedConversationPatchShellSignature = patchShellSignature;/);
   assert.match(appJs, /function rolloutWarningSignature\(thread\)/);
   assert.doesNotMatch(functionBody("conversationRootSignature"), /rolloutSizeBytes: rolloutSizeBytes\(thread\)/);
   assert.doesNotMatch(functionBody("conversationRenderSignature"), /rolloutSizeBytes: rolloutSizeBytes\(thread\)/);
@@ -338,7 +341,9 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /function insertVisibleItemDom\(turn, item\)/);
   assert.match(appJs, /function insertTurnArticleDom\(turn, previousKeys = existingConversationRenderKeys\(\)\)/);
   assert.match(appJs, /function patchCurrentThreadDetailFromRefresh\(previousThread, nextThread, previousConversationSignature\)/);
-  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /conversationPatchShellSignature\(previousThread\) !== conversationPatchShellSignature\(nextThread\)/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /const previousPatchShellSignature = conversationPatchShellSignature\(previousThread\);/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /state\.renderedConversationSignature !== previousConversationSignature[\s\S]*renderedPatchShellSignature !== previousPatchShellSignature/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /previousPatchShellSignature !== conversationPatchShellSignature\(nextThread\)/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /updateLiveOperationDockHtml\(renderLiveOperationDock\(nextThread, previousKeys\)\)/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /patchNode\(article, source\);/);
   assert.match(functionBody("insertVisibleItemDom"), /if \(isOperationalItem\(item\)\) return updateLiveOperationDockForLocalPatch\(\);/);

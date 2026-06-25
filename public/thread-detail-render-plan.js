@@ -16,6 +16,8 @@
     const previousConversationSignature = normalizeSignature(input.previousConversationSignature);
     const nextConversationSignature = normalizeSignature(input.nextConversationSignature);
     const renderedConversationSignature = normalizeSignature(input.renderedConversationSignature);
+    const previousPatchShellSignature = normalizeSignature(input.previousPatchShellSignature);
+    const renderedPatchShellSignature = normalizeSignature(input.renderedPatchShellSignature);
     const allowPatch = input.allowPatch !== false;
     const shouldRenderDetail = previousConversationSignature !== nextConversationSignature
       || renderedConversationSignature !== nextConversationSignature;
@@ -29,15 +31,20 @@
       };
     }
 
-    const canPatch = Boolean(allowPatch
-      && previousConversationSignature
+    const fullSignatureMatches = Boolean(previousConversationSignature
       && renderedConversationSignature
       && previousConversationSignature === renderedConversationSignature);
+    const patchShellMatches = Boolean(previousPatchShellSignature
+      && renderedPatchShellSignature
+      && previousPatchShellSignature === renderedPatchShellSignature);
+    const canPatch = Boolean(allowPatch && (fullSignatureMatches || patchShellMatches));
     return {
       shouldRenderDetail: true,
       canPatch,
       detailRenderMode: canPatch ? "patch" : "full-render",
-      reason: canPatch ? "signature-changed" : "rendered-signature-stale",
+      reason: canPatch
+        ? (fullSignatureMatches ? "signature-changed" : "patch-shell-stable")
+        : "rendered-signature-stale",
     };
   }
 

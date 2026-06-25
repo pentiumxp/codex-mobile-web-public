@@ -37,6 +37,33 @@ return policy，不再出现 `Return required`；如果再次对终止卡调用 
 `returnToSource:true` 是终止卡、auto-return receipt 不触发二次 auto-return、以及
 Music-style repair -> receipt -> ack 链在第一张 terminal return 后停止。
 
+## 2026-06-25 v446 结构签名 Patch Gate 与 Composer 闪动抑制
+
+v446 接续 v445 的手机单窗口修复。生产日志证明 v445 后新内容已经进入
+render 输入，`conversation_render_ms` 的 `htmlChars` 持续增长；但 live-poll 仍
+频繁走 `detailRenderMode=full-render`。用户在 Composer 输入时如果刚好遇到
+后台 live-poll full-render，就会看到输入区和正文一起抖动，表现成“打字偶尔
+触发全屏刷新”。
+
+根因是 `refreshCurrentThread` 的 patch gate 只看完整
+`conversationRenderSignature`。完整签名包含 `mobileProjectionRevision` 和
+`mobileVisibleItemKeys` 等投影元数据，这些字段在活动 turn 中会频繁变化；即使
+DOM 结构和可见 turn shell 仍可安全局部 patch，也会被判成
+`rendered-signature-stale`，退到整段 conversation render。
+
+v446 将“是否需要更新内容”和“是否可以局部 patch”拆开：
+
+- `conversationRenderSignature` 继续作为完整内容签名。
+- 新增 `renderedConversationPatchShellSignature`，记录可局部 patch 的结构签名。
+- `thread-detail-render-plan` 在完整签名 stale 但结构签名仍匹配时允许走 patch，
+  避免仅因 projection 元数据变化而整段替换 DOM。
+- 单线程 render 会写入结构签名；home、新建线程、平铺和插件恢复页会清空该签名，
+  防止跨 surface 误 patch。
+
+新增/更新测试覆盖 `patch-shell-stable` 行为、客户端结构签名写入、以及
+`patchCurrentThreadDetailFromRefresh` 在完整签名不一致但结构签名匹配时仍可安全
+尝试局部 patch。
+
 ## 2026-06-25 v445 手机单窗口长 Turn 可见性修正
 
 v445 修复非平铺手机单窗口里“右上角运行状态持续更新，但正文停在旧长回执，
