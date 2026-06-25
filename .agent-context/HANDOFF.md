@@ -1,3 +1,80 @@
+# 2026-06-25 - v451 visible item DOM patch executor deployed
+
+- Optimization phase:
+  - Phase A fourth slice. v448 moved refresh terminal render outcome ownership
+    into `thread-detail-render-plan`; v449 moved turn-level refresh DOM patch
+    action planning into `thread-detail-patch-plan`; v450 moved local patch
+    scroll completion into `conversation-scroll`; v451 moves visible-item DOM
+    patch execution out of `public/app.js`.
+- Root-cause boundary:
+  - Before v451, `applyVisibleItemsOnlyRefreshPatch` in `public/app.js`
+    interpreted `reuse` / `patch` / `insert` operations, queried DOM nodes,
+    rendered new nodes, called `patchNode`, and inserted nodes.
+  - That kept part of DOM patch execution policy inside the application
+    coordinator, which is one of the paths behind duplicate/missing-message
+    and refresh-jitter investigations.
+- Runtime change:
+  - New `public/thread-detail-dom-patch.js` exposes
+    `applyVisibleItemRefreshDomPatch`.
+  - The helper applies visible-item refresh patch plans with injected
+    lookup/render/patch callbacks and returns bounded results/reasons for
+    `plan-not-patchable`, missing article, missing existing node, render
+    failure, patch failure, unknown operation, and invalid operation.
+  - `public/app.js` now injects DOM lookup, visible-item HTML rendering, and
+    `patchNode` work through `patchVisibleItemElement`; it no longer owns the
+    visible-item patch operation loop.
+  - The change does not hide duplicate messages, synthesize missing messages,
+    skip refreshes, or add a fallback. If patch execution cannot explain the
+    DOM shape, existing local patch rejection still allows the established full
+    render path to handle the refresh.
+  - `CLIENT_BUILD_ID` and service-worker cache are bumped to
+    `codex-mobile-shell-v451`.
+- Docs/tests:
+  - `README.md` records the v451 architecture slice.
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` records that visible-item DOM
+    patch execution is now outside `public/app.js`.
+  - `docs/MODULES.md` maps `public/thread-detail-dom-patch.js` and
+    `test/thread-detail-dom-patch.test.js`.
+  - New focused tests cover reuse/patch/insert order, insertion before the
+    first child, missing node, render failure, patch failure, unknown
+    operation, and invalid operation.
+- Validation:
+  - Syntax checks passed for `public/thread-detail-dom-patch.js`,
+    `public/app.js`, and `public/sw.js`.
+  - Focused source suite passed:
+    `node --test test/thread-detail-dom-patch.test.js
+    test/thread-detail-patch-plan.test.js test/conversation-render.test.js
+    test/mobile-viewport.test.js test/app-update.test.js
+    test/plugin-voice-input.test.js test/thread-tile-layout-ui.test.js
+    test/thread-task-card-route.test.js test/thread-goal-service.test.js`
+    (`149` tests).
+  - Full `npm test` passed (`811` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Commit/deploy:
+  - Runtime commit: `c261332` (`refactor visible item dom patch execution`).
+  - Deployed with Home AI central macOS script:
+    `deploy-macos-production.js --plugin codex-mobile --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --reason codex-mobile-visible-item-dom-patch-v451 --execute --json`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T164939Z-plugin-codex-mobile-web-codex-mobile-visible-item-dom-patch-v451`.
+  - Production `/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v451`,
+    `shellCacheName=codex-mobile-shell-v451`, and `version=0.1.11`.
+  - Source/prod SHA-256 parity confirmed for changed runtime/test/doc files.
+  - Production focused suite passed with `NODE_PATH` pointed at production
+    dependencies (`149` tests).
+- Production observation:
+  - Bounded log-tail aggregation after deploy found no v451/v450/v449
+    `thread_refresh_ms` client events yet; the recent sample still contained
+    `102` v447 events and `1250` events with missing client build id.
+  - This is not evidence of v451 failure; it means refreshed v451 clients have
+    not yet produced that metric in the sampled tail.
+- Follow-up:
+  - Continue Phase A with turn-level DOM execution boundaries: turn node
+    lookup, turn node creation, turn replace/insert execution, hydration, and
+    action binding.
+  - After those boundaries, move to Phase B cold/warm large-session timing
+    evidence unless a production diagnostic case requires earlier attention.
+
 # 2026-06-25 - v450 local patch scroll completion policy deployed
 
 - Optimization phase:
