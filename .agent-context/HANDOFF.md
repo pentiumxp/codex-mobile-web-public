@@ -10388,3 +10388,74 @@ The previous full handoff was archived and should be opened only when old proven
     snapshot/report planning from `app.js`, or move to Phase B and use the now
     unified first-paint/refresh/full-ready/patch-reject evidence to identify
     the real large-session cold-path cost.
+
+## 2026-06-26 - v491 projection consistency diagnostic events deployed
+
+- Latest code commit:
+  - `22f60ea extract projection consistency diagnostic events`
+- v491 change:
+  - `public/thread-diagnostic-events.js` now also owns
+    `renderSignatureMismatchDiagnosticEvent`,
+    `renderSignatureMismatchDiagnosticSuccess`,
+    `duplicateRenderKeysDiagnosticEvent`, and
+    `duplicateRenderKeysDiagnosticSuccess`.
+  - `checkConversationProjectionConsistency()` still owns snapshot acquisition,
+    mismatch/duplicate branching, failure/success recording, and Home AI report
+    transport, but no longer hand-builds `render_signature_mismatch` or
+    `duplicate_render_keys` payloads.
+  - Static build/cache: `0.1.11|codex-mobile-shell-v491` /
+    `codex-mobile-shell-v491`.
+- Root-cause boundary:
+  - Symptom/risk: v490 centralized patch-reject diagnostic payloads, but
+    render-signature mismatch and duplicate-render-key report structures were
+    still assembled inline in `public/app.js`. That left projection consistency
+    report fields prone to drift when tile/single render consistency or
+    snapshot shape changes.
+  - Failing layer: frontend conversation projection consistency diagnostic
+    event ownership.
+  - Invariant: projection consistency diagnostics may contain bounded context,
+    reason/status codes, DOM/visible/duplicate/pane counts, and breadcrumbs
+    only; they must not contain message bodies, task-card bodies, uploads,
+    screenshots, private paths, cookies, tokens, provider payloads, or long
+    logs.
+  - Classification: root-cause architecture cleanup; no fallback or UI-only
+    mitigation added.
+- Validation:
+  - Source focused suite passed:
+    `test/thread-diagnostic-events.test.js`,
+    `test/home-ai-diagnostic-reporting.test.js`,
+    `test/conversation-render.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-task-card-route.test.js`, and
+    `test/thread-goal-service.test.js` (`133` tests).
+  - Full source `npm test` passed (`908` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Production deploy:
+  - Deployed through Home AI central macOS plugin deploy path with reason
+    `codex-mobile-projection-consistency-diagnostic-events-v491`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T225321Z-plugin-codex-mobile-web-codex-mobile-projection-consistency-diagnostic-events-v491`
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v491`,
+    `shellCacheName=codex-mobile-shell-v491`, `version=0.1.11`,
+    `authRequired=true`.
+  - Source/production SHA parity verified for:
+    `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`,
+    `docs/MODULES.md`, `public/app.js`, `public/sw.js`,
+    `public/thread-diagnostic-events.js`,
+    `test/conversation-render.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-diagnostic-events.test.js`,
+    `test/thread-goal-service.test.js`, and
+    `test/thread-task-card-route.test.js`.
+  - Production focused suite passed (`133` tests).
+- Browser/visual note:
+  - Browser automation remains unavailable in the current tool list. v491
+    closure evidence is source focused tests, full source tests, production
+    focused tests, production public-config readback, and source/prod SHA
+    parity.
+- Release:
+  - Public was not pushed for v491.
+- Next suggested slice:
+  - Either finish the Phase A diagnostic boundary by extracting
+    `conversationProjectionDiagnosticSnapshot()` into a pure helper with
+    injected tile/single dependencies, or move to Phase B and use the unified
+    diagnostics/performance events to measure large-session cold-path costs.
