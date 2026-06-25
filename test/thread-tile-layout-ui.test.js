@@ -201,18 +201,37 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.doesNotMatch(tileTurnBody, /renderThreadTaskCardDraft/);
 
   const switchBody = functionBody(appJs, "replaceThreadTilePaneThread");
-  assert.match(switchBody, /state\.threadTilePinnedIds = normalizeThreadTilePinnedIds\(nextIds\)/);
+  assert.match(switchBody, /threadTileStatePolicy\.replacePaneThreadPlan/);
+  assert.match(switchBody, /state\.threadTilePinnedIds = normalizeThreadTilePinnedIds\(plan\.paneThreadIds\)/);
   assert.match(switchBody, /scheduleThreadDisplaySettingsSave\(\)/);
-  assert.match(switchBody, /state\.threadTileSelectedThreadId = to/);
-  assert.match(switchBody, /loadThreadTileDetail\(to, \{ force: true, source: "tile-switch" \}\)/);
+  assert.match(switchBody, /state\.threadTileSelectedThreadId = plan\.selectedThreadId \|\| to/);
+  assert.match(switchBody, /loadThreadTileDetail\(plan\.loadThreadId, \{ force: true, source: "tile-switch" \}\)/);
+  assert.match(switchBody, /plan\.renderMode === "full"/);
+
+  const moveBody = functionBody(appJs, "moveThreadTilePaneRelative");
+  assert.match(moveBody, /threadTileStatePolicy\.movePaneRelativePlan/);
+  assert.match(moveBody, /state\.threadTilePinnedIds = normalizeThreadTilePinnedIds\(plan\.paneThreadIds\)/);
+  assert.match(moveBody, /state\.threadTileSplitPairs = normalizeThreadTileSplitPairs\(plan\.paneSplitPairs, state\.threadTilePinnedIds\)/);
+
+  const splitBody = functionBody(appJs, "splitThreadTilePaneWithTarget");
+  assert.match(splitBody, /threadTileStatePolicy\.splitPaneWithTargetPlan/);
+  assert.match(splitBody, /state\.threadTilePinnedIds = normalizeThreadTilePinnedIds\(plan\.paneThreadIds\)/);
+  assert.match(splitBody, /state\.threadTileSplitPairs = normalizeThreadTileSplitPairs\(plan\.paneSplitPairs, state\.threadTilePinnedIds\)/);
+
+  const dropBody = functionBody(appJs, "dropThreadTilePane");
+  assert.match(dropBody, /threadTileStatePolicy\.dropPaneIntent/);
+  assert.match(dropBody, /moveThreadTilePaneRelative\(from, to, plan\.placement\)/);
+  assert.match(dropBody, /splitThreadTilePaneWithTarget\(from, to, plan\.placement\)/);
 
   const listOpenReplaceBody = functionBody(appJs, "replaceLastThreadTilePaneForThreadListOpen");
   assert.match(listOpenReplaceBody, /source !== "thread-list"/);
   assert.match(listOpenReplaceBody, /const ids = threadTileCandidateIds\(layout\)/);
-  assert.match(listOpenReplaceBody, /const index = ids\.length - 1/);
-  assert.match(listOpenReplaceBody, /state\.threadTilePinnedIds = normalized/);
-  assert.match(listOpenReplaceBody, /state\.threadTileSelectedThreadId = id/);
+  assert.match(listOpenReplaceBody, /threadTileStatePolicy\.replaceLastPaneForThreadListOpenPlan/);
+  assert.match(listOpenReplaceBody, /state\.threadTilePinnedIds = normalizeThreadTilePinnedIds\(plan\.paneThreadIds\)/);
+  assert.match(listOpenReplaceBody, /state\.threadTileSelectedThreadId = plan\.selectedThreadId \|\| id/);
   assert.match(listOpenReplaceBody, /scheduleThreadDisplaySettingsSave\(\)/);
+  assert.doesNotMatch(appJs, /function removeThreadTileSplitPairsForIds\(/);
+  assert.doesNotMatch(appJs, /function setThreadTileSplitPair\(/);
   const loadThreadBody = functionBody(appJs, "loadThread");
   assert.match(loadThreadBody, /replaceLastThreadTilePaneForThreadListOpen\(threadId, \{ source \}\)/);
 

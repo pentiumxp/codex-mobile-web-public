@@ -16,6 +16,32 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v462 Thread Tile Pane Slot Mutation Policy
+
+v462 继续 Phase C，把平铺窗口的 pane slot mutation 规则从 `public/app.js`
+迁到 `public/thread-tile-state.js`。这次处理的是窗口线程切换、拖动换位、
+上下分屏、从线程列表主动打开线程时替换最后一个窗口，以及拖放区域判定。
+
+本次新增的纯策略包括：
+
+- `replacePaneThreadPlan`：规划某个 pane 切换到另一个线程时的 slot 替换、
+  duplicate swap、选中 pane、滚动状态清理和 patch/full render 选择。
+- `movePaneRelativePlan`：规划拖动 pane 到目标 pane 左/右时的固定 slot 顺序
+  和相关 split-pair 清理。
+- `splitPaneWithTargetPlan`：规划拖动 pane 到目标 pane 上/下时的上下分屏关系。
+- `replaceLastPaneForThreadListOpenPlan`：规划在平铺模式下从线程列表打开新线程时，
+  用新线程替换最后一个 pane，而不是让后台 recent 排序移动窗口。
+- `dropPaneIntent`：把拖放命中区域归类为左/右换位或上/下分屏。
+
+`public/app.js` 仍负责副作用：保存草稿、恢复 Composer target、设置 Map/Set、
+触发 detail load、patch pane、full render 和持久化显示设置。这个切片不改变
+server projection、任务卡、图片投影或平铺视觉结构。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v462`。
+`test/thread-tile-state.test.js` 覆盖 slot mutation planning；
+`test/thread-tile-layout-ui.test.js` 约束 app 层必须调用这些 policy helpers，
+且不再保留旧的 split-pair mutation wrapper。
+
 ## 2026-06-26 v461 Thread Tile Detail Refresh Policy
 
 v461 继续 Phase C，把平铺窗口的 pane-local detail refresh 决策从

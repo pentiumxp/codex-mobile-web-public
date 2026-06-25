@@ -349,3 +349,176 @@ test("thread tile state plans detail loads and skips stale work", () => {
     clearError: true,
   });
 });
+
+test("thread tile state plans pane slot replacement without app globals", () => {
+  assert.deepEqual(state.replacePaneThreadPlan({
+    enabled: false,
+    fromThreadId: "a",
+    toThreadId: "d",
+    ids: ["a", "b", "c"],
+  }).action, "skip");
+
+  assert.deepEqual(state.replacePaneThreadPlan({
+    enabled: true,
+    fromThreadId: "b",
+    toThreadId: "d",
+    ids: ["a", "b", "c"],
+    pinnedIds: [],
+  }, { maxPanes: 12 }), {
+    action: "replace",
+    reason: "replace-pane-thread",
+    from: "b",
+    to: "d",
+    index: 1,
+    duplicateIndex: -1,
+    paneThreadIds: ["a", "d", "c"],
+    selectedThreadId: "d",
+    switchMenuPaneId: "",
+    scrollResetIds: ["b", "d"],
+    renderMode: "patch-source-pane",
+    loadThreadId: "d",
+  });
+
+  assert.deepEqual(state.replacePaneThreadPlan({
+    enabled: true,
+    fromThreadId: "a",
+    toThreadId: "c",
+    ids: ["a", "b", "c"],
+    pinnedIds: ["a", "b", "c"],
+  }, { maxPanes: 12 }), {
+    action: "replace",
+    reason: "replace-pane-thread",
+    from: "a",
+    to: "c",
+    index: 0,
+    duplicateIndex: 2,
+    paneThreadIds: ["c", "b", "a"],
+    selectedThreadId: "c",
+    switchMenuPaneId: "",
+    scrollResetIds: ["a", "c"],
+    renderMode: "full",
+    loadThreadId: "c",
+  });
+
+  assert.equal(state.replacePaneThreadPlan({
+    enabled: true,
+    fromThreadId: "a",
+    toThreadId: "a",
+    ids: ["a", "b"],
+  }).action, "select");
+});
+
+test("thread tile state plans pane moves and split pairs", () => {
+  assert.deepEqual(state.movePaneRelativePlan({
+    enabled: true,
+    fromThreadId: "c",
+    toThreadId: "a",
+    placement: "before",
+    ids: ["a", "b", "c"],
+    splitPairs: [{ anchorId: "c", childId: "b" }, { anchorId: "a", childId: "b" }],
+  }, {
+    maxPanes: 12,
+    normalizeSplitPairs: layout.normalizeSplitPairs,
+  }), {
+    action: "move",
+    reason: "move-pane",
+    from: "c",
+    to: "a",
+    placement: "before",
+    paneThreadIds: ["c", "a", "b"],
+    paneSplitPairs: [{ anchorId: "a", childId: "b" }],
+    selectedThreadId: "c",
+    switchMenuPaneId: "",
+  });
+
+  assert.deepEqual(state.splitPaneWithTargetPlan({
+    enabled: true,
+    fromThreadId: "c",
+    toThreadId: "a",
+    placement: "below",
+    ids: ["a", "b", "c"],
+    splitPairs: [],
+  }, {
+    maxPanes: 12,
+    normalizeSplitPairs: layout.normalizeSplitPairs,
+  }), {
+    action: "split",
+    reason: "split-pane",
+    from: "c",
+    to: "a",
+    placement: "below",
+    paneThreadIds: ["a", "c", "b"],
+    paneSplitPairs: [{ anchorId: "a", childId: "c" }],
+    selectedThreadId: "c",
+    switchMenuPaneId: "",
+  });
+});
+
+test("thread tile state plans thread-list pane replacement and drop intent", () => {
+  assert.deepEqual(state.replaceLastPaneForThreadListOpenPlan({
+    enabled: true,
+    source: "thread-list",
+    threadId: "d",
+    ids: ["a", "b", "c"],
+    pinnedIds: ["a", "b", "c"],
+  }, { maxPanes: 12 }), {
+    action: "replace-last",
+    reason: "thread-list-open",
+    from: "c",
+    to: "d",
+    index: 2,
+    duplicateIndex: -1,
+    paneThreadIds: ["a", "b", "d"],
+    selectedThreadId: "d",
+    switchMenuPaneId: "",
+    scrollResetIds: ["c", "d"],
+  });
+
+  assert.equal(state.replaceLastPaneForThreadListOpenPlan({
+    enabled: true,
+    source: "search",
+    threadId: "d",
+    ids: ["a", "b", "c"],
+  }).reason, "unsupported-source");
+
+  assert.deepEqual(state.dropPaneIntent({
+    fromThreadId: "a",
+    toThreadId: "b",
+    left: 0,
+    top: 0,
+    width: 100,
+    height: 100,
+    clientX: 10,
+    clientY: 40,
+  }).action, "move-relative");
+  assert.equal(state.dropPaneIntent({
+    fromThreadId: "a",
+    toThreadId: "b",
+    left: 0,
+    top: 0,
+    width: 100,
+    height: 100,
+    clientX: 90,
+    clientY: 40,
+  }).placement, "after");
+  assert.deepEqual(state.dropPaneIntent({
+    fromThreadId: "a",
+    toThreadId: "b",
+    left: 0,
+    top: 0,
+    width: 100,
+    height: 100,
+    clientX: 50,
+    clientY: 20,
+  }).action, "split-with-target");
+  assert.equal(state.dropPaneIntent({
+    fromThreadId: "a",
+    toThreadId: "b",
+    left: 0,
+    top: 0,
+    width: 100,
+    height: 100,
+    clientX: 50,
+    clientY: 80,
+  }).placement, "below");
+});

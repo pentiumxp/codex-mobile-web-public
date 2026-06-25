@@ -132,9 +132,13 @@ dedupe/order, selected pane fallback, split-pair updates, display-settings
 payload/application, active-id sync, and pane-local operation bubble
 dwell/expiry/mode/signature rules are pure policy. Pane-local detail refresh
 planning is now also in that helper: refresh timer scheduling, refresh target
-selection, and detail-load skip/background/loading decisions are explicit plans
-while `public/app.js` keeps DOM, rendering, network save, timers, API reads,
-AbortController ownership, and other side effects. App code can no
+selection, and detail-load skip/background/loading decisions are explicit
+plans. Pane slot mutation planning is also in that helper: pane thread
+replacement, duplicate swap, drag reorder, up/down split-pair placement,
+thread-list-open replacement, and drop-zone intent are explicit plans while
+`public/app.js` keeps DOM, rendering, network save, timers, API reads,
+AbortController ownership, draft restore, detail-load side effects, and other
+side effects. App code can no
 longer fall through from tile mode into the
 single-thread patch path without an explicit policy decision, fall through from
 a successful tile pane patch into full conversation render, silently choose
@@ -159,8 +163,9 @@ Target:
   thread-tile interaction recognition is now outside app.js for tile surfaces;
   core thread-tile pane-state normalization and operation bubble signature/
   dwell/mode policy are now outside app.js. Pane-local detail refresh planning
-  is now outside app.js; action execution, detail read side effects, command
-  detail panels, and split sizing remain the next boundary.
+  and pane slot mutation planning are now outside app.js; action execution,
+  detail read side effects, command detail panels, and split sizing remain the
+  next boundary.
 - Keep `public/app.js` responsible for DOM wiring, patch application, and event
   binding only.
 - Cover user-message echo convergence, live receipt preservation, completed
@@ -302,11 +307,12 @@ Target:
   `public/thread-tile-state.js` for pane count, pinned ids, split pairs,
   selected pane, display settings, active-id sync, and operation bubble
   dwell/expiry/mode/signature policy. It also owns refresh timer planning,
-  refresh target selection, and detail-load skip/background/loading decisions.
-  Continue moving pane ids, widths, ordering, active pane, per-pane drafts, max
-  concurrent detail reads, pane-local send/approval/interrupt ownership,
-  command detail panels, and mobile collapse behavior into testable helpers
-  without DOM side effects.
+  refresh target selection, detail-load skip/background/loading decisions, and
+  pane slot mutation planning for thread replacement, drag reorder, up/down
+  split, and thread-list-open replacement. Continue moving pane widths, active
+  pane execution, per-pane drafts, max concurrent detail reads, pane-local
+  send/approval/interrupt ownership, command detail panels, and mobile collapse
+  behavior into testable helpers without DOM side effects.
 - Treat each pane as a scaled mobile single-thread runtime instance. Shared
   global Composer chrome is only an interim input surface; global command dock
   or shared operation bubble are no longer acceptable in tile mode and must not

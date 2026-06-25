@@ -103,6 +103,184 @@
     };
   }
 
+  function paneSlotBase(input = {}, options = {}) {
+    return {
+      ids: uniqueIds(input.ids || input.activeIds || []),
+      pinnedIds: normalizePinnedIds(input.pinnedIds || input.threadTilePinnedIds || [], options),
+      splitPairs: Array.isArray(input.splitPairs || input.threadTileSplitPairs)
+        ? (input.splitPairs || input.threadTileSplitPairs)
+        : [],
+    };
+  }
+
+  function fillPaneSlotIds(pinnedIds = [], ids = []) {
+    const nextIds = Array.isArray(pinnedIds) && pinnedIds.length ? pinnedIds.slice() : (ids || []).slice();
+    while (nextIds.length < ids.length) {
+      const fillId = ids[nextIds.length];
+      if (!fillId) break;
+      nextIds.push(fillId);
+    }
+    return nextIds;
+  }
+
+  function skipPaneSlot(reason, extra = {}) {
+    return Object.assign({ action: "skip", reason }, extra);
+  }
+
+  function replacePaneThreadPlan(input = {}, options = {}) {
+    const from = text(input.fromThreadId || input.fromId).trim();
+    const to = text(input.toThreadId || input.toId || input.threadId).trim();
+    const { ids, pinnedIds } = paneSlotBase(input, options);
+    if (input.enabled !== true) return skipPaneSlot("disabled", { from, to, ids });
+    if (!from || !to) return skipPaneSlot("missing-id", { from, to, ids });
+    const index = ids.indexOf(from);
+    if (index < 0) return skipPaneSlot("source-not-visible", { from, to, ids });
+    if (from === to) {
+      return {
+        action: "select",
+        reason: "same-thread",
+        from,
+        to,
+        index,
+        duplicateIndex: index,
+        paneThreadIds: pinnedIds.length ? pinnedIds : ids,
+        selectedThreadId: to,
+        switchMenuPaneId: "",
+        scrollResetIds: [],
+        renderMode: "patch",
+        loadThreadId: "",
+      };
+    }
+    const nextIds = fillPaneSlotIds(pinnedIds, ids);
+    const duplicateIndex = nextIds.indexOf(to);
+    if (duplicateIndex >= 0 && duplicateIndex !== index) nextIds[duplicateIndex] = from;
+    nextIds[index] = to;
+    return {
+      action: "replace",
+      reason: "replace-pane-thread",
+      from,
+      to,
+      index,
+      duplicateIndex,
+      paneThreadIds: normalizePinnedIds(nextIds, options),
+      selectedThreadId: to,
+      switchMenuPaneId: "",
+      scrollResetIds: [from, to],
+      renderMode: duplicateIndex >= 0 && duplicateIndex !== index ? "full" : "patch-source-pane",
+      loadThreadId: to,
+    };
+  }
+
+  function movePaneRelativePlan(input = {}, options = {}) {
+    const from = text(input.fromThreadId || input.fromId).trim();
+    const to = text(input.toThreadId || input.toId).trim();
+    const placement = text(input.placement) === "before" ? "before" : "after";
+    const { ids, splitPairs } = paneSlotBase(input, options);
+    if (input.enabled !== true) return skipPaneSlot("disabled", { from, to, ids, placement });
+    if (!from || !to) return skipPaneSlot("missing-id", { from, to, ids, placement });
+    if (from === to) return skipPaneSlot("same-thread", { from, to, ids, placement });
+    if (!ids.includes(from) || !ids.includes(to)) return skipPaneSlot("pane-not-visible", { from, to, ids, placement });
+    const withoutFrom = ids.filter((id) => id !== from);
+    const targetIndex = withoutFrom.indexOf(to);
+    if (targetIndex < 0) return skipPaneSlot("target-not-visible", { from, to, ids, placement });
+    withoutFrom.splice(placement === "before" ? targetIndex : targetIndex + 1, 0, from);
+    const paneThreadIds = normalizePinnedIds(withoutFrom, options);
+    const withoutSplit = removeSplitPairsForIds(splitPairs, [from]).splitPairs;
+    return {
+      action: "move",
+      reason: "move-pane",
+      from,
+      to,
+      placement,
+      paneThreadIds,
+      paneSplitPairs: normalizeSplitPairs(withoutSplit, paneThreadIds, options),
+      selectedThreadId: from,
+      switchMenuPaneId: "",
+    };
+  }
+
+  function splitPaneWithTargetPlan(input = {}, options = {}) {
+    const from = text(input.fromThreadId || input.fromId).trim();
+    const to = text(input.toThreadId || input.toId).trim();
+    const placement = text(input.placement) === "above" ? "above" : "below";
+    const { ids, splitPairs } = paneSlotBase(input, options);
+    if (input.enabled !== true) return skipPaneSlot("disabled", { from, to, ids, placement });
+    if (!from || !to) return skipPaneSlot("missing-id", { from, to, ids, placement });
+    if (from === to) return skipPaneSlot("same-thread", { from, to, ids, placement });
+    if (!ids.includes(from) || !ids.includes(to)) return skipPaneSlot("pane-not-visible", { from, to, ids, placement });
+    const targetIndex = ids.indexOf(to);
+    const nextIds = ids.filter((id) => id !== from && id !== to);
+    nextIds.splice(Math.max(0, targetIndex), 0, ...(placement === "above" ? [from, to] : [to, from]));
+    const paneThreadIds = normalizePinnedIds(nextIds, options);
+    const pair = placement === "above"
+      ? { anchorId: from, childId: to }
+      : { anchorId: to, childId: from };
+    const splitResult = prependSplitPair(splitPairs, pair.anchorId, pair.childId, Object.assign({}, options, { ids: paneThreadIds }));
+    return {
+      action: "split",
+      reason: "split-pane",
+      from,
+      to,
+      placement,
+      paneThreadIds,
+      paneSplitPairs: splitResult.splitPairs,
+      selectedThreadId: from,
+      switchMenuPaneId: "",
+    };
+  }
+
+  function replaceLastPaneForThreadListOpenPlan(input = {}, options = {}) {
+    const id = text(input.threadId || input.toThreadId || input.toId).trim();
+    const source = text(input.source).trim();
+    const { ids, pinnedIds } = paneSlotBase(input, options);
+    if (input.enabled !== true) return skipPaneSlot("disabled", { id, ids, source });
+    if (source !== "thread-list") return skipPaneSlot("unsupported-source", { id, ids, source });
+    if (!id) return skipPaneSlot("missing-id", { id, ids, source });
+    if (!ids.length) return skipPaneSlot("no-panes", { id, ids, source });
+    if (ids.includes(id)) return skipPaneSlot("already-visible", { id, ids, source });
+    const index = ids.length - 1;
+    const from = ids[index] || "";
+    if (!from || from === id) return skipPaneSlot("missing-source-pane", { id, ids, source });
+    const nextIds = fillPaneSlotIds(pinnedIds, ids);
+    const duplicateIndex = nextIds.indexOf(id);
+    if (duplicateIndex >= 0 && duplicateIndex !== index) nextIds[duplicateIndex] = from;
+    nextIds[index] = id;
+    const paneThreadIds = normalizePinnedIds(nextIds, options);
+    if (idsEqual(pinnedIds, paneThreadIds)) return skipPaneSlot("unchanged", { id, ids, source });
+    return {
+      action: "replace-last",
+      reason: "thread-list-open",
+      from,
+      to: id,
+      index,
+      duplicateIndex,
+      paneThreadIds,
+      selectedThreadId: id,
+      switchMenuPaneId: "",
+      scrollResetIds: [from, id],
+    };
+  }
+
+  function dropPaneIntent(input = {}, options = {}) {
+    const from = text(input.fromThreadId || input.fromId || input.draggingId).trim();
+    const to = text(input.toThreadId || input.toId || input.targetId).trim();
+    if (!from || !to) return skipPaneSlot("missing-id", { from, to });
+    if (from === to) return skipPaneSlot("same-thread", { from, to });
+    const left = Number(input.left || 0);
+    const top = Number(input.top || 0);
+    const width = Math.max(1, Number(input.width || 1));
+    const height = Math.max(1, Number(input.height || 1));
+    const x = (Number(input.clientX || 0) - left) / width;
+    const y = (Number(input.clientY || 0) - top) / height;
+    const beforeThreshold = Number.isFinite(Number(options.beforeThreshold)) ? Number(options.beforeThreshold) : 0.24;
+    const afterThreshold = Number.isFinite(Number(options.afterThreshold)) ? Number(options.afterThreshold) : 0.76;
+    return x < beforeThreshold
+      ? { action: "move-relative", from, to, placement: "before", x, y }
+      : x > afterThreshold
+        ? { action: "move-relative", from, to, placement: "after", x, y }
+        : { action: "split-with-target", from, to, placement: y < 0.5 ? "above" : "below", x, y };
+  }
+
   function effectiveSelectedThreadId(input = {}) {
     const activeIds = normalizePinnedIds(input.activeIds || input.ids || [], { maxPanes: input.maxPanes });
     if (input.enabled === false || !activeIds.length) return "";
@@ -292,6 +470,7 @@
     DEFAULT_OPERATION_BUBBLE_MIN_VISIBLE_MS,
     DEFAULT_USER_MAX_PANES,
     displaySettingsPayload,
+    dropPaneIntent,
     effectiveSelectedThreadId,
     idsEqual,
     normalizeDisplaySettings,
@@ -307,7 +486,11 @@
     refreshDelayMs,
     refreshSchedulePlan,
     refreshTargetIds,
+    replaceLastPaneForThreadListOpenPlan,
+    replacePaneThreadPlan,
     removeSplitPairsForIds,
+    movePaneRelativePlan,
+    splitPaneWithTargetPlan,
     syncPinnedIdsFromActiveIds,
     toggleOperationMode,
     uniqueIds,

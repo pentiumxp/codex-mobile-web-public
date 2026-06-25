@@ -503,7 +503,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v461";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v462";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -11966,22 +11966,6 @@ function threadTilePrunedSplitPairs(ids = threadTileCandidateIds()) {
   return normalizeThreadTileSplitPairs(state.threadTileSplitPairs, ids);
 }
 
-function removeThreadTileSplitPairsForIds(ids = []) {
-  const result = threadTileStatePolicy.removeSplitPairsForIds(state.threadTileSplitPairs, ids);
-  if (result.changed) state.threadTileSplitPairs = result.splitPairs;
-  return result.changed;
-}
-
-function setThreadTileSplitPair(anchorId, childId) {
-  const result = threadTileStatePolicy.prependSplitPair(state.threadTileSplitPairs, anchorId, childId, {
-    ids: threadTileCandidateIds(),
-    maxPanes: THREAD_TILE_USER_MAX_PANES,
-    normalizeSplitPairs: threadTileLayoutPolicy.normalizeSplitPairs,
-  });
-  if (result.changed) state.threadTileSplitPairs = result.splitPairs;
-  return result.changed;
-}
-
 function threadTileVisibleIdSet() {
   const visibleIds = new Set(visibleThreads(state.threads).map((thread) => String(thread && thread.id || "")).filter(Boolean));
   if (state.currentThreadId) visibleIds.add(String(state.currentThreadId));
@@ -12218,29 +12202,29 @@ function replaceThreadTilePaneThread(fromThreadId, toThreadId) {
   if (!from || !to || !state.threadTileMode) return false;
   const layout = threadTileLayout();
   const ids = threadTileCandidateIds(layout);
-  const index = ids.indexOf(from);
-  if (index < 0) return false;
+  const plan = threadTileStatePolicy.replacePaneThreadPlan({
+    enabled: state.threadTileMode,
+    fromThreadId: from,
+    toThreadId: to,
+    ids,
+    pinnedIds: state.threadTilePinnedIds,
+  }, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+  });
+  if (plan.action === "skip") return false;
   const sourcePane = threadTilePaneElement(from);
   saveCurrentDraftNow();
-  const nextIds = normalizeThreadTilePinnedIds(state.threadTilePinnedIds).length
-    ? normalizeThreadTilePinnedIds(state.threadTilePinnedIds)
-    : ids.slice();
-  while (nextIds.length < ids.length) nextIds.push(ids[nextIds.length]);
-  const duplicateIndex = nextIds.indexOf(to);
-  if (duplicateIndex >= 0 && duplicateIndex !== index) nextIds[duplicateIndex] = from;
-  nextIds[index] = to;
-  state.threadTilePinnedIds = normalizeThreadTilePinnedIds(nextIds);
+  state.threadTilePinnedIds = normalizeThreadTilePinnedIds(plan.paneThreadIds);
   state.threadTileActiveIds = threadTileCandidateIds(layout);
-  state.threadTileSelectedThreadId = to;
-  state.threadTileSwitchMenuPaneId = "";
-  state.threadTilePaneScrollHoldById.delete(from);
-  state.threadTilePaneScrollHoldById.delete(to);
+  state.threadTileSelectedThreadId = plan.selectedThreadId || to;
+  state.threadTileSwitchMenuPaneId = plan.switchMenuPaneId || "";
+  (plan.scrollResetIds || []).forEach((id) => state.threadTilePaneScrollHoldById.delete(id));
   scheduleThreadDisplaySettingsSave();
   restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
   renderComposerSettings();
   updateComposerControls();
-  loadThreadTileDetail(to, { force: true, source: "tile-switch" }).catch(showError);
-  if (duplicateIndex >= 0 && duplicateIndex !== index) scheduleRenderCurrentThread();
+  if (plan.loadThreadId) loadThreadTileDetail(plan.loadThreadId, { force: true, source: "tile-switch" }).catch(showError);
+  if (plan.renderMode === "full") scheduleRenderCurrentThread();
   else if (!patchThreadTilePane(to, { paneElement: sourcePane, stickToBottom: true })) scheduleRenderCurrentThread();
   return true;
 }
@@ -12251,18 +12235,23 @@ function moveThreadTilePaneRelative(fromThreadId, toThreadId, placement = "after
   if (!from || !to || from === to || !state.threadTileMode) return false;
   const layout = threadTileLayout();
   const ids = threadTileCandidateIds(layout);
-  if (!ids.includes(from) || !ids.includes(to)) return false;
-  const withoutFrom = ids.filter((id) => id !== from);
-  const targetIndex = withoutFrom.indexOf(to);
-  if (targetIndex < 0) return false;
-  const insertAt = placement === "before" ? targetIndex : targetIndex + 1;
-  withoutFrom.splice(insertAt, 0, from);
+  const plan = threadTileStatePolicy.movePaneRelativePlan({
+    enabled: state.threadTileMode,
+    fromThreadId: from,
+    toThreadId: to,
+    placement,
+    ids,
+    splitPairs: state.threadTileSplitPairs,
+  }, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+    normalizeSplitPairs: threadTileLayoutPolicy.normalizeSplitPairs,
+  });
+  if (plan.action !== "move") return false;
   saveCurrentDraftNow();
-  removeThreadTileSplitPairsForIds([from]);
-  state.threadTilePinnedIds = normalizeThreadTilePinnedIds(withoutFrom);
-  state.threadTileSplitPairs = normalizeThreadTileSplitPairs(state.threadTileSplitPairs, state.threadTilePinnedIds);
-  state.threadTileSelectedThreadId = from;
-  state.threadTileSwitchMenuPaneId = "";
+  state.threadTilePinnedIds = normalizeThreadTilePinnedIds(plan.paneThreadIds);
+  state.threadTileSplitPairs = normalizeThreadTileSplitPairs(plan.paneSplitPairs, state.threadTilePinnedIds);
+  state.threadTileSelectedThreadId = plan.selectedThreadId || from;
+  state.threadTileSwitchMenuPaneId = plan.switchMenuPaneId || "";
   scheduleThreadDisplaySettingsSave();
   restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
   renderComposerSettings();
@@ -12277,16 +12266,23 @@ function splitThreadTilePaneWithTarget(fromThreadId, toThreadId, placement = "be
   if (!from || !to || from === to || !state.threadTileMode) return false;
   const layout = threadTileLayout();
   const ids = threadTileCandidateIds(layout);
-  if (!ids.includes(from) || !ids.includes(to)) return false;
+  const plan = threadTileStatePolicy.splitPaneWithTargetPlan({
+    enabled: state.threadTileMode,
+    fromThreadId: from,
+    toThreadId: to,
+    placement,
+    ids,
+    splitPairs: state.threadTileSplitPairs,
+  }, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+    normalizeSplitPairs: threadTileLayoutPolicy.normalizeSplitPairs,
+  });
+  if (plan.action !== "split") return false;
   saveCurrentDraftNow();
-  const targetIndex = ids.indexOf(to);
-  const nextIds = ids.filter((id) => id !== from && id !== to);
-  nextIds.splice(Math.max(0, targetIndex), 0, ...(placement === "above" ? [from, to] : [to, from]));
-  state.threadTilePinnedIds = normalizeThreadTilePinnedIds(nextIds);
-  if (placement === "above") setThreadTileSplitPair(from, to);
-  else setThreadTileSplitPair(to, from);
-  state.threadTileSelectedThreadId = from;
-  state.threadTileSwitchMenuPaneId = "";
+  state.threadTilePinnedIds = normalizeThreadTilePinnedIds(plan.paneThreadIds);
+  state.threadTileSplitPairs = normalizeThreadTileSplitPairs(plan.paneSplitPairs, state.threadTilePinnedIds);
+  state.threadTileSelectedThreadId = plan.selectedThreadId || from;
+  state.threadTileSwitchMenuPaneId = plan.switchMenuPaneId || "";
   scheduleThreadDisplaySettingsSave();
   restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
   renderComposerSettings();
@@ -12301,13 +12297,19 @@ function dropThreadTilePane(fromThreadId, toThreadId, event) {
   const pane = event && event.target && event.target.closest ? event.target.closest("[data-thread-tile-pane]") : null;
   if (!from || !to || from === to || !pane) return false;
   const rect = pane.getBoundingClientRect();
-  const width = Math.max(1, rect.width || 1);
-  const height = Math.max(1, rect.height || 1);
-  const x = (Number(event.clientX || 0) - rect.left) / width;
-  const y = (Number(event.clientY || 0) - rect.top) / height;
-  if (x < 0.24) return moveThreadTilePaneRelative(from, to, "before");
-  if (x > 0.76) return moveThreadTilePaneRelative(from, to, "after");
-  return splitThreadTilePaneWithTarget(from, to, y < 0.5 ? "above" : "below");
+  const plan = threadTileStatePolicy.dropPaneIntent({
+    fromThreadId: from,
+    toThreadId: to,
+    left: rect.left,
+    top: rect.top,
+    width: rect.width,
+    height: rect.height,
+    clientX: event.clientX,
+    clientY: event.clientY,
+  });
+  if (plan.action === "move-relative") return moveThreadTilePaneRelative(from, to, plan.placement);
+  if (plan.action === "split-with-target") return splitThreadTilePaneWithTarget(from, to, plan.placement);
+  return false;
 }
 
 function replaceLastThreadTilePaneForThreadListOpen(threadId, options = {}) {
@@ -12317,25 +12319,21 @@ function replaceLastThreadTilePaneForThreadListOpen(threadId, options = {}) {
   const layout = threadTileLayout({ enabled: true });
   if (!layout || !layout.enabled) return false;
   const ids = threadTileCandidateIds(layout);
-  if (!ids.length || ids.includes(id)) return false;
-  const index = ids.length - 1;
-  const from = ids[index] || "";
-  if (!from || from === id) return false;
-  const nextIds = normalizeThreadTilePinnedIds(state.threadTilePinnedIds).length
-    ? normalizeThreadTilePinnedIds(state.threadTilePinnedIds)
-    : ids.slice();
-  while (nextIds.length < ids.length) nextIds.push(ids[nextIds.length]);
-  const duplicateIndex = nextIds.indexOf(id);
-  if (duplicateIndex >= 0 && duplicateIndex !== index) nextIds[duplicateIndex] = from;
-  nextIds[index] = id;
-  const normalized = normalizeThreadTilePinnedIds(nextIds);
-  if (threadTileIdsEqual(normalizeThreadTilePinnedIds(state.threadTilePinnedIds), normalized)) return false;
-  state.threadTilePinnedIds = normalized;
+  const plan = threadTileStatePolicy.replaceLastPaneForThreadListOpenPlan({
+    enabled: state.threadTileMode,
+    source,
+    threadId: id,
+    ids,
+    pinnedIds: state.threadTilePinnedIds,
+  }, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+  });
+  if (plan.action !== "replace-last") return false;
+  state.threadTilePinnedIds = normalizeThreadTilePinnedIds(plan.paneThreadIds);
   state.threadTileActiveIds = threadTileCandidateIds(layout);
-  state.threadTileSelectedThreadId = id;
-  state.threadTileSwitchMenuPaneId = "";
-  state.threadTilePaneScrollHoldById.delete(from);
-  state.threadTilePaneScrollHoldById.delete(id);
+  state.threadTileSelectedThreadId = plan.selectedThreadId || id;
+  state.threadTileSwitchMenuPaneId = plan.switchMenuPaneId || "";
+  (plan.scrollResetIds || []).forEach((resetId) => state.threadTilePaneScrollHoldById.delete(resetId));
   scheduleThreadDisplaySettingsSave();
   return true;
 }
