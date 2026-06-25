@@ -16,6 +16,18 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-25 v434 平铺模式 Composer 目标改为输入框提示
+
+v434 修正 v433 的显示方式：不再在 Composer 上方增加独立目标条，因为那会
+占用平铺模式本来就紧张的纵向空间。平铺模式下如果 Composer 绑定到某个
+active pane，空输入框的 placeholder 会从默认 `Message Codex` 改为
+`发送到：线程名`；用户开始输入后提示自然消失。
+
+这个提示仍然使用 `currentComposerThreadId()` / `composerTargetThread()`，与
+真实发送、task-card 草稿、Stop/引导按钮同源。单线程模式保持
+`Message Codex`，新线程草稿保持 `输入第一条消息`。PWA shell cache 升级到
+`codex-mobile-shell-v434`。
+
 ## 2026-06-25 v433 平铺模式 Composer 发送目标提示
 
 v433 在平铺模式下给共享 Composer 增加一行紧凑目标提示：

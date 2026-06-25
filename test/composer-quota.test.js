@@ -17,8 +17,8 @@ test("composer exposes Fast bolt, model, reasoning, permission, and quota as com
   assert.match(indexHtml, /id="composerModelControl"/);
   assert.match(indexHtml, /id="composerEffortControl"/);
   assert.match(indexHtml, /id="composerPermissionControl"/);
-  assert.match(indexHtml, /id="composerTargetHint"/);
-  assert.match(indexHtml, /id="composerTargetName"/);
+  assert.doesNotMatch(indexHtml, /id="composerTargetHint"/);
+  assert.doesNotMatch(indexHtml, /id="composerTargetName"/);
   assert.match(indexHtml, /id="quotaUsage"/);
   assert.match(indexHtml, /class="composer-chip-label">模型/);
   assert.match(indexHtml, /class="composer-chip-label">推理强度/);
@@ -134,9 +134,8 @@ test("composer control row uses fixed heights", () => {
   assert.match(stylesCss, /--composer-control-height:\s*44px;/);
   assert.match(stylesCss, /\.composer-control-card\s*{[\s\S]*height:\s*var\(--composer-control-height\);/);
   assert.match(stylesCss, /\.composer-control-card\s*{[\s\S]*font-size:\s*clamp\(9px,\s*calc\(var\(--content-small-font-size\) \* 0\.88\),\s*11px\);/);
-  assert.match(stylesCss, /\.composer-target-hint\s*{[\s\S]*min-height:\s*24px;/);
-  assert.match(stylesCss, /\.composer-target-hint\.is-visible\s*{[\s\S]*display:\s*flex;/);
-  assert.match(stylesCss, /\.composer-target-name\s*{[\s\S]*text-overflow:\s*ellipsis;/);
+  assert.doesNotMatch(stylesCss, /\.composer-target-hint/);
+  assert.doesNotMatch(stylesCss, /\.composer-target-name/);
   assert.match(stylesCss, /\.composer-control-card > \*\s*{[\s\S]*min-width:\s*0;/);
   assert.match(stylesCss, /\.composer-chip-value\s*{[\s\S]*font-size:\s*clamp\(9\.5px,\s*calc\(var\(--content-small-font-size\) \* 0\.86\),\s*12px\);/);
   assert.match(stylesCss, /\.composer-runtime-menu/);

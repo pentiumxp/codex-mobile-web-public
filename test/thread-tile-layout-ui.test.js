@@ -269,16 +269,16 @@ test("thread tile composer targets the active pane without replacing the shared 
   const targetIdBody = functionBody(appJs, "currentComposerThreadId");
   assert.match(targetIdBody, /effectiveThreadTileSelectedThreadId\(\) \|\| state\.currentThreadId/);
 
-  const targetHintBody = functionBody(appJs, "renderComposerTargetHint");
-  assert.match(targetHintBody, /const targetThreadId = currentComposerThreadId\(\)/);
-  assert.match(targetHintBody, /const targetThread = composerTargetThread\(\)/);
-  assert.match(targetHintBody, /Boolean\(state\.threadTileMode && !state\.newThreadDraft && targetThreadId && targetThread\)/);
-  assert.match(targetHintBody, /nameEl\.textContent = title/);
-  assert.match(functionBody(appJs, "renderComposerSettings"), /renderComposerTargetHint\(\);/);
+  const placeholderBody = functionBody(appJs, "composerPlaceholderText");
+  assert.match(placeholderBody, /const targetThreadId = currentComposerThreadId\(\)/);
+  assert.match(placeholderBody, /const targetThread = composerTargetThread\(\)/);
+  assert.match(placeholderBody, /Boolean\(state\.threadTileMode && !state\.newThreadDraft && targetThreadId && targetThread\)/);
+  assert.match(placeholderBody, /return `发送到：\$\{title\}`;/);
 
   const updateControlsBody = functionBody(appJs, "updateComposerControls");
   assert.match(updateControlsBody, /const targetThreadId = currentComposerThreadId\(\)/);
   assert.match(updateControlsBody, /const targetActiveTurnId = composerTargetActiveTurnId\(\)/);
+  assert.match(updateControlsBody, /messageInput\.dataset\.placeholder = composerPlaceholderText\(\);/);
   assert.match(updateControlsBody, /Boolean\(!hasNewThreadDraft && targetActiveTurnId\) && hasContent/);
 
   const sendMessageBody = functionBody(appJs, "sendMessage");

@@ -1,3 +1,28 @@
+# 2026-06-25 - v434 tile composer target placeholder pending deploy
+
+- Scope:
+  - Corrects v433 Composer target display after user feedback.
+  - v433's separate target row was too tall for tile mode and consumed vertical
+    space.
+  - Validated locally. Not deployed and not pushed Public at the time this note
+    was written.
+- Change:
+  - Removed `#composerTargetHint` / `#composerTargetName` from the Composer DOM.
+  - Removed `.composer-target-*` styles and the extra `target` grid row.
+  - Replaced the target row with `composerPlaceholderText()`: in tile mode,
+    when the Composer is bound to an existing active pane, the empty input
+    placeholder becomes `发送到：<thread name>`.
+  - Single-thread mode keeps `Message Codex`; new-thread draft mode keeps
+    `输入第一条消息`.
+  - PWA shell cache bumped to `codex-mobile-shell-v434`.
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js` passed.
+  - Focused run passed:
+    `node --test test/composer-quota.test.js test/thread-tile-layout-ui.test.js test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js`
+    (`34` tests).
+  - `npm run check` passed.
+  - `git diff --check` passed.
+
 # 2026-06-25 - v433 tile composer target hint deployed
 
 - Scope:
