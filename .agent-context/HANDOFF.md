@@ -1,3 +1,95 @@
+# 2026-06-26 - v476 thread-list fallback cache decision diagnostics deployed
+
+- Scope:
+  - Continued Phase B large-session / thread-list cold path evidence work.
+  - This slice adds bounded thread-list fallback cache decision diagnostics.
+  - It does not change cache invalidation, fallback aggregation, thread-list
+    merge behavior, app-server calls, server projection, task-card behavior,
+    pane layout, image projection, or Home AI diagnostic dispatch. No fallback
+    or UI-only masking was added.
+- Root-cause boundary:
+  - Before v476, `/api/threads` diagnostics could expose fallback timings and
+    `fallbackCacheHit`, but could not explain why a request rebuilt fallback
+    state or whether a later fast request reused the same process-lifetime
+    baseline.
+  - That made large-session/thread-list slowness hard to distinguish between
+    first baseline build, TTL expiry, cache miss, deferred fallback, and normal
+    warm reuse.
+- Change:
+  - `adapters/thread-list-fallback-cache-service.js` now records
+    `cacheDecision` (`hit`, `miss`, `expired` internally and
+    `hit`, `miss-rebuild`, `expired-rebuild` in route diagnostics),
+    bounded cache key hash, cache entry count, TTL, cache age/update age,
+    build count/number, and incremental update count.
+  - `server.js` forwards those fields into
+    `mobileDiagnostics.threadListTimings` as
+    `fallbackCacheDecision`, `fallbackCacheBuildReason`,
+    `fallbackCacheKeyHash`, `fallbackCacheAgeMs`,
+    `fallbackCacheBaselineAgeMs`, `fallbackCacheUpdatedAgeMs`,
+    `fallbackCacheTtlMs`, `fallbackCacheEntryCount`,
+    `fallbackCacheBuildCount`, `fallbackCacheBuildNumber`, and
+    `fallbackCacheIncrementalUpdates`.
+  - `public/thread-performance-metrics.js` now classifies thread-list phase as
+    `warm-fallback-cache`, `cold-fallback-miss-build`, or
+    `cold-fallback-expired-rebuild` from the structured decision.
+  - Bumped `CLIENT_BUILD_ID` and service worker cache to
+    `codex-mobile-shell-v476`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Commit:
+  - Runtime/docs commit: `a842723 instrument thread list fallback cache decisions`.
+- Validation in source workspace:
+  - Syntax checks passed for
+    `adapters/thread-list-fallback-cache-service.js`,
+    `public/thread-performance-metrics.js`, `server.js`, `public/app.js`, and
+    `public/sw.js`.
+  - Focused suite passed: `77` tests across
+    `test/thread-list-fallback-cache-service.test.js`,
+    `test/thread-performance-metrics.test.js`, `test/thread-visibility.test.js`,
+    `test/mobile-viewport.test.js`, `test/thread-goal-service.test.js`, and
+    `test/thread-task-card-route.test.js`.
+  - `npm test` passed: `859` tests.
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+- Production deploy:
+  - Deployed through Home AI central macOS production script.
+  - Reason: `codex-mobile-thread-list-cache-decision-diagnostics-v476`.
+  - Source ref at deploy: `a842723b7d64`, dirty `false`.
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T200954Z-plugin-codex-mobile-web-codex-mobile-thread-list-cache-decision-diagnostics-v476`.
+  - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` reported
+    running and manifest/profile health checks passed.
+- Production readback:
+  - `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v476`,
+    `shellCacheName=codex-mobile-shell-v476`, and `version=0.1.11`.
+  - Source/prod SHA-256 parity matched for:
+    `adapters/thread-list-fallback-cache-service.js`, `server.js`,
+    `public/thread-performance-metrics.js`, `public/app.js`, `public/sw.js`,
+    `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`,
+    `docs/MODULES.md`, and the focused tests listed above.
+  - Production focused suite passed: same `77` tests listed above with
+    production dependencies.
+  - Bounded authenticated thread-list readback returned HTTP `200`; after the
+    deployment restart, one observed request reported
+    `fallbackCacheDecision=miss-rebuild` with `fallbackMs=2917`, and the
+    immediate next request reported `fallbackCacheDecision=hit` with
+    `fallbackMs=1`. Only bounded diagnostics were printed; no access key,
+    thread titles, message text, task-card bodies, upload content, or raw
+    paths were logged.
+- Next architecture boundary:
+  - Continue Phase B with thread-detail cold/warm first-paint evidence and
+    projection-cache/read-path diagnosis before changing cache behavior.
+  - New Home AI task card `ttc_a8ab1599a96e2e92ed` asks Codex Mobile to wire
+    terminal return cards into Home AI Autonomous Delivery Loop event intake;
+    this is a separate task-card protocol slice and should return by real
+    card when complete.
+- Public:
+  - Not pushed to Public. Follow release-order rule: wait for production/user
+    validation or explicit Public instruction before syncing/pushing.
+
 # 2026-06-26 - v475 thread tile operation dock render policy deployed
 
 - Scope:
