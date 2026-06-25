@@ -48,8 +48,29 @@
   - `npm test` passed (`791` tests).
   - `git diff --check` passed.
 - Release state:
-  - Not yet committed/deployed at the time of this handoff entry. Commit and
-    deploy before returning the task card.
+  - Committed locally as:
+    `c4bc288 fix tile local patch signature drift`.
+  - Deployed through the Home AI central plugin deploy script with reason
+    `codex-mobile-tile-local-patch-signature-v441`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T141153Z-plugin-codex-mobile-web-codex-mobile-tile-local-patch-signature-v441`.
+  - `/api/public-config` reports `version=0.1.11`,
+    `clientBuildId=0.1.11|codex-mobile-shell-v441`,
+    `shellCacheName=codex-mobile-shell-v441`, `authRequired=true`,
+    `platform=darwin`, and build id `2d13e680136639dc`.
+  - Central deploy validation passed launchd, health URL, production file hash,
+    shared auth permission repair, and codex auth profile audit checks.
+  - Production `npm run check`, `npm run check:macos`, and the focused
+    126-test suite passed.
+  - Source/production short SHA-256 samples matched for:
+    `public/app.js`, `public/sw.js`, `README.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`,
+    `test/conversation-render.test.js`, and
+    `test/home-ai-diagnostic-reporting.test.js`.
+  - Post-deploy diagnostic DB readback shows `diagcase_27be16978a2839942d0e`
+    still as the pre-v441 one-event H2 case from
+    `2026-06-25T14:02:33Z`; no new post-v441 event was present in the bounded
+    readback.
 
 # 2026-06-25 - v440 tile projection diagnostic false positive repaired
 
