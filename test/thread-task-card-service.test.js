@@ -276,6 +276,9 @@ test("approve runs injected execution and marks the card approved", async () => 
     body: "Detailed request.",
   });
 
+  assert.equal(created.requiresReturn, true);
+  assert.equal(created.terminal, false);
+  assert.equal(created.ackPolicy, "return_required");
   const result = await service.approve(created.id, "thread-dst");
   assert.equal(result.card.status, "approved");
   assert.equal(result.card.injectedTurnId, "turn-approved");
@@ -537,6 +540,8 @@ test("autonomous workflow auto-returns to the source when the injected target tu
   const approved = await service.approve(first.id, "thread-b");
   assert.equal(approved.card.injectedTurnId, "turn-1");
   assert.equal(approved.card.delivery.autoReturnOnCompletion, true);
+  assert.equal(approved.card.requiresReturn, true);
+  assert.equal(approved.card.terminal, false);
   assert.match(executions[0].message.text, /Auto-return:/);
 
   const returned = await service.maybeAutoReplyCompletedTurn({
@@ -551,10 +556,18 @@ test("autonomous workflow auto-returns to the source when the injected target tu
   assert.equal(returned.card.target.threadId, "thread-a");
   assert.equal(returned.card.workflow.id, "auto-return-workflow");
   assert.equal(returned.card.delivery.autoReturnOnCompletion, false);
+  assert.equal(returned.card.delivery.requiresReturn, false);
+  assert.equal(returned.card.delivery.terminal, true);
+  assert.equal(returned.card.delivery.ackPolicy, "none");
+  assert.equal(returned.card.requiresReturn, false);
+  assert.equal(returned.card.terminal, true);
+  assert.equal(returned.card.canReply, false);
   assert.equal(returned.card.message.title, "Auto return: Start workflow");
   assert.equal(returned.card.injectedTurnId, "turn-2");
   assert.match(executions[1].message.text, /Implemented and validated/);
   assert.match(executions[1].message.text, /Workflow id: auto-return-workflow/);
+  assert.match(executions[1].message.text, /Return policy: terminal receipt/);
+  assert.doesNotMatch(executions[1].message.text, /Return required:/);
   assert.doesNotMatch(executions[1].message.text, /when this injected turn completes/);
   const original = service.get(first.id, "thread-b");
   assert.equal(original.autoReplyCardId, returned.card.id);
@@ -721,9 +734,13 @@ test("reply creates a reverse-direction pending card", async () => {
 });
 
 test("reply can return an approved implementation card and is idempotent", async () => {
+  const executions = [];
   const service = createThreadTaskCardService({
     storageFile: tempFile("cards.json"),
-    executeApprovedCard: async (card) => ({ threadId: card.target.threadId, turnId: "turn-approved-return" }),
+    executeApprovedCard: async (card, message) => {
+      executions.push({ card, message });
+      return { threadId: card.target.threadId, turnId: "turn-approved-return" };
+    },
   });
   const created = await service.create({
     sourceWorkspaceId: "home-ai",
@@ -760,8 +777,16 @@ test("reply can return an approved implementation card and is idempotent", async
   assert.equal(returned.replyCard.target.threadId, "thread-home");
   assert.equal(returned.replyCard.delivery.returnToSource, true);
   assert.equal(returned.replyCard.delivery.returnStatus, "completed");
+  assert.equal(returned.replyCard.delivery.requiresReturn, false);
+  assert.equal(returned.replyCard.delivery.terminal, true);
+  assert.equal(returned.replyCard.delivery.ackPolicy, "none");
+  assert.equal(returned.replyCard.requiresReturn, false);
+  assert.equal(returned.replyCard.terminal, true);
+  assert.equal(returned.replyCard.canReply, false);
   assert.equal(returned.replyCard.injectedTurnId, "turn-approved-return");
   assert.equal(returned.replyCard.canApprove, false);
+  assert.match(executions[1].message.text, /Return policy: terminal receipt/);
+  assert.doesNotMatch(executions[1].message.text, /Return required:/);
   assert.deepEqual(service.pendingCountsForThread("thread-home"), {
     pendingTotal: 0,
     pendingIncoming: 0,
@@ -779,6 +804,66 @@ test("reply can return an approved implementation card and is idempotent", async
   assert.equal(duplicate.replyCard.id, returned.replyCard.id);
   assert.equal(duplicate.replyCard.status, "approved");
   assert.equal(service.listForThread("thread-home").filter((card) => card.audit && card.audit.replyToCardId === created.id).length, 1);
+});
+
+test("explicit returnToSource replies are terminal and cannot start acknowledgement loops", async () => {
+  const executions = [];
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    executeApprovedCard: async (card, message) => {
+      executions.push({ card, message });
+      return { threadId: card.target.threadId, turnId: `turn-${executions.length}` };
+    },
+  });
+  const repairCard = await service.create({
+    sourceWorkspaceId: "home-ai",
+    sourceThreadId: "thread-home",
+    sourceTurnId: "turn-home",
+    sourceThreadTitle: "Home AI",
+    targetWorkspaceId: "music",
+    targetThreadId: "thread-music",
+    idempotencyKey: "music:repair:loop",
+    format: "markdown",
+    title: "Repair Music diagnostics",
+    summary: "Repair and return.",
+    body: "Please repair the diagnostic path and return a card.",
+    workflowMode: "autonomous",
+    workflowId: "music-loop-workflow",
+  });
+
+  await service.approveFromSource(repairCard.id, "thread-home");
+  const returned = await service.reply(repairCard.id, "thread-music", {
+    idempotencyKey: "music:return:completed",
+    format: "markdown",
+    title: "Music repair completed",
+    summary: "completed",
+    body: "Completed and validated.",
+    returnToSource: true,
+  });
+
+  assert.equal(returned.replyCard.status, "approved");
+  assert.equal(returned.replyCard.delivery.returnToSource, true);
+  assert.equal(returned.replyCard.delivery.requiresReturn, false);
+  assert.equal(returned.replyCard.delivery.terminal, true);
+  assert.equal(returned.replyCard.delivery.ackPolicy, "none");
+  assert.equal(returned.replyCard.requiresReturn, false);
+  assert.equal(returned.replyCard.terminal, true);
+  assert.equal(returned.replyCard.canReply, false);
+  assert.match(executions[1].message.text, /Return policy: terminal receipt/);
+  assert.doesNotMatch(executions[1].message.text, /Return required:/);
+
+  await assert.rejects(
+    () => service.reply(returned.replyCard.id, "thread-home", {
+      idempotencyKey: "home-ai:ack:should-stop",
+      format: "markdown",
+      title: "Ack: Music repair completed",
+      summary: "acknowledged",
+      body: "Acknowledged.",
+      returnToSource: true,
+    }),
+    /task_card_terminal_no_return_required/,
+  );
+  assert.equal(executions.length, 2);
 });
 
 test("return_to_source retry approves a previously pending reverse card", async () => {
@@ -827,6 +912,12 @@ test("return_to_source retry approves a previously pending reverse card", async 
   assert.equal(returned.replyCard.status, "approved");
   assert.equal(returned.replyCard.delivery.returnToSource, true);
   assert.equal(returned.replyCard.delivery.returnStatus, "completed");
+  assert.equal(returned.replyCard.delivery.requiresReturn, false);
+  assert.equal(returned.replyCard.delivery.terminal, true);
+  assert.equal(returned.replyCard.delivery.ackPolicy, "none");
+  assert.equal(returned.replyCard.requiresReturn, false);
+  assert.equal(returned.replyCard.terminal, true);
+  assert.equal(returned.replyCard.canReply, false);
   assert.equal(returned.replyCard.injectedTurnId, "turn-return-2");
   assert.deepEqual(service.pendingCountsForThread("thread-home"), {
     pendingTotal: 0,

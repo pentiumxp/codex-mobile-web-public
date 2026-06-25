@@ -16,6 +16,27 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-25 任务卡 Return/Ack 终止协议
+
+本次修复跨线程任务卡的 return-card acknowledgement loop。根因是
+`return_to_source`、`/reply returnToSource:true` 和 autonomous auto-return 生成的
+反向卡虽然语义上是回执，但仍然像普通工作卡一样暴露 reply 能力，并且在注入
+文本里可能继续出现 `Return required`。模型或目标线程按提示继续回卡时，就会
+形成“回执的回执还要回执”的链式循环。
+
+现在普通 work card 明确写入 `requiresReturn:true`；return/ack/no-op receipt card
+明确写入 `terminal:true`、`requiresReturn:false`、`ackPolicy:"none"`，并关闭
+`allowReply` 和 `autoReturnOnCompletion`。终止卡注入到源线程时只显示 terminal
+return policy，不再出现 `Return required`；如果再次对终止卡调用 `/reply`，服务
+层会返回 `task_card_terminal_no_return_required`。`codex_mobile.return_to_source`
+的 MCP 返回值也会带上 `terminal/requiresReturn/ackPolicy`，便于源线程判断闭环
+状态。
+
+新增和强化 `test/thread-task-card-service.test.js`、`test/thread-task-card-route.test.js`
+和 `test/codex-mobile-mcp-server.test.js` 覆盖普通工作卡仍要求一次 return、显式
+`returnToSource:true` 是终止卡、auto-return receipt 不触发二次 auto-return、以及
+Music-style repair -> receipt -> ack 链在第一张 terminal return 后停止。
+
 ## 2026-06-25 v438 线程详情可见项 Patch 计划拆分
 
 v438 继续第二阶段前端状态边界优化，把 live/detail refresh 中“能否只做可见项

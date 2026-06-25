@@ -1,3 +1,42 @@
+# 2026-06-25 - terminal return-card acknowledgement loop repaired
+
+- Source task card:
+  - Home AI requested repair of the terminal return-card acknowledgement loop.
+  - Task card id: `ttc_6fa3f08ed5f51abe59`.
+  - Requested reasoning effort: `xhigh`.
+- Root cause:
+  - `return_to_source`, `/reply returnToSource:true`, and autonomous
+    auto-return cards were semantically receipts but still behaved like normal
+    work cards in several places.
+  - They could expose reply affordance and inject `Return required` guidance,
+    allowing a return-card receipt to request another acknowledgement card.
+- Change:
+  - `adapters/thread-task-card-service.js` now assigns structured protocol
+    state:
+    - ordinary work cards: `requiresReturn:true`, `terminal:false`;
+    - return/ack/no-op receipt cards: `terminal:true`,
+      `requiresReturn:false`, `ackPolicy:"none"`.
+  - Terminal cards suppress `Return required` injection text, expose
+    `canReply:false`, and `/reply` rejects them with
+    `task_card_terminal_no_return_required`.
+  - Existing return cards with legacy `returnToSource` metadata are treated as
+    terminal as a migration safety net.
+  - `codex_mobile.return_to_source` / dynamic return responses now include
+    bounded `terminal`, `requiresReturn`, and `ackPolicy` metadata.
+  - Updated `README.md`, `docs/CROSS_THREAD_TASK_CARDS_DESIGN.md`,
+    `docs/CROSS_THREAD_TASK_CARDS_IMPLEMENTATION.md`, and `docs/MODULES.md`.
+- Validation:
+  - Focused task-card tests passed:
+    `node --test test/thread-task-card-service.test.js test/thread-task-card-route.test.js test/codex-mobile-mcp-server.test.js`
+    (`38` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`781` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Release state:
+  - Pending local commit and central Mac production deploy.
+  - No public push in this step unless explicitly requested.
+
 # 2026-06-25 - v438 thread detail patch-plan extraction ready locally
 
 - Scope:

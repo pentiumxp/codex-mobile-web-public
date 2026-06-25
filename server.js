@@ -12457,6 +12457,9 @@ async function dynamicToolServerRequestResponsePayload(request) {
       originalCardStatus: result && result.card && result.card.status || "",
       replyCardId: result && result.replyCard && result.replyCard.id || "",
       replyCardStatus: result && result.replyCard && result.replyCard.status || "",
+      replyCardTerminal: Boolean(result && result.replyCard && result.replyCard.terminal),
+      replyCardRequiresReturn: Boolean(result && result.replyCard && result.replyCard.requiresReturn),
+      replyCardAckPolicy: result && result.replyCard && result.replyCard.ackPolicy || "",
       sourceThreadId: result && result.replyCard && result.replyCard.source && result.replyCard.source.threadId || "",
       targetThreadId: result && result.replyCard && result.replyCard.target && result.replyCard.target.threadId || "",
     });

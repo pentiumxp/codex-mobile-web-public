@@ -142,10 +142,15 @@ and must not be counted as `completed`, `blocked`, or `redirected` by the
 source workflow. Return cards created by `codex_mobile.return_to_source`,
 `scripts/return-thread-task-card.js`, or `/reply` with `returnToSource:true`
 are source-direct approved into the original source thread and do not require a
-second source-thread approval. If a previous runtime version already created a
-pending return card with the same `task-card-return:*` idempotency key, retrying
-through the return path promotes that existing card through the same direct
-return approval flow.
+second source-thread approval. They are also terminal by default:
+`delivery.terminal=true`, `delivery.requiresReturn=false`, and
+`delivery.ackPolicy="none"`. Terminal return cards do not inject `Return
+required` guidance, do not expose a reply affordance, and cannot be replied to
+through `/reply`; acknowledgements do not require acknowledgements. If a
+previous runtime version already created a pending return card with the same
+`task-card-return:*` idempotency key, retrying through the return path promotes
+that existing card through the same direct return approval flow and stamps the
+same terminal metadata.
 
 When the runtime `跨工作区委派` switch is enabled, server-side `thread/start` and
 `turn/start` requests also receive a Codex app-server dynamic tool:
@@ -397,10 +402,13 @@ If sqlite is chosen, keep it separate from normal thread message history.
    `threadTaskCardService.maybeAutoReplyCompletedTurn()`, which creates an
    idempotent reverse-direction card with the completed turn receipt and the
    same workflow id. The existing workflow grant auto-approves that return card
-   and injects it into the original source thread. Return cards must set
-   `delivery.autoReturnOnCompletion=false` and their injected message must not
-   advertise another auto-return; otherwise a completed return turn can start an
-   indefinite ping-pong loop.
+   and injects it into the original source thread. Auto-return only applies to
+   real work cards with `requiresReturn=true`. Return cards must set
+   `delivery.terminal=true`, `delivery.requiresReturn=false`,
+   `delivery.ackPolicy="none"`, and `delivery.autoReturnOnCompletion=false`;
+   their injected message must not advertise another auto-return or `Return
+   required`, otherwise a completed return turn can start an indefinite
+   ping-pong loop.
 
 ## Harness
 

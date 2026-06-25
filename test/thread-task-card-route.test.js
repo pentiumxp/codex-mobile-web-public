@@ -160,6 +160,9 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /createThreadTaskCardsFromSourceThread\(body\.sourceThreadId, body\)/);
   assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /threadTaskCardService\.reply\(prepared\.taskCardId, prepared\.actorThreadId, prepared\.body\)/);
   assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /TASK_CARD_RETURN_TOOL_FULL_NAME/);
+  assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /replyCardTerminal: Boolean/);
+  assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /replyCardRequiresReturn: Boolean/);
+  assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /replyCardAckPolicy:/);
   assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /forcedDirect: true/);
   assert.match(functionBody(serverJs, "taskCardReturnDynamicToolBody"), /returnToSource: true/);
   assert.match(functionBody(serverJs, "taskCardReturnDynamicToolBody"), /const status = normalizedTaskCardReturnStatus/);

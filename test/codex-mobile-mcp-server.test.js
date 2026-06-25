@@ -118,7 +118,16 @@ test("Codex Mobile MCP server calls existing authenticated task-card API", async
           source: { threadId: "target-1" },
           target: { threadId: "source-1" },
           injectedTurnId: "turn-return",
-          delivery: { returnToSource: true, returnStatus: "completed" },
+          terminal: true,
+          requiresReturn: false,
+          ackPolicy: "none",
+          delivery: {
+            returnToSource: true,
+            returnStatus: "completed",
+            terminal: true,
+            requiresReturn: false,
+            ackPolicy: "none",
+          },
         },
       }));
       return;
@@ -161,6 +170,9 @@ test("Codex Mobile MCP server calls existing authenticated task-card API", async
   assert.equal(returned.replyCard.injectedTurnId, "turn-return");
   assert.equal(returned.replyCard.returnToSource, true);
   assert.equal(returned.replyCard.returnStatus, "completed");
+  assert.equal(returned.replyCard.terminal, true);
+  assert.equal(returned.replyCard.requiresReturn, false);
+  assert.equal(returned.replyCard.ackPolicy, "none");
   assert.ok(calls.every((call) => call.authorization === "Bearer secret"));
 });
 

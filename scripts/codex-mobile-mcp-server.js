@@ -312,6 +312,9 @@ async function returnToSource(context, args = {}) {
         injectedTurnId: String(replyCard.injectedTurnId || ""),
         returnToSource: Boolean(replyCard.delivery && replyCard.delivery.returnToSource),
         returnStatus: String(replyCard.delivery && replyCard.delivery.returnStatus || ""),
+        terminal: Boolean(replyCard.terminal || replyCard.delivery && replyCard.delivery.terminal),
+        requiresReturn: Boolean(replyCard.requiresReturn),
+        ackPolicy: String(replyCard.ackPolicy || replyCard.delivery && replyCard.delivery.ackPolicy || ""),
       },
     };
   }

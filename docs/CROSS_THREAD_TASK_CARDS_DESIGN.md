@@ -27,6 +27,14 @@ card is terminal: it does not request another completion auto-return after its
 own injected turn completes, and its title collapses repeated `Auto return:`
 prefixes to one prefix.
 
+Return cards and acknowledgement cards are terminal by default. A card created
+by `codex_mobile.return_to_source`, `scripts/return-thread-task-card.js`, or
+`/reply` with `returnToSource:true` carries structured terminal delivery state
+(`terminal:true`, `requiresReturn:false`, `ackPolicy:"none"`). It must not
+inject `Return required` guidance and must not require a second acknowledgement.
+If the source wants new actionable work after reviewing a terminal return, it
+must create a new work card instead of replying to the terminal receipt.
+
 ## High-Level Flow
 
 1. Source thread creates a task-card request addressed to one or more target
@@ -49,13 +57,13 @@ prefixes to one prefix.
 7. If the approved card has `workflow.mode=autonomous`, that approval activates
    the workflow grant. Later same-workflow cards between the same thread pair
    skip the pending UI and execute the approval path automatically.
-8. If the injected target turn for an approved autonomous card completes, the
+8. If the injected target turn for an approved autonomous work card completes,
    service creates one idempotent reverse-direction return card keyed by the
    original card id plus completed turn id. Because the workflow grant already
    covers the same two thread ids, that return card auto-approves and starts a
    real source-thread turn without another click. The return card's delivery
-   flags disable another completion auto-return so workflows do not ping-pong
-   indefinitely.
+   flags set `terminal:true`, `requiresReturn:false`, `ackPolicy:"none"`, and
+   `autoReturnOnCompletion:false`, so workflows do not ping-pong indefinitely.
 
 ## Data Model
 
@@ -86,7 +94,11 @@ Planned canonical object:
     "injectOnApprove": true,
     "allowReply": true,
     "allowRevoke": true,
-    "autoRunAfterFirstApproval": false
+    "autoRunAfterFirstApproval": false,
+    "autoReturnOnCompletion": false,
+    "requiresReturn": true,
+    "terminal": false,
+    "ackPolicy": "return_required|auto_return|none"
   },
   "workflow": {
     "mode": "manual|autonomous",
@@ -280,6 +292,8 @@ for autonomous workflows and normally do not render as pending UI: they are
 created from the completed injected target turn, auto-approved by the existing
 workflow grant, and surface as a real new turn in the original source thread.
 They are terminal receipt turns rather than another auto-return source.
+Acknowledgements of those receipts are not required; new actionable work must
+start as a new work card.
 
 ## Storage
 
