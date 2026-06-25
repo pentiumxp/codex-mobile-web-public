@@ -2935,8 +2935,9 @@ test("thread tile local patch paths refresh the pane instead of writing a single
   assert.match(functionBody("patchCurrentThreadTilePaneFromState"), /patchThreadTilePane\(plan\.threadId, Object\.assign\(\{ preserveScroll: true \}, options\)\)/);
 
   assert.match(functionBody("completeLocalConversationDomUpdate"), /patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);
-  assert.match(functionBody("completeLocalConversationDomUpdate"), /if \(!canPatchSingleThreadConversationDom\(\)\) return false;/);
-  assert.match(functionBody("completeLocalConversationDomUpdate"), /state\.renderedConversationSignature = conversationRenderSignature\(state\.currentThread\)/);
+  assert.match(functionBody("completeLocalConversationDomUpdate"), /threadDetailDomPatchApi\.planLocalConversationDomUpdateCompletion\(\{/);
+  assert.match(functionBody("completeLocalConversationDomUpdate"), /canPatchSingleThread: tilePanePatched \? false : canPatchSingleThreadConversationDom\(\),/);
+  assert.match(functionBody("completeLocalConversationDomUpdate"), /state\.renderedConversationSignature = completionPlan\.nextRenderedConversationSignature/);
   assert.match(functionBody("updateLiveOperationDockForLocalPatch"), /patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);
   assert.match(functionBody("updateLiveOperationDockForLocalPatch"), /if \(!canPatchSingleThreadConversationDom\(\)\) return false;/);
   assert.match(functionBody("insertVisibleItemDom"), /patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);

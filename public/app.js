@@ -504,7 +504,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v483";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v484";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -13528,21 +13528,35 @@ function hydrateThreadDetailSurface(root, options = {}) {
 }
 
 function completeLocalConversationDomUpdate(root, wasNearBottom, userReadingCurrentTurn) {
-  if (patchCurrentThreadTilePaneFromState({ preserveScroll: true })) return true;
-  if (!canPatchSingleThreadConversationDom()) return false;
-  if (root) hydrateThreadDetailSurface(root);
-  state.renderedConversationSignature = conversationRenderSignature(state.currentThread);
-  state.renderedConversationPatchShellSignature = conversationPatchShellSignature(state.currentThread);
-  const scrollPlan = conversationScroll.planLocalPatchScrollCompletion({
-    userReadingCurrentTurn,
-    autoScrollHold: shouldHoldAutoScrollForCurrentTurn(),
-    nearBottom: wasNearBottom,
-    submittedMessageFollow: shouldFollowSubmittedMessageToBottom(),
-    viewportFollow: shouldFollowViewportChangeToBottom(),
+  const tilePanePatched = patchCurrentThreadTilePaneFromState({ preserveScroll: true });
+  const scrollPlan = tilePanePatched
+    ? { action: "none" }
+    : conversationScroll.planLocalPatchScrollCompletion({
+      userReadingCurrentTurn,
+      autoScrollHold: shouldHoldAutoScrollForCurrentTurn(),
+      nearBottom: wasNearBottom,
+      submittedMessageFollow: shouldFollowSubmittedMessageToBottom(),
+      viewportFollow: shouldFollowViewportChangeToBottom(),
+    });
+  const completionPlan = threadDetailDomPatchApi.planLocalConversationDomUpdateCompletion({
+    tilePanePatched,
+    canPatchSingleThread: tilePanePatched ? false : canPatchSingleThreadConversationDom(),
+    hasRoot: Boolean(root),
+    conversationSignature: tilePanePatched ? "" : conversationRenderSignature(state.currentThread),
+    patchShellSignature: tilePanePatched ? "" : conversationPatchShellSignature(state.currentThread),
+    scrollAction: scrollPlan.action,
   });
-  if (scrollPlan.action === "scroll-to-bottom") {
+  if (!completionPlan.complete) return false;
+  if (completionPlan.hydrateRoot) hydrateThreadDetailSurface(root, completionPlan.hydrateOptions || {});
+  if (completionPlan.updateRenderedConversationSignature) {
+    state.renderedConversationSignature = completionPlan.nextRenderedConversationSignature;
+  }
+  if (completionPlan.updatePatchShellSignature) {
+    state.renderedConversationPatchShellSignature = completionPlan.nextRenderedConversationPatchShellSignature;
+  }
+  if (completionPlan.scrollAction === "scroll-to-bottom") {
     scheduleConversationToBottom();
-  } else {
+  } else if (completionPlan.scrollAction === "update-bottom-button") {
     scheduleScrollToBottomButtonUpdate();
   }
   return true;

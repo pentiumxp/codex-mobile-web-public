@@ -202,6 +202,48 @@
     };
   }
 
+  function planLocalConversationDomUpdateCompletion(input = {}) {
+    if (input.tilePanePatched) {
+      return {
+        action: "tile-pane-complete",
+        complete: true,
+        reason: "tile-pane-patched",
+        hydrateRoot: false,
+        updateRenderedConversationSignature: false,
+        updatePatchShellSignature: false,
+        nextRenderedConversationSignature: "",
+        nextRenderedConversationPatchShellSignature: "",
+        scrollAction: "none",
+      };
+    }
+    if (!input.canPatchSingleThread) {
+      return {
+        action: "blocked",
+        complete: false,
+        reason: "single-thread-unpatchable",
+        hydrateRoot: false,
+        updateRenderedConversationSignature: false,
+        updatePatchShellSignature: false,
+        nextRenderedConversationSignature: "",
+        nextRenderedConversationPatchShellSignature: "",
+        scrollAction: "none",
+      };
+    }
+    const scrollAction = input.scrollAction === "scroll-to-bottom" ? "scroll-to-bottom" : "update-bottom-button";
+    return {
+      action: "single-thread-complete",
+      complete: true,
+      reason: "single-thread-patched",
+      hydrateRoot: Boolean(input.hasRoot),
+      hydrateOptions: {},
+      updateRenderedConversationSignature: true,
+      updatePatchShellSignature: true,
+      nextRenderedConversationSignature: String(input.conversationSignature || ""),
+      nextRenderedConversationPatchShellSignature: String(input.patchShellSignature || ""),
+      scrollAction,
+    };
+  }
+
   function createElementFromHtml(input = {}) {
     const html = String(input.html || "");
     if (!html.trim()) return null;
@@ -469,6 +511,7 @@
     patchHtml,
     patchNode,
     planConversationHtmlUpdate,
+    planLocalConversationDomUpdateCompletion,
     renderKeyForNode,
     resolveTurnInsertAnchor,
     syncAttributes,

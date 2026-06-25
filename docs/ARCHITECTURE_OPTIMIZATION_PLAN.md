@@ -141,7 +141,12 @@ Conversation HTML update planning now also lives in
 versus changed signature branching, patch-shell signature update intent,
 patch-html versus `innerHTML` action choice, hydrate options, and scroll action
 while app code keeps the real DOM write/fallback, callback execution, state
-assignment, and performance event emission.
+assignment, and performance event emission. Local DOM patch completion
+planning now also lives in that helper:
+`planLocalConversationDomUpdateCompletion` owns the tile-pane terminal state,
+single-thread blocked state, single-thread hydrate intent, signature update
+intent, and scroll action after local patch execution while app code keeps the
+real tile pane patch, callback execution, state writes, and scroll scheduling.
 Single-thread full-render shell planning now also lives in
 `public/thread-detail-render-plan.js`: loading, load-error retry, detail
 content ordering, empty/read-warning state selection, plugin-refresh notice

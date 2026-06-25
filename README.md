@@ -16,6 +16,34 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v484 Local DOM Patch Completion Planning
+
+v484 继续推进 Phase A 的前端 render/patch ownership 收敛。
+
+本次切片把 `completeLocalConversationDomUpdate()` 的完成动作决策推进到
+`public/thread-detail-dom-patch.js` 的
+`planLocalConversationDomUpdateCompletion`。新的 helper 负责把 tile-pane
+已完成、single-thread 不可 patch、single-thread patch 完成后的 hydrate、
+conversation signature / patch-shell signature 更新，以及 scroll action
+整理成可测试计划。`public/app.js` 仍然负责真实 tile pane patch、真实
+hydration、状态赋值和滚动执行。
+
+修复边界：
+
+- 症状/风险：局部 DOM patch 后的完成流程仍在 `app.js` 里混合 tile/single
+  surface 判断、signature 写入、hydrate 和 scroll 触发，是局部刷新后闪动、
+  signature 错配、tile/single 状态串线的复发点。
+- 失败层：前端 single-thread/tile-pane local patch completion ownership。
+- 不变量：local patch completion 的动作计划应由纯 helper 输出；`app.js`
+  只执行计划，不重新内联完成分支。
+- 闭环验证：`test/thread-detail-dom-patch.test.js` 覆盖 tile-pane terminal、
+  single-thread blocked、single-thread completion 三条路径；
+  `test/conversation-render.test.js`、`test/turn-scroll-controls.test.js` 和
+  `test/mobile-viewport.test.js` 验证 app 调用 completion plan 并按 plan
+  执行 hydrate、signature 和 scroll。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v484`。
+
 ## 2026-06-26 v483 Conversation HTML Update Planning
 
 v483 继续推进 Phase A 的前端 render/patch ownership 收敛。
