@@ -10159,5 +10159,18 @@ The previous full handoff was archived and should be opened only when old proven
     `public/sw.js`.
   - Production focused suite passed for the same return-event/task-card tests
     (`47` tests).
+- Return-card state:
+  - A duplicate return attempt in this pass was correctly rejected with
+    `task_card_not_returnable:replied`.
+  - Runtime store bounded metadata shows source card
+    `ttc_a8ab1599a96e2e92ed` is already `replied` with terminal return card
+    `ttc_25262fb1d46a151f36`.
+  - The existing terminal return card is `completed`,
+    `terminal:true`, `requiresReturn:false`, and `ackPolicy:"none"`.
+  - Its Home AI delivery-loop observer state is `unknown_task_card` with HTTP
+    `404`, which matches the contract for a Home AI endpoint that does not know
+    the original delivery-slice task id: record bounded diagnostic state and do
+    not block normal return-card delivery.
 - Code changes in this pass:
-  - None. This pass verified and returned an already deployed implementation.
+  - None. This pass verified an already deployed implementation and confirmed
+    the source task card already had a terminal return.
