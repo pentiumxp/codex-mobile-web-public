@@ -1,3 +1,81 @@
+# 2026-06-26 - v462 thread tile pane slot mutation policy deployed
+
+- Scope:
+  - Continued Phase C pane-state / split-screen architecture work.
+  - This slice moves pane slot mutation planning into
+    `public/thread-tile-state.js`.
+  - It does not change server projection, task-card behavior, Home AI
+    diagnostic dispatch, message merge, image projection, or the visual pane
+    design. No fallback or UI-only masking was added.
+- Root-cause boundary:
+  - Before v462, `public/app.js` directly owned pane thread replacement,
+    duplicate thread swap, drag reorder, up/down split-pair placement,
+    thread-list-open replacement of the last pane, and drop-zone geometry
+    classification.
+  - That kept stable pane slot ownership coupled to draft restore, API loads,
+    DOM patching, and render side effects, which made split-screen slot
+    regressions harder to test independently.
+- Change:
+  - Added pure thread-tile slot mutation helpers:
+    `replacePaneThreadPlan`, `movePaneRelativePlan`,
+    `splitPaneWithTargetPlan`, `replaceLastPaneForThreadListOpenPlan`, and
+    `dropPaneIntent`.
+  - `public/app.js` now delegates pane thread switching, drag reorder,
+    up/down split placement, thread-list-open replacement, and drop-zone
+    selection to `threadTileStatePolicy`.
+  - Removed the old app-level split-pair mutation wrappers that were no
+    longer needed after the plan extraction.
+  - `public/app.js` still owns saving/restoring drafts, Composer target
+    updates, detail loads, Map/Set mutation, pane/full render, and display
+    settings persistence.
+  - Bumped `CLIENT_BUILD_ID` and service worker cache to
+    `codex-mobile-shell-v462`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Commit:
+  - Runtime/docs commit: `5ea875f refactor thread tile slot mutation policy`.
+- Validation in source workspace:
+  - Focused suite passed: `56` tests across
+    `test/thread-tile-state.test.js`,
+    `test/thread-tile-layout-ui.test.js`,
+    `test/thread-tile-layout.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-task-card-route.test.js`, and
+    `test/thread-goal-service.test.js`.
+  - `npm test` passed: `850` tests.
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+- Production deploy:
+  - Deployed through Home AI central macOS production script.
+  - Reason: `codex-mobile-thread-tile-slot-mutation-v462`.
+  - Source ref at deploy: `5ea875ffef9a`, dirty `false`.
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T182742Z-plugin-codex-mobile-web-codex-mobile-thread-tile-slot-mutation-v462`.
+  - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` reported
+    running and manifest/profile health checks passed.
+- Production readback:
+  - `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v462`,
+    `shellCacheName=codex-mobile-shell-v462`, `version=0.1.11`, and active
+    profile `previous`.
+  - Source/prod SHA-256 parity matched for:
+    `public/thread-tile-state.js`, `test/thread-tile-state.test.js`,
+    `test/thread-tile-layout-ui.test.js`, `public/app.js`, `public/sw.js`,
+    `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+  - Production focused suite passed: same `56` tests listed above with
+    production dependencies.
+- Next architecture boundary:
+  - Continue Phase C by extracting pane action execution side-effect plans,
+    detail read side effects, command detail panels, split sizing, and
+    active-pane execution ownership from `public/app.js`.
+  - Phase B large-session cold/warm path remains separate and should be
+    tackled with timing evidence before changing cache behavior.
+- Public:
+  - Not pushed to Public. Follow release-order rule: wait for production/user
+    validation or explicit Public instruction before syncing/pushing.
+
 # 2026-06-26 - v461 thread tile detail refresh policy deployed
 
 - Scope:
