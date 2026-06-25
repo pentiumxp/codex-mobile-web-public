@@ -391,8 +391,11 @@ can return `projection-v4-partial` without another app-server turns-list read.
   projections carry `partial:true` / `partialKind:recent-window`, are only
   returned when the coordinator explicitly passes `allowPartial`, are never
   persisted to disk, and cannot overwrite an existing full projection cache.
-  This optimizes repeated recent opens of large sessions without presenting a
-  bounded current window as authoritative complete history.
+  The v4 projection wrapper must pass those seed/get options through to the
+  base projection cache; otherwise production v4 would turn a recent window into
+  an incorrect full `projection-v4-cache`. This optimizes repeated recent opens
+  of large sessions without presenting a bounded current window as
+  authoritative complete history.
 - Preserve the first-paint contract for large sessions. Do not introduce
   deferred incomplete detail enrichment as a UI fallback for server cold-path
   slowness.

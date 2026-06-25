@@ -57,23 +57,30 @@ function createThreadDetailProjectionV4Service(options = {}) {
     });
   }
 
-  function seed(input = {}, result) {
+  function seed(input = {}, result, optionsForSeed = {}) {
     const threadId = String(input.threadId || resultThreadId(result) || "").trim();
-    const revision = bumpRevision(threadId);
+    const revision = revisionForThread(threadId) + 1;
     const normalized = normalizeResult(result, {
       threadId,
       source: "seed",
       revision,
     });
-    const meta = base.seed(input, normalized);
+    const meta = base.seed(input, normalized, optionsForSeed);
+    if (meta && meta.skipped) {
+      return Object.assign({}, meta, {
+        version: PROJECTION_VERSION,
+        revision: revisionForThread(threadId),
+      });
+    }
+    if (meta) revisions.set(threadId, revision);
     return meta ? Object.assign({}, meta, {
       version: PROJECTION_VERSION,
       revision,
     }) : meta;
   }
 
-  function get(input = {}) {
-    const cached = base.get(input);
+  function get(input = {}, optionsForGet = {}) {
+    const cached = base.get(input, optionsForGet);
     if (!cached || !cached.result) return cached;
     const threadId = String(input.threadId || resultThreadId(cached.result) || "").trim();
     const revision = revisionForThread(threadId);
@@ -81,7 +88,7 @@ function createThreadDetailProjectionV4Service(options = {}) {
       version: PROJECTION_VERSION,
       result: normalizeResult(cached.result, {
         threadId,
-        source: cached.dynamic ? "dynamic" : "cache",
+        source: cached.partial ? "partial" : cached.dynamic ? "dynamic" : "cache",
         revision,
       }),
     });

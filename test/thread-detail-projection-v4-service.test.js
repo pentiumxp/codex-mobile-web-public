@@ -63,6 +63,54 @@ test("v4 projection service returns versioned visible keys from warm cache", () 
   }
 });
 
+test("v4 projection service preserves partial recent-window opt-in semantics", () => {
+  const dir = tempDir();
+  try {
+    const service = createThreadDetailProjectionV4Service({
+      cacheDir: dir,
+      policyVersion: "test-v4",
+      maxTurns: 3,
+      now: () => 2000,
+    });
+    const seeded = service.seed(signatureInput(), {
+      thread: {
+        id: "thread-1",
+        turns: [{
+          id: "turn-recent",
+          items: [{ id: "user-1", type: "userMessage" }],
+        }],
+      },
+    }, {
+      partial: true,
+      partialKind: "recent-window",
+    });
+
+    assert.equal(seeded.partial, true);
+    assert.equal(seeded.partialKind, "recent-window");
+    assert.equal(seeded.version, "v4");
+    assert.equal(service.get(signatureInput()), null);
+
+    const cached = service.get(signatureInput(), { allowPartial: true });
+    assert.ok(cached);
+    assert.equal(cached.version, "v4");
+    assert.equal(cached.partial, true);
+    assert.equal(cached.partialKind, "recent-window");
+    assert.equal(cached.result.thread.mobileProjectionVersion, "v4");
+    assert.equal(cached.result.thread.mobileProjectionRevision, 1);
+    assert.deepEqual(cached.result.thread.mobileVisibleItemKeys, ["turn-recent:user:user-1"]);
+
+    const restoredService = createThreadDetailProjectionV4Service({
+      cacheDir: dir,
+      policyVersion: "test-v4",
+      maxTurns: 3,
+      now: () => 3000,
+    });
+    assert.equal(restoredService.get(signatureInput(), { allowPartial: true }), null);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("v4 projection service preserves context compaction notices across dynamic refreshes", () => {
   const service = createThreadDetailProjectionV4Service({
     cacheDir: "",
