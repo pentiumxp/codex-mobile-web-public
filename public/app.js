@@ -504,7 +504,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v482";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v483";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -11687,27 +11687,40 @@ function patchHtml(target, html) {
 
 function updateConversationHtml(html, signature, options = {}) {
   const conversation = $("conversation");
-  const patchShellSignature = String(options.patchShellSignature || "");
-  if (state.renderedConversationSignature === signature) {
-    if (patchShellSignature) state.renderedConversationPatchShellSignature = patchShellSignature;
-    hydrateThreadDetailSurface(conversation, { imageScanDelays: [0, 180], skipRichHydration: true });
-    if (options.stickToBottom) scheduleConversationToBottom();
+  const updatePlan = threadDetailDomPatchApi.planConversationHtmlUpdate({
+    signature,
+    renderedConversationSignature: state.renderedConversationSignature,
+    renderedConversationPatchShellSignature: state.renderedConversationPatchShellSignature,
+    patchShellSignature: options.patchShellSignature,
+    stickToBottom: options.stickToBottom,
+    hasExistingChildren: Boolean(conversation && conversation.childNodes && conversation.childNodes.length),
+  });
+  if (updatePlan.action === "hydrate-existing") {
+    if (updatePlan.updatePatchShellSignature) {
+      state.renderedConversationPatchShellSignature = updatePlan.nextRenderedConversationPatchShellSignature;
+    }
+    hydrateThreadDetailSurface(conversation, updatePlan.hydrateOptions);
+    if (updatePlan.scrollAction === "scroll-to-bottom") scheduleConversationToBottom();
     else scheduleScrollToBottomButtonUpdate();
     return false;
   }
   const startedAt = nowPerfMs();
   const previousChildCount = conversation ? conversation.childNodes.length : 0;
   try {
-    if (conversation.childNodes.length) patchHtml(conversation, html);
+    if (updatePlan.action === "patch-html") patchHtml(conversation, html);
     else conversation.innerHTML = html;
   } catch (err) {
     console.warn("Conversation patch failed; falling back to full render.", err);
     conversation.innerHTML = html;
   }
-  hydrateThreadDetailSurface(conversation);
-  state.renderedConversationSignature = signature;
-  state.renderedConversationPatchShellSignature = patchShellSignature;
-  if (options.stickToBottom) scheduleConversationToBottom();
+  hydrateThreadDetailSurface(conversation, updatePlan.hydrateOptions);
+  if (updatePlan.updateRenderedConversationSignature) {
+    state.renderedConversationSignature = updatePlan.nextRenderedConversationSignature;
+  }
+  if (updatePlan.updatePatchShellSignature) {
+    state.renderedConversationPatchShellSignature = updatePlan.nextRenderedConversationPatchShellSignature;
+  }
+  if (updatePlan.scrollAction === "scroll-to-bottom") scheduleConversationToBottom();
   else scheduleScrollToBottomButtonUpdate();
   const renderElapsedMs = roundedDurationMs(startedAt);
   const forceReport = renderElapsedMs >= PERF_SLOW_RENDER_REPORT_MS;

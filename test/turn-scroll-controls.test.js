@@ -185,10 +185,13 @@ test("live and final message renders stay anchored when the user is at bottom", 
   ]);
 
   const updateBody = functionBody("updateConversationHtml");
-  assert.match(updateBody, /if \(state\.renderedConversationSignature === signature\) \{[\s\S]*if \(options\.stickToBottom\) scheduleConversationToBottom\(\);/);
-  assert.match(updateBody, /const patchShellSignature = String\(options\.patchShellSignature \|\| ""\);/);
-  assert.match(updateBody, /state\.renderedConversationSignature = signature;[\s\S]*if \(options\.stickToBottom\) scheduleConversationToBottom\(\);/);
-  assert.match(updateBody, /state\.renderedConversationPatchShellSignature = patchShellSignature;/);
+  assert.match(updateBody, /threadDetailDomPatchApi\.planConversationHtmlUpdate\(\{/);
+  assert.match(updateBody, /renderedConversationSignature: state\.renderedConversationSignature,/);
+  assert.match(updateBody, /renderedConversationPatchShellSignature: state\.renderedConversationPatchShellSignature,/);
+  assert.match(updateBody, /if \(updatePlan\.action === "hydrate-existing"\) \{/);
+  assert.match(updateBody, /if \(updatePlan\.scrollAction === "scroll-to-bottom"\) scheduleConversationToBottom\(\);/);
+  assert.match(updateBody, /state\.renderedConversationSignature = updatePlan\.nextRenderedConversationSignature;/);
+  assert.match(updateBody, /state\.renderedConversationPatchShellSignature = updatePlan\.nextRenderedConversationPatchShellSignature;/);
 
   const appendBody = functionBody("appendToItem");
   assertInOrder(appendBody, [
@@ -225,6 +228,7 @@ test("thread opens and same-signature renders still land on the latest message",
   assert.match(appJs, /function followThreadOpenToBottom\(threadId, ttlMs = 8000\)/);
   assert.match(appJs, /conversationScroll\.createViewportFollow\(id, \{/);
   assert.match(appJs, /reason: "thread-open"/);
-  assert.match(appJs, /if \(state\.renderedConversationSignature === signature\) \{[\s\S]*if \(options\.stickToBottom\) scheduleConversationToBottom\(\);/);
+  assert.match(functionBody("updateConversationHtml"), /threadDetailDomPatchApi\.planConversationHtmlUpdate\(\{[\s\S]*stickToBottom: options\.stickToBottom,/);
+  assert.match(functionBody("updateConversationHtml"), /if \(updatePlan\.action === "hydrate-existing"\) \{[\s\S]*if \(updatePlan\.scrollAction === "scroll-to-bottom"\) scheduleConversationToBottom\(\);/);
   assert.match(appJs, /followThreadOpenToBottom\(threadId\);[\s\S]*renderThreads\(\);[\s\S]*renderCurrentThread\(\{ stickToBottom: true \}\);/);
 });

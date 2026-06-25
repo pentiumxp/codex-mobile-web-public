@@ -148,8 +148,8 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v482/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v482"/);
+  assert.match(swJs, /codex-mobile-shell-v483/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v483"/);
   assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(swJs, /"\/thread-status-hints\.js"/);
@@ -340,8 +340,9 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /function conversationRootSignature\(thread\)/);
   assert.match(appJs, /function conversationPatchShellSignature\(thread\)/);
   assert.match(appJs, /renderedConversationPatchShellSignature: ""/);
-  assert.match(functionBody("updateConversationHtml"), /const patchShellSignature = String\(options\.patchShellSignature \|\| ""\);/);
-  assert.match(functionBody("updateConversationHtml"), /state\.renderedConversationPatchShellSignature = patchShellSignature;/);
+  assert.match(functionBody("updateConversationHtml"), /threadDetailDomPatchApi\.planConversationHtmlUpdate\(\{/);
+  assert.match(functionBody("updateConversationHtml"), /patchShellSignature: options\.patchShellSignature,/);
+  assert.match(functionBody("updateConversationHtml"), /state\.renderedConversationPatchShellSignature = updatePlan\.nextRenderedConversationPatchShellSignature;/);
   assert.match(appJs, /function rolloutWarningSignature\(thread\)/);
   assert.doesNotMatch(functionBody("conversationRootSignature"), /rolloutSizeBytes: rolloutSizeBytes\(thread\)/);
   assert.doesNotMatch(functionBody("conversationRenderSignature"), /rolloutSizeBytes: rolloutSizeBytes\(thread\)/);

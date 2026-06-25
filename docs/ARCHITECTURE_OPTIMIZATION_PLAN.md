@@ -136,6 +136,12 @@ now also lives in the same helper: `patchNode`, `patchChildNodes`, and
 sync, text/comment patching, stale child removal, incompatible node
 replacement, and bounded `patchHtml` failure reasons while `public/app.js`
 keeps the high-level patch/fallback/hydration/scroll/performance orchestration.
+Conversation HTML update planning now also lives in
+`public/thread-detail-dom-patch.js`: `planConversationHtmlUpdate` owns stable
+versus changed signature branching, patch-shell signature update intent,
+patch-html versus `innerHTML` action choice, hydrate options, and scroll action
+while app code keeps the real DOM write/fallback, callback execution, state
+assignment, and performance event emission.
 Single-thread full-render shell planning now also lives in
 `public/thread-detail-render-plan.js`: loading, load-error retry, detail
 content ordering, empty/read-warning state selection, plugin-refresh notice

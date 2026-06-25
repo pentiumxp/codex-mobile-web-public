@@ -244,6 +244,77 @@ test("patchHtml parses through an injected document and returns bounded failures
   assert.equal(domPatch.patchHtml({ target, html: "<div></div>" }).reason, "missing-document");
 });
 
+test("conversation HTML update plan preserves stable signatures without repainting", () => {
+  assert.deepEqual(domPatch.planConversationHtmlUpdate({
+    signature: "sig-a",
+    renderedConversationSignature: "sig-a",
+    renderedConversationPatchShellSignature: "shell-old",
+    patchShellSignature: "",
+    stickToBottom: false,
+    hasExistingChildren: true,
+  }), {
+    action: "hydrate-existing",
+    changed: false,
+    stableSignature: true,
+    signature: "sig-a",
+    patchShellSignature: "",
+    updateRenderedConversationSignature: false,
+    updatePatchShellSignature: false,
+    nextRenderedConversationSignature: "sig-a",
+    nextRenderedConversationPatchShellSignature: "shell-old",
+    hydrateOptions: {
+      imageScanDelays: [0, 180],
+      skipRichHydration: true,
+    },
+    scrollAction: "update-bottom-button",
+    performance: false,
+  });
+
+  const withPatchShell = domPatch.planConversationHtmlUpdate({
+    signature: "sig-a",
+    renderedConversationSignature: "sig-a",
+    renderedConversationPatchShellSignature: "shell-old",
+    patchShellSignature: "shell-new",
+    stickToBottom: true,
+  });
+  assert.equal(withPatchShell.action, "hydrate-existing");
+  assert.equal(withPatchShell.updatePatchShellSignature, true);
+  assert.equal(withPatchShell.nextRenderedConversationPatchShellSignature, "shell-new");
+  assert.equal(withPatchShell.scrollAction, "scroll-to-bottom");
+});
+
+test("conversation HTML update plan selects patch or innerHTML for changed signatures", () => {
+  assert.deepEqual(domPatch.planConversationHtmlUpdate({
+    signature: "sig-next",
+    renderedConversationSignature: "sig-old",
+    patchShellSignature: "shell-next",
+    stickToBottom: true,
+    hasExistingChildren: true,
+  }), {
+    action: "patch-html",
+    fallbackAction: "set-inner-html",
+    changed: true,
+    stableSignature: false,
+    signature: "sig-next",
+    patchShellSignature: "shell-next",
+    updateRenderedConversationSignature: true,
+    updatePatchShellSignature: true,
+    nextRenderedConversationSignature: "sig-next",
+    nextRenderedConversationPatchShellSignature: "shell-next",
+    hydrateOptions: {},
+    scrollAction: "scroll-to-bottom",
+    performance: true,
+  });
+
+  const emptyTargetPlan = domPatch.planConversationHtmlUpdate({
+    signature: "sig-next",
+    renderedConversationSignature: "",
+    hasExistingChildren: false,
+  });
+  assert.equal(emptyTargetPlan.action, "set-inner-html");
+  assert.equal(emptyTargetPlan.scrollAction, "update-bottom-button");
+});
+
 function applyFixture(article, patchPlan, options = {}) {
   return domPatch.applyVisibleItemRefreshDomPatch({
     article,

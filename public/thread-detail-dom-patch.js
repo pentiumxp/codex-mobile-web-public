@@ -159,6 +159,49 @@
     }
   }
 
+  function planConversationHtmlUpdate(input = {}) {
+    const signature = String(input.signature || "");
+    const renderedConversationSignature = String(input.renderedConversationSignature || "");
+    const renderedConversationPatchShellSignature = String(input.renderedConversationPatchShellSignature || "");
+    const patchShellSignature = String(input.patchShellSignature || "");
+    const stableSignature = renderedConversationSignature === signature;
+    const scrollAction = input.stickToBottom ? "scroll-to-bottom" : "update-bottom-button";
+    if (stableSignature) {
+      return {
+        action: "hydrate-existing",
+        changed: false,
+        stableSignature: true,
+        signature,
+        patchShellSignature,
+        updateRenderedConversationSignature: false,
+        updatePatchShellSignature: Boolean(patchShellSignature),
+        nextRenderedConversationSignature: renderedConversationSignature,
+        nextRenderedConversationPatchShellSignature: patchShellSignature || renderedConversationPatchShellSignature,
+        hydrateOptions: {
+          imageScanDelays: [0, 180],
+          skipRichHydration: true,
+        },
+        scrollAction,
+        performance: false,
+      };
+    }
+    return {
+      action: input.hasExistingChildren ? "patch-html" : "set-inner-html",
+      fallbackAction: "set-inner-html",
+      changed: true,
+      stableSignature: false,
+      signature,
+      patchShellSignature,
+      updateRenderedConversationSignature: true,
+      updatePatchShellSignature: true,
+      nextRenderedConversationSignature: signature,
+      nextRenderedConversationPatchShellSignature: patchShellSignature,
+      hydrateOptions: {},
+      scrollAction,
+      performance: true,
+    };
+  }
+
   function createElementFromHtml(input = {}) {
     const html = String(input.html || "");
     if (!html.trim()) return null;
@@ -425,6 +468,7 @@
     patchChildNodes,
     patchHtml,
     patchNode,
+    planConversationHtmlUpdate,
     renderKeyForNode,
     resolveTurnInsertAnchor,
     syncAttributes,

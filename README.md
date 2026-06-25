@@ -16,6 +16,33 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v483 Conversation HTML Update Planning
+
+v483 继续推进 Phase A 的前端 render/patch ownership 收敛。
+
+本次切片把 `updateConversationHtml()` 里的 conversation HTML 更新决策推进到
+`public/thread-detail-dom-patch.js` 的 `planConversationHtmlUpdate`。新的 helper
+负责判断当前 signature 是否稳定、稳定时是否只做 hydration、变更时应该
+patch HTML 还是直接设置 `innerHTML`、下一步 conversation signature /
+patch-shell signature 应如何更新，以及本轮应触发沉底还是只更新跳转按钮。
+`public/app.js` 仍然负责真实 DOM 写入、fallback 写入、hydration 回调、
+scroll 回调和 performance event 上报。
+
+修复边界：
+
+- 症状/风险：`updateConversationHtml()` 同时持有 signature 稳定判断、DOM
+  patch/innerHTML 分支、patch-shell signature 状态更新和 scroll scheduling
+  分支，是 full-render 闪动、重复 hydration、错误 signature 状态的复发点。
+- 失败层：前端 conversation full-render DOM update ownership。
+- 不变量：conversation HTML 更新的 action、signature 更新、hydrate 选项和
+  scroll action 应由可测试 helper 计划；`app.js` 只执行计划，不重新内联判断。
+- 闭环验证：`test/thread-detail-dom-patch.test.js` 覆盖 stable signature、
+  patch-shell 更新、changed signature patch-html、empty target innerHTML；
+  `test/turn-scroll-controls.test.js` 和 `test/mobile-viewport.test.js` 验证
+  `updateConversationHtml` 调用 helper 并消费 `updatePlan`。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v483`。
+
 ## 2026-06-26 v482 Full-Render Scroll Planning
 
 v482 继续推进 Phase A 的前端 render/patch ownership 收敛。
