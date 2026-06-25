@@ -10056,3 +10056,108 @@ The previous full handoff was archived and should be opened only when old proven
     parity.
 - Release:
   - Public was not pushed for v486.
+
+## 2026-06-26 - v487 refresh outcome execution plan deployed
+
+- Latest code commit:
+  - `25701ba extract refresh outcome execution plan`
+- v487 change:
+  - `public/thread-detail-render-plan.js` now owns
+    `planThreadDetailRefreshOutcomeExecution`, a pure policy helper for
+    converting `refreshCurrentThread()` render outcomes into metadata-only,
+    local-patch completion, full-render, and projection-consistency execution
+    decisions.
+  - `public/app.js` delegates post-outcome execution decisions to that helper
+    and still owns real header/dock/timer updates, full render execution, and
+    runtime projection diagnostics.
+  - Static build/cache: `0.1.11|codex-mobile-shell-v487` /
+    `codex-mobile-shell-v487`.
+- Root-cause boundary:
+  - Symptom/risk: after refresh patch execution, `refreshCurrentThread()` still
+    inlined `refreshRenderAction` branching for metadata update, full render,
+    and projection consistency. That left a high-risk recurrence point for
+    inconsistent metadata-only versus full-render completion.
+  - Failing layer: frontend thread-detail refresh outcome execution policy.
+  - Invariant: render outcome actions must be converted by a pure helper; full
+    render and metadata/local-patch completion must report projection
+    consistency through the same unified execution outlet.
+- Validation:
+  - Source focused suite passed:
+    `test/thread-detail-render-plan.test.js`,
+    `test/conversation-render.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-tile-layout-ui.test.js`,
+    `test/thread-goal-service.test.js`, and
+    `test/thread-task-card-route.test.js` (`145` tests).
+  - Full source `npm test` passed (`898` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Production deploy:
+  - Deployed through Home AI central macOS plugin deploy path with reason
+    `codex-mobile-refresh-outcome-execution-plan-v487`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T221010Z-plugin-codex-mobile-web-codex-mobile-refresh-outcome-execution-plan-v487`
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v487`,
+    `shellCacheName=codex-mobile-shell-v487`, `version=0.1.11`,
+    `authRequired=true`.
+  - Source/production SHA parity verified for:
+    `public/app.js`, `public/thread-detail-render-plan.js`, `public/sw.js`,
+    `test/thread-detail-render-plan.test.js`,
+    `test/conversation-render.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-goal-service.test.js`,
+    `test/thread-task-card-route.test.js`, `README.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and `docs/MODULES.md`.
+  - Production focused suite passed (`145` tests).
+- Browser/visual note:
+  - Browser automation remains unavailable in the current tool list. v487
+    closure evidence is source focused tests, full source tests, production
+    focused tests, production public-config readback, and source/prod SHA
+    parity.
+- Release:
+  - Public was not pushed for v487.
+
+## 2026-06-26 - Home AI autonomous delivery return-card event path verified
+
+- Source task card:
+  - `ttc_a8ab1599a96e2e92ed` requested Codex Mobile terminal return cards be
+    wired into Home AI Autonomous Delivery Loop return-card event intake.
+- Current implementation status:
+  - The required runtime path already exists in code commit
+    `64d3b30 wire return cards to Home AI delivery events`, with deployment
+    evidence recorded by `16000b0 docs record return-card event deployment`
+    and `1ee1fed docs record delivery event return evidence`.
+  - `server.js` wires `onTerminalReturnCard` from
+    `adapters/thread-task-card-service.js` to
+    `adapters/home-ai-autonomous-delivery-return-service.js`.
+  - The observer emits only bounded metadata to
+    `/api/autonomous-delivery/return-card-events`: original task-card id,
+    terminal return-card id, status, short title/summary, source/target thread
+    ids, workflow id, `terminal:true`, and `ackPolicy:"none"`.
+  - Terminal/no-op/ack return cards remain terminal and do not request another
+    acknowledgement or dispatch repair cards.
+  - Unknown Home AI task-card ids are recorded as bounded
+    `unknown_task_card` audit state and do not block return-card delivery.
+- Validation:
+  - Source focused suite passed:
+    `test/home-ai-autonomous-delivery-return-service.test.js`,
+    `test/thread-task-card-service.test.js`,
+    `test/thread-task-card-route.test.js`, and
+    `test/codex-mobile-mcp-server.test.js` (`47` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - Production `/api/public-config` readback remained
+    `0.1.11|codex-mobile-shell-v487` / `codex-mobile-shell-v487`.
+  - Source/production SHA parity verified for:
+    `server.js`, `adapters/thread-task-card-service.js`,
+    `adapters/home-ai-autonomous-delivery-return-service.js`,
+    `scripts/return-thread-task-card.js`,
+    `scripts/codex-mobile-mcp-server.js`,
+    `docs/CROSS_THREAD_TASK_CARDS_DESIGN.md`,
+    `docs/CROSS_THREAD_TASK_CARDS_IMPLEMENTATION.md`,
+    `test/home-ai-autonomous-delivery-return-service.test.js`,
+    `test/thread-task-card-service.test.js`,
+    `test/thread-task-card-route.test.js`,
+    `test/codex-mobile-mcp-server.test.js`, `public/app.js`, and
+    `public/sw.js`.
+  - Production focused suite passed for the same return-event/task-card tests
+    (`47` tests).
+- Code changes in this pass:
+  - None. This pass verified and returned an already deployed implementation.
