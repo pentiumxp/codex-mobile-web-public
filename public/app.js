@@ -504,7 +504,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v474";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v475";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -12816,18 +12816,6 @@ function rememberThreadTileOperationBubble(threadId, html = "") {
   state.threadTileOperationBubblesById.set(id, record);
 }
 
-function recentThreadTileOperationBubble(threadId) {
-  const id = String(threadId || "");
-  const record = state.threadTileOperationBubblesById.get(id);
-  const snapshot = threadTileStatePolicy.operationBubbleSnapshot(record, { nowMs: Date.now() });
-  if (!snapshot.visible) {
-    if (snapshot.expired) state.threadTileOperationBubblesById.delete(id);
-    return "";
-  }
-  scheduleThreadTileOperationMinimumRefresh(snapshot.remainingMs);
-  return snapshot.html;
-}
-
 function clearThreadTileOperationBubble(threadId) {
   const id = String(threadId || "");
   if (!id) return;
@@ -12839,13 +12827,29 @@ function renderThreadTileOperationDock(thread, previousKeys = new Set()) {
   if (!id) return "";
   const entry = currentLiveOperationEntry(thread);
   const mode = threadTileStatePolicy.normalizeOperationMode(state.threadTileOperationModesById.get(id) || "compact");
-  const expanded = mode === "expanded";
-  if (!entry || !entry.item || entry.item.type === "liveTurnStatus") {
-    return latestLiveTurnForThread(thread) ? recentThreadTileOperationBubble(id) : "";
+  const plan = threadTileStatePolicy.operationDockPlan({
+    threadId: id,
+    mode,
+    entryType: entry && entry.item && entry.item.type,
+    hasOperation: Boolean(entry && entry.item && entry.item.type !== "liveTurnStatus"),
+    hasLiveTurn: Boolean(latestLiveTurnForThread(thread)),
+    remembered: state.threadTileOperationBubblesById.get(id),
+    nowMs: Date.now(),
+  });
+  if (plan.action === "render-remembered-operation") {
+    if (plan.scheduleMinimumRefresh) scheduleThreadTileOperationMinimumRefresh(plan.remainingMs);
+    return plan.html || "";
+  }
+  if (plan.action === "clear-remembered-operation") {
+    if (plan.clearRemembered) state.threadTileOperationBubblesById.delete(id);
+    return "";
+  }
+  if (plan.action !== "render-live-operation" || !entry || !entry.item) {
+    return "";
   }
   const html = `<div class="thread-tile-operation-dock" data-thread-tile-operation-dock="${escapeHtml(id)}" data-mode="${escapeHtml(mode)}">
     <div class="live-operation-dock-inner">
-      ${renderMobileOperationStack(entry.item, entry.turn, previousKeys, entry.sourceIndex, expanded, {
+      ${renderMobileOperationStack(entry.item, entry.turn, previousKeys, entry.sourceIndex, plan.expanded, {
         toggleAttribute: "data-thread-tile-operation-toggle",
         toggleValue: id,
       })}

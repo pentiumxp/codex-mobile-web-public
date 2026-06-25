@@ -134,10 +134,13 @@ dwell/expiry/mode/signature rules are pure policy. Operation/command detail
 mode toggle planning is also in that helper: enabled/missing-id checks,
 compact/expanded transitions, selected-pane intent, and pane patch intent are
 computed as a bounded effect plan while app code keeps the real Map write and
-DOM patch execution. Pane-local detail refresh planning is now also in that
-helper: refresh timer scheduling, refresh target selection, and detail-load
-skip/background/loading decisions are explicit plans. Detail-load lifecycle
-side-effect planning is also in that helper:
+DOM patch execution. Operation dock render-branch planning is also in that
+helper: live-operation rendering, remembered-bubble reuse, expired remembered
+state cleanup, and no-content states are explicit actions while app code keeps
+HTML rendering, timer scheduling, and Map deletion. Pane-local detail refresh
+planning is now also in that helper: refresh timer scheduling, refresh target
+selection, and detail-load skip/background/loading decisions are explicit
+plans. Detail-load lifecycle side-effect planning is also in that helper:
 start/success/error/finally phases emit controller, loading, cache, error, and
 render intent while app code keeps AbortController and network execution. Pane slot mutation planning is also in that helper: pane thread
 replacement, duplicate swap, drag reorder, up/down split-pair placement,
@@ -195,17 +198,17 @@ Target:
   thread-tile interaction recognition is now outside app.js for tile surfaces;
   core thread-tile pane-state normalization and operation bubble signature/
   dwell/mode policy are now outside app.js. Operation/command detail mode
-  toggle planning is now also outside app.js. Pane-local detail refresh
-  planning, pane slot mutation planning, pane count/close planning, and active
-  pane sync planning are now outside app.js; explicit selected-pane
-  action/effect planning is also outside app.js; candidate pane id planning is also outside app.js;
+  toggle planning and operation dock render-branch planning are now also
+  outside app.js. Pane-local detail refresh planning, pane slot mutation
+  planning, pane count/close planning, and active pane sync planning are now
+  outside app.js; explicit selected-pane action/effect planning is also outside app.js; candidate pane id planning is also outside app.js;
   switch-menu option/control planning is also outside app.js;
   pane slot mutation side-effect planning including pane count/close execution
   is also outside app.js; detail-load lifecycle side-effect planning is also
   outside app.js; detail-load queue/abort/drain planning is also outside app.js;
-  command detail panel content/rendering, split sizing, measured tuning of the
-  max concurrent detail read value, and per-pane draft/runtime ownership remain
-  the next boundary.
+  command detail panel content HTML, split sizing, measured tuning of the max
+  concurrent detail read value, and per-pane draft/runtime ownership remain the
+  next boundary.
 - Keep `public/app.js` responsible for DOM wiring, patch application, and event
   binding only.
 - Cover user-message echo convergence, live receipt preservation, completed

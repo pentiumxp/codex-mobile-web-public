@@ -16,6 +16,31 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v475 Thread Tile Operation Dock Render Policy
+
+v475 继续 Phase C，在 v474 把 operation mode toggle 迁出 app 层之后，继续把平铺窗口
+operation dock 的渲染分支决策迁到 `public/thread-tile-state.js`。此前
+`renderThreadTileOperationDock` 仍然直接判断当前 pane 是否有 live command/file/tool/search
+operation、是否只剩 `liveTurnStatus`、是否需要复用最小滞留期内的 remembered bubble、以及
+是否清理已过期 remembered bubble。
+
+本次新增 `operationDockPlan`：
+
+- `render-live-operation`：当前 pane 有真实 operation item 时，由 app 层继续渲染现有
+  `mobile-operation-stack`，并记住 bubble HTML。
+- `render-remembered-operation`：当前 live turn 还存在但真实 operation 已短暂结束时，复用
+  remembered bubble，并由 app 层安排最小滞留刷新。
+- `clear-remembered-operation`：remembered bubble 已过期时，显式要求 app 层清理 pane-local
+  remembered 状态。
+- `none`：缺少 pane id、没有 live turn、或没有可复用 remembered bubble 时不渲染。
+
+这个切片不改变 pane 内 operation bubble/sheet 的 HTML 结构和视觉，不改变时间显示、命令摘要、
+server projection、thread detail 读取、任务卡或 Home AI 诊断上报。`public/app.js` 仍负责真实
+HTML 渲染、timer、Map 删除和 DOM patch；策略层只输出 bounded render action。
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v475`。
+`test/thread-tile-state.test.js` 覆盖 operation dock planning；
+`test/thread-tile-layout-ui.test.js` 约束 app 层必须通过 `operationDockPlan`。
+
 ## 2026-06-26 v474 Thread Tile Operation Mode Toggle Policy
 
 v474 继续 Phase C，把平铺窗口里 operation/command 详情面板的展开收起决策从

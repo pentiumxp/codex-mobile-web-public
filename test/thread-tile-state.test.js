@@ -677,6 +677,65 @@ test("thread tile state owns operation mode and signature policy", () => {
     rememberedVisible: false,
     entry: null,
   });
+
+  assert.deepEqual(state.operationDockPlan({
+    threadId: "pane-1",
+    mode: "expanded",
+    entryType: "commandExecution",
+    remembered: record,
+    nowMs: 1200,
+  }), {
+    action: "render-live-operation",
+    reason: "active-operation",
+    id: "pane-1",
+    mode: "expanded",
+    expanded: true,
+    remember: true,
+  });
+  assert.deepEqual(state.operationDockPlan({
+    threadId: "pane-1",
+    mode: "compact",
+    entryType: "liveTurnStatus",
+    hasLiveTurn: true,
+    remembered: record,
+    nowMs: 1200,
+  }), {
+    action: "render-remembered-operation",
+    reason: "remembered-visible",
+    id: "pane-1",
+    mode: "compact",
+    expanded: false,
+    html: "<button class=\"mobile-operation-bubble\">cmd</button>",
+    remainingMs: 300,
+    scheduleMinimumRefresh: true,
+  });
+  assert.deepEqual(state.operationDockPlan({
+    threadId: "pane-1",
+    mode: "compact",
+    hasLiveTurn: true,
+    remembered: record,
+    nowMs: 1600,
+  }), {
+    action: "clear-remembered-operation",
+    reason: "remembered-expired",
+    id: "pane-1",
+    mode: "compact",
+    expanded: false,
+    clearRemembered: true,
+  });
+  assert.deepEqual(state.operationDockPlan({
+    threadId: "pane-1",
+    mode: "compact",
+    hasLiveTurn: false,
+    remembered: record,
+    nowMs: 1200,
+  }), {
+    action: "none",
+    reason: "no-live-turn",
+    id: "pane-1",
+    mode: "compact",
+    expanded: false,
+  });
 });
 
 test("thread tile state plans pane refresh scheduling without DOM state", () => {

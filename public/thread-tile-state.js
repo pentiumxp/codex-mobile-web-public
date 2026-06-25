@@ -732,6 +732,54 @@
     };
   }
 
+  function operationDockPlan(input = {}) {
+    const id = text(input.threadId || input.id).trim();
+    const mode = normalizeOperationMode(input.mode);
+    const expanded = mode === "expanded";
+    if (!id) {
+      return { action: "none", reason: "missing-id", id: "", mode, expanded };
+    }
+    const entryType = text(input.entryType || input.operationType);
+    const hasOperation = input.hasOperation === true || Boolean(entryType && entryType !== "liveTurnStatus");
+    if (hasOperation) {
+      return {
+        action: "render-live-operation",
+        reason: "active-operation",
+        id,
+        mode,
+        expanded,
+        remember: true,
+      };
+    }
+    if (input.hasLiveTurn !== true) {
+      return { action: "none", reason: "no-live-turn", id, mode, expanded };
+    }
+    const remembered = operationBubbleSnapshot(input.remembered, { nowMs: input.nowMs });
+    if (remembered.visible) {
+      return {
+        action: "render-remembered-operation",
+        reason: "remembered-visible",
+        id,
+        mode,
+        expanded,
+        html: remembered.html,
+        remainingMs: remembered.remainingMs,
+        scheduleMinimumRefresh: true,
+      };
+    }
+    if (remembered.expired) {
+      return {
+        action: "clear-remembered-operation",
+        reason: "remembered-expired",
+        id,
+        mode,
+        expanded,
+        clearRemembered: true,
+      };
+    }
+    return { action: "none", reason: "no-remembered-operation", id, mode, expanded };
+  }
+
   function operationSignature(input = {}) {
     const remembered = operationBubbleSnapshot(input.remembered, { nowMs: input.nowMs });
     return {
@@ -970,6 +1018,7 @@
     operationModeTogglePlan,
     operationBubbleRecord,
     operationBubbleSnapshot,
+    operationDockPlan,
     operationSignature,
     paneCountChangePlan,
     paneSelectionPlan,

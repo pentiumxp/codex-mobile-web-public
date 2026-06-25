@@ -334,12 +334,14 @@ test("thread tile rendering is read-only and separate from full conversation ren
 
   const tileOperationDockBody = functionBody(appJs, "renderThreadTileOperationDock");
   assert.match(tileOperationDockBody, /currentLiveOperationEntry\(thread\)/);
+  assert.match(tileOperationDockBody, /threadTileStatePolicy\.operationDockPlan/);
   assert.match(tileOperationDockBody, /data-thread-tile-operation-dock/);
   assert.match(tileOperationDockBody, /data-thread-tile-operation-toggle/);
   assert.match(tileOperationDockBody, /rememberThreadTileOperationBubble/);
   assert.match(tileOperationDockBody, /threadTileStatePolicy\.normalizeOperationMode/);
+  assert.match(tileOperationDockBody, /clear-remembered-operation/);
   assert.match(functionBody(appJs, "rememberThreadTileOperationBubble"), /threadTileStatePolicy\.operationBubbleRecord/);
-  assert.match(functionBody(appJs, "recentThreadTileOperationBubble"), /threadTileStatePolicy\.operationBubbleSnapshot/);
+  assert.doesNotMatch(appJs, /function recentThreadTileOperationBubble\(/);
   assert.match(functionBody(appJs, "threadTileOperationSignature"), /threadTileStatePolicy\.operationSignature/);
 
   const clearGlobalDockBody = functionBody(appJs, "clearGlobalLiveOperationDockForThreadTiles");
