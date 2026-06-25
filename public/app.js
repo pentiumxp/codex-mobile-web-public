@@ -504,7 +504,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v478";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v479";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -11675,82 +11675,14 @@ async function selectWorkspaceShortcut(cwd) {
   await loadThreads();
 }
 
-function renderKeyForNode(node) {
-  return node && node.nodeType === Node.ELEMENT_NODE ? node.getAttribute("data-render-key") || "" : "";
-}
-
-function canPatchNode(target, source) {
-  if (!target || !source || target.nodeType !== source.nodeType) return false;
-  if (target.nodeType !== Node.ELEMENT_NODE) return true;
-  return target.tagName === source.tagName;
-}
-
-function syncAttributes(target, source) {
-  const sourceNames = new Set(Array.from(source.attributes).map((attr) => attr.name));
-  for (const attr of Array.from(target.attributes)) {
-    if (!sourceNames.has(attr.name)) target.removeAttribute(attr.name);
-  }
-  for (const attr of Array.from(source.attributes)) {
-    if (target.getAttribute(attr.name) !== attr.value) target.setAttribute(attr.name, attr.value);
-  }
-}
-
 function patchNode(target, source) {
-  if (!canPatchNode(target, source)) {
-    const replacement = source.cloneNode(true);
-    target.replaceWith(replacement);
-    return replacement;
-  }
-  if (target.nodeType === Node.TEXT_NODE || target.nodeType === Node.COMMENT_NODE) {
-    if (target.nodeValue !== source.nodeValue) target.nodeValue = source.nodeValue;
-    return target;
-  }
-  syncAttributes(target, source);
-  patchChildNodes(target, source);
-  return target;
-}
-
-function patchChildNodes(target, source) {
-  const sourceChildren = Array.from(source.childNodes);
-  const targetChildren = Array.from(target.childNodes);
-  const keyedTargets = new Map();
-  for (const child of targetChildren) {
-    const key = renderKeyForNode(child);
-    if (key && !keyedTargets.has(key)) keyedTargets.set(key, child);
-  }
-
-  const used = new Set();
-  let cursor = target.firstChild;
-  for (const sourceChild of sourceChildren) {
-    const key = renderKeyForNode(sourceChild);
-    let targetChild = key ? keyedTargets.get(key) : null;
-    if (targetChild && used.has(targetChild)) targetChild = null;
-    if (!targetChild && cursor && !renderKeyForNode(cursor) && canPatchNode(cursor, sourceChild)) {
-      targetChild = cursor;
-    }
-
-    if (targetChild) {
-      const patched = patchNode(targetChild, sourceChild);
-      used.add(patched);
-      if (patched !== cursor) target.insertBefore(patched, cursor);
-      cursor = patched.nextSibling;
-      continue;
-    }
-
-    const inserted = sourceChild.cloneNode(true);
-    target.insertBefore(inserted, cursor);
-    used.add(inserted);
-  }
-
-  for (const child of Array.from(target.childNodes)) {
-    if (!used.has(child)) child.remove();
-  }
+  return threadDetailDomPatchApi.patchNode(target, source);
 }
 
 function patchHtml(target, html) {
-  const template = document.createElement("template");
-  template.innerHTML = html;
-  patchChildNodes(target, template.content);
+  const patchResult = threadDetailDomPatchApi.patchHtml({ target, html, document });
+  if (!patchResult || !patchResult.ok) throw new Error(patchResult && patchResult.reason || "patch-html-failed");
+  return patchResult.target || target;
 }
 
 function updateConversationHtml(html, signature, options = {}) {

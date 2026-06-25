@@ -8,6 +8,10 @@
     root.CodexThreadDetailDomPatch = api;
   }
 }(typeof globalThis !== "undefined" ? globalThis : null, function () {
+  const ELEMENT_NODE = 1;
+  const TEXT_NODE = 3;
+  const COMMENT_NODE = 8;
+
   function result(ok, reason, counts = {}) {
     return Object.assign({
       ok: Boolean(ok),
@@ -16,6 +20,80 @@
       patched: 0,
       inserted: 0,
     }, counts);
+  }
+
+  function renderKeyForNode(node) {
+    return node && node.nodeType === ELEMENT_NODE && typeof node.getAttribute === "function"
+      ? node.getAttribute("data-render-key") || ""
+      : "";
+  }
+
+  function canPatchNode(target, source) {
+    if (!target || !source || target.nodeType !== source.nodeType) return false;
+    if (target.nodeType !== ELEMENT_NODE) return true;
+    return target.tagName === source.tagName;
+  }
+
+  function syncAttributes(target, source) {
+    const sourceNames = new Set(Array.from(source.attributes || []).map((attr) => attr.name));
+    for (const attr of Array.from(target.attributes || [])) {
+      if (!sourceNames.has(attr.name)) target.removeAttribute(attr.name);
+    }
+    for (const attr of Array.from(source.attributes || [])) {
+      if (target.getAttribute(attr.name) !== attr.value) target.setAttribute(attr.name, attr.value);
+    }
+  }
+
+  function patchNode(target, source) {
+    if (!canPatchNode(target, source)) {
+      const replacement = source.cloneNode(true);
+      target.replaceWith(replacement);
+      return replacement;
+    }
+    if (target.nodeType === TEXT_NODE || target.nodeType === COMMENT_NODE) {
+      if (target.nodeValue !== source.nodeValue) target.nodeValue = source.nodeValue;
+      return target;
+    }
+    syncAttributes(target, source);
+    patchChildNodes(target, source);
+    return target;
+  }
+
+  function patchChildNodes(target, source) {
+    const sourceChildren = Array.from(source.childNodes || []);
+    const targetChildren = Array.from(target.childNodes || []);
+    const keyedTargets = new Map();
+    for (const child of targetChildren) {
+      const key = renderKeyForNode(child);
+      if (key && !keyedTargets.has(key)) keyedTargets.set(key, child);
+    }
+
+    const used = new Set();
+    let cursor = target.firstChild || null;
+    for (const sourceChild of sourceChildren) {
+      const key = renderKeyForNode(sourceChild);
+      let targetChild = key ? keyedTargets.get(key) : null;
+      if (targetChild && used.has(targetChild)) targetChild = null;
+      if (!targetChild && cursor && !renderKeyForNode(cursor) && canPatchNode(cursor, sourceChild)) {
+        targetChild = cursor;
+      }
+
+      if (targetChild) {
+        const patched = patchNode(targetChild, sourceChild);
+        used.add(patched);
+        if (patched !== cursor) target.insertBefore(patched, cursor);
+        cursor = patched.nextSibling || null;
+        continue;
+      }
+
+      const inserted = sourceChild.cloneNode(true);
+      target.insertBefore(inserted, cursor);
+      used.add(inserted);
+    }
+
+    for (const child of Array.from(target.childNodes || [])) {
+      if (!used.has(child)) child.remove();
+    }
   }
 
   function normalizeOperation(operation) {
@@ -55,6 +133,30 @@
     if (input.document && typeof input.document.createElement === "function") return input.document;
     if (typeof document !== "undefined" && document && typeof document.createElement === "function") return document;
     return null;
+  }
+
+  function normalizePatchHtmlInput(input, html, options = {}) {
+    if (input && typeof input === "object" && typeof input.insertBefore === "function") {
+      return Object.assign({}, options || {}, { target: input, html });
+    }
+    return input && typeof input === "object" ? input : {};
+  }
+
+  function patchHtml(input = {}, html, options = {}) {
+    const normalized = normalizePatchHtmlInput(input, html, options);
+    const target = normalized.target || normalized.root || null;
+    if (!target || typeof target.insertBefore !== "function") return result(false, "missing-target");
+    const doc = documentFrom(normalized);
+    if (!doc) return result(false, "missing-document");
+    try {
+      const template = doc.createElement("template");
+      if (!template) return result(false, "missing-template");
+      template.innerHTML = String(normalized.html || "");
+      patchChildNodes(target, template.content || { childNodes: [] });
+      return result(true, "patched", { patched: 1, target });
+    } catch (_) {
+      return result(false, "patch-html-failed", { target });
+    }
   }
 
   function createElementFromHtml(input = {}) {
@@ -311,6 +413,7 @@
     applyLiveTextItemDomPatch,
     applyThreadTurnRefreshDomPatch,
     applyVisibleItemRefreshDomPatch,
+    canPatchNode,
     createElementFromHtml,
     createTurnArticleElement,
     findElementByRenderKey,
@@ -319,6 +422,11 @@
     insertTurnArticleElement,
     normalizeOperation,
     normalizeTurnOperation,
+    patchChildNodes,
+    patchHtml,
+    patchNode,
+    renderKeyForNode,
     resolveTurnInsertAnchor,
+    syncAttributes,
   };
 }));

@@ -104,9 +104,7 @@ application planning into that policy module:
 `planThreadDetailDomPatchSurface` decides whether the active surface is a
 `thread-tile-pane`, a `single-thread` surface, or a blocked transition/mismatch.
 `planThreadDetailRefreshDomPatch` decides whether each turn refresh should be
-an item-only patch, a turn insert, or a turn replace. DOM node lookup, HTML
-rendering, patch/insert execution, and hydration still remain in
-`public/app.js`. Local patch scroll completion now lives in
+an item-only patch, a turn insert, or a turn replace. Local patch scroll completion now lives in
 `public/conversation-scroll.js` through `planLocalPatchScrollCompletion`, so
 app code consumes an explicit scroll plan instead of inlining the bottom-follow
 policy. Visible-item DOM patch execution now lives in
@@ -132,7 +130,13 @@ patch, and local patch completion. Live text item DOM patch sequencing now
 also lives in the same helper: app code still decides tile/single surface and
 scroll completion, but `applyLiveTextItemDomPatch` owns render-key lookup,
 HTML-to-element creation, patch callback execution, and bounded failure reasons
-for streaming `agentMessage` / `plan` updates. Thread detail click action recognition now
+for streaming `agentMessage` / `plan` updates. Keyed child DOM reconciliation
+now also lives in the same helper: `patchNode`, `patchChildNodes`, and
+`patchHtml` own data-render-key lookup, compatible unkeyed reuse, attribute
+sync, text/comment patching, stale child removal, incompatible node
+replacement, and bounded `patchHtml` failure reasons while `public/app.js`
+keeps the high-level patch/fallback/hydration/scroll/performance orchestration.
+Thread detail click action recognition now
 lives in `public/thread-detail-actions.js`: app code still owns event listener
 wiring and business execution, but selector priority, root containment,
 previewable-image detection, rich-content actions, task-card actions, approval
@@ -202,8 +206,8 @@ turn-level patch operation loop, insertion anchoring loop, or turn article
 render-key lookup selector, creation step, hydration callback sequence, live
 text item render-key lookup / HTML patch sequencing, or
 conversation click-action selector priority, nor own the basic pane-state
-normalization, pane-local operation-bubble state rules, or operation card
-content planning.
+normalization, pane-local operation-bubble state rules, operation card content
+planning, or keyed DOM child reconciliation.
 
 Target:
 
@@ -216,7 +220,8 @@ Target:
   node creation is now outside app.js for turn article insert/replace paths;
   hydration orchestration is now outside app.js for thread detail surfaces;
   live text item DOM patch sequencing is now outside app.js for streaming
-  assistant/plan updates;
+  assistant/plan updates; keyed DOM child reconciliation and `patchHtml`
+  parsing/execution are now outside app.js;
   click-action recognition is now outside app.js for conversation surfaces;
   thread-tile interaction recognition is now outside app.js for tile surfaces;
   core thread-tile pane-state normalization and operation bubble signature/
@@ -230,9 +235,9 @@ Target:
   is also outside app.js; detail-load lifecycle side-effect planning is also
   outside app.js; detail-load queue/abort/drain planning is also outside app.js;
   operation card content planning is now outside app.js;
-  command detail panel final HTML templates, split sizing, measured tuning of the max
-  concurrent detail read value, and per-pane draft/runtime ownership remain the
-  next boundary.
+  command detail panel final HTML templates, single-thread full-render shell
+  planning, split sizing, measured tuning of the max concurrent detail read
+  value, and per-pane draft/runtime ownership remain the next boundary.
 - Keep `public/app.js` responsible for DOM wiring, patch application, and event
   binding only.
 - Cover user-message echo convergence, live receipt preservation, completed

@@ -16,6 +16,31 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v479 Keyed DOM Patch Ownership
+
+v479 继续推进 Phase A 的前端 render/patch ownership 收敛。
+
+本次切片把 keyed DOM child reconciliation 从 `public/app.js` 推进到
+`public/thread-detail-dom-patch.js`。新的 helper 边界覆盖：
+`renderKeyForNode`、`canPatchNode`、attribute sync、text/comment patch、
+keyed child reuse/reorder、incompatible node replacement，以及 `patchHtml`
+的 HTML-to-template patch 调用。`public/app.js` 只保留薄调用层，继续负责
+业务编排、fallback 到 `innerHTML`、hydration、scroll 和性能事件。
+
+修复边界：
+
+- 症状/风险：`app.js` 仍直接拥有 keyed child patch 算法，局部更新和全量
+  render 的底层复用规则难以单测，容易让重复节点、错序、闪动问题复发。
+- 失败层：前端 thread-detail DOM patch application ownership。
+- 不变量：DOM reconciliation 算法应集中在可测试 helper；`app.js` 只负责
+  选择 patch 时机和注入真实 DOM 副作用。
+- 闭环验证：`test/thread-detail-dom-patch.test.js` 覆盖 keyed reorder、
+  unkeyed reuse、stale removal、incompatible replacement 和 `patchHtml`
+  bounded failure；`test/collab-agent-render.test.js` 验证 `app.js` 不再持有
+  `patchChildNodes` / `canPatchNode` / `syncAttributes` 实现。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v479`。
+
 ## 2026-06-26 v478 Operation Card Content Plan Ownership
 
 v478 继续推进 Phase A 的前端 render/patch ownership 收敛。

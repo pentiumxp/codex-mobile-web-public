@@ -390,3 +390,12 @@ test("current-turn subagent panel opens from a left swipe without a topbar butto
   assert.match(stylesCss, /\.side-chat-form textarea\s*{[\s\S]*font-size:\s*var\(--composer-input-font-size\);/);
   assert.match(stylesCss, /\.subagent-status-row/);
 });
+
+test("thread detail DOM patch helper owns keyed child reconciliation", () => {
+  assert.match(appJs, /const threadDetailDomPatchApi = window\.CodexThreadDetailDomPatch/);
+  assert.match(functionBody("patchNode"), /threadDetailDomPatchApi\.patchNode\(target, source\)/);
+  assert.match(functionBody("patchHtml"), /threadDetailDomPatchApi\.patchHtml\(\{ target, html, document \}\)/);
+  assert.doesNotMatch(appJs, /function patchChildNodes\(/);
+  assert.doesNotMatch(appJs, /function canPatchNode\(/);
+  assert.doesNotMatch(appJs, /function syncAttributes\(/);
+});

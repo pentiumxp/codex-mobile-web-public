@@ -35,6 +35,118 @@ function createArticle(nodes) {
   return article;
 }
 
+function unlinkDomNode(node) {
+  if (!node || !node.parentNode) return;
+  const parent = node.parentNode;
+  const index = parent.childNodes.indexOf(node);
+  if (index >= 0) parent.childNodes.splice(index, 1);
+  node.parentNode = null;
+  node.nextSibling = null;
+  syncDomSiblings(parent);
+}
+
+function syncDomSiblings(parent) {
+  (parent.childNodes || []).forEach((child, index, list) => {
+    child.parentNode = parent;
+    child.nextSibling = list[index + 1] || null;
+  });
+}
+
+function domNodeBase() {
+  return {
+    parentNode: null,
+    nextSibling: null,
+    remove() {
+      unlinkDomNode(this);
+    },
+    replaceWith(replacement) {
+      const parent = this.parentNode;
+      if (!parent) return;
+      const index = parent.childNodes.indexOf(this);
+      if (index < 0) return;
+      unlinkDomNode(replacement);
+      parent.childNodes[index] = replacement;
+      this.parentNode = null;
+      this.nextSibling = null;
+      syncDomSiblings(parent);
+    },
+  };
+}
+
+function createDomText(value) {
+  return Object.assign(domNodeBase(), {
+    nodeType: 3,
+    nodeValue: String(value || ""),
+    cloneNode() {
+      return createDomText(this.nodeValue);
+    },
+  });
+}
+
+function createDomElement(tagName, attrs = {}, children = []) {
+  const attrMap = new Map(Object.entries(attrs).map(([key, value]) => [key, String(value)]));
+  const node = Object.assign(domNodeBase(), {
+    nodeType: 1,
+    tagName: String(tagName || "div").toUpperCase(),
+    childNodes: [],
+    getAttribute(name) {
+      return attrMap.has(name) ? attrMap.get(name) : null;
+    },
+    setAttribute(name, value) {
+      attrMap.set(name, String(value));
+    },
+    removeAttribute(name) {
+      attrMap.delete(name);
+    },
+    insertBefore(child, anchor) {
+      unlinkDomNode(child);
+      const anchorIndex = anchor ? this.childNodes.indexOf(anchor) : -1;
+      if (anchorIndex >= 0) this.childNodes.splice(anchorIndex, 0, child);
+      else this.childNodes.push(child);
+      syncDomSiblings(this);
+    },
+    cloneNode(deep) {
+      return createDomElement(
+        this.tagName,
+        Object.fromEntries(attrMap.entries()),
+        deep ? this.childNodes.map((child) => child.cloneNode(true)) : [],
+      );
+    },
+  });
+  Object.defineProperty(node, "firstChild", {
+    enumerable: true,
+    get() {
+      return this.childNodes[0] || null;
+    },
+  });
+  Object.defineProperty(node, "attributes", {
+    enumerable: true,
+    get() {
+      return Array.from(attrMap.entries()).map(([name, value]) => ({ name, value }));
+    },
+  });
+  children.forEach((child) => node.insertBefore(child, null));
+  return node;
+}
+
+function childText(node) {
+  return node && node.childNodes && node.childNodes[0] ? node.childNodes[0].nodeValue : "";
+}
+
+function createPatchHtmlDocument(childrenFactory) {
+  return {
+    createElement(tagName) {
+      if (tagName !== "template") return null;
+      return {
+        content: createDomElement("fragment"),
+        set innerHTML(value) {
+          this.content = createDomElement("fragment", {}, childrenFactory(String(value || "")));
+        },
+      };
+    },
+  };
+}
+
 function createTemplateDocument(options = {}) {
   return {
     createElement(tagName) {
@@ -57,6 +169,80 @@ function createTemplateDocument(options = {}) {
     },
   };
 }
+
+test("keyed DOM patching reorders keyed nodes", () => {
+  const keyedA = createDomElement("div", { "data-render-key": "a" }, [createDomText("old a")]);
+  const keyedB = createDomElement("div", { "data-render-key": "b" }, [createDomText("old b")]);
+  const target = createDomElement("section", {}, [keyedA, keyedB]);
+  const source = createDomElement("fragment", {}, [
+    createDomElement("div", { "data-render-key": "b" }, [createDomText("new b")]),
+    createDomElement("div", { "data-render-key": "a" }, [createDomText("new a")]),
+  ]);
+
+  domPatch.patchChildNodes(target, source);
+
+  assert.equal(target.childNodes[0], keyedB);
+  assert.equal(target.childNodes[1], keyedA);
+  assert.equal(childText(keyedB), "new b");
+  assert.equal(childText(keyedA), "new a");
+});
+
+test("DOM patching reuses compatible unkeyed cursor nodes and removes stale nodes", () => {
+  const unkeyed = createDomElement("p", {}, [createDomText("old unkeyed")]);
+  const keyed = createDomElement("div", { "data-render-key": "keep", class: "old" }, [createDomText("old keyed")]);
+  const stale = createDomElement("div", { "data-render-key": "stale" }, [createDomText("stale")]);
+  const target = createDomElement("section", {}, [keyed, unkeyed, stale]);
+  const source = createDomElement("fragment", {}, [
+    createDomElement("div", { "data-render-key": "keep", class: "new" }, [createDomText("new keyed")]),
+    createDomElement("p", {}, [createDomText("new unkeyed")]),
+    createDomElement("div", { "data-render-key": "inserted" }, [createDomText("inserted")]),
+  ]);
+
+  domPatch.patchChildNodes(target, source);
+
+  assert.equal(target.childNodes[0], keyed);
+  assert.equal(keyed.getAttribute("class"), "new");
+  assert.equal(childText(keyed), "new keyed");
+  assert.equal(target.childNodes[1], unkeyed);
+  assert.equal(childText(unkeyed), "new unkeyed");
+  assert.equal(target.childNodes[2].getAttribute("data-render-key"), "inserted");
+  assert.equal(childText(target.childNodes[2]), "inserted");
+  assert.equal(stale.parentNode, null);
+});
+
+test("DOM patching replaces incompatible nodes and returns the replacement", () => {
+  const oldNode = createDomElement("span", { id: "old" }, [createDomText("old")]);
+  const parent = createDomElement("section", {}, [oldNode]);
+  const source = createDomElement("div", { id: "new" }, [createDomText("new")]);
+
+  const replacement = domPatch.patchNode(oldNode, source);
+
+  assert.notEqual(replacement, oldNode);
+  assert.equal(parent.childNodes[0], replacement);
+  assert.equal(replacement.tagName, "DIV");
+  assert.equal(replacement.getAttribute("id"), "new");
+  assert.equal(childText(replacement), "new");
+  assert.equal(oldNode.parentNode, null);
+});
+
+test("patchHtml parses through an injected document and returns bounded failures", () => {
+  const target = createDomElement("section", {}, [
+    createDomElement("div", { "data-render-key": "old" }, [createDomText("old")]),
+  ]);
+  const document = createPatchHtmlDocument(() => [
+    createDomElement("div", { "data-render-key": "new" }, [createDomText("new")]),
+  ]);
+
+  const result = domPatch.patchHtml({ target, html: "<div>new</div>", document });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.reason, "patched");
+  assert.equal(result.target, target);
+  assert.deepEqual(target.childNodes.map((node) => node.getAttribute("data-render-key")), ["new"]);
+  assert.equal(childText(target.childNodes[0]), "new");
+  assert.equal(domPatch.patchHtml({ html: "<div></div>", document }).reason, "missing-target");
+  assert.equal(domPatch.patchHtml({ target, html: "<div></div>" }).reason, "missing-document");
+});
 
 function applyFixture(article, patchPlan, options = {}) {
   return domPatch.applyVisibleItemRefreshDomPatch({
