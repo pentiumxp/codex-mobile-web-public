@@ -1,3 +1,82 @@
+# 2026-06-26 - v457 thread detail action recognition deployed
+
+- Optimization phase:
+  - Phase A tenth slice. v456 moved thread-detail surface hydration
+    orchestration into `public/thread-detail-dom-patch.js`; v457 moves
+    conversation/thread-detail click action recognition into a dedicated
+    helper.
+- Root-cause boundary:
+  - Before v457, the `public/app.js` conversation click listener directly
+    owned selector priority and target classification for image preview,
+    copy controls, local-file previews, Mermaid controls, GitHub preview
+    toggles, approval answers, task-card actions/drafts, and server-response
+    controls.
+  - That made event recognition harder to test independently from business
+    execution and kept more UI state-machine policy inside the large app
+    coordinator.
+- Runtime change:
+  - Added `public/thread-detail-actions.js`.
+  - The helper exposes `previewableImageFromTarget`,
+    `resolveRichContentClickAction`, and `resolveThreadDetailClickAction`.
+  - The helper owns root containment, selector priority, previewable-image
+    detection, rich-content action classification, approval action
+    classification, task-card action/draft classification, and server-response
+    classification.
+  - `public/app.js` still owns event listener wiring and calls the existing
+    business functions (`openImagePreviewFromImage`,
+    `handleCopyButtonClick`, `openLocalFilePreview`, `handleMermaidAction`,
+    `toggleGitHubLinkPreview`, `answerApproval`, `replyTaskCard`,
+    `mutateThreadTaskCard`, `dismissThreadTaskCardDraft`,
+    `answerServerRequest`, and `declineServerRequest`).
+  - No duplicate filtering, hidden refresh fallback, synthesized content, or
+    task-card protocol behavior was added.
+  - `CLIENT_BUILD_ID` and service-worker cache are bumped to
+    `codex-mobile-shell-v457`; the new helper is registered in `index.html`,
+    the app-shell asset list, the service worker, server build identity, and
+    `npm run check`.
+- Docs/tests:
+  - `README.md` records the v457 architecture slice.
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` records action recognition as
+    outside `public/app.js`, with action execution and thread-tile action
+    recognition remaining as the next boundary.
+  - `docs/MODULES.md` maps `public/thread-detail-actions.js` and its focused
+    test.
+  - Added `test/thread-detail-actions.test.js` for previewable image
+    detection, GitHub-card exclusion, selector priority, root containment,
+    approval/task-card controls, drafts, server responses, and declines.
+  - Existing UI wiring tests now assert that the shell loads
+    `thread-detail-actions.js` and that conversation click handling depends
+    on `CodexThreadDetailActions`.
+- Validation:
+  - Full source `npm test` passed (`831` tests).
+  - Source `npm run check`, `npm run check:macos`, and `git diff --check`
+    passed.
+  - Production focused suite passed with `NODE_PATH` pointed at production
+    dependencies:
+    `test/thread-detail-actions.test.js`,
+    `test/conversation-render.test.js`,
+    `test/thread-task-card-route.test.js`,
+    `test/mobile-viewport.test.js`, `test/app-update.test.js`,
+    `test/plugin-voice-input.test.js`, and
+    `test/thread-tile-layout-ui.test.js` (`137` tests).
+- Commit/deploy:
+  - Runtime commit: `3d82197` (`refactor thread detail action recognition`).
+  - Deployed with Home AI central macOS script:
+    `deploy-macos-production.js --plugin codex-mobile --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --reason codex-mobile-thread-detail-actions-v457 --execute --json`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T174033Z-plugin-codex-mobile-web-codex-mobile-thread-detail-actions-v457`.
+  - Production `/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v457`,
+    `shellCacheName=codex-mobile-shell-v457`, and `version=0.1.11`.
+  - Source/prod SHA-256 parity confirmed for `server.js`, `package.json`,
+    changed public files, docs, and focused test files.
+- Follow-up:
+  - Phase A remains active. The next frontend boundary is action execution and
+    thread-tile action recognition, unless the next user-visible incident
+    points to a higher-priority Phase B cold-path or projection mismatch issue.
+  - This was deployed locally/production only. Do not push Public unless the
+    user explicitly requests it after production validation.
+
 # 2026-06-26 - v456 thread detail hydration orchestration deployed
 
 - Optimization phase:
