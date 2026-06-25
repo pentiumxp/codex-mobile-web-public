@@ -1,3 +1,33 @@
+# 2026-06-25 - GitHub SSA adoption
+
+- Source task card:
+  - Home AI requested adoption of the GitHub Shared Source Account contract for
+    this plugin workspace.
+  - Task card id: `ttc_014b0ae1d788cdb25a`.
+- Central references read:
+  - `/Users/hermes-dev/HermesMobileDev/app/docs/PLATFORM_CONTRACTS/github-shared-source-account-contract.md`
+  - `/Users/hermes-dev/HermesMobileDev/app/docs/RUNBOOKS/github-shared-source-account.md`
+- Remote inspection:
+  - Before: `origin` was `git@github.com:pentiumxp/codex-mobile-web.git`.
+  - `public` remains `git@github.com:pentiumxp/codex-mobile-web-public.git`
+    and was not changed.
+- SSA verification:
+  - Helper status reported local key/public key/SSH alias present with expected
+    bounded metadata.
+  - Smoke command for
+    `git@github.com-homeai-ssa:pentiumxp/codex-mobile-web.git` returned
+    `github_ssa_smoke_passed`.
+  - Do not store or print private key bodies, tokens, cookies, or launch
+    secrets in this workspace.
+- Change:
+  - `origin` has been set to
+    `git@github.com-homeai-ssa:pentiumxp/codex-mobile-web.git`.
+  - `docs/HOME_AI_PLATFORM_CONTRACT.md` now contains a short GitHub SSA pointer
+    to the central contract, runbook, helper, alias, and adopted source remote.
+- Validation and closure:
+  - Run local checks, commit, push through the SSA alias, and return a real
+    task card to Home AI in the same turn.
+
 # 2026-06-25 - v437 tile title menu and Composer target scope deployed
 
 - Scope:

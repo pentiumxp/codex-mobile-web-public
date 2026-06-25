@@ -41,6 +41,8 @@ mobile visual behavior, fallback behavior, or cross-plugin reference behavior:
 - `/Users/hermes-dev/HermesMobileDev/app/docs/RUNBOOKS/macos-production-access.md`
 - `/Users/hermes-dev/HermesMobileDev/app/docs/RUNBOOKS/mcp-tool-upgrade-closure.md`
 - `/Users/hermes-dev/HermesMobileDev/app/docs/RUNBOOKS/macos-ios-simulator-appium.md`
+- `/Users/hermes-dev/HermesMobileDev/app/docs/PLATFORM_CONTRACTS/github-shared-source-account-contract.md`
+- `/Users/hermes-dev/HermesMobileDev/app/docs/RUNBOOKS/github-shared-source-account.md`
 - `/Users/hermes-dev/HermesMobileDev/app/docs/IMPLEMENTATION_NOTES/reference-memory-graph-v1.md`
 - `/Users/hermes-dev/HermesMobileDev/app/docs/IMPLEMENTATION_NOTES/reference-memory-graph-harness-plan.md`
 
@@ -81,6 +83,26 @@ Mobile docs should link to that registry instead of copying entries.
 | `ios_keyboard_visual_harness_command` | `cd /Users/hermes-dev/HermesMobileDev/app && npm run ios:pwa:visual -- --scenario embedded-plugin-keyboard-composer --plugin-id codex-mobile --plugin-thread-id <thread-id> --debug-url http://127.0.0.1:19073/` |
 | `ios_side_chat_keyboard_visual_harness_command` | `cd /Users/hermes-dev/HermesMobileDev/app && npm run ios:pwa:visual -- --scenario embedded-plugin-side-chat-keyboard --plugin-id codex-mobile --plugin-thread-id <thread-id> --debug-url http://127.0.0.1:19073/` |
 | `ios_image_order_visual_smoke_command` | `node scripts/codex-mobile-image-order-visual-smoke.js --debug-url http://127.0.0.1:19073/ --thread-id <thread-id> --target-turn-id <turn-id> --json` |
+
+## GitHub Shared Source Account Pointer
+
+Codex Mobile Web adopts the Home AI GitHub Shared Source Account for local
+development-source Git operations only.
+
+- Central contract:
+  `/Users/hermes-dev/HermesMobileDev/app/docs/PLATFORM_CONTRACTS/github-shared-source-account-contract.md`
+- Runbook:
+  `/Users/hermes-dev/HermesMobileDev/app/docs/RUNBOOKS/github-shared-source-account.md`
+- Helper:
+  `/Users/hermes-dev/HermesMobileDev/app/scripts/github-shared-source-account.js`
+- SSH host alias: `github.com-homeai-ssa`
+- Writable source remote: `git@github.com-homeai-ssa:pentiumxp/codex-mobile-web.git`
+- Public source/install manifests must keep using HTTPS public URLs; the SSA
+  alias is not a runtime credential and must not be deployed or copied into
+  source.
+- Adoption status: `github_ssa_smoke_passed` for
+  `git@github.com-homeai-ssa:pentiumxp/codex-mobile-web.git` on 2026-06-25.
+- Private key material remains a local operator secret outside this repository.
 
 ## Required Local Validation
 
