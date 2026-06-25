@@ -1,3 +1,71 @@
+# 2026-06-25 - v450 local patch scroll completion policy deployed
+
+- Optimization phase:
+  - Phase A third slice. v448 moved refresh terminal render outcome ownership
+    into `thread-detail-render-plan`; v449 moved turn-level refresh DOM patch
+    action planning into `thread-detail-patch-plan`; v450 moves local patch
+    scroll completion policy out of `public/app.js`.
+- Root-cause boundary:
+  - Before v450, `completeLocalConversationDomUpdate` still directly decided
+    whether a local DOM patch should scroll to bottom or only update the
+    scroll-to-bottom affordance.
+  - That kept scroll-follow policy coupled to DOM patch completion in
+    `public/app.js`, which is one of the sensitive paths for long-turn
+    streaming, Composer focus stability, and projection-refresh churn.
+- Runtime change:
+  - `public/conversation-scroll.js` adds
+    `planLocalPatchScrollCompletion`, returning an explicit
+    `scroll-to-bottom` or `update-button` action with a bounded reason.
+  - `public/app.js` now computes user-reading, auto-scroll-hold, near-bottom,
+    submitted-message-follow, and viewport-follow inputs, then executes the
+    scroll helper plan instead of owning the policy inline.
+  - Behavior remains intentionally conservative:
+    user-reading-current-turn and auto-scroll-hold keep the viewport stable;
+    near-bottom, submitted-message-follow, and viewport-follow still allow
+    bottom-follow.
+  - `CLIENT_BUILD_ID` and service-worker cache are bumped to
+    `codex-mobile-shell-v450`.
+- Docs/tests:
+  - `README.md` records the v450 architecture slice.
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` records that local patch scroll
+    completion policy now lives in `conversation-scroll`.
+  - Focused tests cover helper policy order and app wiring away from the old
+    inline scroll condition.
+- Validation:
+  - Syntax checks passed for `public/app.js`, `public/conversation-scroll.js`,
+    and `public/sw.js`.
+  - Focused source suite passed:
+    `node --test test/conversation-scroll.test.js
+    test/turn-scroll-controls.test.js test/conversation-render.test.js
+    test/mobile-viewport.test.js test/thread-detail-patch-plan.test.js
+    test/thread-task-card-route.test.js test/thread-goal-service.test.js
+    test/app-update.test.js test/plugin-voice-input.test.js` (`156` tests).
+  - Full `npm test` passed (`808` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Commit/deploy:
+  - Runtime commit: `06db5de` (`refactor local patch scroll completion policy`).
+  - Deployed with Home AI central macOS script:
+    `deploy-macos-production.js --plugin codex-mobile --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --reason codex-mobile-local-patch-scroll-policy-v450 --execute --json`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T163908Z-plugin-codex-mobile-web-codex-mobile-local-patch-scroll-policy-v450`.
+  - Production `/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v450`,
+    `shellCacheName=codex-mobile-shell-v450`, `version=0.1.11`, and active
+    profile `previous`.
+  - Source/prod SHA-256 parity confirmed for changed runtime/test/doc files.
+  - Production focused suite passed with `NODE_PATH` pointed at production
+    dependencies (`156` tests).
+- Production observation:
+  - Bounded log-tail aggregation after deploy found no v450
+    `thread_refresh_ms` client events yet; the recent sample contained
+    `102` v447 events and `1250` events with missing client build id.
+  - This is not evidence of v450 failure; it means refreshed v450 clients have
+    not yet produced that metric in the sampled tail.
+- Follow-up:
+  - Continue Phase A with remaining DOM ownership boundaries: node lookup,
+    node creation, patch/insert execution, hydration ownership, and then
+    performance/cold-session instrumentation.
+
 # 2026-06-25 - v449 refresh DOM patch application plan deployed
 
 - Optimization phase:
