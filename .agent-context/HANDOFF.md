@@ -1,8 +1,11 @@
-# 2026-06-25 - Movie completed-turn operation projection fix in progress
+# 2026-06-25 - Movie completed/live operation projection fix deployed
 
 - Scope:
-  - Investigating and repairing Movie thread detail projection after v428 deploy.
+  - Implemented, validated, committed, and deployed to Mac production after the
+    v428 tile-mode composer fix.
   - Not pushed Public.
+  - Code commit:
+    - `084b79e fix: restore rollout operations for completed turns`
 - Trigger:
   - User reported a newly-created `Movie` workspace/thread showed only user
     messages and the final system/assistant receipt; intermediate process items
@@ -29,14 +32,33 @@
   - Regression test added in
     `test/thread-turn-compaction-policy-service.test.js`.
   - README records the Movie projection root cause and server-only fix.
-- Validation so far:
+- Validation before deploy:
   - `node --check server.js` passed.
   - `node --test test/thread-turn-compaction-policy-service.test.js test/thread-detail-projection-service.test.js test/thread-detail-projection-v4-service.test.js test/conversation-render.test.js`
     passed (`115` tests).
   - `git diff --check` passed.
-- Next:
-  - Commit, deploy through Home AI central deploy script, then query the Movie
-    thread detail API again to confirm completed turns include operation items.
+- Production deploy:
+  - Central Home AI deploy script used from `/Users/hermes-dev/HermesMobileDev/app`:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart-label com.hermesmobile.plugin.codex-mobile --health-url http://127.0.0.1:8787/api/public-config --execute --json`
+  - Source ref deployed:
+    `084b79e2f5e9`.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T025336Z-plugin-codex-mobile-web-manual`.
+  - Production `/api/public-config` stayed on `0.1.11|codex-mobile-shell-v428`
+    / `codex-mobile-shell-v428`; this was server-only and did not require a
+    PWA cache bump.
+  - Source/production `server.js` short SHA-256 matched:
+    `9b32557c1416f9fb`.
+  - Central deployment validation passed; non-strict auth-profile audit had
+    zero blocking issues.
+- Post-deploy Movie verification:
+  - Movie thread `019efca1-ea69-7292-87b7-025ba023ca87` detail still returns
+    `projection-v4-dynamic`.
+  - The current active turn now includes rollout-derived intermediate operation
+    items; sampled API result showed `38` `commandExecution` items.
+  - Older completed turns remain folded unless selected by
+    `operationDetailTurnIndexes()`. That is the existing history compaction
+    policy, not runtime data loss.
 
 # 2026-06-25 - v428 tile-mode composer @ menu deployed
 

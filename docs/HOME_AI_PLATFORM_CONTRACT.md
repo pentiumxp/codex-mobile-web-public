@@ -206,24 +206,28 @@ Minimum closure for Codex Mobile production changes:
   `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
 - LaunchDaemon: `system/com.hermesmobile.plugin.codex-mobile`.
 - Loopback production URL: `http://127.0.0.1:8787`.
-- Current verified shell after tile-mode composer intent-menu deployment:
+- Current verified shell after tile-mode composer intent-menu and Movie
+  operation-projection deployment:
   `0.1.11|codex-mobile-shell-v428`.
 - Source ref deployed for code change:
-  `14a73bd008cd` with clean source worktree.
+  `084b79e2f5e9` with clean source worktree.
 - Backup path:
-  `/Users/hermes-host/HermesMobile/backups/deploy/20260625T024820Z-plugin-codex-mobile-web-manual`.
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260625T025336Z-plugin-codex-mobile-web-manual`.
 - Production smoke confirmed `/api/public-config` reports
   `clientBuildId=0.1.11|codex-mobile-shell-v428`,
   `shellCacheName=codex-mobile-shell-v428`, `version=0.1.11`,
   `authRequired=true`, production `workspacePath` above, and
   `reasoningEffortOptions=["low","medium","high","xhigh"]`.
 - Source/production short SHA-256 samples matched after deploy:
+  `server.js` `9b32557c1416f9fb`,
   `public/app.js` `0a05fc26e2feac68`,
   `public/styles.css` `28af943f0f2f0b20`, and
   `public/sw.js` `19339bfbe434fdf5`.
-- Focused validation before deploy included syntax checks for `public/app.js`
-  and `public/sw.js`, task-card route, mobile viewport, goal service,
-  composer quota, and thread tile UI tests (`34` tests), plus
+- Focused validation before deploy included syntax checks for `server.js`,
+  `public/app.js`, and `public/sw.js`; task-card route, mobile viewport, goal
+  service, composer quota, thread tile UI, thread turn compaction, thread detail
+  projection, v4 projection, and conversation render tests (`115` tests in the
+  final server-focused suite; earlier v428 UI suite passed `34` tests); plus
   `git diff --check`.
 - Deployment validation also ran the central production file-hash, LaunchDaemon,
   public-config, and non-strict auth-profile audit checks. The auth-profile
