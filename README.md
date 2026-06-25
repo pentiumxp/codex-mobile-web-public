@@ -16,6 +16,19 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-25 v428 平铺模式 @ 目标菜单可见性修复
+
+v428 修复平铺窗口下在 Composer 输入 `@` 时目标任务/任务卡片菜单看不到的
+问题。根因是 `@` 菜单虽然已经是页面级 fixed overlay，但仍使用自己单独的
+`bottom` / `width` 计算；在平铺、键盘、宽屏和 embedded 组合布局下，这套
+计算可能把菜单定位到可视区域之外。
+
+当前实现把 `@` 菜单改为复用 Composer 模型/推理强度/权限菜单已有的
+`fitComposerPopupToAnchor()` 视口内定位逻辑，并统一使用
+`--composer-popup-*` CSS 变量。这样 `@` 菜单仍锚定共享 Composer 输入框，
+但会按当前 visual viewport 夹紧在可见区域内。PWA shell cache 升级到
+`codex-mobile-shell-v428`。
+
 ## 2026-06-24 任务卡手动回执工具链修复
 
 本次修复针对 Home AI 审计/修复闭环中发现的问题：目标实现线程完成任务卡

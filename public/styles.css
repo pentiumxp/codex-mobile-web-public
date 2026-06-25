@@ -7047,11 +7047,11 @@ html.keyboard-open .composer {
 
 .composer-intent-menu {
   position: fixed;
-  left: var(--composer-intent-left, 12px);
-  bottom: var(--composer-intent-bottom, calc(var(--composer-height, 92px) + 10px));
+  left: var(--composer-popup-left, 12px);
+  bottom: var(--composer-popup-bottom, calc(var(--composer-height, 92px) + 10px));
   z-index: 130;
-  width: var(--composer-intent-width, min(420px, calc(100vw - 24px)));
-  max-height: min(42vh, 340px);
+  width: var(--composer-popup-width, min(420px, calc(100vw - 24px)));
+  max-height: min(var(--composer-popup-max-height, 42vh), 340px);
   overscroll-behavior: contain;
   backdrop-filter: blur(16px);
 }

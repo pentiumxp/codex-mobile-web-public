@@ -463,7 +463,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v427";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v428";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -19028,15 +19028,7 @@ function positionComposerIntentMenu() {
   const menu = $("composerIntentMenu");
   const anchor = $("messageInput") || $("composer");
   if (!menu || menu.hidden || !anchor) return;
-  const rect = anchor.getBoundingClientRect();
-  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 390;
-  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 844;
-  const left = Math.max(8, Math.round(rect.left));
-  const width = Math.max(280, Math.min(420, viewportWidth - left - 8, Math.round(rect.width || 320)));
-  const bottom = Math.max(8, Math.round(viewportHeight - rect.top + 8));
-  menu.style.setProperty("--composer-intent-left", `${left}px`);
-  menu.style.setProperty("--composer-intent-width", `${width}px`);
-  menu.style.setProperty("--composer-intent-bottom", `${bottom}px`);
+  fitComposerPopupToAnchor(menu, anchor, { minWidth: 280, maxWidth: 420 });
 }
 
 function updateComposerIntentMenu() {
