@@ -10564,3 +10564,80 @@ The previous full handoff was archived and should be opened only when old proven
   - Return event payload tests and implementation confirm no card body, prompt,
     completion, upload bytes, screenshot, cookie, launch token, access key,
     provider payload, database row, or long log is sent.
+
+## 2026-06-26 - v493 thread-detail cold-path diagnostics deployed
+
+- Latest code commit:
+  - `627e46c expand thread detail cold path diagnostics`
+- v493 change:
+  - `adapters/thread-detail-performance-service.js` now includes bounded
+    thread-detail cold-path decision fields in
+    `mobileDiagnostics.threadDetailTimings`: `readDecision`,
+    `projectionState`, `projectionInputAvailable`, `projectionSource`,
+    `projectionVersion`, `projectionAgeMs`, `projectionSeedStatus`, and
+    `projectionSeedSource`.
+  - `adapters/thread-detail-read-orchestration-service.js` now fills those
+    fields for projection hits, projection misses, unavailable projection input,
+    summary-sourced large-read decisions, bounded `turns-list-large`, full
+    `thread/read`, fallback `thread/turns/list`, summary fallback, and
+    projection seeding from bounded turns-list/full read.
+  - Static build/cache: `0.1.11|codex-mobile-shell-v493` /
+    `codex-mobile-shell-v493`.
+- Root-cause boundary:
+  - Symptom/risk: v492 had unified frontend first-paint/refresh/full-ready
+    evidence, but server detail timings still could not fully explain whether a
+    slow large-session first paint was caused by projection input being
+    unavailable, projection cache miss, bounded turns-list protection, full
+    `thread/read`, or projection seed failure.
+  - Failing layer: server-side thread-detail cold-path diagnostic field
+    ownership.
+  - Invariant: thread-detail timing diagnostics may contain bounded read
+    decisions, projection cache metadata, seed status, counts, and durations
+    only; they must not contain message bodies, task-card bodies, uploads,
+    screenshots, private paths, cookies, tokens, provider payloads, database
+    rows, or long logs.
+  - Classification: root-cause evidence and architecture cleanup; no fallback,
+    forced refresh, hidden duplicate suppression, or UI-only mitigation added.
+- Validation:
+  - Source focused suite passed:
+    `test/thread-detail-performance-service.test.js`,
+    `test/thread-detail-read-orchestration-service.test.js`,
+    `test/thread-performance-metrics.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-goal-service.test.js`, and
+    `test/thread-task-card-route.test.js` (`46` tests).
+  - Full source `npm test` passed (`913` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Production deploy:
+  - Deployed through Home AI central macOS plugin deploy path with reason
+    `codex-mobile-thread-detail-cold-path-diagnostics-v493`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T231001Z-plugin-codex-mobile-web-codex-mobile-thread-detail-cold-path-diagnostics-v493`
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v493`,
+    `shellCacheName=codex-mobile-shell-v493`, `version=0.1.11`,
+    `authRequired=true`.
+  - Source/production SHA parity verified for:
+    `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`,
+    `docs/MODULES.md`,
+    `adapters/thread-detail-performance-service.js`,
+    `adapters/thread-detail-read-orchestration-service.js`,
+    `public/app.js`, `public/sw.js`, `test/mobile-viewport.test.js`,
+    `test/thread-detail-performance-service.test.js`,
+    `test/thread-detail-read-orchestration-service.test.js`,
+    `test/thread-goal-service.test.js`, and
+    `test/thread-task-card-route.test.js`.
+  - Production focused suite passed (`46` tests).
+- Browser/visual note:
+  - Browser automation remains unavailable in the current tool list. v493
+    closure evidence is source focused tests, full source tests, production
+    focused tests, production public-config readback, and source/prod SHA
+    parity.
+- Release:
+  - Public was not pushed for v493.
+- Next suggested slice:
+  - Use v493 `readDecision` / `projectionState` / `projectionSeedStatus`
+    evidence from real large-session opens to decide the next Phase B repair:
+    projection cache seeding/persistence, summary rollout-size hydration, or
+    residual app-server full-read fallback. If live evidence points elsewhere,
+    pivot to the matching Phase B subpath rather than changing cache invalidation
+    speculatively.
