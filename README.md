@@ -16,6 +16,31 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v459 Thread Tile State Policy
+
+v459 开始推进系统级优化目标里的 Phase C：把平铺/分屏模式从 `public/app.js`
+里的临时 UI 分支，继续拆成可测试的 pane-state 架构边界。本轮不是完整分屏重构，
+而是先把最容易引发窗口换位、设置保存不一致、active pane 错绑的纯状态规则迁出。
+
+本次新增 `public/thread-tile-state.js`：
+
+- 统一 pane count 归一化和用户最大 pane 上限。
+- 统一 pinned thread id 去重、截断和稳定顺序。
+- 统一 split pair 的移除、插入、layout-policy 归一化。
+- 统一 active/selected pane fallback 规则，避免 composer 和工具栏绑定到错误窗口。
+- 统一 `thread-display` settings 的 payload 构造和 server settings 应用。
+- 统一 active thread ids 同步回 pinned slots 的规则，保留用户手动固定的窗口顺序。
+
+`public/app.js` 现在只保留兼容 wrapper 和真实副作用：localStorage mirror、render、
+server settings 保存、pane detail 加载、DOM 更新仍在 app 层执行。也就是说，这次
+没有通过前端隐藏重复或强制刷新来掩盖问题，只是把状态所有权向纯 helper 收敛。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v459`。
+`test/thread-tile-state.test.js` 覆盖 pane count、pinned ids、split pairs、selected pane、
+display settings payload/apply 和 active-id sync；既有 app-shell tests 约束
+`thread-tile-state.js` 必须进入 `index.html`、service worker、client asset list 和
+server public-config asset identity。
+
 ## 2026-06-26 v458 Thread Tile Action Recognition
 
 v458 接续 v457，继续 Phase A。v457 已经把单线程 conversation/thread detail
