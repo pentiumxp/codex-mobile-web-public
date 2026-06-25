@@ -36,8 +36,11 @@
     `14a73bd008cd`.
   - Production target:
     `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
-  - First backup path reported by deployment:
-    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T024619Z-plugin-codex-mobile-web-manual`.
+  - Latest backup path reported by the final deployment:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T024820Z-plugin-codex-mobile-web-manual`.
+  - Note: the deploy retention policy pruned the earlier same-day
+    `20260625T024619Z-plugin-codex-mobile-web-manual` backup during the final
+    evidence-sync deployment.
   - Post-deploy `/api/public-config` returned `version=0.1.11`,
     `clientBuildId=0.1.11|codex-mobile-shell-v428`,
     `shellCacheName=codex-mobile-shell-v428`, `authRequired=true`, and

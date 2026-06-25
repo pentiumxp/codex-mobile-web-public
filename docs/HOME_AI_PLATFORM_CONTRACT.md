@@ -211,7 +211,7 @@ Minimum closure for Codex Mobile production changes:
 - Source ref deployed for code change:
   `14a73bd008cd` with clean source worktree.
 - Backup path:
-  `/Users/hermes-host/HermesMobile/backups/deploy/20260625T024619Z-plugin-codex-mobile-web-manual`.
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260625T024820Z-plugin-codex-mobile-web-manual`.
 - Production smoke confirmed `/api/public-config` reports
   `clientBuildId=0.1.11|codex-mobile-shell-v428`,
   `shellCacheName=codex-mobile-shell-v428`, `version=0.1.11`,
