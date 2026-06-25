@@ -158,7 +158,11 @@ patch, scheduled full render, or board render while
 `public/app.js` keeps DOM,
 rendering, network save, timers, API reads,
 AbortController ownership, draft restore, and other
-side effects. App code can no
+side effects. Detail-load queue and stale-controller abort planning now also
+lives there: active pane ids, controller ids, loading ids, max concurrent load
+slots, abort ids, load ids, and deferred ids are computed as one bounded plan
+while `public/app.js` keeps real AbortController aborts and network execution.
+App code can no
 longer fall through from tile mode into the
 single-thread patch path without an explicit policy decision, fall through from
 a successful tile pane patch into full conversation render, silently choose
@@ -189,8 +193,8 @@ Target:
   switch-menu option/control planning is also outside app.js;
   pane slot mutation side-effect planning including pane count/close execution
   is also outside app.js; detail-load lifecycle side-effect planning is also
-  outside app.js;
-  command detail panels, split sizing, max concurrent detail reads, and
+  outside app.js; detail-load queue/abort planning is also outside app.js;
+  command detail panels, split sizing, runtime tuning of max concurrent detail reads, and
   per-pane draft/runtime ownership remain the next boundary.
 - Keep `public/app.js` responsible for DOM wiring, patch application, and event
   binding only.

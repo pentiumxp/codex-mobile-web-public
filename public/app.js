@@ -503,7 +503,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v471";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v472";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -703,6 +703,7 @@ const THREAD_TILE_SETTINGS_SAVE_DEBOUNCE_MS = 500;
 const THREAD_TILE_USER_MAX_PANES = Math.max(1, Math.floor(Number(
   threadTileLayoutPolicy.DEFAULT_USER_MAX_PANES || threadTileLayoutPolicy.DEFAULT_MAX_PANES || 6,
 )) || 6);
+const THREAD_TILE_DETAIL_LOAD_MAX_CONCURRENT = THREAD_TILE_USER_MAX_PANES;
 const THEME_VALUES = new Set(["system", "dark", "light"]);
 const FONT_SIZE_VALUES = new Set(["small", "default", "large", "xlarge", "xxlarge"]);
 const MENU_OVERLAY_MEDIA = "(max-width: 1180px), (pointer: coarse) and (max-width: 1400px)";
@@ -12695,17 +12696,34 @@ function applyThreadTileDetailLoadFinallyEffects(effect) {
   return true;
 }
 
-function ensureThreadTileDetails(ids = []) {
-  if (!state.threadTileMode) return;
-  syncThreadTileActivePaneState(ids);
-  const activeIds = new Set(state.threadTileActiveIds);
-  for (const [id, controller] of Array.from(state.threadTileControllers.entries())) {
-    if (activeIds.has(id)) continue;
-    controller.abort();
+function applyThreadTileDetailLoadQueuePlan(plan) {
+  if (!plan || plan.action !== "detail-load-queue") return false;
+  for (const id of Array.isArray(plan.abortIds) ? plan.abortIds : []) {
+    const controller = state.threadTileControllers.get(id);
+    if (controller && typeof controller.abort === "function") {
+      try {
+        controller.abort();
+      } catch (_) {}
+    }
     state.threadTileControllers.delete(id);
     state.threadTileLoadingIds.delete(id);
   }
-  for (const id of activeIds) loadThreadTileDetail(id).catch(showError);
+  for (const id of Array.isArray(plan.loadIds) ? plan.loadIds : []) {
+    loadThreadTileDetail(id).catch(showError);
+  }
+  return true;
+}
+
+function ensureThreadTileDetails(ids = []) {
+  if (!state.threadTileMode) return;
+  syncThreadTileActivePaneState(ids);
+  applyThreadTileDetailLoadQueuePlan(threadTileStatePolicy.detailLoadQueuePlan({
+    enabled: state.threadTileMode,
+    activeIds: state.threadTileActiveIds,
+    controllerIds: Array.from(state.threadTileControllers.keys()),
+    loadingIds: Array.from(state.threadTileLoadingIds),
+    maxConcurrentLoads: THREAD_TILE_DETAIL_LOAD_MAX_CONCURRENT,
+  }));
   scheduleThreadTileRefresh();
 }
 

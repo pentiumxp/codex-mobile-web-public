@@ -764,6 +764,57 @@
     });
   }
 
+  function detailLoadQueuePlan(input = {}) {
+    const activeIds = uniqueIds(input.activeIds || input.ids || []);
+    const controllerIds = uniqueIds(input.controllerIds || []);
+    const loadingIds = uniqueIds(input.loadingIds || []);
+    if (input.enabled !== true) {
+      return {
+        action: "skip",
+        reason: "disabled",
+        activeIds,
+        controllerIds,
+        loadingIds,
+        abortIds: [],
+        loadIds: [],
+        deferredIds: [],
+        busyIds: [],
+        maxConcurrentLoads: 0,
+        availableSlots: 0,
+      };
+    }
+
+    const activeSet = new Set(activeIds);
+    const controllerSet = new Set(controllerIds);
+    const loadingSet = new Set(loadingIds);
+    const abortIds = controllerIds.filter((id) => !activeSet.has(id));
+    const busyIds = uniqueIds([
+      ...controllerIds.filter((id) => activeSet.has(id)),
+      ...loadingIds.filter((id) => activeSet.has(id)),
+    ]);
+    const parsedMax = Math.floor(Number(input.maxConcurrentLoads));
+    const maxConcurrentLoads = Number.isFinite(parsedMax) && parsedMax > 0
+      ? parsedMax
+      : Math.max(1, activeIds.length || DEFAULT_USER_MAX_PANES);
+    const availableSlots = Math.max(0, maxConcurrentLoads - busyIds.length);
+    const candidates = activeIds.filter((id) => !controllerSet.has(id) && !loadingSet.has(id));
+    const loadIds = candidates.slice(0, availableSlots);
+    const deferredIds = candidates.slice(availableSlots);
+    return {
+      action: "detail-load-queue",
+      reason: !activeIds.length ? "no-active-panes" : (deferredIds.length ? "max-concurrency" : "queue"),
+      activeIds,
+      controllerIds,
+      loadingIds,
+      abortIds,
+      loadIds,
+      deferredIds,
+      busyIds,
+      maxConcurrentLoads,
+      availableSlots,
+    };
+  }
+
   function detailLoadPlan(input = {}) {
     const id = text(input.threadId).trim();
     if (!id) return { action: "skip", reason: "missing-id", id: "" };
@@ -878,6 +929,7 @@
     detailLoadPlan,
     detailLoadErrorEffectsPlan,
     detailLoadFinallyEffectsPlan,
+    detailLoadQueuePlan,
     detailLoadStartEffectsPlan,
     detailLoadSuccessEffectsPlan,
     refreshDelayMs,

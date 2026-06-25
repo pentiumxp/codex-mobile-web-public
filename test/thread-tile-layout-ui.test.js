@@ -139,9 +139,24 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(syncActiveBody, /if \(plan\.settingsChanged\) scheduleThreadDisplaySettingsSave\(\)/);
   const ensureBody = functionBody(appJs, "ensureThreadTileDetails");
   assert.match(ensureBody, /syncThreadTileActivePaneState\(ids\)/);
+  assert.match(ensureBody, /threadTileStatePolicy\.detailLoadQueuePlan/);
+  assert.match(ensureBody, /controllerIds: Array\.from\(state\.threadTileControllers\.keys\(\)\)/);
+  assert.match(ensureBody, /loadingIds: Array\.from\(state\.threadTileLoadingIds\)/);
+  assert.match(ensureBody, /maxConcurrentLoads: THREAD_TILE_DETAIL_LOAD_MAX_CONCURRENT/);
+  assert.match(ensureBody, /applyThreadTileDetailLoadQueuePlan/);
   assert.doesNotMatch(ensureBody, /syncThreadTilePinnedIdsFromActiveIds/);
   assert.doesNotMatch(ensureBody, /syncThreadTileSelectedThread/);
+  assert.doesNotMatch(ensureBody, /state\.threadTileControllers\.delete/);
   assert.match(ensureBody, /scheduleThreadTileRefresh\(\)/);
+
+  const queuePlanBody = functionBody(appJs, "applyThreadTileDetailLoadQueuePlan");
+  assert.match(queuePlanBody, /plan\.action !== "detail-load-queue"/);
+  assert.match(queuePlanBody, /plan\.abortIds/);
+  assert.match(queuePlanBody, /controller\.abort\(\)/);
+  assert.match(queuePlanBody, /state\.threadTileControllers\.delete\(id\)/);
+  assert.match(queuePlanBody, /state\.threadTileLoadingIds\.delete\(id\)/);
+  assert.match(queuePlanBody, /plan\.loadIds/);
+  assert.match(queuePlanBody, /loadThreadTileDetail\(id\)\.catch\(showError\)/);
 
   const candidateBody = functionBody(appJs, "threadTileCandidateIds");
   assert.match(candidateBody, /threadTileStatePolicy\.candidatePaneIdsPlan/);

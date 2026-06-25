@@ -715,6 +715,66 @@ test("thread tile state chooses pane refresh targets without app globals", () =>
   }), ["a", "b"]);
 });
 
+test("thread tile state plans detail-load queue and stale controller aborts", () => {
+  assert.deepEqual(state.detailLoadQueuePlan({
+    enabled: false,
+    activeIds: ["a"],
+    controllerIds: ["old"],
+    loadingIds: ["a"],
+  }), {
+    action: "skip",
+    reason: "disabled",
+    activeIds: ["a"],
+    controllerIds: ["old"],
+    loadingIds: ["a"],
+    abortIds: [],
+    loadIds: [],
+    deferredIds: [],
+    busyIds: [],
+    maxConcurrentLoads: 0,
+    availableSlots: 0,
+  });
+
+  assert.deepEqual(state.detailLoadQueuePlan({
+    enabled: true,
+    activeIds: ["a", "b", "c", "d", "a"],
+    controllerIds: ["a", "stale"],
+    loadingIds: ["b"],
+    maxConcurrentLoads: 3,
+  }), {
+    action: "detail-load-queue",
+    reason: "max-concurrency",
+    activeIds: ["a", "b", "c", "d"],
+    controllerIds: ["a", "stale"],
+    loadingIds: ["b"],
+    abortIds: ["stale"],
+    loadIds: ["c"],
+    deferredIds: ["d"],
+    busyIds: ["a", "b"],
+    maxConcurrentLoads: 3,
+    availableSlots: 1,
+  });
+
+  assert.deepEqual(state.detailLoadQueuePlan({
+    enabled: true,
+    activeIds: [],
+    controllerIds: ["stale"],
+    maxConcurrentLoads: 2,
+  }), {
+    action: "detail-load-queue",
+    reason: "no-active-panes",
+    activeIds: [],
+    controllerIds: ["stale"],
+    loadingIds: [],
+    abortIds: ["stale"],
+    loadIds: [],
+    deferredIds: [],
+    busyIds: [],
+    maxConcurrentLoads: 2,
+    availableSlots: 2,
+  });
+});
+
 test("thread tile state plans detail loads and skips stale work", () => {
   assert.deepEqual(state.detailLoadPlan({ threadId: "" }), {
     action: "skip",

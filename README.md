@@ -16,6 +16,29 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v472 Thread Tile Detail Load Queue Policy
+
+v472 继续 Phase C，把平铺窗口 detail load 的队列选择和 stale controller 清理从
+`public/app.js` 抽到 `public/thread-tile-state.js` 的纯策略。此前 v471 已经把单个
+detail load 的 start/success/error/finally 生命周期做成 effect plan，但
+`ensureThreadTileDetails` 仍直接遍历 controller、abort 不再 active 的 pane，并对所有
+active pane 逐个 fan-out 调用 `loadThreadTileDetail`。
+
+本次新增 `detailLoadQueuePlan`：
+
+- 输出不再 active 的 `abortIds`，由 app 层只负责真实 `AbortController.abort()` 和
+  Map/Set 清理。
+- 输出可启动的 `loadIds`，避免 UI 编排层自己决定 active pane fan-out。
+- 输出因 `maxConcurrentLoads` 被推迟的 `deferredIds`，先把未来并发上限和大 session
+  读队列控制变成可测试策略。
+
+运行时当前把 `THREAD_TILE_DETAIL_LOAD_MAX_CONCURRENT` 设为用户 pane 上限，保持现有
+可见行为，不突然降低多窗口刷新速度；策略测试已经覆盖低并发上限下的 defer 形态。
+这个切片不改变 server projection、thread detail API、任务卡、诊断上报、pane layout 或
+视觉设计。`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v472`。
+`test/thread-tile-state.test.js` 覆盖 queue planning；`test/thread-tile-layout-ui.test.js`
+约束 app 层必须通过 `detailLoadQueuePlan` / `applyThreadTileDetailLoadQueuePlan`。
+
 ## 2026-06-26 v471 Thread Tile Detail Load Lifecycle Policy
 
 v471 继续 Phase C，把平铺窗口 detail load 的生命周期副作用迁到
