@@ -10641,3 +10641,90 @@ The previous full handoff was archived and should be opened only when old proven
     residual app-server full-read fallback. If live evidence points elsewhere,
     pivot to the matching Phase B subpath rather than changing cache invalidation
     speculatively.
+
+## 2026-06-26 - v494 partial recent projection cache deployed
+
+- Latest code commits:
+  - `155c0c7 cache recent thread detail projections safely`
+  - `4b40bf0 preserve partial projections through v4 cache`
+  - `dabb8e6 allow partial cache after stale full projection`
+- v494 change:
+  - `mode=recent` projection misses that successfully return
+    `turns-list-initial` now seed a memory-only partial projection with
+    `partial:true` / `partialKind:recent-window`.
+  - Later `mode=recent` reads pass `allowPartial` and can return
+    `projection-v4-partial` / `projection-partial` without another app-server
+    turns-list read.
+  - Default projection `get()` still rejects partial cache, full/detail paths do
+    not use it, partial entries are not persisted to disk, and reusable full
+    projection cache is not overwritten.
+  - The production-default v4 projection wrapper now forwards seed/get partial
+    options to the base projection cache. This was required because the first
+    production probe showed v4 was turning a recent window into full
+    `projection-v4-cache`.
+  - Stale full cache whose signature no longer matches no longer blocks
+    `recent-window` partial seed. This was required because the second
+    production probe showed `full-cache-exists` kept large sessions on repeated
+    `turns-list-initial`.
+  - Static build/cache: `0.1.11|codex-mobile-shell-v494` /
+    `codex-mobile-shell-v494`.
+- Root-cause boundary:
+  - Symptom/risk: v493 evidence showed thread-list warm cache was working after
+    the first process-lifetime baseline, but several large `mode=recent`
+    details repeatedly returned `turns-list-initial` with projection misses.
+  - Failing layer: server thread-detail recent-window warm path, including v4
+    projection wrapper option propagation and stale-full-cache protection.
+  - Invariant: a partial projection represents only the bounded recent window;
+    it must be opt-in, memory-only, unable to overwrite reusable full cache, and
+    clearly reported as `projection-v4-partial`/`source=partial` when used.
+  - Classification: root-cause Phase B performance repair; no frontend duplicate
+    hiding, forced refresh, or silent fallback was added.
+- Validation:
+  - Source focused suite passed:
+    `test/thread-detail-projection-service.test.js`,
+    `test/thread-detail-projection-v4-service.test.js`,
+    `test/thread-detail-projection-result-service.test.js`,
+    `test/thread-detail-performance-service.test.js`,
+    `test/thread-detail-read-orchestration-service.test.js`,
+    `test/thread-performance-metrics.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-goal-service.test.js`, and
+    `test/thread-task-card-route.test.js` (`74` tests).
+  - Full source `npm test` passed (`921` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Production deploy:
+  - Final deploy reason:
+    `codex-mobile-partial-recent-projection-v494-stale-full-fix`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T233044Z-plugin-codex-mobile-web-codex-mobile-partial-recent-projection-v494-stale-full-fix`
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v494`,
+    `shellCacheName=codex-mobile-shell-v494`, `version=0.1.11`,
+    `authRequired=true`.
+  - Source/production SHA parity verified for README/docs, projection services,
+    orchestration/performance services, server/static shell files, and focused
+    tests touched by v494.
+  - Production focused suite passed (`74` tests).
+- Production observation:
+  - After final deploy, a list cold baseline showed one `miss-rebuild`; repeated
+    list reads returned `fallbackCacheDecision=hit`, `fallbackMs=0/1`, and
+    build count/number stayed `1`.
+  - Six large-thread samples were checked using bounded ids/hashes only. Four
+    large threads first returned `turns-list-initial` with
+    `projectionSeedStatus=seeded-partial`, `threadReadMs=0`; their second reads
+    returned `projection-v4-partial`, `readDecision=projection-partial-hit`,
+    `projectionSource=partial`, `partialKind=recent-window`,
+    `turnsListInitialMs=0`, `threadReadMs=0`. Two other large threads already
+    had warm dynamic projection hits.
+- Privacy:
+  - Evidence recorded only bounded ids/hashes, statuses, modes, counts,
+    durations, and cache decisions. No message bodies, task-card bodies,
+    uploads, private paths, cookies, access keys, provider payloads, database
+    rows, screenshots, or long logs were copied into docs or handoff.
+- Release:
+  - Public was not pushed for v494.
+- Next suggested slice:
+  - Continue Phase B by separating stale/invalid full projection disk entries
+    from healthy full projection persistence more explicitly, or move to Phase A
+    client render/patch ownership if new projection mismatch diagnostics appear.
+    Use production `readDecision`, `projectionSource`, and client render
+    diagnostics before changing cache invalidation again.
