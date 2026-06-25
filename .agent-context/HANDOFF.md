@@ -1,3 +1,27 @@
+# 2026-06-25 - v434 Public sync verified
+
+- Scope:
+  - User requested `推送public`.
+  - No new source changes were published beyond the already deployed v434
+    composer placeholder / tile updates.
+- Public status:
+  - `public/main` was already at
+    `efd5c13 release: publish v434 composer and tiling updates`.
+  - `git push public refs/remotes/public/main:refs/heads/main` returned
+    `Everything up-to-date`.
+  - Excluding `.agent-context`, `git diff --stat remotes/public/main..main`
+    was empty.
+  - Public tree scan found no `.agent-context`, uploads, logs, generated-images,
+    or other private runtime directories.
+- Private history hygiene:
+  - Created a private merge commit with `-s ours` so `remotes/public/main` is
+    again an ancestor of local `main`.
+  - `git merge-base --is-ancestor remotes/public/main main` returned `0`.
+- Current caveat:
+  - `public/thread-detail-merge-state.js` remains an untracked local file from
+    the next architecture-optimization slice. It is not wired into the app shell
+    and was not included in the v434 public sync.
+
 # 2026-06-25 - v434 tile composer target placeholder deployed
 
 - Scope:
