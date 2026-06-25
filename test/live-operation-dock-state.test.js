@@ -167,3 +167,61 @@ test("live operation dock state plans operation card content without DOM or HTML
     classTokens: ["item", "live-operation", "completed", "commandExecution"],
   });
 });
+
+test("live operation dock state renders final operation card HTML through injected escaping", () => {
+  const html = dock.operationCardHtml({
+    itemId: "cmd-<1>",
+    type: "commandExecution",
+    status: "running",
+    title: "Command <run>",
+    detail: "npm <test>",
+    durationText: "00:00:05",
+    durationAttrs: "data-started-ms=\"1\" data-completed-ms=\"\" data-duration-ms=\"\"",
+    renderKey: "op-<key>",
+    escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    },
+  });
+
+  assert.match(html, /<section class="item live-operation commandExecution" data-item="cmd-&lt;1&gt;" data-render-key="op-&lt;key&gt;">/);
+  assert.match(html, /<span class="operation-title">Command &lt;run&gt;<\/span><span class="operation-status">running<\/span>/);
+  assert.match(html, /<time class="operation-duration" data-started-ms="1" data-completed-ms="" data-duration-ms="" title="Elapsed 00:00:05">00:00:05<\/time>/);
+  assert.match(html, /<span class="operation-detail">npm &lt;test&gt;<\/span>/);
+});
+
+test("live operation dock state renders empty detail operation card without DOM access", () => {
+  const html = dock.operationCardHtml({
+    itemId: "cmd-2",
+    type: "commandExecution",
+    status: "completed",
+    title: "Command",
+    renderKey: "op-2",
+  });
+
+  assert.match(html, /class="item live-operation completed commandExecution"/);
+  assert.match(html, /<div class="operation-detail-line empty"><span class="operation-detail">&nbsp;<\/span><\/div>/);
+  assert.doesNotMatch(html, /operation-duration/);
+});
+
+test("live operation dock state filters duration attributes to bounded data fields", () => {
+  const html = dock.operationCardHtml({
+    itemId: "cmd-3",
+    type: "commandExecution",
+    status: "running",
+    title: "Command",
+    detail: "npm test",
+    durationText: "00:00:01",
+    durationAttrs: "data-started-ms=\"1\" onclick=\"bad()\" data-secret=\"x\" data-duration-ms=\"1000\"",
+    renderKey: "op-3",
+  });
+
+  assert.match(html, /data-started-ms="1"/);
+  assert.match(html, /data-duration-ms="1000"/);
+  assert.doesNotMatch(html, /onclick/);
+  assert.doesNotMatch(html, /data-secret/);
+});

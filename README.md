@@ -16,6 +16,33 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v480 Operation Card Template Ownership
+
+v480 继续推进 Phase A 的前端 render/patch ownership 收敛。
+
+本次切片把 live operation / command detail card 的最终 HTML 模板从
+`public/app.js` 推进到 `public/live-operation-dock-state.js` 的
+`operationCardHtml`。`public/app.js` 现在只负责从 operation item 提取
+title/detail/duration/render key，并把 `escapeHtml` 注入给 helper；helper
+负责 section/meta/detail/duration 的模板结构、empty detail 占位、
+completed class 和 bounded duration data attribute 过滤。
+
+修复边界：
+
+- 症状/风险：v478 只抽出了 operation card content plan，但最终
+  `operation-meta-line` / `operation-detail-line` / duration HTML 仍在
+  `app.js` 中手拼，状态计划和 DOM 模板仍容易重新耦合。
+- 失败层：前端 live operation / command detail template ownership。
+- 不变量：operation card 模板结构应由可测试 helper 统一生成；`app.js`
+  只做 item 映射、duration 数据计算和 escape 函数注入。
+- 闭环验证：`test/live-operation-dock-state.test.js` 覆盖完整 card HTML、
+  injected escaping、empty-detail 占位和 duration attribute allowlist；
+  `test/collab-agent-render.test.js` 验证 `renderOperationCard` 不再持有
+  operation card 模板字符串；`test/conversation-render.test.js` 保持
+  command/output 与 live operation 回归。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v480`。
+
 ## 2026-06-26 v479 Keyed DOM Patch Ownership
 
 v479 继续推进 Phase A 的前端 render/patch ownership 收敛。

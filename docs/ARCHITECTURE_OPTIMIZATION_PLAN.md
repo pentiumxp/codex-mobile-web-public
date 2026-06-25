@@ -156,11 +156,13 @@ computed as a bounded effect plan while app code keeps the real Map write and
 DOM patch execution. Operation dock render-branch planning is also in that
 helper: live-operation rendering, remembered-bubble reuse, expired remembered
 state cleanup, and no-content states are explicit actions while app code keeps
-HTML rendering, timer scheduling, and Map deletion. Operation card content
-planning now lives in `public/live-operation-dock-state.js`: title/detail/status
-visibility, empty-detail state, duration visibility, and class-token decisions
-are structured helper output while app code keeps HTML escaping and final
-template strings. Pane-local detail refresh
+HTML rendering, timer scheduling, and Map deletion. Operation card content and
+final card-template planning now live in `public/live-operation-dock-state.js`:
+title/detail/status visibility, empty-detail state, duration visibility,
+class-token decisions, section/meta/detail/duration HTML structure, injected
+escaping, and bounded duration data-attribute filtering are helper-owned while
+app code keeps item extraction, duration computation, render-key selection, and
+real DOM insertion. Pane-local detail refresh
 planning is now also in that helper: refresh timer scheduling, refresh target
 selection, and detail-load skip/background/loading decisions are explicit
 plans. Detail-load lifecycle side-effect planning is also in that helper:
@@ -207,7 +209,7 @@ render-key lookup selector, creation step, hydration callback sequence, live
 text item render-key lookup / HTML patch sequencing, or
 conversation click-action selector priority, nor own the basic pane-state
 normalization, pane-local operation-bubble state rules, operation card content
-planning, or keyed DOM child reconciliation.
+and final template planning, or keyed DOM child reconciliation.
 
 Target:
 
@@ -234,8 +236,8 @@ Target:
   pane slot mutation side-effect planning including pane count/close execution
   is also outside app.js; detail-load lifecycle side-effect planning is also
   outside app.js; detail-load queue/abort/drain planning is also outside app.js;
-  operation card content planning is now outside app.js;
-  command detail panel final HTML templates, single-thread full-render shell
+  operation card content and final template planning are now outside app.js;
+  single-thread full-render shell
   planning, split sizing, measured tuning of the max concurrent detail read
   value, and per-pane draft/runtime ownership remain the next boundary.
 - Keep `public/app.js` responsible for DOM wiring, patch application, and event

@@ -504,7 +504,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v479";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v480";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -15507,7 +15507,7 @@ function renderOperationCard(item, key, options = {}) {
   const title = operationTitle(item);
   const detail = operationDetailText(item);
   const durationData = operationDurationData(item, status);
-  const plan = liveOperationDockPolicy.operationCardContentPlan({
+  return liveOperationDockPolicy.operationCardHtml({
     itemId: item && item.id || "",
     type,
     status,
@@ -15516,19 +15516,9 @@ function renderOperationCard(item, key, options = {}) {
     durationText: durationData && durationData.text || "",
     durationAttrs: durationData ? operationDurationAttrs(durationData) : "",
     extraClass: options.extraClass || "",
+    renderKey: key,
+    escapeHtml,
   });
-  const duration = plan.durationVisible
-    ? `<time class="operation-duration" ${plan.durationAttrs} title="${escapeHtml(plan.durationTitle)}">${escapeHtml(plan.durationText)}</time>`
-    : "";
-  const classes = plan.classTokens.map(escapeHtml).join(" ");
-  const body = `<div class="operation-detail-line${plan.detailEmpty ? " empty" : ""}"><span class="operation-detail">${plan.detail ? escapeHtml(plan.detail) : "&nbsp;"}</span></div>`;
-  const statusHtml = plan.statusVisible
-    ? `<span class="operation-status">${escapeHtml(plan.status)}</span>`
-    : "";
-  return `<section class="${classes}" data-item="${escapeHtml(plan.itemId)}" data-render-key="${escapeHtml(key)}">
-    <div class="operation-meta-line"><span class="operation-meta-main"><span class="operation-title">${escapeHtml(plan.title)}</span>${statusHtml}</span>${duration}</div>
-    ${body}
-  </section>`;
 }
 
 function operationDurationHtml(item, status = "", className = "operation-duration") {
