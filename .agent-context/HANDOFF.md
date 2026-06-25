@@ -7219,6 +7219,69 @@ The previous full handoff was archived and should be opened only when old proven
   - Not pushed to Public. Follow release-order rule: wait for production/user
     validation or explicit Public instruction before syncing/pushing.
 
+## 2026-06-26 - v460 thread tile operation state policy deployed
+
+- Scope:
+  - Continued Phase C pane-state / split-screen architecture work.
+  - This slice moves pane-local operation bubble state policy into
+    `public/thread-tile-state.js`.
+  - It does not change server projection, message merge, task-card behavior, or
+    operation bubble visual design. No fallback or UI-only masking was added.
+- Change:
+  - Added pure thread-tile operation state helpers:
+    `operationBubbleRecord`, `operationBubbleSnapshot`,
+    `normalizeOperationMode`, `toggleOperationMode`, and
+    `operationSignature`.
+  - `public/app.js` now delegates tile pane operation-bubble dwell/expiry,
+    compact/expanded toggle, and operation signature rules to
+    `threadTileStatePolicy`; app code still owns Map mutation, timers, DOM
+    patch, and pane rendering.
+  - Bumped `CLIENT_BUILD_ID` and service worker cache to
+    `codex-mobile-shell-v460`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Commit:
+  - Runtime/docs commit: `7fda7a8 refactor thread tile operation state`.
+- Validation in source workspace:
+  - Focused suite passed: `57` tests across
+    `test/thread-tile-state.test.js`,
+    `test/thread-tile-layout-ui.test.js`,
+    `test/thread-tile-layout.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-task-card-route.test.js`, `test/thread-goal-service.test.js`,
+    `test/live-operation-dock-state.test.js`, and
+    `test/collab-agent-render.test.js`.
+  - `npm test` passed: `844` tests.
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+- Production deploy:
+  - Deployed through Home AI central macOS production script.
+  - Reason: `codex-mobile-thread-tile-operation-state-v460`.
+  - Source ref at deploy: `7fda7a8290a2`, dirty `false`.
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T180936Z-plugin-codex-mobile-web-codex-mobile-thread-tile-operation-state-v460`.
+  - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` reported
+    running and manifest health check passed.
+- Production readback:
+  - `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v460` and
+    `shellCacheName=codex-mobile-shell-v460`.
+  - Source/prod SHA-256 parity matched for:
+    `public/thread-tile-state.js`, `test/thread-tile-state.test.js`,
+    `test/thread-tile-layout-ui.test.js`, `public/app.js`, `public/sw.js`,
+    `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+  - Production focused suite passed: same `57` tests listed above with
+    production dependencies.
+- Next architecture boundary:
+  - Continue Phase C by extracting pane-local detail refresh ownership and
+    command detail panel state from `public/app.js`.
+  - Phase B large-session cold/warm path remains separate.
+- Public:
+  - Not pushed to Public. Follow release-order rule: wait for production/user
+    validation or explicit Public instruction before syncing/pushing.
+
 ## 2026-06-24 - Phase 1 architecture refactor: task-card target routing service
 
 - User goal:
