@@ -35,6 +35,17 @@ inject `Return required` guidance and must not require a second acknowledgement.
 If the source wants new actionable work after reviewing a terminal return, it
 must create a new work card instead of replying to the terminal receipt.
 
+Non-terminal approved work cards carry an `executionLease`. The lease records
+the active card id, source/target thread ids, workflow metadata, current injected
+turn id, last progress time, and `resumeRequired:true`. Ordinary user messages
+in the target thread do not cancel this lease. When an unrelated target-thread
+turn completes while a lease is still active, the runtime schedules a bounded
+continuation turn for the oldest active lease in that target thread. The
+continuation points to the original task-card id and earlier injected message;
+it does not duplicate the full private card body. Explicit pause/cancel actions
+set the lease to `paused` or `cancelled` and suppress continuation. Terminal
+return/no-op cards never create execution leases.
+
 ## High-Level Flow
 
 1. Source thread creates a task-card request addressed to one or more target
@@ -100,6 +111,22 @@ Planned canonical object:
     "terminal": false,
     "ackPolicy": "return_required|auto_return|none"
   },
+  "executionLease": {
+    "cardId": "ttc_01...",
+    "sourceThreadId": "thread_src",
+    "targetThreadId": "thread_dst",
+    "workflowId": "workflow-id",
+    "workflowMode": "manual|autonomous",
+    "status": "active|resuming|paused|cancelled|completed",
+    "resumeRequired": true,
+    "startedAt": "2026-05-29T00:00:00Z",
+    "lastProgressAt": "2026-05-29T00:00:00Z",
+    "injectedTurnId": "turn_01",
+    "currentTurnId": "turn_01",
+    "lastInterruptedTurnId": "",
+    "lastContinuationTurnId": "",
+    "resumeCount": 0
+  },
   "workflow": {
     "mode": "manual|autonomous",
     "id": "workflow-id",
@@ -155,6 +182,15 @@ and records `autoReplyCardId` / `autoReturn*` audit fields on the original
 card. Repeated or replayed completion notifications are idempotent and do not
 create a second return card.
 
+Interruption continuation is also server-side state, not model best effort. The
+server observes `turn/completed` in the target thread. If that turn is not the
+current turn recorded on an active execution lease, and the original card has
+not been replied/returned/cancelled/paused, the service re-injects one bounded
+continuation for that completed turn. Replayed completion notifications are
+deduplicated by `lastInterruptedTurnId` / `resumeForTurnId`. If several active
+leases exist for the same target thread, continuation uses oldest-started-first
+ordering so the queue is deterministic rather than hidden model state.
+
 ## API Shape
 
 ### Create
@@ -200,6 +236,17 @@ route can also be forced back to pending behavior with `pending:true`,
 ### Reply
 
 `POST /api/thread-task-cards/:id/reply`
+
+### Execution Pause / Cancel
+
+`POST /api/thread-task-cards/:id/execution/pause`
+
+`POST /api/thread-task-cards/:id/execution/cancel`
+
+These routes update the structured `executionLease` only. They do not create a
+return card and do not mark the original card completed. They exist so an owner
+or target thread can explicitly stop automatic continuation when an active card
+should no longer resume after ordinary user interruptions.
 
 ## Injection Result
 

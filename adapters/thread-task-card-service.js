@@ -15,6 +15,12 @@ const WORKFLOW_MODE_MANUAL = "manual";
 const WORKFLOW_MODE_AUTONOMOUS = "autonomous";
 const REASONING_EFFORT_VALUES = new Set(["low", "medium", "high", "xhigh"]);
 const AUTO_RETURN_TITLE_PREFIX = "Auto return:";
+const EXECUTION_LEASE_ACTIVE = "active";
+const EXECUTION_LEASE_RESUMING = "resuming";
+const EXECUTION_LEASE_PAUSED = "paused";
+const EXECUTION_LEASE_CANCELLED = "cancelled";
+const EXECUTION_LEASE_COMPLETED = "completed";
+const MAX_LEASE_TURN_IDS = 24;
 
 function nowIso(nowFn) {
   const value = typeof nowFn === "function" ? nowFn() : Date.now();
@@ -248,6 +254,102 @@ function terminalReturnDeliveryFields(returnStatus = "") {
   };
 }
 
+function publicExecutionLease(lease) {
+  if (!lease || typeof lease !== "object") return null;
+  return {
+    cardId: boundedMetadataString(lease.cardId, 80),
+    sourceThreadId: boundedMetadataString(lease.sourceThreadId, 80),
+    targetThreadId: boundedMetadataString(lease.targetThreadId, 80),
+    workflowId: boundedMetadataString(lease.workflowId, 120),
+    workflowMode: boundedMetadataString(lease.workflowMode, 40),
+    status: boundedMetadataString(lease.status, 40),
+    resumeRequired: lease.resumeRequired === true,
+    startedAt: boundedMetadataString(lease.startedAt, 80),
+    lastProgressAt: boundedMetadataString(lease.lastProgressAt, 80),
+    pausedAt: boundedMetadataString(lease.pausedAt, 80),
+    cancelledAt: boundedMetadataString(lease.cancelledAt, 80),
+    completedAt: boundedMetadataString(lease.completedAt, 80),
+    injectedTurnId: boundedMetadataString(lease.injectedTurnId, 120),
+    currentTurnId: boundedMetadataString(lease.currentTurnId, 120),
+    lastInterruptedTurnId: boundedMetadataString(lease.lastInterruptedTurnId, 120),
+    lastContinuationTurnId: boundedMetadataString(lease.lastContinuationTurnId, 120),
+    resumeCount: Math.max(0, Math.trunc(Number(lease.resumeCount || 0)) || 0),
+    resumeForTurnId: boundedMetadataString(lease.resumeForTurnId, 120),
+    lastResumeError: boundedMetadataString(lease.lastResumeError, 200),
+  };
+}
+
+function cardCanOwnExecutionLease(card) {
+  return Boolean(card && card.status === "approved" && !cardIsTerminal(card) && cardRequiresReturn(card));
+}
+
+function executionTurnIds(lease) {
+  const ids = [
+    stringValue(lease && lease.injectedTurnId),
+    stringValue(lease && lease.currentTurnId),
+    stringValue(lease && lease.lastContinuationTurnId),
+    ...safeArray(lease && lease.continuationTurnIds).map(stringValue),
+  ].filter(Boolean);
+  return Array.from(new Set(ids));
+}
+
+function leaseIsActive(lease) {
+  const status = stringValue(lease && lease.status);
+  return status === EXECUTION_LEASE_ACTIVE || status === EXECUTION_LEASE_RESUMING;
+}
+
+function leaseForApprovedCard(card, execution = {}, timestamp = "") {
+  const existing = card && card.executionLease && typeof card.executionLease === "object" ? card.executionLease : {};
+  const turnId = stringValue(execution && execution.turnId) || stringValue(existing.currentTurnId) || stringValue(existing.injectedTurnId);
+  return Object.assign({}, existing, {
+    cardId: stringValue(card && card.id),
+    sourceThreadId: stringValue(card && card.source && card.source.threadId),
+    targetThreadId: stringValue(card && card.target && card.target.threadId),
+    workflowId: stringValue(card && card.workflow && card.workflow.id),
+    workflowMode: stringValue(card && card.workflow && card.workflow.mode) || WORKFLOW_MODE_MANUAL,
+    status: EXECUTION_LEASE_ACTIVE,
+    resumeRequired: true,
+    startedAt: stringValue(existing.startedAt) || timestamp,
+    lastProgressAt: timestamp,
+    injectedTurnId: stringValue(existing.injectedTurnId) || turnId,
+    currentTurnId: turnId,
+    resumeCount: Math.max(0, Math.trunc(Number(existing.resumeCount || 0)) || 0),
+    continuationTurnIds: safeArray(existing.continuationTurnIds).map(stringValue).filter(Boolean).slice(-MAX_LEASE_TURN_IDS),
+    lastResumeError: "",
+    resumeForTurnId: "",
+  });
+}
+
+function markLeaseCompleted(card, timestamp, fields = {}) {
+  if (!card || !card.executionLease) return;
+  card.executionLease = Object.assign({}, card.executionLease, fields, {
+    status: EXECUTION_LEASE_COMPLETED,
+    resumeRequired: false,
+    completedAt: timestamp,
+    lastProgressAt: timestamp,
+    resumeForTurnId: "",
+  });
+}
+
+function taskCardExecutionContinuationText(card, completed = {}) {
+  const turnId = boundedMetadataString(completed && completed.turnId, 120);
+  const lines = [
+    "[Codex Mobile task-card continuation]",
+    "",
+    `Task card id: ${card.id}`,
+    `Source thread id: ${card.source && card.source.threadId || ""}`,
+    card.workflow && card.workflow.id ? `Workflow id: ${card.workflow.id}` : "",
+    turnId ? `Interrupted ordinary turn completed: ${turnId}` : "",
+    "",
+    "An active non-terminal task card for this thread is still open. The previous turn appears to have answered an ordinary user interruption; that interruption does not pause, cancel, or complete the task card.",
+    "Continue the original task-card work from the earlier injected task-card message in this thread. Do not request acknowledgement for terminal receipts, and close the original task card only through codex_mobile.return_to_source or scripts/return-thread-task-card.js when the work is completed, blocked, redirected, or partially completed.",
+    "",
+    card.message && card.message.title ? `Title: ${card.message.title}` : "",
+    card.message && card.message.summary ? `Summary: ${card.message.summary}` : "",
+  ].filter((line, index, all) => line !== "" || (index > 0 && all[index - 1] !== ""));
+  return lines.join("\n");
+}
+
 function publicCard(card, threadId) {
   const role = cardForThread(card, threadId) || "";
   const out = clone(card);
@@ -259,6 +361,7 @@ function publicCard(card, threadId) {
   out.canDelete = role === "target" && out.status === "pending";
   out.canReply = role === "target" && !out.terminal && (out.status === "pending" || out.status === "approved");
   out.canRevoke = role === "source" && out.status === "pending";
+  out.executionLease = publicExecutionLease(out.executionLease);
   return out;
 }
 
@@ -752,6 +855,9 @@ function createThreadTaskCardService(options = {}) {
           requestedReasoningEffort: boundedMetadataString(execution.runtime.requestedReasoningEffort, 40),
         };
       }
+      if (cardCanOwnExecutionLease(card)) {
+        card.executionLease = leaseForApprovedCard(card, execution, timestamp);
+      }
       return {
         card: publicCard(card, publicThreadId || actorThread || card.target.threadId),
         execution,
@@ -944,6 +1050,11 @@ function createThreadTaskCardService(options = {}) {
         markReturnToSourceMetadata(replyCard, replyRequest);
       }
       card.replyCardId = replyCard.id;
+      markLeaseCompleted(card, timestamp, {
+        completedByReplyCardId: replyCard.id,
+        returnToSource: replyRequest.returnToSource === true,
+        returnStatus: replyRequest.status || "",
+      });
       return {
         card: publicCard(card, actorThreadId),
         replyCard: publicCard(replyCard, card.source.threadId),
@@ -959,6 +1070,169 @@ function createThreadTaskCardService(options = {}) {
       result.replyCard = await maybeAutoApprovePublicCard(result.replyCard, result.replyCard && result.replyCard.target && result.replyCard.target.threadId);
     }
     return result;
+  }
+
+  function nextInterruptedExecutionCard(store, threadId, turnId) {
+    const id = stringValue(threadId);
+    const completedTurnId = stringValue(turnId);
+    if (!id || !completedTurnId) return null;
+    const candidates = safeArray(store && store.cards)
+      .filter((card) => {
+        if (!cardCanOwnExecutionLease(card)) return false;
+        if (stringValue(card.target && card.target.threadId) !== id) return false;
+        if (stringValue(card.replyCardId) || stringValue(card.autoReplyCardId)) return false;
+        const lease = card.executionLease && typeof card.executionLease === "object" ? card.executionLease : null;
+        if (!lease || !lease.resumeRequired || !leaseIsActive(lease)) return false;
+        if (stringValue(lease.lastInterruptedTurnId) === completedTurnId) return false;
+        if (stringValue(lease.resumeForTurnId) === completedTurnId) return false;
+        if (executionTurnIds(lease).includes(completedTurnId)) return false;
+        return true;
+      })
+      .sort((left, right) => {
+        const leftTime = Date.parse(left.executionLease && left.executionLease.startedAt || left.createdAt || "") || 0;
+        const rightTime = Date.parse(right.executionLease && right.executionLease.startedAt || right.createdAt || "") || 0;
+        return leftTime - rightTime || stringValue(left.id).localeCompare(stringValue(right.id));
+      });
+    return candidates[0] || null;
+  }
+
+  async function maybeResumeInterruptedTaskCard(completed = {}) {
+    const turnId = stringValue(completed.turnId);
+    const threadId = stringValue(completed.threadId);
+    if (!turnId || !threadId) return null;
+    const prepared = await withStore(async (store) => {
+      const card = nextInterruptedExecutionCard(store, threadId, turnId);
+      if (!card) return null;
+      const timestamp = nowIso(options.now);
+      card.executionLease = Object.assign({}, card.executionLease || {}, {
+        status: EXECUTION_LEASE_RESUMING,
+        resumeRequired: true,
+        resumeForTurnId: turnId,
+        lastInterruptedTurnId: turnId,
+        lastProgressAt: timestamp,
+        resumingAt: timestamp,
+      });
+      card.updatedAt = timestamp;
+      return {
+        card: clone(card),
+        completed: {
+          threadId,
+          turnId,
+          completedAt: stringValue(completed.completedAt),
+        },
+      };
+    });
+    if (!prepared) return null;
+
+    let execution;
+    try {
+      execution = await executeApprovedCard(clone(prepared.card), {
+        text: taskCardExecutionContinuationText(prepared.card, prepared.completed),
+      });
+    } catch (err) {
+      await withStore(async (store) => {
+        const card = findById(store, prepared.card.id);
+        if (card && card.executionLease && stringValue(card.executionLease.resumeForTurnId) === turnId) {
+          const timestamp = nowIso(options.now);
+          card.executionLease = Object.assign({}, card.executionLease, {
+            status: EXECUTION_LEASE_ACTIVE,
+            resumeRequired: true,
+            lastResumeFailedAt: timestamp,
+            lastResumeError: boundedErrorMessage(err),
+            resumeForTurnId: "",
+          });
+          card.updatedAt = timestamp;
+        }
+        return null;
+      });
+      throw err;
+    }
+
+    return withStore(async (store) => {
+      const card = findById(store, prepared.card.id);
+      if (!card) throw errorWithStatus("task_card_not_found", 404);
+      const timestamp = nowIso(options.now);
+      const nextTurnId = stringValue(execution && execution.turnId);
+      const continuationTurnIds = safeArray(card.executionLease && card.executionLease.continuationTurnIds)
+        .map(stringValue)
+        .filter(Boolean);
+      if (nextTurnId && !continuationTurnIds.includes(nextTurnId)) continuationTurnIds.push(nextTurnId);
+      card.executionLease = Object.assign({}, card.executionLease || {}, {
+        status: EXECUTION_LEASE_ACTIVE,
+        resumeRequired: true,
+        currentTurnId: nextTurnId || stringValue(card.executionLease && card.executionLease.currentTurnId),
+        lastContinuationTurnId: nextTurnId || stringValue(card.executionLease && card.executionLease.lastContinuationTurnId),
+        continuationTurnIds: continuationTurnIds.slice(-MAX_LEASE_TURN_IDS),
+        resumeCount: Math.max(0, Math.trunc(Number(card.executionLease && card.executionLease.resumeCount || 0)) || 0) + 1,
+        resumedAt: timestamp,
+        lastProgressAt: timestamp,
+        resumeForTurnId: "",
+        lastResumeError: "",
+      });
+      card.updatedAt = timestamp;
+      if (nextTurnId) card.lastContinuationTurnId = nextTurnId;
+      if (execution && execution.result) card.lastContinuationResult = execution.result;
+      return {
+        card: publicCard(card, card.target && card.target.threadId || ""),
+        execution,
+      };
+    });
+  }
+
+  async function pauseExecution(cardId, actorThreadId) {
+    const id = stringValue(cardId);
+    const actorThread = stringValue(actorThreadId);
+    return withStore(async (store) => {
+      const card = findById(store, id);
+      if (!card) throw errorWithStatus("task_card_not_found", 404);
+      if (!cardCanOwnExecutionLease(card)) throw errorWithStatus(`task_card_execution_not_active:${card && card.status}`, 409);
+      if (stringValue(card.target && card.target.threadId) !== actorThread && stringValue(card.source && card.source.threadId) !== actorThread) {
+        throw errorWithStatus("task_card_execution_action_forbidden", 403);
+      }
+      const timestamp = nowIso(options.now);
+      card.executionLease = Object.assign({}, card.executionLease || leaseForApprovedCard(card, {}, timestamp), {
+        status: EXECUTION_LEASE_PAUSED,
+        resumeRequired: false,
+        pausedAt: timestamp,
+        pausedByThreadId: actorThread,
+        lastProgressAt: timestamp,
+        resumeForTurnId: "",
+      });
+      card.updatedAt = timestamp;
+      card.audit = Object.assign({}, card.audit || {}, {
+        executionPausedAt: timestamp,
+        executionPausedByThreadId: actorThread,
+      });
+      return publicCard(card, actorThread);
+    });
+  }
+
+  async function cancelExecution(cardId, actorThreadId) {
+    const id = stringValue(cardId);
+    const actorThread = stringValue(actorThreadId);
+    return withStore(async (store) => {
+      const card = findById(store, id);
+      if (!card) throw errorWithStatus("task_card_not_found", 404);
+      if (!cardCanOwnExecutionLease(card)) throw errorWithStatus(`task_card_execution_not_active:${card && card.status}`, 409);
+      if (stringValue(card.target && card.target.threadId) !== actorThread && stringValue(card.source && card.source.threadId) !== actorThread) {
+        throw errorWithStatus("task_card_execution_action_forbidden", 403);
+      }
+      const timestamp = nowIso(options.now);
+      card.executionLease = Object.assign({}, card.executionLease || leaseForApprovedCard(card, {}, timestamp), {
+        status: EXECUTION_LEASE_CANCELLED,
+        resumeRequired: false,
+        cancelledAt: timestamp,
+        cancelledByThreadId: actorThread,
+        lastProgressAt: timestamp,
+        resumeForTurnId: "",
+      });
+      card.updatedAt = timestamp;
+      card.audit = Object.assign({}, card.audit || {}, {
+        executionCancelledAt: timestamp,
+        executionCancelledByThreadId: actorThread,
+      });
+      return publicCard(card, actorThread);
+    });
   }
 
   async function maybeAutoReplyCompletedTurn(completed = {}) {
@@ -1060,6 +1334,7 @@ function createThreadTaskCardService(options = {}) {
   return {
     approve,
     approveFromSource,
+    cancelExecution,
     create,
     createMany,
     deleteCard,
@@ -1067,8 +1342,10 @@ function createThreadTaskCardService(options = {}) {
     injectedMessageText,
     listForThread,
     maybeAutoReplyCompletedTurn,
+    maybeResumeInterruptedTaskCard,
     pendingCountForThread,
     pendingCountsForThread,
+    pauseExecution,
     reply,
     revoke,
   };

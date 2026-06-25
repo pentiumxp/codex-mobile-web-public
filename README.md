@@ -37,6 +37,22 @@ return policy，不再出现 `Return required`；如果再次对终止卡调用 
 `returnToSource:true` 是终止卡、auto-return receipt 不触发二次 auto-return、以及
 Music-style repair -> receipt -> ack 链在第一张 terminal return 后停止。
 
+## 2026-06-25 v443 Live 输出可见性修正
+
+v443 修复 active turn 中“命令/文件操作持续更新，但新的 Codex 回执文本不可见”的
+前端渲染缺陷。生产 detail 已能读到当前 active turn 的 `agentMessage`、`commandExecution`
+和 `fileChange`，说明服务端 projection 已经有文本；问题在浏览器 live delta 渲染。
+
+根因是 `item/agentMessage/delta` 走了 `defer-final-receipt` 路径，而该路径只要 live turn
+里存在 command/file operation，就把所有 live `agentMessage` 渲染延迟掉。这样 operation
+bubble 会继续计时和刷新，但 assistant 文本不会进入当前 DOM，刷新时还可能反复重绘旧的长
+回执。
+
+现在 live `agentMessage` delta 一律触发正常 DOM patch/render。operation bubble 仍然只负责
+命令/文件操作状态，不再拥有或阻断 assistant 文本可见性。新增
+`test/conversation-render.test.js` 覆盖：即使 active turn 里有 command operation，agent
+delta 也必须可见渲染。PWA shell cache 升级到 `codex-mobile-shell-v443`。
+
 ## 2026-06-25 v442 前端 DOM Patch Surface 边界
 
 v442 继续收敛 `public/app.js` 的线程详情 DOM patch 所有权。v441 已经把平铺模式

@@ -1852,16 +1852,18 @@ test("long agent messages keep a stable render path when a turn completes", () =
   assert.doesNotMatch(functionBody("visibleItemsForTurn"), /shouldDeferLiveAgentMessage/);
   assert.match(appJs, /function shouldRenderAfterAppend\(turn, itemType, field, previousValue, nextValue, options = \{\}\)/);
   assert.match(appJs, /function shouldDeferLiveFinalReceipt\(turn, itemType\)/);
-  assert.match(functionBody("shouldDeferLiveFinalReceipt"), /turnHasOperationalItems\(turn\)/);
+  assert.doesNotMatch(appJs, /function turnHasOperationalItems\(/);
+  assert.doesNotMatch(functionBody("shouldDeferLiveFinalReceipt"), /isOperationalItem|turnHasOperationalItems/);
+  assert.match(functionBody("shouldDeferLiveFinalReceipt"), /return false;/);
   assert.match(appJs, /function shouldRenderAfterUpsert\(turn, item\)/);
   assert.match(functionBody("shouldRenderAfterUpsert"), /shouldDeferLiveFinalReceipt\(turn, item && item\.type\)/);
   assert.match(functionBody("upsertItem"), /const canPatchExistingItem = index >= 0;/);
   assert.match(functionBody("upsertItem"), /let structureChanged = false;/);
   assert.match(functionBody("upsertItem"), /if \(structureChanged\) scheduleRenderCurrentThread\(\);[\s\S]*else if \(canPatchExistingItem\) \{[\s\S]*patchVisibleItemDom\(turn, nextItem\)[\s\S]*\} else if \(!insertVisibleItemDom\(turn, nextItem\)\)/);
-  assert.match(functionBody("shouldRenderAfterAppend"), /options\.render === "defer-final-receipt" && shouldDeferLiveFinalReceipt\(turn, itemType\)/);
+  assert.doesNotMatch(functionBody("shouldRenderAfterAppend"), /defer-final-receipt|shouldDeferLiveFinalReceipt/);
   assert.doesNotMatch(functionBody("shouldRenderAfterAppend"), /previousLength < LONG_RECEIPT_SCROLL_CHARS && nextLength <= LONG_RECEIPT_SCROLL_CHARS/);
   assert.match(functionBody("appendToItem"), /shouldRenderAfterAppend\(turn, itemType, field, previousValue, nextValue, options\)/);
-  assert.match(functionBody("applyNotification"), /appendToItem\(params\.turnId, params\.itemId, "agentMessage", "text", params\.delta \|\| "", 0, \{ render: "defer-final-receipt" \}\)/);
+  assert.match(functionBody("applyNotification"), /appendToItem\(params\.turnId, params\.itemId, "agentMessage", "text", params\.delta \|\| "", 0\)/);
   assert.match(appJs, /function shouldScrollToLongReceiptStart\(turn\)/);
   assert.match(functionBody("shouldScrollToLongReceiptStart"), /finalReceiptTextForTurn\(turn\)\.length >= LONG_RECEIPT_SCROLL_CHARS/);
   assert.doesNotMatch(functionBody("applyNotification"), /renderCurrentThread\(shouldScrollToLongReceiptStart\(turn\) \? \{ scrollToTurnReceiptStart: params\.turn\.id \} : \{\}\)/);
@@ -1872,6 +1874,34 @@ test("long agent messages keep a stable render path when a turn completes", () =
   assert.match(appJs, /function mergeIncomingOrderedItem\(/);
   assert.match(functionBody("mergeItemsPreservingLocalVisible"), /for \(const incomingItem of incomingItems \|\| \[\]\)/);
   assert.match(functionBody("mergeItemsPreservingLocalVisible"), /findUnusedExistingItemIndexForIncoming\(incomingItem, existingItems \|\| \[\], usedExistingIndexes, incomingTurn\)/);
+});
+
+test("live agent message deltas render even while command operations are active", () => {
+  const sources = [
+    "shouldDeferLiveFinalReceipt",
+    "shouldRenderAfterUpsert",
+    "shouldRenderAfterAppend",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const harness = Function(`
+${sources.join("\n")}
+return { shouldDeferLiveFinalReceipt, shouldRenderAfterUpsert, shouldRenderAfterAppend };
+`)();
+  const turn = {
+    id: "turn-live",
+    status: { type: "active" },
+    items: [
+      { id: "cmd", type: "commandExecution", status: "running" },
+      { id: "agent", type: "agentMessage", text: "visible progress" },
+    ],
+  };
+  const item = turn.items[1];
+
+  assert.equal(harness.shouldDeferLiveFinalReceipt(turn, "agentMessage"), false);
+  assert.equal(harness.shouldRenderAfterUpsert(turn, item), true);
+  assert.equal(
+    harness.shouldRenderAfterAppend(turn, "agentMessage", "text", "", "visible progress", { render: "defer-final-receipt" }),
+    true,
+  );
 });
 
 test("turn diagnostic items render as explicit runtime diagnostics", () => {

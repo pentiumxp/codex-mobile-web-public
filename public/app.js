@@ -485,7 +485,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v442";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v443";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -18122,18 +18122,10 @@ function ensureTurn(turnId) {
   return turn;
 }
 
-function turnHasOperationalItems(turn) {
-  const items = Array.isArray(turn && turn.items) ? turn.items : [];
-  return items.some((item) => isOperationalItem(item));
-}
-
 function shouldDeferLiveFinalReceipt(turn, itemType) {
-  return Boolean(
-    itemType === "agentMessage"
-    && isLatestTurn(turn)
-    && isLiveTurn(turn)
-    && turnHasOperationalItems(turn)
-  );
+  // Live assistant text must remain visible even while command/file operation
+  // bubbles are active; receipt stabilization is handled by merge/patch policy.
+  return false;
 }
 
 function shouldRenderAfterUpsert(turn, item) {
@@ -18229,10 +18221,6 @@ function ensureTimerItem(turnId, itemId, itemType) {
 
 function shouldRenderAfterAppend(turn, itemType, field, previousValue, nextValue, options = {}) {
   if (options.render === false) return false;
-  if (options.render === "defer-final-receipt" && shouldDeferLiveFinalReceipt(turn, itemType)) return false;
-  if (options.render !== "defer-final-receipt") return true;
-  if (itemType !== "agentMessage" || field !== "text") return true;
-  if (!isLatestTurn(turn) || !isLiveTurn(turn)) return true;
   return true;
 }
 
@@ -18549,7 +18537,7 @@ function applyNotification(method, params) {
   }
   if (method === "item/agentMessage/delta") {
     markActivity("输出");
-    appendToItem(params.turnId, params.itemId, "agentMessage", "text", params.delta || "", 0, { render: "defer-final-receipt" });
+    appendToItem(params.turnId, params.itemId, "agentMessage", "text", params.delta || "", 0);
     markSteerAppliedIfNeeded(params.turnId, { type: "agentMessage" });
     return;
   }

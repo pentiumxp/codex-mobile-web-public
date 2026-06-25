@@ -74,6 +74,15 @@ The target thread user can:
 - Autonomous workflow completion return must be idempotent. Replayed
   `turn/completed` notifications for the same injected target turn must not
   create duplicate source-thread return turns.
+- Approved non-terminal work cards must record an active execution lease on the
+  target thread. The lease must survive ordinary user interruptions and must not
+  be completed, paused, or cancelled by an unrelated user question.
+- When an unrelated target-thread turn completes while an execution lease is
+  active, Mobile Web must schedule one bounded continuation for the oldest
+  active lease in that target thread unless the owner or target explicitly
+  paused or cancelled the lease.
+- Terminal return/no-op cards must not create execution leases and must not
+  request acknowledgements.
 
 ## States
 
@@ -133,4 +142,11 @@ The feature is acceptable when:
 8. Completing the injected target turn for an approved autonomous card creates
    exactly one reverse-direction return card and auto-injects it into the
    source thread.
-9. All actions are bounded, authorized, auditable, and idempotent.
+9. Approving a non-terminal work card creates an active execution lease with
+   `resumeRequired=true`.
+10. Completing an ordinary target-thread turn while the lease is active starts
+    one bounded continuation for that card, without copying the full private
+    card body.
+11. Explicit pause/cancel prevents continuation, and terminal return cards do
+    not create leases.
+12. All actions are bounded, authorized, auditable, and idempotent.

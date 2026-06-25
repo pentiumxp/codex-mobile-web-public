@@ -1,3 +1,48 @@
+# 2026-06-25 - v443 live assistant output visibility and task-card lease fix
+
+- User-visible incident:
+  - In the Codex Mobile implementation thread, the top-right running box kept
+    showing reasoning/file/command activity, but the conversation body stayed
+    stuck on an older long assistant receipt and repeatedly refreshed old
+    content.
+  - Bounded production detail evidence for thread
+    `019eee6c-a6f5-7b20-bfb4-f96ccb6431b3` showed the active turn already had
+    `agentMessage` items, so the failing layer was browser live rendering, not
+    model/app-server output generation.
+- Root cause:
+  - `public/app.js` deferred live `item/agentMessage/delta` rendering whenever
+    the latest live turn also had operational command/file items.
+  - Active operation bubbles therefore kept updating while assistant text was
+    hidden from the conversation DOM.
+- Runtime change:
+  - v443 removes the operational-item gate from live assistant text rendering.
+    Agent message deltas now render immediately; receipt stability remains
+    owned by the existing detail merge/patch policy.
+  - `CLIENT_BUILD_ID` and service-worker cache were bumped to
+    `codex-mobile-shell-v443`.
+- Task-card protocol change in the same repair slice:
+  - Non-terminal approved task cards now create a bounded execution lease with
+    `resumeRequired=true`.
+  - Ordinary user turns during an active task-card lease do not complete or
+    cancel that card; after the user interruption completes, the service can
+    inject a bounded continuation for the oldest active lease.
+  - Pause/cancel execution routes were added, while terminal return/no-op cards
+    do not create leases or acknowledgement loops.
+- Local validation completed:
+  - `npm test` passed (`800` tests).
+  - `npm run check`
+  - `npm run check:macos`
+  - Focused suites passed:
+    `test/conversation-render.test.js`,
+    `test/turn-scroll-controls.test.js`,
+    `test/thread-task-card-service.test.js`, and
+    `test/thread-task-card-route.test.js`.
+  - `git diff --check`
+- Deployment state:
+  - Local source is ready for the Home AI central macOS plugin deployment path.
+  - Production readback is pending in this handoff section until deployment
+    completes.
+
 # 2026-06-25 - v442 frontend DOM patch surface boundary in progress
 
 - User goal slice:

@@ -286,6 +286,200 @@ test("approve runs injected execution and marks the card approved", async () => 
   assert.match(executions[0].message.text, /\[Cross-thread task card approved\]/);
   assert.match(executions[0].message.text, /Task card id: ttc_/);
   assert.match(executions[0].message.text, /Return required:/);
+  const stored = service.get(created.id, "thread-dst");
+  assert.equal(stored.executionLease.status, "active");
+  assert.equal(stored.executionLease.resumeRequired, true);
+  assert.equal(stored.executionLease.sourceThreadId, "thread-src");
+  assert.equal(stored.executionLease.targetThreadId, "thread-dst");
+  assert.equal(stored.executionLease.injectedTurnId, "turn-approved");
+  assert.equal(stored.executionLease.currentTurnId, "turn-approved");
+});
+
+test("ordinary user interruption resumes the active task-card execution lease", async () => {
+  const executions = [];
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    executeApprovedCard: async (card, message) => {
+      executions.push({ card, message });
+      return { threadId: card.target.threadId, turnId: `turn-exec-${executions.length}` };
+    },
+  });
+  const created = await service.create({
+    sourceWorkspaceId: "home-ai",
+    sourceThreadId: "thread-home",
+    sourceTurnId: "turn-home",
+    sourceThreadTitle: "Home AI",
+    targetWorkspaceId: "music",
+    targetThreadId: "thread-music",
+    idempotencyKey: "interruption:resume",
+    format: "markdown",
+    title: "Repair Music",
+    summary: "Repair and return.",
+    body: "Long private repair instructions should not be copied into continuation text.",
+  });
+  const approved = await service.approveFromSource(created.id, "thread-home");
+  assert.equal(approved.card.executionLease.status, "active");
+  assert.equal(approved.card.executionLease.currentTurnId, "turn-exec-1");
+
+  const resumed = await service.maybeResumeInterruptedTaskCard({
+    threadId: "thread-music",
+    turnId: "turn-user-question",
+    completedAt: "2026-06-25T10:00:00.000Z",
+    finalReceiptText: "Answered an unrelated user question.",
+  });
+
+  assert.equal(resumed.card.id, created.id);
+  assert.equal(resumed.card.status, "approved");
+  assert.equal(resumed.card.executionLease.status, "active");
+  assert.equal(resumed.card.executionLease.resumeRequired, true);
+  assert.equal(resumed.card.executionLease.lastInterruptedTurnId, "turn-user-question");
+  assert.equal(resumed.card.executionLease.lastContinuationTurnId, "turn-exec-2");
+  assert.equal(resumed.card.executionLease.currentTurnId, "turn-exec-2");
+  assert.equal(resumed.card.executionLease.resumeCount, 1);
+  assert.equal(executions.length, 2);
+  assert.match(executions[1].message.text, /\[Codex Mobile task-card continuation\]/);
+  assert.match(executions[1].message.text, new RegExp(`Task card id: ${created.id}`));
+  assert.match(executions[1].message.text, /Interrupted ordinary turn completed: turn-user-question/);
+  assert.match(executions[1].message.text, /Title: Repair Music/);
+  assert.match(executions[1].message.text, /Summary: Repair and return\./);
+  assert.doesNotMatch(executions[1].message.text, /Long private repair instructions/);
+
+  const duplicate = await service.maybeResumeInterruptedTaskCard({
+    threadId: "thread-music",
+    turnId: "turn-user-question",
+  });
+  assert.equal(duplicate, null);
+  assert.equal(executions.length, 2);
+});
+
+test("task-card execution turn completion does not resume itself", async () => {
+  const executions = [];
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    executeApprovedCard: async (card) => {
+      executions.push(card);
+      return { threadId: card.target.threadId, turnId: `turn-card-${executions.length}` };
+    },
+  });
+  const created = await service.create({
+    sourceWorkspaceId: "home-ai",
+    sourceThreadId: "thread-home",
+    targetWorkspaceId: "music",
+    targetThreadId: "thread-music",
+    idempotencyKey: "interruption:self",
+    format: "markdown",
+    title: "Repair Music",
+    summary: "Repair and return.",
+    body: "Body.",
+  });
+  const approved = await service.approveFromSource(created.id, "thread-home");
+
+  const resumed = await service.maybeResumeInterruptedTaskCard({
+    threadId: "thread-music",
+    turnId: approved.card.executionLease.currentTurnId,
+  });
+
+  assert.equal(resumed, null);
+  assert.equal(executions.length, 1);
+});
+
+test("pausing or cancelling an execution lease prevents interruption continuation", async () => {
+  const executions = [];
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    executeApprovedCard: async (card) => {
+      executions.push(card);
+      return { threadId: card.target.threadId, turnId: `turn-${executions.length}` };
+    },
+  });
+  const pausedCard = await service.create({
+    sourceWorkspaceId: "home-ai",
+    sourceThreadId: "thread-home",
+    targetWorkspaceId: "music",
+    targetThreadId: "thread-music",
+    idempotencyKey: "interruption:pause",
+    format: "markdown",
+    title: "Pause repair",
+    summary: "Repair and return.",
+    body: "Body.",
+  });
+  await service.approveFromSource(pausedCard.id, "thread-home");
+  const paused = await service.pauseExecution(pausedCard.id, "thread-music");
+  assert.equal(paused.executionLease.status, "paused");
+  assert.equal(paused.executionLease.resumeRequired, false);
+  assert.equal(await service.maybeResumeInterruptedTaskCard({
+    threadId: "thread-music",
+    turnId: "turn-user-after-pause",
+  }), null);
+
+  const cancelledCard = await service.create({
+    sourceWorkspaceId: "home-ai",
+    sourceThreadId: "thread-home",
+    targetWorkspaceId: "music",
+    targetThreadId: "thread-music",
+    idempotencyKey: "interruption:cancel",
+    format: "markdown",
+    title: "Cancel repair",
+    summary: "Repair and return.",
+    body: "Body.",
+  });
+  await service.approveFromSource(cancelledCard.id, "thread-home");
+  const cancelled = await service.cancelExecution(cancelledCard.id, "thread-home");
+  assert.equal(cancelled.executionLease.status, "cancelled");
+  assert.equal(cancelled.executionLease.resumeRequired, false);
+  assert.equal(await service.maybeResumeInterruptedTaskCard({
+    threadId: "thread-music",
+    turnId: "turn-user-after-cancel",
+  }), null);
+  assert.equal(executions.length, 2);
+});
+
+test("multiple active task-card leases resume in deterministic oldest-first order", async () => {
+  let now = Date.parse("2026-06-25T10:00:00.000Z");
+  const executions = [];
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    now: () => now,
+    executeApprovedCard: async (card, message) => {
+      executions.push({ card, message });
+      return { threadId: card.target.threadId, turnId: `turn-${executions.length}` };
+    },
+  });
+  const first = await service.create({
+    sourceWorkspaceId: "home-ai",
+    sourceThreadId: "thread-home",
+    targetWorkspaceId: "music",
+    targetThreadId: "thread-music",
+    idempotencyKey: "interruption:queue:first",
+    format: "markdown",
+    title: "First repair",
+    summary: "First.",
+    body: "Body.",
+  });
+  await service.approveFromSource(first.id, "thread-home");
+  now += 1000;
+  const second = await service.create({
+    sourceWorkspaceId: "home-ai",
+    sourceThreadId: "thread-home",
+    targetWorkspaceId: "music",
+    targetThreadId: "thread-music",
+    idempotencyKey: "interruption:queue:second",
+    format: "markdown",
+    title: "Second repair",
+    summary: "Second.",
+    body: "Body.",
+  });
+  await service.approveFromSource(second.id, "thread-home");
+
+  const resumed = await service.maybeResumeInterruptedTaskCard({
+    threadId: "thread-music",
+    turnId: "turn-user-queue",
+  });
+
+  assert.equal(resumed.card.id, first.id);
+  assert.equal(service.get(first.id, "thread-music").executionLease.resumeCount, 1);
+  assert.equal(service.get(second.id, "thread-music").executionLease.resumeCount, 0);
+  assert.match(executions[2].message.text, /Title: First repair/);
 });
 
 test("approve preserves requested reasoning effort in injected task-card metadata", async () => {
@@ -772,6 +966,9 @@ test("reply can return an approved implementation card and is idempotent", async
     sourceThreadTitle: "Note",
   });
   assert.equal(returned.card.status, "replied");
+  assert.equal(returned.card.executionLease.status, "completed");
+  assert.equal(returned.card.executionLease.resumeRequired, false);
+  assert.equal(returned.card.executionLease.completedByReplyCardId, undefined);
   assert.equal(returned.replyCard.status, "approved");
   assert.equal(returned.replyCard.source.threadId, "thread-note");
   assert.equal(returned.replyCard.target.threadId, "thread-home");
@@ -849,6 +1046,7 @@ test("explicit returnToSource replies are terminal and cannot start acknowledgem
   assert.equal(returned.replyCard.requiresReturn, false);
   assert.equal(returned.replyCard.terminal, true);
   assert.equal(returned.replyCard.canReply, false);
+  assert.equal(returned.replyCard.executionLease, null);
   assert.match(executions[1].message.text, /Return policy: terminal receipt/);
   assert.doesNotMatch(executions[1].message.text, /Return required:/);
 

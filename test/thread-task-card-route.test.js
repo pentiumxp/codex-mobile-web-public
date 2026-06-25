@@ -41,6 +41,8 @@ test("server exposes thread task card routes and enriches thread detail response
   assert.match(serverJs, /const threadTaskCardDelete = url\.pathname\.match\(/);
   assert.match(serverJs, /const threadTaskCardRevoke = url\.pathname\.match\(/);
   assert.match(serverJs, /const threadTaskCardReply = url\.pathname\.match\(/);
+  assert.match(serverJs, /const threadTaskCardExecutionPause = url\.pathname\.match\(/);
+  assert.match(serverJs, /const threadTaskCardExecutionCancel = url\.pathname\.match\(/);
   assert.match(serverJs, /function attachThreadTaskCardsToThread\(/);
   assert.match(serverJs, /thread\.threadTaskCards = threadTaskCardService\.listForThread\(thread\.id\)/);
   assert.match(serverJs, /thread\.pendingIncomingTaskCardCount = taskCardCounts\.pendingIncoming/);
@@ -212,11 +214,14 @@ test("thread task card routes preserve service status codes", () => {
   assert.match(routeBlock, /threadTaskCardService\.deleteCard/);
   assert.match(routeBlock, /threadTaskCardService\.revoke/);
   assert.match(routeBlock, /threadTaskCardService\.reply/);
+  assert.match(routeBlock, /threadTaskCardService\.pauseExecution/);
+  assert.match(routeBlock, /threadTaskCardService\.cancelExecution/);
   assert.match(serverJs, /function maybeAutoReplyThreadTaskCard\(/);
   assert.match(serverJs, /threadTaskCardService\.maybeAutoReplyCompletedTurn/);
+  assert.match(serverJs, /threadTaskCardService\.maybeResumeInterruptedTaskCard/);
   assert.match(serverJs, /maybeAutoReplyThreadTaskCard\(msg\.method, msg\.params \|\| null\)/);
   const statusPreservingErrors = routeBlock.match(/sendJson\(res, err\.statusCode \|\| 500, \{ ok: false, error: err\.message \|\| String\(err\) \}\);/g) || [];
-  assert.equal(statusPreservingErrors.length, 6);
+  assert.equal(statusPreservingErrors.length, 8);
 });
 
 test("approved task cards inherit target thread model and effort", () => {
@@ -309,7 +314,7 @@ test("server materializes structured task-card drafts from thread detail", () =>
 });
 
 test("conversation render includes task card signature, toolbar, and action handlers", () => {
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v442"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v443"/);
   assert.match(appJs, /function threadTaskCardsForThread\(/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.status \|\| ""\) === "pending"\)/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.threadRole \|\| ""\) === "target"\)/);

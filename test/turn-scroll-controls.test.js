@@ -194,7 +194,8 @@ test("live and final message renders stay anchored when the user is at bottom", 
   assert.match(sustainBody, /scheduleSubmittedMessageBottomFollowScroll\(\);/);
 
   const notificationBody = functionBody("applyNotification");
-  assert.match(notificationBody, /method === "item\/agentMessage\/delta"[\s\S]*appendToItem\(params\.turnId, params\.itemId, "agentMessage", "text", params\.delta \|\| "", 0, \{ render: "defer-final-receipt" \}\)/);
+  assert.match(notificationBody, /method === "item\/agentMessage\/delta"[\s\S]*appendToItem\(params\.turnId, params\.itemId, "agentMessage", "text", params\.delta \|\| "", 0\)/);
+  assert.doesNotMatch(notificationBody, /defer-final-receipt/);
   assert.match(notificationBody, /method === "turn\/completed"[\s\S]*renderCurrentThread\(\{ stickToBottom: true \}\);/);
 });
 

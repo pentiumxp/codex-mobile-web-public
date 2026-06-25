@@ -7852,13 +7852,17 @@ function maybeAutoReplyThreadTaskCard(method, params) {
   const threadId = pushThreadId(params);
   if (!threadId) return;
   const completedAtMs = turnTimestampMs(params, "completedAt") || turnTimestampMs(params, "updatedAt") || Date.now();
-  threadTaskCardService.maybeAutoReplyCompletedTurn({
+  const completed = {
     threadId,
     turnId,
     completedAt: new Date(completedAtMs).toISOString(),
     finalReceiptText: finalReceiptTextFromParams(params),
-  }).catch((err) => {
+  };
+  threadTaskCardService.maybeAutoReplyCompletedTurn(completed).catch((err) => {
     console.error(`[thread task card] auto-return failed: ${err.message || String(err)}`);
+  });
+  threadTaskCardService.maybeResumeInterruptedTaskCard(completed).catch((err) => {
+    console.error(`[thread task card] interruption resume failed: ${err.message || String(err)}`);
   });
 }
 
@@ -14236,6 +14240,34 @@ async function handleApi(req, res) {
         sourceThreadId: body.sourceThreadId || actorThreadId,
         sourceThreadTitle: taskCardSourceThreadTitle(actorThreadId, body.sourceThreadTitle, actorSummary),
       }))));
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
+    return;
+  }
+  const threadTaskCardExecutionPause = url.pathname.match(/^\/api\/thread-task-cards\/([^/]+)\/execution\/pause$/);
+  if (threadTaskCardExecutionPause && req.method === "POST") {
+    try {
+      const cardId = decodeURIComponent(threadTaskCardExecutionPause[1]);
+      const body = await readBody(req);
+      sendJson(res, 200, {
+        ok: true,
+        card: await threadTaskCardService.pauseExecution(cardId, body.threadId || body.actorThreadId || ""),
+      });
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
+    return;
+  }
+  const threadTaskCardExecutionCancel = url.pathname.match(/^\/api\/thread-task-cards\/([^/]+)\/execution\/cancel$/);
+  if (threadTaskCardExecutionCancel && req.method === "POST") {
+    try {
+      const cardId = decodeURIComponent(threadTaskCardExecutionCancel[1]);
+      const body = await readBody(req);
+      sendJson(res, 200, {
+        ok: true,
+        card: await threadTaskCardService.cancelExecution(cardId, body.threadId || body.actorThreadId || ""),
+      });
     } catch (err) {
       sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
     }

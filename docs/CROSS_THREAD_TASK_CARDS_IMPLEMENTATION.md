@@ -13,6 +13,8 @@ layout and test strategy.
   - authorization checks
   - status transitions
   - target-side approval in-flight persistence before external `turn/start`
+  - active execution leases for non-terminal approved work cards, including
+    interruption-safe continuation state and explicit pause/cancel semantics
   - autonomous workflow grants after first target approval
   - automatic completion return cards for autonomous workflows, with terminal
     return-card delivery flags and single-prefix `Auto return:` titles
@@ -26,6 +28,9 @@ layout and test strategy.
 - `server.js`
   - route wiring
   - `turn/completed` notification hook for autonomous completion auto-return
+  - `turn/completed` notification hook for interruption-safe task-card
+    continuation when a normal target-thread turn completes while a non-terminal
+    work-card lease is still active
   - `turn/completed` and thread-detail hooks that materialize structured `#`
     task-card drafts through the same idempotent create service path
   - fallback `thread/turns/list` detail mode must still run task-card draft
@@ -78,6 +83,8 @@ layout and test strategy.
 - `POST /api/thread-task-cards/:id/delete`
 - `POST /api/thread-task-cards/:id/revoke`
 - `POST /api/thread-task-cards/:id/reply`
+- `POST /api/thread-task-cards/:id/execution/pause`
+- `POST /api/thread-task-cards/:id/execution/cancel`
 
 `POST /api/threads/:sourceThreadId/task-cards` is the thread-callable
 delegation route. It uses `buildThreadTaskCardCreatePayload()` to infer source
@@ -151,6 +158,19 @@ previous runtime version already created a pending return card with the same
 `task-card-return:*` idempotency key, retrying through the return path promotes
 that existing card through the same direct return approval flow and stamps the
 same terminal metadata.
+
+Every non-terminal approved work card also records an `executionLease` on the
+original card. The lease stores bounded ids and status only: card id,
+source/target thread ids, workflow id/mode, `startedAt`, `lastProgressAt`,
+`injectedTurnId`, `currentTurnId`, `lastInterruptedTurnId`,
+`lastContinuationTurnId`, `resumeCount`, and `resumeRequired`. If an unrelated
+target-thread turn completes while the lease is still active, the service
+starts a continuation turn with a bounded prompt that references the original
+task-card id and previous injected message. It does not duplicate the full task
+body. `execution/pause` and `execution/cancel` flip the lease to a non-resuming
+state. Terminal return/no-op cards set `requiresReturn:false` and never create
+leases, so acknowledgement-loop prevention remains separate from interruption
+continuation.
 
 When the runtime `跨工作区委派` switch is enabled, server-side `thread/start` and
 `turn/start` requests also receive a Codex app-server dynamic tool:
