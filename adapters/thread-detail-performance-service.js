@@ -24,6 +24,7 @@ function classifyThreadDetailPhase(readMode, options = {}) {
   const mode = nonEmptyText(readMode).toLowerCase();
   if (options.cached === true) return "warm-client-current";
   if (!mode) return "unknown";
+  if (/projection-v?\d*-partial|projection-partial/.test(mode)) return "warm-projection-partial";
   if (/projection-v?\d*-cache|projection-cache/.test(mode)) return "warm-projection-cache";
   if (/projection-v?\d*-dynamic|projection-dynamic/.test(mode)) return "warm-projection-dynamic";
   if (/turns-list-large/.test(mode)) return "bounded-large-thread-window";

@@ -630,3 +630,98 @@ test("thread detail projection does not return unseeded partial notification win
 
   assert.equal(service.get(signatureInput({ summaryStatus: "active" })), null);
 });
+
+test("thread detail projection returns partial seed only when explicitly allowed", () => {
+  const service = createThreadDetailProjectionService({
+    cacheDir: "",
+    policyVersion: "test-v1",
+    maxTurns: 2,
+    now: () => 1000,
+  });
+  const seeded = service.seed(signatureInput(), {
+    thread: {
+      id: "thread-1",
+      turns: [{ id: "turn-recent", items: [] }],
+    },
+  }, {
+    partial: true,
+    partialKind: "recent-window",
+  });
+
+  assert.equal(seeded.partial, true);
+  assert.equal(seeded.partialKind, "recent-window");
+  assert.equal(service.get(signatureInput()), null);
+
+  const cached = service.get(signatureInput(), { allowPartial: true });
+  assert.ok(cached);
+  assert.equal(cached.partial, true);
+  assert.equal(cached.partialKind, "recent-window");
+  assert.deepEqual(cached.result.thread.turns.map((turn) => turn.id), ["turn-recent"]);
+});
+
+test("thread detail projection keeps partial recent windows memory-only", () => {
+  const dir = tempDir();
+  try {
+    const service = createThreadDetailProjectionService({
+      cacheDir: dir,
+      policyVersion: "test-v1",
+      maxTurns: 2,
+      now: () => 1000,
+    });
+    service.seed(signatureInput(), {
+      thread: {
+        id: "thread-1",
+        turns: [{ id: "turn-recent", items: [] }],
+      },
+    }, {
+      partial: true,
+      partialKind: "recent-window",
+    });
+
+    assert.ok(service.get(signatureInput(), { allowPartial: true }));
+
+    const restoredService = createThreadDetailProjectionService({
+      cacheDir: dir,
+      policyVersion: "test-v1",
+      maxTurns: 2,
+      now: () => 2000,
+    });
+    assert.equal(restoredService.get(signatureInput(), { allowPartial: true }), null);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("thread detail projection partial seed cannot replace an existing full cache", () => {
+  const service = createThreadDetailProjectionService({
+    cacheDir: "",
+    policyVersion: "test-v1",
+    maxTurns: 2,
+    now: () => 1000,
+  });
+  service.seed(signatureInput(), {
+    thread: {
+      id: "thread-1",
+      turns: [{ id: "turn-full", items: [] }],
+    },
+  });
+
+  const seeded = service.seed(signatureInput(), {
+    thread: {
+      id: "thread-1",
+      turns: [{ id: "turn-partial", items: [] }],
+    },
+  }, {
+    partial: true,
+    partialKind: "recent-window",
+  });
+
+  assert.equal(seeded.skipped, true);
+  assert.equal(seeded.reason, "full-cache-exists");
+  assert.equal(seeded.partial, false);
+
+  const cached = service.get(signatureInput(), { allowPartial: true });
+  assert.ok(cached);
+  assert.equal(cached.partial, false);
+  assert.deepEqual(cached.result.thread.turns.map((turn) => turn.id), ["turn-full"]);
+});

@@ -32,6 +32,7 @@ function createThreadDetailProjectionResultService(options = {}) {
 
   function mobileReadMode(cached, projectionVersion) {
     const v4 = projectionVersion === "v4";
+    if (cached && cached.partial) return v4 ? "projection-v4-partial" : "projection-partial";
     return cached && cached.dynamic
       ? (v4 ? "projection-v4-dynamic" : "projection-dynamic")
       : (v4 ? "projection-v4-cache" : "projection-cache");
@@ -74,8 +75,10 @@ function createThreadDetailProjectionResultService(options = {}) {
     result.thread.mobileReadMode = mobileReadMode(cached, projectionVersion);
     result.thread.mobileProjection = {
       ...(result.thread.mobileProjection || {}),
-      source: cached.dynamic ? "dynamic" : "cache",
+      source: cached.partial ? "partial" : cached.dynamic ? "dynamic" : "cache",
       version: projectionVersion || result.thread.mobileProjectionVersion || "",
+      partial: cached.partial === true,
+      partialKind: cached.partialKind || "",
       cachedAtMs: cached.cachedAtMs || null,
       updatedAtMs: cached.updatedAtMs || cached.cachedAtMs || null,
       ageMs: cached.updatedAtMs ? Math.max(0, now() - cached.updatedAtMs) : null,

@@ -5159,8 +5159,8 @@ const threadDetailReadOrchestrationService = createThreadDetailReadOrchestration
   rawAllEnabled: () => THREAD_DETAIL_RAW_ALL_ENABLED,
   readRawThread: readRawThreadDetailForOrchestrator,
   projectionInput: threadDetailProjectionInput,
-  projectedThreadResult: (input, summary, runtimeSettings) => prepareProjectedThreadReadResult(
-    threadDetailProjectionService.get(input),
+  projectedThreadResult: (input, summary, runtimeSettings, optionsForProjection = {}) => prepareProjectedThreadReadResult(
+    threadDetailProjectionService.get(input, optionsForProjection),
     summary,
     runtimeSettings,
   ),
@@ -5174,7 +5174,7 @@ const threadDetailReadOrchestrationService = createThreadDetailReadOrchestration
     threadLog,
   ),
   readFullThread: readFullThreadDetailForOrchestrator,
-  seedProjection: (input, result) => threadDetailProjectionService.seed(input, result),
+  seedProjection: (input, result, optionsForSeed = {}) => threadDetailProjectionService.seed(input, result, optionsForSeed),
   preferBoundedReadBeforeFullRead: ({ summary, projection }) => {
     const thresholdBytes = THREAD_DETAIL_TURNS_LIST_FIRST_BYTES;
     if (thresholdBytes <= 0) {

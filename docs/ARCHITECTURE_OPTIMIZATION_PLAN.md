@@ -57,10 +57,11 @@ Status: in progress. Earlier slices added bounded `detailShape` counts to
 thread-detail performance events, so large-session investigations can compare
 server phase timings with client render/merge timings and visible item shape
 without collecting message bodies or file contents. The latest Phase B slice
-extends thread-list fallback-cache diagnostics with explicit cache decision
-metadata so cold/warm thread-list behavior can be read from
-`mobileDiagnostics.threadListTimings` without inspecting private cache keys or
-raw thread data.
+uses that evidence to add a recent-only, memory-only partial projection warm
+path: a first `mode=recent` `turns-list-initial` response can seed a
+`recent-window` projection that later recent opens may reuse, while full/detail
+reads still reject partial cache and disk persistence still stores only full
+non-partial projections.
 
 - Keep large-session timing evidence in `mobileDiagnostics.threadDetailTimings`
   and client `performancePhase` events. Client events now also carry
@@ -72,7 +73,10 @@ raw thread data.
   whether a cold large-session open was a warm projection hit, projection miss
   protected by `turns-list-large`, summary-sourced large read, full
   `thread/read`, fallback `thread/turns/list`, or summary fallback without
-  reading private conversation data.
+  reading private conversation data. Recent-mode projection hits may now report
+  `projection-v4-partial` / `projection-partial` with source `partial`; those
+  modes mean only the bounded current window is cached, not the complete
+  thread history.
 - Keep thread-list fallback cache evidence in
   `mobileDiagnostics.threadListTimings`. The cache now reports
   `fallbackCacheDecision` (`hit`, `miss-rebuild`, `expired-rebuild`), bounded
@@ -351,7 +355,11 @@ from projection-cache input availability: if projection input cannot be built
 but the thread summary still carries a rollout size at or above
 `CODEX_MOBILE_THREAD_DETAIL_TURNS_LIST_FIRST_BYTES`, the coordinator uses
 `turns-list-large` and records the decision source/reason in
-`mobileDiagnostics.threadDetailTimings`.
+`mobileDiagnostics.threadDetailTimings`. The latest slice adds a separate
+recent-only warm path: if `mode=recent` misses projection and succeeds through
+`turns-list-initial`, the coordinator seeds a memory-only partial
+`recent-window` projection; later `mode=recent` reads pass `allowPartial` and
+can return `projection-v4-partial` without another app-server turns-list read.
 
 - The coordinator owns summary resolution, hidden-thread rejection, projection
   hit, `mode=recent` initial turns-list, full `thread/read`, turns-list
@@ -379,6 +387,12 @@ but the thread summary still carries a rollout size at or above
   projection seeding from bounded turns-list/full read, below-threshold,
   disabled, and no-rollout-size decisions without logging message bodies or
   raw thread data.
+- `mode=recent` can seed and reuse a memory-only partial projection. Partial
+  projections carry `partial:true` / `partialKind:recent-window`, are only
+  returned when the coordinator explicitly passes `allowPartial`, are never
+  persisted to disk, and cannot overwrite an existing full projection cache.
+  This optimizes repeated recent opens of large sessions without presenting a
+  bounded current window as authoritative complete history.
 - Preserve the first-paint contract for large sessions. Do not introduce
   deferred incomplete detail enrichment as a UI fallback for server cold-path
   slowness.
@@ -387,12 +401,14 @@ Remaining target:
 
 - After deployment, verify restart/cold-open paths for both static and actively
   advancing large threads. Expected first detail result should be either
-  disk-backed projection or `turns-list-large`, with `threadReadMs=0`; full
-  `thread/read` should only remain for small/non-rollout threads or bounded
-  turns-list failure. Use `readDecision`, `projectionState`, and
-  `projectionSeedStatus` first when deciding whether the next repair belongs to
-  projection-cache seeding, summary rollout-size hydration, or app-server read
-  fallback.
+  disk-backed projection, `turns-list-large`, or a first recent
+  `turns-list-initial` that seeds `seeded-partial`; a repeated recent open
+  should be able to return `projection-v4-partial` with `threadReadMs=0` and no
+  app-server turns-list timing. Full `thread/read` should only remain for
+  small/non-rollout threads or bounded turns-list failure. Use `readDecision`,
+  `projectionState`, `projectionSeedStatus`, and `projectionSource` first when
+  deciding whether the next repair belongs to projection-cache seeding, summary
+  rollout-size hydration, or app-server read fallback.
 - For thread-list cold/warm behavior, use `fallbackCacheDecision`,
   `fallbackCacheBuildCount`, `fallbackCacheBuildNumber`, and
   `fallbackCacheIncrementalUpdates` before changing cache invalidation. Normal

@@ -594,10 +594,22 @@ function createThreadDetailProjectionService(options = {}) {
     return false;
   }
 
-  function seed(input = {}, result) {
+  function seed(input = {}, result, optionsForSeed = {}) {
     const threadId = String(input.threadId || result && result.thread && result.thread.id || "").trim();
     if (!threadId || !result || typeof result !== "object" || !result.thread) return null;
     const signature = projectionSignature(Object.assign({}, input, { policyVersion, maxTurns }));
+    const existing = entryForThread(threadId);
+    const partial = optionsForSeed.partial === true;
+    if (partial && existing && !existing.partial) {
+      return {
+        cachedAtMs: existing.cachedAtMs,
+        dynamic: existing.dynamic,
+        partial: false,
+        signatureHash: existing.signatureHash,
+        skipped: true,
+        reason: "full-cache-exists",
+      };
+    }
     const entry = {
       threadId,
       rolloutPath: String(input.rolloutPath || "").trim(),
@@ -607,7 +619,8 @@ function createThreadDetailProjectionService(options = {}) {
       updatedAtMs: now(),
       lastPersistedAtMs: 0,
       dynamic: false,
-      partial: false,
+      partial,
+      partialKind: partial ? String(optionsForSeed.partialKind || "recent-window").slice(0, 80) : "",
       result: cloneJson(result),
     };
     normalizeProjectionThreadUserMessages(entry.result.thread);
@@ -619,6 +632,7 @@ function createThreadDetailProjectionService(options = {}) {
       cachedAtMs: entry.cachedAtMs,
       dynamic: entry.dynamic,
       partial: entry.partial,
+      partialKind: entry.partialKind || "",
       signatureHash: entry.signatureHash,
     };
   }
@@ -637,20 +651,22 @@ function createThreadDetailProjectionService(options = {}) {
       lastPersistedAtMs: safeNumber(raw.updatedAtMs || raw.cachedAtMs),
       dynamic: Boolean(raw.dynamic),
       partial: Boolean(raw.partial),
+      partialKind: String(raw.partialKind || ""),
       result: raw.result,
     };
     memory.set(threadId, entry);
     return entry;
   }
 
-  function get(input = {}) {
+  function get(input = {}, optionsForGet = {}) {
     const threadId = String(input.threadId || "").trim();
     if (!threadId) return null;
     const signature = projectionSignature(Object.assign({}, input, { policyVersion, maxTurns }));
     const expectedHash = signatureHash(signature);
     let entry = entryForThread(threadId);
     if (!entry) entry = readDisk(threadId);
-    if (!entry || !entry.result || entry.partial) return null;
+    if (!entry || !entry.result) return null;
+    if (entry.partial && optionsForGet.allowPartial !== true) return null;
 
     const summaryUpdatedAtMs = safeNumber(input.summaryUpdatedAtMs);
     if (entry.dynamic) {
@@ -671,6 +687,8 @@ function createThreadDetailProjectionService(options = {}) {
       cachedAtMs: entry.cachedAtMs,
       updatedAtMs: entry.updatedAtMs,
       dynamic: entry.dynamic,
+      partial: entry.partial === true,
+      partialKind: entry.partialKind || "",
       result,
     };
   }

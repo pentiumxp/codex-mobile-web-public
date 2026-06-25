@@ -92,7 +92,21 @@ function createHarness(overrides = {}) {
         },
       };
     },
-    seedProjection: () => calls.push("seed"),
+    seedProjection: (input, result, options = {}) => {
+      if (options.partial) {
+        calls.push("seed:partial");
+        return {
+          partial: true,
+          partialKind: options.partialKind || "recent-window",
+          signatureHash: "partial-signature",
+        };
+      }
+      calls.push("seed");
+      return {
+        partial: false,
+        signatureHash: "full-signature",
+      };
+    },
     prepareResponse: async (result, details) => {
       calls.push(`prepare:${details.source}`);
       return result;
@@ -312,7 +326,52 @@ test("recent thread detail can use initial bounded turns/list without full read"
   assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["turn-from-list"]);
   assert.ok(calls.indexOf("turns-list:turns-list-initial") > calls.indexOf("projection-miss"));
   assert.equal(calls.includes("thread-read"), false);
+  assert.ok(calls.indexOf("seed:partial") > calls.indexOf("turns-list:turns-list-initial"));
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "initial-turns-list");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedStatus, "seeded-partial");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedSource, "turns-list-initial");
+});
+
+test("recent thread detail can reuse partial projection without app-server reads", async () => {
+  const { service, calls } = createHarness({
+    projectedThreadResult: (input, summary, runtimeSettings, options = {}) => {
+      calls.push(options.allowPartial ? "projection-partial-hit" : "projection-no-partial");
+      if (!options.allowPartial) return null;
+      return {
+        thread: {
+          id: "thread-1",
+          turns: [{ id: "turn-partial" }],
+          mobileReadMode: "projection-v4-partial",
+          mobileProjection: {
+            source: "partial",
+            version: "v4",
+            partial: true,
+            partialKind: "recent-window",
+            ageMs: 12,
+          },
+        },
+      };
+    },
+  });
+
+  const response = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: true,
+    threadLog: () => {},
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.mode, "projection-v4-partial");
+  assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["turn-partial"]);
+  assert.equal(calls.includes("turns-list:turns-list-initial"), false);
+  assert.equal(calls.includes("thread-read"), false);
+  assert.equal(calls.includes("seed:partial"), false);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "projection-partial-hit");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionState, "hit");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSource, "partial");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionVersion, "v4");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionAgeMs, 12);
 });
 
 test("thread/read failure falls back to bounded turns/list", async () => {

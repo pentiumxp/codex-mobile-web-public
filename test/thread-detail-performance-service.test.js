@@ -132,6 +132,7 @@ test("thread detail diagnostics attach to thread without copying private body co
 test("thread detail phase classification distinguishes cold and fallback paths", () => {
   assert.equal(classifyThreadDetailPhase("turns-list-initial"), "cold-turns-list-initial");
   assert.equal(classifyThreadDetailPhase("turns-list-large"), "bounded-large-thread-window");
+  assert.equal(classifyThreadDetailPhase("projection-v4-partial"), "warm-projection-partial");
   assert.equal(classifyThreadDetailPhase("turns-list"), "fallback-turns-list");
   assert.equal(classifyThreadDetailPhase("thread-read-raw"), "cold-thread-read-raw");
   assert.equal(classifyThreadDetailPhase("summary-timeout-fallback"), "fallback-summary");

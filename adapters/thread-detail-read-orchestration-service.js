@@ -230,7 +230,9 @@ function createThreadDetailReadOrchestrationService(options = {}) {
     context.projectionInputAvailable = Boolean(projection);
     context.projectionState = projection ? "input-ready" : "unavailable";
     const projectionStartedAtMs = now();
-    const projected = projection ? projectedThreadResult(projection, summary, runtimeSettings) : null;
+    const projected = projection
+      ? projectedThreadResult(projection, summary, runtimeSettings, { allowPartial: preferRecentTurns })
+      : null;
     timer.mark("projectionMs", projectionStartedAtMs);
     if (projected && projected.thread) {
       context.projectionState = "hit";
@@ -258,7 +260,9 @@ function createThreadDetailReadOrchestrationService(options = {}) {
         body: await prepareAndAttach(projected, context, {
           threadId,
           source: projected.thread.mobileReadMode || "projection",
-          readDecision: "projection-hit",
+          readDecision: projected.thread.mobileProjection && projected.thread.mobileProjection.partial
+            ? "projection-partial-hit"
+            : "projection-hit",
         }),
       };
     }
@@ -285,6 +289,27 @@ function createThreadDetailReadOrchestrationService(options = {}) {
           return hiddenResponse();
         }
         timer.mark("turnsListInitialMs", turnsStartedAtMs);
+        if (projection && result && result.thread) {
+          try {
+            const seeded = seedProjection(projection, result, {
+              partial: true,
+              partialKind: "recent-window",
+            });
+            context.projectionSeedStatus = seeded && seeded.skipped
+              ? "skipped"
+              : seeded && seeded.partial
+                ? "seeded-partial"
+                : "seeded";
+            context.projectionSeedSource = seeded && seeded.reason || "turns-list-initial";
+          } catch (err) {
+            context.projectionSeedStatus = "failed";
+            context.projectionSeedSource = "turns-list-initial";
+            threadLog("projection_seed_error", { error: safeErrorMessage(err) });
+          }
+        } else {
+          context.projectionSeedStatus = "skipped";
+          context.projectionSeedSource = projection ? "turns-list-initial" : "no-projection-input";
+        }
         return {
           status: 200,
           mode: "turns-list-initial",

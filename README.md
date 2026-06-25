@@ -16,6 +16,39 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v494 Partial Recent Projection Cache
+
+v494 继续推进 Phase B 的大 session / thread-detail cold path 收敛。生产
+v493 证据显示：线程列表冷启动后会建立 baseline，后续列表刷新已经走 warm
+cache；但多个大 session 的 `mode=recent` 线程详情仍反复落到
+`turns-list-initial`，且 `projectionState=miss`。这说明慢点不再主要是列表
+baseline 重建，而是 recent 详情窗口没有可复用的 warm projection。
+
+本次切片新增 memory-only partial recent projection：
+
+- `mode=recent` 首次通过 `turns-list-initial` 返回后，只 seed 一个
+  `partial: true` / `partialKind: recent-window` 的内存窗口。
+- 后续 `mode=recent` 可通过 `allowPartial` 命中 `projection-v4-partial`，
+  避免重复调用 app-server 的 `thread/turns/list`。
+- 默认 `get()` 不返回 partial cache，完整详情、full projection 和持久化
+  projection 仍必须使用完整缓存。
+- partial cache 不写入磁盘，且不能覆盖已有 full cache。
+
+修复边界：
+
+- 症状/风险：大 session recent 详情重复进入仍可能每次走 bounded
+  turns-list 初始窗口，首屏体验不稳定。
+- 失败层：服务端 thread-detail recent-window warm path 所有权。
+- 不变量：partial projection 只代表 recent 可见窗口，不得污染完整线程投影；
+  只记录 bounded projection metadata，不记录消息正文、任务卡正文、上传内容、
+  私有路径、cookie/token、provider payload 或长日志。
+- 闭环验证：`test/thread-detail-projection-service.test.js` 覆盖 partial
+  only-on-allow、memory-only、不能覆盖 full cache；`test/thread-detail-read-orchestration-service.test.js`
+  覆盖 recent miss 后 partial seed，以及 recent partial hit 不触发 app-server
+  turns-list/full read。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v494`。
+
 ## 2026-06-26 v493 Thread Detail Cold-Path Diagnostics
 
 v493 开始推进 Phase B 的大 session / thread-detail cold path 收敛。本次不改
