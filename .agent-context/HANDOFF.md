@@ -10764,3 +10764,90 @@ The previous full handoff was archived and should be opened only when old proven
     ids, terminal flag, ack policy, test counts, build ids, and short hashes. No
     card body, prompt/completion, upload, screenshot, cookie, launch token,
     access key, provider payload, database row, or long log was copied.
+
+## 2026-06-26 - v495 projection miss reason diagnostics deployed
+
+- Latest code commit:
+  - `ea15ad5 expose projection cache miss reasons`
+- v495 change:
+  - `adapters/thread-detail-projection-service.js` now exposes `lookup()` with
+    bounded `missReason` values including `entry-missing`,
+    `partial-not-allowed`, `signature-unavailable`,
+    `static-signature-mismatch`, `dynamic-summary-stale`,
+    `dynamic-resting-signature-mismatch`, and
+    `dynamic-age-signature-mismatch`.
+  - `adapters/thread-detail-projection-v4-service.js` forwards lookup through
+    the v4 visible projection wrapper.
+  - `adapters/thread-detail-read-orchestration-service.js` records
+    `projectionMissReason` in `mobileDiagnostics.threadDetailTimings`.
+  - Recent partial projection seed now removes unusable full disk cache entries
+    when the full cache miss reason proves it is stale (`dynamic-summary-stale`
+    or signature mismatch). Healthy full cache still blocks partial overwrite;
+    partial recent windows remain memory-only and opt-in through `allowPartial`.
+  - Static build/cache: `0.1.11|codex-mobile-shell-v495` /
+    `codex-mobile-shell-v495`.
+- Root-cause boundary:
+  - Symptom/risk: after v494, large-session recent opens could show
+    `projectionState=miss` without explaining whether the miss came from absent
+    cache, partial rejection, stale summary, unavailable signature, or signature
+    mismatch. Stale full disk cache could also be re-read after service restart.
+  - Failing layer: server projection cache lookup and invalid full-cache
+    lifecycle.
+  - Invariant: projection miss diagnostics are bounded reason codes only; they
+    do not include message bodies, task-card bodies, uploads, private paths,
+    cookies, access keys, provider payloads, database rows, screenshots, or long
+    logs.
+  - Classification: Phase B root-cause evidence and cache lifecycle repair; no
+    frontend hiding, forced refresh, duplicate suppression, or broad fallback
+    was added.
+- Validation:
+  - Focused source suite passed:
+    `test/thread-detail-projection-service.test.js`,
+    `test/thread-detail-projection-v4-service.test.js`,
+    `test/thread-detail-projection-result-service.test.js`,
+    `test/thread-detail-performance-service.test.js`,
+    `test/thread-detail-read-orchestration-service.test.js`,
+    `test/thread-performance-metrics.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-goal-service.test.js`, and
+    `test/thread-task-card-route.test.js` (`78` tests before the
+    dynamic-summary-stale cleanup addition; focused projection subset later
+    passed `41` tests).
+  - Full source `npm test` passed (`926` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Production deploy:
+  - Deployed through Home AI central macOS plugin deploy path with reason
+    `codex-mobile-projection-miss-reason-v495`.
+  - Final backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T235007Z-plugin-codex-mobile-web-codex-mobile-projection-miss-reason-v495`
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v495`,
+    `shellCacheName=codex-mobile-shell-v495`, `version=0.1.11`,
+    `authRequired=true`.
+  - Source/production SHA parity verified for README/docs, projection services,
+    orchestration/performance services, server/static shell files, and focused
+    tests touched by v495.
+  - Production focused projection suite passed (`41` tests).
+- Production observation:
+  - Bounded live reads used authenticated local requests without printing the
+    access key. Evidence included only thread-id hashes, rollout sizes,
+    decisions, durations, and bounded diagnostics.
+  - Four largest visible thread samples were read twice with `mode=recent`.
+    One was already `projection-v4-dynamic` on the first read. The other three
+    first returned `turns-list-initial` with `projectionState=miss`,
+    `projectionMissReason` of `dynamic-summary-stale` or `entry-missing`,
+    `projectionSeedStatus=seeded-partial`, `threadReadMs=0`; their second reads
+    returned `projection-v4-partial`, `readDecision=projection-partial-hit`,
+    `projectionSource=partial`, `partialKind=recent-window`, and
+    `turnsListInitialMs=0`.
+  - Thread-list cache after deploy showed a rebuild for the first request with
+    a new parameter set and then `fallbackCacheDecision=hit`, `fallbackMs=0`,
+    with build count/number unchanged on the repeated request.
+- Release:
+  - Public was not pushed for v495.
+- Next suggested slice:
+  - Continue Phase B with cold-start/restart observation after normal user
+    traffic: if repeated first reads still show `dynamic-summary-stale`, inspect
+    dynamic full projection persist timing and summary updated-at ownership. If
+    projection hits are warm but the UI still appears slow, pivot to Phase A
+    client render/patch ownership using `thread_detail_first_paint` and
+    `thread_refresh_ms` diagnostics.
