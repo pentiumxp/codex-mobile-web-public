@@ -16,6 +16,30 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v463 Thread Tile Pane Count And Close Policy
+
+v463 继续 Phase C，把平铺窗口的 pane count、close pane 和 selected pane fallback
+决策从 `public/app.js` 迁到 `public/thread-tile-state.js`。这次处理的是窗口数量
+边界、关闭窗口后的 pinned slot 填充、关闭后选中窗口的 fallback，以及切换数量时
+是否需要真正触发 render。
+
+本次新增的纯策略包括：
+
+- `paneCountChangePlan`：统一判断 tile mode/layout 是否可用、请求数量如何按
+  min/max/user max 截断、以及当前数量未变化时是否跳过。
+- `closePanePlan`：统一判断目标 pane 是否可关闭、最小 pane 数限制、关闭后的
+  visible count、pinned thread ids 和 scroll reset ids。
+- `paneSelectionPlan`：统一 selected pane 仍可见、缺失、空选择时的 fallback 规则。
+
+`public/app.js` 仍负责副作用：保存当前草稿、写入 state、清理 scroll hold、
+恢复 Composer target、更新 controls、render 和持久化显示设置。这个切片不改变
+server projection、任务卡、诊断上报、图片投影或 thread detail merge。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v463`。
+`test/thread-tile-state.test.js` 覆盖 count/close/selection planning；
+`test/thread-tile-layout-ui.test.js` 约束 app 层必须通过这些 policy helpers，
+避免 pane count/close 状态判断重新散回 `app.js`。
+
 ## 2026-06-26 v462 Thread Tile Pane Slot Mutation Policy
 
 v462 继续 Phase C，把平铺窗口的 pane slot mutation 规则从 `public/app.js`

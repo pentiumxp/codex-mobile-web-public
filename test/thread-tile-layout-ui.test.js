@@ -77,6 +77,16 @@ test("thread tile layout is wired as an explicit shell policy", () => {
   assert.match(functionBody(appJs, "effectiveThreadTilePaneCount"), /if \(explicit > 0\) \{[\s\S]*threadTileMaximumPaneCount\(layout\)[\s\S]*explicit/);
   assert.match(appJs, /function setThreadTilePaneCount\(/);
   assert.match(appJs, /function closeThreadTilePane\(/);
+  const setCountBody = functionBody(appJs, "setThreadTilePaneCount");
+  assert.match(setCountBody, /threadTileStatePolicy\.paneCountChangePlan/);
+  assert.match(setCountBody, /state\.threadTilePaneCount = plan\.paneCount/);
+  assert.match(setCountBody, /state\.threadTileSwitchMenuPaneId = plan\.switchMenuPaneId \|\| ""/);
+  assert.match(setCountBody, /threadTileStatePolicy\.paneSelectionPlan/);
+  const closePaneBody = functionBody(appJs, "closeThreadTilePane");
+  assert.match(closePaneBody, /threadTileStatePolicy\.closePanePlan/);
+  assert.match(closePaneBody, /state\.threadTilePinnedIds = normalizeThreadTilePinnedIds\(plan\.paneThreadIds\)/);
+  assert.match(closePaneBody, /state\.threadTilePaneCount = plan\.paneCount/);
+  assert.match(closePaneBody, /threadTileStatePolicy\.paneSelectionPlan/);
   assert.match(functionBody(appJs, "threadDisplaySettingsPayload"), /threadTileStatePolicy\.displaySettingsPayload/);
   assert.match(functionBody(appJs, "threadDisplaySettingsPayload"), /normalizeSplitPairs: threadTileLayoutPolicy\.normalizeSplitPairs/);
   assert.match(functionBody(appJs, "applyThreadDisplaySettings"), /threadTileStatePolicy\.normalizeDisplaySettings/);

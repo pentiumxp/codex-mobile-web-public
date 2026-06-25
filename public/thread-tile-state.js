@@ -281,6 +281,71 @@
         : { action: "split-with-target", from, to, placement: y < 0.5 ? "above" : "below", x, y };
   }
 
+  function paneSelectionPlan(input = {}) {
+    const ids = uniqueIds(input.ids || input.activeIds || []);
+    const selectedThreadId = text(input.selectedThreadId).trim();
+    if (selectedThreadId && ids.includes(selectedThreadId)) {
+      return { selectedThreadId, changed: false, reason: "selected-visible" };
+    }
+    if (!selectedThreadId && input.emptyFallback !== true) {
+      return { selectedThreadId: "", changed: false, reason: "empty-selection" };
+    }
+    return {
+      selectedThreadId: ids[0] || "",
+      changed: selectedThreadId !== (ids[0] || ""),
+      reason: selectedThreadId ? "selected-missing" : "empty-fallback",
+    };
+  }
+
+  function paneCountChangePlan(input = {}, options = {}) {
+    if (input.enabled !== true) return skipPaneSlot("disabled");
+    if (input.layoutEnabled !== true) return skipPaneSlot("layout-disabled");
+    const minCount = Math.max(1, Math.floor(Number(input.minCount || 1)) || 1);
+    const maxCount = Math.max(minCount, Math.floor(Number(input.maxCount || minCount)) || minCount);
+    const currentCount = Math.max(minCount, Math.floor(Number(input.currentCount || minCount)) || minCount);
+    const storedPaneCount = normalizePaneCount(input.storedPaneCount, { fallback: 0, maxPanes: options.maxPanes });
+    const requested = normalizePaneCount(input.nextCount, { fallback: currentCount, maxPanes: options.maxPanes });
+    const paneCount = Math.max(minCount, Math.min(maxCount, requested));
+    if (paneCount === currentCount && storedPaneCount === paneCount) {
+      return skipPaneSlot("unchanged", { paneCount, currentCount, minCount, maxCount });
+    }
+    return {
+      action: "set-pane-count",
+      reason: "set-pane-count",
+      paneCount,
+      currentCount,
+      minCount,
+      maxCount,
+      switchMenuPaneId: "",
+    };
+  }
+
+  function closePanePlan(input = {}, options = {}) {
+    const id = text(input.threadId || input.paneId).trim();
+    const ids = uniqueIds(input.ids || input.activeIds || []);
+    if (input.enabled !== true) return skipPaneSlot("disabled", { id, ids });
+    if (input.layoutEnabled !== true) return skipPaneSlot("layout-disabled", { id, ids });
+    if (!id) return skipPaneSlot("missing-id", { id, ids });
+    if (!ids.includes(id)) return skipPaneSlot("pane-not-visible", { id, ids });
+    const minCount = Math.max(1, Math.floor(Number(input.minCount || 1)) || 1);
+    if (ids.length <= minCount) return skipPaneSlot("min-pane-count", { id, ids, minCount });
+    const nextCount = Math.max(minCount, ids.length - 1);
+    const pinnedIds = normalizePinnedIds(input.pinnedIds || [], options);
+    const sourceIds = pinnedIds.length ? pinnedIds : ids;
+    const defaultIds = uniqueIds(input.defaultIds || input.fillIds || []);
+    const remaining = sourceIds.filter((candidateId) => candidateId !== id);
+    const fillIds = defaultIds.filter((candidateId) => candidateId !== id);
+    return {
+      action: "close-pane",
+      reason: "close-pane",
+      threadId: id,
+      paneCount: nextCount,
+      paneThreadIds: normalizePinnedIds([...remaining, ...fillIds], options),
+      switchMenuPaneId: "",
+      scrollResetIds: [id],
+    };
+  }
+
   function effectiveSelectedThreadId(input = {}) {
     const activeIds = normalizePinnedIds(input.activeIds || input.ids || [], { maxPanes: input.maxPanes });
     if (input.enabled === false || !activeIds.length) return "";
@@ -469,6 +534,7 @@
   return {
     DEFAULT_OPERATION_BUBBLE_MIN_VISIBLE_MS,
     DEFAULT_USER_MAX_PANES,
+    closePanePlan,
     displaySettingsPayload,
     dropPaneIntent,
     effectiveSelectedThreadId,
@@ -481,6 +547,8 @@
     operationBubbleRecord,
     operationBubbleSnapshot,
     operationSignature,
+    paneCountChangePlan,
+    paneSelectionPlan,
     prependSplitPair,
     detailLoadPlan,
     refreshDelayMs,

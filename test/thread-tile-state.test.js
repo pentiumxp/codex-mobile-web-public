@@ -142,6 +142,91 @@ test("thread tile state updates split pairs without keeping stale ids", () => {
   ]);
 });
 
+test("thread tile state plans pane count changes and selection fallback", () => {
+  assert.equal(state.paneCountChangePlan({ enabled: false }).action, "skip");
+  assert.deepEqual(state.paneCountChangePlan({
+    enabled: true,
+    layoutEnabled: true,
+    nextCount: 5,
+    currentCount: 2,
+    storedPaneCount: 0,
+    minCount: 2,
+    maxCount: 4,
+  }, { maxPanes: 12 }), {
+    action: "set-pane-count",
+    reason: "set-pane-count",
+    paneCount: 4,
+    currentCount: 2,
+    minCount: 2,
+    maxCount: 4,
+    switchMenuPaneId: "",
+  });
+  assert.equal(state.paneCountChangePlan({
+    enabled: true,
+    layoutEnabled: true,
+    nextCount: 3,
+    currentCount: 3,
+    storedPaneCount: 3,
+    minCount: 2,
+    maxCount: 4,
+  }, { maxPanes: 12 }).reason, "unchanged");
+  assert.deepEqual(state.paneSelectionPlan({
+    selectedThreadId: "c",
+    ids: ["a", "b"],
+    emptyFallback: false,
+  }), {
+    selectedThreadId: "a",
+    changed: true,
+    reason: "selected-missing",
+  });
+  assert.deepEqual(state.paneSelectionPlan({
+    selectedThreadId: "",
+    ids: ["a", "b"],
+    emptyFallback: false,
+  }), {
+    selectedThreadId: "",
+    changed: false,
+    reason: "empty-selection",
+  });
+  assert.deepEqual(state.paneSelectionPlan({
+    selectedThreadId: "",
+    ids: ["a", "b"],
+    emptyFallback: true,
+  }), {
+    selectedThreadId: "a",
+    changed: true,
+    reason: "empty-fallback",
+  });
+});
+
+test("thread tile state plans pane close without app globals", () => {
+  assert.equal(state.closePanePlan({
+    enabled: true,
+    layoutEnabled: true,
+    threadId: "a",
+    ids: ["a"],
+    minCount: 1,
+  }).reason, "min-pane-count");
+
+  assert.deepEqual(state.closePanePlan({
+    enabled: true,
+    layoutEnabled: true,
+    threadId: "b",
+    ids: ["a", "b", "c"],
+    minCount: 2,
+    pinnedIds: ["a", "b", "c"],
+    defaultIds: ["a", "b", "c", "d"],
+  }, { maxPanes: 12 }), {
+    action: "close-pane",
+    reason: "close-pane",
+    threadId: "b",
+    paneCount: 2,
+    paneThreadIds: ["a", "c", "d"],
+    switchMenuPaneId: "",
+    scrollResetIds: ["b"],
+  });
+});
+
 test("thread tile state owns operation bubble dwell and expiry policy", () => {
   assert.equal(state.operationBubbleRecord({
     threadId: "pane-1",

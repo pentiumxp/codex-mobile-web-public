@@ -503,7 +503,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v462";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v463";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -12764,14 +12764,26 @@ function setThreadTilePaneCount(nextCount, options = {}) {
   const minCount = threadTileMinimumPaneCount(layout);
   const maxCount = threadTileMaximumPaneCount(layout);
   const current = effectiveThreadTilePaneCount(layout);
-  const next = Math.max(minCount, Math.min(maxCount, normalizeThreadTilePaneCount(nextCount, current)));
-  if (next === current && state.threadTilePaneCount === next) return false;
-  state.threadTilePaneCount = next;
-  state.threadTileSwitchMenuPaneId = "";
+  const plan = threadTileStatePolicy.paneCountChangePlan({
+    enabled: state.threadTileMode,
+    layoutEnabled: layout.enabled,
+    nextCount,
+    currentCount: current,
+    storedPaneCount: state.threadTilePaneCount,
+    minCount,
+    maxCount,
+  }, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+  });
+  if (plan.action !== "set-pane-count") return false;
+  state.threadTilePaneCount = plan.paneCount;
+  state.threadTileSwitchMenuPaneId = plan.switchMenuPaneId || "";
   const ids = threadTileCandidateIds(layout);
-  if (state.threadTileSelectedThreadId && !ids.includes(state.threadTileSelectedThreadId)) {
-    state.threadTileSelectedThreadId = ids[0] || "";
-  }
+  state.threadTileSelectedThreadId = threadTileStatePolicy.paneSelectionPlan({
+    selectedThreadId: state.threadTileSelectedThreadId,
+    ids,
+    emptyFallback: false,
+  }).selectedThreadId;
   scheduleThreadDisplaySettingsSave();
   if (options.render !== false) renderCurrentThread({ stickToBottom: true });
   return true;
@@ -12790,24 +12802,30 @@ function closeThreadTilePane(threadId) {
   const layout = threadTileLayout({ enabled: true });
   if (!layout || !layout.enabled) return false;
   const ids = threadTileCandidateIds(layout);
-  if (!ids.includes(id)) return false;
   const minCount = threadTileMinimumPaneCount(layout);
-  if (ids.length <= minCount) return false;
-  const nextCount = Math.max(minCount, ids.length - 1);
-  const existing = normalizeThreadTilePinnedIds(state.threadTilePinnedIds);
-  const sourceIds = existing.length ? existing : ids;
-  const remaining = sourceIds.filter((candidateId) => candidateId !== id);
-  const fillIds = defaultThreadTileCandidateIds(layout, { maxPanes: threadTileMaximumPaneCount(layout) })
-    .filter((candidateId) => candidateId !== id);
+  const plan = threadTileStatePolicy.closePanePlan({
+    enabled: state.threadTileMode,
+    layoutEnabled: layout.enabled,
+    threadId: id,
+    ids,
+    pinnedIds: state.threadTilePinnedIds,
+    defaultIds: defaultThreadTileCandidateIds(layout, { maxPanes: threadTileMaximumPaneCount(layout) }),
+    minCount,
+  }, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+  });
+  if (plan.action !== "close-pane") return false;
   saveCurrentDraftNow();
-  state.threadTilePinnedIds = normalizeThreadTilePinnedIds([...remaining, ...fillIds]);
-  state.threadTilePaneCount = nextCount;
-  state.threadTileSwitchMenuPaneId = "";
-  state.threadTilePaneScrollHoldById.delete(id);
+  state.threadTilePinnedIds = normalizeThreadTilePinnedIds(plan.paneThreadIds);
+  state.threadTilePaneCount = plan.paneCount;
+  state.threadTileSwitchMenuPaneId = plan.switchMenuPaneId || "";
+  (plan.scrollResetIds || []).forEach((resetId) => state.threadTilePaneScrollHoldById.delete(resetId));
   const nextIds = threadTileCandidateIds(layout);
-  state.threadTileSelectedThreadId = nextIds.includes(state.threadTileSelectedThreadId)
-    ? state.threadTileSelectedThreadId
-    : nextIds[0] || "";
+  state.threadTileSelectedThreadId = threadTileStatePolicy.paneSelectionPlan({
+    selectedThreadId: state.threadTileSelectedThreadId,
+    ids: nextIds,
+    emptyFallback: true,
+  }).selectedThreadId;
   scheduleThreadDisplaySettingsSave();
   restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
   renderComposerSettings();
