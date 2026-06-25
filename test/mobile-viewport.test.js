@@ -148,8 +148,8 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v487/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v487"/);
+  assert.match(swJs, /codex-mobile-shell-v488/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v488"/);
   assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(swJs, /"\/thread-status-hints\.js"/);
@@ -332,6 +332,8 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(functionBody("refreshCurrentThread"), /if \(executionPlan\.metadataUpdateMode === "local-patch"\) \{[\s\S]*updateCurrentThreadHeader\(state\.currentThread\);[\s\S]*updateTickTimer\(\);[\s\S]*publishPluginNavigationState\(\);/);
   assert.match(functionBody("refreshCurrentThread"), /else if \(executionPlan\.metadataUpdateMode === "metadata-only"\) \{[\s\S]*updateCurrentThreadHeader\(state\.currentThread\);[\s\S]*updateLiveOperationDockHtml\(renderLiveOperationDock\(state\.currentThread, existingConversationRenderKeys\(\)\)\);[\s\S]*updateTickTimer\(\);[\s\S]*scheduleScrollToBottomButtonUpdate\(\);/);
   assert.match(functionBody("refreshCurrentThread"), /else if \(executionPlan\.runFullRender\) \{[\s\S]*renderCurrentThread\(\);/);
+  assert.match(functionBody("refreshCurrentThread"), /const refreshPerformance = threadPerformanceMetrics\.threadDetailRefreshEventFields\(result\.thread, \{/);
+  assert.match(functionBody("refreshCurrentThread"), /postPerformanceEvent\("thread_refresh_ms", refreshPerformance, \{/);
   assert.match(appJs, /skippedDetailRender: !shouldRenderDetail/);
   assert.match(appJs, /locallyPatchedDetail,/);
   assert.match(appJs, /tilePanePatchedDetail,/);

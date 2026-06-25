@@ -164,6 +164,15 @@ Refresh outcome execution planning now also lives in the same helper module:
 update mode, full-render execution, and projection-consistency phase. This
 keeps `refreshCurrentThread()` from inlining `refreshRenderAction` branching
 after the render outcome is known.
+Refresh performance event field planning now lives in
+`public/thread-performance-metrics.js`: `threadDetailRefreshEventFields`
+builds the bounded `thread_refresh_ms` payload, including server timings,
+client timings, detail shape, read/render mode, refresh action, render-plan
+reason, patch rejection reason, and local/tile/full metadata flags. This keeps
+diagnostic field ownership out of `refreshCurrentThread()` while preserving the
+privacy boundary that performance events contain timings, counts, statuses, and
+reason codes rather than message bodies, task-card bodies, uploads, private
+paths, cookies, tokens, or long logs.
 Single-thread full-render shell planning now also lives in
 `public/thread-detail-render-plan.js`: loading, load-error retry, detail
 content ordering, empty/read-warning state selection, plugin-refresh notice
@@ -276,6 +285,7 @@ Target:
   pane slot mutation side-effect planning including pane count/close execution
   is also outside app.js; detail-load lifecycle side-effect planning is also
   outside app.js; detail-load queue/abort/drain planning is also outside app.js;
+  refresh performance event field ownership is also outside app.js;
   operation card content and final template planning are now outside app.js;
   split sizing, measured tuning of the max concurrent detail read
   value, and per-pane draft/runtime ownership remain the next boundary.

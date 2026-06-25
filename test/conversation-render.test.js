@@ -2969,6 +2969,8 @@ test("current-thread refresh patches the current tile pane for metadata-only til
   assert.match(body, /else if \(executionPlan\.runFullRender\) \{/);
   assert.match(body, /const projectionConsistencyPhase = executionPlan\.projectionConsistencyPhase \|\| "";/);
   assert.match(body, /checkConversationProjectionConsistency\(projectionConsistencyPhase, \{ renderMode: detailRenderMode \}\)/);
+  assert.match(body, /const refreshPerformance = threadPerformanceMetrics\.threadDetailRefreshEventFields\(result\.thread, \{/);
+  assert.match(body, /postPerformanceEvent\("thread_refresh_ms", refreshPerformance, \{/);
 });
 
 test("image view render keys include their image source", () => {

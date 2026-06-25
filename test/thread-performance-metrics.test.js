@@ -158,6 +158,106 @@ test("thread performance metrics combine server and client detail fields", () =>
   });
 });
 
+test("thread performance metrics build refresh event payloads from bounded fields", () => {
+  const event = metrics.threadDetailRefreshEventFields({
+    mobileReadMode: "projection-cache",
+    rolloutSizeBytes: 123456,
+    mobileOmittedTurnCount: 3,
+    status: { type: "running", privateText: "not exported because type wins" },
+    mobileDiagnostics: {
+      threadDetailTimings: {
+        phase: "warm-projection-cache",
+        projectionMs: 4,
+      },
+    },
+    turns: [{
+      status: "completed",
+      items: [
+        { type: "userMessage", text: "private prompt" },
+        { type: "agentMessage", text: "private response" },
+      ],
+    }],
+  }, {
+    source: "event-recovery",
+    threadId: "thread-123",
+    requestedMode: "recent",
+    elapsedMs: 34.4,
+    apiElapsedMs: 12.2,
+    renderElapsedMs: 8.7,
+    mergeMs: 1.1,
+    composerRenderMs: 2.2,
+    threadListRenderMs: 3.3,
+    conversationRenderMs: 4.4,
+    detailPatchMs: 5.5,
+    metadataUpdateMs: 6.6,
+    detailRenderMode: "patch",
+    refreshRenderAction: "local-patch-metadata-update",
+    renderPlanReason: "signature-changed",
+    patchRejectReason: "",
+    skippedDetailRender: false,
+    locallyPatchedDetail: true,
+    tilePanePatchedDetail: false,
+  });
+
+  assert.deepEqual(event, {
+    source: "event-recovery",
+    threadId: "thread-123",
+    requestedMode: "recent",
+    readMode: "projection-cache",
+    serverTimings: {
+      phase: "warm-projection-cache",
+      projectionMs: 4,
+    },
+    performancePhase: "warm-projection-cache",
+    clientTimings: {
+      elapsedMs: 34,
+      apiElapsedMs: 12,
+      renderElapsedMs: 9,
+      mergeMs: 1,
+      composerRenderMs: 2,
+      threadListRenderMs: 3,
+      conversationRenderMs: 4,
+      detailPatchMs: 6,
+      metadataUpdateMs: 7,
+      detailRenderMode: "patch",
+      source: "event-recovery",
+      refreshRenderAction: "local-patch-metadata-update",
+      renderPlanReason: "signature-changed",
+      skippedDetailRender: false,
+      locallyPatchedDetail: true,
+      tilePanePatchedDetail: false,
+    },
+    detailShape: {
+      turns: 1,
+      omittedTurns: 3,
+      items: 2,
+      visibleItems: 2,
+      userItems: 1,
+      receiptItems: 1,
+      imageItems: 0,
+      operationItems: 0,
+      usageItems: 0,
+      diagnosticItems: 0,
+      completedTurns: 1,
+      activeTurns: 0,
+    },
+    status: "running",
+    turns: 1,
+    omittedTurns: 3,
+    rolloutSizeBytes: 123456,
+    renderPlanReason: "signature-changed",
+    refreshRenderAction: "local-patch-metadata-update",
+    patchRejectReason: "",
+    skippedDetailRender: false,
+    locallyPatchedDetail: true,
+    tilePanePatchedDetail: false,
+    elapsedMs: 34,
+    apiElapsedMs: 12,
+    renderElapsedMs: 9,
+  });
+  assert.equal(JSON.stringify(event).includes("private"), false);
+});
+
 test("thread performance metrics summarize detail shape without message bodies", () => {
   const shape = metrics.threadDetailShape({
     mobileOmittedTurnCount: 7,

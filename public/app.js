@@ -504,7 +504,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v487";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v488";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -9265,8 +9265,10 @@ async function refreshCurrentThread(options = {}) {
     checkConversationProjectionConsistency(projectionConsistencyPhase, { renderMode: detailRenderMode });
   }
   const renderElapsedMs = roundedDurationMs(renderStartedAt);
-  const detailPerformance = threadPerformanceMetrics.threadDetailEventFieldsWithClient(result.thread, {
+  const refreshPerformance = threadPerformanceMetrics.threadDetailRefreshEventFields(result.thread, {
     source,
+    threadId,
+    requestedMode,
     elapsedMs: roundedDurationMs(refreshStartedAt),
     apiElapsedMs,
     renderElapsedMs,
@@ -9284,29 +9286,7 @@ async function refreshCurrentThread(options = {}) {
     locallyPatchedDetail,
     tilePanePatchedDetail,
   });
-  postPerformanceEvent("thread_refresh_ms", {
-    source,
-    threadId,
-    requestedMode,
-    readMode: result.thread && result.thread.mobileReadMode || "",
-    elapsedMs: roundedDurationMs(refreshStartedAt),
-    apiElapsedMs,
-    renderElapsedMs,
-    serverTimings: detailPerformance.serverTimings,
-    performancePhase: detailPerformance.performancePhase,
-    clientTimings: detailPerformance.clientTimings,
-    detailShape: detailPerformance.detailShape,
-    status: statusText(result.thread && result.thread.status),
-    turns: Array.isArray(result.thread && result.thread.turns) ? result.thread.turns.length : 0,
-    omittedTurns: Number(result.thread && result.thread.mobileOmittedTurnCount || 0),
-    rolloutSizeBytes: rolloutSizeBytes(result.thread),
-    renderPlanReason: String(renderPlan.reason || ""),
-    refreshRenderAction,
-    patchRejectReason,
-    skippedDetailRender: !shouldRenderDetail,
-    locallyPatchedDetail,
-    tilePanePatchedDetail,
-  }, {
+  postPerformanceEvent("thread_refresh_ms", refreshPerformance, {
     key: "thread_refresh_ms",
     minIntervalMs: PERF_EVENT_THROTTLE_MS,
   });

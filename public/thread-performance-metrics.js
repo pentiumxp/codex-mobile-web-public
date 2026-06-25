@@ -113,6 +113,68 @@
     return fields;
   }
 
+  function statusText(status) {
+    if (!status) return "";
+    if (typeof status === "string") return compactLabel(status, 80);
+    if (status && typeof status === "object") {
+      const type = compactLabel(status.type, 80);
+      if (type) return type;
+      try {
+        return compactLabel(JSON.stringify(status), 80);
+      } catch (_) {
+        return "";
+      }
+    }
+    return compactLabel(status, 80);
+  }
+
+  function rolloutSizeBytes(thread) {
+    const size = Number(thread && thread.rolloutSizeBytes);
+    return Number.isFinite(size) && size > 0 ? Math.trunc(size) : 0;
+  }
+
+  function threadTurnCount(thread) {
+    return Array.isArray(thread && thread.turns) ? boundedCount(thread.turns.length) : 0;
+  }
+
+  function threadOmittedTurnCount(thread) {
+    return boundedCount(thread && thread.mobileOmittedTurnCount);
+  }
+
+  function setTimingField(out, key, value) {
+    const timing = boundedTiming(value);
+    if (timing !== null) out[key] = timing;
+  }
+
+  function threadDetailRefreshEventFields(thread, input = {}) {
+    const source = objectOrNull(input) || {};
+    const detailPerformance = threadDetailEventFieldsWithClient(thread, source);
+    const out = {
+      source: compactLabel(source.source, 40),
+      threadId: compactLabel(source.threadId, 220),
+      requestedMode: compactLabel(source.requestedMode, 40),
+      readMode: compactLabel(thread && thread.mobileReadMode, 80),
+      serverTimings: detailPerformance.serverTimings,
+      performancePhase: detailPerformance.performancePhase,
+      clientTimings: detailPerformance.clientTimings,
+      detailShape: detailPerformance.detailShape,
+      status: statusText(thread && thread.status),
+      turns: threadTurnCount(thread),
+      omittedTurns: threadOmittedTurnCount(thread),
+      rolloutSizeBytes: rolloutSizeBytes(thread),
+      renderPlanReason: compactLabel(source.renderPlanReason, 80),
+      refreshRenderAction: compactLabel(source.refreshRenderAction, 80),
+      patchRejectReason: compactLabel(source.patchRejectReason, 80),
+      skippedDetailRender: Boolean(source.skippedDetailRender),
+      locallyPatchedDetail: Boolean(source.locallyPatchedDetail),
+      tilePanePatchedDetail: Boolean(source.tilePanePatchedDetail),
+    };
+    for (const key of ["elapsedMs", "apiElapsedMs", "renderElapsedMs"]) {
+      setTimingField(out, key, source[key]);
+    }
+    return out;
+  }
+
   function boundedCount(value) {
     const number = Number(value);
     if (!Number.isFinite(number) || number < 0) return 0;
@@ -194,11 +256,16 @@
   return {
     boundedTiming,
     classifyThreadListPhase,
+    rolloutSizeBytes,
+    statusText,
     threadDetailClientTimings,
     threadDetailEventFields,
     threadDetailEventFieldsWithClient,
+    threadDetailRefreshEventFields,
     threadDetailShape,
     threadDetailTimings,
+    threadOmittedTurnCount,
+    threadTurnCount,
     threadListEventFields,
     threadListTimings,
   };

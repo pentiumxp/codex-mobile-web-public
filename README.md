@@ -16,6 +16,36 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v488 Refresh Performance Event Planning
+
+v488 继续推进 Phase A 的前端 render/patch ownership 收敛，这次聚焦
+`thread_refresh_ms` 性能事件的字段口径。
+
+本次切片把 `refreshCurrentThread()` 末尾手工拼装 refresh 性能事件 payload
+的逻辑推进到 `public/thread-performance-metrics.js` 的
+`threadDetailRefreshEventFields`。新的 helper 统一生成 server timings、
+performance phase、client timings、detail shape、read mode、状态、turn
+计数、rollout size、render plan reason、refresh render action、patch reject
+reason、metadata/full/local/tile patch 标记等字段。`public/app.js` 仍然负责
+真实 API 调用、merge、DOM 更新和 `postPerformanceEvent()`。
+
+修复边界：
+
+- 症状/风险：`refreshCurrentThread()` 虽然已经把 render/patch/outcome 决策
+  拆进 helper，但 `thread_refresh_ms` 的诊断字段仍在 app.js 手工拼装。后续
+  改 metadata-only、local patch、tile-pane patch 或 full render 分支时，容易
+  出现生产诊断口径漂移，削弱大 session 和 projection mismatch 的闭环证据。
+- 失败层：前端 thread-detail refresh performance event ownership。
+- 不变量：refresh 性能事件字段必须由纯 helper 统一生成；事件只包含 bounded
+  timings/counts/status/reason code，不包含消息正文、任务卡正文、上传内容、
+  私有路径、cookie/token 或长日志。
+- 闭环验证：`test/thread-performance-metrics.test.js` 覆盖 refresh event
+  payload 构造和隐私边界；`test/conversation-render.test.js` 与
+  `test/mobile-viewport.test.js` 验证 `refreshCurrentThread()` 调用
+  `threadDetailRefreshEventFields()` 并将结果直接交给 `thread_refresh_ms`。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v488`。
+
 ## 2026-06-26 v487 Refresh Outcome Execution Planning
 
 v487 继续推进 Phase A 的前端 render/patch ownership 收敛。
