@@ -179,6 +179,11 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(tilePaneBody, /data-thread-tile-bottom/);
   assert.match(tilePaneBody, /thread-tile-bottom-button hidden/);
   assert.doesNotMatch(tilePaneBody, /data-thread-tile-open/);
+  const selectPaneBody = functionBody(appJs, "setThreadTileSelectedThread");
+  assert.match(selectPaneBody, /threadTileStatePolicy\.selectPanePlan/);
+  assert.match(selectPaneBody, /state\.threadTileSelectedThreadId = plan\.selectedThreadId/);
+  assert.match(selectPaneBody, /plan\.patchThreadIds/);
+  assert.match(selectPaneBody, /patchThreadTilePane\(id, \{ preserveScroll: true \}\)/);
 
   const tileActionsBody = functionBody(appJs, "bindThreadTileActions");
   assert.match(tileActionsBody, /threadTileActionsApi\.resolveThreadTilePointerAction/);

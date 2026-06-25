@@ -16,6 +16,25 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v465 Thread Tile Selected Pane Action Policy
+
+v465 继续 Phase C，把用户显式选中某个平铺窗口的执行计划迁到
+`public/thread-tile-state.js`。这次处理的是 `setThreadTileSelectedThread` 中的
+目标 pane 校验、unchanged 判断、previous/next patch 范围和 selected pane 写入计划。
+
+本次新增的纯策略是 `selectPanePlan`：
+
+- 统一 tile mode disabled、缺少 thread id、目标 pane 不在 active ids、目标已选中的
+  skip reason。
+- 输出 selected pane、previous pane 和需要 patch 的 pane ids。
+- 保持 `public/app.js` 只负责保存/恢复草稿、更新 Composer controls、执行 pane patch
+  或 full render fallback。
+
+这个切片不改变 pane layout、thread detail API、server projection、任务卡或诊断上报。
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v465`。
+`test/thread-tile-state.test.js` 覆盖 selected pane action planning；
+`test/thread-tile-layout-ui.test.js` 约束 app 层必须通过 `selectPanePlan`。
+
 ## 2026-06-26 v464 Thread Tile Active Pane Sync Policy
 
 v464 继续 Phase C，把平铺窗口的 active pane 同步决策合并到

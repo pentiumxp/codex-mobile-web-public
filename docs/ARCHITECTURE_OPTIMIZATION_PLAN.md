@@ -141,7 +141,8 @@ detection, close eligibility, pinned slot fill, scroll-reset ids, and
 selected-pane fallback are pure policy. Active pane sync planning is also in
 that helper: active pane ids, pinned slot sync, split-pair prune, selected-pane
 fallback, and display-settings save eligibility are computed as one policy
-while `public/app.js` keeps DOM, rendering, network save, timers, API reads,
+and explicit selected-pane action planning now emits the previous/next pane
+patch set while `public/app.js` keeps DOM, rendering, network save, timers, API reads,
 AbortController ownership, draft restore, detail-load side effects, and other
 side effects. App code can no
 longer fall through from tile mode into the
@@ -169,7 +170,8 @@ Target:
   core thread-tile pane-state normalization and operation bubble signature/
   dwell/mode policy are now outside app.js. Pane-local detail refresh planning,
   pane slot mutation planning, pane count/close planning, and active pane sync
-  planning are now outside app.js; action execution, detail read side effects,
+  planning are now outside app.js; explicit selected-pane action planning is
+  also outside app.js; broader action execution, detail read side effects,
   command detail panels, and split sizing remain the next boundary.
 - Keep `public/app.js` responsible for DOM wiring, patch application, and event
   binding only.
@@ -317,7 +319,9 @@ Target:
   split, thread-list-open replacement, pane count/close planning, and
   selected-pane fallback. Active pane sync planning also now lives there,
   including active ids, pinned slot sync, split-pair prune, selected-pane
-  fallback, and display-settings save eligibility. Continue moving pane widths, active
+  fallback, and display-settings save eligibility. Explicit selected-pane
+  action planning also now lives there, including skip reasons and previous/
+  next pane patch ids. Continue moving pane widths, active
   pane execution, per-pane drafts, max concurrent detail reads, pane-local
   send/approval/interrupt ownership, command detail panels, and mobile collapse
   behavior into testable helpers without DOM side effects.

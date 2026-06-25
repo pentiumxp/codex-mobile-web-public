@@ -503,7 +503,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v464";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v465";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -12126,21 +12126,24 @@ function threadTileDisplayThread(threadId) {
 }
 
 function setThreadTileSelectedThread(threadId, options = {}) {
-  const id = String(threadId || "").trim();
-  if (!id || !state.threadTileMode || !state.threadTileActiveIds.includes(id)) return false;
-  if (state.threadTileSelectedThreadId === id) return false;
-  const previousId = state.threadTileSelectedThreadId || "";
+  const plan = threadTileStatePolicy.selectPanePlan({
+    enabled: state.threadTileMode,
+    threadId,
+    activeIds: state.threadTileActiveIds,
+    selectedThreadId: state.threadTileSelectedThreadId,
+  });
+  if (plan.action !== "select-pane") return false;
   saveCurrentDraftNow();
-  state.threadTileSelectedThreadId = id;
+  state.threadTileSelectedThreadId = plan.selectedThreadId;
   restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
   renderComposerSettings();
   updateComposerControls();
   if (options.render !== false) {
-    const patchedNext = patchThreadTilePane(id, { preserveScroll: true });
-    const patchedPrevious = previousId && previousId !== id
-      ? patchThreadTilePane(previousId, { preserveScroll: true })
-      : true;
-    if (!patchedNext || !patchedPrevious) scheduleRenderCurrentThread();
+    let patchedAll = true;
+    (plan.patchThreadIds || [plan.threadId]).filter(Boolean).forEach((id) => {
+      patchedAll = patchThreadTilePane(id, { preserveScroll: true }) && patchedAll;
+    });
+    if (!patchedAll) scheduleRenderCurrentThread();
   }
   return true;
 }

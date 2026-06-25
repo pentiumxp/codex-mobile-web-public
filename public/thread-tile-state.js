@@ -297,6 +297,24 @@
     };
   }
 
+  function selectPanePlan(input = {}) {
+    const id = text(input.threadId || input.paneId).trim();
+    const activeIds = uniqueIds(input.activeIds || input.ids || []);
+    const selectedThreadId = text(input.selectedThreadId).trim();
+    if (input.enabled !== true) return skipPaneSlot("disabled", { id, activeIds });
+    if (!id) return skipPaneSlot("missing-id", { id, activeIds });
+    if (!activeIds.includes(id)) return skipPaneSlot("pane-not-active", { id, activeIds });
+    if (selectedThreadId === id) return skipPaneSlot("unchanged", { id, activeIds, selectedThreadId });
+    return {
+      action: "select-pane",
+      reason: "select-pane",
+      threadId: id,
+      previousThreadId: selectedThreadId,
+      selectedThreadId: id,
+      patchThreadIds: uniqueIds([id, selectedThreadId]),
+    };
+  }
+
   function paneCountChangePlan(input = {}, options = {}) {
     if (input.enabled !== true) return skipPaneSlot("disabled");
     if (input.layoutEnabled !== true) return skipPaneSlot("layout-disabled");
@@ -609,6 +627,7 @@
     replacePaneThreadPlan,
     removeSplitPairsForIds,
     movePaneRelativePlan,
+    selectPanePlan,
     splitPaneWithTargetPlan,
     syncPinnedIdsFromActiveIds,
     toggleOperationMode,

@@ -268,6 +268,38 @@ test("thread tile state plans pane count changes and selection fallback", () => 
   });
 });
 
+test("thread tile state plans explicit pane selection", () => {
+  assert.equal(state.selectPanePlan({
+    enabled: false,
+    threadId: "a",
+    activeIds: ["a"],
+  }).reason, "disabled");
+  assert.equal(state.selectPanePlan({
+    enabled: true,
+    threadId: "c",
+    activeIds: ["a", "b"],
+  }).reason, "pane-not-active");
+  assert.equal(state.selectPanePlan({
+    enabled: true,
+    threadId: "a",
+    activeIds: ["a", "b"],
+    selectedThreadId: "a",
+  }).reason, "unchanged");
+  assert.deepEqual(state.selectPanePlan({
+    enabled: true,
+    threadId: "b",
+    activeIds: ["a", "b", "b"],
+    selectedThreadId: "a",
+  }), {
+    action: "select-pane",
+    reason: "select-pane",
+    threadId: "b",
+    previousThreadId: "a",
+    selectedThreadId: "b",
+    patchThreadIds: ["b", "a"],
+  });
+});
+
 test("thread tile state plans pane close without app globals", () => {
   assert.equal(state.closePanePlan({
     enabled: true,
