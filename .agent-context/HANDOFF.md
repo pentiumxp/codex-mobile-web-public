@@ -25,8 +25,15 @@
   - `docs/HOME_AI_PLATFORM_CONTRACT.md` now contains a short GitHub SSA pointer
     to the central contract, runbook, helper, alias, and adopted source remote.
 - Validation and closure:
-  - Run local checks, commit, push through the SSA alias, and return a real
-    task card to Home AI in the same turn.
+  - `npm run check` passed.
+  - `git diff --check` passed.
+  - Pointer grep for `github-shared-source-account`, `github.com-homeai-ssa`,
+    and `github_ssa_smoke_passed` passed.
+  - Adoption commit:
+    `f3e2159 docs: adopt Home AI GitHub SSA`.
+  - `git push origin main` succeeded through the SSA alias, updating
+    `origin/main` from `ccf5092` to `f3e2159`.
+  - Return a real task card to Home AI before ending this turn.
 
 # 2026-06-25 - v437 tile title menu and Composer target scope deployed
 
