@@ -9997,3 +9997,62 @@ The previous full handoff was archived and should be opened only when old proven
     parity.
 - Release:
   - Public was not pushed for v485.
+
+## 2026-06-26 - v486 refresh patch execution plan deployed
+
+- Latest code commit:
+  - `e7d8795 extract refresh patch execution plan`
+- v486 change:
+  - `public/thread-detail-render-plan.js` now owns
+    `planThreadDetailRefreshPatchExecution`, a pure policy helper for
+    `refreshCurrentThread()` patch execution.
+  - The helper decides whether a refresh should try tile-pane patch, whether
+    single-thread local patch is eligible, whether metadata-only tile misses
+    should update metadata without full render, and which fallback action
+    applies.
+  - `public/app.js` still owns real DOM patch attempts, metadata writes, full
+    render execution, and diagnostic/performance reporting.
+  - Static build/cache: `0.1.11|codex-mobile-shell-v486` /
+    `codex-mobile-shell-v486`.
+- Root-cause boundary:
+  - Symptom/risk: `refreshCurrentThread()` still mixed server result merge,
+    render signature decisions, tile surface decisions, local patch attempts,
+    metadata-only updates, and full-render fallback. Keeping the tile/single
+    execution policy inline made it easy to reintroduce wrong-surface local
+    patch attempts or metadata-only full renders.
+  - Failing layer: frontend thread-detail refresh render execution policy.
+  - Invariant: tile surface refreshes may try tile-pane patch, but must not
+    fall through to single-thread local patch; metadata-only refreshes should
+    update metadata after a tile miss rather than triggering full render.
+- Validation:
+  - Source focused suite passed:
+    `test/thread-detail-render-plan.test.js`,
+    `test/conversation-render.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-tile-layout-ui.test.js`, `test/thread-goal-service.test.js`,
+    and `test/thread-task-card-route.test.js` (`141` tests).
+  - Full source `npm test` passed (`894` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Production deploy:
+  - Deployed through Home AI central macOS plugin deploy path with reason
+    `codex-mobile-refresh-patch-execution-plan-v486`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T220410Z-plugin-codex-mobile-web-codex-mobile-refresh-patch-execution-plan-v486`
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v486`,
+    `shellCacheName=codex-mobile-shell-v486`, `version=0.1.11`,
+    `authRequired=true`.
+  - Source/production SHA parity verified for:
+    `public/app.js`, `public/thread-detail-render-plan.js`, `public/sw.js`,
+    `test/thread-detail-render-plan.test.js`,
+    `test/conversation-render.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-tile-layout-ui.test.js`, `test/thread-goal-service.test.js`,
+    `test/thread-task-card-route.test.js`, `README.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and `docs/MODULES.md`.
+  - Production focused suite passed (`141` tests).
+- Browser/visual note:
+  - Browser automation remains unavailable in the current tool list. v486
+    closure evidence is source focused tests, full source tests, production
+    focused tests, production public-config readback, and source/prod SHA
+    parity.
+- Release:
+  - Public was not pushed for v486.
