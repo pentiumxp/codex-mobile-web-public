@@ -1,3 +1,82 @@
+# 2026-06-26 - v474 thread tile operation mode toggle policy deployed
+
+- Scope:
+  - Continued Phase C pane-state / split-screen architecture work.
+  - This slice moves pane-local operation/command detail mode toggle planning
+    out of `public/app.js` and into `public/thread-tile-state.js`.
+  - It does not change visual design, operation bubble content, server
+    projection, thread detail reads, task-card behavior, Home AI diagnostics,
+    pane layout, image projection, or message merge. No fallback or UI-only
+    masking was added.
+- Root-cause boundary:
+  - Before v474, pane-local operation bubble dwell/expiry/mode/signature policy
+    was already service-owned, but the click path for expanding/collapsing the
+    operation detail sheet still directly wrote
+    `state.threadTileOperationModesById`, selected the pane, and patched the
+    pane from `bindThreadTileActions`.
+  - That kept command detail panel mode state in the UI event handler instead
+    of the pane-state policy boundary.
+- Change:
+  - Added pure `operationModeTogglePlan` to `public/thread-tile-state.js`.
+  - The plan owns enabled/missing-id checks, compact/expanded transition,
+    selected-pane intent, pane patch intent, preserve-scroll behavior, and
+    patch-miss full-render fallback intent.
+  - Added `applyThreadTileOperationModeTogglePlan` in `public/app.js` as the
+    narrow effect executor for Map writes, selected-pane application, and DOM
+    patch execution.
+  - `bindThreadTileActions` now delegates operation mode toggles through the
+    policy/effect pair instead of mutating app state inline.
+  - Bumped `CLIENT_BUILD_ID` and service worker cache to
+    `codex-mobile-shell-v474`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Commit:
+  - Runtime/docs commit: `9cc790a refactor thread tile operation mode toggle`.
+- Validation in source workspace:
+  - Syntax checks passed for `public/thread-tile-state.js`, `public/app.js`,
+    and `public/sw.js`.
+  - Focused suite passed: `69` tests across
+    `test/thread-tile-state.test.js`,
+    `test/thread-tile-layout-ui.test.js`,
+    `test/thread-tile-layout.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-task-card-route.test.js`,
+    `test/thread-goal-service.test.js`, and
+    `test/composer-draft.test.js`.
+  - `npm test` passed: `859` tests.
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+- Production deploy:
+  - Deployed through Home AI central macOS production script.
+  - Reason: `codex-mobile-thread-tile-operation-mode-toggle-v474`.
+  - Source ref at deploy: `9cc790ab1928`, dirty `false`.
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T195335Z-plugin-codex-mobile-web-codex-mobile-thread-tile-operation-mode-toggle-v474`.
+  - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` reported
+    running and manifest/profile health checks passed.
+- Production readback:
+  - `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v474`,
+    `shellCacheName=codex-mobile-shell-v474`, and `version=0.1.11`.
+  - Source/prod SHA-256 parity matched for:
+    `public/thread-tile-state.js`, `test/thread-tile-state.test.js`,
+    `test/thread-tile-layout-ui.test.js`, `public/app.js`, `public/sw.js`,
+    `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+  - Production focused suite passed: same `69` tests listed above with
+    production dependencies.
+- Next architecture boundary:
+  - Continue Phase C with command detail panel content/rendering extraction,
+    split sizing, measured tuning of the max concurrent detail-read value,
+    per-pane draft/runtime ownership, and pane-local send/approval/interrupt
+    ownership.
+  - Phase B large-session cold/warm path remains separate and should be
+    tackled with timing evidence before changing cache behavior.
+- Public:
+  - Not pushed to Public. Follow release-order rule: wait for production/user
+    validation or explicit Public instruction before syncing/pushing.
+
 # 2026-06-26 - v473 thread tile detail load concurrency policy deployed
 
 - Scope:
