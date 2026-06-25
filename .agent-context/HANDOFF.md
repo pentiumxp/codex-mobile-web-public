@@ -10728,3 +10728,39 @@ The previous full handoff was archived and should be opened only when old proven
     client render/patch ownership if new projection mismatch diagnostics appear.
     Use production `readDecision`, `projectionSource`, and client render
     diagnostics before changing cache invalidation again.
+
+## 2026-06-26 - Home AI Autonomous Delivery return-card event task revalidated
+
+- Source task card:
+  - `ttc_a8ab1599a96e2e92ed`
+  - Request: wire terminal Codex Mobile return cards into Home AI Autonomous
+    Delivery Loop events.
+- Result:
+  - No additional runtime/source change was needed in this pass. The feature was
+    already present from `64d3b30 wire return cards to Home AI delivery events`
+    and remains deployed in the production mirror.
+  - `adapters/home-ai-autonomous-delivery-return-service.js` posts bounded
+    terminal return metadata to
+    `/api/autonomous-delivery/return-card-events`.
+  - `adapters/thread-task-card-service.js` calls the observer only for terminal
+    return cards closing original non-terminal work cards, records sent/404/fail
+    state on return-card audit metadata, and does not block return delivery or
+    create acknowledgement loops.
+- Validation:
+  - Focused suite passed:
+    `test/home-ai-autonomous-delivery-return-service.test.js`,
+    `test/thread-task-card-service.test.js`,
+    `test/codex-mobile-mcp-server.test.js`, and
+    `test/thread-task-card-route.test.js` (`47` tests).
+  - `git diff --check` passed.
+  - Production `/api/public-config` readback on `127.0.0.1:8787` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v494` and
+    `shellCacheName=codex-mobile-shell-v494`.
+  - Source/production SHA parity verified for the autonomous return service,
+    task-card service, server wiring, MCP/script return paths, cross-thread
+    docs, and focused tests.
+- Privacy:
+  - Evidence is bounded to ids, statuses, short titles/summaries, workflow/thread
+    ids, terminal flag, ack policy, test counts, build ids, and short hashes. No
+    card body, prompt/completion, upload, screenshot, cookie, launch token,
+    access key, provider payload, database row, or long log was copied.
