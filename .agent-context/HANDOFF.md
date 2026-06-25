@@ -1,3 +1,81 @@
+# 2026-06-26 - v456 thread detail hydration orchestration deployed
+
+- Optimization phase:
+  - Phase A ninth slice. v455 moved rendered turn article creation for
+    insert/replace paths into `public/thread-detail-dom-patch.js`; v456 moves
+    thread-detail surface hydration orchestration into the same helper.
+- Root-cause boundary:
+  - Before v456, `public/app.js` directly sequenced post-render hydration in
+    several places: full conversation render, thread tile pane patch, and local
+    DOM patch completion each called GitHub link hydration, Mermaid hydration,
+    and image scan scheduling themselves.
+  - That kept callback ordering and image-scan delay forwarding in the app
+    coordinator even after the surrounding DOM patch execution had moved into
+    `public/thread-detail-dom-patch.js`.
+- Runtime change:
+  - `public/thread-detail-dom-patch.js` now exposes
+    `hydrateRenderedSurface`.
+  - `public/app.js` adds a thin `hydrateThreadDetailSurface` wrapper that
+    injects the existing `hydrateGitHubLinkCards`,
+    `hydrateMermaidDiagrams`, and `scheduleFailedAppImageScan` callbacks.
+  - Full conversation render, thread tile pane patch, and local patch
+    completion now route through the wrapper.
+  - Same-signature conversation updates preserve the old behavior by running
+    only image scanning with `[0, 180]` delays and skipping GitHub/Mermaid rich
+    hydration.
+  - The helper does not catch callback errors, suppress refreshes, filter
+    duplicate messages, synthesize content, or change image/Markdown rendering
+    rules.
+  - `CLIENT_BUILD_ID` and service-worker cache are bumped to
+    `codex-mobile-shell-v456`.
+- Docs/tests:
+  - `README.md` records the v456 architecture slice.
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` records that hydration
+    orchestration is now outside `public/app.js` for thread-detail surfaces.
+  - `docs/MODULES.md` maps hydration orchestration ownership to
+    `public/thread-detail-dom-patch.js`.
+  - `test/thread-detail-dom-patch.test.js` covers hydration callback order,
+    image-scan delay forwarding, bounded missing-root result, and callback
+    error propagation.
+  - `test/mobile-viewport.test.js`, `test/conversation-render.test.js`,
+    `test/github-link-preview-ui.test.js`, and `test/mermaid-render.test.js`
+    assert the new wiring without requiring old direct app-level conversation
+    hydration calls.
+- Validation:
+  - Focused source suite passed:
+    `node --test test/github-link-preview-ui.test.js
+    test/mermaid-render.test.js test/thread-detail-dom-patch.test.js
+    test/mobile-viewport.test.js test/conversation-render.test.js`
+    (`137` tests).
+  - Full `npm test` passed (`826` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Commit/deploy:
+  - Runtime commit: `e3f8f73` (`refactor thread detail hydration
+    orchestration`).
+  - Deployed with Home AI central macOS script:
+    `deploy-macos-production.js --plugin codex-mobile --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --reason codex-mobile-thread-detail-hydration-v456 --execute --json`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T172706Z-plugin-codex-mobile-web-codex-mobile-thread-detail-hydration-v456`.
+  - Production `/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v456`,
+    `shellCacheName=codex-mobile-shell-v456`, and `version=0.1.11`.
+  - Source/prod SHA-256 parity confirmed for changed runtime/test/doc files.
+  - Production focused suite passed with `NODE_PATH` pointed at production
+    dependencies (`176` tests).
+- Production observation:
+  - Bounded log-tail aggregation after deploy found no v456/v455/v454/v453/v452
+    `thread_refresh_ms` client events yet; the recent sample contained `102`
+    v447 events and `1250` events with missing client build id.
+  - This is not evidence of v456 failure. It means refreshed v456 clients have
+    not yet produced that metric in the sampled tail.
+- Follow-up:
+  - Remaining Phase A boundary is action binding. After that, proceed to
+    Phase B large-session cold/warm path evidence unless a higher-priority
+    production incident appears.
+  - The broader system optimization goal remains active and incomplete.
+  - This was deployed locally/production only. Do not push Public unless the
+    user explicitly requests it after production validation.
+
 # 2026-06-26 - v455 turn article creation deployed
 
 - Optimization phase:
