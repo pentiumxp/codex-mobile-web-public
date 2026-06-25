@@ -8434,6 +8434,12 @@ The previous full handoff was archived and should be opened only when old proven
 - Operational notes:
   - Server-only change; no static shell/cache bump beyond the already deployed
     v476 shell.
+  - The real return card for `ttc_a8ab1599a96e2e92ed` was created as
+    `ttc_25262fb1d46a151f36` with `returnStatus=completed`. Its Home AI
+    delivery-loop observer attempted the event and recorded bounded
+    `unknown_task_card` / HTTP `404`, which matches the contract for an
+    original task-card id that Home AI has not registered as an autonomous
+    delivery slice. The terminal return itself was delivered normally.
   - Not pushed to public yet. Follow the release-order rule: wait for
     production/user confirmation before any public sync/push.
 
