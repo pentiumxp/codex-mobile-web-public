@@ -140,9 +140,10 @@ count/close planning is now also in that helper: count bounds, unchanged
 detection, close eligibility, pinned slot fill, scroll-reset ids, and
 selected-pane fallback are pure policy. Active pane sync planning is also in
 that helper: active pane ids, pinned slot sync, split-pair prune, selected-pane
-fallback, and display-settings save eligibility are computed as one policy
-and explicit selected-pane action planning now emits the previous/next pane
-patch set. Candidate pane id planning also now lives there: visible pinned
+fallback, and display-settings save eligibility are computed as one policy.
+Explicit selected-pane action and side-effect planning now emits the
+previous/next pane patch set, draft save/restore intent, Composer refresh, and
+patch fallback policy. Candidate pane id planning also now lives there: visible pinned
 filtering, default-candidate fallback, layout-selector delegation, and current
 thread replacement are computed as one policy. Switch-menu option/control
 planning also now lives there: current/active/running/visible thread option
@@ -181,8 +182,8 @@ Target:
   core thread-tile pane-state normalization and operation bubble signature/
   dwell/mode policy are now outside app.js. Pane-local detail refresh planning,
   pane slot mutation planning, pane count/close planning, and active pane sync
-  planning are now outside app.js; explicit selected-pane action planning is
-  also outside app.js; candidate pane id planning is also outside app.js;
+  planning are now outside app.js; explicit selected-pane action/effect
+  planning is also outside app.js; candidate pane id planning is also outside app.js;
   switch-menu option/control planning is also outside app.js;
   pane slot mutation side-effect planning including pane count/close execution
   is also outside app.js;
@@ -344,8 +345,10 @@ Target:
   running/visible option ordering and close/add control eligibility. Pane slot
   mutation side-effect planning also now lives there, including draft/
   Composer/settings/detail-load/render intent for replace/select, move, split,
-  thread-list replace-last, pane count, and close-pane actions. Continue moving pane widths, active
-  pane execution, per-pane drafts, max concurrent detail reads, pane-local
+  thread-list replace-last, pane count, and close-pane actions. Selected-pane
+  side-effect planning also now lives there, including draft/Composer/patch
+  intent for active pane changes. Continue moving pane widths, per-pane drafts,
+  max concurrent detail reads, pane-local
   send/approval/interrupt ownership, command detail panels, and mobile collapse
   behavior into testable helpers without DOM side effects.
 - Treat each pane as a scaled mobile single-thread runtime instance. Shared

@@ -194,9 +194,14 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.doesNotMatch(tilePaneBody, /data-thread-tile-open/);
   const selectPaneBody = functionBody(appJs, "setThreadTileSelectedThread");
   assert.match(selectPaneBody, /threadTileStatePolicy\.selectPanePlan/);
-  assert.match(selectPaneBody, /state\.threadTileSelectedThreadId = plan\.selectedThreadId/);
-  assert.match(selectPaneBody, /plan\.patchThreadIds/);
-  assert.match(selectPaneBody, /patchThreadTilePane\(id, \{ preserveScroll: true \}\)/);
+  assert.match(selectPaneBody, /threadTileStatePolicy\.selectedPaneEffectsPlan\(plan/);
+  assert.match(selectPaneBody, /applyThreadTileSelectedPaneEffects/);
+  assert.doesNotMatch(selectPaneBody, /state\.threadTileSelectedThreadId = plan\.selectedThreadId/);
+  const selectedEffectsBody = functionBody(appJs, "applyThreadTileSelectedPaneEffects");
+  assert.match(selectedEffectsBody, /effect\.action !== "selected-pane-effects"/);
+  assert.match(selectedEffectsBody, /state\.threadTileSelectedThreadId = effect\.selectedThreadId/);
+  assert.match(selectedEffectsBody, /effect\.patchThreadIds/);
+  assert.match(selectedEffectsBody, /patchThreadTilePane\(id, \{ preserveScroll: effect\.patchPreserveScroll !== false \}\)/);
 
   const tileActionsBody = functionBody(appJs, "bindThreadTileActions");
   assert.match(tileActionsBody, /threadTileActionsApi\.resolveThreadTilePointerAction/);
@@ -311,7 +316,7 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(functionBody(appJs, "restoreThreadTilePaneElementScrollState"), /!hold/);
   assert.match(functionBody(appJs, "toggleThreadTileSwitchMenu"), /patchThreadTilePane\(id, \{ preserveScroll: true \}\)/);
   assert.match(functionBody(appJs, "loadThreadTileDetail"), /scheduleRenderThreadTilePane\(id, \{ preserveScroll: true \}\)/);
-  assert.match(functionBody(appJs, "setThreadTileSelectedThread"), /patchThreadTilePane\(id, \{ preserveScroll: true \}\)/);
+  assert.match(functionBody(appJs, "applyThreadTileSelectedPaneEffects"), /patchThreadTilePane\(id, \{ preserveScroll: effect\.patchPreserveScroll !== false \}\)/);
   assert.match(appJs, /if \(state\.threadTileMode && !isThreadTileKeyboardFocusActive\(\)\) scheduleRenderCurrentThread\(\)/);
   assert.match(functionBody(appJs, "updateTurnTimer"), /applyTurnTimerState\(el, currentThreadTurnTimerState\(\)\)/);
   assert.match(functionBody(appJs, "updateThreadTilePaneStatusBadges"), /turnTimerStateHtml\(threadTilePaneTimerState\(threadTileDisplayThread\(id\)\)\)/);

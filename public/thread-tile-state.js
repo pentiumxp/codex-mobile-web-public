@@ -488,6 +488,26 @@
     };
   }
 
+  function selectedPaneEffectsPlan(plan = {}, options = {}) {
+    const sourceAction = text(plan.action).trim();
+    if (sourceAction !== "select-pane") return skipPaneSlot("unsupported-select-pane-plan", { sourceAction });
+    const selectedThreadId = text(plan.selectedThreadId || plan.threadId).trim();
+    if (!selectedThreadId) return skipPaneSlot("missing-id", { selectedThreadId });
+    return {
+      action: "selected-pane-effects",
+      reason: text(plan.reason || sourceAction).trim() || sourceAction,
+      sourceAction,
+      selectedThreadId,
+      patchThreadIds: uniqueIds(plan.patchThreadIds || [selectedThreadId]),
+      saveDraft: true,
+      restoreDraft: true,
+      updateComposer: true,
+      renderMode: options.render === false ? "none" : "patch-panes",
+      patchPreserveScroll: true,
+      scheduleFullRenderOnPatchMiss: true,
+    };
+  }
+
   function paneCountChangePlan(input = {}, options = {}) {
     if (input.enabled !== true) return skipPaneSlot("disabled");
     if (input.layoutEnabled !== true) return skipPaneSlot("layout-disabled");
@@ -803,6 +823,7 @@
     removeSplitPairsForIds,
     movePaneRelativePlan,
     selectPanePlan,
+    selectedPaneEffectsPlan,
     splitPaneWithTargetPlan,
     switchMenuOptionsPlan,
     switchMenuPlan,

@@ -57,8 +57,12 @@ test("switching targets saves the previous draft and restores the next draft", (
   assert.match(newThreadBody, /restoreDraftForCurrentTarget\(\)/);
 
   const tileSelectBody = functionBody("setThreadTileSelectedThread");
-  assert.match(tileSelectBody, /saveCurrentDraftNow\(\)/);
-  assert.match(tileSelectBody, /restoreDraftForCurrentTarget\(\{ resetRuntimeWhenMissingDraft: true \}\)/);
+  assert.match(tileSelectBody, /threadTileStatePolicy\.selectedPaneEffectsPlan\(plan/);
+  assert.match(tileSelectBody, /applyThreadTileSelectedPaneEffects/);
+
+  const tileSelectEffectsBody = functionBody("applyThreadTileSelectedPaneEffects");
+  assert.match(tileSelectEffectsBody, /saveCurrentDraftNow\(\)/);
+  assert.match(tileSelectEffectsBody, /restoreDraftForCurrentTarget\(\{ resetRuntimeWhenMissingDraft: true \}\)/);
 
   const tileEffectsBody = functionBody("applyThreadTilePaneSlotEffects");
   assert.match(tileEffectsBody, /if \(effect\.saveDraft\) saveCurrentDraftNow\(\)/);

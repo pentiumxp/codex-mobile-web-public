@@ -526,6 +526,31 @@ test("thread tile state plans explicit pane selection", () => {
     selectedThreadId: "b",
     patchThreadIds: ["b", "a"],
   });
+
+  assert.deepEqual(state.selectedPaneEffectsPlan({
+    action: "select-pane",
+    reason: "select-pane",
+    threadId: "b",
+    selectedThreadId: "b",
+    patchThreadIds: ["b", "a", "b"],
+  }), {
+    action: "selected-pane-effects",
+    reason: "select-pane",
+    sourceAction: "select-pane",
+    selectedThreadId: "b",
+    patchThreadIds: ["b", "a"],
+    saveDraft: true,
+    restoreDraft: true,
+    updateComposer: true,
+    renderMode: "patch-panes",
+    patchPreserveScroll: true,
+    scheduleFullRenderOnPatchMiss: true,
+  });
+  assert.equal(state.selectedPaneEffectsPlan({
+    action: "select-pane",
+    selectedThreadId: "b",
+  }, { render: false }).renderMode, "none");
+  assert.equal(state.selectedPaneEffectsPlan({ action: "skip" }).reason, "unsupported-select-pane-plan");
 });
 
 test("thread tile state plans pane close without app globals", () => {

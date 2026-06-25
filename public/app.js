@@ -503,7 +503,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v469";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v470";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -12126,17 +12126,26 @@ function setThreadTileSelectedThread(threadId, options = {}) {
     selectedThreadId: state.threadTileSelectedThreadId,
   });
   if (plan.action !== "select-pane") return false;
-  saveCurrentDraftNow();
-  state.threadTileSelectedThreadId = plan.selectedThreadId;
-  restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
-  renderComposerSettings();
-  updateComposerControls();
-  if (options.render !== false) {
+  return applyThreadTileSelectedPaneEffects(threadTileStatePolicy.selectedPaneEffectsPlan(plan, {
+    render: options.render !== false,
+  }));
+}
+
+function applyThreadTileSelectedPaneEffects(effect) {
+  if (!effect || effect.action !== "selected-pane-effects") return false;
+  if (effect.saveDraft) saveCurrentDraftNow();
+  state.threadTileSelectedThreadId = effect.selectedThreadId;
+  if (effect.restoreDraft) restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
+  if (effect.updateComposer) {
+    renderComposerSettings();
+    updateComposerControls();
+  }
+  if (effect.renderMode === "patch-panes") {
     let patchedAll = true;
-    (plan.patchThreadIds || [plan.threadId]).filter(Boolean).forEach((id) => {
-      patchedAll = patchThreadTilePane(id, { preserveScroll: true }) && patchedAll;
+    (effect.patchThreadIds || [effect.selectedThreadId]).filter(Boolean).forEach((id) => {
+      patchedAll = patchThreadTilePane(id, { preserveScroll: effect.patchPreserveScroll !== false }) && patchedAll;
     });
-    if (!patchedAll) scheduleRenderCurrentThread();
+    if (!patchedAll && effect.scheduleFullRenderOnPatchMiss) scheduleRenderCurrentThread();
   }
   return true;
 }

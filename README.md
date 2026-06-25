@@ -16,6 +16,28 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v470 Thread Tile Selected Pane Effect Policy
+
+v470 继续 Phase C，把平铺窗口 active pane 切换后的副作用执行迁到
+`public/thread-tile-state.js` 输出的 effect plan。v465 已经把
+`setThreadTileSelectedThread` 的目标 pane 校验、unchanged 判断、previous/next patch
+范围迁成 `selectPanePlan`；本次补齐后半段，让入口函数不再直接手写保存草稿、
+写 selected pane、恢复草稿、刷新 Composer 和 patch pane 的执行顺序。
+
+本次新增的纯策略是 `selectedPaneEffectsPlan`：
+
+- `select-pane` 输出 `selected-pane-effects`，包含 selected pane、需要 patch 的 pane ids、
+  draft save/restore、Composer refresh、pane patch preserve-scroll，以及 patch miss 时
+  schedule full render 的意图。
+- `render: false` 仍保留旧行为：保存/恢复当前 target 草稿并刷新 Composer，但不 patch pane。
+- `public/app.js` 继续拥有真实 DOM patch、draft store 和 Composer 控件执行。
+
+这个切片不改变 pane layout、线程详情读取、server projection、任务卡或诊断上报。
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v470`。
+`test/thread-tile-state.test.js` 覆盖 selected pane effect planning；
+`test/thread-tile-layout-ui.test.js` 和 `test/composer-draft.test.js` 约束 app 层必须通过
+`selectedPaneEffectsPlan` / `applyThreadTileSelectedPaneEffects`。
+
 ## 2026-06-26 v469 Thread Tile Pane Count/Close Effect Policy
 
 v469 继续 Phase C，把平铺窗口数量调整和关闭窗口后的副作用执行也并入
