@@ -128,3 +128,72 @@ test("thread detail refresh render outcome keeps metadata-only tile patches out 
     projectionConsistencyPhase: "refresh-metadata",
   });
 });
+
+test("single-thread full render shell plans loading state", () => {
+  assert.deepEqual(renderPlan.planSingleThreadFullRenderShell({
+    threadId: "thread-1",
+    loadingWithoutVisibleTurns: true,
+  }), {
+    mode: "loading",
+    html: `<div class="empty-state entry-animate">Loading thread...</div>`,
+    clearLiveOperationDock: true,
+    bindRetry: false,
+    retryThreadId: "",
+    hasPrimaryContent: false,
+    emptyMessage: "",
+  });
+});
+
+test("single-thread full render shell plans escaped load error retry", () => {
+  const plan = renderPlan.planSingleThreadFullRenderShell({
+    threadId: "thread-1",
+    loadError: "bad <state>",
+  });
+
+  assert.equal(plan.mode, "load-error");
+  assert.equal(plan.clearLiveOperationDock, true);
+  assert.equal(plan.bindRetry, true);
+  assert.equal(plan.retryThreadId, "thread-1");
+  assert.match(plan.html, /Thread failed: bad &lt;state&gt;/);
+  assert.match(plan.html, /id="retryCurrentThread"/);
+});
+
+test("single-thread full render shell preserves fragment order with primary content", () => {
+  const plan = renderPlan.planSingleThreadFullRenderShell({
+    goalCard: "<goal/>",
+    rolloutWarning: "<rollout/>",
+    loadingNote: "<loading/>",
+    taskToolbar: "<toolbar/>",
+    omittedBanner: "<omitted/>",
+    readWarning: "<warning/>",
+    turnsHtml: "<turn/>",
+    approvalsHtml: "<approval/>",
+    taskCardsHtml: "<task/>",
+    pluginRefreshNotice: "<plugin/>",
+  });
+
+  assert.equal(plan.mode, "detail");
+  assert.equal(plan.hasPrimaryContent, true);
+  assert.equal(plan.emptyMessage, "No visible turns.");
+  assert.equal(plan.html, "<goal/><rollout/><loading/><toolbar/><omitted/><warning/><turn/><approval/><task/><plugin/>");
+});
+
+test("single-thread full render shell renders plugin notice before empty state", () => {
+  const plan = renderPlan.planSingleThreadFullRenderShell({
+    pluginRefreshNotice: "<plugin/>",
+  });
+
+  assert.equal(plan.hasPrimaryContent, false);
+  assert.equal(plan.emptyMessage, "No visible turns.");
+  assert.equal(plan.html, `<plugin/><div class="empty-state entry-animate">No visible turns.</div>`);
+});
+
+test("single-thread full render shell explains empty read-warning state", () => {
+  const plan = renderPlan.planSingleThreadFullRenderShell({
+    readWarningMessage: "summary fallback",
+  });
+
+  assert.equal(plan.hasPrimaryContent, false);
+  assert.equal(plan.emptyMessage, "暂时没有可显示的完整消息。共享模式恢复后刷新这个页面即可继续读取。");
+  assert.match(plan.html, /暂时没有可显示的完整消息/);
+});

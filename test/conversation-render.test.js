@@ -1849,6 +1849,9 @@ test("loading and thread-list state preserve locally visible live turns", () => 
   assert.match(functionBody("conversationRenderSignature"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) return `loading\\|/);
   assert.match(functionBody("conversationRootSignature"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) return `loading\\|/);
   assert.match(functionBody("renderCurrentThread"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) \{/);
+  assert.match(functionBody("renderCurrentThread"), /threadDetailRenderPlanApi\.planSingleThreadFullRenderShell/);
+  assert.doesNotMatch(functionBody("renderCurrentThread"), /Thread failed:/);
+  assert.doesNotMatch(functionBody("renderCurrentThread"), /No visible turns\./);
   assert.match(functionBody("renderCurrentThread"), /const loadingNote = thread\.mobileLoading/);
   assert.match(functionBody("reconcileThreadStatusHints"), /currentLiveTurnSupportsThreadStatusHint\(id\)/);
   assert.match(functionBody("statusIconInfo"), /state\.runningThreadIds\.has\(id\)[\s\S]*currentLiveTurnSupportsThreadStatusHint\(id\)/);

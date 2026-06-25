@@ -16,6 +16,35 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v481 Single-Thread Full-Render Shell Planning
+
+v481 继续推进 Phase A 的前端 render/patch ownership 收敛。
+
+本次切片把单线程详情页 full-render shell 的 planning 从
+`public/app.js` 推进到 `public/thread-detail-render-plan.js` 的
+`planSingleThreadFullRenderShell`。新的 helper 负责 loading、load-error、
+detail、empty-detail/read-warning 空态的 shell plan，以及目标 HTML 片段
+顺序、retry intent、是否清空 live operation dock 等结构化结果。
+`public/app.js` 仍然负责真实 DOM 写入、retry 事件绑定、header/tile 切换、
+scroll/bottom-follow、hydration 和后续 action binding。
+
+修复边界：
+
+- 症状/风险：`renderCurrentThread()` 仍直接拼接 loading/error/empty/detail
+  full-render HTML，导致 full-render shell、任务卡/approval 片段顺序和空态
+  文案继续与 DOM 副作用耦合。
+- 失败层：前端 single-thread full-render shell ownership。
+- 不变量：full-render shell 的 mode、HTML 片段顺序、empty/read-warning
+  选择和 retry intent 应由可测试 helper 计划；`app.js` 只执行真实 DOM
+  副作用和事件绑定。
+- 闭环验证：`test/thread-detail-render-plan.test.js` 覆盖 loading、load-error、
+  primary-content ordering、plugin notice before empty state、read-warning empty
+  state；`test/conversation-render.test.js` 验证 `renderCurrentThread` 委托
+  helper 且不再内联 load-error / empty shell 文案；任务卡相关 source test
+  验证 task-card 片段仍传入 shell plan。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v481`。
+
 ## 2026-06-26 v480 Operation Card Template Ownership
 
 v480 继续推进 Phase A 的前端 render/patch ownership 收敛。

@@ -96,9 +96,75 @@
     };
   }
 
+  function text(value) {
+    return String(value ?? "");
+  }
+
+  function htmlEscaper(input = {}) {
+    return typeof input.escapeHtml === "function"
+      ? input.escapeHtml
+      : (value) => text(value)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+  }
+
+  function hasHtml(value) {
+    return text(value).trim().length > 0;
+  }
+
+  function planSingleThreadFullRenderShell(input = {}) {
+    const escape = htmlEscaper(input);
+    const threadId = text(input.threadId || input.currentThreadId).trim();
+    if (input.loadingWithoutVisibleTurns) {
+      return {
+        mode: "loading",
+        html: `<div class="empty-state entry-animate">Loading thread...</div>`,
+        clearLiveOperationDock: true,
+        bindRetry: false,
+        retryThreadId: "",
+        hasPrimaryContent: false,
+        emptyMessage: "",
+      };
+    }
+    if (input.loadError) {
+      return {
+        mode: "load-error",
+        html: `<div class="empty-state entry-animate">
+        <div>Thread failed: ${escape(input.loadError)}</div>
+        <button id="retryCurrentThread" class="retry-button" type="button">Retry</button>
+      </div>`,
+        clearLiveOperationDock: true,
+        bindRetry: true,
+        retryThreadId: threadId,
+        hasPrimaryContent: false,
+        emptyMessage: "",
+      };
+    }
+    const hasPrimaryContent = hasHtml(input.turnsHtml) || hasHtml(input.approvalsHtml) || hasHtml(input.taskCardsHtml);
+    const emptyMessage = input.readWarningMessage
+      ? "暂时没有可显示的完整消息。共享模式恢复后刷新这个页面即可继续读取。"
+      : "No visible turns.";
+    const body = hasPrimaryContent
+      ? `${text(input.turnsHtml)}${text(input.approvalsHtml)}${text(input.taskCardsHtml)}${text(input.pluginRefreshNotice)}`
+      : `${text(input.pluginRefreshNotice)}<div class="empty-state entry-animate">${escape(emptyMessage)}</div>`;
+    return {
+      mode: "detail",
+      html: `${text(input.goalCard)}${text(input.rolloutWarning)}${text(input.loadingNote)}${text(input.taskToolbar)}${text(input.omittedBanner)}${text(input.readWarning)}${body}`,
+      clearLiveOperationDock: false,
+      bindRetry: false,
+      retryThreadId: "",
+      hasPrimaryContent,
+      emptyMessage,
+    };
+  }
+
   return {
     finalizeThreadDetailRenderPlan,
     normalizeSignature,
+    planSingleThreadFullRenderShell,
     planThreadDetailRefreshRender,
   };
 }));

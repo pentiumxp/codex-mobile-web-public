@@ -320,7 +320,7 @@ test("server materializes structured task-card drafts from thread detail", () =>
 });
 
 test("conversation render includes task card signature, toolbar, and action handlers", () => {
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v480"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v481"/);
   assert.match(appJs, /function threadTaskCardsForThread\(/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.status \|\| ""\) === "pending"\)/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.threadRole \|\| ""\) === "target"\)/);
@@ -451,7 +451,8 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /pluginEmbedApi\.findRouteHintTargetNode\(conversation, hint, \{ escapeSelector: escapeSelectorAttr \}\)/);
   assert.match(appJs, /Task card approved; starting target turn/);
   assert.match(appJs, /\$\{items\}\$\{approvalsHtml\}[\s\S]*\$\{showStatusLine \? [\s\S]*: ""\}[\s\S]*\$\{draftHtml\}\$\{pendingDraftHtml\}/);
-  assert.match(appJs, /\$\{turnsHtml\}\$\{approvalsHtml\}\$\{taskCardsHtml\}/);
+  assert.match(functionBody(appJs, "renderCurrentThread"), /threadDetailRenderPlanApi\.planSingleThreadFullRenderShell/);
+  assert.match(functionBody(appJs, "renderCurrentThread"), /taskCardsHtml/);
   assert.match(appJs, /Task card draft request/);
   assert.match(indexHtml, /id="workspaceDelegationSettings"/);
   assert.match(stylesCss, /\.workspace-delegation-row/);

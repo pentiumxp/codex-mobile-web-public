@@ -136,6 +136,12 @@ now also lives in the same helper: `patchNode`, `patchChildNodes`, and
 sync, text/comment patching, stale child removal, incompatible node
 replacement, and bounded `patchHtml` failure reasons while `public/app.js`
 keeps the high-level patch/fallback/hydration/scroll/performance orchestration.
+Single-thread full-render shell planning now also lives in
+`public/thread-detail-render-plan.js`: loading, load-error retry, detail
+content ordering, empty/read-warning state selection, plugin-refresh notice
+placement, and operation-dock clearing intent are structured helper output
+while app code keeps header/tile switching, real DOM writes, retry event
+binding, scroll/bottom-follow, hydration, and action binding.
 Thread detail click action recognition now
 lives in `public/thread-detail-actions.js`: app code still owns event listener
 wiring and business execution, but selector priority, root containment,
@@ -207,7 +213,8 @@ scroll-completion policy, own the visible-item patch operation loop, or own the
 turn-level patch operation loop, insertion anchoring loop, or turn article
 render-key lookup selector, creation step, hydration callback sequence, live
 text item render-key lookup / HTML patch sequencing, or
-conversation click-action selector priority, nor own the basic pane-state
+single-thread full-render shell selection, conversation click-action selector
+priority, nor own the basic pane-state
 normalization, pane-local operation-bubble state rules, operation card content
 and final template planning, or keyed DOM child reconciliation.
 
@@ -223,7 +230,8 @@ Target:
   hydration orchestration is now outside app.js for thread detail surfaces;
   live text item DOM patch sequencing is now outside app.js for streaming
   assistant/plan updates; keyed DOM child reconciliation and `patchHtml`
-  parsing/execution are now outside app.js;
+  parsing/execution are now outside app.js; single-thread full-render shell
+  planning is now outside app.js;
   click-action recognition is now outside app.js for conversation surfaces;
   thread-tile interaction recognition is now outside app.js for tile surfaces;
   core thread-tile pane-state normalization and operation bubble signature/
@@ -237,8 +245,7 @@ Target:
   is also outside app.js; detail-load lifecycle side-effect planning is also
   outside app.js; detail-load queue/abort/drain planning is also outside app.js;
   operation card content and final template planning are now outside app.js;
-  single-thread full-render shell
-  planning, split sizing, measured tuning of the max concurrent detail read
+  split sizing, measured tuning of the max concurrent detail read
   value, and per-pane draft/runtime ownership remain the next boundary.
 - Keep `public/app.js` responsible for DOM wiring, patch application, and event
   binding only.

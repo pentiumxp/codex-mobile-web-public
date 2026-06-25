@@ -175,7 +175,7 @@ test("live and final message renders stay anchored when the user is at bottom", 
     /const sustainedSubmittedFollow = !explicitNoStickToBottom[\s\S]*sustainSubmittedMessageBottomFollowFromThread\(thread\);/,
     /const shouldFollowBottom = !explicitNoStickToBottom\s*&& \(sustainedSubmittedFollow \|\| shouldFollowSubmittedMessageToBottom\(\) \|\| shouldFollowViewportChangeToBottom\(\)\);/,
     /const shouldStickToBottom = !explicitNoStickToBottom\s*&& \(shouldFollowBottom[\s\S]*\(options\.stickToBottom === true \|\| nearBottom\)\)\);/,
-    /updateConversationHtml\(html, conversationRenderSignature\(thread\), \{[\s\S]*stickToBottom: shouldStickToBottom,[\s\S]*patchShellSignature: conversationPatchShellSignature\(thread\),[\s\S]*\}\);/,
+    /updateConversationHtml\(shellPlan\.html, conversationRenderSignature\(thread\), \{[\s\S]*stickToBottom: shouldStickToBottom,[\s\S]*patchShellSignature: conversationPatchShellSignature\(thread\),[\s\S]*\}\);/,
   ]);
 
   const updateBody = functionBody("updateConversationHtml");

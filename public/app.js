@@ -504,7 +504,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v480";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v481";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -14035,9 +14035,14 @@ function renderCurrentThread(options = {}) {
   updateCurrentThreadHeader(thread);
   setThreadTileConversationMode(false);
   if (threadIsLoadingWithoutVisibleTurns(thread)) {
+    const shellPlan = threadDetailRenderPlanApi.planSingleThreadFullRenderShell({
+      threadId: state.currentThreadId || thread.id || "",
+      loadingWithoutVisibleTurns: true,
+      escapeHtml,
+    });
     updateLiveOperationDockHtml("");
     updateConversationHtml(
-      `<div class="empty-state entry-animate">Loading thread...</div>`,
+      shellPlan.html,
       conversationRenderSignature(thread),
       { stickToBottom: shouldStickToBottom, patchShellSignature: conversationPatchShellSignature(thread) },
     );
@@ -14046,17 +14051,19 @@ function renderCurrentThread(options = {}) {
     return;
   }
   if (thread.mobileLoadError) {
+    const shellPlan = threadDetailRenderPlanApi.planSingleThreadFullRenderShell({
+      threadId: thread.id || state.currentThreadId || "",
+      loadError: thread.mobileLoadError,
+      escapeHtml,
+    });
     updateLiveOperationDockHtml("");
     updateConversationHtml(
-      `<div class="empty-state entry-animate">
-        <div>Thread failed: ${escapeHtml(thread.mobileLoadError)}</div>
-        <button id="retryCurrentThread" class="retry-button" type="button">Retry</button>
-      </div>`,
+      shellPlan.html,
       conversationRenderSignature(thread),
       { stickToBottom: shouldStickToBottom, patchShellSignature: conversationPatchShellSignature(thread) },
     );
     const retry = $("retryCurrentThread");
-    if (retry) retry.onclick = () => loadThread(thread.id || state.currentThreadId, { source: "retry" }).catch(showError);
+    if (retry) retry.onclick = () => loadThread(shellPlan.retryThreadId || thread.id || state.currentThreadId, { source: "retry" }).catch(showError);
     updateTickTimer();
     publishPluginNavigationState();
     return;
@@ -14086,12 +14093,23 @@ function renderCurrentThread(options = {}) {
     if (turnId && visibleTurnIds.has(turnId)) return false;
     return isApprovalActive(request);
   });
-  const emptyMessage = readWarningMessage
-    ? "暂时没有可显示的完整消息。共享模式恢复后刷新这个页面即可继续读取。"
-    : "No visible turns.";
-    const html = goalCard + rolloutWarning + loadingNote + taskToolbar + omittedBanner + readWarning + (turnsHtml || approvalsHtml || taskCardsHtml ? `${turnsHtml}${approvalsHtml}${taskCardsHtml}${pluginRefreshNotice}` : `${pluginRefreshNotice || ""}<div class="empty-state entry-animate">${escapeHtml(emptyMessage)}</div>`);
+  const shellPlan = threadDetailRenderPlanApi.planSingleThreadFullRenderShell({
+    threadId: state.currentThreadId || thread.id || "",
+    goalCard,
+    rolloutWarning,
+    loadingNote,
+    taskToolbar,
+    omittedBanner,
+    readWarning,
+    turnsHtml,
+    approvalsHtml,
+    taskCardsHtml,
+    pluginRefreshNotice,
+    readWarningMessage,
+    escapeHtml,
+  });
   updateLiveOperationDockHtml(liveOperationDock);
-  updateConversationHtml(html, conversationRenderSignature(thread), {
+  updateConversationHtml(shellPlan.html, conversationRenderSignature(thread), {
     stickToBottom: shouldStickToBottom,
     patchShellSignature: conversationPatchShellSignature(thread),
   });
