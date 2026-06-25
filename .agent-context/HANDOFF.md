@@ -1,3 +1,56 @@
+# 2026-06-25 - v441 thread-tile local patch signature boundary repaired
+
+- Source task card:
+  - Home AI diagnostic remediation dispatched
+    `diagcase_27be16978a2839942d0e` for Codex Mobile Web.
+  - Task card id: `ttc_5769b2b34e8c15a2ec`.
+  - Requested reasoning effort: `xhigh`.
+- Bounded runtime evidence:
+  - Home AI diagnostic DB path checked read-only:
+    `/Users/hermes-host/HermesMobile/data/ai-ops/diagnostics/diagnostics.sqlite`.
+  - Case metadata: plugin `codex-mobile`, source surface `embedded-plugin`,
+    status `card_sent`, one event at `2026-06-25T14:02:33Z`.
+  - Payload now preserved Home AI host fields:
+    `route_kind=thread-tile`, `action=refresh-metadata`,
+    `render_mode=metadata-only`, `pane_count=4`, `dom_count=168`,
+    `visible_count=132`, `duplicate_count=0`,
+    plugin build `0.1.11|codex-mobile-shell-v440`.
+  - The issue is not the same as the v440 fixed mixed signature comparison.
+    v440 correctly entered the tile diagnostic branch; the remaining failure
+    was stale single-thread rendered signature state paired with a tile DOM.
+- Root cause:
+  - `refreshCurrentThread` and SSE local item patch paths still had a
+    single-window DOM ownership assumption.
+  - Metadata-only refresh updated single-window header/global operation dock
+    instead of the current tile pane.
+  - `completeLocalConversationDomUpdate` always wrote
+    `conversationRenderSignature(state.currentThread)`.
+  - In thread-tile DOM this left the tile board paired with a single-thread
+    `state.renderedConversationSignature`, which produced the H2 mismatch on
+    the next consistency check.
+- Change:
+  - Added `patchCurrentThreadTilePaneFromState`.
+  - Current-thread refreshes in thread-tile mode patch the current pane and let
+    `patchThreadTilePane` write `threadTileRenderSignature`.
+  - Metadata-only tile refresh now uses `detailRenderMode=tile-pane-metadata`.
+  - SSE/local patch paths for operation dock, visible item insert/patch, live
+    text patch, and detail refresh patch use the tile pane boundary when the
+    active DOM is a thread-tile board.
+  - Single-thread DOM patch behavior remains unchanged outside tile mode.
+  - PWA shell cache bumped to `codex-mobile-shell-v441`.
+  - Updated `README.md` and `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Validation:
+  - Focused tests passed:
+    `node --test test/conversation-render.test.js test/home-ai-diagnostic-reporting.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    (`126` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `npm test` passed (`791` tests).
+  - `git diff --check` passed.
+- Release state:
+  - Not yet committed/deployed at the time of this handoff entry. Commit and
+    deploy before returning the task card.
+
 # 2026-06-25 - v440 tile projection diagnostic false positive repaired
 
 - Source task card:
@@ -41,8 +94,25 @@
   - `npm test` passed (`789` tests).
   - `git diff --check` passed.
 - Release state:
-  - Not yet committed/deployed at the time of this handoff entry. Commit and
-    deploy before returning the task card.
+  - Committed locally as:
+    `3f1c47e fix tile projection diagnostic signature`.
+  - Deployed through the Home AI central plugin deploy script with reason
+    `codex-mobile-tile-diagnostic-signature-v440`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T132616Z-plugin-codex-mobile-web-codex-mobile-tile-diagnostic-signature-v440`.
+  - `/api/public-config` reports `version=0.1.11`,
+    `clientBuildId=0.1.11|codex-mobile-shell-v440`,
+    `shellCacheName=codex-mobile-shell-v440`, `authRequired=true`,
+    `platform=darwin`, and build id `d84d748dcf337c13`.
+  - Production `npm run check` and `npm run check:macos` passed.
+  - Source/production short SHA-256 samples matched for:
+    `public/app.js`, `public/sw.js`, `README.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`,
+    `test/conversation-render.test.js`, and
+    `test/home-ai-diagnostic-reporting.test.js`.
+  - Post-deploy diagnostic DB readback still shows the H2 case with two
+    pre-v440 events and one separate H3 `detail_patch_rejected` case. No new
+    v440 event was observed in that bounded readback.
 
 # 2026-06-25 - v439 Home AI diagnostic report channel implemented locally
 

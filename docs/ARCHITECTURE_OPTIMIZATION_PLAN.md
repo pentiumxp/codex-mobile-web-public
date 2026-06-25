@@ -151,6 +151,13 @@ Target:
 
 Current diagnostic intake bridge:
 
+- v441 closes the remaining thread-tile local-patch signature boundary.
+  Current-thread refreshes and SSE-driven local item patches now route through
+  `patchCurrentThreadTilePaneFromState` when the active DOM is a thread-tile
+  board. The tile pane renderer owns the DOM patch and writes back the
+  `threadTileRenderSignature`; single-thread paths remain unchanged. This
+  prevents metadata-only refreshes from leaving a tile DOM paired with a
+  single-thread rendered signature.
 - v440 narrows conversation projection mismatch diagnostics to the active
   rendering surface. Single-thread mode compares against
   `conversationRenderSignature`; thread-tile mode compares against

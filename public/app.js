@@ -485,7 +485,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v440";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v441";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -9123,12 +9123,18 @@ async function refreshCurrentThread(options = {}) {
   renderThreads();
   const threadListRenderMs = roundedDurationMs(threadListRenderStartedAt);
   let locallyPatchedDetail = false;
+  let tilePanePatchedDetail = false;
   let conversationRenderMs = 0;
   let detailPatchMs = 0;
   let metadataUpdateMs = 0;
   let detailRenderMode = renderPlan.detailRenderMode;
   if (shouldRenderDetail) {
-    if (renderPlan.canPatch) {
+    const tilePatchStartedAt = nowPerfMs();
+    if (patchCurrentThreadTilePaneFromState({ threadId, preserveScroll: true })) {
+      tilePanePatchedDetail = true;
+      detailPatchMs = roundedDurationMs(tilePatchStartedAt);
+      detailRenderMode = "tile-pane";
+    } else if (renderPlan.canPatch) {
       const patchStartedAt = nowPerfMs();
       locallyPatchedDetail = patchCurrentThreadDetailFromRefresh(previousThread, state.currentThread, previousConversationSignature);
       detailPatchMs = roundedDurationMs(patchStartedAt);
@@ -9176,14 +9182,21 @@ async function refreshCurrentThread(options = {}) {
       checkConversationProjectionConsistency("refresh-full-render", { renderMode: detailRenderMode });
     }
   } else {
-    const metadataStartedAt = nowPerfMs();
-    updateCurrentThreadHeader(state.currentThread);
-    updateLiveOperationDockHtml(renderLiveOperationDock(state.currentThread, existingConversationRenderKeys()));
-    updateTickTimer();
-    scheduleScrollToBottomButtonUpdate();
-    metadataUpdateMs = roundedDurationMs(metadataStartedAt);
+    const tilePatchStartedAt = nowPerfMs();
+    if (patchCurrentThreadTilePaneFromState({ threadId, preserveScroll: true })) {
+      tilePanePatchedDetail = true;
+      detailPatchMs = roundedDurationMs(tilePatchStartedAt);
+      detailRenderMode = "tile-pane-metadata";
+    } else {
+      const metadataStartedAt = nowPerfMs();
+      updateCurrentThreadHeader(state.currentThread);
+      updateLiveOperationDockHtml(renderLiveOperationDock(state.currentThread, existingConversationRenderKeys()));
+      updateTickTimer();
+      scheduleScrollToBottomButtonUpdate();
+      metadataUpdateMs = roundedDurationMs(metadataStartedAt);
+    }
   }
-  if (locallyPatchedDetail || !shouldRenderDetail) {
+  if (locallyPatchedDetail || tilePanePatchedDetail || !shouldRenderDetail) {
     checkConversationProjectionConsistency(shouldRenderDetail ? "refresh-local-patch" : "refresh-metadata", { renderMode: detailRenderMode });
   }
   const renderElapsedMs = roundedDurationMs(renderStartedAt);
@@ -12829,6 +12842,21 @@ function patchThreadTilePane(threadId, options = {}) {
   return true;
 }
 
+function isThreadTileConversationSurface() {
+  const conversation = $("conversation");
+  return Boolean(state.threadTileMode
+    && conversation
+    && conversation.classList
+    && conversation.classList.contains("thread-tile-mode"));
+}
+
+function patchCurrentThreadTilePaneFromState(options = {}) {
+  const id = String(options.threadId || state.currentThreadId || state.currentThread && state.currentThread.id || "").trim();
+  if (!id || !isThreadTileConversationSurface() || !threadTilePaneIsVisible(id)) return false;
+  clearGlobalLiveOperationDockForThreadTiles();
+  return patchThreadTilePane(id, Object.assign({ preserveScroll: true }, options));
+}
+
 function scheduleRenderThreadTilePane(threadId, options = {}) {
   const id = String(threadId || "").trim();
   if (!id || !state.threadTileMode || !threadTilePaneIsVisible(id)) return false;
@@ -13320,6 +13348,7 @@ function firstElementFromHtml(html) {
 }
 
 function completeLocalConversationDomUpdate(root, wasNearBottom, userReadingCurrentTurn) {
+  if (patchCurrentThreadTilePaneFromState({ preserveScroll: true })) return true;
   if (root) {
     hydrateGitHubLinkCards(root);
     hydrateMermaidDiagrams(root);
@@ -13335,6 +13364,7 @@ function completeLocalConversationDomUpdate(root, wasNearBottom, userReadingCurr
 }
 
 function updateLiveOperationDockForLocalPatch(previousKeys = existingConversationRenderKeys()) {
+  if (patchCurrentThreadTilePaneFromState({ preserveScroll: true })) return true;
   const wasNearBottom = isConversationNearBottom();
   const userReadingCurrentTurn = isUserReadingCurrentTurn({ nearBottom: wasNearBottom });
   updateLiveOperationDockHtml(renderLiveOperationDock(state.currentThread, previousKeys));
@@ -13374,6 +13404,7 @@ function insertTurnArticleDom(turn, previousKeys = existingConversationRenderKey
 
 function insertVisibleItemDom(turn, item) {
   if (!turn || !item || !item.id || isReasoningItem(item)) return false;
+  if (patchCurrentThreadTilePaneFromState({ preserveScroll: true })) return true;
   if (isOperationalItem(item)) return updateLiveOperationDockForLocalPatch();
   const conversation = $("conversation");
   if (!conversation) return false;
@@ -13410,6 +13441,7 @@ function insertVisibleItemDom(turn, item) {
 }
 
 function patchVisibleItemDom(turn, item) {
+  if (patchCurrentThreadTilePaneFromState({ preserveScroll: true })) return true;
   if (isOperationalItem(item)) return updateLiveOperationDockForLocalPatch();
   const target = patchVisibleItemDomNode(turn, item, existingConversationRenderKeys());
   if (!target) return false;
@@ -13488,6 +13520,7 @@ function patchVisibleItemsOnlyFromRefresh(previousTurn, nextTurn, previousKeys) 
 function patchLiveTextItemDom(turn, item) {
   if (!turn || !item || !item.id) return false;
   if (item.type !== "agentMessage" && item.type !== "plan") return false;
+  if (patchCurrentThreadTilePaneFromState({ preserveScroll: true })) return true;
   const conversation = $("conversation");
   if (!conversation) return false;
   const index = sourceIndexForVisibleItem(turn, item);
@@ -13506,6 +13539,7 @@ function patchLiveTextItemDom(turn, item) {
 function patchCurrentThreadDetailFromRefresh(previousThread, nextThread, previousConversationSignature) {
   const conversation = $("conversation");
   if (!conversation || !previousThread || !nextThread) return false;
+  if (patchCurrentThreadTilePaneFromState({ threadId: nextThread.id || state.currentThreadId, preserveScroll: true })) return true;
   if (previousThread.mobileLoading || previousThread.mobileLoadError || nextThread.mobileLoading || nextThread.mobileLoadError) return false;
   if (state.renderedConversationSignature !== previousConversationSignature) return false;
   if (conversationPatchShellSignature(previousThread) !== conversationPatchShellSignature(nextThread)) return false;

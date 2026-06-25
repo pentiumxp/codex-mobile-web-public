@@ -37,6 +37,29 @@ return policy，不再出现 `Return required`；如果再次对终止卡调用 
 `returnToSource:true` 是终止卡、auto-return receipt 不触发二次 auto-return、以及
 Music-style repair -> receipt -> ack 链在第一张 terminal return 后停止。
 
+## 2026-06-25 v441 平铺本地 Patch 签名边界修正
+
+v441 修复 v440 后继续出现的 `conversation_projection_mismatch`。新的 Home AI
+诊断 payload 显示问题发生在平铺模式的 `refresh-metadata` 分支：4 个 pane，
+`route_kind=thread-tile`，`render_mode=metadata-only`。这说明诊断已经不再混比
+tile-board 和单线程签名，但某些本地刷新路径仍会把
+`state.renderedConversationSignature` 写成单线程签名，而当前 DOM 实际还是
+thread-tile board。
+
+根因是 `refreshCurrentThread` 和 SSE 本地增量 patch 仍沿用单窗口假设：
+metadata-only refresh 只更新单窗口 header/global operation dock；本地 item patch
+结束时统一写 `conversationRenderSignature(state.currentThread)`。在平铺 DOM 下，
+这些路径应该更新当前 pane，并保持全局签名为 `threadTileRenderSignature`。
+
+现在新增 `patchCurrentThreadTilePaneFromState` 作为平铺本地 patch 边界。平铺 DOM
+下的 current-thread refresh、operation dock、本地 item 插入/替换、live text
+patch 和 detail refresh patch 都会刷新当前 tile pane，并由 `patchThreadTilePane`
+写回 tile-board 签名；单窗口路径仍保持原有单线程 DOM patch 行为。
+
+新增 `test/conversation-render.test.js` 覆盖平铺本地 patch 不变量和
+metadata-only tile refresh 不变量。PWA shell cache 升级到
+`codex-mobile-shell-v441`。
+
 ## 2026-06-25 v440 平铺模式诊断签名修正
 
 v440 修复 v439 诊断上报通道发现的 `conversation_projection_mismatch` 误报。

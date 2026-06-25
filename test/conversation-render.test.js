@@ -2881,6 +2881,31 @@ test("conversation projection diagnostics use the single-thread signature outsid
   assert.deepEqual(helpers.calls().filter((entry) => entry[0] === "tile"), []);
 });
 
+test("thread tile local patch paths refresh the pane instead of writing a single-thread signature", () => {
+  assert.match(appJs, /function patchCurrentThreadTilePaneFromState\(/);
+  assert.match(functionBody("patchCurrentThreadTilePaneFromState"), /isThreadTileConversationSurface\(\)/);
+  assert.match(functionBody("patchCurrentThreadTilePaneFromState"), /clearGlobalLiveOperationDockForThreadTiles\(\)/);
+  assert.match(functionBody("patchCurrentThreadTilePaneFromState"), /patchThreadTilePane\(id, Object\.assign\(\{ preserveScroll: true \}, options\)\)/);
+
+  assert.match(functionBody("completeLocalConversationDomUpdate"), /patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);
+  assert.match(functionBody("completeLocalConversationDomUpdate"), /state\.renderedConversationSignature = conversationRenderSignature\(state\.currentThread\)/);
+  assert.match(functionBody("updateLiveOperationDockForLocalPatch"), /patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);
+  assert.match(functionBody("insertVisibleItemDom"), /patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);
+  assert.match(functionBody("patchVisibleItemDom"), /patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);
+  assert.match(functionBody("patchLiveTextItemDom"), /patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /patchCurrentThreadTilePaneFromState\(\{ threadId: nextThread\.id \|\| state\.currentThreadId, preserveScroll: true \}\)/);
+});
+
+test("current-thread refresh patches the current tile pane for metadata-only tile updates", () => {
+  const body = functionBody("refreshCurrentThread");
+  assert.match(body, /let tilePanePatchedDetail = false;/);
+  assert.match(body, /patchCurrentThreadTilePaneFromState\(\{ threadId, preserveScroll: true \}\)/);
+  assert.match(body, /detailRenderMode = "tile-pane"/);
+  assert.match(body, /detailRenderMode = "tile-pane-metadata"/);
+  assert.match(body, /locallyPatchedDetail \|\| tilePanePatchedDetail \|\| !shouldRenderDetail/);
+  assert.match(body, /checkConversationProjectionConsistency\(shouldRenderDetail \? "refresh-local-patch" : "refresh-metadata"/);
+});
+
 test("image view render keys include their image source", () => {
   const body = functionBody("stableItemKey");
   assert.match(body, /item\.type === "imageView" \|\| item\.type === "imageGeneration"/);
