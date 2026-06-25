@@ -1,3 +1,79 @@
+# 2026-06-26 - v455 turn article creation deployed
+
+- Optimization phase:
+  - Phase A eighth slice. v454 moved turn article render-key lookup into
+    `public/thread-detail-dom-patch.js`; v455 moves rendered turn article
+    creation for insert/replace paths into the same helper.
+- Root-cause boundary:
+  - Before v455, `insertTurnArticleDom` and the refresh patch
+    `renderTurnElement` callback in `public/app.js` still directly performed
+    `renderTurn(...) -> firstElementFromHtml(...)`.
+  - This kept the DOM element creation step in the app coordinator even though
+    turn-level patch execution, insertion anchoring, and lookup had already
+    moved to the helper.
+- Runtime change:
+  - `public/thread-detail-dom-patch.js` now exposes
+    `createElementFromHtml` and `createTurnArticleElement`.
+  - `public/app.js` still owns `renderTurn` and injects the browser `document`,
+    but no longer creates turn article elements directly for insert/replace
+    patch paths.
+  - `firstElementFromHtml` remains as a compatibility wrapper and delegates to
+    `threadDetailDomPatchApi.createElementFromHtml`.
+  - Blank HTML, missing document, template creation exceptions, missing turn,
+    missing renderer, and renderer exceptions return `null`. No duplicate
+    filtering, skipped refresh, forced reload, or synthetic content fallback
+    was added.
+  - `CLIENT_BUILD_ID` and service-worker cache are bumped to
+    `codex-mobile-shell-v455`.
+- Docs/tests:
+  - `README.md` records the v455 architecture slice.
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` records that turn article element
+    creation is now outside `public/app.js` for insert/replace paths.
+  - `docs/MODULES.md` maps creation ownership to
+    `public/thread-detail-dom-patch.js`.
+  - `test/thread-detail-dom-patch.test.js` covers HTML creation, renderer
+    injection, missing input, document failure, and render failure behavior.
+  - `test/mobile-viewport.test.js` asserts that `firstElementFromHtml`,
+    `insertTurnArticleDom`, and refresh patch `renderTurnElement` delegate to
+    the helper.
+- Validation:
+  - Syntax checks passed for `public/thread-detail-dom-patch.js`,
+    `public/app.js`, and `public/sw.js`.
+  - Focused source suite passed:
+    `node --test test/thread-detail-dom-patch.test.js
+    test/thread-detail-patch-plan.test.js test/conversation-render.test.js
+    test/mobile-viewport.test.js test/app-update.test.js
+    test/plugin-voice-input.test.js test/thread-tile-layout-ui.test.js
+    test/thread-task-card-route.test.js test/thread-goal-service.test.js`
+    (`160` tests).
+  - Full `npm test` passed (`822` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Commit/deploy:
+  - Runtime commit: `dab1dd5` (`refactor turn article creation`).
+  - Deployed with Home AI central macOS script:
+    `deploy-macos-production.js --plugin codex-mobile --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --reason codex-mobile-turn-article-creation-v455 --execute --json`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T171702Z-plugin-codex-mobile-web-codex-mobile-turn-article-creation-v455`.
+  - Production `/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v455`,
+    `shellCacheName=codex-mobile-shell-v455`, and `version=0.1.11`.
+  - Source/prod SHA-256 parity confirmed for changed runtime/test/doc files.
+  - Production focused suite passed with `NODE_PATH` pointed at production
+    dependencies (`160` tests).
+- Production observation:
+  - Bounded log-tail aggregation after deploy found no v455/v454/v453/v452/v451
+    `thread_refresh_ms` client events yet; the recent sample contained `102`
+    v447 events and `1250` events with missing client build id.
+  - This is not evidence of v455 failure. It means refreshed v455 clients have
+    not yet produced that metric in the sampled tail.
+- Follow-up:
+  - Remaining Phase A boundaries are hydration and action binding.
+  - The broader system optimization goal remains active and incomplete. After
+    these DOM boundaries are extracted or deliberately deferred, proceed to
+    Phase B large-session cold/warm path evidence.
+  - This was deployed locally/production only. Do not push Public unless the
+    user explicitly requests it after production validation.
+
 # 2026-06-26 - v454 turn article lookup deployed
 
 - Optimization phase:
