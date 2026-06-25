@@ -1,3 +1,86 @@
+# 2026-06-26 - v472 thread tile detail load queue policy deployed
+
+- Scope:
+  - Continued Phase C pane-state / split-screen architecture work.
+  - This slice moves pane detail-load queue selection and stale-controller
+    abort planning into `public/thread-tile-state.js`.
+  - It does not change server projection, task-card behavior, Home AI
+    diagnostic dispatch, message merge, image projection, pane layout, visual
+    pane design, or the thread detail API. No fallback or UI-only masking was
+    added.
+- Root-cause boundary:
+  - Before v472, v471 had moved each individual detail load's
+    start/success/error/finally lifecycle into effect plans, but
+    `ensureThreadTileDetails` still directly decided which controllers to
+    abort and which active panes to fan out into `loadThreadTileDetail`.
+  - That kept multi-pane read orchestration inside the UI layer and made
+    future max-concurrent detail read tuning or slow-path diagnosis difficult
+    to test without touching `public/app.js`.
+- Change:
+  - Added pure `detailLoadQueuePlan` to `public/thread-tile-state.js`.
+  - The plan emits:
+    - `abortIds` for controllers whose panes are no longer active;
+    - `loadIds` for active panes that are not already controlled/loading;
+    - `deferredIds` for active panes that exceed `maxConcurrentLoads`;
+    - bounded `activeIds`, `controllerIds`, `loadingIds`, `busyIds`, and slot
+      counts for future diagnostics/tests.
+  - `ensureThreadTileDetails` now delegates to that plan and
+    `applyThreadTileDetailLoadQueuePlan`; `public/app.js` keeps only real
+    `AbortController.abort()`, Map/Set cleanup, and network load execution.
+  - Runtime currently sets `THREAD_TILE_DETAIL_LOAD_MAX_CONCURRENT` to the
+    user pane ceiling, preserving existing user-visible fan-out behavior while
+    making lower concurrency policy testable for the next step.
+  - Bumped `CLIENT_BUILD_ID` and service worker cache to
+    `codex-mobile-shell-v472`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Commit:
+  - Runtime/docs commit: `d7094f2 refactor thread tile detail load queue`.
+- Validation in source workspace:
+  - Syntax checks passed for `public/thread-tile-state.js`, `public/app.js`,
+    and `public/sw.js`.
+  - Focused suite passed: `68` tests across
+    `test/thread-tile-state.test.js`,
+    `test/thread-tile-layout-ui.test.js`,
+    `test/thread-tile-layout.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-task-card-route.test.js`,
+    `test/thread-goal-service.test.js`, and
+    `test/composer-draft.test.js`.
+  - `npm test` passed: `858` tests.
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+- Production deploy:
+  - Deployed through Home AI central macOS production script.
+  - Reason: `codex-mobile-thread-tile-detail-load-queue-v472`.
+  - Source ref at deploy: `d7094f2ea743`, dirty `false`.
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T193707Z-plugin-codex-mobile-web-codex-mobile-thread-tile-detail-load-queue-v472`.
+  - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` reported
+    running and manifest/profile health checks passed.
+- Production readback:
+  - `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v472`,
+    `shellCacheName=codex-mobile-shell-v472`, and `version=0.1.11`.
+  - Source/prod SHA-256 parity matched for:
+    `public/thread-tile-state.js`, `test/thread-tile-state.test.js`,
+    `test/thread-tile-layout-ui.test.js`, `public/app.js`, `public/sw.js`,
+    `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+  - Production focused suite passed: same `68` tests listed above with
+    production dependencies.
+- Next architecture boundary:
+  - Continue Phase C by turning the now-testable `maxConcurrentLoads` queue
+    into a measured runtime policy, or continue with command detail panels,
+    split sizing, per-pane draft/runtime ownership, and pane-local
+    send/approval/interrupt ownership.
+  - Phase B large-session cold/warm path remains separate and should be
+    tackled with timing evidence before changing cache behavior.
+- Public:
+  - Not pushed to Public. Follow release-order rule: wait for production/user
+    validation or explicit Public instruction before syncing/pushing.
+
 # 2026-06-26 - v471 thread tile detail load effects policy deployed
 
 - Scope:
