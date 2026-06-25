@@ -10312,3 +10312,79 @@ The previous full handoff was archived and should be opened only when old proven
   - Continue Phase A by moving refresh patch rejection diagnostic payloads into
     a bounded helper, or proceed to Phase B large-session cold-path evidence now
     that first-paint, refresh, and full-ready payload ownership is unified.
+
+## 2026-06-26 - v490 patch-reject diagnostic event planning deployed
+
+- Latest code commit:
+  - `d859324 extract patch rejection diagnostic events`
+- v490 change:
+  - Added `public/thread-diagnostic-events.js` with
+    `detailPatchRejectedDiagnosticEvent`, a pure helper that builds the bounded
+    `conversation_projection_mismatch/detail_patch_rejected` Home AI diagnostic
+    payload.
+  - `refreshCurrentThread()` still owns the real refresh, merge, DOM patch
+    attempt, failure recording, and Home AI diagnostic transport, but no longer
+    hand-builds the patch-reject diagnostic category/type/context/counts/
+    breadcrumbs.
+  - `public/home-ai-diagnostic-reporting.js` now allows bounded
+    `render_plan_reason`, `patch_reject_reason`, and `previous_count` fields so
+    patch-rejection reports preserve their root-cause reason codes instead of
+    losing them in plugin-side sanitization.
+  - Static build/cache: `0.1.11|codex-mobile-shell-v490` /
+    `codex-mobile-shell-v490`.
+- Root-cause boundary:
+  - Symptom/risk: patch-reject diagnostic payloads were assembled inline in
+    `refreshCurrentThread()`, and the sanitizer did not whitelist the internal
+    render/patch reason-code fields. A production `detail_patch_rejected`
+    report could therefore reach Home AI without the evidence needed to tell
+    why local DOM patching was rejected.
+  - Failing layer: frontend projection/render mismatch diagnostic event field
+    ownership and plugin diagnostic sanitizer allowlist.
+  - Invariant: projection mismatch diagnostics may contain bounded reason
+    codes, hashes, counts, status fields, and timing buckets only; they must not
+    contain message bodies, task-card bodies, uploads, screenshots, private
+    paths, cookies, tokens, provider payloads, or long logs.
+  - Classification: root-cause architecture cleanup; no fallback or UI-only
+    mitigation added.
+- Validation:
+  - Source focused suite passed:
+    `test/thread-diagnostic-events.test.js`,
+    `test/home-ai-diagnostic-reporting.test.js`,
+    `test/conversation-render.test.js`, `test/mobile-viewport.test.js`,
+    `test/app-update.test.js`, `test/plugin-voice-input.test.js`,
+    `test/thread-task-card-route.test.js`, and
+    `test/thread-goal-service.test.js` (`144` tests).
+  - Full source `npm test` passed (`905` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Production deploy:
+  - Deployed through Home AI central macOS plugin deploy path with reason
+    `codex-mobile-patch-reject-diagnostic-events-v490`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T224713Z-plugin-codex-mobile-web-codex-mobile-patch-reject-diagnostic-events-v490`
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v490`,
+    `shellCacheName=codex-mobile-shell-v490`, `version=0.1.11`,
+    `authRequired=true`.
+  - Source/production SHA parity verified for:
+    `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`,
+    `docs/MODULES.md`, `package.json`, `server.js`, `public/app.js`,
+    `public/home-ai-diagnostic-reporting.js`, `public/index.html`,
+    `public/sw.js`, `public/thread-diagnostic-events.js`,
+    `test/app-update.test.js`, `test/home-ai-diagnostic-reporting.test.js`,
+    `test/mobile-viewport.test.js`, `test/plugin-voice-input.test.js`,
+    `test/thread-diagnostic-events.test.js`,
+    `test/thread-goal-service.test.js`, and
+    `test/thread-task-card-route.test.js`.
+  - Production focused suite passed (`144` tests).
+- Browser/visual note:
+  - Browser automation remains unavailable in the current tool list. v490
+    closure evidence is source focused tests, full source tests, production
+    focused tests, production public-config readback, and source/prod SHA
+    parity.
+- Release:
+  - Public was not pushed for v490.
+- Next suggested slice:
+  - Continue Phase A by extracting the remaining conversation projection
+    snapshot/report planning from `app.js`, or move to Phase B and use the now
+    unified first-paint/refresh/full-ready/patch-reject evidence to identify
+    the real large-session cold-path cost.
