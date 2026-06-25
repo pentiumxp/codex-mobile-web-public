@@ -49,6 +49,39 @@ function applyFixture(article, patchPlan, options = {}) {
   });
 }
 
+test("turn article lookup finds an article by stable render key", () => {
+  const expected = createNode("turn-a");
+  const calls = [];
+  const root = {
+    querySelector(selector) {
+      calls.push(selector);
+      return selector === '[data-render-key="turn-a"]' ? expected : null;
+    },
+  };
+
+  assert.equal(domPatch.findTurnArticleElement({
+    conversation: root,
+    turnKey: "turn-a",
+    escapeSelectorAttr: (value) => String(value),
+  }), expected);
+  assert.deepEqual(calls, ['[data-render-key="turn-a"]']);
+});
+
+test("turn article lookup returns null for missing or invalid lookup inputs", () => {
+  assert.equal(domPatch.findTurnArticleElement({ turnKey: "turn-a" }), null);
+  assert.equal(domPatch.findTurnArticleElement({
+    conversation: { querySelector: () => createNode("unexpected") },
+  }), null);
+  assert.equal(domPatch.findTurnArticleElement({
+    conversation: {
+      querySelector() {
+        throw new Error("bad selector");
+      },
+    },
+    turnKey: "turn-a",
+  }), null);
+});
+
 test("visible item dom patch applies reuse, patch, and insert operations in order", () => {
   const article = createArticle([createNode("a"), createNode("b")]);
   const result = applyFixture(article, {

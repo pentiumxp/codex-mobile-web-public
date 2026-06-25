@@ -16,6 +16,23 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v454 Turn Article Lookup
+
+v454 接续 v453，继续 Phase A。v453 已经把新 turn article 的插入锚点规则
+推进到 `public/thread-detail-dom-patch.js`，但 `turnArticleNode` 仍在
+`public/app.js` 中直接拼接 `[data-render-key=...]` selector 并查询 DOM。
+
+本次把 turn article lookup 规则也推进到 `public/thread-detail-dom-patch.js`：
+
+- 新增 `findElementByRenderKey` 和 `findTurnArticleElement`。
+- `public/app.js` 只负责计算 `stableTurnKey` 并注入 selector 转义函数，不再直接
+  查询 turn article selector。
+- lookup 失败仍返回 `null`，不新增隐藏 fallback、不跳过 refresh、不做重复过滤。
+- `CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v454`。
+
+`test/thread-detail-dom-patch.test.js` 覆盖正常 lookup、缺 root/key 和 selector
+异常；`test/mobile-viewport.test.js` 约束 `turnArticleNode` 必须委托 helper。
+
 ## 2026-06-26 v453 Turn Article Anchoring
 
 v453 接续 v452，继续 Phase A。v452 已经把 turn-level `item-patch`、

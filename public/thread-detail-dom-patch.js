@@ -51,6 +51,29 @@
     return input.firstTurnElement || null;
   }
 
+  function defaultEscapeSelectorAttr(value) {
+    return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  }
+
+  function findElementByRenderKey(input = {}) {
+    const root = input.root || input.conversation || null;
+    if (!root || typeof root.querySelector !== "function") return null;
+    const key = String(input.key || input.renderKey || input.turnKey || "");
+    if (!key) return null;
+    const escapeSelectorAttr = typeof input.escapeSelectorAttr === "function"
+      ? input.escapeSelectorAttr
+      : defaultEscapeSelectorAttr;
+    try {
+      return root.querySelector(`[data-render-key="${escapeSelectorAttr(key)}"]`) || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function findTurnArticleElement(input = {}) {
+    return findElementByRenderKey(input);
+  }
+
   function resolveTurnInsertAnchor(input = {}) {
     const turn = input.turn || null;
     if (!turn) return { ok: false, reason: "missing-turn", anchor: null };
@@ -187,6 +210,8 @@
   return {
     applyThreadTurnRefreshDomPatch,
     applyVisibleItemRefreshDomPatch,
+    findElementByRenderKey,
+    findTurnArticleElement,
     insertTurnArticleElement,
     normalizeOperation,
     normalizeTurnOperation,

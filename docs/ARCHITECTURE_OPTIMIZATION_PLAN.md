@@ -107,13 +107,17 @@ turn render, turn insert, and turn replace callbacks while the helper owns
 `item-patch` / `insert-turn` / `replace-turn` sequencing and bounded failure
 reasons. Turn article insertion anchoring now lives in the same helper:
 `insertTurnArticleElement` owns the after-previous / before-first / append
-selection while app code injects the concrete DOM lookups. App code can no
+selection while app code injects the concrete DOM lookups. Turn article lookup
+by stable render key now also lives in the same helper:
+`findTurnArticleElement` owns the `[data-render-key=...]` selector lookup while
+app code injects `stableTurnKey` and selector escaping. App code can no
 longer fall through from tile mode into the
 single-thread patch path without an explicit policy decision, fall through from
 a successful tile pane patch into full conversation render, silently choose
 turn-level patch actions inside the application loop, inline the local-patch
 scroll-completion policy, own the visible-item patch operation loop, or own the
-turn-level patch operation loop or insertion anchoring loop.
+turn-level patch operation loop, insertion anchoring loop, or turn article
+render-key lookup selector.
 
 Target:
 
@@ -122,8 +126,8 @@ Target:
   outside app.js, the refresh outcome decision is now outside app.js, and the
   turn-level patch action plan, local patch scroll-completion policy, and
   visible-item and turn-level patch operation loops are now outside app.js;
-  turn article anchoring is also outside app.js; turn node lookup, turn node
-  creation, hydration, and action binding remain the next boundaries.
+  turn article anchoring and render-key lookup are also outside app.js; turn
+  node creation, hydration, and action binding remain the next boundaries.
 - Keep `public/app.js` responsible for DOM wiring, patch application, and event
   binding only.
 - Cover user-message echo convergence, live receipt preservation, completed

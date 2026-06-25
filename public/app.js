@@ -491,7 +491,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v453";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v454";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -13459,9 +13459,13 @@ function updateLiveOperationDockForLocalPatch(previousKeys = existingConversatio
 
 function turnArticleNode(turn) {
   const conversation = $("conversation");
-  if (!conversation || !turn) return null;
+  if (!turn) return null;
   const key = stableTurnKey(turn);
-  return conversation.querySelector(`[data-render-key="${escapeSelectorAttr(key)}"]`);
+  return threadDetailDomPatchApi.findTurnArticleElement({
+    conversation,
+    turnKey: key,
+    escapeSelectorAttr,
+  });
 }
 
 function insertTurnArticleDom(turn, previousKeys = existingConversationRenderKeys()) {
