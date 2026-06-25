@@ -1,3 +1,59 @@
+# 2026-06-25 - v428 tile-mode composer @ menu deployed
+
+- Scope:
+  - Implemented, validated, committed, and deployed to Mac production.
+  - Not pushed Public.
+  - Code commit:
+    - `14a73bd fix: keep composer intent menu visible in tile mode`
+- Trigger:
+  - User reported that typing `@` in the Composer to open target-task actions
+    was not visible in thread tile/split-pane mode.
+- Root cause:
+  - The `@` intent menu was already a page-level fixed overlay, but it used its
+    own `bottom` / width variables and did not share the viewport-clamped popup
+    positioning used by the Composer model/reasoning/permission menus. In
+    tiled, keyboard, wide, and embedded layouts the menu could be placed outside
+    the visible viewport.
+- Change:
+  - `positionComposerIntentMenu()` now delegates to
+    `fitComposerPopupToAnchor(menu, anchor, { minWidth: 280, maxWidth: 420 })`.
+  - `.composer-intent-menu` now uses the shared `--composer-popup-*` CSS
+    variables, including bounded max-height.
+  - PWA shell cache bumped to `codex-mobile-shell-v428`.
+  - README records the v428 fix in Chinese.
+  - `docs/HOME_AI_PLATFORM_CONTRACT.md` latest production evidence updated from
+    v427 to v428 after deployment.
+- Validation before deploy:
+  - `node --check public/app.js`
+  - `node --check public/sw.js`
+  - `node --test test/thread-task-card-route.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/composer-quota.test.js test/thread-tile-layout-ui.test.js`
+    passed (`34` tests).
+  - `git diff --check` passed.
+- Production deploy:
+  - Central Home AI deploy script used from `/Users/hermes-dev/HermesMobileDev/app`:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart-label com.hermesmobile.plugin.codex-mobile --health-url http://127.0.0.1:8787/api/public-config --execute --json`
+  - First source ref deployed:
+    `14a73bd008cd`.
+  - Production target:
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - First backup path reported by deployment:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T024619Z-plugin-codex-mobile-web-manual`.
+  - Post-deploy `/api/public-config` returned `version=0.1.11`,
+    `clientBuildId=0.1.11|codex-mobile-shell-v428`,
+    `shellCacheName=codex-mobile-shell-v428`, `authRequired=true`, and
+    production workspace path
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Source/production short SHA-256 samples matched for `public/app.js`
+    (`0a05fc26e2feac68`), `public/styles.css` (`28af943f0f2f0b20`), and
+    `public/sw.js` (`19339bfbe434fdf5`).
+  - Central deployment validation passed; non-strict auth-profile audit had
+    zero blocking issues.
+- Next:
+  - User next reported a new `Movie` workspace/thread where only the user
+    message and final system receipt are visible, while intermediate process
+    items are missing. Investigate thread detail projection/rendering for that
+    thread after this deployment bookkeeping is closed.
+
 # 2026-06-25 - v427 manual tile width and task-card protocol deployed
 
 - Scope:

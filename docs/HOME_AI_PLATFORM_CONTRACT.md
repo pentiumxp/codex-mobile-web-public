@@ -206,40 +206,33 @@ Minimum closure for Codex Mobile production changes:
   `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
 - LaunchDaemon: `system/com.hermesmobile.plugin.codex-mobile`.
 - Loopback production URL: `http://127.0.0.1:8787`.
-- Current verified shell after manual tile-width and task-card protocol deployment:
-  `0.1.11|codex-mobile-shell-v427`.
+- Current verified shell after tile-mode composer intent-menu deployment:
+  `0.1.11|codex-mobile-shell-v428`.
 - Source ref deployed for code change:
-  `8a41a1e7e287` with clean source worktree.
+  `14a73bd008cd` with clean source worktree.
 - Backup path:
-  `/Users/hermes-host/HermesMobile/backups/deploy/20260624T165259Z-plugin-codex-mobile-web-codex-mobile-v427-return-reasoning`.
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260625T024619Z-plugin-codex-mobile-web-manual`.
 - Production smoke confirmed `/api/public-config` reports
-  `clientBuildId=0.1.11|codex-mobile-shell-v427`,
-  `shellCacheName=codex-mobile-shell-v427`, `version=0.1.11`,
+  `clientBuildId=0.1.11|codex-mobile-shell-v428`,
+  `shellCacheName=codex-mobile-shell-v428`, `version=0.1.11`,
   `authRequired=true`, production `workspacePath` above, and
   `reasoningEffortOptions=["low","medium","high","xhigh"]`.
 - Source/production short SHA-256 samples matched after deploy:
-  `server.js` `8c699be0498110e3`,
-  `adapters/thread-task-card-service.js` `bc80c67ab8c268dc`,
-  `scripts/codex-mobile-mcp-server.js` `48c20abb34be4735`,
-  `scripts/create-thread-task-card.js` `fef03e3a95c019bc`,
-  `scripts/return-thread-task-card.js` `3ab920d25b3bd16a`,
-  `public/app.js` `0313548ef2e58ca5`,
-  `public/sw.js` `7a25093c35b599bf`,
-  `public/thread-tile-layout.js` `f57e11f1a35f3f3f`,
-  `README.md` `4f104656288cc2db`,
-  `docs/ARCHITECTURE.md` `f9d251988366e72f`,
-  `docs/MODULES.md` `ffc104c0ab8de57d`, and
-  `docs/CROSS_THREAD_TASK_CARDS_IMPLEMENTATION.md` `caf0ae54810660b9`.
-- Focused validation before deploy included task-card service/route/MCP,
-  tile-layout, viewport, and goal tests (`68` tests); full validation passed
-  `npm run check`, `npm run check:macos`, `npm test` (`759` tests), and
-  `git diff --check`. CodeGraph sync/status reported the index up to date.
+  `public/app.js` `0a05fc26e2feac68`,
+  `public/styles.css` `28af943f0f2f0b20`, and
+  `public/sw.js` `19339bfbe434fdf5`.
+- Focused validation before deploy included syntax checks for `public/app.js`
+  and `public/sw.js`, task-card route, mobile viewport, goal service,
+  composer quota, and thread tile UI tests (`34` tests), plus
+  `git diff --check`.
 - Deployment validation also ran the central production file-hash, LaunchDaemon,
   public-config, and non-strict auth-profile audit checks. The auth-profile
   audit remained non-blocking with zero blocking issues.
+- The earlier 2026-06-25 `codex-mobile-shell-v427` manual tile-width and
+  task-card protocol evidence is historical after the v428 tile-mode composer
+  intent-menu deployment.
 - The earlier 2026-06-24 `codex-mobile-shell-v426` wide tile-column and
-  `codex-mobile-shell-v425` route-hint / tile-pane evidence is historical after
-  the v427 manual tile-width and task-card protocol deployment.
+  `codex-mobile-shell-v425` route-hint / tile-pane evidence is historical.
 - The older 2026-06-09 `codex-mobile-shell-v251` image-rendering evidence is
   historical only and must not be treated as the latest production shell.
 
