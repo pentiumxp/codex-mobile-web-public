@@ -332,6 +332,8 @@ test("thread tile state plans pane slot mutation side effects", () => {
     updateComposer: true,
     scheduleSettingsSave: true,
     refreshActiveIds: true,
+    selectionPolicy: "none",
+    selectionEmptyFallback: false,
     loadThreadId: "b",
     loadSource: "tile-switch",
     renderMode: "patch-pane",
@@ -367,6 +369,8 @@ test("thread tile state plans pane slot mutation side effects", () => {
     updateComposer: true,
     scheduleSettingsSave: true,
     refreshActiveIds: false,
+    selectionPolicy: "none",
+    selectionEmptyFallback: false,
     loadThreadId: "",
     loadSource: "tile-switch",
     renderMode: "full",
@@ -385,6 +389,34 @@ test("thread tile state plans pane slot mutation side effects", () => {
   assert.equal(replaceLast.saveDraft, false);
   assert.equal(replaceLast.renderMode, "none");
   assert.equal(replaceLast.refreshActiveIds, true);
+  const count = state.paneSlotMutationEffectsPlan({
+    action: "set-pane-count",
+    paneCount: 4,
+    switchMenuPaneId: "",
+  }, { maxPanes: 12 });
+  assert.equal(count.paneThreadIds, null);
+  assert.equal(count.paneCount, 4);
+  assert.equal(count.selectionPolicy, "pane-selection");
+  assert.equal(count.selectionEmptyFallback, false);
+  assert.equal(count.renderMode, "full");
+  assert.equal(count.renderStickToBottom, true);
+  assert.equal(state.paneSlotMutationEffectsPlan({
+    action: "set-pane-count",
+    paneCount: 4,
+  }, { render: false }).renderMode, "none");
+  const close = state.paneSlotMutationEffectsPlan({
+    action: "close-pane",
+    paneThreadIds: ["a", "c"],
+    paneCount: 2,
+    scrollResetIds: ["b"],
+  }, { maxPanes: 12 });
+  assert.equal(close.saveDraft, true);
+  assert.equal(close.restoreDraft, true);
+  assert.equal(close.updateComposer, true);
+  assert.equal(close.selectionPolicy, "pane-selection");
+  assert.equal(close.selectionEmptyFallback, true);
+  assert.equal(close.renderMode, "full");
+  assert.equal(close.renderStickToBottom, true);
   assert.equal(state.paneSlotMutationEffectsPlan({ action: "unknown" }).reason, "unsupported-mutation-plan");
 });
 

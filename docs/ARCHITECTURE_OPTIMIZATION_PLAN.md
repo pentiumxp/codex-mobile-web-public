@@ -148,9 +148,10 @@ thread replacement are computed as one policy. Switch-menu option/control
 planning also now lives there: current/active/running/visible thread option
 ordering, menu open/closed skip reasons, and close/add control eligibility are
 computed as one policy. Pane slot mutation side-effect planning also now lives
-there: replace/select, move, split, and thread-list replace-last actions emit
-one bounded effect plan for draft save/restore, settings persistence, active id
-refresh, detail load, pane patch, scheduled full render, or board render while
+there: replace/select, move, split, thread-list replace-last, pane count, and
+close-pane actions emit one bounded effect plan for draft save/restore,
+selection fallback, settings persistence, active id refresh, detail load, pane
+patch, scheduled full render, or board render while
 `public/app.js` keeps DOM,
 rendering, network save, timers, API reads,
 AbortController ownership, draft restore, detail-load side effects, and other
@@ -183,7 +184,8 @@ Target:
   planning are now outside app.js; explicit selected-pane action planning is
   also outside app.js; candidate pane id planning is also outside app.js;
   switch-menu option/control planning is also outside app.js;
-  pane slot mutation side-effect planning is also outside app.js;
+  pane slot mutation side-effect planning including pane count/close execution
+  is also outside app.js;
   broader detail read side effects,
   command detail panels, and split sizing remain the next boundary.
 - Keep `public/app.js` responsible for DOM wiring, patch application, and event
@@ -329,8 +331,9 @@ Target:
   dwell/expiry/mode/signature policy. It also owns refresh timer planning,
   refresh target selection, detail-load skip/background/loading decisions, and
   pane slot mutation planning for thread replacement, drag reorder, up/down
-  split, thread-list-open replacement, pane count/close planning, and
-  selected-pane fallback. Active pane sync planning also now lives there,
+  split, thread-list-open replacement, pane count/close planning, pane
+  count/close side-effect execution planning, and selected-pane fallback. Active
+  pane sync planning also now lives there,
   including active ids, pinned slot sync, split-pair prune, selected-pane
   fallback, and display-settings save eligibility. Explicit selected-pane
   action planning also now lives there, including skip reasons and previous/
@@ -341,7 +344,7 @@ Target:
   running/visible option ordering and close/add control eligibility. Pane slot
   mutation side-effect planning also now lives there, including draft/
   Composer/settings/detail-load/render intent for replace/select, move, split,
-  and thread-list replace-last actions. Continue moving pane widths, active
+  thread-list replace-last, pane count, and close-pane actions. Continue moving pane widths, active
   pane execution, per-pane drafts, max concurrent detail reads, pane-local
   send/approval/interrupt ownership, command detail panels, and mobile collapse
   behavior into testable helpers without DOM side effects.

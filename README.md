@@ -16,6 +16,30 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v469 Thread Tile Pane Count/Close Effect Policy
+
+v469 继续 Phase C，把平铺窗口数量调整和关闭窗口后的副作用执行也并入
+`paneSlotMutationEffectsPlan` / `applyThreadTilePaneSlotEffects` 这条统一通道。
+v463 已经把 pane count / close 的纯决策迁到 `public/thread-tile-state.js`，
+v468 又把 replace / move / split / replace-last 的副作用计划迁出 `app.js`。
+这个切片补齐剩余分叉：`setThreadTilePaneCount` 和 `closeThreadTilePane` 不再直接手写
+pane count、pinned ids、selected fallback、settings save、draft restore、Composer refresh
+和 full render 顺序。
+
+本次保持旧行为不变：
+
+- 调整 pane count 仍然清空切换菜单、保存 display settings，并在需要时以
+  stick-to-bottom 方式重渲染；`render: false` 仍然不会触发 render。
+- 关闭 pane 仍然保存/恢复草稿、更新 pinned ids 和 pane count、清理被关闭 pane 的 scroll hold、
+  选中 fallback 到可见 pane、刷新 Composer，并以 stick-to-bottom 方式重渲染。
+- `replace-last` 仍保持线程列表主动进入线程的轻量语义，不新增草稿、Composer 或 render 副作用。
+
+这个切片不改变 pane layout、视觉设计、server projection、任务卡或诊断上报。
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v469`。
+`test/thread-tile-state.test.js` 覆盖 count/close effect planning；
+`test/thread-tile-layout-ui.test.js` 约束 `setThreadTilePaneCount` 和 `closeThreadTilePane`
+必须通过统一 effect plan/executor。
+
 ## 2026-06-26 v468 Thread Tile Pane Slot Effect Policy
 
 v468 继续 Phase C，把平铺窗口 slot 变更后的副作用意图迁到

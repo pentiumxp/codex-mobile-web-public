@@ -358,7 +358,9 @@
   function paneSlotMutationEffectsPlan(plan = {}, options = {}) {
     const sourceAction = text(plan.action).trim();
     if (!sourceAction || sourceAction === "skip") return skipPaneSlot("no-mutation-plan", { sourceAction });
-    const paneThreadIds = normalizePinnedIds(plan.paneThreadIds || [], options);
+    const paneThreadIds = Array.isArray(plan.paneThreadIds)
+      ? normalizePinnedIds(plan.paneThreadIds, options)
+      : null;
     const base = {
       action: "pane-slot-effects",
       reason: text(plan.reason || sourceAction).trim() || sourceAction,
@@ -374,6 +376,8 @@
       updateComposer: false,
       scheduleSettingsSave: true,
       refreshActiveIds: false,
+      selectionPolicy: "none",
+      selectionEmptyFallback: false,
       loadThreadId: text(plan.loadThreadId).trim(),
       loadSource: "tile-switch",
       renderMode: "none",
@@ -406,6 +410,25 @@
     if (sourceAction === "replace-last") {
       return Object.assign(base, {
         refreshActiveIds: true,
+      });
+    }
+    if (sourceAction === "set-pane-count") {
+      return Object.assign(base, {
+        selectionPolicy: "pane-selection",
+        selectionEmptyFallback: false,
+        renderMode: options.render === false ? "none" : "full",
+        renderStickToBottom: options.render !== false,
+      });
+    }
+    if (sourceAction === "close-pane") {
+      return Object.assign(base, {
+        saveDraft: true,
+        restoreDraft: true,
+        updateComposer: true,
+        selectionPolicy: "pane-selection",
+        selectionEmptyFallback: true,
+        renderMode: "full",
+        renderStickToBottom: true,
       });
     }
     return skipPaneSlot("unsupported-mutation-plan", { sourceAction });
