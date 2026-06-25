@@ -10174,3 +10174,71 @@ The previous full handoff was archived and should be opened only when old proven
 - Code changes in this pass:
   - None. This pass verified an already deployed implementation and confirmed
     the source task card already had a terminal return.
+
+## 2026-06-26 - v488 refresh performance event fields deployed
+
+- Latest code commit:
+  - `459340d extract refresh performance event fields`
+- v488 change:
+  - `public/thread-performance-metrics.js` now owns
+    `threadDetailRefreshEventFields`, a pure helper that builds the bounded
+    `thread_refresh_ms` performance event payload for refresh paths.
+  - The helper emits server timings, performance phase, client timings,
+    detail shape, read mode, status, turn counts, omitted-turn count, rollout
+    size, render-plan reason, refresh render action, patch reject reason, and
+    local/tile/metadata flags.
+  - `public/app.js` still owns the real API call, merge, DOM/header/dock
+    updates, render execution, and `postPerformanceEvent` call, but no longer
+    hand-builds the refresh event payload.
+  - Static build/cache: `0.1.11|codex-mobile-shell-v488` /
+    `codex-mobile-shell-v488`.
+- Root-cause boundary:
+  - Symptom/risk: after v487, render/patch/outcome decisions were helper-owned,
+    but `refreshCurrentThread()` still manually assembled `thread_refresh_ms`.
+    That made diagnostic field ownership prone to drift across metadata-only,
+    local patch, tile-pane patch, and full-render branches, weakening large
+    session and projection-mismatch evidence.
+  - Failing layer: frontend thread-detail refresh performance event ownership.
+  - Invariant: refresh performance events must be generated from one pure
+    bounded helper and must contain timings, counts, statuses, and reason codes
+    only, not message bodies, task-card bodies, uploads, private paths, cookies,
+    tokens, or long logs.
+- Validation:
+  - Source focused suite passed:
+    `test/thread-performance-metrics.test.js`,
+    `test/conversation-render.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-detail-render-plan.test.js`,
+    `test/thread-goal-service.test.js`, and
+    `test/thread-task-card-route.test.js` (`149` tests).
+  - Full source `npm test` passed (`899` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Production deploy:
+  - Deployed through Home AI central macOS plugin deploy path with reason
+    `codex-mobile-refresh-performance-event-fields-v488`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T222331Z-plugin-codex-mobile-web-codex-mobile-refresh-performance-event-fields-v488`
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v488`,
+    `shellCacheName=codex-mobile-shell-v488`, `version=0.1.11`,
+    `authRequired=true`.
+  - Source/production SHA parity verified for:
+    `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`,
+    `docs/MODULES.md`, `public/app.js`, `public/sw.js`,
+    `public/thread-performance-metrics.js`,
+    `test/conversation-render.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-goal-service.test.js`,
+    `test/thread-performance-metrics.test.js`, and
+    `test/thread-task-card-route.test.js`.
+  - Production focused suite passed (`149` tests).
+- Browser/visual note:
+  - Browser automation remains unavailable in the current tool list. v488
+    closure evidence is source focused tests, full source tests, production
+    focused tests, production public-config readback, and source/prod SHA
+    parity.
+- Release:
+  - Public was not pushed for v488.
+- Next suggested slice:
+  - Continue Phase A by extracting the remaining first-paint/full-backfill
+    performance event payload planning into `public/thread-performance-metrics.js`,
+    or move the refresh patch rejection diagnostic payload into a bounded helper
+    so `refreshCurrentThread()` keeps shrinking toward orchestration only.
