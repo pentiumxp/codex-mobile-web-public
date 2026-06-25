@@ -115,6 +115,10 @@ const threadDetailActionsApi = window.CodexThreadDetailActions;
 if (!threadDetailActionsApi) {
   throw new Error("CodexThreadDetailActions script failed to load");
 }
+const threadTileActionsApi = window.CodexThreadTileActions;
+if (!threadTileActionsApi) {
+  throw new Error("CodexThreadTileActions script failed to load");
+}
 const threadTileLayoutPolicy = window.CodexThreadTileLayout;
 if (!threadTileLayoutPolicy) {
   throw new Error("CodexThreadTileLayout policy script failed to load");
@@ -495,7 +499,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v457";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v458";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -552,6 +556,7 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/thread-detail-patch-plan.js",
   "/thread-detail-dom-patch.js",
   "/thread-detail-actions.js",
+  "/thread-tile-actions.js",
   "/thread-tile-layout.js",
   "/build-refresh-policy.js",
   "/app.js",
@@ -12985,70 +12990,56 @@ function bindThreadTileActions() {
   if (!conversation) return;
   if (conversation.dataset.threadTileActionsBound === "true") return;
   conversation.dataset.threadTileActionsBound = "true";
-  const closestTileTarget = (target, selector) => (
-    target && target.closest ? target.closest(selector) : null
-  );
   conversation.addEventListener("pointerdown", (event) => {
-    const titleButton = closestTileTarget(event.target, "[data-thread-tile-title]");
-    if (titleButton && conversation.contains(titleButton)) {
-      const pane = titleButton.closest("[data-thread-tile-pane]");
-      if (pane && conversation.contains(pane)) setThreadTileSelectedThread(pane.getAttribute("data-thread-tile-pane") || "");
+    const plan = threadTileActionsApi.resolveThreadTilePointerAction({
+      target: event.target,
+      root: conversation,
+    });
+    if (plan.action === "select-pane") {
+      setThreadTileSelectedThread(plan.paneId || "");
       return;
     }
-    if (closestTileTarget(event.target, "[data-thread-tile-switch-target], .thread-tile-switch-menu, [data-thread-tile-bottom], [data-thread-tile-operation-toggle], [data-thread-tile-pane-count], [data-thread-tile-close-pane]")) {
+    if (plan.stopPropagation) {
       event.stopPropagation();
       return;
     }
-    const pane = closestTileTarget(event.target, "[data-thread-tile-pane]");
-    if (pane && conversation.contains(pane)) setThreadTileSelectedThread(pane.getAttribute("data-thread-tile-pane") || "");
   });
   conversation.addEventListener("focusin", (event) => {
-    if (closestTileTarget(event.target, "[data-thread-tile-title], [data-thread-tile-switch-target], .thread-tile-switch-menu")) return;
-    const pane = closestTileTarget(event.target, "[data-thread-tile-pane]");
-    if (pane && conversation.contains(pane)) setThreadTileSelectedThread(pane.getAttribute("data-thread-tile-pane") || "");
+    const plan = threadTileActionsApi.resolveThreadTileFocusAction({
+      target: event.target,
+      root: conversation,
+    });
+    if (plan.action === "select-pane") setThreadTileSelectedThread(plan.paneId || "");
   });
   conversation.addEventListener("click", (event) => {
-    const titleButton = closestTileTarget(event.target, "[data-thread-tile-title]");
-    if (titleButton && conversation.contains(titleButton)) {
-      event.preventDefault();
-      event.stopPropagation();
-      toggleThreadTileSwitchMenu(titleButton.getAttribute("data-thread-tile-title") || "");
+    const plan = threadTileActionsApi.resolveThreadTileClickAction({
+      target: event.target,
+      root: conversation,
+    });
+    if (plan.preventDefault) event.preventDefault();
+    if (plan.stopPropagation) event.stopPropagation();
+    if (plan.action === "toggle-switch-menu") {
+      toggleThreadTileSwitchMenu(plan.paneId || "");
       return;
     }
-    const switchButton = closestTileTarget(event.target, "[data-thread-tile-switch-target]");
-    if (switchButton && conversation.contains(switchButton)) {
-      event.preventDefault();
-      event.stopPropagation();
-      const pane = switchButton.closest("[data-thread-tile-pane]");
-      const fromId = pane && pane.getAttribute("data-thread-tile-pane") || "";
-      replaceThreadTilePaneThread(fromId, switchButton.getAttribute("data-thread-tile-switch-target") || "");
+    if (plan.action === "switch-pane-thread") {
+      replaceThreadTilePaneThread(plan.fromId || "", plan.toId || "");
       return;
     }
-    const paneCountButton = closestTileTarget(event.target, "[data-thread-tile-pane-count]");
-    if (paneCountButton && conversation.contains(paneCountButton)) {
-      event.preventDefault();
-      event.stopPropagation();
-      if (!paneCountButton.disabled) changeThreadTilePaneCount(Number(paneCountButton.getAttribute("data-thread-tile-pane-count") || 0));
+    if (plan.action === "change-pane-count") {
+      if (!plan.disabled) changeThreadTilePaneCount(Number(plan.delta || 0));
       return;
     }
-    const closePaneButton = closestTileTarget(event.target, "[data-thread-tile-close-pane]");
-    if (closePaneButton && conversation.contains(closePaneButton)) {
-      event.preventDefault();
-      event.stopPropagation();
-      if (!closePaneButton.disabled) closeThreadTilePane(closePaneButton.getAttribute("data-thread-tile-close-pane") || "");
+    if (plan.action === "close-pane") {
+      if (!plan.disabled) closeThreadTilePane(plan.paneId || "");
       return;
     }
-    const bottomButton = closestTileTarget(event.target, "[data-thread-tile-bottom]");
-    if (bottomButton && conversation.contains(bottomButton)) {
-      event.preventDefault();
-      scrollThreadTilePaneToBottom(bottomButton.getAttribute("data-thread-tile-bottom") || "", { smooth: true });
+    if (plan.action === "scroll-pane-bottom") {
+      scrollThreadTilePaneToBottom(plan.paneId || "", { smooth: true });
       return;
     }
-    const operationButton = closestTileTarget(event.target, "[data-thread-tile-operation-toggle]");
-    if (operationButton && conversation.contains(operationButton)) {
-      event.preventDefault();
-      event.stopPropagation();
-      const id = operationButton.getAttribute("data-thread-tile-operation-toggle") || "";
+    if (plan.action === "toggle-operation") {
+      const id = plan.paneId || "";
       const current = normalizeLiveOperationDockMode(state.threadTileOperationModesById.get(id) || "compact");
       state.threadTileOperationModesById.set(id, current === "expanded" ? "compact" : "expanded");
       setThreadTileSelectedThread(id, { render: false });
@@ -13056,13 +13047,19 @@ function bindThreadTileActions() {
     }
   });
   conversation.addEventListener("scroll", (event) => {
-    const body = closestTileTarget(event.target, ".thread-tile-pane-body");
-    if (body && conversation.contains(body)) updateThreadTileBottomButtonForBody(body);
+    const plan = threadTileActionsApi.resolveThreadTileScrollAction({
+      target: event.target,
+      root: conversation,
+    });
+    if (plan.action === "pane-scroll") updateThreadTileBottomButtonForBody(plan.body);
   }, { passive: true, capture: true });
   conversation.addEventListener("dragstart", (event) => {
-    const handle = closestTileTarget(event.target, "[data-thread-tile-drag-handle]");
-    if (!handle || !conversation.contains(handle)) return;
-    const id = handle.getAttribute("data-thread-tile-drag-handle") || "";
+    const plan = threadTileActionsApi.resolveThreadTileDragStartAction({
+      target: event.target,
+      root: conversation,
+    });
+    if (plan.action !== "drag-start") return;
+    const id = plan.paneId || "";
     if (!id) return;
     state.threadTileDraggingThreadId = id;
     state.threadTileSwitchMenuPaneId = "";
@@ -13070,32 +13067,40 @@ function bindThreadTileActions() {
       event.dataTransfer.effectAllowed = "move";
       event.dataTransfer.setData("text/plain", id);
     }
-    const pane = handle.closest("[data-thread-tile-pane]");
+    const pane = plan.pane;
     if (pane) pane.classList.add("dragging");
   });
   conversation.addEventListener("dragover", (event) => {
-    const pane = closestTileTarget(event.target, "[data-thread-tile-pane]");
-    const dragging = state.threadTileDraggingThreadId || "";
-    const targetId = pane && pane.getAttribute("data-thread-tile-pane") || "";
-    if (!dragging || !targetId || dragging === targetId || !conversation.contains(pane)) return;
-    event.preventDefault();
+    const plan = threadTileActionsApi.resolveThreadTileDragOverAction({
+      target: event.target,
+      root: conversation,
+      draggingId: state.threadTileDraggingThreadId || "",
+    });
+    if (plan.action !== "drag-over") return;
+    if (plan.preventDefault) event.preventDefault();
     if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-    pane.classList.add("drag-over");
+    plan.pane.classList.add("drag-over");
   });
   conversation.addEventListener("dragleave", (event) => {
-    const pane = closestTileTarget(event.target, "[data-thread-tile-pane]");
-    if (pane && conversation.contains(pane)) pane.classList.remove("drag-over");
+    const plan = threadTileActionsApi.resolveThreadTileDragLeaveAction({
+      target: event.target,
+      root: conversation,
+    });
+    if (plan.action === "drag-leave") plan.pane.classList.remove("drag-over");
   });
   conversation.addEventListener("drop", (event) => {
-    const pane = closestTileTarget(event.target, "[data-thread-tile-pane]");
-    const dragging = state.threadTileDraggingThreadId || event.dataTransfer && event.dataTransfer.getData("text/plain") || "";
-    const targetId = pane && pane.getAttribute("data-thread-tile-pane") || "";
-    if (!dragging || !targetId || dragging === targetId || !conversation.contains(pane)) return;
-    event.preventDefault();
-    event.stopPropagation();
+    const plan = threadTileActionsApi.resolveThreadTileDropAction({
+      target: event.target,
+      root: conversation,
+      draggingId: state.threadTileDraggingThreadId || "",
+      transferId: event.dataTransfer && event.dataTransfer.getData("text/plain") || "",
+    });
+    if (plan.action !== "drop-pane") return;
+    if (plan.preventDefault) event.preventDefault();
+    if (plan.stopPropagation) event.stopPropagation();
     document.querySelectorAll(".thread-tile-pane.drag-over, .thread-tile-pane.dragging").forEach((entry) => entry.classList.remove("drag-over", "dragging"));
     state.threadTileDraggingThreadId = "";
-    dropThreadTilePane(dragging, targetId, event);
+    dropThreadTilePane(plan.draggingId, plan.targetId, event);
   });
   conversation.addEventListener("dragend", () => {
     state.threadTileDraggingThreadId = "";

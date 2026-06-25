@@ -122,7 +122,11 @@ lives in `public/thread-detail-actions.js`: app code still owns event listener
 wiring and business execution, but selector priority, root containment,
 previewable-image detection, rich-content actions, task-card actions, approval
 answers, and server-response action classification are covered by a focused
-helper. App code can no
+helper. Thread-tile interaction recognition now also lives in
+`public/thread-tile-actions.js`: app code still owns event listener wiring and
+business execution, but pane selection, switch-menu actions, pane-count/close
+controls, bottom jump, operation toggles, scroll targets, and drag/drop target
+classification are covered by a focused helper. App code can no
 longer fall through from tile mode into the
 single-thread patch path without an explicit policy decision, fall through from
 a successful tile pane patch into full conversation render, silently choose
@@ -143,7 +147,8 @@ Target:
   node creation is now outside app.js for turn article insert/replace paths;
   hydration orchestration is now outside app.js for thread detail surfaces;
   click-action recognition is now outside app.js for conversation surfaces;
-  action execution and thread-tile action recognition remain the next boundary.
+  thread-tile interaction recognition is now outside app.js for tile surfaces;
+  action execution and pane-state execution ownership remain the next boundary.
 - Keep `public/app.js` responsible for DOM wiring, patch application, and event
   binding only.
 - Cover user-message echo convergence, live receipt preservation, completed

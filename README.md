@@ -16,6 +16,33 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v458 Thread Tile Action Recognition
+
+v458 接续 v457，继续 Phase A。v457 已经把单线程 conversation/thread detail
+点击动作识别推进到 `public/thread-detail-actions.js`，但平铺模式的事件识别仍在
+`public/app.js` 中直接按 selector 处理：pane 选中、线程标题菜单、窗口切换、
+新增/关闭窗口、底部跳转、operation bubble 展开，以及拖拽换位/上下分屏。
+
+本次新增 `public/thread-tile-actions.js`，把 thread tile 交互识别推进到可测试
+helper：
+
+- `resolveThreadTilePointerAction` 和 `resolveThreadTileFocusAction` 识别 pane 选中和
+  控制区 stop 规则。
+- `resolveThreadTileClickAction` 识别标题菜单、切换线程、增减窗口、关闭窗口、
+  跳到底部和 operation toggle。
+- `resolveThreadTileScrollAction`、`resolveThreadTileDragStartAction`、
+  `resolveThreadTileDragOverAction`、`resolveThreadTileDragLeaveAction` 和
+  `resolveThreadTileDropAction` 识别平铺窗口滚动和拖拽/drop 目标。
+- `public/app.js` 仍负责调用真实业务函数，不改变 pane 切换、拖拽分屏、operation
+  bubble 或 scroll 语义。
+- 新 helper 加入 `index.html`、PWA shell cache、client shell asset list、server
+  public-config asset list 和 `npm run check`。
+- `CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v458`。
+
+`test/thread-tile-actions.test.js` 覆盖 thread tile action plan、root containment、
+disabled 控制和 drag/drop 分类；既有 tile UI wiring tests 约束
+`bindThreadTileActions` 必须通过 `CodexThreadTileActions`。
+
 ## 2026-06-26 v457 Thread Detail Action Recognition
 
 v457 接续 v456，继续 Phase A。v456 已经把 thread detail surface hydration

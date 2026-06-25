@@ -78,9 +78,10 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(appJs, /"\/thread-detail-patch-plan\.js"/);
   assert.match(appJs, /"\/thread-detail-dom-patch\.js"/);
   assert.match(appJs, /"\/thread-detail-actions\.js"/);
+  assert.match(appJs, /"\/thread-tile-actions\.js"/);
   assert.match(appJs, /"\/thread-tile-layout\.js"/);
   assert.match(appJs, /"\/build-refresh-policy\.js"/);
-  assert.match(indexHtml, /<script src="\/thread-performance-metrics\.js"><\/script>\s*\n\s*<script src="\/live-operation-dock-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-render-plan\.js"><\/script>\s*\n\s*<script src="\/thread-detail-merge-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-patch-plan\.js"><\/script>\s*\n\s*<script src="\/thread-detail-dom-patch\.js"><\/script>\s*\n\s*<script src="\/thread-detail-actions\.js"><\/script>\s*\n\s*<script src="\/thread-tile-layout\.js"><\/script>\s*\n\s*<script src="\/build-refresh-policy\.js"><\/script>\s*\n\s*<script src="\/app\.js"><\/script>/);
+  assert.match(indexHtml, /<script src="\/thread-performance-metrics\.js"><\/script>\s*\n\s*<script src="\/live-operation-dock-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-render-plan\.js"><\/script>\s*\n\s*<script src="\/thread-detail-merge-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-patch-plan\.js"><\/script>\s*\n\s*<script src="\/thread-detail-dom-patch\.js"><\/script>\s*\n\s*<script src="\/thread-detail-actions\.js"><\/script>\s*\n\s*<script src="\/thread-tile-actions\.js"><\/script>\s*\n\s*<script src="\/thread-tile-layout\.js"><\/script>\s*\n\s*<script src="\/build-refresh-policy\.js"><\/script>\s*\n\s*<script src="\/app\.js"><\/script>/);
   assert.match(serverJs, /"viewport-metrics\.js"/);
   assert.match(serverJs, /"conversation-scroll\.js"/);
   assert.match(serverJs, /"home-ai-diagnostic-reporting\.js"/);
@@ -92,6 +93,7 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(serverJs, /"thread-detail-patch-plan\.js"/);
   assert.match(serverJs, /"thread-detail-dom-patch\.js"/);
   assert.match(serverJs, /"thread-detail-actions\.js"/);
+  assert.match(serverJs, /"thread-tile-actions\.js"/);
   assert.match(serverJs, /"thread-tile-layout\.js"/);
   assert.match(serverJs, /"build-refresh-policy\.js"/);
   assert.match(indexHtml, /id="hardRefreshButton"/);

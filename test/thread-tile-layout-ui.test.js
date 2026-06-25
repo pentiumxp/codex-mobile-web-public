@@ -28,7 +28,8 @@ function functionBody(source, name) {
 test("thread tile layout is wired as an explicit shell policy", () => {
   assert.doesNotMatch(indexHtml, /id="threadTileToggle"/);
   assert.match(indexHtml, /data-thread-display-choice="single"[\s\S]*data-thread-display-choice="tile"/);
-  assert.match(indexHtml, /<script src="\/thread-detail-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-render-plan\.js"><\/script>\s*\n\s*<script src="\/thread-detail-merge-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-patch-plan\.js"><\/script>\s*\n\s*<script src="\/thread-detail-dom-patch\.js"><\/script>\s*\n\s*<script src="\/thread-detail-actions\.js"><\/script>\s*\n\s*<script src="\/thread-tile-layout\.js"><\/script>\s*\n\s*<script src="\/build-refresh-policy\.js"><\/script>/);
+  assert.match(indexHtml, /<script src="\/thread-detail-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-render-plan\.js"><\/script>\s*\n\s*<script src="\/thread-detail-merge-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-patch-plan\.js"><\/script>\s*\n\s*<script src="\/thread-detail-dom-patch\.js"><\/script>\s*\n\s*<script src="\/thread-detail-actions\.js"><\/script>\s*\n\s*<script src="\/thread-tile-actions\.js"><\/script>\s*\n\s*<script src="\/thread-tile-layout\.js"><\/script>\s*\n\s*<script src="\/build-refresh-policy\.js"><\/script>/);
+  assert.match(appJs, /const threadTileActionsApi = window\.CodexThreadTileActions/);
   assert.match(appJs, /const threadTileLayoutPolicy = window\.CodexThreadTileLayout/);
   assert.match(appJs, /threadTileMode: false/);
   assert.match(appJs, /threadDisplaySettingsLoaded: false/);
@@ -160,7 +161,14 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.doesNotMatch(tilePaneBody, /data-thread-tile-open/);
 
   const tileActionsBody = functionBody(appJs, "bindThreadTileActions");
-  assert.match(tileActionsBody, /data-thread-tile-pane/);
+  assert.match(tileActionsBody, /threadTileActionsApi\.resolveThreadTilePointerAction/);
+  assert.match(tileActionsBody, /threadTileActionsApi\.resolveThreadTileFocusAction/);
+  assert.match(tileActionsBody, /threadTileActionsApi\.resolveThreadTileClickAction/);
+  assert.match(tileActionsBody, /threadTileActionsApi\.resolveThreadTileScrollAction/);
+  assert.match(tileActionsBody, /threadTileActionsApi\.resolveThreadTileDragStartAction/);
+  assert.match(tileActionsBody, /threadTileActionsApi\.resolveThreadTileDragOverAction/);
+  assert.match(tileActionsBody, /threadTileActionsApi\.resolveThreadTileDragLeaveAction/);
+  assert.match(tileActionsBody, /threadTileActionsApi\.resolveThreadTileDropAction/);
   assert.match(tileActionsBody, /setThreadTileSelectedThread/);
   assert.match(tileActionsBody, /conversation\.dataset\.threadTileActionsBound/);
   assert.match(tileActionsBody, /conversation\.addEventListener\("pointerdown"/);
@@ -168,23 +176,17 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(tileActionsBody, /conversation\.addEventListener\("dragstart"/);
   assert.match(tileActionsBody, /conversation\.addEventListener\("dragover"/);
   assert.match(tileActionsBody, /conversation\.addEventListener\("drop"/);
-  assert.match(tileActionsBody, /dropThreadTilePane\(dragging, targetId, event\)/);
+  assert.match(tileActionsBody, /dropThreadTilePane\(plan\.draggingId, plan\.targetId, event\)/);
   assert.match(tileActionsBody, /conversation\.addEventListener\("scroll"/);
-  assert.match(tileActionsBody, /updateThreadTileBottomButtonForBody\(body\)/);
-  assert.match(tileActionsBody, /toggleThreadTileSwitchMenu\(titleButton\.getAttribute\("data-thread-tile-title"\) \|\| ""\)/);
+  assert.match(tileActionsBody, /updateThreadTileBottomButtonForBody\(plan\.body\)/);
+  assert.match(tileActionsBody, /toggleThreadTileSwitchMenu\(plan\.paneId \|\| ""\)/);
   assert.doesNotMatch(tileActionsBody, /if \(!event\.detail\) toggleThreadTileSwitchMenu/);
-  assert.match(tileActionsBody, /data-thread-tile-title/);
-  assert.match(tileActionsBody, /data-thread-tile-switch-target/);
   assert.match(tileActionsBody, /replaceThreadTilePaneThread/);
-  assert.match(tileActionsBody, /data-thread-tile-pane-count/);
   assert.match(tileActionsBody, /changeThreadTilePaneCount/);
-  assert.match(tileActionsBody, /data-thread-tile-close-pane/);
   assert.match(tileActionsBody, /closeThreadTilePane/);
   assert.doesNotMatch(tileActionsBody, /data-thread-tile-open/);
-  assert.match(tileActionsBody, /data-thread-tile-bottom/);
   assert.match(tileActionsBody, /scrollThreadTilePaneToBottom/);
   assert.match(tileActionsBody, /updateThreadTileBottomButtonForBody/);
-  assert.match(tileActionsBody, /data-thread-tile-operation-toggle/);
 
   const tileTurnBody = functionBody(appJs, "renderThreadTileTurn");
   assert.match(tileTurnBody, /state\.renderContextThreadId/);
