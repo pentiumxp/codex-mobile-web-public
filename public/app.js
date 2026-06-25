@@ -503,7 +503,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v459";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v460";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -12663,24 +12663,26 @@ function scheduleThreadTileOperationMinimumRefresh(delayMs = LIVE_OPERATION_BUBB
 
 function rememberThreadTileOperationBubble(threadId, html = "") {
   const id = String(threadId || "");
-  if (!id || !html || !html.includes("mobile-operation-bubble")) return;
-  state.threadTileOperationBubblesById.set(id, {
+  const record = threadTileStatePolicy.operationBubbleRecord({
+    threadId: id,
     html,
-    visibleUntilMs: Date.now() + LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS,
+    minVisibleMs: LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS,
+    nowMs: Date.now(),
   });
+  if (!record) return;
+  state.threadTileOperationBubblesById.set(id, record);
 }
 
 function recentThreadTileOperationBubble(threadId) {
   const id = String(threadId || "");
   const record = state.threadTileOperationBubblesById.get(id);
-  if (!record) return "";
-  const remainingMs = Number(record.visibleUntilMs || 0) - Date.now();
-  if (remainingMs <= 0) {
-    state.threadTileOperationBubblesById.delete(id);
+  const snapshot = threadTileStatePolicy.operationBubbleSnapshot(record, { nowMs: Date.now() });
+  if (!snapshot.visible) {
+    if (snapshot.expired) state.threadTileOperationBubblesById.delete(id);
     return "";
   }
-  scheduleThreadTileOperationMinimumRefresh(remainingMs);
-  return String(record.html || "");
+  scheduleThreadTileOperationMinimumRefresh(snapshot.remainingMs);
+  return snapshot.html;
 }
 
 function clearThreadTileOperationBubble(threadId) {
@@ -12693,7 +12695,7 @@ function renderThreadTileOperationDock(thread, previousKeys = new Set()) {
   const id = String(thread && thread.id || "");
   if (!id) return "";
   const entry = currentLiveOperationEntry(thread);
-  const mode = normalizeLiveOperationDockMode(state.threadTileOperationModesById.get(id) || "compact");
+  const mode = threadTileStatePolicy.normalizeOperationMode(state.threadTileOperationModesById.get(id) || "compact");
   const expanded = mode === "expanded";
   if (!entry || !entry.item || entry.item.type === "liveTurnStatus") {
     return latestLiveTurnForThread(thread) ? recentThreadTileOperationBubble(id) : "";
@@ -12714,15 +12716,14 @@ function threadTileOperationSignature(threadId) {
   const id = String(threadId || "");
   const thread = threadTileDisplayThread(id);
   const entry = currentLiveOperationEntry(thread);
-  const remembered = state.threadTileOperationBubblesById.get(id);
-  const rememberedVisible = Boolean(remembered && remembered.html && Number(remembered.visibleUntilMs || 0) > Date.now());
-  return {
+  return threadTileStatePolicy.operationSignature({
     mode: state.threadTileOperationModesById.get(id) || "compact",
-    rememberedVisible,
-    entry: entry && entry.item && entry.item.type !== "liveTurnStatus"
+    remembered: state.threadTileOperationBubblesById.get(id),
+    nowMs: Date.now(),
+    entrySignature: entry && entry.item && entry.item.type !== "liveTurnStatus"
       ? visibleItemSignature(entry.item, entry.turn)
       : null,
-  };
+  });
 }
 
 function threadTileMinimumPaneCount(layout = threadTileLayout()) {
@@ -13027,8 +13028,7 @@ function bindThreadTileActions() {
     }
     if (plan.action === "toggle-operation") {
       const id = plan.paneId || "";
-      const current = normalizeLiveOperationDockMode(state.threadTileOperationModesById.get(id) || "compact");
-      state.threadTileOperationModesById.set(id, current === "expanded" ? "compact" : "expanded");
+      state.threadTileOperationModesById.set(id, threadTileStatePolicy.toggleOperationMode(state.threadTileOperationModesById.get(id) || "compact"));
       setThreadTileSelectedThread(id, { render: false });
       if (!patchThreadTilePane(id, { preserveScroll: true })) scheduleRenderCurrentThread();
     }

@@ -141,3 +141,69 @@ test("thread tile state updates split pairs without keeping stale ids", () => {
     { anchorId: "a", childId: "b" },
   ]);
 });
+
+test("thread tile state owns operation bubble dwell and expiry policy", () => {
+  assert.equal(state.operationBubbleRecord({
+    threadId: "pane-1",
+    html: "<div>no operation</div>",
+    nowMs: 1000,
+  }), null);
+
+  const record = state.operationBubbleRecord({
+    threadId: "pane-1",
+    html: "<button class=\"mobile-operation-bubble\">cmd</button>",
+    nowMs: 1000,
+    minVisibleMs: 500,
+  });
+  assert.deepEqual(record, {
+    html: "<button class=\"mobile-operation-bubble\">cmd</button>",
+    visibleUntilMs: 1500,
+  });
+
+  assert.deepEqual(state.operationBubbleSnapshot(record, { nowMs: 1200 }), {
+    visible: true,
+    html: "<button class=\"mobile-operation-bubble\">cmd</button>",
+    remainingMs: 300,
+    expired: false,
+  });
+  assert.deepEqual(state.operationBubbleSnapshot(record, { nowMs: 1600 }), {
+    visible: false,
+    html: "",
+    remainingMs: 0,
+    expired: true,
+  });
+});
+
+test("thread tile state owns operation mode and signature policy", () => {
+  assert.equal(state.normalizeOperationMode("expanded"), "expanded");
+  assert.equal(state.normalizeOperationMode("unknown"), "compact");
+  assert.equal(state.toggleOperationMode("expanded"), "compact");
+  assert.equal(state.toggleOperationMode("compact"), "expanded");
+
+  const record = state.operationBubbleRecord({
+    threadId: "pane-1",
+    html: "<button class=\"mobile-operation-bubble\">cmd</button>",
+    nowMs: 1000,
+    minVisibleMs: 500,
+  });
+  assert.deepEqual(state.operationSignature({
+    mode: "expanded",
+    remembered: record,
+    nowMs: 1200,
+    entrySignature: { type: "command", key: "k1" },
+  }), {
+    mode: "expanded",
+    rememberedVisible: true,
+    entry: { type: "command", key: "k1" },
+  });
+  assert.deepEqual(state.operationSignature({
+    mode: "bad",
+    remembered: record,
+    nowMs: 1600,
+    entrySignature: null,
+  }), {
+    mode: "compact",
+    rememberedVisible: false,
+    entry: null,
+  });
+});

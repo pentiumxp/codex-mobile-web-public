@@ -9,6 +9,16 @@
   }
 }(typeof globalThis !== "undefined" ? globalThis : null, function () {
   const DEFAULT_USER_MAX_PANES = 12;
+  const DEFAULT_OPERATION_BUBBLE_MIN_VISIBLE_MS = 500;
+
+  function text(value) {
+    return String(value || "");
+  }
+
+  function nowValue(value) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : Date.now();
+  }
 
   function maxPaneLimit(maxPanes = DEFAULT_USER_MAX_PANES) {
     const parsed = Math.floor(Number(maxPanes));
@@ -152,17 +162,66 @@
     };
   }
 
+  function normalizeOperationMode(mode) {
+    return text(mode) === "expanded" ? "expanded" : "compact";
+  }
+
+  function toggleOperationMode(mode) {
+    return normalizeOperationMode(mode) === "expanded" ? "compact" : "expanded";
+  }
+
+  function operationBubbleRecord(input = {}) {
+    const id = text(input.threadId).trim();
+    const html = text(input.html);
+    const marker = text(input.bubbleMarker || "mobile-operation-bubble");
+    if (!id || !html || !html.includes(marker)) return null;
+    const minVisibleMs = Math.max(0, Number(input.minVisibleMs || DEFAULT_OPERATION_BUBBLE_MIN_VISIBLE_MS));
+    return {
+      html,
+      visibleUntilMs: nowValue(input.nowMs) + minVisibleMs,
+    };
+  }
+
+  function operationBubbleSnapshot(record, input = {}) {
+    if (!record) return { visible: false, html: "", remainingMs: 0, expired: false };
+    const remainingMs = Number(record.visibleUntilMs || 0) - nowValue(input.nowMs);
+    if (remainingMs <= 0) {
+      return { visible: false, html: "", remainingMs: 0, expired: true };
+    }
+    return {
+      visible: true,
+      html: text(record.html),
+      remainingMs,
+      expired: false,
+    };
+  }
+
+  function operationSignature(input = {}) {
+    const remembered = operationBubbleSnapshot(input.remembered, { nowMs: input.nowMs });
+    return {
+      mode: normalizeOperationMode(input.mode),
+      rememberedVisible: remembered.visible,
+      entry: input.entrySignature || null,
+    };
+  }
+
   return {
+    DEFAULT_OPERATION_BUBBLE_MIN_VISIBLE_MS,
     DEFAULT_USER_MAX_PANES,
     displaySettingsPayload,
     effectiveSelectedThreadId,
     idsEqual,
     normalizeDisplaySettings,
+    normalizeOperationMode,
     normalizePaneCount,
     normalizePinnedIds,
     normalizeSplitPairs,
+    operationBubbleRecord,
+    operationBubbleSnapshot,
+    operationSignature,
     prependSplitPair,
     removeSplitPairsForIds,
     syncPinnedIdsFromActiveIds,
+    toggleOperationMode,
   };
 }));

@@ -189,6 +189,7 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.doesNotMatch(tileActionsBody, /data-thread-tile-open/);
   assert.match(tileActionsBody, /scrollThreadTilePaneToBottom/);
   assert.match(tileActionsBody, /updateThreadTileBottomButtonForBody/);
+  assert.match(tileActionsBody, /threadTileStatePolicy\.toggleOperationMode/);
 
   const tileTurnBody = functionBody(appJs, "renderThreadTileTurn");
   assert.match(tileTurnBody, /state\.renderContextThreadId/);
@@ -218,6 +219,10 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(tileOperationDockBody, /data-thread-tile-operation-dock/);
   assert.match(tileOperationDockBody, /data-thread-tile-operation-toggle/);
   assert.match(tileOperationDockBody, /rememberThreadTileOperationBubble/);
+  assert.match(tileOperationDockBody, /threadTileStatePolicy\.normalizeOperationMode/);
+  assert.match(functionBody(appJs, "rememberThreadTileOperationBubble"), /threadTileStatePolicy\.operationBubbleRecord/);
+  assert.match(functionBody(appJs, "recentThreadTileOperationBubble"), /threadTileStatePolicy\.operationBubbleSnapshot/);
+  assert.match(functionBody(appJs, "threadTileOperationSignature"), /threadTileStatePolicy\.operationSignature/);
 
   const clearGlobalDockBody = functionBody(appJs, "clearGlobalLiveOperationDockForThreadTiles");
   assert.match(clearGlobalDockBody, /state\.liveOperationDockPinned = false/);

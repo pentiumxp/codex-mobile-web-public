@@ -129,8 +129,9 @@ controls, bottom jump, operation toggles, scroll targets, and drag/drop target
 classification are covered by a focused helper. The first pane-state slice now
 lives in `public/thread-tile-state.js`: pane count normalization, pinned id
 dedupe/order, selected pane fallback, split-pair updates, display-settings
-payload/application, and active-id sync are pure policy while `public/app.js`
-keeps DOM, rendering, network save, and other side effects. App code can no
+payload/application, active-id sync, and pane-local operation bubble
+dwell/expiry/mode/signature rules are pure policy while `public/app.js` keeps
+DOM, rendering, network save, timers, and other side effects. App code can no
 longer fall through from tile mode into the
 single-thread patch path without an explicit policy decision, fall through from
 a successful tile pane patch into full conversation render, silently choose
@@ -139,7 +140,7 @@ scroll-completion policy, own the visible-item patch operation loop, or own the
 turn-level patch operation loop, insertion anchoring loop, or turn article
 render-key lookup selector, creation step, hydration callback sequence, or
 conversation click-action selector priority, nor own the basic pane-state
-normalization rules.
+normalization and pane-local operation-bubble state rules.
 
 Target:
 
@@ -153,9 +154,10 @@ Target:
   hydration orchestration is now outside app.js for thread detail surfaces;
   click-action recognition is now outside app.js for conversation surfaces;
   thread-tile interaction recognition is now outside app.js for tile surfaces;
-  core thread-tile pane-state normalization is now outside app.js. Action
-  execution, pane-local detail refresh ownership, pane-local operation state,
-  and split sizing remain the next boundary.
+  core thread-tile pane-state normalization and operation bubble signature/
+  dwell/mode policy are now outside app.js. Action execution, pane-local
+  detail refresh ownership, command detail panels, and split sizing remain the
+  next boundary.
 - Keep `public/app.js` responsible for DOM wiring, patch application, and event
   binding only.
 - Cover user-message echo convergence, live receipt preservation, completed
@@ -295,11 +297,11 @@ Target:
   falling back to the first/current global thread.
 - The first dedicated pane-state helper now exists in
   `public/thread-tile-state.js` for pane count, pinned ids, split pairs,
-  selected pane, display settings, and active-id sync. Continue moving pane
-  ids, widths, ordering, active pane, per-pane drafts, max concurrent detail
-  reads, pane-local send/approval/interrupt ownership, command/operation bubble
-  state, command detail panels, and mobile collapse behavior into testable
-  helpers without DOM side effects.
+  selected pane, display settings, active-id sync, and operation bubble
+  dwell/expiry/mode/signature policy. Continue moving pane ids, widths,
+  ordering, active pane, per-pane drafts, max concurrent detail reads,
+  pane-local send/approval/interrupt ownership, command detail panels, and
+  mobile collapse behavior into testable helpers without DOM side effects.
 - Treat each pane as a scaled mobile single-thread runtime instance. Shared
   global Composer chrome is only an interim input surface; global command dock
   or shared operation bubble are no longer acceptable in tile mode and must not

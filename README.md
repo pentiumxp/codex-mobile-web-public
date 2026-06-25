@@ -16,6 +16,31 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v460 Thread Tile Operation State Policy
+
+v460 接续 v459，继续 Phase C。v459 已经把 pane count、pinned ids、split pairs、
+selected pane 和 `thread-display` settings 这些基础 pane-state 规则迁到
+`public/thread-tile-state.js`；本次把平铺窗口里的 operation bubble 状态判定也收进
+同一个 helper。
+
+本次新增的纯策略包括：
+
+- `operationBubbleRecord`：只在 HTML 确实包含 `mobile-operation-bubble` 时记录
+  pane-local operation bubble，并计算最小可见截止时间。
+- `operationBubbleSnapshot`：判断已记住的 bubble 是否仍可见、剩余多久、是否过期。
+- `normalizeOperationMode` / `toggleOperationMode`：统一平铺窗口内 compact/expanded
+  状态切换。
+- `operationSignature`：为 thread tile render signature 提供稳定的 operation 状态
+  描述，减少 pane-local operation 状态散落在 `public/app.js`。
+
+`public/app.js` 仍负责 Map 写入、定时器、DOM patch 和 pane 重新渲染；helper 只拥有
+状态规则。这个切片不新增 fallback，不隐藏重复消息，也不改变服务端投影。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v460`。
+`test/thread-tile-state.test.js` 新增 operation bubble dwell、expiry、mode toggle 和
+signature 覆盖；`test/thread-tile-layout-ui.test.js` 约束 tile UI 必须通过
+`threadTileStatePolicy` 使用这些规则。
+
 ## 2026-06-26 v459 Thread Tile State Policy
 
 v459 开始推进系统级优化目标里的 Phase C：把平铺/分屏模式从 `public/app.js`
