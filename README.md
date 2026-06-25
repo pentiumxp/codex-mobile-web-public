@@ -16,6 +16,25 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-25 Movie 新线程过程项投影修复
+
+本次 server-only 修复针对新建 Movie 工作区线程里“只能看到用户消息和最后
+系统回执，看不到中间过程”的问题。实测 Movie rollout 中存在
+`function_call`、`patch_apply_end`、`agent_message` 等中间事件，但
+`/api/threads/:id` 返回的 `projection-v4-dynamic` 详情里，completed turn
+只剩 `userMessage`、`agentMessage` 和 `turnUsageSummary`。
+
+根因是服务端 compaction 只把 rollout raw operations 合并进当前 live turn。
+对于策略上允许展示操作详情的 completed turn，虽然
+`operationDetailTurnIndexes()` 会选中它们，实际 items 里却没有从 rollout
+补回的 command/file operation，所以最终被压成 receipt-only。
+
+当前实现把 `mergeRecentRawOperationsIntoLiveTurn()` 收敛为通用
+`mergeRecentRawOperationsIntoTurn()`，并在 `compactThread()` 中对
+`operationDetailTurnIndexes()` 选中的 turn 先合并 rollout raw operations，
+再执行 compact/filter。这样仍然只展开策略允许的少数 turn，不会把所有历史
+turn 全部展开，也不会改变 PWA shell cache。
+
 ## 2026-06-25 v428 平铺模式 @ 目标菜单可见性修复
 
 v428 修复平铺窗口下在 Composer 输入 `@` 时目标任务/任务卡片菜单看不到的

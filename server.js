@@ -5850,11 +5850,11 @@ function mergeRawOperationIntoItem(existing, rawOperation) {
   }
 }
 
-function mergeRecentRawOperationsIntoLiveTurn(thread, turn) {
-  if (!turn || !isLiveTurn(turn) || !Array.isArray(turn.items)) return;
+function mergeRecentRawOperationsIntoTurn(thread, turn, options = {}) {
+  if (!turn || !Array.isArray(turn.items)) return;
   const rawOperations = readRecentRawOperations(thread, turn.id, {
     includeCompleted: true,
-    maxOperations: MAX_LIVE_OPERATION_ITEMS,
+    maxOperations: options.maxOperations || MAX_LIVE_OPERATION_ITEMS,
   });
   if (rawOperations.length === 0) return;
 
@@ -6254,12 +6254,11 @@ function compactThread(thread, options = {}) {
       rolloutStats,
       workspaceContextStats: workspaceContextStatsForCwd(out.cwd),
     });
-    const latestIndex = out.turns.length - 1;
-    const liveLatest = out.turns[latestIndex];
-    if (liveLatest && isLiveTurn(liveLatest)) {
-      mergeRecentRawOperationsIntoLiveTurn(out, liveLatest);
-    }
     const operationDetailIndexes = operationDetailTurnIndexes(out.turns);
+    for (const index of operationDetailIndexes) {
+      mergeRecentRawOperationsIntoTurn(out, out.turns[index], { maxOperations: 50 });
+    }
+    const latestIndex = out.turns.length - 1;
     out.turns = out.turns.map((turn, index) => compactTurn(turn, {
       allowOperations: operationDetailIndexes.has(index),
       maxOperationItems: operationDetailIndexes.has(index) ? "all" : MAX_LIVE_OPERATION_ITEMS,

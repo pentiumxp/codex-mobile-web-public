@@ -1,6 +1,8 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const { test } = require("node:test");
 
 const {
@@ -21,6 +23,25 @@ function policy() {
     isTurnUsageSummaryItem: (item) => Boolean(item && item.kind === "usage"),
     isDiagnosticReceiptItem: (item) => Boolean(item && item.kind === "diagnostic"),
   });
+}
+
+function functionBody(source, name) {
+  const marker = `function ${name}(`;
+  const start = source.indexOf(marker);
+  assert.notEqual(start, -1, `missing function ${name}`);
+  const signatureEnd = source.indexOf(") {", start);
+  assert.notEqual(signatureEnd, -1, `missing function body for ${name}`);
+  const brace = signatureEnd + 2;
+  let depth = 0;
+  for (let index = brace; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "{") depth += 1;
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) return source.slice(start, index + 1);
+    }
+  }
+  throw new Error(`unterminated function ${name}`);
 }
 
 test("trailingOperationIndexes keeps the latest operation items only when operations are allowed", () => {
@@ -95,4 +116,18 @@ test("default live-turn detection preserves interrupted shell behavior", () => {
   assert.equal(defaultIsLiveTurn({ status: "interrupted" }), true);
   assert.equal(defaultIsLiveTurn({ status: "interrupted", durationMs: 1 }), false);
   assert.equal(defaultIsLiveTurn({ status: "completed" }), false);
+});
+
+test("server compaction merges rollout operations into operation-detail turns", () => {
+  const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+  const compactThreadBody = functionBody(serverJs, "compactThread");
+  assert.match(serverJs, /function mergeRecentRawOperationsIntoTurn\(/);
+  assert.doesNotMatch(serverJs, /function mergeRecentRawOperationsIntoLiveTurn\(/);
+  assert.match(compactThreadBody, /const operationDetailIndexes = operationDetailTurnIndexes\(out\.turns\);/);
+  assert.match(compactThreadBody, /for \(const index of operationDetailIndexes\) \{[\s\S]*mergeRecentRawOperationsIntoTurn\(out, out\.turns\[index\], \{ maxOperations: 50 \}\);[\s\S]*\}/);
+  assert.ok(
+    compactThreadBody.indexOf("mergeRecentRawOperationsIntoTurn(out, out.turns[index]") <
+      compactThreadBody.indexOf("out.turns = out.turns.map"),
+    "rollout operations must be merged before compactTurn filters operational items",
+  );
 });

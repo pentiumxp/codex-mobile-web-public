@@ -1,3 +1,43 @@
+# 2026-06-25 - Movie completed-turn operation projection fix in progress
+
+- Scope:
+  - Investigating and repairing Movie thread detail projection after v428 deploy.
+  - Not pushed Public.
+- Trigger:
+  - User reported a newly-created `Movie` workspace/thread showed only user
+    messages and the final system/assistant receipt; intermediate process items
+    were missing.
+- Evidence:
+  - Movie thread id: `019efca1-ea69-7292-87b7-025ba023ca87`.
+  - Workspace/cwd: `/Users/hermes-dev/HermesMobileDev/Movie`.
+  - Runtime rollout contains intermediate `response_item` / `function_call`,
+    `event_msg` / `patch_apply_end`, and final assistant events.
+  - Production `/api/threads/:id` returned `projection-v4-dynamic` with
+    completed turns containing only `userMessage`, `agentMessage`, and
+    `turnUsageSummary`.
+- Root cause:
+  - `compactThread()` only merged rollout raw operations into the latest live
+    turn. Completed turns selected by `operationDetailTurnIndexes()` were still
+    compacted before rollout raw operations were attached, so they became
+    receipt-only when app-server detail did not already carry operation items.
+- Change:
+  - `server.js` replaces the live-only merge helper with
+    `mergeRecentRawOperationsIntoTurn()`.
+  - `compactThread()` now merges rollout raw operations into every turn selected
+    by `operationDetailTurnIndexes()` before `compactTurn()` filters operation
+    items.
+  - Regression test added in
+    `test/thread-turn-compaction-policy-service.test.js`.
+  - README records the Movie projection root cause and server-only fix.
+- Validation so far:
+  - `node --check server.js` passed.
+  - `node --test test/thread-turn-compaction-policy-service.test.js test/thread-detail-projection-service.test.js test/thread-detail-projection-v4-service.test.js test/conversation-render.test.js`
+    passed (`115` tests).
+  - `git diff --check` passed.
+- Next:
+  - Commit, deploy through Home AI central deploy script, then query the Movie
+    thread detail API again to confirm completed turns include operation items.
+
 # 2026-06-25 - v428 tile-mode composer @ menu deployed
 
 - Scope:
