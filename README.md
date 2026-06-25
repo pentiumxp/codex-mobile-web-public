@@ -37,6 +37,27 @@ return policy，不再出现 `Return required`；如果再次对终止卡调用 
 `returnToSource:true` 是终止卡、auto-return receipt 不触发二次 auto-return、以及
 Music-style repair -> receipt -> ack 链在第一张 terminal return 后停止。
 
+## 2026-06-25 v447 Live Refresh Patch 签名修正与诊断增强
+
+v447 接续 v446。用户继续报告 Composer 输入时偶尔造成全屏刷新；生产
+`thread_refresh_ms` 事件也显示，v446 部署后仍有大量 iPhone live-poll 走
+`detailRenderMode=full-render`，而服务端读路径已经是
+`projection-v4-dynamic/cache`，`threadReadMs=0`。这说明剩余问题主要在前端
+render/patch 判定，不是大 session 服务器全量读取。
+
+本次修正 v446 中的一个具体签名边界错误：`refreshCurrentThread` 在 merge 后才
+取 `previousPatchShellSignature`，实际拿到的是下一版 thread 的结构签名，而不是
+当前已渲染 DOM 对应的旧 thread 签名。这样会让部分本来可以局部 patch 的刷新
+被判成不可 patch，回退到整段 conversation full render。
+
+现在 render plan 使用 `previousThread` 的 patch-shell 签名；同时
+`thread_refresh_ms` 增加 `clientBuildId`、`renderPlanReason` 和
+`patchRejectReason`。如果线上仍然出现 full-render，日志可以区分是旧客户端、
+`rendered-signature-stale`、`patch-shell-changed`、DOM surface 不可 patch，还是
+具体插入/完成 DOM 更新失败。这个诊断只记录 bounded reason code 和 build id，
+不记录消息正文、任务卡正文、上传内容或私有路径。PWA shell cache 升级到
+`codex-mobile-shell-v447`。
+
 ## 2026-06-25 v446 结构签名 Patch Gate 与 Composer 闪动抑制
 
 v446 接续 v445 的手机单窗口修复。生产日志证明 v445 后新内容已经进入

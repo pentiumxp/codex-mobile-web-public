@@ -1,4 +1,4 @@
-# 2026-06-25 - v446 patch-shell signature fix in progress
+# 2026-06-25 - v447 live refresh patch signature fix in progress
 
 - User follow-up after v445:
   - User cancelled the prior goal because the phone UI did not show replies for
@@ -6,15 +6,16 @@
   - User also reported that typing in the Composer still sometimes causes the
     Composer and screen above it to flicker, while other times it is stable.
 - Bounded evidence:
-  - v445 production logs showed new live content was present in render input:
+  - v445 production logs showed new live content was present in render input;
     `conversation_render_ms` `htmlChars` kept increasing.
-  - There were no immediate new `conversation_projection_mismatch` /
-    `detail_patch_rejected` matches in the sampled window, but live-poll still
-    frequently reported `detailRenderMode=full-render`.
-  - Therefore the remaining flicker is not the old server projection missing
-    the active turn. It is conversation DOM replacement during live-poll,
-    especially visible while the keyboard/Composer is active.
-- Root cause:
+  - v446 was committed/deployed as `4c6742b` with
+    `clientBuildId=0.1.11|codex-mobile-shell-v446`, but a post-deploy log
+    sample still showed many iPhone `thread_refresh_ms` events choosing
+    `detailRenderMode=full-render`.
+  - The same events used `projection-v4-dynamic/cache` with `threadReadMs=0`,
+    so the remaining flicker is primarily frontend render/patch decision
+    churn, not large-session server `thread/read`.
+- Root cause fixed by v446:
   - `refreshCurrentThread` used the full `conversationRenderSignature` as both
     the "content changed" signal and the "DOM can be patched safely" signal.
   - The full signature includes projection metadata such as
@@ -24,7 +25,13 @@
   - Those metadata-only signature changes made the render plan choose
     `full-render`, causing avoidable conversation DOM replacement and visible
     flicker.
-- Local runtime change:
+- Root cause fixed by v447:
+  - The v446 render-plan call computed `previousPatchShellSignature` from
+    `state.currentThread` after merge, which could be the next thread shape
+    rather than the old thread shape represented by the current DOM.
+  - v447 computes that signature from `previousThread` before merge, so the
+    patch gate compares the rendered DOM against the correct previous shell.
+- Runtime change:
   - `public/app.js` adds `renderedConversationPatchShellSignature`.
   - Single-thread conversation renders write the patch-shell signature; home,
     new-thread, plugin-recovery, and tile surfaces clear it.
@@ -35,19 +42,24 @@
     previous thread shell.
   - `public/thread-detail-render-plan.js` adds `patch-shell-stable`, allowing a
     patch when only projection metadata makes the full signature stale.
+  - v447 adds bounded `clientBuildId`, `renderPlanReason`, and
+    `patchRejectReason` to thread-refresh performance events.
   - `CLIENT_BUILD_ID` and service-worker cache are bumped to
-    `codex-mobile-shell-v446`.
+    `codex-mobile-shell-v447`.
 - Local validation completed so far:
   - Syntax check passed for `public/app.js` and
-    `public/thread-detail-render-plan.js`.
+    `public/thread-detail-render-plan.js`; v447 also checks
+    `public/thread-performance-metrics.js` and `public/sw.js`.
   - Focused suite passed:
     `node --test test/thread-detail-render-plan.test.js
     test/mobile-viewport.test.js test/turn-scroll-controls.test.js
-    test/conversation-render.test.js` (`118` tests).
+    test/conversation-render.test.js test/thread-performance-metrics.test.js
+    test/thread-task-card-route.test.js test/thread-goal-service.test.js`
+    (`139` tests).
 - Pending:
-  - Run broader validation, commit, deploy through Home AI central macOS plugin
+  - Run full validation, commit, deploy through Home AI central macOS plugin
     deployment, and confirm production readback reports
-    `codex-mobile-shell-v446`.
+    `codex-mobile-shell-v447`.
 
 # 2026-06-25 - v445 phone single-thread live visibility fix deployed
 

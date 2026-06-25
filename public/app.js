@@ -246,6 +246,7 @@ const state = {
   lastThreadSignature: "",
   renderedConversationSignature: "",
   renderedConversationPatchShellSignature: "",
+  threadDetailPatchRejectReason: "",
   renderedThreadListSignature: "",
   tickTimer: null,
   relativeTimeTimer: null,
@@ -486,7 +487,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v446";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v447";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -6617,6 +6618,7 @@ function postPerformanceEvent(event, details = {}, options = {}) {
     pwa: isPwaMode(),
     embedded: isHermesEmbedMode(),
     visibility: document.visibilityState || "",
+    clientBuildId: CLIENT_BUILD_ID,
   }, details || {}));
   return true;
 }
@@ -9107,13 +9109,14 @@ async function refreshCurrentThread(options = {}) {
   const mergeStartedAt = nowPerfMs();
   const previousThread = state.currentThread;
   const previousConversationSignature = conversationRenderSignature(state.currentThread);
+  const previousPatchShellSignature = conversationPatchShellSignature(previousThread);
   state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
   const nextConversationSignature = conversationRenderSignature(state.currentThread);
   const renderPlan = threadDetailRenderPlanApi.planThreadDetailRefreshRender({
     previousConversationSignature,
     nextConversationSignature,
     renderedConversationSignature: state.renderedConversationSignature,
-    previousPatchShellSignature: conversationPatchShellSignature(state.currentThread),
+    previousPatchShellSignature,
     renderedPatchShellSignature: state.renderedConversationPatchShellSignature,
   });
   const shouldRenderDetail = renderPlan.shouldRenderDetail;
@@ -9132,6 +9135,8 @@ async function refreshCurrentThread(options = {}) {
   let detailPatchMs = 0;
   let metadataUpdateMs = 0;
   let detailRenderMode = renderPlan.detailRenderMode;
+  let patchRejectReason = "";
+  state.threadDetailPatchRejectReason = "";
   if (shouldRenderDetail) {
     const tilePatchPlan = threadDetailDomPatchSurface({ threadId });
     const tileSurfaceRefresh = Boolean(
@@ -9149,6 +9154,7 @@ async function refreshCurrentThread(options = {}) {
       locallyPatchedDetail = patchCurrentThreadDetailFromRefresh(previousThread, state.currentThread, previousConversationSignature);
       detailPatchMs = roundedDurationMs(patchStartedAt);
       if (!locallyPatchedDetail) {
+        patchRejectReason = state.threadDetailPatchRejectReason || "unknown";
         recordHomeAiDiagnosticFailure({
           category: "conversation_projection_mismatch",
           diagnostic_type: "detail_patch_rejected",
@@ -9160,6 +9166,8 @@ async function refreshCurrentThread(options = {}) {
             action: "thread-detail-refresh",
             read_mode: String(result.thread && result.thread.mobileReadMode || ""),
             render_mode: String(renderPlan.detailRenderMode || ""),
+            render_plan_reason: String(renderPlan.reason || ""),
+            patch_reject_reason: patchRejectReason,
           },
           counts: {
             previous_count: visibleConversationShape(previousThread).visibleItemCount,
@@ -9172,6 +9180,8 @@ async function refreshCurrentThread(options = {}) {
             fields: {
               read_mode: String(result.thread && result.thread.mobileReadMode || ""),
               render_mode: String(renderPlan.detailRenderMode || ""),
+              render_plan_reason: String(renderPlan.reason || ""),
+              patch_reject_reason: patchRejectReason,
               visible_count: visibleConversationShape(state.currentThread).visibleItemCount,
             },
           }],
@@ -9222,6 +9232,8 @@ async function refreshCurrentThread(options = {}) {
     detailPatchMs,
     metadataUpdateMs,
     detailRenderMode,
+    renderPlanReason: renderPlan.reason,
+    patchRejectReason,
     skippedDetailRender: !shouldRenderDetail,
     locallyPatchedDetail,
   });
@@ -9241,6 +9253,8 @@ async function refreshCurrentThread(options = {}) {
     turns: Array.isArray(result.thread && result.thread.turns) ? result.thread.turns.length : 0,
     omittedTurns: Number(result.thread && result.thread.mobileOmittedTurnCount || 0),
     rolloutSizeBytes: rolloutSizeBytes(result.thread),
+    renderPlanReason: String(renderPlan.reason || ""),
+    patchRejectReason,
     skippedDetailRender: !shouldRenderDetail,
     locallyPatchedDetail,
   }, {
@@ -13584,17 +13598,27 @@ function patchLiveTextItemDom(turn, item) {
   return completeLocalConversationDomUpdate(target, wasNearBottom, userReadingCurrentTurn);
 }
 
+function rejectThreadDetailPatch(reason) {
+  state.threadDetailPatchRejectReason = String(reason || "unknown").slice(0, 80);
+  return false;
+}
+
 function patchCurrentThreadDetailFromRefresh(previousThread, nextThread, previousConversationSignature) {
+  state.threadDetailPatchRejectReason = "";
   const conversation = $("conversation");
-  if (!conversation || !previousThread || !nextThread) return false;
-  if (patchCurrentThreadTilePaneFromState({ threadId: nextThread.id || state.currentThreadId, preserveScroll: true })) return true;
-  if (!canPatchSingleThreadConversationDom({ threadId: nextThread.id || state.currentThreadId })) return false;
-  if (previousThread.mobileLoading || previousThread.mobileLoadError || nextThread.mobileLoading || nextThread.mobileLoadError) return false;
+  if (!conversation) return rejectThreadDetailPatch("missing-conversation-root");
+  if (!previousThread || !nextThread) return rejectThreadDetailPatch("missing-thread");
+  if (patchCurrentThreadTilePaneFromState({ threadId: nextThread.id || state.currentThreadId, preserveScroll: true })) {
+    state.threadDetailPatchRejectReason = "";
+    return true;
+  }
+  if (!canPatchSingleThreadConversationDom({ threadId: nextThread.id || state.currentThreadId })) return rejectThreadDetailPatch("single-thread-surface-unavailable");
+  if (previousThread.mobileLoading || previousThread.mobileLoadError || nextThread.mobileLoading || nextThread.mobileLoadError) return rejectThreadDetailPatch("loading-or-error-state");
   const previousPatchShellSignature = conversationPatchShellSignature(previousThread);
   const renderedPatchShellSignature = String(state.renderedConversationPatchShellSignature || "");
   if (state.renderedConversationSignature !== previousConversationSignature
-    && (!renderedPatchShellSignature || renderedPatchShellSignature !== previousPatchShellSignature)) return false;
-  if (previousPatchShellSignature !== conversationPatchShellSignature(nextThread)) return false;
+    && (!renderedPatchShellSignature || renderedPatchShellSignature !== previousPatchShellSignature)) return rejectThreadDetailPatch("rendered-dom-stale");
+  if (previousPatchShellSignature !== conversationPatchShellSignature(nextThread)) return rejectThreadDetailPatch("patch-shell-changed");
   const wasNearBottom = isConversationNearBottom();
   const userReadingCurrentTurn = isUserReadingCurrentTurn({ nearBottom: wasNearBottom });
   const previousKeys = existingConversationRenderKeys();
@@ -13613,13 +13637,15 @@ function patchCurrentThreadDetailFromRefresh(previousThread, nextThread, previou
       continue;
     }
     if (!article) {
-      if (!insertTurnArticleDom(turn, previousKeys)) return false;
+      if (!insertTurnArticleDom(turn, previousKeys)) return rejectThreadDetailPatch("insert-turn-failed");
       continue;
     }
     patchNode(article, source);
   }
   bindCurrentThreadActions();
-  return completeLocalConversationDomUpdate(conversation, wasNearBottom, userReadingCurrentTurn);
+  if (!completeLocalConversationDomUpdate(conversation, wasNearBottom, userReadingCurrentTurn)) return rejectThreadDetailPatch("complete-dom-update-failed");
+  state.threadDetailPatchRejectReason = "";
+  return true;
 }
 
 function renderHome() {

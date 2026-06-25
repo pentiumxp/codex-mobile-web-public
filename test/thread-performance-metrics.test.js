@@ -85,6 +85,8 @@ test("thread performance metrics bound and classify client detail timings", () =
     conversationRenderMs: 4,
     postRenderMs: 0.2,
     detailRenderMode: "first-paint",
+    renderPlanReason: "patch-shell-stable",
+    patchRejectReason: "rendered-dom-stale",
     skippedDetailRender: false,
     locallyPatchedDetail: false,
     ignoredMs: 12,
@@ -99,6 +101,8 @@ test("thread performance metrics bound and classify client detail timings", () =
     postRenderMs: 0,
     detailRenderMode: "first-paint",
     source: "thread-list",
+    renderPlanReason: "patch-shell-stable",
+    patchRejectReason: "rendered-dom-stale",
     skippedDetailRender: false,
     locallyPatchedDetail: false,
   });

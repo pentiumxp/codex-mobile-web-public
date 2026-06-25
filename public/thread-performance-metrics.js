@@ -26,6 +26,10 @@
     "metadataUpdateMs",
     "postRenderMs",
   ];
+  const CLIENT_LABEL_KEYS = [
+    "renderPlanReason",
+    "patchRejectReason",
+  ];
   const ALLOWED_DETAIL_RENDER_MODES = Object.freeze({
     "cached-current": true,
     "first-paint": true,
@@ -87,6 +91,10 @@
     if (renderMode && ALLOWED_DETAIL_RENDER_MODES[renderMode]) result.detailRenderMode = renderMode;
     const sourceLabel = compactLabel(source.source);
     if (sourceLabel) result.source = sourceLabel;
+    for (const key of CLIENT_LABEL_KEYS) {
+      const label = compactLabel(source[key]);
+      if (label) result[key] = label;
+    }
     if (source.skippedDetailRender !== undefined) result.skippedDetailRender = Boolean(source.skippedDetailRender);
     if (source.locallyPatchedDetail !== undefined) result.locallyPatchedDetail = Boolean(source.locallyPatchedDetail);
     return Object.keys(result).length ? result : null;
