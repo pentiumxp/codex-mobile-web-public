@@ -37,6 +37,28 @@ return policy，不再出现 `Return required`；如果再次对终止卡调用 
 `returnToSource:true` 是终止卡、auto-return receipt 不触发二次 auto-return、以及
 Music-style repair -> receipt -> ack 链在第一张 terminal return 后停止。
 
+## 2026-06-26 v448 Refresh Render Outcome 服务化
+
+v448 是下一阶段系统级架构优化的 Phase A 第一块，不是新的视觉兜底。
+近期 v445-v447 已经把手机单窗口可见性、patch-shell 签名和 refresh 诊断收拢，
+但 `refreshCurrentThread` 仍直接决定 metadata-only、single-thread patch、
+tile-pane patch 和 full render 的最终动作。这个判断散在 `public/app.js` 中，
+容易在平铺/单窗口 surface 切换时让局部 patch 结果又落回 full render。
+
+本次把 refresh 最终动作推进到 `public/thread-detail-render-plan.js`：
+
+- `finalizeThreadDetailRenderPlan` 现在返回明确的 `renderAction` 和
+  `projectionConsistencyPhase`。
+- `tilePanePatchedDetail` 成为终态：tile pane 已经 patch 成功时，不再继续走
+  single-thread full render。
+- `thread_refresh_ms` 增加 `refreshRenderAction` 和 `tilePanePatchedDetail`，
+  线上能区分 metadata update、single patch、tile patch 和 full render。
+- `public/app.js` 只按 outcome 执行动作，减少刷新策略散落。
+
+新增/更新 focused tests 覆盖 tile pane patch 是终态、metadata-only tile patch 不
+触发 full render、performance 事件保留 refresh action，以及 app wiring 使用
+render outcome。PWA shell cache 升级到 `codex-mobile-shell-v448`。
+
 ## 2026-06-25 v447 Live Refresh Patch 签名修正与诊断增强
 
 v447 接续 v446。用户继续报告 Composer 输入时偶尔造成全屏刷新；生产

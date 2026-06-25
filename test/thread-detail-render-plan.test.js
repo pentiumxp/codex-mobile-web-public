@@ -37,6 +37,9 @@ test("thread detail refresh render plan allows patch only when current DOM match
   assert.deepEqual(renderPlan.finalizeThreadDetailRenderPlan(plan, { locallyPatchedDetail: true }), {
     detailRenderMode: "patch",
     locallyPatchedDetail: true,
+    tilePanePatchedDetail: false,
+    renderAction: "local-patch-metadata-update",
+    projectionConsistencyPhase: "refresh-local-patch",
   });
 });
 
@@ -56,6 +59,9 @@ test("thread detail refresh render plan requires full render when DOM signature 
   assert.deepEqual(renderPlan.finalizeThreadDetailRenderPlan(plan, { locallyPatchedDetail: false }), {
     detailRenderMode: "full-render",
     locallyPatchedDetail: false,
+    tilePanePatchedDetail: false,
+    renderAction: "full-render",
+    projectionConsistencyPhase: "",
   });
 });
 
@@ -89,4 +95,36 @@ test("thread detail refresh render plan can disable patch explicitly", () => {
   assert.equal(plan.shouldRenderDetail, true);
   assert.equal(plan.canPatch, false);
   assert.equal(plan.detailRenderMode, "full-render");
+});
+
+test("thread detail refresh render outcome treats tile pane patch as terminal", () => {
+  const plan = renderPlan.planThreadDetailRefreshRender({
+    previousConversationSignature: "sig-a",
+    nextConversationSignature: "sig-b",
+    renderedConversationSignature: "sig-a",
+  });
+
+  assert.deepEqual(renderPlan.finalizeThreadDetailRenderPlan(plan, { tilePanePatchedDetail: true }), {
+    detailRenderMode: "tile-pane",
+    locallyPatchedDetail: false,
+    tilePanePatchedDetail: true,
+    renderAction: "tile-pane-patch",
+    projectionConsistencyPhase: "refresh-local-patch",
+  });
+});
+
+test("thread detail refresh render outcome keeps metadata-only tile patches out of full render", () => {
+  const plan = renderPlan.planThreadDetailRefreshRender({
+    previousConversationSignature: "sig-a",
+    nextConversationSignature: "sig-a",
+    renderedConversationSignature: "sig-a",
+  });
+
+  assert.deepEqual(renderPlan.finalizeThreadDetailRenderPlan(plan, { tilePanePatchedDetail: true }), {
+    detailRenderMode: "tile-pane-metadata",
+    locallyPatchedDetail: false,
+    tilePanePatchedDetail: true,
+    renderAction: "tile-pane-patch",
+    projectionConsistencyPhase: "refresh-metadata",
+  });
 });

@@ -2940,10 +2940,12 @@ test("current-thread refresh patches the current tile pane for metadata-only til
   const body = functionBody("refreshCurrentThread");
   assert.match(body, /let tilePanePatchedDetail = false;/);
   assert.match(body, /patchCurrentThreadTilePaneFromState\(\{ threadId, preserveScroll: true \}\)/);
-  assert.match(body, /detailRenderMode = "tile-pane"/);
-  assert.match(body, /detailRenderMode = "tile-pane-metadata"/);
-  assert.match(body, /locallyPatchedDetail \|\| tilePanePatchedDetail \|\| !shouldRenderDetail/);
-  assert.match(body, /checkConversationProjectionConsistency\(shouldRenderDetail \? "refresh-local-patch" : "refresh-metadata"/);
+  assert.match(body, /renderOutcome = threadDetailRenderPlanApi\.finalizeThreadDetailRenderPlan\(renderPlan, \{ locallyPatchedDetail, tilePanePatchedDetail \}\);/);
+  assert.match(body, /detailRenderMode = renderOutcome\.detailRenderMode;/);
+  assert.match(body, /refreshRenderAction = renderOutcome\.renderAction;/);
+  assert.match(body, /let renderOutcome = null;/);
+  assert.match(body, /const projectionConsistencyPhase = renderOutcome && renderOutcome\.projectionConsistencyPhase \|\| "";/);
+  assert.match(body, /checkConversationProjectionConsistency\(projectionConsistencyPhase, \{ renderMode: detailRenderMode \}\)/);
 });
 
 test("image view render keys include their image source", () => {

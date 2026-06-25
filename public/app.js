@@ -487,7 +487,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v447";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v448";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -9135,6 +9135,8 @@ async function refreshCurrentThread(options = {}) {
   let detailPatchMs = 0;
   let metadataUpdateMs = 0;
   let detailRenderMode = renderPlan.detailRenderMode;
+  let refreshRenderAction = "";
+  let renderOutcome = null;
   let patchRejectReason = "";
   state.threadDetailPatchRejectReason = "";
   if (shouldRenderDetail) {
@@ -9188,14 +9190,18 @@ async function refreshCurrentThread(options = {}) {
         });
       }
     }
-    detailRenderMode = threadDetailRenderPlanApi.finalizeThreadDetailRenderPlan(renderPlan, { locallyPatchedDetail }).detailRenderMode;
-    if (locallyPatchedDetail) {
+    renderOutcome = threadDetailRenderPlanApi.finalizeThreadDetailRenderPlan(renderPlan, { locallyPatchedDetail, tilePanePatchedDetail });
+    detailRenderMode = renderOutcome.detailRenderMode;
+    refreshRenderAction = renderOutcome.renderAction;
+    locallyPatchedDetail = renderOutcome.locallyPatchedDetail;
+    tilePanePatchedDetail = renderOutcome.tilePanePatchedDetail;
+    if (refreshRenderAction === "local-patch-metadata-update") {
       const metadataStartedAt = nowPerfMs();
       updateCurrentThreadHeader(state.currentThread);
       updateTickTimer();
       publishPluginNavigationState();
       metadataUpdateMs = roundedDurationMs(metadataStartedAt);
-    } else {
+    } else if (refreshRenderAction === "full-render") {
       const conversationRenderStartedAt = nowPerfMs();
       renderCurrentThread();
       conversationRenderMs = roundedDurationMs(conversationRenderStartedAt);
@@ -9215,9 +9221,15 @@ async function refreshCurrentThread(options = {}) {
       scheduleScrollToBottomButtonUpdate();
       metadataUpdateMs = roundedDurationMs(metadataStartedAt);
     }
+    renderOutcome = threadDetailRenderPlanApi.finalizeThreadDetailRenderPlan(renderPlan, { locallyPatchedDetail, tilePanePatchedDetail });
+    detailRenderMode = renderOutcome.detailRenderMode;
+    refreshRenderAction = renderOutcome.renderAction;
+    locallyPatchedDetail = renderOutcome.locallyPatchedDetail;
+    tilePanePatchedDetail = renderOutcome.tilePanePatchedDetail;
   }
-  if (locallyPatchedDetail || tilePanePatchedDetail || !shouldRenderDetail) {
-    checkConversationProjectionConsistency(shouldRenderDetail ? "refresh-local-patch" : "refresh-metadata", { renderMode: detailRenderMode });
+  const projectionConsistencyPhase = renderOutcome && renderOutcome.projectionConsistencyPhase || "";
+  if (projectionConsistencyPhase) {
+    checkConversationProjectionConsistency(projectionConsistencyPhase, { renderMode: detailRenderMode });
   }
   const renderElapsedMs = roundedDurationMs(renderStartedAt);
   const detailPerformance = threadPerformanceMetrics.threadDetailEventFieldsWithClient(result.thread, {
@@ -9232,10 +9244,12 @@ async function refreshCurrentThread(options = {}) {
     detailPatchMs,
     metadataUpdateMs,
     detailRenderMode,
+    refreshRenderAction,
     renderPlanReason: renderPlan.reason,
     patchRejectReason,
     skippedDetailRender: !shouldRenderDetail,
     locallyPatchedDetail,
+    tilePanePatchedDetail,
   });
   postPerformanceEvent("thread_refresh_ms", {
     source,
@@ -9254,9 +9268,11 @@ async function refreshCurrentThread(options = {}) {
     omittedTurns: Number(result.thread && result.thread.mobileOmittedTurnCount || 0),
     rolloutSizeBytes: rolloutSizeBytes(result.thread),
     renderPlanReason: String(renderPlan.reason || ""),
+    refreshRenderAction,
     patchRejectReason,
     skippedDetailRender: !shouldRenderDetail,
     locallyPatchedDetail,
+    tilePanePatchedDetail,
   }, {
     key: "thread_refresh_ms",
     minIntervalMs: PERF_EVENT_THROTTLE_MS,

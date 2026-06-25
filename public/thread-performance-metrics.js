@@ -27,6 +27,7 @@
     "postRenderMs",
   ];
   const CLIENT_LABEL_KEYS = [
+    "refreshRenderAction",
     "renderPlanReason",
     "patchRejectReason",
   ];
@@ -38,6 +39,8 @@
     "metadata-only": true,
     patch: true,
     skipped: true,
+    "tile-pane": true,
+    "tile-pane-metadata": true,
   });
   const MAX_COUNT = 100000;
 
@@ -97,6 +100,7 @@
     }
     if (source.skippedDetailRender !== undefined) result.skippedDetailRender = Boolean(source.skippedDetailRender);
     if (source.locallyPatchedDetail !== undefined) result.locallyPatchedDetail = Boolean(source.locallyPatchedDetail);
+    if (source.tilePanePatchedDetail !== undefined) result.tilePanePatchedDetail = Boolean(source.tilePanePatchedDetail);
     return Object.keys(result).length ? result : null;
   }
 

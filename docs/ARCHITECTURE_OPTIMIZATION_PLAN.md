@@ -76,8 +76,11 @@ retention/drop policy, and live-to-completed same-turn visible-item preservation
 to `public/thread-detail-state.js`. The refresh render-mode decision now lives
 in `public/thread-detail-render-plan.js`: it decides metadata-only versus local
 patch versus full render from previous/next/rendered conversation signatures,
-and prevents local patch attempts when the currently rendered DOM signature is
-already stale. Thread/turn-level merge orchestration now lives in
+prevents local patch attempts when the currently rendered DOM signature is
+already stale, and owns the final refresh render outcome (`renderAction`,
+`detailRenderMode`, and projection-consistency phase). Tile-pane patch success
+is now a terminal render outcome instead of falling through to a single-thread
+full render. Thread/turn-level merge orchestration now lives in
 `public/thread-detail-merge-state.js`: it coordinates v4 projection delegation,
 incoming turn merge, stale mobile load flag cleanup, active live-turn retention,
 expanded-history preservation, and initial-submission echo cleanup while
@@ -90,14 +93,16 @@ slice also moves DOM patch surface selection into that policy module:
 `thread-tile-pane`, a `single-thread` surface, or a blocked transition/mismatch.
 DOM patch application still remains in `public/app.js`, but app code can no
 longer fall through from tile mode into the single-thread patch path without an
-explicit policy decision.
+explicit policy decision or fall through from a successful tile pane patch into
+full conversation render.
 
 Target:
 
 - Continue extracting thread detail merge/state and DOM patch application rules
   from `public/app.js` into pure helper modules. The surface decision is now
-  outside app.js; node lookup, node creation, patch application, hydration, and
-  scroll ownership remain the next boundaries.
+  outside app.js, and the refresh outcome decision is now outside app.js; node
+  lookup, node creation, patch application, hydration, and scroll ownership
+  remain the next boundaries.
 - Keep `public/app.js` responsible for DOM wiring, patch application, and event
   binding only.
 - Cover user-message echo convergence, live receipt preservation, completed

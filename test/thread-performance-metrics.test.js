@@ -85,10 +85,12 @@ test("thread performance metrics bound and classify client detail timings", () =
     conversationRenderMs: 4,
     postRenderMs: 0.2,
     detailRenderMode: "first-paint",
+    refreshRenderAction: "tile-pane-patch",
     renderPlanReason: "patch-shell-stable",
     patchRejectReason: "rendered-dom-stale",
     skippedDetailRender: false,
     locallyPatchedDetail: false,
+    tilePanePatchedDetail: true,
     ignoredMs: 12,
     negativeMs: -1,
   }), {
@@ -101,10 +103,12 @@ test("thread performance metrics bound and classify client detail timings", () =
     postRenderMs: 0,
     detailRenderMode: "first-paint",
     source: "thread-list",
+    refreshRenderAction: "tile-pane-patch",
     renderPlanReason: "patch-shell-stable",
     patchRejectReason: "rendered-dom-stale",
     skippedDetailRender: false,
     locallyPatchedDetail: false,
+    tilePanePatchedDetail: true,
   });
 
   assert.equal(metrics.boundedTiming(1000000), 600000);

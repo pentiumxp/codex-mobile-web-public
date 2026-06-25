@@ -49,16 +49,50 @@
   }
 
   function finalizeThreadDetailRenderPlan(plan = {}, result = {}) {
+    const tilePanePatchedDetail = Boolean(result.tilePanePatchedDetail);
+    const locallyPatchedDetail = Boolean(result.locallyPatchedDetail);
     if (!plan.shouldRenderDetail) {
+      if (tilePanePatchedDetail) {
+        return {
+          detailRenderMode: "tile-pane-metadata",
+          locallyPatchedDetail: false,
+          tilePanePatchedDetail: true,
+          renderAction: "tile-pane-patch",
+          projectionConsistencyPhase: "refresh-metadata",
+        };
+      }
       return {
         detailRenderMode: "metadata-only",
         locallyPatchedDetail: false,
+        tilePanePatchedDetail: false,
+        renderAction: "metadata-update",
+        projectionConsistencyPhase: "refresh-metadata",
       };
     }
-    const locallyPatchedDetail = Boolean(result.locallyPatchedDetail);
+    if (tilePanePatchedDetail) {
+      return {
+        detailRenderMode: "tile-pane",
+        locallyPatchedDetail: false,
+        tilePanePatchedDetail: true,
+        renderAction: "tile-pane-patch",
+        projectionConsistencyPhase: "refresh-local-patch",
+      };
+    }
+    if (locallyPatchedDetail) {
+      return {
+        detailRenderMode: "patch",
+        locallyPatchedDetail: true,
+        tilePanePatchedDetail: false,
+        renderAction: "local-patch-metadata-update",
+        projectionConsistencyPhase: "refresh-local-patch",
+      };
+    }
     return {
-      detailRenderMode: locallyPatchedDetail ? "patch" : "full-render",
-      locallyPatchedDetail,
+      detailRenderMode: "full-render",
+      locallyPatchedDetail: false,
+      tilePanePatchedDetail: false,
+      renderAction: "full-render",
+      projectionConsistencyPhase: "",
     };
   }
 
