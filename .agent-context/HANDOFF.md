@@ -1,4 +1,4 @@
-# 2026-06-25 - v447 live refresh patch signature fix in progress
+# 2026-06-25 - v447 live refresh patch signature fix deployed
 
 - User follow-up after v445:
   - User cancelled the prior goal because the phone UI did not show replies for
@@ -46,7 +46,7 @@
     `patchRejectReason` to thread-refresh performance events.
   - `CLIENT_BUILD_ID` and service-worker cache are bumped to
     `codex-mobile-shell-v447`.
-- Local validation completed so far:
+- Local validation:
   - Syntax check passed for `public/app.js` and
     `public/thread-detail-render-plan.js`; v447 also checks
     `public/thread-performance-metrics.js` and `public/sw.js`.
@@ -56,10 +56,27 @@
     test/conversation-render.test.js test/thread-performance-metrics.test.js
     test/thread-task-card-route.test.js test/thread-goal-service.test.js`
     (`139` tests).
-- Pending:
-  - Run full validation, commit, deploy through Home AI central macOS plugin
-    deployment, and confirm production readback reports
-    `codex-mobile-shell-v447`.
+  - Full `npm test` passed (`803` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Commit/deploy:
+  - Runtime commit: `ee234c9` (`fix live refresh patch signature diagnostics`).
+  - Deployed with Home AI central macOS script:
+    `deploy-macos-production.js --plugin codex-mobile --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --reason codex-mobile-live-refresh-patch-signature-v447 --execute --json`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T160850Z-plugin-codex-mobile-web-codex-mobile-live-refresh-patch-signature-v447`.
+  - Production `/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v447`,
+    `shellCacheName=codex-mobile-shell-v447`, `version=0.1.11`, and
+    `authRequired=true`.
+  - Source/prod SHA-256 parity confirmed for changed runtime/test/doc files
+    sampled in this fix.
+  - Production focused suite passed with `NODE_PATH` pointed at production
+    dependencies (`139` tests).
+- Follow-up:
+  - After clients reload v447, inspect new `thread_refresh_ms` fields
+    `clientBuildId`, `renderPlanReason`, and `patchRejectReason` if Composer
+    flicker remains. Do not claim the flicker is fully closed until v447
+    runtime samples show fewer/expected `full-render` events.
 
 # 2026-06-25 - v445 phone single-thread live visibility fix deployed
 
