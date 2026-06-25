@@ -148,8 +148,8 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v452/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v452"/);
+  assert.match(swJs, /codex-mobile-shell-v453/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v453"/);
   assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(swJs, /"\/thread-status-hints\.js"/);
@@ -351,6 +351,7 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /function patchVisibleItemDom\(turn, item\)/);
   assert.match(appJs, /function insertVisibleItemDom\(turn, item\)/);
   assert.match(appJs, /function insertTurnArticleDom\(turn, previousKeys = existingConversationRenderKeys\(\)\)/);
+  assert.match(appJs, /function insertTurnArticleElementDom\(turn, source\)/);
   assert.match(appJs, /function patchCurrentThreadDetailFromRefresh\(previousThread, nextThread, previousConversationSignature\)/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /const previousPatchShellSignature = conversationPatchShellSignature\(previousThread\);/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /state\.renderedConversationSignature !== previousConversationSignature[\s\S]*renderedPatchShellSignature !== previousPatchShellSignature/);
@@ -360,6 +361,8 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(functionBody("insertVisibleItemDom"), /if \(isOperationalItem\(item\)\) return updateLiveOperationDockForLocalPatch\(\);/);
   assert.match(functionBody("insertVisibleItemDom"), /article = insertTurnArticleDom\(turn, previousKeys\);/);
   assert.match(functionBody("insertVisibleItemDom"), /article\.insertBefore\(source, anchor\);/);
+  assert.match(functionBody("insertTurnArticleElementDom"), /threadDetailDomPatchApi\.insertTurnArticleElement/);
+  assert.doesNotMatch(functionBody("insertTurnArticleElementDom"), /for \(let index = turnIndex - 1/);
   assert.match(functionBody("upsertItem"), /if \(structureChanged\) scheduleRenderCurrentThread\(\);[\s\S]*else if \(canPatchExistingItem\)[\s\S]*else if \(!insertVisibleItemDom\(turn, nextItem\)\)/);
   assert.match(functionBody("appendToItem"), /if \(isOperationalItem\(item\)\) updateLiveOperationDockForLocalPatch\(\);[\s\S]*else if \(createdItem\) \{/);
   assert.match(stylesCss, /\.live-operation-dock\s*{[\s\S]*min-height:\s*var\(--live-operation-dock-compact-height, 40px\);[\s\S]*contain:\s*layout paint;/);

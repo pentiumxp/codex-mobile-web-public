@@ -491,7 +491,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v452";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v453";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -13474,22 +13474,15 @@ function insertTurnArticleDom(turn, previousKeys = existingConversationRenderKey
 function insertTurnArticleElementDom(turn, source) {
   const conversation = $("conversation");
   if (!conversation || !turn || !source) return null;
-  const turns = visibleTurnsForConversation(state.currentThread);
-  const turnIndex = turns.indexOf(turn);
-  let anchor = null;
-  for (let index = turnIndex - 1; index >= 0; index -= 1) {
-    const previous = turnArticleNode(turns[index]);
-    if (previous) {
-      anchor = previous.nextSibling;
-      break;
-    }
-  }
-  if (!anchor) {
-    const firstTurn = conversation.querySelector(".turn");
-    if (firstTurn) anchor = firstTurn;
-  }
-  conversation.insertBefore(source, anchor);
-  return source;
+  const result = threadDetailDomPatchApi.insertTurnArticleElement({
+    conversation,
+    turn,
+    source,
+    visibleTurns: visibleTurnsForConversation(state.currentThread),
+    findTurnElement: (candidate) => turnArticleNode(candidate),
+    firstTurnElement: () => conversation.querySelector(".turn"),
+  });
+  return result.ok ? source : null;
 }
 
 function insertVisibleItemDom(turn, item) {

@@ -46,6 +46,49 @@
     return fallback;
   }
 
+  function firstTurnElementFrom(input) {
+    if (typeof input.firstTurnElement === "function") return input.firstTurnElement() || null;
+    return input.firstTurnElement || null;
+  }
+
+  function resolveTurnInsertAnchor(input = {}) {
+    const turn = input.turn || null;
+    if (!turn) return { ok: false, reason: "missing-turn", anchor: null };
+    const visibleTurns = Array.isArray(input.visibleTurns) ? input.visibleTurns : [];
+    const findTurnElement = typeof input.findTurnElement === "function" ? input.findTurnElement : null;
+    if (!findTurnElement) return { ok: false, reason: "missing-find-turn-element", anchor: null };
+    const turnIndex = visibleTurns.indexOf(turn);
+    for (let index = turnIndex - 1; index >= 0; index -= 1) {
+      const previous = findTurnElement(visibleTurns[index], index);
+      if (previous) {
+        return {
+          ok: true,
+          reason: "after-previous-turn",
+          anchor: previous.nextSibling || null,
+        };
+      }
+    }
+    const firstTurn = firstTurnElementFrom(input);
+    return {
+      ok: true,
+      reason: firstTurn ? "before-first-turn" : "append",
+      anchor: firstTurn || null,
+    };
+  }
+
+  function insertTurnArticleElement(input = {}) {
+    const conversation = input.conversation;
+    if (!conversation || typeof conversation.insertBefore !== "function") {
+      return result(false, "missing-conversation");
+    }
+    const source = input.source || null;
+    if (!source) return result(false, "missing-source");
+    const anchorPlan = resolveTurnInsertAnchor(input);
+    if (!anchorPlan.ok) return result(false, anchorPlan.reason || "insert-anchor-failed");
+    conversation.insertBefore(source, anchorPlan.anchor || null);
+    return result(true, anchorPlan.reason || "inserted", { inserted: 1 });
+  }
+
   function applyVisibleItemRefreshDomPatch(input = {}) {
     const patchPlan = input.patchPlan;
     if (!patchPlan || !patchPlan.canPatch || !Array.isArray(patchPlan.operations)) {
@@ -144,7 +187,9 @@
   return {
     applyThreadTurnRefreshDomPatch,
     applyVisibleItemRefreshDomPatch,
+    insertTurnArticleElement,
     normalizeOperation,
     normalizeTurnOperation,
+    resolveTurnInsertAnchor,
   };
 }));

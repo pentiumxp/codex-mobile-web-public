@@ -105,12 +105,15 @@ failure reasons. Turn-level DOM patch execution now also lives in
 `public/thread-detail-dom-patch.js`: app code injects turn lookup, item patch,
 turn render, turn insert, and turn replace callbacks while the helper owns
 `item-patch` / `insert-turn` / `replace-turn` sequencing and bounded failure
-reasons. App code can no longer fall through from tile mode into the
+reasons. Turn article insertion anchoring now lives in the same helper:
+`insertTurnArticleElement` owns the after-previous / before-first / append
+selection while app code injects the concrete DOM lookups. App code can no
+longer fall through from tile mode into the
 single-thread patch path without an explicit policy decision, fall through from
 a successful tile pane patch into full conversation render, silently choose
 turn-level patch actions inside the application loop, inline the local-patch
 scroll-completion policy, own the visible-item patch operation loop, or own the
-turn-level patch operation loop.
+turn-level patch operation loop or insertion anchoring loop.
 
 Target:
 
@@ -119,8 +122,8 @@ Target:
   outside app.js, the refresh outcome decision is now outside app.js, and the
   turn-level patch action plan, local patch scroll-completion policy, and
   visible-item and turn-level patch operation loops are now outside app.js;
-  turn node lookup, turn node creation/anchoring, hydration, and action binding
-  remain the next boundaries.
+  turn article anchoring is also outside app.js; turn node lookup, turn node
+  creation, hydration, and action binding remain the next boundaries.
 - Keep `public/app.js` responsible for DOM wiring, patch application, and event
   binding only.
 - Cover user-message echo convergence, live receipt preservation, completed

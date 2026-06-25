@@ -213,3 +213,73 @@ test("turn dom patch returns bounded failure reasons", () => {
     ...base,
   }).reason, "invalid-turn-operation");
 });
+
+test("turn article insertion anchors after the nearest rendered previous turn", () => {
+  const turnA = { id: "a" };
+  const turnB = { id: "b" };
+  const turnC = { id: "c" };
+  const article = createArticle([createNode("a"), createNode("d")]);
+  const source = createNode("c");
+
+  const result = domPatch.insertTurnArticleElement({
+    conversation: article,
+    turn: turnC,
+    source,
+    visibleTurns: [turnA, turnB, turnC],
+    findTurnElement: (turn) => article.nodes.find((node) => node.key === turn.id) || null,
+    firstTurnElement: () => article.firstChild,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.reason, "after-previous-turn");
+  assert.deepEqual(article.nodes.map((node) => node.key), ["a", "c", "d"]);
+});
+
+test("turn article insertion falls back to before first turn or append", () => {
+  const turnA = { id: "a" };
+  const turnB = { id: "b" };
+  const article = createArticle([createNode("b")]);
+  const source = createNode("a");
+
+  const beforeFirst = domPatch.insertTurnArticleElement({
+    conversation: article,
+    turn: turnA,
+    source,
+    visibleTurns: [turnA, turnB],
+    findTurnElement: (turn) => article.nodes.find((node) => node.key === turn.id) || null,
+    firstTurnElement: () => article.firstChild,
+  });
+
+  assert.equal(beforeFirst.ok, true);
+  assert.equal(beforeFirst.reason, "before-first-turn");
+  assert.deepEqual(article.nodes.map((node) => node.key), ["a", "b"]);
+
+  const emptyArticle = createArticle([]);
+  const append = domPatch.insertTurnArticleElement({
+    conversation: emptyArticle,
+    turn: turnA,
+    source: createNode("a"),
+    visibleTurns: [turnA],
+    findTurnElement: () => null,
+    firstTurnElement: () => emptyArticle.firstChild,
+  });
+
+  assert.equal(append.ok, true);
+  assert.equal(append.reason, "append");
+  assert.deepEqual(emptyArticle.nodes.map((node) => node.key), ["a"]);
+});
+
+test("turn article insertion returns bounded failure reasons", () => {
+  const turn = { id: "a" };
+  const source = createNode("a");
+  const article = createArticle([]);
+
+  assert.equal(domPatch.insertTurnArticleElement({ turn, source }).reason, "missing-conversation");
+  assert.equal(domPatch.insertTurnArticleElement({ conversation: article, turn }).reason, "missing-source");
+  assert.equal(domPatch.insertTurnArticleElement({ conversation: article, source }).reason, "missing-turn");
+  assert.equal(domPatch.insertTurnArticleElement({
+    conversation: article,
+    turn,
+    source,
+  }).reason, "missing-find-turn-element");
+});

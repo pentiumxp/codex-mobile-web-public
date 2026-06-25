@@ -16,6 +16,26 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v453 Turn Article Anchoring
+
+v453 接续 v452，继续 Phase A。v452 已经把 turn-level `item-patch`、
+`insert-turn`、`replace-turn` 执行循环推进到 `public/thread-detail-dom-patch.js`，
+但 `insertTurnArticleElementDom` 仍在 `public/app.js` 中自己决定新 turn article
+应该插到哪里：先找前一个已渲染 turn 的 `nextSibling`，找不到再插到第一个
+`.turn` 之前，否则 append。
+
+本次把这块 anchoring 规则也推进到 `public/thread-detail-dom-patch.js`：
+
+- 新增 `resolveTurnInsertAnchor` 和 `insertTurnArticleElement`。
+- `public/app.js` 只注入 conversation、source element、visible turns、
+  turn element lookup 和 first-turn lookup，不再拥有 anchor selection loop。
+- 行为保持不变：优先插到最近一个已渲染前序 turn 后面；没有前序节点时插到
+  第一个 turn 之前；空 conversation 时 append。
+- `CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v453`。
+
+`test/thread-detail-dom-patch.test.js` 覆盖 after-previous、before-first、append
+以及 missing conversation/source/turn/find callback 的 bounded failure reason。
+
 ## 2026-06-26 v452 Turn DOM Patch Executor
 
 v452 接续 v451，继续 Phase A。v451 已经把 visible-item patch plan 的
