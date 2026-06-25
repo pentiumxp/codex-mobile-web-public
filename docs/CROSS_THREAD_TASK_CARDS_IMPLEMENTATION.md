@@ -16,6 +16,8 @@ layout and test strategy.
   - autonomous workflow grants after first target approval
   - automatic completion return cards for autonomous workflows, with terminal
     return-card delivery flags and single-prefix `Auto return:` titles
+  - manual target-thread return cards for pending or approved original cards;
+    local target-thread final text must not be treated as a source return
   - idempotency
   - storage
   - injection payload generation
@@ -97,6 +99,7 @@ node scripts/create-thread-task-card.js \
   --source-thread <source-thread-id> \
   --target-thread <target-thread-id-or-exact-title> \
   --title "<title>" \
+  --reasoning-effort xhigh \
   --body-file <markdown-file>
 ```
 
@@ -107,6 +110,42 @@ prints only the bounded JSON response. Prefer `--body-file` or `--json-file`
 for Chinese or long Markdown payloads. The script can request direct
 auto-approval, but the server only honors that request when the runtime
 `跨工作区委派` switch is enabled.
+Callers may pass `--reasoning-effort xhigh` or JSON
+`reasoningEffort:"xhigh"` for deep audit cards. The create route accepts only
+`low`, `medium`, `high`, or `xhigh`; invalid values fail with a bounded
+`reasoning_effort_invalid` error instead of silently accepting a Medium default.
+
+The supported target-side return CLI wrapper is:
+
+```bash
+node scripts/return-thread-task-card.js \
+  --task-card <task-card-id> \
+  --thread <target-thread-id> \
+  --status completed \
+  --title "<return title>" \
+  --body-file <markdown-file>
+```
+
+This script calls only `POST /api/thread-task-cards/:id/reply`. It is the
+fallback path for target implementation or audit threads when a direct
+`codex_mobile.return_to_source` tool surface is not visible. It reads the
+access key from the same env/key-file sources as the create wrapper, does not
+print key material, and generates a stable `task-card-return:*` idempotency key
+when the caller does not supply one. It always sets `returnToSource:true`, so
+the service treats the reverse card as a source-thread return closure rather
+than an ordinary pending reply.
+
+Every approved task-card injection includes `Task card id: ...` in the target
+turn input. For manual workflows, the target must close with a real return card
+using that id. A target-thread `final` answer is not a source-thread return card
+and must not be counted as `completed`, `blocked`, or `redirected` by the
+source workflow. Return cards created by `codex_mobile.return_to_source`,
+`scripts/return-thread-task-card.js`, or `/reply` with `returnToSource:true`
+are source-direct approved into the original source thread and do not require a
+second source-thread approval. If a previous runtime version already created a
+pending return card with the same `task-card-return:*` idempotency key, retrying
+through the return path promotes that existing card through the same direct
+return approval flow.
 
 When the runtime `跨工作区委派` switch is enabled, server-side `thread/start` and
 `turn/start` requests also receive a Codex app-server dynamic tool:
@@ -131,6 +170,31 @@ calls with a new tool call id do not create duplicate cards. If the switch is of
 tool is not injected. If the tool is called without a target or source thread id
 cannot be inferred, the server returns a bounded error to the model instead of
 hanging the turn.
+The tool schema includes optional `reasoningEffort`. When supplied, the value is
+stored on the card delivery metadata, shown in the injected task-card message as
+`Requested reasoning effort: ...`, and used to override the target turn's
+inherited runtime effort during `thread/resume` / `turn/start`. The approved card
+records bounded `injectionRuntime.reasoningEffort` and
+`injectionRuntime.requestedReasoningEffort` evidence.
+
+Server-side `thread/start` and `turn/start` also receive a Codex app-server
+dynamic return tool:
+
+```text
+codex_mobile.return_to_source
+```
+
+This tool is independent of the `跨工作区委派` switch because it closes work that
+was already delivered to the current target thread. It requires the original
+`taskCardId`, a return title, and a Markdown body; the current thread id is
+inferred from app-server metadata or the recent turn/thread map when possible.
+The server validates the target actor, allows return while the original card is
+`pending` or `approved`, creates the reverse-direction card through
+`threadTaskCardService.reply()`, and keeps retries idempotent. Invalid status
+values, missing card ids, missing actor thread ids, missing title, and missing
+body return bounded tool errors instead of hanging the turn.
+The accepted return statuses are `completed`, `blocked`, `redirected`, and
+`partially_completed`.
 
 Source-thread task-card creation has a stricter target resolver than the manual
 pending-card API. Exact `targetThreadId` and exact `targetThreadTitle` are
@@ -176,13 +240,13 @@ reads, and workspace creation, and still calls `syncCodexMobileMcpToolset()` for
 the target home before Profile-switch preflight. Those functions check every
 known/target `CODEX_HOME/config.toml` and add or repair
 `[mcp_servers.codex_mobile]` when it is missing or stale. The registered stdio
-wrapper is `scripts/codex-mobile-mcp-server.js`; it exposes `list_threads` and
-`delegate_to_thread`, and it calls the same authenticated local HTTP task-card
-API as the script fallback. The config entry stores only command, script,
-server URL, and key-file paths, not raw key material. It also registers
-tool-level `approval_mode = "approve"` for `list_threads` and
-`delegate_to_thread`, so Codex's MCP permission layer does not add a second
-approval prompt around the Mobile Web runtime delegation gate. This keeps new
+wrapper is `scripts/codex-mobile-mcp-server.js`; it exposes `list_threads`,
+`delegate_to_thread`, and `return_to_source`, and it calls the same
+authenticated local HTTP task-card API as the script fallbacks. The config entry
+stores only command, script, server URL, and key-file paths, not raw key
+material. It also registers tool-level `approval_mode = "approve"` for all
+three tools, so Codex's MCP permission layer does not add a second approval
+prompt around the Mobile Web runtime delegation/return gate. This keeps new
 Codex Profiles and new Codex Homes from losing the task-card toolset after a
 profile switch.
 

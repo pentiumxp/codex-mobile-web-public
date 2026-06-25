@@ -223,6 +223,36 @@ test("normalizeCreateRequest rejects replacement-character mojibake", () => {
   );
 });
 
+test("normalizeCreateRequest validates optional reasoning effort", () => {
+  assert.equal(normalizeCreateRequest({
+    sourceWorkspaceId: "codex",
+    sourceThreadId: "thread-src",
+    targetWorkspaceId: "audit",
+    targetThreadId: "thread-audit",
+    idempotencyKey: "reasoning:xhigh",
+    format: "markdown",
+    title: "Deep audit",
+    summary: "Run deep audit.",
+    body: "Body.",
+    reasoning_effort: "XHIGH",
+  }).reasoningEffort, "xhigh");
+  assert.throws(
+    () => normalizeCreateRequest({
+      sourceWorkspaceId: "codex",
+      sourceThreadId: "thread-src",
+      targetWorkspaceId: "audit",
+      targetThreadId: "thread-audit",
+      idempotencyKey: "reasoning:bad",
+      format: "markdown",
+      title: "Deep audit",
+      summary: "Run deep audit.",
+      body: "Body.",
+      reasoningEffort: "deepest",
+    }),
+    /reasoning_effort_invalid/,
+  );
+});
+
 test("approve runs injected execution and marks the card approved", async () => {
   const executions = [];
   const service = createThreadTaskCardService({
@@ -251,6 +281,49 @@ test("approve runs injected execution and marks the card approved", async () => 
   assert.equal(result.card.injectedTurnId, "turn-approved");
   assert.equal(executions.length, 1);
   assert.match(executions[0].message.text, /\[Cross-thread task card approved\]/);
+  assert.match(executions[0].message.text, /Task card id: ttc_/);
+  assert.match(executions[0].message.text, /Return required:/);
+});
+
+test("approve preserves requested reasoning effort in injected task-card metadata", async () => {
+  const executions = [];
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    executeApprovedCard: async (card, message) => {
+      executions.push({ card, message });
+      return {
+        threadId: card.target.threadId,
+        turnId: "turn-xhigh",
+        runtime: {
+          reasoningEffort: "xhigh",
+          requestedReasoningEffort: card.delivery.reasoningEffort,
+        },
+      };
+    },
+  });
+  const created = await service.create({
+    sourceWorkspaceId: "home-ai",
+    sourceThreadId: "thread-home",
+    sourceTurnId: "turn-home",
+    sourceThreadTitle: "Home AI",
+    targetWorkspaceId: "audit",
+    targetThreadId: "thread-audit",
+    idempotencyKey: "deep-audit:xhigh",
+    format: "markdown",
+    title: "Deep Product Reality audit",
+    summary: "Run a deep audit.",
+    body: "Audit this surface.",
+    reasoningEffort: "xhigh",
+  });
+
+  assert.equal(created.delivery.reasoningEffort, "xhigh");
+  const result = await service.approveFromSource(created.id, "thread-home");
+  assert.equal(result.card.status, "approved");
+  assert.equal(result.card.delivery.reasoningEffort, "xhigh");
+  assert.equal(result.card.injectionRuntime.reasoningEffort, "xhigh");
+  assert.equal(result.card.injectionRuntime.requestedReasoningEffort, "xhigh");
+  assert.equal(executions[0].card.delivery.reasoningEffort, "xhigh");
+  assert.match(executions[0].message.text, /Requested reasoning effort: xhigh/);
 });
 
 test("source-thread direct approval bypasses target pending approval with audit markers", async () => {
@@ -286,6 +359,8 @@ test("source-thread direct approval bypasses target pending approval with audit 
   assert.equal(executions.length, 1);
   assert.match(executions[0].message.text, /\[Cross-thread task card sent by source thread\]/);
   assert.match(executions[0].message.text, /target approval bypassed/);
+  assert.match(executions[0].message.text, /Task card id: ttc_/);
+  assert.match(executions[0].message.text, /codex_mobile\.return_to_source/);
 
   const retry = await service.approveFromSource(created.id, "thread-src");
   assert.equal(retry.alreadyApproved, true);
@@ -643,6 +718,121 @@ test("reply creates a reverse-direction pending card", async () => {
   assert.equal(result.replyCard.status, "pending");
   assert.equal(result.replyCard.source.threadId, "thread-dst");
   assert.equal(result.replyCard.target.threadId, "thread-src");
+});
+
+test("reply can return an approved implementation card and is idempotent", async () => {
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    executeApprovedCard: async (card) => ({ threadId: card.target.threadId, turnId: "turn-approved-return" }),
+  });
+  const created = await service.create({
+    sourceWorkspaceId: "home-ai",
+    sourceThreadId: "thread-home",
+    sourceTurnId: "turn-home",
+    sourceThreadTitle: "Home AI",
+    targetWorkspaceId: "note",
+    targetThreadId: "thread-note",
+    idempotencyKey: "home-ai:note:manual",
+    format: "markdown",
+    title: "Repair Note",
+    summary: "Repair and return.",
+    body: "Please repair this and return a card.",
+  });
+  const approved = await service.approveFromSource(created.id, "thread-home");
+  assert.equal(approved.card.status, "approved");
+  assert.equal(approved.card.canReply, false);
+  assert.equal(service.get(created.id, "thread-note").canReply, true);
+
+  const returned = await service.reply(created.id, "thread-note", {
+    idempotencyKey: "return:home-ai:note:manual",
+    format: "markdown",
+    title: "Return: Repair Note",
+    status: "completed",
+    summary: "completed",
+    body: "Completed and validated.",
+    sourceWorkspaceId: "note",
+    sourceThreadId: "thread-note",
+    sourceThreadTitle: "Note",
+  });
+  assert.equal(returned.card.status, "replied");
+  assert.equal(returned.replyCard.status, "approved");
+  assert.equal(returned.replyCard.source.threadId, "thread-note");
+  assert.equal(returned.replyCard.target.threadId, "thread-home");
+  assert.equal(returned.replyCard.delivery.returnToSource, true);
+  assert.equal(returned.replyCard.delivery.returnStatus, "completed");
+  assert.equal(returned.replyCard.injectedTurnId, "turn-approved-return");
+  assert.equal(returned.replyCard.canApprove, false);
+  assert.deepEqual(service.pendingCountsForThread("thread-home"), {
+    pendingTotal: 0,
+    pendingIncoming: 0,
+    pendingOutgoing: 0,
+  });
+
+  const duplicate = await service.reply(created.id, "thread-note", {
+    idempotencyKey: "return:home-ai:note:manual",
+    format: "markdown",
+    title: "Return: Repair Note",
+    status: "completed",
+    summary: "completed",
+    body: "Completed and validated.",
+  });
+  assert.equal(duplicate.replyCard.id, returned.replyCard.id);
+  assert.equal(duplicate.replyCard.status, "approved");
+  assert.equal(service.listForThread("thread-home").filter((card) => card.audit && card.audit.replyToCardId === created.id).length, 1);
+});
+
+test("return_to_source retry approves a previously pending reverse card", async () => {
+  const executions = [];
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    executeApprovedCard: async (card) => {
+      executions.push(card);
+      return { threadId: card.target.threadId, turnId: `turn-return-${executions.length}` };
+    },
+  });
+  const created = await service.create({
+    sourceWorkspaceId: "home-ai",
+    sourceThreadId: "thread-home",
+    sourceTurnId: "turn-home",
+    sourceThreadTitle: "Home AI",
+    targetWorkspaceId: "note",
+    targetThreadId: "thread-note",
+    idempotencyKey: "home-ai:note:old-return",
+    format: "markdown",
+    title: "Repair Note",
+    summary: "Repair and return.",
+    body: "Please repair this and return a card.",
+  });
+  await service.approveFromSource(created.id, "thread-home");
+
+  const pendingReply = await service.reply(created.id, "thread-note", {
+    idempotencyKey: "return:retry:old-pending",
+    format: "markdown",
+    title: "Return: Repair Note",
+    summary: "completed",
+    body: "Completed and validated.",
+  });
+  assert.equal(pendingReply.replyCard.status, "pending");
+  assert.equal(executions.length, 1);
+
+  const returned = await service.reply(created.id, "thread-note", {
+    idempotencyKey: "return:retry:old-pending",
+    format: "markdown",
+    title: "Return: Repair Note",
+    status: "completed",
+    summary: "completed",
+    body: "Completed and validated.",
+  });
+  assert.equal(returned.replyCard.id, pendingReply.replyCard.id);
+  assert.equal(returned.replyCard.status, "approved");
+  assert.equal(returned.replyCard.delivery.returnToSource, true);
+  assert.equal(returned.replyCard.delivery.returnStatus, "completed");
+  assert.equal(returned.replyCard.injectedTurnId, "turn-return-2");
+  assert.deepEqual(service.pendingCountsForThread("thread-home"), {
+    pendingTotal: 0,
+    pendingIncoming: 0,
+    pendingOutgoing: 0,
+  });
 });
 
 test("reply rejects likely encoding-damaged text without settling the original card", async () => {

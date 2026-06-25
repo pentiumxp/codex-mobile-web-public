@@ -35,6 +35,7 @@
     patch: true,
     skipped: true,
   });
+  const MAX_COUNT = 100000;
 
   function threadDetailTimings(thread) {
     const diagnostics = objectOrNull(thread && thread.mobileDiagnostics);
@@ -61,6 +62,7 @@
     return {
       serverTimings: timings,
       performancePhase: timings && timings.phase || "unknown",
+      detailShape: threadDetailShape(thread),
     };
   }
 
@@ -96,6 +98,76 @@
     return fields;
   }
 
+  function boundedCount(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number < 0) return 0;
+    return Math.min(MAX_COUNT, Math.trunc(number));
+  }
+
+  function itemType(value) {
+    return String(value && value.type || "").trim();
+  }
+
+  function isVisibleItem(item) {
+    if (!item || typeof item !== "object") return false;
+    if (item.hidden || item.mobileHidden) return false;
+    const type = itemType(item);
+    if (!type || type === "reasoning") return false;
+    if (typeof item.text === "string" && item.text.trim()) return true;
+    if (Array.isArray(item.content) && item.content.length) return true;
+    if (Array.isArray(item.summary) && item.summary.length) return true;
+    if (type === "imageView" || type === "generatedImage" || type === "fileChange" || type === "commandExecution") return true;
+    if (type === "turnUsageSummary" || type === "taskCard" || type === "toolCall") return true;
+    return false;
+  }
+
+  function itemShapeBucket(item) {
+    const type = itemType(item);
+    if (type === "userMessage") return "userItems";
+    if (type === "agentMessage" || type === "plan") return "receiptItems";
+    if (type === "imageView" || type === "generatedImage") return "imageItems";
+    if (type === "commandExecution" || type === "fileChange" || type === "toolCall") return "operationItems";
+    if (type === "turnUsageSummary") return "usageItems";
+    if (type === "turnDiagnostic") return "diagnosticItems";
+    return "";
+  }
+
+  function turnIsComplete(turn) {
+    const text = String(turn && (turn.status && turn.status.type || turn.status) || "").toLowerCase();
+    return /completed|success|succeeded|done|finished|failed|error|cancel|cancelled|canceled|interrupted/.test(text);
+  }
+
+  function threadDetailShape(thread) {
+    const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+    const shape = {
+      turns: boundedCount(turns.length),
+      omittedTurns: boundedCount(thread && thread.mobileOmittedTurnCount),
+      items: 0,
+      visibleItems: 0,
+      userItems: 0,
+      receiptItems: 0,
+      imageItems: 0,
+      operationItems: 0,
+      usageItems: 0,
+      diagnosticItems: 0,
+      completedTurns: 0,
+      activeTurns: 0,
+    };
+    for (const turn of turns) {
+      if (turnIsComplete(turn)) shape.completedTurns += 1;
+      else shape.activeTurns += 1;
+      const items = Array.isArray(turn && turn.items) ? turn.items : [];
+      shape.items += items.length;
+      for (const item of items) {
+        if (isVisibleItem(item)) shape.visibleItems += 1;
+        const bucket = itemShapeBucket(item);
+        if (bucket) shape[bucket] += 1;
+      }
+    }
+    for (const key of Object.keys(shape)) shape[key] = boundedCount(shape[key]);
+    return shape;
+  }
+
   function threadListEventFields(result) {
     const timings = threadListTimings(result);
     return {
@@ -110,6 +182,7 @@
     threadDetailClientTimings,
     threadDetailEventFields,
     threadDetailEventFieldsWithClient,
+    threadDetailShape,
     threadDetailTimings,
     threadListEventFields,
     threadListTimings,

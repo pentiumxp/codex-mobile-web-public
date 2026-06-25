@@ -53,10 +53,15 @@ AI, not independently by Codex Mobile:
 
 ### Phase 1: Evidence And Boundary Cleanup
 
-Status: in progress.
+Status: in progress. The latest slice adds bounded `detailShape` counts to
+thread-detail performance events, so large-session investigations can compare
+server phase timings with client render/merge timings and visible item shape
+without collecting message bodies or file contents.
 
 - Keep large-session timing evidence in `mobileDiagnostics.threadDetailTimings`
-  and client `performancePhase` events.
+  and client `performancePhase` events. Client events now also carry
+  `detailShape` counts for turns, items, visible items, image items, operation
+  items, receipt items, usage items, diagnostics, and completed/active turns.
 - Move deterministic completed-turn diagnostics out of `server.js` into a
   service module.
 - Preserve the rule that explicit empty final assistant messages produce
@@ -66,9 +71,14 @@ Status: in progress.
 ### Phase 2: Frontend State Ownership
 
 Status: in progress. The first slices extract item visible-field merge policy,
-visible-text render identity / completed-receipt retention, and local-only item
-retention/drop policy to `public/thread-detail-state.js`; broader thread detail
-merge orchestration and DOM patching remain in `public/app.js`.
+visible-text render identity / completed-receipt retention, local-only item
+retention/drop policy, and live-to-completed same-turn visible-item preservation
+to `public/thread-detail-state.js`. The refresh render-mode decision now lives
+in `public/thread-detail-render-plan.js`: it decides metadata-only versus local
+patch versus full render from previous/next/rendered conversation signatures,
+and prevents local patch attempts when the currently rendered DOM signature is
+already stale. Broader thread detail merge orchestration and DOM patching remain
+in `public/app.js`.
 
 Target:
 
@@ -139,14 +149,25 @@ Target:
   split-screen reader where the user can add panes, close panes, drag widths,
   decide how many threads stay visible, and type into each pane through a
   pane-local composer.
-- Current interim state: v424 persists `单线程` / `平铺`, ordered pane thread ids,
+- Current interim state: v427 persists `单线程` / `平铺`, ordered pane thread ids,
   selected pane thread id, and desired pane count in server runtime
-  `settings.json` `threadDisplay`. Device width decides maximum capacity only;
-  `paneCount=0` keeps an automatic current/running-thread-based count, and
-  the pane title menu lets the user expand or close visible panes without
-  reordering unrelated slots. When the user explicitly opens a non-visible
-  thread from the outer thread list, the last visible pane is replaced and that
-  slot order is saved; background recent ordering still cannot move fixed panes.
+  `settings.json` `threadDisplay`. Device width decides the automatic
+  recommended capacity only; `paneCount=0` keeps an automatic
+  current/running-thread-based count, and the pane title menu lets the user
+  expand or close visible panes without reordering unrelated slots. Explicit
+  user-added panes can exceed the recommended viewport capacity. Layout uses
+  browser CSS viewport width, not display physical pixels; automatic mode keeps
+  the wider default pane width, while manual mode derives pane width from the
+  requested pane count and current available CSS width. Wide desktop screens
+  keep five or six requested panes in one row when the CSS width allows it;
+  after the requested pane count exceeds physical column capacity, overflow panes
+  are packed into existing columns as local up/down splits instead of creating a
+  sparse second full row. v431 adds persisted `paneSplitPairs`: dragging a pane
+  title onto another pane can either move the pane before/after the target or
+  pair the two panes into one vertical split column. When the user explicitly
+  opens a non-visible thread from the outer thread list, the last visible pane is
+  replaced and that slot order is saved; background recent ordering still cannot
+  move fixed panes.
 - Keep the current automatic tile policy as the interim capability gate for
   iPad/desktop width, not as the final interaction model. Manual pane count is
   now the owner of "how many windows should be visible" until draggable split

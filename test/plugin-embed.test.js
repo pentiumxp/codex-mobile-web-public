@@ -23,6 +23,98 @@ test("detects Hermes embed mode, launch parameters, and host appearance", () => 
   });
 });
 
+test("plans Hermes notification route-hint open and focus flows", () => {
+  const threadOnly = pluginEmbed.routeHintOpenPlan({
+    pluginId: "codex-mobile",
+    route: "thread",
+    threadId: "thread-123",
+  });
+  assert.equal(threadOnly.action, "openThread");
+  assert.equal(threadOnly.threadId, "thread-123");
+  assert.equal(threadOnly.targetId, "");
+  assert.equal(threadOnly.pendingHint, null);
+  assert.equal(threadOnly.statusMessage, "Opening notification thread");
+
+  const taskTarget = pluginEmbed.routeHintOpenPlan({
+    pluginId: "codex-mobile",
+    route: "thread-task-card",
+    threadId: "thread-123",
+    taskId: "ttc_123",
+  });
+  assert.equal(taskTarget.action, "openThread");
+  assert.equal(taskTarget.threadId, "thread-123");
+  assert.equal(taskTarget.targetId, "ttc_123");
+  assert.deepEqual(taskTarget.pendingHint, {
+    pluginId: "codex-mobile",
+    route: "thread-task-card",
+    itemId: "",
+    threadId: "thread-123",
+    taskId: "ttc_123",
+  });
+  assert.equal(taskTarget.statusMessage, "Opening notification target");
+
+  assert.deepEqual(pluginEmbed.routeHintOpenPlan({
+    pluginId: "codex-mobile",
+    route: "thread-task-card",
+    taskId: "ttc_123",
+  }), {
+    action: "primary",
+    diagnostic: { message: "Notification thread is unavailable", error: true },
+  });
+
+  assert.deepEqual(pluginEmbed.routeHintFocusPlan(taskTarget.pendingHint, {
+    currentThreadId: "thread-123",
+    targetFound: true,
+  }), {
+    action: "focused",
+    diagnostic: { message: "Opened notification target", error: false },
+  });
+
+  assert.deepEqual(pluginEmbed.routeHintFocusPlan(taskTarget.pendingHint, {
+    currentThreadId: "thread-123",
+    targetFound: false,
+  }), {
+    action: "primary",
+    diagnostic: { message: "Notification target is no longer available", error: true },
+  });
+});
+
+test("locates Hermes route-hint targets through bounded DOM selectors", () => {
+  const visited = [];
+  const target = {
+    scrollIntoView() {},
+  };
+  const root = {
+    querySelector(selector) {
+      visited.push(selector);
+      return selector === '[data-task-card="ttc_123"]' ? target : null;
+    },
+  };
+
+  assert.equal(pluginEmbed.findRouteHintTargetNode(root, {
+    pluginId: "codex-mobile",
+    threadId: "thread-123",
+    taskId: "ttc_123",
+  }), target);
+  assert.deepEqual(visited, [
+    '[data-approval-card="ttc_123"]',
+    '[data-task-card="ttc_123"]',
+  ]);
+});
+
+test("scrubs Hermes route-hint URLs to the embedded plugin root", () => {
+  const scrubbed = pluginEmbed.scrubRouteHintPath(
+    "https://codex.example.test/?embed=hermes&codexPluginLaunch=cpl_secret&pluginRoute=thread-task-card&pluginThreadId=thread-123&pluginTaskId=ttc_123&pluginItemId=item-1&workspaceId=old&pluginTheme=dark",
+    {
+      workspaceId: "owner",
+      appearance: { theme: "light", fontSize: "xlarge" },
+    },
+  );
+
+  assert.equal(scrubbed, "/?embed=hermes&workspaceId=owner&pluginTheme=light&pluginFontSize=xlarge");
+  assert.doesNotMatch(scrubbed, /pluginRoute|pluginThreadId|pluginTaskId|pluginItemId|codexPluginLaunch|cpl_secret/);
+});
+
 test("ignores unsupported Hermes plugin appearance values", () => {
   const detected = pluginEmbed.detect("https://codex.example.test/?embed=hermes&pluginTheme=javascript:alert(1)&pluginFontSize=huge");
   assert.equal(detected.embedded, true);

@@ -11,11 +11,18 @@ function initialPluginLaunchKeyFromUrl() {
 
 const pluginEmbedApi = window.CodexPluginEmbed || {
   detect: () => ({ embedded: false, launchKey: initialPluginLaunchKeyFromUrl(), workspaceId: "", routeHint: null, appearance: {} }),
+  findRouteHintTargetNode: () => null,
   isBackMessage: () => false,
   navigationMessage: () => null,
+  normalizeRouteHint: () => null,
   parentOriginFromReferrer: () => "",
   postBackResult: () => null,
   postNavigation: () => null,
+  routeHintFocusPlan: () => ({ action: "ignore" }),
+  routeHintFromUrl: () => null,
+  routeHintOpenPlan: () => ({ action: "ignore" }),
+  routeHintTargetId: () => "",
+  scrubRouteHintPath: () => "",
 };
 const pluginVoiceInputApi = window.CodexPluginVoiceInput || {
   MAX_TEXT_CHARS: 12000,
@@ -84,6 +91,10 @@ const threadDetailStateApi = window.CodexThreadDetailState;
 if (!threadDetailStateApi) {
   throw new Error("CodexThreadDetailState policy script failed to load");
 }
+const threadDetailRenderPlanApi = window.CodexThreadDetailRenderPlan;
+if (!threadDetailRenderPlanApi) {
+  throw new Error("CodexThreadDetailRenderPlan script failed to load");
+}
 const threadTileLayoutPolicy = window.CodexThreadTileLayout;
 if (!threadTileLayoutPolicy) {
   throw new Error("CodexThreadTileLayout policy script failed to load");
@@ -151,6 +162,8 @@ const state = {
   threadTileLoadedAtById: new Map(),
   threadTileActiveIds: [],
   threadTilePinnedIds: [],
+  threadTileSplitPairs: [],
+  threadTileDraggingThreadId: "",
   threadTilePaneCount: 0,
   threadTileSelectedThreadId: "",
   threadTileSwitchMenuPaneId: "",
@@ -456,7 +469,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v424";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v434";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -507,6 +520,7 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/thread-performance-metrics.js",
   "/live-operation-dock-state.js",
   "/thread-detail-state.js",
+  "/thread-detail-render-plan.js",
   "/thread-tile-layout.js",
   "/build-refresh-policy.js",
   "/app.js",
@@ -629,6 +643,9 @@ const THREAD_TASK_CARD_DRAFT_TAG = "codex-mobile-thread-task-card-draft";
 const THREAD_TILE_REFRESH_INTERVAL_MS = 2400;
 const THREAD_TILE_REFRESH_MIN_INTERVAL_MS = 1100;
 const THREAD_TILE_SETTINGS_SAVE_DEBOUNCE_MS = 500;
+const THREAD_TILE_USER_MAX_PANES = Math.max(1, Math.floor(Number(
+  threadTileLayoutPolicy.DEFAULT_USER_MAX_PANES || threadTileLayoutPolicy.DEFAULT_MAX_PANES || 6,
+)) || 6);
 const THEME_VALUES = new Set(["system", "dark", "light"]);
 const FONT_SIZE_VALUES = new Set(["small", "default", "large", "xlarge", "xxlarge"]);
 const MENU_OVERLAY_MEDIA = "(max-width: 1180px), (pointer: coarse) and (max-width: 1400px)";
@@ -5904,11 +5921,7 @@ function mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) {
 }
 
 function shouldPreserveLiveTurnLocalVisibleItems(existingTurn, incomingTurn, existingWeight = null) {
-  if (!existingTurn || !incomingTurn) return false;
-  if (String(existingTurn.id || "") !== String(incomingTurn.id || "")) return false;
-  if (isTurnComplete(existingTurn) || isTurnComplete(incomingTurn)) return false;
-  const weight = existingWeight == null ? turnVisibleWeight(existingTurn) : Number(existingWeight || 0);
-  return weight > 0;
+  return threadDetailStatePolicy.shouldPreserveExistingTurnVisibleItems(existingTurn, incomingTurn, existingWeight);
 }
 
 function mergeThreadPreservingVisibleItems(existingThread, incomingThread) {
@@ -7468,15 +7481,11 @@ function renderPluginRefreshPendingNotice(previousKeys = new Set()) {
 function scrubPluginLaunchUrl() {
   if (!isHermesEmbedMode()) return;
   try {
-    const url = new URL(window.location.href, window.location.origin);
-    url.searchParams.set("embed", "hermes");
-    url.searchParams.delete("codexPluginLaunch");
-    url.searchParams.delete("pluginLaunch");
-    if (state.pluginEmbed.workspaceId) url.searchParams.set("workspaceId", state.pluginEmbed.workspaceId);
-    const appearance = currentPluginAppearanceForHost();
-    if (appearance && appearance.theme) url.searchParams.set("pluginTheme", appearance.theme);
-    if (appearance && appearance.fontSize) url.searchParams.set("pluginFontSize", appearance.fontSize);
-    window.history.replaceState({}, "", `${url.pathname || "/"}?${url.searchParams.toString()}${url.hash || ""}`);
+    const scrubbed = pluginEmbedApi.scrubRouteHintPath(window.location.href, {
+      workspaceId: state.pluginEmbed.workspaceId,
+      appearance: currentPluginAppearanceForHost(),
+    });
+    if (scrubbed) window.history.replaceState({}, "", scrubbed);
   } catch (_) {
     // URL scrubbing is best-effort; auth state is already held in memory.
   }
@@ -7484,9 +7493,9 @@ function scrubPluginLaunchUrl() {
 
 function pluginRootPath() {
   if (!isHermesEmbedMode()) return window.location.pathname || "/";
-  const params = new URLSearchParams({ embed: "hermes" });
-  if (state.pluginEmbed && state.pluginEmbed.workspaceId) params.set("workspaceId", state.pluginEmbed.workspaceId);
-  return `/?${params.toString()}`;
+  return pluginEmbedApi.scrubRouteHintPath("/", {
+    workspaceId: state.pluginEmbed && state.pluginEmbed.workspaceId,
+  }) || "/?embed=hermes";
 }
 
 function showPluginEmbedAuthError(message = "") {
@@ -7769,37 +7778,19 @@ function threadIdFromUrlValue(value) {
 }
 
 function normalizePluginRouteHint(value) {
-  if (!value || typeof value !== "object") return null;
-  const pluginId = String(value.pluginId || "").trim().slice(0, 80);
-  const route = String(value.route || "").trim().slice(0, 80);
-  const itemId = String(value.itemId || "").trim().slice(0, 160);
-  const threadId = String(value.threadId || "").trim().slice(0, 160);
-  const taskId = String(value.taskId || "").trim().slice(0, 160);
-  if (!(pluginId || route || itemId || threadId || taskId)) return null;
-  return { pluginId, route, itemId, threadId, taskId };
+  return pluginEmbedApi.normalizeRouteHint(value);
 }
 
 function pluginRouteHintFromUrl(value) {
   try {
-    const detected = pluginEmbedApi.detect ? pluginEmbedApi.detect(value || window.location.href) : null;
-    const normalized = normalizePluginRouteHint(detected && detected.routeHint);
-    if (normalized) return normalized;
-    const url = new URL(value || window.location.href, window.location.origin);
-    return normalizePluginRouteHint({
-      pluginId: url.searchParams.get("pluginId"),
-      route: url.searchParams.get("pluginRoute"),
-      itemId: url.searchParams.get("pluginItemId"),
-      threadId: url.searchParams.get("pluginThreadId"),
-      taskId: url.searchParams.get("pluginTaskId"),
-    });
+    return pluginEmbedApi.routeHintFromUrl(value || window.location.href);
   } catch (_) {
     return null;
   }
 }
 
 function pluginRouteHintTargetId(hint) {
-  if (!hint) return "";
-  return String(hint.taskId || hint.itemId || "").trim();
+  return pluginEmbedApi.routeHintTargetId(hint);
 }
 
 function setPluginRouteDiagnostic(message, options = {}) {
@@ -7818,14 +7809,9 @@ function clearThreadUrl() {
 }
 
 function findPluginRouteTargetNode(hint) {
-  const targetId = pluginRouteHintTargetId(hint);
-  if (!targetId) return null;
   const conversation = $("conversation");
   if (!conversation) return null;
-  return conversation.querySelector(`[data-approval-card="${escapeSelectorAttr(targetId)}"]`)
-    || conversation.querySelector(`[data-task-card="${escapeSelectorAttr(targetId)}"]`)
-    || conversation.querySelector(`[data-turn="${escapeSelectorAttr(targetId)}"]`)
-    || conversation.querySelector(`[data-item="${escapeSelectorAttr(targetId)}"]`);
+  return pluginEmbedApi.findRouteHintTargetNode(conversation, hint, { escapeSelector: escapeSelectorAttr });
 }
 
 function focusPluginRouteTargetNode(hint) {
@@ -7842,22 +7828,25 @@ function focusPluginRouteTargetNode(hint) {
 function applyPendingPluginRouteHintFocus() {
   const hint = normalizePluginRouteHint(state.pendingPluginRouteHint);
   if (!hint) return false;
-  const threadId = String(state.currentThreadId || "").trim();
-  if (!threadId || hint.threadId !== threadId) return false;
-  const targetId = pluginRouteHintTargetId(hint);
-  if (!targetId) {
+  const node = findPluginRouteTargetNode(hint);
+  const plan = pluginEmbedApi.routeHintFocusPlan(hint, {
+    currentThreadId: state.currentThreadId,
+    targetFound: Boolean(node),
+  });
+  if (!plan || plan.action === "ignore" || plan.action === "wait") return false;
+  if (plan.action === "clear") {
     state.pendingPluginRouteHint = null;
     return false;
   }
-  const focused = focusPluginRouteTargetNode(hint);
-  if (focused) {
+  if (plan.action === "focused") {
+    focusPluginRouteTargetNode(hint);
     state.pendingPluginRouteHint = null;
-    setPluginRouteDiagnostic("Opened notification target", { error: false });
+    if (plan.diagnostic) setPluginRouteDiagnostic(plan.diagnostic.message, { error: plan.diagnostic.error });
     return true;
   }
   state.pendingPluginRouteHint = null;
   showHermesPluginPrimaryPage();
-  setPluginRouteDiagnostic("Notification target is no longer available", { error: true });
+  if (plan.diagnostic) setPluginRouteDiagnostic(plan.diagnostic.message, { error: plan.diagnostic.error });
   return false;
 }
 
@@ -7880,30 +7869,21 @@ async function openExternalThreadSelection(threadId, options = {}) {
 }
 
 async function openHermesPluginRouteHint(hint) {
-  const normalized = normalizePluginRouteHint(hint);
-  if (!normalized || normalized.pluginId !== "codex-mobile") return false;
+  const plan = pluginEmbedApi.routeHintOpenPlan(hint);
+  if (!plan || plan.action === "ignore") return false;
   state.queuedPluginRouteHint = null;
   clearThreadUrl();
-  const threadId = String(normalized.threadId || "").trim();
-  const targetId = pluginRouteHintTargetId(normalized);
-  if (!threadId && !targetId) {
-    if (normalized.route && normalized.route !== "root") {
-      setPluginRouteDiagnostic("Notification target is unavailable", { error: true });
-    }
+  if (plan.action === "primary") {
+    if (plan.diagnostic) setPluginRouteDiagnostic(plan.diagnostic.message, { error: plan.diagnostic.error });
     showHermesPluginPrimaryPage();
-    return true;
-  }
-  if (!threadId) {
-    showHermesPluginPrimaryPage();
-    setPluginRouteDiagnostic("Notification thread is unavailable", { error: true });
     return true;
   }
   try {
-    state.pendingPluginRouteHint = targetId ? normalized : null;
-    await openExternalThreadSelection(threadId, {
-      statusMessage: targetId ? "Opening notification target" : "Opening notification thread",
+    state.pendingPluginRouteHint = plan.pendingHint || null;
+    await openExternalThreadSelection(plan.threadId, {
+      statusMessage: plan.statusMessage,
     });
-    if (!targetId) {
+    if (!plan.targetId) {
       setPluginRouteDiagnostic("Opened notification thread", { error: false });
     } else {
       applyPendingPluginRouteHintFocus();
@@ -7912,7 +7892,7 @@ async function openHermesPluginRouteHint(hint) {
   } catch (error) {
     state.pendingPluginRouteHint = null;
     showHermesPluginPrimaryPage();
-    setPluginRouteDiagnostic(targetId ? "Notification target is unavailable" : "Notification thread is unavailable", {
+    setPluginRouteDiagnostic(plan.targetId ? "Notification target is unavailable" : "Notification thread is unavailable", {
       error: true,
     });
     return true;
@@ -8414,6 +8394,7 @@ async function loadThread(threadId, options = {}) {
         ? "warm-client-current"
         : detailPerformance.performancePhase,
       clientTimings: detailPerformance.clientTimings,
+      detailShape: detailPerformance.detailShape,
       cached: true,
       readMode: state.currentThread && state.currentThread.mobileReadMode || "",
       turns: Array.isArray(state.currentThread && state.currentThread.turns) ? state.currentThread.turns.length : 0,
@@ -8566,6 +8547,7 @@ async function loadThread(threadId, options = {}) {
     serverTimings: detailPerformance.serverTimings,
     performancePhase: detailPerformance.performancePhase,
     clientTimings: detailPerformance.clientTimings,
+    detailShape: detailPerformance.detailShape,
     cached: false,
     readMode: result.thread && result.thread.mobileReadMode || "",
     status: statusText(result.thread && result.thread.status),
@@ -8675,8 +8657,12 @@ async function refreshCurrentThread(options = {}) {
   const previousConversationSignature = conversationRenderSignature(state.currentThread);
   state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
   const nextConversationSignature = conversationRenderSignature(state.currentThread);
-  const shouldRenderDetail = previousConversationSignature !== nextConversationSignature
-    || state.renderedConversationSignature !== nextConversationSignature;
+  const renderPlan = threadDetailRenderPlanApi.planThreadDetailRefreshRender({
+    previousConversationSignature,
+    nextConversationSignature,
+    renderedConversationSignature: state.renderedConversationSignature,
+  });
+  const shouldRenderDetail = renderPlan.shouldRenderDetail;
   mergeThreadIntoThreadList(state.currentThread);
   const mergeMs = roundedDurationMs(mergeStartedAt);
   const composerRenderStartedAt = nowPerfMs();
@@ -8690,13 +8676,15 @@ async function refreshCurrentThread(options = {}) {
   let conversationRenderMs = 0;
   let detailPatchMs = 0;
   let metadataUpdateMs = 0;
-  let detailRenderMode = shouldRenderDetail ? "full-render" : "metadata-only";
+  let detailRenderMode = renderPlan.detailRenderMode;
   if (shouldRenderDetail) {
-    const patchStartedAt = nowPerfMs();
-    locallyPatchedDetail = patchCurrentThreadDetailFromRefresh(previousThread, state.currentThread, previousConversationSignature);
-    detailPatchMs = roundedDurationMs(patchStartedAt);
+    if (renderPlan.canPatch) {
+      const patchStartedAt = nowPerfMs();
+      locallyPatchedDetail = patchCurrentThreadDetailFromRefresh(previousThread, state.currentThread, previousConversationSignature);
+      detailPatchMs = roundedDurationMs(patchStartedAt);
+    }
+    detailRenderMode = threadDetailRenderPlanApi.finalizeThreadDetailRenderPlan(renderPlan, { locallyPatchedDetail }).detailRenderMode;
     if (locallyPatchedDetail) {
-      detailRenderMode = "patch";
       const metadataStartedAt = nowPerfMs();
       updateCurrentThreadHeader(state.currentThread);
       updateTickTimer();
@@ -8742,6 +8730,7 @@ async function refreshCurrentThread(options = {}) {
     serverTimings: detailPerformance.serverTimings,
     performancePhase: detailPerformance.performancePhase,
     clientTimings: detailPerformance.clientTimings,
+    detailShape: detailPerformance.detailShape,
     status: statusText(result.thread && result.thread.status),
     turns: Array.isArray(result.thread && result.thread.turns) ? result.thread.turns.length : 0,
     omittedTurns: Number(result.thread && result.thread.mobileOmittedTurnCount || 0),
@@ -8850,6 +8839,7 @@ async function backfillFullThreadDetail(threadId, options = {}) {
     serverTimings: detailPerformance.serverTimings,
     performancePhase: detailPerformance.performancePhase,
     clientTimings: detailPerformance.clientTimings,
+    detailShape: detailPerformance.detailShape,
     readMode: result.thread && result.thread.mobileReadMode || "",
     turns: Array.isArray(result.thread && result.thread.turns) ? result.thread.turns.length : 0,
     omittedTurns: Number(result.thread && result.thread.mobileOmittedTurnCount || 0),
@@ -11312,7 +11302,9 @@ function threadTileLayout(options = {}) {
     sidebarWidth,
     coarsePointer: isCoarsePointerViewport(),
     menuOverlay,
-    maxPanes: threadTileLayoutPolicy.DEFAULT_MAX_PANES,
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+    recommendedMaxPanes: threadTileLayoutPolicy.DEFAULT_MAX_PANES,
+    desiredPaneCount: normalizeThreadTilePaneCount(state.threadTilePaneCount, 0),
     verticalChromePx: threadTileVerticalChromePx(),
   });
 }
@@ -11320,19 +11312,19 @@ function threadTileLayout(options = {}) {
 function normalizeThreadTilePaneCount(value, fallback = 0) {
   const parsed = Math.floor(Number(value));
   if (!Number.isFinite(parsed)) return fallback;
-  return Math.max(0, Math.min(threadTileLayoutPolicy.DEFAULT_MAX_PANES, parsed));
+  return Math.max(0, Math.min(THREAD_TILE_USER_MAX_PANES, parsed));
 }
 
 function threadTileLayoutCapacity(layout = threadTileLayout()) {
   return Math.max(1, Math.min(
     threadTileLayoutPolicy.DEFAULT_MAX_PANES,
-    Math.floor(Number(layout && layout.maxPanes || 1)) || 1,
+    Math.floor(Number(layout && (layout.recommendedMaxPanes || layout.maxPanes) || 1)) || 1,
   ));
 }
 
 function defaultThreadTileCandidateIds(layout = threadTileLayout(), options = {}) {
   const maxPanes = Math.max(1, Math.min(
-    threadTileLayoutPolicy.DEFAULT_MAX_PANES,
+    THREAD_TILE_USER_MAX_PANES,
     Math.floor(Number(options.maxPanes || layout && layout.maxPanes || 1)) || 1,
   ));
   const threadIds = visibleThreads(state.threads).map((thread) => thread && thread.id).filter(Boolean);
@@ -11361,7 +11353,10 @@ function autoThreadTilePaneCount(layout = threadTileLayout()) {
 function effectiveThreadTilePaneCount(layout = threadTileLayout()) {
   const capacity = threadTileLayoutCapacity(layout);
   const explicit = normalizeThreadTilePaneCount(state.threadTilePaneCount, 0);
-  const desired = explicit > 0 ? explicit : autoThreadTilePaneCount(layout);
+  if (explicit > 0) {
+    return Math.max(1, Math.min(threadTileMaximumPaneCount(layout), explicit));
+  }
+  const desired = autoThreadTilePaneCount(layout);
   const candidateCount = defaultThreadTileCandidateIds(layout, { maxPanes: capacity }).length || 1;
   return Math.max(1, Math.min(capacity, candidateCount, desired));
 }
@@ -11370,11 +11365,19 @@ function threadTileDisplayLayout(layout = threadTileLayout(), ids = []) {
   const count = Math.max(1, Array.isArray(ids) && ids.length ? ids.length : effectiveThreadTilePaneCount(layout));
   const capacityColumns = Math.max(1, Math.floor(Number(layout && layout.columns || 1)) || 1);
   const columns = Math.max(1, Math.min(capacityColumns, count));
+  const columnGroups = threadTileLayoutPolicy.threadTileColumnGroups
+    ? threadTileLayoutPolicy.threadTileColumnGroups({
+      ids,
+      columns,
+      splitPairs: threadTilePrunedSplitPairs(ids),
+    })
+    : (ids || []).slice(0, count).map((id) => [id]);
   return Object.assign({}, layout, {
     capacityPanes: threadTileLayoutCapacity(layout),
     visiblePanes: count,
-    columns,
-    rows: Math.max(1, Math.ceil(count / columns)),
+    columns: Math.max(1, columnGroups.length || columns),
+    rows: Math.max(1, ...columnGroups.map((group) => group.length || 1)),
+    columnGroups,
   });
 }
 
@@ -11386,9 +11389,47 @@ function normalizeThreadTilePinnedIds(values = []) {
     if (!id || seen.has(id)) continue;
     seen.add(id);
     ids.push(id);
-    if (ids.length >= threadTileLayoutPolicy.DEFAULT_MAX_PANES * 2) break;
+    if (ids.length >= THREAD_TILE_USER_MAX_PANES * 2) break;
   }
   return ids;
+}
+
+function normalizeThreadTileSplitPairs(values = [], ids = []) {
+  const visibleSet = new Set((ids || []).map((id) => String(id || "").trim()).filter(Boolean));
+  const normalized = threadTileLayoutPolicy.normalizeSplitPairs
+    ? threadTileLayoutPolicy.normalizeSplitPairs(values, Array.from(visibleSet))
+    : [];
+  return normalized.map((pair) => ({
+    anchorId: String(pair.anchorId || ""),
+    childId: String(pair.childId || ""),
+  })).filter((pair) => pair.anchorId && pair.childId);
+}
+
+function threadTilePrunedSplitPairs(ids = threadTileCandidateIds()) {
+  return normalizeThreadTileSplitPairs(state.threadTileSplitPairs, ids);
+}
+
+function removeThreadTileSplitPairsForIds(ids = []) {
+  const remove = new Set((ids || []).map((id) => String(id || "")).filter(Boolean));
+  if (!remove.size) return false;
+  const next = (state.threadTileSplitPairs || []).filter((pair) => (
+    pair && !remove.has(String(pair.anchorId || "")) && !remove.has(String(pair.childId || ""))
+  ));
+  const changed = JSON.stringify(next) !== JSON.stringify(state.threadTileSplitPairs || []);
+  if (changed) state.threadTileSplitPairs = next;
+  return changed;
+}
+
+function setThreadTileSplitPair(anchorId, childId) {
+  const anchor = String(anchorId || "").trim();
+  const child = String(childId || "").trim();
+  if (!anchor || !child || anchor === child) return false;
+  const next = (state.threadTileSplitPairs || []).filter((pair) => (
+    pair && ![anchor, child].includes(String(pair.anchorId || "")) && ![anchor, child].includes(String(pair.childId || ""))
+  ));
+  next.unshift({ anchorId: anchor, childId: child });
+  state.threadTileSplitPairs = normalizeThreadTileSplitPairs(next, threadTileCandidateIds());
+  return true;
 }
 
 function threadTileVisibleIdSet() {
@@ -11414,10 +11455,12 @@ function threadTileCandidateIds(layout = threadTileLayout()) {
 }
 
 function threadDisplaySettingsPayload() {
+  const paneThreadIds = normalizeThreadTilePinnedIds(state.threadTilePinnedIds);
   return {
     displayMode: state.threadTileMode ? "tile" : "single",
-    paneThreadIds: normalizeThreadTilePinnedIds(state.threadTilePinnedIds),
+    paneThreadIds,
     paneCount: normalizeThreadTilePaneCount(state.threadTilePaneCount, 0),
+    paneSplitPairs: normalizeThreadTileSplitPairs(state.threadTileSplitPairs, paneThreadIds),
     selectedThreadId: String(state.threadTileSelectedThreadId || ""),
   };
 }
@@ -11447,6 +11490,7 @@ function applyThreadDisplaySettings(settings = {}, options = {}) {
     : "single";
   state.threadTileMode = displayMode === "tile";
   state.threadTilePinnedIds = normalizeThreadTilePinnedIds(settings.paneThreadIds || settings.threadTilePinnedIds || []);
+  state.threadTileSplitPairs = normalizeThreadTileSplitPairs(settings.paneSplitPairs || settings.threadTileSplitPairs || settings.splitPairs || [], state.threadTilePinnedIds);
   const paneCountInput = Object.prototype.hasOwnProperty.call(settings, "paneCount")
     ? settings.paneCount
     : Object.prototype.hasOwnProperty.call(settings, "threadTilePaneCount")
@@ -11517,6 +11561,7 @@ function syncThreadTilePinnedIdsFromActiveIds(activeIds = []) {
   const remaining = normalizeThreadTilePinnedIds(state.threadTilePinnedIds)
     .filter((id) => !ids.includes(id));
   state.threadTilePinnedIds = normalizeThreadTilePinnedIds([...ids, ...remaining]);
+  state.threadTileSplitPairs = normalizeThreadTileSplitPairs(state.threadTileSplitPairs, state.threadTilePinnedIds);
   scheduleThreadDisplaySettingsSave();
   return true;
 }
@@ -11583,13 +11628,12 @@ function renderThreadTileSwitchMenu(currentId) {
   const count = activeIds.length || effectiveThreadTilePaneCount(layout);
   const minCount = threadTileMinimumPaneCount(layout);
   const maxCount = threadTileMaximumPaneCount(layout);
-  const capacity = threadTileLayoutCapacity(layout);
   const canClose = activeIds.includes(current) && count > minCount;
   const canAdd = count < maxCount;
   return `<div class="thread-tile-switch-menu" role="listbox" aria-label="切换此窗口线程">
     <div class="thread-tile-switch-actions">
       <button class="thread-tile-switch-action" type="button" data-thread-tile-close-pane="${escapeHtml(current)}"${canClose ? "" : " disabled"}>关闭窗口</button>
-      <span class="thread-tile-switch-count">${escapeHtml(String(count))}/${escapeHtml(String(capacity))}</span>
+      <span class="thread-tile-switch-count">${escapeHtml(String(count))}/${escapeHtml(String(maxCount))}</span>
       <button class="thread-tile-switch-action" type="button" data-thread-tile-pane-count="1"${canAdd ? "" : " disabled"}>新增窗口</button>
     </div>
     ${options.map((threadId) => {
@@ -11639,6 +11683,71 @@ function replaceThreadTilePaneThread(fromThreadId, toThreadId) {
   if (duplicateIndex >= 0 && duplicateIndex !== index) scheduleRenderCurrentThread();
   else if (!patchThreadTilePane(to, { paneElement: sourcePane, stickToBottom: true })) scheduleRenderCurrentThread();
   return true;
+}
+
+function moveThreadTilePaneRelative(fromThreadId, toThreadId, placement = "after") {
+  const from = String(fromThreadId || "").trim();
+  const to = String(toThreadId || "").trim();
+  if (!from || !to || from === to || !state.threadTileMode) return false;
+  const layout = threadTileLayout();
+  const ids = threadTileCandidateIds(layout);
+  if (!ids.includes(from) || !ids.includes(to)) return false;
+  const withoutFrom = ids.filter((id) => id !== from);
+  const targetIndex = withoutFrom.indexOf(to);
+  if (targetIndex < 0) return false;
+  const insertAt = placement === "before" ? targetIndex : targetIndex + 1;
+  withoutFrom.splice(insertAt, 0, from);
+  saveCurrentDraftNow();
+  removeThreadTileSplitPairsForIds([from]);
+  state.threadTilePinnedIds = normalizeThreadTilePinnedIds(withoutFrom);
+  state.threadTileSplitPairs = normalizeThreadTileSplitPairs(state.threadTileSplitPairs, state.threadTilePinnedIds);
+  state.threadTileSelectedThreadId = from;
+  state.threadTileSwitchMenuPaneId = "";
+  scheduleThreadDisplaySettingsSave();
+  restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
+  renderComposerSettings();
+  updateComposerControls();
+  renderCurrentThread({ stickToBottom: true });
+  return true;
+}
+
+function splitThreadTilePaneWithTarget(fromThreadId, toThreadId, placement = "below") {
+  const from = String(fromThreadId || "").trim();
+  const to = String(toThreadId || "").trim();
+  if (!from || !to || from === to || !state.threadTileMode) return false;
+  const layout = threadTileLayout();
+  const ids = threadTileCandidateIds(layout);
+  if (!ids.includes(from) || !ids.includes(to)) return false;
+  saveCurrentDraftNow();
+  const targetIndex = ids.indexOf(to);
+  const nextIds = ids.filter((id) => id !== from && id !== to);
+  nextIds.splice(Math.max(0, targetIndex), 0, ...(placement === "above" ? [from, to] : [to, from]));
+  state.threadTilePinnedIds = normalizeThreadTilePinnedIds(nextIds);
+  if (placement === "above") setThreadTileSplitPair(from, to);
+  else setThreadTileSplitPair(to, from);
+  state.threadTileSelectedThreadId = from;
+  state.threadTileSwitchMenuPaneId = "";
+  scheduleThreadDisplaySettingsSave();
+  restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
+  renderComposerSettings();
+  updateComposerControls();
+  renderCurrentThread({ stickToBottom: true });
+  return true;
+}
+
+function dropThreadTilePane(fromThreadId, toThreadId, event) {
+  const from = String(fromThreadId || "").trim();
+  const to = String(toThreadId || "").trim();
+  const pane = event && event.target && event.target.closest ? event.target.closest("[data-thread-tile-pane]") : null;
+  if (!from || !to || from === to || !pane) return false;
+  const rect = pane.getBoundingClientRect();
+  const width = Math.max(1, rect.width || 1);
+  const height = Math.max(1, rect.height || 1);
+  const x = (Number(event.clientX || 0) - rect.left) / width;
+  const y = (Number(event.clientY || 0) - rect.top) / height;
+  if (x < 0.24) return moveThreadTilePaneRelative(from, to, "before");
+  if (x > 0.76) return moveThreadTilePaneRelative(from, to, "after");
+  return splitThreadTilePaneWithTarget(from, to, y < 0.5 ? "above" : "below");
 }
 
 function replaceLastThreadTilePaneForThreadListOpen(threadId, options = {}) {
@@ -12062,9 +12171,8 @@ function threadTileMinimumPaneCount(layout = threadTileLayout()) {
 }
 
 function threadTileMaximumPaneCount(layout = threadTileLayout()) {
-  const capacity = threadTileLayoutCapacity(layout);
-  const candidateCount = defaultThreadTileCandidateIds(layout, { maxPanes: capacity }).length || 1;
-  return Math.max(1, Math.min(capacity, candidateCount));
+  const candidateCount = defaultThreadTileCandidateIds(layout, { maxPanes: THREAD_TILE_USER_MAX_PANES }).length || 1;
+  return Math.max(1, Math.min(THREAD_TILE_USER_MAX_PANES, candidateCount));
 }
 
 function setThreadTilePaneCount(nextCount, options = {}) {
@@ -12107,7 +12215,7 @@ function closeThreadTilePane(threadId) {
   const existing = normalizeThreadTilePinnedIds(state.threadTilePinnedIds);
   const sourceIds = existing.length ? existing : ids;
   const remaining = sourceIds.filter((candidateId) => candidateId !== id);
-  const fillIds = defaultThreadTileCandidateIds(layout, { maxPanes: threadTileLayoutCapacity(layout) })
+  const fillIds = defaultThreadTileCandidateIds(layout, { maxPanes: threadTileMaximumPaneCount(layout) })
     .filter((candidateId) => candidateId !== id);
   saveCurrentDraftNow();
   state.threadTilePinnedIds = normalizeThreadTilePinnedIds([...remaining, ...fillIds]);
@@ -12152,7 +12260,7 @@ function renderThreadTilePane(threadId, layout, previousKeys = new Set()) {
   return `<section class="thread-tile-pane${active}" data-thread-tile-pane="${escapeHtml(id)}" data-render-key="${escapeHtml(`thread-tile|${id}`)}">
     <header class="thread-tile-pane-header">
       <div class="thread-tile-pane-title-wrap">
-        <button class="thread-tile-pane-title-button" type="button" data-thread-tile-title="${escapeHtml(id)}" aria-haspopup="listbox" aria-expanded="${state.threadTileSwitchMenuPaneId === id ? "true" : "false"}">
+        <button class="thread-tile-pane-title-button" type="button" draggable="true" data-thread-tile-drag-handle="${escapeHtml(id)}" data-thread-tile-title="${escapeHtml(id)}" aria-haspopup="listbox" aria-expanded="${state.threadTileSwitchMenuPaneId === id ? "true" : "false"}">
           <span class="thread-tile-pane-title">${escapeHtml(title)}</span>
         </button>
         ${switchMenu}
@@ -12180,6 +12288,8 @@ function threadTileRenderSignature(layout, ids) {
     visiblePanes: layout.visiblePanes || ids.length,
     capacityPanes: layout.capacityPanes || layout.maxPanes,
     desiredPaneCount: normalizeThreadTilePaneCount(state.threadTilePaneCount, 0),
+    columnGroups: layout.columnGroups || [],
+    splitPairs: threadTilePrunedSplitPairs(ids),
     ids,
     selected: effectiveThreadTileSelectedThreadId(ids),
     loading: ids.filter((id) => state.threadTileLoadingIds.has(id)),
@@ -12249,8 +12359,13 @@ function renderThreadTileLayout(layout, options = {}) {
   updateThreadTileGlobalHeader(displayLayout, ids);
   state.nowMs = Date.now();
   const previousKeys = existingConversationRenderKeys();
+  const columnGroups = Array.isArray(displayLayout.columnGroups) && displayLayout.columnGroups.length
+    ? displayLayout.columnGroups
+    : ids.map((id) => [id]);
   const html = `<div class="thread-tile-board" data-thread-tile-board data-render-key="thread-tile-board">
-    ${ids.map((id) => renderThreadTilePane(id, displayLayout, previousKeys)).join("")}
+    ${columnGroups.map((group, index) => `<div class="thread-tile-column" data-thread-tile-column="${escapeHtml(String(index))}" style="--thread-tile-column-rows: ${escapeHtml(String(Math.max(1, group.length)))}">
+      ${group.map((id) => renderThreadTilePane(id, displayLayout, previousKeys)).join("")}
+    </div>`).join("")}
   </div>`;
   const signature = threadTileRenderSignature(displayLayout, ids);
   setThreadTileConversationMode(true, displayLayout);
@@ -12277,9 +12392,8 @@ function bindThreadTileActions() {
   conversation.addEventListener("pointerdown", (event) => {
     const titleButton = closestTileTarget(event.target, "[data-thread-tile-title]");
     if (titleButton && conversation.contains(titleButton)) {
-      event.preventDefault();
-      event.stopPropagation();
-      toggleThreadTileSwitchMenu(titleButton.getAttribute("data-thread-tile-title") || "");
+      const pane = titleButton.closest("[data-thread-tile-pane]");
+      if (pane && conversation.contains(pane)) setThreadTileSelectedThread(pane.getAttribute("data-thread-tile-pane") || "");
       return;
     }
     if (closestTileTarget(event.target, "[data-thread-tile-switch-target], .thread-tile-switch-menu, [data-thread-tile-bottom], [data-thread-tile-operation-toggle], [data-thread-tile-pane-count], [data-thread-tile-close-pane]")) {
@@ -12346,14 +12460,56 @@ function bindThreadTileActions() {
     const body = closestTileTarget(event.target, ".thread-tile-pane-body");
     if (body && conversation.contains(body)) updateThreadTileBottomButtonForBody(body);
   }, { passive: true, capture: true });
+  conversation.addEventListener("dragstart", (event) => {
+    const handle = closestTileTarget(event.target, "[data-thread-tile-drag-handle]");
+    if (!handle || !conversation.contains(handle)) return;
+    const id = handle.getAttribute("data-thread-tile-drag-handle") || "";
+    if (!id) return;
+    state.threadTileDraggingThreadId = id;
+    state.threadTileSwitchMenuPaneId = "";
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", id);
+    }
+    const pane = handle.closest("[data-thread-tile-pane]");
+    if (pane) pane.classList.add("dragging");
+  });
+  conversation.addEventListener("dragover", (event) => {
+    const pane = closestTileTarget(event.target, "[data-thread-tile-pane]");
+    const dragging = state.threadTileDraggingThreadId || "";
+    const targetId = pane && pane.getAttribute("data-thread-tile-pane") || "";
+    if (!dragging || !targetId || dragging === targetId || !conversation.contains(pane)) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    pane.classList.add("drag-over");
+  });
+  conversation.addEventListener("dragleave", (event) => {
+    const pane = closestTileTarget(event.target, "[data-thread-tile-pane]");
+    if (pane && conversation.contains(pane)) pane.classList.remove("drag-over");
+  });
+  conversation.addEventListener("drop", (event) => {
+    const pane = closestTileTarget(event.target, "[data-thread-tile-pane]");
+    const dragging = state.threadTileDraggingThreadId || event.dataTransfer && event.dataTransfer.getData("text/plain") || "";
+    const targetId = pane && pane.getAttribute("data-thread-tile-pane") || "";
+    if (!dragging || !targetId || dragging === targetId || !conversation.contains(pane)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    document.querySelectorAll(".thread-tile-pane.drag-over, .thread-tile-pane.dragging").forEach((entry) => entry.classList.remove("drag-over", "dragging"));
+    state.threadTileDraggingThreadId = "";
+    dropThreadTilePane(dragging, targetId, event);
+  });
+  conversation.addEventListener("dragend", () => {
+    state.threadTileDraggingThreadId = "";
+    document.querySelectorAll(".thread-tile-pane.drag-over, .thread-tile-pane.dragging").forEach((entry) => entry.classList.remove("drag-over", "dragging"));
+  });
 }
 
 function threadTileLayoutStatusText(layout) {
   if (!state.threadTileMode) return "当前视口：单线程";
   if (layout && layout.enabled) {
     const count = effectiveThreadTilePaneCount(layout);
-    const capacity = threadTileLayoutCapacity(layout);
-    return capacity > 1 ? `当前视口：平铺 ${count}/${capacity} 窗` : "当前视口：平铺可用";
+    const maxCount = threadTileMaximumPaneCount(layout);
+    return maxCount > 1 ? `当前视口：平铺 ${count}/${maxCount} 窗` : "当前视口：平铺可用";
   }
   const reason = String(layout && layout.reason || "");
   if (reason === "tablet-portrait") return "当前视口：竖屏单线程";
@@ -19048,15 +19204,7 @@ function positionComposerIntentMenu() {
   const menu = $("composerIntentMenu");
   const anchor = $("messageInput") || $("composer");
   if (!menu || menu.hidden || !anchor) return;
-  const rect = anchor.getBoundingClientRect();
-  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 390;
-  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 844;
-  const left = Math.max(8, Math.round(rect.left));
-  const width = Math.max(280, Math.min(420, viewportWidth - left - 8, Math.round(rect.width || 320)));
-  const bottom = Math.max(8, Math.round(viewportHeight - rect.top + 8));
-  menu.style.setProperty("--composer-intent-left", `${left}px`);
-  menu.style.setProperty("--composer-intent-width", `${width}px`);
-  menu.style.setProperty("--composer-intent-bottom", `${bottom}px`);
+  fitComposerPopupToAnchor(menu, anchor, { minWidth: 280, maxWidth: 420 });
 }
 
 function updateComposerIntentMenu() {
@@ -19695,6 +19843,16 @@ function toggleQuotaDetails(anchor) {
   }
 }
 
+function composerPlaceholderText() {
+  if (state.newThreadDraft) return "输入第一条消息";
+  const targetThreadId = currentComposerThreadId();
+  const targetThread = composerTargetThread();
+  const shouldShow = Boolean(state.threadTileMode && !state.newThreadDraft && targetThreadId && targetThread);
+  if (!shouldShow) return "Message Codex";
+  const title = threadDisplayName(targetThread) || targetThreadId;
+  return `发送到：${title}`;
+}
+
 function renderComposerSettings() {
   const commandControl = $("composerCommandControl");
   const modelControl = $("composerModelControl");
@@ -19751,9 +19909,7 @@ function updateComposerControls() {
     if (el) el.disabled = state.composerIntentDialogBusy || state.composerBusy;
   }
   if (messageInput) {
-    messageInput.dataset.placeholder = hasNewThreadDraft
-      ? "输入第一条消息"
-      : "Message Codex";
+    messageInput.dataset.placeholder = composerPlaceholderText();
   }
   setMessageInputDisabled(disabled);
   $("fileInput").disabled = disabled;

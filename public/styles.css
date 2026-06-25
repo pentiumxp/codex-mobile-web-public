@@ -3516,6 +3516,14 @@ html.keyboard-open .side-chat-form textarea {
   gap: 10px;
 }
 
+.thread-tile-column {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: repeat(var(--thread-tile-column-rows, 1), minmax(0, 1fr));
+  gap: 10px;
+}
+
 .thread-tile-pane {
   position: relative;
   min-width: 0;
@@ -3532,6 +3540,15 @@ html.keyboard-open .side-chat-form textarea {
 .thread-tile-pane.active {
   border-color: rgba(122, 199, 167, 0.72);
   box-shadow: inset 0 0 0 1px rgba(122, 199, 167, 0.16);
+}
+
+.thread-tile-pane.dragging {
+  opacity: 0.72;
+}
+
+.thread-tile-pane.drag-over {
+  border-color: rgba(122, 199, 167, 0.9);
+  box-shadow: inset 0 0 0 2px rgba(122, 199, 167, 0.22);
 }
 
 .thread-tile-pane-header {
@@ -3629,7 +3646,7 @@ html.keyboard-open .side-chat-form textarea {
 }
 
 .thread-tile-switch-count {
-  min-width: 3.2em;
+  min-width: 4.4em;
   color: var(--muted);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
@@ -7047,11 +7064,11 @@ html.keyboard-open .composer {
 
 .composer-intent-menu {
   position: fixed;
-  left: var(--composer-intent-left, 12px);
-  bottom: var(--composer-intent-bottom, calc(var(--composer-height, 92px) + 10px));
+  left: var(--composer-popup-left, 12px);
+  bottom: var(--composer-popup-bottom, calc(var(--composer-height, 92px) + 10px));
   z-index: 130;
-  width: var(--composer-intent-width, min(420px, calc(100vw - 24px)));
-  max-height: min(42vh, 340px);
+  width: var(--composer-popup-width, min(420px, calc(100vw - 24px)));
+  max-height: min(var(--composer-popup-max-height, 42vh), 340px);
   overscroll-behavior: contain;
   backdrop-filter: blur(16px);
 }

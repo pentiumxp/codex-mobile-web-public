@@ -32,6 +32,88 @@ test("thread tile layout uses multiple desktop panes when width allows", () => {
   assert.equal(layout.columns, 4);
   assert.equal(layout.rows, 2);
   assert.equal(layout.maxPanes, 6);
+  assert.equal(layout.recommendedMaxPanes, 6);
+});
+
+test("thread tile layout keeps manual desktop panes in one row when width allows", () => {
+  const layout = tile.layoutForViewport({
+    enabled: true,
+    viewportWidth: 3100,
+    viewportHeight: 1200,
+    sidebarWidth: 420,
+    coarsePointer: false,
+    menuOverlay: false,
+    maxPanes: tile.DEFAULT_USER_MAX_PANES,
+    recommendedMaxPanes: tile.DEFAULT_MAX_PANES,
+  });
+
+  assert.equal(layout.enabled, true);
+  assert.equal(layout.reason, "wide");
+  assert.equal(layout.columns, 6);
+  assert.equal(layout.maxPanes, 12);
+  assert.equal(layout.recommendedMaxPanes, 6);
+});
+
+test("thread tile layout fits five manual panes on a 2560px desktop display", () => {
+  const automatic = tile.layoutForViewport({
+    enabled: true,
+    viewportWidth: 2560,
+    viewportHeight: 1440,
+    sidebarWidth: 520,
+    coarsePointer: false,
+    menuOverlay: false,
+    maxPanes: tile.DEFAULT_USER_MAX_PANES,
+    recommendedMaxPanes: tile.DEFAULT_MAX_PANES,
+  });
+  const layout = tile.layoutForViewport({
+    enabled: true,
+    viewportWidth: 2560,
+    viewportHeight: 1440,
+    sidebarWidth: 520,
+    coarsePointer: false,
+    menuOverlay: false,
+    maxPanes: tile.DEFAULT_USER_MAX_PANES,
+    recommendedMaxPanes: tile.DEFAULT_MAX_PANES,
+    desiredPaneCount: 5,
+  });
+
+  assert.equal(automatic.columns, 4);
+  assert.equal(automatic.minPaneWidth, tile.DEFAULT_MIN_DESKTOP_PANE_WIDTH);
+  assert.equal(layout.enabled, true);
+  assert.equal(layout.reason, "wide");
+  assert.equal(layout.minPaneWidth, 408);
+  assert.equal(layout.columns >= 5, true);
+  assert.equal(Math.min(layout.columns, 5), 5);
+});
+
+test("thread tile layout exposes a separate user pane ceiling", () => {
+  assert.equal(tile.DEFAULT_MAX_PANES, 6);
+  assert.equal(tile.DEFAULT_USER_MAX_PANES, 12);
+  assert.equal(tile.DEFAULT_MIN_DESKTOP_MANUAL_PANE_WIDTH, 300);
+});
+
+test("thread tile column groups split only the overflow column", () => {
+  assert.deepEqual(tile.threadTileColumnGroups({
+    ids: ["a", "b", "c", "d", "e"],
+    columns: 4,
+  }), [["a"], ["b"], ["c"], ["d", "e"]]);
+  assert.deepEqual(tile.threadTileColumnGroups({
+    ids: ["a", "b", "c", "d", "e", "f"],
+    columns: 4,
+  }), [["a"], ["b"], ["c", "f"], ["d", "e"]]);
+});
+
+test("thread tile column groups honor explicit split pairs without moving unrelated panes", () => {
+  assert.deepEqual(tile.threadTileColumnGroups({
+    ids: ["a", "b", "c", "d", "e"],
+    columns: 4,
+    splitPairs: [{ anchorId: "b", childId: "e" }],
+  }), [["a"], ["b", "e"], ["c"], ["d"]]);
+  assert.deepEqual(tile.normalizeSplitPairs([
+    { anchorId: "b", childId: "e" },
+    { anchorId: "b", childId: "c" },
+    { anchorId: "x", childId: "d" },
+  ], ["a", "b", "c", "d", "e"]), [{ anchorId: "b", childId: "e" }]);
 });
 
 test("thread tile layout keeps iPad portrait in single-thread mode", () => {
@@ -161,4 +243,27 @@ test("thread tile id selection starts with current thread then fills recents", (
     threadIds: ["thread-1", "thread-3", "thread-4"],
     maxPanes: 3,
   }), ["thread-2", "thread-3", "thread-1"]);
+});
+
+test("thread tile id selection can fill the user pane ceiling", () => {
+  const threadIds = Array.from({ length: 16 }, (_, index) => `thread-${index + 1}`);
+
+  assert.deepEqual(tile.selectThreadTileIds({
+    currentThreadId: "thread-0",
+    threadIds,
+    maxPanes: tile.DEFAULT_USER_MAX_PANES,
+  }), [
+    "thread-0",
+    "thread-1",
+    "thread-2",
+    "thread-3",
+    "thread-4",
+    "thread-5",
+    "thread-6",
+    "thread-7",
+    "thread-8",
+    "thread-9",
+    "thread-10",
+    "thread-11",
+  ]);
 });

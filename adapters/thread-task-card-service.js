@@ -13,6 +13,7 @@ const MAX_BATCH_TARGETS = 12;
 const SETTLED_STATUSES = new Set(["approved", "deleted", "revoked", "replied"]);
 const WORKFLOW_MODE_MANUAL = "manual";
 const WORKFLOW_MODE_AUTONOMOUS = "autonomous";
+const REASONING_EFFORT_VALUES = new Set(["low", "medium", "high", "xhigh"]);
 const AUTO_RETURN_TITLE_PREFIX = "Auto return:";
 
 function nowIso(nowFn) {
@@ -102,6 +103,20 @@ function normalizedWorkflowMode(value) {
   throw errorWithStatus("workflow_mode_invalid");
 }
 
+function normalizedReturnStatus(value) {
+  const status = stringValue(value).toLowerCase();
+  if (!status) return "";
+  if (["completed", "blocked", "redirected", "partially_completed"].includes(status)) return status;
+  throw errorWithStatus("return_status_invalid");
+}
+
+function normalizedReasoningEffort(value) {
+  const effort = stringValue(value).toLowerCase();
+  if (!effort) return "";
+  if (REASONING_EFFORT_VALUES.has(effort)) return effort;
+  throw errorWithStatus("reasoning_effort_invalid");
+}
+
 function safeArray(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -186,7 +201,7 @@ function publicCard(card, threadId) {
   out.threadRole = role;
   out.canApprove = role === "target" && out.status === "pending";
   out.canDelete = role === "target" && out.status === "pending";
-  out.canReply = role === "target" && out.status === "pending";
+  out.canReply = role === "target" && (out.status === "pending" || out.status === "approved");
   out.canRevoke = role === "source" && out.status === "pending";
   return out;
 }
@@ -224,6 +239,7 @@ function normalizeCreateRequest(input = {}) {
     title: readableCardText(input.title, "title", MAX_TITLE_CHARS),
     summary: readableCardText(input.summary, "summary", MAX_SUMMARY_CHARS),
     body: readableCardText(input.body, "body", MAX_BODY_CHARS),
+    reasoningEffort: normalizedReasoningEffort(input.reasoningEffort || input.reasoning_effort || input.effort),
     workflowMode: normalizedWorkflowMode(input.workflowMode),
     workflowId: boundedString(input.workflowId, "workflow_id", 220, false),
   };
@@ -273,6 +289,7 @@ function normalizeCreateRequests(input = {}) {
 
 function normalizeReplyRequest(input = {}) {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw errorWithStatus("reply_body_must_be_object");
+  const status = normalizedReturnStatus(input.status);
   return {
     sourceWorkspaceId: boundedString(input.sourceWorkspaceId, "source_workspace_id", 260, false),
     sourceThreadId: boundedString(input.sourceThreadId, "source_thread_id", 220, false),
@@ -282,6 +299,8 @@ function normalizeReplyRequest(input = {}) {
     title: readableCardText(input.title, "title", MAX_TITLE_CHARS),
     summary: readableCardText(input.summary, "summary", MAX_SUMMARY_CHARS),
     body: readableCardText(input.body, "body", MAX_BODY_CHARS),
+    status,
+    returnToSource: input.returnToSource === true || input.return_to_source === true || Boolean(status),
     workflowMode: normalizedWorkflowMode(input.workflowMode),
     workflowModeExplicit: stringValue(input.workflowMode) !== "",
     workflowId: boundedString(input.workflowId, "workflow_id", 220, false),
@@ -391,11 +410,14 @@ function injectedMessageText(card) {
     `Source workspace: ${card.source.workspaceId}`,
     `Source thread: ${card.source.title || card.source.threadId}`,
     `Source thread id: ${card.source.threadId}`,
+    `Task card id: ${card.id}`,
     card.message && card.message.title ? `Title: ${card.message.title}` : "",
+    card.delivery && card.delivery.reasoningEffort ? `Requested reasoning effort: ${card.delivery.reasoningEffort}` : "",
     sourceDirect ? "Approval: target approval bypassed by the thread-callable interface." : "",
     autonomous ? `Workflow mode: ${card.workflow.mode}` : "",
     autonomous ? `Workflow id: ${card.workflow.id}` : "",
     autoReturnOnCompletion ? "Auto-return: when this injected turn completes, Codex Mobile Web will send a return task card back to the source thread in this workflow." : "",
+    autoReturnOnCompletion ? "" : `Return required: local final text in this target thread is not a source-thread return card. When this work is completed, blocked, or redirected, return a task card to the source with taskCardId ${card.id} through codex_mobile.return_to_source or scripts/return-thread-task-card.js.`,
     "",
     stringValue(card.message && card.message.body),
   ].filter((line, index, all) => line !== "" || (index > 0 && all[index - 1] !== ""));
@@ -418,12 +440,37 @@ function autoReplyBodyForCompletedTurn(card, completed = {}) {
   return boundedVisibleText(lines.join("\n"), MAX_BODY_CHARS);
 }
 
+function markReturnToSourceMetadata(replyCard, replyRequest = {}) {
+  if (!replyCard || replyRequest.returnToSource !== true) return;
+  const returnStatus = replyRequest.status
+    || (replyCard.delivery && replyCard.delivery.returnStatus)
+    || (replyCard.audit && replyCard.audit.returnStatus)
+    || "";
+  replyCard.delivery = Object.assign({}, replyCard.delivery || {}, {
+    returnToSource: true,
+    returnStatus,
+  });
+  replyCard.audit = Object.assign({}, replyCard.audit || {}, {
+    returnToSource: true,
+    returnStatus,
+  });
+}
+
 function transitionAllowed(card, action, actorThreadId) {
   const actorThread = stringValue(actorThreadId);
   if (!actorThread) throw errorWithStatus("actor_thread_id_required");
   if (!card) throw errorWithStatus("task_card_not_found", 404);
+  if (action === "reply") {
+    if (stringValue(card.target && card.target.threadId) !== actorThread) {
+      throw errorWithStatus("reply_requires_target_thread", 403);
+    }
+    if (card.status !== "pending" && card.status !== "approved") {
+      throw errorWithStatus(`task_card_not_returnable:${card.status}`, 409);
+    }
+    return;
+  }
   if (card.status !== "pending") throw errorWithStatus(`task_card_not_pending:${card.status}`, 409);
-  if (action === "approve" || action === "delete" || action === "reply") {
+  if (action === "approve" || action === "delete") {
     if (stringValue(card.target && card.target.threadId) !== actorThread) {
       throw errorWithStatus(`${action}_requires_target_thread`, 403);
     }
@@ -504,6 +551,7 @@ function createThreadTaskCardService(options = {}) {
         injectOnApprove: true,
         allowReply: true,
         allowRevoke: true,
+        reasoningEffort: request.reasoningEffort || "",
         autoRunAfterFirstApproval: request.workflowMode === WORKFLOW_MODE_AUTONOMOUS,
         autoReturnOnCompletion: request.workflowMode === WORKFLOW_MODE_AUTONOMOUS,
       },
@@ -632,6 +680,12 @@ function createThreadTaskCardService(options = {}) {
       if (execution && execution.turnId) card.injectedTurnId = String(execution.turnId);
       if (execution && execution.threadId) card.injectedThreadId = String(execution.threadId);
       if (execution && execution.result) card.injectionResult = execution.result;
+      if (execution && execution.runtime && typeof execution.runtime === "object") {
+        card.injectionRuntime = {
+          reasoningEffort: boundedMetadataString(execution.runtime.reasoningEffort, 40),
+          requestedReasoningEffort: boundedMetadataString(execution.runtime.requestedReasoningEffort, 40),
+        };
+      }
       return {
         card: publicCard(card, publicThreadId || actorThread || card.target.threadId),
         execution,
@@ -739,8 +793,15 @@ function createThreadTaskCardService(options = {}) {
     const replyRequest = normalizeReplyRequest(payload);
     const result = await withStore(async (store) => {
       const card = safeArray(store.cards).find((entry) => stringValue(entry.id) === id);
-      transitionAllowed(card, "reply", actorThreadId);
       const existing = findByIdempotency(store, replyRequest.idempotencyKey);
+      if (card && card.status === "replied" && existing && stringValue(card.replyCardId) === stringValue(existing.id)) {
+        markReturnToSourceMetadata(existing, replyRequest);
+        return {
+          card: publicCard(card, actorThreadId),
+          replyCard: publicCard(existing, card.source && card.source.threadId || ""),
+        };
+      }
+      transitionAllowed(card, "reply", actorThreadId);
       const timestamp = nowIso(options.now);
       const replyWorkflowMode = replyRequest.workflowModeExplicit
         ? replyRequest.workflowMode
@@ -790,6 +851,8 @@ function createThreadTaskCardService(options = {}) {
             allowReply: true,
             allowRevoke: true,
             autoRunAfterFirstApproval: replyWorkflowMode === WORKFLOW_MODE_AUTONOMOUS,
+            returnToSource: replyRequest.returnToSource === true,
+            returnStatus: replyRequest.status || "",
           },
           workflow: replyWorkflowMode === WORKFLOW_MODE_AUTONOMOUS ? {
             mode: WORKFLOW_MODE_AUTONOMOUS,
@@ -799,9 +862,13 @@ function createThreadTaskCardService(options = {}) {
           audit: {
             createdAt: timestamp,
             replyToCardId: card.id,
+            returnToSource: replyRequest.returnToSource === true,
+            returnStatus: replyRequest.status || "",
           },
         };
         store.cards.push(replyCard);
+      } else if (replyRequest.returnToSource === true) {
+        markReturnToSourceMetadata(replyCard, replyRequest);
       }
       card.replyCardId = replyCard.id;
       return {
@@ -809,7 +876,15 @@ function createThreadTaskCardService(options = {}) {
         replyCard: publicCard(replyCard, card.source.threadId),
       };
     });
-    result.replyCard = await maybeAutoApprovePublicCard(result.replyCard, result.replyCard && result.replyCard.target && result.replyCard.target.threadId);
+    if (replyRequest.returnToSource === true) {
+      const approved = await executeCardApproval(result.replyCard.id, actorThreadId, {
+        sourceDirect: true,
+        publicThreadId: result.replyCard && result.replyCard.target && result.replyCard.target.threadId || "",
+      });
+      if (approved && approved.card) result.replyCard = approved.card;
+    } else {
+      result.replyCard = await maybeAutoApprovePublicCard(result.replyCard, result.replyCard && result.replyCard.target && result.replyCard.target.threadId);
+    }
     return result;
   }
 
@@ -862,6 +937,8 @@ function createThreadTaskCardService(options = {}) {
             allowRevoke: true,
             autoRunAfterFirstApproval: true,
             autoReturnOnCompletion: false,
+            returnToSource: true,
+            returnStatus: "completed",
           },
           workflow: {
             mode: WORKFLOW_MODE_AUTONOMOUS,
@@ -872,6 +949,8 @@ function createThreadTaskCardService(options = {}) {
             createdAt: timestamp,
             autoReturnToCardId: card.id,
             autoReturnForTurnId: turnId,
+            returnToSource: true,
+            returnStatus: "completed",
           },
         };
         store.cards.push(replyCard);

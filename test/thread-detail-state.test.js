@@ -161,6 +161,38 @@ test("thread detail state preserves only eligible local-only items", () => {
   assert.equal(policy.shouldPreserveLocalOnlyItem({ id: "operation-1", type: "commandExecution", weight: 10 }, false), false);
 });
 
+test("thread detail state preserves visible items only while an existing same turn is live", () => {
+  const policy = createPolicy();
+
+  assert.equal(policy.shouldPreserveExistingTurnVisibleItems({
+    id: "turn-1",
+    status: "running",
+    items: [{ type: "imageView", weight: 20 }],
+  }, {
+    id: "turn-1",
+    status: "completed",
+    items: [{ type: "agentMessage", weight: 10 }],
+  }), true);
+  assert.equal(policy.shouldPreserveExistingTurnVisibleItems({
+    id: "turn-1",
+    status: "completed",
+    items: [{ type: "imageView", weight: 20 }],
+  }, {
+    id: "turn-1",
+    status: "completed",
+    items: [{ type: "agentMessage", weight: 10 }],
+  }), false);
+  assert.equal(policy.shouldPreserveExistingTurnVisibleItems({
+    id: "turn-1",
+    status: "running",
+    items: [{ type: "imageView", weight: 20 }],
+  }, {
+    id: "turn-2",
+    status: "completed",
+    items: [{ type: "agentMessage", weight: 10 }],
+  }), false);
+});
+
 test("thread detail state detects reusable render identity for visible text items", () => {
   const policy = createPolicy({
     visibleTextItemsLikelySame(existingItem, incomingItem) {

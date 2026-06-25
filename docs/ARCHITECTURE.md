@@ -333,11 +333,12 @@ transient layer before page-level back is applied. Hermes must not inspect Codex
 DOM or call Codex route functions.
 Hermes notification deep-links may also add bounded iframe query hints such as
 `pluginId=codex-mobile`, `pluginRoute`, `pluginThreadId`, `pluginTaskId`, and
-`pluginItemId`. `public/plugin-embed.js` parses those hints, and
-`public/app.js` consumes them only in `/?embed=hermes`: it opens the hinted
-thread, focuses the matching approval/item card when still present, and then
-scrubs the URL back to the embed root. Missing targets fall back to the normal
-embedded primary page plus a bounded in-app diagnostic.
+`pluginItemId`. `public/plugin-embed.js` parses those hints and owns the
+testable open/focus/scrub plan; `public/app.js` consumes that plan only in
+`/?embed=hermes`: it opens the hinted thread, focuses the matching
+approval/item card when still present, and then scrubs the URL back to the
+embed root. Missing targets fall back to the normal embedded primary page plus
+a bounded in-app diagnostic.
 Embedded mode also blocks `window.open`, `target=_blank`, external browser
 handoffs, and second-window launches so plugin pages stay in the same iframe.
 Embedded mode also disables browser Web Push registration and local completion
@@ -498,6 +499,19 @@ evidence.
 Server-side handling of `item/tool/call` resolves the source thread from
 app-server metadata or the recent turn/thread map, resolves the target by exact
 thread id/title/cwd, and then calls the same source-thread task-card helper.
+Separately, Mobile Web injects `codex_mobile.return_to_source` for task-card
+target turns. This return tool is independent of the workspace-delegation
+switch because it closes an already received card; it validates the original
+`Task card id`, the target actor thread, and the return body before calling
+`threadTaskCardService.reply()`. Return cards with `returnToSource:true` are
+source-direct approved into the original source thread and do not require a
+second source-thread approval. A target-thread final answer is not a
+source-thread return card.
+Deep audit/task-card callers can pass `reasoningEffort` (`low`, `medium`,
+`high`, or `xhigh`) through the source-thread create route, dynamic tool, MCP
+tool, or create script. The service stores the bounded request on delivery
+metadata, the injected message exposes it, and the approval path overrides the
+target turn's inherited runtime effort before `thread/resume` / `turn/start`.
 Target parsing, visible-thread filtering, archived/hidden/subagent/sidecar
 rejection, same-cwd canonical selection, and public target metadata shaping are
 owned by `adapters/thread-task-card-routing-service.js`; `server.js` keeps only
@@ -506,11 +520,11 @@ This app-server dynamic-tool path is only for Codex app-server turns. Codex
 Mobile also registers a standard `codex_mobile` MCP server into each active or
 target Codex Home during startup, workspace creation, and profile switching.
 That MCP server is backed by `scripts/codex-mobile-mcp-server.js`, exposes
-`list_threads` and `delegate_to_thread`, and uses the same authenticated local
-task-card API. The registration writes command/script/server/key-file paths to
-`CODEX_HOME/config.toml`; it does not store raw key material. This gives new
-Profiles and new Codex Homes the same delegation toolset without manual config
-edits.
+`list_threads`, `delegate_to_thread`, and `return_to_source`, and uses the same
+authenticated local task-card API. The registration writes
+command/script/server/key-file paths to `CODEX_HOME/config.toml`; it does not
+store raw key material. This gives new Profiles and new Codex Homes the same
+delegation and return toolset without manual config edits.
 To keep this from being only a model prompt, the same runtime switch also adds a
 dynamic source-write decision layer. For ordinary non-exempt workspaces,
 `thread/start`, `thread/resume`, and `turn/start` use a real
@@ -670,10 +684,17 @@ entire pane grid. The display mode, desired pane count, and tile pane slot order
 are server-side runtime settings under `settings.json` `threadDisplay`, exposed
 through `GET/POST /api/settings/thread-display`; `localStorage` is only a legacy
 migration/cache mirror. `paneCount=0` means automatic sizing from current/running
-threads and viewport capacity; a positive value is the user's manual window
-count. Device width sets the maximum pane capacity only, so a four-pane-capable
-tablet can still display two wider panes until the user adds a window from the
-pane title menu. Pane slots are stable thread id positions: normal thread-list
+threads and viewport recommended capacity; a positive value is the user's
+manual window count. Device width uses the browser CSS viewport, not the
+display's physical pixels, and sets the automatic/recommended capacity and the
+physical column capacity separately. Automatic mode keeps the wider desktop
+reading width; explicit user-added panes pass the desired pane count into the
+layout policy so the manual pane width is derived from current CSS available
+width, bounded by a desktop safety floor. When the screen can physically fit
+five or six requested panes, the tile board keeps them on one row. It wraps into
+additional rows only after the requested pane count exceeds the physical column
+capacity, up to the bounded user pane ceiling. Pane slots are stable thread id positions:
+normal thread-list
 recent sorting can fill empty slots but must not reorder existing slots. A manual
 pane title-menu switch replaces only that slot and persists the new ordered pane
 id list. An explicit outer thread-list open is also treated as a user pane

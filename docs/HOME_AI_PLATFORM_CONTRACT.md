@@ -1,6 +1,6 @@
 # Home AI Platform Contract Pointer
 
-Last updated: 2026-06-23.
+Last updated: 2026-06-25.
 Home AI platform contract version: `20260623-v5`.
 Home AI root-cause contract version: `20260623-v3`.
 Home AI fallback governance contract version: `20260623-v1`.
@@ -56,7 +56,7 @@ Mobile docs should link to that registry instead of copying entries.
 | --- | --- |
 | `plugin_id` | `codex-mobile` |
 | `workspace_path_windows` | `C:\Users\xuxin\Documents\codex-mobile-web` |
-| `current_branch_snapshot` | `main` with local commits through `89cda66` before this production-evidence update |
+| `current_branch_snapshot` | `main` with local commits through `8a41a1e` before this production-evidence update |
 | `production_source_path_macos` | `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web` |
 | `production_data_root_macos` | `/Users/xuxin/.codex-mobile-web` |
 | `windows_dev_base_url` | `http://127.0.0.1:8787` |
@@ -200,72 +200,59 @@ Minimum closure for Codex Mobile production changes:
 
 ## Latest Production Evidence
 
-2026-06-09 Mac production deployment:
+2026-06-25 Mac production deployment:
 
 - Production source path:
   `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
 - LaunchDaemon: `system/com.hermesmobile.plugin.codex-mobile`.
 - Loopback production URL: `http://127.0.0.1:8787`.
-- Current verified shell after image rendering deployment:
-  `0.1.11|codex-mobile-shell-v251`.
+- Current verified shell after tile-mode composer intent-menu, Movie
+  operation-projection, live-to-completed weak projection merge, and tile local
+  split-pane layout fixes:
+  `0.1.11|codex-mobile-shell-v431`.
+- Source ref deployed for code change:
+  `0c297f045e44` with clean source worktree at deploy time.
 - Backup path:
-  `/Users/hermes-host/HermesMobile/backups/deploy/20260609T061100Z-plugin-codex-mobile-web-codex-mobile-image-rendering-v251`.
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260625T034418Z-plugin-codex-mobile-web-manual`.
 - Production smoke confirmed `/api/public-config` reports
-  `clientBuildId=0.1.11|codex-mobile-shell-v251` and
-  `shellCacheName=codex-mobile-shell-v251`.
-- Plugin manifest returns `plugin_id=codex-mobile`, `kind=embedded_app`, and
-  does not return the exact raw Codex Mobile Access Key value.
-- Production upload-image route remains protected: no auth returns `401`; with
-  the Codex Mobile Access Key, the current thread upload
-  `IMG_5888.jpg` returns `200 image/jpeg`.
-- Production generated-image route remains protected: no auth returns `401`;
-  with the Codex Mobile Access Key, a cached generated image returns
-  `200 image/png`.
-- Production thread detail smoke for
-  `019ea76b-d846-7892-bda0-c0fff9cf7581` returned 10 projected turns, 23
-  image-related items, 6 authenticated upload-route items, and 6 authenticated
-  generated-image-route items. Image items were present across several turns,
-  not only the latest turn.
-- Side-chat route smoke confirmed unauthenticated
-  `/api/threads/<id>/side-chat` returns 401, authenticated read returns 200,
-  and `sideChat.persistence=server`.
-- Production iOS live debug smoke against `http://127.0.0.1:8787/` verified
-  the combined left-swipe panel, server draft round-trip, and
-  `draftInMainConversation=false`; screenshot:
-  `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-v250-prod-side-chat-panel.png`.
-- Production `workspacePath` is
-  `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`; the visible
-  review/source workspace remains
-  `/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web`.
-- Live iOS PWA debug evidence for v247 opened production `127.0.0.1:8787`,
-  created a smoke thread, waited for the first turn to complete, then sent a
-  follow-up with the real composer. Across 50 DOM samples,
-  `maxCount=1`, `duplicateSamples=0`, and `finalCount=1`; the smoke thread was
-  archived. Screenshot artifact:
-  `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-v247-prod-dup-smoke.png`.
-- Development live debug evidence for v247 opened source dev `127.0.0.1:18787`
-  and ran the same real-composer duplicate-message smoke with
-  `maxCount=1`, `duplicateSamples=0`, and `finalCount=1`. Screenshot artifact:
-  `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-v247-dev-dup-smoke.png`.
-- Generated-image endpoint remains protected: no auth returns `401`, Access
-  Key returns `200 image/png`, and a short-lived plugin session cookie can
-  still authorize `/api/generated-images/file` when the query string contains a
-  stale plugin-session token.
-- Uploaded-image endpoint remains protected: no auth returns `401`, Access Key
-  returns `200 image/jpeg`, and a short-lived plugin session cookie can still
-  authorize `/api/uploads/file` when the query string contains a stale token.
-- Live iOS PWA debug evidence for direct Codex plugin launch confirmed
-  `data-font-size=xlarge`, opened thread
-  `019ea76b-d846-7892-bda0-c0fff9cf7581`, rendered one uploaded image
-  `IMG_5882.jpg` with natural size `591x1280`, and `failedUploadCount=0`.
-  Screenshot artifact:
-  `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-v227-upload-image-1781040000.png`.
-- Prior live iOS PWA debug evidence for generated images confirmed
-  `CLIENT_BUILD_ID=0.1.11|codex-mobile-shell-v226`,
-  `data-font-size=xlarge`, opened thread
-  `019ea77e-4e36-7820-adf4-9bf0272965b8`, rendered one `view_image output`
-  image with natural size `942x2048`, and `failedCount=0`. Screenshot artifact:
-  `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-v226-media-font-1780937849769.png`.
+  `clientBuildId=0.1.11|codex-mobile-shell-v431`,
+  `shellCacheName=codex-mobile-shell-v431`, `version=0.1.11`,
+  `authRequired=true`, production `workspacePath` above, and build id
+  `7ed7403159756514`.
+- Source/production short SHA-256 samples matched after deploy:
+  `server.js` `6681ceebf250df44`,
+  `public/app.js` `f79ee1b5ff49966f`,
+  `public/styles.css` `599815a5b4169435`,
+  `public/thread-tile-layout.js` `f10c7a0964ec983c`, and
+  `public/sw.js` `db1c6ff0ac07bb01`.
+- Focused validation before deploy included syntax checks for `server.js`,
+  `public/app.js`, and `public/sw.js`; task-card route, mobile viewport, goal
+  service, composer quota, thread tile UI, thread turn compaction, thread detail
+  projection, v4 projection, thread detail state, and conversation render tests
+  (including the v431 `98`-test tile-layout focused suite); plus `git diff
+  --check`. Browser automation through Node REPL failed with a tool
+  `sandboxCwd` error, and direct local Playwright smoke was not run because this
+  workspace does not have a `playwright` dependency; use the Home AI central
+  visual tool for live drag/split visual evidence if required.
+- Deployment validation also ran the central production file-hash, LaunchDaemon,
+  public-config, and non-strict auth-profile audit checks. The auth-profile
+  audit remained non-blocking with zero blocking issues.
+- The earlier 2026-06-25 `codex-mobile-shell-v430` large-session detail-shape
+  diagnostics evidence is historical after the v431 tile local split-pane
+  deployment.
+- The earlier 2026-06-25 `codex-mobile-shell-v429` live-to-completed weak
+  projection merge evidence is historical after the v431 tile local split-pane
+  deployment.
+- The earlier 2026-06-25 `codex-mobile-shell-v428` tile-mode composer
+  intent-menu and Movie server operation-projection evidence is historical after
+  the v429 live-to-completed weak projection merge deployment.
+- The earlier 2026-06-25 `codex-mobile-shell-v427` manual tile-width and
+  task-card protocol evidence is historical after the v428 tile-mode composer
+  intent-menu deployment.
+- The earlier 2026-06-24 `codex-mobile-shell-v426` wide tile-column and
+  `codex-mobile-shell-v425` route-hint / tile-pane evidence is historical.
+- The older 2026-06-09 `codex-mobile-shell-v251` image-rendering evidence is
+  historical only and must not be treated as the latest production shell.
 
 ## Open Gaps
 

@@ -275,6 +275,8 @@ const WORKSPACE_DELEGATION_GUARD_PLATFORM_EXEMPTION_DISABLED = /^(1|true|yes|on)
 const WORKSPACE_DELEGATION_TOOL_NAMESPACE = "codex_mobile";
 const WORKSPACE_DELEGATION_TOOL_NAME = "delegate_to_thread";
 const WORKSPACE_DELEGATION_TOOL_FULL_NAME = `${WORKSPACE_DELEGATION_TOOL_NAMESPACE}.${WORKSPACE_DELEGATION_TOOL_NAME}`;
+const TASK_CARD_RETURN_TOOL_NAME = "return_to_source";
+const TASK_CARD_RETURN_TOOL_FULL_NAME = `${WORKSPACE_DELEGATION_TOOL_NAMESPACE}.${TASK_CARD_RETURN_TOOL_NAME}`;
 const THREAD_SIDE_CHAT_SCOPE_ID = CODEX_HOME_RESOLUTION.activeProfileId
   || `codex-home-${crypto.createHash("sha256").update(CODEX_HOME).digest("hex").slice(0, 16)}`;
 const THREAD_SIDE_CHAT_REPLY_TIMEOUT_MS = Math.max(
@@ -807,7 +809,11 @@ let threadDetailProjectionService;
 const threadTaskCardService = createThreadTaskCardService({
   storageFile: THREAD_TASK_CARD_FILE,
   executeApprovedCard: async (card, message) => {
-    const runtimeSettings = await resolveThreadRuntimeSettings(card.target.threadId);
+    const requestedReasoningEffort = String(card && card.delivery && card.delivery.reasoningEffort || "").trim();
+    const inheritedRuntimeSettings = await resolveThreadRuntimeSettings(card.target.threadId);
+    const runtimeSettings = requestedReasoningEffort
+      ? Object.assign({}, inheritedRuntimeSettings, { reasoningEffort: requestedReasoningEffort })
+      : inheritedRuntimeSettings;
     try {
       await codex.request("thread/resume", applyResumeRuntimeSettings({
         threadId: card.target.threadId,
@@ -829,6 +835,10 @@ const threadTaskCardService = createThreadTaskCardService({
       threadId: String(card.target.threadId || ""),
       turnId,
       result,
+      runtime: {
+        reasoningEffort: runtimeSettings.reasoningEffort || "",
+        requestedReasoningEffort,
+      },
     };
   },
 });
@@ -1170,6 +1180,7 @@ function appShellBuildId(cacheName = readServiceWorkerCacheName()) {
     "thread-performance-metrics.js",
     "live-operation-dock-state.js",
     "thread-detail-state.js",
+    "thread-detail-render-plan.js",
     "thread-tile-layout.js",
     "app.js",
     "sw.js",
@@ -5840,11 +5851,11 @@ function mergeRawOperationIntoItem(existing, rawOperation) {
   }
 }
 
-function mergeRecentRawOperationsIntoLiveTurn(thread, turn) {
-  if (!turn || !isLiveTurn(turn) || !Array.isArray(turn.items)) return;
+function mergeRecentRawOperationsIntoTurn(thread, turn, options = {}) {
+  if (!turn || !Array.isArray(turn.items)) return;
   const rawOperations = readRecentRawOperations(thread, turn.id, {
     includeCompleted: true,
-    maxOperations: MAX_LIVE_OPERATION_ITEMS,
+    maxOperations: options.maxOperations || MAX_LIVE_OPERATION_ITEMS,
   });
   if (rawOperations.length === 0) return;
 
@@ -6244,12 +6255,11 @@ function compactThread(thread, options = {}) {
       rolloutStats,
       workspaceContextStats: workspaceContextStatsForCwd(out.cwd),
     });
-    const latestIndex = out.turns.length - 1;
-    const liveLatest = out.turns[latestIndex];
-    if (liveLatest && isLiveTurn(liveLatest)) {
-      mergeRecentRawOperationsIntoLiveTurn(out, liveLatest);
-    }
     const operationDetailIndexes = operationDetailTurnIndexes(out.turns);
+    for (const index of operationDetailIndexes) {
+      mergeRecentRawOperationsIntoTurn(out, out.turns[index], { maxOperations: 50 });
+    }
+    const latestIndex = out.turns.length - 1;
     out.turns = out.turns.map((turn, index) => compactTurn(turn, {
       allowOperations: operationDetailIndexes.has(index),
       maxOperationItems: operationDetailIndexes.has(index) ? "all" : MAX_LIVE_OPERATION_ITEMS,
@@ -6950,6 +6960,24 @@ function normalizeThreadDisplayPaneCount(value, fallback = 0) {
   return Math.max(0, Math.min(THREAD_DISPLAY_MAX_PANES, parsed));
 }
 
+function normalizeThreadDisplaySplitPairs(values = [], paneThreadIds = []) {
+  const idSet = new Set((paneThreadIds || []).map(normalizeThreadDisplayThreadId).filter(Boolean));
+  const used = new Set();
+  const pairs = [];
+  for (const value of Array.isArray(values) ? values : []) {
+    const anchorId = normalizeThreadDisplayThreadId(Array.isArray(value) ? value[0] : value && (value.anchorId || value.topId || value.primaryId));
+    const childId = normalizeThreadDisplayThreadId(Array.isArray(value) ? value[1] : value && (value.childId || value.bottomId || value.secondaryId));
+    if (!anchorId || !childId || anchorId === childId) continue;
+    if (idSet.size && (!idSet.has(anchorId) || !idSet.has(childId))) continue;
+    if (used.has(anchorId) || used.has(childId)) continue;
+    used.add(anchorId);
+    used.add(childId);
+    pairs.push({ anchorId, childId });
+    if (pairs.length >= Math.floor(THREAD_DISPLAY_MAX_PANES / 2)) break;
+  }
+  return pairs;
+}
+
 function normalizeThreadDisplayMode(value, fallback = "single") {
   const text = String(value || "").trim().toLowerCase();
   if (text === "tile" || text === "tiles" || text === "tiled") return "tile";
@@ -6984,6 +7012,10 @@ function normalizeThreadDisplaySettings(raw = {}, options = {}) {
         : input.tilePaneCount,
     0,
   );
+  const paneSplitPairs = normalizeThreadDisplaySplitPairs(
+    input.paneSplitPairs || input.threadTileSplitPairs || input.splitPairs,
+    paneThreadIds,
+  );
   const updatedAt = String(input.updatedAt || "").trim();
   const updatedAtMs = timestampToMs(input.updatedAtMs || updatedAt);
   return {
@@ -6991,6 +7023,7 @@ function normalizeThreadDisplaySettings(raw = {}, options = {}) {
     threadTileMode: displayMode === "tile",
     paneThreadIds,
     paneCount,
+    paneSplitPairs,
     selectedThreadId,
     updatedAt,
     updatedAtMs,
@@ -7020,6 +7053,7 @@ function setThreadDisplaySettings(patch = {}) {
       displayMode: next.displayMode,
       paneThreadIds: next.paneThreadIds,
       paneCount: next.paneCount,
+      paneSplitPairs: next.paneSplitPairs,
       selectedThreadId: next.selectedThreadId,
       updatedAt: next.updatedAt,
       updatedAtMs: next.updatedAtMs,
@@ -7156,6 +7190,11 @@ function workspaceDelegationDynamicToolSpec() {
           enum: ["manual", "autonomous"],
           description: "Task-card workflow mode. Default is manual.",
         },
+        reasoningEffort: {
+          type: "string",
+          enum: REASONING_EFFORT_OPTIONS,
+          description: "Optional target turn reasoning effort for this injected task card, for example xhigh for deep audits.",
+        },
         requestId: {
           type: "string",
           description: "Optional stable idempotency seed for this tool call.",
@@ -7177,15 +7216,90 @@ function workspaceDelegationDynamicToolSpec() {
   };
 }
 
+function taskCardReturnDynamicToolSpec() {
+  return {
+    namespace: WORKSPACE_DELEGATION_TOOL_NAMESPACE,
+    name: TASK_CARD_RETURN_TOOL_NAME,
+    description: [
+      "Return a received Codex Mobile task card to its source thread when target work is completed, blocked, or redirected.",
+      "Use this for task-card closure. A plain final answer in the target thread is not a source-thread return card.",
+      "The original injected task-card message contains `Task card id`; pass that value as `taskCardId`.",
+      "The server validates that the current target thread is allowed to return the card and creates the reverse-direction return card through the normal task-card reply service.",
+      "Do not use this to delegate new work. Use codex_mobile.delegate_to_thread for new cross-thread work when that tool is available.",
+    ].join("\n\n"),
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        taskCardId: {
+          type: "string",
+          description: "Original task-card id shown in the injected card message.",
+        },
+        threadId: {
+          type: "string",
+          description: "Current target thread id. Usually the server can infer this from turnId.",
+        },
+        status: {
+          type: "string",
+          enum: ["completed", "blocked", "redirected", "partially_completed"],
+          description: "Closure status for the source thread.",
+        },
+        title: {
+          type: "string",
+          description: "Short return-card title.",
+        },
+        summary: {
+          type: "string",
+          description: "One-line bounded return summary.",
+        },
+        body: {
+          type: "string",
+          description: "Full Markdown return body for the source thread.",
+        },
+        bodyMarkdown: {
+          type: "string",
+          description: "Alias for body.",
+        },
+        requestId: {
+          type: "string",
+          description: "Optional stable idempotency seed for this return.",
+        },
+        idempotencyKey: {
+          type: "string",
+          description: "Explicit return-card idempotency key.",
+        },
+      },
+      required: ["taskCardId", "title", "body"],
+    },
+    outputSchema: {
+      type: "object",
+      additionalProperties: true,
+      properties: {
+        ok: { type: "boolean" },
+        taskCardId: { type: "string" },
+        replyCardId: { type: "string" },
+      },
+    },
+    exposeToContext: true,
+    deferLoading: false,
+  };
+}
+
+function taskCardRuntimeDynamicTools(settings = readRuntimeSettings()) {
+  const tools = [taskCardReturnDynamicToolSpec()];
+  if (workspaceDelegationPublicSettings(settings).enabled) tools.push(workspaceDelegationDynamicToolSpec());
+  return tools;
+}
+
 function workspaceDelegationDynamicTools(settings = readRuntimeSettings()) {
   return workspaceDelegationPublicSettings(settings).enabled
     ? [workspaceDelegationDynamicToolSpec()]
     : [];
 }
 
-function attachWorkspaceDelegationDynamicTools(params, settings = readRuntimeSettings()) {
+function attachTaskCardRuntimeDynamicTools(params, settings = readRuntimeSettings()) {
   if (!params || typeof params !== "object") return params;
-  const tools = workspaceDelegationDynamicTools(settings);
+  const tools = taskCardRuntimeDynamicTools(settings);
   if (!tools.length) return params;
   const existing = Array.isArray(params.dynamicTools)
     ? params.dynamicTools.filter(Boolean)
@@ -7227,8 +7341,26 @@ function workspaceDelegationScriptFallbackInstruction(params = {}) {
   ].join("\n");
 }
 
+function taskCardReturnScriptFallbackInstruction(params = {}) {
+  const threadId = String(params && params.threadId || "").trim();
+  const scriptPath = path.join(APP_ROOT, "scripts", "return-thread-task-card.js");
+  return [
+    "Codex Mobile task-card return fallback:",
+    `- Prefer the app-server dynamic tool \`${TASK_CARD_RETURN_TOOL_FULL_NAME}\` when it is visible.`,
+    "- A local final answer in the target thread is not a source-thread return card.",
+    "- If no direct callable `codex_mobile.return_to_source` tool surface is visible, use the local script below as the first-class return path:",
+    `  node ${JSON.stringify(scriptPath)} --task-card <task-card-id> --thread ${threadId || "<current-target-thread-id>"} --status completed --title "<short return title>" --body-file <markdown-file>`,
+    "- Use status `completed`, `blocked`, or `redirected` to close the task-card workflow.",
+  ].join("\n");
+}
+
 function attachWorkspaceDelegationRuntimeGuidance(params, settings = readRuntimeSettings()) {
-  attachWorkspaceDelegationDynamicTools(params, settings);
+  attachTaskCardRuntimeDynamicTools(params, settings);
+  appendDeveloperInstructions(
+    params,
+    taskCardReturnScriptFallbackInstruction(params),
+    "Codex Mobile task-card return fallback:",
+  );
   if (workspaceDelegationPublicSettings(settings).enabled) {
     appendDeveloperInstructions(
       params,
@@ -11888,6 +12020,12 @@ function normalizeThreadTaskCardWorkflowMode(value) {
   return "manual";
 }
 
+function normalizeThreadTaskCardReasoningEffort(value) {
+  const effort = String(value || "").trim().toLowerCase();
+  if (!effort) return "";
+  return REASONING_EFFORT_OPTIONS.includes(effort) ? effort : "";
+}
+
 function uniqueThreadTaskCardTargetIds(values, fallback = "") {
   const raw = Array.isArray(values) ? values : [values, fallback];
   const seen = new Set();
@@ -11992,6 +12130,7 @@ function threadTaskCardThreadCallIdempotencyKey(sourceThreadId, body = {}, targe
     title: String(body.title || "").trim(),
     summary: String(body.summary || "").trim(),
     body: String(body.body || body.bodyMarkdown || body.message || "").trim(),
+    reasoningEffort: normalizeThreadTaskCardReasoningEffort(body.reasoningEffort || body.reasoning_effort || body.effort),
     workflowMode: normalizeThreadTaskCardWorkflowMode(body.workflowMode),
     workflowId: String(body.workflowId || "").trim(),
   });
@@ -12026,6 +12165,10 @@ function buildThreadTaskCardCreatePayload(body = {}, sourceThreadId = "", option
   }
   const rawBody = String(body.body || body.bodyMarkdown || body.message || "").trim();
   const cardBody = truncateThreadTaskCardBody(rawBody);
+  const reasoningEffort = normalizeThreadTaskCardReasoningEffort(body.reasoningEffort || body.reasoning_effort || body.effort);
+  if ((body.reasoningEffort || body.reasoning_effort || body.effort) && !reasoningEffort) {
+    throw httpStatusError(400, "reasoning_effort_invalid");
+  }
   return Object.assign({}, body, {
     sourceThreadId: sourceId,
     sourceTurnId: body.sourceTurnId || body.turnId || "",
@@ -12038,6 +12181,7 @@ function buildThreadTaskCardCreatePayload(body = {}, sourceThreadId = "", option
     title: body.title,
     summary: body.summary || summarizeTaskCardText(cardBody),
     body: cardBody,
+    reasoningEffort,
   });
 }
 
@@ -12166,12 +12310,92 @@ function sourceThreadIdFromDynamicToolCall(params = {}, args = {}) {
   return String(args.sourceThreadId || args.source_thread_id || "").trim();
 }
 
+function actorThreadIdFromDynamicToolCall(params = {}, args = {}) {
+  const fromParams = pushThreadId(params);
+  if (fromParams) return fromParams;
+  const turnId = String((params && (params.turnId || params.turn_id))
+    || (params && params.turn && (params.turn.id || params.turn.turnId || params.turn.turn_id))
+    || "").trim();
+  const inferred = turnId ? String(latestThreadIdByTurnId.get(turnId) || "") : "";
+  if (inferred) return inferred;
+  return String(args.threadId || args.thread_id || args.actorThreadId || args.actor_thread_id || "").trim();
+}
+
 function dynamicToolErrorPayload(code, message, extra = {}) {
   return dynamicToolJsonResponse(Object.assign({
     ok: false,
     error: code,
     message: String(message || code || "dynamic_tool_error"),
   }, extra), { success: false });
+}
+
+function isTaskCardReturnDynamicToolCall(params = {}) {
+  const identity = dynamicToolCallIdentity(params);
+  if (identity.fullName) return identity.fullName === TASK_CARD_RETURN_TOOL_FULL_NAME;
+  if (identity.namespace || identity.name) {
+    return identity.namespace === WORKSPACE_DELEGATION_TOOL_NAMESPACE && identity.name === TASK_CARD_RETURN_TOOL_NAME;
+  }
+  return false;
+}
+
+function normalizedTaskCardReturnStatus(value) {
+  const status = String(value || "").trim().toLowerCase();
+  if (!status) return "";
+  return ["completed", "blocked", "redirected", "partially_completed"].includes(status) ? status : "";
+}
+
+function taskCardReturnIdempotencyKey(taskCardId, actorThreadId, body = {}) {
+  const explicit = String(body.idempotencyKey || "").trim();
+  if (explicit) return explicit;
+  const requestId = String(body.requestId || body.request_id || "").trim();
+  const seed = requestId || JSON.stringify({
+    taskCardId,
+    actorThreadId,
+    status: normalizedTaskCardReturnStatus(body.status),
+    title: String(body.title || "").trim(),
+    summary: String(body.summary || "").trim(),
+    body: String(body.body || body.bodyMarkdown || body.message || "").trim(),
+  });
+  return `task-card-return:${stableTextHash(`${taskCardId}|${actorThreadId}`)}:${stableTextHash(seed)}`;
+}
+
+function taskCardReturnDynamicToolBody(params = {}, args = {}) {
+  const taskCardId = String(args.taskCardId || args.task_card_id || args.cardId || args.card_id || "").trim();
+  const actorThreadId = actorThreadIdFromDynamicToolCall(params, args);
+  const rawBody = String(args.body || args.bodyMarkdown || args.message || "").trim();
+  const status = normalizedTaskCardReturnStatus(args.status);
+  const title = String(args.title || "").trim();
+  return {
+    taskCardId,
+    actorThreadId,
+    body: {
+      threadId: actorThreadId,
+      status,
+      returnToSource: true,
+      title: /^Return:/i.test(title) ? title : `Return: ${title || status || "task card"}`,
+      summary: String(args.summary || "").trim() || status,
+      body: truncateThreadTaskCardBody(rawBody),
+      format: args.format || "markdown",
+      idempotencyKey: taskCardReturnIdempotencyKey(taskCardId, actorThreadId, args),
+    },
+  };
+}
+
+function logTaskCardReturnDynamicToolCall(request, params = {}, args = {}, extra = {}) {
+  try {
+    console.log(`[task-card-return-tool-call] ${JSON.stringify(Object.assign({
+      requestId: shortIdentifier(request && request.id),
+      tool: truncateToolDescriptionText(dynamicToolCallIdentity(params).fullName || TASK_CARD_RETURN_TOOL_FULL_NAME, 160),
+      actorThreadId: truncateToolDescriptionText(actorThreadIdFromDynamicToolCall(params, args), 80),
+      turnId: truncateToolDescriptionText(params.turnId || params.turn_id || "", 80),
+      callId: truncateToolDescriptionText(params.callId || params.call_id || "", 80),
+      taskCardId: truncateToolDescriptionText(args.taskCardId || args.task_card_id || args.cardId || args.card_id || "", 80),
+      status: truncateToolDescriptionText(args.status || "", 40),
+      hasBody: Boolean(String(args.body || args.bodyMarkdown || args.message || "").trim()),
+    }, extra))}`);
+  } catch (err) {
+    console.error(`[task-card-return-tool-call] failed to summarize request=${shortIdentifier(request && request.id)}: ${err.message || String(err)}`);
+  }
 }
 
 function workspaceDelegationDynamicToolBody(params = {}, args = {}) {
@@ -12190,6 +12414,49 @@ function workspaceDelegationDynamicToolBody(params = {}, args = {}) {
 async function dynamicToolServerRequestResponsePayload(request) {
   const params = request && request.params && typeof request.params === "object" ? request.params : {};
   const args = parseDynamicToolArguments(params.arguments || params.input || params.args);
+  if (isTaskCardReturnDynamicToolCall(params)) {
+    const prepared = taskCardReturnDynamicToolBody(params, args);
+    if (!prepared.taskCardId) {
+      logTaskCardReturnDynamicToolCall(request, params, args, { outcome: "task_card_id_required" });
+      return dynamicToolErrorPayload("task_card_id_required", "Original task card id is required for return_to_source.");
+    }
+    if (!prepared.actorThreadId) {
+      logTaskCardReturnDynamicToolCall(request, params, args, { outcome: "actor_thread_id_required" });
+      return dynamicToolErrorPayload(
+        "actor_thread_id_required",
+        "Codex Mobile could not infer the target thread id for this return card.",
+        { turnId: params.turnId || params.turn_id || "" },
+      );
+    }
+    if (args.status && !prepared.body.status) {
+      logTaskCardReturnDynamicToolCall(request, params, args, { outcome: "status_invalid" });
+      return dynamicToolErrorPayload("status_invalid", "Return status must be completed, blocked, redirected, or partially_completed.");
+    }
+    if (!String(args.title || "").trim()) {
+      logTaskCardReturnDynamicToolCall(request, params, args, { outcome: "return_title_required" });
+      return dynamicToolErrorPayload("return_title_required", "Return-card title is required.");
+    }
+    if (!String(args.body || args.bodyMarkdown || args.message || "").trim()) {
+      logTaskCardReturnDynamicToolCall(request, params, args, { outcome: "return_body_required" });
+      return dynamicToolErrorPayload("return_body_required", "Return-card body is required.");
+    }
+    const result = await threadTaskCardService.reply(prepared.taskCardId, prepared.actorThreadId, prepared.body);
+    logTaskCardReturnDynamicToolCall(request, params, args, {
+      outcome: "ok",
+      replyCardId: result && result.replyCard && result.replyCard.id || "",
+    });
+    return dynamicToolJsonResponse({
+      ok: true,
+      tool: TASK_CARD_RETURN_TOOL_FULL_NAME,
+      taskCardId: prepared.taskCardId,
+      actorThreadId: prepared.actorThreadId,
+      originalCardStatus: result && result.card && result.card.status || "",
+      replyCardId: result && result.replyCard && result.replyCard.id || "",
+      replyCardStatus: result && result.replyCard && result.replyCard.status || "",
+      sourceThreadId: result && result.replyCard && result.replyCard.source && result.replyCard.source.threadId || "",
+      targetThreadId: result && result.replyCard && result.replyCard.target && result.replyCard.target.threadId || "",
+    });
+  }
   if (!isWorkspaceDelegationDynamicToolCall(params, args)) {
     const identity = dynamicToolCallIdentity(params);
     logWorkspaceDelegationDynamicToolCall(request, params, args, { outcome: "unsupported_dynamic_tool" });
@@ -14789,9 +15056,11 @@ module.exports = {
   threadMatchesWorkspaceCwd,
   threadTaskCardCanonicalVisibleTargets,
   uploadPathForId,
+  taskCardReturnDynamicToolSpec,
   workspaceDelegationDynamicToolSpec,
-  attachWorkspaceDelegationDynamicTools,
+  attachTaskCardRuntimeDynamicTools,
   attachWorkspaceDelegationRuntimeGuidance,
+  taskCardReturnScriptFallbackInstruction,
   workspaceDelegationScriptFallbackInstruction,
   dynamicToolTextResponse,
 };
