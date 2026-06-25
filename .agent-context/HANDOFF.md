@@ -1,3 +1,75 @@
+# 2026-06-26 - v454 turn article lookup deployed
+
+- Optimization phase:
+  - Phase A seventh slice. v453 moved new turn article insertion anchoring into
+    `public/thread-detail-dom-patch.js`; v454 moves the single-thread turn
+    article render-key lookup selector into the same helper.
+- Root-cause boundary:
+  - Before v454, `turnArticleNode` in `public/app.js` still built and queried
+    `[data-render-key=...]` directly. That kept part of turn DOM lookup policy
+    in the app coordinator while the surrounding patch executor had already
+    moved out.
+  - This change narrows `public/app.js` to computing `stableTurnKey` and
+    injecting the existing selector-escape function. It does not change turn
+    ordering, rendering, hydration, or action binding.
+- Runtime change:
+  - `public/thread-detail-dom-patch.js` now exposes
+    `findElementByRenderKey` and `findTurnArticleElement`.
+  - The helper returns `null` for missing root, missing key, missing
+    `querySelector`, or selector exceptions. It does not hide duplicate
+    messages, skip refresh, force reload, or synthesize missing content.
+  - `turnArticleNode` delegates to `threadDetailDomPatchApi.findTurnArticleElement`.
+  - `CLIENT_BUILD_ID` and service-worker cache are bumped to
+    `codex-mobile-shell-v454`.
+- Docs/tests:
+  - `README.md` records the v454 architecture slice.
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` records that turn article
+    render-key lookup is now outside `public/app.js`.
+  - `docs/MODULES.md` maps lookup ownership to
+    `public/thread-detail-dom-patch.js`.
+  - `test/thread-detail-dom-patch.test.js` covers normal lookup, missing
+    root/key, and selector exception behavior.
+  - `test/mobile-viewport.test.js` asserts that `turnArticleNode` delegates to
+    the helper and no longer directly queries the render-key selector.
+- Validation:
+  - Syntax checks passed for `public/thread-detail-dom-patch.js`,
+    `public/app.js`, and `public/sw.js`.
+  - Focused source suite passed:
+    `node --test test/thread-detail-dom-patch.test.js
+    test/thread-detail-patch-plan.test.js test/conversation-render.test.js
+    test/mobile-viewport.test.js test/app-update.test.js
+    test/plugin-voice-input.test.js test/thread-tile-layout-ui.test.js
+    test/thread-task-card-route.test.js test/thread-goal-service.test.js`
+    (`156` tests).
+  - Full `npm test` passed (`818` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Commit/deploy:
+  - Runtime commit: `ace9e0b` (`refactor turn article lookup`).
+  - Deployed with Home AI central macOS script:
+    `deploy-macos-production.js --plugin codex-mobile --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --reason codex-mobile-turn-article-lookup-v454 --execute --json`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T171105Z-plugin-codex-mobile-web-codex-mobile-turn-article-lookup-v454`.
+  - Production `/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v454`,
+    `shellCacheName=codex-mobile-shell-v454`, and `version=0.1.11`.
+  - Source/prod SHA-256 parity confirmed for changed runtime/test/doc files.
+  - Production focused suite passed with `NODE_PATH` pointed at production
+    dependencies (`156` tests).
+- Production observation:
+  - Bounded log-tail aggregation after deploy found no v454/v453/v452/v451/v450
+    `thread_refresh_ms` client events yet; the recent sample contained `102`
+    v447 events and `1250` events with missing client build id.
+  - This is not evidence of v454 failure. It means refreshed v454 clients have
+    not yet produced that metric in the sampled tail.
+- Follow-up:
+  - Remaining Phase A boundaries are now turn node creation, hydration, and
+    action binding.
+  - The broader system optimization goal remains active and incomplete. After
+    these DOM boundaries are extracted or deliberately deferred, proceed to
+    Phase B large-session cold/warm path evidence.
+  - This was deployed locally/production only. Do not push Public unless the
+    user explicitly requests it after production validation.
+
 # 2026-06-26 - v453 turn article insertion anchoring deployed
 
 - Optimization phase:
