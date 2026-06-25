@@ -16,6 +16,19 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-25 v436 平铺页眉与 Composer 目标提示对比度
+
+v436 是平铺模式的视觉清晰度修正，不改变平铺窗口数量、active pane 选择、
+Composer 发送目标或线程刷新逻辑。
+
+每个平铺窗口的页眉改用更深一层的专用背景色，active 窗口页眉带轻微状态
+强调，窗口多时更容易分辨 pane 边界。共享 Composer 仍然通过输入框
+placeholder 显示当前发送目标；当 placeholder 是 `发送到：线程名` 时，会使用
+更明显的目标提示颜色和稍高字重。普通单线程 `Message Codex` placeholder 不受
+影响。
+
+PWA shell cache 升级到 `codex-mobile-shell-v436`。
+
 ## 2026-06-25 v435 线程详情合并编排拆分
 
 v435 继续第二阶段前端状态边界优化，把 `public/app.js` 中 thread/turn 级

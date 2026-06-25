@@ -249,6 +249,9 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(stylesCss, /\.thread-tile-switch-action\s*{/);
   assert.doesNotMatch(stylesCss, /\.thread-tile-window-controls\s*{/);
   assert.match(stylesCss, /\.thread-tile-pane\s*{/);
+  assert.match(stylesCss, /\.thread-tile-pane-header\s*{[\s\S]*background:\s*var\(--thread-tile-header-bg\);/);
+  assert.match(stylesCss, /\.thread-tile-pane\.active \.thread-tile-pane-header\s*{[\s\S]*background:\s*var\(--thread-tile-header-active-bg\);/);
+  assert.match(stylesCss, /\.message-input\.has-target-placeholder:empty::before\s*{[\s\S]*color:\s*var\(--composer-target-placeholder\);/);
   assert.match(stylesCss, /\.thread-tile-pane-body\s*{/);
   assert.match(stylesCss, /\.thread-tile-pane-content\s*{/);
   assert.match(stylesCss, /\.thread-tile-pane-state\s*{/);
@@ -274,11 +277,13 @@ test("thread tile composer targets the active pane without replacing the shared 
   assert.match(placeholderBody, /const targetThread = composerTargetThread\(\)/);
   assert.match(placeholderBody, /Boolean\(state\.threadTileMode && !state\.newThreadDraft && targetThreadId && targetThread\)/);
   assert.match(placeholderBody, /return `发送到：\$\{title\}`;/);
+  assert.match(appJs, /function composerShowsTargetPlaceholder\(\)/);
 
   const updateControlsBody = functionBody(appJs, "updateComposerControls");
   assert.match(updateControlsBody, /const targetThreadId = currentComposerThreadId\(\)/);
   assert.match(updateControlsBody, /const targetActiveTurnId = composerTargetActiveTurnId\(\)/);
   assert.match(updateControlsBody, /messageInput\.dataset\.placeholder = composerPlaceholderText\(\);/);
+  assert.match(updateControlsBody, /messageInput\.classList\.toggle\("has-target-placeholder", composerShowsTargetPlaceholder\(\)\);/);
   assert.match(updateControlsBody, /Boolean\(!hasNewThreadDraft && targetActiveTurnId\) && hasContent/);
 
   const sendMessageBody = functionBody(appJs, "sendMessage");

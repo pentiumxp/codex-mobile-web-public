@@ -473,7 +473,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v435";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v436";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -19813,6 +19813,13 @@ function composerPlaceholderText() {
   return `发送到：${title}`;
 }
 
+function composerShowsTargetPlaceholder() {
+  if (state.newThreadDraft) return false;
+  const targetThreadId = currentComposerThreadId();
+  const targetThread = composerTargetThread();
+  return Boolean(state.threadTileMode && targetThreadId && targetThread);
+}
+
 function renderComposerSettings() {
   const commandControl = $("composerCommandControl");
   const modelControl = $("composerModelControl");
@@ -19870,6 +19877,7 @@ function updateComposerControls() {
   }
   if (messageInput) {
     messageInput.dataset.placeholder = composerPlaceholderText();
+    messageInput.classList.toggle("has-target-placeholder", composerShowsTargetPlaceholder());
   }
   setMessageInputDisabled(disabled);
   $("fileInput").disabled = disabled;
