@@ -15,6 +15,12 @@ test("thread detail diagnostics classify warm projection and bounded timings", (
     readMode: "projection-v4-cache",
     summarySource: "state-db+app-server",
     totalMs: 42.4,
+    readDecision: "projection-hit",
+    projectionState: "hit",
+    projectionInputAvailable: true,
+    projectionSource: "cache",
+    projectionVersion: "v4",
+    projectionAgeMs: 123.4,
     rolloutSizeBytes: 2_800_000,
     timings: {
       summaryMs: 3.2,
@@ -32,7 +38,15 @@ test("thread detail diagnostics classify warm projection and bounded timings", (
     requestMode: "recent",
     readMode: "projection-v4-cache",
     phase: "warm-projection-cache",
+    readDecision: "projection-hit",
     summarySource: "state-db+app-server",
+    projectionState: "hit",
+    projectionInputAvailable: true,
+    projectionSource: "cache",
+    projectionVersion: "v4",
+    projectionAgeMs: 123,
+    projectionSeedStatus: "",
+    projectionSeedSource: "",
     returnedTurns: 2,
     omittedTurns: 128,
     rolloutSizeBytes: 2800000,
@@ -50,6 +64,42 @@ test("thread detail diagnostics classify warm projection and bounded timings", (
     turnsListFallbackMs: 0,
     prepareResponseMs: 6,
   });
+});
+
+test("thread detail diagnostics expose bounded projection and seed decisions", () => {
+  const diagnostics = buildThreadDetailDiagnostics({
+    requestMode: "full",
+    readMode: "turns-list-large",
+    readDecision: "bounded-large-turns-list-extra-detail-that-should-not-grow-with-private-context",
+    projectionState: "miss",
+    projectionInputAvailable: true,
+    projectionSource: "projection",
+    projectionVersion: "v4",
+    projectionAgeMs: 18.7,
+    projectionSeedStatus: "seeded",
+    projectionSeedSource: "turns-list-large",
+    summarySource: "session-index",
+    largeReadProtected: true,
+    largeReadRolloutSizeBytes: 12_000_000,
+    largeReadThresholdBytes: 8_000_000,
+    largeReadSource: "projection",
+    largeReadReason: "large-rollout",
+    thread: {
+      turns: [{ id: "turn-1" }],
+      mobileOmittedTurnCount: 99,
+    },
+  });
+
+  assert.equal(diagnostics.phase, "bounded-large-thread-window");
+  assert.equal(diagnostics.readDecision, "bounded-large-turns-list-extra-detail-that-should-not-grow-with-private-context");
+  assert.equal(diagnostics.projectionState, "miss");
+  assert.equal(diagnostics.projectionInputAvailable, true);
+  assert.equal(diagnostics.projectionSource, "projection");
+  assert.equal(diagnostics.projectionVersion, "v4");
+  assert.equal(diagnostics.projectionAgeMs, 19);
+  assert.equal(diagnostics.projectionSeedStatus, "seeded");
+  assert.equal(diagnostics.projectionSeedSource, "turns-list-large");
+  assert.equal(JSON.stringify(diagnostics).includes("turn-1"), false);
 });
 
 test("thread detail diagnostics attach to thread without copying private body content", () => {

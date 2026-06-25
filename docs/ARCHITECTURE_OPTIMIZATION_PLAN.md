@@ -66,6 +66,13 @@ raw thread data.
   and client `performancePhase` events. Client events now also carry
   `detailShape` counts for turns, items, visible items, image items, operation
   items, receipt items, usage items, diagnostics, and completed/active turns.
+  Server detail timings also expose the exact bounded read decision,
+  projection input/hit/miss/unavailable state, projection cache source/version/
+  age, and projection seed status/source. This lets a first-paint event show
+  whether a cold large-session open was a warm projection hit, projection miss
+  protected by `turns-list-large`, summary-sourced large read, full
+  `thread/read`, fallback `thread/turns/list`, or summary fallback without
+  reading private conversation data.
 - Keep thread-list fallback cache evidence in
   `mobileDiagnostics.threadListTimings`. The cache now reports
   `fallbackCacheDecision` (`hit`, `miss-rebuild`, `expired-rebuild`), bounded
@@ -362,11 +369,16 @@ but the thread summary still carries a rollout size at or above
   authoritative for the current retained window without adding a frontend
   second-refresh replacement path.
 - Large rollout protection now uses a structured decision with
-  `largeReadProtected`, `largeReadRolloutSizeBytes`,
-  `largeReadThresholdBytes`, `largeReadSource`, and `largeReadReason` in the
-  thread-detail timing diagnostics. This lets cold-open evidence distinguish
-  projection-sourced, summary-sourced, below-threshold, disabled, and
-  no-rollout-size decisions without logging message bodies or raw thread data.
+  `readDecision`, `projectionState`, `projectionInputAvailable`,
+  `projectionSource`, `projectionVersion`, `projectionAgeMs`,
+  `projectionSeedStatus`, `projectionSeedSource`, `largeReadProtected`,
+  `largeReadRolloutSizeBytes`, `largeReadThresholdBytes`, `largeReadSource`,
+  and `largeReadReason` in the thread-detail timing diagnostics. This lets
+  cold-open evidence distinguish projection hit, projection miss, unavailable
+  projection input, projection-sourced large read, summary-sourced large read,
+  projection seeding from bounded turns-list/full read, below-threshold,
+  disabled, and no-rollout-size decisions without logging message bodies or
+  raw thread data.
 - Preserve the first-paint contract for large sessions. Do not introduce
   deferred incomplete detail enrichment as a UI fallback for server cold-path
   slowness.
@@ -377,7 +389,10 @@ Remaining target:
   advancing large threads. Expected first detail result should be either
   disk-backed projection or `turns-list-large`, with `threadReadMs=0`; full
   `thread/read` should only remain for small/non-rollout threads or bounded
-  turns-list failure.
+  turns-list failure. Use `readDecision`, `projectionState`, and
+  `projectionSeedStatus` first when deciding whether the next repair belongs to
+  projection-cache seeding, summary rollout-size hydration, or app-server read
+  fallback.
 - For thread-list cold/warm behavior, use `fallbackCacheDecision`,
   `fallbackCacheBuildCount`, `fallbackCacheBuildNumber`, and
   `fallbackCacheIncrementalUpdates` before changing cache invalidation. Normal

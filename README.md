@@ -16,6 +16,39 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v493 Thread Detail Cold-Path Diagnostics
+
+v493 开始推进 Phase B 的大 session / thread-detail cold path 收敛。本次不改
+读取策略，不引入前端兜底，只把服务端线程详情读取链路的关键决策结构化到
+`mobileDiagnostics.threadDetailTimings`，方便后续直接判断慢点发生在
+projection cache、bounded turns-list、projection seed、full thread/read 还是
+summary fallback。
+
+本次切片新增的 bounded 字段包括：
+
+- `readDecision`：本次线程详情使用的读取决策，例如 `projection-hit`、
+  `bounded-large-turns-list`、`full-thread-read`、`fallback-turns-list`。
+- `projectionState` / `projectionInputAvailable`：区分 projection 输入不可用、
+  输入可用但 miss、以及 projection hit。
+- `projectionSource` / `projectionVersion` / `projectionAgeMs`：在 projection hit
+  时暴露 cache/dynamic、版本和缓存年龄。
+- `projectionSeedStatus` / `projectionSeedSource`：区分是否从
+  `turns-list-large` 或 `thread-read` 成功 seed projection。
+
+修复边界：
+
+- 症状/风险：此前已有 `phase`、`largeRead*` 和耗时字段，但仍难以从一次
+  first-paint 事件判断 projection 是“不可用”还是“miss”，以及 bounded
+  turns-list 或 full thread/read 是否成功 seed 了后续 warm cache。
+- 失败层：服务端 thread-detail cold-path 诊断字段所有权。
+- 不变量：只记录枚举、计数、耗时和 bounded cache 元数据；不记录消息正文、
+  任务卡正文、上传内容、私有路径、cookie/token、provider payload 或长日志。
+- 闭环验证：`test/thread-detail-performance-service.test.js` 覆盖字段边界和隐私；
+  `test/thread-detail-read-orchestration-service.test.js` 覆盖 projection hit/miss、
+  large turns-list、summary-sourced large read、full thread/read 和 fallback 分支。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v493`。
+
 ## 2026-06-26 v492 Projection Snapshot Planning
 
 v492 继续推进 Phase A 的前端 render/patch ownership 收敛，这次把

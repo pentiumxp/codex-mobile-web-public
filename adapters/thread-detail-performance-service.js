@@ -16,6 +16,10 @@ function nonEmptyText(value) {
   return String(value || "").trim();
 }
 
+function compactLabel(value, maxLength = 80) {
+  return nonEmptyText(value).slice(0, maxLength);
+}
+
 function classifyThreadDetailPhase(readMode, options = {}) {
   const mode = nonEmptyText(readMode).toLowerCase();
   if (options.cached === true) return "warm-client-current";
@@ -49,7 +53,15 @@ function buildThreadDetailDiagnostics(input = {}) {
     requestMode: nonEmptyText(input.requestMode),
     readMode,
     phase: classifyThreadDetailPhase(readMode, input),
+    readDecision: compactLabel(input.readDecision, 80),
     summarySource: nonEmptyText(input.summarySource),
+    projectionState: compactLabel(input.projectionState, 80),
+    projectionInputAvailable: input.projectionInputAvailable === true,
+    projectionSource: compactLabel(input.projectionSource, 80),
+    projectionVersion: compactLabel(input.projectionVersion, 80),
+    projectionAgeMs: safeDurationMs(input.projectionAgeMs),
+    projectionSeedStatus: compactLabel(input.projectionSeedStatus, 80),
+    projectionSeedSource: compactLabel(input.projectionSeedSource, 80),
     returnedTurns: safeCount(input.returnedTurns || counts.returnedTurns),
     omittedTurns: safeCount(input.omittedTurns || counts.omittedTurns),
     rolloutSizeBytes: safeCount(input.rolloutSizeBytes),

@@ -27,8 +27,16 @@ function createHarness(overrides = {}) {
           threadDetailTimings: {
             requestMode: input.requestMode,
             readMode: input.readMode,
+            readDecision: input.readDecision,
             summarySource: input.summarySource,
             phase: input.readMode,
+            projectionState: String(input.projectionState || ""),
+            projectionInputAvailable: input.projectionInputAvailable === true,
+            projectionSource: String(input.projectionSource || ""),
+            projectionVersion: String(input.projectionVersion || ""),
+            projectionAgeMs: Number(input.projectionAgeMs || 0),
+            projectionSeedStatus: String(input.projectionSeedStatus || ""),
+            projectionSeedSource: String(input.projectionSeedSource || ""),
             timings: Object.assign({}, input.timings),
             totalMs: input.totalMs,
             largeReadProtected: Boolean(input.largeReadProtected),
@@ -119,6 +127,11 @@ test("thread detail orchestration returns warm projection before app-server read
           id: "thread-1",
           turns: [{ id: "turn-cached" }],
           mobileReadMode: "projection-v4-cache",
+          mobileProjection: {
+            source: "cache",
+            version: "v4",
+            ageMs: 456,
+          },
         },
       };
     },
@@ -138,6 +151,12 @@ test("thread detail orchestration returns warm projection before app-server read
   assert.equal(calls.includes("thread-read"), false);
   assert.equal(calls.includes("turns-list:turns-list"), false);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.summarySource, "state-db");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "projection-hit");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionState, "hit");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionInputAvailable, true);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSource, "cache");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionVersion, "v4");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionAgeMs, 456);
 });
 
 test("thread detail orchestration preserves full thread/read before bounded turns/list fallback", async () => {
@@ -156,6 +175,11 @@ test("thread detail orchestration preserves full thread/read before bounded turn
   assert.ok(calls.indexOf("thread-read") > calls.indexOf("projection-miss"));
   assert.equal(calls.includes("turns-list:turns-list"), false);
   assert.ok(calls.indexOf("seed") > calls.indexOf("thread-read"));
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "full-thread-read");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionState, "miss");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionInputAvailable, true);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedStatus, "seeded");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedSource, "thread-read");
 });
 
 test("large projection miss can use bounded turns/list before full thread/read", async () => {
@@ -185,6 +209,11 @@ test("large projection miss can use bounded turns/list before full thread/read",
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadProtected, true);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadSource, "projection");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadReason, "large-rollout");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "bounded-large-turns-list");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionState, "miss");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionInputAvailable, true);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedStatus, "seeded");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedSource, "turns-list-large");
 });
 
 test("large summary read uses bounded turns/list even when projection input is unavailable", async () => {
@@ -223,6 +252,11 @@ test("large summary read uses bounded turns/list even when projection input is u
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadRolloutSizeBytes, 12_000_000);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadThresholdBytes, 8_000_000);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadSource, "summary");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "bounded-large-turns-list");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionState, "unavailable");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionInputAvailable, false);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedStatus, "skipped");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedSource, "no-projection-input");
 });
 
 test("small summary read still uses full thread/read when projection input is unavailable", async () => {
@@ -258,6 +292,9 @@ test("small summary read still uses full thread/read when projection input is un
   assert.equal(calls.includes("turns-list:turns-list-large"), false);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadProtected, false);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadReason, "below-threshold");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "full-thread-read");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionState, "unavailable");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionInputAvailable, false);
 });
 
 test("recent thread detail can use initial bounded turns/list without full read", async () => {
@@ -275,6 +312,7 @@ test("recent thread detail can use initial bounded turns/list without full read"
   assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["turn-from-list"]);
   assert.ok(calls.indexOf("turns-list:turns-list-initial") > calls.indexOf("projection-miss"));
   assert.equal(calls.includes("thread-read"), false);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "initial-turns-list");
 });
 
 test("thread/read failure falls back to bounded turns/list", async () => {
@@ -296,6 +334,7 @@ test("thread/read failure falls back to bounded turns/list", async () => {
   assert.equal(response.mode, "turns-list");
   assert.ok(calls.indexOf("turns-list:turns-list") > calls.indexOf("thread-read"));
   assert.equal(calls.includes("fallback:summary-error-fallback"), false);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "fallback-turns-list");
 });
 
 test("thread/read and turns/list timeout returns bounded summary fallback", async () => {
@@ -324,6 +363,7 @@ test("thread/read and turns/list timeout returns bounded summary fallback", asyn
   assert.equal(response.body.thread.mobileReadMode, "summary-timeout-fallback");
   assert.ok(calls.indexOf("fallback:summary-timeout-fallback") > calls.indexOf("turns-list:turns-list"));
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readMode, "summary-timeout-fallback");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "summary-fallback");
 });
 
 test("hidden summary rejects before projection or thread reads", async () => {

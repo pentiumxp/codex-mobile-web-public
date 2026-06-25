@@ -62,6 +62,17 @@ function normalizeBoundedReadDecision(value) {
   };
 }
 
+function projectionDiagnosticsFromThread(thread) {
+  const projection = thread && thread.mobileProjection && typeof thread.mobileProjection === "object"
+    ? thread.mobileProjection
+    : {};
+  return {
+    source: nonEmptyText(projection.source),
+    version: nonEmptyText(projection.version),
+    ageMs: safeNonNegativeNumber(projection.ageMs),
+  };
+}
+
 function createThreadDetailReadOrchestrationService(options = {}) {
   const now = typeof options.now === "function" ? options.now : defaultNow;
   const attachDiagnostics = typeof options.attachDiagnostics === "function"
@@ -112,8 +123,16 @@ function createThreadDetailReadOrchestrationService(options = {}) {
     const boundedDecision = context.boundedReadBeforeFullRead || null;
     return attachDiagnostics(result, {
       requestMode: context.preferRecentTurns ? "recent" : "full",
+      readDecision: details.readDecision || "",
       readMode: details.readMode || details.source || result && result.thread && result.thread.mobileReadMode || "",
       summarySource: context.summarySource,
+      projectionState: context.projectionState || "",
+      projectionInputAvailable: context.projectionInputAvailable === true,
+      projectionSource: context.projectionSource || "",
+      projectionVersion: context.projectionVersion || "",
+      projectionAgeMs: context.projectionAgeMs || 0,
+      projectionSeedStatus: context.projectionSeedStatus || "",
+      projectionSeedSource: context.projectionSeedSource || "",
       timings: context.timer.timings,
       totalMs: context.timer.elapsedMs(),
       rolloutSizeBytes: result && result.thread ? threadRolloutSizeBytes(result.thread) : 0,
@@ -142,6 +161,13 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       timer,
       preferRecentTurns,
       summarySource: "",
+      projectionState: "",
+      projectionInputAvailable: false,
+      projectionSource: "",
+      projectionVersion: "",
+      projectionAgeMs: 0,
+      projectionSeedStatus: "",
+      projectionSeedSource: "",
     };
     threadLog("start", {
       transport: codex && codex.transportKind,
@@ -179,7 +205,11 @@ function createThreadDetailReadOrchestrationService(options = {}) {
         return {
           status: 200,
           mode: "thread-read-raw",
-          body: await prepareAndAttach(result, context, { threadId, source: "thread-read-raw" }),
+          body: await prepareAndAttach(result, context, {
+            threadId,
+            source: "thread-read-raw",
+            readDecision: "raw-thread-read",
+          }),
         };
       } catch (err) {
         threadLog("thread_read_raw_error", {
@@ -197,10 +227,17 @@ function createThreadDetailReadOrchestrationService(options = {}) {
     }
 
     const projection = projectionInput(threadId, summary);
+    context.projectionInputAvailable = Boolean(projection);
+    context.projectionState = projection ? "input-ready" : "unavailable";
     const projectionStartedAtMs = now();
     const projected = projection ? projectedThreadResult(projection, summary, runtimeSettings) : null;
     timer.mark("projectionMs", projectionStartedAtMs);
     if (projected && projected.thread) {
+      context.projectionState = "hit";
+      const projectionInfo = projectionDiagnosticsFromThread(projected.thread);
+      context.projectionSource = projectionInfo.source;
+      context.projectionVersion = projectionInfo.version;
+      context.projectionAgeMs = projectionInfo.ageMs;
       if (isHiddenThread(projected.thread, visibility)) {
         threadLog("projection_hidden", {
           durationMs: now() - projectionStartedAtMs,
@@ -221,8 +258,12 @@ function createThreadDetailReadOrchestrationService(options = {}) {
         body: await prepareAndAttach(projected, context, {
           threadId,
           source: projected.thread.mobileReadMode || "projection",
+          readDecision: "projection-hit",
         }),
       };
+    }
+    if (projection) {
+      context.projectionState = "miss";
     }
 
     if (preferRecentTurns) {
@@ -247,7 +288,11 @@ function createThreadDetailReadOrchestrationService(options = {}) {
         return {
           status: 200,
           mode: "turns-list-initial",
-          body: attachDetailDiagnostics(result, context, { threadId, source: "turns-list-initial" }),
+          body: attachDetailDiagnostics(result, context, {
+            threadId,
+            source: "turns-list-initial",
+            readDecision: "initial-turns-list",
+          }),
         };
       } catch (err) {
         threadLog("turns_list_initial_error", {
@@ -295,14 +340,25 @@ function createThreadDetailReadOrchestrationService(options = {}) {
           try {
             seedProjection(projection, result);
             result.thread.mobileProjection = Object.assign({}, result.thread.mobileProjection || {}, { source: "seeded-from-turns-list" });
+            context.projectionSeedStatus = "seeded";
+            context.projectionSeedSource = "turns-list-large";
           } catch (err) {
+            context.projectionSeedStatus = "failed";
+            context.projectionSeedSource = "turns-list-large";
             threadLog("projection_seed_error", { error: safeErrorMessage(err) });
           }
+        } else {
+          context.projectionSeedStatus = "skipped";
+          context.projectionSeedSource = projection ? "turns-list-large" : "no-projection-input";
         }
         return {
           status: 200,
           mode,
-          body: attachDetailDiagnostics(result, context, { threadId, source: mode }),
+          body: attachDetailDiagnostics(result, context, {
+            threadId,
+            source: mode,
+            readDecision: "bounded-large-turns-list",
+          }),
         };
       } catch (err) {
         threadLog("turns_list_before_full_error", {
@@ -337,14 +393,25 @@ function createThreadDetailReadOrchestrationService(options = {}) {
         try {
           seedProjection(projection, result);
           result.thread.mobileProjection = Object.assign({}, result.thread.mobileProjection || {}, { source: "seeded" });
+          context.projectionSeedStatus = "seeded";
+          context.projectionSeedSource = "thread-read";
         } catch (err) {
+          context.projectionSeedStatus = "failed";
+          context.projectionSeedSource = "thread-read";
           threadLog("projection_seed_error", { error: safeErrorMessage(err) });
         }
+      } else {
+        context.projectionSeedStatus = "skipped";
+        context.projectionSeedSource = "no-projection-input";
       }
       return {
         status: 200,
         mode: "thread-read",
-        body: await prepareAndAttach(result, context, { threadId, source: "thread-read" }),
+        body: await prepareAndAttach(result, context, {
+          threadId,
+          source: "thread-read",
+          readDecision: "full-thread-read",
+        }),
       };
     } catch (readErr) {
       threadLog("thread_read_error", {
@@ -383,7 +450,11 @@ function createThreadDetailReadOrchestrationService(options = {}) {
         return {
           status: 200,
           mode: "turns-list",
-          body: attachDetailDiagnostics(result, context, { threadId, source: "turns-list" }),
+          body: attachDetailDiagnostics(result, context, {
+            threadId,
+            source: "turns-list",
+            readDecision: "fallback-turns-list",
+          }),
         };
       } catch (turnsErr) {
         threadLog("turns_list_error", {
@@ -402,7 +473,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
               runtimeSettings,
               warning: safeErrorMessage(turnsErr),
               mode,
-            }), context, { threadId, source: mode }),
+            }), context, { threadId, source: mode, readDecision: "summary-fallback" }),
           };
         }
         if (isReadTimeoutError(turnsErr)) {
@@ -416,7 +487,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
               runtimeSettings,
               warning: safeErrorMessage(turnsErr),
               mode,
-            }), context, { threadId, source: mode }),
+            }), context, { threadId, source: mode, readDecision: "summary-fallback" }),
           };
         }
         const mode = "summary-error-fallback";
@@ -429,7 +500,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
             runtimeSettings,
             warning: `thread/read failed: ${safeErrorMessage(readErr)}; thread/turns/list failed: ${safeErrorMessage(turnsErr)}`,
             mode,
-          }), context, { threadId, source: mode }),
+          }), context, { threadId, source: mode, readDecision: "summary-fallback" }),
         };
       }
     }
