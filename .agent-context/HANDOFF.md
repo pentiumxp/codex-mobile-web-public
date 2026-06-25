@@ -1,3 +1,71 @@
+# 2026-06-25 - v448 refresh render outcome policy deployed
+
+- Optimization phase:
+  - This is Phase A first slice of the broader Codex Mobile architecture
+    optimization goal. It is a root-cause boundary cleanup, not a visual
+    fallback for flicker.
+  - Goal: make thread refresh choose one explicit terminal render outcome
+    before `public/app.js` performs DOM work.
+- Root-cause boundary:
+  - Before v448, `refreshCurrentThread` could successfully patch a tile pane
+    but still continue through broader single-thread/full-render control flow.
+  - That kept refresh outcome ownership split between `public/app.js` and
+    `public/thread-detail-render-plan.js`, increasing the chance of projection
+    signature churn causing unnecessary conversation replacement.
+- Runtime change:
+  - `public/thread-detail-render-plan.js` `finalizeThreadDetailRenderPlan`
+    now returns a full render outcome: `detailRenderMode`,
+    `locallyPatchedDetail`, `tilePanePatchedDetail`, `renderAction`, and
+    `projectionConsistencyPhase`.
+  - Tile pane patch success is terminal:
+    - `tile-pane` for detail refreshes;
+    - `tile-pane-metadata` for metadata-only tile refreshes.
+  - `public/app.js` now executes `refreshRenderAction` instead of re-deciding
+    patch/full-render behavior inline.
+  - `thread_refresh_ms` now includes bounded diagnostic fields
+    `refreshRenderAction` and `tilePanePatchedDetail`.
+  - `CLIENT_BUILD_ID` and service-worker cache are bumped to
+    `codex-mobile-shell-v448`.
+- Docs/tests:
+  - `README.md` records the v448 architecture slice.
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` records that refresh render
+    outcome ownership moved into the render-plan helper.
+  - Focused tests cover terminal tile-pane patch, metadata-only tile patch
+    avoiding full render, app wiring, and performance metric field retention.
+- Validation:
+  - Focused source suite passed:
+    `node --test test/thread-detail-render-plan.test.js
+    test/mobile-viewport.test.js test/conversation-render.test.js
+    test/thread-performance-metrics.test.js test/thread-task-card-route.test.js
+    test/thread-goal-service.test.js` (`135` tests).
+  - Full `npm test` passed (`805` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Commit/deploy:
+  - Runtime commit: `4806efd` (`refactor refresh render outcome policy`).
+  - Deployed with Home AI central macOS script:
+    `deploy-macos-production.js --plugin codex-mobile --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --reason codex-mobile-refresh-render-outcome-v448 --execute --json`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T162520Z-plugin-codex-mobile-web-codex-mobile-refresh-render-outcome-v448`.
+  - Production `/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v448`,
+    `shellCacheName=codex-mobile-shell-v448`, and `version=0.1.11`.
+  - Source/prod SHA-256 parity confirmed for changed runtime/test/doc files.
+  - Production focused suite passed with `NODE_PATH` pointed at production
+    dependencies (`135` tests).
+- Production observation:
+  - Log-tail aggregation after deploy showed no v448 `thread_refresh_ms`
+    events yet; latest client-side events were still old clients
+    (`codex-mobile-shell-v447` or missing build id).
+  - After real clients refresh to v448, inspect `thread_refresh_ms`
+    `refreshRenderAction`, `tilePanePatchedDetail`, `renderPlanReason`, and
+    `patchRejectReason` before deciding whether Phase A has reduced full-render
+    churn enough.
+- Follow-up:
+  - Continue Phase A by extracting DOM patch application boundaries from
+    `public/app.js`: node lookup, node creation, patch application, hydration,
+    and scroll ownership.
+  - Keep focused tests attached to each extracted boundary.
+
 # 2026-06-25 - v447 live refresh patch signature fix deployed
 
 - User follow-up after v445:
