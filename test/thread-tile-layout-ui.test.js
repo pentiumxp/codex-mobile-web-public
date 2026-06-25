@@ -28,7 +28,7 @@ function functionBody(source, name) {
 test("thread tile layout is wired as an explicit shell policy", () => {
   assert.doesNotMatch(indexHtml, /id="threadTileToggle"/);
   assert.match(indexHtml, /data-thread-display-choice="single"[\s\S]*data-thread-display-choice="tile"/);
-  assert.match(indexHtml, /<script src="\/thread-detail-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-render-plan\.js"><\/script>\s*\n\s*<script src="\/thread-tile-layout\.js"><\/script>\s*\n\s*<script src="\/build-refresh-policy\.js"><\/script>/);
+  assert.match(indexHtml, /<script src="\/thread-detail-state\.js"><\/script>\s*\n\s*<script src="\/thread-detail-render-plan\.js"><\/script>\s*\n\s*<script src="\/thread-detail-merge-state\.js"><\/script>\s*\n\s*<script src="\/thread-tile-layout\.js"><\/script>\s*\n\s*<script src="\/build-refresh-policy\.js"><\/script>/);
   assert.match(appJs, /const threadTileLayoutPolicy = window\.CodexThreadTileLayout/);
   assert.match(appJs, /threadTileMode: false/);
   assert.match(appJs, /threadDisplaySettingsLoaded: false/);

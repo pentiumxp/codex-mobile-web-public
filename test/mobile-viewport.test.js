@@ -9,6 +9,7 @@ const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
 const swJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "sw.js"), "utf8");
+const threadDetailMergeStateJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "thread-detail-merge-state.js"), "utf8");
 const viewportMetricsJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "viewport-metrics.js"), "utf8");
 const platformPointer = fs.readFileSync(path.resolve(__dirname, "..", "docs", "HOME_AI_PLATFORM_CONTRACT.md"), "utf8");
 
@@ -147,13 +148,14 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v434/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v434"/);
+  assert.match(swJs, /codex-mobile-shell-v435/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v435"/);
   assert.match(swJs, /"\/thread-status-hints\.js"/);
   assert.match(swJs, /"\/thread-performance-metrics\.js"/);
   assert.match(swJs, /"\/live-operation-dock-state\.js"/);
   assert.match(swJs, /"\/thread-detail-state\.js"/);
   assert.match(swJs, /"\/thread-detail-render-plan\.js"/);
+  assert.match(swJs, /"\/thread-detail-merge-state\.js"/);
   assert.match(swJs, /"\/thread-tile-layout\.js"/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
@@ -279,10 +281,11 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /const MAX_VISIBLE_TURNS = 10/);
   assert.match(appJs, /const MAX_EXPANDED_VISIBLE_TURNS = 200/);
   assert.match(appJs, /const THREAD_HISTORY_TOP_LOAD_PX = 64/);
-  assert.match(appJs, /Boolean\(incomingThread\.mobileOlderTurnsCursor\)/);
-  assert.match(appJs, /Number\(incomingThread\.mobileOmittedTurnCount \|\| 0\) > 0/);
-  assert.match(appJs, /preservedExpandedTurnCount \+= 1/);
-  assert.match(appJs, /merged\.mobileOmittedTurnCount = Math\.max\(0, Number\(merged\.mobileOmittedTurnCount \|\| 0\) - preservedExpandedTurnCount\)/);
+  assert.match(appJs, /threadDetailMergePolicy\.mergeThreadPreservingVisibleItems\(existingThread, incomingThread/);
+  assert.match(threadDetailMergeStateJs, /Boolean\(incomingThread\.mobileOlderTurnsCursor\)/);
+  assert.match(threadDetailMergeStateJs, /Number\(incomingThread\.mobileOmittedTurnCount \|\| 0\) > 0/);
+  assert.match(threadDetailMergeStateJs, /preservedExpandedTurnCount \+= 1/);
+  assert.match(threadDetailMergeStateJs, /merged\.mobileOmittedTurnCount = Math\.max\(0, Number\(merged\.mobileOmittedTurnCount \|\| 0\) - preservedExpandedTurnCount\)/);
   assert.match(appJs, /function loadOlderThreadTurns\(options = \{\}\)/);
   assert.match(appJs, /const preserveScroll = Boolean\(options\.preserveScroll\)/);
   assert.match(appJs, /let newlyLoadedTurnCount = 0/);
@@ -366,6 +369,7 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(swJs, /"\/live-operation-dock-state\.js"/);
   assert.match(swJs, /"\/thread-detail-state\.js"/);
   assert.match(swJs, /"\/thread-detail-render-plan\.js"/);
+  assert.match(swJs, /"\/thread-detail-merge-state\.js"/);
   assert.match(swJs, /"\/thread-tile-layout\.js"/);
   assert.match(swJs, /"\/build-refresh-policy\.js"/);
   assert.match(appJs, /"\/viewport-metrics\.js"/);
@@ -376,6 +380,7 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /"\/live-operation-dock-state\.js"/);
   assert.match(appJs, /"\/thread-detail-state\.js"/);
   assert.match(appJs, /"\/thread-detail-render-plan\.js"/);
+  assert.match(appJs, /"\/thread-detail-merge-state\.js"/);
   assert.match(appJs, /"\/thread-tile-layout\.js"/);
   assert.match(appJs, /"\/build-refresh-policy\.js"/);
   assert.match(appJs, /navigator\.serviceWorker\.register\("\/sw\.js"\)/);

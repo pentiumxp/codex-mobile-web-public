@@ -16,6 +16,25 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-25 v435 线程详情合并编排拆分
+
+v435 继续第二阶段前端状态边界优化，把 `public/app.js` 中 thread/turn 级
+详情合并编排抽到新的纯 helper：`public/thread-detail-merge-state.js`。
+`app.js` 现在只负责把运行时 active turn id 和现有 item 级合并函数传给
+helper；是否保留 live 本地可见项、是否保留展开历史、是否清理过期
+`mobileLoading` / `mobileLoadError` / `mobileReadWarning`、以及 v4 projection
+线程是否委托给 v4 合并路径，都由新 helper 的可测试策略负责。
+
+这个拆分不改变线程详情投影协议，也不增加前端去重兜底。目标是把
+live/detail 刷新过程中最容易导致“中间内容短暂消失、完成回执替换、展开历史
+丢失”的合并规则从入口文件里拿出来，后续可以继续拆 DOM patch 和 pane-local
+状态而不继续膨胀 `public/app.js`。
+
+新增 `test/thread-detail-merge-state.test.js` 覆盖无 incoming items、incoming
+可见项减少、live-to-completed 保留、加载状态清理、active 本地 turn 保留、
+展开历史保留、初始提交 echo 清理和 v4 projection 委托。PWA shell cache
+升级到 `codex-mobile-shell-v435`。
+
 ## 2026-06-25 v434 平铺模式 Composer 目标改为输入框提示
 
 v434 修正 v433 的显示方式：不再在 Composer 上方增加独立目标条，因为那会

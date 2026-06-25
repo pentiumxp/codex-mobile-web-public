@@ -77,13 +77,17 @@ to `public/thread-detail-state.js`. The refresh render-mode decision now lives
 in `public/thread-detail-render-plan.js`: it decides metadata-only versus local
 patch versus full render from previous/next/rendered conversation signatures,
 and prevents local patch attempts when the currently rendered DOM signature is
-already stale. Broader thread detail merge orchestration and DOM patching remain
-in `public/app.js`.
+already stale. Thread/turn-level merge orchestration now lives in
+`public/thread-detail-merge-state.js`: it coordinates v4 projection delegation,
+incoming turn merge, stale mobile load flag cleanup, active live-turn retention,
+expanded-history preservation, and initial-submission echo cleanup while
+`public/app.js` supplies item-level merge and DOM/runtime glue. DOM patching
+still remains in `public/app.js`.
 
 Target:
 
-- Extract thread detail merge/state rules from `public/app.js` into a pure
-  helper module.
+- Continue extracting thread detail merge/state rules from `public/app.js` into
+  pure helper modules, with DOM patching as the next remaining boundary.
 - Keep `public/app.js` responsible for DOM wiring, patch application, and event
   binding only.
 - Cover user-message echo convergence, live receipt preservation, completed

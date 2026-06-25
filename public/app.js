@@ -95,6 +95,10 @@ const threadDetailRenderPlanApi = window.CodexThreadDetailRenderPlan;
 if (!threadDetailRenderPlanApi) {
   throw new Error("CodexThreadDetailRenderPlan script failed to load");
 }
+const threadDetailMergeStateApi = window.CodexThreadDetailMergeState;
+if (!threadDetailMergeStateApi) {
+  throw new Error("CodexThreadDetailMergeState script failed to load");
+}
 const threadTileLayoutPolicy = window.CodexThreadTileLayout;
 if (!threadTileLayoutPolicy) {
   throw new Error("CodexThreadTileLayout policy script failed to load");
@@ -469,7 +473,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v434";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v435";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -521,6 +525,7 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/live-operation-dock-state.js",
   "/thread-detail-state.js",
   "/thread-detail-render-plan.js",
+  "/thread-detail-merge-state.js",
   "/thread-tile-layout.js",
   "/build-refresh-policy.js",
   "/app.js",
@@ -531,6 +536,22 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/icons/icon-512.png",
   "/icons/apple-touch-icon.png",
 ]);
+const threadDetailMergePolicy = threadDetailMergeStateApi.createThreadDetailMergePolicy({
+  isV4ProjectionThread,
+  mergeV4ProjectionThread,
+  normalizeThreadVisibleUserMessages,
+  turnVisibleWeight,
+  shouldPreserveExistingTurnVisibleItems: (existingTurn, incomingTurn, existingWeight) => (
+    threadDetailStatePolicy.shouldPreserveExistingTurnVisibleItems(existingTurn, incomingTurn, existingWeight)
+  ),
+  mergeItemsPreservingLocalVisible,
+  shouldDropInitialSubmissionEchoTurn,
+  turnIsSupersededBy,
+  isTurnComplete,
+  sortTurnsForDisplay,
+  threadHasInitialSubmissionEcho,
+  maxExpandedVisibleTurns: MAX_EXPANDED_VISIBLE_TURNS,
+});
 const TURN_REPLY_JUMP_WINDOW_MS = 10 * 60 * 1000;
 const CONVERSATION_SCROLL_INTENT_MS = 1200;
 const STORAGE_THREAD_ID = "codexMobileCurrentThreadId";
@@ -5904,78 +5925,17 @@ function mergeItemsPreservingLocalVisible(existingItems, incomingItems, preserve
 }
 
 function mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) {
-  if (!existingTurn) return incomingTurn;
-  if (!incomingTurn) return existingTurn;
-  const existingItems = Array.isArray(existingTurn.items) ? existingTurn.items : [];
-  const incomingHasItems = Array.isArray(incomingTurn.items);
-  const merged = Object.assign({}, existingTurn, incomingTurn);
-  if (!incomingHasItems) merged.items = existingItems;
-  else {
-    const incomingWeight = turnVisibleWeight(Object.assign({}, incomingTurn, { items: incomingTurn.items || [] }));
-    const existingWeight = turnVisibleWeight(existingTurn);
-    const preserveLocalVisible = incomingWeight < existingWeight
-      || shouldPreserveLiveTurnLocalVisibleItems(existingTurn, incomingTurn, existingWeight);
-    merged.items = mergeItemsPreservingLocalVisible(existingItems, incomingTurn.items || [], preserveLocalVisible, incomingTurn);
-  }
-  return merged;
+  return threadDetailMergePolicy.mergeTurnPreservingVisibleItems(existingTurn, incomingTurn);
 }
 
 function shouldPreserveLiveTurnLocalVisibleItems(existingTurn, incomingTurn, existingWeight = null) {
-  return threadDetailStatePolicy.shouldPreserveExistingTurnVisibleItems(existingTurn, incomingTurn, existingWeight);
+  return threadDetailMergePolicy.shouldPreserveLiveTurnLocalVisibleItems(existingTurn, incomingTurn, existingWeight);
 }
 
 function mergeThreadPreservingVisibleItems(existingThread, incomingThread) {
-  if (isV4ProjectionThread(incomingThread)) return mergeV4ProjectionThread(existingThread, incomingThread);
-  if (!existingThread || !incomingThread || existingThread.id !== incomingThread.id) return normalizeThreadVisibleUserMessages(incomingThread);
-  const existingTurns = Array.isArray(existingThread.turns) ? existingThread.turns : [];
-  const incomingTurns = Array.isArray(incomingThread.turns) ? incomingThread.turns : null;
-  const existingById = new Map(existingTurns.map((turn) => [turn.id, turn]));
-  const initialSubmissionId = String(existingThread.mobileInitialSubmissionId || "");
-  const merged = Object.assign({}, existingThread, incomingThread);
-  if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoading")) {
-    delete merged.mobileLoading;
-  }
-  if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoadError")) {
-    delete merged.mobileLoadError;
-  }
-  if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileReadWarning")) {
-    delete merged.mobileReadWarning;
-  }
-  if (!incomingTurns) return normalizeThreadVisibleUserMessages(merged);
-  merged.turns = incomingTurns.map((incomingTurn) => {
-    const existingTurn = existingById.get(incomingTurn.id);
-    return existingTurn ? mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) : incomingTurn;
+  return threadDetailMergePolicy.mergeThreadPreservingVisibleItems(existingThread, incomingThread, {
+    activeTurnId: state.activeTurnId,
   });
-  const incomingIds = new Set(merged.turns.map((turn) => turn && turn.id).filter(Boolean));
-  const latestIncoming = merged.turns.length ? merged.turns[merged.turns.length - 1] : null;
-  const preserveExpandedHistory = Boolean(existingThread.mobileHistoryExpanded)
-    && (/turns-list/i.test(String(incomingThread.mobileReadMode || ""))
-      || Boolean(incomingThread.mobileOlderTurnsCursor)
-      || Number(incomingThread.mobileOmittedTurnCount || 0) > 0);
-  let preservedExpandedTurnCount = 0;
-  for (const existingTurn of existingTurns) {
-    if (!existingTurn || incomingIds.has(existingTurn.id)) continue;
-    if (shouldDropInitialSubmissionEchoTurn(existingTurn, merged.turns, initialSubmissionId)) continue;
-    if (preserveExpandedHistory) {
-      merged.turns.push(existingTurn);
-      preservedExpandedTurnCount += 1;
-      continue;
-    }
-    if (turnIsSupersededBy(existingTurn, latestIncoming)) continue;
-    if (existingTurn.id === state.activeTurnId || (!isTurnComplete(existingTurn) && turnVisibleWeight(existingTurn) > 0)) {
-      merged.turns.push(existingTurn);
-    }
-  }
-  if (preserveExpandedHistory) {
-    merged.mobileHistoryExpanded = true;
-    merged.turns = sortTurnsForDisplay(merged.turns).slice(-MAX_EXPANDED_VISIBLE_TURNS);
-    if (preservedExpandedTurnCount > 0) {
-      merged.mobileOmittedTurnCount = Math.max(0, Number(merged.mobileOmittedTurnCount || 0) - preservedExpandedTurnCount);
-    }
-  }
-  const normalized = normalizeThreadVisibleUserMessages(merged);
-  if (!threadHasInitialSubmissionEcho(normalized, initialSubmissionId)) delete normalized.mobileInitialSubmissionId;
-  return normalized;
 }
 
 function turnOrderMs(turn) {

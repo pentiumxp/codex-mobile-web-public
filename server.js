@@ -1181,6 +1181,7 @@ function appShellBuildId(cacheName = readServiceWorkerCacheName()) {
     "live-operation-dock-state.js",
     "thread-detail-state.js",
     "thread-detail-render-plan.js",
+    "thread-detail-merge-state.js",
     "thread-tile-layout.js",
     "app.js",
     "sw.js",
@@ -5858,6 +5859,7 @@ function mergeRecentRawOperationsIntoTurn(thread, turn, options = {}) {
     maxOperations: options.maxOperations || MAX_LIVE_OPERATION_ITEMS,
   });
   if (rawOperations.length === 0) return;
+  const allowNewRawOperations = isLiveTurn(turn);
 
   const existingByKey = new Map();
   const existingBySignature = new Map();
@@ -5878,6 +5880,7 @@ function mergeRecentRawOperationsIntoTurn(thread, turn, options = {}) {
       mergeRawOperationIntoItem(existing, rawOperation);
       continue;
     }
+    if (!allowNewRawOperations) continue;
     turn.items.push(rawOperation);
     if (key) existingByKey.set(key, rawOperation);
     if (signature) existingBySignature.set(signature, rawOperation);

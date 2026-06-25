@@ -9,7 +9,9 @@ const root = path.resolve(__dirname, "..");
 const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
+const threadDetailMergeStateJs = fs.readFileSync(path.join(root, "public", "thread-detail-merge-state.js"), "utf8");
 const { createThreadDetailStatePolicy } = require(path.join(root, "public", "thread-detail-state.js"));
+const { createThreadDetailMergePolicy } = require(path.join(root, "public", "thread-detail-merge-state.js"));
 
 function functionBodyFrom(source, name) {
   const start = source.indexOf(`function ${name}(`);
@@ -777,7 +779,7 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "mergeTurnPreservingVisibleItems",
     "mergeThreadPreservingVisibleItems",
   ].map((name) => functionSourceFrom(appJs, name));
-  return Function("createThreadDetailStatePolicy", `
+  return Function("createThreadDetailStatePolicy", "createThreadDetailMergePolicy", `
 const MAX_EXPANDED_VISIBLE_TURNS = 40;
 const state = { activeTurnId: "local-start-turn", currentThreadId: "thread-new" };
 function isReasoningItem(item) { return Boolean(item && item.type === "reasoning"); }
@@ -823,8 +825,24 @@ const threadDetailStatePolicy = createThreadDetailStatePolicy({
   visibleTextItemsLikelySame,
   completedReceiptItemsLikelySame,
 });
+const threadDetailMergePolicy = createThreadDetailMergePolicy({
+  isV4ProjectionThread,
+  mergeV4ProjectionThread,
+  normalizeThreadVisibleUserMessages,
+  turnVisibleWeight,
+  shouldPreserveExistingTurnVisibleItems: (existingTurn, incomingTurn, existingWeight) => (
+    threadDetailStatePolicy.shouldPreserveExistingTurnVisibleItems(existingTurn, incomingTurn, existingWeight)
+  ),
+  mergeItemsPreservingLocalVisible,
+  shouldDropInitialSubmissionEchoTurn,
+  turnIsSupersededBy,
+  isTurnComplete,
+  sortTurnsForDisplay,
+  threadHasInitialSubmissionEcho,
+  maxExpandedVisibleTurns: MAX_EXPANDED_VISIBLE_TURNS,
+});
 return mergeThreadPreservingVisibleItems;
-`)(createThreadDetailStatePolicy);
+`)(createThreadDetailStatePolicy, createThreadDetailMergePolicy);
 }
 
 function evaluatedNormalizeThreadVisibleUserMessages() {
@@ -3875,8 +3893,9 @@ test("thread running hints survive notLoaded list refreshes", () => {
 test("thread merge drops superseded stale active turns", () => {
   assert.match(appJs, /function turnIsSupersededBy\(/);
   assert.match(functionBody("turnIsSupersededBy"), /return isTurnComplete\(newerTurn\) && !isTurnComplete\(turn\)/);
-  assert.match(functionBody("mergeThreadPreservingVisibleItems"), /const latestIncoming = merged\.turns\.length \? merged\.turns\[merged\.turns\.length - 1\] : null/);
-  assert.match(functionBody("mergeThreadPreservingVisibleItems"), /if \(turnIsSupersededBy\(existingTurn, latestIncoming\)\) continue/);
+  assert.match(functionBody("mergeThreadPreservingVisibleItems"), /threadDetailMergePolicy\.mergeThreadPreservingVisibleItems\(existingThread, incomingThread/);
+  assert.match(threadDetailMergeStateJs, /const latestIncoming = merged\.turns\.length \? merged\.turns\[merged\.turns\.length - 1\] : null/);
+  assert.match(threadDetailMergeStateJs, /if \(turnIsSupersededBy\(existingTurn, latestIncoming\)\) continue/);
 });
 
 test("completed turns can render context and token usage summaries", () => {
