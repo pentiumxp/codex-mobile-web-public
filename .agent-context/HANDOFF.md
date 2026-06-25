@@ -8371,6 +8371,72 @@ The previous full handoff was archived and should be opened only when old proven
   - This has not been pushed to public. Follow the release-order rule: wait for
     production/user confirmation before any public sync/push.
 
+## 2026-06-26 - Home AI Autonomous Delivery return-card events deployed
+
+- Trigger:
+  - Home AI task card `ttc_a8ab1599a96e2e92ed` requested Codex Mobile terminal
+    return cards to update Home AI Autonomous Delivery Loop slices without
+    manual case/slice lookup.
+- Root cause / invariant:
+  - Codex Mobile already created terminal return cards, but the Home AI
+    delivery-loop state was not notified from the authoritative return-card
+    creation path. Local target-thread final text is not a source-thread return
+    card, and terminal return cards must remain terminal with no acknowledgement
+    loop.
+- Change:
+  - Added `adapters/home-ai-autonomous-delivery-return-service.js` as a
+    backend-only bounded event client for
+    `/api/autonomous-delivery/return-card-events`.
+  - `adapters/thread-task-card-service.js` now emits one observer event when a
+    terminal `returnToSource` card closes an original non-terminal work card.
+    Event metadata is bounded to original task-card id, return-card id, return
+    status, title/summary, source/target thread ids, workflow id,
+    `terminal:true`, and `ackPolicy:"none"`.
+  - The observer is idempotent after a successful send. Home AI `404` for an
+    unknown original task-card id records bounded `unknown_task_card` audit
+    state and does not block return-card delivery.
+  - `server.js` wires the observer through the existing trusted Home AI/Hermes
+    backend web-key callback path. The event path does not create repair cards,
+    does not request acknowledgement, and does not inject another task card.
+  - MCP and script return status validation now include `rejected`, matching
+    the Home AI return-card event contract.
+- Commit:
+  - `64d3b30` (`wire return cards to Home AI delivery events`).
+- Validation:
+  - Source focused task-card/protocol/render suite passed (`146` tests):
+    `test/home-ai-autonomous-delivery-return-service.test.js`,
+    `test/thread-task-card-service.test.js`,
+    `test/thread-task-card-route.test.js`,
+    `test/codex-mobile-mcp-server.test.js`, and
+    `test/conversation-render.test.js`.
+  - Source full `npm test` passed (`864` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - Production focused suite passed with production dependencies (`146` tests).
+  - Source/production hash parity matched for the new adapter, task-card
+    service, server wiring, return scripts, docs, package metadata, and focused
+    tests.
+- Production deploy:
+  - Deployed through Home AI central macOS production script with reason
+    `codex-mobile-home-ai-return-card-events`.
+  - Source ref: `64d3b3074422`, dirty state: false.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T202524Z-plugin-codex-mobile-web-codex-mobile-home-ai-return-card-events`.
+  - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` restarted and
+    manifest health check passed.
+  - `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v476`,
+    `shellCacheName=codex-mobile-shell-v476`, `version=0.1.11`,
+    `authRequired=true`.
+- Privacy:
+  - Event payload excludes raw task-card bodies, conversation text, prompts,
+    completions, uploads, screenshots, provider payloads, cookies, launch
+    tokens, access keys, database rows, and long logs.
+- Operational notes:
+  - Server-only change; no static shell/cache bump beyond the already deployed
+    v476 shell.
+  - Not pushed to public yet. Follow the release-order rule: wait for
+    production/user confirmation before any public sync/push.
+
 ## 2026-06-26 - v459 thread tile state policy deployed
 
 - Scope:
