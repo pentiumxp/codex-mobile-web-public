@@ -9939,3 +9939,61 @@ The previous full handoff was archived and should be opened only when old proven
     parity.
 - Release:
   - Public was not pushed for v484.
+
+## 2026-06-26 - v485 visible item insertion anchoring deployed
+
+- Latest code commit:
+  - `4f9e626 extract visible item insertion anchoring`
+- v485 change:
+  - `public/thread-detail-dom-patch.js` now owns
+    `insertVisibleItemElement`, the concrete visible-item insertion anchor
+    policy for local single-thread item patching.
+  - The helper distinguishes three cases with executable tests:
+    nearest rendered previous item followed by another node, nearest rendered
+    previous item at the DOM end, and no previous rendered item.
+  - `public/app.js` delegates visible item insertion to the helper and still
+    owns the runtime DOM lookup, render-key construction, hydration, and
+    scroll completion.
+  - Static build/cache: `0.1.11|codex-mobile-shell-v485` /
+    `codex-mobile-shell-v485`.
+- Root-cause boundary:
+  - Symptom/risk: the previous inline `insertVisibleItemDom()` path searched
+    for the nearest previous visible item, but when that previous node was the
+    last DOM child, `previousNode.nextSibling` was `null`; the old fallback then
+    reused `article.firstChild`, which could insert the new item at the start
+    instead of appending after the previous item.
+  - Failing layer: frontend visible-item DOM patch insertion anchoring.
+  - Invariant: item insertion must preserve visible-entry order; only the
+    "no previous rendered item" case may fall back to before-first insertion.
+- Validation:
+  - Source focused suite passed:
+    `test/thread-detail-dom-patch.test.js`,
+    `test/conversation-render.test.js`, `test/mobile-viewport.test.js`,
+    `test/app-update.test.js`, `test/thread-goal-service.test.js`, and
+    `test/thread-task-card-route.test.js` (`165` tests).
+  - Full source `npm test` passed (`890` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Production deploy:
+  - Deployed through Home AI central macOS plugin deploy path with reason
+    `codex-mobile-visible-item-insert-anchoring-v485`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T215711Z-plugin-codex-mobile-web-codex-mobile-visible-item-insert-anchoring-v485`
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v485`,
+    `shellCacheName=codex-mobile-shell-v485`, `version=0.1.11`,
+    `authRequired=true`.
+  - Source/production SHA parity verified for:
+    `public/app.js`, `public/thread-detail-dom-patch.js`, `public/sw.js`,
+    `test/thread-detail-dom-patch.test.js`,
+    `test/conversation-render.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-goal-service.test.js`,
+    `test/thread-task-card-route.test.js`, `README.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and `docs/MODULES.md`.
+  - Production focused suite passed (`165` tests).
+- Browser/visual note:
+  - Browser automation remains unavailable in the current tool list. v485
+    closure evidence is source focused tests, full source tests, production
+    focused tests, production public-config readback, and source/prod SHA
+    parity.
+- Release:
+  - Public was not pushed for v485.
