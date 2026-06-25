@@ -272,7 +272,43 @@
     return result(true, "applied", counts);
   }
 
+  function applyLiveTextItemDomPatch(input = {}) {
+    const root = input.root || input.conversation || null;
+    if (!root || typeof root.querySelector !== "function") return result(false, "missing-root");
+    const key = String(input.key || input.renderKey || "");
+    if (!key) return result(false, "missing-render-key");
+    const renderHtml = typeof input.renderHtml === "function" ? input.renderHtml : null;
+    const patchElement = typeof input.patchElement === "function" ? input.patchElement : null;
+    if (!renderHtml) return result(false, "missing-render-html");
+    if (!patchElement) return result(false, "missing-patch-element");
+
+    const target = findElementByRenderKey({
+      root,
+      key,
+      escapeSelectorAttr: input.escapeSelectorAttr,
+    });
+    if (!target) return result(false, "missing-live-text-target");
+
+    let html = "";
+    try {
+      html = renderHtml();
+    } catch (_) {
+      return result(false, "render-live-text-html-failed");
+    }
+    const source = createElementFromHtml({
+      document: input.document,
+      html,
+    });
+    if (!source) return result(false, "render-live-text-node-failed");
+
+    const patched = patchElement(target, source);
+    if (!callbackOk(patched)) return result(false, callbackReason(patched, "patch-live-text-node-failed"));
+    const patchedTarget = patched && typeof patched === "object" && patched.target ? patched.target : target;
+    return result(true, "patched", { patched: 1, target: patchedTarget });
+  }
+
   return {
+    applyLiveTextItemDomPatch,
     applyThreadTurnRefreshDomPatch,
     applyVisibleItemRefreshDomPatch,
     createElementFromHtml,

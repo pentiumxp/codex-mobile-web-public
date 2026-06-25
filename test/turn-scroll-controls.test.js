@@ -191,9 +191,10 @@ test("live and final message renders stay anchored when the user is at bottom", 
     /if \(!patchLiveTextItemDom\(turn, item\)\) scheduleRenderCurrentThread\(\);/,
   ]);
   assert.match(appJs, /function patchLiveTextItemDom\(turn, item\)/);
-  assert.match(functionBody("patchLiveTextItemDom"), /conversation\.querySelector\(`\[data-render-key="\$\{escapeSelectorAttr\(key\)\}"\]`\)/);
-  assert.match(functionBody("patchLiveTextItemDom"), /patchNode\(target, source\);/);
-  assert.match(functionBody("patchLiveTextItemDom"), /completeLocalConversationDomUpdate\(target, wasNearBottom, userReadingCurrentTurn\)/);
+  assert.match(functionBody("patchLiveTextItemDom"), /threadDetailDomPatchApi\.applyLiveTextItemDomPatch\(\{/);
+  assert.match(functionBody("patchLiveTextItemDom"), /renderHtml: \(\) => renderItem\(item, turn, previousKeys, index\)/);
+  assert.match(functionBody("patchLiveTextItemDom"), /patchElement: \(target, source\) => \{[\s\S]*patchNode\(target, source\);[\s\S]*return target;/);
+  assert.match(functionBody("patchLiveTextItemDom"), /completeLocalConversationDomUpdate\(patchResult\.target, wasNearBottom, userReadingCurrentTurn\)/);
   assert.match(functionBody("completeLocalConversationDomUpdate"), /state\.renderedConversationSignature = conversationRenderSignature\(state\.currentThread\);/);
   assert.match(functionBody("completeLocalConversationDomUpdate"), /conversationScroll\.planLocalPatchScrollCompletion\(\{/);
   assert.match(functionBody("completeLocalConversationDomUpdate"), /autoScrollHold: shouldHoldAutoScrollForCurrentTurn\(\),/);

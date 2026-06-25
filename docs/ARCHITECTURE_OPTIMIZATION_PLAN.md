@@ -128,7 +128,11 @@ creation for insert/replace operations. Thread detail hydration orchestration
 now also lives in the same helper: app code injects GitHub-card hydration,
 Mermaid hydration, and image scan callbacks while `hydrateRenderedSurface`
 owns the call order and image-scan delay forwarding for full render, tile-pane
-patch, and local patch completion. Thread detail click action recognition now
+patch, and local patch completion. Live text item DOM patch sequencing now
+also lives in the same helper: app code still decides tile/single surface and
+scroll completion, but `applyLiveTextItemDomPatch` owns render-key lookup,
+HTML-to-element creation, patch callback execution, and bounded failure reasons
+for streaming `agentMessage` / `plan` updates. Thread detail click action recognition now
 lives in `public/thread-detail-actions.js`: app code still owns event listener
 wiring and business execution, but selector priority, root containment,
 previewable-image detection, rich-content actions, task-card actions, approval
@@ -191,7 +195,8 @@ a successful tile pane patch into full conversation render, silently choose
 turn-level patch actions inside the application loop, inline the local-patch
 scroll-completion policy, own the visible-item patch operation loop, or own the
 turn-level patch operation loop, insertion anchoring loop, or turn article
-render-key lookup selector, creation step, hydration callback sequence, or
+render-key lookup selector, creation step, hydration callback sequence, live
+text item render-key lookup / HTML patch sequencing, or
 conversation click-action selector priority, nor own the basic pane-state
 normalization and pane-local operation-bubble state rules.
 
@@ -205,6 +210,8 @@ Target:
   turn article anchoring and render-key lookup are also outside app.js; turn
   node creation is now outside app.js for turn article insert/replace paths;
   hydration orchestration is now outside app.js for thread detail surfaces;
+  live text item DOM patch sequencing is now outside app.js for streaming
+  assistant/plan updates;
   click-action recognition is now outside app.js for conversation surfaces;
   thread-tile interaction recognition is now outside app.js for tile surfaces;
   core thread-tile pane-state normalization and operation bubble signature/

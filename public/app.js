@@ -504,7 +504,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v476";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v477";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -13784,15 +13784,22 @@ function patchLiveTextItemDom(turn, item) {
   if (!conversation) return false;
   const index = sourceIndexForVisibleItem(turn, item);
   const key = stableItemKey(turn, item, index);
-  const target = conversation.querySelector(`[data-render-key="${escapeSelectorAttr(key)}"]`);
-  if (!target) return false;
   const wasNearBottom = isConversationNearBottom();
   const userReadingCurrentTurn = isUserReadingCurrentTurn({ nearBottom: wasNearBottom });
-  const html = renderItem(item, turn, existingConversationRenderKeys(), index);
-  const source = firstElementFromHtml(html);
-  if (!source) return false;
-  patchNode(target, source);
-  return completeLocalConversationDomUpdate(target, wasNearBottom, userReadingCurrentTurn);
+  const previousKeys = existingConversationRenderKeys();
+  const patchResult = threadDetailDomPatchApi.applyLiveTextItemDomPatch({
+    conversation,
+    key,
+    document,
+    escapeSelectorAttr,
+    renderHtml: () => renderItem(item, turn, previousKeys, index),
+    patchElement: (target, source) => {
+      patchNode(target, source);
+      return target;
+    },
+  });
+  if (!patchResult || !patchResult.ok || !patchResult.target) return false;
+  return completeLocalConversationDomUpdate(patchResult.target, wasNearBottom, userReadingCurrentTurn);
 }
 
 function rejectThreadDetailPatch(reason) {

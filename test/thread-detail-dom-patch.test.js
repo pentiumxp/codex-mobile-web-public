@@ -300,6 +300,75 @@ test("visible item dom patch returns bounded failure reasons", () => {
   }).reason, "invalid-operation");
 });
 
+test("live text item dom patch finds, renders, and patches through injected callbacks", () => {
+  const target = createNode("live-item");
+  const calls = [];
+  const root = {
+    querySelector(selector) {
+      calls.push(["query", selector]);
+      return selector.includes("live-item") ? target : null;
+    },
+  };
+
+  const result = domPatch.applyLiveTextItemDomPatch({
+    root,
+    key: "live-item",
+    document: createTemplateDocument(),
+    renderHtml: () => '<div data-render-key="live-item"></div>',
+    patchElement: (node, source) => {
+      calls.push(["patch", node.key, source.key]);
+      node.patchedWith = source.key;
+      return node;
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.reason, "patched");
+  assert.equal(result.patched, 1);
+  assert.equal(result.target, target);
+  assert.equal(target.patchedWith, "live-item");
+  assert.deepEqual(calls, [
+    ["query", '[data-render-key="live-item"]'],
+    ["patch", "live-item", "live-item"],
+  ]);
+});
+
+test("live text item dom patch returns bounded failure reasons", () => {
+  const root = { querySelector: () => createNode("live-item") };
+  const base = {
+    root,
+    key: "live-item",
+    document: createTemplateDocument(),
+    renderHtml: () => '<div data-render-key="live-item"></div>',
+    patchElement: () => createNode("live-item"),
+  };
+
+  assert.equal(domPatch.applyLiveTextItemDomPatch({ key: "live-item" }).reason, "missing-root");
+  assert.equal(domPatch.applyLiveTextItemDomPatch({ root }).reason, "missing-render-key");
+  assert.equal(domPatch.applyLiveTextItemDomPatch({ root, key: "live-item" }).reason, "missing-render-html");
+  assert.equal(domPatch.applyLiveTextItemDomPatch({
+    root,
+    key: "live-item",
+    renderHtml: () => '<div data-render-key="live-item"></div>',
+  }).reason, "missing-patch-element");
+  assert.equal(domPatch.applyLiveTextItemDomPatch({
+    ...base,
+    root: { querySelector: () => null },
+  }).reason, "missing-live-text-target");
+  assert.equal(domPatch.applyLiveTextItemDomPatch({
+    ...base,
+    renderHtml: () => { throw new Error("render failed"); },
+  }).reason, "render-live-text-html-failed");
+  assert.equal(domPatch.applyLiveTextItemDomPatch({
+    ...base,
+    renderHtml: () => "",
+  }).reason, "render-live-text-node-failed");
+  assert.equal(domPatch.applyLiveTextItemDomPatch({
+    ...base,
+    patchElement: () => ({ ok: false, reason: "patch-denied" }),
+  }).reason, "patch-denied");
+});
+
 test("turn dom patch applies item patch, insert turn, and replace turn in order", () => {
   const turns = new Map([
     ["turn-a", { id: "turn-a" }],

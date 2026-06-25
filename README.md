@@ -16,6 +16,31 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v477 Live Text DOM Patch Ownership
+
+v477 继续推进 Phase A 的前端 thread detail render/patch ownership 收敛。
+
+本次切片把 live text item 的 DOM patch 查找、HTML 解析、patch 回调顺序和
+bounded failure reason 移入 `public/thread-detail-dom-patch.js` 的
+`applyLiveTextItemDomPatch`。`public/app.js` 仍然负责 tile/single surface
+判断、真实 DOM patch 回调和 scroll completion，但不再直接拥有 live text
+的 render-key selector 与 HTML-to-node patch sequencing。
+
+修复边界：
+
+- 症状/风险：流式 `agentMessage` / `plan` 文本增量到达时，`app.js` 同时
+  负责 selector、render、patch 和 scroll completion，导致局部 patch、
+  全量 render、tile pane patch 的职责边界继续耦合。
+- 失败层：前端 thread detail DOM patch ownership。
+- 不变量：`app.js` 应只编排 surface 判断和副作用注入；可测试 patch
+  sequencing 应位于 helper。
+- 闭环验证：`test/thread-detail-dom-patch.test.js` 覆盖 live text patch
+  成功路径和 bounded failure reasons；`test/turn-scroll-controls.test.js`
+  验证 app 委托 helper 后仍执行 scroll completion；`test/conversation-render.test.js`
+  覆盖流式文本、图片、tile/single-thread projection consistency 回归。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v477`。
+
 ## 2026-06-26 Home AI Autonomous Delivery Return Events
 
 本次 Phase D 切片把 Codex Mobile terminal return-card 接入 Home AI
