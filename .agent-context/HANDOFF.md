@@ -1,3 +1,78 @@
+# 2026-06-26 - v475 thread tile operation dock render policy deployed
+
+- Scope:
+  - Continued Phase C pane-state / split-screen architecture work.
+  - This slice moves pane-local operation dock render-branch planning out of
+    `public/app.js` and into `public/thread-tile-state.js`.
+  - It does not change visual design, operation bubble/sheet HTML, command
+    summary/duration display, server projection, thread detail reads,
+    task-card behavior, Home AI diagnostics, pane layout, image projection, or
+    message merge. No fallback or UI-only masking was added.
+- Root-cause boundary:
+  - Before v475, v474 moved operation mode toggle state into pane-state policy,
+    but `renderThreadTileOperationDock` still directly decided whether to
+    render a current live operation, reuse a remembered bubble during its
+    minimum dwell window, clear expired remembered state, or render nothing.
+  - That kept operation dock runtime branching in the app render function
+    instead of a testable pane-state policy.
+- Change:
+  - Added pure `operationDockPlan` to `public/thread-tile-state.js`.
+  - The plan emits bounded actions:
+    `render-live-operation`, `render-remembered-operation`,
+    `clear-remembered-operation`, or `none`.
+  - `public/app.js` now keeps only real HTML rendering, timer scheduling,
+    remembered-bubble Map deletion, and DOM patch ownership.
+  - Removed the now-redundant `recentThreadTileOperationBubble` app helper.
+  - Bumped `CLIENT_BUILD_ID` and service worker cache to
+    `codex-mobile-shell-v475`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Commit:
+  - Runtime/docs commit: `f2be8b7 refactor thread tile operation dock planning`.
+- Validation in source workspace:
+  - Syntax checks passed for `public/thread-tile-state.js`, `public/app.js`,
+    and `public/sw.js`.
+  - Focused suite passed: `69` tests across
+    `test/thread-tile-state.test.js`,
+    `test/thread-tile-layout-ui.test.js`,
+    `test/thread-tile-layout.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-task-card-route.test.js`,
+    `test/thread-goal-service.test.js`, and
+    `test/composer-draft.test.js`.
+  - `npm test` passed: `859` tests.
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+- Production deploy:
+  - Deployed through Home AI central macOS production script.
+  - Reason: `codex-mobile-thread-tile-operation-dock-planning-v475`.
+  - Source ref at deploy: `f2be8b7eb6de`, dirty `false`.
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T195946Z-plugin-codex-mobile-web-codex-mobile-thread-tile-operation-dock-planning-v475`.
+  - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` reported
+    running and manifest/profile health checks passed.
+- Production readback:
+  - `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v475`,
+    `shellCacheName=codex-mobile-shell-v475`, and `version=0.1.11`.
+  - Source/prod SHA-256 parity matched for:
+    `public/thread-tile-state.js`, `test/thread-tile-state.test.js`,
+    `test/thread-tile-layout-ui.test.js`, `public/app.js`, `public/sw.js`,
+    `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+  - Production focused suite passed: same `69` tests listed above with
+    production dependencies.
+- Next architecture boundary:
+  - Continue Phase C with command detail panel content HTML extraction, split
+    sizing, measured tuning of the max concurrent detail-read value, per-pane
+    draft/runtime ownership, and pane-local send/approval/interrupt ownership.
+  - Phase B large-session cold/warm path remains separate and should be
+    tackled with timing evidence before changing cache behavior.
+- Public:
+  - Not pushed to Public. Follow release-order rule: wait for production/user
+    validation or explicit Public instruction before syncing/pushing.
+
 # 2026-06-26 - v474 thread tile operation mode toggle policy deployed
 
 - Scope:
