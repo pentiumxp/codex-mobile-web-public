@@ -16,6 +16,29 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v474 Thread Tile Operation Mode Toggle Policy
+
+v474 继续 Phase C，把平铺窗口里 operation/command 详情面板的展开收起决策从
+`public/app.js` 迁到 `public/thread-tile-state.js`。此前 pane-local operation bubble 的
+dwell、expiry、mode 和 signature 规则已经是纯策略，但点击 operation bubble 后，
+`bindThreadTileActions` 仍然直接写 `state.threadTileOperationModesById`、选中 pane、
+再局部 patch pane。这让命令详情面板的状态切换还留在 UI 事件处理层。
+
+本次新增 `operationModeTogglePlan`：
+
+- 策略层负责判断 tile mode 是否启用、目标 pane id 是否有效，以及 compact/expanded 的
+  下一状态。
+- 策略层输出选中 pane、局部 patch、preserve-scroll、patch miss 后 full render 的 effect
+  意图。
+- `public/app.js` 只执行真实 Map 写入、active pane 选择和 DOM patch。
+
+这个切片不改变视觉、不改变 operation bubble 内容、不改变 server projection、thread detail
+读取、任务卡、Home AI 诊断上报或 pane layout。它只是继续收窄平铺模式的状态所有权边界。
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v474`。
+`test/thread-tile-state.test.js` 覆盖 operation mode toggle planning；
+`test/thread-tile-layout-ui.test.js` 约束 app 层必须通过
+`operationModeTogglePlan` / `applyThreadTileOperationModeTogglePlan`。
+
 ## 2026-06-26 v473 Thread Tile Detail Load Concurrency Policy
 
 v473 继续 Phase C，在 v472 的 detail-load queue plan 基础上启用真正的有界并发。

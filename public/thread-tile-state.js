@@ -686,6 +686,26 @@
     return normalizeOperationMode(mode) === "expanded" ? "compact" : "expanded";
   }
 
+  function operationModeTogglePlan(input = {}) {
+    const id = text(input.threadId || input.paneId).trim();
+    if (input.enabled !== true) return skipPaneSlot("disabled", { id });
+    if (!id) return skipPaneSlot("missing-id", { id });
+    const previousMode = normalizeOperationMode(input.mode || input.currentMode);
+    const mode = toggleOperationMode(previousMode);
+    return {
+      action: "operation-mode-toggle-effects",
+      reason: "toggle-operation-mode",
+      id,
+      previousMode,
+      mode,
+      selectPane: true,
+      selectPaneRender: false,
+      patchThreadId: id,
+      patchPreserveScroll: true,
+      scheduleFullRenderOnPatchMiss: true,
+    };
+  }
+
   function operationBubbleRecord(input = {}) {
     const id = text(input.threadId).trim();
     const html = text(input.html);
@@ -947,6 +967,7 @@
     normalizePaneCount,
     normalizePinnedIds,
     normalizeSplitPairs,
+    operationModeTogglePlan,
     operationBubbleRecord,
     operationBubbleSnapshot,
     operationSignature,

@@ -270,7 +270,16 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.doesNotMatch(tileActionsBody, /data-thread-tile-open/);
   assert.match(tileActionsBody, /scrollThreadTilePaneToBottom/);
   assert.match(tileActionsBody, /updateThreadTileBottomButtonForBody/);
-  assert.match(tileActionsBody, /threadTileStatePolicy\.toggleOperationMode/);
+  assert.match(tileActionsBody, /threadTileStatePolicy\.operationModeTogglePlan/);
+  assert.match(tileActionsBody, /applyThreadTileOperationModeTogglePlan/);
+  assert.doesNotMatch(tileActionsBody, /state\.threadTileOperationModesById\.set/);
+  assert.doesNotMatch(tileActionsBody, /threadTileStatePolicy\.toggleOperationMode/);
+
+  const operationToggleEffectsBody = functionBody(appJs, "applyThreadTileOperationModeTogglePlan");
+  assert.match(operationToggleEffectsBody, /operation-mode-toggle-effects/);
+  assert.match(operationToggleEffectsBody, /state\.threadTileOperationModesById\.set\(id, threadTileStatePolicy\.normalizeOperationMode\(effect\.mode\)\)/);
+  assert.match(operationToggleEffectsBody, /setThreadTileSelectedThread\(id, \{ render: effect\.selectPaneRender !== false \}\)/);
+  assert.match(operationToggleEffectsBody, /patchThreadTilePane\(effect\.patchThreadId, \{ preserveScroll: effect\.patchPreserveScroll !== false \}\)/);
 
   const tileTurnBody = functionBody(appJs, "renderThreadTileTurn");
   assert.match(tileTurnBody, /state\.renderContextThreadId/);

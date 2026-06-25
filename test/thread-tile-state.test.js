@@ -619,6 +619,38 @@ test("thread tile state owns operation mode and signature policy", () => {
   assert.equal(state.toggleOperationMode("expanded"), "compact");
   assert.equal(state.toggleOperationMode("compact"), "expanded");
 
+  assert.equal(state.operationModeTogglePlan({
+    enabled: false,
+    threadId: "pane-1",
+    mode: "compact",
+  }).reason, "disabled");
+  assert.equal(state.operationModeTogglePlan({
+    enabled: true,
+    threadId: "",
+    mode: "compact",
+  }).reason, "missing-id");
+  assert.deepEqual(state.operationModeTogglePlan({
+    enabled: true,
+    threadId: "pane-1",
+    mode: "compact",
+  }), {
+    action: "operation-mode-toggle-effects",
+    reason: "toggle-operation-mode",
+    id: "pane-1",
+    previousMode: "compact",
+    mode: "expanded",
+    selectPane: true,
+    selectPaneRender: false,
+    patchThreadId: "pane-1",
+    patchPreserveScroll: true,
+    scheduleFullRenderOnPatchMiss: true,
+  });
+  assert.equal(state.operationModeTogglePlan({
+    enabled: true,
+    paneId: "pane-1",
+    currentMode: "expanded",
+  }).mode, "compact");
+
   const record = state.operationBubbleRecord({
     threadId: "pane-1",
     html: "<button class=\"mobile-operation-bubble\">cmd</button>",
