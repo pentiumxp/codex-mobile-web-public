@@ -207,30 +207,42 @@ Minimum closure for Codex Mobile production changes:
 - LaunchDaemon: `system/com.hermesmobile.plugin.codex-mobile`.
 - Loopback production URL: `http://127.0.0.1:8787`.
 - Current verified shell after tile-mode composer intent-menu, Movie
-  operation-projection, and live-to-completed weak projection merge fixes:
-  `0.1.11|codex-mobile-shell-v429`.
+  operation-projection, live-to-completed weak projection merge, and tile local
+  split-pane layout fixes:
+  `0.1.11|codex-mobile-shell-v431`.
 - Source ref deployed for code change:
-  `3c78e8bb6ac7` with clean source worktree at deploy time.
+  `0c297f045e44` with clean source worktree at deploy time.
 - Backup path:
-  `/Users/hermes-host/HermesMobile/backups/deploy/20260625T030147Z-plugin-codex-mobile-web-manual`.
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260625T034418Z-plugin-codex-mobile-web-manual`.
 - Production smoke confirmed `/api/public-config` reports
-  `clientBuildId=0.1.11|codex-mobile-shell-v429`,
-  `shellCacheName=codex-mobile-shell-v429`, `version=0.1.11`,
-  `authRequired=true`, production `workspacePath` above, and
-  `reasoningEffortOptions=["low","medium","high","xhigh"]`.
+  `clientBuildId=0.1.11|codex-mobile-shell-v431`,
+  `shellCacheName=codex-mobile-shell-v431`, `version=0.1.11`,
+  `authRequired=true`, production `workspacePath` above, and build id
+  `7ed7403159756514`.
 - Source/production short SHA-256 samples matched after deploy:
-  `server.js` `9b32557c1416f9fb`,
-  `public/app.js` `aeb7fa48a73d5855`, and
-  `public/sw.js` `a315f48708557b09`.
+  `server.js` `6681ceebf250df44`,
+  `public/app.js` `f79ee1b5ff49966f`,
+  `public/styles.css` `599815a5b4169435`,
+  `public/thread-tile-layout.js` `f10c7a0964ec983c`, and
+  `public/sw.js` `db1c6ff0ac07bb01`.
 - Focused validation before deploy included syntax checks for `server.js`,
   `public/app.js`, and `public/sw.js`; task-card route, mobile viewport, goal
   service, composer quota, thread tile UI, thread turn compaction, thread detail
   projection, v4 projection, thread detail state, and conversation render tests
-  (including the v429 `126`-test live-to-completed merge suite); plus `git diff
-  --check`.
+  (including the v431 `98`-test tile-layout focused suite); plus `git diff
+  --check`. Browser automation through Node REPL failed with a tool
+  `sandboxCwd` error, and direct local Playwright smoke was not run because this
+  workspace does not have a `playwright` dependency; use the Home AI central
+  visual tool for live drag/split visual evidence if required.
 - Deployment validation also ran the central production file-hash, LaunchDaemon,
   public-config, and non-strict auth-profile audit checks. The auth-profile
   audit remained non-blocking with zero blocking issues.
+- The earlier 2026-06-25 `codex-mobile-shell-v430` large-session detail-shape
+  diagnostics evidence is historical after the v431 tile local split-pane
+  deployment.
+- The earlier 2026-06-25 `codex-mobile-shell-v429` live-to-completed weak
+  projection merge evidence is historical after the v431 tile local split-pane
+  deployment.
 - The earlier 2026-06-25 `codex-mobile-shell-v428` tile-mode composer
   intent-menu and Movie server operation-projection evidence is historical after
   the v429 live-to-completed weak projection merge deployment.

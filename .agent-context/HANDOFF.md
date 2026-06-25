@@ -1,8 +1,11 @@
-# 2026-06-25 - v431 tile local split columns and header drag pending deploy
+# 2026-06-25 - v431 tile local split columns and header drag deployed
 
 - Scope:
-  - Implemented a split-screen reader layout improvement for wide tile mode.
-  - Not committed, deployed, or pushed Public yet.
+  - Implemented, committed, and deployed a split-screen reader layout
+    improvement for wide tile mode.
+  - Not pushed Public.
+  - Code commit:
+    - `0c297f0 feat: support local split tile panes`
 - Change:
   - `public/thread-tile-layout.js` now builds column groups for tile panes. If
     the visible pane count exceeds physical column capacity, overflow panes are
@@ -37,8 +40,17 @@
     run because this workspace does not have a `playwright` dependency. Use the
     Home AI central visual tool after deployment if live visual evidence is
     required.
-- Next:
-  - Commit if ready, and deploy only if requested.
+- Production deploy:
+  - Deployed through the Home AI central plugin deploy script.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T034418Z-plugin-codex-mobile-web-manual`.
+  - `/api/public-config` reports `clientBuildId=0.1.11|codex-mobile-shell-v431`,
+    `shellCacheName=codex-mobile-shell-v431`, `version=0.1.11`,
+    `authRequired=true`, and build id `7ed7403159756514`.
+  - Source/production SHA-256 samples matched for `public/app.js`,
+    `public/sw.js`, `public/thread-tile-layout.js`, `public/styles.css`, and
+    `server.js`.
+  - Central deploy validation reported zero blocking auth-profile audit issues.
 
 # 2026-06-25 - v430 architecture optimization slice pending deploy
 
