@@ -1,3 +1,46 @@
+# 2026-06-25 - v436 tile pane contrast deployed
+
+- Scope:
+  - User requested clearer visual separation in wide tile mode and a more
+    visible Composer target hint.
+  - This is a visual CSS/UI polish only; it does not change pane count, active
+    pane selection, send target, thread refresh, or Composer behavior.
+- Code commit:
+  - `09848ed fix: improve tile pane visual separation`
+- Change:
+  - Added tile-pane header color variables for dark, light, and system-light
+    themes.
+  - `.thread-tile-pane-header` now uses a deeper dedicated background and a
+    stronger bottom border.
+  - `.thread-tile-pane.active .thread-tile-pane-header` uses a lightly accented
+    active background.
+  - `updateComposerControls()` toggles `has-target-placeholder` on
+    `#messageInput` when tile mode is showing `发送到：<thread>`.
+  - `.message-input.has-target-placeholder:empty::before` uses a more visible
+    target color and slightly stronger weight. Ordinary `Message Codex`
+    placeholder styling is unchanged.
+  - PWA shell cache advanced to `codex-mobile-shell-v436`.
+- Validation:
+  - Focused UI tests passed:
+    `node --test test/thread-tile-layout-ui.test.js test/composer-quota.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    (`34` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`777` tests).
+  - `git diff --check` passed.
+- Production deploy:
+  - Deployed through the Home AI central plugin deploy script.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T050430Z-plugin-codex-mobile-web-manual`.
+  - `/api/public-config` reports `clientBuildId=0.1.11|codex-mobile-shell-v436`,
+    `shellCacheName=codex-mobile-shell-v436`, `version=0.1.11`,
+    `authRequired=true`, and build id `c44493ef6e205801`.
+  - Source/production SHA-256 samples matched for `public/app.js`,
+    `public/sw.js`, `public/styles.css`, and `README.md`.
+  - Central deploy validation reported zero blocking auth-profile audit issues.
+- Not pushed Public:
+  - Follow release-order rule. Public sync requires explicit user instruction
+    after production/user validation.
+
 # 2026-06-25 - v435 thread-detail merge policy deployed
 
 - Scope:

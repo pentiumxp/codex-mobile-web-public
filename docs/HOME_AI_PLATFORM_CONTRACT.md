@@ -206,38 +206,35 @@ Minimum closure for Codex Mobile production changes:
   `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
 - LaunchDaemon: `system/com.hermesmobile.plugin.codex-mobile`.
 - Loopback production URL: `http://127.0.0.1:8787`.
-- Current verified shell after thread-detail merge orchestration extraction and
-  raw-operation fallback tightening:
-  `0.1.11|codex-mobile-shell-v435`.
+- Current verified shell after tile-pane header contrast and Composer target
+  placeholder contrast polish:
+  `0.1.11|codex-mobile-shell-v436`.
 - Source ref deployed for code change:
-  `f92987e16fe6` with clean source worktree at deploy time.
+  `09848ed6803a` with clean source worktree at deploy time.
 - Backup path:
-  `/Users/hermes-host/HermesMobile/backups/deploy/20260625T045551Z-plugin-codex-mobile-web-manual`.
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260625T050430Z-plugin-codex-mobile-web-manual`.
 - Production smoke confirmed `/api/public-config` reports
-  `clientBuildId=0.1.11|codex-mobile-shell-v435`,
-  `shellCacheName=codex-mobile-shell-v435`, `version=0.1.11`,
+  `clientBuildId=0.1.11|codex-mobile-shell-v436`,
+  `shellCacheName=codex-mobile-shell-v436`, `version=0.1.11`,
   `authRequired=true`, production `workspacePath` above, and build id
-  `6d07230bfa206e4f`.
+  `c44493ef6e205801`.
 - Source/production short SHA-256 samples matched after deploy:
-  `server.js` `3575e5056c630d17`,
-  `public/app.js` `686340b70b4decca`,
-  `public/sw.js` `fceabaa2aa5ea0ae`,
-  `public/index.html` `bb391771cd47485a`,
-  `public/thread-detail-merge-state.js` `e73c364cc9ca0a80`,
-  `README.md` `f88c2047baecf413`,
-  `docs/MODULES.md` `17ef9539672237f9`, and
-  `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` `857bdfd60fdf34a0`.
+  `public/app.js` `0f5ae98a53661df7`,
+  `public/sw.js` `a7af74d782319f20`,
+  `public/styles.css` `b32020a96c2b5acd`, and
+  `README.md` `62ee088dedd11d18`.
 - Validation before deploy:
-  `npm test` passed (`777` tests), focused thread-detail merge/render/state,
-  conversation render, mobile viewport, app-update, plugin voice-input,
-  thread-tile UI, goal, and task-card route tests passed (`156` tests),
-  `npm run check` passed, and `git diff --check` passed.
+  `npm test` passed (`777` tests), focused tile/composer/mobile/goal/task-card
+  tests passed (`34` tests), `npm run check` passed, and `git diff --check`
+  passed.
 - Deployment validation also ran the central production file-hash, LaunchDaemon,
   public-config, and non-strict auth-profile audit checks. The auth-profile
   audit remained non-blocking with zero blocking issues.
 - The earlier 2026-06-25 `codex-mobile-shell-v434` tile-mode Composer
   placeholder evidence is historical after the v435 thread-detail merge
   deployment.
+- The earlier 2026-06-25 `codex-mobile-shell-v435` thread-detail merge evidence
+  is historical after the v436 tile-pane contrast deployment.
 - The earlier 2026-06-25 `codex-mobile-shell-v430` large-session detail-shape
   diagnostics evidence is historical after the v431 tile local split-pane
   deployment.
