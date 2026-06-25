@@ -10242,3 +10242,73 @@ The previous full handoff was archived and should be opened only when old proven
     performance event payload planning into `public/thread-performance-metrics.js`,
     or move the refresh patch rejection diagnostic payload into a bounded helper
     so `refreshCurrentThread()` keeps shrinking toward orchestration only.
+
+## 2026-06-26 - v489 first-paint/full-ready performance event fields deployed
+
+- Latest code commit:
+  - `e9ba5fc extract first paint performance event fields`
+- v489 change:
+  - `public/thread-performance-metrics.js` now owns
+    `threadDetailFirstPaintEventFields` and
+    `threadDetailFullReadyEventFields`, pure helpers that build bounded
+    `thread_detail_first_paint` and `thread_detail_full_ready` payloads.
+  - `public/app.js` still owns thread API calls, current-thread state,
+    conversation rendering, and `postPerformanceEvent`, but no longer hand-builds
+    first-paint/full-ready payloads in cached-current, initial open, or full
+    backfill paths.
+  - Cached current-thread first paint preserves the warm-client phase behavior
+    and omits status/omitted-turn fields; uncached first paint and full-ready
+    payloads include the bounded status/count/timing fields needed for
+    cold-path diagnosis.
+  - Static build/cache: `0.1.11|codex-mobile-shell-v489` /
+    `codex-mobile-shell-v489`.
+- Root-cause boundary:
+  - Symptom/risk: v488 centralized `thread_refresh_ms`, but `loadThread()` and
+    `backfillFullThreadDetail()` still manually assembled first-paint and
+    full-ready payloads. That left large-session cold/warm evidence prone to
+    drift across cached current, initial open, refresh, and full backfill.
+  - Failing layer: frontend thread-detail first-paint/full-ready performance
+    event ownership.
+  - Invariant: first-paint and full-backfill performance events must be planned
+    by pure bounded helpers and contain timing/count/status/reason metadata only,
+    not message bodies, task-card bodies, uploads, private paths, cookies,
+    tokens, provider payloads, or long logs.
+- Validation:
+  - Source focused suite passed:
+    `test/thread-performance-metrics.test.js`,
+    `test/conversation-render.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-detail-render-plan.test.js`,
+    `test/thread-goal-service.test.js`,
+    `test/thread-task-card-route.test.js`, and
+    `test/turn-scroll-controls.test.js` (`158` tests).
+  - Full source `npm test` passed (`902` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Production deploy:
+  - Deployed through Home AI central macOS plugin deploy path with reason
+    `codex-mobile-first-paint-performance-event-fields-v489`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T223708Z-plugin-codex-mobile-web-codex-mobile-first-paint-performance-event-fields-v489`
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v489`,
+    `shellCacheName=codex-mobile-shell-v489`, `version=0.1.11`,
+    `authRequired=true`.
+  - Source/production SHA parity verified for:
+    `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`,
+    `docs/MODULES.md`, `public/app.js`, `public/sw.js`,
+    `public/thread-performance-metrics.js`,
+    `test/conversation-render.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-goal-service.test.js`,
+    `test/thread-performance-metrics.test.js`, and
+    `test/thread-task-card-route.test.js`.
+  - Production focused suite passed (`158` tests).
+- Browser/visual note:
+  - Browser automation remains unavailable in the current tool list. v489
+    closure evidence is source focused tests, full source tests, production
+    focused tests, production public-config readback, and source/prod SHA
+    parity.
+- Release:
+  - Public was not pushed for v489.
+- Next suggested slice:
+  - Continue Phase A by moving refresh patch rejection diagnostic payloads into
+    a bounded helper, or proceed to Phase B large-session cold-path evidence now
+    that first-paint, refresh, and full-ready payload ownership is unified.
