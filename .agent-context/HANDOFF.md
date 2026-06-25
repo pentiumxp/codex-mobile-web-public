@@ -1,4 +1,4 @@
-# 2026-06-25 - v437 tile title menu and Composer target scope pending deploy
+# 2026-06-25 - v437 tile title menu and Composer target scope deployed
 
 - Scope:
   - User reported that tile pane thread-title clicks no longer opened the
@@ -31,8 +31,20 @@
   - `npm run check` passed.
   - `git diff --check` passed.
 - Deployment:
-  - Pending at the time of this note. Use the Home AI central deploy script;
-    do not push Public without explicit instruction.
+  - Code commit:
+    `fdd7286 fix: restore tile title menu interaction`.
+  - Deployed through the Home AI central plugin deploy script.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T052512Z-plugin-codex-mobile-web-manual`.
+  - `/api/public-config` reports `clientBuildId=0.1.11|codex-mobile-shell-v437`,
+    `shellCacheName=codex-mobile-shell-v437`, `version=0.1.11`,
+    `authRequired=true`, and build id `983c98892640c564`.
+  - Source/production SHA-256 samples matched for `public/app.js`,
+    `public/sw.js`, `README.md`, and `test/thread-tile-layout-ui.test.js`.
+  - Central deploy validation reported zero blocking auth-profile audit issues.
+- Not pushed Public:
+  - Follow release-order rule. Public sync requires explicit user instruction
+    after production/user validation.
 
 # 2026-06-25 - v436 tile pane contrast deployed
 

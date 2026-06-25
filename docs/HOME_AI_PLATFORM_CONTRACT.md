@@ -206,27 +206,26 @@ Minimum closure for Codex Mobile production changes:
   `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
 - LaunchDaemon: `system/com.hermesmobile.plugin.codex-mobile`.
 - Loopback production URL: `http://127.0.0.1:8787`.
-- Current verified shell after tile-pane header contrast and Composer target
-  placeholder contrast polish:
-  `0.1.11|codex-mobile-shell-v436`.
+- Current verified shell after tile-title menu restoration and Composer target
+  placeholder scope correction:
+  `0.1.11|codex-mobile-shell-v437`.
 - Source ref deployed for code change:
-  `09848ed6803a` with clean source worktree at deploy time.
+  `fdd72864f652` with clean source worktree at deploy time.
 - Backup path:
-  `/Users/hermes-host/HermesMobile/backups/deploy/20260625T050430Z-plugin-codex-mobile-web-manual`.
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260625T052512Z-plugin-codex-mobile-web-manual`.
 - Production smoke confirmed `/api/public-config` reports
-  `clientBuildId=0.1.11|codex-mobile-shell-v436`,
-  `shellCacheName=codex-mobile-shell-v436`, `version=0.1.11`,
+  `clientBuildId=0.1.11|codex-mobile-shell-v437`,
+  `shellCacheName=codex-mobile-shell-v437`, `version=0.1.11`,
   `authRequired=true`, production `workspacePath` above, and build id
-  `c44493ef6e205801`.
+  `983c98892640c564`.
 - Source/production short SHA-256 samples matched after deploy:
-  `public/app.js` `0f5ae98a53661df7`,
-  `public/sw.js` `a7af74d782319f20`,
-  `public/styles.css` `b32020a96c2b5acd`, and
-  `README.md` `62ee088dedd11d18`.
+  `public/app.js` `817512c463905ba4`,
+  `public/sw.js` `997956d5a7d1bab8`,
+  `README.md` `04bcb6aeb694fe93`, and
+  `test/thread-tile-layout-ui.test.js` `4d766f23e3740a46`.
 - Validation before deploy:
-  `npm test` passed (`777` tests), focused tile/composer/mobile/goal/task-card
-  tests passed (`34` tests), `npm run check` passed, and `git diff --check`
-  passed.
+  focused tile/composer/mobile/goal/task-card tests passed (`34` tests),
+  `npm run check` passed, and `git diff --check` passed.
 - Deployment validation also ran the central production file-hash, LaunchDaemon,
   public-config, and non-strict auth-profile audit checks. The auth-profile
   audit remained non-blocking with zero blocking issues.
