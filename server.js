@@ -16,6 +16,7 @@ const {
 } = require("./adapters/push-notification-service");
 const { createSharedChainRestartService } = require("./adapters/shared-chain-restart-service");
 const { createHermesNotificationDelegateService } = require("./adapters/hermes-notification-delegate-service");
+const { createHomeAiAutonomousDeliveryReturnService } = require("./adapters/home-ai-autonomous-delivery-return-service");
 const { runSqliteJson } = require("./adapters/sqlite-cli");
 const { compactWorkspaceContext } = require("./adapters/continuation-handoff-compaction-service");
 const {
@@ -316,6 +317,12 @@ const hermesPluginService = createHermesPluginService({
 });
 const hermesNotificationDelegateService = createHermesNotificationDelegateService({
   pluginId: "codex-mobile",
+  baseUrl: HERMES_PLUGIN_NOTIFICATION_BASE_URL,
+  webKey: HERMES_PLUGIN_NOTIFICATION_KEY,
+  webKeyFile: HERMES_PLUGIN_NOTIFICATION_KEY_FILE,
+  registrationForWorkspace: (workspaceId) => hermesPluginService.registration({ workspaceId }),
+});
+const homeAiAutonomousDeliveryReturnService = createHomeAiAutonomousDeliveryReturnService({
   baseUrl: HERMES_PLUGIN_NOTIFICATION_BASE_URL,
   webKey: HERMES_PLUGIN_NOTIFICATION_KEY,
   webKeyFile: HERMES_PLUGIN_NOTIFICATION_KEY_FILE,
@@ -808,6 +815,7 @@ async function autoRecoverThreadTurn(threadId, options = {}) {
 let threadDetailProjectionService;
 const threadTaskCardService = createThreadTaskCardService({
   storageFile: THREAD_TASK_CARD_FILE,
+  onTerminalReturnCard: async (event) => homeAiAutonomousDeliveryReturnService.send(event, { workspaceId: "owner" }),
   executeApprovedCard: async (card, message) => {
     const requestedReasoningEffort = String(card && card.delivery && card.delivery.reasoningEffort || "").trim();
     const inheritedRuntimeSettings = await resolveThreadRuntimeSettings(card.target.threadId);
@@ -7271,7 +7279,7 @@ function taskCardReturnDynamicToolSpec() {
         },
         status: {
           type: "string",
-          enum: ["completed", "blocked", "redirected", "partially_completed"],
+          enum: ["completed", "blocked", "redirected", "rejected", "partially_completed"],
           description: "Closure status for the source thread.",
         },
         title: {
@@ -12375,7 +12383,7 @@ function isTaskCardReturnDynamicToolCall(params = {}) {
 function normalizedTaskCardReturnStatus(value) {
   const status = String(value || "").trim().toLowerCase();
   if (!status) return "";
-  return ["completed", "blocked", "redirected", "partially_completed"].includes(status) ? status : "";
+  return ["completed", "blocked", "redirected", "rejected", "partially_completed"].includes(status) ? status : "";
 }
 
 function taskCardReturnIdempotencyKey(taskCardId, actorThreadId, body = {}) {
@@ -12464,7 +12472,7 @@ async function dynamicToolServerRequestResponsePayload(request) {
     }
     if (args.status && !prepared.body.status) {
       logTaskCardReturnDynamicToolCall(request, params, args, { outcome: "status_invalid" });
-      return dynamicToolErrorPayload("status_invalid", "Return status must be completed, blocked, redirected, or partially_completed.");
+      return dynamicToolErrorPayload("status_invalid", "Return status must be completed, blocked, redirected, rejected, or partially_completed.");
     }
     if (!String(args.title || "").trim()) {
       logTaskCardReturnDynamicToolCall(request, params, args, { outcome: "return_title_required" });

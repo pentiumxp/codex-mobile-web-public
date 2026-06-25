@@ -284,6 +284,34 @@ Remaining target:
   build; repeated `miss-rebuild` or `expired-rebuild` is the evidence needed
   for the next cache-boundary repair.
 
+### Phase 3b: Task-Card Protocol Runtime
+
+Status: in progress. The terminal return-card and interruption-safe lease
+foundations are already in place: return/no-op cards are terminal by default,
+manual `return_to_source` cards are source-direct approved, automatic
+autonomous completion returns are idempotent, and non-terminal work cards carry
+active execution leases so ordinary user interruptions do not silently abandon
+work.
+
+The latest slice wires terminal return cards into Home AI Autonomous Delivery
+Loop state tracking. When a terminal return closes an original non-terminal
+work card, Codex Mobile emits one bounded Home AI event with original card id,
+return card id, return status, bounded title/summary, original source/target
+thread ids, workflow id, `terminal:true`, and `ackPolicy:"none"`. This is
+protocol observation only. It does not create repair cards, request
+acknowledgement, or block normal terminal return-card delivery. Unknown Home AI
+task-card ids are recorded as bounded `unknown_task_card` audit status on the
+return card.
+
+Remaining target:
+
+- Keep return-card delivery and Home AI delivery-loop event reporting separate:
+  return-card generation/injection must remain authoritative even if Home AI's
+  event endpoint is unavailable.
+- Continue hardening active task-card lease queueing, pause/cancel/resume
+  affordances, same-workspace routing, archived-target rejection, and manual
+  return-path visibility with executable tests.
+
 ### Phase 4: Browser And Visual Coverage
 
 Target:

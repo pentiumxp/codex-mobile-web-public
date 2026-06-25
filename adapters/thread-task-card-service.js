@@ -11,6 +11,7 @@ const AUTO_REPLY_BODY_CHARS = 6_000;
 const DEFAULT_RECENT_LIMIT = 24;
 const MAX_BATCH_TARGETS = 12;
 const SETTLED_STATUSES = new Set(["approved", "deleted", "revoked", "replied"]);
+const RETURN_STATUSES = new Set(["completed", "blocked", "redirected", "rejected", "partially_completed"]);
 const WORKFLOW_MODE_MANUAL = "manual";
 const WORKFLOW_MODE_AUTONOMOUS = "autonomous";
 const REASONING_EFFORT_VALUES = new Set(["low", "medium", "high", "xhigh"]);
@@ -112,7 +113,7 @@ function normalizedWorkflowMode(value) {
 function normalizedReturnStatus(value) {
   const status = stringValue(value).toLowerCase();
   if (!status) return "";
-  if (["completed", "blocked", "redirected", "partially_completed"].includes(status)) return status;
+  if (RETURN_STATUSES.has(status)) return status;
   throw errorWithStatus("return_status_invalid");
 }
 
@@ -251,6 +252,46 @@ function terminalReturnDeliveryFields(returnStatus = "") {
     requiresReturn: false,
     terminal: true,
     ackPolicy: "none",
+  };
+}
+
+function terminalReturnStatusForCard(card) {
+  const delivery = card && card.delivery && typeof card.delivery === "object" ? card.delivery : {};
+  const audit = card && card.audit && typeof card.audit === "object" ? card.audit : {};
+  const status = stringValue(delivery.returnStatus || audit.returnStatus || "completed").toLowerCase();
+  return RETURN_STATUSES.has(status) ? status : "completed";
+}
+
+function terminalReturnEventForCards(originalCard, returnCard) {
+  if (!originalCard || !returnCard) return null;
+  if (cardIsTerminal(originalCard)) return null;
+  if (!cardIsTerminal(returnCard)) return null;
+  const delivery = returnCard.delivery && typeof returnCard.delivery === "object" ? returnCard.delivery : {};
+  const audit = returnCard.audit && typeof returnCard.audit === "object" ? returnCard.audit : {};
+  if (delivery.returnToSource !== true && audit.returnToSource !== true) return null;
+  const title = boundedVisibleText(returnCard.message && returnCard.message.title || "Return card", MAX_TITLE_CHARS);
+  const summary = boundedVisibleText(
+    returnCard.message && returnCard.message.summary || terminalReturnStatusForCard(returnCard),
+    MAX_SUMMARY_CHARS,
+  );
+  return {
+    taskCardId: boundedMetadataString(originalCard.id, 180),
+    returnCardId: boundedMetadataString(returnCard.id, 180),
+    status: terminalReturnStatusForCard(returnCard),
+    title,
+    summary,
+    metadata: {
+      sourceThreadId: boundedMetadataString(originalCard.source && originalCard.source.threadId, 180),
+      targetThreadId: boundedMetadataString(originalCard.target && originalCard.target.threadId, 180),
+      workflowId: boundedMetadataString(
+        originalCard.workflow && originalCard.workflow.id
+          || returnCard.workflow && returnCard.workflow.id
+          || "",
+        180,
+      ),
+      terminal: true,
+      ackPolicy: "none",
+    },
   };
 }
 
@@ -657,6 +698,9 @@ function createThreadTaskCardService(options = {}) {
   const executeApprovedCard = typeof options.executeApprovedCard === "function"
     ? options.executeApprovedCard
     : async () => ({});
+  const onTerminalReturnCard = typeof options.onTerminalReturnCard === "function"
+    ? options.onTerminalReturnCard
+    : null;
   const idGenerator = typeof options.idGenerator === "function"
     ? options.idGenerator
     : () => `ttc_${crypto.randomBytes(9).toString("hex")}`;
@@ -675,6 +719,74 @@ function createThreadTaskCardService(options = {}) {
       return result;
     } finally {
       release();
+    }
+  }
+
+  async function recordTerminalReturnEventResult(originalCardId, returnCardId, result = {}) {
+    const sourceId = stringValue(originalCardId);
+    const replyId = stringValue(returnCardId);
+    if (!sourceId || !replyId) return null;
+    return withStore(async (store) => {
+      const replyCard = findById(store, replyId);
+      if (!replyCard) return null;
+      const timestamp = nowIso(options.now);
+      const audit = Object.assign({}, replyCard.audit || {});
+      audit.homeAiDeliveryReturnEventForCardId = sourceId;
+      audit.homeAiDeliveryReturnEventAt = timestamp;
+      audit.homeAiDeliveryReturnEventStatus = boundedMetadataString(result.status || "", 80);
+      audit.homeAiDeliveryReturnEventHttpStatus = Math.max(0, Math.trunc(Number(result.httpStatus || 0)) || 0);
+      audit.homeAiDeliveryReturnEventError = boundedMetadataString(result.error || "", 160);
+      audit.homeAiDeliveryReturnEventId = boundedMetadataString(result.eventId || "", 160);
+      audit.homeAiDeliveryReturnEventDeduped = result.deduped === true;
+      replyCard.audit = audit;
+      replyCard.updatedAt = timestamp;
+      return publicCard(replyCard, replyCard.target && replyCard.target.threadId || "");
+    });
+  }
+
+  async function notifyTerminalReturnCard(originalCardId, returnCardId) {
+    if (!onTerminalReturnCard) return null;
+    const sourceId = stringValue(originalCardId);
+    const replyId = stringValue(returnCardId);
+    if (!sourceId || !replyId) return null;
+    const prepared = await withStore(async (store) => {
+      const originalCard = findById(store, sourceId);
+      const returnCard = findById(store, replyId);
+      if (!originalCard || !returnCard) return null;
+      const audit = returnCard.audit && typeof returnCard.audit === "object" ? returnCard.audit : {};
+      if (audit.homeAiDeliveryReturnEventStatus === "sent"
+        && stringValue(audit.homeAiDeliveryReturnEventForCardId) === sourceId) {
+        return { skipped: true, reason: "already_sent" };
+      }
+      const event = terminalReturnEventForCards(originalCard, returnCard);
+      if (!event) return null;
+      const timestamp = nowIso(options.now);
+      returnCard.audit = Object.assign({}, audit, {
+        homeAiDeliveryReturnEventForCardId: sourceId,
+        homeAiDeliveryReturnEventAttemptedAt: timestamp,
+        homeAiDeliveryReturnEventStatus: "sending",
+        homeAiDeliveryReturnEventError: "",
+      });
+      returnCard.updatedAt = timestamp;
+      return { event };
+    });
+    if (!prepared || prepared.skipped || !prepared.event) return prepared;
+    try {
+      const sent = await onTerminalReturnCard(prepared.event);
+      return recordTerminalReturnEventResult(sourceId, replyId, {
+        status: "sent",
+        httpStatus: sent && sent.status,
+        eventId: sent && sent.eventId,
+        deduped: sent && sent.deduped,
+      });
+    } catch (err) {
+      const httpStatus = Math.max(0, Math.trunc(Number(err && (err.responseStatus || err.statusCode) || 0)) || 0);
+      const eventStatus = httpStatus === 404 ? "unknown_task_card" : "failed";
+      return recordTerminalReturnEventResult(sourceId, replyId, {
+        status: eventStatus,
+        httpStatus,
+        error: err && err.message ? err.message : String(err || "home_ai_return_event_failed"),
+      });
     }
   }
 
@@ -1066,6 +1178,7 @@ function createThreadTaskCardService(options = {}) {
         publicThreadId: result.replyCard && result.replyCard.target && result.replyCard.target.threadId || "",
       });
       if (approved && approved.card) result.replyCard = approved.card;
+      await notifyTerminalReturnCard(id, result.replyCard && result.replyCard.id);
     } else {
       result.replyCard = await maybeAutoApprovePublicCard(result.replyCard, result.replyCard && result.replyCard.target && result.replyCard.target.threadId);
     }
@@ -1318,6 +1431,7 @@ function createThreadTaskCardService(options = {}) {
     });
     if (!prepared) return null;
     const replyCard = await maybeAutoApprovePublicCard(prepared, prepared && prepared.target && prepared.target.threadId);
+    await notifyTerminalReturnCard(prepared.audit && prepared.audit.autoReturnToCardId, replyCard && replyCard.id || prepared.id);
     return replyCard ? { card: replyCard } : null;
   }
 

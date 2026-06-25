@@ -708,11 +708,16 @@ test("autonomous workflow auto-approval is scoped to the same two thread ids", a
 
 test("autonomous workflow auto-returns to the source when the injected target turn completes", async () => {
   const executions = [];
+  const returnEvents = [];
   const service = createThreadTaskCardService({
     storageFile: tempFile("cards.json"),
     executeApprovedCard: async (card, message) => {
       executions.push({ card, message });
       return { threadId: card.target.threadId, turnId: `turn-${executions.length}` };
+    },
+    onTerminalReturnCard: async (event) => {
+      returnEvents.push(event);
+      return { status: 200, eventId: `event-${returnEvents.length}` };
     },
   });
   const first = await service.create({
@@ -765,6 +770,21 @@ test("autonomous workflow auto-returns to the source when the injected target tu
   assert.doesNotMatch(executions[1].message.text, /when this injected turn completes/);
   const original = service.get(first.id, "thread-b");
   assert.equal(original.autoReplyCardId, returned.card.id);
+  assert.deepEqual(returnEvents, [{
+    taskCardId: first.id,
+    returnCardId: returned.card.id,
+    status: "completed",
+    title: "Auto return: Start workflow",
+    summary: "Target thread completed and returned the result automatically.",
+    metadata: {
+      sourceThreadId: "thread-a",
+      targetThreadId: "thread-b",
+      workflowId: "auto-return-workflow",
+      terminal: true,
+      ackPolicy: "none",
+    },
+  }]);
+  assert.equal(service.get(returned.card.id, "thread-a").audit.homeAiDeliveryReturnEventStatus, "sent");
 
   const duplicate = await service.maybeAutoReplyCompletedTurn({
     threadId: "thread-b",
@@ -774,6 +794,7 @@ test("autonomous workflow auto-returns to the source when the injected target tu
   });
   assert.equal(duplicate, null);
   assert.equal(executions.length, 2);
+  assert.equal(returnEvents.length, 1);
 
   const recursive = await service.maybeAutoReplyCompletedTurn({
     threadId: "thread-a",
@@ -1005,11 +1026,16 @@ test("reply can return an approved implementation card and is idempotent", async
 
 test("explicit returnToSource replies are terminal and cannot start acknowledgement loops", async () => {
   const executions = [];
+  const returnEvents = [];
   const service = createThreadTaskCardService({
     storageFile: tempFile("cards.json"),
     executeApprovedCard: async (card, message) => {
       executions.push({ card, message });
       return { threadId: card.target.threadId, turnId: `turn-${executions.length}` };
+    },
+    onTerminalReturnCard: async (event) => {
+      returnEvents.push(event);
+      return { status: 200, eventId: `event-${returnEvents.length}` };
     },
   });
   const repairCard = await service.create({
@@ -1049,6 +1075,30 @@ test("explicit returnToSource replies are terminal and cannot start acknowledgem
   assert.equal(returned.replyCard.executionLease, null);
   assert.match(executions[1].message.text, /Return policy: terminal receipt/);
   assert.doesNotMatch(executions[1].message.text, /Return required:/);
+  assert.deepEqual(returnEvents, [{
+    taskCardId: repairCard.id,
+    returnCardId: returned.replyCard.id,
+    status: "completed",
+    title: "Music repair completed",
+    summary: "completed",
+    metadata: {
+      sourceThreadId: "thread-home",
+      targetThreadId: "thread-music",
+      workflowId: "music-loop-workflow",
+      terminal: true,
+      ackPolicy: "none",
+    },
+  }]);
+  const duplicateReturn = await service.reply(repairCard.id, "thread-music", {
+    idempotencyKey: "music:return:completed",
+    format: "markdown",
+    title: "Music repair completed",
+    summary: "completed",
+    body: "Completed and validated.",
+    returnToSource: true,
+  });
+  assert.equal(duplicateReturn.replyCard.id, returned.replyCard.id);
+  assert.equal(returnEvents.length, 1);
 
   await assert.rejects(
     () => service.reply(returned.replyCard.id, "thread-home", {
@@ -1062,6 +1112,89 @@ test("explicit returnToSource replies are terminal and cannot start acknowledgem
     /task_card_terminal_no_return_required/,
   );
   assert.equal(executions.length, 2);
+  assert.equal(returnEvents.length, 1);
+});
+
+test("terminal return cards report bounded Home AI delivery events for supported statuses", async () => {
+  const events = [];
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    executeApprovedCard: async (card) => ({ threadId: card.target.threadId, turnId: `turn-${card.id}` }),
+    onTerminalReturnCard: async (event) => {
+      events.push(event);
+      return { status: 200 };
+    },
+  });
+  for (const status of ["blocked", "redirected", "partially_completed", "rejected"]) {
+    const card = await service.create({
+      sourceWorkspaceId: "home-ai",
+      sourceThreadId: `thread-home-${status}`,
+      sourceTurnId: `turn-home-${status}`,
+      sourceThreadTitle: "Home AI",
+      targetWorkspaceId: "plugin",
+      targetThreadId: `thread-plugin-${status}`,
+      idempotencyKey: `return-status:${status}`,
+      format: "markdown",
+      title: `Repair ${status}`,
+      summary: "Repair and return.",
+      body: "Please repair and return.",
+    });
+    await service.reply(card.id, `thread-plugin-${status}`, {
+      idempotencyKey: `return-status:${status}:reply`,
+      format: "markdown",
+      title: `Return: ${status}`,
+      status,
+      summary: status,
+      body: "Bounded return body is not part of the Home AI event.",
+      returnToSource: true,
+    });
+  }
+  assert.deepEqual(events.map((event) => event.status), ["blocked", "redirected", "partially_completed", "rejected"]);
+  assert.equal(events.every((event) => event.metadata.terminal === true && event.metadata.ackPolicy === "none"), true);
+  assert.equal(events.some((event) => Object.hasOwn(event, "body")), false);
+});
+
+test("Home AI delivery event 404 is recorded without blocking return-card delivery", async () => {
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    executeApprovedCard: async (card) => ({ threadId: card.target.threadId, turnId: "turn-return" }),
+    onTerminalReturnCard: async () => {
+      const err = new Error("home_ai_autonomous_delivery_task_card_unknown");
+      err.statusCode = 404;
+      err.responseStatus = 404;
+      throw err;
+    },
+  });
+  const card = await service.create({
+    sourceWorkspaceId: "home-ai",
+    sourceThreadId: "thread-home",
+    sourceTurnId: "turn-home",
+    sourceThreadTitle: "Home AI",
+    targetWorkspaceId: "plugin",
+    targetThreadId: "thread-plugin",
+    idempotencyKey: "return-event:404",
+    format: "markdown",
+    title: "Repair plugin",
+    summary: "Repair and return.",
+    body: "Please repair and return.",
+  });
+
+  const returned = await service.reply(card.id, "thread-plugin", {
+    idempotencyKey: "return-event:404:reply",
+    format: "markdown",
+    title: "Return: plugin repair",
+    status: "completed",
+    summary: "completed",
+    body: "Completed.",
+    returnToSource: true,
+  });
+
+  assert.equal(returned.replyCard.status, "approved");
+  const stored = service.get(returned.replyCard.id, "thread-home");
+  assert.equal(stored.audit.homeAiDeliveryReturnEventStatus, "unknown_task_card");
+  assert.equal(stored.audit.homeAiDeliveryReturnEventHttpStatus, 404);
+  assert.equal(stored.delivery.terminal, true);
+  assert.equal(stored.requiresReturn, false);
 });
 
 test("return_to_source retry approves a previously pending reverse card", async () => {

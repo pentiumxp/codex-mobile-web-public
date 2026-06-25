@@ -20,10 +20,24 @@ layout and test strategy.
     return-card delivery flags and single-prefix `Auto return:` titles
   - manual target-thread return cards for pending or approved original cards;
     local target-thread final text must not be treated as a source return
+  - bounded terminal return-card observer events for Home AI Autonomous Delivery
+    Loop state tracking; event success/failure is recorded on the return-card
+    audit metadata and must not block return-card delivery
   - idempotency
   - storage
   - injection payload generation
   - multi-target expansion into one stored card per target
+
+- `adapters/home-ai-autonomous-delivery-return-service.js`
+  - Home AI Autonomous Delivery Loop return-card event client
+  - normalizes the bounded payload for
+    `POST /api/autonomous-delivery/return-card-events`
+  - uses the existing backend trusted Home AI / Hermes web-key path
+  - sends only ids, status, bounded title/summary, workflow id, terminal flag,
+    and ack policy
+  - rejects unsafe visible metadata locally and never sends raw bodies,
+    prompts, completions, uploads, provider payloads, cookies, launch tokens,
+    access keys, database rows, or logs
 
 - `server.js`
   - route wiring
@@ -159,6 +173,37 @@ previous runtime version already created a pending return card with the same
 that existing card through the same direct return approval flow and stamps the
 same terminal metadata.
 
+After a terminal return card is created for an original non-terminal work card,
+the task-card service builds a Home AI Autonomous Delivery Loop event:
+
+```json
+{
+  "taskCardId": "ttc_original",
+  "returnCardId": "ttc_return",
+  "status": "completed|blocked|redirected|rejected|partially_completed",
+  "title": "bounded return title",
+  "summary": "bounded short summary",
+  "metadata": {
+    "sourceThreadId": "original source thread id",
+    "targetThreadId": "original target thread id",
+    "workflowId": "workflow id when available",
+    "terminal": true,
+    "ackPolicy": "none"
+  }
+}
+```
+
+`server.js` wires that observer to
+`adapters/home-ai-autonomous-delivery-return-service.js`, which posts to
+Home AI's `/api/autonomous-delivery/return-card-events` endpoint through the
+same trusted backend web-key path used by Hermes plugin callbacks. The observer
+is idempotent at the Codex side after a successful send and Home AI also dedupes
+by the original/return card ids. If Home AI returns 404 for an unknown original
+task-card id, Codex Mobile records `unknown_task_card` plus the HTTP status in
+the return-card audit metadata and still delivers the terminal return normally.
+Transient send failures are recorded as `failed`; they do not create repair
+cards or acknowledgement loops.
+
 Every non-terminal approved work card also records an `executionLease` on the
 original card. The lease stores bounded ids and status only: card id,
 source/target thread ids, workflow id/mode, `startedAt`, `lastProgressAt`,
@@ -218,8 +263,8 @@ The server validates the target actor, allows return while the original card is
 `threadTaskCardService.reply()`, and keeps retries idempotent. Invalid status
 values, missing card ids, missing actor thread ids, missing title, and missing
 body return bounded tool errors instead of hanging the turn.
-The accepted return statuses are `completed`, `blocked`, `redirected`, and
-`partially_completed`.
+The accepted return statuses are `completed`, `blocked`, `redirected`,
+`rejected`, and `partially_completed`.
 
 Source-thread task-card creation has a stricter target resolver than the manual
 pending-card API. Exact `targetThreadId` and exact `targetThreadTitle` are

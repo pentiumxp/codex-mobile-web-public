@@ -16,6 +16,38 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 Home AI Autonomous Delivery Return Events
+
+本次 Phase D 切片把 Codex Mobile terminal return-card 接入 Home AI
+Autonomous Delivery Loop 的 bounded event intake。
+
+当以下路径生成 terminal return card 时：
+
+- `codex_mobile.return_to_source`
+- `scripts/return-thread-task-card.js`
+- `POST /api/thread-task-cards/:id/reply` 且 `returnToSource:true`
+- autonomous workflow completion auto-return
+
+Codex Mobile 会向 Home AI 后端可信回调发送一次 bounded metadata event：
+
+- 原始 `taskCardId`
+- terminal `returnCardId`
+- `completed|blocked|redirected|rejected|partially_completed`
+- bounded title / summary
+- source thread id、target thread id、workflow id
+- `terminal:true`
+- `ackPolicy:"none"`
+
+该事件只用于 Home AI delivery slice 状态更新。它不会创建新的修复卡，
+不会要求 acknowledgement，也不会参与 return-card 注入。Home AI 返回 404
+表示未知原始 task-card id 时，Codex Mobile 只在 return-card audit 中记录
+`unknown_task_card`，不阻断 terminal return-card 的正常交付。
+
+隐私边界：事件不包含 raw task-card body、conversation text、prompt、
+completion、upload/screenshot 内容、provider payload、cookie、launch token、
+access key、数据库行或长日志。认证复用 Home AI / Hermes 后端可信回调的
+`X-Hermes-Web-Key` 路径，不在仓库或日志中写入 raw key。
+
 ## 2026-06-26 v476 Thread List Fallback Cache Decision Diagnostics
 
 v476 转入 Phase B 的一个小切片：把线程列表 fallback cache 的冷/热路径证据补完整。

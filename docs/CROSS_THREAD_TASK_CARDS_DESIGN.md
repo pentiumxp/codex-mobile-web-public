@@ -35,6 +35,17 @@ inject `Return required` guidance and must not require a second acknowledgement.
 If the source wants new actionable work after reviewing a terminal return, it
 must create a new work card instead of replying to the terminal receipt.
 
+When a terminal return card closes an original non-terminal work card, Codex
+Mobile also emits one bounded Home AI Autonomous Delivery Loop return-card
+event. The event contains only task-card ids, return-card id, return status,
+bounded title/summary, source/target thread ids, workflow id, and terminal
+metadata. It does not include card bodies, conversation text, prompts,
+completions, uploads, provider payloads, cookies, launch tokens, access keys,
+database rows, or logs. This event is state observation only: it must not
+create repair cards, request acknowledgement, or affect terminal return-card
+delivery. Unknown Home AI task-card ids are recorded as bounded diagnostics and
+do not block normal return delivery.
+
 Non-terminal approved work cards carry an `executionLease`. The lease records
 the active card id, source/target thread ids, workflow metadata, current injected
 turn id, last progress time, and `resumeRequired:true`. Ordinary user messages
@@ -75,6 +86,9 @@ return/no-op cards never create execution leases.
    real source-thread turn without another click. The return card's delivery
    flags set `terminal:true`, `requiresReturn:false`, `ackPolicy:"none"`, and
    `autoReturnOnCompletion:false`, so workflows do not ping-pong indefinitely.
+   The same terminal return is also eligible for a single Home AI delivery-loop
+   event keyed by the original card id plus return-card id; replayed completion
+   notifications stay idempotent.
 
 ## Data Model
 

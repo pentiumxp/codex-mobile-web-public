@@ -33,6 +33,9 @@ function functionBody(source, name) {
 
 test("server exposes thread task card routes and enriches thread detail responses", () => {
   assert.match(serverJs, /createThreadTaskCardService/);
+  assert.match(serverJs, /createHomeAiAutonomousDeliveryReturnService/);
+  assert.match(serverJs, /const homeAiAutonomousDeliveryReturnService = createHomeAiAutonomousDeliveryReturnService/);
+  assert.match(serverJs, /onTerminalReturnCard: async \(event\) => homeAiAutonomousDeliveryReturnService\.send\(event, \{ workspaceId: "owner" \}\)/);
   assert.doesNotMatch(serverJs, /createThreadTaskCardIntentService/);
   assert.match(serverJs, /CODEX_MOBILE_THREAD_TASK_CARD_FILE/);
   assert.match(serverJs, /"\/api\/thread-task-cards"/);
@@ -198,9 +201,12 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(returnThreadTaskCardScript, /\/api\/thread-task-cards\/\$\{encodeURIComponent\(taskCardId\)\}\/reply/);
   assert.match(returnThreadTaskCardScript, /CODEX_MOBILE_KEY_FILE/);
   assert.match(returnThreadTaskCardScript, /--status <value>/);
+  assert.match(returnThreadTaskCardScript, /rejected/);
   assert.match(returnThreadTaskCardScript, /partially_completed/);
   assert.match(returnThreadTaskCardScript, /returnToSource = true/);
   assert.match(returnThreadTaskCardScript, /task-card-return:/);
+  assert.match(functionBody(serverJs, "taskCardReturnDynamicToolSpec"), /rejected/);
+  assert.match(functionBody(serverJs, "taskCardReturnDynamicToolSpec"), /partially_completed/);
 });
 
 test("thread task card routes preserve service status codes", () => {
