@@ -81,8 +81,12 @@ test("thread detail projection misses when rollout signature changes", () => {
       },
     });
 
-    assert.equal(service.get(signatureInput({ rolloutStats: { sizeBytes: 2048, mtimeMs: 1000 } })), null);
-    assert.equal(service.get(signatureInput({ summaryUpdatedAtMs: 3000 })), null);
+    const changedRollout = signatureInput({ rolloutStats: { sizeBytes: 2048, mtimeMs: 1000 } });
+    assert.equal(service.get(changedRollout), null);
+    assert.equal(service.lookup(changedRollout).missReason, "static-signature-mismatch");
+    const changedSummary = signatureInput({ summaryUpdatedAtMs: 3000 });
+    assert.equal(service.get(changedSummary), null);
+    assert.equal(service.lookup(changedSummary).missReason, "static-signature-mismatch");
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -651,12 +655,25 @@ test("thread detail projection returns partial seed only when explicitly allowed
   assert.equal(seeded.partial, true);
   assert.equal(seeded.partialKind, "recent-window");
   assert.equal(service.get(signatureInput()), null);
+  assert.equal(service.lookup(signatureInput()).missReason, "partial-not-allowed");
 
   const cached = service.get(signatureInput(), { allowPartial: true });
   assert.ok(cached);
   assert.equal(cached.partial, true);
   assert.equal(cached.partialKind, "recent-window");
   assert.deepEqual(cached.result.thread.turns.map((turn) => turn.id), ["turn-recent"]);
+});
+
+test("thread detail projection reports bounded lookup miss reasons", () => {
+  const service = createThreadDetailProjectionService({
+    cacheDir: "",
+    policyVersion: "test-v1",
+    maxTurns: 2,
+    now: () => 1000,
+  });
+
+  assert.deepEqual(service.lookup({}), { cached: null, missReason: "missing-thread-id" });
+  assert.equal(service.lookup(signatureInput()).missReason, "entry-missing");
 });
 
 test("thread detail projection keeps partial recent windows memory-only", () => {
@@ -767,4 +784,115 @@ test("thread detail projection partial seed can replace an unusable stale full c
   assert.ok(cached);
   assert.equal(cached.partial, true);
   assert.deepEqual(cached.result.thread.turns.map((turn) => turn.id), ["turn-partial"]);
+});
+
+test("thread detail projection partial seed deletes unusable stale full cache from disk", () => {
+  const dir = tempDir();
+  try {
+    const service = createThreadDetailProjectionService({
+      cacheDir: dir,
+      policyVersion: "test-v1",
+      maxTurns: 2,
+      now: () => 1000,
+    });
+    service.seed(signatureInput(), {
+      thread: {
+        id: "thread-1",
+        turns: [{ id: "turn-stale-full", items: [] }],
+      },
+    });
+
+    const changedSignature = signatureInput({
+      rolloutStats: {
+        sizeBytes: 2048,
+        mtimeMs: 2000,
+      },
+      summaryUpdatedAtMs: 2000,
+    });
+    assert.equal(service.lookup(changedSignature).missReason, "static-signature-mismatch");
+
+    const seeded = service.seed(changedSignature, {
+      thread: {
+        id: "thread-1",
+        turns: [{ id: "turn-partial", items: [] }],
+      },
+    }, {
+      partial: true,
+      partialKind: "recent-window",
+    });
+
+    assert.equal(seeded.partial, true);
+    assert.equal(seeded.replacedStaleFull, true);
+    assert.equal(seeded.staleFullReason, "static-signature-mismatch");
+    assert.ok(service.get(changedSignature, { allowPartial: true }));
+
+    const restoredService = createThreadDetailProjectionService({
+      cacheDir: dir,
+      policyVersion: "test-v1",
+      maxTurns: 2,
+      now: () => 2000,
+    });
+    assert.equal(restoredService.get(signatureInput()), null);
+    assert.equal(restoredService.get(changedSignature, { allowPartial: true }), null);
+    assert.equal(restoredService.lookup(signatureInput()).missReason, "entry-missing");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("thread detail projection partial seed deletes dynamic summary-stale full cache from disk", () => {
+  const dir = tempDir();
+  try {
+    let current = 1000;
+    const service = createThreadDetailProjectionService({
+      cacheDir: dir,
+      policyVersion: "test-v1",
+      maxTurns: 2,
+      dynamicPersistMinIntervalMs: 0,
+      now: () => current,
+    });
+    service.seed(signatureInput({ summaryStatus: "active", summaryUpdatedAtMs: 1000 }), {
+      thread: {
+        id: "thread-1",
+        turns: [{ id: "turn-dynamic-full", items: [] }],
+      },
+    });
+    current = 1200;
+    service.applyNotification("item/completed", {
+      threadId: "thread-1",
+      turnId: "turn-dynamic-full",
+      item: { id: "agent-1", type: "agentMessage", text: "done" },
+    });
+
+    const staleInput = signatureInput({
+      summaryStatus: "active",
+      summaryUpdatedAtMs: 4000,
+    });
+    assert.equal(service.lookup(staleInput).missReason, "dynamic-summary-stale");
+
+    const seeded = service.seed(staleInput, {
+      thread: {
+        id: "thread-1",
+        turns: [{ id: "turn-partial", items: [] }],
+      },
+    }, {
+      partial: true,
+      partialKind: "recent-window",
+    });
+
+    assert.equal(seeded.partial, true);
+    assert.equal(seeded.replacedStaleFull, true);
+    assert.equal(seeded.staleFullReason, "dynamic-summary-stale");
+    assert.ok(service.get(staleInput, { allowPartial: true }));
+
+    const restoredService = createThreadDetailProjectionService({
+      cacheDir: dir,
+      policyVersion: "test-v1",
+      maxTurns: 2,
+      now: () => 2000,
+    });
+    assert.equal(restoredService.lookup(staleInput).missReason, "entry-missing");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

@@ -35,6 +35,7 @@ function createHarness(overrides = {}) {
             projectionSource: String(input.projectionSource || ""),
             projectionVersion: String(input.projectionVersion || ""),
             projectionAgeMs: Number(input.projectionAgeMs || 0),
+            projectionMissReason: String(input.projectionMissReason || ""),
             projectionSeedStatus: String(input.projectionSeedStatus || ""),
             projectionSeedSource: String(input.projectionSeedSource || ""),
             timings: Object.assign({}, input.timings),
@@ -171,6 +172,41 @@ test("thread detail orchestration returns warm projection before app-server read
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSource, "cache");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionVersion, "v4");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionAgeMs, 456);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionMissReason, "");
+});
+
+test("thread detail orchestration records bounded projection lookup miss reason", async () => {
+  const { service, calls } = createHarness({
+    projectedThreadLookup: () => {
+      calls.push("projection-lookup-miss");
+      return {
+        result: null,
+        missReason: "static-signature-mismatch",
+      };
+    },
+    preferBoundedReadBeforeFullRead: () => ({
+      prefer: true,
+      rolloutSizeBytes: 12_000_000,
+      thresholdBytes: 8_000_000,
+      source: "projection",
+      reason: "large-rollout",
+    }),
+  });
+
+  const response = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: false,
+    threadLog: () => {},
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.mode, "turns-list-large");
+  assert.equal(calls.includes("projection-miss"), false);
+  assert.ok(calls.indexOf("turns-list:turns-list-large") > calls.indexOf("projection-lookup-miss"));
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionState, "miss");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionMissReason, "static-signature-mismatch");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "bounded-large-turns-list");
 });
 
 test("thread detail orchestration preserves full thread/read before bounded turns/list fallback", async () => {

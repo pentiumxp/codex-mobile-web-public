@@ -89,6 +89,7 @@ test("v4 projection service preserves partial recent-window opt-in semantics", (
     assert.equal(seeded.partialKind, "recent-window");
     assert.equal(seeded.version, "v4");
     assert.equal(service.get(signatureInput()), null);
+    assert.equal(service.lookup(signatureInput()).missReason, "partial-not-allowed");
 
     const cached = service.get(signatureInput(), { allowPartial: true });
     assert.ok(cached);
@@ -109,6 +110,32 @@ test("v4 projection service preserves partial recent-window opt-in semantics", (
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("v4 projection service exposes bounded lookup miss reasons", () => {
+  const service = createThreadDetailProjectionV4Service({
+    cacheDir: "",
+    policyVersion: "test-v4",
+    maxTurns: 3,
+    now: () => 2000,
+  });
+  service.seed(signatureInput(), {
+    thread: {
+      id: "thread-1",
+      turns: [{
+        id: "turn-full",
+        items: [{ id: "user-full", type: "userMessage" }],
+      }],
+    },
+  });
+
+  const changedSignature = signatureInput({
+    rolloutStats: { sizeBytes: 4096, mtimeMs: 3000 },
+    summaryUpdatedAtMs: 3000,
+  });
+  const lookedUp = service.lookup(changedSignature);
+  assert.equal(lookedUp.cached, null);
+  assert.equal(lookedUp.missReason, "static-signature-mismatch");
 });
 
 test("v4 projection service lets partial recent windows replace stale full cache", () => {

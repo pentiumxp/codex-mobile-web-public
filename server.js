@@ -5159,6 +5159,19 @@ const threadDetailReadOrchestrationService = createThreadDetailReadOrchestration
   rawAllEnabled: () => THREAD_DETAIL_RAW_ALL_ENABLED,
   readRawThread: readRawThreadDetailForOrchestrator,
   projectionInput: threadDetailProjectionInput,
+  projectedThreadLookup: (input, summary, runtimeSettings, optionsForProjection = {}) => {
+    const lookedUp = typeof threadDetailProjectionService.lookup === "function"
+      ? threadDetailProjectionService.lookup(input, optionsForProjection)
+      : { cached: threadDetailProjectionService.get(input, optionsForProjection), missReason: "" };
+    return {
+      result: prepareProjectedThreadReadResult(
+        lookedUp && lookedUp.cached,
+        summary,
+        runtimeSettings,
+      ),
+      missReason: lookedUp && lookedUp.missReason || "",
+    };
+  },
   projectedThreadResult: (input, summary, runtimeSettings, optionsForProjection = {}) => prepareProjectedThreadReadResult(
     threadDetailProjectionService.get(input, optionsForProjection),
     summary,

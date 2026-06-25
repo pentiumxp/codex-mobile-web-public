@@ -96,6 +96,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
   const readRawThread = typeof options.readRawThread === "function" ? options.readRawThread : async () => ({ thread: null });
   const projectionInput = typeof options.projectionInput === "function" ? options.projectionInput : () => null;
   const projectedThreadResult = typeof options.projectedThreadResult === "function" ? options.projectedThreadResult : () => null;
+  const projectedThreadLookup = typeof options.projectedThreadLookup === "function" ? options.projectedThreadLookup : null;
   const rememberThreadSummary = typeof options.rememberThreadSummary === "function" ? options.rememberThreadSummary : () => {};
   const turnsListThreadReadResult = typeof options.turnsListThreadReadResult === "function"
     ? options.turnsListThreadReadResult
@@ -131,6 +132,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       projectionSource: context.projectionSource || "",
       projectionVersion: context.projectionVersion || "",
       projectionAgeMs: context.projectionAgeMs || 0,
+      projectionMissReason: context.projectionMissReason || "",
       projectionSeedStatus: context.projectionSeedStatus || "",
       projectionSeedSource: context.projectionSeedSource || "",
       timings: context.timer.timings,
@@ -166,6 +168,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       projectionSource: "",
       projectionVersion: "",
       projectionAgeMs: 0,
+      projectionMissReason: "",
       projectionSeedStatus: "",
       projectionSeedSource: "",
     };
@@ -230,12 +233,19 @@ function createThreadDetailReadOrchestrationService(options = {}) {
     context.projectionInputAvailable = Boolean(projection);
     context.projectionState = projection ? "input-ready" : "unavailable";
     const projectionStartedAtMs = now();
-    const projected = projection
-      ? projectedThreadResult(projection, summary, runtimeSettings, { allowPartial: preferRecentTurns })
+    const projectionLookup = projection && projectedThreadLookup
+      ? projectedThreadLookup(projection, summary, runtimeSettings, { allowPartial: preferRecentTurns })
       : null;
+    const projected = projection
+      ? projectionLookup
+        ? projectionLookup.result
+        : projectedThreadResult(projection, summary, runtimeSettings, { allowPartial: preferRecentTurns })
+      : null;
+    context.projectionMissReason = projectionLookup && projectionLookup.missReason || "";
     timer.mark("projectionMs", projectionStartedAtMs);
     if (projected && projected.thread) {
       context.projectionState = "hit";
+      context.projectionMissReason = "";
       const projectionInfo = projectionDiagnosticsFromThread(projected.thread);
       context.projectionSource = projectionInfo.source;
       context.projectionVersion = projectionInfo.version;
@@ -268,6 +278,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
     }
     if (projection) {
       context.projectionState = "miss";
+      if (!context.projectionMissReason) context.projectionMissReason = "result-missing";
     }
 
     if (preferRecentTurns) {

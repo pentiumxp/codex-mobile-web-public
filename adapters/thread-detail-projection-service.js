@@ -87,6 +87,13 @@ function cacheFileForThread(cacheDir, threadId) {
   return path.join(cacheDir, `${hash}.json`);
 }
 
+const STALE_FULL_MISS_REASONS = new Set([
+  "dynamic-summary-stale",
+  "static-signature-mismatch",
+  "dynamic-resting-signature-mismatch",
+  "dynamic-age-signature-mismatch",
+]);
+
 function rolloutPathForEntry(entry) {
   return String(entry && (entry.rolloutPath
     || entry.result && entry.result.thread && (
@@ -553,6 +560,17 @@ function createThreadDetailProjectionService(options = {}) {
     return true;
   }
 
+  function removePersistedEntry(threadId) {
+    const id = String(threadId || "").trim();
+    if (!id || !cacheDir) return false;
+    try {
+      fs.rmSync(cacheFileForThread(cacheDir, id), { force: true });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   function refreshEntrySignatureFromRollout(entry) {
     if (!entry || !entry.signature) return false;
     const rolloutPath = rolloutPathForEntry(entry);
@@ -600,9 +618,11 @@ function createThreadDetailProjectionService(options = {}) {
     const signature = projectionSignature(Object.assign({}, input, { policyVersion, maxTurns }));
     const existing = entryForThread(threadId);
     const partial = optionsForSeed.partial === true;
+    let replacedStaleFull = false;
+    let staleFullReason = "";
     if (partial && existing && !existing.partial) {
-      const reusableFull = get(input);
-      if (reusableFull && reusableFull.partial !== true) {
+      const reusableFullLookup = lookup(input);
+      if (reusableFullLookup.cached && reusableFullLookup.cached.partial !== true) {
         return {
           cachedAtMs: existing.cachedAtMs,
           dynamic: existing.dynamic,
@@ -611,6 +631,11 @@ function createThreadDetailProjectionService(options = {}) {
           skipped: true,
           reason: "full-cache-exists",
         };
+      }
+      staleFullReason = reusableFullLookup.missReason || "";
+      if (STALE_FULL_MISS_REASONS.has(staleFullReason)) {
+        replacedStaleFull = true;
+        removePersistedEntry(threadId);
       }
     }
     const entry = {
@@ -636,7 +661,9 @@ function createThreadDetailProjectionService(options = {}) {
       dynamic: entry.dynamic,
       partial: entry.partial,
       partialKind: entry.partialKind || "",
+      replacedStaleFull,
       signatureHash: entry.signatureHash,
+      staleFullReason,
     };
   }
 
@@ -661,25 +688,31 @@ function createThreadDetailProjectionService(options = {}) {
     return entry;
   }
 
-  function get(input = {}, optionsForGet = {}) {
+  function lookup(input = {}, optionsForGet = {}) {
     const threadId = String(input.threadId || "").trim();
-    if (!threadId) return null;
+    if (!threadId) return { cached: null, missReason: "missing-thread-id" };
     const signature = projectionSignature(Object.assign({}, input, { policyVersion, maxTurns }));
     const expectedHash = signatureHash(signature);
     let entry = entryForThread(threadId);
     if (!entry) entry = readDisk(threadId);
-    if (!entry || !entry.result) return null;
-    if (entry.partial && optionsForGet.allowPartial !== true) return null;
+    if (!entry) return { cached: null, missReason: "entry-missing" };
+    if (!entry.result) return { cached: null, missReason: "entry-empty" };
+    if (entry.partial && optionsForGet.allowPartial !== true) return { cached: null, missReason: "partial-not-allowed" };
 
     const summaryUpdatedAtMs = safeNumber(input.summaryUpdatedAtMs);
     if (entry.dynamic) {
-      if (summaryUpdatedAtMs && entry.updatedAtMs && summaryUpdatedAtMs > entry.updatedAtMs + 2000) return null;
+      if (summaryUpdatedAtMs && entry.updatedAtMs && summaryUpdatedAtMs > entry.updatedAtMs + 2000) {
+        return { cached: null, missReason: "dynamic-summary-stale" };
+      }
       if (dynamicBackingSignatureChanged(entry.signature, signature)) {
         const dynamicAgeMs = Math.max(0, now() - safeNumber(entry.updatedAtMs || entry.cachedAtMs));
-        if (isRestingStatus(input.summaryStatus) || dynamicAgeMs > dynamicSignatureMismatchMaxAgeMs) return null;
+        if (isRestingStatus(input.summaryStatus)) return { cached: null, missReason: "dynamic-resting-signature-mismatch" };
+        if (dynamicAgeMs > dynamicSignatureMismatchMaxAgeMs) return { cached: null, missReason: "dynamic-age-signature-mismatch" };
       }
-    } else if (!expectedHash || entry.signatureHash !== expectedHash) {
-      return null;
+    } else if (!expectedHash) {
+      return { cached: null, missReason: "signature-unavailable" };
+    } else if (entry.signatureHash !== expectedHash) {
+      return { cached: null, missReason: "static-signature-mismatch" };
     }
 
     const result = cloneJson(entry.result);
@@ -687,13 +720,21 @@ function createThreadDetailProjectionService(options = {}) {
     normalizeProjectionSupersededLiveTurns(result.thread);
     trimTurns(result.thread, maxTurns);
     return {
-      cachedAtMs: entry.cachedAtMs,
-      updatedAtMs: entry.updatedAtMs,
-      dynamic: entry.dynamic,
-      partial: entry.partial === true,
-      partialKind: entry.partialKind || "",
-      result,
+      cached: {
+        cachedAtMs: entry.cachedAtMs,
+        updatedAtMs: entry.updatedAtMs,
+        dynamic: entry.dynamic,
+        partial: entry.partial === true,
+        partialKind: entry.partialKind || "",
+        result,
+      },
+      missReason: "",
     };
+  }
+
+  function get(input = {}, optionsForGet = {}) {
+    const result = lookup(input, optionsForGet);
+    return result.cached;
   }
 
   function forget(threadId) {
@@ -767,6 +808,7 @@ function createThreadDetailProjectionService(options = {}) {
     applyNotification,
     forget,
     get,
+    lookup,
     projectionSignature,
     seed,
   };

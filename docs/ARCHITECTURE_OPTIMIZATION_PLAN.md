@@ -360,6 +360,14 @@ recent-only warm path: if `mode=recent` misses projection and succeeds through
 `turns-list-initial`, the coordinator seeds a memory-only partial
 `recent-window` projection; later `mode=recent` reads pass `allowPartial` and
 can return `projection-v4-partial` without another app-server turns-list read.
+The newest slice turns projection cache lookup into an explicit `{ cached,
+missReason }` contract so production first-paint evidence can distinguish
+missing entries, partial-not-allowed, unavailable signatures, static signature
+mismatch, dynamic summary staleness, and dynamic signature mismatch. It also
+cleans up unusable stale full disk cache entries when a recent partial seed
+proves the old full cache is no longer reusable through `dynamic-summary-stale`
+or signature mismatch, so service restarts do not re-read the same invalid full
+projection.
 
 - The coordinator owns summary resolution, hidden-thread rejection, projection
   hit, `mode=recent` initial turns-list, full `thread/read`, turns-list
@@ -379,9 +387,10 @@ can return `projection-v4-partial` without another app-server turns-list read.
 - Large rollout protection now uses a structured decision with
   `readDecision`, `projectionState`, `projectionInputAvailable`,
   `projectionSource`, `projectionVersion`, `projectionAgeMs`,
-  `projectionSeedStatus`, `projectionSeedSource`, `largeReadProtected`,
-  `largeReadRolloutSizeBytes`, `largeReadThresholdBytes`, `largeReadSource`,
-  and `largeReadReason` in the thread-detail timing diagnostics. This lets
+  `projectionMissReason`, `projectionSeedStatus`, `projectionSeedSource`,
+  `largeReadProtected`, `largeReadRolloutSizeBytes`,
+  `largeReadThresholdBytes`, `largeReadSource`, and `largeReadReason` in the
+  thread-detail timing diagnostics. This lets
   cold-open evidence distinguish projection hit, projection miss, unavailable
   projection input, projection-sourced large read, summary-sourced large read,
   projection seeding from bounded turns-list/full read, below-threshold,
@@ -398,6 +407,10 @@ can return `projection-v4-partial` without another app-server turns-list read.
   an incorrect full `projection-v4-cache`. This optimizes repeated recent opens
   of large sessions without presenting a bounded current window as
   authoritative complete history.
+- Projection cache lookup now reports bounded miss reasons and may delete a
+  stale full disk entry only when the existing full cache is proven unusable by
+  `dynamic-summary-stale` or a signature mismatch reason. It does not delete
+  healthy full cache and does not persist partial recent windows to disk.
 - Preserve the first-paint contract for large sessions. Do not introduce
   deferred incomplete detail enrichment as a UI fallback for server cold-path
   slowness.
@@ -411,9 +424,10 @@ Remaining target:
   should be able to return `projection-v4-partial` with `threadReadMs=0` and no
   app-server turns-list timing. Full `thread/read` should only remain for
   small/non-rollout threads or bounded turns-list failure. Use `readDecision`,
-  `projectionState`, `projectionSeedStatus`, and `projectionSource` first when
-  deciding whether the next repair belongs to projection-cache seeding, summary
-  rollout-size hydration, or app-server read fallback.
+  `projectionState`, `projectionMissReason`, `projectionSeedStatus`, and
+  `projectionSource` first when deciding whether the next repair belongs to
+  projection-cache seeding, summary rollout-size hydration, invalid full-cache
+  lifecycle, or app-server read fallback.
 - For thread-list cold/warm behavior, use `fallbackCacheDecision`,
   `fallbackCacheBuildCount`, `fallbackCacheBuildNumber`, and
   `fallbackCacheIncrementalUpdates` before changing cache invalidation. Normal

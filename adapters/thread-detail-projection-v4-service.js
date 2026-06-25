@@ -94,6 +94,32 @@ function createThreadDetailProjectionV4Service(options = {}) {
     });
   }
 
+  function lookup(input = {}, optionsForGet = {}) {
+    const lookedUp = typeof base.lookup === "function"
+      ? base.lookup(input, optionsForGet)
+      : { cached: base.get(input, optionsForGet), missReason: "" };
+    const cached = lookedUp && lookedUp.cached;
+    if (!cached || !cached.result) {
+      return {
+        cached: null,
+        missReason: lookedUp && lookedUp.missReason || "entry-missing",
+      };
+    }
+    const threadId = String(input.threadId || resultThreadId(cached.result) || "").trim();
+    const revision = revisionForThread(threadId);
+    return {
+      cached: Object.assign({}, cached, {
+        version: PROJECTION_VERSION,
+        result: normalizeResult(cached.result, {
+          threadId,
+          source: cached.partial ? "partial" : cached.dynamic ? "dynamic" : "cache",
+          revision,
+        }),
+      }),
+      missReason: "",
+    };
+  }
+
   function applyNotification(method, params = {}) {
     const normalizedParams = normalizeNotificationParamsForProjectionV4(method, params);
     const changed = base.applyNotification(method, normalizedParams);
@@ -119,6 +145,7 @@ function createThreadDetailProjectionV4Service(options = {}) {
     compare,
     forget,
     get,
+    lookup,
     normalizeResult,
     seed,
   };

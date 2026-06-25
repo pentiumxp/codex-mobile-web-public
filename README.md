@@ -16,6 +16,44 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v495 Projection Miss Reason Diagnostics
+
+v495 继续推进 Phase B 的大 session / thread-detail cold path 收敛。v494 已经让
+`mode=recent` 在首次 `turns-list-initial` 后 seed memory-only partial
+projection，并让后续 recent 打开复用 `projection-v4-partial`。本次切片解决
+剩余证据缺口：此前 `projectionState=miss` 只能说明“没有命中”，不能说明是
+没有 entry、partial 未被允许、签名不可用，还是旧 full cache 已经失效。
+
+本次切片新增：
+
+- `thread-detail-projection-service` 新增 `lookup()`，返回 `{ cached,
+  missReason }`，用 bounded reason code 区分 `entry-missing`、
+  `partial-not-allowed`、`signature-unavailable`、`static-signature-mismatch`、
+  `dynamic-summary-stale`、`dynamic-resting-signature-mismatch` 和
+  `dynamic-age-signature-mismatch` 等路径。
+- v4 projection wrapper 透传 lookup，并保持 v4 visible projection 输出。
+- `thread-detail-read-orchestration-service` 把 lookup miss reason 写入
+  `mobileDiagnostics.threadDetailTimings.projectionMissReason`。
+- recent partial seed 遇到不可复用的 full cache 时，如果 miss reason 是
+  `dynamic-summary-stale` 或签名 mismatch，会删除对应磁盘 full cache 条目，
+  避免服务重启后重复读回同一个失效 full projection。可复用 full cache 仍不会
+  被 partial 覆盖。
+
+修复边界：
+
+- 症状/风险：生产证据能看到 projection miss，但不能解释 miss 原因；summary
+  已更新或签名失效的 full disk cache 可能在重启后继续参与判断，反复干扰
+  recent partial warm path。
+- 失败层：服务端 projection cache lookup/invalid-full-cache 生命周期所有权。
+- 不变量：miss reason 只能是 bounded enum/status，不包含消息正文、任务卡正文、
+  上传内容、私有路径、cookie/token、provider payload 或长日志；partial cache
+  仍然 memory-only 且只在 explicit `allowPartial` 下返回。
+- 闭环验证：`test/thread-detail-projection-service.test.js` 覆盖 lookup miss
+  reason、partial-not-allowed、stale full disk cleanup；v4/service/orchestration/
+  performance tests 覆盖 wrapper 透传和 diagnostics 输出。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v495`。
+
 ## 2026-06-26 v494 Partial Recent Projection Cache
 
 v494 继续推进 Phase B 的大 session / thread-detail cold path 收敛。生产

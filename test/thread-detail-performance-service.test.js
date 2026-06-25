@@ -21,6 +21,7 @@ test("thread detail diagnostics classify warm projection and bounded timings", (
     projectionSource: "cache",
     projectionVersion: "v4",
     projectionAgeMs: 123.4,
+    projectionMissReason: "",
     rolloutSizeBytes: 2_800_000,
     timings: {
       summaryMs: 3.2,
@@ -45,6 +46,7 @@ test("thread detail diagnostics classify warm projection and bounded timings", (
     projectionSource: "cache",
     projectionVersion: "v4",
     projectionAgeMs: 123,
+    projectionMissReason: "",
     projectionSeedStatus: "",
     projectionSeedSource: "",
     returnedTurns: 2,
@@ -76,6 +78,7 @@ test("thread detail diagnostics expose bounded projection and seed decisions", (
     projectionSource: "projection",
     projectionVersion: "v4",
     projectionAgeMs: 18.7,
+    projectionMissReason: "static-signature-mismatch-extra-detail-that-should-not-grow-with-private-context",
     projectionSeedStatus: "seeded",
     projectionSeedSource: "turns-list-large",
     summarySource: "session-index",
@@ -97,6 +100,7 @@ test("thread detail diagnostics expose bounded projection and seed decisions", (
   assert.equal(diagnostics.projectionSource, "projection");
   assert.equal(diagnostics.projectionVersion, "v4");
   assert.equal(diagnostics.projectionAgeMs, 19);
+  assert.equal(diagnostics.projectionMissReason, "static-signature-mismatch-extra-detail-that-should-not-grow-with-private-context");
   assert.equal(diagnostics.projectionSeedStatus, "seeded");
   assert.equal(diagnostics.projectionSeedSource, "turns-list-large");
   assert.equal(JSON.stringify(diagnostics).includes("turn-1"), false);

@@ -61,6 +61,7 @@ function buildThreadDetailDiagnostics(input = {}) {
     projectionSource: compactLabel(input.projectionSource, 80),
     projectionVersion: compactLabel(input.projectionVersion, 80),
     projectionAgeMs: safeDurationMs(input.projectionAgeMs),
+    projectionMissReason: compactLabel(input.projectionMissReason, 80),
     projectionSeedStatus: compactLabel(input.projectionSeedStatus, 80),
     projectionSeedSource: compactLabel(input.projectionSeedSource, 80),
     returnedTurns: safeCount(input.returnedTurns || counts.returnedTurns),
