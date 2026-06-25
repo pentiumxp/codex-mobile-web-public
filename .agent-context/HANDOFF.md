@@ -1,3 +1,78 @@
+# 2026-06-25 - v452 turn-level DOM patch executor deployed
+
+- Optimization phase:
+  - Phase A fifth slice. v451 moved visible-item DOM patch execution out of
+    `public/app.js`; v452 moves the turn-level refresh patch operation loop out
+    of `patchCurrentThreadDetailFromRefresh`.
+- Root-cause boundary:
+  - Before v452, `patchCurrentThreadDetailFromRefresh` still iterated
+    `turnPatchPlan.operations` and decided inline how to execute
+    `item-patch`, `insert-turn`, and `replace-turn`.
+  - That kept turn-level DOM patch execution policy coupled to the refresh
+    coordinator even after turn action planning and visible-item execution had
+    been extracted.
+- Runtime change:
+  - `public/thread-detail-dom-patch.js` now exposes
+    `applyThreadTurnRefreshDomPatch`.
+  - The helper applies `item-patch`, `insert-turn`, and `replace-turn`
+    operations with injected callbacks for turn lookup, item patch, turn
+    render, turn insert, and turn replace.
+  - Existing bounded failure semantics are preserved: missing turn,
+    item-patch failure, render failure, insert failure, replace missing
+    article, unknown operation, and invalid operation still return explicit
+    reasons. No duplicate filtering, skipped refresh, forced re-render, or
+    hidden fallback was added.
+  - `public/app.js` keeps DOM/runtime wiring only for this path: it supplies the
+    callbacks, binds actions after the helper succeeds, and runs the existing
+    local patch completion path.
+  - `CLIENT_BUILD_ID` and service-worker cache are bumped to
+    `codex-mobile-shell-v452`.
+- Docs/tests:
+  - `README.md` records the v452 architecture slice.
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` records that turn-level DOM patch
+    execution is now outside `public/app.js`.
+  - `docs/MODULES.md` expands `public/thread-detail-dom-patch.js` ownership to
+    visible-item and turn-level patch execution.
+  - `test/thread-detail-dom-patch.test.js` now covers turn-level success order
+    and bounded failure reasons.
+  - `test/conversation-render.test.js` confirms `patchCurrentThreadDetailFromRefresh`
+    calls the helper and no longer loops over `turnPatchPlan.operations`.
+- Validation:
+  - Syntax checks passed for `public/thread-detail-dom-patch.js`,
+    `public/app.js`, and `public/sw.js`.
+  - Focused source suite passed:
+    `node --test test/thread-detail-dom-patch.test.js
+    test/thread-detail-patch-plan.test.js test/conversation-render.test.js
+    test/mobile-viewport.test.js test/app-update.test.js
+    test/plugin-voice-input.test.js test/thread-tile-layout-ui.test.js
+    test/thread-task-card-route.test.js test/thread-goal-service.test.js`
+    (`151` tests).
+  - Full `npm test` passed (`813` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Commit/deploy:
+  - Runtime commit: `cd5e4f8` (`refactor turn dom patch execution`).
+  - Deployed with Home AI central macOS script:
+    `deploy-macos-production.js --plugin codex-mobile --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --reason codex-mobile-turn-dom-patch-v452 --execute --json`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T165625Z-plugin-codex-mobile-web-codex-mobile-turn-dom-patch-v452`.
+  - Production `/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v452`,
+    `shellCacheName=codex-mobile-shell-v452`, and `version=0.1.11`.
+  - Source/prod SHA-256 parity confirmed for changed runtime/test/doc files.
+  - Production focused suite passed with `NODE_PATH` pointed at production
+    dependencies (`151` tests).
+- Production observation:
+  - Bounded log-tail aggregation after deploy found no v452/v451/v450/v449
+    `thread_refresh_ms` client events yet; the recent sample still contained
+    `102` v447 events and `1250` events with missing client build id.
+  - This is not evidence of v452 failure; refreshed v452 clients have not yet
+    produced that metric in the sampled tail.
+- Follow-up:
+  - Remaining Phase A boundaries are now narrower: turn node lookup,
+    turn node creation/anchoring, hydration, and action binding.
+  - After those are extracted or deliberately deferred, move to Phase B
+    cold/warm large-session timing evidence and cache rebuild boundaries.
+
 # 2026-06-25 - v451 visible item DOM patch executor deployed
 
 - Optimization phase:
