@@ -9754,3 +9754,68 @@ The previous full handoff was archived and should be opened only when old proven
   - A duplicate `return_to_source` attempt in this continuation was rejected
     with `task_card_not_returnable:replied`, which is the expected idempotency
     guard and prevented a duplicate return-card loop.
+
+## 2026-06-26 - Latest continuation status: v482 full-render scroll plan deployed
+
+- Latest code commit:
+  - `5d57e4e extract full-render scroll plan`
+- Prior local v481 deployment:
+  - `2241183 extract single-thread render shell plan` was deployed first through
+    the Home AI central macOS plugin deploy path with reason
+    `codex-mobile-single-thread-shell-plan-v481`.
+  - Production readback after v481 reported
+    `clientBuildId=0.1.11|codex-mobile-shell-v481` and
+    `shellCacheName=codex-mobile-shell-v481`.
+  - Source/production SHA parity matched for the changed v481 files, and
+    production focused suite passed (`150` tests).
+- v482 change:
+  - Full-render bottom-follow planning for single-thread conversation renders
+    moved from `public/app.js` to `public/conversation-scroll.js` as
+    `planFullRenderScroll`.
+  - `public/app.js` still owns DOM/runtime observations and actual scrolling,
+    but the final `stickToBottom` decision for full conversation renders now
+    comes from a pure helper with bounded reasons.
+  - Static build/cache: `0.1.11|codex-mobile-shell-v482` /
+    `codex-mobile-shell-v482`.
+- Root-cause boundary:
+  - Symptom/risk: `renderCurrentThread()` still directly combined
+    near-bottom, user-reading, auto-scroll hold, submitted-message follow,
+    viewport follow, and explicit `stickToBottom` state. That formula is a
+    high-risk ownership point for full-render flicker and incorrect bottom
+    jumps.
+  - Failing layer: frontend single-thread full-render scroll ownership.
+  - Invariant: full-render scroll decisions should be planned by a testable
+    helper; app code should provide observations and execute the result.
+- Validation:
+  - Source focused suite passed:
+    `test/conversation-scroll.test.js`, `test/turn-scroll-controls.test.js`,
+    `test/conversation-render.test.js`, `test/mobile-viewport.test.js`,
+    `test/app-update.test.js`, `test/thread-goal-service.test.js`, and
+    `test/thread-task-card-route.test.js` (`146` tests).
+  - Full source `npm test` passed (`881` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Production deploy:
+  - Deployed through Home AI central macOS plugin deploy path with reason
+    `codex-mobile-full-render-scroll-plan-v482`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T212855Z-plugin-codex-mobile-web-codex-mobile-full-render-scroll-plan-v482`
+  - The deploy retention step pruned the intermediate v481 backup under the
+    daily latest-per-target policy; v482 is the current retained backup.
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v482`,
+    `shellCacheName=codex-mobile-shell-v482`, `version=0.1.11`,
+    `authRequired=true`.
+  - Source/production SHA parity verified for:
+    `public/app.js`, `public/conversation-scroll.js`, `public/sw.js`,
+    `test/conversation-scroll.test.js`, `test/turn-scroll-controls.test.js`,
+    `test/mobile-viewport.test.js`, `test/thread-goal-service.test.js`,
+    `test/thread-task-card-route.test.js`, `README.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and `docs/MODULES.md`.
+  - Production focused suite passed (`146` tests).
+- Browser/visual note:
+  - Browser automation remains unavailable in the current tool list. v482
+    closure evidence is focused source tests, full source tests, production
+    focused tests, production public-config readback, and source/prod SHA
+    parity.
+- Release:
+  - Public was not pushed for v482.
