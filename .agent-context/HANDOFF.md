@@ -1,9 +1,11 @@
-# 2026-06-25 - v433 tile composer target hint pending deploy
+# 2026-06-25 - v433 tile composer target hint deployed
 
 - Scope:
   - Small tile-mode UX guard to reduce accidental sends to the wrong pane.
-  - Validated locally. Not deployed and not pushed Public at the time this note
-    was written.
+  - Implemented, committed, and deployed to Mac production.
+  - Not pushed Public.
+  - Code commit:
+    - `e1e14f3 feat: show tile composer target`
 - Change:
   - Added `#composerTargetHint` / `#composerTargetName` to the shared Composer.
   - `renderComposerTargetHint()` displays `发送到 · <thread name>` when
@@ -20,6 +22,16 @@
     (`34` tests).
   - `npm run check` passed.
   - `git diff --check` passed.
+- Production deploy:
+  - Deployed through the Home AI central plugin deploy script.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T041731Z-plugin-codex-mobile-web-manual`.
+  - `/api/public-config` reports `clientBuildId=0.1.11|codex-mobile-shell-v433`,
+    `shellCacheName=codex-mobile-shell-v433`, `version=0.1.11`,
+    `authRequired=true`, and build id `71415c9c95d0cc8c`.
+  - Source/production SHA-256 samples matched for `public/app.js`,
+    `public/sw.js`, `public/index.html`, `public/styles.css`, and `README.md`.
+  - Central deploy validation reported zero blocking auth-profile audit issues.
 
 # 2026-06-25 - v432 thread detail render-plan slice pending commit/deploy
 
