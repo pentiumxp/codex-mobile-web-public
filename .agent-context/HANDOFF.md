@@ -1,3 +1,62 @@
+# 2026-06-25 - v435 thread-detail merge policy deployed
+
+- Scope:
+  - Continued the architecture optimization goal, Phase 2 frontend state
+    ownership.
+  - Extracted thread/turn-level thread-detail merge orchestration out of
+    `public/app.js` into `public/thread-detail-merge-state.js`.
+  - Also tightened the server raw-operation fallback discovered by the full
+    test suite: completed/non-live turns no longer gain new raw operation cards
+    from rollout fallback; they only merge existing operation items. Live turns
+    can still rehydrate missing operations.
+- Code commit:
+  - `f92987e refactor: extract thread detail merge policy`
+- Changed boundary:
+  - `public/thread-detail-merge-state.js` owns v4 projection delegation,
+    incoming turn merge, stale mobile load flag cleanup, active live-turn
+    retention, expanded-history preservation, and initial-submission echo
+    cleanup.
+  - `public/app.js` now wires the helper and passes runtime `activeTurnId`; item
+    merge functions remain in `app.js` for now.
+  - PWA shell cache and client build id advanced to
+    `codex-mobile-shell-v435`.
+- Docs updated:
+  - `README.md`
+  - `docs/MODULES.md`
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`
+  - `docs/HOME_AI_PLATFORM_CONTRACT.md`
+- Validation:
+  - Focused tests passed:
+    `node --test test/thread-detail-merge-state.test.js test/thread-detail-state.test.js test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/app-update.test.js test/plugin-voice-input.test.js test/thread-tile-layout-ui.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    (`156` tests).
+  - `node --test test/thread-item-timestamp-enrichment.test.js test/thread-turn-compaction-policy-service.test.js`
+    passed (`29` tests) after tightening the raw-operation fallback.
+  - `npm test` passed (`777` tests).
+  - `npm run check` passed.
+  - `git diff --check` passed.
+- Production deploy:
+  - Deployed through the Home AI central plugin deploy script.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T045551Z-plugin-codex-mobile-web-manual`.
+  - `/api/public-config` reports `clientBuildId=0.1.11|codex-mobile-shell-v435`,
+    `shellCacheName=codex-mobile-shell-v435`, `version=0.1.11`,
+    `authRequired=true`, and build id `6d07230bfa206e4f`.
+  - Source/production SHA-256 samples matched for `public/app.js`,
+    `public/sw.js`, `public/index.html`, `public/thread-detail-merge-state.js`,
+    `server.js`, `README.md`, `docs/MODULES.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+  - Central deploy validation reported zero blocking auth-profile audit issues.
+- Not pushed Public:
+  - Follow release-order rule. Public sync requires explicit user instruction
+    after production/user validation.
+- Remaining architecture targets:
+  - Continue Phase 2 by extracting DOM patch/conversation patch ownership from
+    `public/app.js`.
+  - Continue Phase 3 large-session cold-path evidence/optimization with current
+    projection/read orchestration boundaries.
+  - Add browser/visual coverage for mobile flicker, task-card folding, image
+    rendering, and PWA refresh paths.
+
 # 2026-06-25 - v434 Public sync verified
 
 - Scope:
