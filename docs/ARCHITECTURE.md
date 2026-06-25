@@ -339,6 +339,16 @@ testable open/focus/scrub plan; `public/app.js` consumes that plan only in
 approval/item card when still present, and then scrubs the URL back to the
 embed root. Missing targets fall back to the normal embedded primary page plus
 a bounded in-app diagnostic.
+Codex Mobile also participates in Home AI's platform-owned diagnostic
+remediation loop through `homeai.diagnostic.report`. The plugin-side helper
+`public/home-ai-diagnostic-reporting.js` only emits bounded repeated-failure
+metadata from trusted embedded mode: task-card workflow failures,
+thread/session load and route-hint failures, media render failures, and
+conversation projection consistency anomalies. It sends no raw conversation
+text, prompts, completions, task-card bodies, upload bytes, raw thread/turn/task
+ids, cookies, launch tokens, access keys, or private URLs/paths. Home AI owns
+case deduplication, Owner notification, and Owner-triggered task-card dispatch;
+automatic plugin reports must not directly create repair cards.
 Embedded mode also blocks `window.open`, `target=_blank`, external browser
 handoffs, and second-window launches so plugin pages stay in the same iframe.
 Embedded mode also disables browser Web Push registration and local completion

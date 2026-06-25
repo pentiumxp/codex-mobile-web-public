@@ -80,8 +80,9 @@ test("voice input helper builds Home AI embedded-plugin protocol messages", () =
 });
 
 test("voice input bridge is limited to Hermes embed mode and uses plugin scripts", () => {
-  assert.match(indexHtml, /<script src="\/plugin-voice-input\.js"><\/script>\s*<script src="\/thread-status-hints\.js"><\/script>\s*<script src="\/thread-performance-metrics\.js"><\/script>\s*<script src="\/live-operation-dock-state\.js"><\/script>\s*<script src="\/thread-detail-state\.js"><\/script>\s*<script src="\/thread-detail-render-plan\.js"><\/script>\s*<script src="\/thread-detail-merge-state\.js"><\/script>\s*<script src="\/thread-detail-patch-plan\.js"><\/script>\s*<script src="\/thread-tile-layout\.js"><\/script>\s*<script src="\/build-refresh-policy\.js"><\/script>\s*<script src="\/app\.js"><\/script>/);
+  assert.match(indexHtml, /<script src="\/plugin-voice-input\.js"><\/script>\s*<script src="\/home-ai-diagnostic-reporting\.js"><\/script>\s*<script src="\/thread-status-hints\.js"><\/script>\s*<script src="\/thread-performance-metrics\.js"><\/script>\s*<script src="\/live-operation-dock-state\.js"><\/script>\s*<script src="\/thread-detail-state\.js"><\/script>\s*<script src="\/thread-detail-render-plan\.js"><\/script>\s*<script src="\/thread-detail-merge-state\.js"><\/script>\s*<script src="\/thread-detail-patch-plan\.js"><\/script>\s*<script src="\/thread-tile-layout\.js"><\/script>\s*<script src="\/build-refresh-policy\.js"><\/script>\s*<script src="\/app\.js"><\/script>/);
   assert.match(swJs, /"\/plugin-voice-input\.js"/);
+  assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(swJs, /"\/thread-status-hints\.js"/);
   assert.match(swJs, /"\/thread-performance-metrics\.js"/);
   assert.match(swJs, /"\/live-operation-dock-state\.js"/);
@@ -91,6 +92,7 @@ test("voice input bridge is limited to Hermes embed mode and uses plugin scripts
   assert.match(swJs, /"\/thread-detail-patch-plan\.js"/);
   assert.match(swJs, /"\/thread-tile-layout\.js"/);
   assert.match(appJs, /"\/plugin-voice-input\.js"/);
+  assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(appJs, /"\/thread-status-hints\.js"/);
   assert.match(appJs, /"\/thread-performance-metrics\.js"/);
   assert.match(appJs, /"\/live-operation-dock-state\.js"/);

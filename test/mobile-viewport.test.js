@@ -148,8 +148,10 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v438/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v438"/);
+  assert.match(swJs, /codex-mobile-shell-v439/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v439"/);
+  assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
+  assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(swJs, /"\/thread-status-hints\.js"/);
   assert.match(swJs, /"\/thread-performance-metrics\.js"/);
   assert.match(swJs, /"\/live-operation-dock-state\.js"/);
@@ -366,6 +368,7 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(swJs, /"\/conversation-scroll\.js"/);
   assert.match(swJs, /"\/image-compressor\.js"/);
   assert.match(swJs, /"\/plugin-embed\.js"/);
+  assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(swJs, /"\/thread-performance-metrics\.js"/);
   assert.match(swJs, /"\/live-operation-dock-state\.js"/);
   assert.match(swJs, /"\/thread-detail-state\.js"/);
@@ -378,6 +381,7 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /"\/conversation-scroll\.js"/);
   assert.match(appJs, /"\/image-compressor\.js"/);
   assert.match(appJs, /"\/plugin-embed\.js"/);
+  assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(appJs, /"\/thread-performance-metrics\.js"/);
   assert.match(appJs, /"\/live-operation-dock-state\.js"/);
   assert.match(appJs, /"\/thread-detail-state\.js"/);

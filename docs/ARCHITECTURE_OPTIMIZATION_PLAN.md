@@ -149,6 +149,22 @@ Target:
 - Prefer evidence-driven fixes over client-only duplicate filtering or visual
   masking.
 
+Current diagnostic intake bridge:
+
+- v439 adds `public/home-ai-diagnostic-reporting.js` as the browser-side
+  repeated-failure state machine for Home AI's diagnostic remediation loop.
+  It gates automatic reports by stable privacy-preserving signatures, clears
+  counters on success, throttles repeated reports, and sanitizes all payloads
+  before `homeai.diagnostic.report` is posted to the Home AI parent frame.
+- Initial probes cover task-card workflow failures, thread/session load and
+  route-hint failures, visible media render failures, and conversation
+  projection consistency anomalies such as render-signature mismatch or
+  duplicate DOM render keys.
+- This is evidence capture, not a UI fallback. It must not filter duplicate
+  messages, synthesize missing messages, auto-refresh to hide projection bugs,
+  or auto-dispatch repair cards. Home AI owns case dedupe, Owner notification,
+  and Owner-triggered repair-card dispatch.
+
 ### Phase 5: User-Managed Split Reading
 
 Target:

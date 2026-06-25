@@ -37,6 +37,36 @@ return policy，不再出现 `Return required`；如果再次对终止卡调用 
 `returnToSource:true` 是终止卡、auto-return receipt 不触发二次 auto-return、以及
 Music-style repair -> receipt -> ack 链在第一张 terminal return 后停止。
 
+## 2026-06-25 v439 Home AI 诊断上报通道
+
+v439 接入 Home AI 平台级 diagnostic remediation loop。Codex Mobile 不直接自动
+发修复卡，也不把私密正文、prompt、任务卡正文、附件内容、原始 thread/turn/task id
+或 token/path/url 交给 Home AI；它只在嵌入式插件模式下，把连续出现的用户可见
+失败整理成 `homeai.diagnostic.report` 元数据事件，交给 Home AI 负责 case 去重、
+Owner 通知和 Owner 手动触发修复卡。
+
+新增 `public/home-ai-diagnostic-reporting.js` 作为纯策略模块，负责阈值计数、
+成功清计数、节流、payload 清洗和 `postMessage` 安全失败。默认同一隐私安全签名
+连续 3 次失败才上报，5 分钟内同签名只报一次；成功路径会清掉相同 surface/action
+的失败计数。
+
+首批接入面：
+
+- 任务卡 workflow：手动创建、草案请求、草案物化、approve/reply/delete/revoke
+  可见失败。
+- 线程/session：线程列表加载失败、线程详情加载/refresh 失败、Home AI
+  route-hint thread/task/item 目标不可用。
+- 媒体与投影显示：图片加载失败、conversation render signature mismatch、
+  DOM `data-render-key` 重复，以及 detail patch 被拒绝后转 full render 的重复
+  诊断。
+
+本地 `/api/client-events` 仍保留 Codex Mobile 自身排查所需的客户端事件；发给
+Home AI 的自动诊断只包含 build/cache id、surface/action、状态码、计数、
+duration bucket、source kind、read/render mode 和 short hash。新增
+`test/home-ai-diagnostic-reporting.test.js` 覆盖阈值、去重、success clear、隐私
+字段清洗和非嵌入/父窗口异常时安全失败。PWA shell cache 升级到
+`codex-mobile-shell-v439`。
+
 ## 2026-06-25 v438 线程详情可见项 Patch 计划拆分
 
 v438 继续第二阶段前端状态边界优化，把 live/detail refresh 中“能否只做可见项

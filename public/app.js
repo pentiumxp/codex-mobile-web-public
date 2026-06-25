@@ -64,6 +64,10 @@ const pluginVoiceInputApi = window.CodexPluginVoiceInput || {
   textFromMessage: (input = {}) => String(input.text || "").trim().slice(0, 12000),
   voiceSessionIdFrom: (input = {}) => String(input.voiceSessionId || input.voice_session_id || "").trim(),
 };
+const homeAiDiagnosticReportingApi = window.CodexHomeAiDiagnosticReporting;
+if (!homeAiDiagnosticReportingApi) {
+  throw new Error("CodexHomeAiDiagnosticReporting script failed to load");
+}
 const buildRefreshPolicy = window.CodexBuildRefreshPolicy || {
   shouldPromptForServerBuildChange(serverBuildId, clientBuildId) {
     const server = String(serverBuildId || "").trim();
@@ -440,6 +444,10 @@ const state = {
   threadHistoryBusy: false,
   threadHistoryError: "",
   perfEventLastReportedAt: {},
+  homeAiDiagnosticReporter: homeAiDiagnosticReportingApi.createDiagnosticReporter({
+    threshold: homeAiDiagnosticReportingApi.DEFAULT_THRESHOLD,
+    throttleMs: homeAiDiagnosticReportingApi.DEFAULT_THROTTLE_MS,
+  }),
   shellLoadedReported: false,
 };
 
@@ -477,7 +485,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v438";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v439";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -524,6 +532,7 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/image-compressor.js",
   "/plugin-embed.js",
   "/plugin-voice-input.js",
+  "/home-ai-diagnostic-reporting.js",
   "/thread-status-hints.js",
   "/thread-performance-metrics.js",
   "/live-operation-dock-state.js",
@@ -6611,6 +6620,228 @@ function postPerformanceEvent(event, details = {}, options = {}) {
   return true;
 }
 
+function diagnosticHash(value) {
+  return homeAiDiagnosticReportingApi.hashIdentifier(String(value || ""), "h");
+}
+
+function diagnosticThreadHash(threadId = state.currentThreadId) {
+  const id = String(threadId || "").trim();
+  return id ? diagnosticHash(`thread:${id}`) : "";
+}
+
+function diagnosticTurnHash(turnId) {
+  const id = String(turnId || "").trim();
+  return id ? diagnosticHash(`turn:${id}`) : "";
+}
+
+function diagnosticTaskHash(taskId) {
+  const id = String(taskId || "").trim();
+  return id ? diagnosticHash(`task:${id}`) : "";
+}
+
+function diagnosticItemHash(itemId) {
+  const id = String(itemId || "").trim();
+  return id ? diagnosticHash(`item:${id}`) : "";
+}
+
+function diagnosticRouteKind() {
+  if (state.newThreadDraft) return "new-thread";
+  if (isHermesEmbedMode() && isHermesPluginPrimaryPage()) return "embedded-primary";
+  if (state.threadTileMode) return "thread-tile";
+  if (state.currentThreadId) return "thread-detail";
+  return isHermesEmbedMode() ? "embedded-root" : "standalone-root";
+}
+
+function diagnosticErrorStatus(err) {
+  let status = Number(err && (err.status || err.statusCode) || 0);
+  if ((!Number.isFinite(status) || status <= 0) && err && /^\d+$/.test(String(err.code || ""))) {
+    status = Number(err.code);
+  }
+  return Number.isFinite(status) && status > 0 ? status : 0;
+}
+
+function diagnosticErrorCode(err, fallback = "runtime_failed") {
+  const explicit = String(err && err.code || "").trim();
+  if (explicit && !/^\d+$/.test(explicit)) return homeAiDiagnosticReportingApi.boundedToken(explicit, fallback, 100);
+  const status = diagnosticErrorStatus(err);
+  if (status) return `http_${status}`;
+  const message = String(err && err.message || err || "").toLowerCase();
+  if (message.includes("request timed out")) return "request_timeout";
+  if (message.includes("request cancelled")) return "request_cancelled";
+  if (message.includes("failed to fetch")) return "network_fetch_failed";
+  if (message.includes("not visible")) return "target_thread_not_visible";
+  if (message.includes("terminal") && message.includes("return")) return "terminal_card_no_return_required";
+  return fallback;
+}
+
+function diagnosticDurationBucket(ms) {
+  return homeAiDiagnosticReportingApi.durationBucket(ms);
+}
+
+function currentHomeAiDiagnosticContext(extra = {}) {
+  const context = Object.assign({
+    surface: "runtime",
+    action: "unknown",
+    route_kind: diagnosticRouteKind(),
+    build_id: CLIENT_BUILD_ID,
+    shell_cache: CLIENT_BUILD_ID.split("|").pop() || "",
+    thread_hash: diagnosticThreadHash(),
+    embedded: isHermesEmbedMode(),
+    pwa: isPwaMode(),
+    client_visibility: document.visibilityState || "",
+  }, extra || {});
+  if (!context.thread_hash) delete context.thread_hash;
+  return context;
+}
+
+function postHomeAiDiagnosticReport(report, meta = {}) {
+  const targetOrigin = normalizePluginParentOrigin(state.pluginParentOrigin);
+  if (targetOrigin) state.pluginParentOrigin = targetOrigin;
+  const result = homeAiDiagnosticReportingApi.postReportToHomeAi({
+    report,
+    embedded: isHermesEmbedMode(),
+    parentWindow: window.parent,
+    selfWindow: window,
+    targetOrigin: targetOrigin || "*",
+  });
+  postClientEvent("home_ai_diagnostic_report_post", {
+    ok: Boolean(result.ok),
+    reason: result.reason || "",
+    category: report && report.category || "",
+    diagnostic_type: report && report.diagnostic_type || "",
+    error_code: report && report.error_code || "",
+    signature: meta.signature || "",
+    repeatedFailures: Number(meta.repeatedFailures || 0),
+  });
+  return result;
+}
+
+function recordHomeAiDiagnosticFailure(input = {}) {
+  const result = state.homeAiDiagnosticReporter.recordFailure(Object.assign({}, input, {
+    context: currentHomeAiDiagnosticContext(input.context || {}),
+  }));
+  postClientEvent("home_ai_diagnostic_failure_recorded", {
+    category: input.category || "",
+    diagnostic_type: input.diagnostic_type || input.diagnosticType || "",
+    error_code: input.error_code || input.errorCode || "",
+    eligible: Boolean(result.eligible),
+    repeatedFailures: Number(result.repeatedFailures || 0),
+    threshold: Number(result.threshold || 0),
+    signature: result.signature || "",
+  });
+  if (result.report) postHomeAiDiagnosticReport(result.report, result);
+  return result;
+}
+
+function recordHomeAiDiagnosticSuccess(input = {}) {
+  return state.homeAiDiagnosticReporter.recordSuccess(Object.assign({}, input, {
+    context: currentHomeAiDiagnosticContext(input.context || {}),
+  }));
+}
+
+function conversationDomShape() {
+  const conversation = $("conversation");
+  if (!conversation) return { renderKeyCount: 0, duplicateRenderKeyCount: 0, turnCount: 0 };
+  const seen = new Set();
+  let duplicateRenderKeyCount = 0;
+  for (const node of Array.from(conversation.querySelectorAll("[data-render-key]"))) {
+    const key = String(node && node.getAttribute && node.getAttribute("data-render-key") || "");
+    if (!key) continue;
+    if (seen.has(key)) duplicateRenderKeyCount += 1;
+    else seen.add(key);
+  }
+  return {
+    renderKeyCount: seen.size,
+    duplicateRenderKeyCount,
+    turnCount: conversation.querySelectorAll("[data-turn]").length,
+  };
+}
+
+function visibleConversationShape(thread) {
+  const turns = visibleTurnsForConversation(thread);
+  const visibleItemCount = turns.reduce((total, turn) => total + visibleItemsForTurn(turn).length, 0);
+  return {
+    visibleTurnCount: turns.length,
+    visibleItemCount,
+  };
+}
+
+function checkConversationProjectionConsistency(source, extra = {}) {
+  if (!state.currentThread || state.currentThread.mobileLoading || state.currentThread.mobileLoadError) return;
+  const currentSignature = conversationRenderSignature(state.currentThread);
+  const domShape = conversationDomShape();
+  const visibleShape = visibleConversationShape(state.currentThread);
+  const baseContext = {
+    surface: "conversation-render",
+    action: source || "render",
+    read_mode: String(state.currentThread.mobileReadMode || ""),
+    render_mode: String(extra.renderMode || ""),
+  };
+  const counts = {
+    dom_count: domShape.renderKeyCount,
+    duplicate_count: domShape.duplicateRenderKeyCount,
+    visible_count: visibleShape.visibleItemCount,
+    turn_count: visibleShape.visibleTurnCount,
+  };
+  if (state.renderedConversationSignature && state.renderedConversationSignature !== currentSignature) {
+    recordHomeAiDiagnosticFailure({
+      category: "conversation_projection_mismatch",
+      diagnostic_type: "render_signature_mismatch",
+      severity_hint: "H2",
+      evidence_confidence: 0.74,
+      error_code: "render_signature_mismatch",
+      context: baseContext,
+      counts,
+      breadcrumbs: [{
+        kind: "conversation-render",
+        code: "signature-check",
+        status: "failed",
+        fields: {
+          read_mode: baseContext.read_mode,
+          render_mode: baseContext.render_mode,
+          dom_count: domShape.renderKeyCount,
+          visible_count: visibleShape.visibleItemCount,
+        },
+      }],
+    });
+  } else {
+    recordHomeAiDiagnosticSuccess({
+      category: "conversation_projection_mismatch",
+      diagnostic_type: "render_signature_mismatch",
+      error_code: "render_signature_mismatch",
+      context: baseContext,
+    });
+  }
+  if (domShape.duplicateRenderKeyCount > 0) {
+    recordHomeAiDiagnosticFailure({
+      category: "conversation_projection_mismatch",
+      diagnostic_type: "duplicate_render_keys",
+      severity_hint: "H2",
+      evidence_confidence: 0.78,
+      error_code: "duplicate_render_keys",
+      context: baseContext,
+      counts,
+      breadcrumbs: [{
+        kind: "conversation-render",
+        code: "render-key-check",
+        status: "failed",
+        fields: {
+          duplicate_count: domShape.duplicateRenderKeyCount,
+          dom_count: domShape.renderKeyCount,
+          visible_count: visibleShape.visibleItemCount,
+        },
+      }],
+    });
+  } else {
+    recordHomeAiDiagnosticSuccess({
+      category: "conversation_projection_mismatch",
+      diagnostic_type: "duplicate_render_keys",
+      error_code: "duplicate_render_keys",
+      context: baseContext,
+    });
+  }
+}
+
 function startUiWatchdog() {
   if (state.uiWatchdogTimer) return;
   state.lastUiWatchdogTickAt = Date.now();
@@ -7815,11 +8046,53 @@ function applyPendingPluginRouteHintFocus() {
     focusPluginRouteTargetNode(hint);
     state.pendingPluginRouteHint = null;
     if (plan.diagnostic) setPluginRouteDiagnostic(plan.diagnostic.message, { error: plan.diagnostic.error });
+    recordHomeAiDiagnosticSuccess({
+      category: "thread_session_load_failed",
+      diagnostic_type: "route_hint_target_missing",
+      error_code: "route_hint_target_missing",
+      context: {
+        surface: "thread-session",
+        action: "route-hint-focus",
+        route_kind: "plugin-route",
+        thread_hash: diagnosticThreadHash(hint.threadId || hint.pluginThreadId || state.currentThreadId),
+        task_hash: diagnosticTaskHash(hint.taskId || hint.pluginTaskId || ""),
+        item_hash: diagnosticItemHash(hint.itemId || hint.pluginItemId || ""),
+      },
+    });
     return true;
   }
   state.pendingPluginRouteHint = null;
   showHermesPluginPrimaryPage();
   if (plan.diagnostic) setPluginRouteDiagnostic(plan.diagnostic.message, { error: plan.diagnostic.error });
+  recordHomeAiDiagnosticFailure({
+    category: "thread_session_load_failed",
+    diagnostic_type: "route_hint_target_missing",
+    severity_hint: "H2",
+    evidence_confidence: 0.78,
+    error_code: "route_hint_target_missing",
+    context: {
+      surface: "thread-session",
+      action: "route-hint-focus",
+      route_kind: "plugin-route",
+      thread_hash: diagnosticThreadHash(hint.threadId || hint.pluginThreadId || state.currentThreadId),
+      task_hash: diagnosticTaskHash(hint.taskId || hint.pluginTaskId || ""),
+      item_hash: diagnosticItemHash(hint.itemId || hint.pluginItemId || ""),
+    },
+    counts: {
+      missing_count: 1,
+    },
+    breadcrumbs: [{
+      kind: "thread-session",
+      code: "route-hint-focus",
+      status: "failed",
+      fields: {
+        route_kind: "plugin-route",
+        thread_hash: diagnosticThreadHash(hint.threadId || hint.pluginThreadId || state.currentThreadId),
+        task_hash: diagnosticTaskHash(hint.taskId || hint.pluginTaskId || ""),
+        item_hash: diagnosticItemHash(hint.itemId || hint.pluginItemId || ""),
+      },
+    }],
+  });
   return false;
 }
 
@@ -7861,12 +8134,51 @@ async function openHermesPluginRouteHint(hint) {
     } else {
       applyPendingPluginRouteHintFocus();
     }
+    recordHomeAiDiagnosticSuccess({
+      category: "thread_session_load_failed",
+      diagnostic_type: "route_hint_thread_unavailable",
+      error_code: "route_hint_thread_unavailable",
+      context: {
+        surface: "thread-session",
+        action: "route-hint-open",
+        route_kind: "plugin-route",
+        thread_hash: diagnosticThreadHash(plan.threadId || hint.threadId || hint.pluginThreadId || ""),
+      },
+    });
     return true;
   } catch (error) {
     state.pendingPluginRouteHint = null;
     showHermesPluginPrimaryPage();
     setPluginRouteDiagnostic(plan.targetId ? "Notification target is unavailable" : "Notification thread is unavailable", {
       error: true,
+    });
+    recordHomeAiDiagnosticFailure({
+      category: "thread_session_load_failed",
+      diagnostic_type: plan.targetId ? "route_hint_target_unavailable" : "route_hint_thread_unavailable",
+      severity_hint: "H2",
+      evidence_confidence: 0.78,
+      error_code: diagnosticErrorCode(error, plan.targetId ? "route_hint_target_unavailable" : "route_hint_thread_unavailable"),
+      context: {
+        surface: "thread-session",
+        action: "route-hint-open",
+        route_kind: "plugin-route",
+        thread_hash: diagnosticThreadHash(plan.threadId || hint.threadId || hint.pluginThreadId || ""),
+        task_hash: diagnosticTaskHash(hint.taskId || hint.pluginTaskId || ""),
+        item_hash: diagnosticItemHash(hint.itemId || hint.pluginItemId || ""),
+      },
+      counts: {
+        status_code: diagnosticErrorStatus(error),
+      },
+      breadcrumbs: [{
+        kind: "thread-session",
+        code: "route-hint-open",
+        status: "failed",
+        fields: {
+          status_code: diagnosticErrorStatus(error),
+          route_kind: "plugin-route",
+          thread_hash: diagnosticThreadHash(plan.threadId || hint.threadId || hint.pluginThreadId || ""),
+        },
+      }],
     });
     return true;
   }
@@ -8259,10 +8571,43 @@ async function loadThreads(options = {}) {
       hasWorkspace: Boolean(state.selectedCwd),
       mobileFallback: Boolean(result.mobileFallback),
     });
+    recordHomeAiDiagnosticSuccess({
+      category: "thread_session_load_failed",
+      diagnostic_type: "thread_list_load_failed",
+      error_code: "thread_list_load_failed",
+      context: {
+        surface: "thread-session",
+        action: "thread-list-load",
+      },
+    });
     return result;
   } catch (err) {
     if (seq !== state.threadListLoadSeq || controller.signal.aborted) return null;
     if (!silent) renderThreadLoadError(err);
+    recordHomeAiDiagnosticFailure({
+      category: "thread_session_load_failed",
+      diagnostic_type: "thread_list_load_failed",
+      severity_hint: "H3",
+      evidence_confidence: 0.7,
+      error_code: diagnosticErrorCode(err, "thread_list_load_failed"),
+      duration_bucket: diagnosticDurationBucket(roundedDurationMs(loadStartedAt)),
+      context: {
+        surface: "thread-session",
+        action: "thread-list-load",
+      },
+      counts: {
+        status_code: diagnosticErrorStatus(err),
+      },
+      breadcrumbs: [{
+        kind: "thread-session",
+        code: "thread-list-load",
+        status: "failed",
+        duration_bucket: diagnosticDurationBucket(roundedDurationMs(loadStartedAt)),
+        fields: {
+          status_code: diagnosticErrorStatus(err),
+        },
+      }],
+    });
     throw err;
   } finally {
     if (state.threadListLoadController === controller) state.threadListLoadController = null;
@@ -8345,6 +8690,7 @@ async function loadThread(threadId, options = {}) {
       updateComposerControls();
     }
     if (isMenuOverlayMode()) closeSidebarMenu();
+    checkConversationProjectionConsistency("cached-current", { renderMode: "cached-current" });
     if (!state.threadSideChats.has(threadId)) loadSideChat(threadId, { silent: true }).catch(showError);
     const renderElapsedMs = roundedDurationMs(renderStartedAt);
     const detailPerformance = threadPerformanceMetrics.threadDetailEventFieldsWithClient(state.currentThread, {
@@ -8377,6 +8723,16 @@ async function loadThread(threadId, options = {}) {
       source,
       threadId,
       elapsedMs: roundedDurationMs(switchStartedAt),
+    });
+    recordHomeAiDiagnosticSuccess({
+      category: "thread_session_load_failed",
+      diagnostic_type: "thread_detail_load_failed",
+      error_code: "thread_detail_load_failed",
+      context: {
+        surface: "thread-session",
+        action: "thread-detail-load",
+        thread_hash: diagnosticThreadHash(threadId),
+      },
     });
     return;
   }
@@ -8448,6 +8804,32 @@ async function loadThread(threadId, options = {}) {
       apiElapsedMs: roundedDurationMs(apiStartedAt),
       error: err.message || String(err),
     });
+    recordHomeAiDiagnosticFailure({
+      category: "thread_session_load_failed",
+      diagnostic_type: "thread_detail_load_failed",
+      severity_hint: "H2",
+      evidence_confidence: 0.76,
+      error_code: diagnosticErrorCode(err, "thread_detail_load_failed"),
+      duration_bucket: diagnosticDurationBucket(roundedDurationMs(switchStartedAt)),
+      context: {
+        surface: "thread-session",
+        action: "thread-detail-load",
+        thread_hash: diagnosticThreadHash(threadId),
+      },
+      counts: {
+        status_code: diagnosticErrorStatus(err),
+      },
+      breadcrumbs: [{
+        kind: "thread-session",
+        code: "thread-detail-load",
+        status: "failed",
+        duration_bucket: diagnosticDurationBucket(roundedDurationMs(switchStartedAt)),
+        fields: {
+          status_code: diagnosticErrorStatus(err),
+          thread_hash: diagnosticThreadHash(threadId),
+        },
+      }],
+    });
     throw err;
   } finally {
     clearThreadLoadWatchdog();
@@ -8497,6 +8879,7 @@ async function loadThread(threadId, options = {}) {
   }
   scheduleUsageBackfillRefresh();
   const postRenderMs = roundedDurationMs(postRenderStartedAt);
+  checkConversationProjectionConsistency("first-paint", { renderMode: "first-paint" });
   const renderElapsedMs = roundedDurationMs(renderStartedAt);
   const detailPerformance = threadPerformanceMetrics.threadDetailEventFieldsWithClient(result.thread, {
     source,
@@ -8539,6 +8922,16 @@ async function loadThread(threadId, options = {}) {
     turns: Array.isArray(result.thread && result.thread.turns) ? result.thread.turns.length : 0,
     omittedTurns: Number(result.thread && result.thread.mobileOmittedTurnCount || 0),
     rolloutSizeBytes: rolloutSizeBytes(result.thread),
+  });
+  recordHomeAiDiagnosticSuccess({
+    category: "thread_session_load_failed",
+    diagnostic_type: "thread_detail_load_failed",
+    error_code: "thread_detail_load_failed",
+    context: {
+      surface: "thread-session",
+      action: "thread-detail-load",
+      thread_hash: diagnosticThreadHash(threadId),
+    },
   });
 }
 
@@ -8618,6 +9011,32 @@ async function refreshCurrentThread(options = {}) {
     });
   } catch (err) {
     if (controller.signal.aborted || err.name === "AbortError") return;
+    recordHomeAiDiagnosticFailure({
+      category: "thread_session_load_failed",
+      diagnostic_type: "thread_detail_refresh_failed",
+      severity_hint: "H2",
+      evidence_confidence: 0.74,
+      error_code: diagnosticErrorCode(err, "thread_detail_refresh_failed"),
+      duration_bucket: diagnosticDurationBucket(roundedDurationMs(refreshStartedAt)),
+      context: {
+        surface: "thread-session",
+        action: "thread-detail-refresh",
+        thread_hash: diagnosticThreadHash(threadId),
+      },
+      counts: {
+        status_code: diagnosticErrorStatus(err),
+      },
+      breadcrumbs: [{
+        kind: "thread-session",
+        code: "thread-detail-refresh",
+        status: "failed",
+        duration_bucket: diagnosticDurationBucket(roundedDurationMs(refreshStartedAt)),
+        fields: {
+          status_code: diagnosticErrorStatus(err),
+          thread_hash: diagnosticThreadHash(threadId),
+        },
+      }],
+    });
     throw err;
   } finally {
     if (state.refreshThreadController === controller) state.refreshThreadController = null;
@@ -8655,6 +9074,35 @@ async function refreshCurrentThread(options = {}) {
       const patchStartedAt = nowPerfMs();
       locallyPatchedDetail = patchCurrentThreadDetailFromRefresh(previousThread, state.currentThread, previousConversationSignature);
       detailPatchMs = roundedDurationMs(patchStartedAt);
+      if (!locallyPatchedDetail) {
+        recordHomeAiDiagnosticFailure({
+          category: "conversation_projection_mismatch",
+          diagnostic_type: "detail_patch_rejected",
+          severity_hint: "H3",
+          evidence_confidence: 0.7,
+          error_code: "detail_patch_rejected",
+          context: {
+            surface: "conversation-render",
+            action: "thread-detail-refresh",
+            read_mode: String(result.thread && result.thread.mobileReadMode || ""),
+            render_mode: String(renderPlan.detailRenderMode || ""),
+          },
+          counts: {
+            previous_count: visibleConversationShape(previousThread).visibleItemCount,
+            visible_count: visibleConversationShape(state.currentThread).visibleItemCount,
+          },
+          breadcrumbs: [{
+            kind: "conversation-render",
+            code: "detail-patch",
+            status: "rejected",
+            fields: {
+              read_mode: String(result.thread && result.thread.mobileReadMode || ""),
+              render_mode: String(renderPlan.detailRenderMode || ""),
+              visible_count: visibleConversationShape(state.currentThread).visibleItemCount,
+            },
+          }],
+        });
+      }
     }
     detailRenderMode = threadDetailRenderPlanApi.finalizeThreadDetailRenderPlan(renderPlan, { locallyPatchedDetail }).detailRenderMode;
     if (locallyPatchedDetail) {
@@ -8667,6 +9115,7 @@ async function refreshCurrentThread(options = {}) {
       const conversationRenderStartedAt = nowPerfMs();
       renderCurrentThread();
       conversationRenderMs = roundedDurationMs(conversationRenderStartedAt);
+      checkConversationProjectionConsistency("refresh-full-render", { renderMode: detailRenderMode });
     }
   } else {
     const metadataStartedAt = nowPerfMs();
@@ -8675,6 +9124,9 @@ async function refreshCurrentThread(options = {}) {
     updateTickTimer();
     scheduleScrollToBottomButtonUpdate();
     metadataUpdateMs = roundedDurationMs(metadataStartedAt);
+  }
+  if (locallyPatchedDetail || !shouldRenderDetail) {
+    checkConversationProjectionConsistency(shouldRenderDetail ? "refresh-local-patch" : "refresh-metadata", { renderMode: detailRenderMode });
   }
   const renderElapsedMs = roundedDurationMs(renderStartedAt);
   const detailPerformance = threadPerformanceMetrics.threadDetailEventFieldsWithClient(result.thread, {
@@ -8713,6 +9165,16 @@ async function refreshCurrentThread(options = {}) {
   }, {
     key: "thread_refresh_ms",
     minIntervalMs: PERF_EVENT_THROTTLE_MS,
+  });
+  recordHomeAiDiagnosticSuccess({
+    category: "thread_session_load_failed",
+    diagnostic_type: "thread_detail_refresh_failed",
+    error_code: "thread_detail_refresh_failed",
+    context: {
+      surface: "thread-session",
+      action: "thread-detail-refresh",
+      thread_hash: diagnosticThreadHash(threadId),
+    },
   });
   scheduleUsageBackfillRefresh();
   scheduleLivePollIfNeeded();
@@ -14030,8 +14492,43 @@ async function createThreadTaskCardFromCurrent(event) {
       timeoutMs: 30000,
     });
     $("connectionState").textContent = "Task card created";
+    recordHomeAiDiagnosticSuccess({
+      category: "task_card_workflow_failed",
+      diagnostic_type: "task_card_creation_failed",
+      error_code: "task_card_create_failed",
+      context: {
+        surface: "task-card",
+        action: "manual-create",
+        thread_hash: diagnosticThreadHash(thread.id),
+      },
+    });
     await refreshCurrentThreadAfterTaskCard();
   } catch (err) {
+    recordHomeAiDiagnosticFailure({
+      category: "task_card_workflow_failed",
+      diagnostic_type: "task_card_creation_failed",
+      severity_hint: "H2",
+      evidence_confidence: 0.78,
+      error_code: diagnosticErrorCode(err, "task_card_create_failed"),
+      context: {
+        surface: "task-card",
+        action: "manual-create",
+        thread_hash: diagnosticThreadHash(thread.id),
+      },
+      counts: {
+        target_count: targets.length,
+        status_code: diagnosticErrorStatus(err),
+      },
+      breadcrumbs: [{
+        kind: "task-card",
+        code: "manual-create",
+        status: "failed",
+        fields: {
+          status_code: diagnosticErrorStatus(err),
+          thread_hash: diagnosticThreadHash(thread.id),
+        },
+      }],
+    });
     showError(err);
   }
 }
@@ -16559,12 +17056,56 @@ function handleConversationImageError(event) {
   if (typeof postImageDiagnosticEvent === "function") postImageDiagnosticEvent("error", image, {}, { force: true });
   if (handleProtectedAppImageError(image)) return;
   markFailedAppImage(image, { explicit: true });
+  if (typeof imageDiagnosticDetails === "function" && typeof recordHomeAiDiagnosticFailure === "function") {
+    const details = imageDiagnosticDetails(image, "error");
+    recordHomeAiDiagnosticFailure({
+      category: "media_render_failed",
+      diagnostic_type: "image_render_failed",
+      severity_hint: "H3",
+      evidence_confidence: 0.72,
+      error_code: "image_render_failed",
+      context: {
+        surface: "media-render",
+        action: "image-load",
+        source_kind: details.sourceKind || "",
+        item_hash: diagnosticItemHash(details.sourceHash || ""),
+      },
+      counts: {
+        recovery_count: details.recoveryCount,
+        natural_width: details.naturalWidth,
+        natural_height: details.naturalHeight,
+      },
+      breadcrumbs: [{
+        kind: "media-render",
+        code: "image-load",
+        status: "failed",
+        fields: {
+          source_kind: details.sourceKind || "",
+          item_hash: diagnosticItemHash(details.sourceHash || ""),
+        },
+      }],
+    });
+  }
   if (typeof probeFailedAuthenticatedImage === "function") probeFailedAuthenticatedImage(image);
 }
 
 function handleConversationImageLoad(event) {
   const image = event && event.target && event.target.closest ? event.target.closest("img") : null;
   if (typeof postImageDiagnosticEvent === "function") postImageDiagnosticEvent("load", image);
+  if (typeof imageDiagnosticDetails === "function" && typeof recordHomeAiDiagnosticSuccess === "function") {
+    const details = imageDiagnosticDetails(image, "load");
+    recordHomeAiDiagnosticSuccess({
+      category: "media_render_failed",
+      diagnostic_type: "image_render_failed",
+      error_code: "image_render_failed",
+      context: {
+        surface: "media-render",
+        action: "image-load",
+        source_kind: details.sourceKind || "",
+        item_hash: diagnosticItemHash(details.sourceHash || ""),
+      },
+    });
+  }
   clearFailedAppImage(image);
 }
 
@@ -19111,6 +19652,31 @@ function saveComposerIntentDraft(kind, value) {
   try {
     localStorage.setItem(STORAGE_COMPOSER_INTENT_DRAFTS, JSON.stringify(drafts));
   } catch (err) {
+    recordHomeAiDiagnosticFailure({
+      category: "task_card_workflow_failed",
+      diagnostic_type: action === "reply" ? "task_card_return_failed" : "task_card_action_failed",
+      severity_hint: "H2",
+      evidence_confidence: 0.78,
+      error_code: diagnosticErrorCode(err, action === "reply" ? "task_card_return_failed" : "task_card_action_failed"),
+      context: {
+        surface: "task-card",
+        action: homeAiDiagnosticReportingApi.boundedToken(action, "mutate", 40),
+        thread_hash: diagnosticThreadHash(state.currentThreadId),
+        task_hash: diagnosticTaskHash(id),
+      },
+      counts: {
+        status_code: diagnosticErrorStatus(err),
+      },
+      breadcrumbs: [{
+        kind: "task-card",
+        code: homeAiDiagnosticReportingApi.boundedToken(action, "mutate", 40),
+        status: "failed",
+        fields: {
+          status_code: diagnosticErrorStatus(err),
+          task_hash: diagnosticTaskHash(id),
+        },
+      }],
+    });
     showError(err);
   }
 }
@@ -20204,6 +20770,16 @@ async function sendThreadTaskCardCommand(commandText, options = {}) {
     $("connectionState").classList.remove("error");
     $("connectionState").textContent = "Task card draft requested";
     markActivity("草案已请求");
+    recordHomeAiDiagnosticSuccess({
+      category: "task_card_workflow_failed",
+      diagnostic_type: "task_card_draft_request_failed",
+      error_code: "task_card_draft_request_failed",
+      context: {
+        surface: "task-card",
+        action: "draft-request",
+        thread_hash: diagnosticThreadHash(targetThreadId),
+      },
+    });
     scheduleComposerTargetRefresh(targetThreadId, 600, "task-card-submit");
     scheduleLivePollIfNeeded(1200);
     loadThreads({ silent: true }).catch(showError);
@@ -20221,6 +20797,30 @@ async function sendThreadTaskCardCommand(commandText, options = {}) {
       message,
       steering: false,
       taskCardCommand: true,
+    });
+    recordHomeAiDiagnosticFailure({
+      category: "task_card_workflow_failed",
+      diagnostic_type: "task_card_draft_request_failed",
+      severity_hint: "H2",
+      evidence_confidence: 0.76,
+      error_code: diagnosticErrorCode(err, "task_card_draft_request_failed"),
+      context: {
+        surface: "task-card",
+        action: "draft-request",
+        thread_hash: diagnosticThreadHash(targetThreadId),
+      },
+      counts: {
+        status_code: diagnosticErrorStatus(err),
+      },
+      breadcrumbs: [{
+        kind: "task-card",
+        code: "draft-request",
+        status: "failed",
+        fields: {
+          status_code: diagnosticErrorStatus(err),
+          thread_hash: diagnosticThreadHash(targetThreadId),
+        },
+      }],
     });
     if (options.rethrow) throw new Error(message);
     return false;
@@ -20648,6 +21248,17 @@ async function mutateThreadTaskCard(cardId, action, body = {}) {
       $("connectionState").textContent = "Task card updated";
     }
     settleCurrentThreadTaskCard(id, action === "approve" ? "approved" : action === "delete" ? "deleted" : action === "revoke" ? "revoked" : "replied", result && result.card ? result.card : null);
+    recordHomeAiDiagnosticSuccess({
+      category: "task_card_workflow_failed",
+      diagnostic_type: action === "reply" ? "task_card_return_failed" : "task_card_action_failed",
+      error_code: action === "reply" ? "task_card_return_failed" : "task_card_action_failed",
+      context: {
+        surface: "task-card",
+        action: homeAiDiagnosticReportingApi.boundedToken(action, "mutate", 40),
+        thread_hash: diagnosticThreadHash(state.currentThreadId),
+        task_hash: diagnosticTaskHash(id),
+      },
+    });
     if (action === "approve" && result && result.execution && result.execution.turnId) {
       const injectedVisible = await waitForCurrentThreadTurn(result.execution.turnId, { timeoutMs: 10000, intervalMs: 500 });
       $("connectionState").textContent = injectedVisible ? "Task card approved and injected" : "Task card approved; waiting for thread refresh";
@@ -20804,6 +21415,17 @@ async function createThreadTaskCardDraft(draftKey) {
       threadId: createdCards[0].target && createdCards[0].target.threadId || targetThreadIds[0],
       taskId: createdCards[0].id,
     }) : null;
+    recordHomeAiDiagnosticSuccess({
+      category: "task_card_workflow_failed",
+      diagnostic_type: "task_card_draft_materialize_failed",
+      error_code: "task_card_draft_materialize_failed",
+      context: {
+        surface: "task-card",
+        action: "draft-materialize",
+        thread_hash: diagnosticThreadHash(state.currentThreadId),
+        item_hash: diagnosticItemHash(draftKey),
+      },
+    });
     renderThreads();
     loadThreads({ silent: true }).catch(showError);
     if (createdCards.length === 1) {
@@ -20815,6 +21437,31 @@ async function createThreadTaskCardDraft(draftKey) {
     setThreadTaskCardDraftState(draftKey, {
       status: "failed",
       error: normalizeClientErrorMessage(err && err.message ? err.message : String(err)) || "Task card creation failed",
+    });
+    recordHomeAiDiagnosticFailure({
+      category: "task_card_workflow_failed",
+      diagnostic_type: "task_card_draft_materialize_failed",
+      severity_hint: "H2",
+      evidence_confidence: 0.78,
+      error_code: diagnosticErrorCode(err, "task_card_draft_materialize_failed"),
+      context: {
+        surface: "task-card",
+        action: "draft-materialize",
+        thread_hash: diagnosticThreadHash(state.currentThreadId),
+        item_hash: diagnosticItemHash(draftKey),
+      },
+      counts: {
+        status_code: diagnosticErrorStatus(err),
+      },
+      breadcrumbs: [{
+        kind: "task-card",
+        code: "draft-materialize",
+        status: "failed",
+        fields: {
+          status_code: diagnosticErrorStatus(err),
+          item_hash: diagnosticItemHash(draftKey),
+        },
+      }],
     });
     throw err;
   } finally {
