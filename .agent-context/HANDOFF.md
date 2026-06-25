@@ -10459,3 +10459,108 @@ The previous full handoff was archived and should be opened only when old proven
     `conversationProjectionDiagnosticSnapshot()` into a pure helper with
     injected tile/single dependencies, or move to Phase B and use the unified
     diagnostics/performance events to measure large-session cold-path costs.
+
+## 2026-06-26 - v492 projection snapshot planning deployed
+
+- Latest code commit:
+  - `ae0f241 extract projection diagnostic snapshot planning`
+- v492 change:
+  - `public/thread-diagnostic-events.js` now owns
+    `conversationProjectionDiagnosticSnapshot`, a pure helper that plans
+    bounded single-thread versus tile-mode projection diagnostic snapshots from
+    injected dependencies.
+  - `public/app.js` still owns the real DOM/current-thread/tile-state reads, but
+    now only passes those values and callbacks into the helper instead of
+    assembling tile/single snapshot payload shape inline.
+  - Static build/cache: `0.1.11|codex-mobile-shell-v492` /
+    `codex-mobile-shell-v492`.
+- Root-cause boundary:
+  - Symptom/risk: v491 centralized projection mismatch event payloads, but the
+    tile/single/transition snapshot planner still lived in `public/app.js`.
+    That left diagnostic snapshot shape prone to drift from future conversation
+    pane or single-thread render changes.
+  - Failing layer: frontend conversation projection diagnostic snapshot
+    ownership.
+  - Invariant: snapshot planning must output only bounded signatures, route
+    kind, read/render mode, pane/status flags, and numeric counts; it must not
+    include message bodies, task-card bodies, uploads, screenshots, private
+    paths, cookies, tokens, provider payloads, or long logs.
+  - Classification: root-cause architecture cleanup; no fallback or UI-only
+    mitigation added.
+- Validation:
+  - Source focused suite passed:
+    `test/thread-diagnostic-events.test.js`,
+    `test/home-ai-diagnostic-reporting.test.js`,
+    `test/conversation-render.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-task-card-route.test.js`, and
+    `test/thread-goal-service.test.js` (`137` tests).
+  - Full source `npm test` passed (`912` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Production deploy:
+  - Deployed through Home AI central macOS plugin deploy path with reason
+    `codex-mobile-projection-snapshot-planning-v492`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T230040Z-plugin-codex-mobile-web-codex-mobile-projection-snapshot-planning-v492`
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v492`,
+    `shellCacheName=codex-mobile-shell-v492`, `version=0.1.11`,
+    `authRequired=true`.
+  - Source/production SHA parity verified for:
+    `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`,
+    `docs/MODULES.md`, `public/app.js`, `public/sw.js`,
+    `public/thread-diagnostic-events.js`,
+    `test/conversation-render.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-diagnostic-events.test.js`,
+    `test/thread-goal-service.test.js`, and
+    `test/thread-task-card-route.test.js`.
+  - Production focused suite passed (`137` tests).
+- Browser/visual note:
+  - Browser automation remains unavailable in the current tool list. v492
+    closure evidence is source focused tests, full source tests, production
+    focused tests, production public-config readback, and source/prod SHA
+    parity.
+- Release:
+  - Public was not pushed for v492.
+- Next suggested slice:
+  - Move to Phase B large-session cold-path timing using the now unified
+    diagnostics/performance event boundaries, unless another incident card
+    proves a higher-priority task-card/projection protocol defect.
+
+## 2026-06-26 - Home AI Autonomous Delivery return-card event card verified
+
+- Source task card:
+  - `ttc_a8ab1599a96e2e92ed`
+  - Request: wire terminal Codex Mobile return cards into Home AI Autonomous
+    Delivery Loop events.
+- Current implementation status:
+  - Already implemented in earlier commit
+    `64d3b30 wire return cards to Home AI delivery events`.
+  - `adapters/home-ai-autonomous-delivery-return-service.js` posts bounded
+    terminal return metadata to
+    `/api/autonomous-delivery/return-card-events` through the backend trusted
+    Home AI/Hermes web-key path.
+  - `adapters/thread-task-card-service.js` observes terminal
+    `returnToSource`/auto-return cards for original non-terminal work cards,
+    records send/404/failure state on return-card audit metadata, and does not
+    block terminal return delivery or create acknowledgement loops.
+- Validation:
+  - Focused suite passed:
+    `test/home-ai-autonomous-delivery-return-service.test.js`,
+    `test/thread-task-card-service.test.js`,
+    `test/codex-mobile-mcp-server.test.js`, and
+    `test/thread-task-card-route.test.js` (`47` tests).
+  - `git diff --check` passed and worktree had no uncommitted source changes
+    before this handoff update.
+  - Source/production SHA parity verified for:
+    `adapters/home-ai-autonomous-delivery-return-service.js`,
+    `adapters/thread-task-card-service.js`, `server.js`,
+    `scripts/return-thread-task-card.js`,
+    `scripts/codex-mobile-mcp-server.js`,
+    `docs/CROSS_THREAD_TASK_CARDS_IMPLEMENTATION.md`,
+    `docs/CROSS_THREAD_TASK_CARDS_DESIGN.md`,
+    `test/home-ai-autonomous-delivery-return-service.test.js`, and
+    `test/thread-task-card-service.test.js`.
+- Privacy:
+  - Return event payload tests and implementation confirm no card body, prompt,
+    completion, upload bytes, screenshot, cookie, launch token, access key,
+    provider payload, database row, or long log is sent.
