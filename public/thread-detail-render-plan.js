@@ -48,6 +48,50 @@
     };
   }
 
+  function planThreadDetailRefreshPatchExecution(input = {}) {
+    const shouldRenderDetail = Boolean(input.shouldRenderDetail);
+    const canPatch = Boolean(input.canPatch);
+    const tileSurfaceRefresh = Boolean(input.tileSurfaceRefresh);
+    if (!shouldRenderDetail) {
+      return {
+        tryTilePanePatch: true,
+        tryLocalPatch: false,
+        updateMetadataOnTileMiss: true,
+        fallbackAction: "metadata-update",
+        localPatchBlockedReason: "signature-stable",
+        reason: "metadata-only",
+      };
+    }
+    if (!canPatch) {
+      return {
+        tryTilePanePatch: true,
+        tryLocalPatch: false,
+        updateMetadataOnTileMiss: false,
+        fallbackAction: "full-render",
+        localPatchBlockedReason: "patch-not-allowed",
+        reason: "full-render-required",
+      };
+    }
+    if (tileSurfaceRefresh) {
+      return {
+        tryTilePanePatch: true,
+        tryLocalPatch: false,
+        updateMetadataOnTileMiss: false,
+        fallbackAction: "full-render",
+        localPatchBlockedReason: "tile-surface-refresh",
+        reason: "tile-surface-refresh",
+      };
+    }
+    return {
+      tryTilePanePatch: true,
+      tryLocalPatch: true,
+      updateMetadataOnTileMiss: false,
+      fallbackAction: "full-render",
+      localPatchBlockedReason: "",
+      reason: "local-patch-eligible",
+    };
+  }
+
   function finalizeThreadDetailRenderPlan(plan = {}, result = {}) {
     const tilePanePatchedDetail = Boolean(result.tilePanePatchedDetail);
     const locallyPatchedDetail = Boolean(result.locallyPatchedDetail);
@@ -165,6 +209,7 @@
     finalizeThreadDetailRenderPlan,
     normalizeSignature,
     planSingleThreadFullRenderShell,
+    planThreadDetailRefreshPatchExecution,
     planThreadDetailRefreshRender,
   };
 }));

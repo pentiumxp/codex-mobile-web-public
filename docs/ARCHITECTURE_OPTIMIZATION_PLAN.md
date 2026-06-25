@@ -152,6 +152,13 @@ Visible-item insert anchoring now also lives in that helper:
 fallback, append-after-previous behavior when the previous node is already the
 last DOM child, the concrete `insertBefore` call, and bounded failure reasons
 while app code keeps item HTML rendering and local patch completion execution.
+Refresh patch execution planning now also lives in
+`public/thread-detail-render-plan.js`: `planThreadDetailRefreshPatchExecution`
+owns whether a thread refresh should try tile-pane patch, whether
+single-thread local patch is eligible, whether a metadata-only tile miss should
+update metadata without full render, and which fallback action applies. App code
+keeps real DOM patch attempts, metadata writes, full render execution, and
+diagnostic/performance reporting.
 Single-thread full-render shell planning now also lives in
 `public/thread-detail-render-plan.js`: loading, load-error retry, detail
 content ordering, empty/read-warning state selection, plugin-refresh notice

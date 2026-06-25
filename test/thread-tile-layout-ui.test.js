@@ -402,7 +402,9 @@ test("thread tile rendering is read-only and separate from full conversation ren
   const refreshBody = functionBody(appJs, "refreshCurrentThread");
   assert.match(refreshBody, /const tilePatchPlan = threadDetailDomPatchSurface\(\{ threadId \}\)/);
   assert.match(refreshBody, /state\.threadTileMode[\s\S]*isThreadTileConversationSurface\(\)[\s\S]*tilePatchPlan && tilePatchPlan\.surface === "thread-tile-pane"/);
-  assert.match(refreshBody, /renderPlan\.canPatch && !tileSurfaceRefresh/);
+  assert.match(refreshBody, /threadDetailRenderPlanApi\.planThreadDetailRefreshPatchExecution\(\{[\s\S]*canPatch: renderPlan\.canPatch,[\s\S]*tileSurfaceRefresh,[\s\S]*\}\);/);
+  assert.match(refreshBody, /else if \(patchExecutionPlan\.tryLocalPatch\)/);
+  assert.doesNotMatch(refreshBody, /renderPlan\.canPatch && !tileSurfaceRefresh/);
 });
 
 test("thread tile composer targets the active pane without replacing the shared composer", () => {

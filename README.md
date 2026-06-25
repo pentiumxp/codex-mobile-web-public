@@ -16,6 +16,33 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v486 Refresh Patch Execution Planning
+
+v486 继续推进 Phase A 的前端 render/patch ownership 收敛。
+
+本次切片把 `refreshCurrentThread()` 中“刷新后先尝试 tile-pane patch、
+什么情况下允许 single-thread local patch、metadata-only 刷新失败时是否只做
+metadata update”的分支，推进到 `public/thread-detail-render-plan.js` 的
+`planThreadDetailRefreshPatchExecution`。`public/app.js` 仍然负责真实 DOM
+patch、metadata 写入、full render 调用和性能/诊断上报。
+
+修复边界：
+
+- 症状/风险：`refreshCurrentThread()` 同时承担 server 结果 merge、render
+  signature 判断、tile surface 判断、local patch 尝试、metadata-only 更新和
+  full render fallback。tile surface 上错误地尝试 single-thread patch，或
+  metadata-only 刷新误入 full render，都会增加闪动、少消息和错 surface 更新风险。
+- 失败层：前端 thread-detail refresh render execution policy。
+- 不变量：刷新执行顺序必须由纯 helper 计划；tile surface 只能走 tile pane patch
+  或 full render，不允许落到 single-thread local patch；signature-stable
+  metadata-only 刷新不应触发 full render。
+- 闭环验证：`test/thread-detail-render-plan.test.js` 覆盖 local-patch eligible、
+  tile-surface block、patch-not-allowed full render、metadata-only 四条分支；
+  `test/conversation-render.test.js` 验证 `refreshCurrentThread` 调用 helper，
+  且不再内联 `renderPlan.canPatch && !tileSurfaceRefresh`。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v486`。
+
 ## 2026-06-26 v485 Visible Item Insert Anchoring
 
 v485 继续推进 Phase A 的前端 render/patch ownership 收敛。

@@ -2954,6 +2954,10 @@ test("thread tile local patch paths refresh the pane instead of writing a single
 test("current-thread refresh patches the current tile pane for metadata-only tile updates", () => {
   const body = functionBody("refreshCurrentThread");
   assert.match(body, /let tilePanePatchedDetail = false;/);
+  assert.match(body, /threadDetailRenderPlanApi\.planThreadDetailRefreshPatchExecution\(\{/);
+  assert.match(body, /if \(patchExecutionPlan\.tryTilePanePatch && patchCurrentThreadTilePaneFromState\(\{ threadId, preserveScroll: true \}\)\)/);
+  assert.match(body, /else if \(patchExecutionPlan\.tryLocalPatch\)/);
+  assert.doesNotMatch(body, /renderPlan\.canPatch && !tileSurfaceRefresh/);
   assert.match(body, /patchCurrentThreadTilePaneFromState\(\{ threadId, preserveScroll: true \}\)/);
   assert.match(body, /renderOutcome = threadDetailRenderPlanApi\.finalizeThreadDetailRenderPlan\(renderPlan, \{ locallyPatchedDetail, tilePanePatchedDetail \}\);/);
   assert.match(body, /detailRenderMode = renderOutcome\.detailRenderMode;/);

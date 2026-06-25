@@ -504,7 +504,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v485";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v486";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -9169,12 +9169,17 @@ async function refreshCurrentThread(options = {}) {
       || isThreadTileConversationSurface()
       || (tilePatchPlan && tilePatchPlan.surface === "thread-tile-pane")
     );
+    const patchExecutionPlan = threadDetailRenderPlanApi.planThreadDetailRefreshPatchExecution({
+      shouldRenderDetail,
+      canPatch: renderPlan.canPatch,
+      tileSurfaceRefresh,
+    });
     const tilePatchStartedAt = nowPerfMs();
-    if (patchCurrentThreadTilePaneFromState({ threadId, preserveScroll: true })) {
+    if (patchExecutionPlan.tryTilePanePatch && patchCurrentThreadTilePaneFromState({ threadId, preserveScroll: true })) {
       tilePanePatchedDetail = true;
       detailPatchMs = roundedDurationMs(tilePatchStartedAt);
       detailRenderMode = "tile-pane";
-    } else if (renderPlan.canPatch && !tileSurfaceRefresh) {
+    } else if (patchExecutionPlan.tryLocalPatch) {
       const patchStartedAt = nowPerfMs();
       locallyPatchedDetail = patchCurrentThreadDetailFromRefresh(previousThread, state.currentThread, previousConversationSignature);
       detailPatchMs = roundedDurationMs(patchStartedAt);
@@ -9231,12 +9236,17 @@ async function refreshCurrentThread(options = {}) {
       checkConversationProjectionConsistency("refresh-full-render", { renderMode: detailRenderMode });
     }
   } else {
+    const patchExecutionPlan = threadDetailRenderPlanApi.planThreadDetailRefreshPatchExecution({
+      shouldRenderDetail,
+      canPatch: renderPlan.canPatch,
+      tileSurfaceRefresh: Boolean(state.threadTileMode || isThreadTileConversationSurface()),
+    });
     const tilePatchStartedAt = nowPerfMs();
-    if (patchCurrentThreadTilePaneFromState({ threadId, preserveScroll: true })) {
+    if (patchExecutionPlan.tryTilePanePatch && patchCurrentThreadTilePaneFromState({ threadId, preserveScroll: true })) {
       tilePanePatchedDetail = true;
       detailPatchMs = roundedDurationMs(tilePatchStartedAt);
       detailRenderMode = "tile-pane-metadata";
-    } else {
+    } else if (patchExecutionPlan.updateMetadataOnTileMiss) {
       const metadataStartedAt = nowPerfMs();
       updateCurrentThreadHeader(state.currentThread);
       updateLiveOperationDockHtml(renderLiveOperationDock(state.currentThread, existingConversationRenderKeys()));

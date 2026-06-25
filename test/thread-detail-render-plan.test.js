@@ -97,6 +97,66 @@ test("thread detail refresh render plan can disable patch explicitly", () => {
   assert.equal(plan.detailRenderMode, "full-render");
 });
 
+test("thread detail refresh patch execution allows local patch only for non-tile patchable detail refreshes", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchExecution({
+    shouldRenderDetail: true,
+    canPatch: true,
+    tileSurfaceRefresh: false,
+  }), {
+    tryTilePanePatch: true,
+    tryLocalPatch: true,
+    updateMetadataOnTileMiss: false,
+    fallbackAction: "full-render",
+    localPatchBlockedReason: "",
+    reason: "local-patch-eligible",
+  });
+});
+
+test("thread detail refresh patch execution blocks single-thread patching on tile surfaces", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchExecution({
+    shouldRenderDetail: true,
+    canPatch: true,
+    tileSurfaceRefresh: true,
+  }), {
+    tryTilePanePatch: true,
+    tryLocalPatch: false,
+    updateMetadataOnTileMiss: false,
+    fallbackAction: "full-render",
+    localPatchBlockedReason: "tile-surface-refresh",
+    reason: "tile-surface-refresh",
+  });
+});
+
+test("thread detail refresh patch execution falls back to full render when patch is not allowed", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchExecution({
+    shouldRenderDetail: true,
+    canPatch: false,
+    tileSurfaceRefresh: false,
+  }), {
+    tryTilePanePatch: true,
+    tryLocalPatch: false,
+    updateMetadataOnTileMiss: false,
+    fallbackAction: "full-render",
+    localPatchBlockedReason: "patch-not-allowed",
+    reason: "full-render-required",
+  });
+});
+
+test("thread detail refresh patch execution keeps metadata-only refreshes out of full render", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchExecution({
+    shouldRenderDetail: false,
+    canPatch: false,
+    tileSurfaceRefresh: false,
+  }), {
+    tryTilePanePatch: true,
+    tryLocalPatch: false,
+    updateMetadataOnTileMiss: true,
+    fallbackAction: "metadata-update",
+    localPatchBlockedReason: "signature-stable",
+    reason: "metadata-only",
+  });
+});
+
 test("thread detail refresh render outcome treats tile pane patch as terminal", () => {
   const plan = renderPlan.planThreadDetailRefreshRender({
     previousConversationSignature: "sig-a",
