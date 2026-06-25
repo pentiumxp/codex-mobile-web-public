@@ -8371,6 +8371,72 @@ The previous full handoff was archived and should be opened only when old proven
   - This has not been pushed to public. Follow the release-order rule: wait for
     production/user confirmation before any public sync/push.
 
+## 2026-06-25T20:55:03Z - v479 keyed DOM patch ownership slice deployed
+
+- Context:
+  - This is Phase A of the frontend render/patch ownership optimization, after
+    the user said the visible flashing issue was mostly handled and wanted the
+    broader architecture optimization target to continue.
+  - Scope was intentionally narrow: move keyed DOM reconciliation out of
+    `public/app.js` and into a dedicated helper without changing the visible
+    conversation rendering contract.
+- Commit:
+  - `51c0549 extract keyed DOM patch helper`
+- Runtime/static version:
+  - `CLIENT_BUILD_ID=0.1.11|codex-mobile-shell-v479`
+  - `SHELL_CACHE_NAME=codex-mobile-shell-v479`
+- Changed files:
+  - `public/thread-detail-dom-patch.js`
+  - `public/app.js`
+  - `public/sw.js`
+  - `test/thread-detail-dom-patch.test.js`
+  - `test/collab-agent-render.test.js`
+  - `test/mobile-viewport.test.js`
+  - `test/thread-goal-service.test.js`
+  - `test/thread-task-card-route.test.js`
+  - `README.md`
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`
+  - `docs/MODULES.md`
+- Architecture boundary:
+  - `thread-detail-dom-patch.js` now owns render-key calculation, compatible
+    node checks, attribute sync, keyed/unkeyed child patching, replacement, and
+    bounded `patchHtml` results.
+  - `public/app.js` keeps orchestration: render surface selection, hydration,
+    scroll/perf handling, and fallback/error behavior.
+  - This reduces future duplicate/missing-message and full-render flash risk by
+    making the keyed child DOM reconciliation independently testable.
+- Source validation:
+  - Focused suite passed: `node --test test/thread-detail-dom-patch.test.js
+    test/collab-agent-render.test.js test/conversation-render.test.js
+    test/mobile-viewport.test.js test/app-update.test.js
+    test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    (`161` passed).
+  - `npm test` passed (`872` passed).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Production deploy:
+  - Deployed through Home AI central deploy path with reason
+    `codex-mobile-keyed-dom-patch-v479`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T205503Z-plugin-codex-mobile-web-codex-mobile-keyed-dom-patch-v479`
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v479`,
+    `shellCacheName=codex-mobile-shell-v479`, `version=0.1.11`,
+    `authRequired=true`.
+  - Source/production SHA parity verified for the changed runtime, test, and
+    docs files listed above.
+  - Production focused suite passed with production dependencies (`161`
+    passed).
+- Browser/visual note:
+  - Browser automation was not available in the current callable tool list, and
+    this workspace did not have a local Playwright dependency to run a direct
+    browser smoke. Evidence for this slice is therefore bounded source tests,
+    production focused tests, HTTP public-config readback, and SHA parity.
+- Release note:
+  - Public was not pushed in this slice. Keep following the local commit +
+    production deploy + validation before public push rule.
+
 ## 2026-06-26 - v478 operation card content plan and Home AI return-event verification
 
 - Active optimization slice:
@@ -9549,3 +9615,41 @@ The previous full handoff was archived and should be opened only when old proven
   - This is server-only; no PWA cache bump.
   - This has not been pushed to public. Follow the release-order rule: wait for
     production/user confirmation before any public sync/push.
+
+## 2026-06-26 - Latest continuation status: v479 keyed DOM patch deployed
+
+- Latest code commit:
+  - `51c0549 extract keyed DOM patch helper`
+- Note:
+  - This file is not strictly chronological. Fuller v479 evidence appears
+    above, but this compact EOF copy is kept so future continuations that read
+    only the recent tail see the current state.
+- Change:
+  - Keyed DOM reconciliation moved from `public/app.js` to
+    `public/thread-detail-dom-patch.js`.
+  - `public/app.js` now delegates `patchNode` / `patchHtml`; the helper owns
+    render keys, compatibility checks, attribute sync, keyed child patching,
+    replacement, and bounded `patchHtml` results.
+  - Static build/cache: `0.1.11|codex-mobile-shell-v479` /
+    `codex-mobile-shell-v479`.
+- Validation:
+  - Source focused suite passed (`161` tests).
+  - Source `npm test` passed (`872` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - Production focused suite passed (`161` tests).
+  - Source/production SHA parity verified for changed runtime, tests, and docs.
+- Deploy:
+  - Deployed through Home AI central macOS plugin deploy path with reason
+    `codex-mobile-keyed-dom-patch-v479`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T205503Z-plugin-codex-mobile-web-codex-mobile-keyed-dom-patch-v479`
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v479`,
+    `shellCacheName=codex-mobile-shell-v479`, `version=0.1.11`,
+    `authRequired=true`.
+- Browser/visual note:
+  - Browser automation was not callable in the current tool list, and local
+    Playwright was not installed in this workspace. v479 evidence is tests,
+    production focused tests, HTTP readback, and source/prod parity.
+- Release:
+  - Public was not pushed for v479.
