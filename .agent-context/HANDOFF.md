@@ -7153,6 +7153,72 @@ The previous full handoff was archived and should be opened only when old proven
   - This has not been pushed to public. Follow the release-order rule: wait for
     production/user confirmation before any public sync/push.
 
+## 2026-06-26 - v459 thread tile state policy deployed
+
+- Scope:
+  - Continued the system-level architecture optimization plan with the first
+    Phase C pane-state slice.
+  - This is not the full split-screen rewrite. It moves deterministic
+    thread-tile pane-state policy out of `public/app.js` while leaving DOM,
+    render, network save, pane detail loading, and other side effects in app
+    orchestration.
+- Change:
+  - Added `public/thread-tile-state.js` as a pure pane-state policy helper for:
+    pane count normalization, pinned thread id normalization, selected-pane
+    fallback, split-pair remove/prepend/normalization, display-settings
+    payload/application, and active-id-to-pinned-slot sync.
+  - `public/app.js` now delegates those rules through compatibility wrappers.
+  - Added the helper to `public/index.html`, PWA shell assets, service worker
+    cache, server app-shell asset identity, and `npm run check`.
+  - Bumped `CLIENT_BUILD_ID` and service worker cache to
+    `codex-mobile-shell-v459`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md` to describe v459 as pane-state boundary extraction and
+    record the remaining split-screen boundaries.
+- Commit:
+  - Runtime/docs commit: `b4286a3 refactor thread tile state policy`.
+- Validation in source workspace:
+  - Focused suite passed: `62` tests across
+    `test/thread-tile-state.test.js`,
+    `test/thread-tile-layout-ui.test.js`,
+    `test/thread-tile-layout.test.js`,
+    `test/mobile-viewport.test.js`, `test/app-update.test.js`,
+    `test/plugin-voice-input.test.js`, `test/thread-task-card-route.test.js`,
+    and `test/thread-goal-service.test.js`.
+  - `npm test` passed: `842` tests.
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+- Production deploy:
+  - Deployed through Home AI central macOS production script.
+  - Reason: `codex-mobile-thread-tile-state-v459`.
+  - Source ref at deploy: `b4286a3c2657`, dirty `false`.
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T180249Z-plugin-codex-mobile-web-codex-mobile-thread-tile-state-v459`.
+  - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` reported
+    running and manifest health check passed.
+- Production readback:
+  - `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v459` and
+    `shellCacheName=codex-mobile-shell-v459`.
+  - Source/prod SHA-256 parity matched for:
+    `public/thread-tile-state.js`, `test/thread-tile-state.test.js`,
+    `public/app.js`, `public/index.html`, `public/sw.js`, `server.js`,
+    `package.json`, `README.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and `docs/MODULES.md`.
+  - Production focused suite passed: same `62` tests listed above with
+    production dependencies.
+- Next architecture boundary:
+  - Continue Phase C by extracting pane-local detail refresh ownership,
+    pane-local operation/command bubble state, and active-pane execution
+    side effects out of `public/app.js`.
+  - Phase B large-session cold/warm path remains a separate target; do not
+    conflate it with this pane-state slice.
+- Public:
+  - Not pushed to Public. Follow release-order rule: wait for production/user
+    validation or explicit Public instruction before syncing/pushing.
+
 ## 2026-06-24 - Phase 1 architecture refactor: task-card target routing service
 
 - User goal:
