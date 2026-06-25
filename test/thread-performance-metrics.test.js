@@ -258,6 +258,127 @@ test("thread performance metrics build refresh event payloads from bounded field
   assert.equal(JSON.stringify(event).includes("private"), false);
 });
 
+test("thread performance metrics build cached first-paint payloads with warm client phase", () => {
+  const event = metrics.threadDetailFirstPaintEventFields({
+    mobileReadMode: "projection-cache",
+    rolloutSizeBytes: 4321,
+    status: { privateText: "not exported" },
+    turns: [{ status: "running", items: [{ type: "agentMessage", text: "private response" }] }],
+  }, {
+    source: "thread-list",
+    threadId: "thread-cached",
+    elapsedMs: 12.4,
+    apiElapsedMs: 0,
+    renderElapsedMs: 7.6,
+    threadListRenderMs: 1.2,
+    conversationRenderMs: 5.1,
+    detailRenderMode: "cached-current",
+    cached: true,
+  });
+
+  assert.deepEqual(event, {
+    source: "thread-list",
+    threadId: "thread-cached",
+    serverTimings: null,
+    performancePhase: "warm-client-current",
+    clientTimings: {
+      elapsedMs: 12,
+      apiElapsedMs: 0,
+      renderElapsedMs: 8,
+      threadListRenderMs: 1,
+      conversationRenderMs: 5,
+      detailRenderMode: "cached-current",
+      source: "thread-list",
+    },
+    detailShape: {
+      turns: 1,
+      omittedTurns: 0,
+      items: 1,
+      visibleItems: 1,
+      userItems: 0,
+      receiptItems: 1,
+      imageItems: 0,
+      operationItems: 0,
+      usageItems: 0,
+      diagnosticItems: 0,
+      completedTurns: 0,
+      activeTurns: 1,
+    },
+    cached: true,
+    readMode: "projection-cache",
+    turns: 1,
+    rolloutSizeBytes: 4321,
+    elapsedMs: 12,
+    apiElapsedMs: 0,
+    renderElapsedMs: 8,
+  });
+  assert.equal(Object.hasOwn(event, "status"), false);
+  assert.equal(Object.hasOwn(event, "omittedTurns"), false);
+  assert.equal(JSON.stringify(event).includes("private"), false);
+});
+
+test("thread performance metrics build uncached first-paint payloads", () => {
+  const event = metrics.threadDetailFirstPaintEventFields({
+    mobileReadMode: "turns-list-initial",
+    mobileOmittedTurnCount: 9,
+    status: { type: "completed", privateText: "not exported" },
+    mobileDiagnostics: { threadDetailTimings: { phase: "bounded-turns-list", turnsListMs: 18 } },
+    turns: [{ status: "completed", items: [{ type: "turnUsageSummary" }] }],
+  }, {
+    source: "startup",
+    threadId: "thread-open",
+    elapsedMs: 101.2,
+    apiElapsedMs: 80.8,
+    renderElapsedMs: 20.1,
+    mergeMs: 4.4,
+    draftRestoreMs: 2.1,
+    composerRenderMs: 1.2,
+    threadListRenderMs: 2.2,
+    conversationRenderMs: 8.7,
+    postRenderMs: 1.8,
+    detailRenderMode: "first-paint",
+    cached: false,
+  });
+
+  assert.equal(event.performancePhase, "bounded-turns-list");
+  assert.equal(event.cached, false);
+  assert.equal(event.status, "completed");
+  assert.equal(event.omittedTurns, 9);
+  assert.equal(event.clientTimings.detailRenderMode, "first-paint");
+  assert.equal(JSON.stringify(event).includes("private"), false);
+});
+
+test("thread performance metrics build full-ready payloads", () => {
+  const event = metrics.threadDetailFullReadyEventFields({
+    mobileReadMode: "thread-read",
+    mobileOmittedTurnCount: 0,
+    rolloutSizeBytes: 9876,
+    mobileDiagnostics: { threadDetailTimings: { phase: "full-thread-read", threadReadMs: 90 } },
+    turns: [{ status: "completed", items: [{ type: "agentMessage", text: "private response" }] }],
+  }, {
+    source: "thread-list",
+    threadId: "thread-full",
+    elapsedMs: 150.9,
+    apiElapsedMs: 111.1,
+    renderElapsedMs: 39.4,
+    mergeMs: 7.2,
+    composerRenderMs: 3.1,
+    threadListRenderMs: 2.8,
+    conversationRenderMs: 20.6,
+    postRenderMs: 1.1,
+    detailRenderMode: "full-backfill",
+  });
+
+  assert.equal(event.source, "thread-list");
+  assert.equal(event.threadId, "thread-full");
+  assert.equal(event.performancePhase, "full-thread-read");
+  assert.equal(event.readMode, "thread-read");
+  assert.equal(event.rolloutSizeBytes, 9876);
+  assert.equal(event.clientTimings.detailRenderMode, "full-backfill");
+  assert.equal(event.omittedTurns, 0);
+  assert.equal(JSON.stringify(event).includes("private"), false);
+});
+
 test("thread performance metrics summarize detail shape without message bodies", () => {
   const shape = metrics.threadDetailShape({
     mobileOmittedTurnCount: 7,

@@ -16,6 +16,37 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v489 First-Paint Performance Event Planning
+
+v489 继续推进 Phase A 的前端 render/patch ownership 收敛，这次把线程详情
+首屏和 full-backfill 性能事件的字段口径也收进性能 helper。
+
+本次切片在 `public/thread-performance-metrics.js` 增加
+`threadDetailFirstPaintEventFields` 和 `threadDetailFullReadyEventFields`。
+两个 helper 统一生成 `thread_detail_first_paint` 和
+`thread_detail_full_ready` 的 bounded payload，包括 server timings、
+performance phase、client timings、detail shape、read mode、turn 计数、
+rollout size、cached/full-ready 状态以及必要的 status / omitted-turn 字段。
+`public/app.js` 仍然负责真实线程读取、merge、DOM 渲染和
+`postPerformanceEvent()`。
+
+修复边界：
+
+- 症状/风险：v488 已经收敛 `thread_refresh_ms`，但首屏和 full-backfill
+  payload 仍在 `loadThread()` / `backfillFullThreadDetail()` 里手工拼装。
+  大 session 首屏慢、projection cache 命中、bounded turns-list 首屏和 full
+  backfill 补齐需要同一套可测试证据口径，否则冷/热路径分析容易漂移。
+- 失败层：前端 thread-detail first-paint/full-ready performance event ownership。
+- 不变量：首屏和 full-backfill 性能事件必须由纯 helper 统一生成；事件只包含
+  bounded timings、counts、status、reason code，不包含消息正文、任务卡正文、
+  上传内容、私有路径、cookie/token 或长日志。
+- 闭环验证：`test/thread-performance-metrics.test.js` 覆盖 cached first-paint、
+  uncached first-paint、full-ready payload 和隐私边界；`test/mobile-viewport.test.js`
+  与 `test/conversation-render.test.js` 验证 `loadThread()` /
+  `backfillFullThreadDetail()` 调用 helper。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v489`。
+
 ## 2026-06-26 v488 Refresh Performance Event Planning
 
 v488 继续推进 Phase A 的前端 render/patch ownership 收敛，这次聚焦

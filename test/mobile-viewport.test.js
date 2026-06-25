@@ -148,8 +148,8 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v488/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v488"/);
+  assert.match(swJs, /codex-mobile-shell-v489/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v489"/);
   assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(swJs, /"\/thread-status-hints\.js"/);
@@ -210,6 +210,8 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /const listPerformance = threadPerformanceMetrics\.threadListEventFields\(result\);/);
   assert.match(appJs, /serverTimings: listPerformance\.serverTimings/);
   assert.match(appJs, /performancePhase: listPerformance\.performancePhase/);
+  assert.match(functionBody("loadThread"), /threadPerformanceMetrics\.threadDetailFirstPaintEventFields\(state\.currentThread, \{/);
+  assert.match(functionBody("loadThread"), /threadPerformanceMetrics\.threadDetailFirstPaintEventFields\(result\.thread, \{/);
   assert.match(appJs, /postPerformanceEvent\("thread_detail_first_paint"/);
   assert.match(appJs, /postPerformanceEvent\("conversation_render_ms"/);
   assert.match(appJs, /postPerformanceEvent\("github_cards_hydrate_ms"/);
@@ -399,7 +401,8 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.mobile-operation-sheet\s*{[\s\S]*max-height:\s*min\(42vh, 280px\);/);
   assert.match(appJs, /if \(shouldBackfillFullThreadDetail\(result\.thread\)\) \{/);
   assert.match(appJs, /backfillFullThreadDetail\(threadId, \{ seq, source \}\)\.catch\(\(\) => \{\}\)/);
-  assert.match(appJs, /postPerformanceEvent\("thread_detail_full_ready"/);
+  assert.match(functionBody("backfillFullThreadDetail"), /threadPerformanceMetrics\.threadDetailFullReadyEventFields\(result\.thread, \{/);
+  assert.match(functionBody("backfillFullThreadDetail"), /postPerformanceEvent\("thread_detail_full_ready", fullReadyPerformance, \{ force: true \}\)/);
   assert.match(stylesCss, /\.history-loader\s*{[\s\S]*justify-content:\s*space-between;/);
   assert.match(stylesCss, /\.history-load-button/);
   assert.match(swJs, /"\/api-client\.js"/);

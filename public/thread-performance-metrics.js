@@ -175,6 +175,56 @@
     return out;
   }
 
+  function threadDetailFirstPaintEventFields(thread, input = {}) {
+    const source = objectOrNull(input) || {};
+    const cached = source.cached === true;
+    const detailPerformance = threadDetailEventFieldsWithClient(thread, source);
+    const performancePhase = cached && detailPerformance.performancePhase === "unknown"
+      ? "warm-client-current"
+      : detailPerformance.performancePhase;
+    const out = {
+      source: compactLabel(source.source, 40),
+      threadId: compactLabel(source.threadId, 220),
+      serverTimings: detailPerformance.serverTimings,
+      performancePhase,
+      clientTimings: detailPerformance.clientTimings,
+      detailShape: detailPerformance.detailShape,
+      cached,
+      readMode: compactLabel(thread && thread.mobileReadMode, 80),
+      turns: threadTurnCount(thread),
+      rolloutSizeBytes: rolloutSizeBytes(thread),
+    };
+    for (const key of ["elapsedMs", "apiElapsedMs", "renderElapsedMs"]) {
+      setTimingField(out, key, source[key]);
+    }
+    if (!cached) {
+      out.status = statusText(thread && thread.status);
+      out.omittedTurns = threadOmittedTurnCount(thread);
+    }
+    return out;
+  }
+
+  function threadDetailFullReadyEventFields(thread, input = {}) {
+    const source = objectOrNull(input) || {};
+    const detailPerformance = threadDetailEventFieldsWithClient(thread, source);
+    const out = {
+      source: compactLabel(source.source, 40),
+      threadId: compactLabel(source.threadId, 220),
+      serverTimings: detailPerformance.serverTimings,
+      performancePhase: detailPerformance.performancePhase,
+      clientTimings: detailPerformance.clientTimings,
+      detailShape: detailPerformance.detailShape,
+      readMode: compactLabel(thread && thread.mobileReadMode, 80),
+      turns: threadTurnCount(thread),
+      omittedTurns: threadOmittedTurnCount(thread),
+      rolloutSizeBytes: rolloutSizeBytes(thread),
+    };
+    for (const key of ["elapsedMs", "apiElapsedMs", "renderElapsedMs"]) {
+      setTimingField(out, key, source[key]);
+    }
+    return out;
+  }
+
   function boundedCount(value) {
     const number = Number(value);
     if (!Number.isFinite(number) || number < 0) return 0;
@@ -261,6 +311,8 @@
     threadDetailClientTimings,
     threadDetailEventFields,
     threadDetailEventFieldsWithClient,
+    threadDetailFirstPaintEventFields,
+    threadDetailFullReadyEventFields,
     threadDetailRefreshEventFields,
     threadDetailShape,
     threadDetailTimings,

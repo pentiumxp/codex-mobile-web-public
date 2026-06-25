@@ -504,7 +504,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v488";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v489";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -8778,32 +8778,18 @@ async function loadThread(threadId, options = {}) {
     checkConversationProjectionConsistency("cached-current", { renderMode: "cached-current" });
     if (!state.threadSideChats.has(threadId)) loadSideChat(threadId, { silent: true }).catch(showError);
     const renderElapsedMs = roundedDurationMs(renderStartedAt);
-    const detailPerformance = threadPerformanceMetrics.threadDetailEventFieldsWithClient(state.currentThread, {
+    const firstPaintPerformance = threadPerformanceMetrics.threadDetailFirstPaintEventFields(state.currentThread, {
       source,
+      threadId,
       elapsedMs: roundedDurationMs(switchStartedAt),
       apiElapsedMs: 0,
       renderElapsedMs,
       threadListRenderMs,
       conversationRenderMs,
       detailRenderMode: "cached-current",
-    });
-    postPerformanceEvent("thread_detail_first_paint", {
-      source,
-      threadId,
-      elapsedMs: roundedDurationMs(switchStartedAt),
-      apiElapsedMs: 0,
-      renderElapsedMs,
-      serverTimings: detailPerformance.serverTimings,
-      performancePhase: detailPerformance.performancePhase === "unknown"
-        ? "warm-client-current"
-        : detailPerformance.performancePhase,
-      clientTimings: detailPerformance.clientTimings,
-      detailShape: detailPerformance.detailShape,
       cached: true,
-      readMode: state.currentThread && state.currentThread.mobileReadMode || "",
-      turns: Array.isArray(state.currentThread && state.currentThread.turns) ? state.currentThread.turns.length : 0,
-      rolloutSizeBytes: rolloutSizeBytes(state.currentThread),
     });
+    postPerformanceEvent("thread_detail_first_paint", firstPaintPerformance);
     postClientEvent("thread_switch_cached", {
       source,
       threadId,
@@ -8966,8 +8952,9 @@ async function loadThread(threadId, options = {}) {
   const postRenderMs = roundedDurationMs(postRenderStartedAt);
   checkConversationProjectionConsistency("first-paint", { renderMode: "first-paint" });
   const renderElapsedMs = roundedDurationMs(renderStartedAt);
-  const detailPerformance = threadPerformanceMetrics.threadDetailEventFieldsWithClient(result.thread, {
+  const firstPaintPerformance = threadPerformanceMetrics.threadDetailFirstPaintEventFields(result.thread, {
     source,
+    threadId,
     elapsedMs: roundedDurationMs(switchStartedAt),
     apiElapsedMs,
     renderElapsedMs,
@@ -8978,24 +8965,9 @@ async function loadThread(threadId, options = {}) {
     conversationRenderMs,
     postRenderMs,
     detailRenderMode: "first-paint",
-  });
-  postPerformanceEvent("thread_detail_first_paint", {
-    source,
-    threadId,
-    elapsedMs: roundedDurationMs(switchStartedAt),
-    apiElapsedMs,
-    renderElapsedMs,
-    serverTimings: detailPerformance.serverTimings,
-    performancePhase: detailPerformance.performancePhase,
-    clientTimings: detailPerformance.clientTimings,
-    detailShape: detailPerformance.detailShape,
     cached: false,
-    readMode: result.thread && result.thread.mobileReadMode || "",
-    status: statusText(result.thread && result.thread.status),
-    turns: Array.isArray(result.thread && result.thread.turns) ? result.thread.turns.length : 0,
-    omittedTurns: Number(result.thread && result.thread.mobileOmittedTurnCount || 0),
-    rolloutSizeBytes: rolloutSizeBytes(result.thread),
   });
+  postPerformanceEvent("thread_detail_first_paint", firstPaintPerformance);
   postClientEvent("thread_switch_complete", {
     source,
     threadId,
@@ -9377,8 +9349,10 @@ async function backfillFullThreadDetail(threadId, options = {}) {
   updateComposerControls();
   const postRenderMs = roundedDurationMs(postRenderStartedAt);
   const renderElapsedMs = roundedDurationMs(renderStartedAt);
-  const detailPerformance = threadPerformanceMetrics.threadDetailEventFieldsWithClient(result.thread, {
-    source: String(options.source || "unknown").slice(0, 40),
+  const source = String(options.source || "unknown").slice(0, 40);
+  const fullReadyPerformance = threadPerformanceMetrics.threadDetailFullReadyEventFields(result.thread, {
+    source,
+    threadId: id,
     elapsedMs: roundedDurationMs(apiStartedAt),
     apiElapsedMs,
     renderElapsedMs,
@@ -9389,21 +9363,7 @@ async function backfillFullThreadDetail(threadId, options = {}) {
     postRenderMs,
     detailRenderMode: "full-backfill",
   });
-  postPerformanceEvent("thread_detail_full_ready", {
-    source: String(options.source || "unknown").slice(0, 40),
-    threadId: id,
-    elapsedMs: roundedDurationMs(apiStartedAt),
-    apiElapsedMs,
-    renderElapsedMs,
-    serverTimings: detailPerformance.serverTimings,
-    performancePhase: detailPerformance.performancePhase,
-    clientTimings: detailPerformance.clientTimings,
-    detailShape: detailPerformance.detailShape,
-    readMode: result.thread && result.thread.mobileReadMode || "",
-    turns: Array.isArray(result.thread && result.thread.turns) ? result.thread.turns.length : 0,
-    omittedTurns: Number(result.thread && result.thread.mobileOmittedTurnCount || 0),
-    rolloutSizeBytes: rolloutSizeBytes(result.thread),
-  }, { force: true });
+  postPerformanceEvent("thread_detail_full_ready", fullReadyPerformance, { force: true });
 }
 
 function preserveConversationScrollAfterPrepend(previousScrollTop, previousScrollHeight) {

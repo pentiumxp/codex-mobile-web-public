@@ -173,6 +173,14 @@ diagnostic field ownership out of `refreshCurrentThread()` while preserving the
 privacy boundary that performance events contain timings, counts, statuses, and
 reason codes rather than message bodies, task-card bodies, uploads, private
 paths, cookies, tokens, or long logs.
+First-paint and full-backfill performance event field planning now also lives
+in `public/thread-performance-metrics.js`:
+`threadDetailFirstPaintEventFields` and `threadDetailFullReadyEventFields`
+build the bounded `thread_detail_first_paint` and `thread_detail_full_ready`
+payloads, including cached/warm-client phase handling, server/client timings,
+detail shape, read mode, turn counts, omitted-turn counts where relevant, and
+rollout size. This keeps large-session cold/warm path evidence consistent
+across initial open, cached current open, refresh, and full backfill.
 Single-thread full-render shell planning now also lives in
 `public/thread-detail-render-plan.js`: loading, load-error retry, detail
 content ordering, empty/read-warning state selection, plugin-refresh notice
@@ -285,7 +293,8 @@ Target:
   pane slot mutation side-effect planning including pane count/close execution
   is also outside app.js; detail-load lifecycle side-effect planning is also
   outside app.js; detail-load queue/abort/drain planning is also outside app.js;
-  refresh performance event field ownership is also outside app.js;
+  refresh, first-paint, and full-backfill performance event field ownership is
+  also outside app.js;
   operation card content and final template planning are now outside app.js;
   split sizing, measured tuning of the max concurrent detail read
   value, and per-pane draft/runtime ownership remain the next boundary.
