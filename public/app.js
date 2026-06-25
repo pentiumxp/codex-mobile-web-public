@@ -91,6 +91,10 @@ const threadDetailStateApi = window.CodexThreadDetailState;
 if (!threadDetailStateApi) {
   throw new Error("CodexThreadDetailState policy script failed to load");
 }
+const threadDetailRenderPlanApi = window.CodexThreadDetailRenderPlan;
+if (!threadDetailRenderPlanApi) {
+  throw new Error("CodexThreadDetailRenderPlan script failed to load");
+}
 const threadTileLayoutPolicy = window.CodexThreadTileLayout;
 if (!threadTileLayoutPolicy) {
   throw new Error("CodexThreadTileLayout policy script failed to load");
@@ -465,7 +469,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v431";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v432";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -516,6 +520,7 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/thread-performance-metrics.js",
   "/live-operation-dock-state.js",
   "/thread-detail-state.js",
+  "/thread-detail-render-plan.js",
   "/thread-tile-layout.js",
   "/build-refresh-policy.js",
   "/app.js",
@@ -8652,8 +8657,12 @@ async function refreshCurrentThread(options = {}) {
   const previousConversationSignature = conversationRenderSignature(state.currentThread);
   state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
   const nextConversationSignature = conversationRenderSignature(state.currentThread);
-  const shouldRenderDetail = previousConversationSignature !== nextConversationSignature
-    || state.renderedConversationSignature !== nextConversationSignature;
+  const renderPlan = threadDetailRenderPlanApi.planThreadDetailRefreshRender({
+    previousConversationSignature,
+    nextConversationSignature,
+    renderedConversationSignature: state.renderedConversationSignature,
+  });
+  const shouldRenderDetail = renderPlan.shouldRenderDetail;
   mergeThreadIntoThreadList(state.currentThread);
   const mergeMs = roundedDurationMs(mergeStartedAt);
   const composerRenderStartedAt = nowPerfMs();
@@ -8667,13 +8676,15 @@ async function refreshCurrentThread(options = {}) {
   let conversationRenderMs = 0;
   let detailPatchMs = 0;
   let metadataUpdateMs = 0;
-  let detailRenderMode = shouldRenderDetail ? "full-render" : "metadata-only";
+  let detailRenderMode = renderPlan.detailRenderMode;
   if (shouldRenderDetail) {
-    const patchStartedAt = nowPerfMs();
-    locallyPatchedDetail = patchCurrentThreadDetailFromRefresh(previousThread, state.currentThread, previousConversationSignature);
-    detailPatchMs = roundedDurationMs(patchStartedAt);
+    if (renderPlan.canPatch) {
+      const patchStartedAt = nowPerfMs();
+      locallyPatchedDetail = patchCurrentThreadDetailFromRefresh(previousThread, state.currentThread, previousConversationSignature);
+      detailPatchMs = roundedDurationMs(patchStartedAt);
+    }
+    detailRenderMode = threadDetailRenderPlanApi.finalizeThreadDetailRenderPlan(renderPlan, { locallyPatchedDetail }).detailRenderMode;
     if (locallyPatchedDetail) {
-      detailRenderMode = "patch";
       const metadataStartedAt = nowPerfMs();
       updateCurrentThreadHeader(state.currentThread);
       updateTickTimer();

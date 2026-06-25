@@ -1,3 +1,41 @@
+# 2026-06-25 - v432 thread detail render-plan slice pending commit/deploy
+
+- Scope:
+  - Continuing the architecture optimization sequence without a broad rewrite.
+  - This slice extracts the thread-detail refresh render-mode decision from
+    `public/app.js` into a pure frontend helper.
+  - Validated locally. Not deployed and not pushed Public at the time this note
+    was written.
+- Change:
+  - Added `public/thread-detail-render-plan.js`.
+  - The helper decides whether a refresh is `metadata-only`, eligible for local
+    DOM `patch`, or must use `full-render` from three signatures:
+    previous conversation, next conversation, and the currently rendered DOM
+    conversation signature.
+  - `refreshCurrentThread` now calls that helper before attempting
+    `patchCurrentThreadDetailFromRefresh`.
+  - Local patch is only attempted when the current DOM signature still matches
+    the pre-refresh conversation signature. If the DOM signature is stale, the
+    refresh goes straight to full render instead of trying to patch on an
+    unreliable baseline.
+  - Added the new static asset to `public/index.html`, `PAGE_SHELL_ASSETS`,
+    `public/sw.js`, and the server app-shell build fingerprint list.
+  - Added the new helper to `npm run check`.
+  - PWA shell cache bumped to `codex-mobile-shell-v432`.
+- Tests/docs:
+  - Added `test/thread-detail-render-plan.test.js`.
+  - Updated script-order/build-id tests.
+  - Updated `README.md`, `docs/MODULES.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js && node --check public/thread-detail-render-plan.js && node --check server.js`
+    passed.
+  - `npm run check` passed.
+  - Focused frontend/thread-detail run passed:
+    `node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/app-update.test.js test/plugin-voice-input.test.js test/thread-performance-metrics.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js`
+    (`140` tests).
+  - `git diff --check` passed.
+
 # 2026-06-25 - v431 tile local split columns and header drag deployed
 
 - Scope:

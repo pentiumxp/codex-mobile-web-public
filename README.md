@@ -16,6 +16,25 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-25 v432 线程详情刷新渲染计划拆分
+
+v432 继续第二阶段前端状态边界优化，不改变服务端投影、线程读取策略或
+分屏 UI。`refreshCurrentThread` 里“本次刷新应该 metadata-only、局部 patch
+还是 full render”的判断已抽到新的纯 helper：
+`public/thread-detail-render-plan.js`。
+
+这个 helper 明确了局部 patch 的前提：浏览器当前 DOM 的
+`renderedConversationSignature` 必须仍等于刷新前的 conversation signature。
+如果 DOM 签名已经陈旧，即使前后数据签名发生变化，也直接走 full render，
+避免在不可靠 DOM 基线上做局部替换，减少刷新过程中短暂内容丢失或画面颤动
+的风险。实际 DOM patch、全量 render、metadata 更新仍由 `public/app.js`
+编排。
+
+新增 `test/thread-detail-render-plan.test.js` 覆盖稳定签名、可 patch 签名、
+陈旧 DOM 签名和显式禁用 patch 四种情况。PWA shell cache 升级到
+`codex-mobile-shell-v432`。当前为本地优化切片，是否部署/推 Public 仍按
+“先本地验证，再按需部署，生产确认后再 Public”的发布顺序执行。
+
 ## 2026-06-25 v431 平铺窗口局部分屏与页眉拖动
 
 v431 改进宽屏平铺模式在窗口数超过可用列数时的布局。之前如果桌面当前只能

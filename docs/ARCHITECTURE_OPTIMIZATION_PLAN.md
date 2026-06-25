@@ -73,8 +73,12 @@ without collecting message bodies or file contents.
 Status: in progress. The first slices extract item visible-field merge policy,
 visible-text render identity / completed-receipt retention, local-only item
 retention/drop policy, and live-to-completed same-turn visible-item preservation
-to `public/thread-detail-state.js`; broader thread detail merge orchestration
-and DOM patching remain in `public/app.js`.
+to `public/thread-detail-state.js`. The refresh render-mode decision now lives
+in `public/thread-detail-render-plan.js`: it decides metadata-only versus local
+patch versus full render from previous/next/rendered conversation signatures,
+and prevents local patch attempts when the currently rendered DOM signature is
+already stale. Broader thread detail merge orchestration and DOM patching remain
+in `public/app.js`.
 
 Target:
 

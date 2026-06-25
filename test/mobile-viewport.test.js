@@ -147,12 +147,13 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v431/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v431"/);
+  assert.match(swJs, /codex-mobile-shell-v432/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v432"/);
   assert.match(swJs, /"\/thread-status-hints\.js"/);
   assert.match(swJs, /"\/thread-performance-metrics\.js"/);
   assert.match(swJs, /"\/live-operation-dock-state\.js"/);
   assert.match(swJs, /"\/thread-detail-state\.js"/);
+  assert.match(swJs, /"\/thread-detail-render-plan\.js"/);
   assert.match(swJs, /"\/thread-tile-layout\.js"/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
@@ -305,8 +306,13 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /const requestedMode = options\.full === true \|\| String\(options\.mode \|\| ""\)\.toLowerCase\(\) === "full"[\s\S]*\? "full"[\s\S]*: "recent";/);
   assert.match(appJs, /api\(threadDetailApiPath\(threadId, requestedMode === "recent" \? \{ mode: "recent" \} : \{\}\)/);
   assert.match(appJs, /const previousConversationSignature = conversationRenderSignature\(state\.currentThread\);/);
-  assert.match(appJs, /const shouldRenderDetail = previousConversationSignature !== nextConversationSignature[\s\S]*state\.renderedConversationSignature !== nextConversationSignature;/);
-  assert.match(functionBody("refreshCurrentThread"), /locallyPatchedDetail = patchCurrentThreadDetailFromRefresh\(previousThread, state\.currentThread, previousConversationSignature\);[\s\S]*if \(locallyPatchedDetail\) \{[\s\S]*updateCurrentThreadHeader\(state\.currentThread\);[\s\S]*updateTickTimer\(\);[\s\S]*publishPluginNavigationState\(\);[\s\S]*\} else \{[\s\S]*renderCurrentThread\(\);/);
+  assert.match(appJs, /const threadDetailRenderPlanApi = window\.CodexThreadDetailRenderPlan;/);
+  assert.match(appJs, /threadDetailRenderPlanApi\.planThreadDetailRefreshRender\(\{[\s\S]*previousConversationSignature,[\s\S]*nextConversationSignature,[\s\S]*renderedConversationSignature: state\.renderedConversationSignature,[\s\S]*\}\);/);
+  assert.match(functionBody("refreshCurrentThread"), /const shouldRenderDetail = renderPlan\.shouldRenderDetail;/);
+  assert.match(functionBody("refreshCurrentThread"), /let detailRenderMode = renderPlan\.detailRenderMode;/);
+  assert.match(functionBody("refreshCurrentThread"), /if \(renderPlan\.canPatch\) \{[\s\S]*locallyPatchedDetail = patchCurrentThreadDetailFromRefresh\(previousThread, state\.currentThread, previousConversationSignature\);[\s\S]*\}/);
+  assert.match(functionBody("refreshCurrentThread"), /threadDetailRenderPlanApi\.finalizeThreadDetailRenderPlan\(renderPlan, \{ locallyPatchedDetail \}\)\.detailRenderMode/);
+  assert.match(functionBody("refreshCurrentThread"), /if \(locallyPatchedDetail\) \{[\s\S]*updateCurrentThreadHeader\(state\.currentThread\);[\s\S]*updateTickTimer\(\);[\s\S]*publishPluginNavigationState\(\);[\s\S]*\} else \{[\s\S]*renderCurrentThread\(\);/);
   assert.match(functionBody("refreshCurrentThread"), /\} else \{[\s\S]*updateCurrentThreadHeader\(state\.currentThread\);[\s\S]*updateLiveOperationDockHtml\(renderLiveOperationDock\(state\.currentThread, existingConversationRenderKeys\(\)\)\);[\s\S]*updateTickTimer\(\);[\s\S]*scheduleScrollToBottomButtonUpdate\(\);/);
   assert.match(appJs, /skippedDetailRender: !shouldRenderDetail/);
   assert.match(appJs, /locallyPatchedDetail,/);
@@ -359,6 +365,7 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(swJs, /"\/thread-performance-metrics\.js"/);
   assert.match(swJs, /"\/live-operation-dock-state\.js"/);
   assert.match(swJs, /"\/thread-detail-state\.js"/);
+  assert.match(swJs, /"\/thread-detail-render-plan\.js"/);
   assert.match(swJs, /"\/thread-tile-layout\.js"/);
   assert.match(swJs, /"\/build-refresh-policy\.js"/);
   assert.match(appJs, /"\/viewport-metrics\.js"/);
@@ -368,6 +375,7 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /"\/thread-performance-metrics\.js"/);
   assert.match(appJs, /"\/live-operation-dock-state\.js"/);
   assert.match(appJs, /"\/thread-detail-state\.js"/);
+  assert.match(appJs, /"\/thread-detail-render-plan\.js"/);
   assert.match(appJs, /"\/thread-tile-layout\.js"/);
   assert.match(appJs, /"\/build-refresh-policy\.js"/);
   assert.match(appJs, /navigator\.serviceWorker\.register\("\/sw\.js"\)/);
