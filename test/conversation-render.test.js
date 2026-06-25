@@ -86,6 +86,68 @@ function evaluatedInputContentRenderer() {
   return evaluatedInputContentRendererWithKey("");
 }
 
+function evaluatedConversationProjectionDiagnosticSnapshot() {
+  const source = functionSourceFrom(appJs, "conversationProjectionDiagnosticSnapshot");
+  return Function(`
+let classNames = new Set();
+let calls = [];
+const conversation = {
+  classList: {
+    contains(name) {
+      return classNames.has(name);
+    },
+  },
+};
+const state = {
+  threadTileMode: false,
+  renderedConversationSignature: "single-rendered",
+  currentThread: { id: "single", mobileReadMode: "recent", shape: { visibleTurnCount: 1, visibleItemCount: 3 } },
+};
+function $(id) {
+  return id === "conversation" ? conversation : null;
+}
+function conversationDomShape() {
+  return { renderKeyCount: 7, duplicateRenderKeyCount: 0, turnCount: 2 };
+}
+function visibleConversationShape(thread) {
+  return thread && thread.shape ? thread.shape : { visibleTurnCount: 0, visibleItemCount: 0 };
+}
+function conversationRenderSignature(thread) {
+  calls.push(["single", thread && thread.id || ""]);
+  return "single-current";
+}
+function threadTileLayout() {
+  calls.push(["layout"]);
+  return { enabled: true, columns: 2 };
+}
+function threadTileCandidateIds(layout) {
+  calls.push(["ids", layout && layout.columns || 0]);
+  return ["tile-a", "tile-b"];
+}
+function threadTileDisplayLayout(layout, ids) {
+  calls.push(["display", ids.length]);
+  return { enabled: true, columns: 2, rows: 1 };
+}
+function threadTileRenderSignature(layout, ids) {
+  calls.push(["tile", ids.join(",")]);
+  return "tile-current";
+}
+function threadTileDisplayThread(id) {
+  return { id, shape: { visibleTurnCount: 1, visibleItemCount: id === "tile-a" ? 2 : 4 } };
+}
+${source}
+return {
+  state,
+  calls: () => calls.slice(),
+  setTileDom(value) {
+    if (value) classNames.add("thread-tile-mode");
+    else classNames.delete("thread-tile-mode");
+  },
+  conversationProjectionDiagnosticSnapshot,
+};
+`)();
+}
+
 function evaluatedInputContentRendererWithKey(key = "", options = {}) {
   const sources = [
     "escapeHtml",
@@ -2771,6 +2833,52 @@ test("conversation image urls rerender when the auth key version changes", () =>
   assert.match(functionBody("conversationRenderSignature"), /imageAuthVersion: Number\(state\.imageAuthVersion \|\| 0\)/);
   assert.match(functionBody("login"), /setAuthKey\(key\)/);
   assert.match(functionBody("exchangePluginLaunchSession"), /setAuthKey\(result\.session_key\)/);
+});
+
+test("conversation projection diagnostics use the tile-board signature in tile mode", () => {
+  const helpers = evaluatedConversationProjectionDiagnosticSnapshot();
+  helpers.state.threadTileMode = true;
+  helpers.state.renderedConversationSignature = "tile-current";
+  helpers.setTileDom(true);
+
+  const snapshot = helpers.conversationProjectionDiagnosticSnapshot("refresh-metadata", { renderMode: "metadata-only" });
+
+  assert.equal(snapshot.renderedSignature, "tile-current");
+  assert.equal(snapshot.currentSignature, "tile-current");
+  assert.equal(snapshot.context.route_kind, "thread-tile");
+  assert.equal(snapshot.context.read_mode, "mixed");
+  assert.equal(snapshot.counts.pane_count, 2);
+  assert.equal(snapshot.counts.visible_count, 6);
+  assert.deepEqual(helpers.calls().filter((entry) => entry[0] === "single"), []);
+  assert.ok(helpers.calls().some((entry) => entry[0] === "tile"));
+});
+
+test("conversation projection diagnostics skip mismatched tile transition surfaces", () => {
+  const helpers = evaluatedConversationProjectionDiagnosticSnapshot();
+  helpers.state.threadTileMode = true;
+  helpers.setTileDom(false);
+  assert.equal(helpers.conversationProjectionDiagnosticSnapshot("transition", {}), null);
+
+  helpers.state.threadTileMode = false;
+  helpers.setTileDom(true);
+  assert.equal(helpers.conversationProjectionDiagnosticSnapshot("transition", {}), null);
+});
+
+test("conversation projection diagnostics use the single-thread signature outside tile mode", () => {
+  const helpers = evaluatedConversationProjectionDiagnosticSnapshot();
+  helpers.state.threadTileMode = false;
+  helpers.state.renderedConversationSignature = "single-current";
+  helpers.setTileDom(false);
+
+  const snapshot = helpers.conversationProjectionDiagnosticSnapshot("first-paint", { renderMode: "first-paint" });
+
+  assert.equal(snapshot.renderedSignature, "single-current");
+  assert.equal(snapshot.currentSignature, "single-current");
+  assert.equal(snapshot.context.read_mode, "recent");
+  assert.equal(snapshot.context.render_mode, "first-paint");
+  assert.equal(snapshot.counts.visible_count, 3);
+  assert.ok(helpers.calls().some((entry) => entry[0] === "single"));
+  assert.deepEqual(helpers.calls().filter((entry) => entry[0] === "tile"), []);
 });
 
 test("image view render keys include their image source", () => {

@@ -1,3 +1,116 @@
+# 2026-06-25 - v440 tile projection diagnostic false positive repaired
+
+- Source task card:
+  - Home AI diagnostic remediation dispatched
+    `diagcase_6e638140313aa4869b05` for Codex Mobile Web.
+  - Task card id: `ttc_1de42abd596c5025ab`.
+  - Requested reasoning effort: `xhigh`.
+- Bounded runtime evidence:
+  - The v439 diagnostic channel successfully produced a Home AI case for
+    `conversation_projection_mismatch` / `render_signature_mismatch`.
+  - Home AI diagnostic DB path checked read-only:
+    `/Users/hermes-host/HermesMobile/data/ai-ops/diagnostics/diagnostics.sqlite`.
+  - Case metadata: plugin `codex-mobile`, source surface `embedded-plugin`,
+    status `card_sent`, one stored event at `2026-06-25T13:18:45Z`.
+  - Stored event evidence did not include raw private content. Home AI host
+    currently maps plugin counts/context into a narrow frontend-state payload,
+    so Codex-specific counts were not retained in the case payload.
+- Root cause:
+  - v439 added `checkConversationProjectionConsistency`.
+  - In thread-tile mode, `state.renderedConversationSignature` is the full
+    `threadTileRenderSignature` for the tile board.
+  - The diagnostic check compared that tile-board signature with
+    single-thread `conversationRenderSignature(state.currentThread)`.
+  - During repeated wide-screen tile refreshes, this produced a stable false
+    `render_signature_mismatch` after the reporter threshold was reached.
+- Change:
+  - Added `conversationProjectionDiagnosticSnapshot` in `public/app.js`.
+  - Single-thread DOM compares only single-thread render signatures.
+  - Thread-tile DOM compares only `threadTileRenderSignature`.
+  - Transition frames where state and DOM rendering surface disagree are
+    skipped instead of reported.
+  - Duplicate DOM render-key diagnostics remain active.
+  - PWA shell cache bumped to `codex-mobile-shell-v440`.
+  - Updated `README.md` and `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Validation:
+  - Focused tests passed:
+    `node --test test/conversation-render.test.js test/home-ai-diagnostic-reporting.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    (`124` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `npm test` passed (`789` tests).
+  - `git diff --check` passed.
+- Release state:
+  - Not yet committed/deployed at the time of this handoff entry. Commit and
+    deploy before returning the task card.
+
+# 2026-06-25 - v439 Home AI diagnostic report channel implemented locally
+
+- Source task card:
+  - Home AI requested Codex Mobile adoption of the platform-owned diagnostic
+    report channel.
+  - Task card id: `ttc_28cd1a44ca922ca88d`.
+  - Requested reasoning effort: `xhigh`.
+- Root-cause boundary:
+  - The recurring user-visible symptoms are client/server projection and
+    workflow inconsistencies: duplicate/missing visible messages, route/task
+    targets not opening, media render failures, and task-card workflow
+    failures.
+  - This change does not mask those defects with duplicate filtering,
+    synthetic refreshes, or UI fallbacks. It adds bounded evidence capture so
+    Home AI can dedupe cases and let Owner trigger repair cards with replayable
+    metadata.
+- Change:
+  - Added `public/home-ai-diagnostic-reporting.js`.
+    - Repeated-failure threshold defaults to `3`.
+    - Same signature is throttled for `5` minutes.
+    - Success for the same surface/action clears accumulated failures.
+    - Payload sanitizer strips raw message/body/prompt/text/title/path/url/key/
+      token/cookie-like fields and keeps only bounded enums, counts, status
+      codes, duration buckets, build/cache ids, and short hashes.
+  - `public/app.js` now records diagnostics for:
+    - task-card creation, draft request/materialization, approve/reply/delete/
+      revoke failures;
+    - thread list/detail load and detail refresh failures;
+    - Home AI route-hint thread/task/item missing or unavailable paths;
+    - image render failures;
+    - conversation render-signature mismatch, duplicate DOM render keys, and
+      repeated detail-patch rejection.
+  - Embedded mode posts eligible reports to the parent as
+    `homeai.diagnostic.report`; standalone mode only records local client
+    events. Automatic plugin reports do not create task cards directly.
+  - PWA shell cache bumped to `codex-mobile-shell-v439`.
+  - Updated `README.md`, `docs/ARCHITECTURE.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and `docs/MODULES.md`.
+- Validation:
+  - Focused tests passed:
+    `node --test test/home-ai-diagnostic-reporting.test.js test/app-update.test.js test/mobile-viewport.test.js test/plugin-voice-input.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js`
+    (`42` tests).
+  - Conversation/media focused tests passed:
+    `node --test test/conversation-render.test.js test/home-ai-diagnostic-reporting.test.js`
+    (`98` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `npm test` passed (`786` tests).
+  - `git diff --check` passed.
+- Release state:
+  - Committed locally as:
+    `c93f8d4 feat: report repeated runtime diagnostics to Home AI`.
+  - Deployed through the Home AI central plugin deploy script with reason
+    `codex-mobile-diagnostic-report-channel-v439`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T125545Z-plugin-codex-mobile-web-codex-mobile-diagnostic-report-channel-v439`.
+  - `/api/public-config` reports `version=0.1.11`,
+    `clientBuildId=0.1.11|codex-mobile-shell-v439`,
+    `shellCacheName=codex-mobile-shell-v439`, `authRequired=true`,
+    `platform=darwin`, and build id `59e89dd324e92aa4`.
+  - Production `npm run check` and `npm run check:macos` passed.
+  - Source/production short SHA-256 samples matched for:
+    `public/app.js`, `public/home-ai-diagnostic-reporting.js`,
+    `public/sw.js`, `public/index.html`, `server.js`, and `package.json`.
+  - Central deployment audit reported `blockingIssueCount=0`.
+  - No public push in this step unless explicitly requested.
+
 # 2026-06-25 - terminal return-card acknowledgement loop repaired
 
 - Source task card:

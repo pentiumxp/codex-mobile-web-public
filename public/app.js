@@ -485,7 +485,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v439";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v440";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -6766,24 +6766,82 @@ function visibleConversationShape(thread) {
   };
 }
 
+function conversationProjectionDiagnosticSnapshot(source, extra = {}, deps = {}) {
+  const conversation = deps.conversation || $("conversation");
+  if (!conversation) return null;
+  const renderedSignature = Object.prototype.hasOwnProperty.call(deps, "renderedConversationSignature")
+    ? String(deps.renderedConversationSignature || "")
+    : String(state.renderedConversationSignature || "");
+  const domShape = deps.domShape || conversationDomShape();
+  const renderMode = String(extra.renderMode || "");
+  const action = source || "render";
+  const tileMode = Object.prototype.hasOwnProperty.call(deps, "threadTileMode")
+    ? deps.threadTileMode === true
+    : state.threadTileMode === true;
+
+  if (tileMode) {
+    if (!conversation.classList || !conversation.classList.contains("thread-tile-mode")) return null;
+    const layout = deps.tileLayout || threadTileLayout();
+    if (!layout || !layout.enabled) return null;
+    const ids = Array.isArray(deps.tileIds) ? deps.tileIds : threadTileCandidateIds(layout);
+    if (!ids.length) return null;
+    const displayLayout = deps.tileDisplayLayout || threadTileDisplayLayout(layout, ids);
+    const currentSignature = deps.tileSignature || threadTileRenderSignature(displayLayout, ids);
+    const visibleShape = ids.reduce((acc, id) => {
+      const thread = typeof deps.tileThreadForId === "function" ? deps.tileThreadForId(id) : threadTileDisplayThread(id);
+      const shape = visibleConversationShape(thread);
+      acc.visibleTurnCount += shape.visibleTurnCount;
+      acc.visibleItemCount += shape.visibleItemCount;
+      return acc;
+    }, { visibleTurnCount: 0, visibleItemCount: 0 });
+    return {
+      renderedSignature,
+      currentSignature,
+      context: {
+        surface: "conversation-render",
+        action,
+        route_kind: "thread-tile",
+        read_mode: "mixed",
+        render_mode: renderMode,
+      },
+      counts: {
+        dom_count: domShape.renderKeyCount,
+        duplicate_count: domShape.duplicateRenderKeyCount,
+        visible_count: visibleShape.visibleItemCount,
+        turn_count: visibleShape.visibleTurnCount,
+        pane_count: ids.length,
+      },
+    };
+  }
+
+  if (conversation.classList && conversation.classList.contains("thread-tile-mode")) return null;
+  const thread = deps.thread || state.currentThread;
+  const visibleShape = visibleConversationShape(thread);
+  return {
+    renderedSignature,
+    currentSignature: deps.currentSignature || conversationRenderSignature(thread),
+    context: {
+      surface: "conversation-render",
+      action,
+      read_mode: String(thread && thread.mobileReadMode || ""),
+      render_mode: renderMode,
+    },
+    counts: {
+      dom_count: domShape.renderKeyCount,
+      duplicate_count: domShape.duplicateRenderKeyCount,
+      visible_count: visibleShape.visibleItemCount,
+      turn_count: visibleShape.visibleTurnCount,
+    },
+  };
+}
+
 function checkConversationProjectionConsistency(source, extra = {}) {
   if (!state.currentThread || state.currentThread.mobileLoading || state.currentThread.mobileLoadError) return;
-  const currentSignature = conversationRenderSignature(state.currentThread);
-  const domShape = conversationDomShape();
-  const visibleShape = visibleConversationShape(state.currentThread);
-  const baseContext = {
-    surface: "conversation-render",
-    action: source || "render",
-    read_mode: String(state.currentThread.mobileReadMode || ""),
-    render_mode: String(extra.renderMode || ""),
-  };
-  const counts = {
-    dom_count: domShape.renderKeyCount,
-    duplicate_count: domShape.duplicateRenderKeyCount,
-    visible_count: visibleShape.visibleItemCount,
-    turn_count: visibleShape.visibleTurnCount,
-  };
-  if (state.renderedConversationSignature && state.renderedConversationSignature !== currentSignature) {
+  const snapshot = conversationProjectionDiagnosticSnapshot(source, extra);
+  if (!snapshot) return;
+  const baseContext = snapshot.context;
+  const counts = snapshot.counts;
+  if (snapshot.renderedSignature && snapshot.renderedSignature !== snapshot.currentSignature) {
     recordHomeAiDiagnosticFailure({
       category: "conversation_projection_mismatch",
       diagnostic_type: "render_signature_mismatch",
@@ -6799,8 +6857,8 @@ function checkConversationProjectionConsistency(source, extra = {}) {
         fields: {
           read_mode: baseContext.read_mode,
           render_mode: baseContext.render_mode,
-          dom_count: domShape.renderKeyCount,
-          visible_count: visibleShape.visibleItemCount,
+          dom_count: counts.dom_count,
+          visible_count: counts.visible_count,
         },
       }],
     });
@@ -6812,7 +6870,7 @@ function checkConversationProjectionConsistency(source, extra = {}) {
       context: baseContext,
     });
   }
-  if (domShape.duplicateRenderKeyCount > 0) {
+  if (counts.duplicate_count > 0) {
     recordHomeAiDiagnosticFailure({
       category: "conversation_projection_mismatch",
       diagnostic_type: "duplicate_render_keys",
@@ -6826,9 +6884,9 @@ function checkConversationProjectionConsistency(source, extra = {}) {
         code: "render-key-check",
         status: "failed",
         fields: {
-          duplicate_count: domShape.duplicateRenderKeyCount,
-          dom_count: domShape.renderKeyCount,
-          visible_count: visibleShape.visibleItemCount,
+          duplicate_count: counts.duplicate_count,
+          dom_count: counts.dom_count,
+          visible_count: counts.visible_count,
         },
       }],
     });

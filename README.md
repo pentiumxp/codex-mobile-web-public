@@ -37,6 +37,23 @@ return policy，不再出现 `Return required`；如果再次对终止卡调用 
 `returnToSource:true` 是终止卡、auto-return receipt 不触发二次 auto-return、以及
 Music-style repair -> receipt -> ack 链在第一张 terminal return 后停止。
 
+## 2026-06-25 v440 平铺模式诊断签名修正
+
+v440 修复 v439 诊断上报通道发现的 `conversation_projection_mismatch` 误报。
+根因是平铺模式下 `state.renderedConversationSignature` 保存的是整个
+thread-tile board 的签名，但诊断检查仍按单线程
+`conversationRenderSignature(state.currentThread)` 重新计算当前签名。用户在宽屏
+平铺模式下反复进入线程、刷新详情或增量 patch 时，两个签名体系天然不同，连续
+三次后就会被错误上报为 render signature mismatch。
+
+现在 `conversationProjectionDiagnosticSnapshot` 会先识别当前 DOM 渲染表面：
+单窗口只比较单线程签名；平铺模式只比较 `threadTileRenderSignature`；如果正在
+单窗口/平铺转场且 DOM class 与状态不一致，则跳过本次诊断。这样不会屏蔽真正的
+DOM duplicate key 或真实投影不一致，只是避免把平铺全局签名和单线程签名混比。
+
+新增 `test/conversation-render.test.js` 覆盖平铺签名、平铺转场跳过、单窗口签名
+三条路径。PWA shell cache 升级到 `codex-mobile-shell-v440`。
+
 ## 2026-06-25 v439 Home AI 诊断上报通道
 
 v439 接入 Home AI 平台级 diagnostic remediation loop。Codex Mobile 不直接自动

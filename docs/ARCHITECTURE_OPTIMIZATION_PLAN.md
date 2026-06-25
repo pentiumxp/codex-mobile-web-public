@@ -151,6 +151,13 @@ Target:
 
 Current diagnostic intake bridge:
 
+- v440 narrows conversation projection mismatch diagnostics to the active
+  rendering surface. Single-thread mode compares against
+  `conversationRenderSignature`; thread-tile mode compares against
+  `threadTileRenderSignature`; transition frames where state and DOM surface do
+  not match are skipped. This keeps the diagnostic channel sensitive to real
+  projection/DOM divergence without reporting the expected difference between a
+  tile-board signature and a single-thread signature.
 - v439 adds `public/home-ai-diagnostic-reporting.js` as the browser-side
   repeated-failure state machine for Home AI's diagnostic remediation loop.
   It gates automatic reports by stable privacy-preserving signatures, clears
