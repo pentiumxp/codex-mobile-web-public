@@ -39,9 +39,28 @@
     `test/thread-task-card-route.test.js`.
   - `git diff --check`
 - Deployment state:
-  - Local source is ready for the Home AI central macOS plugin deployment path.
-  - Production readback is pending in this handoff section until deployment
-    completes.
+  - Runtime commit:
+    `f1ac3cc fix thread tile current pane refresh`.
+  - Deployed through the Home AI central plugin deploy script with reason
+    `codex-mobile-thread-tile-current-pane-v444`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T153339Z-plugin-codex-mobile-web-codex-mobile-thread-tile-current-pane-v444`.
+  - `/api/public-config` reports `clientBuildId=0.1.11|codex-mobile-shell-v444`,
+    `shellCacheName=codex-mobile-shell-v444`, `buildId=ead102668ea0186c`,
+    `authRequired=true`, and `platform=darwin`.
+  - Production focused validation passed:
+    `node --test test/thread-tile-layout.test.js
+    test/thread-tile-layout-ui.test.js test/conversation-render.test.js
+    test/turn-scroll-controls.test.js test/mobile-viewport.test.js
+    test/home-ai-diagnostic-reporting.test.js test/thread-goal-service.test.js
+    test/thread-task-card-route.test.js` (`152` tests).
+  - Source/production short SHA-256 samples matched for:
+    `public/app.js`, `public/sw.js`, `public/thread-tile-layout.js`,
+    `README.md`, and the focused test files touched by this change.
+  - In-app Browser smoke was not completed because the Browser bridge failed
+    before setup with a local environment metadata error. Current validation is
+    therefore server/prod-test/log based; watch for any new v444
+    `detail_patch_rejected` diagnostics after clients reload.
 
 # 2026-06-25 - v443 live assistant output visibility and task-card lease fix
 
