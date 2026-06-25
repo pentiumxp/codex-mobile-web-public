@@ -23,9 +23,37 @@
     `codex-mobile-shell-v442`.
   - `README.md` and `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` updated.
 - Validation state:
-  - Not yet committed/deployed.
-  - Next: run focused frontend tests, standard checks, full tests as needed,
-    commit and deploy.
+  - Runtime commit:
+    `b2429ac refactor thread detail patch surface policy`.
+  - Deployed through the Home AI central plugin deploy script with reason
+    `codex-mobile-thread-detail-patch-surface-v442`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T150145Z-plugin-codex-mobile-web-codex-mobile-thread-detail-patch-surface-v442`.
+  - `/api/public-config` reports `clientBuildId=0.1.11|codex-mobile-shell-v442`,
+    `shellCacheName=codex-mobile-shell-v442`, `buildId=f54b98287ef8a856`,
+    `authRequired=true`, and `platform=darwin`.
+  - Local validation passed:
+    - `node --check public/app.js && node --check public/thread-detail-patch-plan.js && node --check public/sw.js`
+    - Focused frontend tests:
+      `node --test test/thread-detail-patch-plan.test.js test/conversation-render.test.js test/thread-tile-layout-ui.test.js test/mobile-viewport.test.js test/app-update.test.js test/home-ai-diagnostic-reporting.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+      (`144` tests).
+    - `npm run check`
+    - `npm run check:macos`
+    - `npm test` (`795` tests).
+    - `git diff --check`
+  - Production validation passed:
+    - Same focused 144-test suite.
+    - `npm run check`
+    - Source/production short SHA-256 samples matched for:
+      `public/app.js`, `public/sw.js`, `public/thread-detail-patch-plan.js`,
+      `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`,
+      `test/thread-detail-patch-plan.test.js`, and
+      `test/conversation-render.test.js`.
+  - Remaining goal work:
+    - Continue pane-state service extraction.
+    - Add browser/visual regression coverage for composer stability,
+      conversation patch jitter, task-card expand/collapse, image rendering,
+      and PWA refresh.
 
 # 2026-06-25 - Large-session cold-open large-read decision tightened locally
 
