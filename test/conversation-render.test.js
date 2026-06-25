@@ -3379,6 +3379,59 @@ test("completed projection merge drops local-only live receipts when server rece
   assert.equal(mergedItems.filter((item) => item.type === "turnUsageSummary").length, 1);
 });
 
+test("completed projection merge preserves small live images and operations despite long final receipt", () => {
+  const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
+  const existingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 20,
+    turns: [{
+      id: "turn-current",
+      status: { type: "active" },
+      items: [
+        { id: "user-current", type: "userMessage", content: [{ type: "text", text: "inspect this" }] },
+        { id: "image-current", type: "imageView", path: "/tmp/current.jpg" },
+        { id: "operation-current", type: "commandExecution", status: "completed", command: "identify current.jpg" },
+        { id: "local-live-receipt", type: "agentMessage", text: "checking" },
+      ],
+    }],
+  };
+  const incomingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 21,
+    turns: [{
+      id: "turn-current",
+      status: { type: "completed" },
+      completedAtMs: 1782221000000,
+      items: [
+        { id: "user-current", type: "userMessage", content: [{ type: "input_text", text: "inspect this" }] },
+        { id: "server-final-receipt", type: "agentMessage", text: "Final result ".repeat(120) },
+        {
+          id: "mobile-turn-usage-turn-current",
+          type: "turnUsageSummary",
+          mobileUsageSummary: { totalTokenUsage: { totalTokens: 42 } },
+        },
+      ],
+    }],
+  };
+
+  const merged = mergeThreadPreservingVisibleItems(existingThread, incomingThread);
+  const mergedItems = merged.turns[0].items;
+
+  assert.deepEqual(mergedItems.map((item) => item.id), [
+    "user-current",
+    "image-current",
+    "operation-current",
+    "server-final-receipt",
+    "mobile-turn-usage-turn-current",
+  ]);
+  assert.deepEqual(
+    mergedItems.filter((item) => item.type === "agentMessage").map((item) => item.id),
+    ["server-final-receipt"],
+  );
+});
+
 test("completed projection merge adopts shorter final receipt without repainting live receipt", () => {
   const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
   const existingThread = {

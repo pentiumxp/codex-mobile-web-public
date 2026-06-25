@@ -16,6 +16,24 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-25 v429 Live-to-completed 刷新弱投影修复
+
+v429 修复 Movie 新线程在运行中偶发退回弱显示状态的问题：页面先正常显示
+图片、命令和中间过程，随后一次刷新会短暂变成只剩用户需求和最终回执，
+后续新回执或下一次增强投影又把过程刷回来。
+
+根因在前端合并策略。服务端最终 detail 已经可以返回完整 active turn，但
+浏览器同时会收到较弱的 completed patch：这类 patch 有最终回执和 Usage，
+但可能暂时没有图片、命令和 rollout-derived operation items。旧逻辑在
+incoming turn 变成 completed 时关闭了 live-turn 本地可见项保留；如果最终
+回执文本很长，权重比较会误认为 incoming 更完整，从而删除已有图片/操作项。
+
+当前规则：同一个 turn 从 live/active 过渡到 completed 时，completed
+回执仍然替换本地临时回执，但图片、命令、文件操作等非回执可见项会被保留，
+直到服务端增强投影给出等价或更完整的权威项。新增回归测试覆盖“小图片/小
+操作 + 长 final receipt”的场景。PWA shell cache 升级到
+`codex-mobile-shell-v429`。
+
 ## 2026-06-25 Movie 新线程过程项投影修复
 
 本次 server-only 修复针对新建 Movie 工作区线程里“只能看到用户消息和最后

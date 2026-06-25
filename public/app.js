@@ -463,7 +463,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v428";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v429";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -5916,7 +5916,7 @@ function mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) {
 function shouldPreserveLiveTurnLocalVisibleItems(existingTurn, incomingTurn, existingWeight = null) {
   if (!existingTurn || !incomingTurn) return false;
   if (String(existingTurn.id || "") !== String(incomingTurn.id || "")) return false;
-  if (isTurnComplete(existingTurn) || isTurnComplete(incomingTurn)) return false;
+  if (isTurnComplete(existingTurn)) return false;
   const weight = existingWeight == null ? turnVisibleWeight(existingTurn) : Number(existingWeight || 0);
   return weight > 0;
 }

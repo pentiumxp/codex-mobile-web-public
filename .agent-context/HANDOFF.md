@@ -1,3 +1,40 @@
+# 2026-06-25 - v429 live-to-completed weak projection merge fix in progress
+
+- Scope:
+  - Fixing Movie/new-thread transient refresh regression after v428/v429 server
+    operation projection deploys.
+  - Not pushed Public.
+- Trigger:
+  - User reported Movie initially showed normal intermediate images/process
+    items for several refreshes, then suddenly refreshed into the weak state
+    with mostly a user request plus final receipt. Later a new receipt/detail
+    refresh restored richer content.
+- Root cause:
+  - Service detail API was returning rich active turns, but the browser can also
+    receive a weaker completed patch containing final receipt and Usage before
+    rollout-derived images/operations are present.
+  - `shouldPreserveLiveTurnLocalVisibleItems()` explicitly returned `false`
+    when the incoming turn was completed. If the completed final receipt was
+    long enough, the weight comparison treated the weak completed patch as more
+    complete and removed existing image/operation items.
+- Change:
+  - `public/app.js` now preserves non-receipt visible items from the same
+    existing active turn during live-to-completed merges. Authoritative
+    completed receipts still replace local transient receipts through the
+    existing `shouldDropLocalOnlyReceiptForIncomingTurn()` rule.
+  - PWA shell cache bumped to `codex-mobile-shell-v429`.
+  - Regression test added for small image/operation items being preserved even
+    when the incoming completed patch has a long final receipt.
+  - README records v429 root cause and behavior.
+- Validation so far:
+  - `node --check public/app.js && node --check public/sw.js` passed.
+  - `node --test test/conversation-render.test.js test/thread-detail-state.test.js test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js`
+    passed (`126` tests).
+  - `git diff --check` passed.
+- Next:
+  - Commit and deploy through Home AI central deploy script, then verify
+    `/api/public-config` reports `codex-mobile-shell-v429`.
+
 # 2026-06-25 - Movie completed/live operation projection fix deployed
 
 - Scope:
