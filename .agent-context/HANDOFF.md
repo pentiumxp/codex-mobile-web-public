@@ -1,3 +1,75 @@
+# 2026-06-26 - v470 thread tile selected pane effects policy deployed
+
+- Scope:
+  - Continued Phase C pane-state / split-screen architecture work.
+  - This slice moves active selected-pane side-effect planning into
+    `public/thread-tile-state.js`.
+  - It does not change server projection, task-card behavior, Home AI
+    diagnostic dispatch, message merge, image projection, pane layout, or
+    visual pane design. No fallback or UI-only masking was added.
+- Root-cause boundary:
+  - Before v470, `selectPanePlan` already owned selected-pane validation and
+    previous/next patch ids, but `setThreadTileSelectedThread` still directly
+    saved draft state, wrote `state.threadTileSelectedThreadId`, restored the
+    target draft, refreshed Composer controls, patched panes, and scheduled a
+    full render on patch miss.
+  - That kept active-pane execution outside the same pane-state effect
+    boundary used by slot/count/close changes.
+- Change:
+  - Added pure `selectedPaneEffectsPlan` to `public/thread-tile-state.js`.
+  - `setThreadTileSelectedThread` now delegates to
+    `selectedPaneEffectsPlan` and `applyThreadTileSelectedPaneEffects`.
+  - The effect preserves old behavior: draft save/restore and Composer refresh
+    still happen, `render: false` skips pane patching, and patch misses still
+    schedule a full render.
+  - Bumped `CLIENT_BUILD_ID` and service worker cache to
+    `codex-mobile-shell-v470`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Commit:
+  - Runtime/docs commit: `521449d refactor thread tile selected pane effects`.
+- Validation in source workspace:
+  - Focused suite passed: `67` tests across
+    `test/thread-tile-state.test.js`,
+    `test/thread-tile-layout-ui.test.js`,
+    `test/thread-tile-layout.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-task-card-route.test.js`,
+    `test/thread-goal-service.test.js`, and
+    `test/composer-draft.test.js`.
+  - `npm test` passed: `857` tests.
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+- Production deploy:
+  - Deployed through Home AI central macOS production script.
+  - Reason: `codex-mobile-thread-tile-selected-pane-effects-v470`.
+  - Source ref at deploy: `521449d789dd`, dirty `false`.
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T192234Z-plugin-codex-mobile-web-codex-mobile-thread-tile-selected-pane-effects-v470`.
+  - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` reported
+    running and manifest/profile health checks passed.
+- Production readback:
+  - `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v470`,
+    `shellCacheName=codex-mobile-shell-v470`, and `version=0.1.11`.
+  - Source/prod SHA-256 parity matched for:
+    `public/thread-tile-state.js`, `test/thread-tile-state.test.js`,
+    `test/thread-tile-layout-ui.test.js`, `test/composer-draft.test.js`,
+    `public/app.js`, `public/sw.js`, `README.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and `docs/MODULES.md`.
+  - Production focused suite passed: same `67` tests listed above with
+    production dependencies.
+- Next architecture boundary:
+  - Continue Phase C by extracting detail read side effects, command detail
+    panels, split sizing, per-pane draft/runtime ownership, and max concurrent
+    detail reads from `public/app.js`.
+  - Phase B large-session cold/warm path remains separate and should be
+    tackled with timing evidence before changing cache behavior.
+- Public:
+  - Not pushed to Public. Follow release-order rule: wait for production/user
+    validation or explicit Public instruction before syncing/pushing.
+
 # 2026-06-26 - v469 thread tile pane count/close effects policy deployed
 
 - Scope:
