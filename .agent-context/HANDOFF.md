@@ -1,4 +1,4 @@
-# 2026-06-25 - v445 phone single-thread live visibility fix in progress
+# 2026-06-25 - v445 phone single-thread live visibility fix deployed
 
 - User correction after v444:
   - User clarified the failing surface was not thread-tile/split-pane mode.
@@ -31,7 +31,7 @@
     user scroll still clears the follow through the existing scroll-intent path.
   - `CLIENT_BUILD_ID` and service-worker cache are bumped to
     `codex-mobile-shell-v445`.
-- Local validation completed so far:
+- Local validation completed:
   - Syntax check passed for
     `adapters/thread-detail-projection-result-service.js`, `public/app.js`,
     and `public/sw.js`.
@@ -43,13 +43,18 @@
     test/home-ai-diagnostic-reporting.test.js test/mobile-viewport.test.js
     test/thread-goal-service.test.js test/thread-task-card-route.test.js`
     (`159` tests).
-- Pending:
-  - Run full `npm test`, `npm run check`, `npm run check:macos`, and
-    `git diff --check`.
-  - Commit and deploy through the Home AI central macOS plugin deployment path.
-  - Production readback should report
+- Commit/deploy:
+  - Runtime commit: `e83bd81` (`fix phone live turn projection and scroll
+    follow`).
+  - `npm test` passed (`802` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - Deployed via Home AI central macOS plugin deployment with reason
+    `codex-mobile-phone-live-turn-follow-v445`; source ref was clean.
+  - Production readback reported
     `clientBuildId=0.1.11|codex-mobile-shell-v445` and
     `shellCacheName=codex-mobile-shell-v445`.
+  - Production focused suite passed (`159` tests), and source/production
+    SHA-256 prefixes matched for changed runtime/test/doc files.
 
 # 2026-06-25 - v444 thread tile current-pane refresh fix
 
