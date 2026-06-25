@@ -417,6 +417,56 @@
     };
   }
 
+  function activePaneSyncPlan(input = {}, options = {}) {
+    const activeIds = normalizePinnedIds(input.activeIds || [], options);
+    const selectedThreadId = text(input.selectedThreadId).trim();
+    const currentPinnedIds = normalizePinnedIds(input.pinnedIds || input.threadTilePinnedIds || [], options);
+    const splitPairs = Array.isArray(input.splitPairs || input.threadTileSplitPairs)
+      ? (input.splitPairs || input.threadTileSplitPairs)
+      : [];
+    if (input.enabled !== true || !activeIds.length) {
+      return {
+        action: "sync-active-panes",
+        reason: input.enabled === true ? "no-active-panes" : "disabled",
+        changed: Boolean(selectedThreadId),
+        settingsChanged: false,
+        pinnedChanged: false,
+        selectedChanged: Boolean(selectedThreadId),
+        activeIds,
+        paneThreadIds: currentPinnedIds,
+        paneSplitPairs: splitPairs,
+        selectedThreadId: "",
+      };
+    }
+    const pinned = syncPinnedIdsFromActiveIds({
+      enabled: true,
+      activeIds,
+      pinnedIds: currentPinnedIds,
+      visibleIds: input.visibleIds,
+      splitPairs,
+    }, options);
+    const nextSelectedThreadId = effectiveSelectedThreadId({
+      enabled: true,
+      activeIds,
+      selectedThreadId,
+      currentThreadId: input.currentThreadId,
+      maxPanes: options.maxPanes,
+    });
+    const selectedChanged = selectedThreadId !== nextSelectedThreadId;
+    return {
+      action: "sync-active-panes",
+      reason: pinned.changed || selectedChanged ? "sync" : "unchanged",
+      changed: pinned.changed || selectedChanged,
+      settingsChanged: pinned.changed,
+      pinnedChanged: pinned.changed,
+      selectedChanged,
+      activeIds,
+      paneThreadIds: pinned.paneThreadIds,
+      paneSplitPairs: pinned.paneSplitPairs,
+      selectedThreadId: nextSelectedThreadId,
+    };
+  }
+
   function normalizeOperationMode(mode) {
     return text(mode) === "expanded" ? "expanded" : "compact";
   }
@@ -534,6 +584,7 @@
   return {
     DEFAULT_OPERATION_BUBBLE_MIN_VISIBLE_MS,
     DEFAULT_USER_MAX_PANES,
+    activePaneSyncPlan,
     closePanePlan,
     displaySettingsPayload,
     dropPaneIntent,

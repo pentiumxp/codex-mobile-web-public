@@ -130,10 +130,16 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(functionBody(appJs, "threadTileRenderSignature"), /splitPairs: threadTilePrunedSplitPairs\(ids\)/);
   assert.match(functionBody(appJs, "threadTileRenderSignature"), /switchMenuPaneId: state\.threadTileSwitchMenuPaneId \|\| ""/);
 
+  const syncActiveBody = functionBody(appJs, "syncThreadTileActivePaneState");
+  assert.match(syncActiveBody, /threadTileStatePolicy\.activePaneSyncPlan/);
+  assert.match(syncActiveBody, /state\.threadTileActiveIds = plan\.activeIds/);
+  assert.match(syncActiveBody, /state\.threadTilePinnedIds = normalizeThreadTilePinnedIds\(plan\.paneThreadIds\)/);
+  assert.match(syncActiveBody, /state\.threadTileSelectedThreadId = plan\.selectedThreadId/);
+  assert.match(syncActiveBody, /if \(plan\.settingsChanged\) scheduleThreadDisplaySettingsSave\(\)/);
   const ensureBody = functionBody(appJs, "ensureThreadTileDetails");
-  assert.match(ensureBody, /state\.threadTileActiveIds = Array\.from\(activeIds\)/);
-  assert.match(ensureBody, /syncThreadTilePinnedIdsFromActiveIds\(state\.threadTileActiveIds\)/);
-  assert.match(ensureBody, /syncThreadTileSelectedThread\(state\.threadTileActiveIds\)/);
+  assert.match(ensureBody, /syncThreadTileActivePaneState\(ids\)/);
+  assert.doesNotMatch(ensureBody, /syncThreadTilePinnedIdsFromActiveIds/);
+  assert.doesNotMatch(ensureBody, /syncThreadTileSelectedThread/);
   assert.match(ensureBody, /scheduleThreadTileRefresh\(\)/);
 
   const candidateBody = functionBody(appJs, "threadTileCandidateIds");

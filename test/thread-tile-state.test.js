@@ -123,6 +123,75 @@ test("thread tile state syncs active ids into pinned slots only when needed", ()
   assert.deepEqual(changed.paneSplitPairs, [{ anchorId: "a", childId: "c" }, { anchorId: "b", childId: "d" }]);
 });
 
+test("thread tile state plans active pane sync as one policy boundary", () => {
+  assert.deepEqual(state.activePaneSyncPlan({
+    enabled: true,
+    activeIds: ["a", "b"],
+    pinnedIds: ["a", "b", "c"],
+    visibleIds: ["a", "b", "c"],
+    splitPairs: [{ anchorId: "b", childId: "c" }],
+    selectedThreadId: "b",
+    currentThreadId: "a",
+  }, {
+    maxPanes: 12,
+    normalizeSplitPairs: layout.normalizeSplitPairs,
+  }), {
+    action: "sync-active-panes",
+    reason: "unchanged",
+    changed: false,
+    settingsChanged: false,
+    pinnedChanged: false,
+    selectedChanged: false,
+    activeIds: ["a", "b"],
+    paneThreadIds: ["a", "b", "c"],
+    paneSplitPairs: [{ anchorId: "b", childId: "c" }],
+    selectedThreadId: "b",
+  });
+
+  assert.deepEqual(state.activePaneSyncPlan({
+    enabled: true,
+    activeIds: ["b", "d"],
+    pinnedIds: ["a", "b", "c"],
+    visibleIds: ["a", "b", "c", "d"],
+    splitPairs: [{ anchorId: "a", childId: "c" }, { anchorId: "b", childId: "d" }],
+    selectedThreadId: "missing",
+    currentThreadId: "d",
+  }, {
+    maxPanes: 12,
+    normalizeSplitPairs: layout.normalizeSplitPairs,
+  }), {
+    action: "sync-active-panes",
+    reason: "sync",
+    changed: true,
+    settingsChanged: true,
+    pinnedChanged: true,
+    selectedChanged: true,
+    activeIds: ["b", "d"],
+    paneThreadIds: ["b", "d", "a", "c"],
+    paneSplitPairs: [{ anchorId: "a", childId: "c" }, { anchorId: "b", childId: "d" }],
+    selectedThreadId: "d",
+  });
+
+  assert.deepEqual(state.activePaneSyncPlan({
+    enabled: true,
+    activeIds: [],
+    pinnedIds: ["a"],
+    splitPairs: [{ anchorId: "a", childId: "b" }],
+    selectedThreadId: "a",
+  }, { maxPanes: 12 }), {
+    action: "sync-active-panes",
+    reason: "no-active-panes",
+    changed: true,
+    settingsChanged: false,
+    pinnedChanged: false,
+    selectedChanged: true,
+    activeIds: [],
+    paneThreadIds: ["a"],
+    paneSplitPairs: [{ anchorId: "a", childId: "b" }],
+    selectedThreadId: "",
+  });
+});
+
 test("thread tile state updates split pairs without keeping stale ids", () => {
   const removed = state.removeSplitPairsForIds([
     { anchorId: "a", childId: "b" },

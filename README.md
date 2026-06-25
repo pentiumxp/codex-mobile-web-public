@@ -16,6 +16,29 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v464 Thread Tile Active Pane Sync Policy
+
+v464 继续 Phase C，把平铺窗口的 active pane 同步决策合并到
+`public/thread-tile-state.js`。这次处理的是 `ensureThreadTileDetails` 进入
+平铺渲染前，如何同步 active pane ids、pinned slots、split pairs 和 selected pane。
+
+本次新增的纯策略是 `activePaneSyncPlan`：
+
+- 统一 active pane ids 的去重和截断。
+- 复用 pinned slot 同步规则，并输出是否需要持久化 `thread-display` settings。
+- 统一 selected pane fallback：当前选中 pane 不可见时优先回到当前线程，否则回到
+  第一个 active pane；没有 active pane 时清空 selected pane。
+- 把 pinned slot、split-pair prune、selected pane 三个联动决策合成一个可测试计划。
+
+`public/app.js` 仍负责副作用：写入 state、保存 display settings、终止不可见 pane 的
+detail controller、触发 pane detail load 和 tile refresh。这个切片不改变 pane layout、
+server projection、任务卡、诊断上报或视觉设计。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v464`。
+`test/thread-tile-state.test.js` 覆盖 active pane sync planning；
+`test/thread-tile-layout-ui.test.js` 约束 `ensureThreadTileDetails` 必须通过
+`syncThreadTileActivePaneState` 调用 policy，而不是重新拆成分散的 app 层判断。
+
 ## 2026-06-26 v463 Thread Tile Pane Count And Close Policy
 
 v463 继续 Phase C，把平铺窗口的 pane count、close pane 和 selected pane fallback

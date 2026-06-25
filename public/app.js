@@ -503,7 +503,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v463";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v464";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -12092,22 +12092,27 @@ function scheduleThreadDisplaySettingsSave() {
   }, THREAD_TILE_SETTINGS_SAVE_DEBOUNCE_MS);
 }
 
-function syncThreadTilePinnedIdsFromActiveIds(activeIds = []) {
-  const result = threadTileStatePolicy.syncPinnedIdsFromActiveIds({
+function syncThreadTileActivePaneState(activeIds = []) {
+  const plan = threadTileStatePolicy.activePaneSyncPlan({
     enabled: state.threadTileMode,
     activeIds,
     pinnedIds: state.threadTilePinnedIds,
     visibleIds: Array.from(threadTileVisibleIdSet()),
     splitPairs: state.threadTileSplitPairs,
+    selectedThreadId: state.threadTileSelectedThreadId,
+    currentThreadId: state.currentThreadId,
   }, {
     maxPanes: THREAD_TILE_USER_MAX_PANES,
     normalizeSplitPairs: threadTileLayoutPolicy.normalizeSplitPairs,
   });
-  if (!result.changed) return false;
-  state.threadTilePinnedIds = result.paneThreadIds;
-  state.threadTileSplitPairs = result.paneSplitPairs;
-  scheduleThreadDisplaySettingsSave();
-  return true;
+  state.threadTileActiveIds = plan.activeIds;
+  if (plan.pinnedChanged) {
+    state.threadTilePinnedIds = normalizeThreadTilePinnedIds(plan.paneThreadIds);
+    state.threadTileSplitPairs = normalizeThreadTileSplitPairs(plan.paneSplitPairs, state.threadTilePinnedIds);
+  }
+  if (plan.selectedChanged) state.threadTileSelectedThreadId = plan.selectedThreadId;
+  if (plan.settingsChanged) scheduleThreadDisplaySettingsSave();
+  return Boolean(plan.changed);
 }
 
 function threadTileSummary(threadId) {
@@ -12118,13 +12123,6 @@ function threadTileDisplayThread(threadId) {
   const id = String(threadId || "");
   if (state.currentThread && String(state.currentThread.id || "") === id) return state.currentThread;
   return state.threadTileDetails.get(id) || threadTileSummary(id) || { id, name: id, preview: id, turns: [] };
-}
-
-function syncThreadTileSelectedThread(ids = state.threadTileActiveIds) {
-  const next = effectiveThreadTileSelectedThreadId(ids);
-  if (state.threadTileSelectedThreadId === next) return false;
-  state.threadTileSelectedThreadId = next;
-  return true;
 }
 
 function setThreadTileSelectedThread(threadId, options = {}) {
@@ -12633,10 +12631,8 @@ async function loadThreadTileDetail(threadId, options = {}) {
 
 function ensureThreadTileDetails(ids = []) {
   if (!state.threadTileMode) return;
-  const activeIds = new Set(ids.map((id) => String(id || "")).filter(Boolean));
-  state.threadTileActiveIds = Array.from(activeIds);
-  syncThreadTilePinnedIdsFromActiveIds(state.threadTileActiveIds);
-  syncThreadTileSelectedThread(state.threadTileActiveIds);
+  syncThreadTileActivePaneState(ids);
+  const activeIds = new Set(state.threadTileActiveIds);
   for (const [id, controller] of Array.from(state.threadTileControllers.entries())) {
     if (activeIds.has(id)) continue;
     controller.abort();
