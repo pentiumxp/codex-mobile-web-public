@@ -37,6 +37,31 @@ return policy，不再出现 `Return required`；如果再次对终止卡调用 
 `returnToSource:true` 是终止卡、auto-return receipt 不触发二次 auto-return、以及
 Music-style repair -> receipt -> ack 链在第一张 terminal return 后停止。
 
+## 2026-06-25 v445 手机单窗口长 Turn 可见性修正
+
+v445 修复非平铺手机单窗口里“右上角运行状态持续更新，但正文停在旧长回执，
+新内容完全看不到”的事故。v444 只修复了平铺 pane 边界；用户确认复现发生在
+手机单窗口后，重新查生产日志发现手机端 detail refresh 一直成功，`htmlChars`
+持续增长，但长 turn 进入 full render 路径后 `stickToBottom` 从 `true` 变成
+`false`。这说明新内容已经进入 DOM 生成路径，但提交后的底部跟随在长时间
+full render 中断掉，用户视口停留在旧回执位置。
+
+这版同时修两条根因边界：
+
+- 服务端 projection result 增加本地 active turn 一致性检查：如果 summary 中有
+  Mobile Web 刚启动的 `activeTurnId` / `mobileLocalActiveStatus.turnId`，但缓存
+  projection 里没有该 turn，则拒绝这份旧 projection，转入 `turns-list-initial`
+  或后续真实读取，避免旧动态缓存覆盖刚发出的新 turn。
+- 前端 `renderCurrentThread` 在 full render 路径也会续命提交后的 bottom follow：
+  只要当前线程的最新 live turn 已经有非用户可见进展，就像 live delta patch 一样
+  延长跟随窗口。用户如果手动上滑阅读，原有 `touchstart` / `wheel` 逻辑仍会清掉
+  follow，不会被强行拉回底部。
+
+新增 `test/thread-detail-projection-result-service.test.js` 覆盖缺少本地 active turn
+的旧 projection 必须返回 `null`；强化 `test/turn-scroll-controls.test.js` 覆盖
+full render 也会续命提交后的底部跟随。PWA shell cache 升级到
+`codex-mobile-shell-v445`。
+
 ## 2026-06-25 v444 平铺视图当前线程可见性修正
 
 v444 修复 v443 后仍复现的平铺模式刷新问题。生产诊断显示页面已经加载

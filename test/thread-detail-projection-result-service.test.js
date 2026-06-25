@@ -142,3 +142,56 @@ test("projection result read mode follows cache source and v4 version", () => {
   assert.equal(cache.thread.mobileReadMode, "projection-v4-cache");
   assert.equal(cache.thread.mobileProjection.ageMs, 50);
 });
+
+test("projection result rejects cached detail missing the local active turn", () => {
+  const service = createThreadDetailProjectionResultService({
+    maxTurns: 5,
+    now: () => 1000,
+  });
+
+  const stale = service.prepareProjectedThreadReadResult({
+    dynamic: true,
+    version: "v4",
+    cachedAtMs: 900,
+    result: {
+      thread: {
+        id: "thread-1",
+        turns: [{
+          id: "turn-old",
+          status: { type: "active" },
+          items: [{ id: "agent-old", type: "agentMessage", text: "old output" }],
+        }],
+      },
+    },
+  }, {
+    id: "thread-1",
+    status: { type: "active" },
+    activeTurnId: "turn-new",
+    mobileLocalActiveStatus: { turnId: "turn-new" },
+  }, {});
+
+  assert.equal(stale, null);
+
+  const current = service.prepareProjectedThreadReadResult({
+    dynamic: true,
+    version: "v4",
+    cachedAtMs: 900,
+    result: {
+      thread: {
+        id: "thread-1",
+        turns: [{
+          id: "turn-new",
+          status: { type: "active" },
+          items: [{ id: "agent-new", type: "agentMessage", text: "new output" }],
+        }],
+      },
+    },
+  }, {
+    id: "thread-1",
+    status: { type: "active" },
+    mobileLocalActiveStatus: { turnId: "turn-new" },
+  }, {});
+
+  assert.ok(current);
+  assert.equal(current.thread.turns[0].id, "turn-new");
+});

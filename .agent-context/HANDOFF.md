@@ -1,3 +1,56 @@
+# 2026-06-25 - v445 phone single-thread live visibility fix in progress
+
+- User correction after v444:
+  - User clarified the failing surface was not thread-tile/split-pane mode.
+    It occurred on a phone single-thread view: the running/status box kept
+    showing activity, but the conversation body did not show new content.
+- Bounded evidence:
+  - Production client events for thread
+    `019eee6c-a6f5-7b20-bfb4-f96ccb6431b3` showed repeated successful
+    `thread_refresh_ms` and `conversation_render_ms` on iPhone.
+  - `htmlChars` continued to grow, proving render input was not empty, but
+    `stickToBottom` moved from `true` to `false` during a long active turn.
+  - Detail reads around the fresh message also showed `projection-v4-dynamic`
+    hits for the large thread immediately after Mobile Web started a new turn,
+    so stale dynamic projection could still race local-start state.
+- Root cause:
+  - Server projection result did not reject a cached projection that was missing
+    the Mobile Web local active turn from `activeTurnId` /
+    `mobileLocalActiveStatus.turnId`.
+  - Browser full-render refreshes did not sustain the submitted-message
+    bottom-follow lease. Only live delta patch extended that lease, so a long
+    turn that refreshed through full render could stop following after the
+    initial window even though the user had not manually scrolled away.
+- Local runtime change:
+  - `adapters/thread-detail-projection-result-service.js` rejects cached
+    projected detail when it does not contain the local active turn from the
+    summary. The route then falls through to `turns-list-initial` or another
+    real read instead of returning stale projected content.
+  - `public/app.js` adds full-render bottom-follow sustain for submitted
+    messages when the latest live turn has non-user visible progress. Manual
+    user scroll still clears the follow through the existing scroll-intent path.
+  - `CLIENT_BUILD_ID` and service-worker cache are bumped to
+    `codex-mobile-shell-v445`.
+- Local validation completed so far:
+  - Syntax check passed for
+    `adapters/thread-detail-projection-result-service.js`, `public/app.js`,
+    and `public/sw.js`.
+  - Focused suite passed:
+    `node --test test/thread-detail-projection-result-service.test.js
+    test/turn-scroll-controls.test.js test/conversation-render.test.js
+    test/thread-detail-projection-service.test.js
+    test/thread-detail-read-orchestration-service.test.js
+    test/home-ai-diagnostic-reporting.test.js test/mobile-viewport.test.js
+    test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    (`159` tests).
+- Pending:
+  - Run full `npm test`, `npm run check`, `npm run check:macos`, and
+    `git diff --check`.
+  - Commit and deploy through the Home AI central macOS plugin deployment path.
+  - Production readback should report
+    `clientBuildId=0.1.11|codex-mobile-shell-v445` and
+    `shellCacheName=codex-mobile-shell-v445`.
+
 # 2026-06-25 - v444 thread tile current-pane refresh fix
 
 - User-visible incident after v443:

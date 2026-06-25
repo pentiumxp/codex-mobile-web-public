@@ -37,8 +37,30 @@ function createThreadDetailProjectionResultService(options = {}) {
       : (v4 ? "projection-v4-cache" : "projection-cache");
   }
 
+  function summaryLocalActiveTurnId(summary) {
+    return String(summary && (
+      summary.activeTurnId
+      || summary.active_turn_id
+      || summary.mobileLocalActiveStatus && summary.mobileLocalActiveStatus.turnId
+      || summary.mobileLocalActiveStatus && summary.mobileLocalActiveStatus.turn_id
+    ) || "").trim();
+  }
+
+  function projectedThreadHasTurn(thread, turnId) {
+    const id = String(turnId || "").trim();
+    if (!id || !thread || !Array.isArray(thread.turns)) return !id;
+    return thread.turns.some((turn) => String(turn && (turn.id || turn.turnId || turn.turn_id) || "").trim() === id);
+  }
+
+  function projectedThreadSatisfiesLocalActiveSummary(cached, summary) {
+    const localActiveTurnId = summaryLocalActiveTurnId(summary);
+    if (!localActiveTurnId) return true;
+    return projectedThreadHasTurn(cached && cached.result && cached.result.thread, localActiveTurnId);
+  }
+
   function prepareProjectedThreadReadResult(cached, summary, runtimeSettings) {
     if (!cached || !cached.result || !cached.result.thread) return null;
+    if (!projectedThreadSatisfiesLocalActiveSummary(cached, summary)) return null;
     const mergedResult = Object.assign({}, cached.result, {
       thread: mergeThreadDisplaySummary(cached.result.thread, summary) || cached.result.thread,
     });
