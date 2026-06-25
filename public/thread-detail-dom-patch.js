@@ -51,6 +51,44 @@
     return input.firstTurnElement || null;
   }
 
+  function documentFrom(input = {}) {
+    if (input.document && typeof input.document.createElement === "function") return input.document;
+    if (typeof document !== "undefined" && document && typeof document.createElement === "function") return document;
+    return null;
+  }
+
+  function createElementFromHtml(input = {}) {
+    const html = String(input.html || "");
+    if (!html.trim()) return null;
+    const doc = documentFrom(input);
+    if (!doc) return null;
+    let template = null;
+    try {
+      template = doc.createElement("template");
+      if (!template) return null;
+      template.innerHTML = html;
+      return template.content && template.content.firstElementChild || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function createTurnArticleElement(input = {}) {
+    const turn = input.turn || null;
+    const renderTurnHtml = typeof input.renderTurnHtml === "function" ? input.renderTurnHtml : null;
+    if (!turn || !renderTurnHtml) return null;
+    let html = "";
+    try {
+      html = renderTurnHtml(turn, input.previousKeys);
+    } catch (_) {
+      return null;
+    }
+    return createElementFromHtml({
+      document: input.document,
+      html,
+    });
+  }
+
   function defaultEscapeSelectorAttr(value) {
     return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
   }
@@ -210,6 +248,8 @@
   return {
     applyThreadTurnRefreshDomPatch,
     applyVisibleItemRefreshDomPatch,
+    createElementFromHtml,
+    createTurnArticleElement,
     findElementByRenderKey,
     findTurnArticleElement,
     insertTurnArticleElement,

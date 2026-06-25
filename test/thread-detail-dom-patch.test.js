@@ -35,6 +35,29 @@ function createArticle(nodes) {
   return article;
 }
 
+function createTemplateDocument(options = {}) {
+  return {
+    createElement(tagName) {
+      if (options.throwOnCreate) throw new Error("create failed");
+      if (tagName !== "template") return null;
+      return {
+        content: { firstElementChild: null },
+        set innerHTML(value) {
+          const html = String(value || "");
+          if (!html.trim()) {
+            this.content.firstElementChild = null;
+            return;
+          }
+          const key = (html.match(/data-render-key="([^"]+)"/) || [])[1] || "created";
+          const node = createNode(key);
+          node.html = html;
+          this.content.firstElementChild = node;
+        },
+      };
+    },
+  };
+}
+
 function applyFixture(article, patchPlan, options = {}) {
   return domPatch.applyVisibleItemRefreshDomPatch({
     article,
@@ -48,6 +71,63 @@ function applyFixture(article, patchPlan, options = {}) {
     },
   });
 }
+
+test("create element from html parses the first element through an injected document", () => {
+  const node = domPatch.createElementFromHtml({
+    document: createTemplateDocument(),
+    html: '<article data-render-key="turn-a"></article>',
+  });
+
+  assert.equal(node.key, "turn-a");
+  assert.equal(node.html, '<article data-render-key="turn-a"></article>');
+});
+
+test("create element from html returns null for blank html or document failures", () => {
+  assert.equal(domPatch.createElementFromHtml({ document: createTemplateDocument(), html: "" }), null);
+  assert.equal(domPatch.createElementFromHtml({ html: '<article data-render-key="turn-a"></article>' }), null);
+  assert.equal(domPatch.createElementFromHtml({
+    document: createTemplateDocument({ throwOnCreate: true }),
+    html: '<article data-render-key="turn-a"></article>',
+  }), null);
+});
+
+test("create turn article element renders through an injected turn renderer", () => {
+  const turn = { id: "turn-a" };
+  const previousKeys = new Set(["old"]);
+  const calls = [];
+
+  const node = domPatch.createTurnArticleElement({
+    document: createTemplateDocument(),
+    turn,
+    previousKeys,
+    renderTurnHtml(candidate, keys) {
+      calls.push({ candidate, keys });
+      return '<article data-render-key="turn-a"></article>';
+    },
+  });
+
+  assert.equal(node.key, "turn-a");
+  assert.deepEqual(calls, [{ candidate: turn, keys: previousKeys }]);
+});
+
+test("create turn article element returns null for missing inputs or render failures", () => {
+  const turn = { id: "turn-a" };
+  assert.equal(domPatch.createTurnArticleElement({
+    document: createTemplateDocument(),
+    renderTurnHtml: () => '<article data-render-key="turn-a"></article>',
+  }), null);
+  assert.equal(domPatch.createTurnArticleElement({
+    document: createTemplateDocument(),
+    turn,
+  }), null);
+  assert.equal(domPatch.createTurnArticleElement({
+    document: createTemplateDocument(),
+    turn,
+    renderTurnHtml() {
+      throw new Error("render failed");
+    },
+  }), null);
+});
 
 test("turn article lookup finds an article by stable render key", () => {
   const expected = createNode("turn-a");

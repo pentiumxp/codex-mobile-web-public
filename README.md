@@ -16,6 +16,27 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v455 Turn Article Creation
+
+v455 接续 v454，继续 Phase A。v454 已经把 `turnArticleNode` 的
+`[data-render-key=...]` lookup selector 推进到 `public/thread-detail-dom-patch.js`，
+但 `insertTurnArticleDom` 和 refresh patch 的 `renderTurnElement` 回调仍在
+`public/app.js` 中直接执行 `renderTurn(...) -> firstElementFromHtml(...)`。
+
+本次把 rendered turn HTML 转成 DOM article 的 creation 步骤也推进到
+`public/thread-detail-dom-patch.js`：
+
+- 新增 `createElementFromHtml` 和 `createTurnArticleElement`。
+- `public/app.js` 继续拥有 `renderTurn` 和具体 document 注入，但不再自己创建
+  turn article element。
+- `firstElementFromHtml` 保留为兼容包装，但内部委托 helper。
+- 行为保持不变：空 HTML、缺 document、template 创建异常、render 异常仍返回
+  `null`，不新增隐藏 fallback、不强制刷新、不合成缺失消息。
+- `CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v455`。
+
+`test/thread-detail-dom-patch.test.js` 覆盖 HTML creation、turn renderer 注入和
+render/document failure；`test/mobile-viewport.test.js` 约束 app 层必须委托 helper。
+
 ## 2026-06-26 v454 Turn Article Lookup
 
 v454 接续 v453，继续 Phase A。v453 已经把新 turn article 的插入锚点规则

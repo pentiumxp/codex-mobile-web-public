@@ -491,7 +491,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v454";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v455";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -13418,9 +13418,7 @@ function renderVisibleItemPatchHtml(turn, item, previousKeys = new Set(), index 
 }
 
 function firstElementFromHtml(html) {
-  const template = document.createElement("template");
-  template.innerHTML = html;
-  return template.content.firstElementChild || null;
+  return threadDetailDomPatchApi.createElementFromHtml({ document, html });
 }
 
 function completeLocalConversationDomUpdate(root, wasNearBottom, userReadingCurrentTurn) {
@@ -13469,8 +13467,12 @@ function turnArticleNode(turn) {
 }
 
 function insertTurnArticleDom(turn, previousKeys = existingConversationRenderKeys()) {
-  const html = renderTurn(turn, previousKeys);
-  const source = firstElementFromHtml(html);
+  const source = threadDetailDomPatchApi.createTurnArticleElement({
+    document,
+    turn,
+    previousKeys,
+    renderTurnHtml: (candidate, keys) => renderTurn(candidate, keys),
+  });
   if (!source) return null;
   return insertTurnArticleElementDom(turn, source);
 }
@@ -13691,7 +13693,12 @@ function patchCurrentThreadDetailFromRefresh(previousThread, nextThread, previou
         ? { ok: true }
         : { ok: false, reason: "item-patch-failed" };
     },
-    renderTurnElement: (turn) => firstElementFromHtml(renderTurn(turn, previousKeys)),
+    renderTurnElement: (turn) => threadDetailDomPatchApi.createTurnArticleElement({
+      document,
+      turn,
+      previousKeys,
+      renderTurnHtml: (candidate, keys) => renderTurn(candidate, keys),
+    }),
     insertTurnElement: (source, turn) => insertTurnArticleElementDom(turn, source)
       ? { ok: true }
       : { ok: false, reason: "insert-turn-failed" },
