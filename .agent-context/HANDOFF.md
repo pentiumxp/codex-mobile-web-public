@@ -1,3 +1,83 @@
+# 2026-06-26 - v471 thread tile detail load effects policy deployed
+
+- Scope:
+  - Continued Phase C pane-state / split-screen architecture work.
+  - This slice moves pane detail-load lifecycle side-effect planning into
+    `public/thread-tile-state.js`.
+  - It does not change server projection, task-card behavior, Home AI
+    diagnostic dispatch, message merge, image projection, pane layout, visual
+    pane design, or the thread detail API. No fallback or UI-only masking was
+    added.
+- Root-cause boundary:
+  - Before v471, `detailLoadPlan` already owned skip/load/background/loading
+    decisions, but `loadThreadTileDetail` still directly wrote controller,
+    loading, detail cache, loadedAt, error, merge, and final pane render state
+    through four inline branches.
+  - That kept detail-load lifecycle execution outside the pane-state planning
+    boundary and made future concurrent pane reads or per-pane runtime rules
+    harder to reason about.
+- Change:
+  - Added pure lifecycle plans:
+    `detailLoadStartEffectsPlan`, `detailLoadSuccessEffectsPlan`,
+    `detailLoadErrorEffectsPlan`, and `detailLoadFinallyEffectsPlan`.
+  - `loadThreadTileDetail` now keeps only AbortController/network ownership and
+    delegates start/success/error/finally state/render intent to the lifecycle
+    plans plus small app-side executors.
+  - Preserved existing behavior:
+    - foreground loads still mark loading and patch the pane immediately;
+    - background refresh failures remain silent;
+    - successful reads update `threadTileDetails`, `threadTileLoadedAtById`,
+      clear pane errors, and merge the thread into the list;
+    - finally clears matching controllers, clears loading ids, and patches
+      visible panes with preserve-scroll.
+  - Bumped `CLIENT_BUILD_ID` and service worker cache to
+    `codex-mobile-shell-v471`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Commit:
+  - Runtime/docs commit: `0a5994d refactor thread tile detail load effects`.
+- Validation in source workspace:
+  - Focused suite passed: `67` tests across
+    `test/thread-tile-state.test.js`,
+    `test/thread-tile-layout-ui.test.js`,
+    `test/thread-tile-layout.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-task-card-route.test.js`,
+    `test/thread-goal-service.test.js`, and
+    `test/composer-draft.test.js`.
+  - `npm test` passed: `857` tests.
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+- Production deploy:
+  - Deployed through Home AI central macOS production script.
+  - Reason: `codex-mobile-thread-tile-detail-load-effects-v471`.
+  - Source ref at deploy: `0a5994d9a49b`, dirty `false`.
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T192821Z-plugin-codex-mobile-web-codex-mobile-thread-tile-detail-load-effects-v471`.
+  - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` reported
+    running and manifest/profile health checks passed.
+- Production readback:
+  - `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v471`,
+    `shellCacheName=codex-mobile-shell-v471`, and `version=0.1.11`.
+  - Source/prod SHA-256 parity matched for:
+    `public/thread-tile-state.js`, `test/thread-tile-state.test.js`,
+    `test/thread-tile-layout-ui.test.js`, `public/app.js`, `public/sw.js`,
+    `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+  - Production focused suite passed: same `67` tests listed above with
+    production dependencies.
+- Next architecture boundary:
+  - Continue Phase C by extracting command detail panels, split sizing,
+    per-pane draft/runtime ownership, max concurrent detail reads, and
+    pane-local send/approval/interrupt ownership from `public/app.js`.
+  - Phase B large-session cold/warm path remains separate and should be
+    tackled with timing evidence before changing cache behavior.
+- Public:
+  - Not pushed to Public. Follow release-order rule: wait for production/user
+    validation or explicit Public instruction before syncing/pushing.
+
 # 2026-06-26 - v470 thread tile selected pane effects policy deployed
 
 - Scope:
