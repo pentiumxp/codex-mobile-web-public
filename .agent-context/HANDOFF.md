@@ -1,3 +1,80 @@
+# 2026-06-26 - v453 turn article insertion anchoring deployed
+
+- Optimization phase:
+  - Phase A sixth slice. v451 moved visible-item DOM patch execution out of
+    `public/app.js`; v452 moved turn-level refresh patch operation execution
+    out of `patchCurrentThreadDetailFromRefresh`; v453 moves newly rendered
+    turn article insertion anchoring into `public/thread-detail-dom-patch.js`.
+- Root-cause boundary:
+  - Before v453, `insertTurnArticleElementDom` in `public/app.js` still owned
+    the insertion-anchor rule for a new rendered turn article: scan backward
+    through visible turns, insert after the nearest rendered previous turn,
+    otherwise insert before the first `.turn`, otherwise append.
+  - That kept ordering/anchoring policy inside the app coordinator even after
+    turn-level DOM patch execution had been extracted.
+- Runtime change:
+  - `public/thread-detail-dom-patch.js` now exposes
+    `resolveTurnInsertAnchor` and `insertTurnArticleElement`.
+  - The helper owns the after-previous / before-first / append decision and
+    returns bounded results/reasons for invalid turn, invalid source, missing
+    conversation insertion API, and insert exceptions.
+  - `public/app.js` now injects the concrete DOM lookups only:
+    `visibleTurnsForConversation`, `turnArticleNode`, and first `.turn`
+    lookup. It no longer contains the backward insertion-anchor loop.
+  - No duplicate filtering, skipped refresh, forced reload, or hidden fallback
+    was added.
+  - `CLIENT_BUILD_ID` and service-worker cache are bumped to
+    `codex-mobile-shell-v453`.
+- Docs/tests:
+  - `README.md` records the v453 architecture slice.
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` records that turn article
+    insertion anchoring is now outside `public/app.js`.
+  - `docs/MODULES.md` maps `public/thread-detail-dom-patch.js` to visible-item
+    patch execution, turn-level patch execution, and turn article insertion
+    anchoring.
+  - `test/thread-detail-dom-patch.test.js` covers after-previous insertion,
+    before-first/append fallback, and bounded failure reasons.
+  - Build/static tests assert `insertTurnArticleElementDom` delegates to the
+    helper and no longer owns the old backward scan.
+- Validation:
+  - Syntax checks passed for `public/thread-detail-dom-patch.js`,
+    `public/app.js`, and `public/sw.js`.
+  - Focused source suite passed:
+    `node --test test/thread-detail-dom-patch.test.js
+    test/thread-detail-patch-plan.test.js test/conversation-render.test.js
+    test/mobile-viewport.test.js test/app-update.test.js
+    test/plugin-voice-input.test.js test/thread-tile-layout-ui.test.js
+    test/thread-task-card-route.test.js test/thread-goal-service.test.js`
+    (`154` tests).
+  - Full `npm test` passed (`816` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Commit/deploy:
+  - Runtime commit: `f1dcf8c` (`refactor turn article anchoring`).
+  - Deployed with Home AI central macOS script:
+    `deploy-macos-production.js --plugin codex-mobile --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --reason codex-mobile-turn-article-anchoring-v453 --execute --json`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T170451Z-plugin-codex-mobile-web-codex-mobile-turn-article-anchoring-v453`.
+  - Production `/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v453`,
+    `shellCacheName=codex-mobile-shell-v453`, and `version=0.1.11`.
+  - Source/prod SHA-256 parity confirmed for changed runtime/test/doc files.
+  - Production focused suite passed with `NODE_PATH` pointed at production
+    dependencies (`154` tests).
+- Production observation:
+  - Bounded log-tail aggregation after deploy found no v453/v452/v451/v450/v449
+    `thread_refresh_ms` client events yet; the recent sample contained `102`
+    v447 events and `1250` events with missing client build id.
+  - This is not evidence of v453 failure. It means refreshed v453 clients have
+    not yet produced that metric in the sampled tail.
+- Follow-up:
+  - Continue Phase A with turn node lookup, turn node creation, hydration, and
+    action binding. The broader system optimization goal remains active and is
+    not complete.
+  - After Phase A reaches a stable boundary, move to Phase B cold/warm
+    large-session evidence and cache rebuild boundaries.
+  - This was deployed locally/production only. Do not push Public unless the
+    user explicitly requests it after production validation.
+
 # 2026-06-25 - v452 turn-level DOM patch executor deployed
 
 - Optimization phase:
