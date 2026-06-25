@@ -1,11 +1,13 @@
-# 2026-06-25 - v434 tile composer target placeholder pending deploy
+# 2026-06-25 - v434 tile composer target placeholder deployed
 
 - Scope:
   - Corrects v433 Composer target display after user feedback.
   - v433's separate target row was too tall for tile mode and consumed vertical
     space.
-  - Validated locally. Not deployed and not pushed Public at the time this note
-    was written.
+  - Implemented, committed, and deployed to Mac production.
+  - Not pushed Public.
+  - Code commit:
+    - `391551d fix: use composer placeholder for tile target`
 - Change:
   - Removed `#composerTargetHint` / `#composerTargetName` from the Composer DOM.
   - Removed `.composer-target-*` styles and the extra `target` grid row.
@@ -22,6 +24,16 @@
     (`34` tests).
   - `npm run check` passed.
   - `git diff --check` passed.
+- Production deploy:
+  - Deployed through the Home AI central plugin deploy script.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T042220Z-plugin-codex-mobile-web-manual`.
+  - `/api/public-config` reports `clientBuildId=0.1.11|codex-mobile-shell-v434`,
+    `shellCacheName=codex-mobile-shell-v434`, `version=0.1.11`,
+    `authRequired=true`, and build id `59f4860cf1e63675`.
+  - Source/production SHA-256 samples matched for `public/app.js`,
+    `public/sw.js`, `public/index.html`, `public/styles.css`, and `README.md`.
+  - Central deploy validation reported zero blocking auth-profile audit issues.
 
 # 2026-06-25 - v433 tile composer target hint deployed
 
