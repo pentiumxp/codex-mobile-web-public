@@ -16,6 +16,27 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v451 Visible Item DOM Patch Executor
+
+v451 接续 v450，继续 Phase A。v449 已经把 refresh turn-level DOM patch action
+收束到 `thread-detail-patch-plan`，v450 把 local patch 完成后的滚动策略收束到
+`conversation-scroll`，但 visible-item patch plan 的执行循环仍留在 `public/app.js`：
+它同时解释 `reuse` / `patch` / `insert` 操作、查找 DOM 节点、渲染新节点、执行
+`patchNode` 和 `insertBefore`。
+
+本次把 visible-item DOM patch 执行推进到 `public/thread-detail-dom-patch.js`：
+
+- 新增 `applyVisibleItemRefreshDomPatch`，按 plan 顺序执行 `reuse`、`patch`、
+  `insert`，并返回 bounded failure reason。
+- `public/app.js` 只注入节点查找、HTML 渲染和 patch 回调，不再拥有 operation loop。
+- 失败仍然保持可解释：helper 返回 reason，外层 refresh patch 失败后继续交给既有
+  full render 路径；没有增加去重、隐藏消息或强制刷新兜底。
+- `CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v451`。
+
+新增 `test/thread-detail-dom-patch.test.js` 覆盖 reuse/patch/insert 顺序、开头插入、
+缺失节点、渲染失败、patch 失败、未知操作和 invalid operation；现有
+`conversation-render` / shell wiring tests 同步确认 `app.js` 使用新 helper。
+
 ## 2026-06-25 任务卡 Return/Ack 终止协议
 
 本次修复跨线程任务卡的 return-card acknowledgement loop。根因是

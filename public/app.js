@@ -107,6 +107,10 @@ const threadDetailPatchPlanApi = window.CodexThreadDetailPatchPlan;
 if (!threadDetailPatchPlanApi) {
   throw new Error("CodexThreadDetailPatchPlan script failed to load");
 }
+const threadDetailDomPatchApi = window.CodexThreadDetailDomPatch;
+if (!threadDetailDomPatchApi) {
+  throw new Error("CodexThreadDetailDomPatch script failed to load");
+}
 const threadTileLayoutPolicy = window.CodexThreadTileLayout;
 if (!threadTileLayoutPolicy) {
   throw new Error("CodexThreadTileLayout policy script failed to load");
@@ -487,7 +491,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v450";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v451";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -542,6 +546,7 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/thread-detail-render-plan.js",
   "/thread-detail-merge-state.js",
   "/thread-detail-patch-plan.js",
+  "/thread-detail-dom-patch.js",
   "/thread-tile-layout.js",
   "/build-refresh-policy.js",
   "/app.js",
@@ -13544,6 +13549,14 @@ function patchVisibleItemDomNode(turn, item, previousKeys, sourceIndex = null) {
   const key = stableItemKey(turn, item, index);
   const target = conversation.querySelector(`[data-render-key="${escapeSelectorAttr(key)}"]`);
   if (!target) return null;
+  return patchVisibleItemElement(target, turn, item, previousKeys, index);
+}
+
+function patchVisibleItemElement(target, turn, item, previousKeys, sourceIndex = null) {
+  if (!target || !turn || !item || !item.id || isReasoningItem(item)) return null;
+  const index = Number.isInteger(sourceIndex) && sourceIndex >= 0
+    ? sourceIndex
+    : sourceIndexForVisibleItem(turn, item);
   const html = renderVisibleItemPatchHtml(turn, item, previousKeys, index);
   const source = firstElementFromHtml(html);
   if (!source) return null;
@@ -13578,30 +13591,28 @@ function planVisibleItemsOnlyFromRefresh(previousTurn, nextTurn) {
 }
 
 function applyVisibleItemsOnlyRefreshPatch(nextTurn, patchPlan, previousKeys) {
-  if (!patchPlan || !patchPlan.canPatch) return false;
   const article = turnArticleNode(nextTurn);
-  if (!article) return false;
-  let lastPatchedNode = null;
-  for (const operation of patchPlan.operations) {
-    const nextEntry = operation && operation.nextEntry;
-    if (!nextEntry) return false;
-    if (operation.type === "reuse" || operation.type === "patch") {
-      const existingNode = article.querySelector(`[data-render-key="${escapeSelectorAttr(nextEntry.key)}"]`);
-      if (!existingNode) return false;
-      lastPatchedNode = operation.type === "reuse"
-        ? existingNode
-        : patchVisibleItemDomNode(nextTurn, nextEntry.item, previousKeys, nextEntry.sourceIndex);
-      if (!lastPatchedNode) return false;
-      continue;
-    }
-    if (operation.type !== "insert") return false;
-    const html = renderVisibleItemPatchHtml(nextTurn, nextEntry.item, previousKeys, nextEntry.sourceIndex);
-    const source = firstElementFromHtml(html);
-    if (!source) return false;
-    article.insertBefore(source, lastPatchedNode ? lastPatchedNode.nextSibling : article.firstChild);
-    lastPatchedNode = source;
-  }
-  return true;
+  const result = threadDetailDomPatchApi.applyVisibleItemRefreshDomPatch({
+    article,
+    patchPlan,
+    findElementByKey: (key) => article
+      ? article.querySelector(`[data-render-key="${escapeSelectorAttr(key)}"]`)
+      : null,
+    renderElement: (nextEntry) => firstElementFromHtml(renderVisibleItemPatchHtml(
+      nextTurn,
+      nextEntry.item,
+      previousKeys,
+      nextEntry.sourceIndex,
+    )),
+    patchElement: (target, nextEntry) => patchVisibleItemElement(
+      target,
+      nextTurn,
+      nextEntry.item,
+      previousKeys,
+      nextEntry.sourceIndex,
+    ),
+  });
+  return Boolean(result && result.ok);
 }
 
 function patchLiveTextItemDom(turn, item) {
