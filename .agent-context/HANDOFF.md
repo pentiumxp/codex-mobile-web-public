@@ -34,7 +34,21 @@
   - `npm run check:macos` passed.
   - `git diff --check` passed.
 - Release state:
-  - Pending local commit and central Mac production deploy.
+  - Code commits:
+    - `11f5374 refactor: extract thread detail patch planning`
+    - `3d99d87 fix: make task card returns terminal`
+  - Deployed through the Home AI central plugin deploy script with reason
+    `task-card-terminal-return-loop`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T123411Z-plugin-codex-mobile-web-task-card-terminal-return-loop`.
+  - `/api/public-config` reports `clientBuildId=0.1.11|codex-mobile-shell-v438`,
+    `shellCacheName=codex-mobile-shell-v438`, `version=0.1.11`,
+    `authRequired=true`, and build id `8dd4d1864a81f8cc`.
+  - Source/production short SHA-256 samples matched for:
+    `adapters/thread-task-card-service.js`, `server.js`,
+    `scripts/codex-mobile-mcp-server.js`, `public/app.js`,
+    `public/sw.js`, `README.md`, and
+    `docs/CROSS_THREAD_TASK_CARDS_IMPLEMENTATION.md`.
   - No public push in this step unless explicitly requested.
 
 # 2026-06-25 - v438 thread detail patch-plan extraction ready locally
