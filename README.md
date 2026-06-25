@@ -16,6 +16,30 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v478 Operation Card Content Plan Ownership
+
+v478 继续推进 Phase A 的前端 render/patch ownership 收敛。
+
+本次切片把 live operation / command detail card 的内容计划移入
+`public/live-operation-dock-state.js` 的 `operationCardContentPlan`。该 helper
+现在负责 operation card 的结构化内容边界：item id、type、title、detail、
+empty-detail 标记、status 可见性、duration 可见性和 class token 列表。
+`public/app.js` 仍然负责 HTML escape、最终模板字符串和真实 DOM patch。
+
+修复边界：
+
+- 症状/风险：命令详情卡的 status、completed class、empty detail、duration
+  可见性和 HTML 拼接都在 `app.js` 中，导致运行状态显示规则和 DOM 模板继续耦合。
+- 失败层：前端 live operation / command detail content ownership。
+- 不变量：状态/内容选择应由可测试 helper 计划；`app.js` 只做 HTML 输出和
+  副作用。
+- 闭环验证：`test/live-operation-dock-state.test.js` 覆盖
+  `operationCardContentPlan` 的 running/completed/empty-detail 计划；
+  `test/collab-agent-render.test.js` 验证 `renderOperationCard` 委托 helper；
+  `test/conversation-render.test.js` 保持 command/output 与 live operation 回归。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v478`。
+
 ## 2026-06-26 v477 Live Text DOM Patch Ownership
 
 v477 继续推进 Phase A 的前端 thread detail render/patch ownership 收敛。

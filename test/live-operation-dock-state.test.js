@@ -121,3 +121,49 @@ test("live operation dock state preserves pinned sheet and recall only under sam
     liveTurnActive: false,
   }), false);
 });
+
+test("live operation dock state plans operation card content without DOM or HTML escaping", () => {
+  assert.deepEqual(dock.operationCardContentPlan({
+    itemId: "cmd-1",
+    type: "commandExecution",
+    status: "running",
+    title: "Command",
+    detail: "npm   test",
+    durationText: "00:00:05",
+    durationAttrs: "data-started-at-ms=\"1\" data-ended-at-ms=\"6\"",
+    extraClass: "mobile-operation-sheet-card",
+  }), {
+    itemId: "cmd-1",
+    type: "commandExecution",
+    status: "running",
+    title: "Command",
+    detail: "npm test",
+    detailEmpty: false,
+    statusVisible: true,
+    durationVisible: true,
+    durationText: "00:00:05",
+    durationTitle: "Elapsed 00:00:05",
+    durationAttrs: "data-started-at-ms=\"1\" data-ended-at-ms=\"6\"",
+    classTokens: ["item", "live-operation", "mobile-operation-sheet-card", "commandExecution"],
+  });
+
+  assert.deepEqual(dock.operationCardContentPlan({
+    itemId: "cmd-2",
+    type: "commandExecution",
+    status: "completed",
+    title: "Command",
+  }), {
+    itemId: "cmd-2",
+    type: "commandExecution",
+    status: "completed",
+    title: "Command",
+    detail: "",
+    detailEmpty: true,
+    statusVisible: true,
+    durationVisible: false,
+    durationText: "",
+    durationTitle: "",
+    durationAttrs: "",
+    classTokens: ["item", "live-operation", "completed", "commandExecution"],
+  });
+});

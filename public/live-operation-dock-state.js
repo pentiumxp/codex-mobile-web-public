@@ -18,6 +18,10 @@
     return String(value || "");
   }
 
+  function isCompletedStatusText(value) {
+    return /completed|failed|cancel|error|interrupted/i.test(text(value));
+  }
+
   function nowValue(value) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : Date.now();
@@ -85,12 +89,43 @@
       && containsSheet(input.recallHtml));
   }
 
+  function operationCardContentPlan(input = {}) {
+    const status = text(input.status || (input.completed ? "completed" : "running")).trim();
+    const type = text(input.type || input.itemType || "item").trim() || "item";
+    const title = text(input.title || type).trim() || type;
+    const detail = text(input.detail).replace(/\s+/g, " ").trim();
+    const durationText = text(input.durationText).trim();
+    const extraClass = text(input.extraClass).trim();
+    const completed = Boolean(input.completed || isCompletedStatusText(status));
+    return {
+      itemId: text(input.itemId).trim(),
+      type,
+      status,
+      title,
+      detail,
+      detailEmpty: !detail,
+      statusVisible: Boolean(status),
+      durationVisible: Boolean(durationText),
+      durationText,
+      durationTitle: durationText ? `Elapsed ${durationText}` : "",
+      durationAttrs: text(input.durationAttrs).trim(),
+      classTokens: [
+        "item",
+        "live-operation",
+        extraClass,
+        completed ? "completed" : "",
+        type,
+      ].filter(Boolean),
+    };
+  }
+
   return {
     DEFAULT_MIN_VISIBLE_MS,
     compactBubblePreservation,
     containsBubble,
     containsSheet,
     normalizeMode,
+    operationCardContentPlan,
     rememberCompactBubble,
     shouldPreservePinned,
     shouldShowRecall,

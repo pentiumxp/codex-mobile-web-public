@@ -153,9 +153,10 @@ test("live operation cards dock on wide screens and become a mobile bubble", () 
   assert.match(functionBody("renderLiveOperation"), /stableOperationRenderKey\(turn, item, index\)/);
   assert.match(functionBody("renderOperationCard"), /operation-meta-line/);
   assert.match(functionBody("renderOperationCard"), /operation-detail-line/);
-  assert.match(functionBody("renderOperationCard"), /operation-detail-line\$\{detail \? "" : " empty"\}/);
-  assert.match(functionBody("renderOperationCard"), /detail \? escapeHtml\(detail\) : "&nbsp;"/);
-  assert.match(functionBody("renderOperationCard"), /const statusHtml = String\(status \|\| ""\)\.trim\(\)/);
+  assert.match(functionBody("renderOperationCard"), /liveOperationDockPolicy\.operationCardContentPlan\(\{/);
+  assert.match(functionBody("renderOperationCard"), /operation-detail-line\$\{plan\.detailEmpty \? " empty" : ""\}/);
+  assert.match(functionBody("renderOperationCard"), /plan\.detail \? escapeHtml\(plan\.detail\) : "&nbsp;"/);
+  assert.match(functionBody("renderOperationCard"), /const statusHtml = plan\.statusVisible/);
   assert.match(functionBody("renderOperationCard"), /operation-title[\s\S]*\$\{statusHtml\}/);
   assert.match(functionBody("renderOperationCard"), /operation-duration/);
   assert.match(functionBody("renderOperationCard"), /operationDurationData\(item, status\)/);

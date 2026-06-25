@@ -504,7 +504,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v477";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v478";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -15575,22 +15575,26 @@ function renderOperationCard(item, key, options = {}) {
   const title = operationTitle(item);
   const detail = operationDetailText(item);
   const durationData = operationDurationData(item, status);
-  const duration = durationData
-    ? `<time class="operation-duration" ${operationDurationAttrs(durationData)} title="${escapeHtml(`Elapsed ${durationData.text}`)}">${escapeHtml(durationData.text)}</time>`
-    : "";
-  const classes = [
-    "item",
-    "live-operation",
-    options.extraClass || "",
-    isCompletedStatus(status) ? "completed" : "",
+  const plan = liveOperationDockPolicy.operationCardContentPlan({
+    itemId: item && item.id || "",
     type,
-  ].filter(Boolean).map(escapeHtml).join(" ");
-  const body = `<div class="operation-detail-line${detail ? "" : " empty"}"><span class="operation-detail">${detail ? escapeHtml(detail) : "&nbsp;"}</span></div>`;
-  const statusHtml = String(status || "").trim()
-    ? `<span class="operation-status">${escapeHtml(status)}</span>`
+    status,
+    title,
+    detail,
+    durationText: durationData && durationData.text || "",
+    durationAttrs: durationData ? operationDurationAttrs(durationData) : "",
+    extraClass: options.extraClass || "",
+  });
+  const duration = plan.durationVisible
+    ? `<time class="operation-duration" ${plan.durationAttrs} title="${escapeHtml(plan.durationTitle)}">${escapeHtml(plan.durationText)}</time>`
     : "";
-  return `<section class="${classes}" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}">
-    <div class="operation-meta-line"><span class="operation-meta-main"><span class="operation-title">${escapeHtml(title)}</span>${statusHtml}</span>${duration}</div>
+  const classes = plan.classTokens.map(escapeHtml).join(" ");
+  const body = `<div class="operation-detail-line${plan.detailEmpty ? " empty" : ""}"><span class="operation-detail">${plan.detail ? escapeHtml(plan.detail) : "&nbsp;"}</span></div>`;
+  const statusHtml = plan.statusVisible
+    ? `<span class="operation-status">${escapeHtml(plan.status)}</span>`
+    : "";
+  return `<section class="${classes}" data-item="${escapeHtml(plan.itemId)}" data-render-key="${escapeHtml(key)}">
+    <div class="operation-meta-line"><span class="operation-meta-main"><span class="operation-title">${escapeHtml(plan.title)}</span>${statusHtml}</span>${duration}</div>
     ${body}
   </section>`;
 }
