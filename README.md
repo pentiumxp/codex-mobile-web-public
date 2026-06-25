@@ -37,6 +37,24 @@ return policy，不再出现 `Return required`；如果再次对终止卡调用 
 `returnToSource:true` 是终止卡、auto-return receipt 不触发二次 auto-return、以及
 Music-style repair -> receipt -> ack 链在第一张 terminal return 后停止。
 
+## 2026-06-26 v450 Local Patch Scroll Completion Policy
+
+v450 接续 v449，继续 Phase A。v449 已经把 refresh turn-level DOM patch action
+收束到 `thread-detail-patch-plan`，但 local DOM patch 完成后是否沉底仍由
+`completeLocalConversationDomUpdate` 在 `public/app.js` 里内联判断。
+
+本次把这块滚动策略推进到 `public/conversation-scroll.js`：
+
+- 新增 `planLocalPatchScrollCompletion`，明确 local patch 后的动作是
+  `scroll-to-bottom` 还是 `update-button`。
+- 规则保持不变：用户正在阅读当前轮或存在 auto-scroll hold 时不强制沉底；
+  只有 near-bottom、submitted-message follow、viewport follow 之一成立时才沉底。
+- `public/app.js` 只读取 scroll plan 并执行滚动或更新按钮。
+- `CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v450`。
+
+Focused tests 覆盖 near-bottom、submitted follow、viewport follow、用户阅读当前轮、
+auto-scroll hold 和非跟随状态，并确认 app wiring 不再内联完整滚动条件。
+
 ## 2026-06-26 v449 Refresh DOM Patch Application Plan
 
 v449 接续 v448，是 Phase A 的第二块。v448 已经把 refresh 最终动作收束到

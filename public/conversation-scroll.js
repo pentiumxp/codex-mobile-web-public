@@ -84,6 +84,43 @@
     return nowMs <= numberOrZero(follow.untilMs);
   }
 
+  function planLocalPatchScrollCompletion(options = {}) {
+    if (options.userReadingCurrentTurn) {
+      return {
+        action: "update-button",
+        reason: "user-reading-current-turn",
+      };
+    }
+    if (options.autoScrollHold) {
+      return {
+        action: "update-button",
+        reason: "auto-scroll-hold",
+      };
+    }
+    if (options.nearBottom) {
+      return {
+        action: "scroll-to-bottom",
+        reason: "near-bottom",
+      };
+    }
+    if (options.submittedMessageFollow) {
+      return {
+        action: "scroll-to-bottom",
+        reason: "submitted-message-follow",
+      };
+    }
+    if (options.viewportFollow) {
+      return {
+        action: "scroll-to-bottom",
+        reason: "viewport-follow",
+      };
+    }
+    return {
+      action: "update-button",
+      reason: "not-following-bottom",
+    };
+  }
+
   return {
     DEFAULT_NEAR_BOTTOM_PX,
     DEFAULT_SUBMIT_FOLLOW_MS,
@@ -93,6 +130,7 @@
     extendSubmittedMessageFollow,
     createViewportFollow,
     isNearBottom,
+    planLocalPatchScrollCompletion,
     shouldFollowViewport,
     shouldFollowSubmittedMessage,
     shouldStartViewportFollow,

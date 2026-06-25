@@ -116,3 +116,47 @@ test("viewport follow stays scoped to one thread and expires", () => {
     nowMs: 4001,
   }), false);
 });
+
+test("local patch scroll completion follows bottom only when policy allows", () => {
+  assert.deepEqual(conversationScroll.planLocalPatchScrollCompletion({
+    nearBottom: true,
+  }), {
+    action: "scroll-to-bottom",
+    reason: "near-bottom",
+  });
+
+  assert.deepEqual(conversationScroll.planLocalPatchScrollCompletion({
+    submittedMessageFollow: true,
+  }), {
+    action: "scroll-to-bottom",
+    reason: "submitted-message-follow",
+  });
+
+  assert.deepEqual(conversationScroll.planLocalPatchScrollCompletion({
+    viewportFollow: true,
+  }), {
+    action: "scroll-to-bottom",
+    reason: "viewport-follow",
+  });
+
+  assert.deepEqual(conversationScroll.planLocalPatchScrollCompletion({
+    userReadingCurrentTurn: true,
+    nearBottom: true,
+  }), {
+    action: "update-button",
+    reason: "user-reading-current-turn",
+  });
+
+  assert.deepEqual(conversationScroll.planLocalPatchScrollCompletion({
+    autoScrollHold: true,
+    submittedMessageFollow: true,
+  }), {
+    action: "update-button",
+    reason: "auto-scroll-hold",
+  });
+
+  assert.deepEqual(conversationScroll.planLocalPatchScrollCompletion({}), {
+    action: "update-button",
+    reason: "not-following-bottom",
+  });
+});

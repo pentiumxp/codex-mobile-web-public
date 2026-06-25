@@ -94,20 +94,24 @@ application planning into that policy module:
 `thread-tile-pane`, a `single-thread` surface, or a blocked transition/mismatch.
 `planThreadDetailRefreshDomPatch` decides whether each turn refresh should be
 an item-only patch, a turn insert, or a turn replace. DOM node lookup, HTML
-rendering, patch/insert execution, hydration, and scroll ownership still remain
-in `public/app.js`, but app code can no longer fall through from tile mode into
-the single-thread patch path without an explicit policy decision, fall through
-from a successful tile pane patch into full conversation render, or silently
-choose turn-level patch actions inside the application loop.
+rendering, patch/insert execution, and hydration still remain in
+`public/app.js`. Local patch scroll completion now lives in
+`public/conversation-scroll.js` through `planLocalPatchScrollCompletion`, so
+app code consumes an explicit scroll plan instead of inlining the bottom-follow
+policy. App code can no longer fall through from tile mode into the
+single-thread patch path without an explicit policy decision, fall through from
+a successful tile pane patch into full conversation render, silently choose
+turn-level patch actions inside the application loop, or inline the local-patch
+scroll-completion policy.
 
 Target:
 
 - Continue extracting thread detail merge/state and DOM patch application rules
   from `public/app.js` into pure helper modules. The surface decision is now
   outside app.js, the refresh outcome decision is now outside app.js, and the
-  turn-level patch action plan is now outside app.js; node lookup, node
-  creation, patch/insert execution, hydration, and scroll ownership remain the
-  next boundaries.
+  turn-level patch action plan and local patch scroll-completion policy are now
+  outside app.js; node lookup, node creation, patch/insert execution, and
+  hydration remain the next boundaries.
 - Keep `public/app.js` responsible for DOM wiring, patch application, and event
   binding only.
 - Cover user-message echo convergence, live receipt preservation, completed

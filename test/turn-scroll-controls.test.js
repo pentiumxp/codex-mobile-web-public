@@ -195,6 +195,12 @@ test("live and final message renders stay anchored when the user is at bottom", 
   assert.match(functionBody("patchLiveTextItemDom"), /patchNode\(target, source\);/);
   assert.match(functionBody("patchLiveTextItemDom"), /completeLocalConversationDomUpdate\(target, wasNearBottom, userReadingCurrentTurn\)/);
   assert.match(functionBody("completeLocalConversationDomUpdate"), /state\.renderedConversationSignature = conversationRenderSignature\(state\.currentThread\);/);
+  assert.match(functionBody("completeLocalConversationDomUpdate"), /conversationScroll\.planLocalPatchScrollCompletion\(\{/);
+  assert.match(functionBody("completeLocalConversationDomUpdate"), /autoScrollHold: shouldHoldAutoScrollForCurrentTurn\(\),/);
+  assert.match(functionBody("completeLocalConversationDomUpdate"), /submittedMessageFollow: shouldFollowSubmittedMessageToBottom\(\),/);
+  assert.match(functionBody("completeLocalConversationDomUpdate"), /viewportFollow: shouldFollowViewportChangeToBottom\(\),/);
+  assert.match(functionBody("completeLocalConversationDomUpdate"), /if \(scrollPlan\.action === "scroll-to-bottom"\) \{/);
+  assert.doesNotMatch(functionBody("completeLocalConversationDomUpdate"), /!userReadingCurrentTurn && !shouldHoldAutoScrollForCurrentTurn\(\) && \(wasNearBottom/);
 
   const sustainBody = functionBody("sustainSubmittedMessageBottomFollow");
   assert.match(sustainBody, /if \(itemType !== "agentMessage" \|\| field !== "text"\) return;/);
