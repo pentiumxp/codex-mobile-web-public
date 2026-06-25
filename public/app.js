@@ -504,7 +504,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v486";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v487";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -9223,18 +9223,6 @@ async function refreshCurrentThread(options = {}) {
     refreshRenderAction = renderOutcome.renderAction;
     locallyPatchedDetail = renderOutcome.locallyPatchedDetail;
     tilePanePatchedDetail = renderOutcome.tilePanePatchedDetail;
-    if (refreshRenderAction === "local-patch-metadata-update") {
-      const metadataStartedAt = nowPerfMs();
-      updateCurrentThreadHeader(state.currentThread);
-      updateTickTimer();
-      publishPluginNavigationState();
-      metadataUpdateMs = roundedDurationMs(metadataStartedAt);
-    } else if (refreshRenderAction === "full-render") {
-      const conversationRenderStartedAt = nowPerfMs();
-      renderCurrentThread();
-      conversationRenderMs = roundedDurationMs(conversationRenderStartedAt);
-      checkConversationProjectionConsistency("refresh-full-render", { renderMode: detailRenderMode });
-    }
   } else {
     const patchExecutionPlan = threadDetailRenderPlanApi.planThreadDetailRefreshPatchExecution({
       shouldRenderDetail,
@@ -9246,13 +9234,6 @@ async function refreshCurrentThread(options = {}) {
       tilePanePatchedDetail = true;
       detailPatchMs = roundedDurationMs(tilePatchStartedAt);
       detailRenderMode = "tile-pane-metadata";
-    } else if (patchExecutionPlan.updateMetadataOnTileMiss) {
-      const metadataStartedAt = nowPerfMs();
-      updateCurrentThreadHeader(state.currentThread);
-      updateLiveOperationDockHtml(renderLiveOperationDock(state.currentThread, existingConversationRenderKeys()));
-      updateTickTimer();
-      scheduleScrollToBottomButtonUpdate();
-      metadataUpdateMs = roundedDurationMs(metadataStartedAt);
     }
     renderOutcome = threadDetailRenderPlanApi.finalizeThreadDetailRenderPlan(renderPlan, { locallyPatchedDetail, tilePanePatchedDetail });
     detailRenderMode = renderOutcome.detailRenderMode;
@@ -9260,7 +9241,26 @@ async function refreshCurrentThread(options = {}) {
     locallyPatchedDetail = renderOutcome.locallyPatchedDetail;
     tilePanePatchedDetail = renderOutcome.tilePanePatchedDetail;
   }
-  const projectionConsistencyPhase = renderOutcome && renderOutcome.projectionConsistencyPhase || "";
+  const executionPlan = threadDetailRenderPlanApi.planThreadDetailRefreshOutcomeExecution(renderOutcome);
+  if (executionPlan.metadataUpdateMode === "local-patch") {
+    const metadataStartedAt = nowPerfMs();
+    updateCurrentThreadHeader(state.currentThread);
+    updateTickTimer();
+    publishPluginNavigationState();
+    metadataUpdateMs = roundedDurationMs(metadataStartedAt);
+  } else if (executionPlan.metadataUpdateMode === "metadata-only") {
+    const metadataStartedAt = nowPerfMs();
+    updateCurrentThreadHeader(state.currentThread);
+    updateLiveOperationDockHtml(renderLiveOperationDock(state.currentThread, existingConversationRenderKeys()));
+    updateTickTimer();
+    scheduleScrollToBottomButtonUpdate();
+    metadataUpdateMs = roundedDurationMs(metadataStartedAt);
+  } else if (executionPlan.runFullRender) {
+    const conversationRenderStartedAt = nowPerfMs();
+    renderCurrentThread();
+    conversationRenderMs = roundedDurationMs(conversationRenderStartedAt);
+  }
+  const projectionConsistencyPhase = executionPlan.projectionConsistencyPhase || "";
   if (projectionConsistencyPhase) {
     checkConversationProjectionConsistency(projectionConsistencyPhase, { renderMode: detailRenderMode });
   }

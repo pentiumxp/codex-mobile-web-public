@@ -189,6 +189,57 @@ test("thread detail refresh render outcome keeps metadata-only tile patches out 
   });
 });
 
+test("thread detail refresh outcome execution maps local patch completion to metadata update", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshOutcomeExecution({
+    renderAction: "local-patch-metadata-update",
+    projectionConsistencyPhase: "refresh-local-patch",
+  }), {
+    renderAction: "local-patch-metadata-update",
+    metadataUpdateMode: "local-patch",
+    runFullRender: false,
+    projectionConsistencyPhase: "refresh-local-patch",
+    reason: "local-patch-complete",
+  });
+});
+
+test("thread detail refresh outcome execution maps metadata-only refreshes", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshOutcomeExecution({
+    renderAction: "metadata-update",
+    projectionConsistencyPhase: "refresh-metadata",
+  }), {
+    renderAction: "metadata-update",
+    metadataUpdateMode: "metadata-only",
+    runFullRender: false,
+    projectionConsistencyPhase: "refresh-metadata",
+    reason: "metadata-only",
+  });
+});
+
+test("thread detail refresh outcome execution gives full render an explicit consistency phase", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshOutcomeExecution({
+    renderAction: "full-render",
+  }), {
+    renderAction: "full-render",
+    metadataUpdateMode: "",
+    runFullRender: true,
+    projectionConsistencyPhase: "refresh-full-render",
+    reason: "full-render",
+  });
+});
+
+test("thread detail refresh outcome execution preserves terminal tile-pane patch phases", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshOutcomeExecution({
+    renderAction: "tile-pane-patch",
+    projectionConsistencyPhase: "refresh-local-patch",
+  }), {
+    renderAction: "tile-pane-patch",
+    metadataUpdateMode: "",
+    runFullRender: false,
+    projectionConsistencyPhase: "refresh-local-patch",
+    reason: "tile-pane-patch",
+  });
+});
+
 test("single-thread full render shell plans loading state", () => {
   assert.deepEqual(renderPlan.planSingleThreadFullRenderShell({
     threadId: "thread-1",

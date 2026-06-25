@@ -2963,7 +2963,11 @@ test("current-thread refresh patches the current tile pane for metadata-only til
   assert.match(body, /detailRenderMode = renderOutcome\.detailRenderMode;/);
   assert.match(body, /refreshRenderAction = renderOutcome\.renderAction;/);
   assert.match(body, /let renderOutcome = null;/);
-  assert.match(body, /const projectionConsistencyPhase = renderOutcome && renderOutcome\.projectionConsistencyPhase \|\| "";/);
+  assert.match(body, /const executionPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshOutcomeExecution\(renderOutcome\);/);
+  assert.match(body, /if \(executionPlan\.metadataUpdateMode === "local-patch"\) \{/);
+  assert.match(body, /else if \(executionPlan\.metadataUpdateMode === "metadata-only"\) \{/);
+  assert.match(body, /else if \(executionPlan\.runFullRender\) \{/);
+  assert.match(body, /const projectionConsistencyPhase = executionPlan\.projectionConsistencyPhase \|\| "";/);
   assert.match(body, /checkConversationProjectionConsistency\(projectionConsistencyPhase, \{ renderMode: detailRenderMode \}\)/);
 });
 

@@ -16,6 +16,35 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v487 Refresh Outcome Execution Planning
+
+v487 继续推进 Phase A 的前端 render/patch ownership 收敛。
+
+本次切片把 `refreshCurrentThread()` 中 `renderOutcome` 之后的执行动作推进到
+`public/thread-detail-render-plan.js` 的
+`planThreadDetailRefreshOutcomeExecution`。新的 helper 负责把
+`local-patch-metadata-update`、`metadata-update`、`full-render` 和
+`tile-pane-patch` 这些结果转换成明确的执行计划：metadata update 模式、
+是否执行 full render、以及 projection consistency phase。`public/app.js`
+仍然负责真实 DOM/header/dock 写入、`renderCurrentThread()` 调用和诊断上报。
+
+修复边界：
+
+- 症状/风险：`refreshCurrentThread()` 在拿到 render outcome 后仍内联判断
+  `refreshRenderAction`，同时安排 metadata update、full render 和 projection
+  consistency。这个尾部动作如果继续散落，后续很容易出现 full render
+  consistency 漏查、metadata-only 错走 full render、或 local patch 后重复执行
+  不一致的更新动作。
+- 失败层：前端 thread-detail refresh outcome execution policy。
+- 不变量：render outcome 的后续动作必须由纯 helper 计划；full render 的
+  consistency phase 必须和 metadata/local patch 一样走统一出口。
+- 闭环验证：`test/thread-detail-render-plan.test.js` 覆盖 local patch metadata、
+  metadata-only、full render、tile-pane terminal 四条 outcome execution 分支；
+  `test/conversation-render.test.js` 和 `test/mobile-viewport.test.js` 验证
+  `refreshCurrentThread` 调用 helper，并按 `executionPlan` 执行动作。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v487`。
+
 ## 2026-06-26 v486 Refresh Patch Execution Planning
 
 v486 继续推进 Phase A 的前端 render/patch ownership 收敛。

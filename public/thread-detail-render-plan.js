@@ -140,6 +140,45 @@
     };
   }
 
+  function planThreadDetailRefreshOutcomeExecution(outcome = {}) {
+    const renderAction = String(outcome.renderAction || "");
+    const projectionConsistencyPhase = String(outcome.projectionConsistencyPhase || "");
+    if (renderAction === "local-patch-metadata-update") {
+      return {
+        renderAction,
+        metadataUpdateMode: "local-patch",
+        runFullRender: false,
+        projectionConsistencyPhase,
+        reason: "local-patch-complete",
+      };
+    }
+    if (renderAction === "metadata-update") {
+      return {
+        renderAction,
+        metadataUpdateMode: "metadata-only",
+        runFullRender: false,
+        projectionConsistencyPhase,
+        reason: "metadata-only",
+      };
+    }
+    if (renderAction === "full-render") {
+      return {
+        renderAction,
+        metadataUpdateMode: "",
+        runFullRender: true,
+        projectionConsistencyPhase: "refresh-full-render",
+        reason: "full-render",
+      };
+    }
+    return {
+      renderAction,
+      metadataUpdateMode: "",
+      runFullRender: false,
+      projectionConsistencyPhase,
+      reason: renderAction || "none",
+    };
+  }
+
   function text(value) {
     return String(value ?? "");
   }
@@ -208,6 +247,7 @@
   return {
     finalizeThreadDetailRenderPlan,
     normalizeSignature,
+    planThreadDetailRefreshOutcomeExecution,
     planSingleThreadFullRenderShell,
     planThreadDetailRefreshPatchExecution,
     planThreadDetailRefreshRender,
