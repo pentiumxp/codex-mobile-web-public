@@ -1,3 +1,82 @@
+# 2026-06-26 - v473 thread tile detail load concurrency policy deployed
+
+- Scope:
+  - Continued Phase C pane-state / split-screen architecture work.
+  - This slice turns the v472 detail-load queue plan into a runtime bounded
+    concurrency policy.
+  - It does not limit the number of visible panes; it limits only concurrent
+    `loadThreadTileDetail` reads. It does not change server projection,
+    task-card behavior, Home AI diagnostic dispatch, message merge, image
+    projection, pane layout, visual pane design, or the thread detail API. No
+    fallback or UI-only masking was added.
+- Root-cause boundary:
+  - Before v473, the queue plan could express `deferredIds`, but runtime still
+    set max concurrent detail reads to the user pane ceiling, so a 5/6-pane
+    desktop layout could still start every pane detail read at once.
+  - That preserved the multi-pane fan-out pressure that can make large session
+    first paint and app-server read scheduling harder to reason about.
+- Change:
+  - Runtime now sets `THREAD_TILE_DETAIL_LOAD_MAX_CONCURRENT` to
+    `min(4, user pane ceiling)`, keeping pane count separate from detail-read
+    concurrency.
+  - Added pure `detailLoadQueueDrainPlan` to `public/thread-tile-state.js`.
+  - Added a 120ms pane detail-load drain timer in `public/app.js`; deferred
+    panes can continue quickly after an initial queue pass or after any detail
+    load settles, instead of waiting for the ordinary 2.4s tile refresh timer.
+  - `detailLoadQueuePlan` now accepts `readyIds`, so cached/current panes do
+    not occupy candidate slots or repeatedly block deferred panes.
+  - `abortThreadTileLoads` clears both the ordinary tile refresh timer and the
+    detail-load drain timer.
+  - Bumped `CLIENT_BUILD_ID` and service worker cache to
+    `codex-mobile-shell-v473`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Commit:
+  - Runtime/docs commit: `7167f11 limit thread tile detail load concurrency`.
+- Validation in source workspace:
+  - Syntax checks passed for `public/thread-tile-state.js`, `public/app.js`,
+    and `public/sw.js`.
+  - Focused suite passed: `69` tests across
+    `test/thread-tile-state.test.js`,
+    `test/thread-tile-layout-ui.test.js`,
+    `test/thread-tile-layout.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-task-card-route.test.js`,
+    `test/thread-goal-service.test.js`, and
+    `test/composer-draft.test.js`.
+  - `npm test` passed: `859` tests.
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+- Production deploy:
+  - Deployed through Home AI central macOS production script.
+  - Reason: `codex-mobile-thread-tile-detail-load-concurrency-v473`.
+  - Source ref at deploy: `7167f11ad9bc`, dirty `false`.
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T194510Z-plugin-codex-mobile-web-codex-mobile-thread-tile-detail-load-concurrency-v473`.
+  - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` reported
+    running and manifest/profile health checks passed.
+- Production readback:
+  - `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v473`,
+    `shellCacheName=codex-mobile-shell-v473`, and `version=0.1.11`.
+  - Source/prod SHA-256 parity matched for:
+    `public/thread-tile-state.js`, `test/thread-tile-state.test.js`,
+    `test/thread-tile-layout-ui.test.js`, `public/app.js`, `public/sw.js`,
+    `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+  - Production focused suite passed: same `69` tests listed above with
+    production dependencies.
+- Next architecture boundary:
+  - Continue Phase C with measured tuning of the max concurrent detail-read
+    value, command detail panels, split sizing, per-pane draft/runtime
+    ownership, and pane-local send/approval/interrupt ownership.
+  - Phase B large-session cold/warm path remains separate and should be
+    tackled with timing evidence before changing cache behavior.
+- Public:
+  - Not pushed to Public. Follow release-order rule: wait for production/user
+    validation or explicit Public instruction before syncing/pushing.
+
 # 2026-06-26 - v472 thread tile detail load queue policy deployed
 
 - Scope:
