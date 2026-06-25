@@ -1185,6 +1185,7 @@ function appShellBuildId(cacheName = readServiceWorkerCacheName()) {
     "plugin-embed.js",
     "plugin-voice-input.js",
     "home-ai-diagnostic-reporting.js",
+    "thread-diagnostic-events.js",
     "build-refresh-policy.js",
     "thread-performance-metrics.js",
     "live-operation-dock-state.js",

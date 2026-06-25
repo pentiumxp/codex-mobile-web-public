@@ -139,6 +139,51 @@ test("report payload strips unsafe private fields", () => {
   assert.match(event.context.thread_hash, /^h_/);
 });
 
+test("report payload preserves bounded render reason codes", () => {
+  const event = diagnostics.sanitizeInput({
+    category: "conversation_projection_mismatch",
+    diagnostic_type: "detail_patch_rejected",
+    error_code: "detail_patch_rejected",
+    context: {
+      surface: "conversation-render",
+      action: "thread-detail-refresh",
+      read_mode: "projection-cache",
+      render_mode: "patch",
+      render_plan_reason: "signature-changed",
+      patch_reject_reason: "rendered-dom-stale",
+      message: "private message stripped",
+      raw_path: "/Users/private/upload.jpg",
+    },
+    counts: {
+      previous_count: 5,
+      visible_count: 6,
+    },
+    breadcrumbs: [{
+      kind: "conversation-render",
+      code: "detail-patch",
+      status: "rejected",
+      fields: {
+        read_mode: "projection-cache",
+        render_mode: "patch",
+        render_plan_reason: "signature-changed",
+        patch_reject_reason: "rendered-dom-stale",
+        previous_count: 5,
+        visible_count: 6,
+        prompt: "private prompt stripped",
+      },
+    }],
+  });
+  const json = JSON.stringify(event);
+
+  assert.equal(event.context.render_plan_reason, "signature-changed");
+  assert.equal(event.context.patch_reject_reason, "rendered-dom-stale");
+  assert.equal(event.breadcrumbs[0].fields.render_plan_reason, "signature-changed");
+  assert.equal(event.breadcrumbs[0].fields.patch_reject_reason, "rendered-dom-stale");
+  assert.equal(event.breadcrumbs[0].fields.previous_count, 5);
+  assert.equal(event.breadcrumbs[0].fields.visible_count, 6);
+  assert.doesNotMatch(json, /private message|private prompt|upload\.jpg/);
+});
+
 test("postMessage delivery fails safely outside trusted embedded contexts", () => {
   const report = {
     type: "homeai.diagnostic.report",

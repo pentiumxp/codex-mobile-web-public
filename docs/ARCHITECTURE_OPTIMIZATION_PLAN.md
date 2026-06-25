@@ -181,6 +181,16 @@ payloads, including cached/warm-client phase handling, server/client timings,
 detail shape, read mode, turn counts, omitted-turn counts where relevant, and
 rollout size. This keeps large-session cold/warm path evidence consistent
 across initial open, cached current open, refresh, and full backfill.
+Patch-rejection diagnostic event planning now lives in
+`public/thread-diagnostic-events.js`:
+`detailPatchRejectedDiagnosticEvent` builds the bounded
+`conversation_projection_mismatch/detail_patch_rejected` report payload,
+including render-plan reason, patch-reject reason, visible-count delta, and
+breadcrumbs. `public/app.js` keeps the real refresh, patch attempt, failure
+counter, and Home AI report transport, while the diagnostic evidence shape is
+owned by a focused helper. The Home AI diagnostic sanitizer now explicitly
+allows these bounded reason/count fields so they are not lost before the Owner
+diagnostic loop receives them.
 Single-thread full-render shell planning now also lives in
 `public/thread-detail-render-plan.js`: loading, load-error retry, detail
 content ordering, empty/read-warning state selection, plugin-refresh notice

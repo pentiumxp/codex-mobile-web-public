@@ -70,6 +70,7 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(appJs, /"\/image-compressor\.js"/);
   assert.match(appJs, /"\/plugin-embed\.js"/);
   assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
+  assert.match(appJs, /"\/thread-diagnostic-events\.js"/);
   assert.match(appJs, /"\/thread-performance-metrics\.js"/);
   assert.match(appJs, /"\/live-operation-dock-state\.js"/);
   assert.match(appJs, /"\/thread-detail-state\.js"/);
@@ -86,6 +87,7 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(serverJs, /"viewport-metrics\.js"/);
   assert.match(serverJs, /"conversation-scroll\.js"/);
   assert.match(serverJs, /"home-ai-diagnostic-reporting\.js"/);
+  assert.match(serverJs, /"thread-diagnostic-events\.js"/);
   assert.match(serverJs, /"thread-performance-metrics\.js"/);
   assert.match(serverJs, /"live-operation-dock-state\.js"/);
   assert.match(serverJs, /"thread-detail-state\.js"/);

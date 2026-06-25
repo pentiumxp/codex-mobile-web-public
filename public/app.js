@@ -68,6 +68,10 @@ const homeAiDiagnosticReportingApi = window.CodexHomeAiDiagnosticReporting;
 if (!homeAiDiagnosticReportingApi) {
   throw new Error("CodexHomeAiDiagnosticReporting script failed to load");
 }
+const threadDiagnosticEventsApi = window.CodexThreadDiagnosticEvents;
+if (!threadDiagnosticEventsApi) {
+  throw new Error("CodexThreadDiagnosticEvents script failed to load");
+}
 const buildRefreshPolicy = window.CodexBuildRefreshPolicy || {
   shouldPromptForServerBuildChange(serverBuildId, clientBuildId) {
     const server = String(serverBuildId || "").trim();
@@ -504,7 +508,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v489";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v490";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -552,6 +556,7 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/plugin-embed.js",
   "/plugin-voice-input.js",
   "/home-ai-diagnostic-reporting.js",
+  "/thread-diagnostic-events.js",
   "/thread-status-hints.js",
   "/thread-performance-metrics.js",
   "/live-operation-dock-state.js",
@@ -9157,37 +9162,16 @@ async function refreshCurrentThread(options = {}) {
       detailPatchMs = roundedDurationMs(patchStartedAt);
       if (!locallyPatchedDetail) {
         patchRejectReason = state.threadDetailPatchRejectReason || "unknown";
-        recordHomeAiDiagnosticFailure({
-          category: "conversation_projection_mismatch",
-          diagnostic_type: "detail_patch_rejected",
-          severity_hint: "H3",
-          evidence_confidence: 0.7,
-          error_code: "detail_patch_rejected",
-          context: {
-            surface: "conversation-render",
-            action: "thread-detail-refresh",
-            read_mode: String(result.thread && result.thread.mobileReadMode || ""),
-            render_mode: String(renderPlan.detailRenderMode || ""),
-            render_plan_reason: String(renderPlan.reason || ""),
-            patch_reject_reason: patchRejectReason,
-          },
-          counts: {
-            previous_count: visibleConversationShape(previousThread).visibleItemCount,
-            visible_count: visibleConversationShape(state.currentThread).visibleItemCount,
-          },
-          breadcrumbs: [{
-            kind: "conversation-render",
-            code: "detail-patch",
-            status: "rejected",
-            fields: {
-              read_mode: String(result.thread && result.thread.mobileReadMode || ""),
-              render_mode: String(renderPlan.detailRenderMode || ""),
-              render_plan_reason: String(renderPlan.reason || ""),
-              patch_reject_reason: patchRejectReason,
-              visible_count: visibleConversationShape(state.currentThread).visibleItemCount,
-            },
-          }],
-        });
+        const previousVisibleShape = visibleConversationShape(previousThread);
+        const nextVisibleShape = visibleConversationShape(state.currentThread);
+        recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.detailPatchRejectedDiagnosticEvent({
+          readMode: result.thread && result.thread.mobileReadMode,
+          renderMode: renderPlan.detailRenderMode,
+          renderPlanReason: renderPlan.reason,
+          patchRejectReason,
+          previousVisibleItemCount: previousVisibleShape.visibleItemCount,
+          visibleItemCount: nextVisibleShape.visibleItemCount,
+        }));
       }
     }
     renderOutcome = threadDetailRenderPlanApi.finalizeThreadDetailRenderPlan(renderPlan, { locallyPatchedDetail, tilePanePatchedDetail });

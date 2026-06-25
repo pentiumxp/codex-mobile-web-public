@@ -16,6 +16,36 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v490 Patch-Reject Diagnostic Event Planning
+
+v490 继续推进 Phase A 的前端 render/patch ownership 收敛，这次聚焦
+`refreshCurrentThread()` 里 local DOM patch 被拒绝时的 Home AI 诊断事件。
+
+本次切片新增 `public/thread-diagnostic-events.js`，由
+`detailPatchRejectedDiagnosticEvent()` 统一生成
+`conversation_projection_mismatch/detail_patch_rejected` 的 bounded payload。
+`public/app.js` 仍然负责真实刷新、merge、DOM patch、失败计数和 Home AI
+transport，但不再内联 category、diagnostic type、counts、context 和
+breadcrumbs。`public/home-ai-diagnostic-reporting.js` 同步补齐安全白名单，
+确保 `render_plan_reason`、`patch_reject_reason` 和 `previous_count` 这些
+bounded reason/count 字段不会在 sanitizer 中被误剥离。
+
+修复边界：
+
+- 症状/风险：此前 patch reject 诊断结构散在 `refreshCurrentThread()`，并且
+  sanitizer 没有允许 patch/render reason code。生产上即使记录了
+  `detail_patch_rejected`，Home AI 也可能拿不到解释本次拒绝原因的关键字段。
+- 失败层：前端 projection/render mismatch 诊断事件字段所有权，以及
+  Home AI diagnostic report sanitizer 白名单。
+- 不变量：projection mismatch 诊断只能包含 bounded reason code、hash、计数
+  和状态字段；不能包含消息正文、任务卡正文、上传内容、私有路径、cookie/token
+  或长日志。
+- 闭环验证：`test/thread-diagnostic-events.test.js` 覆盖 patch reject payload
+  和隐私边界；`test/home-ai-diagnostic-reporting.test.js` 验证 sanitizer 保留
+  bounded reason code 并继续剥离不安全字段。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v490`。
+
 ## 2026-06-26 v489 First-Paint Performance Event Planning
 
 v489 继续推进 Phase A 的前端 render/patch ownership 收敛，这次把线程详情
