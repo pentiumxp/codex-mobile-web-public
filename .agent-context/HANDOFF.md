@@ -9653,3 +9653,60 @@ The previous full handoff was archived and should be opened only when old proven
     production focused tests, HTTP readback, and source/prod parity.
 - Release:
   - Public was not pushed for v479.
+
+## 2026-06-26 - Latest continuation status: v480 operation card template deployed
+
+- Latest code commit:
+  - `6612b0e extract operation card html template`
+- Change:
+  - Live operation / command detail card final HTML template ownership moved
+    from `public/app.js` to `public/live-operation-dock-state.js`.
+  - `operationCardHtml` now owns the section/meta/detail/duration template
+    structure, empty-detail placeholder, completed class rendering, injected
+    escaping, and bounded duration data-attribute filtering.
+  - `public/app.js` still owns operation item extraction, duration calculation,
+    render-key selection, and real DOM insertion.
+  - Static build/cache: `0.1.11|codex-mobile-shell-v480` /
+    `codex-mobile-shell-v480`.
+- Root-cause boundary:
+  - v478 had moved operation card content planning out of `app.js`, but the
+    final `operation-meta-line`, `operation-detail-line`, duration HTML, and
+    empty-detail card template were still hand-built in `app.js`.
+  - v480 closes that specific Phase A boundary without changing visible card
+    layout or adding a UI fallback.
+- Validation:
+  - Focused source suite passed:
+    `node --test test/live-operation-dock-state.test.js
+    test/collab-agent-render.test.js test/conversation-render.test.js
+    test/mobile-viewport.test.js test/app-update.test.js
+    test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    (`144` passed).
+  - Full source `npm test` passed (`875` passed).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Production deploy:
+  - Deployed through the Home AI central macOS plugin deploy path with reason
+    `codex-mobile-operation-card-template-v480`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T210625Z-plugin-codex-mobile-web-codex-mobile-operation-card-template-v480`
+  - The deploy retention step pruned the prior v479 backup under the same
+    target/day retention policy; v480 is the current retained backup.
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v480`,
+    `shellCacheName=codex-mobile-shell-v480`, `version=0.1.11`,
+    `authRequired=true`.
+  - Source/production SHA parity verified for:
+    `public/app.js`, `public/live-operation-dock-state.js`, `public/sw.js`,
+    `test/live-operation-dock-state.test.js`,
+    `test/collab-agent-render.test.js`, `test/conversation-render.test.js`,
+    `test/mobile-viewport.test.js`, `README.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and `docs/MODULES.md`.
+  - Production focused suite passed (`144` passed).
+- Browser/visual note:
+  - Browser automation was not callable in the current tool list, and local
+    Playwright is not installed in this workspace. v480 closure evidence is
+    focused source tests, full source tests, production focused tests,
+    production public-config readback, and source/prod SHA parity.
+- Release:
+  - Public was not pushed for v480.
