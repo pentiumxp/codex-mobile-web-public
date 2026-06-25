@@ -233,23 +233,31 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.doesNotMatch(tileTurnBody, /turn-status/);
   assert.doesNotMatch(tileTurnBody, /renderThreadTaskCardDraft/);
 
+  const paneSlotEffectsBody = functionBody(appJs, "applyThreadTilePaneSlotEffects");
+  assert.match(paneSlotEffectsBody, /effect\.action !== "pane-slot-effects"/);
+  assert.match(paneSlotEffectsBody, /state\.threadTilePinnedIds = normalizeThreadTilePinnedIds\(effect\.paneThreadIds\)/);
+  assert.match(paneSlotEffectsBody, /state\.threadTileSplitPairs = normalizeThreadTileSplitPairs\(effect\.paneSplitPairs, state\.threadTilePinnedIds\)/);
+  assert.match(paneSlotEffectsBody, /state\.threadTileActiveIds = threadTileCandidateIds\(layout\)/);
+  assert.match(paneSlotEffectsBody, /state\.threadTileSelectedThreadId = effect\.selectedThreadId/);
+  assert.match(paneSlotEffectsBody, /scheduleThreadDisplaySettingsSave\(\)/);
+  assert.match(paneSlotEffectsBody, /loadThreadTileDetail\(effect\.loadThreadId, \{ force: true, source: effect\.loadSource \|\| "tile-switch" \}\)/);
+  assert.match(paneSlotEffectsBody, /effect\.renderMode === "schedule-full"/);
+  assert.match(paneSlotEffectsBody, /patchThreadTilePane\(effect\.patchThreadId/);
+
   const switchBody = functionBody(appJs, "replaceThreadTilePaneThread");
   assert.match(switchBody, /threadTileStatePolicy\.replacePaneThreadPlan/);
-  assert.match(switchBody, /state\.threadTilePinnedIds = normalizeThreadTilePinnedIds\(plan\.paneThreadIds\)/);
-  assert.match(switchBody, /scheduleThreadDisplaySettingsSave\(\)/);
-  assert.match(switchBody, /state\.threadTileSelectedThreadId = plan\.selectedThreadId \|\| to/);
-  assert.match(switchBody, /loadThreadTileDetail\(plan\.loadThreadId, \{ force: true, source: "tile-switch" \}\)/);
-  assert.match(switchBody, /plan\.renderMode === "full"/);
+  assert.match(switchBody, /threadTileStatePolicy\.paneSlotMutationEffectsPlan\(plan/);
+  assert.match(switchBody, /applyThreadTilePaneSlotEffects/);
 
   const moveBody = functionBody(appJs, "moveThreadTilePaneRelative");
   assert.match(moveBody, /threadTileStatePolicy\.movePaneRelativePlan/);
-  assert.match(moveBody, /state\.threadTilePinnedIds = normalizeThreadTilePinnedIds\(plan\.paneThreadIds\)/);
-  assert.match(moveBody, /state\.threadTileSplitPairs = normalizeThreadTileSplitPairs\(plan\.paneSplitPairs, state\.threadTilePinnedIds\)/);
+  assert.match(moveBody, /threadTileStatePolicy\.paneSlotMutationEffectsPlan\(plan/);
+  assert.match(moveBody, /applyThreadTilePaneSlotEffects/);
 
   const splitBody = functionBody(appJs, "splitThreadTilePaneWithTarget");
   assert.match(splitBody, /threadTileStatePolicy\.splitPaneWithTargetPlan/);
-  assert.match(splitBody, /state\.threadTilePinnedIds = normalizeThreadTilePinnedIds\(plan\.paneThreadIds\)/);
-  assert.match(splitBody, /state\.threadTileSplitPairs = normalizeThreadTileSplitPairs\(plan\.paneSplitPairs, state\.threadTilePinnedIds\)/);
+  assert.match(splitBody, /threadTileStatePolicy\.paneSlotMutationEffectsPlan\(plan/);
+  assert.match(splitBody, /applyThreadTilePaneSlotEffects/);
 
   const dropBody = functionBody(appJs, "dropThreadTilePane");
   assert.match(dropBody, /threadTileStatePolicy\.dropPaneIntent/);
@@ -260,9 +268,8 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(listOpenReplaceBody, /source !== "thread-list"/);
   assert.match(listOpenReplaceBody, /const ids = threadTileCandidateIds\(layout\)/);
   assert.match(listOpenReplaceBody, /threadTileStatePolicy\.replaceLastPaneForThreadListOpenPlan/);
-  assert.match(listOpenReplaceBody, /state\.threadTilePinnedIds = normalizeThreadTilePinnedIds\(plan\.paneThreadIds\)/);
-  assert.match(listOpenReplaceBody, /state\.threadTileSelectedThreadId = plan\.selectedThreadId \|\| id/);
-  assert.match(listOpenReplaceBody, /scheduleThreadDisplaySettingsSave\(\)/);
+  assert.match(listOpenReplaceBody, /threadTileStatePolicy\.paneSlotMutationEffectsPlan\(plan/);
+  assert.match(listOpenReplaceBody, /applyThreadTilePaneSlotEffects/);
   assert.doesNotMatch(appJs, /function removeThreadTileSplitPairsForIds\(/);
   assert.doesNotMatch(appJs, /function setThreadTileSplitPair\(/);
   const loadThreadBody = functionBody(appJs, "loadThread");

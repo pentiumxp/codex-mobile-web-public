@@ -305,6 +305,89 @@ test("thread tile state plans switch menu options and controls without app globa
   assert.equal(maxed.canAdd, false);
 });
 
+test("thread tile state plans pane slot mutation side effects", () => {
+  assert.deepEqual(state.paneSlotMutationEffectsPlan({
+    action: "replace",
+    reason: "replace-pane-thread",
+    from: "a",
+    to: "b",
+    paneThreadIds: ["b", "c"],
+    selectedThreadId: "b",
+    switchMenuPaneId: "",
+    scrollResetIds: ["a", "b"],
+    renderMode: "patch-source-pane",
+    loadThreadId: "b",
+  }, { maxPanes: 12 }), {
+    action: "pane-slot-effects",
+    reason: "replace-pane-thread",
+    sourceAction: "replace",
+    paneThreadIds: ["b", "c"],
+    paneSplitPairs: null,
+    paneCount: null,
+    selectedThreadId: "b",
+    switchMenuPaneId: "",
+    scrollResetIds: ["a", "b"],
+    saveDraft: true,
+    restoreDraft: true,
+    updateComposer: true,
+    scheduleSettingsSave: true,
+    refreshActiveIds: true,
+    loadThreadId: "b",
+    loadSource: "tile-switch",
+    renderMode: "patch-pane",
+    renderStickToBottom: false,
+    patchThreadId: "b",
+    patchSourceThreadId: "a",
+    patchStickToBottom: true,
+  });
+
+  assert.equal(state.paneSlotMutationEffectsPlan({
+    action: "replace",
+    renderMode: "full",
+  }).renderMode, "schedule-full");
+
+  assert.deepEqual(state.paneSlotMutationEffectsPlan({
+    action: "move",
+    reason: "move-pane",
+    paneThreadIds: ["c", "a", "b"],
+    paneSplitPairs: [{ anchorId: "a", childId: "b" }],
+    selectedThreadId: "c",
+  }, { maxPanes: 12 }), {
+    action: "pane-slot-effects",
+    reason: "move-pane",
+    sourceAction: "move",
+    paneThreadIds: ["c", "a", "b"],
+    paneSplitPairs: [{ anchorId: "a", childId: "b" }],
+    paneCount: null,
+    selectedThreadId: "c",
+    switchMenuPaneId: "",
+    scrollResetIds: [],
+    saveDraft: true,
+    restoreDraft: true,
+    updateComposer: true,
+    scheduleSettingsSave: true,
+    refreshActiveIds: false,
+    loadThreadId: "",
+    loadSource: "tile-switch",
+    renderMode: "full",
+    renderStickToBottom: true,
+    patchThreadId: "",
+    patchSourceThreadId: "",
+    patchStickToBottom: false,
+  });
+
+  const replaceLast = state.paneSlotMutationEffectsPlan({
+    action: "replace-last",
+    paneThreadIds: ["a", "d"],
+    selectedThreadId: "d",
+    scrollResetIds: ["b", "d"],
+  }, { maxPanes: 12 });
+  assert.equal(replaceLast.saveDraft, false);
+  assert.equal(replaceLast.renderMode, "none");
+  assert.equal(replaceLast.refreshActiveIds, true);
+  assert.equal(state.paneSlotMutationEffectsPlan({ action: "unknown" }).reason, "unsupported-mutation-plan");
+});
+
 test("thread tile state updates split pairs without keeping stale ids", () => {
   const removed = state.removeSplitPairsForIds([
     { anchorId: "a", childId: "b" },

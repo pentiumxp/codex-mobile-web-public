@@ -60,9 +60,10 @@ test("switching targets saves the previous draft and restores the next draft", (
   assert.match(tileSelectBody, /saveCurrentDraftNow\(\)/);
   assert.match(tileSelectBody, /restoreDraftForCurrentTarget\(\{ resetRuntimeWhenMissingDraft: true \}\)/);
 
-  const tileReplaceBody = functionBody("replaceThreadTilePaneThread");
-  assert.match(tileReplaceBody, /saveCurrentDraftNow\(\)/);
-  assert.match(tileReplaceBody, /restoreDraftForCurrentTarget\(\{ resetRuntimeWhenMissingDraft: true \}\)/);
+  const tileEffectsBody = functionBody("applyThreadTilePaneSlotEffects");
+  assert.match(tileEffectsBody, /if \(effect\.saveDraft\) saveCurrentDraftNow\(\)/);
+  assert.match(tileEffectsBody, /if \(effect\.restoreDraft\) restoreDraftForCurrentTarget\(\{ resetRuntimeWhenMissingDraft: true \}\)/);
+  assert.match(functionBody("replaceThreadTilePaneThread"), /paneSlotMutationEffectsPlan/);
 });
 
 test("composer runtime selections persist without typed text", () => {

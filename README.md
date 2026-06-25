@@ -16,6 +16,31 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v468 Thread Tile Pane Slot Effect Policy
+
+v468 继续 Phase C，把平铺窗口 slot 变更后的副作用意图迁到
+`public/thread-tile-state.js`。这次处理的是窗口线程替换、拖动换位、上下分屏、
+线程列表打开替换最后窗口之后，`public/app.js` 里重复出现的保存草稿、写入
+pinned/split/selected、清理 scroll hold、保存 settings、恢复草稿、加载 detail、
+patch pane 或 full render 的执行顺序。
+
+本次新增的纯策略是 `paneSlotMutationEffectsPlan`：
+
+- `replace` / `select` 输出保存草稿、刷新 active ids、恢复 Composer、加载目标 detail，
+  并区分 patch pane 与 schedule full render。
+- `move` / `split` 输出保存草稿、写入 split pairs、恢复 Composer，并要求当前 tile board
+  以 stick-to-bottom 方式重新渲染。
+- `replace-last` 保持线程列表主动进入线程时的旧语义：只更新 slot、active ids、selected
+  和 settings，不额外触发草稿/Composer/渲染副作用。
+- `public/app.js` 继续拥有实际 DOM、网络、draft、Composer 和 render 执行；策略层只输出
+  bounded effect plan。
+
+这个切片不改变 pane layout、thread detail API、server projection、任务卡或诊断上报。
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v468`。
+`test/thread-tile-state.test.js` 覆盖 pane slot mutation effects planning；
+`test/thread-tile-layout-ui.test.js` 和 `test/composer-draft.test.js` 约束 app 层必须通过
+`paneSlotMutationEffectsPlan` 和 `applyThreadTilePaneSlotEffects`。
+
 ## 2026-06-26 v467 Thread Tile Switch Menu State Policy
 
 v467 继续 Phase C，把平铺窗口标题菜单的状态策略迁到

@@ -147,7 +147,11 @@ filtering, default-candidate fallback, layout-selector delegation, and current
 thread replacement are computed as one policy. Switch-menu option/control
 planning also now lives there: current/active/running/visible thread option
 ordering, menu open/closed skip reasons, and close/add control eligibility are
-computed as one policy while `public/app.js` keeps DOM,
+computed as one policy. Pane slot mutation side-effect planning also now lives
+there: replace/select, move, split, and thread-list replace-last actions emit
+one bounded effect plan for draft save/restore, settings persistence, active id
+refresh, detail load, pane patch, scheduled full render, or board render while
+`public/app.js` keeps DOM,
 rendering, network save, timers, API reads,
 AbortController ownership, draft restore, detail-load side effects, and other
 side effects. App code can no
@@ -179,7 +183,8 @@ Target:
   planning are now outside app.js; explicit selected-pane action planning is
   also outside app.js; candidate pane id planning is also outside app.js;
   switch-menu option/control planning is also outside app.js;
-  broader action execution, detail read side effects,
+  pane slot mutation side-effect planning is also outside app.js;
+  broader detail read side effects,
   command detail panels, and split sizing remain the next boundary.
 - Keep `public/app.js` responsible for DOM wiring, patch application, and event
   binding only.
@@ -333,7 +338,10 @@ Target:
   including visible pinned filtering, default-candidate fallback,
   layout-selector delegation, and current-thread replacement. Switch-menu
   option/control planning also now lives there, including current/active/
-  running/visible option ordering and close/add control eligibility. Continue moving pane widths, active
+  running/visible option ordering and close/add control eligibility. Pane slot
+  mutation side-effect planning also now lives there, including draft/
+  Composer/settings/detail-load/render intent for replace/select, move, split,
+  and thread-list replace-last actions. Continue moving pane widths, active
   pane execution, per-pane drafts, max concurrent detail reads, pane-local
   send/approval/interrupt ownership, command detail panels, and mobile collapse
   behavior into testable helpers without DOM side effects.

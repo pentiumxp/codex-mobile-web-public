@@ -355,6 +355,62 @@
     };
   }
 
+  function paneSlotMutationEffectsPlan(plan = {}, options = {}) {
+    const sourceAction = text(plan.action).trim();
+    if (!sourceAction || sourceAction === "skip") return skipPaneSlot("no-mutation-plan", { sourceAction });
+    const paneThreadIds = normalizePinnedIds(plan.paneThreadIds || [], options);
+    const base = {
+      action: "pane-slot-effects",
+      reason: text(plan.reason || sourceAction).trim() || sourceAction,
+      sourceAction,
+      paneThreadIds,
+      paneSplitPairs: Array.isArray(plan.paneSplitPairs) ? plan.paneSplitPairs : null,
+      paneCount: Number.isFinite(Number(plan.paneCount)) ? Math.max(0, Math.floor(Number(plan.paneCount))) : null,
+      selectedThreadId: text(plan.selectedThreadId).trim(),
+      switchMenuPaneId: text(plan.switchMenuPaneId).trim(),
+      scrollResetIds: uniqueIds(plan.scrollResetIds || []),
+      saveDraft: false,
+      restoreDraft: false,
+      updateComposer: false,
+      scheduleSettingsSave: true,
+      refreshActiveIds: false,
+      loadThreadId: text(plan.loadThreadId).trim(),
+      loadSource: "tile-switch",
+      renderMode: "none",
+      renderStickToBottom: false,
+      patchThreadId: "",
+      patchSourceThreadId: "",
+      patchStickToBottom: false,
+    };
+    if (sourceAction === "select" || sourceAction === "replace") {
+      return Object.assign(base, {
+        saveDraft: true,
+        restoreDraft: true,
+        updateComposer: true,
+        refreshActiveIds: true,
+        renderMode: text(plan.renderMode) === "full" ? "schedule-full" : "patch-pane",
+        patchThreadId: text(plan.to || plan.threadId).trim(),
+        patchSourceThreadId: text(plan.from || plan.threadId).trim(),
+        patchStickToBottom: true,
+      });
+    }
+    if (sourceAction === "move" || sourceAction === "split") {
+      return Object.assign(base, {
+        saveDraft: true,
+        restoreDraft: true,
+        updateComposer: true,
+        renderMode: "full",
+        renderStickToBottom: true,
+      });
+    }
+    if (sourceAction === "replace-last") {
+      return Object.assign(base, {
+        refreshActiveIds: true,
+      });
+    }
+    return skipPaneSlot("unsupported-mutation-plan", { sourceAction });
+  }
+
   function dropPaneIntent(input = {}, options = {}) {
     const from = text(input.fromThreadId || input.fromId || input.draggingId).trim();
     const to = text(input.toThreadId || input.toId || input.targetId).trim();
@@ -713,6 +769,7 @@
     operationSignature,
     paneCountChangePlan,
     paneSelectionPlan,
+    paneSlotMutationEffectsPlan,
     prependSplitPair,
     detailLoadPlan,
     refreshDelayMs,

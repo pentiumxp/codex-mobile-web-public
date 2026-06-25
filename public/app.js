@@ -503,7 +503,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v467";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v468";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -12195,6 +12195,38 @@ function renderThreadTileSwitchMenu(currentId) {
   </div>`;
 }
 
+function applyThreadTilePaneSlotEffects(effect, layout = threadTileLayout()) {
+  if (!effect || effect.action !== "pane-slot-effects") return false;
+  const sourcePane = effect.patchSourceThreadId ? threadTilePaneElement(effect.patchSourceThreadId) : null;
+  if (effect.saveDraft) saveCurrentDraftNow();
+  if (Array.isArray(effect.paneThreadIds)) state.threadTilePinnedIds = normalizeThreadTilePinnedIds(effect.paneThreadIds);
+  if (Array.isArray(effect.paneSplitPairs)) {
+    state.threadTileSplitPairs = normalizeThreadTileSplitPairs(effect.paneSplitPairs, state.threadTilePinnedIds);
+  }
+  if (effect.paneCount !== null && effect.paneCount !== undefined) state.threadTilePaneCount = effect.paneCount;
+  if (effect.refreshActiveIds) state.threadTileActiveIds = threadTileCandidateIds(layout);
+  if (effect.selectedThreadId) state.threadTileSelectedThreadId = effect.selectedThreadId;
+  state.threadTileSwitchMenuPaneId = effect.switchMenuPaneId || "";
+  (effect.scrollResetIds || []).forEach((id) => state.threadTilePaneScrollHoldById.delete(id));
+  if (effect.scheduleSettingsSave) scheduleThreadDisplaySettingsSave();
+  if (effect.restoreDraft) restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
+  if (effect.updateComposer) {
+    renderComposerSettings();
+    updateComposerControls();
+  }
+  if (effect.loadThreadId) loadThreadTileDetail(effect.loadThreadId, { force: true, source: effect.loadSource || "tile-switch" }).catch(showError);
+  if (effect.renderMode === "schedule-full") scheduleRenderCurrentThread();
+  else if (effect.renderMode === "full") renderCurrentThread({ stickToBottom: Boolean(effect.renderStickToBottom) });
+  else if (effect.renderMode === "patch-pane" && effect.patchThreadId) {
+    const patched = patchThreadTilePane(effect.patchThreadId, {
+      paneElement: sourcePane,
+      stickToBottom: Boolean(effect.patchStickToBottom),
+    });
+    if (!patched) scheduleRenderCurrentThread();
+  }
+  return true;
+}
+
 function replaceThreadTilePaneThread(fromThreadId, toThreadId) {
   const from = String(fromThreadId || "").trim();
   const to = String(toThreadId || "").trim();
@@ -12211,21 +12243,9 @@ function replaceThreadTilePaneThread(fromThreadId, toThreadId) {
     maxPanes: THREAD_TILE_USER_MAX_PANES,
   });
   if (plan.action === "skip") return false;
-  const sourcePane = threadTilePaneElement(from);
-  saveCurrentDraftNow();
-  state.threadTilePinnedIds = normalizeThreadTilePinnedIds(plan.paneThreadIds);
-  state.threadTileActiveIds = threadTileCandidateIds(layout);
-  state.threadTileSelectedThreadId = plan.selectedThreadId || to;
-  state.threadTileSwitchMenuPaneId = plan.switchMenuPaneId || "";
-  (plan.scrollResetIds || []).forEach((id) => state.threadTilePaneScrollHoldById.delete(id));
-  scheduleThreadDisplaySettingsSave();
-  restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
-  renderComposerSettings();
-  updateComposerControls();
-  if (plan.loadThreadId) loadThreadTileDetail(plan.loadThreadId, { force: true, source: "tile-switch" }).catch(showError);
-  if (plan.renderMode === "full") scheduleRenderCurrentThread();
-  else if (!patchThreadTilePane(to, { paneElement: sourcePane, stickToBottom: true })) scheduleRenderCurrentThread();
-  return true;
+  return applyThreadTilePaneSlotEffects(threadTileStatePolicy.paneSlotMutationEffectsPlan(plan, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+  }), layout);
 }
 
 function moveThreadTilePaneRelative(fromThreadId, toThreadId, placement = "after") {
@@ -12246,17 +12266,9 @@ function moveThreadTilePaneRelative(fromThreadId, toThreadId, placement = "after
     normalizeSplitPairs: threadTileLayoutPolicy.normalizeSplitPairs,
   });
   if (plan.action !== "move") return false;
-  saveCurrentDraftNow();
-  state.threadTilePinnedIds = normalizeThreadTilePinnedIds(plan.paneThreadIds);
-  state.threadTileSplitPairs = normalizeThreadTileSplitPairs(plan.paneSplitPairs, state.threadTilePinnedIds);
-  state.threadTileSelectedThreadId = plan.selectedThreadId || from;
-  state.threadTileSwitchMenuPaneId = plan.switchMenuPaneId || "";
-  scheduleThreadDisplaySettingsSave();
-  restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
-  renderComposerSettings();
-  updateComposerControls();
-  renderCurrentThread({ stickToBottom: true });
-  return true;
+  return applyThreadTilePaneSlotEffects(threadTileStatePolicy.paneSlotMutationEffectsPlan(plan, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+  }), layout);
 }
 
 function splitThreadTilePaneWithTarget(fromThreadId, toThreadId, placement = "below") {
@@ -12277,17 +12289,9 @@ function splitThreadTilePaneWithTarget(fromThreadId, toThreadId, placement = "be
     normalizeSplitPairs: threadTileLayoutPolicy.normalizeSplitPairs,
   });
   if (plan.action !== "split") return false;
-  saveCurrentDraftNow();
-  state.threadTilePinnedIds = normalizeThreadTilePinnedIds(plan.paneThreadIds);
-  state.threadTileSplitPairs = normalizeThreadTileSplitPairs(plan.paneSplitPairs, state.threadTilePinnedIds);
-  state.threadTileSelectedThreadId = plan.selectedThreadId || from;
-  state.threadTileSwitchMenuPaneId = plan.switchMenuPaneId || "";
-  scheduleThreadDisplaySettingsSave();
-  restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
-  renderComposerSettings();
-  updateComposerControls();
-  renderCurrentThread({ stickToBottom: true });
-  return true;
+  return applyThreadTilePaneSlotEffects(threadTileStatePolicy.paneSlotMutationEffectsPlan(plan, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+  }), layout);
 }
 
 function dropThreadTilePane(fromThreadId, toThreadId, event) {
@@ -12328,13 +12332,9 @@ function replaceLastThreadTilePaneForThreadListOpen(threadId, options = {}) {
     maxPanes: THREAD_TILE_USER_MAX_PANES,
   });
   if (plan.action !== "replace-last") return false;
-  state.threadTilePinnedIds = normalizeThreadTilePinnedIds(plan.paneThreadIds);
-  state.threadTileActiveIds = threadTileCandidateIds(layout);
-  state.threadTileSelectedThreadId = plan.selectedThreadId || id;
-  state.threadTileSwitchMenuPaneId = plan.switchMenuPaneId || "";
-  (plan.scrollResetIds || []).forEach((resetId) => state.threadTilePaneScrollHoldById.delete(resetId));
-  scheduleThreadDisplaySettingsSave();
-  return true;
+  return applyThreadTilePaneSlotEffects(threadTileStatePolicy.paneSlotMutationEffectsPlan(plan, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+  }), layout);
 }
 
 function toggleThreadTileSwitchMenu(threadId) {
