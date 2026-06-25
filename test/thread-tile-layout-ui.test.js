@@ -169,6 +169,7 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(tileActionsBody, /conversation\.addEventListener\("scroll"/);
   assert.match(tileActionsBody, /updateThreadTileBottomButtonForBody\(body\)/);
   assert.match(tileActionsBody, /toggleThreadTileSwitchMenu\(titleButton\.getAttribute\("data-thread-tile-title"\) \|\| ""\)/);
+  assert.doesNotMatch(tileActionsBody, /if \(!event\.detail\) toggleThreadTileSwitchMenu/);
   assert.match(tileActionsBody, /data-thread-tile-title/);
   assert.match(tileActionsBody, /data-thread-tile-switch-target/);
   assert.match(tileActionsBody, /replaceThreadTilePaneThread/);
@@ -272,12 +273,18 @@ test("thread tile composer targets the active pane without replacing the shared 
   const targetIdBody = functionBody(appJs, "currentComposerThreadId");
   assert.match(targetIdBody, /effectiveThreadTileSelectedThreadId\(\) \|\| state\.currentThreadId/);
 
+  const tileComposerContextBody = functionBody(appJs, "isThreadTileComposerContext");
+  assert.match(tileComposerContextBody, /state\.threadTileMode/);
+  assert.match(tileComposerContextBody, /conversation\.classList\.contains\("thread-tile-mode"\)/);
+  assert.match(tileComposerContextBody, /state\.threadTileActiveIds\.length/);
+
   const placeholderBody = functionBody(appJs, "composerPlaceholderText");
   assert.match(placeholderBody, /const targetThreadId = currentComposerThreadId\(\)/);
   assert.match(placeholderBody, /const targetThread = composerTargetThread\(\)/);
-  assert.match(placeholderBody, /Boolean\(state\.threadTileMode && !state\.newThreadDraft && targetThreadId && targetThread\)/);
+  assert.match(placeholderBody, /Boolean\(isThreadTileComposerContext\(\) && targetThreadId && targetThread\)/);
   assert.match(placeholderBody, /return `发送到：\$\{title\}`;/);
   assert.match(appJs, /function composerShowsTargetPlaceholder\(\)/);
+  assert.match(functionBody(appJs, "composerShowsTargetPlaceholder"), /Boolean\(isThreadTileComposerContext\(\) && targetThreadId && targetThread\)/);
 
   const updateControlsBody = functionBody(appJs, "updateComposerControls");
   assert.match(updateControlsBody, /const targetThreadId = currentComposerThreadId\(\)/);

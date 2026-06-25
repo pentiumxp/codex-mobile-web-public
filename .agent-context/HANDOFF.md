@@ -1,3 +1,39 @@
+# 2026-06-25 - v437 tile title menu and Composer target scope pending deploy
+
+- Scope:
+  - User reported that tile pane thread-title clicks no longer opened the
+    thread switch list.
+  - User also clarified that the Composer target placeholder must appear only
+    while the UI is actually in tile mode, not in single-thread mode.
+- Root cause:
+  - `bindThreadTileActions()` gated `toggleThreadTileSwitchMenu(...)` behind
+    `if (!event.detail)`. Normal mouse/touch clicks generally have
+    `event.detail=1`, so the title button selected the pane but did not open
+    the switch menu.
+  - The Composer placeholder checked `state.threadTileMode`, which can describe
+    configured intent rather than the currently rendered conversation mode.
+- Change:
+  - Removed the `event.detail` gate so title button clicks always toggle the
+    pane's switch menu.
+  - Added `isThreadTileComposerContext()`, requiring configured tile mode, the
+    actual `.conversation.thread-tile-mode` DOM state, and active tile panes.
+  - `composerPlaceholderText()` and `composerShowsTargetPlaceholder()` now use
+    that actual tile-context predicate, so single-thread mode keeps
+    `Message Codex`.
+  - `setThreadTileConversationMode()` now calls `updateComposerControls()` so
+    placeholder state updates immediately when the actual layout mode changes.
+  - PWA shell cache advanced to `codex-mobile-shell-v437`.
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js` passed.
+  - Focused UI tests passed:
+    `node --test test/thread-tile-layout-ui.test.js test/composer-quota.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    (`34` tests).
+  - `npm run check` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Pending at the time of this note. Use the Home AI central deploy script;
+    do not push Public without explicit instruction.
+
 # 2026-06-25 - v436 tile pane contrast deployed
 
 - Scope:

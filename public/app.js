@@ -473,7 +473,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v436";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v437";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -4326,6 +4326,14 @@ function effectiveThreadTileSelectedThreadId(ids = state.threadTileActiveIds) {
 function currentComposerThreadId() {
   if (state.newThreadDraft) return "";
   return effectiveThreadTileSelectedThreadId() || state.currentThreadId || "";
+}
+
+function isThreadTileComposerContext() {
+  const conversation = $("conversation");
+  return Boolean(state.threadTileMode
+    && conversation
+    && conversation.classList.contains("thread-tile-mode")
+    && state.threadTileActiveIds.length);
 }
 
 function composerTargetThread() {
@@ -11804,6 +11812,7 @@ function setThreadTileConversationMode(active, layout = null) {
       state.threadTileOperationRefreshTimer = null;
     }
   }
+  updateComposerControls();
 }
 
 function captureThreadTilePaneScrollState() {
@@ -12373,7 +12382,7 @@ function bindThreadTileActions() {
     if (titleButton && conversation.contains(titleButton)) {
       event.preventDefault();
       event.stopPropagation();
-      if (!event.detail) toggleThreadTileSwitchMenu(titleButton.getAttribute("data-thread-tile-title") || "");
+      toggleThreadTileSwitchMenu(titleButton.getAttribute("data-thread-tile-title") || "");
       return;
     }
     const switchButton = closestTileTarget(event.target, "[data-thread-tile-switch-target]");
@@ -19807,7 +19816,7 @@ function composerPlaceholderText() {
   if (state.newThreadDraft) return "输入第一条消息";
   const targetThreadId = currentComposerThreadId();
   const targetThread = composerTargetThread();
-  const shouldShow = Boolean(state.threadTileMode && !state.newThreadDraft && targetThreadId && targetThread);
+  const shouldShow = Boolean(isThreadTileComposerContext() && targetThreadId && targetThread);
   if (!shouldShow) return "Message Codex";
   const title = threadDisplayName(targetThread) || targetThreadId;
   return `发送到：${title}`;
@@ -19817,7 +19826,7 @@ function composerShowsTargetPlaceholder() {
   if (state.newThreadDraft) return false;
   const targetThreadId = currentComposerThreadId();
   const targetThread = composerTargetThread();
-  return Boolean(state.threadTileMode && targetThreadId && targetThread);
+  return Boolean(isThreadTileComposerContext() && targetThreadId && targetThread);
 }
 
 function renderComposerSettings() {

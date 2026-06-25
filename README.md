@@ -16,6 +16,19 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-25 v437 平铺标题菜单与 Composer 目标提示范围
+
+v437 是平铺模式交互回归修正。平铺窗口页眉里的线程名点击现在会直接打开
+线程切换列表；之前的 click handler 错误使用 `event.detail` 作为门禁，导致
+正常鼠标/触摸点击不会触发菜单，只能选中 pane。
+
+Composer 的 `发送到：线程名` placeholder 也收紧为只在“实际已经渲染为平铺
+视图”时显示。判断条件不再只看设置态 `threadTileMode`，还要求当前
+conversation DOM 处于 `.thread-tile-mode` 并且存在 active pane。单窗口、Home、
+新线程草稿和视口回落到单线程时都保持默认 `Message Codex`。
+
+PWA shell cache 升级到 `codex-mobile-shell-v437`。
+
 ## 2026-06-25 v436 平铺页眉与 Composer 目标提示对比度
 
 v436 是平铺模式的视觉清晰度修正，不改变平铺窗口数量、active pane 选择、
