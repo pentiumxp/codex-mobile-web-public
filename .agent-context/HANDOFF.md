@@ -8371,6 +8371,65 @@ The previous full handoff was archived and should be opened only when old proven
   - This has not been pushed to public. Follow the release-order rule: wait for
     production/user confirmation before any public sync/push.
 
+## 2026-06-26 - v478 operation card content plan and Home AI return-event verification
+
+- Active optimization slice:
+  - Commit `3d3e1e3` (`extract operation card content planning`) moved live
+    operation card content planning from `public/app.js` into
+    `public/live-operation-dock-state.js`.
+  - The helper now owns item id/type/title/detail normalization, empty-detail
+    state, status visibility, duration visibility/title text, and class token
+    selection.
+  - `public/app.js` still owns HTML escaping, final template strings, and real
+    DOM patching. This intentionally keeps the slice small instead of rewriting
+    the whole command card renderer.
+  - Shell/cache bumped to `codex-mobile-shell-v478`.
+- Home AI Autonomous Delivery Loop task-card check:
+  - The return-card event path already exists in commit `64d3b30`
+    (`wire return cards to Home AI delivery events`) and is documented in the
+    cross-thread task-card docs.
+  - Verified that terminal cards from `return_to_source`,
+    `/reply returnToSource:true`, and autonomous auto-return use terminal
+    metadata with `terminal:true`, `requiresReturn:false`, and
+    `ackPolicy:"none"`.
+  - Verified that terminal return-card observer events send bounded metadata
+    only, and Home AI `404` for an unknown original task card is recorded as
+    `unknown_task_card` without blocking normal return-card delivery.
+- Validation:
+  - Focused v478 tests passed: `node --test
+    test/live-operation-dock-state.test.js test/collab-agent-render.test.js
+    test/conversation-render.test.js test/mobile-viewport.test.js
+    test/app-update.test.js test/thread-goal-service.test.js
+    test/thread-task-card-route.test.js` (`140` passed).
+  - Focused return-card event tests passed: `node --test
+    test/home-ai-autonomous-delivery-return-service.test.js
+    test/thread-task-card-service.test.js test/codex-mobile-mcp-server.test.js
+    test/thread-task-card-route.test.js` (`47` passed).
+  - Full source `npm test` passed (`867` passed).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Production deploy:
+  - Deployed with Home AI central script:
+    `deploy-macos-production.js --plugin codex-mobile --reason
+    codex-mobile-operation-card-content-plan-v478 --execute --json`.
+  - Source ref at deploy: `3d3e1e38c258`, dirty state `false`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T204227Z-plugin-codex-mobile-web-codex-mobile-operation-card-content-plan-v478`.
+  - `/api/public-config` readback returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v478`,
+    `shellCacheName=codex-mobile-shell-v478`, `version=0.1.11`,
+    `authRequired=true`.
+  - Source/production SHA-256 parity was confirmed for:
+    `public/app.js`, `public/sw.js`,
+    `public/live-operation-dock-state.js`,
+    `adapters/home-ai-autonomous-delivery-return-service.js`,
+    `adapters/thread-task-card-service.js`, return-card tests, `README.md`,
+    and cross-thread task-card docs.
+  - Production focused suite passed with production dependencies (`63` passed).
+- Operational notes:
+  - Runtime/static files are deployed to Mac production. Clients need to load
+    the v478 shell/cache to pick up the operation-card extraction.
+  - Public push has not been performed in this step.
+
 ## 2026-06-26 - v477 live text DOM patch ownership deployed
 
 - Goal slice:
