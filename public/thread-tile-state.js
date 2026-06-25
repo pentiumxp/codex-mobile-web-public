@@ -768,6 +768,7 @@
     const activeIds = uniqueIds(input.activeIds || input.ids || []);
     const controllerIds = uniqueIds(input.controllerIds || []);
     const loadingIds = uniqueIds(input.loadingIds || []);
+    const readyIds = uniqueIds(input.readyIds || []);
     if (input.enabled !== true) {
       return {
         action: "skip",
@@ -775,6 +776,7 @@
         activeIds,
         controllerIds,
         loadingIds,
+        readyIds,
         abortIds: [],
         loadIds: [],
         deferredIds: [],
@@ -787,6 +789,7 @@
     const activeSet = new Set(activeIds);
     const controllerSet = new Set(controllerIds);
     const loadingSet = new Set(loadingIds);
+    const readySet = new Set(readyIds);
     const abortIds = controllerIds.filter((id) => !activeSet.has(id));
     const busyIds = uniqueIds([
       ...controllerIds.filter((id) => activeSet.has(id)),
@@ -797,7 +800,7 @@
       ? parsedMax
       : Math.max(1, activeIds.length || DEFAULT_USER_MAX_PANES);
     const availableSlots = Math.max(0, maxConcurrentLoads - busyIds.length);
-    const candidates = activeIds.filter((id) => !controllerSet.has(id) && !loadingSet.has(id));
+    const candidates = activeIds.filter((id) => !controllerSet.has(id) && !loadingSet.has(id) && !readySet.has(id));
     const loadIds = candidates.slice(0, availableSlots);
     const deferredIds = candidates.slice(availableSlots);
     return {
@@ -806,12 +809,37 @@
       activeIds,
       controllerIds,
       loadingIds,
+      readyIds,
       abortIds,
       loadIds,
       deferredIds,
       busyIds,
       maxConcurrentLoads,
       availableSlots,
+    };
+  }
+
+  function detailLoadQueueDrainPlan(input = {}, options = {}) {
+    const activeIds = uniqueIds(input.activeIds || input.ids || []);
+    const delayMs = Math.max(0, Number(input.delayMs || options.defaultDelayMs || 0));
+    if (input.enabled !== true) {
+      return { schedule: false, clearTimer: true, reason: "disabled", activeIds, delayMs: 0 };
+    }
+    if (!activeIds.length) {
+      return { schedule: false, clearTimer: true, reason: "no-active-panes", activeIds, delayMs: 0 };
+    }
+    if (input.hasTimer === true) {
+      return { schedule: false, clearTimer: false, reason: "timer-active", activeIds, delayMs: 0 };
+    }
+    if (input.pending !== true && input.force !== true) {
+      return { schedule: false, clearTimer: false, reason: "no-pending-loads", activeIds, delayMs: 0 };
+    }
+    return {
+      schedule: true,
+      clearTimer: false,
+      reason: input.force === true ? "load-settled" : "deferred-loads",
+      activeIds,
+      delayMs,
     };
   }
 
@@ -929,6 +957,7 @@
     detailLoadPlan,
     detailLoadErrorEffectsPlan,
     detailLoadFinallyEffectsPlan,
+    detailLoadQueueDrainPlan,
     detailLoadQueuePlan,
     detailLoadStartEffectsPlan,
     detailLoadSuccessEffectsPlan,

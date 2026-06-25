@@ -727,6 +727,7 @@ test("thread tile state plans detail-load queue and stale controller aborts", ()
     activeIds: ["a"],
     controllerIds: ["old"],
     loadingIds: ["a"],
+    readyIds: [],
     abortIds: [],
     loadIds: [],
     deferredIds: [],
@@ -747,6 +748,7 @@ test("thread tile state plans detail-load queue and stale controller aborts", ()
     activeIds: ["a", "b", "c", "d"],
     controllerIds: ["a", "stale"],
     loadingIds: ["b"],
+    readyIds: [],
     abortIds: ["stale"],
     loadIds: ["c"],
     deferredIds: ["d"],
@@ -766,12 +768,104 @@ test("thread tile state plans detail-load queue and stale controller aborts", ()
     activeIds: [],
     controllerIds: ["stale"],
     loadingIds: [],
+    readyIds: [],
     abortIds: ["stale"],
     loadIds: [],
     deferredIds: [],
     busyIds: [],
     maxConcurrentLoads: 2,
     availableSlots: 2,
+  });
+
+  assert.deepEqual(state.detailLoadQueuePlan({
+    enabled: true,
+    activeIds: ["a", "b", "c", "d", "e"],
+    readyIds: ["a", "b", "c"],
+    maxConcurrentLoads: 2,
+  }), {
+    action: "detail-load-queue",
+    reason: "queue",
+    activeIds: ["a", "b", "c", "d", "e"],
+    controllerIds: [],
+    loadingIds: [],
+    readyIds: ["a", "b", "c"],
+    abortIds: [],
+    loadIds: ["d", "e"],
+    deferredIds: [],
+    busyIds: [],
+    maxConcurrentLoads: 2,
+    availableSlots: 2,
+  });
+});
+
+test("thread tile state plans detail-load queue drain scheduling", () => {
+  assert.deepEqual(state.detailLoadQueueDrainPlan({
+    enabled: false,
+    activeIds: ["a"],
+    pending: true,
+  }, { defaultDelayMs: 120 }), {
+    schedule: false,
+    clearTimer: true,
+    reason: "disabled",
+    activeIds: ["a"],
+    delayMs: 0,
+  });
+  assert.deepEqual(state.detailLoadQueueDrainPlan({
+    enabled: true,
+    activeIds: [],
+    pending: true,
+  }, { defaultDelayMs: 120 }), {
+    schedule: false,
+    clearTimer: true,
+    reason: "no-active-panes",
+    activeIds: [],
+    delayMs: 0,
+  });
+  assert.deepEqual(state.detailLoadQueueDrainPlan({
+    enabled: true,
+    activeIds: ["a"],
+    hasTimer: true,
+    pending: true,
+  }, { defaultDelayMs: 120 }), {
+    schedule: false,
+    clearTimer: false,
+    reason: "timer-active",
+    activeIds: ["a"],
+    delayMs: 0,
+  });
+  assert.deepEqual(state.detailLoadQueueDrainPlan({
+    enabled: true,
+    activeIds: ["a"],
+    pending: false,
+  }, { defaultDelayMs: 120 }), {
+    schedule: false,
+    clearTimer: false,
+    reason: "no-pending-loads",
+    activeIds: ["a"],
+    delayMs: 0,
+  });
+  assert.deepEqual(state.detailLoadQueueDrainPlan({
+    enabled: true,
+    activeIds: ["a", "b", "a"],
+    pending: true,
+  }, { defaultDelayMs: 120 }), {
+    schedule: true,
+    clearTimer: false,
+    reason: "deferred-loads",
+    activeIds: ["a", "b"],
+    delayMs: 120,
+  });
+  assert.deepEqual(state.detailLoadQueueDrainPlan({
+    enabled: true,
+    activeIds: ["a"],
+    force: true,
+    delayMs: 25,
+  }, { defaultDelayMs: 120 }), {
+    schedule: true,
+    clearTimer: false,
+    reason: "load-settled",
+    activeIds: ["a"],
+    delayMs: 25,
   });
 });
 

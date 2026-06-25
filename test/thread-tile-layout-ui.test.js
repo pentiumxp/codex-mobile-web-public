@@ -130,6 +130,9 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(functionBody(appJs, "threadTileRenderSignature"), /columnGroups: layout\.columnGroups \|\| \[\]/);
   assert.match(functionBody(appJs, "threadTileRenderSignature"), /splitPairs: threadTilePrunedSplitPairs\(ids\)/);
   assert.match(functionBody(appJs, "threadTileRenderSignature"), /switchMenuPaneId: state\.threadTileSwitchMenuPaneId \|\| ""/);
+  assert.match(appJs, /THREAD_TILE_DETAIL_LOAD_MAX_CONCURRENT = Math\.max\(1, Math\.min\(4, THREAD_TILE_USER_MAX_PANES\)\)/);
+  assert.match(appJs, /THREAD_TILE_DETAIL_LOAD_QUEUE_DRAIN_MS = 120/);
+  assert.match(appJs, /threadTileDetailLoadQueueTimer: null/);
 
   const syncActiveBody = functionBody(appJs, "syncThreadTileActivePaneState");
   assert.match(syncActiveBody, /threadTileStatePolicy\.activePaneSyncPlan/);
@@ -142,12 +145,23 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(ensureBody, /threadTileStatePolicy\.detailLoadQueuePlan/);
   assert.match(ensureBody, /controllerIds: Array\.from\(state\.threadTileControllers\.keys\(\)\)/);
   assert.match(ensureBody, /loadingIds: Array\.from\(state\.threadTileLoadingIds\)/);
+  assert.match(ensureBody, /const readyIds = state\.threadTileActiveIds\.filter/);
+  assert.match(ensureBody, /state\.threadTileDetails\.get\(id\)/);
+  assert.match(ensureBody, /readyIds,/);
   assert.match(ensureBody, /maxConcurrentLoads: THREAD_TILE_DETAIL_LOAD_MAX_CONCURRENT/);
   assert.match(ensureBody, /applyThreadTileDetailLoadQueuePlan/);
   assert.doesNotMatch(ensureBody, /syncThreadTilePinnedIdsFromActiveIds/);
   assert.doesNotMatch(ensureBody, /syncThreadTileSelectedThread/);
   assert.doesNotMatch(ensureBody, /state\.threadTileControllers\.delete/);
   assert.match(ensureBody, /scheduleThreadTileRefresh\(\)/);
+
+  const drainBody = functionBody(appJs, "scheduleThreadTileDetailLoadQueueDrain");
+  assert.match(drainBody, /threadTileStatePolicy\.detailLoadQueueDrainPlan/);
+  assert.match(drainBody, /hasTimer: Boolean\(state\.threadTileDetailLoadQueueTimer\)/);
+  assert.match(drainBody, /defaultDelayMs: THREAD_TILE_DETAIL_LOAD_QUEUE_DRAIN_MS/);
+  assert.match(drainBody, /ensureThreadTileDetails\(state\.threadTileActiveIds\)/);
+  assert.match(functionBody(appJs, "clearThreadTileDetailLoadQueueTimer"), /clearTimeout\(state\.threadTileDetailLoadQueueTimer\)/);
+  assert.match(functionBody(appJs, "abortThreadTileLoads"), /clearThreadTileDetailLoadQueueTimer\(\)/);
 
   const queuePlanBody = functionBody(appJs, "applyThreadTileDetailLoadQueuePlan");
   assert.match(queuePlanBody, /plan\.action !== "detail-load-queue"/);
@@ -157,6 +171,8 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(queuePlanBody, /state\.threadTileLoadingIds\.delete\(id\)/);
   assert.match(queuePlanBody, /plan\.loadIds/);
   assert.match(queuePlanBody, /loadThreadTileDetail\(id\)\.catch\(showError\)/);
+  assert.match(queuePlanBody, /plan\.deferredIds/);
+  assert.match(queuePlanBody, /scheduleThreadTileDetailLoadQueueDrain\(\{ pending: true \}\)/);
 
   const candidateBody = functionBody(appJs, "threadTileCandidateIds");
   assert.match(candidateBody, /threadTileStatePolicy\.candidatePaneIdsPlan/);
@@ -185,6 +201,7 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(loadBody, /threadTileStatePolicy\.detailLoadFinallyEffectsPlan/);
   assert.match(loadBody, /applyThreadTileDetailLoadFinallyEffects/);
   assert.doesNotMatch(loadBody, /state\.threadTileDetails\.set\(id, result\.thread\)/);
+  assert.match(functionBody(appJs, "applyThreadTileDetailLoadFinallyEffects"), /scheduleThreadTileDetailLoadQueueDrain\(\{ force: true \}\)/);
 
   const tilePaneBody = functionBody(appJs, "renderThreadTilePane");
   assert.match(tilePaneBody, /thread-tile-pane-content/);

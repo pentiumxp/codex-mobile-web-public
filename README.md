@@ -16,6 +16,31 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v473 Thread Tile Detail Load Concurrency Policy
+
+v473 继续 Phase C，在 v472 的 detail-load queue plan 基础上启用真正的有界并发。
+平铺窗口数量仍由用户设置和布局策略决定，不因为这个改动被限制；限制的是同一时刻
+并发读取线程详情的 `loadThreadTileDetail` 数量，避免 5/6 个 pane 同时打开大 session 时
+一起打满 app-server 或触发前端整板重绘压力。
+
+本次运行时策略：
+
+- `THREAD_TILE_DETAIL_LOAD_MAX_CONCURRENT` 设为 `min(4, user pane ceiling)`，最多并发 4 个
+  pane detail read。
+- 新增 `detailLoadQueueDrainPlan`，由 `public/thread-tile-state.js` 决定是否需要安排下一批
+  队列续跑。
+- 新增 120ms 的 pane detail-load drain timer。首批 load 启动后如果还有 `deferredIds`，
+  会短延迟重查队列；任一 load finally 后也会触发队列续跑，保证被推迟的 pane 不必等普通
+  2.4s refresh timer。
+- `abortThreadTileLoads` 会同时清理普通 refresh timer 和 detail-load drain timer，避免退出
+  平铺后继续续跑旧队列。
+
+这个切片是架构收敛，不是 UI 兜底：不会隐藏重复消息，不会跳过刷新，也不会改变 server
+projection、thread detail API、任务卡或 Home AI 诊断上报。
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v473`。
+`test/thread-tile-state.test.js` 覆盖 drain scheduling；`test/thread-tile-layout-ui.test.js`
+约束 app 层必须通过 queue/drain 策略和 executor。
+
 ## 2026-06-26 v472 Thread Tile Detail Load Queue Policy
 
 v472 继续 Phase C，把平铺窗口 detail load 的队列选择和 stale controller 清理从
