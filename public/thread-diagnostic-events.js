@@ -63,6 +63,92 @@
     };
   }
 
+  function visibleShapeFrom(deps, thread) {
+    if (typeof deps.visibleShape === "function") {
+      const shape = deps.visibleShape(thread);
+      if (shape && typeof shape === "object") return shape;
+    }
+    return { visibleTurnCount: 0, visibleItemCount: 0 };
+  }
+
+  function domCountsFromShape(domShape = {}) {
+    return {
+      dom_count: domShape.renderKeyCount || domShape.dom_count || domShape.domCount,
+      duplicate_count: domShape.duplicateRenderKeyCount || domShape.duplicate_count || domShape.duplicateCount,
+    };
+  }
+
+  function conversationProjectionDiagnosticSnapshot(input = {}, deps = {}) {
+    const source = input && typeof input === "object" ? input : {};
+    const action = compactToken(source.source || source.action, "render", 80);
+    const renderMode = compactToken(source.renderMode || source.render_mode, "", 80);
+    const renderedSignature = String(source.renderedConversationSignature || source.renderedSignature || "");
+    const domShape = source.domShape && typeof source.domShape === "object" ? source.domShape : {};
+    const baseCounts = domCountsFromShape(domShape);
+    const tileMode = source.threadTileMode === true;
+    const tileDomActive = source.tileDomActive === true;
+
+    if (tileMode) {
+      if (!tileDomActive) return null;
+      const layout = source.tileLayout || (typeof deps.tileLayout === "function" ? deps.tileLayout() : null);
+      if (!layout || !layout.enabled) return null;
+      const ids = Array.isArray(source.tileIds)
+        ? source.tileIds
+        : (typeof deps.tileCandidateIds === "function" ? deps.tileCandidateIds(layout) : []);
+      if (!ids.length) return null;
+      const displayLayout = source.tileDisplayLayout || (typeof deps.tileDisplayLayout === "function"
+        ? deps.tileDisplayLayout(layout, ids)
+        : layout);
+      const currentSignature = source.tileSignature || source.currentSignature || (typeof deps.tileRenderSignature === "function"
+        ? deps.tileRenderSignature(displayLayout, ids)
+        : "");
+      const visibleShape = ids.reduce((acc, id) => {
+        const thread = typeof deps.tileThreadForId === "function" ? deps.tileThreadForId(id) : null;
+        const shape = visibleShapeFrom(deps, thread);
+        acc.visibleTurnCount += boundedCount(shape.visibleTurnCount);
+        acc.visibleItemCount += boundedCount(shape.visibleItemCount);
+        return acc;
+      }, { visibleTurnCount: 0, visibleItemCount: 0 });
+      return projectionDiagnosticSnapshot({
+        renderedSignature,
+        currentSignature,
+        context: {
+          surface: "conversation-render",
+          action,
+          route_kind: "thread-tile",
+          read_mode: "mixed",
+          render_mode: renderMode,
+        },
+        counts: Object.assign({}, baseCounts, {
+          visible_count: visibleShape.visibleItemCount,
+          turn_count: visibleShape.visibleTurnCount,
+          pane_count: ids.length,
+        }),
+      });
+    }
+
+    if (tileDomActive) return null;
+    const thread = source.thread || null;
+    const visibleShape = visibleShapeFrom(deps, thread);
+    const currentSignature = source.currentSignature || (typeof deps.singleSignature === "function"
+      ? deps.singleSignature(thread)
+      : "");
+    return projectionDiagnosticSnapshot({
+      renderedSignature,
+      currentSignature,
+      context: {
+        surface: "conversation-render",
+        action,
+        read_mode: thread && thread.mobileReadMode || "",
+        render_mode: renderMode,
+      },
+      counts: Object.assign({}, baseCounts, {
+        visible_count: visibleShape.visibleItemCount,
+        turn_count: visibleShape.visibleTurnCount,
+      }),
+    });
+  }
+
   function hasRenderSignatureMismatch(snapshot) {
     const normalized = projectionDiagnosticSnapshot(snapshot);
     return Boolean(normalized.renderedSignature && normalized.renderedSignature !== normalized.currentSignature);
@@ -188,6 +274,7 @@
     duplicateRenderKeysDiagnosticSuccess,
     hasDuplicateRenderKeys,
     hasRenderSignatureMismatch,
+    conversationProjectionDiagnosticSnapshot,
     projectionDiagnosticContext,
     projectionDiagnosticCounts,
     projectionDiagnosticSnapshot,

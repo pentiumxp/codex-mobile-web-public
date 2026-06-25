@@ -163,3 +163,120 @@ test("thread diagnostic events build duplicate render-key payloads and success i
     context: duplicate.context,
   });
 });
+
+test("thread diagnostic events plan tile conversation projection snapshots", () => {
+  const calls = [];
+  const snapshot = diagnostics.conversationProjectionDiagnosticSnapshot({
+    source: "refresh-metadata",
+    renderMode: "metadata-only",
+    renderedSignature: "tile-rendered",
+    threadTileMode: true,
+    tileDomActive: true,
+    domShape: { renderKeyCount: 7, duplicateRenderKeyCount: 1 },
+  }, {
+    tileLayout() {
+      calls.push(["layout"]);
+      return { enabled: true, columns: 2 };
+    },
+    tileCandidateIds(layout) {
+      calls.push(["ids", layout.columns]);
+      return ["tile-a", "tile-b"];
+    },
+    tileDisplayLayout(layout, ids) {
+      calls.push(["display", ids.join(",")]);
+      return { enabled: true, columns: layout.columns, rows: 1 };
+    },
+    tileRenderSignature(layout, ids) {
+      calls.push(["tile-signature", ids.length, layout.columns]);
+      return "tile-current";
+    },
+    tileThreadForId(id) {
+      return { id, visibleItemCount: id === "tile-a" ? 2 : 4 };
+    },
+    visibleShape(thread) {
+      return { visibleTurnCount: 1, visibleItemCount: thread.visibleItemCount };
+    },
+    singleSignature() {
+      calls.push(["single"]);
+      return "single-current";
+    },
+  });
+
+  assert.deepEqual(snapshot, {
+    renderedSignature: "tile-rendered",
+    currentSignature: "tile-current",
+    context: {
+      surface: "conversation-render",
+      action: "refresh-metadata",
+      route_kind: "thread-tile",
+      read_mode: "mixed",
+      render_mode: "metadata-only",
+    },
+    counts: {
+      dom_count: 7,
+      duplicate_count: 1,
+      visible_count: 6,
+      turn_count: 2,
+      pane_count: 2,
+    },
+  });
+  assert.deepEqual(calls.filter((entry) => entry[0] === "single"), []);
+  assert.deepEqual(calls.map((entry) => entry[0]), ["layout", "ids", "display", "tile-signature"]);
+});
+
+test("thread diagnostic events plan single conversation projection snapshots", () => {
+  const calls = [];
+  const thread = { id: "thread-1", mobileReadMode: "projection-cache" };
+  const snapshot = diagnostics.conversationProjectionDiagnosticSnapshot({
+    source: "first-paint",
+    renderMode: "first-paint",
+    renderedSignature: "single-rendered",
+    threadTileMode: false,
+    tileDomActive: false,
+    domShape: { renderKeyCount: 3, duplicateRenderKeyCount: 0 },
+    thread,
+  }, {
+    singleSignature(inputThread) {
+      calls.push(["single", inputThread && inputThread.id]);
+      return "single-current";
+    },
+    visibleShape(inputThread) {
+      return inputThread === thread
+        ? { visibleTurnCount: 1, visibleItemCount: 3 }
+        : { visibleTurnCount: 0, visibleItemCount: 0 };
+    },
+    tileLayout() {
+      calls.push(["tile"]);
+      return { enabled: true };
+    },
+  });
+
+  assert.equal(snapshot.renderedSignature, "single-rendered");
+  assert.equal(snapshot.currentSignature, "single-current");
+  assert.equal(snapshot.context.read_mode, "projection-cache");
+  assert.equal(snapshot.context.render_mode, "first-paint");
+  assert.equal(snapshot.counts.visible_count, 3);
+  assert.deepEqual(calls, [["single", "thread-1"]]);
+});
+
+test("thread diagnostic events skip mismatched projection surfaces", () => {
+  assert.equal(diagnostics.conversationProjectionDiagnosticSnapshot({
+    threadTileMode: true,
+    tileDomActive: false,
+  }), null);
+  assert.equal(diagnostics.conversationProjectionDiagnosticSnapshot({
+    threadTileMode: false,
+    tileDomActive: true,
+  }), null);
+  assert.equal(diagnostics.conversationProjectionDiagnosticSnapshot({
+    threadTileMode: true,
+    tileDomActive: true,
+    tileLayout: { enabled: false },
+  }), null);
+  assert.equal(diagnostics.conversationProjectionDiagnosticSnapshot({
+    threadTileMode: true,
+    tileDomActive: true,
+    tileLayout: { enabled: true },
+    tileIds: [],
+  }), null);
+});

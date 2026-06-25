@@ -11,6 +11,7 @@ const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 const threadDetailMergeStateJs = fs.readFileSync(path.join(root, "public", "thread-detail-merge-state.js"), "utf8");
 const threadDetailPatchPlan = require(path.join(root, "public", "thread-detail-patch-plan.js"));
+const threadDiagnosticEvents = require(path.join(root, "public", "thread-diagnostic-events.js"));
 const { createThreadDetailStatePolicy } = require(path.join(root, "public", "thread-detail-state.js"));
 const { createThreadDetailMergePolicy } = require(path.join(root, "public", "thread-detail-merge-state.js"));
 
@@ -88,7 +89,7 @@ function evaluatedInputContentRenderer() {
 
 function evaluatedConversationProjectionDiagnosticSnapshot() {
   const source = functionSourceFrom(appJs, "conversationProjectionDiagnosticSnapshot");
-  return Function(`
+  return Function("threadDiagnosticEventsApi", `
 let classNames = new Set();
 let calls = [];
 const conversation = {
@@ -145,7 +146,7 @@ return {
   },
   conversationProjectionDiagnosticSnapshot,
 };
-`)();
+`)(threadDiagnosticEvents);
 }
 
 function evaluatedInputContentRendererWithKey(key = "", options = {}) {
@@ -2922,6 +2923,18 @@ test("conversation projection diagnostics use the single-thread signature outsid
   assert.equal(snapshot.counts.visible_count, 3);
   assert.ok(helpers.calls().some((entry) => entry[0] === "single"));
   assert.deepEqual(helpers.calls().filter((entry) => entry[0] === "tile"), []);
+});
+
+test("conversation projection diagnostic snapshot delegates planning to helper", () => {
+  const body = functionBody("conversationProjectionDiagnosticSnapshot");
+  assert.match(body, /threadDiagnosticEventsApi\.conversationProjectionDiagnosticSnapshot\(\{/);
+  assert.match(body, /singleSignature: conversationRenderSignature/);
+  assert.match(body, /tileLayout: threadTileLayout/);
+  assert.match(body, /tileCandidateIds: threadTileCandidateIds/);
+  assert.match(body, /tileRenderSignature: threadTileRenderSignature/);
+  assert.match(body, /visibleShape: visibleConversationShape/);
+  assert.doesNotMatch(body, /ids\.reduce/);
+  assert.doesNotMatch(body, /route_kind: "thread-tile"/);
 });
 
 test("conversation projection consistency delegates report payloads to diagnostic helpers", () => {

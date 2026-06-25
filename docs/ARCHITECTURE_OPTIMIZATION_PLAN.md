@@ -198,6 +198,12 @@ and `duplicateRenderKeysDiagnosticSuccess` build the bounded failure/success
 inputs for render-signature mismatch and duplicate render-key reports.
 `checkConversationProjectionConsistency()` now owns snapshot acquisition and
 reporter calls only, not event shape construction.
+Conversation projection diagnostic snapshot planning now also lives there:
+`conversationProjectionDiagnosticSnapshot` decides tile-board, single-thread,
+and mismatched transition surfaces from injected dependencies for tile layout,
+tile ids, tile signatures, single-thread signatures, and visible shape. App
+code now supplies real DOM/state values and callbacks, while the helper owns
+the bounded snapshot shape used by later projection mismatch reports.
 Single-thread full-render shell planning now also lives in
 `public/thread-detail-render-plan.js`: loading, load-error retry, detail
 content ordering, empty/read-warning state selection, plugin-refresh notice

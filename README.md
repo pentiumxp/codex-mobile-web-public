@@ -16,6 +16,34 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v492 Projection Snapshot Planning
+
+v492 继续推进 Phase A 的前端 render/patch ownership 收敛，这次把
+`conversationProjectionDiagnosticSnapshot()` 的 tile/single snapshot 规划从
+`public/app.js` 推进到 `public/thread-diagnostic-events.js`。
+
+本次切片新增 `conversationProjectionDiagnosticSnapshot()` 纯 helper。它通过
+injected callbacks 接收 tile layout、tile ids、tile signature、single-thread
+signature 和 visible shape，统一决定 tile-board、single-thread 和 transition
+mismatch 三类 projection diagnostic snapshot。`public/app.js` 只负责从真实
+DOM/state 读取当前 surface、rendered signature 和 dom shape，再把依赖注入给
+helper。
+
+修复边界：
+
+- 症状/风险：v491 已经把 diagnostic payload 拆出，但 snapshot 仍在 `app.js`
+  里同时判断 tile/single surface、计算 visible counts、拼 context。后续平铺
+  pane、single-thread render 或 transition surface 变化时，snapshot 规则仍可能
+  和 payload/report 规则漂移。
+- 失败层：前端 conversation projection diagnostic snapshot ownership。
+- 不变量：projection snapshot 只产出 bounded signature、context 和 counts；
+  不读取消息正文、任务卡正文、上传内容、私有路径、cookie/token 或长日志。
+- 闭环验证：`test/thread-diagnostic-events.test.js` 覆盖 tile、single 和
+  mismatched transition snapshot；`test/conversation-render.test.js` 验证
+  `app.js` wrapper 已委托 helper 并只保留依赖注入。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v492`。
+
 ## 2026-06-26 v491 Projection Consistency Diagnostic Event Planning
 
 v491 继续推进 Phase A 的前端 render/patch ownership 收敛，这次把
