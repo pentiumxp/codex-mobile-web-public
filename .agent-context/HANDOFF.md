@@ -1,3 +1,40 @@
+# 2026-06-25 - v430 architecture optimization slice pending deploy
+
+- Scope:
+  - Implemented the next optimization slice for the first two architecture
+    priorities: large-session evidence and frontend thread-detail state
+    ownership.
+  - Committed locally, not deployed, and not pushed Public.
+  - Code commit:
+    - This commit: `refactor: add thread detail shape diagnostics`.
+- Change:
+  - `public/thread-performance-metrics.js` now emits bounded `detailShape`
+    counts with thread-detail performance fields. The shape includes turn/item
+    counts, visible item count, image/operation/receipt/usage/diagnostic item
+    counts, and completed/active turn counts. It intentionally excludes message
+    bodies, raw paths, command text, image contents, provider payloads, and
+    prompts.
+  - `public/app.js` includes `detailShape` in
+    `thread_detail_first_paint`, `thread_refresh_ms`, and full-backfill
+    performance events.
+  - `public/thread-detail-state.js` now owns the live-to-completed same-turn
+    visible-item preservation rule, reducing `public/app.js` state-policy
+    ownership.
+  - PWA shell cache bumped to `codex-mobile-shell-v430`.
+  - `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md` document this optimization boundary.
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js && node --check public/thread-performance-metrics.js && node --check public/thread-detail-state.js`
+    passed.
+  - `node --test test/thread-performance-metrics.test.js test/thread-detail-state.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js test/app-update.test.js test/plugin-voice-input.test.js`
+    passed (`147` tests).
+  - `git diff --check` passed.
+- Next:
+  - Deploy only if the user requests production deployment.
+  - Continue Phase 2 by extracting broader thread-detail merge orchestration or
+    DOM patch planning out of `public/app.js` after this evidence layer is
+    stable.
+
 # 2026-06-25 - v429 live-to-completed weak projection merge fix deployed
 
 - Scope:

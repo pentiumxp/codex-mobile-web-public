@@ -24,6 +24,20 @@ test("thread performance metrics extract detail server timings for client events
       projectionMs: 1,
     },
     performancePhase: "warm-projection-cache",
+    detailShape: {
+      turns: 0,
+      omittedTurns: 0,
+      items: 0,
+      visibleItems: 0,
+      userItems: 0,
+      receiptItems: 0,
+      imageItems: 0,
+      operationItems: 0,
+      usageItems: 0,
+      diagnosticItems: 0,
+      completedTurns: 0,
+      activeTurns: 0,
+    },
   });
 });
 
@@ -39,6 +53,20 @@ test("thread performance metrics return null server timings when response has no
   assert.deepEqual(metrics.threadDetailEventFields({}), {
     serverTimings: null,
     performancePhase: "unknown",
+    detailShape: {
+      turns: 0,
+      omittedTurns: 0,
+      items: 0,
+      visibleItems: 0,
+      userItems: 0,
+      receiptItems: 0,
+      imageItems: 0,
+      operationItems: 0,
+      usageItems: 0,
+      diagnosticItems: 0,
+      completedTurns: 0,
+      activeTurns: 0,
+    },
   });
   assert.deepEqual(metrics.threadListEventFields({}), {
     serverTimings: null,
@@ -98,9 +126,61 @@ test("thread performance metrics combine server and client detail fields", () =>
       turnsListFallbackMs: 32,
     },
     performancePhase: "fallback-turns-list",
+    detailShape: {
+      turns: 0,
+      omittedTurns: 0,
+      items: 0,
+      visibleItems: 0,
+      userItems: 0,
+      receiptItems: 0,
+      imageItems: 0,
+      operationItems: 0,
+      usageItems: 0,
+      diagnosticItems: 0,
+      completedTurns: 0,
+      activeTurns: 0,
+    },
     clientTimings: {
       renderElapsedMs: 11,
       detailRenderMode: "patch",
     },
   });
+});
+
+test("thread performance metrics summarize detail shape without message bodies", () => {
+  const shape = metrics.threadDetailShape({
+    mobileOmittedTurnCount: 7,
+    turns: [{
+      status: "completed",
+      items: [
+        { type: "userMessage", text: "private prompt body" },
+        { type: "agentMessage", text: "private response body" },
+        { type: "imageView", path: "/private/image.jpg" },
+        { type: "turnUsageSummary" },
+      ],
+    }, {
+      status: "running",
+      items: [
+        { type: "commandExecution", command: "long private command" },
+        { type: "reasoning", text: "private reasoning" },
+        { type: "turnDiagnostic", text: "bounded diagnostic" },
+      ],
+    }],
+  });
+
+  assert.deepEqual(shape, {
+    turns: 2,
+    omittedTurns: 7,
+    items: 7,
+    visibleItems: 6,
+    userItems: 1,
+    receiptItems: 1,
+    imageItems: 1,
+    operationItems: 1,
+    usageItems: 1,
+    diagnosticItems: 1,
+    completedTurns: 1,
+    activeTurns: 1,
+  });
+  assert.equal(JSON.stringify(shape).includes("private"), false);
 });

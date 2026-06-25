@@ -43,6 +43,9 @@
     const completedReceiptItemsLikelySame = typeof options.completedReceiptItemsLikelySame === "function"
       ? options.completedReceiptItemsLikelySame
       : () => false;
+    const turnVisibleWeight = typeof options.turnVisibleWeight === "function"
+      ? options.turnVisibleWeight
+      : (turn) => (Array.isArray(turn && turn.items) ? turn.items : []).reduce((total, item) => total + itemVisibleWeight(item), 0);
 
     function completedIncomingTurnHasAuthoritativeReceipt(incomingTurn) {
       if (!incomingTurn || !isTurnComplete(incomingTurn) || !Array.isArray(incomingTurn.items)) return false;
@@ -60,6 +63,14 @@
       if (shouldDropLocalOnlyReceiptForIncomingTurn(item, incomingTurn)) return false;
       if (item.type === "userMessage" && /^mux-user-/.test(String(item.id || ""))) return true;
       return preserveLocalVisible && !isReasoningItem(item);
+    }
+
+    function shouldPreserveExistingTurnVisibleItems(existingTurn, incomingTurn, existingWeight = null) {
+      if (!existingTurn || !incomingTurn) return false;
+      if (String(existingTurn.id || "") !== String(incomingTurn.id || "")) return false;
+      if (isTurnComplete(existingTurn)) return false;
+      const weight = existingWeight == null ? turnVisibleWeight(existingTurn) : Number(existingWeight || 0);
+      return weight > 0;
     }
 
     function mergeItemPreservingVisibleFields(existingItem, incomingItem) {
@@ -113,6 +124,7 @@
       mergeItemPreservingVisibleFields,
       mergeVisibleTextItemPreservingRenderIdentity,
       shouldDropLocalOnlyReceiptForIncomingTurn,
+      shouldPreserveExistingTurnVisibleItems,
       shouldPreserveLocalOnlyItem,
       visibleTextItemsCanShareRenderIdentity,
     };

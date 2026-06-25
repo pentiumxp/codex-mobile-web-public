@@ -16,6 +16,23 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-25 v430 大 session 诊断与前端状态边界优化
+
+v430 是架构优化的下一步，不改变线程详情读取策略本身，而是把可观测性和
+前端状态所有权继续收敛：
+
+- `thread_detail_first_paint`、`thread_refresh_ms` 和 full backfill 性能事件
+  新增 `detailShape`，只上报 turn/item/image/operation/receipt/usage 等计数
+  和 completed/active turn 数量，不包含消息正文、图片内容、路径、命令正文或
+  provider payload。这样后续排查大 session 首屏慢或弱刷新时，可以判断是
+  服务端 read path 慢、客户端 render/merge 慢，还是 detail 形态突然退化。
+- live-to-completed 时“同一 turn 的本地可见项是否保留”的判断从 `public/app.js`
+  移到 `public/thread-detail-state.js`。`app.js` 继续负责 DOM 和事件编排，
+  但该状态决策现在有独立单测，避免后续刷新/投影修复继续堆在大文件内部。
+
+PWA shell cache 升级到 `codex-mobile-shell-v430`。这不是大 session 冷启动的
+最终性能修复；它先补齐后续优化需要的证据口径，并继续拆前端状态边界。
+
 ## 2026-06-25 v429 Live-to-completed 刷新弱投影修复
 
 v429 修复 Movie 新线程在运行中偶发退回弱显示状态的问题：页面先正常显示

@@ -53,10 +53,15 @@ AI, not independently by Codex Mobile:
 
 ### Phase 1: Evidence And Boundary Cleanup
 
-Status: in progress.
+Status: in progress. The latest slice adds bounded `detailShape` counts to
+thread-detail performance events, so large-session investigations can compare
+server phase timings with client render/merge timings and visible item shape
+without collecting message bodies or file contents.
 
 - Keep large-session timing evidence in `mobileDiagnostics.threadDetailTimings`
-  and client `performancePhase` events.
+  and client `performancePhase` events. Client events now also carry
+  `detailShape` counts for turns, items, visible items, image items, operation
+  items, receipt items, usage items, diagnostics, and completed/active turns.
 - Move deterministic completed-turn diagnostics out of `server.js` into a
   service module.
 - Preserve the rule that explicit empty final assistant messages produce
@@ -66,9 +71,10 @@ Status: in progress.
 ### Phase 2: Frontend State Ownership
 
 Status: in progress. The first slices extract item visible-field merge policy,
-visible-text render identity / completed-receipt retention, and local-only item
-retention/drop policy to `public/thread-detail-state.js`; broader thread detail
-merge orchestration and DOM patching remain in `public/app.js`.
+visible-text render identity / completed-receipt retention, local-only item
+retention/drop policy, and live-to-completed same-turn visible-item preservation
+to `public/thread-detail-state.js`; broader thread detail merge orchestration
+and DOM patching remain in `public/app.js`.
 
 Target:
 
