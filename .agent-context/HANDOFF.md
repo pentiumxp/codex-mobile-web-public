@@ -8371,6 +8371,80 @@ The previous full handoff was archived and should be opened only when old proven
   - This has not been pushed to public. Follow the release-order rule: wait for
     production/user confirmation before any public sync/push.
 
+## 2026-06-26 - v477 live text DOM patch ownership deployed
+
+- Goal slice:
+  - Continue Phase A frontend thread-detail render/patch ownership cleanup.
+  - This is not a visual fallback and does not hide duplicate/missing
+    projection problems. It moves one remaining live-text patch sequencing
+    branch out of `public/app.js` into the existing DOM patch helper boundary.
+- Symptom/risk:
+  - Streaming `agentMessage` / `plan` text updates still had selector lookup,
+    HTML-to-node creation, DOM patch callback sequencing, and scroll completion
+    in one `public/app.js` function. That kept local patch, full render, and
+    tile-pane patch responsibilities coupled in the largest frontend file.
+- Owning layer / invariant:
+  - Frontend thread detail DOM patch ownership.
+  - `public/app.js` should decide tile/single-thread surface availability and
+    inject side-effect callbacks. Reusable render-key lookup, HTML parse,
+    patch sequencing, and bounded failure reasons should live in
+    `public/thread-detail-dom-patch.js`.
+- Change:
+  - Added `applyLiveTextItemDomPatch` to
+    `public/thread-detail-dom-patch.js`.
+  - `patchLiveTextItemDom()` in `public/app.js` now delegates live text
+    render-key lookup, HTML parsing, and patch callback sequencing to that
+    helper while preserving the existing tile/single surface checks and
+    `completeLocalConversationDomUpdate` scroll completion.
+  - Bumped app shell from `codex-mobile-shell-v476` to
+    `codex-mobile-shell-v477`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Commit:
+  - `b47d2a0` (`extract live text DOM patch policy`).
+- Validation:
+  - Focused source suite passed (`158` tests):
+    `test/thread-detail-dom-patch.test.js`,
+    `test/turn-scroll-controls.test.js`,
+    `test/conversation-render.test.js`,
+    `test/mobile-viewport.test.js`,
+    `test/app-update.test.js`, `test/thread-goal-service.test.js`, and
+    `test/thread-task-card-route.test.js`.
+  - Source full `npm test` passed (`866` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - Production focused suite passed (`158` tests) with production
+    dependencies.
+  - Source/production hash parity matched for `public/app.js`,
+    `public/sw.js`, `public/thread-detail-dom-patch.js`, focused tests, and
+    docs.
+- Production deploy:
+  - Deployed through Home AI central macOS production script with reason
+    `codex-mobile-live-text-dom-patch-v477`.
+  - Source ref: `b47d2a0d036b`, dirty state: false.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T203403Z-plugin-codex-mobile-web-codex-mobile-live-text-dom-patch-v477`.
+  - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` restarted and
+    manifest health check passed.
+  - `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v477`,
+    `shellCacheName=codex-mobile-shell-v477`, `version=0.1.11`,
+    `authRequired=true`.
+- Browser/visual note:
+  - Attempted in-app Browser background verification, but the current browser
+    control runtime returned `sandboxCwd must be an absolute file URI` before a
+    page could be opened. No browser-side state was mutated. Use a future
+    Browser/tooling repair or Home AI central visual harness for video-level
+    evidence.
+- Next boundary:
+  - Continue Phase A with command detail panel content HTML or remaining
+    single-thread/tile pane DOM patch branches still coupled to `app.js`.
+  - Phase B cold-path work should continue using
+    `threadDetailTimings` / `threadListTimings` evidence before changing cache
+    invalidation.
+- Operational notes:
+  - This has not been pushed to public. Follow the release-order rule: wait for
+    production/user confirmation before any public sync/push.
+
 ## 2026-06-26 - Home AI Autonomous Delivery return-card events deployed
 
 - Trigger:
