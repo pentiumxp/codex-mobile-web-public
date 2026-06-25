@@ -37,6 +37,31 @@ return policy，不再出现 `Return required`；如果再次对终止卡调用 
 `returnToSource:true` 是终止卡、auto-return receipt 不触发二次 auto-return、以及
 Music-style repair -> receipt -> ack 链在第一张 terminal return 后停止。
 
+## 2026-06-25 大 session cold-open 决策证据修正
+
+本次是 server-only 的大 session 首屏路径优化，不升级 PWA shell cache。目标是
+继续收敛 cold open：大 rollout 首屏应该命中 disk-backed projection 或
+`turns-list-large`，`threadReadMs=0`；只有小线程或 bounded turns-list 失败时才
+允许进入 full `thread/read`。
+
+之前 `turns-list-large` 判断绑定在 projection input 上：只有能从 rollout path/stat
+构造 projection input 时，才会根据 rollout size 决定是否先走 bounded
+`thread/turns/list`。这会让某些重启后或 summary-only 的冷开场景虽然已经知道
+rollout 很大，却因为 projection input 暂时不可用而误入 full `thread/read`。
+
+现在 large-read 决策归到 `thread-detail-read-orchestration-service` 的可诊断
+边界：server 先看 projection stats，没有则看 summary/rollout size。只要 size
+达到 `CODEX_MOBILE_THREAD_DETAIL_TURNS_LIST_FIRST_BYTES`，就使用
+`turns-list-large`，并在 `mobileDiagnostics.threadDetailTimings` 里记录
+`largeReadProtected`、`largeReadRolloutSizeBytes`、`largeReadThresholdBytes`、
+`largeReadSource` 和 `largeReadReason`。这让后续重启冷开、活跃写入中冷开、
+静态大线程冷开三类证据都能直接判断是否误入 full `thread/read`，且不记录正文、
+prompt、附件或原始私密内容。
+
+新增 `test/thread-detail-read-orchestration-service.test.js` 覆盖 projection input
+不可用但 summary 已判定为大 rollout 时必须走 `turns-list-large`，以及小 summary
+仍走 full `thread/read` 的边界。
+
 ## 2026-06-25 v441 平铺本地 Patch 签名边界修正
 
 v441 修复 v440 后继续出现的 `conversation_projection_mismatch`。新的 Home AI

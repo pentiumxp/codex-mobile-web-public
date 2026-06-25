@@ -1,3 +1,43 @@
+# 2026-06-25 - Large-session cold-open large-read decision tightened locally
+
+- User goal:
+  - Optimize large-session first-screen loading before moving to frontend DOM
+    patch extraction, pane-state service, and visual regression coverage.
+  - Required invariant: large rollout cold-open should hit disk-backed
+    projection or `turns-list-large` with `threadReadMs=0`; full
+    `thread/read` should remain only for small/non-rollout threads or bounded
+    turns-list failure.
+- Root-cause boundary:
+  - Failing layer: server thread-detail read orchestration.
+  - The existing `turns-list-large` gate was tied to projection input
+    availability. If projection input was unavailable during restart/cold-open
+    but the summary already carried rollout size, the route could still enter
+    full `thread/read` for a large rollout.
+- Change:
+  - `server.js` now returns a structured large-read decision from
+    `preferBoundedReadBeforeFullRead`: it checks projection rollout stats
+    first, then summary/rollout size, and records source/reason/threshold.
+  - `adapters/thread-detail-read-orchestration-service.js` normalizes the
+    structured decision, uses it for `turns-list-large`, and logs bounded
+    decision metadata.
+  - `adapters/thread-detail-performance-service.js` adds
+    `largeReadProtected`, `largeReadRolloutSizeBytes`,
+    `largeReadThresholdBytes`, `largeReadSource`, and `largeReadReason` to
+    `mobileDiagnostics.threadDetailTimings`.
+  - `README.md` and `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` document that
+    this is a server-only cold-open correction, not a frontend deferred
+    enrichment fallback.
+- Validation so far:
+  - `node --check server.js && node --check adapters/thread-detail-read-orchestration-service.js && node --check adapters/thread-detail-performance-service.js`
+    passed.
+  - Focused tests passed:
+    `node --test test/thread-detail-read-orchestration-service.test.js test/thread-detail-performance-service.test.js test/thread-detail-projection-input-service.test.js test/thread-detail-projection-service.test.js`
+    (`29` tests).
+- Release state:
+  - Local changes are not yet committed/deployed.
+  - Next: run broader detail/projection tests, standard checks, commit, deploy,
+    and read back production public-config plus cold-path diagnostics.
+
 # 2026-06-25 - v441 thread-tile local patch signature boundary repaired
 
 - Source task card:

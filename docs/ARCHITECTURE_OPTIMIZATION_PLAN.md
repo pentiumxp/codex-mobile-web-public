@@ -110,7 +110,12 @@ fall back to full `thread/read` on large rollouts. A follow-up production
 restart check showed active external writers can still advance rollout size
 between cache persistence and restart, so large rollout projection misses now
 use bounded `thread/turns/list` for the current visible window before trying
-full `thread/read`.
+full `thread/read`. The current slice makes that large-rollout gate independent
+from projection-cache input availability: if projection input cannot be built
+but the thread summary still carries a rollout size at or above
+`CODEX_MOBILE_THREAD_DETAIL_TURNS_LIST_FIRST_BYTES`, the coordinator uses
+`turns-list-large` and records the decision source/reason in
+`mobileDiagnostics.threadDetailTimings`.
 
 - The coordinator owns summary resolution, hidden-thread rejection, projection
   hit, `mode=recent` initial turns-list, full `thread/read`, turns-list
@@ -127,6 +132,12 @@ full `thread/read`.
   window and seed projection from that result. This keeps the first response
   authoritative for the current retained window without adding a frontend
   second-refresh replacement path.
+- Large rollout protection now uses a structured decision with
+  `largeReadProtected`, `largeReadRolloutSizeBytes`,
+  `largeReadThresholdBytes`, `largeReadSource`, and `largeReadReason` in the
+  thread-detail timing diagnostics. This lets cold-open evidence distinguish
+  projection-sourced, summary-sourced, below-threshold, disabled, and
+  no-rollout-size decisions without logging message bodies or raw thread data.
 - Preserve the first-paint contract for large sessions. Do not introduce
   deferred incomplete detail enrichment as a UI fallback for server cold-path
   slowness.

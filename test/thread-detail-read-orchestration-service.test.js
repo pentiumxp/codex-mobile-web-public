@@ -31,6 +31,11 @@ function createHarness(overrides = {}) {
             phase: input.readMode,
             timings: Object.assign({}, input.timings),
             totalMs: input.totalMs,
+            largeReadProtected: Boolean(input.largeReadProtected),
+            largeReadRolloutSizeBytes: Number(input.largeReadRolloutSizeBytes || 0),
+            largeReadThresholdBytes: Number(input.largeReadThresholdBytes || 0),
+            largeReadSource: String(input.largeReadSource || ""),
+            largeReadReason: String(input.largeReadReason || ""),
           },
         };
       }
@@ -155,7 +160,13 @@ test("thread detail orchestration preserves full thread/read before bounded turn
 
 test("large projection miss can use bounded turns/list before full thread/read", async () => {
   const { service, calls } = createHarness({
-    preferBoundedReadBeforeFullRead: () => true,
+    preferBoundedReadBeforeFullRead: () => ({
+      prefer: true,
+      rolloutSizeBytes: 12_000_000,
+      thresholdBytes: 8_000_000,
+      source: "projection",
+      reason: "large-rollout",
+    }),
   });
 
   const response = await service.readThreadDetail({
@@ -171,6 +182,82 @@ test("large projection miss can use bounded turns/list before full thread/read",
   assert.ok(calls.indexOf("turns-list:turns-list-large") > calls.indexOf("projection-miss"));
   assert.equal(calls.includes("thread-read"), false);
   assert.ok(calls.indexOf("seed") > calls.indexOf("turns-list:turns-list-large"));
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadProtected, true);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadSource, "projection");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadReason, "large-rollout");
+});
+
+test("large summary read uses bounded turns/list even when projection input is unavailable", async () => {
+  const { service, calls } = createHarness({
+    projectionInput: () => {
+      calls.push("projection-input");
+      return null;
+    },
+    preferBoundedReadBeforeFullRead: ({ summary, projection }) => ({
+      prefer: !projection && Number(summary && summary.rolloutSizeBytes) >= 8_000_000,
+      rolloutSizeBytes: Number(summary && summary.rolloutSizeBytes || 0),
+      thresholdBytes: 8_000_000,
+      source: "summary",
+      reason: "large-rollout",
+    }),
+    summary: {
+      id: "thread-1",
+      status: { type: "idle" },
+      rolloutSizeBytes: 12_000_000,
+    },
+  });
+
+  const response = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: false,
+    threadLog: () => {},
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.mode, "turns-list-large");
+  assert.equal(calls.includes("thread-read"), false);
+  assert.ok(calls.indexOf("turns-list:turns-list-large") > calls.indexOf("projection-input"));
+  assert.equal(calls.includes("seed"), false);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadProtected, true);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadRolloutSizeBytes, 12_000_000);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadThresholdBytes, 8_000_000);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadSource, "summary");
+});
+
+test("small summary read still uses full thread/read when projection input is unavailable", async () => {
+  const { service, calls } = createHarness({
+    projectionInput: () => {
+      calls.push("projection-input");
+      return null;
+    },
+    preferBoundedReadBeforeFullRead: ({ summary, projection }) => ({
+      prefer: !projection && Number(summary && summary.rolloutSizeBytes) >= 8_000_000,
+      rolloutSizeBytes: Number(summary && summary.rolloutSizeBytes || 0),
+      thresholdBytes: 8_000_000,
+      source: "summary",
+      reason: "below-threshold",
+    }),
+    summary: {
+      id: "thread-1",
+      status: { type: "idle" },
+      rolloutSizeBytes: 2_000_000,
+    },
+  });
+
+  const response = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: false,
+    threadLog: () => {},
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.mode, "thread-read");
+  assert.ok(calls.indexOf("thread-read") > calls.indexOf("projection-input"));
+  assert.equal(calls.includes("turns-list:turns-list-large"), false);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadProtected, false);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadReason, "below-threshold");
 });
 
 test("recent thread detail can use initial bounded turns/list without full read", async () => {

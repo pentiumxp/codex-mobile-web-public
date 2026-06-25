@@ -53,6 +53,11 @@ function buildThreadDetailDiagnostics(input = {}) {
     returnedTurns: safeCount(input.returnedTurns || counts.returnedTurns),
     omittedTurns: safeCount(input.omittedTurns || counts.omittedTurns),
     rolloutSizeBytes: safeCount(input.rolloutSizeBytes),
+    largeReadProtected: Boolean(input.largeReadProtected),
+    largeReadRolloutSizeBytes: safeCount(input.largeReadRolloutSizeBytes),
+    largeReadThresholdBytes: safeCount(input.largeReadThresholdBytes),
+    largeReadSource: nonEmptyText(input.largeReadSource),
+    largeReadReason: nonEmptyText(input.largeReadReason),
   };
   for (const key of [
     "summaryMs",

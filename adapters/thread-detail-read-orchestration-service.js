@@ -34,6 +34,34 @@ function hiddenResponse() {
   };
 }
 
+function nonEmptyText(value) {
+  return String(value || "").trim();
+}
+
+function safeNonNegativeNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : 0;
+}
+
+function normalizeBoundedReadDecision(value) {
+  if (value && typeof value === "object") {
+    return {
+      prefer: Boolean(value.prefer || value.enabled || value.useBoundedRead),
+      rolloutSizeBytes: safeNonNegativeNumber(value.rolloutSizeBytes),
+      thresholdBytes: safeNonNegativeNumber(value.thresholdBytes),
+      source: nonEmptyText(value.source),
+      reason: nonEmptyText(value.reason),
+    };
+  }
+  return {
+    prefer: Boolean(value),
+    rolloutSizeBytes: 0,
+    thresholdBytes: 0,
+    source: "",
+    reason: Boolean(value) ? "enabled" : "",
+  };
+}
+
 function createThreadDetailReadOrchestrationService(options = {}) {
   const now = typeof options.now === "function" ? options.now : defaultNow;
   const attachDiagnostics = typeof options.attachDiagnostics === "function"
@@ -81,6 +109,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
   const maxThreadTurns = Number(options.maxThreadTurns || 0);
 
   function attachDetailDiagnostics(result, context, details = {}) {
+    const boundedDecision = context.boundedReadBeforeFullRead || null;
     return attachDiagnostics(result, {
       requestMode: context.preferRecentTurns ? "recent" : "full",
       readMode: details.readMode || details.source || result && result.thread && result.thread.mobileReadMode || "",
@@ -88,6 +117,11 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       timings: context.timer.timings,
       totalMs: context.timer.elapsedMs(),
       rolloutSizeBytes: result && result.thread ? threadRolloutSizeBytes(result.thread) : 0,
+      largeReadProtected: Boolean(boundedDecision && boundedDecision.prefer),
+      largeReadRolloutSizeBytes: boundedDecision ? boundedDecision.rolloutSizeBytes : 0,
+      largeReadThresholdBytes: boundedDecision ? boundedDecision.thresholdBytes : 0,
+      largeReadSource: boundedDecision ? boundedDecision.source : "",
+      largeReadReason: boundedDecision ? boundedDecision.reason : "",
     });
   }
 
@@ -224,13 +258,21 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       }
     }
 
-    if (preferBoundedReadBeforeFullRead({ threadId, summary, projection, runtimeSettings })) {
+    const boundedReadDecision = normalizeBoundedReadDecision(
+      preferBoundedReadBeforeFullRead({ threadId, summary, projection, runtimeSettings }),
+    );
+    context.boundedReadBeforeFullRead = boundedReadDecision;
+    if (boundedReadDecision.prefer) {
       const turnsStartedAtMs = now();
       const mode = "turns-list-large";
       threadLog("turns_list_before_full_start", {
         limit: maxThreadTurns,
         timeoutMs: threadDetailRpcTimeoutMs,
         fallbackFrom: "projection-miss",
+        rolloutSizeBytes: boundedReadDecision.rolloutSizeBytes || null,
+        thresholdBytes: boundedReadDecision.thresholdBytes || null,
+        decisionSource: boundedReadDecision.source || "",
+        decisionReason: boundedReadDecision.reason || "",
       });
       try {
         const result = await turnsListThreadReadResult({

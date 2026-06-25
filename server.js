@@ -5162,11 +5162,32 @@ const threadDetailReadOrchestrationService = createThreadDetailReadOrchestration
   ),
   readFullThread: readFullThreadDetailForOrchestrator,
   seedProjection: (input, result) => threadDetailProjectionService.seed(input, result),
-  preferBoundedReadBeforeFullRead: ({ projection }) => {
-    if (THREAD_DETAIL_TURNS_LIST_FIRST_BYTES <= 0 || !projection) return false;
-    const stats = projection.rolloutStats || {};
-    const sizeBytes = Number(stats.sizeBytes || stats.size || 0);
-    return Number.isFinite(sizeBytes) && sizeBytes >= THREAD_DETAIL_TURNS_LIST_FIRST_BYTES;
+  preferBoundedReadBeforeFullRead: ({ summary, projection }) => {
+    const thresholdBytes = THREAD_DETAIL_TURNS_LIST_FIRST_BYTES;
+    if (thresholdBytes <= 0) {
+      return { prefer: false, thresholdBytes, reason: "disabled" };
+    }
+    const stats = projection && projection.rolloutStats || {};
+    let sizeBytes = Number(stats.sizeBytes || stats.size || 0);
+    let source = sizeBytes > 0 ? "projection" : "";
+    if (!source) {
+      sizeBytes = threadRolloutSizeBytes(summary);
+      source = sizeBytes > 0 ? "summary" : "";
+    }
+    if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
+      return {
+        prefer: false,
+        thresholdBytes,
+        reason: "no-rollout-size",
+      };
+    }
+    return {
+      prefer: sizeBytes >= thresholdBytes,
+      rolloutSizeBytes: sizeBytes,
+      thresholdBytes,
+      source,
+      reason: sizeBytes >= thresholdBytes ? "large-rollout" : "below-threshold",
+    };
   },
   prepareResponse: prepareThreadDetailResponseResult,
   fallbackThreadReadResult: fallbackThreadReadResultForOrchestrator,
