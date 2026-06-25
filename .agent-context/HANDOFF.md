@@ -9880,3 +9880,62 @@ The previous full handoff was archived and should be opened only when old proven
     parity.
 - Release:
   - Public was not pushed for v483.
+
+## 2026-06-26 - v484 local DOM patch completion plan deployed
+
+- Latest code commit:
+  - `ad184a8 extract local dom patch completion plan`
+- v484 change:
+  - `public/thread-detail-dom-patch.js` now owns
+    `planLocalConversationDomUpdateCompletion`, a pure planning boundary for
+    local DOM patch completion.
+  - The planner distinguishes tile-pane terminal completion,
+    single-thread-unpatchable blocked completion, and single-thread completion
+    with hydrate/signature/scroll intent.
+  - `public/app.js` still owns the real tile pane patch, real hydration
+    callback, state writes, and scroll scheduling.
+  - Static build/cache: `0.1.11|codex-mobile-shell-v484` /
+    `codex-mobile-shell-v484`.
+- Root-cause boundary:
+  - Symptom/risk: `completeLocalConversationDomUpdate()` still mixed tile/single
+    surface completion, signature writes, hydration, and scroll scheduling in
+    one app function. That is a high-risk recurrence point for local-patch
+    flicker, signature mismatch, and tile/single state bleed.
+  - Failing layer: frontend local DOM patch completion ownership.
+  - Invariant: local patch completion decisions should be pure and
+    executable-testable; app code should execute the plan against runtime DOM
+    and state.
+- Validation:
+  - Source focused suite passed:
+    `test/thread-detail-dom-patch.test.js`,
+    `test/conversation-render.test.js`, `test/turn-scroll-controls.test.js`,
+    `test/mobile-viewport.test.js`, `test/app-update.test.js`,
+    `test/thread-goal-service.test.js`, and
+    `test/thread-task-card-route.test.js` (`167` tests).
+  - Full source `npm test` passed (`886` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Production deploy:
+  - Deployed through Home AI central macOS plugin deploy path with reason
+    `codex-mobile-local-dom-patch-completion-plan-v484`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T214645Z-plugin-codex-mobile-web-codex-mobile-local-dom-patch-completion-plan-v484`
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v484`,
+    `shellCacheName=codex-mobile-shell-v484`, `version=0.1.11`,
+    `authRequired=true`.
+  - Source/production SHA parity verified for:
+    `public/app.js`, `public/thread-detail-dom-patch.js`, `public/sw.js`,
+    `test/thread-detail-dom-patch.test.js`,
+    `test/conversation-render.test.js`,
+    `test/turn-scroll-controls.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-goal-service.test.js`,
+    `test/thread-task-card-route.test.js`, `README.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and `docs/MODULES.md`.
+  - Production focused suite passed (`167` tests).
+- Browser/visual note:
+  - Browser automation remains unavailable in the current tool list. v484
+    closure evidence is source focused tests, full source tests, production
+    focused tests, production public-config readback, and source/prod SHA
+    parity.
+- Release:
+  - Public was not pushed for v484.
