@@ -485,7 +485,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v443";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v444";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -9129,12 +9129,18 @@ async function refreshCurrentThread(options = {}) {
   let metadataUpdateMs = 0;
   let detailRenderMode = renderPlan.detailRenderMode;
   if (shouldRenderDetail) {
+    const tilePatchPlan = threadDetailDomPatchSurface({ threadId });
+    const tileSurfaceRefresh = Boolean(
+      state.threadTileMode
+      || isThreadTileConversationSurface()
+      || (tilePatchPlan && tilePatchPlan.surface === "thread-tile-pane")
+    );
     const tilePatchStartedAt = nowPerfMs();
     if (patchCurrentThreadTilePaneFromState({ threadId, preserveScroll: true })) {
       tilePanePatchedDetail = true;
       detailPatchMs = roundedDurationMs(tilePatchStartedAt);
       detailRenderMode = "tile-pane";
-    } else if (renderPlan.canPatch) {
+    } else if (renderPlan.canPatch && !tileSurfaceRefresh) {
       const patchStartedAt = nowPerfMs();
       locallyPatchedDetail = patchCurrentThreadDetailFromRefresh(previousThread, state.currentThread, previousConversationSignature);
       detailPatchMs = roundedDurationMs(patchStartedAt);
@@ -11957,7 +11963,18 @@ function threadTileCandidateIds(layout = threadTileLayout()) {
     .map((id) => String(id || ""))
     .filter((id) => id && visibleIds.has(id));
   if (!pinned.length) return defaults;
-  return Array.from(new Set([...pinned, ...defaults])).slice(0, maxPanes);
+  if (typeof threadTileLayoutPolicy.selectPinnedThreadTileIds === "function") {
+    return threadTileLayoutPolicy.selectPinnedThreadTileIds({
+      currentThreadId: state.currentThreadId,
+      pinnedThreadIds: pinned,
+      threadIds: defaults,
+      maxPanes,
+    });
+  }
+  const ids = Array.from(new Set([...pinned, ...defaults])).slice(0, maxPanes);
+  const current = String(state.currentThreadId || "").trim();
+  if (current && !ids.includes(current)) ids[Math.max(0, ids.length - 1)] = current;
+  return Array.from(new Set(ids)).slice(0, maxPanes);
 }
 
 function threadDisplaySettingsPayload() {

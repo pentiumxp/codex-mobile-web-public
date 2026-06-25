@@ -1,3 +1,48 @@
+# 2026-06-25 - v444 thread tile current-pane refresh fix
+
+- User-visible incident after v443:
+  - User refreshed Codex Mobile after v443 deployment and the same thread still
+    showed the previous failure shape: the running/status box continued to show
+    active thought/file/command work, but the conversation body stayed on an
+    older assistant receipt and repeatedly redrew old content.
+  - Production detail for thread `019eee6c-a6f5-7b20-bfb4-f96ccb6431b3`
+    still showed an active turn with many `agentMessage`, `commandExecution`,
+    and `fileChange` items, so the remaining failure was not app-server output.
+- Second root cause:
+  - v443 fixed hidden live assistant deltas, but tile mode could still exclude
+    `state.currentThreadId` from `threadTileCandidateIds` when pinned panes
+    already filled the pane limit.
+  - The global status/composer state was then bound to the current thread while
+    no tile pane existed for that thread. `refreshCurrentThread` fell back into
+    a single-thread DOM patch path on a tile surface, producing
+    `detail_patch_rejected` diagnostics and full-board redraws of stale panes.
+- Runtime change:
+  - `public/thread-tile-layout.js` now owns
+    `selectPinnedThreadTileIds`, which keeps the current thread visible by
+    replacing the last pinned pane when needed.
+  - `public/app.js` uses that policy for tile candidates and blocks the
+    single-thread DOM patch branch whenever the active surface is tile mode.
+  - `CLIENT_BUILD_ID` and service-worker cache are bumped to
+    `codex-mobile-shell-v444`.
+- Local validation completed:
+  - `npm test` passed (`801` tests).
+  - `npm run check`
+  - `npm run check:macos`
+  - Focused suites passed:
+    `test/thread-tile-layout.test.js`,
+    `test/thread-tile-layout-ui.test.js`,
+    `test/conversation-render.test.js`,
+    `test/turn-scroll-controls.test.js`,
+    `test/mobile-viewport.test.js`,
+    `test/home-ai-diagnostic-reporting.test.js`,
+    `test/thread-goal-service.test.js`, and
+    `test/thread-task-card-route.test.js`.
+  - `git diff --check`
+- Deployment state:
+  - Local source is ready for the Home AI central macOS plugin deployment path.
+  - Production readback is pending in this handoff section until deployment
+    completes.
+
 # 2026-06-25 - v443 live assistant output visibility and task-card lease fix
 
 - User-visible incident:
@@ -39,9 +84,15 @@
     `test/thread-task-card-route.test.js`.
   - `git diff --check`
 - Deployment state:
-  - Local source is ready for the Home AI central macOS plugin deployment path.
-  - Production readback is pending in this handoff section until deployment
-    completes.
+  - Runtime commit:
+    `b6d1833 fix live output rendering and task card resumes`.
+  - Deployed through the Home AI central plugin deploy script with reason
+    `codex-mobile-live-agent-output-v443-task-card-lease`.
+  - Production readback reported
+    `clientBuildId=0.1.11|codex-mobile-shell-v443` and
+    `shellCacheName=codex-mobile-shell-v443`.
+  - v443 fixed live assistant delta suppression but did not fully close the
+    tile-surface mismatch described in the v444 section above.
 
 # 2026-06-25 - v442 frontend DOM patch surface boundary in progress
 

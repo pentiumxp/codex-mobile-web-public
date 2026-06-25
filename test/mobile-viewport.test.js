@@ -148,8 +148,8 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v443/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v443"/);
+  assert.match(swJs, /codex-mobile-shell-v444/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v444"/);
   assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(swJs, /"\/thread-status-hints\.js"/);
@@ -316,7 +316,8 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /threadDetailRenderPlanApi\.planThreadDetailRefreshRender\(\{[\s\S]*previousConversationSignature,[\s\S]*nextConversationSignature,[\s\S]*renderedConversationSignature: state\.renderedConversationSignature,[\s\S]*\}\);/);
   assert.match(functionBody("refreshCurrentThread"), /const shouldRenderDetail = renderPlan\.shouldRenderDetail;/);
   assert.match(functionBody("refreshCurrentThread"), /let detailRenderMode = renderPlan\.detailRenderMode;/);
-  assert.match(functionBody("refreshCurrentThread"), /if \(renderPlan\.canPatch\) \{[\s\S]*locallyPatchedDetail = patchCurrentThreadDetailFromRefresh\(previousThread, state\.currentThread, previousConversationSignature\);[\s\S]*\}/);
+  assert.match(functionBody("refreshCurrentThread"), /const tileSurfaceRefresh = Boolean\([\s\S]*state\.threadTileMode[\s\S]*isThreadTileConversationSurface\(\)[\s\S]*tilePatchPlan && tilePatchPlan\.surface === "thread-tile-pane"[\s\S]*\);/);
+  assert.match(functionBody("refreshCurrentThread"), /renderPlan\.canPatch && !tileSurfaceRefresh[\s\S]*locallyPatchedDetail = patchCurrentThreadDetailFromRefresh\(previousThread, state\.currentThread, previousConversationSignature\);/);
   assert.match(functionBody("refreshCurrentThread"), /threadDetailRenderPlanApi\.finalizeThreadDetailRenderPlan\(renderPlan, \{ locallyPatchedDetail \}\)\.detailRenderMode/);
   assert.match(functionBody("refreshCurrentThread"), /if \(locallyPatchedDetail\) \{[\s\S]*updateCurrentThreadHeader\(state\.currentThread\);[\s\S]*updateTickTimer\(\);[\s\S]*publishPluginNavigationState\(\);[\s\S]*\} else \{[\s\S]*renderCurrentThread\(\);/);
   assert.match(functionBody("refreshCurrentThread"), /\} else \{[\s\S]*updateCurrentThreadHeader\(state\.currentThread\);[\s\S]*updateLiveOperationDockHtml\(renderLiveOperationDock\(state\.currentThread, existingConversationRenderKeys\(\)\)\);[\s\S]*updateTickTimer\(\);[\s\S]*scheduleScrollToBottomButtonUpdate\(\);/);

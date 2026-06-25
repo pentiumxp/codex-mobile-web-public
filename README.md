@@ -37,6 +37,24 @@ return policy，不再出现 `Return required`；如果再次对终止卡调用 
 `returnToSource:true` 是终止卡、auto-return receipt 不触发二次 auto-return、以及
 Music-style repair -> receipt -> ack 链在第一张 terminal return 后停止。
 
+## 2026-06-25 v444 平铺视图当前线程可见性修正
+
+v444 修复 v443 后仍复现的平铺模式刷新问题。生产诊断显示页面已经加载
+`codex-mobile-shell-v443`，但连续上报
+`conversation_projection_mismatch / detail_patch_rejected`，surface 为
+`thread-tile`。同时服务端 detail 中当前 active turn 已经有新的
+`agentMessage`，说明问题不在模型输出或服务端投影，而在平铺视图的 pane
+选择和 patch 边界。
+
+根因是固定 pane 已经占满时，`threadTileCandidateIds` 可能把
+`currentThreadId` 挤出平铺候选列表。这样运行状态和 composer 仍绑定当前线程，
+但 DOM 中没有对应 pane，detail refresh 无法 patch 当前 pane，随后又误入
+单线程 patch 路径并反复全量刷新旧内容。v444 将“当前线程必须在平铺 pane
+中可见”固化到 `public/thread-tile-layout.js` 的选择策略里；满员时保留前面
+pane 的位置，替换最后一个 pane 为当前线程。同时 tile surface 下 pane patch
+失败时不再尝试单线程 DOM patch，避免 `detail_patch_rejected` 循环。PWA
+shell cache 升级到 `codex-mobile-shell-v444`。
+
 ## 2026-06-25 v443 Live 输出可见性修正
 
 v443 修复 active turn 中“命令/文件操作持续更新，但新的 Codex 回执文本不可见”的

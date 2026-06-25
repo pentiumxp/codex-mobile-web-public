@@ -128,6 +128,9 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(candidateBody, /effectiveThreadTilePaneCount\(layout\)/);
   assert.match(candidateBody, /defaultThreadTileCandidateIds\(layout, \{ maxPanes \}\)/);
   assert.match(candidateBody, /threadTileVisibleIdSet\(\)/);
+  assert.match(candidateBody, /threadTileLayoutPolicy\.selectPinnedThreadTileIds/);
+  assert.match(candidateBody, /currentThreadId: state\.currentThreadId/);
+  assert.match(candidateBody, /ids\[Math\.max\(0, ids\.length - 1\)\] = current/);
   assert.match(functionBody(appJs, "threadTileMaximumPaneCount"), /THREAD_TILE_USER_MAX_PANES/);
   assert.match(functionBody(appJs, "defaultThreadTileCandidateIds"), /THREAD_TILE_USER_MAX_PANES/);
 
@@ -264,6 +267,11 @@ test("thread tile rendering is read-only and separate from full conversation ren
   const notificationBody = functionBody(appJs, "applyNotification");
   assert.match(notificationBody, /threadTilePaneIsVisible\(params\.threadId\)/);
   assert.match(notificationBody, /loadThreadTileDetail\(params\.threadId, \{ force: true, background: true/);
+
+  const refreshBody = functionBody(appJs, "refreshCurrentThread");
+  assert.match(refreshBody, /const tilePatchPlan = threadDetailDomPatchSurface\(\{ threadId \}\)/);
+  assert.match(refreshBody, /state\.threadTileMode[\s\S]*isThreadTileConversationSurface\(\)[\s\S]*tilePatchPlan && tilePatchPlan\.surface === "thread-tile-pane"/);
+  assert.match(refreshBody, /renderPlan\.canPatch && !tileSurfaceRefresh/);
 });
 
 test("thread tile composer targets the active pane without replacing the shared composer", () => {
