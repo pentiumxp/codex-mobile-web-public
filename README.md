@@ -16,6 +16,22 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-25 v438 线程详情可见项 Patch 计划拆分
+
+v438 继续第二阶段前端状态边界优化，把 live/detail refresh 中“能否只做可见项
+增量 patch、每个可见项应复用/替换/插入”的纯判断从 `public/app.js` 拆到
+`public/thread-detail-patch-plan.js`。`app.js` 现在只消费 patch plan，并继续负责
+DOM 查询、HTML 渲染、节点替换和插入。
+
+这个拆分不改变服务端投影、不改变线程详情协议，也不引入前端二次刷新或去重
+兜底。目标是把曾经导致“中间内容短暂消失、回执替换时抖动、usage/图片追加
+时整轮重绘”的 shape 判断变成可单独测试的纯策略，后续再继续拆 DOM patch
+application。
+
+新增 `test/thread-detail-patch-plan.test.js` 覆盖保持原有顺序追加 usage、同 key
+签名变化触发 patch、以及重排/删除/非法 entry 拒绝增量 patch。PWA shell cache
+升级到 `codex-mobile-shell-v438`。
+
 ## 2026-06-25 v437 平铺标题菜单与 Composer 目标提示范围
 
 v437 是平铺模式交互回归修正。平铺窗口页眉里的线程名点击现在会直接打开

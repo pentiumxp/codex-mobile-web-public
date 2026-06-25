@@ -99,6 +99,10 @@ const threadDetailMergeStateApi = window.CodexThreadDetailMergeState;
 if (!threadDetailMergeStateApi) {
   throw new Error("CodexThreadDetailMergeState script failed to load");
 }
+const threadDetailPatchPlanApi = window.CodexThreadDetailPatchPlan;
+if (!threadDetailPatchPlanApi) {
+  throw new Error("CodexThreadDetailPatchPlan script failed to load");
+}
 const threadTileLayoutPolicy = window.CodexThreadTileLayout;
 if (!threadTileLayoutPolicy) {
   throw new Error("CodexThreadTileLayout policy script failed to load");
@@ -473,7 +477,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v437";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v438";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -526,6 +530,7 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/thread-detail-state.js",
   "/thread-detail-render-plan.js",
   "/thread-detail-merge-state.js",
+  "/thread-detail-patch-plan.js",
   "/thread-tile-layout.js",
   "/build-refresh-policy.js",
   "/app.js",
@@ -12926,39 +12931,31 @@ function visibleItemPatchEntries(turn) {
 }
 
 function visibleItemPatchShapePreservesExisting(previousEntries, nextEntries) {
-  if (!Array.isArray(previousEntries) || !Array.isArray(nextEntries)) return false;
-  if (previousEntries.length > nextEntries.length) return false;
-  let previousIndex = 0;
-  for (const nextEntry of nextEntries) {
-    const previousEntry = previousEntries[previousIndex];
-    if (previousEntry && previousEntry.key === nextEntry.key) previousIndex += 1;
-  }
-  return previousIndex === previousEntries.length;
+  return threadDetailPatchPlanApi.visibleItemPatchShapePreservesExisting(previousEntries, nextEntries);
 }
 
 function patchVisibleItemsOnlyFromRefresh(previousTurn, nextTurn, previousKeys) {
   if (!previousTurn || !nextTurn || !isLatestTurn(nextTurn)) return false;
   const previousEntries = visibleItemPatchEntries(previousTurn);
   const nextEntries = visibleItemPatchEntries(nextTurn);
-  if (!visibleItemPatchShapePreservesExisting(previousEntries, nextEntries)) return false;
+  const patchPlan = threadDetailPatchPlanApi.planVisibleItemRefreshPatch(previousEntries, nextEntries);
+  if (!patchPlan.canPatch) return false;
   const article = turnArticleNode(nextTurn);
   if (!article) return false;
-  const previousByKey = new Map(previousEntries.map((entry) => [entry.key, entry]));
   let lastPatchedNode = null;
-  for (let index = 0; index < nextEntries.length; index += 1) {
-    const nextEntry = nextEntries[index];
-    const previousEntry = previousByKey.get(nextEntry.key);
-    if (previousEntry) {
+  for (const operation of patchPlan.operations) {
+    const nextEntry = operation && operation.nextEntry;
+    if (!nextEntry) return false;
+    if (operation.type === "reuse" || operation.type === "patch") {
       const existingNode = article.querySelector(`[data-render-key="${escapeSelectorAttr(nextEntry.key)}"]`);
       if (!existingNode) return false;
-      const previousSignature = JSON.stringify(previousEntry.signature);
-      const nextSignature = JSON.stringify(nextEntry.signature);
-      lastPatchedNode = previousSignature === nextSignature
+      lastPatchedNode = operation.type === "reuse"
         ? existingNode
         : patchVisibleItemDomNode(nextTurn, nextEntry.item, previousKeys, nextEntry.sourceIndex);
       if (!lastPatchedNode) return false;
       continue;
     }
+    if (operation.type !== "insert") return false;
     const html = renderVisibleItemPatchHtml(nextTurn, nextEntry.item, previousKeys, nextEntry.sourceIndex);
     const source = firstElementFromHtml(html);
     if (!source) return false;

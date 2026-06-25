@@ -81,13 +81,17 @@ already stale. Thread/turn-level merge orchestration now lives in
 `public/thread-detail-merge-state.js`: it coordinates v4 projection delegation,
 incoming turn merge, stale mobile load flag cleanup, active live-turn retention,
 expanded-history preservation, and initial-submission echo cleanup while
-`public/app.js` supplies item-level merge and DOM/runtime glue. DOM patching
-still remains in `public/app.js`.
+`public/app.js` supplies item-level merge and DOM/runtime glue. Visible-item
+refresh patch planning now lives in `public/thread-detail-patch-plan.js`: it
+classifies shape-preserving updates into reuse/patch/insert operations and
+rejects reorder/removal/invalid-entry cases before DOM work starts. DOM patch
+application still remains in `public/app.js`.
 
 Target:
 
 - Continue extracting thread detail merge/state rules from `public/app.js` into
-  pure helper modules, with DOM patching as the next remaining boundary.
+  pure helper modules, with DOM patch application as the next remaining
+  boundary.
 - Keep `public/app.js` responsible for DOM wiring, patch application, and event
   binding only.
 - Cover user-message echo convergence, live receipt preservation, completed

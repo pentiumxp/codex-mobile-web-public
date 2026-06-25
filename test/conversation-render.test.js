@@ -10,6 +10,7 @@ const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 const threadDetailMergeStateJs = fs.readFileSync(path.join(root, "public", "thread-detail-merge-state.js"), "utf8");
+const threadDetailPatchPlan = require(path.join(root, "public", "thread-detail-patch-plan.js"));
 const { createThreadDetailStatePolicy } = require(path.join(root, "public", "thread-detail-state.js"));
 const { createThreadDetailMergePolicy } = require(path.join(root, "public", "thread-detail-merge-state.js"));
 
@@ -1690,16 +1691,21 @@ test("live detail refresh can patch changed visible items without replacing the 
   assert.match(appJs, /function visibleItemPatchEntries\(/);
   assert.match(appJs, /function visibleItemPatchShapePreservesExisting\(/);
   assert.match(appJs, /function patchVisibleItemsOnlyFromRefresh\(/);
+  assert.match(appJs, /const threadDetailPatchPlanApi = window\.CodexThreadDetailPatchPlan/);
+  assert.match(functionBody("visibleItemPatchShapePreservesExisting"), /threadDetailPatchPlanApi\.visibleItemPatchShapePreservesExisting\(previousEntries, nextEntries\)/);
   assert.match(functionBody("patchVisibleItemsOnlyFromRefresh"), /!isLatestTurn\(nextTurn\)/);
   assert.doesNotMatch(functionBody("patchVisibleItemsOnlyFromRefresh"), /!isLiveTurn\(nextTurn\)/);
-  assert.match(functionBody("patchVisibleItemsOnlyFromRefresh"), /visibleItemPatchShapePreservesExisting\(previousEntries, nextEntries\)/);
+  assert.match(functionBody("patchVisibleItemsOnlyFromRefresh"), /threadDetailPatchPlanApi\.planVisibleItemRefreshPatch\(previousEntries, nextEntries\)/);
+  assert.match(functionBody("patchVisibleItemsOnlyFromRefresh"), /for \(const operation of patchPlan\.operations\)/);
+  assert.match(functionBody("patchVisibleItemsOnlyFromRefresh"), /operation\.type === "reuse"/);
+  assert.match(functionBody("patchVisibleItemsOnlyFromRefresh"), /operation\.type !== "insert"/);
   assert.match(functionBody("patchVisibleItemsOnlyFromRefresh"), /article\.insertBefore\(source, lastPatchedNode \? lastPatchedNode\.nextSibling : article\.firstChild\)/);
   assert.match(functionBody("patchVisibleItemsOnlyFromRefresh"), /patchVisibleItemDomNode\(nextTurn, nextEntry\.item, previousKeys, nextEntry\.sourceIndex\)/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /patchVisibleItemsOnlyFromRefresh\(previousTurn, turn, previousKeys\)/);
 });
 
 test("visible item refresh patch shape preserves existing keys while appending usage", () => {
-  const preservesExisting = Function(`${functionSourceFrom(appJs, "visibleItemPatchShapePreservesExisting")}\nreturn visibleItemPatchShapePreservesExisting;`)();
+  const preservesExisting = threadDetailPatchPlan.visibleItemPatchShapePreservesExisting;
 
   assert.equal(
     preservesExisting(

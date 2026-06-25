@@ -1,3 +1,40 @@
+# 2026-06-25 - v438 thread detail patch-plan extraction ready locally
+
+- Scope:
+  - Continued Phase 2 frontend state ownership optimization after the v435
+    thread-detail merge orchestration split.
+  - Extracted visible-item refresh patch planning from `public/app.js` into a
+    pure browser/CommonJS helper.
+- Root-cause boundary:
+  - The previous refresh path mixed two responsibilities in `public/app.js`:
+    deciding whether the visible item shape still allowed incremental patching,
+    and applying the resulting DOM changes.
+  - This change separates the pure decision layer without adding front-end
+    refresh, dedupe, or fallback masking behavior.
+- Change:
+  - Added `public/thread-detail-patch-plan.js`.
+  - `patchVisibleItemsOnlyFromRefresh()` now consumes a
+    reuse/patch/insert plan from `CodexThreadDetailPatchPlan`; `app.js` still
+    owns DOM query, HTML rendering, node patch, and insertion.
+  - Added `test/thread-detail-patch-plan.test.js` for append, changed
+    signature, reorder/removal, and invalid-entry behavior.
+  - Updated shell asset wiring in `public/index.html`, `public/sw.js`,
+    `public/app.js`, `server.js`, and `package.json`.
+  - PWA shell cache bumped to `codex-mobile-shell-v438`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation:
+  - Focused test command passed:
+    `node --test test/thread-detail-patch-plan.test.js test/conversation-render.test.js test/thread-detail-render-plan.test.js test/thread-detail-merge-state.test.js test/mobile-viewport.test.js test/app-update.test.js test/plugin-voice-input.test.js test/thread-tile-layout-ui.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    (`148` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`780` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Release state:
+  - Not deployed and not pushed Public in this step. Await explicit deploy or
+    public instruction.
+
 # 2026-06-25 - GitHub SSA adoption
 
 - Source task card:
