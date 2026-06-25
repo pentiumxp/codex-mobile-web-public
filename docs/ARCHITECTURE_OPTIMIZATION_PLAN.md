@@ -147,6 +147,11 @@ planning now also lives in that helper:
 single-thread blocked state, single-thread hydrate intent, signature update
 intent, and scroll action after local patch execution while app code keeps the
 real tile pane patch, callback execution, state writes, and scroll scheduling.
+Visible-item insert anchoring now also lives in that helper:
+`insertVisibleItemElement` owns nearest-rendered-previous lookup, before-first
+fallback, append-after-previous behavior when the previous node is already the
+last DOM child, the concrete `insertBefore` call, and bounded failure reasons
+while app code keeps item HTML rendering and local patch completion execution.
 Single-thread full-render shell planning now also lives in
 `public/thread-detail-render-plan.js`: loading, load-error retry, detail
 content ordering, empty/read-warning state selection, plugin-refresh notice

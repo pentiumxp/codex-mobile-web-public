@@ -632,6 +632,76 @@ test("visible item dom patch returns bounded failure reasons", () => {
   }).reason, "invalid-operation");
 });
 
+test("visible item insertion appends after a rendered previous item at the end", () => {
+  const article = createArticle([createNode("a"), createNode("b")]);
+  const source = createNode("c");
+  const entries = [{ key: "a" }, { key: "b" }, { key: "c" }];
+
+  const result = domPatch.insertVisibleItemElement({
+    article,
+    source,
+    entries,
+    visibleIndex: 2,
+    keyForEntry: (entry) => entry.key,
+    findElementByKey: (key) => article.nodes.find((node) => node.key === key) || null,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.anchorMode, "append-after-previous");
+  assert.deepEqual(article.nodes.map((node) => node.key), ["a", "b", "c"]);
+});
+
+test("visible item insertion uses the nearest rendered previous item as anchor", () => {
+  const article = createArticle([createNode("a"), createNode("d")]);
+  const source = createNode("c");
+  const entries = [{ key: "a" }, { key: "b" }, { key: "c" }];
+
+  const result = domPatch.insertVisibleItemElement({
+    article,
+    source,
+    entries,
+    visibleIndex: 2,
+    keyForEntry: (entry) => entry.key,
+    findElementByKey: (key) => article.nodes.find((node) => node.key === key) || null,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.anchorMode, "after-previous-before-next");
+  assert.deepEqual(article.nodes.map((node) => node.key), ["a", "c", "d"]);
+});
+
+test("visible item insertion falls back to before first child when no previous item rendered", () => {
+  const article = createArticle([createNode("b")]);
+  const source = createNode("a");
+  const entries = [{ key: "a" }, { key: "b" }];
+
+  const result = domPatch.insertVisibleItemElement({
+    article,
+    source,
+    entries,
+    visibleIndex: 0,
+    keyForEntry: (entry) => entry.key,
+    findElementByKey: (key) => article.nodes.find((node) => node.key === key) || null,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.anchorMode, "before-first");
+  assert.deepEqual(article.nodes.map((node) => node.key), ["a", "b"]);
+});
+
+test("visible item insertion returns bounded failure reasons", () => {
+  const article = createArticle([createNode("a")]);
+  const source = createNode("b");
+  const entries = [{ key: "a" }, { key: "b" }];
+  const keyForEntry = (entry) => entry.key;
+  const findElementByKey = (key) => article.nodes.find((node) => node.key === key) || null;
+
+  assert.equal(domPatch.insertVisibleItemElement({ source, entries, visibleIndex: 1, keyForEntry, findElementByKey }).reason, "missing-article");
+  assert.equal(domPatch.insertVisibleItemElement({ article, entries, visibleIndex: 1, keyForEntry, findElementByKey }).reason, "missing-source");
+  assert.equal(domPatch.insertVisibleItemElement({ article, source, entries, visibleIndex: -1, keyForEntry, findElementByKey }).reason, "invalid-visible-index");
+  assert.equal(domPatch.insertVisibleItemElement({ article, source, entries, visibleIndex: 1, findElementByKey }).reason, "missing-key-lookup");
+});
+
 test("live text item dom patch finds, renders, and patches through injected callbacks", () => {
   const target = createNode("live-item");
   const calls = [];

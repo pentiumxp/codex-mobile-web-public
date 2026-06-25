@@ -2942,6 +2942,7 @@ test("thread tile local patch paths refresh the pane instead of writing a single
   assert.match(functionBody("updateLiveOperationDockForLocalPatch"), /if \(!canPatchSingleThreadConversationDom\(\)\) return false;/);
   assert.match(functionBody("insertVisibleItemDom"), /patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);
   assert.match(functionBody("insertVisibleItemDom"), /if \(!canPatchSingleThreadConversationDom\(\)\) return false;/);
+  assert.match(functionBody("insertVisibleItemDom"), /threadDetailDomPatchApi\.insertVisibleItemElement\(\{/);
   assert.match(functionBody("patchVisibleItemDom"), /patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);
   assert.match(functionBody("patchVisibleItemDom"), /if \(!canPatchSingleThreadConversationDom\(\)\) return false;/);
   assert.match(functionBody("patchLiveTextItemDom"), /patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);

@@ -16,6 +16,33 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v485 Visible Item Insert Anchoring
+
+v485 继续推进 Phase A 的前端 render/patch ownership 收敛。
+
+本次切片把 `insertVisibleItemDom()` 中新增 visible item 的锚点选择和
+`insertBefore` 执行推进到 `public/thread-detail-dom-patch.js` 的
+`insertVisibleItemElement`。新的 helper 负责从当前 visible entries 中向前查找
+最近已渲染 item，并决定插入到该节点之后、首节点之前或空容器 append。
+`public/app.js` 仍然负责选择 single/tile surface、渲染 item HTML、创建 DOM
+节点和执行 local patch completion。
+
+修复边界：
+
+- 症状/风险：新增 visible item 时，`app.js` 内联从 `visibleIndex` 向前查找
+  anchor。旧逻辑无法区分“找到了 previous 节点但它已经是最后一个节点”和
+  “完全没找到 previous 节点”，前者会因为 `nextSibling === null` 被回退到
+  `firstChild`，存在把新 item 插到开头的错序风险。
+- 失败层：前端 visible item local insert DOM anchoring。
+- 不变量：新增 item 应插到最近已渲染 previous item 后面；如果 previous 是最后
+  一个节点，应 append，而不是回退到 firstChild。
+- 闭环验证：`test/thread-detail-dom-patch.test.js` 覆盖 append-after-previous、
+  after-previous-before-next、before-first 和 bounded failure reasons；
+  `test/mobile-viewport.test.js` / `test/conversation-render.test.js` 验证
+  `insertVisibleItemDom` 调用 helper 且不再保留旧反向 anchor 循环。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v485`。
+
 ## 2026-06-26 v484 Local DOM Patch Completion Planning
 
 v484 继续推进 Phase A 的前端 render/patch ownership 收敛。

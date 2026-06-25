@@ -148,8 +148,8 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v484/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v484"/);
+  assert.match(swJs, /codex-mobile-shell-v485/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v485"/);
   assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(swJs, /"\/thread-status-hints\.js"/);
@@ -364,7 +364,8 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /patchNode\(article, source\);/);
   assert.match(functionBody("insertVisibleItemDom"), /if \(isOperationalItem\(item\)\) return updateLiveOperationDockForLocalPatch\(\);/);
   assert.match(functionBody("insertVisibleItemDom"), /article = insertTurnArticleDom\(turn, previousKeys\);/);
-  assert.match(functionBody("insertVisibleItemDom"), /article\.insertBefore\(source, anchor\);/);
+  assert.match(functionBody("insertVisibleItemDom"), /threadDetailDomPatchApi\.insertVisibleItemElement\(\{/);
+  assert.doesNotMatch(functionBody("insertVisibleItemDom"), /for \(let index = visibleIndex - 1/);
   assert.match(functionBody("insertTurnArticleElementDom"), /threadDetailDomPatchApi\.insertTurnArticleElement/);
   assert.doesNotMatch(functionBody("insertTurnArticleElementDom"), /for \(let index = turnIndex - 1/);
   assert.match(functionBody("turnArticleNode"), /threadDetailDomPatchApi\.findTurnArticleElement/);

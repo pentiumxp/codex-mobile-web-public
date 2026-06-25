@@ -504,7 +504,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v484";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v485";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -13631,19 +13631,16 @@ function insertVisibleItemDom(turn, item) {
   const html = renderVisibleItemPatchHtml(turn, item, previousKeys, sourceIndex);
   const source = firstElementFromHtml(html);
   if (!source) return false;
-  let anchor = null;
-  for (let index = visibleIndex - 1; index >= 0; index -= 1) {
-    const entry = entries[index];
-    const previousKey = stableItemKey(turn, entry.item, entry.sourceIndex);
-    const previousNode = article.querySelector(`[data-render-key="${escapeSelectorAttr(previousKey)}"]`);
-    if (previousNode) {
-      anchor = previousNode.nextSibling;
-      break;
-    }
-  }
-  if (!anchor) anchor = article.firstChild;
-  article.insertBefore(source, anchor);
-  return completeLocalConversationDomUpdate(source, wasNearBottom, userReadingCurrentTurn);
+  const insertResult = threadDetailDomPatchApi.insertVisibleItemElement({
+    article,
+    source,
+    entries,
+    visibleIndex,
+    keyForEntry: (entry) => entry && entry.item ? stableItemKey(turn, entry.item, entry.sourceIndex) : "",
+    findElementByKey: (key) => article.querySelector(`[data-render-key="${escapeSelectorAttr(key)}"]`),
+  });
+  if (!insertResult || !insertResult.ok) return false;
+  return completeLocalConversationDomUpdate(insertResult.target || source, wasNearBottom, userReadingCurrentTurn);
 }
 
 function patchVisibleItemDom(turn, item) {

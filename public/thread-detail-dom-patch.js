@@ -364,6 +364,42 @@
     return result(true, anchorPlan.reason || "inserted", { inserted: 1 });
   }
 
+  function insertVisibleItemElement(input = {}) {
+    const article = input.article || input.root || null;
+    if (!article || typeof article.insertBefore !== "function") {
+      return result(false, "missing-article");
+    }
+    const source = input.source || null;
+    if (!source) return result(false, "missing-source");
+    const entries = Array.isArray(input.entries) ? input.entries : [];
+    const visibleIndex = Number.isInteger(input.visibleIndex) ? input.visibleIndex : -1;
+    if (visibleIndex < 0 || visibleIndex >= entries.length) return result(false, "invalid-visible-index");
+    const keyForEntry = typeof input.keyForEntry === "function" ? input.keyForEntry : null;
+    const findElementByKey = typeof input.findElementByKey === "function" ? input.findElementByKey : null;
+    if (!keyForEntry || !findElementByKey) return result(false, "missing-key-lookup");
+
+    let anchor = null;
+    let foundPrevious = false;
+    for (let index = visibleIndex - 1; index >= 0; index -= 1) {
+      const entry = entries[index];
+      const key = String(keyForEntry(entry, index) || "");
+      if (!key) continue;
+      const previousNode = findElementByKey(key, entry, index);
+      if (!previousNode) continue;
+      foundPrevious = true;
+      anchor = previousNode.nextSibling || null;
+      break;
+    }
+    if (!foundPrevious) anchor = article.firstChild || null;
+    article.insertBefore(source, anchor);
+    return result(true, "inserted", {
+      inserted: 1,
+      target: source,
+      anchor,
+      anchorMode: foundPrevious ? (anchor ? "after-previous-before-next" : "append-after-previous") : "before-first",
+    });
+  }
+
   function applyVisibleItemRefreshDomPatch(input = {}) {
     const patchPlan = input.patchPlan;
     if (!patchPlan || !patchPlan.canPatch || !Array.isArray(patchPlan.operations)) {
@@ -505,6 +541,7 @@
     findTurnArticleElement,
     hydrateRenderedSurface,
     insertTurnArticleElement,
+    insertVisibleItemElement,
     normalizeOperation,
     normalizeTurnOperation,
     patchChildNodes,
