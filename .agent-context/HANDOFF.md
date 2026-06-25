@@ -1,3 +1,81 @@
+# 2026-06-26 - v468 thread tile pane slot effects policy deployed
+
+- Scope:
+  - Continued Phase C pane-state / split-screen architecture work.
+  - This slice moves pane slot mutation side-effect planning into
+    `public/thread-tile-state.js`.
+  - It does not change server projection, task-card behavior, Home AI
+    diagnostic dispatch, message merge, image projection, pane layout, or the
+    visual pane design. No fallback or UI-only masking was added.
+- Root-cause boundary:
+  - Before v468, `public/app.js` repeated side-effect ordering across pane
+    replace, move, split, and thread-list replace-last actions: draft save,
+    pinned/split/selected writes, scroll-hold cleanup, settings save, draft
+    restore, Composer refresh, detail load, pane patch, scheduled full render,
+    or board render.
+  - Those repeated branches made each pane action easy to drift from the
+    intended "pane as scaled single-thread window" execution contract.
+- Change:
+  - Added pure `paneSlotMutationEffectsPlan` to
+    `public/thread-tile-state.js`.
+  - `public/app.js` now converts pane slot mutation plans through
+    `threadTileStatePolicy.paneSlotMutationEffectsPlan` and executes the
+    result through one `applyThreadTilePaneSlotEffects` helper.
+  - The pure plan preserves existing behavior:
+    - replace/select saves and restores draft, refreshes active ids, refreshes
+      Composer, loads target detail, and either patches the pane or schedules a
+      full render;
+    - move/split saves and restores draft, writes split pairs, refreshes
+      Composer, and renders the tile board with bottom stickiness;
+    - thread-list replace-last updates slots, active ids, selected pane, scroll
+      holds, and settings without adding draft/Composer/render side effects.
+  - Bumped `CLIENT_BUILD_ID` and service worker cache to
+    `codex-mobile-shell-v468`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Commit:
+  - Runtime/docs commit: `d3f8d4b refactor thread tile pane slot effects`.
+- Validation in source workspace:
+  - Focused suite passed: `67` tests across
+    `test/thread-tile-state.test.js`,
+    `test/thread-tile-layout-ui.test.js`,
+    `test/thread-tile-layout.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-task-card-route.test.js`, `test/thread-goal-service.test.js`,
+    and `test/composer-draft.test.js`.
+  - `npm test` passed: `857` tests.
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+- Production deploy:
+  - Deployed through Home AI central macOS production script.
+  - Reason: `codex-mobile-thread-tile-pane-slot-effects-v468`.
+  - Source ref at deploy: `d3f8d4b01c69`, dirty `false`.
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T190856Z-plugin-codex-mobile-web-codex-mobile-thread-tile-pane-slot-effects-v468`.
+  - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` reported
+    running and manifest/profile health checks passed.
+- Production readback:
+  - `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v468`,
+    `shellCacheName=codex-mobile-shell-v468`, and `version=0.1.11`.
+  - Source/prod SHA-256 parity matched for:
+    `public/thread-tile-state.js`, `test/thread-tile-state.test.js`,
+    `test/thread-tile-layout-ui.test.js`, `test/composer-draft.test.js`,
+    `public/app.js`, `public/sw.js`, `README.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and `docs/MODULES.md`.
+  - Production focused suite passed: same `67` tests listed above with
+    production dependencies.
+- Next architecture boundary:
+  - Continue Phase C by extracting pane count/close side-effect execution,
+    detail read side effects, command detail panels, split sizing, and remaining
+    active-pane execution ownership from `public/app.js`.
+  - Phase B large-session cold/warm path remains separate and should be
+    tackled with timing evidence before changing cache behavior.
+- Public:
+  - Not pushed to Public. Follow release-order rule: wait for production/user
+    validation or explicit Public instruction before syncing/pushing.
+
 # 2026-06-26 - v467 thread tile switch menu policy deployed
 
 - Scope:
