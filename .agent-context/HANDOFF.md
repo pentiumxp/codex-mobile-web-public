@@ -1,9 +1,11 @@
-# 2026-06-25 - v429 live-to-completed weak projection merge fix in progress
+# 2026-06-25 - v429 live-to-completed weak projection merge fix deployed
 
 - Scope:
-  - Fixing Movie/new-thread transient refresh regression after v428/v429 server
-    operation projection deploys.
+  - Fixed, committed, and deployed Movie/new-thread transient refresh
+    regression after v428/v429 server operation projection deploys.
   - Not pushed Public.
+  - Code commit:
+    - `3c78e8b fix: preserve live turn details on completion refresh`
 - Trigger:
   - User reported Movie initially showed normal intermediate images/process
     items for several refreshes, then suddenly refreshed into the weak state
@@ -26,14 +28,27 @@
   - Regression test added for small image/operation items being preserved even
     when the incoming completed patch has a long final receipt.
   - README records v429 root cause and behavior.
-- Validation so far:
+- Validation:
   - `node --check public/app.js && node --check public/sw.js` passed.
   - `node --test test/conversation-render.test.js test/thread-detail-state.test.js test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js`
     passed (`126` tests).
   - `git diff --check` passed.
-- Next:
-  - Commit and deploy through Home AI central deploy script, then verify
-    `/api/public-config` reports `codex-mobile-shell-v429`.
+- Production deploy:
+  - Deployed through the Home AI central plugin deploy script.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T030147Z-plugin-codex-mobile-web-manual`.
+  - `/api/public-config` reports `clientBuildId=0.1.11|codex-mobile-shell-v429`,
+    `shellCacheName=codex-mobile-shell-v429`, `version=0.1.11`, and
+    `authRequired=true`.
+  - Source/production SHA-256 samples matched for `public/app.js`,
+    `public/sw.js`, and `server.js`.
+  - Central deploy validation reported zero blocking auth-profile audit issues.
+- Notes:
+  - The server detail API was already returning rich Movie active-turn detail
+    after the prior server fix; v429 closes the browser-side merge path where a
+    weaker completed patch could temporarily delete existing images and
+    operation items.
+  - Devices must load the v429 shell for this client-side merge fix.
 
 # 2026-06-25 - Movie completed/live operation projection fix deployed
 
