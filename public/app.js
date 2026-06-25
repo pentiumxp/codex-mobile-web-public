@@ -503,7 +503,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v466";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v467";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -12142,46 +12142,51 @@ function setThreadTileSelectedThread(threadId, options = {}) {
 }
 
 function threadTileVisibleThreadOptions(currentId = "") {
-  const current = String(currentId || "");
   const visible = visibleThreads(state.threads);
-  const running = visible
+  const runningIds = visible
     .filter((thread) => thread && isRunningStatus(thread.status))
     .map((thread) => String(thread.id || ""))
     .filter(Boolean);
-  return Array.from(new Set([
-    current,
-    ...state.threadTileActiveIds,
-    ...running,
-    ...visible.map((thread) => String(thread && thread.id || "")).filter(Boolean),
-  ])).filter(Boolean);
+  return threadTileStatePolicy.switchMenuOptionsPlan({
+    currentId,
+    activeIds: state.threadTileActiveIds,
+    runningIds,
+    visibleIds: visible.map((thread) => String(thread && thread.id || "")).filter(Boolean),
+  });
 }
 
 function renderThreadTileSwitchMenu(currentId) {
   const current = String(currentId || "");
-  if (!current || state.threadTileSwitchMenuPaneId !== current) return "";
   const options = threadTileVisibleThreadOptions(current);
-  if (!options.length) return "";
   const layout = threadTileLayout({ enabled: true });
   const activeIds = threadTileCandidateIds(layout);
   const count = activeIds.length || effectiveThreadTilePaneCount(layout);
   const minCount = threadTileMinimumPaneCount(layout);
   const maxCount = threadTileMaximumPaneCount(layout);
-  const canClose = activeIds.includes(current) && count > minCount;
-  const canAdd = count < maxCount;
+  const plan = threadTileStatePolicy.switchMenuPlan({
+    currentId: current,
+    switchMenuPaneId: state.threadTileSwitchMenuPaneId,
+    options,
+    activeIds,
+    count,
+    minCount,
+    maxCount,
+  });
+  if (plan.action !== "render-switch-menu") return "";
   return `<div class="thread-tile-switch-menu" role="listbox" aria-label="切换此窗口线程">
     <div class="thread-tile-switch-actions">
-      <button class="thread-tile-switch-action" type="button" data-thread-tile-close-pane="${escapeHtml(current)}"${canClose ? "" : " disabled"}>关闭窗口</button>
-      <span class="thread-tile-switch-count">${escapeHtml(String(count))}/${escapeHtml(String(maxCount))}</span>
-      <button class="thread-tile-switch-action" type="button" data-thread-tile-pane-count="1"${canAdd ? "" : " disabled"}>新增窗口</button>
+      <button class="thread-tile-switch-action" type="button" data-thread-tile-close-pane="${escapeHtml(plan.currentId)}"${plan.canClose ? "" : " disabled"}>关闭窗口</button>
+      <span class="thread-tile-switch-count">${escapeHtml(String(plan.count))}/${escapeHtml(String(plan.maxCount))}</span>
+      <button class="thread-tile-switch-action" type="button" data-thread-tile-pane-count="1"${plan.canAdd ? "" : " disabled"}>新增窗口</button>
     </div>
-    ${options.map((threadId) => {
+    ${plan.options.map((threadId) => {
       const thread = threadTileDisplayThread(threadId);
       const title = threadDisplayName(thread) || threadId;
       const summary = threadTileSummary(threadId) || thread;
       const pathText = shortPath((thread && thread.cwd) || (summary && summary.cwd) || "") || "聊天";
       const timeText = formatTime((thread && thread.updatedAt) || (summary && summary.updatedAt), state.nowMs);
       const status = statusIconHtml(thread && thread.status, "thread-tile-switch-status", threadId);
-      const selected = threadId === current;
+      const selected = threadId === plan.currentId;
       return `<button class="thread-tile-switch-option${selected ? " selected" : ""}" type="button" role="option" aria-selected="${selected ? "true" : "false"}" data-thread-tile-switch-target="${escapeHtml(threadId)}">
         <span class="thread-tile-switch-main"><span class="thread-tile-switch-title">${escapeHtml(title)}</span><span class="thread-tile-switch-meta">${escapeHtml([pathText, timeText].filter(Boolean).join(" | "))}</span></span>
         ${status}

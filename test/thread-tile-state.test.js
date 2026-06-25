@@ -242,6 +242,69 @@ test("thread tile state plans candidate pane ids without app globals", () => {
   });
 });
 
+test("thread tile state plans switch menu options and controls without app globals", () => {
+  assert.deepEqual(state.switchMenuOptionsPlan({
+    currentId: "b",
+    activeIds: ["a", "b"],
+    runningIds: ["c", "a"],
+    visibleIds: ["d", "c"],
+  }), ["b", "a", "c", "d"]);
+
+  assert.deepEqual(state.switchMenuPlan({
+    currentId: "b",
+    switchMenuPaneId: "a",
+    options: ["b", "a"],
+    activeIds: ["a", "b"],
+    count: 2,
+    minCount: 1,
+    maxCount: 3,
+  }), {
+    action: "skip",
+    reason: "closed",
+    currentId: "b",
+    options: ["b", "a"],
+    activeIds: ["a", "b"],
+    count: 2,
+    minCount: 1,
+    maxCount: 3,
+    canClose: false,
+    canAdd: false,
+  });
+
+  assert.deepEqual(state.switchMenuPlan({
+    currentId: "b",
+    switchMenuPaneId: "b",
+    options: ["b", "a"],
+    activeIds: ["a", "b"],
+    count: 2,
+    minCount: 1,
+    maxCount: 3,
+  }), {
+    action: "render-switch-menu",
+    reason: "open",
+    currentId: "b",
+    options: ["b", "a"],
+    activeIds: ["a", "b"],
+    count: 2,
+    minCount: 1,
+    maxCount: 3,
+    canClose: true,
+    canAdd: true,
+  });
+
+  const maxed = state.switchMenuPlan({
+    currentId: "b",
+    switchMenuPaneId: "b",
+    options: ["b", "a"],
+    activeIds: ["a"],
+    count: 3,
+    minCount: 3,
+    maxCount: 3,
+  });
+  assert.equal(maxed.canClose, false);
+  assert.equal(maxed.canAdd, false);
+});
+
 test("thread tile state updates split pairs without keeping stale ids", () => {
   const removed = state.removeSplitPairsForIds([
     { anchorId: "a", childId: "b" },

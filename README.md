@@ -16,6 +16,28 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v467 Thread Tile Switch Menu State Policy
+
+v467 继续 Phase C，把平铺窗口标题菜单的状态策略迁到
+`public/thread-tile-state.js`。这次处理的是 `threadTileVisibleThreadOptions` 和
+`renderThreadTileSwitchMenu` 中的候选线程排序去重、菜单开闭、关闭窗口/新增窗口按钮
+可用性，以及窗口计数显示。
+
+本次新增的纯策略是 `switchMenuOptionsPlan` 和 `switchMenuPlan`：
+
+- 线程切换候选项按当前窗口、active panes、running visible threads、visible threads
+  的顺序去重。
+- 菜单是否打开、是否缺少目标 pane、是否有可渲染选项由纯策略输出 bounded reason。
+- 关闭窗口按钮只在当前 pane 仍是 active pane 且 pane 数量高于最小值时可用。
+- 新增窗口按钮只在当前 pane 数量低于最大值时可用。
+
+`public/app.js` 仍负责把线程对象渲染成标题、路径、时间和状态图标；菜单状态判断不再
+直接读写在 app 层。这个切片不改变 pane layout、thread detail API、server projection、
+任务卡或诊断上报。`CLIENT_BUILD_ID` 和 PWA shell cache 升级到
+`codex-mobile-shell-v467`。`test/thread-tile-state.test.js` 覆盖 switch menu planning；
+`test/thread-tile-layout-ui.test.js` 约束 app 层必须通过 `switchMenuOptionsPlan` 和
+`switchMenuPlan`。
+
 ## 2026-06-26 v466 Thread Tile Candidate Pane Id Policy
 
 v466 继续 Phase C，把平铺窗口候选线程 ID 的选择策略迁到

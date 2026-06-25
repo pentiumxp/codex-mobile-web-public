@@ -115,6 +115,48 @@
     };
   }
 
+  function switchMenuOptionsPlan(input = {}) {
+    const currentId = text(input.currentId || input.currentThreadId || input.threadId).trim();
+    return uniqueIds([
+      currentId,
+      ...(Array.isArray(input.activeIds) ? input.activeIds : []),
+      ...(Array.isArray(input.runningIds) ? input.runningIds : []),
+      ...(Array.isArray(input.visibleIds) ? input.visibleIds : []),
+    ]);
+  }
+
+  function switchMenuPlan(input = {}) {
+    const currentId = text(input.currentId || input.threadId).trim();
+    const switchMenuPaneId = text(input.switchMenuPaneId || input.openPaneId).trim();
+    const options = uniqueIds(input.options || switchMenuOptionsPlan(input));
+    const activeIds = uniqueIds(input.activeIds || []);
+    const countInput = Number(input.count);
+    const count = Math.max(0, Math.floor(Number.isFinite(countInput) ? countInput : activeIds.length));
+    const minCount = Math.max(0, Math.floor(Number(input.minCount || 0)) || 0);
+    const maxCount = Math.max(minCount, Math.floor(Number(input.maxCount || 0)) || 0);
+    if (!currentId) {
+      return { action: "skip", reason: "missing-id", currentId, options, activeIds, count, minCount, maxCount, canClose: false, canAdd: false };
+    }
+    if (switchMenuPaneId !== currentId) {
+      return { action: "skip", reason: "closed", currentId, options, activeIds, count, minCount, maxCount, canClose: false, canAdd: false };
+    }
+    if (!options.length) {
+      return { action: "skip", reason: "no-options", currentId, options, activeIds, count, minCount, maxCount, canClose: false, canAdd: false };
+    }
+    return {
+      action: "render-switch-menu",
+      reason: "open",
+      currentId,
+      options,
+      activeIds,
+      count,
+      minCount,
+      maxCount,
+      canClose: activeIds.includes(currentId) && count > minCount,
+      canAdd: count < maxCount,
+    };
+  }
+
   function normalizeSplitPairs(values = [], ids = [], options = {}) {
     const visibleIds = normalizePinnedIds(ids, { maxPanes: options.maxPanes });
     const normalize = typeof options.normalizeSplitPairs === "function"
@@ -682,6 +724,8 @@
     movePaneRelativePlan,
     selectPanePlan,
     splitPaneWithTargetPlan,
+    switchMenuOptionsPlan,
+    switchMenuPlan,
     syncPinnedIdsFromActiveIds,
     toggleOperationMode,
     uniqueIds,

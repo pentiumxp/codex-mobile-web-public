@@ -144,7 +144,10 @@ fallback, and display-settings save eligibility are computed as one policy
 and explicit selected-pane action planning now emits the previous/next pane
 patch set. Candidate pane id planning also now lives there: visible pinned
 filtering, default-candidate fallback, layout-selector delegation, and current
-thread replacement are computed as one policy while `public/app.js` keeps DOM,
+thread replacement are computed as one policy. Switch-menu option/control
+planning also now lives there: current/active/running/visible thread option
+ordering, menu open/closed skip reasons, and close/add control eligibility are
+computed as one policy while `public/app.js` keeps DOM,
 rendering, network save, timers, API reads,
 AbortController ownership, draft restore, detail-load side effects, and other
 side effects. App code can no
@@ -175,6 +178,7 @@ Target:
   pane slot mutation planning, pane count/close planning, and active pane sync
   planning are now outside app.js; explicit selected-pane action planning is
   also outside app.js; candidate pane id planning is also outside app.js;
+  switch-menu option/control planning is also outside app.js;
   broader action execution, detail read side effects,
   command detail panels, and split sizing remain the next boundary.
 - Keep `public/app.js` responsible for DOM wiring, patch application, and event
@@ -327,7 +331,9 @@ Target:
   action planning also now lives there, including skip reasons and previous/
   next pane patch ids. Candidate pane id planning also now lives there,
   including visible pinned filtering, default-candidate fallback,
-  layout-selector delegation, and current-thread replacement. Continue moving pane widths, active
+  layout-selector delegation, and current-thread replacement. Switch-menu
+  option/control planning also now lives there, including current/active/
+  running/visible option ordering and close/add control eligibility. Continue moving pane widths, active
   pane execution, per-pane drafts, max concurrent detail reads, pane-local
   send/approval/interrupt ownership, command detail panels, and mobile collapse
   behavior into testable helpers without DOM side effects.
