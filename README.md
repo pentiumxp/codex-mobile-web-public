@@ -16,6 +16,31 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v471 Thread Tile Detail Load Lifecycle Policy
+
+v471 继续 Phase C，把平铺窗口 detail load 的生命周期副作用迁到
+`public/thread-tile-state.js` 的纯 effect plan。此前 `detailLoadPlan` 已经负责判断
+是否要加载、是否后台刷新、是否 mark loading 和 clear error；但 `loadThreadTileDetail`
+仍然直接写入 controller、loading ids、detail cache、loadedAt、error map，并在 finally
+里决定是否 patch pane。
+
+本次新增四个纯策略：
+
+- `detailLoadStartEffectsPlan`：描述 controller 注册、loading 标记、清理错误和起始 pane
+  patch。
+- `detailLoadSuccessEffectsPlan`：描述 detail cache 写入、loadedAt 更新、清理错误和 thread
+  list merge。
+- `detailLoadErrorEffectsPlan`：只让前台非 abort 错误进入 pane error map；后台刷新错误仍然
+  不打扰用户。
+- `detailLoadFinallyEffectsPlan`：描述 controller/loading 清理，以及可见 pane 的最终 patch。
+
+`public/app.js` 继续拥有真实 `AbortController`、`api()` 网络请求、DOM patch 和 state Map/Set
+写入；策略层只输出 bounded lifecycle effect。这个切片不改变 thread detail API、
+projection、任务卡、诊断上报、pane layout 或视觉设计。
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v471`。
+`test/thread-tile-state.test.js` 覆盖 detail-load lifecycle planning；
+`test/thread-tile-layout-ui.test.js` 约束 app 层必须通过 lifecycle effect executor。
+
 ## 2026-06-26 v470 Thread Tile Selected Pane Effect Policy
 
 v470 继续 Phase C，把平铺窗口 active pane 切换后的副作用执行迁到

@@ -161,7 +161,15 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(loadBody, /loadingActive: state\.threadTileLoadingIds\.has\(id\)/);
   assert.match(loadBody, /THREAD_TILE_REFRESH_MIN_INTERVAL_MS/);
   assert.match(loadBody, /if \(plan\.action !== "load"\) return;/);
-  assert.match(loadBody, /state\.threadTileDetails\.set\(id, result\.thread\)/);
+  assert.match(loadBody, /threadTileStatePolicy\.detailLoadStartEffectsPlan\(plan\)/);
+  assert.match(loadBody, /applyThreadTileDetailLoadStartEffects/);
+  assert.match(loadBody, /threadTileStatePolicy\.detailLoadSuccessEffectsPlan/);
+  assert.match(loadBody, /applyThreadTileDetailLoadSuccessEffects/);
+  assert.match(loadBody, /threadTileStatePolicy\.detailLoadErrorEffectsPlan/);
+  assert.match(loadBody, /applyThreadTileDetailLoadErrorEffects/);
+  assert.match(loadBody, /threadTileStatePolicy\.detailLoadFinallyEffectsPlan/);
+  assert.match(loadBody, /applyThreadTileDetailLoadFinallyEffects/);
+  assert.doesNotMatch(loadBody, /state\.threadTileDetails\.set\(id, result\.thread\)/);
 
   const tilePaneBody = functionBody(appJs, "renderThreadTilePane");
   assert.match(tilePaneBody, /thread-tile-pane-content/);
@@ -315,7 +323,7 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(functionBody(appJs, "rememberThreadTilePaneScrollPosition"), /state\.threadTilePaneScrollHoldById\.delete\(id\)/);
   assert.match(functionBody(appJs, "restoreThreadTilePaneElementScrollState"), /!hold/);
   assert.match(functionBody(appJs, "toggleThreadTileSwitchMenu"), /patchThreadTilePane\(id, \{ preserveScroll: true \}\)/);
-  assert.match(functionBody(appJs, "loadThreadTileDetail"), /scheduleRenderThreadTilePane\(id, \{ preserveScroll: true \}\)/);
+  assert.match(functionBody(appJs, "applyThreadTileDetailLoadFinallyEffects"), /scheduleRenderThreadTilePane\(id, \{ preserveScroll: effect\.preserveScroll !== false \}\)/);
   assert.match(functionBody(appJs, "applyThreadTileSelectedPaneEffects"), /patchThreadTilePane\(id, \{ preserveScroll: effect\.patchPreserveScroll !== false \}\)/);
   assert.match(appJs, /if \(state\.threadTileMode && !isThreadTileKeyboardFocusActive\(\)\) scheduleRenderCurrentThread\(\)/);
   assert.match(functionBody(appJs, "updateTurnTimer"), /applyTurnTimerState\(el, currentThreadTurnTimerState\(\)\)/);

@@ -503,7 +503,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v470";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v471";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -12619,12 +12619,7 @@ async function loadThreadTileDetail(threadId, options = {}) {
   if (plan.action !== "load") return;
   const background = plan.background;
   const controller = new AbortController();
-  state.threadTileControllers.set(id, controller);
-  if (plan.markLoading) {
-    state.threadTileLoadingIds.add(id);
-    if (!scheduleRenderThreadTilePane(id, { preserveScroll: true })) scheduleRenderCurrentThread();
-  }
-  if (plan.clearError) state.threadTileErrors.delete(id);
+  applyThreadTileDetailLoadStartEffects(threadTileStatePolicy.detailLoadStartEffectsPlan(plan), controller);
   try {
     const result = await api(threadDetailApiPath(id, { mode: "recent" }), {
       timeoutMs: 20000,
@@ -12632,18 +12627,72 @@ async function loadThreadTileDetail(threadId, options = {}) {
     });
     if (controller.signal.aborted) return;
     if (result && result.thread) {
-      state.threadTileDetails.set(id, result.thread);
-      state.threadTileLoadedAtById.set(id, Date.now());
-      state.threadTileErrors.delete(id);
-      mergeThreadIntoThreadList(result.thread);
+      applyThreadTileDetailLoadSuccessEffects(threadTileStatePolicy.detailLoadSuccessEffectsPlan({
+        id,
+        hasThread: true,
+        nowMs: Date.now(),
+      }), result.thread);
     }
   } catch (err) {
-    if (!controller.signal.aborted && !background) state.threadTileErrors.set(id, err && err.message ? err.message : String(err));
+    applyThreadTileDetailLoadErrorEffects(threadTileStatePolicy.detailLoadErrorEffectsPlan({
+      id,
+      aborted: controller.signal.aborted,
+      background,
+      errorMessage: err && err.message ? err.message : String(err),
+    }));
   } finally {
-    if (state.threadTileControllers.get(id) === controller) state.threadTileControllers.delete(id);
-    state.threadTileLoadingIds.delete(id);
-    if (threadTilePaneIsVisible(id) && !scheduleRenderThreadTilePane(id, { preserveScroll: true })) scheduleRenderCurrentThread();
+    applyThreadTileDetailLoadFinallyEffects(threadTileStatePolicy.detailLoadFinallyEffectsPlan({
+      id,
+      controllerMatches: state.threadTileControllers.get(id) === controller,
+      visible: threadTilePaneIsVisible(id),
+    }));
   }
+}
+
+function applyThreadTileDetailLoadStartEffects(effect, controller) {
+  if (!effect || effect.action !== "detail-load-start-effects") return false;
+  const id = String(effect.id || "");
+  if (!id) return false;
+  if (effect.setController) state.threadTileControllers.set(id, controller);
+  if (effect.markLoading) {
+    state.threadTileLoadingIds.add(id);
+    if (effect.renderPane && !scheduleRenderThreadTilePane(id, { preserveScroll: effect.preserveScroll !== false })) {
+      scheduleRenderCurrentThread();
+    }
+  }
+  if (effect.clearError) state.threadTileErrors.delete(id);
+  return true;
+}
+
+function applyThreadTileDetailLoadSuccessEffects(effect, thread) {
+  if (!effect || effect.action !== "detail-load-success-effects" || !thread) return false;
+  const id = String(effect.id || "");
+  if (!id) return false;
+  if (effect.setDetail) state.threadTileDetails.set(id, thread);
+  if (effect.setLoadedAt) state.threadTileLoadedAtById.set(id, Number(effect.loadedAtMs || Date.now()));
+  if (effect.clearError) state.threadTileErrors.delete(id);
+  if (effect.mergeThread) mergeThreadIntoThreadList(thread);
+  return true;
+}
+
+function applyThreadTileDetailLoadErrorEffects(effect) {
+  if (!effect || effect.action !== "detail-load-error-effects") return false;
+  const id = String(effect.id || "");
+  if (!id) return false;
+  state.threadTileErrors.set(id, effect.errorMessage || "Thread load failed");
+  return true;
+}
+
+function applyThreadTileDetailLoadFinallyEffects(effect) {
+  if (!effect || effect.action !== "detail-load-finally-effects") return false;
+  const id = String(effect.id || "");
+  if (!id) return false;
+  if (effect.clearController) state.threadTileControllers.delete(id);
+  if (effect.clearLoading) state.threadTileLoadingIds.delete(id);
+  if (effect.renderPane && !scheduleRenderThreadTilePane(id, { preserveScroll: effect.preserveScroll !== false })) {
+    scheduleRenderCurrentThread();
+  }
+  return true;
 }
 
 function ensureThreadTileDetails(ids = []) {

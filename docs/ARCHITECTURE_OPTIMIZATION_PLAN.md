@@ -133,7 +133,9 @@ payload/application, active-id sync, and pane-local operation bubble
 dwell/expiry/mode/signature rules are pure policy. Pane-local detail refresh
 planning is now also in that helper: refresh timer scheduling, refresh target
 selection, and detail-load skip/background/loading decisions are explicit
-plans. Pane slot mutation planning is also in that helper: pane thread
+plans. Detail-load lifecycle side-effect planning is also in that helper:
+start/success/error/finally phases emit controller, loading, cache, error, and
+render intent while app code keeps AbortController and network execution. Pane slot mutation planning is also in that helper: pane thread
 replacement, duplicate swap, drag reorder, up/down split-pair placement,
 thread-list-open replacement, and drop-zone intent are explicit plans. Pane
 count/close planning is now also in that helper: count bounds, unchanged
@@ -155,7 +157,7 @@ selection fallback, settings persistence, active id refresh, detail load, pane
 patch, scheduled full render, or board render while
 `public/app.js` keeps DOM,
 rendering, network save, timers, API reads,
-AbortController ownership, draft restore, detail-load side effects, and other
+AbortController ownership, draft restore, and other
 side effects. App code can no
 longer fall through from tile mode into the
 single-thread patch path without an explicit policy decision, fall through from
@@ -186,9 +188,10 @@ Target:
   planning is also outside app.js; candidate pane id planning is also outside app.js;
   switch-menu option/control planning is also outside app.js;
   pane slot mutation side-effect planning including pane count/close execution
-  is also outside app.js;
-  broader detail read side effects,
-  command detail panels, and split sizing remain the next boundary.
+  is also outside app.js; detail-load lifecycle side-effect planning is also
+  outside app.js;
+  command detail panels, split sizing, max concurrent detail reads, and
+  per-pane draft/runtime ownership remain the next boundary.
 - Keep `public/app.js` responsible for DOM wiring, patch application, and event
   binding only.
 - Cover user-message echo convergence, live receipt preservation, completed
@@ -347,8 +350,9 @@ Target:
   Composer/settings/detail-load/render intent for replace/select, move, split,
   thread-list replace-last, pane count, and close-pane actions. Selected-pane
   side-effect planning also now lives there, including draft/Composer/patch
-  intent for active pane changes. Continue moving pane widths, per-pane drafts,
-  max concurrent detail reads, pane-local
+  intent for active pane changes. Detail-load lifecycle side-effect planning
+  also now lives there, including start/success/error/finally state/render
+  intent. Continue moving pane widths, per-pane drafts, max concurrent detail reads, pane-local
   send/approval/interrupt ownership, command detail panels, and mobile collapse
   behavior into testable helpers without DOM side effects.
 - Treat each pane as a scaled mobile single-thread runtime instance. Shared

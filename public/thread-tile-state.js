@@ -792,6 +792,67 @@
     };
   }
 
+  function detailLoadStartEffectsPlan(plan = {}) {
+    const sourceAction = text(plan.action).trim();
+    const id = text(plan.id || plan.threadId).trim();
+    if (sourceAction !== "load") return skipPaneSlot("unsupported-detail-load-plan", { sourceAction, id });
+    if (!id) return skipPaneSlot("missing-id", { id });
+    return {
+      action: "detail-load-start-effects",
+      reason: text(plan.reason || sourceAction).trim() || sourceAction,
+      id,
+      background: plan.background === true,
+      setController: true,
+      markLoading: plan.markLoading === true,
+      clearError: plan.clearError === true,
+      renderPane: plan.markLoading === true,
+      preserveScroll: true,
+    };
+  }
+
+  function detailLoadSuccessEffectsPlan(input = {}) {
+    const id = text(input.id || input.threadId).trim();
+    if (!id) return skipPaneSlot("missing-id", { id });
+    if (input.hasThread !== true) return skipPaneSlot("missing-thread", { id });
+    return {
+      action: "detail-load-success-effects",
+      reason: "thread-loaded",
+      id,
+      setDetail: true,
+      setLoadedAt: true,
+      loadedAtMs: nowValue(input.nowMs),
+      clearError: true,
+      mergeThread: true,
+    };
+  }
+
+  function detailLoadErrorEffectsPlan(input = {}) {
+    const id = text(input.id || input.threadId).trim();
+    if (!id) return skipPaneSlot("missing-id", { id });
+    if (input.aborted === true) return skipPaneSlot("aborted", { id });
+    if (input.background === true) return skipPaneSlot("background-refresh", { id });
+    return {
+      action: "detail-load-error-effects",
+      reason: "foreground-error",
+      id,
+      errorMessage: text(input.errorMessage || input.message || input.error).trim(),
+    };
+  }
+
+  function detailLoadFinallyEffectsPlan(input = {}) {
+    const id = text(input.id || input.threadId).trim();
+    if (!id) return skipPaneSlot("missing-id", { id });
+    return {
+      action: "detail-load-finally-effects",
+      reason: "settle",
+      id,
+      clearController: input.controllerMatches === true,
+      clearLoading: true,
+      renderPane: input.visible === true,
+      preserveScroll: true,
+    };
+  }
+
   return {
     DEFAULT_OPERATION_BUBBLE_MIN_VISIBLE_MS,
     DEFAULT_USER_MAX_PANES,
@@ -815,6 +876,10 @@
     paneSlotMutationEffectsPlan,
     prependSplitPair,
     detailLoadPlan,
+    detailLoadErrorEffectsPlan,
+    detailLoadFinallyEffectsPlan,
+    detailLoadStartEffectsPlan,
+    detailLoadSuccessEffectsPlan,
     refreshDelayMs,
     refreshSchedulePlan,
     refreshTargetIds,

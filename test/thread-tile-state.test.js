@@ -787,6 +787,66 @@ test("thread tile state plans detail loads and skips stale work", () => {
     markLoading: true,
     clearError: true,
   });
+
+  assert.deepEqual(state.detailLoadStartEffectsPlan({
+    action: "load",
+    reason: "load",
+    id: "a",
+    background: false,
+    markLoading: true,
+    clearError: true,
+  }), {
+    action: "detail-load-start-effects",
+    reason: "load",
+    id: "a",
+    background: false,
+    setController: true,
+    markLoading: true,
+    clearError: true,
+    renderPane: true,
+    preserveScroll: true,
+  });
+  assert.deepEqual(state.detailLoadSuccessEffectsPlan({
+    id: "a",
+    hasThread: true,
+    nowMs: 1234,
+  }), {
+    action: "detail-load-success-effects",
+    reason: "thread-loaded",
+    id: "a",
+    setDetail: true,
+    setLoadedAt: true,
+    loadedAtMs: 1234,
+    clearError: true,
+    mergeThread: true,
+  });
+  assert.deepEqual(state.detailLoadErrorEffectsPlan({
+    id: "a",
+    errorMessage: "boom",
+  }), {
+    action: "detail-load-error-effects",
+    reason: "foreground-error",
+    id: "a",
+    errorMessage: "boom",
+  });
+  assert.equal(state.detailLoadErrorEffectsPlan({
+    id: "a",
+    background: true,
+    errorMessage: "hidden",
+  }).reason, "background-refresh");
+  assert.deepEqual(state.detailLoadFinallyEffectsPlan({
+    id: "a",
+    controllerMatches: true,
+    visible: true,
+  }), {
+    action: "detail-load-finally-effects",
+    reason: "settle",
+    id: "a",
+    clearController: true,
+    clearLoading: true,
+    renderPane: true,
+    preserveScroll: true,
+  });
 });
 
 test("thread tile state plans pane slot replacement without app globals", () => {
