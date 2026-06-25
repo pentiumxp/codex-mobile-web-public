@@ -15,6 +15,18 @@
     return Object.assign({}, entry, { key });
   }
 
+  function normalizeRefreshTurnPatchEntry(entry) {
+    if (!entry || typeof entry !== "object") return null;
+    const key = String(entry.key || "");
+    if (!key) return null;
+    return {
+      key,
+      hasPreviousTurn: Boolean(entry.hasPreviousTurn),
+      itemPatchable: Boolean(entry.itemPatchable),
+      articlePresent: Boolean(entry.articlePresent),
+    };
+  }
+
   function signatureText(signature) {
     if (signature == null) return "";
     if (typeof signature === "string") return signature;
@@ -112,8 +124,49 @@
     };
   }
 
+  function planThreadDetailRefreshDomPatch(entries) {
+    if (!Array.isArray(entries)) {
+      return {
+        canPatch: false,
+        reason: "invalid-turn-entries",
+        operations: [],
+      };
+    }
+    const operations = [];
+    for (const rawEntry of entries) {
+      const entry = normalizeRefreshTurnPatchEntry(rawEntry);
+      if (!entry) {
+        return {
+          canPatch: false,
+          reason: "invalid-turn-entry",
+          operations: [],
+        };
+      }
+      if (entry.hasPreviousTurn && entry.itemPatchable && entry.articlePresent) {
+        operations.push({
+          type: "item-patch",
+          key: entry.key,
+          entry,
+        });
+        continue;
+      }
+      operations.push({
+        type: entry.articlePresent ? "replace-turn" : "insert-turn",
+        key: entry.key,
+        entry,
+      });
+    }
+    return {
+      canPatch: true,
+      reason: "planned",
+      operations,
+    };
+  }
+
   return {
     normalizePatchEntry,
+    normalizeRefreshTurnPatchEntry,
+    planThreadDetailRefreshDomPatch,
     planVisibleItemRefreshPatch,
     planThreadDetailDomPatchSurface,
     visibleItemPatchShapePreservesExisting,

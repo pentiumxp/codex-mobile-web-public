@@ -37,6 +37,26 @@ return policy，不再出现 `Return required`；如果再次对终止卡调用 
 `returnToSource:true` 是终止卡、auto-return receipt 不触发二次 auto-return、以及
 Music-style repair -> receipt -> ack 链在第一张 terminal return 后停止。
 
+## 2026-06-26 v449 Refresh DOM Patch Application Plan
+
+v449 接续 v448，是 Phase A 的第二块。v448 已经把 refresh 最终动作收束到
+`thread-detail-render-plan`，但 single-thread 的 DOM patch 仍在
+`patchCurrentThreadDetailFromRefresh` 中逐个 turn 临时判断：item-only patch、
+insert turn、replace turn、render failure 和未知操作都混在 `app.js` 循环里。
+
+本次把 turn-level patch 应用计划推进到 `public/thread-detail-patch-plan.js`：
+
+- 新增 `planThreadDetailRefreshDomPatch`，产出 `item-patch`、`insert-turn`、
+  `replace-turn` 三类明确操作。
+- `public/app.js` 只负责按 plan 查找 DOM、渲染 turn、执行 patch/insert。
+- 如果 plan 或 DOM 状态无法解释当前形态，局部 patch 会带 reject reason 失败，
+  交给现有 full render 路径，而不是删除节点或静默兜底。
+- `CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v449`。
+
+Focused tests 覆盖 turn patch plan 的三类操作和 invalid-entry 拒绝，并确认
+`patchCurrentThreadDetailFromRefresh` 已使用 helper 计划，而不是在应用循环中
+重新决定 turn 操作。
+
 ## 2026-06-26 v448 Refresh Render Outcome 服务化
 
 v448 是下一阶段系统级架构优化的 Phase A 第一块，不是新的视觉兜底。

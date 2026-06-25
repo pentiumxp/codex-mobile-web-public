@@ -487,7 +487,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v448";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v449";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -13563,12 +13563,15 @@ function visibleItemPatchShapePreservesExisting(previousEntries, nextEntries) {
   return threadDetailPatchPlanApi.visibleItemPatchShapePreservesExisting(previousEntries, nextEntries);
 }
 
-function patchVisibleItemsOnlyFromRefresh(previousTurn, nextTurn, previousKeys) {
+function planVisibleItemsOnlyFromRefresh(previousTurn, nextTurn) {
   if (!previousTurn || !nextTurn || !isLatestTurn(nextTurn)) return false;
   const previousEntries = visibleItemPatchEntries(previousTurn);
   const nextEntries = visibleItemPatchEntries(nextTurn);
-  const patchPlan = threadDetailPatchPlanApi.planVisibleItemRefreshPatch(previousEntries, nextEntries);
-  if (!patchPlan.canPatch) return false;
+  return threadDetailPatchPlanApi.planVisibleItemRefreshPatch(previousEntries, nextEntries);
+}
+
+function applyVisibleItemsOnlyRefreshPatch(nextTurn, patchPlan, previousKeys) {
+  if (!patchPlan || !patchPlan.canPatch) return false;
   const article = turnArticleNode(nextTurn);
   if (!article) return false;
   let lastPatchedNode = null;
@@ -13641,21 +13644,43 @@ function patchCurrentThreadDetailFromRefresh(previousThread, nextThread, previou
   const previousTurnById = new Map(visibleTurnsForConversation(previousThread)
     .map((turn) => [String(turn && turn.id || ""), turn])
     .filter(([id]) => id));
-  updateLiveOperationDockHtml(renderLiveOperationDock(nextThread, previousKeys));
-  for (const turn of visibleTurnsForConversation(nextThread)) {
+  const nextTurns = visibleTurnsForConversation(nextThread);
+  const turnByKey = new Map();
+  const itemPatchPlanByTurnKey = new Map();
+  const turnPatchEntries = nextTurns.map((turn) => {
+    const key = stableTurnKey(turn);
     const previousTurn = previousTurnById.get(String(turn && turn.id || ""));
-    if (previousTurn && patchVisibleItemsOnlyFromRefresh(previousTurn, turn, previousKeys)) continue;
+    const itemPatchPlan = planVisibleItemsOnlyFromRefresh(previousTurn, turn);
+    turnByKey.set(key, turn);
+    itemPatchPlanByTurnKey.set(key, itemPatchPlan);
+    return {
+      key,
+      hasPreviousTurn: Boolean(previousTurn),
+      itemPatchable: Boolean(itemPatchPlan && itemPatchPlan.canPatch),
+      articlePresent: Boolean(turnArticleNode(turn)),
+    };
+  });
+  const turnPatchPlan = threadDetailPatchPlanApi.planThreadDetailRefreshDomPatch(turnPatchEntries);
+  if (!turnPatchPlan.canPatch) return rejectThreadDetailPatch(turnPatchPlan.reason || "turn-patch-plan-rejected");
+  updateLiveOperationDockHtml(renderLiveOperationDock(nextThread, previousKeys));
+  for (const operation of turnPatchPlan.operations) {
+    const turn = turnByKey.get(String(operation && operation.key || ""));
+    if (!turn) return rejectThreadDetailPatch("turn-patch-operation-missing-turn");
+    if (operation.type === "item-patch") {
+      const patchPlan = itemPatchPlanByTurnKey.get(operation.key);
+      if (!applyVisibleItemsOnlyRefreshPatch(turn, patchPlan, previousKeys)) return rejectThreadDetailPatch("item-patch-failed");
+      continue;
+    }
     const html = renderTurn(turn, previousKeys);
     const source = firstElementFromHtml(html);
     const article = turnArticleNode(turn);
-    if (!source) {
-      if (article) article.remove();
-      continue;
-    }
-    if (!article) {
+    if (!source) return rejectThreadDetailPatch("render-turn-failed");
+    if (operation.type === "insert-turn") {
       if (!insertTurnArticleDom(turn, previousKeys)) return rejectThreadDetailPatch("insert-turn-failed");
       continue;
     }
+    if (operation.type !== "replace-turn") return rejectThreadDetailPatch("unknown-turn-patch-operation");
+    if (!article) return rejectThreadDetailPatch("replace-turn-missing-article");
     patchNode(article, source);
   }
   bindCurrentThreadActions();

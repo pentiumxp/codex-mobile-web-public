@@ -131,3 +131,47 @@ test("dom patch surface allows single-thread patching only on single-thread surf
     "missing-conversation",
   );
 });
+
+test("thread detail refresh dom patch plan chooses item patch, insert, and replace operations", () => {
+  const plan = patchPlan.planThreadDetailRefreshDomPatch([
+    {
+      key: "turn-a",
+      hasPreviousTurn: true,
+      itemPatchable: true,
+      articlePresent: true,
+    },
+    {
+      key: "turn-b",
+      hasPreviousTurn: true,
+      itemPatchable: true,
+      articlePresent: false,
+    },
+    {
+      key: "turn-c",
+      hasPreviousTurn: true,
+      itemPatchable: false,
+      articlePresent: true,
+    },
+  ]);
+
+  assert.equal(plan.canPatch, true);
+  assert.equal(plan.reason, "planned");
+  assert.deepEqual(plan.operations.map((operation) => operation.type), [
+    "item-patch",
+    "insert-turn",
+    "replace-turn",
+  ]);
+  assert.deepEqual(plan.operations.map((operation) => operation.key), ["turn-a", "turn-b", "turn-c"]);
+});
+
+test("thread detail refresh dom patch plan rejects invalid turn entries", () => {
+  assert.deepEqual(
+    patchPlan.planThreadDetailRefreshDomPatch(null),
+    { canPatch: false, reason: "invalid-turn-entries", operations: [] },
+  );
+
+  assert.deepEqual(
+    patchPlan.planThreadDetailRefreshDomPatch([{ hasPreviousTurn: true }]),
+    { canPatch: false, reason: "invalid-turn-entry", operations: [] },
+  );
+});
