@@ -1,3 +1,81 @@
+# 2026-06-26 - v458 thread tile action recognition deployed
+
+- Optimization phase:
+  - Phase A eleventh slice. v457 moved single-thread thread-detail click
+    action recognition into `public/thread-detail-actions.js`; v458 moves
+    thread-tile interaction recognition into a dedicated helper.
+- Root-cause boundary:
+  - Before v458, `public/app.js` directly owned selector priority and target
+    classification for thread-tile pane selection, title switch menu, pane
+    thread switching, add/close pane controls, bottom jump, operation toggle,
+    scroll target detection, and drag/drop target detection.
+  - That kept split-screen interaction policy coupled to the main app
+    coordinator and made pane interaction regressions harder to test without
+    broad UI source-string assertions.
+- Runtime change:
+  - Added `public/thread-tile-actions.js`.
+  - The helper exposes `resolveThreadTilePointerAction`,
+    `resolveThreadTileFocusAction`, `resolveThreadTileClickAction`,
+    `resolveThreadTileScrollAction`, `resolveThreadTileDragStartAction`,
+    `resolveThreadTileDragOverAction`,
+    `resolveThreadTileDragLeaveAction`, and
+    `resolveThreadTileDropAction`.
+  - The helper owns root containment, thread-tile selector priority, disabled
+    control classification, and stable action plan fields.
+  - `public/app.js` still owns event listener wiring and calls the existing
+    business functions (`setThreadTileSelectedThread`,
+    `toggleThreadTileSwitchMenu`, `replaceThreadTilePaneThread`,
+    `changeThreadTilePaneCount`, `closeThreadTilePane`,
+    `scrollThreadTilePaneToBottom`, `patchThreadTilePane`,
+    `scheduleRenderCurrentThread`, and `dropThreadTilePane`).
+  - No pane layout fallback, duplicate filtering, hidden refresh fallback,
+    synthesized content, or task-card protocol behavior was added.
+  - `CLIENT_BUILD_ID` and service-worker cache are bumped to
+    `codex-mobile-shell-v458`; the new helper is registered in `index.html`,
+    the app-shell asset list, the service worker, server build identity, and
+    `npm run check`.
+- Docs/tests:
+  - `README.md` records the v458 architecture slice.
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` records that thread-tile
+    interaction recognition is now outside `public/app.js`; action execution
+    and pane-state execution ownership remain later boundaries.
+  - `docs/MODULES.md` maps `public/thread-tile-actions.js` and its focused
+    test.
+  - Added `test/thread-tile-actions.test.js` for pane selection, control stop,
+    click actions, disabled controls, root containment, and drag/drop
+    classification.
+  - Existing tile UI wiring tests now assert that `bindThreadTileActions`
+    delegates recognition through `CodexThreadTileActions`.
+- Validation:
+  - Focused source suite passed:
+    `node --test test/thread-tile-actions.test.js
+    test/thread-tile-layout-ui.test.js test/thread-tile-layout.test.js
+    test/mobile-viewport.test.js test/app-update.test.js
+    test/plugin-voice-input.test.js test/thread-task-card-route.test.js
+    test/thread-goal-service.test.js` (`61` tests).
+  - Full source `npm test` passed (`836` tests).
+  - Source `npm run check`, `npm run check:macos`, and `git diff --check`
+    passed.
+  - Production focused suite passed with `NODE_PATH` pointed at production
+    dependencies (`61` tests).
+- Commit/deploy:
+  - Runtime commit: `57ab797` (`refactor thread tile action recognition`).
+  - Deployed with Home AI central macOS script:
+    `deploy-macos-production.js --plugin codex-mobile --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --reason codex-mobile-thread-tile-actions-v458 --execute --json`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T174921Z-plugin-codex-mobile-web-codex-mobile-thread-tile-actions-v458`.
+  - Production `/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v458`,
+    `shellCacheName=codex-mobile-shell-v458`, and `version=0.1.11`.
+  - Source/prod SHA-256 parity confirmed for `server.js`, `package.json`,
+    changed public files, docs, and focused test files.
+- Follow-up:
+  - Phase A remains active. The next frontend boundary is action execution
+    ownership and pane-state execution ownership, unless the next production
+    signal points to Phase B large-session cold-path work.
+  - This was deployed locally/production only. Do not push Public unless the
+    user explicitly requests it after production validation.
+
 # 2026-06-26 - v457 thread detail action recognition deployed
 
 - Optimization phase:
