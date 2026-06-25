@@ -37,6 +37,25 @@ return policy，不再出现 `Return required`；如果再次对终止卡调用 
 `returnToSource:true` 是终止卡、auto-return receipt 不触发二次 auto-return、以及
 Music-style repair -> receipt -> ack 链在第一张 terminal return 后停止。
 
+## 2026-06-25 v442 前端 DOM Patch Surface 边界
+
+v442 继续收敛 `public/app.js` 的线程详情 DOM patch 所有权。v441 已经把平铺模式
+的本地 patch 改为刷新当前 tile pane，但“是否允许执行 tile pane patch、是否允许
+执行单窗口 DOM patch”的判断仍散在 `app.js` 多个函数里。转场或状态不一致时，
+后续维护仍可能让单窗口 patch 路径误写平铺 DOM 的 signature。
+
+现在 `public/thread-detail-patch-plan.js` 新增 `planThreadDetailDomPatchSurface`：
+纯策略层只会返回 `thread-tile-pane`、`single-thread` 或 blocked reason。`app.js`
+通过 `threadDetailDomPatchSurface` / `canPatchSingleThreadConversationDom` 执行该
+决策：tile mode 只允许 pane patch；单窗口 DOM patch 只有在当前 surface 明确是
+single-thread 时才允许执行；tile 转场或 surface mismatch 直接拒绝局部 patch，交给
+完整 render 接管。这样把“平铺状态不能落入单窗口 patch”变成可测试边界，而不是
+散落在各个 DOM 操作函数里的局部条件。
+
+新增 `test/thread-detail-patch-plan.test.js` 覆盖 tile pane、single-thread 和转场
+blocked 决策；`test/conversation-render.test.js` 覆盖 `app.js` 必须通过该策略层
+执行 tile/single patch。PWA shell cache 升级到 `codex-mobile-shell-v442`。
+
 ## 2026-06-25 大 session cold-open 决策证据修正
 
 本次是 server-only 的大 session 首屏路径优化，不升级 PWA shell cache。目标是

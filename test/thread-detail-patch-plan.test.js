@@ -62,3 +62,72 @@ test("visible item patch plan rejects reorder, removal, and invalid entries", ()
     { canPatch: false, reason: "shape-changed", operations: [] },
   );
 });
+
+test("dom patch surface routes tile panes and blocks tile transition mismatches", () => {
+  assert.deepEqual(
+    patchPlan.planThreadDetailDomPatchSurface({
+      threadId: "thread-1",
+      threadTileMode: true,
+      threadTileSurface: true,
+      tilePaneVisible: true,
+      conversationPresent: true,
+    }),
+    {
+      canPatch: true,
+      surface: "thread-tile-pane",
+      reason: "tile-pane-visible",
+      threadId: "thread-1",
+    },
+  );
+
+  assert.equal(
+    patchPlan.planThreadDetailDomPatchSurface({
+      threadId: "thread-1",
+      threadTileMode: true,
+      threadTileSurface: false,
+      tilePaneVisible: true,
+      conversationPresent: true,
+    }).reason,
+    "tile-mode-surface-mismatch",
+  );
+
+  assert.equal(
+    patchPlan.planThreadDetailDomPatchSurface({
+      threadId: "thread-1",
+      threadTileMode: false,
+      threadTileSurface: true,
+      tilePaneVisible: true,
+      conversationPresent: true,
+    }).reason,
+    "tile-surface-without-tile-mode",
+  );
+});
+
+test("dom patch surface allows single-thread patching only on single-thread surfaces", () => {
+  assert.deepEqual(
+    patchPlan.planThreadDetailDomPatchSurface({
+      threadId: "thread-1",
+      threadTileMode: false,
+      threadTileSurface: false,
+      tilePaneVisible: false,
+      conversationPresent: true,
+    }),
+    {
+      canPatch: true,
+      surface: "single-thread",
+      reason: "single-thread-surface",
+      threadId: "thread-1",
+    },
+  );
+
+  assert.equal(
+    patchPlan.planThreadDetailDomPatchSurface({
+      threadId: "thread-1",
+      threadTileMode: false,
+      threadTileSurface: false,
+      tilePaneVisible: false,
+      conversationPresent: false,
+    }).reason,
+    "missing-conversation",
+  );
+});

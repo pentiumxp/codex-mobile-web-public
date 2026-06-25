@@ -84,14 +84,20 @@ expanded-history preservation, and initial-submission echo cleanup while
 `public/app.js` supplies item-level merge and DOM/runtime glue. Visible-item
 refresh patch planning now lives in `public/thread-detail-patch-plan.js`: it
 classifies shape-preserving updates into reuse/patch/insert operations and
-rejects reorder/removal/invalid-entry cases before DOM work starts. DOM patch
-application still remains in `public/app.js`.
+rejects reorder/removal/invalid-entry cases before DOM work starts. The latest
+slice also moves DOM patch surface selection into that policy module:
+`planThreadDetailDomPatchSurface` decides whether the active surface is a
+`thread-tile-pane`, a `single-thread` surface, or a blocked transition/mismatch.
+DOM patch application still remains in `public/app.js`, but app code can no
+longer fall through from tile mode into the single-thread patch path without an
+explicit policy decision.
 
 Target:
 
-- Continue extracting thread detail merge/state rules from `public/app.js` into
-  pure helper modules, with DOM patch application as the next remaining
-  boundary.
+- Continue extracting thread detail merge/state and DOM patch application rules
+  from `public/app.js` into pure helper modules. The surface decision is now
+  outside app.js; node lookup, node creation, patch application, hydration, and
+  scroll ownership remain the next boundaries.
 - Keep `public/app.js` responsible for DOM wiring, patch application, and event
   binding only.
 - Cover user-message echo convergence, live receipt preservation, completed

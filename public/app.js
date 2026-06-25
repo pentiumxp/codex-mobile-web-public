@@ -485,7 +485,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v441";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v442";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -12850,11 +12850,27 @@ function isThreadTileConversationSurface() {
     && conversation.classList.contains("thread-tile-mode"));
 }
 
-function patchCurrentThreadTilePaneFromState(options = {}) {
+function threadDetailDomPatchSurface(options = {}) {
   const id = String(options.threadId || state.currentThreadId || state.currentThread && state.currentThread.id || "").trim();
-  if (!id || !isThreadTileConversationSurface() || !threadTilePaneIsVisible(id)) return false;
+  return threadDetailPatchPlanApi.planThreadDetailDomPatchSurface({
+    threadId: id,
+    threadTileMode: state.threadTileMode,
+    threadTileSurface: isThreadTileConversationSurface(),
+    tilePaneVisible: id ? threadTilePaneIsVisible(id) : false,
+    conversationPresent: Boolean($("conversation")),
+  });
+}
+
+function canPatchSingleThreadConversationDom(options = {}) {
+  const plan = threadDetailDomPatchSurface(options);
+  return Boolean(plan && plan.canPatch && plan.surface === "single-thread");
+}
+
+function patchCurrentThreadTilePaneFromState(options = {}) {
+  const plan = threadDetailDomPatchSurface(options);
+  if (!plan || !plan.canPatch || plan.surface !== "thread-tile-pane") return false;
   clearGlobalLiveOperationDockForThreadTiles();
-  return patchThreadTilePane(id, Object.assign({ preserveScroll: true }, options));
+  return patchThreadTilePane(plan.threadId, Object.assign({ preserveScroll: true }, options));
 }
 
 function scheduleRenderThreadTilePane(threadId, options = {}) {
@@ -13349,6 +13365,7 @@ function firstElementFromHtml(html) {
 
 function completeLocalConversationDomUpdate(root, wasNearBottom, userReadingCurrentTurn) {
   if (patchCurrentThreadTilePaneFromState({ preserveScroll: true })) return true;
+  if (!canPatchSingleThreadConversationDom()) return false;
   if (root) {
     hydrateGitHubLinkCards(root);
     hydrateMermaidDiagrams(root);
@@ -13365,6 +13382,7 @@ function completeLocalConversationDomUpdate(root, wasNearBottom, userReadingCurr
 
 function updateLiveOperationDockForLocalPatch(previousKeys = existingConversationRenderKeys()) {
   if (patchCurrentThreadTilePaneFromState({ preserveScroll: true })) return true;
+  if (!canPatchSingleThreadConversationDom()) return false;
   const wasNearBottom = isConversationNearBottom();
   const userReadingCurrentTurn = isUserReadingCurrentTurn({ nearBottom: wasNearBottom });
   updateLiveOperationDockHtml(renderLiveOperationDock(state.currentThread, previousKeys));
@@ -13405,6 +13423,7 @@ function insertTurnArticleDom(turn, previousKeys = existingConversationRenderKey
 function insertVisibleItemDom(turn, item) {
   if (!turn || !item || !item.id || isReasoningItem(item)) return false;
   if (patchCurrentThreadTilePaneFromState({ preserveScroll: true })) return true;
+  if (!canPatchSingleThreadConversationDom()) return false;
   if (isOperationalItem(item)) return updateLiveOperationDockForLocalPatch();
   const conversation = $("conversation");
   if (!conversation) return false;
@@ -13442,6 +13461,7 @@ function insertVisibleItemDom(turn, item) {
 
 function patchVisibleItemDom(turn, item) {
   if (patchCurrentThreadTilePaneFromState({ preserveScroll: true })) return true;
+  if (!canPatchSingleThreadConversationDom()) return false;
   if (isOperationalItem(item)) return updateLiveOperationDockForLocalPatch();
   const target = patchVisibleItemDomNode(turn, item, existingConversationRenderKeys());
   if (!target) return false;
@@ -13452,6 +13472,7 @@ function patchVisibleItemDom(turn, item) {
 
 function patchVisibleItemDomNode(turn, item, previousKeys, sourceIndex = null) {
   if (!turn || !item || !item.id || isReasoningItem(item)) return null;
+  if (!canPatchSingleThreadConversationDom()) return null;
   const conversation = $("conversation");
   if (!conversation) return null;
   const index = Number.isInteger(sourceIndex) && sourceIndex >= 0
@@ -13521,6 +13542,7 @@ function patchLiveTextItemDom(turn, item) {
   if (!turn || !item || !item.id) return false;
   if (item.type !== "agentMessage" && item.type !== "plan") return false;
   if (patchCurrentThreadTilePaneFromState({ preserveScroll: true })) return true;
+  if (!canPatchSingleThreadConversationDom()) return false;
   const conversation = $("conversation");
   if (!conversation) return false;
   const index = sourceIndexForVisibleItem(turn, item);
@@ -13540,6 +13562,7 @@ function patchCurrentThreadDetailFromRefresh(previousThread, nextThread, previou
   const conversation = $("conversation");
   if (!conversation || !previousThread || !nextThread) return false;
   if (patchCurrentThreadTilePaneFromState({ threadId: nextThread.id || state.currentThreadId, preserveScroll: true })) return true;
+  if (!canPatchSingleThreadConversationDom({ threadId: nextThread.id || state.currentThreadId })) return false;
   if (previousThread.mobileLoading || previousThread.mobileLoadError || nextThread.mobileLoading || nextThread.mobileLoadError) return false;
   if (state.renderedConversationSignature !== previousConversationSignature) return false;
   if (conversationPatchShellSignature(previousThread) !== conversationPatchShellSignature(nextThread)) return false;

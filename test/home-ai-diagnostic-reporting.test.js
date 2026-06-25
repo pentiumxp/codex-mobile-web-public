@@ -18,7 +18,7 @@ function taskCardFailure(extra = {}) {
       action: "create",
       thread_hash: diagnostics.hashIdentifier("thread-123"),
       task_hash: diagnostics.hashIdentifier("ttc-123"),
-      build_id: "0.1.11|codex-mobile-shell-v441",
+      build_id: "0.1.11|codex-mobile-shell-v442",
       route: "/?thread=raw-thread-123&token=secret",
       title: "private task title",
     },
@@ -90,7 +90,7 @@ test("repeated thread route failure creates bounded diagnostic report", () => {
       action: "route-hint-open",
       route_kind: "plugin-route",
       thread_hash: diagnostics.hashIdentifier("thread-secret"),
-      build_id: "0.1.11|codex-mobile-shell-v441",
+      build_id: "0.1.11|codex-mobile-shell-v442",
     },
     counts: { retry_count: 2 },
   };

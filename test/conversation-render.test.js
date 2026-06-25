@@ -2882,18 +2882,28 @@ test("conversation projection diagnostics use the single-thread signature outsid
 });
 
 test("thread tile local patch paths refresh the pane instead of writing a single-thread signature", () => {
+  assert.match(appJs, /function threadDetailDomPatchSurface\(/);
+  assert.match(functionBody("threadDetailDomPatchSurface"), /threadDetailPatchPlanApi\.planThreadDetailDomPatchSurface\(/);
+  assert.match(appJs, /function canPatchSingleThreadConversationDom\(/);
   assert.match(appJs, /function patchCurrentThreadTilePaneFromState\(/);
-  assert.match(functionBody("patchCurrentThreadTilePaneFromState"), /isThreadTileConversationSurface\(\)/);
+  assert.match(functionBody("patchCurrentThreadTilePaneFromState"), /threadDetailDomPatchSurface\(options\)/);
+  assert.match(functionBody("patchCurrentThreadTilePaneFromState"), /plan\.surface !== "thread-tile-pane"/);
   assert.match(functionBody("patchCurrentThreadTilePaneFromState"), /clearGlobalLiveOperationDockForThreadTiles\(\)/);
-  assert.match(functionBody("patchCurrentThreadTilePaneFromState"), /patchThreadTilePane\(id, Object\.assign\(\{ preserveScroll: true \}, options\)\)/);
+  assert.match(functionBody("patchCurrentThreadTilePaneFromState"), /patchThreadTilePane\(plan\.threadId, Object\.assign\(\{ preserveScroll: true \}, options\)\)/);
 
   assert.match(functionBody("completeLocalConversationDomUpdate"), /patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);
+  assert.match(functionBody("completeLocalConversationDomUpdate"), /if \(!canPatchSingleThreadConversationDom\(\)\) return false;/);
   assert.match(functionBody("completeLocalConversationDomUpdate"), /state\.renderedConversationSignature = conversationRenderSignature\(state\.currentThread\)/);
   assert.match(functionBody("updateLiveOperationDockForLocalPatch"), /patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);
+  assert.match(functionBody("updateLiveOperationDockForLocalPatch"), /if \(!canPatchSingleThreadConversationDom\(\)\) return false;/);
   assert.match(functionBody("insertVisibleItemDom"), /patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);
+  assert.match(functionBody("insertVisibleItemDom"), /if \(!canPatchSingleThreadConversationDom\(\)\) return false;/);
   assert.match(functionBody("patchVisibleItemDom"), /patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);
+  assert.match(functionBody("patchVisibleItemDom"), /if \(!canPatchSingleThreadConversationDom\(\)\) return false;/);
   assert.match(functionBody("patchLiveTextItemDom"), /patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);
+  assert.match(functionBody("patchLiveTextItemDom"), /if \(!canPatchSingleThreadConversationDom\(\)\) return false;/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /patchCurrentThreadTilePaneFromState\(\{ threadId: nextThread\.id \|\| state\.currentThreadId, preserveScroll: true \}\)/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /canPatchSingleThreadConversationDom\(\{ threadId: nextThread\.id \|\| state\.currentThreadId \}\)/);
 });
 
 test("current-thread refresh patches the current tile pane for metadata-only tile updates", () => {

@@ -1,3 +1,32 @@
+# 2026-06-25 - v442 frontend DOM patch surface boundary in progress
+
+- User goal slice:
+  - Continue Phase 2 frontend state ownership after the large-session
+    cold-open deployment.
+  - Reduce recurrence risk where single-thread DOM patch paths write state while
+    the active DOM is actually a thread-tile board.
+- Root-cause boundary:
+  - Failing layer: browser thread detail DOM patch surface ownership.
+  - v441 fixed the immediate tile local-patch signature drift, but the decision
+    for tile pane patch versus single-thread patch still lived in multiple
+    `public/app.js` DOM functions.
+- Change:
+  - `public/thread-detail-patch-plan.js` now owns
+    `planThreadDetailDomPatchSurface`.
+  - `public/app.js` adds `threadDetailDomPatchSurface` and
+    `canPatchSingleThreadConversationDom`.
+  - Tile mode can only patch through `thread-tile-pane`; single-thread DOM patch
+    only runs when the policy reports a `single-thread` surface.
+  - Tile/single transition mismatches reject local patch and allow the existing
+    full render path to take over.
+  - `CLIENT_BUILD_ID` and service worker cache bumped to
+    `codex-mobile-shell-v442`.
+  - `README.md` and `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` updated.
+- Validation state:
+  - Not yet committed/deployed.
+  - Next: run focused frontend tests, standard checks, full tests as needed,
+    commit and deploy.
+
 # 2026-06-25 - Large-session cold-open large-read decision tightened locally
 
 - User goal:
