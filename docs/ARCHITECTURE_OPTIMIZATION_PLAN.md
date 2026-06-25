@@ -101,11 +101,16 @@ app code consumes an explicit scroll plan instead of inlining the bottom-follow
 policy. Visible-item DOM patch execution now lives in
 `public/thread-detail-dom-patch.js`: app code injects lookup/render/patch
 callbacks while the helper owns reuse/patch/insert sequencing and bounded
-failure reasons. App code can no longer fall through from tile mode into the
+failure reasons. Turn-level DOM patch execution now also lives in
+`public/thread-detail-dom-patch.js`: app code injects turn lookup, item patch,
+turn render, turn insert, and turn replace callbacks while the helper owns
+`item-patch` / `insert-turn` / `replace-turn` sequencing and bounded failure
+reasons. App code can no longer fall through from tile mode into the
 single-thread patch path without an explicit policy decision, fall through from
 a successful tile pane patch into full conversation render, silently choose
 turn-level patch actions inside the application loop, inline the local-patch
-scroll-completion policy, or own the visible-item patch operation loop.
+scroll-completion policy, own the visible-item patch operation loop, or own the
+turn-level patch operation loop.
 
 Target:
 
@@ -113,9 +118,9 @@ Target:
   from `public/app.js` into pure helper modules. The surface decision is now
   outside app.js, the refresh outcome decision is now outside app.js, and the
   turn-level patch action plan, local patch scroll-completion policy, and
-  visible-item patch operation loop are now outside app.js; turn node lookup,
-  turn node creation, turn replace/insert execution, hydration, and action
-  binding remain the next boundaries.
+  visible-item and turn-level patch operation loops are now outside app.js;
+  turn node lookup, turn node creation/anchoring, hydration, and action binding
+  remain the next boundaries.
 - Keep `public/app.js` responsible for DOM wiring, patch application, and event
   binding only.
 - Cover user-message echo convergence, live receipt preservation, completed

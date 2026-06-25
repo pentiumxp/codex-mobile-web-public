@@ -112,3 +112,104 @@ test("visible item dom patch returns bounded failure reasons", () => {
     operations: [{ type: "reuse", key: "a" }],
   }).reason, "invalid-operation");
 });
+
+test("turn dom patch applies item patch, insert turn, and replace turn in order", () => {
+  const turns = new Map([
+    ["turn-a", { id: "turn-a" }],
+    ["turn-b", { id: "turn-b" }],
+    ["turn-c", { id: "turn-c" }],
+  ]);
+  const calls = [];
+
+  const result = domPatch.applyThreadTurnRefreshDomPatch({
+    patchPlan: {
+      canPatch: true,
+      operations: [
+        { type: "item-patch", key: "turn-a" },
+        { type: "insert-turn", key: "turn-b" },
+        { type: "replace-turn", key: "turn-c" },
+      ],
+    },
+    findTurnByKey: (key) => turns.get(key),
+    applyItemPatch: (turn) => {
+      calls.push(`item:${turn.id}`);
+      return { ok: true };
+    },
+    renderTurnElement: (turn) => {
+      calls.push(`render:${turn.id}`);
+      return createNode(turn.id);
+    },
+    insertTurnElement: (source, turn) => {
+      calls.push(`insert:${turn.id}:${source.key}`);
+      return { ok: true };
+    },
+    replaceTurnElement: (source, turn) => {
+      calls.push(`replace:${turn.id}:${source.key}`);
+      return { ok: true };
+    },
+  });
+
+  assert.deepEqual(result, {
+    ok: true,
+    reason: "applied",
+    reused: 0,
+    patched: 2,
+    inserted: 1,
+    itemPatched: 1,
+    replaced: 1,
+  });
+  assert.deepEqual(calls, [
+    "item:turn-a",
+    "render:turn-b",
+    "insert:turn-b:turn-b",
+    "render:turn-c",
+    "replace:turn-c:turn-c",
+  ]);
+});
+
+test("turn dom patch returns bounded failure reasons", () => {
+  const turn = { id: "turn-a" };
+  const base = {
+    findTurnByKey: () => turn,
+    applyItemPatch: () => ({ ok: true }),
+    renderTurnElement: () => createNode("turn-a"),
+    insertTurnElement: () => ({ ok: true }),
+    replaceTurnElement: () => ({ ok: true }),
+  };
+
+  assert.equal(domPatch.applyThreadTurnRefreshDomPatch({ patchPlan: null }).reason, "turn-patch-plan-not-patchable");
+  assert.equal(domPatch.applyThreadTurnRefreshDomPatch({ patchPlan: { canPatch: true, operations: [] } }).reason, "missing-find-turn");
+  assert.equal(domPatch.applyThreadTurnRefreshDomPatch({
+    patchPlan: { canPatch: true, operations: [{ type: "item-patch", key: "missing" }] },
+    ...base,
+    findTurnByKey: () => null,
+  }).reason, "turn-patch-operation-missing-turn");
+  assert.equal(domPatch.applyThreadTurnRefreshDomPatch({
+    patchPlan: { canPatch: true, operations: [{ type: "item-patch", key: "turn-a" }] },
+    ...base,
+    applyItemPatch: () => ({ ok: false, reason: "item-patch-failed" }),
+  }).reason, "item-patch-failed");
+  assert.equal(domPatch.applyThreadTurnRefreshDomPatch({
+    patchPlan: { canPatch: true, operations: [{ type: "insert-turn", key: "turn-a" }] },
+    ...base,
+    renderTurnElement: () => null,
+  }).reason, "render-turn-failed");
+  assert.equal(domPatch.applyThreadTurnRefreshDomPatch({
+    patchPlan: { canPatch: true, operations: [{ type: "insert-turn", key: "turn-a" }] },
+    ...base,
+    insertTurnElement: () => ({ ok: false, reason: "insert-turn-failed" }),
+  }).reason, "insert-turn-failed");
+  assert.equal(domPatch.applyThreadTurnRefreshDomPatch({
+    patchPlan: { canPatch: true, operations: [{ type: "replace-turn", key: "turn-a" }] },
+    ...base,
+    replaceTurnElement: () => ({ ok: false, reason: "replace-turn-missing-article" }),
+  }).reason, "replace-turn-missing-article");
+  assert.equal(domPatch.applyThreadTurnRefreshDomPatch({
+    patchPlan: { canPatch: true, operations: [{ type: "remove-turn", key: "turn-a" }] },
+    ...base,
+  }).reason, "unknown-turn-patch-operation");
+  assert.equal(domPatch.applyThreadTurnRefreshDomPatch({
+    patchPlan: { canPatch: true, operations: [{ type: "item-patch" }] },
+    ...base,
+  }).reason, "invalid-turn-operation");
+});

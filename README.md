@@ -16,6 +16,29 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v452 Turn DOM Patch Executor
+
+v452 接续 v451，继续 Phase A。v451 已经把 visible-item patch plan 的
+`reuse` / `patch` / `insert` 执行循环推进到 `public/thread-detail-dom-patch.js`，
+但 `patchCurrentThreadDetailFromRefresh` 仍然自己遍历 turn-level operations：
+`item-patch`、`insert-turn`、`replace-turn`、render failure 和 missing article
+都还在 `public/app.js` 里判断。
+
+本次把 turn-level DOM patch 执行也推进到 `public/thread-detail-dom-patch.js`：
+
+- 新增 `applyThreadTurnRefreshDomPatch`，按 turn patch plan 顺序执行
+  `item-patch`、`insert-turn`、`replace-turn`。
+- `public/app.js` 只注入 turn lookup、item patch、turn render、turn insert、
+  turn replace 回调，不再拥有 turn operation loop。
+- 保留现有 reject reason 语义：missing turn、item patch failure、render failure、
+  insert failure、replace missing article 和 unknown operation 仍以 bounded reason
+  退出，不做静默兜底。
+- `CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v452`。
+
+`test/thread-detail-dom-patch.test.js` 新增 turn-level 成功路径和失败 reason 覆盖；
+现有 `conversation-render` wiring tests 确认 `patchCurrentThreadDetailFromRefresh`
+已经调用 helper，不再遍历 `turnPatchPlan.operations`。
+
 ## 2026-06-26 v451 Visible Item DOM Patch Executor
 
 v451 接续 v450，继续 Phase A。v449 已经把 refresh turn-level DOM patch action

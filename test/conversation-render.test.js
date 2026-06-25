@@ -1767,9 +1767,12 @@ test("live detail refresh can patch changed visible items without replacing the 
   assert.doesNotMatch(functionBody("applyVisibleItemsOnlyRefreshPatch"), /for \(const operation of patchPlan\.operations\)/);
   assert.doesNotMatch(functionBody("applyVisibleItemsOnlyRefreshPatch"), /article\.insertBefore\(source, lastPatchedNode/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /threadDetailPatchPlanApi\.planThreadDetailRefreshDomPatch\(turnPatchEntries\)/);
-  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /operation\.type === "item-patch"/);
-  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /operation\.type === "insert-turn"/);
-  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /operation\.type !== "replace-turn"/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /threadDetailDomPatchApi\.applyThreadTurnRefreshDomPatch/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /applyItemPatch:/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /insertTurnElement:/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /replaceTurnElement:/);
+  assert.doesNotMatch(functionBody("patchCurrentThreadDetailFromRefresh"), /for \(const operation of turnPatchPlan\.operations\)/);
+  assert.doesNotMatch(functionBody("patchCurrentThreadDetailFromRefresh"), /operation\.type === "item-patch"/);
 });
 
 test("visible item refresh patch shape preserves existing keys while appending usage", () => {
