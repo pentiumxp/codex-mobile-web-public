@@ -1,3 +1,77 @@
+# 2026-06-26 - v461 thread tile detail refresh policy deployed
+
+- Scope:
+  - Continued Phase C pane-state / split-screen architecture work.
+  - This slice moves pane-local detail refresh planning into
+    `public/thread-tile-state.js`.
+  - It does not change server projection, task-card behavior, Home AI
+    diagnostic dispatch, message merge, image projection, or the visual pane
+    design. No fallback or UI-only masking was added.
+- Root-cause boundary:
+  - Before v461, `public/app.js` directly owned pane refresh timer scheduling,
+    visible-target selection, current-thread exclusion, duplicate id collapse,
+    detail-load skip checks, background-refresh classification, loading/error
+    marker decisions, controller checks, and minimum refresh interval checks.
+  - That kept pane-local refresh ownership coupled to DOM/API side effects and
+    made split-screen refresh regressions harder to test as pure state policy.
+- Change:
+  - Added pure thread-tile refresh helpers:
+    `uniqueIds`, `refreshDelayMs`, `refreshSchedulePlan`,
+    `refreshTargetIds`, and `detailLoadPlan`.
+  - `public/app.js` now delegates pane refresh scheduling, target selection,
+    and detail-load skip/background/loading decisions to
+    `threadTileStatePolicy`.
+  - `public/app.js` still owns AbortController, API reads, loading/error Map
+    mutation, render scheduling, thread-list merge, timers, and DOM patch
+    side effects.
+  - Bumped `CLIENT_BUILD_ID` and service worker cache to
+    `codex-mobile-shell-v461`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Commit:
+  - Runtime/docs commit: `83f9c82 refactor thread tile refresh policy`.
+- Validation in source workspace:
+  - Focused suite passed: `53` tests across
+    `test/thread-tile-state.test.js`,
+    `test/thread-tile-layout-ui.test.js`,
+    `test/thread-tile-layout.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-task-card-route.test.js`, and
+    `test/thread-goal-service.test.js`.
+  - `npm test` passed: `847` tests.
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+- Production deploy:
+  - Deployed through Home AI central macOS production script.
+  - Reason: `codex-mobile-thread-tile-refresh-policy-v461`.
+  - Source ref at deploy: `83f9c82461f7`, dirty `false`.
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260625T181743Z-plugin-codex-mobile-web-codex-mobile-thread-tile-refresh-policy-v461`.
+  - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` reported
+    running and manifest/profile health checks passed.
+- Production readback:
+  - `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v461`,
+    `shellCacheName=codex-mobile-shell-v461`, `version=0.1.11`, and active
+    profile `previous`.
+  - Source/prod SHA-256 parity matched for:
+    `public/thread-tile-state.js`, `test/thread-tile-state.test.js`,
+    `test/thread-tile-layout-ui.test.js`, `public/app.js`, `public/sw.js`,
+    `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+  - Production focused suite passed: same `53` tests listed above with
+    production dependencies.
+- Next architecture boundary:
+  - Continue Phase C by extracting pane action execution, detail read side
+    effects, command detail panels, split sizing, and active-pane execution
+    ownership from `public/app.js`.
+  - Phase B large-session cold/warm path remains separate and should be
+    tackled with timing evidence before changing cache behavior.
+- Public:
+  - Not pushed to Public. Follow release-order rule: wait for production/user
+    validation or explicit Public instruction before syncing/pushing.
+
 # 2026-06-26 - v458 thread tile action recognition deployed
 
 - Optimization phase:
