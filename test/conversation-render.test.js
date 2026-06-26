@@ -2973,10 +2973,16 @@ test("thread tile local patch paths refresh the pane instead of writing a single
   assert.match(functionBody("patchCurrentThreadTilePaneFromState"), /clearGlobalLiveOperationDockForThreadTiles\(\)/);
   assert.match(functionBody("patchCurrentThreadTilePaneFromState"), /patchThreadTilePane\(plan\.threadId, Object\.assign\(\{ preserveScroll: true \}, options\)\)/);
 
-  assert.match(functionBody("completeLocalConversationDomUpdate"), /patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);
+  assert.match(appJs, /function completeLocalConversationDomUpdate\(root, wasNearBottom, userReadingCurrentTurn, options = \{\}\)/);
+  assert.match(functionBody("completeLocalConversationDomUpdate"), /hasOption\("tilePanePatched"\)[\s\S]*patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);
   assert.match(functionBody("completeLocalConversationDomUpdate"), /threadDetailDomPatchApi\.planLocalConversationDomUpdateCompletion\(\{/);
-  assert.match(functionBody("completeLocalConversationDomUpdate"), /canPatchSingleThread: tilePanePatched \? false : canPatchSingleThreadConversationDom\(\),/);
+  assert.match(functionBody("completeLocalConversationDomUpdate"), /const canPatchSingleThread = tilePanePatched[\s\S]*hasOption\("canPatchSingleThread"\)/);
+  assert.match(functionBody("completeLocalConversationDomUpdate"), /const conversationSignature = hasOption\("conversationSignature"\)/);
+  assert.match(functionBody("completeLocalConversationDomUpdate"), /const patchShellSignature = hasOption\("patchShellSignature"\)/);
   assert.match(functionBody("completeLocalConversationDomUpdate"), /state\.renderedConversationSignature = completionPlan\.nextRenderedConversationSignature/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /const completionSnapshot = \{/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /conversationSignature: conversationRenderSignature\(nextThread\)/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /patchShellSignature: conversationPatchShellSignature\(nextThread\)/);
   assert.match(functionBody("updateLiveOperationDockForLocalPatch"), /patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);
   assert.match(functionBody("updateLiveOperationDockForLocalPatch"), /if \(!canPatchSingleThreadConversationDom\(\)\) return false;/);
   assert.match(functionBody("insertVisibleItemDom"), /patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);

@@ -13527,9 +13527,17 @@ function hydrateThreadDetailSurface(root, options = {}) {
   });
 }
 
-function completeLocalConversationDomUpdate(root, wasNearBottom, userReadingCurrentTurn) {
-  const tilePanePatched = patchCurrentThreadTilePaneFromState({ preserveScroll: true });
-  const scrollPlan = tilePanePatched
+function completeLocalConversationDomUpdate(root, wasNearBottom, userReadingCurrentTurn, options = {}) {
+  const hasOption = (key) => Object.prototype.hasOwnProperty.call(options || {}, key);
+  const tilePanePatched = hasOption("tilePanePatched")
+    ? Boolean(options.tilePanePatched)
+    : patchCurrentThreadTilePaneFromState({ preserveScroll: true });
+  const canPatchSingleThread = tilePanePatched
+    ? false
+    : (hasOption("canPatchSingleThread") ? Boolean(options.canPatchSingleThread) : canPatchSingleThreadConversationDom());
+  const scrollPlan = options && options.scrollPlan && typeof options.scrollPlan === "object"
+    ? options.scrollPlan
+    : tilePanePatched
     ? { action: "none" }
     : conversationScroll.planLocalPatchScrollCompletion({
       userReadingCurrentTurn,
@@ -13538,12 +13546,18 @@ function completeLocalConversationDomUpdate(root, wasNearBottom, userReadingCurr
       submittedMessageFollow: shouldFollowSubmittedMessageToBottom(),
       viewportFollow: shouldFollowViewportChangeToBottom(),
     });
+  const conversationSignature = hasOption("conversationSignature")
+    ? String(options.conversationSignature || "")
+    : (tilePanePatched ? "" : conversationRenderSignature(state.currentThread));
+  const patchShellSignature = hasOption("patchShellSignature")
+    ? String(options.patchShellSignature || "")
+    : (tilePanePatched ? "" : conversationPatchShellSignature(state.currentThread));
   const completionPlan = threadDetailDomPatchApi.planLocalConversationDomUpdateCompletion({
     tilePanePatched,
-    canPatchSingleThread: tilePanePatched ? false : canPatchSingleThreadConversationDom(),
+    canPatchSingleThread,
     hasRoot: Boolean(root),
-    conversationSignature: tilePanePatched ? "" : conversationRenderSignature(state.currentThread),
-    patchShellSignature: tilePanePatched ? "" : conversationPatchShellSignature(state.currentThread),
+    conversationSignature,
+    patchShellSignature,
     scrollAction: scrollPlan.action,
   });
   if (!completionPlan.complete) return false;
@@ -13805,6 +13819,19 @@ function patchCurrentThreadDetailFromRefresh(previousThread, nextThread, previou
   const wasNearBottom = isConversationNearBottom();
   const userReadingCurrentTurn = isUserReadingCurrentTurn({ nearBottom: wasNearBottom });
   const previousKeys = existingConversationRenderKeys();
+  const completionSnapshot = {
+    tilePanePatched: false,
+    canPatchSingleThread: true,
+    conversationSignature: conversationRenderSignature(nextThread),
+    patchShellSignature: conversationPatchShellSignature(nextThread),
+    scrollPlan: conversationScroll.planLocalPatchScrollCompletion({
+      userReadingCurrentTurn,
+      autoScrollHold: shouldHoldAutoScrollForCurrentTurn(),
+      nearBottom: wasNearBottom,
+      submittedMessageFollow: shouldFollowSubmittedMessageToBottom(),
+      viewportFollow: shouldFollowViewportChangeToBottom(),
+    }),
+  };
   const previousTurnById = new Map(visibleTurnsForConversation(previousThread)
     .map((turn) => [String(turn && turn.id || ""), turn])
     .filter(([id]) => id));
@@ -13869,7 +13896,12 @@ function patchCurrentThreadDetailFromRefresh(previousThread, nextThread, previou
       },
       {
         name: "complete-local-conversation-dom-update",
-        apply: () => completeLocalConversationDomUpdate(conversation, wasNearBottom, userReadingCurrentTurn)
+        apply: () => completeLocalConversationDomUpdate(
+          conversation,
+          wasNearBottom,
+          userReadingCurrentTurn,
+          completionSnapshot,
+        )
           ? { ok: true }
           : { ok: false, reason: "complete-dom-update-failed" },
       },

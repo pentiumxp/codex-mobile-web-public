@@ -446,7 +446,9 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /name: "update-live-operation-dock"/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /updateLiveOperationDockHtml\(renderLiveOperationDock\(nextThread, previousKeys\)\)/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /name: "bind-current-thread-actions"[\s\S]*bindCurrentThreadActions\(\);/);
-  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /name: "complete-local-conversation-dom-update"[\s\S]*completeLocalConversationDomUpdate\(conversation, wasNearBottom, userReadingCurrentTurn\)/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /const completionSnapshot = \{/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /scrollPlan: conversationScroll\.planLocalPatchScrollCompletion\(\{/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /name: "complete-local-conversation-dom-update"[\s\S]*completeLocalConversationDomUpdate\([\s\S]*conversation,[\s\S]*wasNearBottom,[\s\S]*userReadingCurrentTurn,[\s\S]*completionSnapshot,/);
   assert.doesNotMatch(functionBody("patchCurrentThreadDetailFromRefresh"), /updateLiveOperationDockHtml\(renderLiveOperationDock\(nextThread, previousKeys\)\);\s*const applyResult = threadDetailDomPatchApi\.applyThreadTurnRefreshDomPatch/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /patchNode\(article, source\);/);
   assert.match(functionBody("insertVisibleItemDom"), /if \(isOperationalItem\(item\)\) return updateLiveOperationDockForLocalPatch\(\);/);
@@ -464,7 +466,9 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(functionBody("hydrateThreadDetailSurface"), /threadDetailDomPatchApi\.hydrateRenderedSurface/);
   assert.match(functionBody("updateConversationHtml"), /hydrateThreadDetailSurface\(conversation/);
   assert.match(functionBody("patchThreadTilePane"), /hydrateThreadDetailSurface\(patchedPane, \{ imageScanDelays: \[0, 180\] \}\)/);
+  assert.match(appJs, /function completeLocalConversationDomUpdate\(root, wasNearBottom, userReadingCurrentTurn, options = \{\}\)/);
   assert.match(functionBody("completeLocalConversationDomUpdate"), /threadDetailDomPatchApi\.planLocalConversationDomUpdateCompletion\(\{/);
+  assert.match(functionBody("completeLocalConversationDomUpdate"), /const scrollPlan = options && options\.scrollPlan/);
   assert.match(functionBody("completeLocalConversationDomUpdate"), /if \(completionPlan\.hydrateRoot\) hydrateThreadDetailSurface\(root, completionPlan\.hydrateOptions \|\| \{\}\);/);
   assert.match(functionBody("upsertItem"), /if \(structureChanged\) scheduleRenderCurrentThread\(\);[\s\S]*else if \(canPatchExistingItem\)[\s\S]*else if \(!insertVisibleItemDom\(turn, nextItem\)\)/);
   assert.match(functionBody("appendToItem"), /if \(isOperationalItem\(item\)\) updateLiveOperationDockForLocalPatch\(\);[\s\S]*else if \(createdItem\) \{/);

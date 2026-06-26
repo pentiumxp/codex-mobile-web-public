@@ -194,6 +194,11 @@ the core turn DOM patch first and only executes success effects such as
 operation-dock refresh, action rebinding, and local DOM completion after the
 core patch succeeds. This prevents failed turn patches from updating
 operation-dock state while leaving conversation DOM on the old signature.
+Local DOM patch completion can now consume an explicit completion snapshot from
+the refresh path. The snapshot captures single-thread completion, render
+signature, patch-shell signature, and scroll-follow policy before the turn DOM
+patch is applied, so completion no longer has to re-probe tile/single surface or
+re-read scroll policy after the DOM mutation.
 Refresh outcome execution planning now also lives in the same helper module:
 `planThreadDetailRefreshOutcomeExecution` maps render outcomes to metadata
 update mode, full-render execution, and projection-consistency phase. This
