@@ -157,6 +157,15 @@ keeps the v511/v512 root-cause repair in one focused state-ownership module
 instead of splitting detection, sanitization, and recovery across the main app
 render function.
 
+`codex-mobile-shell-v515` adds the next ownership rule from the same Music
+incident class: an incoming empty `turns: []` detail response cannot wipe out an
+existing current-thread state that already has visible turns. That merge
+authority lives in `public/thread-detail-merge-state.js`, because the decision
+is about state strength, not UI rendering. The same slice moves the
+single-thread loading/load-error early-shell execution plan into
+`public/thread-detail-render-plan.js`, leaving `public/app.js` to execute DOM,
+retry, tick, and navigation effects only.
+
 The first slices extract item visible-field merge policy,
 visible-text render identity / completed-receipt retention, local-only item
 retention/drop policy, and live-to-completed same-turn visible-item preservation

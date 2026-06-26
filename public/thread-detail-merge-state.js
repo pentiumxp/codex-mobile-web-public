@@ -88,6 +88,12 @@
       if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoadError")) delete merged.mobileLoadError;
       if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileReadWarning")) delete merged.mobileReadWarning;
       if (!incomingTurns) return normalizeThreadVisibleUserMessages(merged);
+      const existingVisibleWeight = existingTurns.reduce((total, turn) => total + turnVisibleWeight(turn), 0);
+      const incomingVisibleWeight = incomingTurns.reduce((total, turn) => total + turnVisibleWeight(turn), 0);
+      if (!incomingTurns.length && existingTurns.length && existingVisibleWeight > 0 && incomingVisibleWeight === 0) {
+        merged.turns = existingTurns;
+        return normalizeThreadVisibleUserMessages(merged);
+      }
 
       merged.turns = incomingTurns.map((incomingTurn) => {
         const existingTurn = existingById.get(incomingTurn && incomingTurn.id);

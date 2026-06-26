@@ -16,6 +16,37 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v515 Detail Merge Authority And Early Shell Plan
+
+v515 继续修复 Music `Music 06-23` 详情页空白问题。现场证据显示：
+`/api/threads/019ef42b-2cb8-7332-ab17-033ec5b48947?mode=recent` 返回
+`10` 个 turn 且每个 turn 都有可见 item，但移动端截图进入了
+`No visible turns.` 空状态。失败层不是 Music session 没内容，而是前端
+thread-detail state 合并和渲染编排边界。
+
+本次切片新增/调整：
+
+- `public/thread-detail-merge-state.js` 增加 merge invariant：空 `turns: []`
+  的 incoming detail 不能擦掉已有更强的可见 detail state。
+- `test/thread-detail-merge-state.test.js` 覆盖“已有可见 turns + incoming 空 detail”
+  的回归场景，防止线程刷新或投影窗口偶发空结果把页面稳定改成空白。
+- `public/thread-detail-render-plan.js` 新增 `planSingleThreadEarlyShellExecution()`，
+  将 loading / load-error 的 terminal shell 执行计划移出 `public/app.js`。
+- `public/app.js` 只执行 helper 计划：清空 operation dock、更新 conversation HTML、
+  绑定 retry、刷新 tick/nav，不再内联判断 loading/error shell。
+
+修复边界：
+
+- 症状/风险：线程列表 summary 或一次空 incoming detail 会覆盖已经存在的可见
+  conversation detail，导致服务端实际有 turns 但前端显示 `No visible turns.`。
+- 失败层：前端 thread detail merge authority / single-thread render orchestration。
+- 不变量：空 incoming detail 不能证明“真实空线程”，也不能比已有可见 turns 更权威；
+  loading/error shell 的分支选择属于 render-plan policy。
+- 闭环验证：Music detail 生产读回返回 `10` 个 turn；focused tests 覆盖 merge
+  invariant 与 early shell plan。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v515`。
+
 ## 2026-06-26 v514 Summary-Only Current Thread Recovery Plan
 
 v514 继续 Phase A 前端状态所有权收敛。v513 已经把 thread-list summary 与

@@ -97,6 +97,30 @@ test("mergeThreadPreservingVisibleItems retains active local turn missing from i
   assert.deepEqual(merged.turns.map((turn) => turn.id), ["incoming", "active"]);
 });
 
+test("mergeThreadPreservingVisibleItems refuses empty incoming detail over stronger visible detail", () => {
+  const policy = createPolicy();
+  const merged = policy.mergeThreadPreservingVisibleItems(
+    {
+      id: "thread-1",
+      turns: [
+        { id: "existing-1", status: "completed", items: [{ id: "a" }, { id: "b" }] },
+        { id: "existing-2", status: "completed", items: [{ id: "c" }] },
+      ],
+      mobileProjectionVersion: "v4",
+    },
+    {
+      id: "thread-1",
+      turns: [],
+      mobileReadMode: "projection-cache",
+      mobileProjectionVersion: "v4",
+    }
+  );
+
+  assert.deepEqual(merged.turns.map((turn) => turn.id), ["existing-1", "existing-2"]);
+  assert.equal(merged.mobileReadMode, "projection-cache");
+  assert.equal(merged.mobileProjectionVersion, "v4");
+});
+
 test("mergeThreadPreservingVisibleItems preserves expanded history and decrements omitted count", () => {
   const policy = createPolicy({ maxExpandedVisibleTurns: 10 });
   const merged = policy.mergeThreadPreservingVisibleItems(

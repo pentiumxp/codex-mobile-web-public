@@ -1854,7 +1854,6 @@ test("loading and thread-list state preserve locally visible live turns", () => 
   assert.match(appJs, /function threadIsLoadingWithoutVisibleTurns\(/);
   assert.match(functionBody("conversationRenderSignature"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) return `loading\\|/);
   assert.match(functionBody("conversationRootSignature"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) return `loading\\|/);
-  assert.match(functionBody("renderCurrentThread"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) \{/);
   assert.match(functionBody("loadThread"), /Object\.assign\(\{\}, summary, \{\s*turns: \[\],\s*mobileLoading: true,\s*mobileLoadError: "",\s*\}\)/);
   assert.match(functionBody("loadThread"), /threadHasLoadedDetailState\(state\.currentThread\)/);
   assert.match(functionBody("loadThreads"), /threadListSummaryFromDetailThread\(thread\) \|\| thread/);
@@ -1862,6 +1861,12 @@ test("loading and thread-list state preserve locally visible live turns", () => 
   assert.match(functionBody("renderCurrentThread"), /threadDetailStateApi\.planSummaryOnlyCurrentThreadRecovery\(\{/);
   assert.match(functionBody("renderCurrentThread"), /postClientEvent\("thread_summary_detail_recovery", summaryRecoveryPlan\.event\)/);
   assert.match(functionBody("renderCurrentThread"), /scheduleCurrentThreadRefresh\(0, "summary-detail-recovery"\)/);
+  assert.match(functionBody("renderCurrentThread"), /threadDetailRenderPlanApi\.planSingleThreadEarlyShellExecution\(\{/);
+  assert.match(functionBody("renderCurrentThread"), /loadingWithoutVisibleTurns: threadIsLoadingWithoutVisibleTurns\(thread\)/);
+  assert.match(functionBody("renderCurrentThread"), /loadError: thread\.mobileLoadError/);
+  assert.match(functionBody("renderCurrentThread"), /if \(earlyShellPlan\.shouldRender\) \{/);
+  assert.match(functionBody("renderCurrentThread"), /updateConversationHtml\(\s*earlyShellPlan\.html,\s*earlyShellPlan\.conversationSignature,/);
+  assert.match(functionBody("renderCurrentThread"), /earlyShellPlan\.bindRetry/);
   assert.match(functionBody("renderCurrentThread"), /threadDetailRenderPlanApi\.planSingleThreadFullRenderShell/);
   assert.doesNotMatch(functionBody("renderCurrentThread"), /Thread failed:/);
   assert.doesNotMatch(functionBody("renderCurrentThread"), /No visible turns\./);

@@ -510,7 +510,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v514";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v515";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -14281,36 +14281,27 @@ function renderCurrentThread(options = {}) {
       scheduleCurrentThreadRefresh(0, "summary-detail-recovery");
     }
   }
-  if (threadIsLoadingWithoutVisibleTurns(thread)) {
-    const shellPlan = threadDetailRenderPlanApi.planSingleThreadFullRenderShell({
-      threadId: state.currentThreadId || thread.id || "",
-      loadingWithoutVisibleTurns: true,
-      escapeHtml,
-    });
-    updateLiveOperationDockHtml("");
+  const earlyShellPlan = threadDetailRenderPlanApi.planSingleThreadEarlyShellExecution({
+    threadId: thread.id || state.currentThreadId || "",
+    currentThreadId: state.currentThreadId,
+    loadingWithoutVisibleTurns: threadIsLoadingWithoutVisibleTurns(thread),
+    loadError: thread.mobileLoadError,
+    conversationSignature: conversationRenderSignature(thread),
+    patchShellSignature: conversationPatchShellSignature(thread),
+    stickToBottom: shouldStickToBottom,
+    escapeHtml,
+  });
+  if (earlyShellPlan.shouldRender) {
+    if (earlyShellPlan.clearLiveOperationDock) updateLiveOperationDockHtml("");
     updateConversationHtml(
-      shellPlan.html,
-      conversationRenderSignature(thread),
-      { stickToBottom: shouldStickToBottom, patchShellSignature: conversationPatchShellSignature(thread) },
+      earlyShellPlan.html,
+      earlyShellPlan.conversationSignature,
+      { stickToBottom: earlyShellPlan.stickToBottom, patchShellSignature: earlyShellPlan.patchShellSignature },
     );
-    updateTickTimer();
-    publishPluginNavigationState();
-    return;
-  }
-  if (thread.mobileLoadError) {
-    const shellPlan = threadDetailRenderPlanApi.planSingleThreadFullRenderShell({
-      threadId: thread.id || state.currentThreadId || "",
-      loadError: thread.mobileLoadError,
-      escapeHtml,
-    });
-    updateLiveOperationDockHtml("");
-    updateConversationHtml(
-      shellPlan.html,
-      conversationRenderSignature(thread),
-      { stickToBottom: shouldStickToBottom, patchShellSignature: conversationPatchShellSignature(thread) },
-    );
-    const retry = $("retryCurrentThread");
-    if (retry) retry.onclick = () => loadThread(shellPlan.retryThreadId || thread.id || state.currentThreadId, { source: "retry" }).catch(showError);
+    if (earlyShellPlan.bindRetry) {
+      const retry = $("retryCurrentThread");
+      if (retry) retry.onclick = () => loadThread(earlyShellPlan.retryThreadId || thread.id || state.currentThreadId, { source: "retry" }).catch(showError);
+    }
     updateTickTimer();
     publishPluginNavigationState();
     return;

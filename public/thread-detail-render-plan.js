@@ -699,6 +699,44 @@
     };
   }
 
+  function planSingleThreadEarlyShellExecution(input = {}) {
+    const loadingWithoutVisibleTurns = Boolean(input.loadingWithoutVisibleTurns);
+    const loadError = text(input.loadError);
+    if (!loadingWithoutVisibleTurns && !loadError) {
+      return {
+        shouldRender: false,
+        mode: "detail",
+        reason: "detail-content",
+        html: "",
+        clearLiveOperationDock: false,
+        bindRetry: false,
+        retryThreadId: "",
+        conversationSignature: text(input.conversationSignature),
+        patchShellSignature: text(input.patchShellSignature),
+        stickToBottom: Boolean(input.stickToBottom),
+      };
+    }
+    const shellPlan = planSingleThreadFullRenderShell({
+      threadId: input.threadId || input.currentThreadId,
+      currentThreadId: input.currentThreadId,
+      loadingWithoutVisibleTurns,
+      loadError,
+      escapeHtml: input.escapeHtml,
+    });
+    return {
+      shouldRender: true,
+      mode: shellPlan.mode,
+      reason: shellPlan.mode,
+      html: shellPlan.html,
+      clearLiveOperationDock: Boolean(shellPlan.clearLiveOperationDock),
+      bindRetry: Boolean(shellPlan.bindRetry),
+      retryThreadId: shellPlan.retryThreadId || "",
+      conversationSignature: text(input.conversationSignature),
+      patchShellSignature: text(input.patchShellSignature),
+      stickToBottom: Boolean(input.stickToBottom),
+    };
+  }
+
   return {
     emptyThreadDetailRefreshPatchAttempt,
     finalizeThreadDetailRenderPlan,
@@ -713,6 +751,7 @@
     planThreadDetailRefreshRequest,
     planThreadDetailRefreshPatchSurface,
     planThreadDetailRefreshPostMergeEffects,
+    planSingleThreadEarlyShellExecution,
     planSingleThreadFullRenderShell,
     planThreadDetailHistoryAutoBackfill,
     planThreadDetailRefreshPatchExecution,

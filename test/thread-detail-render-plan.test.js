@@ -870,6 +870,68 @@ test("single-thread full render shell plans loading state", () => {
   });
 });
 
+test("single-thread early shell execution plans loading terminal render", () => {
+  assert.deepEqual(renderPlan.planSingleThreadEarlyShellExecution({
+    threadId: "thread-1",
+    loadingWithoutVisibleTurns: true,
+    conversationSignature: "loading|thread-1",
+    patchShellSignature: "patch|thread-1",
+    stickToBottom: true,
+  }), {
+    shouldRender: true,
+    mode: "loading",
+    reason: "loading",
+    html: `<div class="empty-state entry-animate">Loading thread...</div>`,
+    clearLiveOperationDock: true,
+    bindRetry: false,
+    retryThreadId: "",
+    conversationSignature: "loading|thread-1",
+    patchShellSignature: "patch|thread-1",
+    stickToBottom: true,
+  });
+});
+
+test("single-thread early shell execution plans load-error retry", () => {
+  const plan = renderPlan.planSingleThreadEarlyShellExecution({
+    currentThreadId: "thread-2",
+    loadError: "bad <state>",
+    conversationSignature: "error|thread-2",
+    patchShellSignature: "patch|thread-2",
+    stickToBottom: false,
+  });
+
+  assert.equal(plan.shouldRender, true);
+  assert.equal(plan.mode, "load-error");
+  assert.equal(plan.reason, "load-error");
+  assert.equal(plan.clearLiveOperationDock, true);
+  assert.equal(plan.bindRetry, true);
+  assert.equal(plan.retryThreadId, "thread-2");
+  assert.equal(plan.conversationSignature, "error|thread-2");
+  assert.equal(plan.patchShellSignature, "patch|thread-2");
+  assert.equal(plan.stickToBottom, false);
+  assert.match(plan.html, /Thread failed: bad &lt;state&gt;/);
+});
+
+test("single-thread early shell execution leaves detail content to full render path", () => {
+  assert.deepEqual(renderPlan.planSingleThreadEarlyShellExecution({
+    threadId: "thread-3",
+    conversationSignature: "detail|thread-3",
+    patchShellSignature: "patch|thread-3",
+    stickToBottom: true,
+  }), {
+    shouldRender: false,
+    mode: "detail",
+    reason: "detail-content",
+    html: "",
+    clearLiveOperationDock: false,
+    bindRetry: false,
+    retryThreadId: "",
+    conversationSignature: "detail|thread-3",
+    patchShellSignature: "patch|thread-3",
+    stickToBottom: true,
+  });
+});
+
 test("single-thread full render shell plans escaped load error retry", () => {
   const plan = renderPlan.planSingleThreadFullRenderShell({
     threadId: "thread-1",
