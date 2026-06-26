@@ -171,6 +171,19 @@
     return Number.isFinite(size) && size > 0 ? Math.trunc(size) : 0;
   }
 
+  function hasCursor(value) {
+    if (!value) return false;
+    if (typeof value === "string") return Boolean(value.trim());
+    if (typeof value === "object") return Object.keys(value).length > 0;
+    return true;
+  }
+
+  function booleanFlag(value) {
+    if (value === true || value === 1) return true;
+    const text = String(value || "").trim().toLowerCase();
+    return text === "true" || text === "1" || text === "yes";
+  }
+
   function threadTurnCount(thread) {
     return Array.isArray(thread && thread.turns) ? boundedCount(thread.turns.length) : 0;
   }
@@ -265,6 +278,149 @@
     return out;
   }
 
+  function planThreadDetailSlowPathDiagnostic(event = {}, input = {}) {
+    const fields = objectOrNull(event) || {};
+    const source = objectOrNull(input) || {};
+    const thresholdMs = boundedTiming(source.thresholdMs) || 8000;
+    const elapsedMs = boundedTiming(fields.elapsedMs || fields.clientTimings && fields.clientTimings.elapsedMs) || 0;
+    const apiElapsedMs = boundedTiming(fields.apiElapsedMs || fields.clientTimings && fields.clientTimings.apiElapsedMs) || 0;
+    const renderElapsedMs = boundedTiming(fields.renderElapsedMs || fields.clientTimings && fields.clientTimings.renderElapsedMs) || 0;
+    const slowElapsed = elapsedMs >= thresholdMs;
+    const slowApi = apiElapsedMs >= thresholdMs;
+    const slowRender = renderElapsedMs >= thresholdMs;
+    if (!slowElapsed && !slowApi && !slowRender) {
+      return {
+        shouldReport: false,
+        reason: "below-threshold",
+        thresholdMs,
+        elapsedMs,
+        apiElapsedMs,
+        renderElapsedMs,
+      };
+    }
+    const performancePhase = compactLabel(fields.performancePhase, 80);
+    const reason = slowApi
+      ? "api-slow"
+      : slowRender
+        ? "render-slow"
+        : "elapsed-slow";
+    const severe = elapsedMs >= thresholdMs * 2
+      || apiElapsedMs >= thresholdMs * 2
+      || /cold-thread-read|fallback|bounded-large/.test(performancePhase);
+    const detailShape = objectOrNull(fields.detailShape) || {};
+    return {
+      shouldReport: true,
+      reason,
+      severityHint: severe ? "H2" : "H3",
+      thresholdMs,
+      elapsedMs,
+      apiElapsedMs,
+      renderElapsedMs,
+      readMode: compactLabel(fields.readMode, 80),
+      performancePhase,
+      source: compactLabel(fields.source || source.source, 40),
+      action: compactLabel(source.action || "thread-detail", 80),
+      threadHash: compactLabel(source.threadHash || source.thread_hash, 80),
+      durationBucket: compactLabel(source.durationBucket || source.duration_bucket, 40),
+      renderMode: compactLabel(fields.clientTimings && fields.clientTimings.detailRenderMode, 40),
+      rolloutSizeBytes: rolloutSizeBytes(fields),
+      turns: boundedCount(fields.turns || detailShape.turns),
+      visibleItems: boundedCount(detailShape.visibleItems),
+      omittedTurns: boundedCount(fields.omittedTurns || detailShape.omittedTurns),
+    };
+  }
+
+  function threadDetailProjectionContractFields(thread) {
+    const projection = objectOrNull(thread && thread.mobileProjection) || {};
+    const timings = threadDetailTimings(thread) || {};
+    const readMode = compactLabel(thread && thread.mobileReadMode, 80);
+    return {
+      readMode,
+      projectionSource: compactLabel(projection.source || thread && thread.mobileProjectionSource || timings.projectionSource, 80),
+      projectionPartial: booleanFlag(projection.partial) || /projection-v?\d*-partial|projection-partial/.test(readMode),
+      projectionPartialKind: compactLabel(projection.partialKind || timings.projectionPartialKind, 80),
+      olderCursor: hasCursor(thread && thread.mobileOlderTurnsCursor),
+      newerCursor: hasCursor(thread && thread.mobileNewerTurnsCursor),
+      status: statusText(thread && thread.status),
+      detailShape: threadDetailShape(thread),
+      turns: threadTurnCount(thread),
+      omittedTurns: threadOmittedTurnCount(thread),
+      rolloutSizeBytes: rolloutSizeBytes(thread),
+    };
+  }
+
+  function activeLikeStatus(value) {
+    return /active|running|in[_-]?progress|pending|thinking|queued/.test(String(value || "").toLowerCase());
+  }
+
+  function planThreadDetailResponseContractDiagnostic(event = {}, input = {}) {
+    const fields = objectOrNull(event) || {};
+    const source = objectOrNull(input) || {};
+    const contract = source.thread
+      ? threadDetailProjectionContractFields(source.thread)
+      : objectOrNull(source.contract) || {};
+    const detailShape = objectOrNull(fields.detailShape)
+      || objectOrNull(contract.detailShape)
+      || objectOrNull(source.detailShape)
+      || {};
+    const readMode = compactLabel(fields.readMode || contract.readMode || source.readMode, 80);
+    const performancePhase = compactLabel(fields.performancePhase || source.performancePhase, 80);
+    const projectionSource = compactLabel(contract.projectionSource || source.projectionSource, 80);
+    const projectionPartialKind = compactLabel(contract.projectionPartialKind || source.projectionPartialKind, 80);
+    const projectionPartial = Boolean(contract.projectionPartial || source.projectionPartial);
+    const olderCursor = Boolean(contract.olderCursor || source.olderCursor);
+    const newerCursor = Boolean(contract.newerCursor || source.newerCursor);
+    const turns = boundedCount(fields.turns || contract.turns || detailShape.turns);
+    const items = boundedCount(detailShape.items);
+    const visibleItems = boundedCount(detailShape.visibleItems);
+    const activeTurns = boundedCount(detailShape.activeTurns);
+    const completedTurns = boundedCount(detailShape.completedTurns);
+    const omittedTurns = boundedCount(fields.omittedTurns || contract.omittedTurns || detailShape.omittedTurns);
+    const status = compactLabel(fields.status || contract.status || source.status, 80);
+    const activeLike = Boolean(source.expectedActiveFullRead) || activeTurns > 0 || activeLikeStatus(status);
+    const windowedMode = /turns-list|projection-v?\d*-partial|projection-partial|summary-timeout|unmaterialized|fallback/.test(readMode)
+      || /bounded-large|turns-list|partial|fallback/.test(performancePhase);
+    const projectionModeMarkedFull = /projection-v?\d*-(cache|dynamic)|projection-(cache|dynamic)/.test(readMode)
+      && !projectionPartial;
+    let reason = "";
+    let severityHint = "H3";
+    if (projectionModeMarkedFull && newerCursor) {
+      reason = "projection-window-marked-full";
+      severityHint = "H2";
+    } else if (turns > 0 && visibleItems === 0 && (items === 0 || projectionPartial || projectionPartialKind === "notification-shell")) {
+      reason = "empty-projection-shell";
+      severityHint = "H2";
+    } else if (activeLike && windowedMode) {
+      reason = "active-thread-window-downgrade";
+      severityHint = "H2";
+    }
+    const base = {
+      shouldReport: Boolean(reason),
+      reason: reason || "ok",
+      severityHint,
+      action: compactLabel(source.action || fields.source || "thread-detail", 80),
+      source: compactLabel(fields.source || source.source, 40),
+      threadHash: compactLabel(source.threadHash || source.thread_hash, 80),
+      durationBucket: compactLabel(source.durationBucket || source.duration_bucket, 40),
+      readMode,
+      renderMode: compactLabel(fields.clientTimings && fields.clientTimings.detailRenderMode || source.renderMode, 40),
+      performancePhase,
+      projectionSource,
+      projectionPartialKind,
+      projectionPartial,
+      olderCursor,
+      newerCursor,
+      turns,
+      items,
+      visibleItems,
+      activeTurns,
+      completedTurns,
+      omittedTurns,
+      rolloutSizeBytes: rolloutSizeBytes(contract.rolloutSizeBytes ? contract : fields),
+    };
+    return base;
+  }
+
   function boundedCount(value) {
     const number = Number(value);
     if (!Number.isFinite(number) || number < 0) return 0;
@@ -357,6 +513,9 @@
     threadDetailRefreshEventFields,
     threadDetailShape,
     threadDetailTimings,
+    planThreadDetailResponseContractDiagnostic,
+    planThreadDetailSlowPathDiagnostic,
+    threadDetailProjectionContractFields,
     threadOmittedTurnCount,
     threadTurnCount,
     threadListEventFields,

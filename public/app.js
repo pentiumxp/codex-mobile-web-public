@@ -508,7 +508,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v509";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v510";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -6778,6 +6778,42 @@ function recordHomeAiDiagnosticSuccess(input = {}) {
   }));
 }
 
+function recordThreadDetailResponseDiagnostics(performanceEvent = {}, input = {}) {
+  const source = input && typeof input === "object" ? input : {};
+  const threadId = String(source.threadId || state.currentThreadId || "");
+  const threadHash = diagnosticThreadHash(threadId);
+  const action = String(source.action || "thread-detail").slice(0, 80);
+  const durationBucket = source.durationBucket
+    || diagnosticDurationBucket(Number(performanceEvent && performanceEvent.elapsedMs || 0));
+  const slowPlan = threadPerformanceMetrics.planThreadDetailSlowPathDiagnostic(performanceEvent, {
+    action,
+    threadHash,
+    durationBucket,
+  });
+  if (slowPlan.shouldReport) {
+    recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.threadDetailSlowPathDiagnosticEvent(slowPlan));
+  } else {
+    recordHomeAiDiagnosticSuccess(threadDiagnosticEventsApi.threadDetailSlowPathDiagnosticSuccess({
+      action,
+      threadHash,
+      readMode: performanceEvent && performanceEvent.readMode || "",
+      renderMode: performanceEvent && performanceEvent.clientTimings && performanceEvent.clientTimings.detailRenderMode || "",
+    }));
+  }
+  const contractPlan = threadPerformanceMetrics.planThreadDetailResponseContractDiagnostic(performanceEvent, {
+    action,
+    threadHash,
+    durationBucket,
+    thread: source.thread,
+    expectedActiveFullRead: source.expectedActiveFullRead,
+  });
+  if (contractPlan.shouldReport) {
+    recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.threadDetailResponseContractDiagnosticEvent(contractPlan));
+  } else {
+    recordHomeAiDiagnosticSuccess(threadDiagnosticEventsApi.threadDetailResponseContractDiagnosticSuccess(contractPlan));
+  }
+}
+
 function conversationDomShape() {
   const conversation = $("conversation");
   if (!conversation) return { renderKeyCount: 0, duplicateRenderKeyCount: 0, turnCount: 0 };
@@ -8962,6 +8998,11 @@ async function loadThread(threadId, options = {}) {
     cached: false,
   });
   postPerformanceEvent("thread_detail_first_paint", firstPaintPerformance);
+  recordThreadDetailResponseDiagnostics(firstPaintPerformance, {
+    action: "thread-detail-load",
+    threadId,
+    thread: result.thread,
+  });
   postClientEvent("thread_switch_complete", {
     source,
     threadId,
@@ -9371,6 +9412,11 @@ async function refreshCurrentThread(options = {}) {
     key: "thread_refresh_ms",
     minIntervalMs: PERF_EVENT_THROTTLE_MS,
   });
+  recordThreadDetailResponseDiagnostics(refreshPerformance, {
+    action: "thread-detail-refresh",
+    threadId,
+    thread: result.thread,
+  });
   const completionPlan = threadDetailRenderPlanApi.planThreadDetailRefreshCompletionEffects({
     threadHash: diagnosticThreadHash(threadId),
   });
@@ -9503,6 +9549,11 @@ async function backfillFullThreadDetail(threadId, options = {}) {
     detailRenderMode: "full-backfill",
   });
   postPerformanceEvent("thread_detail_full_ready", fullReadyPerformance, { force: true });
+  recordThreadDetailResponseDiagnostics(fullReadyPerformance, {
+    action: "thread-detail-full-backfill",
+    threadId: id,
+    thread: result.thread,
+  });
 }
 
 function preserveConversationScrollAfterPrepend(previousScrollTop, previousScrollHeight) {

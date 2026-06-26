@@ -380,3 +380,119 @@ test("thread diagnostic events skip mismatched projection surfaces", () => {
     tileIds: [],
   }), null);
 });
+
+test("thread diagnostic events build bounded slow path payloads", () => {
+  const event = diagnostics.threadDetailSlowPathDiagnosticEvent({
+    action: "thread-detail-load",
+    reason: "api-slow",
+    readMode: "thread-read",
+    renderMode: "first-paint",
+    performancePhase: "cold-thread-read",
+    threadHash: "thread/hash",
+    durationBucket: "10_30s",
+    elapsedMs: 17000,
+    apiElapsedMs: 12000,
+    renderElapsedMs: 300,
+    thresholdMs: 8000,
+    turns: 10,
+    visibleItems: 30,
+    omittedTurns: 2,
+    rolloutSizeBytes: 2 * 1024 * 1024,
+    prompt: "private prompt ignored",
+  });
+
+  assert.equal(event.category, "thread_session_slow_path");
+  assert.equal(event.diagnostic_type, "thread_detail_slow_path");
+  assert.equal(event.error_code, "api-slow");
+  assert.equal(event.context.thread_hash, "thread_hash");
+  assert.equal(event.context.performance_phase, "cold-thread-read");
+  assert.equal(event.counts.elapsed_ms, 17000);
+  assert.equal(event.counts.api_elapsed_ms, 12000);
+  assert.equal(event.counts.threshold_ms, 8000);
+  assert.equal(event.counts.rollout_mb, 2);
+  assert.equal(JSON.stringify(event).includes("private"), false);
+  assert.deepEqual(diagnostics.threadDetailSlowPathDiagnosticSuccess({
+    action: "thread-detail-load",
+    threadHash: "thread/hash",
+    readMode: "thread-read",
+  }), {
+    category: "thread_session_slow_path",
+    diagnostic_type: "thread_detail_slow_path",
+    error_code: "thread_detail_slow_path",
+    context: {
+      surface: "thread-session",
+      action: "thread-detail-load",
+      thread_hash: "thread_hash",
+      read_mode: "thread-read",
+    },
+  });
+});
+
+test("thread diagnostic events build bounded detail response contract payloads", () => {
+  const event = diagnostics.threadDetailResponseContractDiagnosticEvent({
+    reason: "empty-projection-shell",
+    severityHint: "H2",
+    action: "thread-detail-load",
+    threadHash: "thread/hash",
+    readMode: "projection-v4-partial",
+    renderMode: "first-paint",
+    performancePhase: "warm-projection-partial",
+    projectionSource: "partial",
+    projectionPartialKind: "notification-shell",
+    turns: 1,
+    items: 0,
+    visibleItems: 0,
+    activeTurns: 0,
+    completedTurns: 1,
+    omittedTurns: 0,
+    olderCursor: false,
+    newerCursor: false,
+    projectionPartial: true,
+    body: "private body ignored",
+    url: "https://example.invalid/private",
+  });
+
+  assert.equal(event.category, "conversation_projection_mismatch");
+  assert.equal(event.diagnostic_type, "thread_detail_response_contract_mismatch");
+  assert.equal(event.error_code, "empty-projection-shell");
+  assert.equal(event.evidence_confidence, 0.82);
+  assert.deepEqual(event.context, {
+    surface: "thread-session",
+    action: "thread-detail-load",
+    thread_hash: "thread_hash",
+    read_mode: "projection-v4-partial",
+    render_mode: "first-paint",
+    performance_phase: "warm-projection-partial",
+    projection_source: "partial",
+    projection_partial_kind: "notification-shell",
+  });
+  assert.deepEqual(event.counts, {
+    turn_count: 1,
+    item_count: 0,
+    visible_count: 0,
+    active_turn_count: 0,
+    completed_turn_count: 1,
+    omitted_turns: 0,
+    older_cursor: 0,
+    newer_cursor: 0,
+    projection_partial: 1,
+  });
+  assert.equal(event.breadcrumbs[0].fields.projection_partial, 1);
+  assert.equal(event.breadcrumbs[0].fields.thread_hash, "thread_hash");
+  assert.equal(JSON.stringify(event).includes("private"), false);
+  assert.deepEqual(diagnostics.threadDetailResponseContractDiagnosticSuccess({
+    action: "thread-detail-load",
+    threadHash: "thread/hash",
+    readMode: "thread-read",
+  }), {
+    category: "conversation_projection_mismatch",
+    diagnostic_type: "thread_detail_response_contract_mismatch",
+    error_code: "thread_detail_response_contract_mismatch",
+    context: {
+      surface: "thread-session",
+      action: "thread-detail-load",
+      thread_hash: "thread_hash",
+      read_mode: "thread-read",
+    },
+  });
+});

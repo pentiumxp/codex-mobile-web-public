@@ -92,7 +92,7 @@ non-partial projections.
 
 ### Phase 2: Frontend State Ownership
 
-Status: Phase A module deploy candidate as of `codex-mobile-shell-v509`.
+Status: Phase A module deploy candidate as of `codex-mobile-shell-v510`.
 The local Phase A refresh/patch ownership work now has the helper extraction,
 transaction ordering, completion snapshots, attempt aggregation, and
 behavior-level DOM harness needed to deploy as one module instead of many
@@ -310,6 +310,16 @@ payloads, including cached/warm-client phase handling, server/client timings,
 detail shape, read mode, turn counts, omitted-turn counts where relevant, and
 rollout size. This keeps large-session cold/warm path evidence consistent
 across initial open, cached current open, refresh, and full backfill.
+The same helper now plans detail-response diagnostic contracts:
+`planThreadDetailSlowPathDiagnostic` detects repeated slow detail opens,
+refreshes, and backfills from bounded timing fields, and
+`planThreadDetailResponseContractDiagnostic` detects response shapes that would
+make the client show missing or misleading history: empty projection shells,
+active/running threads served by partial/windowed reads, and projection cache/
+dynamic reads that still carry older/newer cursors. These diagnostics report
+through Home AI only after the repeated-failure threshold and successful detail
+responses clear the counter, so the fix surfaces architectural inconsistencies
+without adding a silent display fallback.
 Patch-rejection diagnostic event planning now lives in
 `public/thread-diagnostic-events.js`:
 `detailPatchRejectedDiagnosticEvent` builds the bounded
@@ -327,6 +337,14 @@ and `duplicateRenderKeysDiagnosticSuccess` build the bounded failure/success
 inputs for render-signature mismatch and duplicate render-key reports.
 `checkConversationProjectionConsistency()` now owns snapshot acquisition and
 reporter calls only, not event shape construction.
+Detail response diagnostic event planning also lives there:
+`threadDetailSlowPathDiagnosticEvent`,
+`threadDetailSlowPathDiagnosticSuccess`,
+`threadDetailResponseContractDiagnosticEvent`, and
+`threadDetailResponseContractDiagnosticSuccess` produce the Home AI diagnostic
+inputs for slow-path and response-contract failures using only read-mode,
+performance phase, projection source/kind, cursor booleans, item/turn counts,
+duration buckets, rollout size buckets, and short thread hashes.
 Conversation projection diagnostic snapshot planning now also lives there:
 `conversationProjectionDiagnosticSnapshot` decides tile-board, single-thread,
 and mismatched transition surfaces from injected dependencies for tile layout,

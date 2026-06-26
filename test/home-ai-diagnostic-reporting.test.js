@@ -184,6 +184,68 @@ test("report payload preserves bounded render reason codes", () => {
   assert.doesNotMatch(json, /private message|private prompt|upload\.jpg/);
 });
 
+test("report payload preserves bounded thread detail contract fields", () => {
+  const event = diagnostics.sanitizeInput({
+    category: "conversation_projection_mismatch",
+    diagnostic_type: "thread_detail_response_contract_mismatch",
+    error_code: "empty-projection-shell",
+    context: {
+      surface: "thread-session",
+      action: "thread-detail-load",
+      thread_hash: diagnostics.hashIdentifier("thread-secret"),
+      read_mode: "projection-v4-partial",
+      render_mode: "first-paint",
+      performance_phase: "warm-projection-partial",
+      projection_source: "partial",
+      projection_partial_kind: "notification-shell",
+      title: "private title stripped",
+      path: "/Users/private/upload.jpg",
+    },
+    counts: {
+      turn_count: 1,
+      item_count: 0,
+      visible_count: 0,
+      active_turn_count: 0,
+      completed_turn_count: 1,
+      omitted_turns: 0,
+      older_cursor: 0,
+      newer_cursor: 0,
+      projection_partial: 1,
+    },
+    breadcrumbs: [{
+      kind: "thread-session",
+      code: "thread-detail-response-contract",
+      status: "failed",
+      fields: {
+        thread_hash: diagnostics.hashIdentifier("thread-secret"),
+        read_mode: "projection-v4-partial",
+        performance_phase: "warm-projection-partial",
+        projection_source: "partial",
+        projection_partial_kind: "notification-shell",
+        turn_count: 1,
+        item_count: 0,
+        visible_count: 0,
+        active_turn_count: 0,
+        older_cursor: 0,
+        newer_cursor: 0,
+        projection_partial: 1,
+        body: "private body stripped",
+      },
+    }],
+  });
+  const json = JSON.stringify(event);
+
+  assert.equal(event.context.projection_source, "partial");
+  assert.equal(event.context.projection_partial_kind, "notification-shell");
+  assert.equal(event.context.performance_phase, "warm-projection-partial");
+  assert.equal(event.counts.item_count, 0);
+  assert.equal(event.counts.projection_partial, 1);
+  assert.equal(event.breadcrumbs[0].fields.projection_source, "partial");
+  assert.equal(event.breadcrumbs[0].fields.item_count, 0);
+  assert.equal(event.breadcrumbs[0].fields.projection_partial, 1);
+  assert.doesNotMatch(json, /private title|private body|upload\.jpg|thread-secret/);
+});
+
 test("postMessage delivery fails safely outside trusted embedded contexts", () => {
   const report = {
     type: "homeai.diagnostic.report",

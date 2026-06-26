@@ -44,6 +44,17 @@ test("client turn ordering follows server started-at-first semantics", () => {
   assert.match(consistencyBody, /turnOrderMismatchDiagnosticSuccess\(orderSnapshot\)/);
 });
 
+test("thread detail response diagnostics are planned before Home AI reporting", () => {
+  const body = functionBody("recordThreadDetailResponseDiagnostics");
+  assert.match(body, /threadPerformanceMetrics\.planThreadDetailSlowPathDiagnostic\(performanceEvent, \{/);
+  assert.match(body, /threadDiagnosticEventsApi\.threadDetailSlowPathDiagnosticEvent\(slowPlan\)/);
+  assert.match(body, /threadDiagnosticEventsApi\.threadDetailSlowPathDiagnosticSuccess\(\{/);
+  assert.match(body, /threadPerformanceMetrics\.planThreadDetailResponseContractDiagnostic\(performanceEvent, \{/);
+  assert.match(body, /threadDiagnosticEventsApi\.threadDetailResponseContractDiagnosticEvent\(contractPlan\)/);
+  assert.match(body, /threadDiagnosticEventsApi\.threadDetailResponseContractDiagnosticSuccess\(contractPlan\)/);
+  assert.doesNotMatch(body, /taskBody|messageText|rawPrompt|upload/);
+});
+
 test("mobile viewport and early guards disable page zoom", () => {
   assert.match(indexHtml, /name="viewport" content="[^"]*maximum-scale=1/);
   assert.match(indexHtml, /name="viewport" content="[^"]*minimum-scale=1/);
@@ -163,9 +174,9 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
   assert.doesNotMatch(stylesCss, /\.turn-timer-time\s*{[\s\S]*flex:\s*0 0 104px;/);
 });
 
-test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v509/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v509"/);
+test("public app shell cache advances with static frontend changes", () => {
+  assert.match(swJs, /codex-mobile-shell-v510/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v510"/);
   assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(swJs, /"\/thread-diagnostic-events\.js"/);
@@ -230,6 +241,7 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /performancePhase: listPerformance\.performancePhase/);
   assert.match(functionBody("loadThread"), /threadPerformanceMetrics\.threadDetailFirstPaintEventFields\(state\.currentThread, \{/);
   assert.match(functionBody("loadThread"), /threadPerformanceMetrics\.threadDetailFirstPaintEventFields\(result\.thread, \{/);
+  assert.match(functionBody("loadThread"), /recordThreadDetailResponseDiagnostics\(firstPaintPerformance, \{[\s\S]*action: "thread-detail-load",[\s\S]*threadId,[\s\S]*thread: result\.thread,[\s\S]*\}\);/);
   assert.match(appJs, /postPerformanceEvent\("thread_detail_first_paint"/);
   assert.match(appJs, /postPerformanceEvent\("conversation_render_ms"/);
   assert.match(appJs, /postPerformanceEvent\("github_cards_hydrate_ms"/);
@@ -425,6 +437,7 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(functionBody("refreshCurrentThread"), /shouldRenderDetail,[\s\S]*renderPlan,[\s\S]*renderOutcome,[\s\S]*patchAttemptResult,[\s\S]*timings: \{/);
   assert.match(functionBody("refreshCurrentThread"), /const refreshPerformance = threadPerformanceMetrics\.threadDetailRefreshEventFields\(result\.thread, refreshPerformanceInput\);/);
   assert.match(functionBody("refreshCurrentThread"), /postPerformanceEvent\("thread_refresh_ms", refreshPerformance, \{/);
+  assert.match(functionBody("refreshCurrentThread"), /recordThreadDetailResponseDiagnostics\(refreshPerformance, \{[\s\S]*action: "thread-detail-refresh",[\s\S]*threadId,[\s\S]*thread: result\.thread,[\s\S]*\}\);/);
   assert.match(functionBody("refreshCurrentThread"), /const completionPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshCompletionEffects\(\{[\s\S]*threadHash: diagnosticThreadHash\(threadId\),[\s\S]*\}\);/);
   assert.match(functionBody("refreshCurrentThread"), /for \(const effect of completionPlan\.effects\) applyThreadDetailRefreshCompletionEffect\(effect\);/);
   assert.match(appJs, /function applyThreadDetailRefreshCompletionEffect\(effect\)/);
@@ -513,6 +526,7 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /backfillFullThreadDetail\(threadId, \{ seq, source \}\)\.catch\(\(\) => \{\}\)/);
   assert.match(functionBody("backfillFullThreadDetail"), /threadPerformanceMetrics\.threadDetailFullReadyEventFields\(result\.thread, \{/);
   assert.match(functionBody("backfillFullThreadDetail"), /postPerformanceEvent\("thread_detail_full_ready", fullReadyPerformance, \{ force: true \}\)/);
+  assert.match(functionBody("backfillFullThreadDetail"), /recordThreadDetailResponseDiagnostics\(fullReadyPerformance, \{[\s\S]*action: "thread-detail-full-backfill",[\s\S]*threadId: id,[\s\S]*thread: result\.thread,[\s\S]*\}\);/);
   assert.match(stylesCss, /\.history-loader\s*{[\s\S]*justify-content:\s*space-between;/);
   assert.match(stylesCss, /\.history-load-button/);
   assert.match(swJs, /"\/api-client\.js"/);

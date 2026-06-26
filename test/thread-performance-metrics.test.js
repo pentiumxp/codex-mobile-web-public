@@ -440,3 +440,187 @@ test("thread performance metrics summarize detail shape without message bodies",
   });
   assert.equal(JSON.stringify(shape).includes("private"), false);
 });
+
+test("thread performance metrics plan slow detail path diagnostics only at threshold", () => {
+  const below = metrics.planThreadDetailSlowPathDiagnostic({
+    elapsedMs: 7999,
+    apiElapsedMs: 100,
+    renderElapsedMs: 100,
+    readMode: "thread-read",
+    detailShape: { turns: 10, visibleItems: 30 },
+  }, {
+    action: "thread-detail-load",
+    threadHash: "h_thread",
+    durationBucket: "3_10s",
+    thresholdMs: 8000,
+  });
+
+  assert.equal(below.shouldReport, false);
+  assert.equal(below.reason, "below-threshold");
+
+  const planned = metrics.planThreadDetailSlowPathDiagnostic({
+    elapsedMs: 17000,
+    apiElapsedMs: 12000,
+    renderElapsedMs: 300,
+    readMode: "thread-read",
+    performancePhase: "cold-thread-read",
+    detailShape: { turns: 10, visibleItems: 30, omittedTurns: 2 },
+    rolloutSizeBytes: 2 * 1024 * 1024,
+  }, {
+    action: "thread-detail-refresh",
+    threadHash: "h_thread",
+    durationBucket: "10_30s",
+    thresholdMs: 8000,
+  });
+
+  assert.equal(planned.shouldReport, true);
+  assert.equal(planned.reason, "api-slow");
+  assert.equal(planned.severityHint, "H2");
+  assert.equal(planned.threadHash, "h_thread");
+  assert.equal(planned.durationBucket, "10_30s");
+  assert.equal(planned.rolloutSizeBytes, 2 * 1024 * 1024);
+});
+
+test("thread performance metrics detect empty projection response shells", () => {
+  const planned = metrics.planThreadDetailResponseContractDiagnostic({
+    source: "thread-list",
+    readMode: "projection-v4-partial",
+    performancePhase: "warm-projection-partial",
+    detailShape: {
+      turns: 1,
+      items: 0,
+      visibleItems: 0,
+      activeTurns: 0,
+      completedTurns: 1,
+    },
+    turns: 1,
+    omittedTurns: 0,
+  }, {
+    action: "thread-detail-load",
+    threadHash: "h_music",
+    durationBucket: "lt_1s",
+    contract: {
+      projectionPartial: true,
+      projectionPartialKind: "notification-shell",
+      olderCursor: false,
+      newerCursor: false,
+    },
+  });
+
+  assert.equal(planned.shouldReport, true);
+  assert.equal(planned.reason, "empty-projection-shell");
+  assert.equal(planned.severityHint, "H2");
+  assert.equal(planned.turns, 1);
+  assert.equal(planned.items, 0);
+  assert.equal(planned.visibleItems, 0);
+  assert.equal(planned.projectionPartial, true);
+});
+
+test("thread performance metrics detect active thread window downgrades", () => {
+  const planned = metrics.planThreadDetailResponseContractDiagnostic({
+    source: "event-recovery",
+    readMode: "turns-list-large",
+    performancePhase: "bounded-large-thread-window",
+    detailShape: {
+      turns: 10,
+      items: 40,
+      visibleItems: 40,
+      activeTurns: 1,
+      completedTurns: 9,
+    },
+    turns: 10,
+  }, {
+    action: "thread-detail-refresh",
+    threadHash: "h_home_ai",
+  });
+
+  assert.equal(planned.shouldReport, true);
+  assert.equal(planned.reason, "active-thread-window-downgrade");
+  assert.equal(planned.severityHint, "H2");
+  assert.equal(planned.activeTurns, 1);
+});
+
+test("thread performance metrics detect projection windows marked as full cache", () => {
+  const planned = metrics.planThreadDetailResponseContractDiagnostic({
+    source: "thread-list",
+    readMode: "projection-v4-cache",
+    performancePhase: "warm-projection-cache",
+    detailShape: {
+      turns: 10,
+      items: 40,
+      visibleItems: 40,
+      activeTurns: 0,
+      completedTurns: 10,
+    },
+    turns: 10,
+  }, {
+    action: "thread-detail-load",
+    threadHash: "h_window",
+    contract: {
+      projectionPartial: false,
+      olderCursor: true,
+      newerCursor: true,
+      projectionSource: "cache",
+    },
+  });
+
+  assert.equal(planned.shouldReport, true);
+  assert.equal(planned.reason, "projection-window-marked-full");
+  assert.equal(planned.olderCursor, true);
+  assert.equal(planned.newerCursor, true);
+});
+
+test("thread performance metrics accept latest projection windows with only older history", () => {
+  const planned = metrics.planThreadDetailResponseContractDiagnostic({
+    source: "thread-list",
+    readMode: "projection-v4-dynamic",
+    performancePhase: "warm-projection-dynamic",
+    status: "completed",
+    detailShape: {
+      turns: 10,
+      items: 40,
+      visibleItems: 40,
+      activeTurns: 0,
+      completedTurns: 10,
+    },
+    turns: 10,
+    omittedTurns: 218,
+  }, {
+    action: "thread-detail-load",
+    threadHash: "h_latest",
+    contract: {
+      projectionPartial: false,
+      olderCursor: true,
+      newerCursor: false,
+      projectionSource: "dynamic",
+    },
+  });
+
+  assert.equal(planned.shouldReport, false);
+  assert.equal(planned.reason, "ok");
+  assert.equal(planned.olderCursor, true);
+  assert.equal(planned.newerCursor, false);
+});
+
+test("thread performance metrics accept complete idle recent windows", () => {
+  const planned = metrics.planThreadDetailResponseContractDiagnostic({
+    source: "thread-list",
+    readMode: "turns-list-initial",
+    performancePhase: "cold-turns-list-initial-seeded-partial",
+    status: "completed",
+    detailShape: {
+      turns: 10,
+      items: 30,
+      visibleItems: 30,
+      activeTurns: 0,
+      completedTurns: 10,
+    },
+    turns: 10,
+  }, {
+    action: "thread-detail-load",
+    threadHash: "h_music",
+  });
+
+  assert.equal(planned.shouldReport, false);
+  assert.equal(planned.reason, "ok");
+});

@@ -25,6 +25,12 @@
     return Math.min(MAX_COUNT, Math.trunc(number));
   }
 
+  function boundedRolloutMb(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) return 0;
+    return boundedCount(Math.ceil(number / (1024 * 1024)));
+  }
+
   function projectionDiagnosticContext(input = {}) {
     const source = input && typeof input === "object" ? input : {};
     const out = {
@@ -350,6 +356,167 @@
     };
   }
 
+  function threadDetailSlowPathDiagnosticEvent(input = {}) {
+    const source = input && typeof input === "object" ? input : {};
+    const action = compactToken(source.action, "thread-detail", 80);
+    const reason = compactToken(source.reason, "elapsed-slow", 80);
+    const readMode = compactToken(source.readMode || source.read_mode, "", 80);
+    const renderMode = compactToken(source.renderMode || source.render_mode, "", 80);
+    const performancePhase = compactToken(source.performancePhase || source.performance_phase, "", 80);
+    const threadHash = compactToken(source.threadHash || source.thread_hash, "", 80);
+    const durationBucket = compactToken(source.durationBucket || source.duration_bucket, "", 80);
+    const counts = {
+      elapsed_ms: boundedCount(source.elapsedMs || source.elapsed_ms),
+      api_elapsed_ms: boundedCount(source.apiElapsedMs || source.api_elapsed_ms),
+      render_elapsed_ms: boundedCount(source.renderElapsedMs || source.render_elapsed_ms),
+      threshold_ms: boundedCount(source.thresholdMs || source.threshold_ms),
+      turn_count: boundedCount(source.turns || source.turn_count),
+      visible_count: boundedCount(source.visibleItems || source.visible_count),
+      omitted_turns: boundedCount(source.omittedTurns || source.omitted_turns),
+    };
+    const rolloutMb = boundedRolloutMb(source.rolloutSizeBytes || source.rollout_size_bytes);
+    if (rolloutMb) counts.rollout_mb = rolloutMb;
+    const context = {
+      surface: "thread-session",
+      action,
+    };
+    if (threadHash) context.thread_hash = threadHash;
+    if (readMode) context.read_mode = readMode;
+    if (renderMode) context.render_mode = renderMode;
+    if (performancePhase) context.performance_phase = performancePhase;
+    return {
+      category: "thread_session_slow_path",
+      diagnostic_type: "thread_detail_slow_path",
+      severity_hint: compactToken(source.severityHint || source.severity_hint, "H3", 8),
+      evidence_confidence: 0.7,
+      error_code: reason,
+      duration_bucket: durationBucket,
+      context,
+      counts,
+      breadcrumbs: [{
+        kind: "thread-session",
+        code: "thread-detail-slow-path",
+        status: "slow",
+        duration_bucket: durationBucket,
+        fields: {
+          read_mode: readMode,
+          render_mode: renderMode,
+          performance_phase: performancePhase,
+          elapsed_ms: counts.elapsed_ms,
+          api_elapsed_ms: counts.api_elapsed_ms,
+          render_elapsed_ms: counts.render_elapsed_ms,
+          threshold_ms: counts.threshold_ms,
+          thread_hash: threadHash,
+        },
+      }],
+    };
+  }
+
+  function threadDetailSlowPathDiagnosticSuccess(input = {}) {
+    const source = input && typeof input === "object" ? input : {};
+    const context = {
+      surface: "thread-session",
+      action: compactToken(source.action, "thread-detail", 80),
+    };
+    const threadHash = compactToken(source.threadHash || source.thread_hash, "", 80);
+    if (threadHash) context.thread_hash = threadHash;
+    const readMode = compactToken(source.readMode || source.read_mode, "", 80);
+    if (readMode) context.read_mode = readMode;
+    const renderMode = compactToken(source.renderMode || source.render_mode, "", 80);
+    if (renderMode) context.render_mode = renderMode;
+    return {
+      category: "thread_session_slow_path",
+      diagnostic_type: "thread_detail_slow_path",
+      error_code: "thread_detail_slow_path",
+      context,
+    };
+  }
+
+  function threadDetailResponseContractDiagnosticContext(input = {}) {
+    const source = input && typeof input === "object" ? input : {};
+    const context = {
+      surface: "thread-session",
+      action: compactToken(source.action, "thread-detail", 80),
+    };
+    const threadHash = compactToken(source.threadHash || source.thread_hash, "", 80);
+    const readMode = compactToken(source.readMode || source.read_mode, "", 80);
+    const renderMode = compactToken(source.renderMode || source.render_mode, "", 80);
+    const performancePhase = compactToken(source.performancePhase || source.performance_phase, "", 80);
+    const projectionSource = compactToken(source.projectionSource || source.projection_source, "", 80);
+    const projectionPartialKind = compactToken(source.projectionPartialKind || source.projection_partial_kind, "", 80);
+    if (threadHash) context.thread_hash = threadHash;
+    if (readMode) context.read_mode = readMode;
+    if (renderMode) context.render_mode = renderMode;
+    if (performancePhase) context.performance_phase = performancePhase;
+    if (projectionSource) context.projection_source = projectionSource;
+    if (projectionPartialKind) context.projection_partial_kind = projectionPartialKind;
+    return context;
+  }
+
+  function threadDetailResponseContractCounts(input = {}) {
+    const source = input && typeof input === "object" ? input : {};
+    const out = {
+      turn_count: boundedCount(source.turns || source.turn_count),
+      item_count: boundedCount(source.items || source.item_count),
+      visible_count: boundedCount(source.visibleItems || source.visible_count),
+      active_turn_count: boundedCount(source.activeTurns || source.active_turn_count),
+      completed_turn_count: boundedCount(source.completedTurns || source.completed_turn_count),
+      omitted_turns: boundedCount(source.omittedTurns || source.omitted_turns),
+      older_cursor: source.olderCursor || source.older_cursor ? 1 : 0,
+      newer_cursor: source.newerCursor || source.newer_cursor ? 1 : 0,
+      projection_partial: source.projectionPartial || source.projection_partial ? 1 : 0,
+    };
+    const rolloutMb = boundedRolloutMb(source.rolloutSizeBytes || source.rollout_size_bytes);
+    if (rolloutMb) out.rollout_mb = rolloutMb;
+    return out;
+  }
+
+  function threadDetailResponseContractDiagnosticEvent(input = {}) {
+    const source = input && typeof input === "object" ? input : {};
+    const reason = compactToken(source.reason, "thread-detail-response-contract", 80);
+    const context = threadDetailResponseContractDiagnosticContext(source);
+    const counts = threadDetailResponseContractCounts(source);
+    return {
+      category: "conversation_projection_mismatch",
+      diagnostic_type: "thread_detail_response_contract_mismatch",
+      severity_hint: compactToken(source.severityHint || source.severity_hint, "H2", 8),
+      evidence_confidence: 0.82,
+      error_code: reason,
+      duration_bucket: compactToken(source.durationBucket || source.duration_bucket, "", 80),
+      context,
+      counts,
+      breadcrumbs: [{
+        kind: "thread-session",
+        code: "thread-detail-response-contract",
+        status: "failed",
+        fields: {
+          read_mode: context.read_mode || "",
+          render_mode: context.render_mode || "",
+          performance_phase: context.performance_phase || "",
+          projection_source: context.projection_source || "",
+          projection_partial_kind: context.projection_partial_kind || "",
+          turn_count: counts.turn_count,
+          item_count: counts.item_count,
+          visible_count: counts.visible_count,
+          active_turn_count: counts.active_turn_count,
+          older_cursor: counts.older_cursor,
+          newer_cursor: counts.newer_cursor,
+          projection_partial: counts.projection_partial,
+          thread_hash: context.thread_hash || "",
+        },
+      }],
+    };
+  }
+
+  function threadDetailResponseContractDiagnosticSuccess(input = {}) {
+    return {
+      category: "conversation_projection_mismatch",
+      diagnostic_type: "thread_detail_response_contract_mismatch",
+      error_code: "thread_detail_response_contract_mismatch",
+      context: threadDetailResponseContractDiagnosticContext(input),
+    };
+  }
+
   return {
     boundedCount,
     compactToken,
@@ -365,6 +532,10 @@
     projectionDiagnosticSnapshot,
     renderSignatureMismatchDiagnosticEvent,
     renderSignatureMismatchDiagnosticSuccess,
+    threadDetailResponseContractDiagnosticEvent,
+    threadDetailResponseContractDiagnosticSuccess,
+    threadDetailSlowPathDiagnosticEvent,
+    threadDetailSlowPathDiagnosticSuccess,
     threadDetailRefreshFailedDiagnosticEvent,
     turnOrderMismatchDiagnosticEvent,
     turnOrderMismatchDiagnosticSuccess,
