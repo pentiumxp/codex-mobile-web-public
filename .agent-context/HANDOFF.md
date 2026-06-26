@@ -1,3 +1,79 @@
+# 2026-06-26 - v507 Phase A refresh/patch module deployed
+
+- Latest runtime code commit deployed:
+  - `49c88f4c1296 prepare phase a refresh module deploy`
+- Follow-up docs/context:
+  - README and this handoff record the v507 module deployment evidence after
+    production readback.
+- Scope:
+  - Deployed the accumulated local Phase A frontend thread-detail refresh /
+    patch ownership module as one production release, rather than deploying
+    the prior small local slices individually.
+  - The module covers `refreshCurrentThread()` request planning, patch surface
+    selection, patch-attempt effect planning/aggregation, local DOM patch
+    transaction ordering, completion snapshots, execution-effect planning,
+    performance payload assembly, and behavior-level DOM harness coverage.
+  - It does not change server projection semantics, Home AI diagnostic dispatch
+    policy, task-card protocol, image projection rules, or tile/split visual
+    layout.
+- Root-cause boundary:
+  - Symptom/risk: client/server projection display has had regressions around
+    duplicate/missing messages, whole-screen refreshes, and local patch/full
+    render instability. A large `public/app.js` refresh state machine made
+    ownership hard to prove and regressions easy to reintroduce.
+  - Failing layer: frontend thread-detail refresh/patch ownership and
+    validation boundary.
+  - Classification: root-cause architecture cleanup and validation hardening;
+    no fallback or UI-only masking was added.
+- Static build/cache:
+  - `public/app.js` `CLIENT_BUILD_ID` is now
+    `0.1.11|codex-mobile-shell-v507`.
+  - `public/sw.js` `CACHE_NAME` is now `codex-mobile-shell-v507`.
+- Validation before deploy:
+  - Focused module suite passed:
+    `node --test test/thread-detail-refresh-dom-harness.test.js test/thread-detail-dom-patch.test.js test/thread-detail-render-plan.test.js test/thread-detail-patch-plan.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    (`110` tests).
+  - Full source `npm test` passed (`955` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Production deploy:
+  - Deployed through Home AI central macOS production script:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart-label com.hermesmobile.plugin.codex-mobile --health-url http://127.0.0.1:8787/api/public-config --reason codex-mobile-phase-a-refresh-module-v507 --execute --json`
+  - Source ref at deploy: `49c88f4c1296`, dirty `false`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T021410Z-plugin-codex-mobile-web-codex-mobile-phase-a-refresh-module-v507`
+  - LaunchDaemon validation passed for `system/com.hermesmobile.plugin.codex-mobile`.
+  - Auth-profile audit passed with `blockingIssueCount=0`.
+- Production readback:
+  - `/api/public-config` reports `version=0.1.11`,
+    `clientBuildId=0.1.11|codex-mobile-shell-v507`,
+    `shellCacheName=codex-mobile-shell-v507`,
+    `workspacePath=/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`,
+    and `activeProfileId=previous`.
+  - Source/prod short SHA-256 samples matched for:
+    `public/app.js`, `public/sw.js`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`,
+    `public/thread-detail-render-plan.js`,
+    `public/thread-detail-patch-plan.js`,
+    `public/thread-detail-dom-patch.js`, and
+    `test/thread-detail-refresh-dom-harness.test.js`.
+- Public:
+  - Public was not pushed for v507. Follow the release order: production/user
+    validation first, then public sync only after explicit request.
+- Progress:
+  - Overall system-level architecture optimization is now estimated at about
+    `75%`.
+  - Phase A refresh/patch ownership is deployed as a coherent module. The next
+    optimization should use production `thread_refresh_ms` and Home AI
+    `conversation_projection_mismatch` evidence before deciding whether to
+    continue frontend DOM patching, server projection cache/read orchestration,
+    SSE/live merge, or pane-state ownership.
+- Next suggested work:
+  - Observe v507 in normal phone/split-pane flows. If projection mismatch or
+    whole-screen refresh reports recur, inspect bounded diagnostics first.
+  - Otherwise move to the next module target: large-session cold/warm path
+    evidence or pane-state/detail-load ownership, but again accumulate a
+    complete module before deploying.
+
 # 2026-06-26 - v476 thread-list fallback cache decision diagnostics deployed
 
 - Scope:

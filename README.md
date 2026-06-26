@@ -16,6 +16,42 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v507 Phase A Refresh/Patch Module Deploy
+
+v507 把 v506 之后累积的 Phase A `refreshCurrentThread()` 编排优化作为一个
+完整模块部署，而不是继续按小切片部署。这个模块的目标是把线程详情刷新、
+tile/single surface 判定、local patch 尝试、DOM patch 事务、completion
+snapshot、性能字段和诊断字段的所有权从 `public/app.js` 主状态机中收敛到
+纯 helper 和可测试执行边界里。
+
+本次模块边界包含：
+
+- `public/thread-detail-render-plan.js`：请求规划、patch surface/attempt、
+  outcome execution、performance input、completion effects、post-merge effects。
+- `public/thread-detail-patch-plan.js`：local patch preflight、可见项/turn
+  patch plan、reorder/removal 等拒绝原因。
+- `public/thread-detail-dom-patch.js`：可见项 patch、turn patch、keyed DOM
+  reconciliation、local patch transaction、commit/post-commit 分层。
+- `test/thread-detail-refresh-dom-harness.test.js`：用真实 helper 和轻量 fake DOM
+  验证 tile patch 成功终止、single-thread local patch 先 commit 再更新 dock、
+  local patch 拒绝后进入 full render。
+
+修复边界：
+
+- 症状/风险：客户端和服务端投影显示长期存在少消息、重复消息、全量刷新和
+  局部 patch 顺序不稳定等风险，`refreshCurrentThread()` 过多内联策略会让
+  类似问题反复回归。
+- 失败层：前端 thread detail refresh/patch ownership。
+- 不变量：本模块不改变 server projection 语义、Home AI 诊断上报策略、
+  task-card 协议、图片投影规则或平铺视觉布局。
+- 闭环验证：Phase A focused tests、完整 `npm test`、`npm run check`、
+  `npm run check:macos`、`git diff --check` 全部通过。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v507`。
+部署后生产 `/api/public-config` 读回为
+`clientBuildId=0.1.11|codex-mobile-shell-v507`、
+`shellCacheName=codex-mobile-shell-v507`。
+
 ## 2026-06-26 v506 Thread Refresh Post-Merge Effects Plan
 
 v506 继续 Phase A 的 `refreshCurrentThread()` 编排收敛。v505 已经把
