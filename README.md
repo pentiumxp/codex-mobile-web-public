@@ -2170,6 +2170,38 @@ bump PWA shell/cache。它只把 API first-paint 响应到达后的固定 state/
 - 闭环验证：focused tests 证明 plan 顺序与 app wiring；完整检查通过后再随 Phase A
   模块批量部署。
 
+## 2026-06-27 Local Phase A Full-Backfill Performance Input Slice
+
+这个本地小切片继续 Phase A 的 full-backfill telemetry ownership 收敛。此前
+`threadDetailFullReadyEventFields()` 已经负责生成 bounded
+`thread_detail_full_ready` payload，post-render 和 telemetry side-effect 顺序也已经由
+`thread-detail-render-plan` 声明，但 `backfillFullThreadDetail()` 仍在
+`public/app.js` 中手写 full-ready input 的 timing 字段选择。
+
+本次切片新增/调整：
+
+- `public/thread-detail-render-plan.js` 新增
+  `planThreadDetailFullBackfillPerformanceInput()`，只接收 app 层测得的
+  API/render/merge/composer/thread-list/conversation/post-render timings，并返回
+  `threadDetailFullReadyEventFields()` 的 bounded input。
+- `public/app.js` 的 `backfillFullThreadDetail()` 改为调用该 plan helper，再把
+  planned input 交给 `threadPerformanceMetrics.threadDetailFullReadyEventFields()`。
+- `test/thread-detail-render-plan.test.js` 覆盖 full-backfill input shape；
+  `test/mobile-viewport.test.js` 和 `test/conversation-render.test.js` 确认
+  `backfillFullThreadDetail()` 不再内联 full-ready input 字段选择。
+- 不改变 full-backfill read strategy、最终 performance payload 构造、
+  response diagnostics、DOM patch、scroll、Home AI diagnostic intake、任务卡协议或
+  shell/cache。
+
+修复边界：
+
+- 症状/风险：refresh 和 first-paint 的 performance input 字段选择已经计划化，但
+  full-backfill 仍手写在 `app.js`，未来容易造成 cold/warm path 证据字段漂移。
+- 失败层：前端 full-backfill performance input ownership，不是 telemetry sink、
+  server projection、full-read 策略或最终 bounded payload 构造。
+- 闭环验证：focused tests 证明 input shape 和 app wiring；完整检查通过后再随
+  Phase A 模块批量部署。
+
 ## 2026-06-26 Local Phase B Server Timing Classifier
 
 这个本地切片继续 Phase B 的大 session / thread-detail cold path 收敛，但只处理

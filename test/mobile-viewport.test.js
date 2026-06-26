@@ -684,7 +684,8 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.mobile-operation-sheet\s*{[\s\S]*max-height:\s*min\(42vh, 280px\);/);
   assert.match(functionBody("applyThreadDetailPostRenderEffect"), /if \(shouldBackfillFullThreadDetail\(context\.thread\)\) \{/);
   assert.match(functionBody("applyThreadDetailPostRenderEffect"), /backfillFullThreadDetail\(String\(item\.threadId \|\| ""\), \{[\s\S]*seq: Number\(item\.seq \|\| 0\),[\s\S]*source: String\(item\.source \|\| ""\)\.slice\(0, 40\),[\s\S]*\}\)\.catch\(\(\) => \{\}\)/);
-  assert.match(functionBody("backfillFullThreadDetail"), /threadPerformanceMetrics\.threadDetailFullReadyEventFields\(result\.thread, \{/);
+  assert.match(functionBody("backfillFullThreadDetail"), /threadDetailRenderPlanApi\.planThreadDetailFullBackfillPerformanceInput\(\{[\s\S]*threadId: id,[\s\S]*timings: \{[\s\S]*postRenderMs,[\s\S]*\},[\s\S]*\}\)/);
+  assert.match(functionBody("backfillFullThreadDetail"), /threadPerformanceMetrics\.threadDetailFullReadyEventFields\(\s*result\.thread,\s*fullBackfillPerformanceInput,\s*\)/);
   assert.match(functionBody("backfillFullThreadDetail"), /threadDetailRenderPlanApi\.planThreadDetailFullBackfillPostRenderEffects\(\)/);
   assert.match(functionBody("backfillFullThreadDetail"), /applyThreadDetailPostRenderEffectsPlan\(fullBackfillPostRenderPlan\)/);
   assert.match(functionBody("backfillFullThreadDetail"), /threadDetailRenderPlanApi\.planThreadDetailFullBackfillTelemetryEffects\(\{[\s\S]*performanceEvent: fullReadyPerformance,[\s\S]*threadId: id,[\s\S]*\}\)/);

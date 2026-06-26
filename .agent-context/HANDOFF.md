@@ -18063,3 +18063,55 @@ The previous full handoff was archived and should be opened only when old proven
     `refreshCurrentThread()` render/patch/scroll authority into pure helpers,
     or batch the accumulated Phase A local slices for one deploy/readback when
     requested.
+
+## 2026-06-27 - Latest tail marker: Phase A full-backfill performance input local slice
+
+- Current local state:
+  - Continued Phase A full-backfill telemetry ownership cleanup after
+    `2f98811`.
+  - `threadPerformanceMetrics.threadDetailFullReadyEventFields()` already owned
+    the final bounded `thread_detail_full_ready` payload and
+    `planThreadDetailFullBackfillTelemetryEffects()` owned the telemetry sink
+    ordering, but `backfillFullThreadDetail()` still hand-selected the
+    full-ready input timing fields inline.
+  - This slice moves full-backfill performance input field selection into
+    `public/thread-detail-render-plan.js`.
+- Root-cause boundary:
+  - Symptom/risk: refresh and first-paint performance inputs were planned, while
+    full-backfill still had a handwritten client-timing input shape in
+    `public/app.js`. Future edits could make full-ready cold/warm-path evidence
+    drift from the rest of the thread-detail telemetry pipeline.
+  - Failing layer: frontend full-backfill performance input ownership, not
+    telemetry sinks, final performance-event construction, full-backfill read
+    strategy, server projection, DOM patch, task-card protocol, Home AI
+    diagnostic intake, or shell/cache.
+  - Violated invariant: app code should measure real timings and pass the
+    current thread object; pure planning helpers should own fixed field
+    selection before performance-metrics helpers build bounded event payloads.
+- Changes:
+  - `public/thread-detail-render-plan.js` now exports
+    `planThreadDetailFullBackfillPerformanceInput()`.
+  - `public/app.js` uses that plan in `backfillFullThreadDetail()` before
+    calling `threadDetailFullReadyEventFields()`.
+  - Updated `test/thread-detail-render-plan.test.js`,
+    `test/mobile-viewport.test.js`, and `test/conversation-render.test.js`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation:
+  - Syntax and focused:
+    `node --check public/thread-detail-render-plan.js && node --check public/app.js && node --check test/thread-detail-render-plan.test.js && node --check test/conversation-render.test.js && node --check test/mobile-viewport.test.js && node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js`
+    passed (`196` focused tests).
+  - Full:
+    `npm test` passed (`1165` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache
+    bump. This remains a local Phase A ownership slice to batch with the next
+    module validation/deploy.
+- Progress:
+  - Overall architecture optimization is about `80%`.
+  - Phase A frontend render/projection ownership is about `90%`.
+- Next:
+  - Commit locally, then continue Phase A on the remaining
+    `refreshCurrentThread()` patch/render/scroll orchestration seams, or batch
+    the accumulated Phase A local slices for one deploy/readback when requested.

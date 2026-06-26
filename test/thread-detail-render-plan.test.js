@@ -1156,6 +1156,35 @@ test("thread detail first-paint performance input preserves cached and API timin
   });
 });
 
+test("thread detail full-backfill performance input preserves timing shape", () => {
+  assert.deepEqual(renderPlan.planThreadDetailFullBackfillPerformanceInput({
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA",
+    threadId: "thread-full",
+    timings: {
+      elapsedMs: 101.9,
+      apiElapsedMs: 77.2,
+      renderElapsedMs: 33.6,
+      mergeMs: 5.4,
+      composerRenderMs: 4.8,
+      threadListRenderMs: 3.3,
+      conversationRenderMs: 18.7,
+      postRenderMs: 2.1,
+    },
+  }), {
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR",
+    threadId: "thread-full",
+    elapsedMs: 101.9,
+    apiElapsedMs: 77.2,
+    renderElapsedMs: 33.6,
+    mergeMs: 5.4,
+    composerRenderMs: 4.8,
+    threadListRenderMs: 3.3,
+    conversationRenderMs: 18.7,
+    postRenderMs: 2.1,
+    detailRenderMode: "full-backfill",
+  });
+});
+
 test("thread detail refresh telemetry effects plan preserves event and diagnostics order", () => {
   const performanceEvent = {
     elapsedMs: 42,

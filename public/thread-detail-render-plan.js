@@ -809,6 +809,23 @@
     return out;
   }
 
+  function planThreadDetailFullBackfillPerformanceInput(input = {}) {
+    const timings = objectOrEmpty(input.timings);
+    return {
+      source: compactReason(input.source, "").slice(0, 40),
+      threadId: compactReason(input.threadId, ""),
+      elapsedMs: normalizedDurationMs(timings.elapsedMs),
+      apiElapsedMs: normalizedDurationMs(timings.apiElapsedMs),
+      renderElapsedMs: normalizedDurationMs(timings.renderElapsedMs),
+      mergeMs: normalizedDurationMs(timings.mergeMs),
+      composerRenderMs: normalizedDurationMs(timings.composerRenderMs),
+      threadListRenderMs: normalizedDurationMs(timings.threadListRenderMs),
+      conversationRenderMs: normalizedDurationMs(timings.conversationRenderMs),
+      postRenderMs: normalizedDurationMs(timings.postRenderMs),
+      detailRenderMode: "full-backfill",
+    };
+  }
+
   function planThreadDetailRefreshTelemetryEffects(input = {}) {
     const performanceEvent = objectOrEmpty(input.performanceEvent);
     const eventName = compactReason(input.eventName, "thread_refresh_ms");
@@ -1417,6 +1434,7 @@
     planThreadDetailFirstPaintPreRenderEffects,
     planThreadDetailFirstPaintResponseEffects,
     planThreadDetailFullBackfillResponseEffects,
+    planThreadDetailFullBackfillPerformanceInput,
     planThreadDetailLoadErrorEffects,
     planThreadDetailLoadingShellPostStateEffects,
     planThreadDetailFullBackfillPostRenderEffects,
