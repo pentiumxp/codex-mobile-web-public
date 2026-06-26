@@ -234,6 +234,66 @@ function fallbackBaselineReasonDecision(reason) {
   };
 }
 
+function appServerThreadListLatencyDecision(list = {}) {
+  const totalMs = boundedCount(list.appServerMs);
+  if (totalMs < 1000) return null;
+
+  const rpcMs = boundedCount(list.appServerRpcMs);
+  const visibleFilterMs = boundedCount(list.appServerVisibleFilterMs);
+  const workspaceFilterMs = boundedCount(list.appServerWorkspaceFilterMs);
+  const postProcessMs = boundedCount(list.appServerPostProcessMs);
+  const splitKnown = rpcMs > 0 || visibleFilterMs > 0 || workspaceFilterMs > 0 || postProcessMs > 0;
+  const dominantFloorMs = Math.max(500, Math.trunc(totalMs * 0.6));
+
+  if (rpcMs >= dominantFloorMs) {
+    return {
+      status: "needs_repair",
+      priority: "H2",
+      owner: "app-server-thread-list-rpc",
+      reason: "app-server-rpc-latency",
+      nextAction: "investigate-app-server-thread-list-rpc",
+    };
+  }
+
+  if (visibleFilterMs >= dominantFloorMs) {
+    return {
+      status: "needs_repair",
+      priority: "H2",
+      owner: "thread-list-visible-filter",
+      reason: "visible-filter-latency",
+      nextAction: "optimize-thread-list-visible-filter",
+    };
+  }
+
+  if (workspaceFilterMs >= dominantFloorMs) {
+    return {
+      status: "needs_repair",
+      priority: "H2",
+      owner: "thread-list-workspace-filter",
+      reason: "workspace-filter-latency",
+      nextAction: "optimize-thread-list-workspace-filter",
+    };
+  }
+
+  if (postProcessMs >= dominantFloorMs) {
+    return {
+      status: "needs_repair",
+      priority: "H2",
+      owner: "mobile-thread-list-postprocess",
+      reason: "mobile-postprocess-latency",
+      nextAction: "optimize-mobile-thread-list-postprocess",
+    };
+  }
+
+  return {
+    status: splitKnown ? "observe" : "needs_repair",
+    priority: splitKnown ? "H3" : "H2",
+    owner: "app-server-thread-list",
+    reason: splitKnown ? "app-server-latency-split-inconclusive" : "app-server-latency-unsplit",
+    nextAction: splitKnown ? "capture-next-app-server-list-latency-sample" : "instrument-app-server-thread-list-latency",
+  };
+}
+
 function threadListPrewarmDecision(list = {}, report = {}) {
   const publicConfig = objectOrNull(report.publicConfig) || {};
   const prewarm = objectOrNull(publicConfig.threadListFallbackPrewarm);
@@ -288,7 +348,9 @@ function threadListPrewarmDecision(list = {}, report = {}) {
 function threadListDecision(list = {}, report = {}) {
   const owner = lowerLabel(list.coldPathOwner, 80);
   const reason = compactLabel(list.coldPathReason, 80);
-  if (!owner || owner === "warm-fallback-cache" || owner === "fallback-source-snapshot") return null;
+  if (!owner || owner === "warm-fallback-cache" || owner === "fallback-source-snapshot") {
+    return appServerThreadListLatencyDecision(list);
+  }
   const prewarmDecision = threadListPrewarmDecision(list, report);
   if (prewarmDecision && prewarmDecision.status === "needs_repair") return prewarmDecision;
   if (owner === "fallback-baseline") {
@@ -326,7 +388,7 @@ function threadListDecision(list = {}, report = {}) {
     };
   }
   if (owner === "app-server-thread-list") {
-    return {
+    return appServerThreadListLatencyDecision(list) || {
       status: "needs_repair",
       priority: "H2",
       owner: "app-server-thread-list",

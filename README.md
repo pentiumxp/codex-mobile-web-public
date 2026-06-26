@@ -16,6 +16,41 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-27 Phase B App-Server List Latency Decision Slice
+
+本地小切片继续上一片 app-server latency attribution。上一片已经把
+`appServerMs` 拆成 RPC、visible filter、workspace filter、post-process 和数量计数，
+但 Phase B readback decision 还只是记录 evidence，没有真正把 2 秒级列表慢点路由到
+下一步 owner。
+
+本切片不改变运行路径，只让 `phase-b-readback-decision-service` 消费这些字段：
+
+- `appServerMs < 1000`：不改变 decision，避免把正常波动升级为 H2。
+- `appServerRpcMs` 主导：owner=`app-server-thread-list-rpc`，nextAction=
+  `investigate-app-server-thread-list-rpc`。
+- `appServerVisibleFilterMs` 主导：owner=`thread-list-visible-filter`，nextAction=
+  `optimize-thread-list-visible-filter`。
+- `appServerWorkspaceFilterMs` 主导：owner=`thread-list-workspace-filter`。
+- `appServerPostProcessMs` 主导：owner=`mobile-thread-list-postprocess`。
+- split 不明确但总耗时高：H3 observe，要求继续采样而不是直接改代码。
+
+这样下一次模块部署读回时，Phase B decision 会直接给出 root-cause owner，而不是只显示
+`phase-b-readback ready` 或泛化的 `app-server-thread-list`。该切片仍不 bump
+`CLIENT_BUILD_ID` / PWA shell cache，不单独部署。
+
+验证：
+
+```bash
+node --test test/phase-b-readback-decision-service.test.js
+npm run check
+npm run check:macos
+npm test
+git diff --check
+```
+
+结果：focused `19` passed；`npm test` `1198` passed；`check`、`check:macos`、
+`git diff --check` passed。
+
 ## 2026-06-27 Phase B App-Server List Latency Attribution Slice
 
 本地小切片继续 v535 之后的 Phase B。v535 读回确认 fallback/prewarm 已经不是

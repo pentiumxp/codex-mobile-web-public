@@ -19144,3 +19144,51 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit locally, then continue Phase B using the next production readback
     to decide whether the remaining delay is mux/app-server RPC or Mobile-side
     list post-processing.
+
+## 2026-06-27 - Phase B app-server list latency decision local slice
+
+- Current local state:
+  - Continued after local commit `ac43b73`, which exposed app-server list
+    latency split/count fields but did not yet use them to select the next
+    Phase B owner.
+- Root-cause boundary:
+  - Symptom/risk: after latency attribution, a high warm-list `appServerMs`
+    could still be classified as ready or generic app-server list work, leaving
+    the next action ambiguous.
+  - Failing layer: Phase B readback decision policy, not `/api/threads` runtime
+    behavior, app-server RPC, fallback/prewarm, projection detail reads, or
+    frontend rendering.
+  - Violated invariant: readback decision should convert bounded latency
+    evidence into a concrete root-cause owner/nextAction when the split is
+    strong enough, and otherwise record an H3 observation rather than guessing.
+- Changes:
+  - `adapters/phase-b-readback-decision-service.js` now treats
+    `appServerMs >= 1000` on warm/source-snapshot/app-server-list paths as an
+    attribution target.
+  - Dominant `appServerRpcMs` routes to `app-server-thread-list-rpc`.
+  - Dominant `appServerVisibleFilterMs` routes to
+    `thread-list-visible-filter`.
+  - Dominant `appServerWorkspaceFilterMs` routes to
+    `thread-list-workspace-filter`.
+  - Dominant `appServerPostProcessMs` routes to
+    `mobile-thread-list-postprocess`.
+  - Split-known but non-dominant high latency becomes H3 observe with
+    `capture-next-app-server-list-latency-sample`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`,
+    `docs/MODULES.md`, and focused decision tests.
+- Validation:
+  - `node --test test/phase-b-readback-decision-service.test.js` passed
+    (`19` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `npm test` passed (`1198` tests).
+  - `git diff --check` passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache
+    bump. This is a local readback-decision slice to batch into the next Phase
+    B module deploy.
+- Next:
+  - Run focused/full checks, commit locally, then continue Phase B with either
+    a merge/decorate timing split if production shows residual
+    `appServerMs - rpc - filter` time, or the concrete owner returned by the
+    next deployed readback.
