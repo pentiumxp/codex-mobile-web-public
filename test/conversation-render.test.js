@@ -1881,6 +1881,10 @@ test("loading and thread-list state preserve locally visible live turns", () => 
   assert.doesNotMatch(functionBody("loadThread"), /postPerformanceEvent\("thread_detail_first_paint", firstPaintPerformance\)/);
   assert.doesNotMatch(functionBody("loadThread"), /threadHasReusableLoadedDetailState\(state\.currentThread\)/);
   assert.doesNotMatch(functionBody("loadThread"), /threadHasLoadedDetailState\(state\.currentThread\)/);
+  assert.match(functionBody("loadThread"), /const firstPaintPreRenderPlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintPreRenderEffects\(\{[\s\S]*threadId,[\s\S]*hasEvents: Boolean\(state\.events\),[\s\S]*\}\);/);
+  assert.match(functionBody("loadThread"), /applyThreadDetailPostRenderEffectsPlan\(firstPaintPreRenderPlan, \{ thread: state\.currentThread \}\);/);
+  assert.match(functionBody("loadThread"), /const firstPaintDraftRestorePlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintDraftRestoreEffects\(\);[\s\S]*applyThreadDetailPostRenderEffectsPlan\(firstPaintDraftRestorePlan, \{ thread: state\.currentThread \}\);/);
+  assert.doesNotMatch(functionBody("loadThread"), /localStorage\.setItem\(STORAGE_THREAD_ID, threadId\);\s*\n\s*draftStore\.setTargetKey\(""\);\s*\n\s*followThreadOpenToBottom\(threadId\);/);
   assert.match(functionBody("loadThreads"), /threadListSummaryFromDetailThread\(thread\) \|\| thread/);
   assert.match(functionSourceFrom(appJs, "renderCurrentThread"), /let thread = state\.currentThread;/);
   assert.match(functionBody("renderCurrentThread"), /threadDetailStateApi\.planSummaryOnlyCurrentThreadRecovery\(\{/);

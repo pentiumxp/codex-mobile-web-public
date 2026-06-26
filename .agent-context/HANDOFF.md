@@ -17736,6 +17736,63 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit locally, then continue Phase A current-thread render authority or
     batch the accumulated module for one deploy/readback when requested.
 
+## 2026-06-27 - Latest tail marker: Phase A first-paint pre-render effects local slice
+
+- Current local state:
+  - Continued Phase A `loadThread()` ownership cleanup after `b34f173`.
+  - Loading-shell post-state ordering now goes through a plan, but the API
+    first-paint success path still directly owned several fixed local-state
+    side effects after merge and before conversation render.
+  - This slice moves first-paint pre-render local-state preparation and the
+    timed draft restore effect into `public/thread-detail-render-plan.js`.
+- Root-cause boundary:
+  - Symptom/risk: successful first-paint detail opens still had a hand-written
+    localStorage/draft/follow/EventSource/draft-restore sequence inside
+    `loadThread()`, separate from the now-planned loading-shell, post-render,
+    post-timing, and telemetry sequences.
+  - Failing layer: frontend API first-paint pre-render side-effect ownership,
+    not projection cache selection, app-server detail reads, server projection,
+    DOM patch selection, task-card routing, Home AI diagnostic intake, or
+    shell/cache.
+  - Violated invariant: fixed thread-detail side-effect ordering should be
+    declared by pure planning helpers, while app code executes the real
+    localStorage/draft-store/EventSource/DOM effects and preserves timing
+    boundaries.
+- Changes:
+  - `public/thread-detail-render-plan.js` now exports
+    `planThreadDetailFirstPaintPreRenderEffects()` and
+    `planThreadDetailFirstPaintDraftRestoreEffects()`.
+  - The pre-render plan declares persist-current-thread-id,
+    clear-draft-target-key, follow-thread-open-to-bottom, and optional
+    connect-events when app runtime state says an EventSource exists.
+  - The draft-restore plan keeps `restore-draft-for-current-target` in its own
+    timed block so `draftRestoreMs` preserves the previous scope.
+  - `public/app.js` applies both plans in `loadThread()` after post-merge and
+    before Composer/thread-list/conversation render timing.
+  - Updated `test/thread-detail-render-plan.test.js`,
+    `test/mobile-viewport.test.js`, `test/conversation-render.test.js`, and
+    `test/composer-draft.test.js`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation so far:
+  - Focused:
+    `node --test test/thread-detail-render-plan.test.js test/mobile-viewport.test.js test/conversation-render.test.js test/composer-draft.test.js test/turn-scroll-controls.test.js`
+    passed (`201` tests).
+  - Syntax:
+    `node --check public/thread-detail-render-plan.js && node --check public/app.js && node --check test/thread-detail-render-plan.test.js && node --check test/mobile-viewport.test.js && node --check test/conversation-render.test.js && node --check test/composer-draft.test.js`
+    passed.
+- Deployment:
+  - Not deployed yet. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache
+    bump. This remains a local Phase A ownership slice to batch with the next
+    module validation/deploy.
+- Progress:
+  - Overall architecture optimization is about `75%`.
+  - Phase A frontend render/projection ownership is about `85%`.
+- Next:
+  - Run full validation, commit locally, then continue Phase A current-thread
+    render authority or batch the accumulated module for one deploy/readback
+    when requested.
+
 ## 2026-06-27 - Latest tail marker: Phase A loading-shell post-state effects local slice
 
 - Current local state:

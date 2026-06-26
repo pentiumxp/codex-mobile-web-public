@@ -1286,6 +1286,42 @@ test("thread detail first-paint post-timing effects plan preserves consistency b
   });
 });
 
+test("thread detail first-paint pre-render effects plan preserves local open ordering", () => {
+  assert.deepEqual(renderPlan.planThreadDetailFirstPaintPreRenderEffects({
+    threadId: "thread-1",
+    hasEvents: true,
+  }), {
+    effects: [
+      { type: "persist-current-thread-id", threadId: "thread-1" },
+      { type: "clear-draft-target-key" },
+      { type: "follow-thread-open-to-bottom", threadId: "thread-1" },
+      { type: "connect-events" },
+    ],
+    reason: "first-paint-pre-render",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailFirstPaintPreRenderEffects({
+    threadId: "thread-2",
+    hasEvents: false,
+  }), {
+    effects: [
+      { type: "persist-current-thread-id", threadId: "thread-2" },
+      { type: "clear-draft-target-key" },
+      { type: "follow-thread-open-to-bottom", threadId: "thread-2" },
+    ],
+    reason: "first-paint-pre-render",
+  });
+});
+
+test("thread detail first-paint draft-restore effects plan preserves timing target", () => {
+  assert.deepEqual(renderPlan.planThreadDetailFirstPaintDraftRestoreEffects(), {
+    effects: [
+      { type: "restore-draft-for-current-target" },
+    ],
+    reason: "first-paint-draft-restore",
+  });
+});
+
 test("thread detail loading-shell post-state effects plan preserves visible open order", () => {
   assert.deepEqual(renderPlan.planThreadDetailLoadingShellPostStateEffects({
     threadId: "thread-1",

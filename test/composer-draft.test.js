@@ -49,7 +49,9 @@ test("switching targets saves the previous draft and restores the next draft", (
 
   const loadThreadBody = functionBody("loadThread");
   assert.match(loadThreadBody, /saveCurrentDraftNow\(\)/);
-  assert.match(loadThreadBody, /restoreDraftForCurrentTarget\(\)/);
+  assert.match(loadThreadBody, /planThreadDetailLoadingShellPostStateEffects\(\{/);
+  assert.match(loadThreadBody, /planThreadDetailFirstPaintDraftRestoreEffects\(\)/);
+  assert.match(functionBody("applyThreadDetailPostRenderEffect"), /if \(type === "restore-draft-for-current-target"\) \{[\s\S]*restoreDraftForCurrentTarget\(\);/);
 
   const newThreadBody = functionBody("enterNewThreadDraft");
   assert.match(newThreadBody, /saveCurrentDraftNow\(\)/);
@@ -117,7 +119,8 @@ test("composer runtime selections persist without typed text", () => {
 
   const loadThreadBody = functionBody("loadThread");
   assert.match(loadThreadBody, /state\.currentThread = mergeThreadPreservingVisibleItems/);
-  assert.match(loadThreadBody, /restoreDraftForCurrentTarget\(\);[\s\S]*applyThreadDetailRefreshPostMergeEffectsGroup\(postMergePlan, "composer-render"\)/, "thread load should restore persisted runtime selections");
+  assert.match(loadThreadBody, /const firstPaintDraftRestorePlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintDraftRestoreEffects\(\);/);
+  assert.match(loadThreadBody, /applyThreadDetailPostRenderEffectsPlan\(firstPaintDraftRestorePlan, \{ thread: state\.currentThread \}\);[\s\S]*applyThreadDetailRefreshPostMergeEffectsGroup\(postMergePlan, "composer-render"\)/, "thread load should restore persisted runtime selections");
   assert.match(loadThreadBody, /planThreadDetailLoadingShellPostStateEffects\(\{[\s\S]*threadId,[\s\S]*source,[\s\S]*\}\)/, "loading shell opens should restore target runtime selections through the post-state plan");
   assert.match(functionBody("applyThreadDetailPostRenderEffect"), /if \(type === "restore-draft-for-current-target"\) \{[\s\S]*restoreDraftForCurrentTarget\(\);/);
   assert.match(functionBody("applyThreadDetailPostRenderEffect"), /if \(type === "render-composer-settings"\) \{[\s\S]*renderComposerSettings\(\);/);

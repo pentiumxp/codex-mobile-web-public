@@ -917,6 +917,29 @@
     };
   }
 
+  function planThreadDetailFirstPaintPreRenderEffects(input = {}) {
+    const threadId = compactReason(input.threadId, "");
+    const effects = [
+      { type: "persist-current-thread-id", threadId },
+      { type: "clear-draft-target-key" },
+      { type: "follow-thread-open-to-bottom", threadId },
+    ];
+    if (input.hasEvents) effects.push({ type: "connect-events" });
+    return {
+      effects,
+      reason: "first-paint-pre-render",
+    };
+  }
+
+  function planThreadDetailFirstPaintDraftRestoreEffects() {
+    return {
+      effects: [
+        { type: "restore-draft-for-current-target" },
+      ],
+      reason: "first-paint-draft-restore",
+    };
+  }
+
   function planThreadDetailLoadingShellPostStateEffects(input = {}) {
     const threadId = compactReason(input.threadId, "");
     const source = compactReason(input.source, "").slice(0, 40);
@@ -1311,7 +1334,9 @@
     planThreadDetailCachedCurrentTelemetryEffects,
     planThreadDetailCachedCurrentPostRenderEffects,
     planThreadDetailFirstPaintAfterRenderEffects,
+    planThreadDetailFirstPaintDraftRestoreEffects,
     planThreadDetailFirstPaintPostTimingEffects,
+    planThreadDetailFirstPaintPreRenderEffects,
     planThreadDetailLoadingShellPostStateEffects,
     planThreadDetailFullBackfillPostRenderEffects,
     planThreadDetailFullBackfillTelemetryEffects,

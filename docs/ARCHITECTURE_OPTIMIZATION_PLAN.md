@@ -930,6 +930,13 @@ thread-list render, conversation render, plugin navigation, side-chat silent
 load, connection state, activity marker, and load watchdog startup. App code
 still executes the real DOM/state/timer/network effects, but `loadThread()` no
 longer owns this loading-shell visible-open sequence inline.
+API first-paint pre-render local-state preparation is also planned explicitly:
+`planThreadDetailFirstPaintPreRenderEffects` declares current thread id
+persistence, draft-target clearing, follow-to-bottom, and optional EventSource
+reconnect after the successful detail response is merged. The paired
+`planThreadDetailFirstPaintDraftRestoreEffects` keeps draft restoration as its
+own timed effect so `draftRestoreMs` preserves the previous scope while
+removing another fixed direct call from `loadThread()`.
 First-paint telemetry/reporting side-effect ordering now also lives in
 `public/thread-detail-render-plan.js`:
 `planThreadDetailFirstPaintTelemetryEffects` declares the fixed sequence for

@@ -9070,13 +9070,15 @@ async function loadThread(threadId, options = {}) {
   state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
   const postMergePlan = threadDetailRenderPlanApi.planThreadDetailRefreshPostMergeEffects();
   applyThreadDetailRefreshPostMergeEffectsGroup(postMergePlan, "merge");
-  localStorage.setItem(STORAGE_THREAD_ID, threadId);
-  draftStore.setTargetKey("");
-  followThreadOpenToBottom(threadId);
-  if (state.events) connectEvents();
+  const firstPaintPreRenderPlan = threadDetailRenderPlanApi.planThreadDetailFirstPaintPreRenderEffects({
+    threadId,
+    hasEvents: Boolean(state.events),
+  });
+  applyThreadDetailPostRenderEffectsPlan(firstPaintPreRenderPlan, { thread: state.currentThread });
   const mergeMs = roundedDurationMs(mergeStartedAt);
   const draftRestoreStartedAt = nowPerfMs();
-  restoreDraftForCurrentTarget();
+  const firstPaintDraftRestorePlan = threadDetailRenderPlanApi.planThreadDetailFirstPaintDraftRestoreEffects();
+  applyThreadDetailPostRenderEffectsPlan(firstPaintDraftRestorePlan, { thread: state.currentThread });
   const draftRestoreMs = roundedDurationMs(draftRestoreStartedAt);
   const composerRenderStartedAt = nowPerfMs();
   applyThreadDetailRefreshPostMergeEffectsGroup(postMergePlan, "composer-render");
@@ -9240,6 +9242,15 @@ function applyThreadDetailRefreshCompletionEffectsPlan(plan) {
 function applyThreadDetailPostRenderEffect(effect, context = {}) {
   const item = effect && typeof effect === "object" ? effect : {};
   const type = String(item.type || "");
+  if (type === "persist-current-thread-id") {
+    const threadId = String(item.threadId || "");
+    if (threadId) localStorage.setItem(STORAGE_THREAD_ID, threadId);
+    return true;
+  }
+  if (type === "clear-draft-target-key") {
+    draftStore.setTargetKey("");
+    return true;
+  }
   if (type === "follow-thread-open-to-bottom") {
     followThreadOpenToBottom(String(item.threadId || ""));
     return true;
@@ -9254,6 +9265,10 @@ function applyThreadDetailPostRenderEffect(effect, context = {}) {
   }
   if (type === "sync-active-turn-from-thread") {
     syncActiveTurnFromThread();
+    return true;
+  }
+  if (type === "connect-events") {
+    connectEvents();
     return true;
   }
   if (type === "render-thread-list") {
