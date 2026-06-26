@@ -145,7 +145,11 @@ Current acceleration targets:
    partial active-overlay window, and re-run the proof gate. Ordinary
    projection reads still reject stale or partial windows, and the active
    response is emitted only if the proof gate returns
-   `use-projection-overlay`.
+   `use-projection-overlay`. Production readback after deploying this active
+   overlay window slice showed `readMode=projection-active-overlay`,
+   `activeOverlayGate=ready`, and `activeOverlayReason=overlay-evidence-complete`;
+   the remaining readback decision is only H3 observation for thread-list
+   deferred fallback while active thread detail is prioritized.
 2. Thread-list cold starts no longer hide source collection inside the fallback
    cache policy. The local `thread-list-fallback-baseline-service` slice now
    owns state DB / rollout session / session-index source collection,

@@ -72,8 +72,14 @@ Phase B 的活跃大线程读取风险已经从 proof gate 推进到真实 provi
   这个 partial window 不持久化、不成为普通 projection cache，也不会放宽普通
   projection 的 staleness / active-turn 规则。
 
-这个 follow-up 仍是本地小切片，按新的节奏等待 active-detail 模块凑齐后统一部署和生产读回。
-它不是 UI 去重、不是强制刷新，也不是新的 fallback cache。
+这个 follow-up 已随 `c1497eb` 部署到 Mac 生产并完成 Phase B readback。
+生产 `/api/threads/:id?mode=recent` 返回 `readMode=projection-active-overlay`、
+`activeOverlayGate=ready`、`activeOverlayReason=overlay-evidence-complete`，
+detail 冷路径归类为 `warm-projection-active-overlay`。本次没有修改静态 shell，
+所以 `clientBuildId` / `shellCacheName` 仍为 `codex-mobile-shell-v531`。
+这不是 UI 去重、不是强制刷新，也不是新的 fallback cache；后续如果仍有大
+session 慢路径，应优先看 thread-list deferred/cold fallback 和剩余客户端
+render/patch 指标，而不是回退 active detail overlay。
 
 ## 2026-06-26 Thread List Fallback Baseline Service
 

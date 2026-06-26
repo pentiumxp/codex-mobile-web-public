@@ -14456,3 +14456,50 @@ The previous full handoff was archived and should be opened only when old proven
     `scripts/codex-mobile-phase-b-readback-smoke.js --require-active-overlay`
     to see whether production reaches `projection-active-overlay` or exposes
     the next proof-gate reason.
+
+## 2026-06-26 - active overlay window deployed and readback ready
+
+- Deployment:
+  - Committed `c1497eb` (`use bounded active overlay window`) after focused,
+    full, static, macOS, and diff-check validation.
+  - Deployed through Home AI central macOS plugin deploy path with reason
+    `codex-mobile-active-overlay-window`.
+  - Deploy source ref: `c1497eb8ac3c`, dirty false.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T111129Z-plugin-codex-mobile-web-codex-mobile-active-overlay-window`.
+  - Health check returned `version=0.1.11`,
+    `clientBuildId=0.1.11|codex-mobile-shell-v531`, and
+    `shellCacheName=codex-mobile-shell-v531`. Static shell files were not
+    changed, so no shell/cache bump was expected.
+- Production readback:
+  - Command:
+    `node scripts/codex-mobile-phase-b-readback-smoke.js --server http://127.0.0.1:8787 --require-active-overlay --json`
+    passed.
+  - Thread list readback:
+    - `coldPathOwner=deferred-fallback`,
+      `coldPathReason=active-thread-detail`, total about `284ms`.
+    - Fallback baseline was intentionally deferred while active thread detail
+      was prioritized.
+  - Detail readback:
+    - `readMode=projection-active-overlay`.
+    - `readDecision=projection-active-overlay`.
+    - `coldPathOwner=warm-path`.
+    - `coldPathReason=warm-projection-active-overlay`.
+    - `projectionState=hit`.
+    - `activeOverlayAction=use-projection-overlay`.
+    - `activeOverlayReason=overlay-evidence-complete`.
+    - `activeOverlayGate=ready`.
+    - `activeOverlayNextAction=observe-active-overlay-readback`.
+  - Decision:
+    - `status=observe`, `priority=H3`, owner
+      `thread-list-deferred-fallback`, next action
+      `observe-deferred-fallback-before-optimizing`.
+- Current conclusion:
+  - The active-detail module has moved past the prior production blockers:
+    `missing-active-turn-id`, `dynamic-summary-stale`, and
+    `missing-projection-window`.
+  - Active thread detail can now avoid full `thread/read` through
+    proof-gated `projection-active-overlay`.
+  - The next Phase B target should be thread-list deferred/cold fallback
+    observation or client render/patch ownership, depending on fresh live
+    diagnostics. Do not regress active-overlay proof-gate strictness.
