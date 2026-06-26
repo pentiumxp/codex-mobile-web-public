@@ -910,6 +910,12 @@ Composer control refresh, conditional overlay-menu close, conditional full
 detail backfill, and Usage backfill. App code still evaluates runtime
 conditions and performs the actual DOM/timer/network side effects, but
 `loadThread()` no longer owns this fixed post-render ordering inline.
+First-paint after-render history auto-backfill is also planned explicitly:
+`planThreadDetailFirstPaintAfterRenderEffects` declares the auto-backfill effect
+that runs after `renderCurrentThread({ stickToBottom: true })` and before
+`postRenderStartedAt`. This keeps the original performance timing boundary
+while removing the last direct first-paint history auto-backfill call from
+`loadThread()`.
 First-paint telemetry/reporting side-effect ordering now also lives in
 `public/thread-detail-render-plan.js`:
 `planThreadDetailFirstPaintTelemetryEffects` declares the fixed sequence for

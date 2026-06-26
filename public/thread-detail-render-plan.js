@@ -890,6 +890,20 @@
     };
   }
 
+  function planThreadDetailFirstPaintAfterRenderEffects(input = {}) {
+    const seq = Number(input.seq);
+    return {
+      effects: [
+        {
+          type: "history-auto-backfill",
+          seq: Number.isFinite(seq) ? seq : 0,
+          source: compactReason(input.source, "first-paint").slice(0, 40),
+        },
+      ],
+      reason: "first-paint-after-render",
+    };
+  }
+
   function planThreadDetailCachedCurrentPostRenderEffects(input = {}) {
     const seq = Number(input.seq);
     const threadId = compactReason(input.threadId, "");
@@ -1261,6 +1275,7 @@
     normalizeSignature,
     planThreadDetailCachedCurrentTelemetryEffects,
     planThreadDetailCachedCurrentPostRenderEffects,
+    planThreadDetailFirstPaintAfterRenderEffects,
     planThreadDetailFullBackfillPostRenderEffects,
     planThreadDetailFullBackfillTelemetryEffects,
     planThreadDetailFirstPaintPostRenderEffects,

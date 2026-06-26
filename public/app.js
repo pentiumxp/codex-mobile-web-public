@@ -9095,7 +9095,11 @@ async function loadThread(threadId, options = {}) {
   const conversationRenderStartedAt = nowPerfMs();
   renderCurrentThread({ stickToBottom: true });
   const conversationRenderMs = roundedDurationMs(conversationRenderStartedAt);
-  maybeAutoBackfillThreadHistory(state.currentThread, { seq, source: "first-paint" });
+  const firstPaintAfterRenderPlan = threadDetailRenderPlanApi.planThreadDetailFirstPaintAfterRenderEffects({
+    seq,
+    source: "first-paint",
+  });
+  applyThreadDetailPostRenderEffectsPlan(firstPaintAfterRenderPlan, { thread: state.currentThread });
   const postRenderStartedAt = nowPerfMs();
   const firstPaintPostRenderPlan = threadDetailRenderPlanApi.planThreadDetailFirstPaintPostRenderEffects({
     threadId,

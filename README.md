@@ -191,6 +191,29 @@ clear 和 side-chat silent load。这让 cached-current 与 first-paint/full-bac
 该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为 Phase A
 本地/private commit 累积。
 
+## 2026-06-27 Phase A First-Paint After-Render Planning Slice
+
+本地小切片继续收敛 `loadThread()` 的 API first-paint 路径。此前
+first-paint 在 `renderCurrentThread({ stickToBottom: true })` 之后仍直接调用
+`maybeAutoBackfillThreadHistory(state.currentThread, { seq, source: "first-paint" })`。
+cached-current 的同类 auto-backfill 已经进入 post-render effect plan，因此
+first-paint 留下这条内联调用会继续让线程打开后的历史补齐边界不一致。
+
+本次修复：
+
+- `public/thread-detail-render-plan.js` 新增
+  `planThreadDetailFirstPaintAfterRenderEffects()`，声明 first-paint render 之后、
+  post-render timing 开始之前的 history auto-backfill effect。
+- `public/app.js` 通过 `applyThreadDetailPostRenderEffectsPlan()` 执行该 effect；
+  `postRenderStartedAt` 仍在 after-render effect 之后开始，保持原性能计时口径。
+- `test/thread-detail-render-plan.test.js` 覆盖 effect 顺序、source 截断和非法
+  seq 归零。
+- `test/mobile-viewport.test.js` 覆盖 app wiring，防止 `loadThread()` 重新内联
+  first-paint auto-backfill 调用。
+
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为 Phase A
+本地/private commit 累积。
+
 ## 2026-06-26 Phase C Pane Count State Planning Slice
 
 本地小切片开始推进 Phase C 的 pane-state 架构化。此前平铺模式的自动窗口数、

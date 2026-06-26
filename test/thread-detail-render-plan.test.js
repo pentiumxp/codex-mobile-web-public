@@ -1244,6 +1244,35 @@ test("thread detail first-paint post-render effects plan preserves order and bou
   });
 });
 
+test("thread detail first-paint after-render effects plan preserves auto-backfill boundary", () => {
+  assert.deepEqual(renderPlan.planThreadDetailFirstPaintAfterRenderEffects({
+    seq: 7,
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA",
+  }), {
+    effects: [
+      {
+        type: "history-auto-backfill",
+        seq: 7,
+        source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR",
+      },
+    ],
+    reason: "first-paint-after-render",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailFirstPaintAfterRenderEffects({
+    seq: "bad",
+  }), {
+    effects: [
+      {
+        type: "history-auto-backfill",
+        seq: 0,
+        source: "first-paint",
+      },
+    ],
+    reason: "first-paint-after-render",
+  });
+});
+
 test("thread detail cached-current post-render effects plan preserves order and runtime guards", () => {
   assert.deepEqual(renderPlan.planThreadDetailCachedCurrentPostRenderEffects({
     threadId: "thread-1",
