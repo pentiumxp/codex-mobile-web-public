@@ -171,6 +171,61 @@
     };
   }
 
+  function layoutCapacity(input = {}, options = {}) {
+    const maxPanes = maxPaneLimit(options.capacityMaxPanes || options.maxPanes || DEFAULT_USER_MAX_PANES);
+    const value = Object.prototype.hasOwnProperty.call(input, "recommendedMaxPanes")
+      ? input.recommendedMaxPanes
+      : input.maxPanes;
+    const parsed = Math.floor(Number(value || 1));
+    return Math.max(1, Math.min(maxPanes, Number.isFinite(parsed) && parsed > 0 ? parsed : 1));
+  }
+
+  function normalizeColumnGroups(values = []) {
+    return (Array.isArray(values) ? values : [])
+      .map((group) => uniqueIds(Array.isArray(group) ? group : []))
+      .filter((group) => group.length);
+  }
+
+  function paneDisplayLayoutPlan(input = {}, options = {}) {
+    const layout = input.layout && typeof input.layout === "object" ? input.layout : input;
+    const ids = uniqueIds(input.ids || input.threadIds || []);
+    const effectivePaneCount = normalizePaneCount(
+      Object.prototype.hasOwnProperty.call(input, "effectivePaneCount") ? input.effectivePaneCount : input.count,
+      { fallback: 0, maxPanes: options.maxPanes },
+    );
+    const count = Math.max(1, ids.length ? ids.length : (effectivePaneCount || 1));
+    const capacityColumns = Math.max(1, Math.floor(Number(layout && layout.columns || 1)) || 1);
+    const columns = Math.max(1, Math.min(capacityColumns, count));
+    const splitPairs = Array.isArray(input.splitPairs || input.paneSplitPairs)
+      ? (input.splitPairs || input.paneSplitPairs)
+      : [];
+    const groupFn = typeof options.threadTileColumnGroups === "function"
+      ? options.threadTileColumnGroups
+      : null;
+    const plannedGroups = groupFn
+      ? groupFn({ ids, columns, splitPairs })
+      : ids.slice(0, count).map((id) => [id]);
+    const columnGroups = normalizeColumnGroups(plannedGroups);
+    const rows = Math.max(1, ...columnGroups.map((group) => group.length || 1));
+    const displayLayout = Object.assign({}, layout, {
+      capacityPanes: layoutCapacity(layout, options),
+      visiblePanes: count,
+      columns: Math.max(1, columnGroups.length || columns),
+      rows,
+      columnGroups,
+    });
+    return {
+      action: "pane-display-layout",
+      reason: ids.length ? "thread-ids" : "count-only",
+      count,
+      capacityColumns,
+      columns,
+      rows,
+      columnGroups,
+      displayLayout,
+    };
+  }
+
   function paneScrollMetrics(input = {}, options = {}) {
     const scrollHeight = nonNegativeNumber(input.scrollHeight);
     const clientHeight = nonNegativeNumber(input.clientHeight);
@@ -1251,6 +1306,7 @@
     dropPaneIntent,
     effectiveSelectedThreadId,
     idsEqual,
+    layoutCapacity,
     normalizeDisplaySettings,
     normalizeOperationMode,
     normalizePaneCount,
@@ -1265,6 +1321,7 @@
     paneBottomButtonPlan,
     paneCountChangePlan,
     paneCountStatePlan,
+    paneDisplayLayoutPlan,
     paneSelectionPlan,
     paneSlotMutationEffectsPlan,
     paneScrollHoldPlan,

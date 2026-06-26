@@ -73,7 +73,9 @@ test("thread tile layout is wired as an explicit shell policy", () => {
   assert.match(layoutBody, /desiredPaneCount: normalizeThreadTilePaneCount\(state\.threadTilePaneCount, 0\)/);
   assert.match(layoutBody, /verticalChromePx: threadTileVerticalChromePx\(\)/);
   assert.match(appJs, /function effectiveThreadTilePaneCount\(/);
-  assert.match(functionBody(appJs, "threadTileLayoutCapacity"), /layout\.recommendedMaxPanes \|\| layout\.maxPanes/);
+  assert.match(functionBody(appJs, "threadTileLayoutCapacity"), /threadTileStatePolicy\.layoutCapacity/);
+  assert.match(functionBody(appJs, "threadTileDisplayLayout"), /threadTileStatePolicy\.paneDisplayLayoutPlan/);
+  assert.match(functionBody(appJs, "threadTileDisplayLayout"), /threadTileLayoutPolicy\.threadTileColumnGroups/);
   assert.match(functionBody(appJs, "threadTilePaneCountState"), /threadTileStatePolicy\.paneCountStatePlan/);
   assert.match(functionBody(appJs, "threadTilePaneCountState"), /candidateIds: defaultThreadTileCandidateIds\(layout, \{ maxPanes: capacity \}\)/);
   assert.match(functionBody(appJs, "threadTilePaneCountState"), /maxCandidateIds: defaultThreadTileCandidateIds\(layout, \{ maxPanes: THREAD_TILE_USER_MAX_PANES \}\)/);

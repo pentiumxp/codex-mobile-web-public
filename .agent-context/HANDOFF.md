@@ -16195,3 +16195,54 @@ The previous full handoff was archived and should be opened only when old proven
   - Only bounded file paths, test counts, and architecture state are recorded.
     No secrets, cookies, launch tokens, private thread bodies, task-card bodies,
     uploads, screenshots, or long logs are included.
+
+## 2026-06-27 - Phase C pane display layout planning local slice
+
+- Latest local slice:
+  - Continued Phase C pane-state architecture after `2d9fe2e`
+    (`plan thread tile operation refresh`). This slice is local/private only
+    and is not deployed by design.
+- Root-cause boundary:
+  - Symptom/risk: tile mode display layout still let `public/app.js` directly
+    decide visible pane count, layout capacity, actual columns, rows, and
+    `columnGroups`. Those decisions govern the user's overflow/split behavior,
+    such as five panes in a four-column capacity becoming one column-level
+    up/down split instead of a whole-board wrap.
+  - Failing layer: frontend thread-tile pane display layout state, not CSS,
+    DOM templates, server-saved display settings, detail-load concurrency,
+    server projection, task-card protocol, or shell/cache.
+  - Violated invariant: `public/app.js` should supply current layout/id/split
+    facts and render the result; deterministic pane display layout planning
+    should live in a pure helper with focused tests.
+- Changes:
+  - `public/thread-tile-state.js` now exposes `layoutCapacity()` and
+    `paneDisplayLayoutPlan()` for display capacity, visible panes, capacity
+    columns, actual columns, rows, overflow column groups, and explicit
+    split-pair grouping.
+  - `public/app.js` now calls those helpers from `threadTileLayoutCapacity()`
+    and `threadTileDisplayLayout()` while keeping DOM/render side effects.
+  - `test/thread-tile-state.test.js` covers five panes in four columns and
+    explicit split-pair grouping; `test/thread-tile-layout-ui.test.js` now
+    guards the new helper boundary.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md` with the Phase C boundary.
+- Validation:
+  - Focused:
+    `node --test test/thread-tile-state.test.js test/thread-tile-layout.test.js test/thread-tile-layout-ui.test.js`
+    passed (`48` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`1130` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Not deployed. No `CLIENT_BUILD_ID` / PWA shell cache bump. This remains a
+    small Phase C local slice to batch with the next pane-state/split module.
+- Next:
+  - Commit locally, then continue Phase C with split sizing controls,
+    measured pane detail-load concurrency tuning, browser/visual validation,
+    or transition back to Phase D task-card runtime hardening before one batch
+    deploy.
+- Privacy:
+  - Only bounded file paths, test counts, and architecture state are recorded.
+    No secrets, cookies, launch tokens, private thread bodies, task-card bodies,
+    uploads, screenshots, or long logs are included.

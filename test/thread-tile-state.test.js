@@ -31,6 +31,53 @@ test("thread tile state normalizes split pairs through layout policy", () => {
   ]);
 });
 
+test("thread tile state plans display layout and overflow split columns", () => {
+  assert.equal(state.layoutCapacity({ recommendedMaxPanes: 9, maxPanes: 12 }, { capacityMaxPanes: 6 }), 6);
+
+  const plan = state.paneDisplayLayoutPlan({
+    layout: {
+      enabled: true,
+      columns: 4,
+      rows: 1,
+      maxPanes: 6,
+      recommendedMaxPanes: 6,
+      availableWidth: 3000,
+    },
+    ids: ["a", "b", "c", "d", "e"],
+    effectivePaneCount: 5,
+    splitPairs: [],
+  }, {
+    capacityMaxPanes: layout.DEFAULT_MAX_PANES,
+    maxPanes: 12,
+    threadTileColumnGroups: layout.threadTileColumnGroups,
+  });
+
+  assert.equal(plan.action, "pane-display-layout");
+  assert.equal(plan.count, 5);
+  assert.equal(plan.displayLayout.capacityPanes, 6);
+  assert.equal(plan.displayLayout.visiblePanes, 5);
+  assert.equal(plan.displayLayout.columns, 4);
+  assert.equal(plan.displayLayout.rows, 2);
+  assert.deepEqual(plan.displayLayout.columnGroups, [["a"], ["b"], ["c"], ["d", "e"]]);
+});
+
+test("thread tile state keeps explicit split pairs in display layout", () => {
+  const plan = state.paneDisplayLayoutPlan({
+    layout: { enabled: true, columns: 4, rows: 1, maxPanes: 6, recommendedMaxPanes: 6 },
+    ids: ["a", "b", "c", "d", "e"],
+    effectivePaneCount: 5,
+    splitPairs: [{ anchorId: "b", childId: "e" }],
+  }, {
+    capacityMaxPanes: layout.DEFAULT_MAX_PANES,
+    maxPanes: 12,
+    threadTileColumnGroups: layout.threadTileColumnGroups,
+  });
+
+  assert.deepEqual(plan.displayLayout.columnGroups, [["a"], ["b", "e"], ["c"], ["d"]]);
+  assert.equal(plan.displayLayout.columns, 4);
+  assert.equal(plan.displayLayout.rows, 2);
+});
+
 test("thread tile state selects active pane without depending on app globals", () => {
   assert.equal(state.effectiveSelectedThreadId({
     enabled: false,

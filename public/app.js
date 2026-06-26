@@ -12400,10 +12400,10 @@ function normalizeThreadTilePaneCount(value, fallback = 0) {
 }
 
 function threadTileLayoutCapacity(layout = threadTileLayout()) {
-  return Math.max(1, Math.min(
-    threadTileLayoutPolicy.DEFAULT_MAX_PANES,
-    Math.floor(Number(layout && (layout.recommendedMaxPanes || layout.maxPanes) || 1)) || 1,
-  ));
+  return threadTileStatePolicy.layoutCapacity(layout, {
+    capacityMaxPanes: threadTileLayoutPolicy.DEFAULT_MAX_PANES,
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+  });
 }
 
 function defaultThreadTileCandidateIds(layout = threadTileLayout(), options = {}) {
@@ -12452,23 +12452,16 @@ function effectiveThreadTilePaneCount(layout = threadTileLayout()) {
 }
 
 function threadTileDisplayLayout(layout = threadTileLayout(), ids = []) {
-  const count = Math.max(1, Array.isArray(ids) && ids.length ? ids.length : effectiveThreadTilePaneCount(layout));
-  const capacityColumns = Math.max(1, Math.floor(Number(layout && layout.columns || 1)) || 1);
-  const columns = Math.max(1, Math.min(capacityColumns, count));
-  const columnGroups = threadTileLayoutPolicy.threadTileColumnGroups
-    ? threadTileLayoutPolicy.threadTileColumnGroups({
-      ids,
-      columns,
-      splitPairs: threadTilePrunedSplitPairs(ids),
-    })
-    : (ids || []).slice(0, count).map((id) => [id]);
-  return Object.assign({}, layout, {
-    capacityPanes: threadTileLayoutCapacity(layout),
-    visiblePanes: count,
-    columns: Math.max(1, columnGroups.length || columns),
-    rows: Math.max(1, ...columnGroups.map((group) => group.length || 1)),
-    columnGroups,
-  });
+  return threadTileStatePolicy.paneDisplayLayoutPlan({
+    layout,
+    ids,
+    effectivePaneCount: effectiveThreadTilePaneCount(layout),
+    splitPairs: threadTilePrunedSplitPairs(ids),
+  }, {
+    capacityMaxPanes: threadTileLayoutPolicy.DEFAULT_MAX_PANES,
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+    threadTileColumnGroups: threadTileLayoutPolicy.threadTileColumnGroups,
+  }).displayLayout;
 }
 
 function normalizeThreadTilePinnedIds(values = []) {

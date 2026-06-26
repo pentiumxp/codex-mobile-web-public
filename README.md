@@ -166,6 +166,37 @@ node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js te
 该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为 Phase C
 本地模块累积，后续与 command detail、split sizing 或浏览器视觉验证一起批量部署。
 
+## 2026-06-27 Phase C Pane Display Layout Planning Slice
+
+本地小切片继续推进 Phase C 的 pane-state ownership。此前平铺模式的
+`threadTileDisplayLayout()` 仍在 `public/app.js` 内联决定 visible panes、
+layout capacity、实际列数、行数和 `columnGroups`。这些规则直接影响“5 个窗口
+在 4 列容量下是否整体换行，还是只让一个目标列上下分屏”的体验，属于平铺窗口
+状态策略，不应继续留在 DOM 渲染编排层。
+
+本次修复：
+
+- `public/thread-tile-state.js` 新增 `layoutCapacity()` 和
+  `paneDisplayLayoutPlan()`，统一规划 layout capacity、visible panes、
+  capacity columns、实际 columns、rows 和 column groups。
+- `public/app.js` 的 `threadTileLayoutCapacity()` 和 `threadTileDisplayLayout()`
+  改为只收集当前 layout、candidate ids、effective pane count 和 split pairs，
+  然后读取 helper 输出的 display layout。
+- focused tests 覆盖 5 个 pane 在 4 列容量下生成 4 个 column group，最后一列
+  变成上下分屏；也覆盖显式 split pair 保持在指定列，不移动无关 pane。
+- 不改变 CSS、DOM 结构、server-saved display settings、detail load 并发、
+  server projection、任务卡协议、shell/cache 或部署状态。
+
+闭环验证：
+
+```bash
+node --test test/thread-tile-state.test.js test/thread-tile-layout.test.js test/thread-tile-layout-ui.test.js
+```
+
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为 Phase C
+本地模块累积，后续与 split sizing、pane visual smoke 或任务卡 runtime hardening
+一起批量部署。
+
 ## 2026-06-26 Phase C Pane Scroll Runtime Planning Slice
 
 本地小切片继续推进 Phase C 的 pane-runtime ownership。此前每个平铺窗口的

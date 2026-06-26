@@ -1006,7 +1006,11 @@ execution. Effective pane-count state now also lives there: layout capacity,
 default candidate ids, maximum candidate ids, running/current thread ids, and
 explicit user pane count are normalized into automatic, effective, min, and
 max pane counts as one bounded plan while `public/app.js` only supplies current
-thread/list facts. Runtime detail reads are now capped separately from visible
+thread/list facts. Pane display layout planning now also lives there: layout
+capacity, visible panes, capacity columns, actual columns, rows, overflow
+column groups, and explicit split-pair grouping are helper-owned while
+`public/app.js` keeps DOM rendering and supplies current layout/id/split facts.
+Runtime detail reads are now capped separately from visible
 pane count, so wide screens can still show more panes without starting every
 large thread detail read at once. Pane-local scroll runtime policy now also
 lives there: near-bottom metrics, hold clear/remember decisions, bottom-jump
@@ -1066,11 +1070,12 @@ Target:
   is also outside app.js; detail-load lifecycle side-effect planning is also
   outside app.js; detail-load queue/abort/drain planning is also outside app.js;
   automatic/effective/min/max pane-count planning is also outside app.js;
+  pane display layout and overflow split column planning is also outside app.js;
   pane-local scroll hold/bottom-button/restore planning is also outside app.js;
   refresh, first-paint, and full-backfill performance event field ownership is
   also outside app.js;
   operation card content and final template planning are now outside app.js;
-  split sizing, measured tuning of the max concurrent detail read
+  split sizing controls, measured tuning of the max concurrent detail read
   value, and per-pane draft/runtime ownership remain the next boundary.
 - Keep `public/app.js` responsible for DOM wiring, patch application, and event
   binding only.
