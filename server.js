@@ -13236,7 +13236,7 @@ function rolloutEntryTimestampMs(entry) {
   return timestampToMs(entry.timestamp || payload.timestamp || payload.created_at || payload.updated_at);
 }
 
-function readRolloutSessionFallbackThreadFromFile(file, indexEntry = {}) {
+function readRolloutSessionFallbackThreadFromFile(file, indexEntry = {}, options = {}) {
   const rolloutPath = typeof file === "string" ? file : file && file.path;
   const id = threadIdFromRolloutPath(rolloutPath) || String(indexEntry.id || "").trim();
   if (!id || !rolloutPath || isBackupRolloutPath(rolloutPath)) return null;
@@ -13291,8 +13291,25 @@ function readRolloutSessionFallbackThreadFromFile(file, indexEntry = {}) {
     model,
     agent_nickname: agentNickname,
     agent_role: agentRole,
-    status: inferRolloutFallbackStatus(rolloutPath, stat) || undefined,
+    status: options.includeStatus === false ? undefined : inferRolloutFallbackStatus(rolloutPath, stat) || undefined,
   });
+}
+
+function attachRolloutFallbackStatus(thread, options = {}) {
+  if (!thread || typeof thread !== "object") return thread;
+  const rolloutPath = rolloutPathForThread(thread);
+  if (!rolloutPath) return thread;
+  let stat = options.stat || null;
+  if (!stat) {
+    try {
+      stat = fs.statSync(rolloutPath);
+    } catch (_) {
+      return thread;
+    }
+  }
+  const status = inferRolloutFallbackStatus(rolloutPath, stat, options.nowMs || Date.now());
+  if (!status) return thread;
+  return Object.assign({}, thread, { status });
 }
 
 function readRolloutSessionFallback(limit = 80, filters = {}) {
@@ -13305,10 +13322,10 @@ function readRolloutSessionFallback(limit = 80, filters = {}) {
     const id = threadIdFromRolloutPath(file && file.path);
     if (!id || seen.has(id) || archivedIds.has(id)) continue;
     seen.add(id);
-    const thread = readRolloutSessionFallbackThreadFromFile(file, indexEntries.get(id) || { id });
+    const thread = readRolloutSessionFallbackThreadFromFile(file, indexEntries.get(id) || { id }, { includeStatus: false });
     if (thread) threads.push(thread);
   }
-  return filterFallbackThreads(threads, filters).slice(0, limit);
+  return filterFallbackThreads(threads, filters).slice(0, limit).map((thread) => attachRolloutFallbackStatus(thread));
 }
 
 function readRolloutSessionFallbackThread(threadId) {
@@ -15124,6 +15141,7 @@ if (require.main === module) {
 module.exports = {
   approvalResponsePayload,
   anyThreadMatchesVisibleWorkspace,
+  attachRolloutFallbackStatus,
   applyLocalActiveThreadStatusToSummary,
   codeGraphMcpElicitationToolName,
   codeGraphReadOnlyMcpElicitationDecision,

@@ -134,11 +134,19 @@ cache policy 和 baseline 构建边界混在一起。
   session-index source set，再重新套用原有 filter/merge/limit。诊断字段会暴露
   `fallbackSourceSnapshotHit`、snapshot age/build/raw count，用来证明是否避免了
   重扫 source。
+- server-only follow-up 降低首次 source snapshot 构建里的 rollout I/O。线程列表
+  fallback 读取 rollout 摘要时先只读 head/stat 来获得 id、cwd、标题、mtime 和
+  agent metadata，经过可见性/cwd/search 过滤并截断最终候选后，才对保留下来的
+  rows 读取 tail 推断 `active` / `completed` / stale-active 状态。单线程
+  `readRolloutSessionFallbackThread()` 和默认 helper 仍保持旧语义，直接返回带状态的
+  summary；列表冷路径只是把 tail/status 推迟到最终候选，避免对被过滤掉的 rollout
+  文件做状态扫描。
 
-这不是新的 fallback 行为，也不是 prewarm/persist。source 内部实现、route
-aggregation、defer fallback、app-server result merge 都没有改变；readback 只是把
-deferred 之后的完整读和 warm check 证据化。该切片暂不单独部署，按新的节奏等待
-Phase B 模块批量验证后再统一部署。
+这不是新的 fallback 行为，也不是 prewarm/persist。route aggregation、defer
+fallback、app-server result merge 都没有改变；source 层只调整 rollout list
+候选的读取顺序，把昂贵状态扫描延迟到最终候选。readback 仍只把 deferred 之后的
+完整读和 warm check 证据化。该切片暂不单独部署，按新的节奏等待 Phase B 模块
+批量验证后再统一部署。
 
 ## 2026-06-26 v531 Thread Detail Cold-Path Diagnosis
 

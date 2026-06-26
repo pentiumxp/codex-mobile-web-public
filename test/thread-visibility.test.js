@@ -27,6 +27,7 @@ try {
 const {
   anyThreadMatchesVisibleWorkspace,
   applyLocalActiveThreadStatusToSummary,
+  attachRolloutFallbackStatus,
   clearLocalActiveThreadStatus,
   compactThread,
   filterFallbackThreads,
@@ -560,6 +561,50 @@ test("rollout session fallback infers active and completed status from rollout t
   assert.equal(touched.status.type, "notLoaded");
 });
 
+test("rollout session list fallback can defer status until final candidates", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-rollout-deferred-status-"));
+  const threadId = "019e9000-0000-7000-8000-000000000015";
+  const now = new Date();
+  const earlier = new Date(now.getTime() - 1000);
+  const rolloutPath = path.join(dir, `rollout-2026-06-04T10-00-00-${threadId}.jsonl`);
+  fs.writeFileSync(rolloutPath, [
+    JSON.stringify({
+      type: "session_meta",
+      payload: {
+        id: threadId,
+        timestamp: earlier.toISOString(),
+        cwd: "C:\\Users\\xuxin\\Documents\\Agent",
+      },
+    }),
+    JSON.stringify({
+      timestamp: earlier.toISOString(),
+      type: "event_msg",
+      payload: {
+        type: "task_started",
+        turn_id: "turn-active",
+      },
+    }),
+    JSON.stringify({
+      timestamp: now.toISOString(),
+      type: "response_item",
+      payload: {
+        type: "function_call",
+      },
+    }),
+  ].join("\n"), "utf8");
+  fs.utimesSync(rolloutPath, now, now);
+
+  const candidate = readRolloutSessionFallbackThreadFromFile(
+    rolloutPath,
+    { id: threadId },
+    { includeStatus: false },
+  );
+  assert.equal(candidate.status.type, "notLoaded");
+
+  const finalCandidate = attachRolloutFallbackStatus(candidate, { nowMs: now.getTime() });
+  assert.equal(finalCandidate.status.type, "active");
+});
+
 test("context-only stale active rollout turn is normalized to idle", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-context-only-stale-"));
   const threadId = "019e9000-0000-7000-8000-000000000013";
@@ -777,6 +822,8 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   const routeBody = serverJs.slice(routeIndex, serverJs.indexOf('const threadRename = url.pathname.match', routeIndex));
 
   assert.match(serverJs, /function readRolloutSessionFallback\(/);
+  assert.match(serverJs, /readRolloutSessionFallbackThreadFromFile\(file, indexEntries\.get\(id\) \|\| \{ id \}, \{ includeStatus: false \}\)/);
+  assert.match(serverJs, /filterFallbackThreads\(threads, filters\)\.slice\(0, limit\)\.map\(\(thread\) => attachRolloutFallbackStatus\(thread\)\)/);
   assert.match(serverJs, /function readThreadListFallback\(/);
   assert.match(serverJs, /function logThreadList\(event, details = \{\}\)/);
   assert.match(serverJs, /const THREAD_LIST_FALLBACK_CACHE_TTL_MS[\s\S]*\|\| "0"/);

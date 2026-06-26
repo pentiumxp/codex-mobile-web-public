@@ -14676,3 +14676,68 @@ The previous full handoff was archived and should be opened only when old proven
     cost (`fallbackMs` about `2.3s` in this readback) or pivot back to
     frontend render/patch ownership if fresh diagnostics show visible message
     mismatch/flash symptoms.
+
+## 2026-06-26 - rollout fallback status attachment deferred local slice
+
+- Scope:
+  - Continued Phase B thread-list cold-path work after production readback
+    showed the first full list after deploy rebuilding fallback baseline with
+    `coldPathReason=miss-rebuild:rollout` and `fallbackMs` about `2.3s`.
+  - This slice changes server-side rollout fallback source internals only. It
+    does not change frontend behavior, final-list cache keys, fallback cache
+    TTL, app-server authority, route aggregation, source snapshot persistence,
+    or shell/static files.
+- Root-cause boundary:
+  - Symptom: the first source snapshot build can spend seconds in rollout
+    fallback even though follow-up same-key list reads are warm.
+  - Failing layer: rollout-session source collection inside the thread-list
+    fallback baseline, specifically tail/status inference done before
+    visibility/cwd/search filtering and result limiting.
+  - Violated invariant: cold start/deploy may rebuild once, but the one-time
+    rebuild should avoid unnecessary rollout tail scans for rows that cannot
+    survive final visibility/filter/limit rules.
+  - Root cause/hypothesis: `readRolloutSessionFallback()` called
+    `readRolloutSessionFallbackThreadFromFile()` with immediate status
+    inference for every recent rollout candidate. Status inference reads the
+    rollout tail, so filtered-out candidates still paid the expensive tail
+    scan.
+  - Closure classification: root-cause I/O-order optimization. No masking
+    fallback, no client dedupe, no forced refresh, no prewarm.
+- Changes:
+  - `server.js`
+    - `readRolloutSessionFallbackThreadFromFile()` now accepts
+      `{ includeStatus: false }` for list-source candidate reads.
+    - Added `attachRolloutFallbackStatus()` to attach active/completed/stale
+      status only after final list-source candidates survive filtering and
+      slicing.
+    - Default/single-thread rollout fallback remains unchanged: direct calls
+      still infer and return status immediately.
+  - `test/thread-visibility.test.js`
+    - Adds coverage proving candidate reads can defer status and final
+      candidate attachment restores active status.
+    - Adds a structural guard so the list fallback path does not regress to
+      eager status inference for all rollout candidates.
+  - `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md` were updated with the Phase B boundary.
+- Validation:
+  - Focused:
+    `node --test test/thread-visibility.test.js` passed (`46` tests).
+  - Focused fallback set:
+    `node --test test/thread-list-fallback-baseline-service.test.js test/thread-list-fallback-cache-service.test.js test/thread-list-cold-path-diagnosis-service.test.js`
+    passed (`15` tests).
+  - Full `npm test` passed (`1096` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Not deployed by design. This is a small Phase B local runtime slice and
+    should be batched with the next coherent module deploy unless a production
+    incident requires immediate rollout.
+- Next:
+  - Commit this local slice.
+  - Continue Phase B by measuring/reducing the remaining first cold rebuild
+    cost: candidate file discovery/sort, repeated archive-id scans, or rollout
+    status tail parsing for the final visible candidate set.
+  - When the Phase B module is ready, deploy once and rerun
+    `node scripts/codex-mobile-phase-b-readback-smoke.js --server http://127.0.0.1:8787 --require-active-overlay --json`
+    to compare first-list `fallbackMs` and confirm warm checks still hit.

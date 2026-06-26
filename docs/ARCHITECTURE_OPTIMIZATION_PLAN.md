@@ -190,7 +190,13 @@ Current acceleration targets:
    below the final-list
    cache: different `cwd/search/limit` final-list keys can reuse the same
    visibility-scoped state DB / rollout / session-index source set, while the
-   existing filter/merge/limit semantics still produce each public list.
+   existing filter/merge/limit semantics still produce each public list. The
+   next source-internal slice reduces the first build cost without changing
+   cache policy: rollout list fallback now reads head/stat first, filters and
+   limits visible candidates, then reads rollout tails only for the surviving
+   rows that need status inference. Default single-thread rollout fallback
+   still returns active/completed status immediately; only list source
+   collection defers that tail scan until the final candidates are known.
 3. Large detail cold-path attribution now has a dedicated
    `thread-detail-cold-path-diagnosis-service` that emits bounded
    `coldPathOwner` / `coldPathReason` for projection-cache seeding,
