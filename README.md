@@ -57,8 +57,8 @@ snapshot 没对齐，而不是继续泛化为 `fallback-baseline`。
   - `CODEX_MOBILE_PHASE_B_PREWARM_POLL_MS` 默认 `250`。
   - CLI 可用 `--no-wait-prewarm`、`--prewarm-settle-ms`、`--prewarm-poll-ms`。
 
-本切片是本地提交候选，尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；
-后续会和 Phase B cold-path 模块一起做生产 readback，目标证据是首次用户
+本批次已经从本地切片收束为 `codex-mobile-shell-v534` 模块发布候选；
+部署后会和 Phase B cold-path 模块一起做生产 readback，目标证据是首次用户
 `/api/threads?limit=40` 能直接命中 warm fallback cache，或至少复用
 source snapshot 而不再前台扫描 rollout/source baseline。
 
