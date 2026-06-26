@@ -196,6 +196,11 @@ test("thread detail refresh outcome execution maps local patch completion to met
   }), {
     renderAction: "local-patch-metadata-update",
     metadataUpdateMode: "local-patch",
+    metadataEffects: [
+      "update-current-thread-header",
+      "update-tick-timer",
+      "publish-plugin-navigation-state",
+    ],
     runFullRender: false,
     projectionConsistencyPhase: "refresh-local-patch",
     reason: "local-patch-complete",
@@ -209,6 +214,12 @@ test("thread detail refresh outcome execution maps metadata-only refreshes", () 
   }), {
     renderAction: "metadata-update",
     metadataUpdateMode: "metadata-only",
+    metadataEffects: [
+      "update-current-thread-header",
+      "update-live-operation-dock",
+      "update-tick-timer",
+      "schedule-scroll-button-update",
+    ],
     runFullRender: false,
     projectionConsistencyPhase: "refresh-metadata",
     reason: "metadata-only",
@@ -221,6 +232,7 @@ test("thread detail refresh outcome execution gives full render an explicit cons
   }), {
     renderAction: "full-render",
     metadataUpdateMode: "",
+    metadataEffects: [],
     runFullRender: true,
     projectionConsistencyPhase: "refresh-full-render",
     reason: "full-render",
@@ -234,6 +246,7 @@ test("thread detail refresh outcome execution preserves terminal tile-pane patch
   }), {
     renderAction: "tile-pane-patch",
     metadataUpdateMode: "",
+    metadataEffects: [],
     runFullRender: false,
     projectionConsistencyPhase: "refresh-local-patch",
     reason: "tile-pane-patch",

@@ -147,6 +147,11 @@
       return {
         renderAction,
         metadataUpdateMode: "local-patch",
+        metadataEffects: [
+          "update-current-thread-header",
+          "update-tick-timer",
+          "publish-plugin-navigation-state",
+        ],
         runFullRender: false,
         projectionConsistencyPhase,
         reason: "local-patch-complete",
@@ -156,6 +161,12 @@
       return {
         renderAction,
         metadataUpdateMode: "metadata-only",
+        metadataEffects: [
+          "update-current-thread-header",
+          "update-live-operation-dock",
+          "update-tick-timer",
+          "schedule-scroll-button-update",
+        ],
         runFullRender: false,
         projectionConsistencyPhase,
         reason: "metadata-only",
@@ -165,6 +176,7 @@
       return {
         renderAction,
         metadataUpdateMode: "",
+        metadataEffects: [],
         runFullRender: true,
         projectionConsistencyPhase: "refresh-full-render",
         reason: "full-render",
@@ -173,6 +185,7 @@
     return {
       renderAction,
       metadataUpdateMode: "",
+      metadataEffects: [],
       runFullRender: false,
       projectionConsistencyPhase,
       reason: renderAction || "none",

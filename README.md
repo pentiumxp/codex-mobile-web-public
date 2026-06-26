@@ -16,6 +16,38 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v496 Thread Refresh Metadata Effect Plan
+
+v496 回到 Phase A 的前端 render/patch ownership 收敛。v495 已经让
+大 session recent detail 的 server 侧 miss reason 和 partial cache 路径更清楚；
+本次切片不改 server projection，而是继续缩小 `refreshCurrentThread()` 中的
+前端状态机判断面。
+
+本次切片把 refresh outcome 之后的 metadata 副作用组合推进到
+`public/thread-detail-render-plan.js`：
+
+- `planThreadDetailRefreshOutcomeExecution()` 现在输出 `metadataEffects`。
+- `local-patch` 只执行 header、tick timer、plugin navigation state 更新。
+- `metadata-only` 执行 header、live operation dock、tick timer、scroll button
+  update。
+- `full-render` 仍只触发完整 `renderCurrentThread()`，不混入 metadata-only
+  副作用。
+
+修复边界：
+
+- 症状/风险：`refreshCurrentThread()` 已经把 render/patch/outcome/performance
+  多个策略外移，但 metadata-only 和 local-patch 的副作用组合仍在 app 函数内
+  直接分支，容易在后续修复闪动、少消息、重复消息时重新散落状态所有权。
+- 失败层：前端 thread detail refresh outcome execution ownership。
+- 不变量：本次只移动副作用组合决策，不改变 DOM 写入函数、projection 读取、
+  task-card 协议、诊断上报传输或视觉布局；不引入隐藏重复、强制刷新或跳过
+  刷新的兜底。
+- 闭环验证：`test/thread-detail-render-plan.test.js` 覆盖 metadata effect
+  序列；`test/mobile-viewport.test.js` 验证 `refreshCurrentThread()` 消费
+  `metadataEffects` 而不是重新内联 mode 分支。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v496`。
+
 ## 2026-06-26 v495 Projection Miss Reason Diagnostics
 
 v495 继续推进 Phase B 的大 session / thread-detail cold path 收敛。v494 已经让

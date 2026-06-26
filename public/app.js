@@ -508,7 +508,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v495";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v496";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -8970,6 +8970,31 @@ function scheduleUsageBackfillRefresh(delay = 1200) {
   }, delay);
 }
 
+function applyThreadDetailRefreshMetadataEffect(effect) {
+  const key = String(effect || "");
+  if (key === "update-current-thread-header") {
+    updateCurrentThreadHeader(state.currentThread);
+    return true;
+  }
+  if (key === "update-live-operation-dock") {
+    updateLiveOperationDockHtml(renderLiveOperationDock(state.currentThread, existingConversationRenderKeys()));
+    return true;
+  }
+  if (key === "update-tick-timer") {
+    updateTickTimer();
+    return true;
+  }
+  if (key === "publish-plugin-navigation-state") {
+    publishPluginNavigationState();
+    return true;
+  }
+  if (key === "schedule-scroll-button-update") {
+    scheduleScrollToBottomButtonUpdate();
+    return true;
+  }
+  throw new Error(`Unknown thread detail refresh metadata effect: ${key || "empty"}`);
+}
+
 async function refreshCurrentThread(options = {}) {
   if (!state.currentThreadId) return;
   markIdleActivity("同步");
@@ -9117,18 +9142,12 @@ async function refreshCurrentThread(options = {}) {
     tilePanePatchedDetail = renderOutcome.tilePanePatchedDetail;
   }
   const executionPlan = threadDetailRenderPlanApi.planThreadDetailRefreshOutcomeExecution(renderOutcome);
-  if (executionPlan.metadataUpdateMode === "local-patch") {
+  const metadataEffects = Array.isArray(executionPlan.metadataEffects)
+    ? executionPlan.metadataEffects
+    : [];
+  if (metadataEffects.length) {
     const metadataStartedAt = nowPerfMs();
-    updateCurrentThreadHeader(state.currentThread);
-    updateTickTimer();
-    publishPluginNavigationState();
-    metadataUpdateMs = roundedDurationMs(metadataStartedAt);
-  } else if (executionPlan.metadataUpdateMode === "metadata-only") {
-    const metadataStartedAt = nowPerfMs();
-    updateCurrentThreadHeader(state.currentThread);
-    updateLiveOperationDockHtml(renderLiveOperationDock(state.currentThread, existingConversationRenderKeys()));
-    updateTickTimer();
-    scheduleScrollToBottomButtonUpdate();
+    for (const effect of metadataEffects) applyThreadDetailRefreshMetadataEffect(effect);
     metadataUpdateMs = roundedDurationMs(metadataStartedAt);
   } else if (executionPlan.runFullRender) {
     const conversationRenderStartedAt = nowPerfMs();

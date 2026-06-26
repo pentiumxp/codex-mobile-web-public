@@ -148,8 +148,8 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v495/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v495"/);
+  assert.match(swJs, /codex-mobile-shell-v496/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v496"/);
   assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(swJs, /"\/thread-diagnostic-events\.js"/);
@@ -333,9 +333,14 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(functionBody("refreshCurrentThread"), /renderOutcome = threadDetailRenderPlanApi\.finalizeThreadDetailRenderPlan\(renderPlan, \{ locallyPatchedDetail, tilePanePatchedDetail \}\);/);
   assert.match(functionBody("refreshCurrentThread"), /refreshRenderAction = renderOutcome\.renderAction;/);
   assert.match(functionBody("refreshCurrentThread"), /const executionPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshOutcomeExecution\(renderOutcome\);/);
-  assert.match(functionBody("refreshCurrentThread"), /if \(executionPlan\.metadataUpdateMode === "local-patch"\) \{[\s\S]*updateCurrentThreadHeader\(state\.currentThread\);[\s\S]*updateTickTimer\(\);[\s\S]*publishPluginNavigationState\(\);/);
-  assert.match(functionBody("refreshCurrentThread"), /else if \(executionPlan\.metadataUpdateMode === "metadata-only"\) \{[\s\S]*updateCurrentThreadHeader\(state\.currentThread\);[\s\S]*updateLiveOperationDockHtml\(renderLiveOperationDock\(state\.currentThread, existingConversationRenderKeys\(\)\)\);[\s\S]*updateTickTimer\(\);[\s\S]*scheduleScrollToBottomButtonUpdate\(\);/);
+  assert.match(functionBody("refreshCurrentThread"), /const metadataEffects = Array\.isArray\(executionPlan\.metadataEffects\)[\s\S]*\? executionPlan\.metadataEffects[\s\S]*: \[\];/);
+  assert.match(functionBody("refreshCurrentThread"), /if \(metadataEffects\.length\) \{[\s\S]*for \(const effect of metadataEffects\) applyThreadDetailRefreshMetadataEffect\(effect\);/);
   assert.match(functionBody("refreshCurrentThread"), /else if \(executionPlan\.runFullRender\) \{[\s\S]*renderCurrentThread\(\);/);
+  assert.match(appJs, /function applyThreadDetailRefreshMetadataEffect\(effect\)/);
+  assert.match(functionBody("applyThreadDetailRefreshMetadataEffect"), /updateCurrentThreadHeader\(state\.currentThread\)/);
+  assert.match(functionBody("applyThreadDetailRefreshMetadataEffect"), /updateLiveOperationDockHtml\(renderLiveOperationDock\(state\.currentThread, existingConversationRenderKeys\(\)\)\)/);
+  assert.match(functionBody("applyThreadDetailRefreshMetadataEffect"), /publishPluginNavigationState\(\)/);
+  assert.match(functionBody("applyThreadDetailRefreshMetadataEffect"), /scheduleScrollToBottomButtonUpdate\(\)/);
   assert.match(functionBody("refreshCurrentThread"), /const refreshPerformance = threadPerformanceMetrics\.threadDetailRefreshEventFields\(result\.thread, \{/);
   assert.match(functionBody("refreshCurrentThread"), /postPerformanceEvent\("thread_refresh_ms", refreshPerformance, \{/);
   assert.match(appJs, /skippedDetailRender: !shouldRenderDetail/);

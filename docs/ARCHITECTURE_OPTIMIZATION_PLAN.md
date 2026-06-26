@@ -174,7 +174,11 @@ Refresh outcome execution planning now also lives in the same helper module:
 `planThreadDetailRefreshOutcomeExecution` maps render outcomes to metadata
 update mode, full-render execution, and projection-consistency phase. This
 keeps `refreshCurrentThread()` from inlining `refreshRenderAction` branching
-after the render outcome is known.
+after the render outcome is known. The same plan now also owns the ordered
+metadata effect list for `local-patch` and `metadata-only` refreshes, so app
+code executes explicit effect names instead of re-deciding which header,
+operation-dock, timer, navigation-state, and scroll-button updates belong to
+each refresh outcome.
 Refresh performance event field planning now lives in
 `public/thread-performance-metrics.js`: `threadDetailRefreshEventFields`
 builds the bounded `thread_refresh_ms` payload, including server timings,
