@@ -12225,7 +12225,15 @@ The previous full handoff was archived and should be opened only when old proven
   - Full source `npm test` passed (`971` tests).
   - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
 - Deployment:
-  - Pending at handoff write time. Use the central Home AI macOS plugin deploy
-    path with reason `codex-mobile-turn-order-v509`, then read back
-    `/api/public-config` and source/production SHA parity for the changed
-    runtime files.
+  - Code commit: `93ee289 fix client turn ordering diagnostics`.
+  - Deployed through the central Home AI macOS plugin deploy path with reason
+    `codex-mobile-turn-order-v509`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T025905Z-plugin-codex-mobile-web-codex-mobile-turn-order-v509`.
+  - Production readback returned `clientBuildId=0.1.11|codex-mobile-shell-v509`,
+    `shellCacheName=codex-mobile-shell-v509`, and production workspace
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Source/production SHA-256 prefixes matched for `public/app.js`,
+    `public/sw.js`, `public/thread-diagnostic-events.js`,
+    `public/home-ai-diagnostic-reporting.js`, `docs/MODULES.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
