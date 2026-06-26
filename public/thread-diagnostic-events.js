@@ -359,6 +359,81 @@
     };
   }
 
+  function emptyVisibleDetailMismatchContext(input = {}) {
+    const source = input && typeof input === "object" ? input : {};
+    const context = {
+      surface: "conversation-render",
+      action: compactToken(source.action, "single-thread-empty-state", 80),
+      route_kind: compactToken(source.routeKind || source.route_kind, "single-thread", 80),
+    };
+    const readMode = compactToken(source.readMode || source.read_mode, "", 80);
+    const renderMode = compactToken(source.renderMode || source.render_mode, "", 80);
+    const sourceKind = compactToken(source.sourceKind || source.source_kind, "", 80);
+    const threadHash = compactToken(source.threadHash || source.thread_hash, "", 80);
+    if (readMode) context.read_mode = readMode;
+    if (renderMode) context.render_mode = renderMode;
+    if (sourceKind) context.source_kind = sourceKind;
+    if (threadHash) context.thread_hash = threadHash;
+    return context;
+  }
+
+  function emptyVisibleDetailMismatchCounts(input = {}) {
+    const source = input && typeof input === "object" ? input : {};
+    return {
+      visible_count: boundedCount(source.visibleItems || source.visible_count),
+      turn_count: boundedCount(source.turns || source.turn_count),
+      item_count: boundedCount(source.items || source.item_count),
+      current_visible_count: boundedCount(source.currentVisibleItems || source.current_visible_count),
+      current_turn_count: boundedCount(source.currentTurns || source.current_turn_count),
+      dom_count: boundedCount(source.domCount || source.dom_count),
+      previous_count: boundedCount(source.previousCount || source.previous_count),
+      detail_loaded: source.detailLoaded || source.detail_loaded ? 1 : 0,
+      mobile_loading: source.mobileLoading || source.mobile_loading ? 1 : 0,
+      recent_detail_age_ms: boundedCount(source.recentDetailAgeMs || source.recent_detail_age_ms),
+    };
+  }
+
+  function emptyVisibleDetailMismatchDiagnosticEvent(input = {}) {
+    const source = input && typeof input === "object" ? input : {};
+    const context = emptyVisibleDetailMismatchContext(source);
+    const counts = emptyVisibleDetailMismatchCounts(source);
+    const reason = compactToken(source.reason, "empty_visible_detail_mismatch", 80);
+    return {
+      category: "conversation_projection_mismatch",
+      diagnostic_type: "empty_visible_detail_mismatch",
+      severity_hint: "H2",
+      evidence_confidence: 0.84,
+      error_code: reason,
+      context,
+      counts,
+      breadcrumbs: [{
+        kind: "conversation-render",
+        code: "empty-state-contract",
+        status: "failed",
+        fields: {
+          read_mode: context.read_mode || "",
+          render_mode: context.render_mode || "",
+          source_kind: context.source_kind || "",
+          thread_hash: context.thread_hash || "",
+          visible_count: counts.visible_count,
+          turn_count: counts.turn_count,
+          item_count: counts.item_count,
+          dom_count: counts.dom_count,
+          previous_count: counts.previous_count,
+        },
+      }],
+    };
+  }
+
+  function emptyVisibleDetailMismatchDiagnosticSuccess(input = {}) {
+    return {
+      category: "conversation_projection_mismatch",
+      diagnostic_type: "empty_visible_detail_mismatch",
+      error_code: "empty_visible_detail_mismatch",
+      context: emptyVisibleDetailMismatchContext(input),
+    };
+  }
+
   function detailPatchRejectedDiagnosticEvent(input = {}) {
     const readMode = compactToken(input.readMode, "", 80);
     const renderMode = compactToken(input.renderMode, "", 80);
@@ -599,6 +674,8 @@
     detailPatchRejectedDiagnosticEvent,
     duplicateRenderKeysDiagnosticEvent,
     duplicateRenderKeysDiagnosticSuccess,
+    emptyVisibleDetailMismatchDiagnosticEvent,
+    emptyVisibleDetailMismatchDiagnosticSuccess,
     hasDuplicateRenderKeys,
     hasRenderSignatureMismatch,
     hasTurnOrderMismatch,

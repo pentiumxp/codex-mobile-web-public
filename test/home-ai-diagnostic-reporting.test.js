@@ -307,6 +307,66 @@ test("report payload preserves primary shell conflict metadata without private c
   assert.doesNotMatch(json, /private title|private message|session\.jsonl|thread-secret|token=secret|raw_message_chars/);
 });
 
+test("report payload preserves empty visible detail mismatch metadata without private content", () => {
+  const event = diagnostics.sanitizeInput({
+    category: "conversation_projection_mismatch",
+    diagnostic_type: "empty_visible_detail_mismatch",
+    error_code: "empty_render_after_nonempty_detail",
+    context: {
+      surface: "conversation-render",
+      action: "single-thread-empty-state",
+      route_kind: "single-thread",
+      read_mode: "projection-v4-dynamic",
+      render_mode: "full-render",
+      source_kind: "first-paint-detail-api",
+      thread_hash: diagnostics.hashIdentifier("thread-secret"),
+      title: "private title stripped",
+      url: "https://example.invalid/private?token=secret",
+    },
+    counts: {
+      visible_count: 34,
+      turn_count: 10,
+      item_count: 39,
+      current_visible_count: 0,
+      current_turn_count: 0,
+      dom_count: 2,
+      previous_count: 11,
+      detail_loaded: 1,
+      mobile_loading: 0,
+      recent_detail_age_ms: 900,
+      raw_message_chars: 9000,
+    },
+    breadcrumbs: [{
+      kind: "conversation-render",
+      code: "empty-state-contract",
+      status: "failed",
+      fields: {
+        read_mode: "projection-v4-dynamic",
+        render_mode: "full-render",
+        source_kind: "first-paint-detail-api",
+        thread_hash: diagnostics.hashIdentifier("thread-secret"),
+        visible_count: 34,
+        turn_count: 10,
+        item_count: 39,
+        dom_count: 2,
+        previous_count: 11,
+        message: "private message stripped",
+      },
+    }],
+  });
+  const json = JSON.stringify(event);
+
+  assert.equal(event.context.route_kind, "single-thread");
+  assert.equal(event.context.source_kind, "first-paint-detail-api");
+  assert.equal(event.counts.current_visible_count, 0);
+  assert.equal(event.counts.current_turn_count, 0);
+  assert.equal(event.counts.detail_loaded, 1);
+  assert.equal(event.counts.recent_detail_age_ms, 900);
+  assert.equal(event.breadcrumbs[0].fields.source_kind, "first-paint-detail-api");
+  assert.equal(event.breadcrumbs[0].fields.previous_count, 11);
+  assert.doesNotMatch(json, /private title|private message|thread-secret|token=secret|raw_message_chars/);
+});
+
 test("postMessage delivery fails safely outside trusted embedded contexts", () => {
   const report = {
     type: "homeai.diagnostic.report",

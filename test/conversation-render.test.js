@@ -2988,6 +2988,19 @@ test("primary shell selection conflicts are diagnosed instead of silently cleari
   assert.match(functionBody("checkPrimaryShellSelectionConflictAfterRender"), /recordPrimaryShellSelectionConflict\("primary_shell_render_after_detail"/);
 });
 
+test("empty visible detail mismatches are diagnosed from recent detail evidence", () => {
+  assert.match(functionBody("recordEmptyVisibleDetailMismatch"), /threadDiagnosticEventsApi\.emptyVisibleDetailMismatchDiagnosticEvent/);
+  assert.match(functionBody("recordEmptyVisibleDetailHealthy"), /threadDiagnosticEventsApi\.emptyVisibleDetailMismatchDiagnosticSuccess/);
+  assert.match(functionBody("checkConversationProjectionConsistency"), /recordEmptyVisibleDetailHealthy\(source, state\.currentThread\)/);
+  assert.match(functionBody("checkEmptyVisibleDetailMismatchAfterRender"), /shellPlan\.emptyMessage !== "No visible turns\."/);
+  assert.match(functionBody("checkEmptyVisibleDetailMismatchAfterRender"), /recentThreadDetailRenderEvidence\(\)/);
+  assert.match(functionBody("checkEmptyVisibleDetailMismatchAfterRender"), /recordEmptyVisibleDetailMismatch\("empty_render_after_nonempty_detail"/);
+  assert.match(functionBody("renderCurrentThread"), /checkEmptyVisibleDetailMismatchAfterRender\(thread, shellPlan, \{/);
+  assert.match(functionBody("loadThread"), /markThreadDetailLoaded\(result\.thread\);\s*rememberThreadDetailRenderEvidence\(result\.thread, `\$\{source\}-detail-api`\);/);
+  assert.match(functionBody("refreshCurrentThread"), /markThreadDetailLoaded\(result\.thread\);\s*rememberThreadDetailRenderEvidence\(result\.thread, `\$\{source\}-detail-api`\);/);
+  assert.match(functionBody("backfillFullThreadDetail"), /markThreadDetailLoaded\(result\.thread\);\s*rememberThreadDetailRenderEvidence\(result\.thread, `\$\{String\(options\.source \|\| "unknown"\)\.slice\(0, 40\)\}-detail-api`\);/);
+});
+
 test("thread detail refresh failure delegates diagnostic payloads to helper", () => {
   const body = functionBody("refreshCurrentThread");
   assert.match(body, /recordHomeAiDiagnosticFailure\(threadDiagnosticEventsApi\.threadDetailRefreshFailedDiagnosticEvent\(\{/);
@@ -4230,11 +4243,11 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(restoreBody, /updateThreadStatusHints\(id, \{ type: "active" \}, restoredStatus/);
   assert.match(restoreBody, /state\.currentThread\.status = snapshot\.currentStatus/);
   assert.match(functionBody("loadThread"), /state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);\s*mergeThreadIntoThreadList\(state\.currentThread\);/);
-  assert.match(functionBody("loadThread"), /markThreadDetailLoaded\(result\.thread\);\s*syncThreadPendingServerRequests\(result\.thread\);\s*state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);/);
+  assert.match(functionBody("loadThread"), /markThreadDetailLoaded\(result\.thread\);\s*rememberThreadDetailRenderEvidence\(result\.thread, `\$\{source\}-detail-api`\);\s*syncThreadPendingServerRequests\(result\.thread\);\s*state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);/);
   assert.match(functionBody("loadThread"), /threadPerformanceMetrics\.threadDetailFirstPaintEventFields\(result\.thread, \{/);
-  assert.match(functionBody("refreshCurrentThread"), /markThreadDetailLoaded\(result\.thread\);\s*state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);[\s\S]*const postMergePlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPostMergeEffects\(\);/);
+  assert.match(functionBody("refreshCurrentThread"), /markThreadDetailLoaded\(result\.thread\);\s*rememberThreadDetailRenderEvidence\(result\.thread, `\$\{source\}-detail-api`\);\s*state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);[\s\S]*const postMergePlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPostMergeEffects\(\);/);
   assert.match(functionBody("refreshCurrentThread"), /applyThreadDetailRefreshPostMergeEffectsGroup\(postMergePlan, "merge"\);[\s\S]*const mergeMs = roundedDurationMs\(mergeStartedAt\);/);
-  assert.match(functionBody("backfillFullThreadDetail"), /markThreadDetailLoaded\(result\.thread\);\s*syncThreadPendingServerRequests\(result\.thread\);\s*state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);\s*mergeThreadIntoThreadList\(state\.currentThread\);/);
+  assert.match(functionBody("backfillFullThreadDetail"), /markThreadDetailLoaded\(result\.thread\);\s*rememberThreadDetailRenderEvidence\(result\.thread, `\$\{String\(options\.source \|\| "unknown"\)\.slice\(0, 40\)\}-detail-api`\);\s*syncThreadPendingServerRequests\(result\.thread\);\s*state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);\s*mergeThreadIntoThreadList\(state\.currentThread\);/);
   assert.match(functionBody("backfillFullThreadDetail"), /threadPerformanceMetrics\.threadDetailFullReadyEventFields\(result\.thread, \{/);
   const sendBody = functionBody("sendMessage");
   assert.match(sendBody, /const targetThreadId = currentComposerThreadId\(\);/);

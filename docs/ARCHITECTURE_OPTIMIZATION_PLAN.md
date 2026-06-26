@@ -214,6 +214,19 @@ local paths, cookies, tokens, prompts, uploads, or long logs. Forced user/route
 Primary navigation clears the recent detail evidence to avoid reporting
 intentional navigation as a projection mismatch.
 
+`codex-mobile-shell-v519` adds the adjacent empty-state diagnostic for the
+same production failure class. Detail API success paths now also record bounded
+same-thread evidence before merge/render, so a later single-thread full render
+that emits `No visible turns.` after nonempty detail evidence records an
+`empty_visible_detail_mismatch` diagnostic. This is intentionally diagnostic,
+not a masking fallback: the UI is not force-refreshed or hidden, and plugin
+reports still flow only through Home AI's Owner-gated diagnostic intake. The
+payload contains only thread hash, read/render mode, source kind, visible
+turn/item counts, DOM/previous counts, detail-loaded flag, and evidence age;
+message bodies, task-card bodies, upload bytes, private paths, URLs, cookies,
+tokens, prompts, and long logs are excluded by construction and sanitizer
+tests.
+
 The first slices extract item visible-field merge policy,
 visible-text render identity / completed-receipt retention, local-only item
 retention/drop policy, and live-to-completed same-turn visible-item preservation

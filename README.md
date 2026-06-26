@@ -16,6 +16,37 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v519 Empty Detail Mismatch Diagnostics
+
+v519 在 v518 的 detail ownership 修复之后，继续补齐自动发现能力：如果客户端刚从
+detail API 或成功 detail render 得到同一线程的非空 bounded 证据，随后单线程界面又实际
+渲染出 `No visible turns.`，客户端会记录 `empty_visible_detail_mismatch` 诊断。
+
+本次切片新增/调整：
+
+- `public/thread-diagnostic-events.js` 新增
+  `empty_visible_detail_mismatch` failure/success payload builder。
+- `public/app.js` 在 `loadThread()`、`refreshCurrentThread()` 和
+  `backfillFullThreadDetail()` 的 detail API 成功路径记录同一线程的 bounded detail 证据。
+- `renderCurrentThread()` 在单线程 full render 产生 `No visible turns.` 后，检查最近 detail
+  证据；如果同一线程刚有非空 visible turn/item 证据，则通过 Home AI diagnostic reporter
+  记录 H2 mismatch。
+- 正常非空 detail render 会发送 success clear 输入，避免旧失败签名持续积累。
+- `test/thread-diagnostic-events.test.js`、`test/home-ai-diagnostic-reporting.test.js` 和
+  `test/conversation-render.test.js` 覆盖 payload、隐私边界、detail API 证据记录和空态
+  render 触发点。
+
+修复边界：
+
+- 症状/风险：用户看到 `No visible turns.`，但同一客户端刚读取过该线程的非空 detail
+  证据；这类情况必须由客户端自动发现并进入 Home AI Owner-gated 诊断闭环。
+- 失败层：frontend render/detail evidence consistency diagnostics。
+- 不变量：诊断只能使用 thread hash、read/render mode、source kind、turn/item/dom 计数和
+  age bucket 类元数据；不得包含消息正文、任务卡正文、上传内容、私有路径、URL、cookies、
+  tokens 或长日志；插件不自动发修复卡。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v519`。
+
 ## 2026-06-26 v518 Detail Ownership And Primary Shell Diagnostics
 
 v518 延续 v517 的根因修复，把同一类事故纳入 Home AI 诊断闭环，并修正一个新的

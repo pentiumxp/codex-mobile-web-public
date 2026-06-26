@@ -343,6 +343,84 @@ test("thread diagnostic events build primary shell selection conflict payloads",
   assert.equal(JSON.stringify(event).includes("private"), false);
 });
 
+test("thread diagnostic events build empty visible detail mismatch payloads", () => {
+  const event = diagnostics.emptyVisibleDetailMismatchDiagnosticEvent({
+    reason: "empty render after nonempty detail",
+    sourceKind: "first paint detail api",
+    threadHash: "thread/hash with spaces",
+    readMode: "projection-v4-dynamic",
+    renderMode: "full-render",
+    turns: 10,
+    visibleItems: 34,
+    items: 39,
+    currentTurns: 0,
+    currentVisibleItems: 0,
+    domCount: 2,
+    previousCount: 11,
+    detailLoaded: true,
+    mobileLoading: false,
+    recentDetailAgeMs: 900,
+    prompt: "private prompt ignored",
+    body: "private body ignored",
+  });
+
+  assert.equal(event.category, "conversation_projection_mismatch");
+  assert.equal(event.diagnostic_type, "empty_visible_detail_mismatch");
+  assert.equal(event.severity_hint, "H2");
+  assert.equal(event.evidence_confidence, 0.84);
+  assert.equal(event.error_code, "empty_render_after_nonempty_detail");
+  assert.deepEqual(event.context, {
+    surface: "conversation-render",
+    action: "single-thread-empty-state",
+    route_kind: "single-thread",
+    read_mode: "projection-v4-dynamic",
+    render_mode: "full-render",
+    source_kind: "first_paint_detail_api",
+    thread_hash: "thread_hash_with_spaces",
+  });
+  assert.deepEqual(event.counts, {
+    visible_count: 34,
+    turn_count: 10,
+    item_count: 39,
+    current_visible_count: 0,
+    current_turn_count: 0,
+    dom_count: 2,
+    previous_count: 11,
+    detail_loaded: 1,
+    mobile_loading: 0,
+    recent_detail_age_ms: 900,
+  });
+  assert.deepEqual(event.breadcrumbs[0].fields, {
+    read_mode: "projection-v4-dynamic",
+    render_mode: "full-render",
+    source_kind: "first_paint_detail_api",
+    thread_hash: "thread_hash_with_spaces",
+    visible_count: 34,
+    turn_count: 10,
+    item_count: 39,
+    dom_count: 2,
+    previous_count: 11,
+  });
+  assert.deepEqual(diagnostics.emptyVisibleDetailMismatchDiagnosticSuccess({
+    sourceKind: "first-paint",
+    threadHash: "thread/hash with spaces",
+    readMode: "projection-v4-dynamic",
+  }), {
+    category: "conversation_projection_mismatch",
+    diagnostic_type: "empty_visible_detail_mismatch",
+    error_code: "empty_visible_detail_mismatch",
+    context: {
+      surface: "conversation-render",
+      action: "single-thread-empty-state",
+      route_kind: "single-thread",
+      read_mode: "projection-v4-dynamic",
+      source_kind: "first-paint",
+      thread_hash: "thread_hash_with_spaces",
+    },
+  });
+  assert.equal(JSON.stringify(event).includes("private"), false);
+});
+
 test("thread diagnostic events plan tile conversation projection snapshots", () => {
   const calls = [];
   const snapshot = diagnostics.conversationProjectionDiagnosticSnapshot({

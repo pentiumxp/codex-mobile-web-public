@@ -515,7 +515,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v518";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v519";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -6782,6 +6782,70 @@ function recordPrimaryShellSelectionHealthy(source, thread = state.currentThread
   }));
 }
 
+function emptyVisibleDetailMismatchInput(reason, thread = state.currentThread, details = {}) {
+  const threadId = String((thread && thread.id) || state.currentThreadId || "").trim();
+  const evidence = recentThreadDetailRenderEvidence();
+  const sameThreadEvidence = evidence && (!threadId || String(evidence.threadId || "") === threadId) ? evidence : null;
+  const shape = thread ? visibleConversationShape(thread) : { visibleTurnCount: 0, visibleItemCount: 0 };
+  return {
+    reason,
+    action: "single-thread-empty-state",
+    routeKind: "single-thread",
+    sourceKind: details.source || (sameThreadEvidence && sameThreadEvidence.sourceKind) || "",
+    threadHash: (sameThreadEvidence && sameThreadEvidence.threadHash) || diagnosticThreadHash(threadId),
+    readMode: (sameThreadEvidence && sameThreadEvidence.readMode) || (thread && thread.mobileReadMode) || "",
+    renderMode: details.renderMode || "",
+    turns: sameThreadEvidence && sameThreadEvidence.turnCount || 0,
+    visibleItems: sameThreadEvidence && sameThreadEvidence.visibleItemCount || 0,
+    items: sameThreadEvidence && sameThreadEvidence.itemCount || 0,
+    currentTurns: shape.visibleTurnCount,
+    currentVisibleItems: shape.visibleItemCount,
+    domCount: details.domCount,
+    previousCount: details.previousCount,
+    detailLoaded: Boolean(thread && thread.mobileDetailLoaded),
+    mobileLoading: Boolean(thread && thread.mobileLoading),
+    recentDetailAgeMs: sameThreadEvidence && sameThreadEvidence.ageMs || 0,
+  };
+}
+
+function recordEmptyVisibleDetailMismatch(reason, thread = state.currentThread, details = {}) {
+  return recordHomeAiDiagnosticFailure(
+    threadDiagnosticEventsApi.emptyVisibleDetailMismatchDiagnosticEvent(
+      emptyVisibleDetailMismatchInput(reason, thread, details),
+    ),
+  );
+}
+
+function recordEmptyVisibleDetailHealthy(source, thread = state.currentThread) {
+  if (!thread || thread.mobileLoading || thread.mobileLoadError) return null;
+  const threadId = String(thread.id || state.currentThreadId || "").trim();
+  if (!threadId) return null;
+  const shape = visibleConversationShape(thread);
+  if (!shape.visibleTurnCount && !shape.visibleItemCount) return null;
+  return recordHomeAiDiagnosticSuccess(threadDiagnosticEventsApi.emptyVisibleDetailMismatchDiagnosticSuccess({
+    action: "single-thread-empty-state",
+    routeKind: "single-thread",
+    sourceKind: source,
+    threadHash: diagnosticThreadHash(threadId),
+    readMode: thread.mobileReadMode || "",
+  }));
+}
+
+function checkEmptyVisibleDetailMismatchAfterRender(thread, shellPlan = {}, metrics = {}) {
+  if (!thread || thread.mobileLoading || thread.mobileLoadError) return;
+  if (shellPlan.hasPrimaryContent || shellPlan.emptyMessage !== "No visible turns.") return;
+  const threadId = String(thread.id || state.currentThreadId || "").trim();
+  const evidence = recentThreadDetailRenderEvidence();
+  if (!evidence || String(evidence.threadId || "") !== threadId) return;
+  if (!evidence.turnCount && !evidence.visibleItemCount) return;
+  recordEmptyVisibleDetailMismatch("empty_render_after_nonempty_detail", thread, {
+    source: metrics.source || "single-thread-render",
+    renderMode: metrics.renderMode || "full-render",
+    domCount: metrics.domCount,
+    previousCount: metrics.previousCount,
+  });
+}
+
 function visibleRenderableTurnIds(thread) {
   return visibleTurnsForConversation(thread)
     .filter((turn) => turn && turn.id && visibleItemsForTurn(turn).length > 0)
@@ -6876,6 +6940,7 @@ function conversationProjectionDiagnosticSnapshot(source, extra = {}, deps = {})
 function checkConversationProjectionConsistency(source, extra = {}) {
   if (!state.currentThread || state.currentThread.mobileLoading || state.currentThread.mobileLoadError) return;
   recordPrimaryShellSelectionHealthy(source, state.currentThread);
+  recordEmptyVisibleDetailHealthy(source, state.currentThread);
   const snapshot = conversationProjectionDiagnosticSnapshot(source, extra);
   if (!snapshot) return;
   if (threadDiagnosticEventsApi.hasRenderSignatureMismatch(snapshot)) {
@@ -8909,6 +8974,7 @@ async function loadThread(threadId, options = {}) {
   const renderStartedAt = nowPerfMs();
   const mergeStartedAt = nowPerfMs();
   markThreadDetailLoaded(result.thread);
+  rememberThreadDetailRenderEvidence(result.thread, `${source}-detail-api`);
   syncThreadPendingServerRequests(result.thread);
   state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
   mergeThreadIntoThreadList(state.currentThread);
@@ -9252,6 +9318,7 @@ async function refreshCurrentThread(options = {}) {
   const previousConversationSignature = conversationRenderSignature(state.currentThread);
   const previousPatchShellSignature = conversationPatchShellSignature(previousThread);
   markThreadDetailLoaded(result.thread);
+  rememberThreadDetailRenderEvidence(result.thread, `${source}-detail-api`);
   state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
   const nextConversationSignature = conversationRenderSignature(state.currentThread);
   const renderPlan = threadDetailRenderPlanApi.planThreadDetailRefreshRender({
@@ -9485,6 +9552,7 @@ async function backfillFullThreadDetail(threadId, options = {}) {
   const wasNearBottom = isConversationNearBottom();
   const mergeStartedAt = nowPerfMs();
   markThreadDetailLoaded(result.thread);
+  rememberThreadDetailRenderEvidence(result.thread, `${String(options.source || "unknown").slice(0, 40)}-detail-api`);
   syncThreadPendingServerRequests(result.thread);
   state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
   mergeThreadIntoThreadList(state.currentThread);
@@ -14365,9 +14433,16 @@ function renderCurrentThread(options = {}) {
     escapeHtml,
   });
   updateLiveOperationDockHtml(liveOperationDock);
+  const previousChildCount = $("conversation") ? $("conversation").childNodes.length : 0;
   updateConversationHtml(shellPlan.html, conversationRenderSignature(thread), {
     stickToBottom: shouldStickToBottom,
     patchShellSignature: conversationPatchShellSignature(thread),
+  });
+  checkEmptyVisibleDetailMismatchAfterRender(thread, shellPlan, {
+    source: "single-thread-render",
+    renderMode: "full-render",
+    domCount: $("conversation") ? $("conversation").childNodes.length : 0,
+    previousCount: previousChildCount,
   });
   bindCurrentThreadActions();
   if (options.scrollToTurnReceiptStart) scrollConversationToTurnReceiptStart(options.scrollToTurnReceiptStart);
