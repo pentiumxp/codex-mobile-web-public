@@ -11839,3 +11839,65 @@ The previous full handoff was archived and should be opened only when old proven
     module boundary, then either prepare a module-level deploy candidate or
     continue extracting the remaining refresh completion caller defaults into
     helper-owned policies before deployment.
+
+## 2026-06-26 - local Phase A module review plus transaction hardening, not deployed
+
+- Latest code commits:
+  - `75ef961 extract patch attempt aggregation policy`
+  - `b669b1e gate local patch post-commit effects`
+- Review:
+  - A read-only sub-agent review checked the recent Phase A local refresh /
+    projection / DOM patch orchestration commits. It concluded that the module
+    boundary is substantially formed, but should not yet be marked a deploy
+    candidate because real refresh DOM paths still need stronger behavior-level
+    coverage beyond source-shape assertions.
+  - The review also identified a concrete transaction-order risk: success
+    effects could partially update dock/action state before DOM completion
+    failed.
+- Changes:
+  - `public/thread-detail-render-plan.js` now owns patch-attempt aggregation:
+    the empty attempt state, effect-context derivation, and tile/local attempt
+    reducer. `public/app.js` still performs the real DOM patch effects, but no
+    longer owns timing/status/reject-reason accumulation rules.
+  - `public/thread-detail-dom-patch.js` now separates local patch transaction
+    stages into `commitEffects` and post-commit `afterSuccess` effects.
+  - `patchCurrentThreadDetailFromRefresh()` now treats
+    `completeLocalConversationDomUpdate()` as the commit gate. Operation-dock
+    refresh and action rebinding run only after that gate succeeds.
+- Root-cause boundary:
+  - Symptom/risk: refresh patch-attempt aggregation and local transaction
+    effect ordering were still partially owned by `public/app.js`, leaving
+    timing/status flags and success-effect commit semantics coupled to the
+    orchestration body.
+  - Failing layer: frontend thread-detail local refresh orchestration and DOM
+    patch transaction ownership.
+  - Classification: root-cause architecture boundary cleanup. No server
+    projection change, core DOM patch algorithm change, visual layout change,
+    diagnostic transport change, task-card protocol change, fallback,
+    shell/cache bump, deployment, or public push was added.
+- Validation:
+  - Patch-attempt aggregation focused suite passed:
+    `test/thread-detail-render-plan.test.js`,
+    `test/conversation-render.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-detail-dom-patch.test.js`,
+    `test/thread-detail-patch-plan.test.js`, and
+    `test/thread-tile-layout-ui.test.js` (`196` tests).
+  - Commit/post-commit transaction focused suite passed with the same coverage
+    group (`197` tests).
+  - Full source `npm test` passed after both slices (`951` tests after
+    aggregation, `952` tests after transaction hardening).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Not deployed by design under the updated cadence. These are still local
+    Phase A module assembly commits.
+  - Production remains at `0.1.11|codex-mobile-shell-v506` until a complete
+    Phase A module deploy candidate is selected and validated.
+- Progress:
+  - Overall system-level architecture optimization is now estimated at about
+    `72%`.
+- Next suggested slice:
+  - Add a behavior-level DOM harness for the refresh path that proves tile
+    terminal success, single-thread local patch success, and local patch
+    rejection -> full render behavior without relying only on `functionBody()`
+    source-shape assertions. This should be the final evidence gate before
+    deciding whether Phase A can become a module-level deploy candidate.
