@@ -1365,6 +1365,77 @@ test("thread detail refresh performance input combines render and patch plans", 
   });
 });
 
+test("thread detail refresh reporting stage composes performance, telemetry, and completion config", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshReportingStage({
+    source: "refresh",
+    threadId: "thread-1",
+    requestedMode: "recent",
+    shouldRenderDetail: true,
+    renderPlan: {
+      detailRenderMode: "patch",
+      reason: "signature-changed",
+    },
+    renderOutcome: {
+      detailRenderMode: "patch",
+      renderAction: "local-patch-metadata-update",
+      locallyPatchedDetail: true,
+      tilePanePatchedDetail: false,
+    },
+    patchAttemptResult: {
+      detailPatchMs: 7.6,
+      patchRejectReason: "shape-changed",
+    },
+    timings: {
+      elapsedMs: 25.4,
+      apiElapsedMs: 10.2,
+      renderElapsedMs: 8.9,
+      mergeMs: 1.1,
+      composerRenderMs: 2.2,
+      threadListRenderMs: 3.3,
+      conversationRenderMs: 4.4,
+      metadataUpdateMs: 5.5,
+    },
+    eventName: "thread_refresh_ms",
+    throttleKey: "thread_refresh_ms",
+    minIntervalMs: 1000.4,
+    action: "thread-detail-refresh",
+    threadHash: "abc123",
+  }), {
+    performanceInput: {
+      source: "refresh",
+      threadId: "thread-1",
+      requestedMode: "recent",
+      elapsedMs: 25.4,
+      apiElapsedMs: 10.2,
+      renderElapsedMs: 8.9,
+      mergeMs: 1.1,
+      composerRenderMs: 2.2,
+      threadListRenderMs: 3.3,
+      conversationRenderMs: 4.4,
+      detailPatchMs: 7.6,
+      metadataUpdateMs: 5.5,
+      detailRenderMode: "patch",
+      refreshRenderAction: "local-patch-metadata-update",
+      renderPlanReason: "signature-changed",
+      patchRejectReason: "shape-changed",
+      skippedDetailRender: false,
+      locallyPatchedDetail: true,
+      tilePanePatchedDetail: false,
+    },
+    telemetryConfig: {
+      eventName: "thread_refresh_ms",
+      throttleKey: "thread_refresh_ms",
+      minIntervalMs: 1000.4,
+      action: "thread-detail-refresh",
+      threadId: "thread-1",
+    },
+    completionConfig: {
+      threadHash: "abc123",
+    },
+    reason: "refresh-reporting",
+  });
+});
+
 test("thread detail first-paint performance input preserves cached and API timing shape", () => {
   const cachedInput = renderPlan.planThreadDetailFirstPaintPerformanceInput({
     source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA",
@@ -1490,6 +1561,71 @@ test("thread detail refresh telemetry effects plan preserves event and diagnosti
       },
     ],
     reason: "refresh-telemetry",
+  });
+});
+
+test("thread detail refresh reporting effects stage composes telemetry and completion effects", () => {
+  const performanceEvent = {
+    elapsedMs: 42,
+    readMode: "projection-v4-dynamic",
+    detailShape: { turns: 3 },
+  };
+  assert.deepEqual(renderPlan.planThreadDetailRefreshReportingEffectsStage({
+    performanceEvent,
+    telemetryConfig: {
+      threadId: "thread-1",
+      action: "thread-detail-refresh",
+      eventName: "thread_refresh_ms",
+      throttleKey: "thread_refresh_ms",
+      minIntervalMs: 1000.4,
+    },
+    completionConfig: {
+      threadHash: "abc123",
+    },
+  }), {
+    telemetryEffectsPlan: {
+      effects: [
+        {
+          type: "post-performance-event",
+          eventName: "thread_refresh_ms",
+          payload: performanceEvent,
+          options: {
+            key: "thread_refresh_ms",
+            minIntervalMs: 1000.4,
+          },
+        },
+        {
+          type: "record-thread-detail-response-diagnostics",
+          performanceEvent,
+          context: {
+            action: "thread-detail-refresh",
+            threadId: "thread-1",
+          },
+        },
+      ],
+      reason: "refresh-telemetry",
+    },
+    completionEffectsPlan: {
+      effects: [
+        {
+          type: "diagnostic-success",
+          payload: {
+            category: "thread_session_load_failed",
+            diagnostic_type: "thread_detail_refresh_failed",
+            error_code: "thread_detail_refresh_failed",
+            context: {
+              surface: "thread-session",
+              action: "thread-detail-refresh",
+              thread_hash: "abc123",
+            },
+          },
+        },
+        { type: "schedule-usage-backfill-refresh" },
+        { type: "schedule-live-poll" },
+      ],
+      reason: "refresh-complete",
+    },
+    reason: "refresh-reporting-effects",
   });
 });
 

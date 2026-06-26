@@ -18333,3 +18333,60 @@ The previous full handoff was archived and should be opened only when old proven
     `refreshCurrentThread()` performance/telemetry/completion stage boundary or
     batch the accumulated Phase A local slices for one deploy/readback when
     requested.
+
+## 2026-06-27 - Latest tail marker: Phase A refresh reporting stage local slice
+
+- Current local state:
+  - Continued Phase A `refreshCurrentThread()` reporting/completion ownership
+    cleanup after `a688284`.
+  - Performance input, telemetry effects, and completion effects already lived
+    in `public/thread-detail-render-plan.js`, but `refreshCurrentThread()` still
+    directly composed those helpers around
+    `threadPerformanceMetrics.threadDetailRefreshEventFields()`.
+- Root-cause boundary:
+  - Symptom/risk: refresh reporting and completion behavior was pure and tested
+    in pieces, but the fixed performance-input / telemetry / diagnostic-success
+    / Usage-backfill / live-poll composition still lived in `public/app.js`.
+    Future app orchestration edits could make diagnostic clearing, refresh
+    telemetry, and completion scheduling drift from the tested plan layer.
+  - Failing layer: frontend refresh reporting/completion stage composition
+    ownership, not server projection, DOM patch execution, merge behavior,
+    scroll behavior, task-card protocol, Home AI diagnostic intake, or
+    shell/cache.
+  - Violated invariant: app code should execute cross-module performance event
+    calculation and real side effects; pure planning helpers should own the
+    fixed reporting/completion config and effect-plan composition.
+- Changes:
+  - `public/thread-detail-render-plan.js` now exports
+    `planThreadDetailRefreshReportingStage()` and
+    `planThreadDetailRefreshReportingEffectsStage()`.
+  - `public/app.js` uses those helpers in `refreshCurrentThread()` and no
+    longer directly calls `planThreadDetailRefreshPerformanceInput()`,
+    `planThreadDetailRefreshTelemetryEffects()`, or
+    `planThreadDetailRefreshCompletionEffects()` from the app orchestration
+    body.
+  - `threadPerformanceMetrics.threadDetailRefreshEventFields()` remains in
+    `public/app.js` because it is the explicit cross-module performance-metrics
+    boundary.
+  - Updated `test/thread-detail-render-plan.test.js`,
+    `test/conversation-render.test.js`, and `test/mobile-viewport.test.js`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation:
+  - Syntax and focused:
+    `node --check public/thread-detail-render-plan.js && node --check public/app.js && node --check test/thread-detail-render-plan.test.js && node --check test/conversation-render.test.js && node --check test/mobile-viewport.test.js && node --check test/thread-tile-layout-ui.test.js && node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-tile-layout-ui.test.js`
+    passed (`206` focused tests).
+  - Full:
+    `npm test` passed (`1171` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache
+    bump. This remains a local Phase A ownership slice to batch with the next
+    module validation/deploy.
+- Progress:
+  - Overall architecture optimization is about `85%`.
+  - Phase A frontend render/projection ownership is about `95%`.
+- Next:
+  - Commit locally, then either continue Phase A by extracting the remaining
+    DOM-evidence shape collection / patch-surface probe loops, or batch the
+    accumulated Phase A local slices for one deploy/readback when requested.

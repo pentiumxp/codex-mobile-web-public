@@ -45,6 +45,43 @@ completion、scroll/bottom-follow 和 single-thread shell update 的所有权边
 `status=ready`，detail 走 `projection-active-overlay` warm path，active overlay
 gate 为 `ready`；抽样文件 source/prod SHA-256 短 hash 一致。
 
+## 2026-06-27 Phase A Refresh Reporting Stage Slice
+
+本地小切片继续收敛 `refreshCurrentThread()` 的 refresh 完成后 reporting /
+completion 编排。此前 performance input、telemetry effects 和 completion effects
+已经分别由 `public/thread-detail-render-plan.js` 的纯 helper 负责，但
+`public/app.js` 仍直接串联 performance input、`threadPerformanceMetrics`、
+telemetry effects、diagnostic success、Usage backfill 和 live poll completion。
+
+本次修复：
+
+- `public/thread-detail-render-plan.js` 新增
+  `planThreadDetailRefreshReportingStage()`，统一产出 refresh performance input、
+  telemetry config 和 completion config。
+- `public/thread-detail-render-plan.js` 新增
+  `planThreadDetailRefreshReportingEffectsStage()`，在
+  `threadPerformanceMetrics.threadDetailRefreshEventFields()` 生成 bounded
+  performance event 之后，统一产出 telemetry effects 和 completion effects。
+- `public/app.js` 的 `refreshCurrentThread()` 保留跨模块 performance event 计算和
+  真实 side effects 执行，不再直接调用底层 performance-input / telemetry /
+  completion helper。
+- `test/thread-detail-render-plan.test.js` 覆盖两个 reporting stage 的输出形状；
+  `test/conversation-render.test.js` 和 `test/mobile-viewport.test.js` 验证
+  `refreshCurrentThread()` 只调用 stage helper。
+- 不改变 refresh timing 字段、`thread_refresh_ms` 上报、Home AI response
+  diagnostics、diagnostic success clear、Usage backfill、live poll、server
+  projection、任务卡协议、shell/cache 或部署状态。
+
+闭环验证：
+
+```bash
+node --check public/thread-detail-render-plan.js && node --check public/app.js && node --check test/thread-detail-render-plan.test.js && node --check test/conversation-render.test.js && node --check test/mobile-viewport.test.js && node --check test/thread-tile-layout-ui.test.js
+node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-tile-layout-ui.test.js
+```
+
+结果：focused `206` passed。该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，
+尚未部署；继续作为 Phase A 模块的一部分累积。
+
 ## 2026-06-27 Phase A Refresh Outcome Execution Stage Slice
 
 本地小切片继续收敛 `refreshCurrentThread()` 的 outcome/execution/consistency

@@ -899,6 +899,28 @@
     };
   }
 
+  function planThreadDetailRefreshReportingStage(input = {}) {
+    const eventName = compactReason(input.eventName, "thread_refresh_ms");
+    const threadId = compactReason(input.threadId, "");
+    const performanceInput = planThreadDetailRefreshPerformanceInput(input);
+    const telemetryConfig = {
+      eventName,
+      throttleKey: compactReason(input.throttleKey, eventName),
+      minIntervalMs: normalizedDurationMs(input.minIntervalMs),
+      action: compactReason(input.action, "thread-detail-refresh"),
+      threadId,
+    };
+    const completionConfig = {
+      threadHash: compactReason(input.threadHash, ""),
+    };
+    return {
+      performanceInput,
+      telemetryConfig,
+      completionConfig,
+      reason: "refresh-reporting",
+    };
+  }
+
   function addOptionalTimingField(out, key, value) {
     const timing = normalizedOptionalDurationMs(value);
     if (timing !== null) out[key] = timing;
@@ -970,6 +992,25 @@
         },
       ],
       reason: "refresh-telemetry",
+    };
+  }
+
+  function planThreadDetailRefreshReportingEffectsStage(input = {}) {
+    const telemetryConfig = objectOrEmpty(input.telemetryConfig);
+    const completionConfig = objectOrEmpty(input.completionConfig);
+    const telemetryEffectsPlan = planThreadDetailRefreshTelemetryEffects({
+      performanceEvent: input.performanceEvent,
+      eventName: telemetryConfig.eventName,
+      throttleKey: telemetryConfig.throttleKey,
+      minIntervalMs: telemetryConfig.minIntervalMs,
+      action: telemetryConfig.action,
+      threadId: telemetryConfig.threadId,
+    });
+    const completionEffectsPlan = planThreadDetailRefreshCompletionEffects(completionConfig);
+    return {
+      telemetryEffectsPlan,
+      completionEffectsPlan,
+      reason: "refresh-reporting-effects",
     };
   }
 
@@ -1573,6 +1614,8 @@
     planThreadDetailRefreshOutcomeExecutionStage,
     planThreadDetailRefreshExecutionEffects,
     planThreadDetailRefreshPerformanceInput,
+    planThreadDetailRefreshReportingStage,
+    planThreadDetailRefreshReportingEffectsStage,
     planThreadDetailRefreshTelemetryEffects,
     planThreadDetailRefreshFailureDiagnosticEffects,
     planThreadDetailRefreshRequest,

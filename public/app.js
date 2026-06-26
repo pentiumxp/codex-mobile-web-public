@@ -9816,7 +9816,7 @@ async function refreshCurrentThread(options = {}) {
   conversationRenderMs += executionTimings.conversationRenderMs;
   applyThreadDetailRefreshConsistencyCheckEffectsPlan(outcomeExecutionStage.consistencyCheckEffectsPlan);
   const renderElapsedMs = roundedDurationMs(renderStartedAt);
-  const refreshPerformanceInput = threadDetailRenderPlanApi.planThreadDetailRefreshPerformanceInput({
+  const refreshReportingStage = threadDetailRenderPlanApi.planThreadDetailRefreshReportingStage({
     source,
     threadId,
     requestedMode,
@@ -9834,21 +9834,23 @@ async function refreshCurrentThread(options = {}) {
       conversationRenderMs,
       metadataUpdateMs,
     },
-  });
-  const refreshPerformance = threadPerformanceMetrics.threadDetailRefreshEventFields(result.thread, refreshPerformanceInput);
-  const telemetryEffectsPlan = threadDetailRenderPlanApi.planThreadDetailRefreshTelemetryEffects({
-    performanceEvent: refreshPerformance,
     eventName: "thread_refresh_ms",
     throttleKey: "thread_refresh_ms",
     minIntervalMs: PERF_EVENT_THROTTLE_MS,
     action: "thread-detail-refresh",
-    threadId,
-  });
-  applyThreadDetailRefreshTelemetryEffectsPlan(telemetryEffectsPlan, { thread: result.thread });
-  const completionPlan = threadDetailRenderPlanApi.planThreadDetailRefreshCompletionEffects({
     threadHash: diagnosticThreadHash(threadId),
   });
-  applyThreadDetailRefreshCompletionEffectsPlan(completionPlan);
+  const refreshPerformance = threadPerformanceMetrics.threadDetailRefreshEventFields(
+    result.thread,
+    refreshReportingStage.performanceInput,
+  );
+  const refreshReportingEffectsStage = threadDetailRenderPlanApi.planThreadDetailRefreshReportingEffectsStage({
+    performanceEvent: refreshPerformance,
+    telemetryConfig: refreshReportingStage.telemetryConfig,
+    completionConfig: refreshReportingStage.completionConfig,
+  });
+  applyThreadDetailRefreshTelemetryEffectsPlan(refreshReportingEffectsStage.telemetryEffectsPlan, { thread: result.thread });
+  applyThreadDetailRefreshCompletionEffectsPlan(refreshReportingEffectsStage.completionEffectsPlan);
 }
 
 function threadTurnsCursorParam(cursor) {

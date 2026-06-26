@@ -777,6 +777,15 @@ performance input assembly now also lives in this helper:
 `planThreadDetailRefreshPerformanceInput` combines measured timings with
 `renderPlan`, `renderOutcome`, and `patchAttemptResult`, so app code no longer
 maintains separate performance-only render mode/action/patch duration fields.
+Refresh reporting stage composition now also lives in this helper:
+`planThreadDetailRefreshReportingStage` combines the refresh performance input
+with telemetry and completion config, while
+`planThreadDetailRefreshReportingEffectsStage` turns the bounded performance
+event into telemetry and completion effect plans. The actual
+`threadPerformanceMetrics.threadDetailRefreshEventFields()` call remains in
+app code because it crosses the render-plan and performance-metrics module
+boundary; app code no longer hand-wires the performance-input, telemetry, and
+completion helper chain.
 Refresh execution-effect planning now also lives in this helper:
 `planThreadDetailRefreshExecutionEffects` maps outcome execution actions to
 metadata-update, full-render, no-op, or bounded unknown effect entries. App code
