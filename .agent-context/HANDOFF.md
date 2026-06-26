@@ -14032,3 +14032,54 @@ The previous full handoff was archived and should be opened only when old proven
   - Use production readback after the batch deploy to decide whether the next
     root-cause optimization should target fallback baseline source collection,
     cache freshness, projection miss lifecycle, or app-server fallback.
+
+## 2026-06-26 - Phase B readback smoke local-only
+
+- Scope:
+  - Continued Phase B by adding a bounded post-deploy readback gate for the
+    local Phase B diagnostics batch.
+  - This is local-only tooling and documentation. It does not deploy, bump
+    shell/cache, change runtime behavior, change UI, push Public, or read
+    private thread/card/upload bodies.
+- Root-cause boundary:
+  - Failing layer addressed: prior Phase B slices added active-overlay and
+    thread-list cold-path diagnostics, but the batch still lacked a single
+    production readback command that proves `/api/public-config`,
+    `/api/threads`, and `/api/threads/:id?mode=recent` expose the expected
+    bounded evidence after deployment.
+  - Violated invariant: production validation should use bounded structured
+    metadata from the owning routes, not manual visual checks, private logs, or
+    ad hoc thread-content inspection.
+  - Closure classification: validation harness only. No fallback, client
+    dedupe, forced refresh, cache rebuild policy, or projection behavior
+    change.
+- Changes:
+  - Added `scripts/codex-mobile-phase-b-readback-smoke.js`.
+    The script reads `/api/public-config`, `/api/threads`, and optionally
+    `/api/threads/:id?mode=recent`; validates thread-list
+    `coldPathOwner` / `coldPathReason`, thread-detail timings, and optional
+    `projection-active-overlay`; and emits only safe build ids, short hashes,
+    owner/reason labels, counts, and timings.
+  - Added `test/phase-b-readback-smoke.test.js` covering the smoke path,
+    missing cold-path fields, `--allow-missing-cold-path`, active-overlay
+    requirement, and privacy-bounded summaries.
+  - `package.json` now includes the readback smoke script in `npm run check`.
+  - README, architecture optimization plan, and module map now document the
+    Phase B readback command and evidence boundary.
+- Validation:
+  - Focused:
+    `node --test test/phase-b-readback-smoke.test.js test/thread-list-cold-path-diagnosis-service.test.js test/thread-list-fallback-cache-service.test.js test/thread-visibility.test.js test/thread-detail-active-overlay-integration.test.js`
+    passed (`60` tests).
+  - Full source `npm test` passed (`1073` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment status:
+  - Not deployed by design. This remains part of the Phase B local batch.
+- Next Phase B candidates:
+  - When the Phase B batch is ready, deploy once through the central macOS
+    plugin deploy path and run
+    `node scripts/codex-mobile-phase-b-readback-smoke.js --json` against
+    production. For an active thread, also pass `--thread-id <id>
+    --require-active-overlay`.
+  - Use the readback result to choose the next root-cause target:
+    fallback-baseline source collection, cache freshness, projection miss
+    lifecycle, or app-server fallback.

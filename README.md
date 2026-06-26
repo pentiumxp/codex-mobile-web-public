@@ -71,6 +71,11 @@ cache policy 和 baseline 构建边界混在一起。
   fallback/app-server timings 归因为 bounded `coldPathOwner` /
   `coldPathReason`，例如 `warm-fallback-cache`、`deferred-fallback`、
   `fallback-baseline`、`fallback-cache-policy` 或 `app-server-thread-list`。
+- 新增 `scripts/codex-mobile-phase-b-readback-smoke.js`，作为 Phase B 批量部署后的
+  生产读回工具。它只请求 `/api/public-config`、`/api/threads` 和
+  `/api/threads/:id?mode=recent`，验证 `coldPathOwner`、thread-detail timings
+  和可选的 `projection-active-overlay`，输出仅包含 build id、hash、read mode、
+  owner/reason、计数和耗时。
 
 这不是新的 fallback 行为，也不是 prewarm/persist。source 内部实现、route
 aggregation、defer fallback、app-server result merge 都没有改变。该切片暂不

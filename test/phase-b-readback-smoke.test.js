@@ -1,0 +1,203 @@
+"use strict";
+
+const assert = require("node:assert/strict");
+const http = require("node:http");
+const { test } = require("node:test");
+
+const {
+  parseArgs,
+  run,
+  summarizeThreadDetail,
+  summarizeThreadList,
+} = require("../scripts/codex-mobile-phase-b-readback-smoke");
+
+function listen(server) {
+  return new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      resolve(`http://127.0.0.1:${address.port}`);
+    });
+  });
+}
+
+function createMockServer(handler) {
+  return http.createServer((req, res) => {
+    const url = new URL(req.url, "http://127.0.0.1");
+    const send = (status, body) => {
+      res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify(body));
+    };
+    Promise.resolve(handler({ req, url, send })).catch((err) => send(500, {
+      error: err && err.message || String(err),
+    }));
+  });
+}
+
+test("phase B readback smoke collects bounded diagnostics without private fields", async (t) => {
+  const seen = [];
+  const server = createMockServer(({ req, url, send }) => {
+    seen.push({ path: url.pathname, authorization: req.headers.authorization || "" });
+    if (url.pathname === "/api/public-config") {
+      send(200, {
+        version: "0.1.11",
+        clientBuildId: "0.1.11|codex-mobile-shell-test",
+        shellCacheName: "codex-mobile-shell-test",
+        authRequired: true,
+      });
+      return;
+    }
+    if (url.pathname === "/api/threads") {
+      send(200, {
+        data: [{
+          id: "thread-private-1",
+          name: "PRIVATE THREAD TITLE SHOULD NOT LEAK",
+          privatePrompt: "do not leak",
+        }],
+        mobileDiagnostics: {
+          threadListTimings: {
+            totalMs: 40,
+            appServerMs: 12,
+            fallbackMs: 8,
+            mergeMs: 2,
+            fallbackCacheDecision: "miss-rebuild",
+            fallbackBaselineSourceCount: 9,
+            fallbackBaselineResultCount: 1,
+            coldPathOwner: "fallback-baseline",
+            coldPathReason: "miss-rebuild:rollout",
+          },
+        },
+      });
+      return;
+    }
+    if (url.pathname === "/api/threads/thread-private-1") {
+      assert.equal(url.searchParams.get("mode"), "recent");
+      send(200, {
+        thread: {
+          id: "thread-private-1",
+          name: "PRIVATE DETAIL TITLE SHOULD NOT LEAK",
+          mobileReadMode: "projection-active-overlay",
+          turns: [{
+            id: "turn-private",
+            items: [{ text: "PRIVATE MESSAGE BODY SHOULD NOT LEAK" }],
+          }],
+          mobileDiagnostics: {
+            threadDetailTimings: {
+              readDecision: "projection-active-overlay",
+              coldPathOwner: "warm-path",
+              coldPathReason: "warm-projection-active-overlay",
+              projectionState: "hit",
+              activeOverlayAction: "use-projection-overlay",
+              activeOverlayReason: "overlay-evidence-complete",
+              activeOverlaySource: "projection-live",
+              activeOverlayItems: 3,
+            },
+          },
+        },
+      });
+      return;
+    }
+    send(404, { error: "not_found" });
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const baseUrl = await listen(server);
+
+  const report = await run(parseArgs(["--server", baseUrl, "--json", "--no-auth", "--require-active-overlay"]));
+
+  assert.equal(report.ok, true);
+  assert.equal(report.threadList.coldPathOwner, "fallback-baseline");
+  assert.equal(report.threadList.coldPathReason, "miss-rebuild:rollout");
+  assert.equal(report.detail.readMode, "projection-active-overlay");
+  assert.equal(report.detail.activeOverlayReason, "overlay-evidence-complete");
+  assert.match(report.threadList.firstThreadHash, /^[a-f0-9]{16}$/);
+  assert.match(report.detail.requestedThreadHash, /^[a-f0-9]{16}$/);
+  assert.deepEqual(seen.map((item) => item.path), [
+    "/api/public-config",
+    "/api/threads",
+    "/api/threads/thread-private-1",
+  ]);
+  assert.equal(seen.every((item) => item.authorization === ""), true);
+  const serialized = JSON.stringify(report);
+  assert.doesNotMatch(serialized, /PRIVATE|MESSAGE BODY|do not leak/);
+});
+
+test("phase B readback smoke fails when required thread-list cold path fields are missing", async (t) => {
+  const server = createMockServer(({ url, send }) => {
+    if (url.pathname === "/api/public-config") {
+      send(200, { clientBuildId: "test-build" });
+      return;
+    }
+    if (url.pathname === "/api/threads") {
+      send(200, {
+        data: [{ id: "thread-1", name: "private title" }],
+        mobileDiagnostics: {
+          threadListTimings: {
+            fallbackCacheDecision: "hit",
+          },
+        },
+      });
+      return;
+    }
+    if (url.pathname === "/api/threads/thread-1") {
+      send(200, {
+        thread: {
+          id: "thread-1",
+          mobileReadMode: "projection-v4-cache",
+          turns: [],
+          mobileDiagnostics: {
+            threadDetailTimings: {
+              readDecision: "projection-hit",
+            },
+          },
+        },
+      });
+      return;
+    }
+    send(404, { error: "not_found" });
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const baseUrl = await listen(server);
+
+  const report = await run(parseArgs(["--server", baseUrl, "--no-auth"]));
+  assert.equal(report.ok, false);
+  assert.equal(report.failure, "threadListColdPath");
+
+  const allowed = await run(parseArgs(["--server", baseUrl, "--no-auth", "--allow-missing-cold-path"]));
+  assert.equal(allowed.ok, true);
+});
+
+test("phase B readback summary helpers keep only bounded metadata", () => {
+  const list = summarizeThreadList({
+    data: [{ id: "thread-secret", name: "private title" }],
+    mobileDiagnostics: {
+      threadListTimings: {
+        coldPathOwner: "fallback-baseline",
+        coldPathReason: "miss-rebuild:session-index",
+        fallbackBaselineSourceCount: 1000000,
+        totalMs: 999999999,
+      },
+    },
+  });
+  assert.equal(list.coldPathOwner, "fallback-baseline");
+  assert.equal(list.fallbackBaselineSourceCount, 100000);
+  assert.equal(list.totalMs, 600000);
+  assert.doesNotMatch(JSON.stringify(list), /private title|thread-secret/);
+
+  const detail = summarizeThreadDetail({
+    thread: {
+      id: "thread-secret",
+      name: "private title",
+      mobileReadMode: "projection-active-overlay",
+      turns: [{ id: "turn-1", text: "private message" }],
+      mobileDiagnostics: {
+        threadDetailTimings: {
+          activeOverlayReason: "overlay-evidence-complete",
+          activeOverlayItems: 5,
+        },
+      },
+    },
+  }, "thread-secret");
+  assert.equal(detail.readMode, "projection-active-overlay");
+  assert.equal(detail.turnCount, 1);
+  assert.doesNotMatch(JSON.stringify(detail), /private title|private message|thread-secret/);
+});

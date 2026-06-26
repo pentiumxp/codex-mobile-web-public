@@ -125,6 +125,10 @@ Current acceleration targets:
    can use these fields to decide whether a root-cause fix belongs to source
    internals, route aggregation, cache freshness, or a future explicit
    prewarm/persist design.
+   `scripts/codex-mobile-phase-b-readback-smoke.js` now gives the Phase B batch
+   a deploy/readback gate for `/api/public-config`, `/api/threads`, and
+   `/api/threads/:id?mode=recent`, while reporting only build ids, short hashes,
+   owner/reason labels, counts, and timings.
 3. Large detail cold-path attribution now has a dedicated
    `thread-detail-cold-path-diagnosis-service` that emits bounded
    `coldPathOwner` / `coldPathReason` for projection-cache seeding,
