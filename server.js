@@ -90,6 +90,7 @@ const { attachThreadDetailDiagnostics } = require("./adapters/thread-detail-perf
 const { createThreadDetailReadOrchestrationService } = require("./adapters/thread-detail-read-orchestration-service");
 const { handleThreadDetailReadRoute } = require("./adapters/thread-detail-route-service");
 const { createThreadListFallbackCacheService } = require("./adapters/thread-list-fallback-cache-service");
+const { diagnoseThreadListColdPath } = require("./adapters/thread-list-cold-path-diagnosis-service");
 const {
   stripThreadListDetailFields,
   stripThreadListResultDetailFields,
@@ -14550,16 +14551,20 @@ async function handleApi(req, res) {
     const attachDiagnostics = (result, details = {}) => {
       if (!result || typeof result !== "object") return result;
       const totalMs = Math.max(0, Date.now() - routeStartedAtMs);
+      const threadListTimings = Object.assign({
+        totalMs,
+        limit,
+        cursor: Boolean(cursor),
+        archived,
+        hasWorkspace: Boolean(cwd),
+        hasSearch: Boolean(searchTerm),
+        resultCount: Array.isArray(result.data) ? result.data.length : Array.isArray(result.threads) ? result.threads.length : 0,
+      }, timings, details || {});
+      const coldPathDiagnosis = diagnoseThreadListColdPath(threadListTimings);
+      threadListTimings.coldPathOwner = coldPathDiagnosis.owner;
+      threadListTimings.coldPathReason = coldPathDiagnosis.reason;
       result.mobileDiagnostics = Object.assign({}, result.mobileDiagnostics || {}, {
-        threadListTimings: Object.assign({
-          totalMs,
-          limit,
-          cursor: Boolean(cursor),
-          archived,
-          hasWorkspace: Boolean(cwd),
-          hasSearch: Boolean(searchTerm),
-          resultCount: Array.isArray(result.data) ? result.data.length : Array.isArray(result.threads) ? result.threads.length : 0,
-        }, timings, details || {}),
+        threadListTimings,
       });
       return result;
     };

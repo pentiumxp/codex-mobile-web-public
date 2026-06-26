@@ -67,6 +67,10 @@ cache policy 和 baseline 构建边界混在一起。
   `fallbackStateDbCount`、`fallbackRolloutCount`、`fallbackSessionIndexCount`、
   `fallbackBaselineSourceCount`、`fallbackBaselineResultCount`，方便区分慢在
   source 读取还是合并结果规模。
+- 新增 `adapters/thread-list-cold-path-diagnosis-service.js`，把已有
+  fallback/app-server timings 归因为 bounded `coldPathOwner` /
+  `coldPathReason`，例如 `warm-fallback-cache`、`deferred-fallback`、
+  `fallback-baseline`、`fallback-cache-policy` 或 `app-server-thread-list`。
 
 这不是新的 fallback 行为，也不是 prewarm/persist。source 内部实现、route
 aggregation、defer fallback、app-server result merge 都没有改变。该切片暂不

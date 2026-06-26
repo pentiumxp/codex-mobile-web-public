@@ -771,6 +771,7 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
   const baselineServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-fallback-baseline-service.js"), "utf8");
   const cacheServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-fallback-cache-service.js"), "utf8");
+  const coldPathDiagnosisServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-cold-path-diagnosis-service.js"), "utf8");
   const routeIndex = serverJs.indexOf('if (url.pathname === "/api/threads" && req.method === "GET")');
   assert.ok(routeIndex >= 0, "missing thread list route");
   const routeBody = serverJs.slice(routeIndex, serverJs.indexOf('const threadRename = url.pathname.match', routeIndex));
@@ -782,6 +783,8 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(serverJs, /createThreadListFallbackCacheService/);
   assert.match(baselineServiceJs, /createThreadListFallbackBaselineService/);
   assert.match(cacheServiceJs, /createThreadListFallbackBaselineService/);
+  assert.match(coldPathDiagnosisServiceJs, /diagnoseThreadListColdPath/);
+  assert.match(serverJs, /diagnoseThreadListColdPath/);
   assert.match(serverJs, /stripThreadListDetailFields/);
   assert.match(serverJs, /stripThreadListResultDetailFields/);
   assert.match(threadListSummaryServiceJs, /THREAD_DETAIL_ONLY_SUMMARY_FIELDS/);
@@ -806,6 +809,9 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(cacheServiceJs, /diagnostics\.cacheBuildReason = missDecision/);
   assert.match(cacheServiceJs, /diagnostics\.cacheIncrementalUpdates = cached\.incrementalUpdates/);
   assert.match(routeBody, /mobileDiagnostics[\s\S]*threadListTimings/);
+  assert.match(routeBody, /const coldPathDiagnosis = diagnoseThreadListColdPath\(threadListTimings\)/);
+  assert.match(routeBody, /threadListTimings\.coldPathOwner = coldPathDiagnosis\.owner/);
+  assert.match(routeBody, /threadListTimings\.coldPathReason = coldPathDiagnosis\.reason/);
   assert.match(routeBody, /fallbackCacheHit: Boolean\(fallbackDiagnostics\.cacheHit\)/);
   assert.match(routeBody, /fallbackCacheDecision: String\(fallbackDiagnostics\.cacheDecision \|\| ""\)/);
   assert.match(routeBody, /fallbackCacheKeyHash: String\(fallbackDiagnostics\.cacheKeyHash \|\| ""\)/);

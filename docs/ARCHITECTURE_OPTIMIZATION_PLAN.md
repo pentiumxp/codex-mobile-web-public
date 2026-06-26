@@ -117,9 +117,14 @@ Current acceleration targets:
    cache policy. The local `thread-list-fallback-baseline-service` slice now
    owns state DB / rollout session / session-index source collection,
    per-source timings/counts, source-order merge, and result limiting without
-   changing behavior. The next thread-list slice can use these fields to decide
-   whether a root-cause fix belongs to source internals, route aggregation,
-   cache freshness, or a future explicit prewarm/persist design.
+   changing behavior. The `thread-list-cold-path-diagnosis-service` slice now
+   converts those existing bounded fields into `coldPathOwner` /
+   `coldPathReason`, distinguishing warm cache reuse, deferred fallback, miss
+   rebuild, TTL-expired rebuild, app-server-only reads, and app-server error
+   fallback without changing thread-list data flow. The next thread-list slice
+   can use these fields to decide whether a root-cause fix belongs to source
+   internals, route aggregation, cache freshness, or a future explicit
+   prewarm/persist design.
 3. Large detail cold-path attribution now has a dedicated
    `thread-detail-cold-path-diagnosis-service` that emits bounded
    `coldPathOwner` / `coldPathReason` for projection-cache seeding,
@@ -195,6 +200,9 @@ non-partial projections.
   existing per-source timings. These fields prove whether an observed slow list
   load is a first baseline build, TTL expiry, cache miss, deferred fallback,
   warm in-process reuse, source-read volume, or post-merge result size.
+  `thread-list-cold-path-diagnosis-service.js` also emits bounded
+  `coldPathOwner` / `coldPathReason` from those fields so production readback
+  can be grouped without copying thread titles, prompts, paths, or logs.
 - Move deterministic completed-turn diagnostics out of `server.js` into a
   service module.
 - Preserve the rule that explicit empty final assistant messages produce

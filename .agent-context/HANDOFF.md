@@ -13982,3 +13982,53 @@ The previous full handoff was archived and should be opened only when old proven
     cold-path evidence that identifies whether slow first opens are coming from
     fallback baseline source collection, projection cache misses, or app-server
     fallback.
+
+## 2026-06-26 - thread-list cold-path attribution local-only
+
+- Scope:
+  - Continued Phase B by adding bounded owner/reason attribution for
+    `/api/threads` thread-list cold/warm paths.
+  - This is a local-only evidence slice. It does not deploy, bump shell/cache,
+    change UI, change fallback cache behavior, or push Public.
+- Root-cause boundary:
+  - Failing layer addressed: thread-list diagnostics exposed raw fallback
+    cache decisions, per-source timings, counts, and app-server timings, but
+    production readback still required manual interpretation to know whether
+    slow opens came from warm cache reuse, deferred fallback, baseline source
+    collection, TTL expiry, or app-server failure.
+  - Violated invariant: Phase B cold-path evidence should classify the owning
+    layer from bounded fields, not require private logs or ad hoc human
+    inference.
+  - Closure classification: diagnostic attribution only. No fallback,
+    prewarm/persist cache, client dedupe, forced refresh, or source-reading
+    behavior change.
+- Changes:
+  - Added `adapters/thread-list-cold-path-diagnosis-service.js`. It maps
+    existing bounded thread-list timing fields to `coldPathOwner` /
+    `coldPathReason` for `warm-fallback-cache`, `deferred-fallback`,
+    `fallback-baseline`, `fallback-cache-policy`, `app-server-thread-list`, or
+    `unknown`.
+  - `/api/threads` now attaches those fields to
+    `mobileDiagnostics.threadListTimings` before logging/sending the response.
+  - Added `test/thread-list-cold-path-diagnosis-service.test.js` covering
+    deferred fallback, warm cache hit, miss rebuild dominant source, TTL
+    rebuild, app-server-only/app-server-error paths, and privacy-bounded output.
+  - `test/thread-visibility.test.js` now asserts server wiring for
+    `coldPathOwner` / `coldPathReason`.
+  - README, architecture optimization plan, module map, and `package.json`
+    check script were updated for the new adapter.
+- Validation:
+  - Focused:
+    `node --test test/thread-list-cold-path-diagnosis-service.test.js test/thread-list-fallback-cache-service.test.js test/thread-list-fallback-baseline-service.test.js test/thread-visibility.test.js test/thread-performance-metrics.test.js`
+    passed (`74` tests).
+  - Full source `npm test` passed (`1070` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment status:
+  - Not deployed by design. This remains part of the Phase B local batch.
+- Next Phase B candidates:
+  - Add a production-readback/smoke script for the batched Phase B diagnostics
+    before deploy, so deployment can verify `projection-active-overlay` and
+    thread-list `coldPathOwner` values without private message/log content.
+  - Use production readback after the batch deploy to decide whether the next
+    root-cause optimization should target fallback baseline source collection,
+    cache freshness, projection miss lifecycle, or app-server fallback.
