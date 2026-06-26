@@ -25,6 +25,11 @@ function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function cloneJson(value) {
+  if (value === undefined) return undefined;
+  return JSON.parse(JSON.stringify(value));
+}
+
 function boundedReason(value) {
   return lower(value).slice(0, 80);
 }
@@ -156,11 +161,19 @@ function normalizeAssistantCoverage(value, evidence, input) {
   if (evidence.assistantItems <= 0) return "unknown";
   const projectionRevision = numberOrZero(input.projectionRevision);
   const overlayRevision = numberOrZero(input.overlayRevision);
-  if (projectionRevision && overlayRevision && overlayRevision < projectionRevision) return "stale";
+  if (projectionRevision || overlayRevision) {
+    if (!projectionRevision || !overlayRevision) return "unknown";
+    if (overlayRevision < projectionRevision) return "stale";
+    return "fresh";
+  }
   const projectionTimestampMs = numberOrZero(input.projectionTimestampMs);
   const overlayTimestampMs = numberOrZero(input.overlayTimestampMs || evidence.latestItemTimestampMs);
-  if (projectionTimestampMs && overlayTimestampMs && overlayTimestampMs < projectionTimestampMs) return "stale";
-  return "fresh";
+  if (projectionTimestampMs || overlayTimestampMs) {
+    if (!projectionTimestampMs || !overlayTimestampMs) return "unknown";
+    if (overlayTimestampMs < projectionTimestampMs) return "stale";
+    return "fresh";
+  }
+  return "unknown";
 }
 
 function projectionWindowReason(thread) {
@@ -283,8 +296,37 @@ function planActiveWindowOverlay(input = {}) {
   });
 }
 
+function mergeProjectionThreadWithActiveOverlay(projectionThread, overlayTurn, options = {}) {
+  if (!projectionThread || typeof projectionThread !== "object") return null;
+  if (!overlayTurn || typeof overlayTurn !== "object") return cloneJson(projectionThread);
+  const thread = cloneJson(projectionThread);
+  const turn = cloneJson(overlayTurn);
+  const id = turnId(turn);
+  const turns = asArray(thread.turns).map((candidate) => cloneJson(candidate));
+  const existingIndex = id ? turns.findIndex((candidate) => turnId(candidate) === id) : -1;
+  if (existingIndex >= 0) turns[existingIndex] = Object.assign({}, turns[existingIndex], turn);
+  else turns.push(turn);
+  thread.turns = turns;
+  thread.status = Object.assign({}, thread.status && typeof thread.status === "object"
+    ? thread.status
+    : { type: thread.status || "active" }, { type: "active" });
+  if (id) thread.activeTurnId = id;
+  thread.mobileReadMode = options.readMode || "projection-active-overlay";
+  thread.mobileProjection = Object.assign({}, thread.mobileProjection || {}, {
+    activeOverlay: true,
+    activeOverlaySource: lower(options.overlaySource),
+  });
+  thread.mobileActiveOverlay = {
+    reason: boundedReason(options.reason || "overlay-evidence-complete"),
+    source: lower(options.overlaySource),
+    counts: Object.assign({}, options.counts || {}),
+  };
+  return thread;
+}
+
 module.exports = {
   classifyActiveOverlayItem,
+  mergeProjectionThreadWithActiveOverlay,
   planActiveWindowOverlay,
   summarizeActiveOverlayTurnEvidence,
 };

@@ -34,6 +34,9 @@ function classifyThreadDetailPhase(readMode, options = {}) {
   if (readDecision === "projection-partial-hit" || /projection-v?\d*-partial|projection-partial/.test(mode)) {
     return "warm-projection-partial";
   }
+  if (readDecision === "projection-active-overlay" || /projection-active-overlay/.test(mode)) {
+    return "warm-projection-active-overlay";
+  }
   if (readDecision === "projection-hit" || projectionState === "hit") {
     if (/dynamic/.test(projectionSource) || /projection-v?\d*-dynamic|projection-dynamic/.test(mode)) {
       return "warm-projection-dynamic";
@@ -88,6 +91,14 @@ function buildThreadDetailDiagnostics(input = {}) {
     projectionSeedSource: compactLabel(input.projectionSeedSource, 80),
     activeFullReadRequired: input.activeFullReadRequired === true,
     activeFullReadReason: compactLabel(input.activeFullReadReason, 80),
+    activeOverlayAction: compactLabel(input.activeOverlayAction, 80),
+    activeOverlayReason: compactLabel(input.activeOverlayReason, 80),
+    activeOverlaySource: compactLabel(input.activeOverlaySource, 80),
+    activeOverlayItems: safeCount(input.activeOverlayItems),
+    activeOverlayOperationItems: safeCount(input.activeOverlayOperationItems),
+    activeOverlayUploadItems: safeCount(input.activeOverlayUploadItems),
+    activeOverlayAssistantItems: safeCount(input.activeOverlayAssistantItems),
+    activeOverlayReceiptItems: safeCount(input.activeOverlayReceiptItems),
     returnedTurns: safeCount(input.returnedTurns || counts.returnedTurns),
     omittedTurns: safeCount(input.omittedTurns || counts.omittedTurns),
     rolloutSizeBytes: safeCount(input.rolloutSizeBytes),
@@ -109,6 +120,7 @@ function buildThreadDetailDiagnostics(input = {}) {
     "rawThreadReadMs",
     "turnsListFallbackMs",
     "prepareResponseMs",
+    "activeOverlayMs",
   ]) {
     output[key] = safeDurationMs(timings[key]);
   }

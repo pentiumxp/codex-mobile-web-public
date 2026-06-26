@@ -13723,3 +13723,59 @@ The previous full handoff was archived and should be opened only when old proven
     session-index fallback, route merge/decorate, or cache freshness.
   - Continue with active large-thread overlay proof gating as the next detail
     read-risk reduction slice.
+
+## 2026-06-26 - active window overlay orchestration seam local-only
+
+- Scope:
+  - Continued Phase B with a small active large-thread read-risk slice.
+  - This slice wires the existing active-window overlay proof gate into
+    `thread-detail-read-orchestration-service` as an injected provider seam.
+  - Default runtime behavior remains unchanged because no real provider is
+    wired yet: active/running detail reads still fail closed to full
+    `thread/read` unless a provider supplies complete authoritative evidence.
+- Root-cause boundary:
+  - Failing layer under investigation: active large-thread detail opens that
+    still require full `thread/read` to preserve live operations, uploads,
+    assistant deltas, usage, and diagnostics.
+  - Violated invariant being addressed: active read shortcuts must have an
+    executable proof gate in the orchestration path, not only a detached policy
+    test. Incomplete evidence must remain a full-read path.
+  - Closure classification: architecture seam and bounded diagnostics. No real
+    overlay provider, no automatic shortcut in production, no hidden refresh,
+    no client dedupe, and no automatic repair-card dispatch.
+- Changes:
+  - `adapters/thread-detail-active-window-overlay-policy-service.js` now
+    requires explicit assistant freshness evidence. Assistant items alone no
+    longer imply fresh deltas. It also exposes
+    `mergeProjectionThreadWithActiveOverlay()` for the pure projection-window +
+    active-overlay-turn merge after the proof gate passes.
+  - `adapters/thread-detail-read-orchestration-service.js` accepts an optional
+    `resolveActiveWindowOverlay` provider. If active full-read is required and
+    projection input exists, the service can test a partial projection candidate
+    through `planActiveWindowOverlay()`. Complete evidence returns
+    `projection-active-overlay`; provider-missing, resolver errors, non-
+    authoritative source, missing/stale/unknown coverage, mismatch, or empty
+    evidence all continue to the old full `thread/read` path.
+  - `adapters/thread-detail-performance-service.js` records bounded active
+    overlay diagnostics in `threadDetailTimings`: action, reason, source, item
+    counts, and `activeOverlayMs`. It also classifies
+    `projection-active-overlay` as `warm-projection-active-overlay`.
+  - README, architecture optimization plan, module map, and troubleshooting
+    docs describe the fail-closed seam and the provider still needed before
+    production can avoid active full reads.
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-active-window-overlay-policy-service.test.js test/thread-detail-active-read-policy-service.test.js test/thread-detail-read-orchestration-service.test.js test/thread-detail-performance-service.test.js test/thread-detail-cold-path-diagnosis-service.test.js test/thread-performance-metrics.test.js`
+    passed (`64` tests).
+  - Full source `npm test` passed (`1054` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment status:
+  - Not deployed by design. This is a local-only small slice under the updated
+    module-batch cadence.
+- Next Phase B candidates:
+  - Build the real authoritative active overlay provider from server-owned live
+    projection/notification state, still fail-closed.
+  - After a batched deploy, use `activeOverlayReason` and `coldPathOwner` to
+    decide whether active large-thread slow opens are blocked by provider
+    absence, stale deltas, missing receipt coverage, projection miss, or app-
+    server fallback.

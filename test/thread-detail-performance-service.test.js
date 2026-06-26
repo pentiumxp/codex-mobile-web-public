@@ -51,6 +51,14 @@ test("thread detail diagnostics classify warm projection and bounded timings", (
     projectionSeedSource: "",
     activeFullReadRequired: false,
     activeFullReadReason: "",
+    activeOverlayAction: "",
+    activeOverlayReason: "",
+    activeOverlaySource: "",
+    activeOverlayItems: 0,
+    activeOverlayOperationItems: 0,
+    activeOverlayUploadItems: 0,
+    activeOverlayAssistantItems: 0,
+    activeOverlayReceiptItems: 0,
     returnedTurns: 2,
     omittedTurns: 128,
     rolloutSizeBytes: 2800000,
@@ -69,6 +77,7 @@ test("thread detail diagnostics classify warm projection and bounded timings", (
     rawThreadReadMs: 0,
     turnsListFallbackMs: 0,
     prepareResponseMs: 6,
+    activeOverlayMs: 0,
   });
 });
 
@@ -128,6 +137,10 @@ test("thread detail phase classification uses bounded read decisions without rea
   assert.equal(
     classifyThreadDetailPhase("", { readDecision: "projection-partial-hit" }),
     "warm-projection-partial",
+  );
+  assert.equal(
+    classifyThreadDetailPhase("", { readDecision: "projection-active-overlay" }),
+    "warm-projection-active-overlay",
   );
   assert.equal(
     classifyThreadDetailPhase("", {
@@ -202,6 +215,50 @@ test("thread detail diagnostics expose bounded active full-read reasons", () => 
   assert.doesNotMatch(JSON.stringify(diagnostics), /private-active-turn-id|private command output/);
 });
 
+test("thread detail diagnostics expose bounded active overlay evidence", () => {
+  const diagnostics = buildThreadDetailDiagnostics({
+    requestMode: "recent",
+    readMode: "projection-active-overlay",
+    readDecision: "projection-active-overlay",
+    projectionState: "hit",
+    projectionInputAvailable: true,
+    projectionSource: "partial",
+    projectionVersion: "v4",
+    activeFullReadRequired: true,
+    activeFullReadReason: "active-turn-id",
+    activeOverlayAction: "use-projection-overlay",
+    activeOverlayReason: "overlay-evidence-complete-private-detail-that-should-be-bounded",
+    activeOverlaySource: "app-server-notification",
+    activeOverlayItems: 4,
+    activeOverlayOperationItems: 1,
+    activeOverlayUploadItems: 1,
+    activeOverlayAssistantItems: 1,
+    activeOverlayReceiptItems: 1,
+    timings: {
+      activeOverlayMs: 9.6,
+    },
+    thread: {
+      turns: [{
+        id: "private-active-turn-id",
+        items: [{ type: "agentMessage", text: "private response body" }],
+      }],
+    },
+  });
+
+  assert.equal(diagnostics.phase, "warm-projection-active-overlay");
+  assert.equal(diagnostics.activeOverlayAction, "use-projection-overlay");
+  assert.equal(diagnostics.activeOverlayReason, "overlay-evidence-complete-private-detail-that-should-be-bounded");
+  assert.equal(diagnostics.activeOverlaySource, "app-server-notification");
+  assert.equal(diagnostics.activeOverlayItems, 4);
+  assert.equal(diagnostics.activeOverlayOperationItems, 1);
+  assert.equal(diagnostics.activeOverlayUploadItems, 1);
+  assert.equal(diagnostics.activeOverlayAssistantItems, 1);
+  assert.equal(diagnostics.activeOverlayReceiptItems, 1);
+  assert.equal(diagnostics.activeOverlayMs, 10);
+  assert.equal(diagnostics.coldPathOwner, "warm-path");
+  assert.doesNotMatch(JSON.stringify(diagnostics), /private-active-turn-id|private response body/);
+});
+
 test("thread detail diagnostics attach to thread without copying private body content", () => {
   const result = {
     thread: {
@@ -235,6 +292,7 @@ test("thread detail phase classification distinguishes cold and fallback paths",
   assert.equal(classifyThreadDetailPhase("turns-list-initial"), "cold-turns-list-initial");
   assert.equal(classifyThreadDetailPhase("turns-list-large"), "bounded-large-thread-window");
   assert.equal(classifyThreadDetailPhase("projection-v4-partial"), "warm-projection-partial");
+  assert.equal(classifyThreadDetailPhase("projection-active-overlay"), "warm-projection-active-overlay");
   assert.equal(classifyThreadDetailPhase("turns-list"), "fallback-turns-list");
   assert.equal(classifyThreadDetailPhase("thread-read-raw"), "cold-thread-read-raw");
   assert.equal(classifyThreadDetailPhase("summary-timeout-fallback"), "fallback-summary");

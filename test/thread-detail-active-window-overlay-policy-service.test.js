@@ -5,6 +5,7 @@ const { test } = require("node:test");
 
 const {
   classifyActiveOverlayItem,
+  mergeProjectionThreadWithActiveOverlay,
   planActiveWindowOverlay,
   summarizeActiveOverlayTurnEvidence,
 } = require("../adapters/thread-detail-active-window-overlay-policy-service");
@@ -186,6 +187,25 @@ test("active window overlay plan requires explicit none coverage for absent cate
   assert.equal(complete.assistantDeltaCoverage, "fresh");
 });
 
+test("active window overlay plan requires explicit assistant freshness evidence", () => {
+  const plan = planActiveWindowOverlay({
+    summary: { activeTurnId: "active-turn" },
+    projectionThread: projectionThread(),
+    overlaySource: "app-server-notification",
+    overlayTurn: {
+      id: "active-turn",
+      items: [{ type: "agentMessage" }],
+    },
+    operationCoverage: "none",
+    uploadCoverage: "none",
+    receiptCoverage: "none",
+  });
+
+  assert.equal(plan.action, "require-full-read");
+  assert.equal(plan.reason, "assistant-delta-unknown");
+  assert.equal(plan.assistantDeltaCoverage, "unknown");
+});
+
 test("active window overlay plan rejects stale assistant deltas", () => {
   const plan = planActiveWindowOverlay({
     summary: { activeTurnId: "active-turn" },
@@ -220,4 +240,32 @@ test("active window overlay plan requires receipt coverage", () => {
   assert.equal(plan.action, "require-full-read");
   assert.equal(plan.reason, "receipt-evidence-unknown");
   assert.equal(plan.receiptCoverage, "unknown");
+});
+
+test("active window overlay merge appends or replaces the active turn without mutating projection", () => {
+  const projected = projectionThread();
+  const overlay = overlayTurn();
+  const merged = mergeProjectionThreadWithActiveOverlay(projected, overlay, {
+    overlaySource: "app-server-notification",
+    reason: "overlay-evidence-complete",
+    counts: { items: 4 },
+  });
+
+  assert.equal(merged.mobileReadMode, "projection-active-overlay");
+  assert.equal(merged.mobileProjection.activeOverlay, true);
+  assert.equal(merged.mobileProjection.activeOverlaySource, "app-server-notification");
+  assert.equal(merged.mobileActiveOverlay.reason, "overlay-evidence-complete");
+  assert.equal(merged.activeTurnId, "active-turn");
+  assert.deepEqual(merged.turns.map((turn) => turn.id), ["older-turn", "active-turn"]);
+  assert.deepEqual(projected.turns.map((turn) => turn.id), ["older-turn"]);
+
+  const replaced = mergeProjectionThreadWithActiveOverlay({
+    id: "thread-1",
+    turns: [{ id: "active-turn", items: [{ type: "agentMessage", text: "old" }] }],
+    mobileProjection: { source: "partial" },
+  }, { id: "active-turn", items: [{ type: "agentMessage", text: "new" }] }, {
+    overlaySource: "mux-notification",
+  });
+  assert.equal(replaced.turns.length, 1);
+  assert.equal(replaced.turns[0].items[0].text, "new");
 });

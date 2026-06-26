@@ -16,6 +16,29 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 Active Window Overlay Orchestration Seam
+
+本地小切片继续推进 Phase B 的活跃大线程读取风险收敛。此前
+`thread-detail-active-window-overlay-policy-service.js` 已经定义了 active window overlay
+的 proof gate，但 `thread-detail-read-orchestration-service.js` 没有接线；active/running
+线程仍会禁用 partial projection 和 bounded turns-list，最后回到 full `thread/read`。
+
+本次修复：
+
+- 收紧 active overlay proof gate：assistant delta 不能再仅凭存在 assistant item 推断为
+  fresh，必须有显式 freshness、revision 或 timestamp 证据，否则 fail-closed。
+- 新增 `mergeProjectionThreadWithActiveOverlay()`，只在 policy 证明完整后把 active overlay turn
+  合入 projection window。
+- `thread-detail-read-orchestration-service.js` 新增可注入
+  `resolveActiveWindowOverlay` 接线点。默认 provider 为空，所以生产默认行为不变；只有注入 provider
+  且 proof gate 返回 `use-projection-overlay` 时，才返回 `projection-active-overlay`，否则继续旧路径
+  full `thread/read`。
+- `threadDetailTimings` 新增 bounded active overlay diagnostics，包括 action、reason、source、
+  item counts 和 `activeOverlayMs`，不记录消息正文、上传路径或私有内容。
+
+该切片仍不接真实 provider、不改变默认读取行为、不单独部署。它只是把“未来可以不用 full read”
+的安全入口放到可测试 orchestration 边界。
+
 ## 2026-06-26 Thread List Fallback Baseline Service
 
 本地小切片继续推进 Phase B 的线程列表冷路径收敛。此前

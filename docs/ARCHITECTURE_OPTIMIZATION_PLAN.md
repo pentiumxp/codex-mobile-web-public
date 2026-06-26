@@ -91,10 +91,13 @@ Current acceleration targets:
 1. Active large-thread detail opens still have the highest full-read risk. The
    active-read policy intentionally disables partial projection and bounded
    turns-list shortcuts unless an authoritative active-window overlay can prove
-   operation, upload, assistant-delta, usage, and diagnostic coverage. The next
-   minimal slice is an injected active-overlay provider that defaults
-   fail-closed, with tests for complete evidence using projection+overlay and
-   incomplete evidence staying on full `thread/read`.
+   operation, upload, assistant-delta, usage, and diagnostic coverage. The
+   local active-overlay orchestration seam now defaults fail-closed and is
+   executable in tests: incomplete evidence still falls through to full
+   `thread/read`, while injected complete evidence can return
+   `projection-active-overlay`. The remaining work is a real authoritative
+   provider that can supply bounded overlay evidence from server-owned live
+   state.
 2. Thread-list cold starts no longer hide source collection inside the fallback
    cache policy. The local `thread-list-fallback-baseline-service` slice now
    owns state DB / rollout session / session-index source collection,
@@ -161,6 +164,12 @@ non-partial projections.
   can directly distinguish projection-cache misses, missing projection input,
   summary-sourced large windows, active read policy full reads, app-server
   `thread/read`, app-server `thread/turns/list`, and summary fallback.
+  The local active-overlay orchestration seam then wires that proof gate into
+  `thread-detail-read-orchestration-service` without enabling a real provider:
+  active reads record bounded `activeOverlayAction`, `activeOverlayReason`,
+  `activeOverlaySource`, item counts, and `activeOverlayMs`; provider-missing or
+  incomplete evidence remains `require-full-read`, while test-injected complete
+  evidence returns `projection-active-overlay`.
 - Keep thread-list fallback cache evidence in
   `mobileDiagnostics.threadListTimings`. The cache now reports
   `fallbackCacheDecision` (`hit`, `miss-rebuild`, `expired-rebuild`), bounded

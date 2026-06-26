@@ -40,6 +40,14 @@ function createHarness(overrides = {}) {
             projectionSeedSource: String(input.projectionSeedSource || ""),
             activeFullReadRequired: input.activeFullReadRequired === true,
             activeFullReadReason: String(input.activeFullReadReason || ""),
+            activeOverlayAction: String(input.activeOverlayAction || ""),
+            activeOverlayReason: String(input.activeOverlayReason || ""),
+            activeOverlaySource: String(input.activeOverlaySource || ""),
+            activeOverlayItems: Number(input.activeOverlayItems || 0),
+            activeOverlayOperationItems: Number(input.activeOverlayOperationItems || 0),
+            activeOverlayUploadItems: Number(input.activeOverlayUploadItems || 0),
+            activeOverlayAssistantItems: Number(input.activeOverlayAssistantItems || 0),
+            activeOverlayReceiptItems: Number(input.activeOverlayReceiptItems || 0),
             timings: Object.assign({}, input.timings),
             totalMs: input.totalMs,
             largeReadProtected: Boolean(input.largeReadProtected),
@@ -349,8 +357,141 @@ test("active recent thread detail skips partial windows and bounded turns/list",
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "full-thread-read");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeFullReadRequired, true);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeFullReadReason, "active-turn-id");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayAction, "require-full-read");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayReason, "overlay-provider-unavailable");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadProtected, false);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadReason, "active-thread-requires-full-read");
+});
+
+test("active overlay incomplete evidence still falls through to full thread/read", async () => {
+  const { service, calls } = createHarness({
+    summary: {
+      id: "thread-1",
+      status: { type: "active" },
+      activeTurnId: "active-turn",
+      rolloutPath: "/tmp/rollout.jsonl",
+    },
+    projectedThreadLookup: (input, summary, runtimeSettings, options = {}) => {
+      calls.push(`projection-lookup:${options.allowPartial === true ? "partial" : "full"}`);
+      if (!options.allowPartial) return { result: null, missReason: "partial-not-allowed" };
+      return {
+        result: {
+          thread: {
+            id: "thread-1",
+            turns: [{ id: "older-turn", items: [{ type: "agentMessage" }] }],
+            mobileReadMode: "projection-v4-partial",
+            mobileProjection: { source: "partial", version: "v4", partial: true },
+          },
+        },
+        missReason: "",
+      };
+    },
+    resolveActiveWindowOverlay: async () => {
+      calls.push("overlay-provider");
+      return {
+        overlaySource: "app-server-notification",
+        overlayTurn: {
+          id: "active-turn",
+          items: [{ type: "agentMessage" }],
+        },
+        operationCoverage: "none",
+        uploadCoverage: "none",
+        receiptCoverage: "none",
+      };
+    },
+  });
+
+  const response = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: true,
+    threadLog: () => {},
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.mode, "thread-read");
+  assert.ok(calls.indexOf("overlay-provider") > calls.indexOf("projection-lookup:partial"));
+  assert.ok(calls.includes("thread-read"));
+  assert.equal(calls.includes("turns-list:turns-list-initial"), false);
+  assert.equal(calls.includes("turns-list:turns-list-large"), false);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "full-thread-read");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayAction, "require-full-read");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayReason, "assistant-delta-unknown");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlaySource, "app-server-notification");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayAssistantItems, 1);
+});
+
+test("active overlay complete evidence can use projection plus overlay without full read", async () => {
+  const { service, calls } = createHarness({
+    summary: {
+      id: "thread-1",
+      status: { type: "active" },
+      activeTurnId: "active-turn",
+      rolloutPath: "/tmp/rollout.jsonl",
+    },
+    projectedThreadLookup: (input, summary, runtimeSettings, options = {}) => {
+      calls.push(`projection-lookup:${options.allowPartial === true ? "partial" : "full"}`);
+      if (!options.allowPartial) return { result: null, missReason: "partial-not-allowed" };
+      return {
+        result: {
+          thread: {
+            id: "thread-1",
+            turns: [{ id: "older-turn", items: [{ type: "agentMessage" }] }],
+            mobileReadMode: "projection-v4-partial",
+            mobileProjection: {
+              source: "partial",
+              version: "v4",
+              partial: true,
+              ageMs: 12,
+            },
+          },
+        },
+        missReason: "",
+      };
+    },
+    resolveActiveWindowOverlay: async ({ projectionThread }) => {
+      calls.push(`overlay-provider:${projectionThread && projectionThread.mobileReadMode}`);
+      return {
+        overlaySource: "app-server-notification",
+        overlayTurn: {
+          id: "active-turn",
+          items: [
+            { type: "commandExecution", startedAtMs: 110, text: "private command" },
+            { type: "input_image", createdAtMs: 111, path: "/private/upload.png" },
+            { type: "agentMessage", updatedAtMs: 120, text: "private response" },
+            { type: "turnDiagnostic", createdAtMs: 121 },
+          ],
+        },
+        projectionRevision: 4,
+        overlayRevision: 5,
+      };
+    },
+  });
+
+  const response = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: true,
+    threadLog: () => {},
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.mode, "projection-active-overlay");
+  assert.equal(calls.includes("thread-read"), false);
+  assert.equal(calls.includes("turns-list:turns-list-initial"), false);
+  assert.equal(calls.includes("turns-list:turns-list-large"), false);
+  assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["older-turn", "active-turn"]);
+  assert.equal(response.body.thread.mobileProjection.activeOverlay, true);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "projection-active-overlay");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeFullReadRequired, true);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayAction, "use-projection-overlay");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayReason, "overlay-evidence-complete");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayItems, 4);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayOperationItems, 1);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayUploadItems, 1);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayAssistantItems, 1);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayReceiptItems, 1);
+  assert.doesNotMatch(JSON.stringify(response.body.thread.mobileDiagnostics.threadDetailTimings), /private|upload\.png/);
 });
 
 test("active full thread detail skips bounded turns/list", async () => {
