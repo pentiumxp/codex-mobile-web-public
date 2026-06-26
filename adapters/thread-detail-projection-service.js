@@ -743,6 +743,7 @@ function createThreadDetailProjectionService(options = {}) {
     if (!entry) return { cached: null, missReason: "entry-missing" };
     if (!entry.result) return { cached: null, missReason: "entry-empty" };
     if (!entry.partial && markWindowEntryPartial(entry)) removePersistedEntry(threadId);
+    if (entry.partial && !entry.signatureHash) return { cached: null, missReason: "partial-not-seeded" };
     if (entry.partial && optionsForGet.allowPartial !== true) return { cached: null, missReason: "partial-not-allowed" };
 
     const summaryUpdatedAtMs = safeNumber(input.summaryUpdatedAtMs);
@@ -809,6 +810,7 @@ function createThreadDetailProjectionService(options = {}) {
         updatedAtMs: now(),
         dynamic: true,
         partial: true,
+        partialKind: "notification-shell",
         result: { thread: { id: threadId, turns: [] } },
       };
       memory.set(threadId, entry);

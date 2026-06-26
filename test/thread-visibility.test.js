@@ -228,7 +228,7 @@ test("thread detail defaults to ten turns and exposes an older cursor when compa
   assert.match(serverJs, /return JSON\.stringify\(\{ turnId, includeAnchor: false \}\);/);
   assert.match(serverJs, /out\.mobileOlderTurnsCursor = olderTurnsCursorBeforeTurn\(out\.turns\[0\]\);/);
   assert.match(serverJs, /const preferRecentTurns = detailMode === "recent";/);
-  assert.match(threadDetailReadOrchestrationServiceJs, /if \(preferRecentTurns\) \{/);
+  assert.match(threadDetailReadOrchestrationServiceJs, /if \(preferRecentTurns && !activeSummaryRequiresFullRead\) \{/);
   assert.match(threadDetailReadOrchestrationServiceJs, /"turns-list-initial"/);
   assert.match(serverJs, /limit: Math\.max\(1, Math\.min\(100, Number\(url\.searchParams\.get\("limit"\) \|\| String\(MAX_THREAD_TURNS\)\)\)\)/);
 });

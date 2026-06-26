@@ -633,6 +633,8 @@ test("thread detail projection does not return unseeded partial notification win
   });
 
   assert.equal(service.get(signatureInput({ summaryStatus: "active" })), null);
+  assert.equal(service.get(signatureInput({ summaryStatus: "active" }), { allowPartial: true }), null);
+  assert.equal(service.lookup(signatureInput({ summaryStatus: "active" }), { allowPartial: true }).missReason, "partial-not-seeded");
 });
 
 test("thread detail projection returns partial seed only when explicitly allowed", () => {

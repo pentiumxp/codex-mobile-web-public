@@ -535,6 +535,15 @@ metadata.
   cache also drops legacy disk entries that persisted such a window as a full
   dynamic cache, so `mode=full` cannot reuse a recent/current turns-list window
   as `projection-v4-dynamic`.
+- Notification-only partial shells without a projection signature are not valid
+  thread-detail hits, even when a `mode=recent` caller permits partial cache.
+  They may carry transient status patches, but they must not render as an empty
+  current thread.
+- Active/running summaries require a full `thread/read` path. `mode=recent`
+  skips partial projection hits and `turns-list-initial` for those summaries,
+  and the large-session bounded-read gate is disabled with
+  `largeReadReason=active-thread-requires-full-read`. This preserves active
+  turn intermediate items that `thread/turns/list` can omit.
 - Projection cache lookup now reports bounded miss reasons and may delete a
   stale full disk entry only when the existing full cache is proven unusable by
   `dynamic-summary-stale` or a signature mismatch reason. It does not delete
