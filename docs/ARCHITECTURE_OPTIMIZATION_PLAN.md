@@ -92,7 +92,19 @@ non-partial projections.
 
 ### Phase 2: Frontend State Ownership
 
-Status: in progress. The first slices extract item visible-field merge policy,
+Status: Phase A module deploy candidate as of `codex-mobile-shell-v507`.
+The local Phase A refresh/patch ownership work now has the helper extraction,
+transaction ordering, completion snapshots, attempt aggregation, and
+behavior-level DOM harness needed to deploy as one module instead of many
+small slices. The module remains a root-cause architecture boundary cleanup:
+it changes frontend refresh/patch ownership and validation, not server
+projection semantics, diagnostic dispatch policy, task-card protocol, or
+visual layout. Post-deploy observation should use bounded
+`thread_refresh_ms` and Home AI `conversation_projection_mismatch` diagnostics
+before deciding whether the next repair belongs to DOM patching, server
+projection, SSE/live merge, or pane state.
+
+The first slices extract item visible-field merge policy,
 visible-text render identity / completed-receipt retention, local-only item
 retention/drop policy, and live-to-completed same-turn visible-item preservation
 to `public/thread-detail-state.js`. The refresh render-mode decision now lives
