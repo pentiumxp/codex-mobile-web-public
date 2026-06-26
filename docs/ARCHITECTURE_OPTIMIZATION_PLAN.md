@@ -239,7 +239,13 @@ Current acceleration targets:
    module deploy/readback confirmed this boundary in production: prewarm
    completed, ordinary first thread-list read hit `warm-fallback-cache`, and
    targeted readback reused `fallback-source-snapshot` instead of scanning
-   rollout source. The next local
+   rollout source. The next local app-server-delay slice makes warm fallback
+   initial shell explicit: the server can now read only an existing warm cache
+   without building a fallback baseline, return it only for default
+   `initial=warm-fallback` requests, and mark the result as
+   `mobileDeferredAppServer` / `appServerDeferred`. The client then schedules a
+   normal authoritative refresh. This moves already-warmed list data onto the
+   first-paint path without hiding the later app-server merge. The next local
    slice makes that attribution explicit: fallback baseline source reads now
    carry bounded counters for rollout directory reads, JSONL stat/collect/sort
    counts, candidate scans, head reads/bytes, final status tail reads/bytes,

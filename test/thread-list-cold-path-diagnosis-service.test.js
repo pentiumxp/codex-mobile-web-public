@@ -26,6 +26,16 @@ test("thread-list cold path diagnosis classifies deferred and warm cache paths",
   });
 
   assert.deepEqual(diagnoseThreadListColdPath({
+    appServerDeferred: true,
+    appServerDeferredReason: "warm-fallback-initial",
+    fallbackCacheDecision: "hit",
+    fallbackCacheHit: true,
+  }), {
+    owner: "warm-fallback-cache",
+    reason: "warm-fallback-initial",
+  });
+
+  assert.deepEqual(diagnoseThreadListColdPath({
     fallbackCacheDecision: "miss-rebuild",
     fallbackSourceSnapshotHit: true,
     fallbackBaselineSourceCount: 12,

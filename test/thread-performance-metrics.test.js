@@ -43,6 +43,7 @@ test("thread performance metrics extract detail server timings for client events
 
 test("thread performance metrics classify thread list cold, warm, and deferred phases", () => {
   assert.equal(metrics.classifyThreadListPhase({ fallbackDeferred: true }), "deferred-fallback");
+  assert.equal(metrics.classifyThreadListPhase({ appServerDeferred: true, fallbackCacheHit: true }), "warm-fallback-initial");
   assert.equal(metrics.classifyThreadListPhase({ fallbackCacheHit: true }), "warm-fallback-cache");
   assert.equal(metrics.classifyThreadListPhase({ fallbackCacheDecision: "hit" }), "warm-fallback-cache");
   assert.equal(metrics.classifyThreadListPhase({ fallbackCacheDecision: "expired-rebuild", fallbackMs: 25 }), "cold-fallback-expired-rebuild");

@@ -58,6 +58,7 @@
     const value = objectOrNull(timings);
     if (!value) return "unknown";
     if (value.fallbackDeferred) return "deferred-fallback";
+    if (value.appServerDeferred) return "warm-fallback-initial";
     const decision = compactLabel(value.fallbackCacheDecision, 40);
     if (decision === "hit" || value.fallbackCacheHit) return "warm-fallback-cache";
     if (decision === "expired-rebuild") return "cold-fallback-expired-rebuild";

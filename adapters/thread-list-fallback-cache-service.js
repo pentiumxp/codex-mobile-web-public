@@ -406,11 +406,40 @@ function createThreadListFallbackCacheService(options = {}) {
     return threads;
   }
 
+  function readCachedFallback(limit = 80, filters = {}) {
+    const diagnostics = filters.diagnostics && typeof filters.diagnostics === "object" ? filters.diagnostics : null;
+    const key = cacheKey(limit, filters);
+    const cached = read(key, diagnostics);
+    if (!cached) {
+      if (diagnostics) {
+        diagnostics.cacheHit = false;
+        diagnostics.stateDbMs = 0;
+        diagnostics.rolloutMs = 0;
+        diagnostics.sessionIndexMs = 0;
+      }
+      return [];
+    }
+    if (diagnostics) {
+      diagnostics.cacheHit = true;
+      diagnostics.cacheDecision = "hit";
+      diagnostics.stateDbMs = 0;
+      diagnostics.rolloutMs = 0;
+      diagnostics.sessionIndexMs = 0;
+      diagnostics.cachedSourceTimings = cached.timings;
+      diagnostics.cacheAgeMs = cached.updatedAt ? Math.max(0, now() - cached.updatedAt) : 0;
+      diagnostics.cacheBaselineAgeMs = cached.cachedAt ? Math.max(0, now() - cached.cachedAt) : 0;
+      diagnostics.cacheBuildNumber = cached.buildNumber || 0;
+      diagnostics.cacheIncrementalUpdates = cached.incrementalUpdates || 0;
+    }
+    return cached.threads;
+  }
+
   return {
     applyStatusPayload,
     cacheKey,
     clear,
     read,
+    readCachedFallback,
     readFallback,
     remember,
     removeThread,

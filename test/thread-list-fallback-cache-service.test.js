@@ -144,6 +144,32 @@ test("readFallback uses cached fallback list after the first complete pass", () 
   });
 });
 
+test("readCachedFallback returns only warm cache and never builds cold baseline", () => {
+  const { calls, service, setNow } = createService();
+  const coldDiagnostics = {};
+  const cold = service.readCachedFallback(10, { diagnostics: coldDiagnostics });
+  assert.deepEqual(cold, []);
+  assert.equal(coldDiagnostics.cacheHit, false);
+  assert.equal(coldDiagnostics.cacheDecision, "miss");
+  assert.deepEqual(calls, { stateDb: 0, rollout: 0, sessionIndex: 0 });
+
+  const buildDiagnostics = {};
+  service.readFallback(10, { diagnostics: buildDiagnostics });
+  assert.equal(buildDiagnostics.cacheDecision, "miss-rebuild");
+  assert.deepEqual(calls, { stateDb: 1, rollout: 1, sessionIndex: 1 });
+
+  setNow(1500);
+  const warmDiagnostics = {};
+  const warm = service.readCachedFallback(10, { diagnostics: warmDiagnostics });
+  assert.deepEqual(warm.map((thread) => thread.id), ["thread-session", "thread-rollout", "thread-state"]);
+  assert.equal(warmDiagnostics.cacheHit, true);
+  assert.equal(warmDiagnostics.cacheDecision, "hit");
+  assert.equal(warmDiagnostics.cacheAgeMs, 500);
+  assert.equal(warmDiagnostics.cacheBaselineAgeMs, 500);
+  assert.equal(warmDiagnostics.cacheBuildNumber, 1);
+  assert.deepEqual(calls, { stateDb: 1, rollout: 1, sessionIndex: 1 });
+});
+
 test("readFallback reuses source snapshot across final-list filter cache misses", () => {
   const { calls, service } = createService({
     readStateDbFallback(limit, filters) {

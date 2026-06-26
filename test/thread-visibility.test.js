@@ -970,6 +970,7 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(serverJs, /function readThreadListFallbackCache\(key\)/);
   assert.match(serverJs, /function threadListFallbackCacheKey\(limit, filters = \{\}\) \{\s*return threadListFallbackCacheService\.cacheKey\(limit, filters\);\s*\}/);
   assert.match(functionBody(serverJs, "readThreadListFallbackCache"), /threadListFallbackCacheService\.read\(key\)/);
+  assert.match(serverJs, /function readThreadListCachedFallback\(limit = 80, filters = \{\}\) \{[\s\S]*return threadListFallbackCacheService\.readCachedFallback\(limit, filters\);[\s\S]*\}/);
   assert.doesNotMatch(cacheServiceJs, /fileFingerprint/);
   assert.match(cacheServiceJs, /ttlMs > 0/);
   assert.match(cacheServiceJs, /diagnostics\.cacheHit = true/);
@@ -1009,6 +1010,12 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(serverJs, /fallbackSessionIndexReuseCount: Number\(diagnostics\.sessionIndexReuseCount \|\| 0\)/);
   assert.match(routeBody, /const fallbackMode = String\(url\.searchParams\.get\("fallback"\) \|\| ""\)/);
   assert.match(routeBody, /const deferFallback = fallbackMode === "defer" && !cursor && !archived && !searchTerm/);
+  assert.match(routeBody, /const initialMode = String\(url\.searchParams\.get\("initial"\) \|\| ""\)/);
+  assert.match(routeBody, /const allowWarmFallbackInitial = initialMode === "warm-fallback" && !cursor && !archived && !searchTerm && !cwd/);
+  assert.match(routeBody, /readThreadListCachedFallback\(limit, \{ cwd, searchTerm, globalState, diagnostics: fallbackDiagnostics \}\)/);
+  assert.match(routeBody, /decorated\.mobileDeferredAppServer = true/);
+  assert.match(routeBody, /decorated\.mobileInitialSource = "warm-fallback-cache"/);
+  assert.match(routeBody, /logThreadList\("warm_fallback_initial"/);
   assert.match(routeBody, /const shouldDeferFallback = shouldDeferThreadListFallbackForActiveDetail\(\{[\s\S]*deferFallback,[\s\S]*cursor,[\s\S]*archived,[\s\S]*searchTerm,[\s\S]*cwd,[\s\S]*\}\);/);
   assert.match(routeBody, /fallbackDeferred: true/);
   assert.match(routeBody, /fallbackDeferredReason: deferFallback \? "client" : "active-thread-detail"/);

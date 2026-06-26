@@ -783,14 +783,16 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /state\.threadLoadController[\s\S]*state\.refreshThreadController[\s\S]*state\.currentThread && state\.currentThread\.mobileLoading/);
   assert.match(appJs, /const threadDetailOpening = hasThreadDetailRequestInFlight\(\);/);
   assert.match(appJs, /silent && options\.deferFallback !== false && threadDetailOpening && !state\.selectedCwd && !search/);
-  assert.match(appJs, /if \(shouldDeferFallback && !search\) params\.set\("fallback", "defer"\)/);
+  assert.match(appJs, /if \(shouldDeferFallback && !search\) \{[\s\S]*params\.set\("fallback", "defer"\);[\s\S]*params\.set\("initial", "warm-fallback"\);[\s\S]*\}/);
+  assert.match(appJs, /params\.set\("initial", "warm-fallback"\)/);
   assert.match(appJs, /const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;/);
   assert.match(appJs, /const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;/);
   assert.match(appJs, /threadListDeferredFallbackTimer: null/);
   assert.match(appJs, /function scheduleThreadListDeferredFallback\(delayMs = THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS\)/);
   assert.match(appJs, /if \(state\.threadListLoadController \|\| hasThreadDetailRequestInFlight\(\)\) \{[\s\S]*scheduleThreadListDeferredFallback\(THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS\);[\s\S]*return;/);
   assert.match(appJs, /if \(options\.deferFallback !== true\) clearThreadListDeferredFallbackTimer\(\);/);
-  assert.match(appJs, /if \(result && result\.mobileDeferredFallback && !state\.selectedCwd && !search\) \{[\s\S]*scheduleThreadListDeferredFallback\(\);[\s\S]*\}/);
+  assert.match(appJs, /result\.mobileDeferredFallback \|\| result\.mobileDeferredAppServer/);
+  assert.match(appJs, /if \(result && \(result\.mobileDeferredFallback \|\| result\.mobileDeferredAppServer\) && !state\.selectedCwd && !search\) \{[\s\S]*scheduleThreadListDeferredFallback\(\);[\s\S]*\}/);
   assert.match(appJs, /Uncached \$\{escapeHtml\(formatTokenMillion\(displayInputTokensExcludingCached\(entry\)\)\)\}/);
   assert.match(appJs, /Cached \$\{escapeHtml\(formatTokenMillion\(entry && entry\.cachedInputTokens\)\)\}/);
   assert.match(appJs, /Out \$\{escapeHtml\(formatTokenMillion\(entry && entry\.outputTokens\)\)\}/);

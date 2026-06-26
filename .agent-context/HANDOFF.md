@@ -15404,6 +15404,54 @@ The previous full handoff was archived and should be opened only when old proven
     portion of thread-list/detail reads, or move to Phase C pane-state
     architecture if the user prioritizes split-screen stability.
 
+## 2026-06-27 - Phase B warm fallback initial shell local slice
+
+- Current local state:
+  - Continued Phase B after v534 production readback proved fallback prewarm
+    completed and ordinary list reads could hit `warm-fallback-cache`.
+  - The remaining issue was that `/api/threads` still waited for
+    `codex.request("thread/list")` before reading the already-warm fallback
+    cache, so first paint could still be dominated by app-server list latency.
+- Root-cause boundary:
+  - Symptom/risk: a warmed fallback cache did not actually shorten the startup
+    thread-list first paint whenever app-server list was slow.
+  - Failing layer: server thread-list initial response policy and client
+    startup request mode, not fallback source scans, fallback merge/filter/limit
+    semantics, task-card protocol, Home AI diagnostics, or PWA shell.
+  - Violated invariant: after cold start/deploy prewarm, the default foreground
+    list should be able to use already-warmed bounded metadata as an initial
+    shell, while scheduling a normal authoritative app-server refresh.
+- Changes:
+  - `thread-list-fallback-cache-service` now exposes `readCachedFallback()`,
+    which reads only existing cache entries and never builds a cold baseline on
+    miss.
+  - `/api/threads` now honors `initial=warm-fallback` only for the default
+    non-archived/no-cursor/no-search/no-cwd list. If cache is warm, it returns
+    the cached list with `mobileDeferredAppServer=true`,
+    `mobileInitialSource=warm-fallback-cache`, and bounded
+    `appServerDeferred` diagnostics. If cache is absent, it falls through to
+    the existing app-server path.
+  - Client `loadThreads({ deferFallback: true })` sends
+    `initial=warm-fallback`; when it receives `mobileDeferredAppServer`, it
+    schedules the existing delayed normal refresh so app-server authority still
+    merges back in.
+  - `thread-list-cold-path-diagnosis-service` and
+    `thread-performance-metrics` classify this as `warm-fallback-initial`.
+- Validation:
+  - Focused:
+    `node --test test/thread-list-fallback-cache-service.test.js test/thread-list-cold-path-diagnosis-service.test.js test/thread-performance-metrics.test.js test/thread-visibility.test.js test/mobile-viewport.test.js`
+    passed (`90` tests).
+  - Full: `npm test` passed (`1188` tests). `npm run check` and
+    `git diff --check` passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache
+    bump. Keep batching with the next Phase B app-server/cold-path slice before
+    a module deploy/readback.
+- Next:
+  - Commit locally. Then continue Phase B by measuring whether the follow-up
+    authoritative app-server refresh needs overfetch/limit tuning or route-level
+    background reconciliation.
+
 ## 2026-06-26 - Phase A patch rejection diagnostic input slice
 
 - Context:

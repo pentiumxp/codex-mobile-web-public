@@ -8785,7 +8785,10 @@ async function loadThreads(options = {}) {
   const threadDetailOpening = hasThreadDetailRequestInFlight();
   const shouldDeferFallback = options.deferFallback === true
     || (silent && options.deferFallback !== false && threadDetailOpening && !state.selectedCwd && !search);
-  if (shouldDeferFallback && !search) params.set("fallback", "defer");
+  if (shouldDeferFallback && !search) {
+    params.set("fallback", "defer");
+    params.set("initial", "warm-fallback");
+  }
   if (!silent) renderThreadListLoading();
   try {
     const apiStartedAt = nowPerfMs();
@@ -8809,7 +8812,7 @@ async function loadThreads(options = {}) {
     }
     restoreConnectionState(result.mobileFallback ? "Recovered from session index" : "Connected");
     scheduleVisiblePageRefreshCheck(500);
-    if (result && result.mobileDeferredFallback && !state.selectedCwd && !search) {
+    if (result && (result.mobileDeferredFallback || result.mobileDeferredAppServer) && !state.selectedCwd && !search) {
       scheduleThreadListDeferredFallback();
     }
     if (shouldRenderPrimaryConversationShell()) renderCurrentThread();

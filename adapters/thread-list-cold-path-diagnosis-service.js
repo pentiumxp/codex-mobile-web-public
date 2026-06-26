@@ -74,6 +74,13 @@ function diagnoseThreadListColdPath(input = {}) {
     };
   }
 
+  if (booleanFlag(source.appServerDeferred)) {
+    return {
+      owner: "warm-fallback-cache",
+      reason: compactLabel(source.appServerDeferredReason, 80) || "app-server-deferred",
+    };
+  }
+
   if (decision === "hit" || booleanFlag(source.fallbackCacheHit)) {
     const incrementalUpdates = numberValue(source.fallbackCacheIncrementalUpdates);
     return {

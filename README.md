@@ -16,6 +16,47 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-27 Phase B Warm Fallback Initial Shell Slice
+
+本地小切片继续 v534 之后的 Phase B。v534 已经证明 thread-list fallback
+prewarm 可以在部署/冷启动后完成一次后台 baseline/source snapshot 构建，普通
+readback 的首个列表样本也能命中 `warm-fallback-cache`。但生产读回同时暴露了
+另一个边界：`/api/threads` route 仍会先等待 `codex.request("thread/list")`，
+再读取已经预热好的 fallback cache；因此即使命中 warm cache，首屏响应仍可能被
+不可预测的 app-server list 延迟牵住。
+
+本切片新增 `readCachedFallback()`，明确区分“只读已有 warm cache”和
+`readFallback()` 的“miss 时允许构建 baseline/source snapshot”。server 端只有在
+默认列表、非 archived、无 cursor、无 workspace filter、无 search，且请求显式
+带 `initial=warm-fallback` 时，才尝试 warm fallback initial shell。命中时直接返回
+已有预热列表并标记：
+
+- `mobileDeferredAppServer=true`
+- `mobileInitialSource=warm-fallback-cache`
+- `threadListTimings.appServerDeferred=true`
+- `threadListTimings.appServerDeferredReason=warm-fallback-initial`
+
+如果 warm cache 不存在，该路径不会触发冷重建，仍退回原 app-server list 路径。
+客户端只在现有 `deferFallback` 首屏路径带上 `initial=warm-fallback`；收到
+`mobileDeferredAppServer` 后复用既有延迟刷新机制，再拉一次普通 authoritative
+thread-list 融合结果。这个切片不改变 app-server authority、fallback
+merge/filter/limit 语义、任务卡协议、Home AI 诊断调度或 PWA shell，只把已经预热
+好的 bounded fallback list 作为首屏 initial shell，并把后续权威刷新显式化。
+
+验证：
+
+```bash
+node --test test/thread-list-fallback-cache-service.test.js test/thread-list-cold-path-diagnosis-service.test.js test/thread-performance-metrics.test.js test/thread-visibility.test.js test/mobile-viewport.test.js
+npm run check
+npm test
+git diff --check
+```
+
+结果：focused `90` passed；`npm test` `1188` passed；`check` 和
+`git diff --check` passed。该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，
+尚未部署；继续按当前节奏作为 Phase B 本地提交，等待下一组 cold-path/app-server
+优化合成模块后统一部署/readback。
+
 ## 2026-06-27 v534 Phase B Thread-List Fallback Prewarm Module
 
 本地小切片开始处理 v533 readback 暴露的下一阶段问题：生产重启或部署后，首次
