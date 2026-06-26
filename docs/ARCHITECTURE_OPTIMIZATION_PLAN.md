@@ -110,8 +110,10 @@ non-partial projections.
   fallback without changing the actual read strategy. It also records
   `activeFullReadRequired` / `activeFullReadReason` when an active/running
   summary intentionally skips partial projection or bounded turns-list shortcuts
-  and falls back to full `thread/read`; that evidence is the boundary for any
-  later active-turn overlay optimization.
+  and falls back to full `thread/read`; `thread-detail-active-read-policy-service`
+  now owns that decision boundary, so any later active-turn overlay optimization
+  has to prove itself against a pure policy surface rather than patching the
+  orchestration path inline.
 - Keep thread-list fallback cache evidence in
   `mobileDiagnostics.threadListTimings`. The cache now reports
   `fallbackCacheDecision` (`hit`, `miss-rebuild`, `expired-rebuild`), bounded

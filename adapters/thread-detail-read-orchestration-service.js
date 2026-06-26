@@ -1,5 +1,10 @@
 "use strict";
 
+const {
+  applyActiveThreadPolicyToBoundedReadDecision,
+  planActiveThreadDetailReadPolicy,
+} = require("./thread-detail-active-read-policy-service");
+
 function defaultNow() {
   return Date.now();
 }
@@ -71,36 +76,6 @@ function projectionDiagnosticsFromThread(thread) {
     version: nonEmptyText(projection.version),
     ageMs: safeNonNegativeNumber(projection.ageMs),
   };
-}
-
-function statusText(value) {
-  if (!value) return "";
-  if (typeof value === "string") return value;
-  if (value && typeof value === "object" && value.type) return String(value.type || "");
-  return String(value || "");
-}
-
-function isActiveLikeStatus(value) {
-  return /^(active|running|started|pending|queued|processing|inprogress|in_progress|in-progress)$/i.test(statusText(value).trim());
-}
-
-function summaryActiveTurnId(summary) {
-  return nonEmptyText(summary && (
-    summary.activeTurnId
-    || summary.active_turn_id
-    || summary.mobileLocalActiveStatus && (summary.mobileLocalActiveStatus.turnId || summary.mobileLocalActiveStatus.turn_id)
-  ));
-}
-
-function summaryFullThreadReadReason(summary) {
-  if (!summary || typeof summary !== "object") return false;
-  if (summaryActiveTurnId(summary)) return "active-turn-id";
-  if (isActiveLikeStatus(summary.status)) return "status-active";
-  if (isActiveLikeStatus(summary.mobileStatus)) return "mobile-status-active";
-  if (isActiveLikeStatus(summary.mobileLocalActiveStatus && summary.mobileLocalActiveStatus.status)) {
-    return "local-active-status";
-  }
-  return "";
 }
 
 function createThreadDetailReadOrchestrationService(options = {}) {
@@ -214,10 +189,9 @@ function createThreadDetailReadOrchestrationService(options = {}) {
     timer.mark("summaryMs", summaryStartedAtMs);
     const summary = summaryResult && summaryResult.summary || null;
     context.summarySource = summaryResult && summaryResult.source || "";
-    const activeSummaryFullReadReason = summaryFullThreadReadReason(summary);
-    const activeSummaryRequiresFullRead = Boolean(activeSummaryFullReadReason);
-    context.activeFullReadRequired = activeSummaryRequiresFullRead;
-    context.activeFullReadReason = activeSummaryFullReadReason || "";
+    const activeReadPolicy = planActiveThreadDetailReadPolicy({ summary, preferRecentTurns });
+    context.activeFullReadRequired = activeReadPolicy.activeFullReadRequired;
+    context.activeFullReadReason = activeReadPolicy.activeFullReadReason || "";
     const runtimeSettings = threadRuntimeSettings(threadId, summary);
     if (summary && isHiddenThread(summary, visibility)) {
       threadLog("hidden", { status: 404 });
@@ -269,7 +243,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
     context.projectionInputAvailable = Boolean(projection);
     context.projectionState = projection ? "input-ready" : "unavailable";
     const projectionStartedAtMs = now();
-    const allowPartialProjection = preferRecentTurns && !activeSummaryRequiresFullRead;
+    const allowPartialProjection = activeReadPolicy.allowPartialProjection;
     const projectionLookup = projection && projectedThreadLookup
       ? projectedThreadLookup(projection, summary, runtimeSettings, { allowPartial: allowPartialProjection })
       : null;
@@ -318,7 +292,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       if (!context.projectionMissReason) context.projectionMissReason = "result-missing";
     }
 
-    if (preferRecentTurns && !activeSummaryRequiresFullRead) {
+    if (activeReadPolicy.shouldUseInitialTurnsList) {
       const turnsStartedAtMs = now();
       try {
         const result = await turnsListThreadReadResult({
@@ -374,21 +348,19 @@ function createThreadDetailReadOrchestrationService(options = {}) {
           error: safeErrorMessage(err),
         });
       }
-    } else if (preferRecentTurns && activeSummaryRequiresFullRead) {
+    } else if (activeReadPolicy.initialTurnsListSkipReason) {
       threadLog("turns_list_initial_skipped_active", {
-        reason: "active-thread-requires-full-read",
+        reason: activeReadPolicy.initialTurnsListSkipReason,
       });
     }
 
     const rawBoundedReadDecision = normalizeBoundedReadDecision(
       preferBoundedReadBeforeFullRead({ threadId, summary, projection, runtimeSettings }),
     );
-    const boundedReadDecision = rawBoundedReadDecision.prefer && activeSummaryRequiresFullRead
-      ? Object.assign({}, rawBoundedReadDecision, {
-        prefer: false,
-        reason: "active-thread-requires-full-read",
-      })
-      : rawBoundedReadDecision;
+    const boundedReadDecision = applyActiveThreadPolicyToBoundedReadDecision(
+      rawBoundedReadDecision,
+      activeReadPolicy,
+    );
     context.boundedReadBeforeFullRead = boundedReadDecision;
     if (boundedReadDecision.prefer) {
       const turnsStartedAtMs = now();
