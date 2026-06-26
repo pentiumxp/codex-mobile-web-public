@@ -137,6 +137,35 @@ node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js te
 该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为 Phase C
 本地模块累积，后续与 pane-local command detail、split sizing 或视觉验证一起批量部署。
 
+## 2026-06-27 Phase C Operation Minimum Refresh Planning Slice
+
+本地小切片继续推进 Phase C 的 pane-local operation ownership。此前平铺窗口里的
+operation bubble 为了保证 500ms 最短可见时间，会在到期后由
+`scheduleThreadTileOperationMinimumRefresh()` 直接遍历 active pane 并决定是否
+fallback 到整页 render。这个判断属于 pane-local operation 状态机，不应该继续
+由 `public/app.js` 内联；否则短命令气泡、展开详情和 pane patch 的刷新边界容易
+再次和全局 render 纠缠。
+
+本次修复：
+
+- `public/thread-tile-state.js` 新增 `operationMinimumRefreshPlan()`，统一规划
+  disabled、无 active pane、patch active panes 和 patch miss 后是否允许 full render。
+- `public/app.js` 的 operation 最短可见刷新定时器改为读取 helper plan；app 仍只负责
+  真实 timer、pane patch 和必要的 full-render side effect。
+- focused tests 覆盖 disabled/no-active/active panes 的纯策略，以及 app wiring 不再
+  直接决定 active pane patch 列表。
+- 不改变 DOM 结构、operation HTML、bubble dwell 时长、server projection、任务卡协议、
+  shell/cache 或部署状态。
+
+闭环验证：
+
+```bash
+node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js test/conversation-render.test.js test/live-operation-dock-state.test.js
+```
+
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为 Phase C
+本地模块累积，后续与 command detail、split sizing 或浏览器视觉验证一起批量部署。
+
 ## 2026-06-26 Phase C Pane Scroll Runtime Planning Slice
 
 本地小切片继续推进 Phase C 的 pane-runtime ownership。此前每个平铺窗口的

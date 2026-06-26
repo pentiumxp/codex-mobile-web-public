@@ -13342,12 +13342,16 @@ function scheduleThreadTileOperationMinimumRefresh(delayMs = LIVE_OPERATION_BUBB
   if (state.threadTileOperationRefreshTimer) clearTimeout(state.threadTileOperationRefreshTimer);
   state.threadTileOperationRefreshTimer = setTimeout(() => {
     state.threadTileOperationRefreshTimer = null;
-    if (state.threadTileMode) {
+    const plan = threadTileStatePolicy.operationMinimumRefreshPlan({
+      enabled: state.threadTileMode,
+      activeIds: state.threadTileActiveIds,
+    });
+    if (plan.action === "operation-minimum-refresh") {
       let patchedAny = false;
-      for (const id of state.threadTileActiveIds) {
+      for (const id of plan.patchThreadIds || []) {
         patchedAny = scheduleRenderThreadTilePane(id, { preserveScroll: true }) || patchedAny;
       }
-      if (!patchedAny) scheduleRenderCurrentThread();
+      if (plan.fullRenderOnPatchMiss && !patchedAny) scheduleRenderCurrentThread();
     }
   }, Math.max(0, Number(delayMs) || 0) + 16);
 }

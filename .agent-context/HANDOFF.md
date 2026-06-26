@@ -16150,3 +16150,48 @@ The previous full handoff was archived and should be opened only when old proven
   - Only bounded file paths, test counts, and architecture state are recorded.
     No secrets, cookies, launch tokens, private thread bodies, task-card bodies,
     uploads, screenshots, or long logs are included.
+
+## 2026-06-27 - Phase C operation minimum refresh planning local slice
+
+- Latest local slice:
+  - Continued Phase C pane-state/runtime architecture after `b2f65f9`
+    (`plan thread tile composer runtime`). This slice is local/private only and
+    is not deployed by design.
+- Root-cause boundary:
+  - Symptom/risk: tile panes should own their compact operation bubble timing
+    like independent mobile windows. The 500ms minimum-refresh timer still had
+    inline `public/app.js` policy for which active panes to patch and when to
+    fallback to full render after no pane patch succeeded.
+  - Failing layer: frontend thread-tile pane-local operation refresh policy,
+    not operation HTML, DOM structure, server projection, task-card protocol,
+    network reads, or shell/cache.
+  - Violated invariant: `public/app.js` should own real timers and render side
+    effects; deterministic pane-local operation refresh targets should live in
+    pure helper policy with focused tests.
+- Changes:
+  - `public/thread-tile-state.js` now exposes
+    `operationMinimumRefreshPlan()` for disabled/no-active/active-pane patch
+    targets and full-render-on-patch-miss policy.
+  - `public/app.js` now calls that helper from
+    `scheduleThreadTileOperationMinimumRefresh()` and only executes the timer,
+    pane patch, and full-render side effects.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md` with the Phase C boundary.
+- Validation:
+  - Focused:
+    `node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js test/conversation-render.test.js test/live-operation-dock-state.test.js`
+    passed (`145` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`1128` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Not deployed. No `CLIENT_BUILD_ID` / PWA shell cache bump. This remains a
+    small Phase C local slice to batch with the next pane-state/runtime module.
+- Next:
+  - Commit locally, then continue Phase C with pane-local command detail state,
+    split sizing, or browser/visual validation before one batch deploy.
+- Privacy:
+  - Only bounded file paths, test counts, and architecture state are recorded.
+    No secrets, cookies, launch tokens, private thread bodies, task-card bodies,
+    uploads, screenshots, or long logs are included.

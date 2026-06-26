@@ -1020,7 +1020,10 @@ storage, and control rendering. Composer draft runtime restore planning now
 also lives there: new-thread defaults, old-thread draft runtime restore,
 missing-draft keep/reset behavior, Fast, model, reasoning effort, and
 permission option validation are helper-owned while `public/app.js` keeps
-normalized permission input and state write side effects.
+normalized permission input and state write side effects. Pane-local operation
+minimum-refresh planning now also lives there: disabled/no-active/active-pane
+patch targets and full-render-on-patch-miss policy are helper-owned while
+`public/app.js` keeps the real timer and render side effects.
 App code can no
 longer fall through from tile mode into the
 single-thread patch path without an explicit policy decision, fall through from
@@ -1341,7 +1344,9 @@ Target:
   target placeholder no longer depend on scattered `app.js` branches. Composer
   draft runtime restore planning also now lives there, so Fast/model/effort/
   permission recovery across pane switches no longer depends on scattered
-  `app.js` branches. Continue moving pane
+  `app.js` branches. Operation minimum-refresh planning also now lives there,
+  so remembered command bubbles can expire through pane-local patch targets
+  without `app.js` owning that state decision. Continue moving pane
   widths, per-pane drafts, max concurrent detail reads, pane-local
   send/approval/interrupt ownership, command detail panels, and mobile collapse
   behavior into testable helpers without DOM side effects.

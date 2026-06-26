@@ -1013,6 +1013,34 @@ test("thread tile state owns operation mode and signature policy", () => {
     mode: "compact",
     expanded: false,
   });
+
+  assert.deepEqual(state.operationMinimumRefreshPlan({
+    enabled: false,
+    activeIds: ["pane-1"],
+  }), {
+    action: "operation-minimum-refresh",
+    reason: "disabled",
+    patchThreadIds: [],
+    fullRenderOnPatchMiss: false,
+  });
+  assert.deepEqual(state.operationMinimumRefreshPlan({
+    enabled: true,
+    activeIds: [],
+  }), {
+    action: "operation-minimum-refresh",
+    reason: "no-active-panes",
+    patchThreadIds: [],
+    fullRenderOnPatchMiss: true,
+  });
+  assert.deepEqual(state.operationMinimumRefreshPlan({
+    enabled: true,
+    activeIds: ["pane-1", "pane-2", "pane-1"],
+  }), {
+    action: "operation-minimum-refresh",
+    reason: "patch-active-panes",
+    patchThreadIds: ["pane-1", "pane-2"],
+    fullRenderOnPatchMiss: true,
+  });
 });
 
 test("thread tile state plans pane refresh scheduling without DOM state", () => {

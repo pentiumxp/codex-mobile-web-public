@@ -1009,6 +1009,24 @@
     };
   }
 
+  function operationMinimumRefreshPlan(input = {}) {
+    const activeIds = uniqueIds(input.activeIds || input.ids || []);
+    if (input.enabled !== true) {
+      return {
+        action: "operation-minimum-refresh",
+        reason: "disabled",
+        patchThreadIds: [],
+        fullRenderOnPatchMiss: false,
+      };
+    }
+    return {
+      action: "operation-minimum-refresh",
+      reason: activeIds.length ? "patch-active-panes" : "no-active-panes",
+      patchThreadIds: activeIds,
+      fullRenderOnPatchMiss: true,
+    };
+  }
+
   function refreshDelayMs(value, options = {}) {
     const defaultDelayMs = Math.max(0, Number(options.defaultDelayMs || 0));
     const minDelayMs = Math.max(0, Number(options.minDelayMs || 500));
@@ -1242,6 +1260,7 @@
     operationBubbleRecord,
     operationBubbleSnapshot,
     operationDockPlan,
+    operationMinimumRefreshPlan,
     operationSignature,
     paneBottomButtonPlan,
     paneCountChangePlan,
