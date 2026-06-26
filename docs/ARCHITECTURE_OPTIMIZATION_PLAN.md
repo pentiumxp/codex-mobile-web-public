@@ -887,6 +887,12 @@ patch-surface decision into a DOM-probe effect only when a rendered detail
 refresh needs it. App code still performs the real `threadDetailDomPatchSurface`
 lookup, but `refreshCurrentThread()` no longer branches directly on
 `patchSurfaceProbePlan.shouldProbeTilePatchSurface`.
+Patch surface execution stage composition now also lives in the same helper:
+`planThreadDetailRefreshPatchSurfaceExecutionStage` takes the bounded DOM probe
+result plus the current render plan and composes the final patch surface,
+patch-execution plan, and ordered patch-attempt effects. App code still performs
+the real DOM probe and real DOM patch timing, but `refreshCurrentThread()` no
+longer hand-wires surface-result planning into patch-execution planning.
 Refresh patch-attempt effect planning now also lives in this helper:
 `planThreadDetailRefreshPatchAttemptEffects` declares the tile-pane patch and
 local-patch attempt order. App code still performs the real DOM patch calls and

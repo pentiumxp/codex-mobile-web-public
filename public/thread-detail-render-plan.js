@@ -506,6 +506,33 @@
     };
   }
 
+  function planThreadDetailRefreshPatchSurfaceExecutionStage(input = {}) {
+    const renderPlan = objectOrEmpty(input.renderPlan);
+    const shouldRenderDetail = Object.prototype.hasOwnProperty.call(input, "shouldRenderDetail")
+      ? Boolean(input.shouldRenderDetail)
+      : Boolean(renderPlan.shouldRenderDetail);
+    const patchSurfaceResultStage = planThreadDetailRefreshPatchSurfaceResultStage({
+      shouldRenderDetail,
+      threadTileMode: input.threadTileMode,
+      threadTileConversationSurface: input.threadTileConversationSurface,
+      tilePatchPlan: input.tilePatchPlan,
+      tilePatchSurface: input.tilePatchSurface,
+    });
+    const patchExecutionStage = planThreadDetailRefreshPatchExecutionStage({
+      renderPlan,
+      shouldRenderDetail,
+      patchSurfacePlan: patchSurfaceResultStage.patchSurfacePlan,
+    });
+    return {
+      patchSurfaceResultStage,
+      patchSurfacePlan: patchSurfaceResultStage.patchSurfacePlan,
+      patchExecutionStage,
+      patchExecutionPlan: patchExecutionStage.patchExecutionPlan,
+      patchAttemptEffectsPlan: patchExecutionStage.patchAttemptEffectsPlan,
+      reason: patchExecutionStage.reason,
+    };
+  }
+
   function planThreadDetailRefreshPostMergeEffects() {
     return {
       groups: [
@@ -1699,6 +1726,7 @@
     planThreadDetailRefreshPatchSurface,
     planThreadDetailRefreshPatchSurfaceProbeEffects,
     planThreadDetailRefreshPatchSurfaceProbeStage,
+    planThreadDetailRefreshPatchSurfaceExecutionStage,
     planThreadDetailRefreshPatchSurfaceResultStage,
     planThreadDetailRefreshPostMergeEffects,
     planThreadDetailRefreshPatchExecutionStage,

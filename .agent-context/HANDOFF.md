@@ -18607,3 +18607,50 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit locally. After that, Phase A is close to a deployable module
     boundary; choose either one more app-orchestration audit slice or a batched
     deploy/readback when requested.
+
+## 2026-06-27 - Latest tail marker: Phase A patch surface execution stage local slice
+
+- Current local state:
+  - Continued Phase A `refreshCurrentThread()` app-orchestration cleanup after
+    `994b21a`.
+  - DOM probe pre-planning, probe effects, patch surface result, and patch
+    execution planning were already helper-owned, but `refreshCurrentThread()`
+    still manually wired the DOM probe result into surface-result planning and
+    then into patch-execution planning.
+- Root-cause boundary:
+  - Symptom/risk: tile pane, single-thread, and metadata-only refresh paths were
+    planned by helpers but still composed in app code. Future edits could
+    reintroduce drift between probe result interpretation and patch attempt
+    effects even when individual helper tests stayed green.
+  - Failing layer: frontend refresh patch surface/execution composition, not the
+    real DOM probe, real DOM patch execution, server projection, merge behavior,
+    scroll behavior, task-card protocol, Home AI diagnostics, or shell/cache.
+  - Violated invariant: app code should execute real DOM effects and pass
+    bounded results back into a single planning stage; it should not hand-wire
+    patch surface result planning into patch execution planning.
+- Changes:
+  - `public/thread-detail-render-plan.js` added
+    `planThreadDetailRefreshPatchSurfaceExecutionStage()`.
+  - `refreshCurrentThread()` now calls that stage after the real DOM probe
+    effect and reads `patchSurfaceExecutionStage.patchAttemptEffectsPlan`.
+  - Updated `test/thread-detail-render-plan.test.js`,
+    `test/conversation-render.test.js`, `test/mobile-viewport.test.js`, and
+    `test/thread-tile-layout-ui.test.js`.
+  - Updated `README.md` and `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Validation:
+  - Syntax and focused:
+    `node --check public/thread-detail-render-plan.js && node --check public/app.js && node --check test/thread-detail-render-plan.test.js && node --check test/conversation-render.test.js && node --check test/mobile-viewport.test.js && node --check test/thread-tile-layout-ui.test.js && node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-tile-layout-ui.test.js`
+    passed (`210` focused tests).
+  - Full validation was run before local commit:
+    `npm test` passed (`1175` tests). `npm run check`, `npm run check:macos`,
+    and `git diff --check` passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache bump
+    unless this slice is later batched into a deployable Phase A module.
+- Progress:
+  - Overall architecture optimization is about `89.5%`.
+  - Phase A frontend render/projection ownership is about `98.5%`.
+- Next:
+  - Commit locally. After that, Phase A is very close to a deployable module
+    boundary; the next decision is either one final orchestration audit slice or
+    a batched deploy/readback when requested.

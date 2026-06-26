@@ -516,10 +516,11 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.doesNotMatch(functionBody("refreshCurrentThread"), /patchSurfaceProbePlan\.shouldProbeTilePatchSurface[\s\S]*\? threadDetailDomPatchSurface/);
   assert.doesNotMatch(functionBody("refreshCurrentThread"), /planThreadDetailRefreshPatchSurface\(\{/);
   assert.doesNotMatch(functionBody("refreshCurrentThread"), /planThreadDetailRefreshPatchSurfaceProbeEffects\(\{/);
-  assert.match(functionBody("refreshCurrentThread"), /const patchSurfaceResultStage = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchSurfaceResultStage\(\{[\s\S]*tilePatchPlan,[\s\S]*\}\);/);
-  assert.match(functionBody("refreshCurrentThread"), /const patchExecutionStage = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchExecutionStage\(\{[\s\S]*renderPlan,[\s\S]*patchSurfacePlan: patchSurfaceResultStage\.patchSurfacePlan,[\s\S]*\}\);/);
+  assert.match(functionBody("refreshCurrentThread"), /const patchSurfaceExecutionStage = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchSurfaceExecutionStage\(\{[\s\S]*shouldRenderDetail,[\s\S]*renderPlan,[\s\S]*threadTileMode: state\.threadTileMode,[\s\S]*threadTileConversationSurface,[\s\S]*tilePatchPlan,[\s\S]*\}\);/);
+  assert.doesNotMatch(functionBody("refreshCurrentThread"), /planThreadDetailRefreshPatchSurfaceResultStage\(\{/);
+  assert.doesNotMatch(functionBody("refreshCurrentThread"), /planThreadDetailRefreshPatchExecutionStage\(\{/);
   assert.doesNotMatch(functionBody("refreshCurrentThread"), /const patchExecutionPlan = patchExecutionStage\.patchExecutionPlan;/);
-  assert.match(functionBody("refreshCurrentThread"), /const patchAttemptEffectsPlan = patchExecutionStage\.patchAttemptEffectsPlan;/);
+  assert.match(functionBody("refreshCurrentThread"), /const patchAttemptEffectsPlan = patchSurfaceExecutionStage\.patchAttemptEffectsPlan;/);
   assert.doesNotMatch(functionBody("refreshCurrentThread"), /canPatch: renderPlan\.canPatch/);
   assert.doesNotMatch(functionBody("refreshCurrentThread"), /tileSurfaceRefresh: patchSurfacePlan\.tileSurfaceRefresh/);
   assert.doesNotMatch(functionBody("refreshCurrentThread"), /tilePatchPlan && tilePatchPlan\.surface === "thread-tile-pane"/);

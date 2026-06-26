@@ -3181,10 +3181,12 @@ test("current-thread refresh patches the current tile pane for metadata-only til
   const body = functionBody("refreshCurrentThread");
   assert.doesNotMatch(body, /let locallyPatchedDetail = false;/);
   assert.doesNotMatch(body, /let tilePanePatchedDetail = false;/);
-  assert.match(body, /const patchExecutionStage = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchExecutionStage\(\{/);
-  assert.match(body, /renderPlan,[\s\S]*patchSurfacePlan: patchSurfaceResultStage\.patchSurfacePlan,/);
+  assert.match(body, /const patchSurfaceExecutionStage = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchSurfaceExecutionStage\(\{/);
+  assert.match(body, /shouldRenderDetail,[\s\S]*renderPlan,[\s\S]*threadTileMode: state\.threadTileMode,[\s\S]*threadTileConversationSurface,[\s\S]*tilePatchPlan,/);
+  assert.doesNotMatch(body, /planThreadDetailRefreshPatchSurfaceResultStage\(\{/);
+  assert.doesNotMatch(body, /planThreadDetailRefreshPatchExecutionStage\(\{/);
   assert.doesNotMatch(body, /const patchExecutionPlan = patchExecutionStage\.patchExecutionPlan;/);
-  assert.match(body, /const patchAttemptEffectsPlan = patchExecutionStage\.patchAttemptEffectsPlan;/);
+  assert.match(body, /const patchAttemptEffectsPlan = patchSurfaceExecutionStage\.patchAttemptEffectsPlan;/);
   assert.match(body, /const patchAttempt = applyThreadDetailRefreshPatchAttemptEffectsPlan\(patchAttemptEffectsPlan, \{/);
   assert.doesNotMatch(body, /tilePanePatchedDetail = patchAttempt\.tilePanePatchedDetail;/);
   assert.doesNotMatch(body, /locallyPatchedDetail = patchAttempt\.locallyPatchedDetail;/);

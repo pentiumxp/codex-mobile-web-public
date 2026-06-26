@@ -660,6 +660,90 @@ test("thread detail refresh patch surface result stage composes final surface fr
   });
 });
 
+test("thread detail refresh patch surface execution stage composes probe result and patch attempt effects", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchSurfaceExecutionStage({
+    shouldRenderDetail: true,
+    renderPlan: {
+      shouldRenderDetail: true,
+      canPatch: true,
+    },
+    threadTileMode: false,
+    threadTileConversationSurface: false,
+    tilePatchPlan: {
+      surface: "thread-tile-pane",
+    },
+  }), {
+    patchSurfaceResultStage: {
+      patchSurfacePlan: {
+        shouldProbeTilePatchSurface: true,
+        tileSurfaceRefresh: true,
+        tilePatchSurface: "thread-tile-pane",
+        reason: "tile-patch-surface",
+      },
+      reason: "tile-patch-surface",
+    },
+    patchSurfacePlan: {
+      shouldProbeTilePatchSurface: true,
+      tileSurfaceRefresh: true,
+      tilePatchSurface: "thread-tile-pane",
+      reason: "tile-patch-surface",
+    },
+    patchExecutionStage: {
+      patchExecutionPlan: {
+        tryTilePanePatch: true,
+        tryLocalPatch: false,
+        updateMetadataOnTileMiss: false,
+        fallbackAction: "full-render",
+        localPatchBlockedReason: "tile-surface-refresh",
+        reason: "tile-surface-refresh",
+      },
+      patchAttemptEffectsPlan: {
+        effects: [
+          {
+            type: "tile-pane-patch",
+            timingTarget: "tile-pane-patch",
+            preserveScroll: true,
+          },
+        ],
+        reason: "patch-attempt-effects",
+      },
+      reason: "tile-surface-refresh",
+    },
+    patchExecutionPlan: {
+      tryTilePanePatch: true,
+      tryLocalPatch: false,
+      updateMetadataOnTileMiss: false,
+      fallbackAction: "full-render",
+      localPatchBlockedReason: "tile-surface-refresh",
+      reason: "tile-surface-refresh",
+    },
+    patchAttemptEffectsPlan: {
+      effects: [
+        {
+          type: "tile-pane-patch",
+          timingTarget: "tile-pane-patch",
+          preserveScroll: true,
+        },
+      ],
+      reason: "patch-attempt-effects",
+    },
+    reason: "tile-surface-refresh",
+  });
+
+  const metadataStage = renderPlan.planThreadDetailRefreshPatchSurfaceExecutionStage({
+    renderPlan: {
+      shouldRenderDetail: false,
+      canPatch: false,
+    },
+    threadTileMode: false,
+    threadTileConversationSurface: false,
+    tilePatchPlan: {},
+  });
+  assert.equal(metadataStage.patchSurfacePlan.reason, "metadata-only-single-thread-surface");
+  assert.equal(metadataStage.patchExecutionPlan.fallbackAction, "metadata-update");
+  assert.equal(metadataStage.patchAttemptEffectsPlan.effects.length, 1);
+});
+
 test("thread detail refresh post-merge effects plan preserves timing groups and order", () => {
   assert.deepEqual(renderPlan.planThreadDetailRefreshPostMergeEffects(), {
     groups: [

@@ -9782,17 +9782,14 @@ async function refreshCurrentThread(options = {}) {
     patchSurfaceProbeStage.patchSurfaceProbeEffectsPlan,
     { threadId },
   );
-  const patchSurfaceResultStage = threadDetailRenderPlanApi.planThreadDetailRefreshPatchSurfaceResultStage({
+  const patchSurfaceExecutionStage = threadDetailRenderPlanApi.planThreadDetailRefreshPatchSurfaceExecutionStage({
     shouldRenderDetail,
+    renderPlan,
     threadTileMode: state.threadTileMode,
     threadTileConversationSurface,
     tilePatchPlan,
   });
-  const patchExecutionStage = threadDetailRenderPlanApi.planThreadDetailRefreshPatchExecutionStage({
-    renderPlan,
-    patchSurfacePlan: patchSurfaceResultStage.patchSurfacePlan,
-  });
-  const patchAttemptEffectsPlan = patchExecutionStage.patchAttemptEffectsPlan;
+  const patchAttemptEffectsPlan = patchSurfaceExecutionStage.patchAttemptEffectsPlan;
   const patchAttempt = applyThreadDetailRefreshPatchAttemptEffectsPlan(patchAttemptEffectsPlan, {
     threadId,
     previousThread,

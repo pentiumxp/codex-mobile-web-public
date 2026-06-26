@@ -45,6 +45,41 @@ completion、scroll/bottom-follow 和 single-thread shell update 的所有权边
 `status=ready`，detail 走 `projection-active-overlay` warm path，active overlay
 gate 为 `ready`；抽样文件 source/prod SHA-256 短 hash 一致。
 
+## 2026-06-27 Phase A Patch Surface Execution Stage Slice
+
+本地小切片继续收敛 `refreshCurrentThread()` 的 patch surface / execution
+编排。此前 DOM probe 的前置规划、probe effect、surface result 和 patch
+execution 都已经由 `public/thread-detail-render-plan.js` 分别拥有，但
+`public/app.js` 仍然手写把 probe 结果再串到 result stage、execution stage 和
+attempt effects。这个组合逻辑如果继续留在 app 主状态机会让 tile pane、single
+thread 和 metadata-only 刷新路径在后续修改时重新漂移。
+
+本次修复：
+
+- `public/thread-detail-render-plan.js` 新增
+  `planThreadDetailRefreshPatchSurfaceExecutionStage()`，把 DOM probe 的
+  bounded 结果、最终 patch surface、patch execution 和 attempt effects 组合为
+  一个纯 planning stage。
+- `refreshCurrentThread()` 只执行真实 DOM probe effect，然后把 probe 结果交给
+  该组合 stage；它不再直接调用 surface result stage 和 patch execution stage。
+- `test/thread-detail-render-plan.test.js` 覆盖 tile-pane probe 结果会阻止
+  single-thread local patch、metadata-only 刷新仍走 metadata-update fallback。
+- `test/conversation-render.test.js`、`test/mobile-viewport.test.js` 和
+  `test/thread-tile-layout-ui.test.js` 验证 app.js wiring 不再散落 result/execution
+  组合。
+- 不改变 DOM probe、tile-pane patch、single-thread local patch、full render、
+  metadata update、server projection、任务卡协议、诊断上报或 shell/cache。
+
+闭环验证：
+
+```bash
+node --check public/thread-detail-render-plan.js && node --check public/app.js && node --check test/thread-detail-render-plan.test.js && node --check test/conversation-render.test.js && node --check test/mobile-viewport.test.js && node --check test/thread-tile-layout-ui.test.js
+node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-tile-layout-ui.test.js
+```
+
+结果：focused `210` passed。该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，
+尚未部署；继续作为 Phase A 模块的一部分累积。
+
 ## 2026-06-27 Phase A Post-Merge Timing Executor Slice
 
 本地小切片继续收敛 thread-detail refresh / first-paint / full-backfill 的
