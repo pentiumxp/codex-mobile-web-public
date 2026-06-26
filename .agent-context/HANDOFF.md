@@ -1,3 +1,56 @@
+# 2026-06-26 - local Phase B thread-detail performance phase classifier validated, not deployed
+
+- Latest code commit:
+  - `1d61967 classify thread detail performance phases`
+- Scope:
+  - Started the next Phase B large-session / cold-path evidence boundary after
+    the v507 Phase A module deploy.
+  - Added client-side `classifyThreadDetailPhase()` in
+    `public/thread-performance-metrics.js`.
+  - The classifier preserves an explicit non-`unknown` server phase when
+    present, but can now derive a bounded `performancePhase` from
+    `readDecision`, `readMode`, `projectionState`, `projectionSource`, and
+    `projectionSeedStatus` when the server phase is missing or `unknown`.
+  - Covered warm projection cache, warm projection dynamic, warm projection
+    partial, cold initial turns-list, cold initial turns-list with partial
+    seed, bounded large turns-list, cold full `thread/read`, raw thread/read,
+    turns-list fallback, summary fallback, cached-current, and unknown paths.
+- Root-cause boundary:
+  - Symptom/risk: large-session first-paint/refresh/full-ready client events
+    could degrade to `performancePhase=unknown` even when safe server fields
+    contained enough bounded evidence to classify the read path. That weakens
+    root-cause triage for "slow first open" and can push the next repair toward
+    guesswork instead of projection/read-path evidence.
+  - Failing layer: client-side Phase B performance diagnostics interpretation.
+  - Classification: root-cause evidence ownership cleanup. No server read
+    strategy, projection cache behavior, thread-list cache behavior, render
+    behavior, fallback, shell/cache bump, deployment, or public push was added.
+- Files changed:
+  - `public/thread-performance-metrics.js`
+  - `test/thread-performance-metrics.test.js`
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`
+  - `docs/MODULES.md`
+- Validation:
+  - Focused suite passed:
+    `node --test test/thread-performance-metrics.test.js test/thread-detail-performance-service.test.js test/thread-detail-read-orchestration-service.test.js test/mobile-viewport.test.js`
+    (`34` tests).
+  - Full source `npm test` passed (`956` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Not deployed by design. This is a local Phase B evidence/diagnostic
+    ownership slice and should accumulate into a larger Phase B module before
+    production deploy.
+  - Production remains at `0.1.11|codex-mobile-shell-v507`.
+- Progress:
+  - Overall system-level architecture optimization is now estimated at about
+    `76%`.
+- Next suggested slice:
+  - Continue Phase B with server-side read-path decision ownership or runtime
+    observation: compare production `thread_detail_first_paint` / `thread_refresh_ms`
+    events for large threads and decide whether the next code slice belongs to
+    projection-cache seeding, summary rollout-size hydration, invalid full-cache
+    lifecycle, or app-server `turns/list` fallback timing.
+
 # 2026-06-26 - v507 Phase A refresh/patch module deployed
 
 - Latest runtime code commit deployed:
