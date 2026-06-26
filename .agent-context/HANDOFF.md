@@ -13341,4 +13341,25 @@ The previous full handoff was archived and should be opened only when old proven
   - Full source `npm test` passed (`1032` tests).
   - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
 - Deployment status:
-  - Pending commit/deploy from clean source.
+  - Committed as `c1a51f9` (`extract empty detail recovery policy`) and
+    deployed from a clean source tree through the central Home AI macOS plugin
+    deploy path.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T072008Z-plugin-codex-mobile-web-codex-mobile-empty-detail-policy-v524`.
+  - Production `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v524` and
+    `shellCacheName=codex-mobile-shell-v524`.
+  - Production static marker readback confirmed
+    `planEmptyDetailHistoryRecovery` / `emptyDetailHistoryEvidenceForThread`
+    in `public/thread-detail-state.js`, app consumption of
+    `threadDetailStateApi.planEmptyDetailHistoryRecovery`, and
+    `codex-mobile-shell-v524` in `public/app.js` / `public/sw.js`.
+  - Source/prod SHA-256 matched for `public/app.js`, `public/sw.js`,
+    `public/thread-detail-state.js`, README, architecture optimization plan,
+    and module map.
+  - Authenticated production Music detail read returned HTTP `200`, `10` turns,
+    item counts `[3,5,3,5,5,4,3,4,3,4]`, `39` visible item keys, `79` omitted
+    turns, read mode `projection-v4-dynamic`, projection state `hit`, and
+    shape hash `c347733fe098db40`.
+  - Authenticated production Music list search returned one matching row and
+    no forbidden detail-only fields (`presentForbidden=[]`, no `turns` field).
