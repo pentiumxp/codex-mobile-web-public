@@ -1870,6 +1870,9 @@ test("loading and thread-list state preserve locally visible live turns", () => 
   assert.doesNotMatch(functionBody("loadThread"), /if \(cacheReusePlan\.shouldUseCachedCurrent\) \{[\s\S]*?mergeThreadIntoThreadList\(state\.currentThread\);[\s\S]*?maybeAutoBackfillThreadHistory\(state\.currentThread, \{ seq: state\.threadLoadSeq, source: "cached-current" \}\);/);
   assert.doesNotMatch(functionBody("loadThread"), /if \(cacheReusePlan\.shouldUseCachedCurrent\) \{[\s\S]*?const threadListRenderStartedAt = nowPerfMs\(\);\s*renderThreads\(\);[\s\S]*?maybeAutoBackfillThreadHistory\(state\.currentThread, \{ seq: state\.threadLoadSeq, source: "cached-current" \}\);/);
   assert.match(functionBody("loadThread"), /recordEmptyCachedDetailReuseHealthy\("cached-current", state\.currentThread\)/);
+  assert.match(functionBody("loadThread"), /const cachedTelemetryPlan = threadDetailRenderPlanApi\.planThreadDetailCachedCurrentTelemetryEffects\(\{[\s\S]*performanceEvent: firstPaintPerformance,[\s\S]*source,[\s\S]*threadId,[\s\S]*threadHash: diagnosticThreadHash\(threadId\),[\s\S]*\}\);[\s\S]*applyThreadDetailFirstPaintTelemetryEffectsPlan\(cachedTelemetryPlan, \{ thread: state\.currentThread \}\);/);
+  assert.doesNotMatch(functionBody("loadThread"), /postClientEvent\("thread_switch_cached"/);
+  assert.doesNotMatch(functionBody("loadThread"), /postPerformanceEvent\("thread_detail_first_paint", firstPaintPerformance\)/);
   assert.doesNotMatch(functionBody("loadThread"), /threadHasReusableLoadedDetailState\(state\.currentThread\)/);
   assert.doesNotMatch(functionBody("loadThread"), /threadHasLoadedDetailState\(state\.currentThread\)/);
   assert.match(functionBody("loadThreads"), /threadListSummaryFromDetailThread\(thread\) \|\| thread/);

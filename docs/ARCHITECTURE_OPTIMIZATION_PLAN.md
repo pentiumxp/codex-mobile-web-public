@@ -881,7 +881,12 @@ the same post-merge plan to `loadThread()` successful first paint and
 thread-list merge and thread-list render through the same plan while preserving
 its existing follow-to-bottom, conversation render, auto-backfill,
 tile-pane-specific Composer refresh, menu close, projection-consistency, and
-cached first-paint telemetry behavior. Ordinary refresh, cached-current first
+cached first-paint telemetry behavior. Cached-current first-paint
+telemetry/reporting ordering now also lives in
+`planThreadDetailCachedCurrentTelemetryEffects`, preserving the legacy
+`thread_detail_first_paint`, `thread_switch_cached`, and load-success
+diagnostic-clear sequence without adding API first-paint response diagnostics.
+Ordinary refresh, cached-current first
 paint, API first paint, and full detail backfill no longer maintain separate
 hand-written thread-list post-merge ordering in `public/app.js`; first paint and
 full backfill still own their existing detail-loaded marker, render-evidence

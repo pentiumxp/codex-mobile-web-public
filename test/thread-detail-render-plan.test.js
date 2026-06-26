@@ -1251,6 +1251,48 @@ test("thread detail first-paint telemetry effects plan preserves bounded event o
   });
 });
 
+test("thread detail cached-current telemetry effects plan preserves legacy event shape", () => {
+  const performanceEvent = { detailRenderMode: "cached-current", cached: true, renderElapsedMs: 8 };
+  assert.deepEqual(renderPlan.planThreadDetailCachedCurrentTelemetryEffects({
+    performanceEvent,
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA",
+    threadId: "thread-1",
+    elapsedMs: 44.4,
+    threadHash: "hash-1",
+  }), {
+    effects: [
+      {
+        type: "post-performance-event",
+        eventName: "thread_detail_first_paint",
+        payload: performanceEvent,
+      },
+      {
+        type: "post-client-event",
+        eventName: "thread_switch_cached",
+        payload: {
+          source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR",
+          threadId: "thread-1",
+          elapsedMs: 44.4,
+        },
+      },
+      {
+        type: "diagnostic-success",
+        payload: {
+          category: "thread_session_load_failed",
+          diagnostic_type: "thread_detail_load_failed",
+          error_code: "thread_detail_load_failed",
+          context: {
+            surface: "thread-session",
+            action: "thread-detail-load",
+            thread_hash: "hash-1",
+          },
+        },
+      },
+    ],
+    reason: "cached-current-telemetry",
+  });
+});
+
 test("single-thread full render shell plans loading state", () => {
   assert.deepEqual(renderPlan.planSingleThreadFullRenderShell({
     threadId: "thread-1",

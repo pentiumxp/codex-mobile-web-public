@@ -897,6 +897,45 @@
     };
   }
 
+  function planThreadDetailCachedCurrentTelemetryEffects(input = {}) {
+    const source = compactReason(input.source, "").slice(0, 40);
+    const threadId = compactReason(input.threadId, "");
+    const threadHash = compactReason(input.threadHash, "");
+    const performanceEvent = objectOrEmpty(input.performanceEvent);
+    return {
+      effects: [
+        {
+          type: "post-performance-event",
+          eventName: "thread_detail_first_paint",
+          payload: performanceEvent,
+        },
+        {
+          type: "post-client-event",
+          eventName: "thread_switch_cached",
+          payload: {
+            source,
+            threadId,
+            elapsedMs: normalizedDurationMs(input.elapsedMs),
+          },
+        },
+        {
+          type: "diagnostic-success",
+          payload: {
+            category: "thread_session_load_failed",
+            diagnostic_type: "thread_detail_load_failed",
+            error_code: "thread_detail_load_failed",
+            context: {
+              surface: "thread-session",
+              action: "thread-detail-load",
+              thread_hash: threadHash,
+            },
+          },
+        },
+      ],
+      reason: "cached-current-telemetry",
+    };
+  }
+
   function text(value) {
     return String(value ?? "");
   }
@@ -1050,6 +1089,7 @@
     emptyThreadDetailRefreshPatchAttempt,
     finalizeThreadDetailRenderPlan,
     normalizeSignature,
+    planThreadDetailCachedCurrentTelemetryEffects,
     planThreadDetailFirstPaintPostRenderEffects,
     planThreadDetailFirstPaintTelemetryEffects,
     planThreadDetailRefreshCompletionEffects,

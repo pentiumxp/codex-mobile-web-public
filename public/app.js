@@ -8967,22 +8967,14 @@ async function loadThread(threadId, options = {}) {
       detailRenderMode: "cached-current",
       cached: true,
     });
-    postPerformanceEvent("thread_detail_first_paint", firstPaintPerformance);
-    postClientEvent("thread_switch_cached", {
+    const cachedTelemetryPlan = threadDetailRenderPlanApi.planThreadDetailCachedCurrentTelemetryEffects({
+      performanceEvent: firstPaintPerformance,
       source,
       threadId,
       elapsedMs: roundedDurationMs(switchStartedAt),
+      threadHash: diagnosticThreadHash(threadId),
     });
-    recordHomeAiDiagnosticSuccess({
-      category: "thread_session_load_failed",
-      diagnostic_type: "thread_detail_load_failed",
-      error_code: "thread_detail_load_failed",
-      context: {
-        surface: "thread-session",
-        action: "thread-detail-load",
-        thread_hash: diagnosticThreadHash(threadId),
-      },
-    });
+    applyThreadDetailFirstPaintTelemetryEffectsPlan(cachedTelemetryPlan, { thread: state.currentThread });
     return;
   }
   const seq = state.threadLoadSeq + 1;

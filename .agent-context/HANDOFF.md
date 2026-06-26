@@ -16954,6 +16954,59 @@ The previous full handoff was archived and should be opened only when old proven
     task-card bodies, upload bytes, private paths, provider payloads, prompts,
     or long logs are included.
 
+## 2026-06-27 - Phase A cached-current telemetry plan reuse local slice
+
+- Latest local slice:
+  - Continued Phase A render/telemetry ownership after `87d7681`
+    (`plan first paint telemetry effects`).
+  - This slice is local/private only and is not deployed by design.
+- Root-cause boundary:
+  - Symptom/risk: `loadThread()` cached-current reuse still hand-wrote the
+    fixed telemetry/reporting sequence for `thread_detail_first_paint`,
+    `thread_switch_cached`, and Home AI load-success diagnostic clear. Keeping
+    this sequence inline leaves cached-current first-paint evidence separate
+    from the now-planned API first-paint telemetry path.
+  - Failing layer: frontend cached-current telemetry side-effect ownership,
+    not API reads, projection cache, merge policy, DOM patch choice, scroll
+    policy, task-card routing, Home AI diagnostic intake, or shell/cache.
+  - Violated invariant: cached-current telemetry ordering should be declared by
+    a pure plan while `public/app.js` only executes real runtime reporting side
+    effects. The cached-current legacy shape must remain distinct from API
+    first-paint: no extra response-diagnostic effect is added.
+- Changes:
+  - `public/thread-detail-render-plan.js` now exports
+    `planThreadDetailCachedCurrentTelemetryEffects()`.
+  - The plan declares ordered effects for `thread_detail_first_paint`,
+    `thread_switch_cached`, and load-success diagnostic clearing.
+  - `public/app.js` cached-current branch now applies that plan through the
+    existing telemetry effect executor while preserving the existing
+    performance payload and bounded diagnostic fields.
+  - Updated `test/thread-detail-render-plan.test.js`,
+    `test/conversation-render.test.js`, and `test/mobile-viewport.test.js`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/turn-scroll-controls.test.js test/thread-detail-refresh-dom-harness.test.js`
+    passed (`189` tests).
+  - Syntax:
+    `node --check public/thread-detail-render-plan.js && node --check public/app.js && node --check test/conversation-render.test.js && node --check test/mobile-viewport.test.js && node --check test/thread-detail-render-plan.test.js`
+    passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache
+    bump. This remains a local Phase A ownership slice to batch with the next
+    module validation/deploy.
+- Next:
+  - Run full validation, commit locally, then continue Phase A with remaining
+    `loadThread()` cancellation/error/success event ownership or switch to
+    Phase B cold-path readback if large-session load time becomes immediate
+    priority.
+- Privacy:
+  - Only bounded file paths, helper names, effect names, and test counts are
+    recorded. No secrets, cookies, launch tokens, private thread bodies,
+    task-card bodies, upload bytes, private paths, provider payloads, prompts,
+    or long logs are included.
+
 ## 2026-06-27 - Phase A first-paint telemetry plan reuse local slice
 
 - Latest local slice:

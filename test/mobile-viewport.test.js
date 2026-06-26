@@ -298,6 +298,8 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /performancePhase: listPerformance\.performancePhase/);
   assert.match(functionBody("loadThread"), /threadPerformanceMetrics\.threadDetailFirstPaintEventFields\(state\.currentThread, \{/);
   assert.match(functionBody("loadThread"), /threadPerformanceMetrics\.threadDetailFirstPaintEventFields\(result\.thread, \{/);
+  assert.match(functionBody("loadThread"), /const cachedTelemetryPlan = threadDetailRenderPlanApi\.planThreadDetailCachedCurrentTelemetryEffects\(\{[\s\S]*performanceEvent: firstPaintPerformance,[\s\S]*threadHash: diagnosticThreadHash\(threadId\),[\s\S]*\}\);/);
+  assert.match(functionBody("loadThread"), /applyThreadDetailFirstPaintTelemetryEffectsPlan\(cachedTelemetryPlan, \{ thread: state\.currentThread \}\);/);
   assert.match(functionBody("loadThread"), /const firstPaintTelemetryPlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintTelemetryEffects\(\{[\s\S]*performanceEvent: firstPaintPerformance,[\s\S]*threadHash: diagnosticThreadHash\(threadId\),[\s\S]*\}\);/);
   assert.match(functionBody("loadThread"), /applyThreadDetailFirstPaintTelemetryEffectsPlan\(firstPaintTelemetryPlan, \{ thread: result\.thread \}\);/);
   assert.match(functionBody("applyThreadDetailFirstPaintTelemetryEffect"), /postPerformanceEvent\(String\(item\.eventName \|\| ""\), item\.payload \|\| \{\}, item\.options \|\| \{\}\);/);
