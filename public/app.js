@@ -9772,11 +9772,8 @@ async function refreshCurrentThread(options = {}) {
   const threadListRenderStartedAt = nowPerfMs();
   applyThreadDetailRefreshPostMergeEffectsGroup(postMergePlan, "thread-list-render");
   const threadListRenderMs = roundedDurationMs(threadListRenderStartedAt);
-  let locallyPatchedDetail = false;
-  let tilePanePatchedDetail = false;
   let conversationRenderMs = 0;
   let metadataUpdateMs = 0;
-  let renderOutcome = null;
   const threadTileConversationSurface = isThreadTileConversationSurface();
   const patchSurfaceProbeStage = threadDetailRenderPlanApi.planThreadDetailRefreshPatchSurfaceProbeStage({
     shouldRenderDetail,
@@ -9804,8 +9801,6 @@ async function refreshCurrentThread(options = {}) {
     previousThread,
     previousConversationSignature,
   });
-  tilePanePatchedDetail = patchAttempt.tilePanePatchedDetail;
-  locallyPatchedDetail = patchAttempt.locallyPatchedDetail;
   const patchAttemptResultEvidenceStage = threadDetailRenderPlanApi.planThreadDetailRefreshPatchAttemptResultEvidenceStage({
     shouldRenderDetail,
     patchAttempt,
@@ -9830,16 +9825,12 @@ async function refreshCurrentThread(options = {}) {
     });
   }
   const patchAttemptResult = patchAttemptResultStage.patchAttemptResult;
-  locallyPatchedDetail = patchAttemptResult.locallyPatchedDetail;
-  tilePanePatchedDetail = patchAttemptResult.tilePanePatchedDetail;
   applyThreadDetailRefreshPatchRejectedDiagnosticEffectsPlan(patchAttemptResultStage.patchRejectedDiagnosticEffectsPlan);
   const outcomeExecutionStage = threadDetailRenderPlanApi.planThreadDetailRefreshOutcomeExecutionStage({
     renderPlan,
     patchAttemptResult,
   });
-  renderOutcome = outcomeExecutionStage.renderOutcome;
-  locallyPatchedDetail = renderOutcome.locallyPatchedDetail;
-  tilePanePatchedDetail = renderOutcome.tilePanePatchedDetail;
+  const renderOutcome = outcomeExecutionStage.renderOutcome;
   const executionTimings = applyThreadDetailRefreshExecutionEffectsPlan(outcomeExecutionStage.executionEffectsPlan);
   metadataUpdateMs += executionTimings.metadataUpdateMs;
   conversationRenderMs += executionTimings.conversationRenderMs;

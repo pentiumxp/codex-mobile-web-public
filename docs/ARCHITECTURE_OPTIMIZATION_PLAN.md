@@ -815,6 +815,11 @@ now also lives in the helper:
 consistency effect plans as one stage. This keeps `refreshCurrentThread()` from
 hand-wiring the outcome/execution/consistency helper chain while still leaving
 real metadata updates, full render, and consistency checks in app code.
+The refresh path now also stops mirroring patch state in app-local booleans:
+`locallyPatchedDetail` and `tilePanePatchedDetail` are owned by
+`patchAttemptResult` and the final `renderOutcome`, not by extra
+`refreshCurrentThread()` variables that can drift across patch attempt, result,
+and outcome stages.
 Refresh completion side-effect planning now also lives in this helper:
 `planThreadDetailRefreshCompletionEffects` decides the success diagnostic clear,
 usage-backfill refresh scheduling, and live-poll scheduling effects, while app

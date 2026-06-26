@@ -18507,3 +18507,52 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit locally, then either batch the accumulated Phase A local slices for
     one deploy/readback when requested or continue the remaining app orchestration
     cleanup before moving to the next module boundary.
+
+## 2026-06-27 - Latest tail marker: Phase A refresh patch outcome mirror cleanup local slice
+
+- Current local state:
+  - Continued Phase A `refreshCurrentThread()` state ownership cleanup after
+    `c814cc1`.
+  - Patch attempt, patch result, and render outcome ownership already lived in
+    `public/thread-detail-render-plan.js`, but `refreshCurrentThread()` still
+    kept `locallyPatchedDetail` / `tilePanePatchedDetail` as local mirror
+    variables and assigned them from patch attempt, patch result, and render
+    outcome stages.
+- Root-cause boundary:
+  - Symptom/risk: app-local mirror booleans duplicated the authority already held
+    by `patchAttemptResult` and `renderOutcome`. Even when currently unused, this
+    stale pattern invites future drift between app orchestration and the tested
+    render-plan stage.
+  - Failing layer: frontend refresh patch/outcome state ownership, not DOM patch
+    execution, server projection, merge behavior, scroll behavior, task-card
+    protocol, Home AI diagnostic intake, or shell/cache.
+  - Violated invariant: patch success/rejection and final render mode should be
+    read from the staged plan outputs, not copied into extra app-level state.
+- Changes:
+  - `public/app.js` removed `locallyPatchedDetail` and `tilePanePatchedDetail`
+    mirror variables from `refreshCurrentThread()`.
+  - `public/app.js` now declares `const renderOutcome =
+    outcomeExecutionStage.renderOutcome` at the point of use instead of creating
+    an empty mutable `renderOutcome` slot.
+  - Updated `test/conversation-render.test.js` and
+    `test/mobile-viewport.test.js` so the wiring tests now reject the old mirror
+    variables and assignments.
+  - Updated `README.md` and `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Validation:
+  - Syntax and focused:
+    `node --check public/app.js && node --check test/conversation-render.test.js && node --check test/mobile-viewport.test.js && node --test test/conversation-render.test.js test/mobile-viewport.test.js test/thread-tile-layout-ui.test.js test/thread-detail-render-plan.test.js`
+    passed (`209` focused tests).
+  - Full validation was run before local commit:
+    `npm test`, `npm run check`, `npm run check:macos`, and `git diff --check`.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache
+    bump. This remains a local Phase A ownership slice to batch with the next
+    module validation/deploy.
+- Progress:
+  - Overall architecture optimization is about `88%`.
+  - Phase A frontend render/projection ownership is about `98%`.
+- Next:
+  - Commit locally, then either batch/deploy the accumulated Phase A module when
+    requested or use the next turn to audit the last remaining
+    `refreshCurrentThread()` app-orchestration responsibilities before moving to
+    Phase B/C.

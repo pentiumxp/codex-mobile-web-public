@@ -45,6 +45,36 @@ completion、scroll/bottom-follow 和 single-thread shell update 的所有权边
 `status=ready`，detail 走 `projection-active-overlay` warm path，active overlay
 gate 为 `ready`；抽样文件 source/prod SHA-256 短 hash 一致。
 
+## 2026-06-27 Phase A Refresh Patch Outcome Mirror Cleanup Slice
+
+本地小切片继续收敛 `refreshCurrentThread()` 的状态所有权。此前 patch attempt、
+patch attempt result 和 render outcome 已经由 `public/thread-detail-render-plan.js`
+规划，但 `public/app.js` 仍保留 `locallyPatchedDetail` /
+`tilePanePatchedDetail` 旧镜像变量，并在 patch attempt、patch result、render
+outcome 三个阶段重复赋值。当前最终 reporting 已经读取 `patchAttemptResult` 和
+`renderOutcome`，这些镜像变量只增加状态漂移风险。
+
+本次修复：
+
+- `public/app.js` 删除 `refreshCurrentThread()` 里的
+  `locallyPatchedDetail` / `tilePanePatchedDetail` 局部镜像状态。
+- `public/app.js` 将 `renderOutcome` 改为直接来自
+  `outcomeExecutionStage.renderOutcome` 的 `const`，不再先建空变量再赋值。
+- `test/conversation-render.test.js` 和 `test/mobile-viewport.test.js` 改为验证
+  `refreshCurrentThread()` 不再维护这些旧镜像变量。
+- 不改变 patch attempt、result planning、render outcome、metadata/full-render
+  execution、diagnostic payload、server projection、scroll、任务卡协议或 shell/cache。
+
+闭环验证：
+
+```bash
+node --check public/app.js && node --check test/conversation-render.test.js && node --check test/mobile-viewport.test.js
+node --test test/conversation-render.test.js test/mobile-viewport.test.js test/thread-tile-layout-ui.test.js test/thread-detail-render-plan.test.js
+```
+
+结果：focused `209` passed。该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，
+尚未部署；继续作为 Phase A 模块的一部分累积。
+
 ## 2026-06-27 Phase A Patch Rejected Visible-Shape Evidence Slice
 
 本地小切片继续收敛 `refreshCurrentThread()` 的 patch rejection evidence

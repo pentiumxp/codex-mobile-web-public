@@ -3179,14 +3179,15 @@ test("thread tile local patch paths refresh the pane instead of writing a single
 
 test("current-thread refresh patches the current tile pane for metadata-only tile updates", () => {
   const body = functionBody("refreshCurrentThread");
-  assert.match(body, /let tilePanePatchedDetail = false;/);
+  assert.doesNotMatch(body, /let locallyPatchedDetail = false;/);
+  assert.doesNotMatch(body, /let tilePanePatchedDetail = false;/);
   assert.match(body, /const patchExecutionStage = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchExecutionStage\(\{/);
   assert.match(body, /renderPlan,[\s\S]*patchSurfacePlan: patchSurfaceResultStage\.patchSurfacePlan,/);
   assert.doesNotMatch(body, /const patchExecutionPlan = patchExecutionStage\.patchExecutionPlan;/);
   assert.match(body, /const patchAttemptEffectsPlan = patchExecutionStage\.patchAttemptEffectsPlan;/);
   assert.match(body, /const patchAttempt = applyThreadDetailRefreshPatchAttemptEffectsPlan\(patchAttemptEffectsPlan, \{/);
-  assert.match(body, /tilePanePatchedDetail = patchAttempt\.tilePanePatchedDetail;/);
-  assert.match(body, /locallyPatchedDetail = patchAttempt\.locallyPatchedDetail;/);
+  assert.doesNotMatch(body, /tilePanePatchedDetail = patchAttempt\.tilePanePatchedDetail;/);
+  assert.doesNotMatch(body, /locallyPatchedDetail = patchAttempt\.locallyPatchedDetail;/);
   assert.doesNotMatch(body, /if \(patchExecutionPlan\.tryTilePanePatch\)/);
   assert.doesNotMatch(body, /if \(shouldRenderDetail && !tilePanePatchedDetail && patchExecutionPlan\.tryLocalPatch\)/);
   assert.doesNotMatch(body, /renderPlan\.canPatch && !tileSurfaceRefresh/);
@@ -3213,6 +3214,8 @@ test("current-thread refresh patches the current tile pane for metadata-only til
   assert.doesNotMatch(body, /previousVisibleShape: visibleConversationShape\(previousThread\)/);
   assert.doesNotMatch(body, /nextVisibleShape: visibleConversationShape\(state\.currentThread\)/);
   assert.match(body, /const patchAttemptResult = patchAttemptResultStage\.patchAttemptResult;/);
+  assert.doesNotMatch(body, /locallyPatchedDetail = patchAttemptResult\.locallyPatchedDetail;/);
+  assert.doesNotMatch(body, /tilePanePatchedDetail = patchAttemptResult\.tilePanePatchedDetail;/);
   assert.match(appJs, /function applyThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffectsPlan\(plan, context = \{\}\)/);
   assert.match(functionBody("applyThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffect"), /previousVisibleShape: visibleConversationShape\(context\.previousThread\)/);
   assert.match(functionBody("applyThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffect"), /nextVisibleShape: visibleConversationShape\(context\.nextThread\)/);
@@ -3231,11 +3234,13 @@ test("current-thread refresh patches the current tile pane for metadata-only til
   assert.doesNotMatch(body, /if \(patchRejectedDiagnosticPlan\.shouldReport\)/);
   assert.match(body, /const outcomeExecutionStage = threadDetailRenderPlanApi\.planThreadDetailRefreshOutcomeExecutionStage\(\{/);
   assert.match(body, /renderPlan,[\s\S]*patchAttemptResult,/);
-  assert.match(body, /renderOutcome = outcomeExecutionStage\.renderOutcome;/);
+  assert.match(body, /const renderOutcome = outcomeExecutionStage\.renderOutcome;/);
+  assert.doesNotMatch(body, /locallyPatchedDetail = renderOutcome\.locallyPatchedDetail;/);
+  assert.doesNotMatch(body, /tilePanePatchedDetail = renderOutcome\.tilePanePatchedDetail;/);
   assert.doesNotMatch(body, /finalizeThreadDetailRenderPlan\(renderPlan, patchAttemptResult\.finalizeResult\)/);
   assert.doesNotMatch(body, /detailRenderMode = renderOutcome\.detailRenderMode;/);
   assert.doesNotMatch(body, /refreshRenderAction = renderOutcome\.renderAction;/);
-  assert.match(body, /let renderOutcome = null;/);
+  assert.doesNotMatch(body, /let renderOutcome = null;/);
   assert.doesNotMatch(body, /planThreadDetailRefreshOutcomeExecution\(renderOutcome\)/);
   assert.doesNotMatch(body, /planThreadDetailRefreshExecutionEffects\(executionPlan\)/);
   assert.match(body, /const executionTimings = applyThreadDetailRefreshExecutionEffectsPlan\(outcomeExecutionStage\.executionEffectsPlan\);/);
