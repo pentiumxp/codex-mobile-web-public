@@ -2079,6 +2079,34 @@ first-paint performance input 的字段选择从 `public/app.js` 移到可测试
 - 闭环验证：focused tests 证明 cached-current 不携带 API 专属 timing 字段；完整
   检查通过后再随 Phase A 模块批量部署。
 
+## 2026-06-27 Local Phase A Thread Load Error Effects Slice
+
+这个本地小切片继续 Phase A 的 `loadThread()` 编排收敛，不改变 API 失败判定、
+错误诊断、Home AI diagnostic report 或 shell/cache。它只把 detail API 失败后的
+固定 UI 状态更新顺序移到 `public/thread-detail-render-plan.js`。
+
+本次切片新增/调整：
+
+- `public/thread-detail-render-plan.js` 新增
+  `planThreadDetailLoadErrorEffects()`，声明 load-error 状态写入、active turn
+  同步、线程列表渲染、当前线程渲染和 Composer 控件刷新顺序。
+- `public/app.js` 的 `loadThread()` catch 分支改为执行该 plan；app 层仍负责真实
+  `state.currentThread` 写入、DOM 渲染和 Composer 控件更新。
+- `thread_switch_error` client event 和 `thread_detail_load_failed` Home AI 诊断
+  仍沿用原有路径，未改变 payload 语义。
+- `test/thread-detail-render-plan.test.js` 覆盖 load-error effect 顺序；
+  `test/mobile-viewport.test.js` 和 `test/conversation-render.test.js` 确认
+  `loadThread()` 不再内联旧的 error-state/render/update 串联。
+
+修复边界：
+
+- 症状/风险：普通 detail API 失败时，`loadThread()` 仍直接拥有 load-error UI
+  状态和渲染顺序，和 loading shell、first-paint、cached-current 已计划化的路径不一致。
+- 失败层：前端 load-error render/state effect ownership，不是网络 API、server
+  projection、任务卡协议或 Home AI diagnostic intake。
+- 闭环验证：focused tests 覆盖 plan 顺序和 app wiring；完整检查通过后再随 Phase A
+  模块批量部署。
+
 ## 2026-06-26 Local Phase B Server Timing Classifier
 
 这个本地切片继续 Phase B 的大 session / thread-detail cold path 收敛，但只处理

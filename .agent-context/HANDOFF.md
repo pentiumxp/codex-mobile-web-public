@@ -17907,3 +17907,52 @@ The previous full handoff was archived and should be opened only when old proven
   - Continue Phase A by moving the next remaining `loadThread()` fixed
     current-thread render authority into plan helpers, or batch the accumulated
     Phase A local slices for one deploy/readback when requested.
+
+## 2026-06-27 - Latest tail marker: Phase A load-error effects local slice
+
+- Current local state:
+  - Continued Phase A `loadThread()` ownership cleanup after `bc96c72`.
+  - API first-paint/cached-current success paths now delegate most fixed effect
+    ordering to plan helpers, but the detail API failure path still directly
+    wrote load-error state and re-rendered thread list/detail/Composer controls.
+  - This slice moves that fixed load-error state/render/update sequence into
+    `public/thread-detail-render-plan.js`.
+- Root-cause boundary:
+  - Symptom/risk: failed thread detail loads had a separate inline UI update
+    sequence in `loadThread()`, making error-state rendering easier to regress
+    independently from loading-shell and success paths.
+  - Failing layer: frontend load-error render/state effect ownership, not network
+    request behavior, server projection, app-server detail reads, task-card
+    protocol, Home AI diagnostic intake, or shell/cache.
+  - Violated invariant: `loadThread()` should catch errors, preserve diagnostics,
+    and execute planned UI effects; fixed load-error render order belongs in a
+    focused helper with tests.
+- Changes:
+  - `public/thread-detail-render-plan.js` now exports
+    `planThreadDetailLoadErrorEffects()`.
+  - `public/app.js` applies the plan in the detail API catch branch and adds a
+    `set-current-thread-load-error` effect executor.
+  - `thread_switch_error` client-event planning and
+    `thread_detail_load_failed` Home AI diagnostic payloads are unchanged.
+  - Updated `test/thread-detail-render-plan.test.js`,
+    `test/mobile-viewport.test.js`, and `test/conversation-render.test.js`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation so far:
+  - Syntax:
+    `node --check public/thread-detail-render-plan.js && node --check public/app.js && node --check test/thread-detail-render-plan.test.js && node --check test/mobile-viewport.test.js && node --check test/conversation-render.test.js`
+    passed.
+  - Focused:
+    `node --test test/thread-detail-render-plan.test.js test/mobile-viewport.test.js test/conversation-render.test.js`
+    passed (`193` tests).
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache
+    bump. This remains a local Phase A ownership slice to batch with the next
+    module validation/deploy.
+- Progress:
+  - Overall architecture optimization is about `77%`.
+  - Phase A frontend render/projection ownership is about `87%`.
+- Next:
+  - Run full validation, commit locally, then continue Phase A current-thread
+    render authority or batch the accumulated module for one deploy/readback
+    when requested.

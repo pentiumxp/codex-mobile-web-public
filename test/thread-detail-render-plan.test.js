@@ -1384,6 +1384,26 @@ test("thread detail first-paint draft-restore effects plan preserves timing targ
   });
 });
 
+test("thread detail load-error effects plan preserves state and render order", () => {
+  assert.deepEqual(renderPlan.planThreadDetailLoadErrorEffects({
+    threadId: "thread-1",
+    errorMessage: "Request timed out",
+  }), {
+    effects: [
+      {
+        type: "set-current-thread-load-error",
+        threadId: "thread-1",
+        errorMessage: "Request timed out",
+      },
+      { type: "sync-active-turn-from-thread" },
+      { type: "render-thread-list" },
+      { type: "render-current-thread" },
+      { type: "update-composer-controls" },
+    ],
+    reason: "thread-detail-load-error",
+  });
+});
+
 test("thread detail loading-shell post-state effects plan preserves visible open order", () => {
   assert.deepEqual(renderPlan.planThreadDetailLoadingShellPostStateEffects({
     threadId: "thread-1",

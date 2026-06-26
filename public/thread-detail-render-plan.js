@@ -966,6 +966,23 @@
     };
   }
 
+  function planThreadDetailLoadErrorEffects(input = {}) {
+    return {
+      effects: [
+        {
+          type: "set-current-thread-load-error",
+          threadId: compactReason(input.threadId, ""),
+          errorMessage: String(input.errorMessage || input.error || ""),
+        },
+        { type: "sync-active-turn-from-thread" },
+        { type: "render-thread-list" },
+        { type: "render-current-thread" },
+        { type: "update-composer-controls" },
+      ],
+      reason: "thread-detail-load-error",
+    };
+  }
+
   function planThreadDetailLoadingShellPostStateEffects(input = {}) {
     const threadId = compactReason(input.threadId, "");
     const source = compactReason(input.source, "").slice(0, 40);
@@ -1364,6 +1381,7 @@
     planThreadDetailFirstPaintPerformanceInput,
     planThreadDetailFirstPaintPostTimingEffects,
     planThreadDetailFirstPaintPreRenderEffects,
+    planThreadDetailLoadErrorEffects,
     planThreadDetailLoadingShellPostStateEffects,
     planThreadDetailFullBackfillPostRenderEffects,
     planThreadDetailFullBackfillTelemetryEffects,

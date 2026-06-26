@@ -930,6 +930,12 @@ thread-list render, conversation render, plugin navigation, side-chat silent
 load, connection state, activity marker, and load watchdog startup. App code
 still executes the real DOM/state/timer/network effects, but `loadThread()` no
 longer owns this loading-shell visible-open sequence inline.
+Thread detail load-error UI ordering now follows the same rule:
+`planThreadDetailLoadErrorEffects` declares the fixed load-error state/render
+sequence for failed detail API reads. App code still writes the real
+`state.currentThread.mobileLoadError`, updates DOM controls, and emits the
+existing switch-error and Home AI failure diagnostics, but `loadThread()` no
+longer owns the load-error render/update order inline.
 API first-paint pre-render local-state preparation is also planned explicitly:
 `planThreadDetailFirstPaintPreRenderEffects` declares current thread id
 persistence, draft-target clearing, follow-to-bottom, and optional EventSource

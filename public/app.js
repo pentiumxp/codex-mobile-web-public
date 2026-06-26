@@ -9030,14 +9030,11 @@ async function loadThread(threadId, options = {}) {
       applyThreadDetailSwitchClientEventPlan(cancelledEventPlan);
       return;
     }
-    state.currentThread = Object.assign({}, state.currentThread || { id: threadId, name: threadId, preview: threadId, turns: [] }, {
-      mobileLoading: false,
-      mobileLoadError: err.message || String(err),
+    const loadErrorPlan = threadDetailRenderPlanApi.planThreadDetailLoadErrorEffects({
+      threadId,
+      errorMessage: err.message || String(err),
     });
-    syncActiveTurnFromThread();
-    renderThreads();
-    renderCurrentThread();
-    updateComposerControls();
+    applyThreadDetailPostRenderEffectsPlan(loadErrorPlan, { thread: state.currentThread });
     const errorEventPlan = threadDetailRenderPlanApi.planThreadDetailSwitchErrorClientEvent({
       source,
       threadId,
@@ -9290,6 +9287,19 @@ function applyThreadDetailPostRenderEffect(effect, context = {}) {
   if (type === "render-current-thread") {
     const options = item.options && typeof item.options === "object" ? item.options : {};
     renderCurrentThread({ stickToBottom: Boolean(options.stickToBottom) });
+    return true;
+  }
+  if (type === "set-current-thread-load-error") {
+    const threadId = String(item.threadId || state.currentThreadId || "");
+    state.currentThread = Object.assign({}, state.currentThread || {
+      id: threadId,
+      name: threadId,
+      preview: threadId,
+      turns: [],
+    }, {
+      mobileLoading: false,
+      mobileLoadError: String(item.errorMessage || ""),
+    });
     return true;
   }
   if (type === "publish-plugin-navigation-state") {

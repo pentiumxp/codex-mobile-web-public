@@ -308,6 +308,8 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(functionBody("loadThread"), /threadDetailRenderPlanApi\.planThreadDetailSwitchStartClientEvent\(\{/);
   assert.match(functionBody("loadThread"), /threadDetailRenderPlanApi\.planThreadDetailSwitchCancelledClientEvent\(\{/);
   assert.match(functionBody("loadThread"), /threadDetailRenderPlanApi\.planThreadDetailSwitchErrorClientEvent\(\{/);
+  assert.match(functionBody("loadThread"), /const loadErrorPlan = threadDetailRenderPlanApi\.planThreadDetailLoadErrorEffects\(\{[\s\S]*threadId,[\s\S]*errorMessage: err\.message \|\| String\(err\),[\s\S]*\}\);[\s\S]*applyThreadDetailPostRenderEffectsPlan\(loadErrorPlan, \{ thread: state\.currentThread \}\);/);
+  assert.match(functionBody("applyThreadDetailPostRenderEffect"), /if \(type === "set-current-thread-load-error"\) \{[\s\S]*state\.currentThread = Object\.assign\(\{\}, state\.currentThread \|\| \{[\s\S]*mobileLoading: false,[\s\S]*mobileLoadError: String\(item\.errorMessage \|\| ""\),[\s\S]*\}\);/);
   assert.match(functionBody("applyThreadDetailSwitchClientEventEffect"), /postClientEvent\(String\(item\.eventName \|\| ""\), item\.payload \|\| \{\}\);/);
   assert.doesNotMatch(functionBody("loadThread"), /postClientEvent\("thread_switch_start"/);
   assert.doesNotMatch(functionBody("loadThread"), /postClientEvent\("thread_switch_cancelled"/);
