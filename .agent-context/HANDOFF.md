@@ -15668,6 +15668,32 @@ The previous full handoff was archived and should be opened only when old proven
   - Continue Phase A or batch the current module for one deploy/readback when
     requested.
 
+## 2026-06-26 - Latest tail marker: Phase A patch surface probe effects slice
+
+- Latest local commit for this continuation slice:
+  - Message: `plan patch surface probe effects`.
+- Current state:
+  - This is the twelfth local Phase A render/patch ownership slice.
+  - Not deployed by design; no `CLIENT_BUILD_ID` / PWA shell cache bump.
+- Root-cause boundary:
+  - `planThreadDetailRefreshPatchSurface()` already decided whether the refresh
+    should probe tile-pane DOM patch surface, but `refreshCurrentThread()` still
+    directly branched on `patchSurfaceProbePlan.shouldProbeTilePatchSurface` to
+    call `threadDetailDomPatchSurface()`.
+  - `public/thread-detail-render-plan.js` now plans ordered patch-surface probe
+    effects; `public/app.js` only executes the real DOM surface probe.
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-tile-layout-ui.test.js`
+    passed (`179` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`1117` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit locally, then continue Phase A or batch the current module for one
+    deploy/readback when requested.
+
 ## 2026-06-26 - Latest tail marker: Phase A refresh failure diagnostic effects slice
 
 - Latest local commit for this continuation slice:

@@ -16,6 +16,43 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 Phase A Patch Surface Probe Effects Slice
+
+本地小切片继续推进 Phase A 的 `refreshCurrentThread()` 所有权收敛。此前
+`planThreadDetailRefreshPatchSurface()` 已经负责判断是否需要探测
+tile-pane DOM patch surface，但 `public/app.js` 仍直接用三元表达式调用
+`threadDetailDomPatchSurface()`。这让 patch surface DOM probe 的 effect
+intent 继续留在主 app 文件里。
+
+本次修复：
+
+- `public/thread-detail-render-plan.js` 新增
+  `planThreadDetailRefreshPatchSurfaceProbeEffects()`，把是否需要 DOM surface
+  probe 转成有序 effects。
+- `public/app.js` 新增
+  `applyThreadDetailRefreshPatchSurfaceProbeEffect()` /
+  `applyThreadDetailRefreshPatchSurfaceProbeEffectsPlan()`，只执行真实 DOM
+  surface probe。
+- `refreshCurrentThread()` 不再直接根据
+  `patchSurfaceProbePlan.shouldProbeTilePatchSurface` 调用 DOM probe。
+- 不改变 tile/single surface 判定、local/tile patch eligibility、DOM patch
+  executor、server projection、任务卡协议或 shell/cache。
+
+闭环验证：
+
+```bash
+node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-tile-layout-ui.test.js
+npm run check
+npm test
+npm run check:macos
+git diff --check
+```
+
+结果：focused `179` passed；full `npm test` `1117` passed；
+`npm run check`、`npm run check:macos`、`git diff --check` 均通过。
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，
+尚未部署；继续作为 Phase A 模块的一部分累积。
+
 ## 2026-06-26 Phase A Refresh Failure Diagnostic Effects Slice
 
 本地小切片继续推进 Phase A 的 `refreshCurrentThread()` 所有权收敛。此前

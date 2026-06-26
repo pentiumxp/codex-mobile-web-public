@@ -433,7 +433,12 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.doesNotMatch(functionBody("refreshCurrentThread"), /mergeThreadIntoThreadList\(state\.currentThread\);\s*const mergeMs/);
   assert.doesNotMatch(functionBody("refreshCurrentThread"), /renderComposerSettings\(\);\s*syncActiveTurnFromThread\(\);/);
   assert.match(functionBody("refreshCurrentThread"), /const patchSurfaceProbePlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchSurface\(\{/);
-  assert.match(functionBody("refreshCurrentThread"), /const tilePatchPlan = patchSurfaceProbePlan\.shouldProbeTilePatchSurface[\s\S]*\? threadDetailDomPatchSurface\(\{ threadId \}\)[\s\S]*: null;/);
+  assert.match(functionBody("refreshCurrentThread"), /const patchSurfaceProbeEffectsPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchSurfaceProbeEffects\(\{/);
+  assert.match(functionBody("refreshCurrentThread"), /patchSurfacePlan: patchSurfaceProbePlan,[\s\S]*threadId,/);
+  assert.match(functionBody("refreshCurrentThread"), /const tilePatchPlan = applyThreadDetailRefreshPatchSurfaceProbeEffectsPlan\(patchSurfaceProbeEffectsPlan, \{ threadId \}\);/);
+  assert.match(appJs, /function applyThreadDetailRefreshPatchSurfaceProbeEffectsPlan\(plan, context = \{\}\)/);
+  assert.match(functionBody("applyThreadDetailRefreshPatchSurfaceProbeEffect"), /threadDetailDomPatchSurface\(\{[\s\S]*threadId: String\(item\.threadId \|\| context\.threadId \|\| ""\),[\s\S]*\}\);/);
+  assert.doesNotMatch(functionBody("refreshCurrentThread"), /patchSurfaceProbePlan\.shouldProbeTilePatchSurface[\s\S]*\? threadDetailDomPatchSurface/);
   assert.match(functionBody("refreshCurrentThread"), /const patchSurfacePlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchSurface\(\{[\s\S]*tilePatchSurface: tilePatchPlan && tilePatchPlan\.surface,[\s\S]*\}\);/);
   assert.match(functionBody("refreshCurrentThread"), /threadDetailRenderPlanApi\.planThreadDetailRefreshPatchExecution\(\{[\s\S]*shouldRenderDetail,[\s\S]*canPatch: renderPlan\.canPatch,[\s\S]*tileSurfaceRefresh,[\s\S]*\}\);/);
   assert.match(functionBody("refreshCurrentThread"), /tileSurfaceRefresh: patchSurfacePlan\.tileSurfaceRefresh/);

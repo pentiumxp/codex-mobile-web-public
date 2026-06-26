@@ -9457,6 +9457,27 @@ function applyThreadDetailRefreshPatchAttemptEffectsPlan(plan, context = {}) {
   return result;
 }
 
+function applyThreadDetailRefreshPatchSurfaceProbeEffect(effect, context = {}) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  if (type === "probe-thread-detail-dom-patch-surface") {
+    return threadDetailDomPatchSurface({
+      threadId: String(item.threadId || context.threadId || ""),
+    });
+  }
+  throw new Error(`Unknown thread detail refresh patch surface probe effect: ${type || "empty"}`);
+}
+
+function applyThreadDetailRefreshPatchSurfaceProbeEffectsPlan(plan, context = {}) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  let result = { surface: "" };
+  for (const effect of effects) {
+    const probe = applyThreadDetailRefreshPatchSurfaceProbeEffect(effect, context);
+    if (probe && typeof probe === "object") result = probe;
+  }
+  return result;
+}
+
 async function refreshCurrentThread(options = {}) {
   const requestPlan = threadDetailRenderPlanApi.planThreadDetailRefreshRequest({
     threadId: state.currentThreadId,
@@ -9542,9 +9563,11 @@ async function refreshCurrentThread(options = {}) {
     threadTileMode: state.threadTileMode,
     threadTileConversationSurface,
   });
-  const tilePatchPlan = patchSurfaceProbePlan.shouldProbeTilePatchSurface
-    ? threadDetailDomPatchSurface({ threadId })
-    : null;
+  const patchSurfaceProbeEffectsPlan = threadDetailRenderPlanApi.planThreadDetailRefreshPatchSurfaceProbeEffects({
+    patchSurfacePlan: patchSurfaceProbePlan,
+    threadId,
+  });
+  const tilePatchPlan = applyThreadDetailRefreshPatchSurfaceProbeEffectsPlan(patchSurfaceProbeEffectsPlan, { threadId });
   const patchSurfacePlan = threadDetailRenderPlanApi.planThreadDetailRefreshPatchSurface({
     shouldRenderDetail,
     threadTileMode: state.threadTileMode,

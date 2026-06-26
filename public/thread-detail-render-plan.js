@@ -356,6 +356,25 @@
     };
   }
 
+  function planThreadDetailRefreshPatchSurfaceProbeEffects(input = {}) {
+    const patchSurfacePlan = objectOrEmpty(input.patchSurfacePlan || input.plan);
+    if (!patchSurfacePlan.shouldProbeTilePatchSurface) {
+      return {
+        effects: [],
+        reason: compactReason(patchSurfacePlan.reason, "no-patch-surface-probe"),
+      };
+    }
+    return {
+      effects: [
+        {
+          type: "probe-thread-detail-dom-patch-surface",
+          threadId: compactReason(input.threadId, ""),
+        },
+      ],
+      reason: "patch-surface-probe",
+    };
+  }
+
   function planThreadDetailRefreshPostMergeEffects() {
     return {
       groups: [
@@ -971,6 +990,7 @@
     planThreadDetailRefreshFailureDiagnosticEffects,
     planThreadDetailRefreshRequest,
     planThreadDetailRefreshPatchSurface,
+    planThreadDetailRefreshPatchSurfaceProbeEffects,
     planThreadDetailRefreshPostMergeEffects,
     planSingleThreadEarlyShellExecution,
     planSingleThreadFullRenderShell,

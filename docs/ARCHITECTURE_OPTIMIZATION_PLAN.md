@@ -775,6 +775,12 @@ Refresh patch surface planning now also lives in this helper:
 tile-pane DOM state and whether the current patch path is a tile surface based
 on tile mode, tile conversation surface state, and the probed DOM patch surface.
 App code still reads the UI state and performs the real DOM probe.
+Patch surface probe effect planning now also lives in this helper:
+`planThreadDetailRefreshPatchSurfaceProbeEffects` converts the initial
+patch-surface decision into a DOM-probe effect only when a rendered detail
+refresh needs it. App code still performs the real `threadDetailDomPatchSurface`
+lookup, but `refreshCurrentThread()` no longer branches directly on
+`patchSurfaceProbePlan.shouldProbeTilePatchSurface`.
 Refresh patch-attempt effect planning now also lives in this helper:
 `planThreadDetailRefreshPatchAttemptEffects` declares the tile-pane patch and
 local-patch attempt order. App code still performs the real DOM patch calls and

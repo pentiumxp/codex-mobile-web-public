@@ -428,6 +428,35 @@ test("thread detail refresh patch surface plan keeps metadata-only probes quiet"
   });
 });
 
+test("thread detail refresh patch surface probe effects plan owns DOM probe intent", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchSurfaceProbeEffects({
+    patchSurfacePlan: {
+      shouldProbeTilePatchSurface: true,
+      reason: "tile-mode",
+    },
+    threadId: "thread-1",
+  }), {
+    effects: [
+      {
+        type: "probe-thread-detail-dom-patch-surface",
+        threadId: "thread-1",
+      },
+    ],
+    reason: "patch-surface-probe",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchSurfaceProbeEffects({
+    patchSurfacePlan: {
+      shouldProbeTilePatchSurface: false,
+      reason: "metadata-only-single-thread-surface",
+    },
+    threadId: "thread-1",
+  }), {
+    effects: [],
+    reason: "metadata-only-single-thread-surface",
+  });
+});
+
 test("thread detail refresh post-merge effects plan preserves timing groups and order", () => {
   assert.deepEqual(renderPlan.planThreadDetailRefreshPostMergeEffects(), {
     groups: [
