@@ -11411,3 +11411,64 @@ The previous full handoff was archived and should be opened only when old proven
     ownership from `refreshCurrentThread()` into a pure plan. If fresh
     production diagnostics show server cold-path misses, pivot to Phase B with
     current `thread_refresh_ms` and projection miss evidence.
+
+## 2026-06-26 - v505 thread refresh patch surface plan deployed
+
+- Latest code commit:
+  - `ca6191e extract thread refresh patch surface plan`
+- v505 change:
+  - Continued Phase A frontend thread-detail ownership convergence.
+  - `public/thread-detail-render-plan.js` now owns
+    `planThreadDetailRefreshPatchSurface()`.
+  - The helper decides whether refresh should probe tile-pane DOM state and
+    whether the current refresh patch path is a tile surface, based on tile
+    mode, tile conversation surface state, and the probed DOM patch surface.
+  - `refreshCurrentThread()` now only reads current UI state, performs the real
+    DOM surface probe, and passes the helper-planned `tileSurfaceRefresh` into
+    patch execution planning. The old inline
+    `tilePatchPlan.surface === "thread-tile-pane"` branch was removed from the
+    app state machine.
+  - Static build/cache: `0.1.11|codex-mobile-shell-v505` /
+    `codex-mobile-shell-v505`.
+- Root-cause boundary:
+  - Symptom/risk: after v504, request/mode/abort planning was helper-owned,
+    but tile/single patch surface selection still lived directly in
+    `refreshCurrentThread()`, keeping surface ownership partly mixed with app
+    orchestration.
+  - Failing layer: frontend thread-detail refresh patch surface ownership.
+  - Classification: root-cause architecture boundary cleanup. No DOM probe
+    behavior, tile-pane patch behavior, single-thread patch behavior,
+    full-render fallback, server projection, diagnostic transport,
+    task-card protocol, visual layout, or duplicate-hiding fallback changed.
+- Validation:
+  - Focused source suite passed:
+    `test/thread-detail-render-plan.test.js`, `test/conversation-render.test.js`,
+    `test/mobile-viewport.test.js`, `test/thread-goal-service.test.js`,
+    `test/thread-task-card-route.test.js`, and
+    `test/thread-tile-layout-ui.test.js` (`159` tests).
+  - Full source `npm test` passed (`939` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Production deploy:
+  - Deployed through Home AI central macOS plugin deploy path with reason
+    `codex-mobile-thread-refresh-patch-surface-v505`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T010854Z-plugin-codex-mobile-web-codex-mobile-thread-refresh-patch-surface-v505`
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v505`,
+    `shellCacheName=codex-mobile-shell-v505`, `version=0.1.11`,
+    `authRequired=true`.
+  - Production focused suite passed (`159` tests).
+  - Source/production SHA parity verified for README/docs, app/static shell,
+    render-plan helper, and focused tests touched by v505.
+- Privacy:
+  - Evidence recorded only statuses, build ids, test counts, bounded deploy
+    metadata, and short hashes. No message bodies, task-card bodies, uploads,
+    private paths, cookies, access keys, provider payloads, database rows,
+    screenshots, or long logs were copied into docs or handoff.
+- Release:
+  - Public was not pushed for v505.
+- Next suggested slice:
+  - Continue Phase A by extracting post-merge side-effect ordering or full-render
+    execution side-effect planning from `refreshCurrentThread()`. If production
+    diagnostics show server cold-path misses, pivot to Phase B with current
+    `thread_refresh_ms` and projection miss evidence.
