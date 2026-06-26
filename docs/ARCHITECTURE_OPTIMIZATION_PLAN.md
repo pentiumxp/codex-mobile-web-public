@@ -251,6 +251,15 @@ continues to the normal detail API path. This keeps the root-cause fix at the
 state ownership boundary: no UI hiding, forced refresh loop, synthetic turns,
 or duplicate suppression is introduced.
 
+`codex-mobile-shell-v522` adds the Phase E browser/DOM replay hook for that same
+failure class. Hermes embedded `window.__codexMobileVisualHarness` can now seed
+an empty loaded current-thread detail and call the real `loadThread()` path, and
+`scripts/codex-mobile-empty-detail-cache-smoke.js` drives that hook through the
+Home AI live debug server to assert that the DOM reaches nonempty turn rows
+instead of staying on `No visible turns.`. This is verification infrastructure,
+not a runtime fallback: the smoke records only build id, thread hash,
+turn/item counts, loaded/loading/error flags, read mode, and DOM counts.
+
 The first slices extract item visible-field merge policy,
 visible-text render identity / completed-receipt retention, local-only item
 retention/drop policy, and live-to-completed same-turn visible-item preservation

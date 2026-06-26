@@ -16,6 +16,29 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v522 Empty Detail Browser Smoke Harness
+
+v522 给 v520/v521 的 Music 空详情事故补上浏览器/DOM 级回归入口。它不改变线程
+detail 权威规则，也不合成内容；它把旧事故的前置条件变成可回放动作，方便用 Home AI
+live debug / PWA 视觉核验验证真实页面不会再把空 cached detail 当成最终显示。
+
+本次切片新增/调整：
+
+- Hermes embedded 模式下的 `window.__codexMobileVisualHarness` 新增
+  `simulateEmptyCachedDetailOpen(threadId)`。该方法只接受 thread id，先构造
+  `turns: [] + mobileDetailLoaded:true` 的当前线程空缓存，再调用真实
+  `loadThread(threadId, { source: "visual-harness-empty-cache" })`。
+- 新增 `scripts/codex-mobile-empty-detail-cache-smoke.js`，复用 Home AI live debug
+  server：进入 Codex iframe，调用上述 harness，检查 DOM 中 `.turn[data-turn]` 已恢复
+  且没有停在 `No visible turns.`。
+- harness 和 smoke 的返回只包含 `clientBuildId`、`thread_hash`、turn/item 计数、
+  loaded/loading/error 标记、read mode 和 DOM 计数；不返回线程标题、消息正文、
+  任务卡正文、上传内容、文件路径、URL、cookies、tokens 或长日志。
+- `test/mobile-viewport.test.js` 覆盖 harness 暴露、空缓存构造、真实 `loadThread()`
+  调用、smoke 脚本入口和隐私边界。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v522`。
+
 ## 2026-06-26 v521 Thread Open Cache-Reuse Policy And Diagnostics
 
 v521 在 v520 的 Music 空详情根因修复上继续收敛架构边界：同线程打开时是否允许复用

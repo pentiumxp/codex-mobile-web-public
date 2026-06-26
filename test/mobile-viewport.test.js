@@ -174,9 +174,34 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
   assert.doesNotMatch(stylesCss, /\.turn-timer-time\s*{[\s\S]*flex:\s*0 0 104px;/);
 });
 
+test("visual harness can replay empty cached detail openings without exposing thread content", () => {
+  const installBody = functionBody("installCodexMobileVisualHarnessFacade");
+  const harnessBody = functionBody("simulateEmptyCachedDetailOpenForHarness");
+  const shapeBody = functionBody("visualHarnessThreadShape");
+  const smokeScript = fs.readFileSync(path.resolve(__dirname, "..", "scripts", "codex-mobile-empty-detail-cache-smoke.js"), "utf8");
+
+  assert.match(installBody, /simulateEmptyCachedDetailOpen:\s*\(threadId\) => simulateEmptyCachedDetailOpenForHarness\(threadId\)/);
+  assert.match(harnessBody, /state\.currentThread = \{[\s\S]*turns:\s*\[\],[\s\S]*mobileDetailLoaded:\s*true,[\s\S]*mobileReadMode:\s*"visual-harness-empty-cache"/);
+  assert.match(harnessBody, /await loadThread\(id, \{ source: "visual-harness-empty-cache" \}\)/);
+  assert.match(harnessBody, /thread_hash:\s*threadHash/);
+  assert.match(harnessBody, /before,[\s\S]*after,/);
+  assert.match(shapeBody, /visibleConversationShape\(thread\)/);
+  assert.match(shapeBody, /visibleTurnCount/);
+  assert.match(shapeBody, /visibleItemCount/);
+  assert.match(shapeBody, /itemCount/);
+  assert.doesNotMatch(harnessBody, /text|message|prompt|cookie|token|contentUrl|localPath|filePath/);
+
+  assert.match(smokeScript, /simulateEmptyCachedDetailOpen\(threadId\)/);
+  assert.match(smokeScript, /No visible turns/);
+  assert.match(smokeScript, /thread_hash/);
+  assert.match(smokeScript, /turnCount/);
+  assert.match(smokeScript, /itemCount/);
+  assert.doesNotMatch(smokeScript, /innerText|rawPrompt|taskBody|accessKey|cookie|uploadBytes|providerPayload/);
+});
+
 test("public app shell cache advances with static frontend changes", () => {
-  assert.match(swJs, /codex-mobile-shell-v521/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v521"/);
+  assert.match(swJs, /codex-mobile-shell-v522/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v522"/);
   assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(swJs, /"\/thread-diagnostic-events\.js"/);

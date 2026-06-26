@@ -515,7 +515,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v521";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v522";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -10775,6 +10775,64 @@ function updateSubagentPanelUi(options = {}) {
   if (options.scrollSideChatToBottom) scheduleSideChatToBottom();
 }
 
+function visualHarnessThreadShape(thread) {
+  const shape = visibleConversationShape(thread);
+  const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+  const itemCount = turns.reduce((total, turn) => total + (Array.isArray(turn && turn.items) ? turn.items.length : 0), 0);
+  return {
+    visibleTurnCount: Number(shape.visibleTurnCount || 0),
+    visibleItemCount: Number(shape.visibleItemCount || 0),
+    itemCount,
+    detailLoaded: Boolean(thread && thread.mobileDetailLoaded),
+    loading: Boolean(thread && thread.mobileLoading),
+    loadError: Boolean(thread && thread.mobileLoadError),
+    readMode: homeAiDiagnosticReportingApi.boundedToken(thread && thread.mobileReadMode || "", "", 80),
+  };
+}
+
+async function simulateEmptyCachedDetailOpenForHarness(threadId) {
+  const id = String(threadId || state.currentThreadId || "").trim();
+  const threadHash = diagnosticThreadHash(id);
+  const before = {
+    visibleTurnCount: 0,
+    visibleItemCount: 0,
+    itemCount: 0,
+    detailLoaded: true,
+    loading: false,
+    loadError: false,
+    readMode: "visual-harness-empty-cache",
+  };
+  if (!id) {
+    return {
+      ok: false,
+      error: "missing_thread_id",
+      clientBuildId: CLIENT_BUILD_ID,
+      thread_hash: "",
+      before,
+      after: null,
+    };
+  }
+  state.currentThreadId = id;
+  state.currentThread = {
+    id,
+    turns: [],
+    mobileDetailLoaded: true,
+    mobileLoading: false,
+    mobileLoadError: "",
+    mobileReadMode: "visual-harness-empty-cache",
+  };
+  await loadThread(id, { source: "visual-harness-empty-cache" });
+  const after = visualHarnessThreadShape(state.currentThread);
+  return {
+    ok: Boolean(after.visibleTurnCount || after.visibleItemCount),
+    error: after.loadError ? "thread_detail_load_error" : "",
+    clientBuildId: CLIENT_BUILD_ID,
+    thread_hash: threadHash,
+    before,
+    after,
+  };
+}
+
 function refreshSideChatFormButtons() {
   const textarea = sideChatDraftTextarea();
   if (!textarea) return;
@@ -10835,6 +10893,7 @@ function installCodexMobileVisualHarnessFacade() {
         return Boolean(state.subagentPanelOpen);
       },
       openThread: (threadId) => loadThread(String(threadId || ""), { source: "visual-harness" }),
+      simulateEmptyCachedDetailOpen: (threadId) => simulateEmptyCachedDetailOpenForHarness(threadId),
       loadSideChat: (threadId) => loadSideChat(String(threadId || sideChatThreadId()), { silent: true }),
       ensureSideChatDraftVisible,
       autoSizeSideChatDraftTextarea,
