@@ -66,6 +66,13 @@ function diagnoseThreadListColdPath(input = {}) {
     };
   }
 
+  if (booleanFlag(source.fallbackSourceSnapshotHit) || booleanFlag(source.sourceSnapshotHit)) {
+    return {
+      owner: "fallback-source-snapshot",
+      reason: "source-snapshot-hit",
+    };
+  }
+
   if (decision === "expired-rebuild") {
     return {
       owner: "fallback-cache-policy",

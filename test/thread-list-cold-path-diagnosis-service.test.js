@@ -24,6 +24,15 @@ test("thread-list cold path diagnosis classifies deferred and warm cache paths",
     owner: "warm-fallback-cache",
     reason: "cache-hit-incremental",
   });
+
+  assert.deepEqual(diagnoseThreadListColdPath({
+    fallbackCacheDecision: "miss-rebuild",
+    fallbackSourceSnapshotHit: true,
+    fallbackBaselineSourceCount: 12,
+  }), {
+    owner: "fallback-source-snapshot",
+    reason: "source-snapshot-hit",
+  });
 });
 
 test("thread-list cold path diagnosis attributes miss rebuilds to dominant baseline source", () => {

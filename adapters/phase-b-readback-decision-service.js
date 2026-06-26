@@ -19,6 +19,8 @@ function buildEvidence(report = {}) {
     threadListOwner: compactLabel(list.coldPathOwner, 80),
     threadListReason: compactLabel(list.coldPathReason, 80),
     threadListCacheDecision: compactLabel(list.fallbackCacheDecision, 80),
+    threadListSourceSnapshotHit: list.fallbackSourceSnapshotHit === true,
+    threadListSourceSnapshotRawCount: Number.isFinite(Number(list.fallbackSourceSnapshotRawCount)) ? Math.max(0, Math.min(100000, Math.trunc(Number(list.fallbackSourceSnapshotRawCount)))) : 0,
     threadListResultCount: Number.isFinite(Number(list.resultCount)) ? Math.max(0, Math.min(100000, Math.trunc(Number(list.resultCount)))) : 0,
     detailOwner: compactLabel(detail.coldPathOwner, 80),
     detailReason: compactLabel(detail.coldPathReason, 80),
@@ -123,7 +125,7 @@ function detailDecision(detail = {}) {
 function threadListDecision(list = {}) {
   const owner = lowerLabel(list.coldPathOwner, 80);
   const reason = compactLabel(list.coldPathReason, 80);
-  if (!owner || owner === "warm-fallback-cache") return null;
+  if (!owner || owner === "warm-fallback-cache" || owner === "fallback-source-snapshot") return null;
   if (owner === "fallback-baseline") {
     return {
       status: "needs_repair",

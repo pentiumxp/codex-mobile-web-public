@@ -102,6 +102,29 @@ test("phase B readback decision returns ready for warm or bounded paths", () => 
   assert.equal(decision.nextAction, "proceed-to-next-phase-b-root-cause-target");
 });
 
+test("phase B readback decision treats source snapshot hits as ready evidence", () => {
+  const decision = classifyPhaseBReadback({
+    ok: true,
+    threadList: {
+      coldPathOwner: "fallback-source-snapshot",
+      coldPathReason: "source-snapshot-hit",
+      fallbackSourceSnapshotHit: true,
+      fallbackSourceSnapshotRawCount: 12,
+    },
+    detail: {
+      readMode: "projection-v4-cache",
+      readDecision: "projection-hit",
+      coldPathOwner: "warm-path",
+      coldPathReason: "warm-projection-cache",
+    },
+  });
+
+  assert.equal(decision.status, "ready");
+  assert.equal(decision.owner, "phase-b-readback");
+  assert.equal(decision.evidence.threadListSourceSnapshotHit, true);
+  assert.equal(decision.evidence.threadListSourceSnapshotRawCount, 12);
+});
+
 test("phase B readback decision keeps evidence bounded and private-content free", () => {
   const decision = classifyPhaseBReadback({
     ok: true,

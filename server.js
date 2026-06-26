@@ -14660,6 +14660,12 @@ async function handleApi(req, res) {
         fallbackSessionIndexCount: Number(fallbackDiagnostics.sessionIndexCount || 0),
         fallbackBaselineSourceCount: Number(fallbackDiagnostics.baselineSourceCount || 0),
         fallbackBaselineResultCount: Number(fallbackDiagnostics.baselineResultCount || 0),
+        fallbackSourceSnapshotHit: fallbackDiagnostics.sourceSnapshotHit === true,
+        fallbackSourceSnapshotAgeMs: Number(fallbackDiagnostics.sourceSnapshotAgeMs || 0),
+        fallbackSourceSnapshotLimit: Number(fallbackDiagnostics.sourceSnapshotLimit || 0),
+        fallbackSourceSnapshotBuildCount: Number(fallbackDiagnostics.sourceSnapshotBuildCount || 0),
+        fallbackSourceSnapshotBuildNumber: Number(fallbackDiagnostics.sourceSnapshotBuildNumber || 0),
+        fallbackSourceSnapshotRawCount: Number(fallbackDiagnostics.sourceSnapshotRawCount || 0),
       });
       const mergeStartedAtMs = Date.now();
       const result = normalizeThreadListResultStatuses(mergeThreadListFallback(appServerResult, fallback, limit));
@@ -14702,6 +14708,12 @@ async function handleApi(req, res) {
         fallbackSessionIndexCount: Number(fallbackDiagnostics.sessionIndexCount || 0),
         fallbackBaselineSourceCount: Number(fallbackDiagnostics.baselineSourceCount || 0),
         fallbackBaselineResultCount: Number(fallbackDiagnostics.baselineResultCount || 0),
+        fallbackSourceSnapshotHit: fallbackDiagnostics.sourceSnapshotHit === true,
+        fallbackSourceSnapshotAgeMs: Number(fallbackDiagnostics.sourceSnapshotAgeMs || 0),
+        fallbackSourceSnapshotLimit: Number(fallbackDiagnostics.sourceSnapshotLimit || 0),
+        fallbackSourceSnapshotBuildCount: Number(fallbackDiagnostics.sourceSnapshotBuildCount || 0),
+        fallbackSourceSnapshotBuildNumber: Number(fallbackDiagnostics.sourceSnapshotBuildNumber || 0),
+        fallbackSourceSnapshotRawCount: Number(fallbackDiagnostics.sourceSnapshotRawCount || 0),
       });
       if (fallback.length) {
         const decorateStartedAtMs = Date.now();

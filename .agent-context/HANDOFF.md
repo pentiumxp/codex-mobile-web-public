@@ -14134,3 +14134,61 @@ The previous full handoff was archived and should be opened only when old proven
     / session-index candidate source set before applying existing filtering and
     merge policy. Keep it memory-only, bounded, observable, and covered by
     focused tests.
+
+## 2026-06-26 - thread-list source snapshot reuse local-only
+
+- Scope:
+  - Continued Phase B with the first root-cause performance optimization after
+    the readback decision slice.
+  - This is a local-only server/runtime source-cache optimization. It does not
+    deploy, bump shell/cache, change UI, push Public, persist cache data, or
+    change app-server thread-list authority.
+- Root-cause boundary:
+  - Failing layer addressed: final thread-list fallback cache keys include
+    `cwd`, `search`, and `limit`, so multiple final-list misses in the same
+    process could repeatedly call the expensive state DB / rollout /
+    session-index fallback readers even when the visible source universe had
+    not changed.
+  - Violated invariant: after cold start or deploy restart, ordinary filtered
+    list rebuilds should reuse already-read source evidence and only reapply
+    existing filter/merge/limit policy, rather than rescanning all fallback
+    sources for every final-list key.
+  - Closure classification: memory-only source snapshot reuse below the
+    final-list cache. This is not a UI fallback, forced refresh, persisted
+    prewarm, app-server replacement, or masking layer. It keeps source snapshots
+    process-local and bounded, and diagnostics expose hit/build/raw-count fields.
+- Changes:
+  - `adapters/thread-list-fallback-baseline-service.js` now supports
+    visibility-scoped source snapshots. It reads state DB / rollout /
+    session-index sources once per source key, then reapplies existing
+    `filterFallbackThreads`, `mergeThreadSummaryList`, and `limit` for each
+    final-list request.
+  - `adapters/thread-list-fallback-cache-service.js` now passes a source
+    snapshot key/limit to the baseline service, carries source snapshot
+    diagnostics, and updates/removes snapshot rows during incremental cache
+    changes so new final-list keys do not use stale source data.
+  - `/api/threads` diagnostics now include bounded
+    `fallbackSourceSnapshotHit`, age, limit, build, and raw-count fields.
+  - `thread-list-cold-path-diagnosis-service` recognizes
+    `fallback-source-snapshot` so a final-list miss that reuses source evidence
+    is not misclassified as an expensive baseline rebuild.
+  - Phase B readback summary and decision evidence now include source snapshot
+    fields; source snapshot hits are treated as ready evidence rather than an
+    H2 baseline repair signal.
+  - README, architecture optimization plan, and module map were updated.
+- Validation:
+  - Focused:
+    `node --test test/thread-list-fallback-baseline-service.test.js test/thread-list-fallback-cache-service.test.js test/thread-list-cold-path-diagnosis-service.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js test/thread-visibility.test.js test/thread-status-hints.test.js`
+    passed (`76` tests).
+  - Full source `npm test` passed (`1083` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment status:
+  - Not deployed by design. This remains part of the Phase B local batch.
+- Next Phase B candidates:
+  - Batch-deploy the Phase B module when ready, then run
+    `node scripts/codex-mobile-phase-b-readback-smoke.js --json` and inspect
+    `decision.owner`, `fallbackSourceSnapshotHit`, and detail cold-path fields.
+  - If production still shows slow thread-list reads with
+    `fallback-source-snapshot` ready, shift to projection-cache or active-overlay
+    evidence; if it still shows `fallback-baseline`, inspect source snapshot key
+    invalidation/freshness before adding any broader cache.

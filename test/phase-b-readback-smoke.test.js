@@ -63,6 +63,8 @@ test("phase B readback smoke collects bounded diagnostics without private fields
             fallbackCacheDecision: "miss-rebuild",
             fallbackBaselineSourceCount: 9,
             fallbackBaselineResultCount: 1,
+            fallbackSourceSnapshotHit: true,
+            fallbackSourceSnapshotRawCount: 12,
             coldPathOwner: "fallback-baseline",
             coldPathReason: "miss-rebuild:rollout",
           },
@@ -107,6 +109,8 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.ok, true);
   assert.equal(report.threadList.coldPathOwner, "fallback-baseline");
   assert.equal(report.threadList.coldPathReason, "miss-rebuild:rollout");
+  assert.equal(report.threadList.fallbackSourceSnapshotHit, true);
+  assert.equal(report.threadList.fallbackSourceSnapshotRawCount, 12);
   assert.equal(report.detail.readMode, "projection-active-overlay");
   assert.equal(report.detail.activeOverlayReason, "overlay-evidence-complete");
   assert.match(report.threadList.firstThreadHash, /^[a-f0-9]{16}$/);

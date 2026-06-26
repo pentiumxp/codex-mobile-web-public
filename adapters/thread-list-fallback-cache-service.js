@@ -64,6 +64,7 @@ function createThreadListFallbackCacheService(options = {}) {
       readStateDbFallback,
       readRolloutSessionFallback,
       readSessionIndexFallback,
+      filterFallbackThreads,
       mergeThreadSummaryList,
     });
 
@@ -72,6 +73,7 @@ function createThreadListFallbackCacheService(options = {}) {
 
   function clear() {
     cache.clear();
+    if (typeof baselineService.clearSourceSnapshots === "function") baselineService.clearSourceSnapshots();
   }
 
   function removeThread(threadId) {
@@ -88,6 +90,7 @@ function createThreadListFallbackCacheService(options = {}) {
         entry.incrementalUpdates = Number(entry.incrementalUpdates || 0) + 1;
       }
     }
+    if (typeof baselineService.removeThread === "function") baselineService.removeThread(id);
     return removed;
   }
 
@@ -124,6 +127,9 @@ function createThreadListFallbackCacheService(options = {}) {
       entry.updatedAt = nowMs;
       entry.incrementalUpdates = Number(entry.incrementalUpdates || 0) + 1;
       changed = true;
+    }
+    if ((changed || addIfMissing) && typeof baselineService.upsertThread === "function") {
+      changed = baselineService.upsertThread(thread) || changed;
     }
     return changed;
   }
@@ -163,6 +169,21 @@ function createThreadListFallbackCacheService(options = {}) {
       roots,
       projectlessIds,
     });
+  }
+
+  function sourceSnapshotKey(limit, filters = {}) {
+    const globalState = filters.globalState || readGlobalState();
+    const roots = [...visibleWorkspaceRoots(globalState)].map(normalizeFsPath).filter(Boolean).sort();
+    const projectlessIds = [...visibleProjectlessThreadIds(globalState)].map(normalizeThreadId).filter(Boolean).sort();
+    return JSON.stringify({
+      roots,
+      projectlessIds,
+    });
+  }
+
+  function sourceSnapshotLimit(limit) {
+    const bounded = Math.max(1, Math.min(200, Number(limit || 80)));
+    return Math.max(200, Math.min(1000, bounded * 8));
   }
 
   function remember(key, threads, timings = {}, rememberOptions = {}) {
@@ -268,7 +289,10 @@ function createThreadListFallbackCacheService(options = {}) {
       diagnostics.cacheBuildReason = missDecision;
       diagnostics.cacheDecision = missDecision === "expired" ? "expired-rebuild" : "miss-rebuild";
     }
-    const baseline = baselineService.readBaseline(limit, filters);
+    const baseline = baselineService.readBaseline(limit, Object.assign({}, filters, {
+      sourceSnapshotKey: sourceSnapshotKey(limit, filters),
+      sourceSnapshotLimit: sourceSnapshotLimit(limit),
+    }));
     const threads = Array.isArray(baseline && baseline.threads) ? baseline.threads : [];
     const baselineTimings = baseline && baseline.timings && typeof baseline.timings === "object"
       ? baseline.timings
@@ -282,6 +306,14 @@ function createThreadListFallbackCacheService(options = {}) {
       diagnostics.sessionIndexCount = Number(baselineTimings.sessionIndexCount || 0);
       diagnostics.baselineSourceCount = Number(baselineTimings.baselineSourceCount || 0);
       diagnostics.baselineResultCount = Number(baselineTimings.baselineResultCount || threads.length);
+      if (Object.prototype.hasOwnProperty.call(baselineTimings, "sourceSnapshotHit")) {
+        diagnostics.sourceSnapshotHit = baselineTimings.sourceSnapshotHit === true;
+        diagnostics.sourceSnapshotAgeMs = Number(baselineTimings.sourceSnapshotAgeMs || 0);
+        diagnostics.sourceSnapshotLimit = Number(baselineTimings.sourceSnapshotLimit || 0);
+        diagnostics.sourceSnapshotBuildCount = Number(baselineTimings.sourceSnapshotBuildCount || 0);
+        diagnostics.sourceSnapshotBuildNumber = Number(baselineTimings.sourceSnapshotBuildNumber || 0);
+        diagnostics.sourceSnapshotRawCount = Number(baselineTimings.sourceSnapshotRawCount || 0);
+      }
     }
     remember(key, threads, {
       stateDbMs: Number(baselineTimings.stateDbMs || 0),
@@ -292,6 +324,14 @@ function createThreadListFallbackCacheService(options = {}) {
       sessionIndexCount: Number(baselineTimings.sessionIndexCount || 0),
       baselineSourceCount: Number(baselineTimings.baselineSourceCount || 0),
       baselineResultCount: Number(baselineTimings.baselineResultCount || threads.length),
+      ...(Object.prototype.hasOwnProperty.call(baselineTimings, "sourceSnapshotHit") ? {
+        sourceSnapshotHit: baselineTimings.sourceSnapshotHit === true,
+        sourceSnapshotAgeMs: Number(baselineTimings.sourceSnapshotAgeMs || 0),
+        sourceSnapshotLimit: Number(baselineTimings.sourceSnapshotLimit || 0),
+        sourceSnapshotBuildCount: Number(baselineTimings.sourceSnapshotBuildCount || 0),
+        sourceSnapshotBuildNumber: Number(baselineTimings.sourceSnapshotBuildNumber || 0),
+        sourceSnapshotRawCount: Number(baselineTimings.sourceSnapshotRawCount || 0),
+      } : {}),
     }, {
       limit,
       filters,

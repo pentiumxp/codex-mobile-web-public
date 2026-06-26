@@ -130,7 +130,50 @@ test("readFallback uses cached fallback list after the first complete pass", () 
     sessionIndexCount: 1,
     baselineSourceCount: 3,
     baselineResultCount: 3,
+    sourceSnapshotHit: false,
+    sourceSnapshotAgeMs: 0,
+    sourceSnapshotLimit: 200,
+    sourceSnapshotBuildCount: 1,
+    sourceSnapshotBuildNumber: 1,
+    sourceSnapshotRawCount: 3,
   });
+});
+
+test("readFallback reuses source snapshot across final-list filter cache misses", () => {
+  const { calls, service } = createService({
+    readStateDbFallback(limit, filters) {
+      assert.equal(limit, 200);
+      assert.equal(filters.searchTerm, undefined);
+      assert.equal(filters.cwd, undefined);
+      return [
+        { id: "alpha", name: "Alpha", updatedAt: 100 },
+        { id: "beta", name: "Beta", updatedAt: 200 },
+      ];
+    },
+    readRolloutSessionFallback() {
+      return [{ id: "rollout-alpha", name: "Alpha rollout", updatedAt: 300 }];
+    },
+    readSessionIndexFallback() {
+      return [];
+    },
+  });
+
+  const firstDiagnostics = {};
+  const first = service.readFallback(10, { searchTerm: "alpha", diagnostics: firstDiagnostics });
+  assert.deepEqual(first.map((thread) => thread.id), ["rollout-alpha", "alpha"]);
+  assert.equal(firstDiagnostics.cacheDecision, "miss-rebuild");
+  assert.equal(firstDiagnostics.sourceSnapshotHit, false);
+  assert.equal(firstDiagnostics.sourceSnapshotBuildCount, 1);
+  assert.deepEqual(calls, { stateDb: 1, rollout: 1, sessionIndex: 1 });
+
+  const secondDiagnostics = {};
+  const second = service.readFallback(10, { searchTerm: "beta", diagnostics: secondDiagnostics });
+  assert.deepEqual(second.map((thread) => thread.id), ["beta"]);
+  assert.equal(secondDiagnostics.cacheDecision, "miss-rebuild");
+  assert.equal(secondDiagnostics.sourceSnapshotHit, true);
+  assert.equal(secondDiagnostics.stateDbMs, 0);
+  assert.equal(secondDiagnostics.sourceSnapshotBuildCount, 1);
+  assert.deepEqual(calls, { stateDb: 1, rollout: 1, sessionIndex: 1 });
 });
 
 test("readFallback can build cold baseline through injected baseline service", () => {
@@ -237,10 +280,11 @@ test("fallback cache ttl is opt-in and expires cached entries when configured", 
   service.readFallback(10, { diagnostics: expiredDiagnostics });
   assert.equal(expiredDiagnostics.cacheDecision, "expired-rebuild");
   assert.equal(expiredDiagnostics.cacheBuildReason, "expired");
+  assert.equal(expiredDiagnostics.sourceSnapshotHit, true);
   assert.equal(expiredDiagnostics.cacheTtlMs, 10);
   assert.equal(expiredDiagnostics.cacheBuildCount, 2);
   assert.equal(expiredDiagnostics.cacheBuildNumber, 2);
-  assert.deepEqual(calls, { stateDb: 2, rollout: 2, sessionIndex: 2 });
+  assert.deepEqual(calls, { stateDb: 1, rollout: 1, sessionIndex: 1 });
 });
 
 test("status updates patch cached rows without adding missing threads", () => {

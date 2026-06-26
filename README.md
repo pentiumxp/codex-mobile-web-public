@@ -81,6 +81,12 @@ cache policy 和 baseline 构建边界混在一起。
   projection input、thread-list fallback baseline、cache freshness 或 app-server
   fallback。这样 Phase B 批量部署后可以按 bounded 字段直接决定下一步 root-cause
   修复方向，而不是人工解释私有日志或肉眼观察。
+- `adapters/thread-list-fallback-baseline-service.js` 现在有进程内 memory-only
+  source snapshot。最终列表 cache 仍按 `cwd/search/limit` 区分；当最终列表 key
+  miss 或 TTL 过期时，可以复用同一可见性下已经读取过的 state DB / rollout /
+  session-index source set，再重新套用原有 filter/merge/limit。诊断字段会暴露
+  `fallbackSourceSnapshotHit`、snapshot age/build/raw count，用来证明是否避免了
+  重扫 source。
 
 这不是新的 fallback 行为，也不是 prewarm/persist。source 内部实现、route
 aggregation、defer fallback、app-server result merge 都没有改变。该切片暂不

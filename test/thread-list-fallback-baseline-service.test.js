@@ -93,3 +93,103 @@ test("thread-list fallback baseline normalizes invalid source results without co
   assert.equal(baseline.timings.baselineResultCount, 1);
   assert.doesNotMatch(JSON.stringify(baseline), /privatePrompt|do not export/);
 });
+
+test("thread-list fallback baseline reuses source snapshot across filter keys", () => {
+  let nowMs = 1000;
+  const calls = { stateDb: 0, rollout: 0, sessionIndex: 0 };
+  const service = createThreadListFallbackBaselineService({
+    now: () => {
+      nowMs += 5;
+      return nowMs;
+    },
+    readStateDbFallback(limit, filters) {
+      calls.stateDb += 1;
+      assert.equal(limit, 10);
+      assert.equal(filters.searchTerm, undefined);
+      assert.equal(filters.cwd, undefined);
+      return [
+        { id: "alpha", name: "Alpha", cwd: "/a", updatedAt: 100 },
+        { id: "beta", name: "Beta", cwd: "/b", updatedAt: 200 },
+      ];
+    },
+    readRolloutSessionFallback() {
+      calls.rollout += 1;
+      return [{ id: "rollout-alpha", name: "Alpha rollout", cwd: "/a", updatedAt: 300 }];
+    },
+    readSessionIndexFallback() {
+      calls.sessionIndex += 1;
+      return [];
+    },
+    filterFallbackThreads(threads, filters = {}) {
+      const search = String(filters.searchTerm || "").toLowerCase();
+      const cwd = String(filters.cwd || "");
+      return (threads || []).filter((thread) => {
+        if (search && !String(thread.name || "").toLowerCase().includes(search)) return false;
+        if (cwd && thread.cwd !== cwd) return false;
+        return true;
+      });
+    },
+    mergeThreadSummaryList: mergeByUpdatedAt,
+  });
+
+  const first = service.readBaseline(2, {
+    searchTerm: "alpha",
+    sourceSnapshotKey: "visible-root-set",
+    sourceSnapshotLimit: 10,
+  });
+  assert.deepEqual(first.threads.map((thread) => thread.id), ["rollout-alpha", "alpha"]);
+  assert.equal(first.timings.sourceSnapshotHit, false);
+  assert.deepEqual(calls, { stateDb: 1, rollout: 1, sessionIndex: 1 });
+
+  const second = service.readBaseline(2, {
+    cwd: "/b",
+    sourceSnapshotKey: "visible-root-set",
+    sourceSnapshotLimit: 10,
+  });
+  assert.deepEqual(second.threads.map((thread) => thread.id), ["beta"]);
+  assert.equal(second.timings.sourceSnapshotHit, true);
+  assert.equal(second.timings.stateDbMs, 0);
+  assert.equal(second.timings.sourceSnapshotBuildCount, 1);
+  assert.deepEqual(calls, { stateDb: 1, rollout: 1, sessionIndex: 1 });
+});
+
+test("thread-list fallback baseline keeps source snapshots incrementally current", () => {
+  const service = createThreadListFallbackBaselineService({
+    now: () => 100,
+    readStateDbFallback() {
+      return [{ id: "alpha", name: "Alpha", cwd: "/a", updatedAt: 100 }];
+    },
+    readRolloutSessionFallback() {
+      return [];
+    },
+    readSessionIndexFallback() {
+      return [];
+    },
+    filterFallbackThreads(threads, filters = {}) {
+      const search = String(filters.searchTerm || "").toLowerCase();
+      return (threads || []).filter((thread) => !search || String(thread.name || "").toLowerCase().includes(search));
+    },
+    mergeThreadSummaryList: mergeByUpdatedAt,
+  });
+
+  service.readBaseline(10, {
+    sourceSnapshotKey: "visible-root-set",
+    sourceSnapshotLimit: 10,
+  });
+  assert.equal(service.upsertThread({ id: "beta", name: "Beta", cwd: "/b", updatedAt: 300 }), true);
+  const afterUpsert = service.readBaseline(10, {
+    searchTerm: "beta",
+    sourceSnapshotKey: "visible-root-set",
+    sourceSnapshotLimit: 10,
+  });
+  assert.equal(afterUpsert.timings.sourceSnapshotHit, true);
+  assert.deepEqual(afterUpsert.threads.map((thread) => thread.id), ["beta"]);
+
+  assert.equal(service.removeThread("beta"), true);
+  const afterRemove = service.readBaseline(10, {
+    searchTerm: "beta",
+    sourceSnapshotKey: "visible-root-set",
+    sourceSnapshotLimit: 10,
+  });
+  assert.deepEqual(afterRemove.threads, []);
+});

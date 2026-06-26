@@ -132,7 +132,11 @@ Current acceleration targets:
    maps those labels into a bounded `decision` so post-deploy evidence points
    at the next root-cause owner: active overlay proof, projection cache
    lifecycle, projection input, thread-list fallback baseline, cache freshness,
-   or app-server fallback.
+   or app-server fallback. The first root-cause optimization from that
+   decision path is memory-only source snapshot reuse below the final-list
+   cache: different `cwd/search/limit` final-list keys can reuse the same
+   visibility-scoped state DB / rollout / session-index source set, while the
+   existing filter/merge/limit semantics still produce each public list.
 3. Large detail cold-path attribution now has a dedicated
    `thread-detail-cold-path-diagnosis-service` that emits bounded
    `coldPathOwner` / `coldPathReason` for projection-cache seeding,
@@ -211,6 +215,9 @@ non-partial projections.
   `thread-list-cold-path-diagnosis-service.js` also emits bounded
   `coldPathOwner` / `coldPathReason` from those fields so production readback
   can be grouped without copying thread titles, prompts, paths, or logs.
+  Final-list cache misses can now report `fallback-source-snapshot` when the
+  expensive raw source set was reused in memory and only the final filter/merge
+  was rebuilt.
 - Move deterministic completed-turn diagnostics out of `server.js` into a
   service module.
 - Preserve the rule that explicit empty final assistant messages produce
