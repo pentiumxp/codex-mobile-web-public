@@ -875,12 +875,14 @@ Refresh post-merge side-effect ordering now also lives in this helper:
 thread-list-merge, composer/active-turn sync, and thread-list-render groups
 after state merge. App code still performs the real side effects and preserves
 the existing `mergeMs`, `composerRenderMs`, and `threadListRenderMs` timing
-boundaries. The 2026-06-27 local full-backfill follow-up applies the same
-post-merge plan to `backfillFullThreadDetail()`, so ordinary refresh and full
-detail backfill no longer maintain separate hand-written post-merge ordering in
-`public/app.js`; full backfill still owns its existing detail-loaded marker,
-render-evidence write, pending-server-request sync, current-thread merge,
-full render, and `thread_detail_full_ready` telemetry behavior.
+boundaries. The 2026-06-27 local first-paint/full-backfill follow-up applies
+the same post-merge plan to `loadThread()` successful first paint and
+`backfillFullThreadDetail()`, so ordinary refresh, first paint, and full detail
+backfill no longer maintain separate hand-written post-merge ordering in
+`public/app.js`; first paint and full backfill still own their existing
+detail-loaded marker, render-evidence write, pending-server-request sync,
+current-thread merge, local draft/follow/connect behavior, full render, and
+bounded first-paint/full-ready telemetry behavior.
 Thread refresh failure diagnostic payload planning now lives in
 `public/thread-diagnostic-events.js`: `threadDetailRefreshFailedDiagnosticEvent`
 builds the bounded `thread_detail_refresh_failed` failure report, so

@@ -9101,7 +9101,8 @@ async function loadThread(threadId, options = {}) {
   rememberThreadDetailRenderEvidence(result.thread, `${source}-detail-api`);
   syncThreadPendingServerRequests(result.thread);
   state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
-  mergeThreadIntoThreadList(state.currentThread);
+  const postMergePlan = threadDetailRenderPlanApi.planThreadDetailRefreshPostMergeEffects();
+  applyThreadDetailRefreshPostMergeEffectsGroup(postMergePlan, "merge");
   localStorage.setItem(STORAGE_THREAD_ID, threadId);
   draftStore.setTargetKey("");
   followThreadOpenToBottom(threadId);
@@ -9111,11 +9112,10 @@ async function loadThread(threadId, options = {}) {
   restoreDraftForCurrentTarget();
   const draftRestoreMs = roundedDurationMs(draftRestoreStartedAt);
   const composerRenderStartedAt = nowPerfMs();
-  renderComposerSettings();
-  syncActiveTurnFromThread();
+  applyThreadDetailRefreshPostMergeEffectsGroup(postMergePlan, "composer-render");
   const composerRenderMs = roundedDurationMs(composerRenderStartedAt);
   const threadListRenderStartedAt = nowPerfMs();
-  renderThreads();
+  applyThreadDetailRefreshPostMergeEffectsGroup(postMergePlan, "thread-list-render");
   const threadListRenderMs = roundedDurationMs(threadListRenderStartedAt);
   const conversationRenderStartedAt = nowPerfMs();
   renderCurrentThread({ stickToBottom: true });
