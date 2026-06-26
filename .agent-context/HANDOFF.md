@@ -11294,3 +11294,60 @@ The previous full handoff was archived and should be opened only when old proven
     the `refreshCurrentThread()` catch path into the diagnostic/planning helper,
     or pivot to Phase B if fresh production diagnostics show server cold-path
     misses instead of client refresh ownership issues.
+
+## 2026-06-26 - v503 thread refresh failure diagnostic event deployed
+
+- Latest code commit:
+  - `b84ccdb extract thread refresh failure diagnostic event`
+- v503 change:
+  - Continued Phase A frontend thread-detail ownership convergence.
+  - `public/thread-diagnostic-events.js` now owns
+    `threadDetailRefreshFailedDiagnosticEvent()`, which builds the bounded
+    `thread_detail_refresh_failed` Home AI diagnostic payload.
+  - `refreshCurrentThread()` catch path now only extracts the real error code,
+    duration bucket, status code, and thread hash, then delegates category,
+    diagnostic type, severity, context, counts, and breadcrumbs to the helper.
+  - Static build/cache: `0.1.11|codex-mobile-shell-v503` /
+    `codex-mobile-shell-v503`.
+- Root-cause boundary:
+  - Symptom/risk: v502 moved successful refresh completion effects out of
+    `refreshCurrentThread()`, but refresh failure diagnostic payload ownership
+    still lived inside the app state machine.
+  - Failing layer: frontend thread-detail refresh failure diagnostic ownership.
+  - Classification: root-cause architecture boundary cleanup. No refresh
+    request/mode/abort behavior, error rethrow behavior, diagnostic transport,
+    server projection, DOM patch, task-card protocol, visual layout, or
+    duplicate-hiding fallback changed.
+- Validation:
+  - Focused source suite passed:
+    `test/thread-diagnostic-events.test.js`, `test/conversation-render.test.js`,
+    `test/mobile-viewport.test.js`, `test/thread-goal-service.test.js`,
+    `test/thread-task-card-route.test.js`, and
+    `test/thread-tile-layout-ui.test.js` (`136` tests).
+  - Full source `npm test` passed (`935` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Production deploy:
+  - Deployed through Home AI central macOS plugin deploy path with reason
+    `codex-mobile-thread-refresh-failure-diagnostic-v503`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T005604Z-plugin-codex-mobile-web-codex-mobile-thread-refresh-failure-diagnostic-v503`
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v503`,
+    `shellCacheName=codex-mobile-shell-v503`, `version=0.1.11`,
+    `authRequired=true`.
+  - Production focused suite passed (`136` tests).
+  - Source/production SHA parity verified for README/docs, app/static shell,
+    diagnostic helper, and focused tests touched by v503.
+- Privacy:
+  - Evidence recorded only statuses, build ids, test counts, bounded deploy
+    metadata, and short hashes. No message bodies, task-card bodies, uploads,
+    private paths, cookies, access keys, provider payloads, database rows,
+    screenshots, or long logs were copied into docs or handoff.
+- Release:
+  - Public was not pushed for v503.
+- Next suggested slice:
+  - Continue Phase A by extracting refresh request/mode/abort planning from
+    `refreshCurrentThread()`, then move toward scroll/render side-effect
+    ownership. If fresh production diagnostics show server cold-path misses,
+    pivot to Phase B with current `thread_refresh_ms` and projection miss
+    evidence.
