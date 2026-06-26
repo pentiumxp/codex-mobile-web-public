@@ -517,7 +517,10 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(functionBody("applyThreadDetailRefreshTelemetryEffect"), /postPerformanceEvent\(String\(item\.eventName \|\| ""\), item\.payload \|\| \{\}, item\.options \|\| \{\}\);/);
   assert.match(functionBody("applyThreadDetailRefreshTelemetryEffect"), /recordThreadDetailResponseDiagnostics\(item\.performanceEvent \|\| \{\}, \{[\s\S]*action: String\(eventContext\.action \|\| ""\),[\s\S]*threadId: String\(eventContext\.threadId \|\| ""\),[\s\S]*thread: context\.thread,[\s\S]*\}\);/);
   assert.match(functionBody("refreshCurrentThread"), /const completionPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshCompletionEffects\(\{[\s\S]*threadHash: diagnosticThreadHash\(threadId\),[\s\S]*\}\);/);
-  assert.match(functionBody("refreshCurrentThread"), /for \(const effect of completionPlan\.effects\) applyThreadDetailRefreshCompletionEffect\(effect\);/);
+  assert.match(functionBody("refreshCurrentThread"), /applyThreadDetailRefreshCompletionEffectsPlan\(completionPlan\);/);
+  assert.doesNotMatch(functionBody("refreshCurrentThread"), /for \(const effect of completionPlan\.effects\) applyThreadDetailRefreshCompletionEffect\(effect\);/);
+  assert.match(appJs, /function applyThreadDetailRefreshCompletionEffectsPlan\(plan\)/);
+  assert.match(functionBody("applyThreadDetailRefreshCompletionEffectsPlan"), /for \(const effect of effects\) applyThreadDetailRefreshCompletionEffect\(effect\);/);
   assert.match(appJs, /function applyThreadDetailRefreshCompletionEffect\(effect\)/);
   assert.match(functionBody("applyThreadDetailRefreshCompletionEffect"), /recordHomeAiDiagnosticSuccess\(item\.payload \|\| \{\}\)/);
   assert.match(functionBody("applyThreadDetailRefreshCompletionEffect"), /scheduleUsageBackfillRefresh\(\)/);

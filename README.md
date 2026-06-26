@@ -16,6 +16,40 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 Phase A Refresh Completion Effects Executor Slice
+
+本地小切片继续推进 Phase A 的 `refreshCurrentThread()` 所有权收敛。此前
+`planThreadDetailRefreshCompletionEffects()` 已经声明 refresh 成功后的
+bounded diagnostic success、usage backfill refresh、live poll 调度 effects，
+但 `public/app.js` 仍在 `refreshCurrentThread()` 里直接遍历
+`completionPlan.effects`。这样 completion side-effect 执行顺序仍暴露在主刷新
+编排体里。
+
+本次修复：
+
+- `public/app.js` 新增
+  `applyThreadDetailRefreshCompletionEffectsPlan()`，统一执行 completion
+  effect list。
+- `refreshCurrentThread()` 不再直接遍历 `completionPlan.effects`，只调用
+  completion effects executor。
+- 不改变 completion effect 内容、Home AI diagnostic success、usage backfill、
+  live poll、projection、任务卡协议或 shell/cache。
+
+闭环验证：
+
+```bash
+node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js
+npm run check
+npm test
+npm run check:macos
+git diff --check
+```
+
+结果：focused `176` passed；full `npm test` `1117` passed；
+`npm run check`、`npm run check:macos`、`git diff --check` 均通过。
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，
+尚未部署；继续作为 Phase A 模块的一部分累积。
+
 ## 2026-06-26 Phase A Patch Surface Probe Effects Slice
 
 本地小切片继续推进 Phase A 的 `refreshCurrentThread()` 所有权收敛。此前

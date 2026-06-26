@@ -813,6 +813,12 @@ Refresh telemetry effect planning now also lives in this helper:
 App code still executes the real reporting side effects and supplies the runtime
 thread object for diagnostics, but `refreshCurrentThread()` no longer owns
 refresh telemetry side-effect ordering.
+Refresh completion effect execution is now also isolated behind an app-level
+plan executor: `planThreadDetailRefreshCompletionEffects` selects bounded
+completion effects, and `applyThreadDetailRefreshCompletionEffectsPlan` executes
+the list. App code still performs the real diagnostic-success, usage-backfill,
+and live-poll scheduling calls, but `refreshCurrentThread()` no longer directly
+iterates over `completionPlan.effects`.
 Refresh post-merge side-effect ordering now also lives in this helper:
 `planThreadDetailRefreshPostMergeEffects` declares the fixed
 thread-list-merge, composer/active-turn sync, and thread-list-render groups

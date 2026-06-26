@@ -3202,7 +3202,10 @@ test("current-thread refresh patches the current tile pane for metadata-only til
   assert.match(functionBody("applyThreadDetailRefreshTelemetryEffect"), /recordThreadDetailResponseDiagnostics\(item\.performanceEvent \|\| \{\}, \{/);
   assert.match(functionBody("applyThreadDetailRefreshTelemetryEffect"), /thread: context\.thread/);
   assert.match(body, /const completionPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshCompletionEffects\(\{/);
-  assert.match(body, /for \(const effect of completionPlan\.effects\) applyThreadDetailRefreshCompletionEffect\(effect\);/);
+  assert.match(body, /applyThreadDetailRefreshCompletionEffectsPlan\(completionPlan\);/);
+  assert.doesNotMatch(body, /for \(const effect of completionPlan\.effects\) applyThreadDetailRefreshCompletionEffect\(effect\);/);
+  assert.match(appJs, /function applyThreadDetailRefreshCompletionEffectsPlan\(plan\)/);
+  assert.match(functionBody("applyThreadDetailRefreshCompletionEffectsPlan"), /for \(const effect of effects\) applyThreadDetailRefreshCompletionEffect\(effect\);/);
   assert.doesNotMatch(body, /recordHomeAiDiagnosticSuccess\(\{[\s\S]*thread_detail_refresh_failed/);
 });
 

@@ -9242,6 +9242,11 @@ function applyThreadDetailRefreshCompletionEffect(effect) {
   throw new Error(`Unknown thread detail refresh completion effect: ${type || "empty"}`);
 }
 
+function applyThreadDetailRefreshCompletionEffectsPlan(plan) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applyThreadDetailRefreshCompletionEffect(effect);
+}
+
 function applyThreadDetailRefreshPostMergeEffect(effect) {
   const key = String(effect || "");
   if (key === "merge-thread-list") {
@@ -9661,7 +9666,7 @@ async function refreshCurrentThread(options = {}) {
   const completionPlan = threadDetailRenderPlanApi.planThreadDetailRefreshCompletionEffects({
     threadHash: diagnosticThreadHash(threadId),
   });
-  for (const effect of completionPlan.effects) applyThreadDetailRefreshCompletionEffect(effect);
+  applyThreadDetailRefreshCompletionEffectsPlan(completionPlan);
 }
 
 function threadTurnsCursorParam(cursor) {

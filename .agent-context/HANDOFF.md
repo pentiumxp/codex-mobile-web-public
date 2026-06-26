@@ -15668,6 +15668,31 @@ The previous full handoff was archived and should be opened only when old proven
   - Continue Phase A or batch the current module for one deploy/readback when
     requested.
 
+## 2026-06-26 - Latest tail marker: Phase A refresh completion effects executor slice
+
+- Latest local commit for this continuation slice:
+  - Message: `plan refresh completion effects executor`.
+- Current state:
+  - This is the thirteenth local Phase A render/patch ownership slice.
+  - Not deployed by design; no `CLIENT_BUILD_ID` / PWA shell cache bump.
+- Root-cause boundary:
+  - `planThreadDetailRefreshCompletionEffects()` already selected bounded
+    refresh-completion effects, but `refreshCurrentThread()` still directly
+    iterated over `completionPlan.effects`.
+  - `public/app.js` now owns a plan-level completion effects executor, so
+    `refreshCurrentThread()` only asks for the plan and invokes the executor.
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js`
+    passed (`176` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`1117` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit locally, then continue Phase A or batch the current module for one
+    deploy/readback when requested.
+
 ## 2026-06-26 - Latest tail marker: Phase A patch surface probe effects slice
 
 - Latest local commit for this continuation slice:
