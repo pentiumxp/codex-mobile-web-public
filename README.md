@@ -141,12 +141,17 @@ cache policy 和 baseline 构建边界混在一起。
   `readRolloutSessionFallbackThread()` 和默认 helper 仍保持旧语义，直接返回带状态的
   summary；列表冷路径只是把 tail/status 推迟到最终候选，避免对被过滤掉的 rollout
   文件做状态扫描。
+- server-only follow-up 继续收紧同一冷路径里的重复同步 I/O。归档线程 id 集合在一次
+  fallback filter/merge pass 中复用，不再让每个 row 的 `threadHasArchiveSignal()`
+  反复扫描 archived session 目录；`inferRolloutFallbackStatus()` 已经读取过的
+  rollout tail 会传给 stale context-only active evidence，不再为了同一个最终候选
+  二次读取 tail。归档过滤和 stale-active 转 idle 的语义保持不变。
 
 这不是新的 fallback 行为，也不是 prewarm/persist。route aggregation、defer
 fallback、app-server result merge 都没有改变；source 层只调整 rollout list
-候选的读取顺序，把昂贵状态扫描延迟到最终候选。readback 仍只把 deferred 之后的
-完整读和 warm check 证据化。该切片暂不单独部署，按新的节奏等待 Phase B 模块
-批量验证后再统一部署。
+候选的读取顺序，并减少同一 pass 里的重复归档扫描和重复 tail 读取。readback 仍只把
+deferred 之后的完整读和 warm check 证据化。该切片暂不单独部署，按新的节奏等待
+Phase B 模块批量验证后再统一部署。
 
 ## 2026-06-26 v531 Thread Detail Cold-Path Diagnosis
 

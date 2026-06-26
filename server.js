@@ -2956,8 +2956,8 @@ function isResidualFallbackThreadSummary(thread) {
   return !isThreadListLiveStatus(thread.status);
 }
 
-function shouldHideThreadListSummary(thread) {
-  if (threadHasArchiveSignal(thread)) return true;
+function shouldHideThreadListSummary(thread, archivedIds = null) {
+  if (threadHasArchiveSignal(thread, archivedIds)) return true;
   if (isSubagentThreadSummary(thread)) return true;
   if (isSideChatSidecarThreadSummary(thread)) return true;
   return isResidualFallbackThreadSummary(thread);
@@ -2998,14 +2998,15 @@ function archivedSessionThreadIds() {
   return ids;
 }
 
-function threadHasArchiveSignal(thread) {
+function threadHasArchiveSignal(thread, archivedIds = null) {
   if (!thread || typeof thread !== "object") return false;
   const id = normalizeThreadId(thread.id);
   const status = statusText(thread.status).toLowerCase();
   const location = String(thread.path || thread.rolloutPath || thread.rollout_path || "").toLowerCase();
+  const archivedThreadIds = archivedIds && typeof archivedIds.has === "function" ? archivedIds : archivedSessionThreadIds();
   return Boolean(thread.archived || thread.archivedAt || thread.archived_at || thread.isArchived)
     || Boolean(thread.deleted || thread.deletedAt || thread.deleted_at || thread.isDeleted || thread.removed || thread.removedAt)
-    || Boolean(id && archivedSessionThreadIds().has(id))
+    || Boolean(id && archivedThreadIds.has(id))
     || /archived|deleted|removed/.test(status)
     || /[/\\](archived|deleted|trash|removed)[_-]?sessions[/\\]/.test(location)
     || isBackupRolloutPath(location);
@@ -3141,7 +3142,7 @@ function mergeThreadSummaryList(threads) {
       normalizeThreadSummaryLiveStatus(mergeThreadWithCachedDisplaySummary(thread)),
     );
     const merged = normalizeThreadSummaryLiveStatus(byId.has(id) ? mergeThreadDisplaySummary(byId.get(id), displayThread) : displayThread);
-    if (threadHasArchiveSignal(merged) || isSubagentThreadSummary(merged)) {
+    if (threadHasArchiveSignal(merged, archivedIds) || isSubagentThreadSummary(merged)) {
       byId.delete(id);
       continue;
     }
@@ -3149,7 +3150,7 @@ function mergeThreadSummaryList(threads) {
   }
   return sortThreadListSummaries(
     hydrateThreadListTitlesFromSessionIndex([...byId.values()])
-      .filter((thread) => !shouldHideThreadListSummary(thread)),
+      .filter((thread) => !shouldHideThreadListSummary(thread, archivedIds)),
   );
 }
 
@@ -12816,12 +12817,15 @@ function fallbackThreadReadResultForOrchestrator({ threadId, summary, runtimeSet
 function filterFallbackThreads(threads, filters = {}) {
   const globalState = filters.globalState || readGlobalState();
   const visibility = visibilityFromGlobalState(globalState);
+  const archivedIds = filters.archivedIds && typeof filters.archivedIds.has === "function"
+    ? filters.archivedIds
+    : archivedSessionThreadIds();
   const cwdFilter = String(filters.cwd || "").trim();
   const search = String(filters.searchTerm || "").trim().toLowerCase();
   const shouldFilterByWorkspace = anyThreadMatchesVisibleWorkspace(threads, visibility);
   return threads
     .filter((thread) => {
-      if (threadHasArchiveSignal(thread) || isSubagentThreadSummary(thread)) return false;
+      if (threadHasArchiveSignal(thread, archivedIds) || isSubagentThreadSummary(thread)) return false;
       if (!shouldFilterByWorkspace) return true;
       if (threadProjectlessVisible(thread, visibility)) return true;
       const cwd = String(thread && thread.cwd || "").trim();
@@ -13038,8 +13042,8 @@ function createRolloutTurnEvidence(turnId, timestampMs = 0) {
   };
 }
 
-function rolloutLatestTurnEvidence(rolloutPath, stat = null) {
-  const tail = readRolloutTail(rolloutPath);
+function rolloutLatestTurnEvidence(rolloutPath, stat = null, options = {}) {
+  const tail = typeof options.tail === "string" ? options.tail : readRolloutTail(rolloutPath);
   if (!tail) return null;
   const byTurn = new Map();
   let currentTurnId = "";
@@ -13136,7 +13140,9 @@ function staleContextOnlyActiveEvidenceForRollout(rolloutPath, options = {}) {
       return null;
     }
   }
-  const evidence = rolloutLatestTurnEvidence(rolloutPath, stat);
+  const evidence = rolloutLatestTurnEvidence(rolloutPath, stat, {
+    tail: typeof options.tail === "string" ? options.tail : undefined,
+  });
   if (!evidence || evidence.hasTerminal || evidence.hasVisibleUser || evidence.hasAssistant || evidence.hasOperation) {
     return null;
   }
@@ -13200,7 +13206,7 @@ function inferRolloutFallbackStatus(rolloutPath, stat = null, nowMs = Date.now()
   const mtimeMs = Number(stat && stat.mtimeMs || 0);
   const tail = readRolloutTail(rolloutPath);
   if (!tail) return null;
-  const staleContextOnlyActive = staleContextOnlyActiveEvidenceForRollout(rolloutPath, { stat, nowMs });
+  const staleContextOnlyActive = staleContextOnlyActiveEvidenceForRollout(rolloutPath, { stat, nowMs, tail });
   if (staleContextOnlyActive) return staleContextOnlyActiveStatus({ type: "active" }, staleContextOnlyActive);
   let lastActivityMs = 0;
   let lastTerminalMs = 0;
@@ -13325,7 +13331,9 @@ function readRolloutSessionFallback(limit = 80, filters = {}) {
     const thread = readRolloutSessionFallbackThreadFromFile(file, indexEntries.get(id) || { id }, { includeStatus: false });
     if (thread) threads.push(thread);
   }
-  return filterFallbackThreads(threads, filters).slice(0, limit).map((thread) => attachRolloutFallbackStatus(thread));
+  return filterFallbackThreads(threads, Object.assign({}, filters, { archivedIds }))
+    .slice(0, limit)
+    .map((thread) => attachRolloutFallbackStatus(thread));
 }
 
 function readRolloutSessionFallbackThread(threadId) {

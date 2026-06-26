@@ -264,6 +264,21 @@ test("fallback thread list keeps migrated Windows cwd rows when no visible works
   assert.deepEqual(filtered.map((thread) => thread.id), ["thread-1"]);
 });
 
+test("fallback filtering reuses injected archived ids for a whole pass", () => {
+  const visibleRoot = "C:\\Users\\xuxin\\Documents\\Agent";
+  const archivedId = "019e9000-0000-7000-8000-000000000016";
+  const liveId = "019e9000-0000-7000-8000-000000000017";
+  const filtered = filterFallbackThreads([
+    { id: archivedId, cwd: visibleRoot, status: { type: "active" } },
+    { id: liveId, cwd: visibleRoot, status: { type: "active" } },
+  ], {
+    archivedIds: new Set([archivedId]),
+    globalState: globalStateForRoots([visibleRoot]),
+  });
+
+  assert.deepEqual(filtered.map((thread) => thread.id), [liveId]);
+});
+
 test("thread list merges local fallback threads when app-server list misses them", () => {
   const result = mergeThreadListFallback({
     data: [
@@ -669,6 +684,51 @@ test("context-only stale active rollout turn is normalized to idle", () => {
   assert.deepEqual(normalized.turns, []);
 });
 
+test("rollout session fallback marks stale context-only active summary idle", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-rollout-stale-summary-"));
+  const threadId = "019e9000-0000-7000-8000-000000000018";
+  const turnId = "019e9000-0000-7000-8000-00000000stale";
+  const rolloutPath = path.join(dir, `rollout-2026-06-04T10-00-00-${threadId}.jsonl`);
+  const old = new Date("2026-06-04T10:00:00.000Z");
+  fs.writeFileSync(rolloutPath, [
+    JSON.stringify({
+      type: "session_meta",
+      payload: {
+        id: threadId,
+        timestamp: old.toISOString(),
+        cwd: "/tmp/project",
+      },
+    }),
+    JSON.stringify({
+      timestamp: old.toISOString(),
+      type: "event_msg",
+      payload: {
+        type: "task_started",
+        turn_id: turnId,
+      },
+    }),
+    JSON.stringify({
+      timestamp: old.toISOString(),
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "user",
+        content: [{
+          type: "input_text",
+          text: "<environment_context>\n  <current_date>2026-06-20</current_date>\n</environment_context>",
+        }],
+      },
+    }),
+  ].join("\n"), "utf8");
+  fs.utimesSync(rolloutPath, old, old);
+
+  const summary = readRolloutSessionFallbackThreadFromFile(rolloutPath, { id: threadId });
+
+  assert.equal(summary.status.type, "idle");
+  assert.equal(summary.status.reason, "context-only-active-turn");
+  assert.equal(summary.status.mobileStaleActiveTurn, true);
+});
+
 test("stale active rollout turn with real user text stays active", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-real-user-active-"));
   const threadId = "019e9000-0000-7000-8000-000000000014";
@@ -823,7 +883,11 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
 
   assert.match(serverJs, /function readRolloutSessionFallback\(/);
   assert.match(serverJs, /readRolloutSessionFallbackThreadFromFile\(file, indexEntries\.get\(id\) \|\| \{ id \}, \{ includeStatus: false \}\)/);
-  assert.match(serverJs, /filterFallbackThreads\(threads, filters\)\.slice\(0, limit\)\.map\(\(thread\) => attachRolloutFallbackStatus\(thread\)\)/);
+  assert.match(serverJs, /filterFallbackThreads\(threads, Object\.assign\(\{\}, filters, \{ archivedIds \}\)\)[\s\S]*\.slice\(0, limit\)[\s\S]*\.map\(\(thread\) => attachRolloutFallbackStatus\(thread\)\)/);
+  assert.match(serverJs, /function filterFallbackThreads\(threads, filters = \{\}\) \{[\s\S]*const archivedIds = filters\.archivedIds[\s\S]*archivedSessionThreadIds\(\)/);
+  assert.match(serverJs, /function filterFallbackThreads\(threads, filters = \{\}\) \{[\s\S]*threadHasArchiveSignal\(thread, archivedIds\)/);
+  assert.match(serverJs, /function rolloutLatestTurnEvidence\(rolloutPath, stat = null, options = \{\}\) \{[\s\S]*const tail = typeof options\.tail === "string" \? options\.tail : readRolloutTail\(rolloutPath\)/);
+  assert.match(serverJs, /function inferRolloutFallbackStatus\(rolloutPath, stat = null, nowMs = Date\.now\(\)\) \{[\s\S]*staleContextOnlyActiveEvidenceForRollout\(rolloutPath, \{ stat, nowMs, tail \}\)/);
   assert.match(serverJs, /function readThreadListFallback\(/);
   assert.match(serverJs, /function logThreadList\(event, details = \{\}\)/);
   assert.match(serverJs, /const THREAD_LIST_FALLBACK_CACHE_TTL_MS[\s\S]*\|\| "0"/);

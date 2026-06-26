@@ -72,7 +72,7 @@ test("archive state merge keeps backup and archived-session filters active", () 
   assert.match(serverJs, /function isBackupRolloutPath\(/);
   assert.match(serverJs, /archivedSessionThreadIds\(\)/);
   assert.match(serverJs, /mobileArchiveIndexService\.threadIds\(\)/);
-  assert.match(serverJs, /threadHasArchiveSignal\(thread\)/);
+  assert.match(serverJs, /threadHasArchiveSignal\(thread, archivedIds\)/);
   assert.match(serverJs, /isBackupRolloutPath\(row\.rollout_path\)/);
   assert.ok(serverJs.includes("url.pathname.match(/^\\/api\\/threads\\/([^/]+)\\/archive$/)"));
 });

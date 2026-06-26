@@ -196,7 +196,12 @@ Current acceleration targets:
    limits visible candidates, then reads rollout tails only for the surviving
    rows that need status inference. Default single-thread rollout fallback
    still returns active/completed status immediately; only list source
-   collection defers that tail scan until the final candidates are known.
+   collection defers that tail scan until the final candidates are known. The
+   same source-internal slice also reuses archived-thread ids for a whole
+   filter/merge pass and reuses the already-read rollout tail when checking
+   stale context-only active evidence, so the remaining first cold rebuild work
+   can be measured against candidate discovery/sort and final-candidate status
+   parsing rather than repeated per-row directory/tail scans.
 3. Large detail cold-path attribution now has a dedicated
    `thread-detail-cold-path-diagnosis-service` that emits bounded
    `coldPathOwner` / `coldPathReason` for projection-cache seeding,

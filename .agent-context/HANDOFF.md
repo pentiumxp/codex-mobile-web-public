@@ -14741,3 +14741,79 @@ The previous full handoff was archived and should be opened only when old proven
   - When the Phase B module is ready, deploy once and rerun
     `node scripts/codex-mobile-phase-b-readback-smoke.js --server http://127.0.0.1:8787 --require-active-overlay --json`
     to compare first-list `fallbackMs` and confirm warm checks still hit.
+
+## 2026-06-26 - fallback cold rebuild repeated scan local slice
+
+- Scope:
+  - Continued Phase B first-cold thread-list fallback rebuild optimization
+    after committing `9d3e05e` (`defer rollout fallback status scans`).
+  - A read-only subagent independently reviewed the remaining first-cold
+    costs and highlighted four candidates: rollout file discovery/stat/sort,
+    final-candidate status tail reads, repeated `session_index.jsonl` reads,
+    and duplicate merge/filter work. It also noted the already-started
+    archived-id rescan fix as aligned.
+  - This slice addresses two low-risk repeated-scan costs in `server.js`:
+    per-row archived id rescans and duplicate rollout-tail reads during status
+    inference.
+- Root-cause boundary:
+  - Symptom: after the once-only fallback baseline rebuild invariant was
+    proven, the first rebuild still spent about `2.3s` in rollout fallback.
+  - Failing layer: repeated synchronous source scans inside the fallback
+    baseline path, not client rendering or cache policy.
+  - Violated invariant: one-time cold rebuild should not repeat identical
+    archive-directory scans or read the same rollout tail twice for the same
+    final candidate.
+  - Root cause/hypothesis:
+    - `threadHasArchiveSignal()` called `archivedSessionThreadIds()` whenever
+      invoked without context, so filter/merge passes could rescan the Mobile
+      archive index and archived-session directories per row.
+    - `inferRolloutFallbackStatus()` read a rollout tail, then called
+      stale-context evidence, which read the same tail again through
+      `rolloutLatestTurnEvidence()`.
+  - Closure classification: root-cause I/O-order/reuse optimization. No new
+    fallback, no prewarm, no persistence, no client dedupe, no route behavior
+    change.
+- Changes:
+  - `server.js`
+    - `threadHasArchiveSignal()` and `shouldHideThreadListSummary()` accept an
+      optional archived id set.
+    - `filterFallbackThreads()`, `mergeThreadSummaryList()`, and
+      `readRolloutSessionFallback()` reuse one archived id set for a whole
+      pass.
+    - `rolloutLatestTurnEvidence()` accepts an optional already-read tail.
+    - `inferRolloutFallbackStatus()` passes its existing tail to
+      `staleContextOnlyActiveEvidenceForRollout()` so context-only active
+      evidence does not read the same file twice.
+  - `test/thread-visibility.test.js`
+    - Adds behavior coverage for injected archived id reuse and stale
+      context-only active fallback summary normalization.
+    - Adds structural guards for the pass-level archived id set and single-tail
+      status inference path.
+  - `test/thread-archive.test.js`
+    - Updates archive structural coverage for the new `threadHasArchiveSignal`
+      call shape.
+  - `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md` were updated.
+- Validation:
+  - Focused:
+    `node --test test/thread-visibility.test.js` passed (`48` tests).
+  - Focused fallback set:
+    `node --test test/thread-list-fallback-baseline-service.test.js test/thread-list-fallback-cache-service.test.js test/thread-list-cold-path-diagnosis-service.test.js`
+    passed (`15` tests).
+  - Full `npm test` passed (`1098` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Not deployed by design. This is still part of the Phase B local runtime
+    batch; deploy only when the module has enough changes to justify one
+    production restart/readback.
+- Next:
+  - Commit this local slice.
+  - Remaining high-value Phase B evidence/optimization candidates:
+    candidate rollout file discovery/stat/sort, same-request
+    `session_index.jsonl` reuse, and merge/filter duplication.
+  - Before a deploy, consider adding bounded readback counters for rollout
+    files statted/sorted, status-tail reads/bytes, session-index reads, and
+    archived-id scans so production readback can attribute any remaining
+    first-cold cost without private logs.
