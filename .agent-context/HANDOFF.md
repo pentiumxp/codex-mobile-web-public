@@ -11535,3 +11535,62 @@ The previous full handoff was archived and should be opened only when old proven
     or scroll ownership from `refreshCurrentThread()`. If production
     diagnostics show server cold-path misses, pivot to Phase B with current
     `thread_refresh_ms` and projection miss evidence.
+
+## 2026-06-26 - release cadence update
+
+- User clarified the release cadence for the ongoing architecture optimization:
+  small helper/refactor slices should not each deploy individually.
+- Future Phase A/B/C/D/E optimization work should accumulate into a larger
+  coherent module, run local focused/full checks, then deploy once when the
+  module is complete enough for production validation.
+- Public push remains after production/user validation only.
+- For browser/runtime source edits inside an undeployed module, avoid needless
+  per-slice shell/cache version churn; bump `CLIENT_BUILD_ID` and
+  `public/sw.js` cache at the module deployment boundary.
+
+## 2026-06-26 - local Phase A execution-effects slice validated, not deployed
+
+- Latest code commit:
+  - `302f705 extract thread refresh execution effects plan`
+- Change:
+  - Continued the Phase A `refreshCurrentThread()` orchestration cleanup as part
+    of the next larger module, without deploying the small slice.
+  - `public/thread-detail-render-plan.js` now owns
+    `planThreadDetailRefreshExecutionEffects()`, mapping outcome execution
+    actions to metadata-update, full-render, no-op, or bounded unknown effect
+    entries.
+  - `public/app.js` now executes that plan through
+    `applyThreadDetailRefreshExecutionEffectsPlan()`, keeping the real DOM and
+    metadata side effects in app code but removing direct
+    `executionPlan.executionAction` branching from `refreshCurrentThread()`.
+- Root-cause boundary:
+  - Symptom/risk: after v506, outcome execution planning existed, but
+    `refreshCurrentThread()` still directly branched on metadata/full-render
+    execution actions and accumulated effect timings inline.
+  - Failing layer: frontend thread-detail refresh execution-effect ownership.
+  - Classification: root-cause architecture boundary cleanup. No server
+    projection change, DOM patch algorithm change, full-render behavior change,
+    scroll policy change, diagnostic transport change, task-card protocol
+    change, visual layout change, duplicate hiding, fallback, or shell/cache
+    version bump was added.
+- Validation:
+  - Focused source suite passed:
+    `test/thread-detail-render-plan.test.js`, `test/conversation-render.test.js`,
+    `test/mobile-viewport.test.js`, `test/thread-goal-service.test.js`,
+    `test/thread-task-card-route.test.js`, and `test/thread-tile-layout-ui.test.js`
+    (`161` tests).
+  - Full source `npm test` passed (`941` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Not deployed by design under the updated cadence. This slice is part of the
+    next larger Phase A refresh orchestration module.
+  - Production remains at `0.1.11|codex-mobile-shell-v506` until the module-level
+    deploy.
+- Sub-agent note:
+  - A read-only sub-agent reviewed remaining Phase A candidates and recommended
+    next focusing on post-merge runner consolidation, patch attempt execution,
+    local DOM patch transaction ownership, and scroll snapshot/follow policy.
+- Next suggested slice:
+  - Continue locally with post-merge runner consolidation or patch-attempt
+    executor planning. Deploy only after enough Phase A refresh orchestration
+    cleanup is complete to form a coherent module.
