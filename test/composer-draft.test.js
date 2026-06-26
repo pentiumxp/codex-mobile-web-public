@@ -117,7 +117,10 @@ test("composer runtime selections persist without typed text", () => {
 
   const loadThreadBody = functionBody("loadThread");
   assert.match(loadThreadBody, /state\.currentThread = mergeThreadPreservingVisibleItems/);
-  assert.match(loadThreadBody, /restoreDraftForCurrentTarget\(\);[\s\S]*renderComposerSettings\(\)/, "thread load should restore persisted runtime selections");
+  assert.match(loadThreadBody, /restoreDraftForCurrentTarget\(\);[\s\S]*applyThreadDetailRefreshPostMergeEffectsGroup\(postMergePlan, "composer-render"\)/, "thread load should restore persisted runtime selections");
+  assert.match(loadThreadBody, /planThreadDetailLoadingShellPostStateEffects\(\{[\s\S]*threadId,[\s\S]*source,[\s\S]*\}\)/, "loading shell opens should restore target runtime selections through the post-state plan");
+  assert.match(functionBody("applyThreadDetailPostRenderEffect"), /if \(type === "restore-draft-for-current-target"\) \{[\s\S]*restoreDraftForCurrentTarget\(\);/);
+  assert.match(functionBody("applyThreadDetailPostRenderEffect"), /if \(type === "render-composer-settings"\) \{[\s\S]*renderComposerSettings\(\);/);
 });
 
 test("draft attachments use IndexedDB and are cleared only after a successful send", () => {

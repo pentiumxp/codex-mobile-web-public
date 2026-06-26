@@ -1286,6 +1286,33 @@ test("thread detail first-paint post-timing effects plan preserves consistency b
   });
 });
 
+test("thread detail loading-shell post-state effects plan preserves visible open order", () => {
+  assert.deepEqual(renderPlan.planThreadDetailLoadingShellPostStateEffects({
+    threadId: "thread-1",
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA",
+  }), {
+    effects: [
+      { type: "follow-thread-open-to-bottom", threadId: "thread-1" },
+      { type: "restore-draft-for-current-target" },
+      { type: "render-composer-settings" },
+      { type: "sync-active-turn-from-thread" },
+      { type: "render-thread-list" },
+      { type: "render-current-thread", options: { stickToBottom: true } },
+      { type: "publish-plugin-navigation-state", force: true },
+      { type: "update-composer-controls" },
+      { type: "load-side-chat", threadId: "thread-1", silent: true },
+      { type: "set-connection-state", removeClass: "error", text: "Loading thread" },
+      { type: "mark-activity", label: "加载线程" },
+      {
+        type: "start-thread-load-watchdog",
+        threadId: "thread-1",
+        source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR",
+      },
+    ],
+    reason: "loading-shell-post-state",
+  });
+});
+
 test("thread detail cached-current post-render effects plan preserves order and runtime guards", () => {
   assert.deepEqual(renderPlan.planThreadDetailCachedCurrentPostRenderEffects({
     threadId: "thread-1",

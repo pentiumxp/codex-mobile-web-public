@@ -273,7 +273,8 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /function scheduleSideChatPoll\(/);
   assert.match(appJs, /侧聊正在回复/);
   assert.match(appJs, /function flushSideChatDraftNow\(/);
-  assert.match(appJs, /loadSideChat\(threadId, \{ silent: true \}\)\.catch\(showError\)/);
+  assert.match(appJs, /threadDetailRenderPlanApi\.planThreadDetailLoadingShellPostStateEffects/);
+  assert.match(functionBody("applyThreadDetailPostRenderEffect"), /loadSideChat\(sideChatThreadId, \{ silent: item\.silent !== false \}\)\.catch\(showError\);/);
   assert.match(appJs, /function serverBuildIdFromConfig\(config\) \{\s*return String\(config && \(config\.clientBuildId \|\| config\.shellCacheName \|\| config\.buildId\) \|\| ""\)\.trim\(\);/);
   assert.doesNotMatch(appJs, /function serverBuildIdFromConfig\(config\) \{\s*return String\(config && \(config\.clientBuildId \|\| config\.shellCacheName \|\| config\.buildId \|\| config\.version\)/);
   assert.match(appJs, /startupThreadOpenPending: false/);
@@ -380,7 +381,9 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /function showHermesPluginPrimaryPage\(options = \{\}\) \{[\s\S]*const force = options\.force === true;[\s\S]*plugin_primary_suppressed_thread_open/);
   assert.match(functionBody("showHermesPluginPrimaryPage"), /state\.threadLoadController[\s\S]*state\.startupThreadOpenPending[\s\S]*state\.currentThread && state\.currentThread\.mobileLoading/);
   assert.match(appJs, /async function restoreThreadSelection\(\) \{[\s\S]*if \(hasThreadDetailSelectionIntent\(\)\) return;[\s\S]*showHermesPluginPrimaryPage\(\{ source: "restore-empty" \}\);[\s\S]*return;/);
-  assert.match(appJs, /renderCurrentThread\(\{ stickToBottom: true \}\);\s*\n\s*publishPluginNavigationState\(\{ force: true \}\);\s*\n\s*updateComposerControls\(\);/);
+  assert.match(functionBody("loadThread"), /const loadingShellPostStatePlan = threadDetailRenderPlanApi\.planThreadDetailLoadingShellPostStateEffects\(\{[\s\S]*threadId,[\s\S]*source,[\s\S]*\}\);/);
+  assert.match(functionBody("loadThread"), /applyThreadDetailPostRenderEffectsPlan\(loadingShellPostStatePlan, \{ thread: state\.currentThread \}\);/);
+  assert.doesNotMatch(functionBody("loadThread"), /renderCurrentThread\(\{ stickToBottom: true \}\);\s*\n\s*publishPluginNavigationState\(\{ force: true \}\);\s*\n\s*updateComposerControls\(\);/);
   assert.doesNotMatch(appJs, /function shouldOpenLargeThreadHistoryAtTop/);
   assert.doesNotMatch(appJs, /function threadOpenRenderOptions/);
   assert.doesNotMatch(appJs, /scrollConversationToTop/);
@@ -403,6 +406,9 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(functionBody("applyThreadDetailPostRenderEffect"), /checkConversationProjectionConsistency\(String\(item\.phase \|\| ""\), \{[\s\S]*renderMode: String\(item\.renderMode \|\| ""\),[\s\S]*\}\);/);
   assert.match(functionBody("applyThreadDetailPostRenderEffect"), /recordEmptyCachedDetailReuseHealthy\(String\(item\.reason \|\| ""\), context\.thread\);/);
   assert.match(functionBody("applyThreadDetailPostRenderEffect"), /loadSideChat\(sideChatThreadId, \{ silent: item\.silent !== false \}\)\.catch\(showError\);/);
+  assert.match(functionBody("applyThreadDetailPostRenderEffect"), /followThreadOpenToBottom\(String\(item\.threadId \|\| ""\)\);/);
+  assert.match(functionBody("applyThreadDetailPostRenderEffect"), /renderCurrentThread\(\{ stickToBottom: Boolean\(options\.stickToBottom\) \}\);/);
+  assert.match(functionBody("applyThreadDetailPostRenderEffect"), /startThreadLoadWatchdog\(String\(item\.threadId \|\| ""\), \{ source: String\(item\.source \|\| ""\)\.slice\(0, 40\) \}\);/);
   assert.match(appJs, /renderCurrentThread\(\{ stickToBottom: true \}\);\s*\n\s*const conversationRenderMs = roundedDurationMs\(conversationRenderStartedAt\);\s*\n\s*const firstPaintAfterRenderPlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintAfterRenderEffects\(\{[\s\S]*seq,[\s\S]*source: "first-paint",[\s\S]*\}\);\s*\n\s*applyThreadDetailPostRenderEffectsPlan\(firstPaintAfterRenderPlan, \{ thread: state\.currentThread \}\);\s*\n\s*const postRenderStartedAt = nowPerfMs\(\);\s*\n\s*const firstPaintPostRenderPlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintPostRenderEffects\(\{[\s\S]*threadId,[\s\S]*seq,[\s\S]*source,[\s\S]*\}\);\s*\n\s*applyThreadDetailPostRenderEffectsPlan\(firstPaintPostRenderPlan, \{ thread: result\.thread \}\);/);
   assert.match(appJs, /const postRenderMs = roundedDurationMs\(postRenderStartedAt\);\s*\n\s*const firstPaintPostTimingPlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintPostTimingEffects\(\);\s*\n\s*applyThreadDetailPostRenderEffectsPlan\(firstPaintPostTimingPlan, \{ thread: result\.thread \}\);\s*\n\s*const renderElapsedMs = roundedDurationMs\(renderStartedAt\);/);
   assert.doesNotMatch(functionBody("loadThread"), /maybeAutoBackfillThreadHistory\(state\.currentThread, \{ seq, source: "first-paint" \}\);/);

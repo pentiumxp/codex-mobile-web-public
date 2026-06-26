@@ -9001,19 +9001,11 @@ async function loadThread(threadId, options = {}) {
     mobileLoading: true,
     mobileLoadError: "",
   };
-  followThreadOpenToBottom(threadId);
-  restoreDraftForCurrentTarget();
-  renderComposerSettings();
-  syncActiveTurnFromThread();
-  renderThreads();
-  renderCurrentThread({ stickToBottom: true });
-  publishPluginNavigationState({ force: true });
-  updateComposerControls();
-  loadSideChat(threadId, { silent: true }).catch(showError);
-  $("connectionState").classList.remove("error");
-  $("connectionState").textContent = "Loading thread";
-  markActivity("加载线程");
-  startThreadLoadWatchdog(threadId, { source });
+  const loadingShellPostStatePlan = threadDetailRenderPlanApi.planThreadDetailLoadingShellPostStateEffects({
+    threadId,
+    source,
+  });
+  applyThreadDetailPostRenderEffectsPlan(loadingShellPostStatePlan, { thread: state.currentThread });
   let result;
   const apiStartedAt = nowPerfMs();
   try {
@@ -9248,6 +9240,31 @@ function applyThreadDetailRefreshCompletionEffectsPlan(plan) {
 function applyThreadDetailPostRenderEffect(effect, context = {}) {
   const item = effect && typeof effect === "object" ? effect : {};
   const type = String(item.type || "");
+  if (type === "follow-thread-open-to-bottom") {
+    followThreadOpenToBottom(String(item.threadId || ""));
+    return true;
+  }
+  if (type === "restore-draft-for-current-target") {
+    restoreDraftForCurrentTarget();
+    return true;
+  }
+  if (type === "render-composer-settings") {
+    renderComposerSettings();
+    return true;
+  }
+  if (type === "sync-active-turn-from-thread") {
+    syncActiveTurnFromThread();
+    return true;
+  }
+  if (type === "render-thread-list") {
+    renderThreads();
+    return true;
+  }
+  if (type === "render-current-thread") {
+    const options = item.options && typeof item.options === "object" ? item.options : {};
+    renderCurrentThread({ stickToBottom: Boolean(options.stickToBottom) });
+    return true;
+  }
   if (type === "publish-plugin-navigation-state") {
     publishPluginNavigationState({ force: Boolean(item.force) });
     return true;
@@ -9295,6 +9312,21 @@ function applyThreadDetailPostRenderEffect(effect, context = {}) {
   if (type === "load-side-chat") {
     const sideChatThreadId = String(item.threadId || "");
     if (sideChatThreadId) loadSideChat(sideChatThreadId, { silent: item.silent !== false }).catch(showError);
+    return true;
+  }
+  if (type === "set-connection-state") {
+    const element = $("connectionState");
+    const removeClass = String(item.removeClass || "");
+    if (removeClass) element.classList.remove(removeClass);
+    element.textContent = String(item.text || "");
+    return true;
+  }
+  if (type === "mark-activity") {
+    markActivity(String(item.label || ""));
+    return true;
+  }
+  if (type === "start-thread-load-watchdog") {
+    startThreadLoadWatchdog(String(item.threadId || ""), { source: String(item.source || "").slice(0, 40) });
     return true;
   }
   if (type === "backfill-full-thread-detail-if-needed") {

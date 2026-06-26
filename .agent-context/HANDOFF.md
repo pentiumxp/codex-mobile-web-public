@@ -17735,3 +17735,63 @@ The previous full handoff was archived and should be opened only when old proven
 - Next:
   - Commit locally, then continue Phase A current-thread render authority or
     batch the accumulated module for one deploy/readback when requested.
+
+## 2026-06-27 - Latest tail marker: Phase A loading-shell post-state effects local slice
+
+- Current local state:
+  - Continued Phase A `loadThread()` ownership cleanup after `c9cc156`.
+  - `planThreadOpenLoadingShell()` already owned safe loading-shell state
+    construction, but `loadThread()` still directly owned the fixed visible
+    post-state sequence after assigning `state.currentThread`.
+  - This slice moves that loading-shell post-state sequence into
+    `public/thread-detail-render-plan.js` while preserving the existing order
+    and runtime side effects.
+- Root-cause boundary:
+  - Symptom/risk: loading-shell open, API first-paint, cached-current, and
+    full-backfill thread-detail paths still had uneven fixed side-effect
+    ownership. Loading-shell display could regress by changing a direct
+    `loadThread()` call sequence without touching a testable plan.
+  - Failing layer: frontend loading-shell post-state side-effect ownership,
+    not projection cache selection, app-server detail reads, server projection,
+    DOM patch selection, task-card routing, Home AI diagnostic intake, or
+    shell/cache.
+  - Violated invariant: fixed thread-detail visible-open side-effect ordering
+    should be declared by pure planning helpers; app code should execute the
+    real DOM/state/timer/network effects.
+- Changes:
+  - `public/thread-detail-render-plan.js` now exports
+    `planThreadDetailLoadingShellPostStateEffects()`.
+  - The plan declares the ordered effects for follow-to-bottom, draft restore,
+    Composer settings, active-turn sync, thread-list render, current-thread
+    render, plugin navigation, Composer controls, side-chat silent load,
+    connection state, activity marker, and thread-load watchdog startup.
+  - `public/app.js` applies that plan after installing the loading shell and
+    extends the shared post-render effect executor for those effect types.
+  - Updated `test/thread-detail-render-plan.test.js`,
+    `test/mobile-viewport.test.js`, `test/conversation-render.test.js`, and
+    `test/composer-draft.test.js`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation so far:
+  - Focused:
+    `node --test test/thread-detail-render-plan.test.js test/mobile-viewport.test.js test/conversation-render.test.js test/turn-scroll-controls.test.js`
+    passed (`195` tests).
+  - Targeted after composer-draft guard update:
+    `node --test test/composer-draft.test.js test/thread-detail-render-plan.test.js test/mobile-viewport.test.js test/conversation-render.test.js`
+    passed (`193` tests).
+  - Syntax:
+    `node --check public/thread-detail-render-plan.js && node --check public/app.js && node --check test/thread-detail-render-plan.test.js && node --check test/mobile-viewport.test.js && node --check test/conversation-render.test.js`
+    passed.
+  - Full:
+    `npm test` passed (`1158` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache
+    bump. This remains a local Phase A ownership slice to batch with the next
+    module validation/deploy.
+- Progress:
+  - Overall architecture optimization is about `74%`.
+  - Phase A frontend render/projection ownership is about `84%`.
+- Next:
+  - Commit locally, then continue Phase A current-thread render authority or
+    batch the accumulated module for one deploy/readback when requested.

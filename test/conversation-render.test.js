@@ -1862,6 +1862,9 @@ test("loading and thread-list state preserve locally visible live turns", () => 
   assert.match(functionBody("loadThread"), /const loadingShellPlan = threadDetailStateApi\.planThreadOpenLoadingShell\(\{ threadId, summaryThread: summary \}\);/);
   assert.match(functionBody("loadThread"), /state\.currentThreadId = loadingShellPlan\.currentThreadId \|\| threadId;/);
   assert.match(functionBody("loadThread"), /state\.currentThread = loadingShellPlan\.thread \|\| \{[\s\S]*id: threadId,[\s\S]*name: threadId,[\s\S]*preview: threadId,[\s\S]*turns: \[\],[\s\S]*mobileLoading: true,[\s\S]*mobileLoadError: "",[\s\S]*\};/);
+  assert.match(functionBody("loadThread"), /const loadingShellPostStatePlan = threadDetailRenderPlanApi\.planThreadDetailLoadingShellPostStateEffects\(\{[\s\S]*threadId,[\s\S]*source,[\s\S]*\}\);/);
+  assert.match(functionBody("loadThread"), /applyThreadDetailPostRenderEffectsPlan\(loadingShellPostStatePlan, \{ thread: state\.currentThread \}\);/);
+  assert.doesNotMatch(functionBody("loadThread"), /followThreadOpenToBottom\(threadId\);\s*\n\s*restoreDraftForCurrentTarget\(\);\s*\n\s*renderComposerSettings\(\);\s*\n\s*syncActiveTurnFromThread\(\);\s*\n\s*renderThreads\(\);\s*\n\s*renderCurrentThread\(\{ stickToBottom: true \}\);/);
   assert.doesNotMatch(functionBody("loadThread"), /Object\.assign\(\{\}, threadListSummaryFromDetailThread\(summary\) \|\| summary/);
   assert.match(functionBody("loadThread"), /const cacheReusePlan = planThreadOpenCacheReuse\(\{/);
   assert.match(functionBody("loadThread"), /recordEmptyCachedDetailReuseBlocked\(cacheReusePlan\.reason, state\.currentThread, \{ source \}\)/);

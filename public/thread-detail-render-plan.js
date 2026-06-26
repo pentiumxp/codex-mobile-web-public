@@ -917,6 +917,28 @@
     };
   }
 
+  function planThreadDetailLoadingShellPostStateEffects(input = {}) {
+    const threadId = compactReason(input.threadId, "");
+    const source = compactReason(input.source, "").slice(0, 40);
+    return {
+      effects: [
+        { type: "follow-thread-open-to-bottom", threadId },
+        { type: "restore-draft-for-current-target" },
+        { type: "render-composer-settings" },
+        { type: "sync-active-turn-from-thread" },
+        { type: "render-thread-list" },
+        { type: "render-current-thread", options: { stickToBottom: true } },
+        { type: "publish-plugin-navigation-state", force: true },
+        { type: "update-composer-controls" },
+        { type: "load-side-chat", threadId, silent: true },
+        { type: "set-connection-state", removeClass: "error", text: "Loading thread" },
+        { type: "mark-activity", label: "加载线程" },
+        { type: "start-thread-load-watchdog", threadId, source },
+      ],
+      reason: "loading-shell-post-state",
+    };
+  }
+
   function planThreadDetailCachedCurrentPostRenderEffects(input = {}) {
     const seq = Number(input.seq);
     const threadId = compactReason(input.threadId, "");
@@ -1290,6 +1312,7 @@
     planThreadDetailCachedCurrentPostRenderEffects,
     planThreadDetailFirstPaintAfterRenderEffects,
     planThreadDetailFirstPaintPostTimingEffects,
+    planThreadDetailLoadingShellPostStateEffects,
     planThreadDetailFullBackfillPostRenderEffects,
     planThreadDetailFullBackfillTelemetryEffects,
     planThreadDetailFirstPaintPostRenderEffects,

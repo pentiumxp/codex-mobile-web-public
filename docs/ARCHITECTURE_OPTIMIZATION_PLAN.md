@@ -921,6 +921,15 @@ First-paint post-timing projection-consistency checking is planned separately:
 `check-conversation-projection-consistency` effect that runs after
 `postRenderMs` is measured. This preserves the existing timing scope while
 removing another direct fixed effect call from `loadThread()`.
+Thread-open loading-shell post-state ordering now also lives in
+`public/thread-detail-render-plan.js`:
+`planThreadDetailLoadingShellPostStateEffects` declares the fixed sequence that
+runs after `planThreadOpenLoadingShell()` installs `state.currentThread`,
+including follow-to-bottom, draft restore, Composer settings, active-turn sync,
+thread-list render, conversation render, plugin navigation, side-chat silent
+load, connection state, activity marker, and load watchdog startup. App code
+still executes the real DOM/state/timer/network effects, but `loadThread()` no
+longer owns this loading-shell visible-open sequence inline.
 First-paint telemetry/reporting side-effect ordering now also lives in
 `public/thread-detail-render-plan.js`:
 `planThreadDetailFirstPaintTelemetryEffects` declares the fixed sequence for
