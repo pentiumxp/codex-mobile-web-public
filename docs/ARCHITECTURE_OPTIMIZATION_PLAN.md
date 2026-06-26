@@ -521,6 +521,16 @@ projection.
   stale full disk entry only when the existing full cache is proven unusable by
   `dynamic-summary-stale` or a signature mismatch reason. It does not delete
   healthy full cache and does not persist partial recent windows to disk.
+- Client-side large-session performance events now classify thread-detail
+  cold/warm phases from bounded server fields when the server phase is absent
+  or `unknown`. `public/thread-performance-metrics.js` owns the client
+  `classifyThreadDetailPhase()` policy for projection hits, projection partial
+  hits, initial turns-list reads, seeded partial windows, large bounded
+  turns-list reads, full `thread/read`, raw reads, turns-list fallback, and
+  summary fallback. This keeps `thread_detail_first_paint`,
+  `thread_refresh_ms`, and `thread_detail_full_ready` evidence interpretable
+  without changing the server read path or logging private message/task-card
+  content.
 - Preserve the first-paint contract for large sessions. Do not introduce
   deferred incomplete detail enrichment as a UI fallback for server cold-path
   slowness.

@@ -52,6 +52,23 @@ test("thread performance metrics classify thread list cold, warm, and deferred p
   assert.equal(metrics.classifyThreadListPhase(null), "unknown");
 });
 
+test("thread performance metrics classify thread detail cold and warm phases from bounded fields", () => {
+  assert.equal(metrics.classifyThreadDetailPhase({ phase: "warm-projection-cache" }), "warm-projection-cache");
+  assert.equal(metrics.classifyThreadDetailPhase({ phase: "unknown", readDecision: "projection-hit", projectionSource: "cache" }), "warm-projection-cache");
+  assert.equal(metrics.classifyThreadDetailPhase({ readDecision: "projection-hit", projectionSource: "dynamic" }), "warm-projection-dynamic");
+  assert.equal(metrics.classifyThreadDetailPhase({ readDecision: "projection-partial-hit" }), "warm-projection-partial");
+  assert.equal(metrics.classifyThreadDetailPhase({ readMode: "projection-v4-partial" }), "warm-projection-partial");
+  assert.equal(metrics.classifyThreadDetailPhase({ readDecision: "initial-turns-list", projectionSeedStatus: "seeded-partial" }), "cold-turns-list-initial-seeded-partial");
+  assert.equal(metrics.classifyThreadDetailPhase({ readDecision: "initial-turns-list" }), "cold-turns-list-initial");
+  assert.equal(metrics.classifyThreadDetailPhase({ readDecision: "bounded-large-turns-list" }), "bounded-large-thread-window");
+  assert.equal(metrics.classifyThreadDetailPhase({ readDecision: "full-thread-read" }), "cold-thread-read");
+  assert.equal(metrics.classifyThreadDetailPhase({ readMode: "thread-read-raw" }), "cold-thread-read-raw");
+  assert.equal(metrics.classifyThreadDetailPhase({ readDecision: "fallback-turns-list" }), "fallback-turns-list");
+  assert.equal(metrics.classifyThreadDetailPhase({ readDecision: "summary-fallback" }), "fallback-summary");
+  assert.equal(metrics.classifyThreadDetailPhase(null, { cached: true }), "warm-client-current");
+  assert.equal(metrics.classifyThreadDetailPhase(null), "unknown");
+});
+
 test("thread performance metrics return null server timings when response has none", () => {
   assert.deepEqual(metrics.threadDetailEventFields({}), {
     serverTimings: null,
@@ -322,7 +339,14 @@ test("thread performance metrics build uncached first-paint payloads", () => {
     mobileReadMode: "turns-list-initial",
     mobileOmittedTurnCount: 9,
     status: { type: "completed", privateText: "not exported" },
-    mobileDiagnostics: { threadDetailTimings: { phase: "bounded-turns-list", turnsListMs: 18 } },
+    mobileDiagnostics: {
+      threadDetailTimings: {
+        phase: "unknown",
+        readDecision: "initial-turns-list",
+        projectionSeedStatus: "seeded-partial",
+        turnsListMs: 18,
+      },
+    },
     turns: [{ status: "completed", items: [{ type: "turnUsageSummary" }] }],
   }, {
     source: "startup",
@@ -340,7 +364,7 @@ test("thread performance metrics build uncached first-paint payloads", () => {
     cached: false,
   });
 
-  assert.equal(event.performancePhase, "bounded-turns-list");
+  assert.equal(event.performancePhase, "cold-turns-list-initial-seeded-partial");
   assert.equal(event.cached, false);
   assert.equal(event.status, "completed");
   assert.equal(event.omittedTurns, 9);
@@ -353,7 +377,7 @@ test("thread performance metrics build full-ready payloads", () => {
     mobileReadMode: "thread-read",
     mobileOmittedTurnCount: 0,
     rolloutSizeBytes: 9876,
-    mobileDiagnostics: { threadDetailTimings: { phase: "full-thread-read", threadReadMs: 90 } },
+    mobileDiagnostics: { threadDetailTimings: { phase: "unknown", readDecision: "full-thread-read", threadReadMs: 90 } },
     turns: [{ status: "completed", items: [{ type: "agentMessage", text: "private response" }] }],
   }, {
     source: "thread-list",
@@ -371,7 +395,7 @@ test("thread performance metrics build full-ready payloads", () => {
 
   assert.equal(event.source, "thread-list");
   assert.equal(event.threadId, "thread-full");
-  assert.equal(event.performancePhase, "full-thread-read");
+  assert.equal(event.performancePhase, "cold-thread-read");
   assert.equal(event.readMode, "thread-read");
   assert.equal(event.rolloutSizeBytes, 9876);
   assert.equal(event.clientTimings.detailRenderMode, "full-backfill");

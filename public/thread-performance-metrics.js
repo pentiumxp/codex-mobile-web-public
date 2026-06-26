@@ -67,11 +67,49 @@
     return "unknown";
   }
 
+  function classifyThreadDetailPhase(timings, input = {}) {
+    const value = objectOrNull(timings);
+    const source = objectOrNull(input) || {};
+    if (source.cached === true) return "warm-client-current";
+    if (!value) return "unknown";
+    const existingPhase = compactLabel(value.phase, 80);
+    if (existingPhase && existingPhase !== "unknown") return existingPhase;
+    const readDecision = compactLabel(value.readDecision || source.readDecision, 80).toLowerCase();
+    const readMode = compactLabel(value.readMode || source.readMode, 80).toLowerCase();
+    const projectionState = compactLabel(value.projectionState, 80).toLowerCase();
+    const projectionSource = compactLabel(value.projectionSource, 80).toLowerCase();
+    const projectionSeedStatus = compactLabel(value.projectionSeedStatus, 80).toLowerCase();
+    if (readDecision === "projection-partial-hit" || /projection-v?\d*-partial|projection-partial/.test(readMode)) {
+      return "warm-projection-partial";
+    }
+    if (readDecision === "projection-hit" || projectionState === "hit") {
+      if (/dynamic/.test(projectionSource) || /projection-v?\d*-dynamic|projection-dynamic/.test(readMode)) {
+        return "warm-projection-dynamic";
+      }
+      return "warm-projection-cache";
+    }
+    if (readDecision === "bounded-large-turns-list" || /turns-list-large/.test(readMode)) {
+      return "bounded-large-thread-window";
+    }
+    if (readDecision === "initial-turns-list" || /turns-list-initial/.test(readMode)) {
+      return projectionSeedStatus === "seeded-partial"
+        ? "cold-turns-list-initial-seeded-partial"
+        : "cold-turns-list-initial";
+    }
+    if (/thread-read-raw/.test(readMode)) return "cold-thread-read-raw";
+    if (readDecision === "full-thread-read" || /thread-read/.test(readMode)) return "cold-thread-read";
+    if (readDecision === "fallback-turns-list" || /turns-list/.test(readMode)) return "fallback-turns-list";
+    if (readDecision === "summary-fallback" || /summary-timeout|unmaterialized|fallback/.test(readMode)) {
+      return "fallback-summary";
+    }
+    return "unknown";
+  }
+
   function threadDetailEventFields(thread) {
     const timings = threadDetailTimings(thread);
     return {
       serverTimings: timings,
-      performancePhase: timings && timings.phase || "unknown",
+      performancePhase: classifyThreadDetailPhase(timings, { readMode: thread && thread.mobileReadMode }),
       detailShape: threadDetailShape(thread),
     };
   }
@@ -179,9 +217,11 @@
     const source = objectOrNull(input) || {};
     const cached = source.cached === true;
     const detailPerformance = threadDetailEventFieldsWithClient(thread, source);
-    const performancePhase = cached && detailPerformance.performancePhase === "unknown"
-      ? "warm-client-current"
-      : detailPerformance.performancePhase;
+    const performancePhase = classifyThreadDetailPhase(detailPerformance.serverTimings, {
+      cached,
+      readMode: thread && thread.mobileReadMode,
+      readDecision: source.readDecision,
+    });
     const out = {
       source: compactLabel(source.source, 40),
       threadId: compactLabel(source.threadId, 220),
@@ -305,6 +345,7 @@
 
   return {
     boundedTiming,
+    classifyThreadDetailPhase,
     classifyThreadListPhase,
     rolloutSizeBytes,
     statusText,
