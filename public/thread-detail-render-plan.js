@@ -749,6 +749,32 @@
     };
   }
 
+  function addOptionalTimingField(out, key, value) {
+    const timing = normalizedOptionalDurationMs(value);
+    if (timing !== null) out[key] = timing;
+  }
+
+  function planThreadDetailFirstPaintPerformanceInput(input = {}) {
+    const timings = objectOrEmpty(input.timings);
+    const cached = input.cached === true;
+    const out = {
+      source: compactReason(input.source, "").slice(0, 40),
+      threadId: compactReason(input.threadId, ""),
+      elapsedMs: normalizedDurationMs(timings.elapsedMs),
+      apiElapsedMs: normalizedDurationMs(timings.apiElapsedMs),
+      renderElapsedMs: normalizedDurationMs(timings.renderElapsedMs),
+      detailRenderMode: compactReason(input.detailRenderMode, cached ? "cached-current" : "first-paint"),
+      cached,
+    };
+    addOptionalTimingField(out, "mergeMs", timings.mergeMs);
+    addOptionalTimingField(out, "draftRestoreMs", timings.draftRestoreMs);
+    addOptionalTimingField(out, "composerRenderMs", timings.composerRenderMs);
+    addOptionalTimingField(out, "threadListRenderMs", timings.threadListRenderMs);
+    addOptionalTimingField(out, "conversationRenderMs", timings.conversationRenderMs);
+    addOptionalTimingField(out, "postRenderMs", timings.postRenderMs);
+    return out;
+  }
+
   function planThreadDetailRefreshTelemetryEffects(input = {}) {
     const performanceEvent = objectOrEmpty(input.performanceEvent);
     const eventName = compactReason(input.eventName, "thread_refresh_ms");
@@ -1335,6 +1361,7 @@
     planThreadDetailCachedCurrentPostRenderEffects,
     planThreadDetailFirstPaintAfterRenderEffects,
     planThreadDetailFirstPaintDraftRestoreEffects,
+    planThreadDetailFirstPaintPerformanceInput,
     planThreadDetailFirstPaintPostTimingEffects,
     planThreadDetailFirstPaintPreRenderEffects,
     planThreadDetailLoadingShellPostStateEffects,

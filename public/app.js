@@ -8955,22 +8955,28 @@ async function loadThread(threadId, options = {}) {
     });
     applyThreadDetailPostRenderEffectsPlan(cachedCurrentPostRenderPlan, { thread: state.currentThread });
     const renderElapsedMs = roundedDurationMs(renderStartedAt);
-    const firstPaintPerformance = threadPerformanceMetrics.threadDetailFirstPaintEventFields(state.currentThread, {
+    const cachedFirstPaintPerformanceInput = threadDetailRenderPlanApi.planThreadDetailFirstPaintPerformanceInput({
       source,
       threadId,
-      elapsedMs: roundedDurationMs(switchStartedAt),
-      apiElapsedMs: 0,
-      renderElapsedMs,
-      threadListRenderMs,
-      conversationRenderMs,
       detailRenderMode: "cached-current",
       cached: true,
+      timings: {
+        elapsedMs: roundedDurationMs(switchStartedAt),
+        apiElapsedMs: 0,
+        renderElapsedMs,
+        threadListRenderMs,
+        conversationRenderMs,
+      },
     });
+    const firstPaintPerformance = threadPerformanceMetrics.threadDetailFirstPaintEventFields(
+      state.currentThread,
+      cachedFirstPaintPerformanceInput,
+    );
     const cachedTelemetryPlan = threadDetailRenderPlanApi.planThreadDetailCachedCurrentTelemetryEffects({
       performanceEvent: firstPaintPerformance,
       source,
       threadId,
-      elapsedMs: roundedDurationMs(switchStartedAt),
+      elapsedMs: cachedFirstPaintPerformanceInput.elapsedMs,
       threadHash: diagnosticThreadHash(threadId),
     });
     applyThreadDetailFirstPaintTelemetryEffectsPlan(cachedTelemetryPlan, { thread: state.currentThread });
@@ -9105,28 +9111,34 @@ async function loadThread(threadId, options = {}) {
   const firstPaintPostTimingPlan = threadDetailRenderPlanApi.planThreadDetailFirstPaintPostTimingEffects();
   applyThreadDetailPostRenderEffectsPlan(firstPaintPostTimingPlan, { thread: result.thread });
   const renderElapsedMs = roundedDurationMs(renderStartedAt);
-  const firstPaintPerformance = threadPerformanceMetrics.threadDetailFirstPaintEventFields(result.thread, {
+  const firstPaintPerformanceInput = threadDetailRenderPlanApi.planThreadDetailFirstPaintPerformanceInput({
     source,
     threadId,
-    elapsedMs: roundedDurationMs(switchStartedAt),
-    apiElapsedMs,
-    renderElapsedMs,
-    mergeMs,
-    draftRestoreMs,
-    composerRenderMs,
-    threadListRenderMs,
-    conversationRenderMs,
-    postRenderMs,
     detailRenderMode: "first-paint",
     cached: false,
+    timings: {
+      elapsedMs: roundedDurationMs(switchStartedAt),
+      apiElapsedMs,
+      renderElapsedMs,
+      mergeMs,
+      draftRestoreMs,
+      composerRenderMs,
+      threadListRenderMs,
+      conversationRenderMs,
+      postRenderMs,
+    },
   });
+  const firstPaintPerformance = threadPerformanceMetrics.threadDetailFirstPaintEventFields(
+    result.thread,
+    firstPaintPerformanceInput,
+  );
   const firstPaintTelemetryPlan = threadDetailRenderPlanApi.planThreadDetailFirstPaintTelemetryEffects({
     performanceEvent: firstPaintPerformance,
     source,
     threadId,
-    elapsedMs: roundedDurationMs(switchStartedAt),
-    apiElapsedMs,
-    renderElapsedMs,
+    elapsedMs: firstPaintPerformanceInput.elapsedMs,
+    apiElapsedMs: firstPaintPerformanceInput.apiElapsedMs,
+    renderElapsedMs: firstPaintPerformanceInput.renderElapsedMs,
     readMode: result.thread && result.thread.mobileReadMode || "",
     status: statusText(result.thread && result.thread.status),
     turns: Array.isArray(result.thread && result.thread.turns) ? result.thread.turns.length : 0,

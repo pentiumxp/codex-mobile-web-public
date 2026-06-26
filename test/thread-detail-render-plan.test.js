@@ -1058,6 +1058,68 @@ test("thread detail refresh performance input combines render and patch plans", 
   });
 });
 
+test("thread detail first-paint performance input preserves cached and API timing shape", () => {
+  const cachedInput = renderPlan.planThreadDetailFirstPaintPerformanceInput({
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA",
+    threadId: "thread-1",
+    detailRenderMode: "cached-current",
+    cached: true,
+    timings: {
+      elapsedMs: 12.5,
+      apiElapsedMs: 0,
+      renderElapsedMs: 4.4,
+      threadListRenderMs: 1.2,
+      conversationRenderMs: 2.3,
+    },
+  });
+  assert.deepEqual(cachedInput, {
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR",
+    threadId: "thread-1",
+    elapsedMs: 12.5,
+    apiElapsedMs: 0,
+    renderElapsedMs: 4.4,
+    detailRenderMode: "cached-current",
+    cached: true,
+    threadListRenderMs: 1.2,
+    conversationRenderMs: 2.3,
+  });
+  assert.equal(Object.hasOwn(cachedInput, "mergeMs"), false);
+  assert.equal(Object.hasOwn(cachedInput, "draftRestoreMs"), false);
+  assert.equal(Object.hasOwn(cachedInput, "composerRenderMs"), false);
+  assert.equal(Object.hasOwn(cachedInput, "postRenderMs"), false);
+
+  assert.deepEqual(renderPlan.planThreadDetailFirstPaintPerformanceInput({
+    source: "thread-list",
+    threadId: "thread-2",
+    cached: false,
+    timings: {
+      elapsedMs: 40,
+      apiElapsedMs: 13,
+      renderElapsedMs: 20,
+      mergeMs: 1,
+      draftRestoreMs: 2,
+      composerRenderMs: 3,
+      threadListRenderMs: 4,
+      conversationRenderMs: 5,
+      postRenderMs: 6,
+    },
+  }), {
+    source: "thread-list",
+    threadId: "thread-2",
+    elapsedMs: 40,
+    apiElapsedMs: 13,
+    renderElapsedMs: 20,
+    detailRenderMode: "first-paint",
+    cached: false,
+    mergeMs: 1,
+    draftRestoreMs: 2,
+    composerRenderMs: 3,
+    threadListRenderMs: 4,
+    conversationRenderMs: 5,
+    postRenderMs: 6,
+  });
+});
+
 test("thread detail refresh telemetry effects plan preserves event and diagnostics order", () => {
   const performanceEvent = {
     elapsedMs: 42,

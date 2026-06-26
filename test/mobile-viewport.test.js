@@ -297,8 +297,8 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /const listPerformance = threadPerformanceMetrics\.threadListEventFields\(result\);/);
   assert.match(appJs, /serverTimings: listPerformance\.serverTimings/);
   assert.match(appJs, /performancePhase: listPerformance\.performancePhase/);
-  assert.match(functionBody("loadThread"), /threadPerformanceMetrics\.threadDetailFirstPaintEventFields\(state\.currentThread, \{/);
-  assert.match(functionBody("loadThread"), /threadPerformanceMetrics\.threadDetailFirstPaintEventFields\(result\.thread, \{/);
+  assert.match(functionBody("loadThread"), /const cachedFirstPaintPerformanceInput = threadDetailRenderPlanApi\.planThreadDetailFirstPaintPerformanceInput\(\{[\s\S]*detailRenderMode: "cached-current",[\s\S]*cached: true,[\s\S]*\}\);[\s\S]*threadPerformanceMetrics\.threadDetailFirstPaintEventFields\(\s*state\.currentThread,\s*cachedFirstPaintPerformanceInput,\s*\);/);
+  assert.match(functionBody("loadThread"), /const firstPaintPerformanceInput = threadDetailRenderPlanApi\.planThreadDetailFirstPaintPerformanceInput\(\{[\s\S]*detailRenderMode: "first-paint",[\s\S]*cached: false,[\s\S]*\}\);[\s\S]*threadPerformanceMetrics\.threadDetailFirstPaintEventFields\(\s*result\.thread,\s*firstPaintPerformanceInput,\s*\);/);
   assert.match(functionBody("loadThread"), /const cachedTelemetryPlan = threadDetailRenderPlanApi\.planThreadDetailCachedCurrentTelemetryEffects\(\{[\s\S]*performanceEvent: firstPaintPerformance,[\s\S]*threadHash: diagnosticThreadHash\(threadId\),[\s\S]*\}\);/);
   assert.match(functionBody("loadThread"), /applyThreadDetailFirstPaintTelemetryEffectsPlan\(cachedTelemetryPlan, \{ thread: state\.currentThread \}\);/);
   assert.match(functionBody("loadThread"), /const firstPaintTelemetryPlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintTelemetryEffects\(\{[\s\S]*performanceEvent: firstPaintPerformance,[\s\S]*threadHash: diagnosticThreadHash\(threadId\),[\s\S]*\}\);/);

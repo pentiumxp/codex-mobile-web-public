@@ -4411,7 +4411,7 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(functionBody("loadThread"), /applyThreadDetailRefreshPostMergeEffectsGroup\(postMergePlan, "composer-render"\);[\s\S]*const composerRenderMs = roundedDurationMs\(composerRenderStartedAt\);/);
   assert.match(functionBody("loadThread"), /applyThreadDetailRefreshPostMergeEffectsGroup\(postMergePlan, "thread-list-render"\);[\s\S]*const threadListRenderMs = roundedDurationMs\(threadListRenderStartedAt\);/);
   assert.doesNotMatch(functionBody("loadThread"), /state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);\s*mergeThreadIntoThreadList\(state\.currentThread\);/);
-  assert.match(functionBody("loadThread"), /threadPerformanceMetrics\.threadDetailFirstPaintEventFields\(result\.thread, \{/);
+  assert.match(functionBody("loadThread"), /const firstPaintPerformanceInput = threadDetailRenderPlanApi\.planThreadDetailFirstPaintPerformanceInput\(\{[\s\S]*detailRenderMode: "first-paint",[\s\S]*cached: false,[\s\S]*\}\);[\s\S]*threadPerformanceMetrics\.threadDetailFirstPaintEventFields\(\s*result\.thread,\s*firstPaintPerformanceInput,\s*\);/);
   assert.match(functionBody("refreshCurrentThread"), /const responseEffectsPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshResponseEffects\(\{/);
   assert.match(functionBody("refreshCurrentThread"), /if \(!responseEffectsPlan\.shouldApply\) return;/);
   assert.match(functionBody("refreshCurrentThread"), /applyThreadDetailRefreshResponseEffectsPlan\(responseEffectsPlan, \{ thread: result\.thread \}\);[\s\S]*const postMergePlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPostMergeEffects\(\);/);

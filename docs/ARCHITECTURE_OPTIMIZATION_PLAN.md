@@ -945,6 +945,11 @@ diagnostics, `thread_switch_complete`, and load-success Home AI diagnostic
 clear. App code still supplies the runtime thread object and performs the real
 reporting side effects, but `loadThread()` no longer owns this first-paint
 telemetry ordering inline.
+First-paint performance input selection now also lives in the same helper:
+`planThreadDetailFirstPaintPerformanceInput` normalizes the cached-current and
+API first-paint timing fields before `threadPerformanceMetrics` builds the
+event. App code still measures the real elapsed durations, but it no longer
+hand-writes the event input shape for cached versus uncached first paint.
 Thread switch start/cancel/error client-event payload planning now also lives in
 `public/thread-detail-render-plan.js`:
 `planThreadDetailSwitchStartClientEvent`,

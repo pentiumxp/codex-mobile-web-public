@@ -2048,6 +2048,37 @@ row 里的 `turns: []`、`mobileDetailLoaded`、`mobileReadMode`、`mobileVisibl
 
 `CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v523`。
 
+## 2026-06-27 Local Phase A First-Paint Performance Input Planning Slice
+
+这个本地小切片继续 Phase A 的 `loadThread()` ownership 收敛，不改变线程详情
+读取策略、不改变事件字段语义、不 bump PWA shell/cache，也不单独部署。它只把
+first-paint performance input 的字段选择从 `public/app.js` 移到可测试 plan helper。
+
+本次切片新增/调整：
+
+- `public/thread-detail-render-plan.js` 新增
+  `planThreadDetailFirstPaintPerformanceInput()`，集中规范 cached-current 与 API
+  first-paint 的 timing input。
+- cached-current 路径只保留之前已有的 `elapsedMs`、`apiElapsedMs`、`renderElapsedMs`、
+  `threadListRenderMs`、`conversationRenderMs`，不会误加入 API first-paint 专属的
+  `mergeMs`、`draftRestoreMs`、`composerRenderMs` 或 `postRenderMs`。
+- API first-paint 路径仍保留 merge/draft/composer/thread-list/conversation/post-render
+  timing 字段；`threadPerformanceMetrics` 继续拥有最终 event payload 正规化。
+- `public/app.js` 只负责采集真实计时、调用 plan helper、执行 telemetry effects。
+- `test/thread-detail-render-plan.test.js` 覆盖 cached/API 两种 input shape；
+  `test/mobile-viewport.test.js` 和 `test/conversation-render.test.js` 确认
+  `loadThread()` 不再手写 first-paint performance input。
+
+修复边界：
+
+- 症状/风险：`loadThread()` 已经把大量 first-paint side effects 移到计划器，但
+  performance input 仍在 app 层手写，容易让 cached-current 与 API first-paint
+  字段边界再次漂移。
+- 失败层：前端 first-paint telemetry input ownership，不是服务端 projection、
+  app-server detail read、DOM patch、任务卡协议或 Home AI diagnostic intake。
+- 闭环验证：focused tests 证明 cached-current 不携带 API 专属 timing 字段；完整
+  检查通过后再随 Phase A 模块批量部署。
+
 ## 2026-06-26 Local Phase B Server Timing Classifier
 
 这个本地切片继续 Phase B 的大 session / thread-detail cold path 收敛，但只处理

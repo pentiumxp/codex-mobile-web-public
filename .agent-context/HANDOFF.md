@@ -17852,3 +17852,58 @@ The previous full handoff was archived and should be opened only when old proven
 - Next:
   - Commit locally, then continue Phase A current-thread render authority or
     batch the accumulated module for one deploy/readback when requested.
+
+## 2026-06-27 - Latest tail marker: Phase A first-paint performance input local slice
+
+- Current local state:
+  - Continued Phase A `loadThread()` ownership cleanup after `beb6548`.
+  - First-paint side-effect ordering and telemetry effect ordering were already
+    planned, but cached-current and API first-paint performance input objects
+    were still hand-written in `public/app.js`.
+  - This slice moves first-paint performance input selection into
+    `public/thread-detail-render-plan.js` while preserving the existing event
+    payload contract owned by `public/thread-performance-metrics.js`.
+- Root-cause boundary:
+  - Symptom/risk: cached-current and uncached API first-paint paths could drift
+    in the app orchestration layer, especially by accidentally mixing API-only
+    timing fields into cached-current telemetry or omitting first-paint timing
+    fields during future edits.
+  - Failing layer: frontend first-paint telemetry input ownership, not server
+    projection, app-server detail reads, DOM patch selection, task-card protocol,
+    Home AI diagnostic intake, or shell/cache.
+  - Violated invariant: `loadThread()` should measure real timings and execute
+    side effects, while pure planning helpers own fixed field selection and
+    cached/API shape differences.
+- Changes:
+  - `public/thread-detail-render-plan.js` now exports
+    `planThreadDetailFirstPaintPerformanceInput()`.
+  - `public/app.js` uses the planned input for cached-current and API
+    first-paint `threadDetailFirstPaintEventFields()` calls.
+  - Cached-current input keeps only the previous cached timing shape; API
+    first-paint keeps merge/draft/composer/thread-list/conversation/post-render
+    timings.
+  - Updated `test/thread-detail-render-plan.test.js`,
+    `test/mobile-viewport.test.js`, and `test/conversation-render.test.js`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation:
+  - Syntax:
+    `node --check public/thread-detail-render-plan.js && node --check public/app.js && node --check test/thread-detail-render-plan.test.js && node --check test/mobile-viewport.test.js && node --check test/conversation-render.test.js`
+    passed.
+  - Focused:
+    `node --test test/thread-detail-render-plan.test.js test/mobile-viewport.test.js test/conversation-render.test.js test/thread-performance-metrics.test.js`
+    passed (`209` tests).
+  - Full:
+    `npm test` passed (`1161` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache
+    bump. This remains a local Phase A ownership slice to batch with the next
+    module validation/deploy.
+- Progress:
+  - Overall architecture optimization is about `76%`.
+  - Phase A frontend render/projection ownership is about `86%`.
+- Next:
+  - Continue Phase A by moving the next remaining `loadThread()` fixed
+    current-thread render authority into plan helpers, or batch the accumulated
+    Phase A local slices for one deploy/readback when requested.
