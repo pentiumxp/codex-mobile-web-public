@@ -13768,18 +13768,40 @@ function acceptThreadDetailPatch(reason) {
 
 function patchCurrentThreadDetailFromRefresh(previousThread, nextThread, previousConversationSignature) {
   const conversation = $("conversation");
-  if (!conversation) return rejectThreadDetailPatch("missing-conversation-root");
-  if (!previousThread || !nextThread) return rejectThreadDetailPatch("missing-thread");
-  if (patchCurrentThreadTilePaneFromState({ threadId: nextThread.id || state.currentThreadId, preserveScroll: true })) {
-    return acceptThreadDetailPatch("tile-pane-patched");
+  const rootPreflight = threadDetailPatchPlanApi.planThreadDetailRefreshLocalPatchPreflight({
+    stage: "root",
+    conversationPresent: Boolean(conversation),
+    previousThreadPresent: Boolean(previousThread),
+    nextThreadPresent: Boolean(nextThread),
+  });
+  if (!rootPreflight.canPatch) return rejectThreadDetailPatch(rootPreflight.reason);
+  const targetThreadId = nextThread.id || state.currentThreadId;
+  const tilePanePatched = patchCurrentThreadTilePaneFromState({ threadId: targetThreadId, preserveScroll: true });
+  if (tilePanePatched) {
+    const tilePreflight = threadDetailPatchPlanApi.planThreadDetailRefreshLocalPatchPreflight({
+      conversationPresent: true,
+      previousThreadPresent: true,
+      nextThreadPresent: true,
+      tilePanePatched: true,
+    });
+    return acceptThreadDetailPatch(tilePreflight.reason);
   }
-  if (!canPatchSingleThreadConversationDom({ threadId: nextThread.id || state.currentThreadId })) return rejectThreadDetailPatch("single-thread-surface-unavailable");
-  if (previousThread.mobileLoading || previousThread.mobileLoadError || nextThread.mobileLoading || nextThread.mobileLoadError) return rejectThreadDetailPatch("loading-or-error-state");
   const previousPatchShellSignature = conversationPatchShellSignature(previousThread);
   const renderedPatchShellSignature = String(state.renderedConversationPatchShellSignature || "");
-  if (state.renderedConversationSignature !== previousConversationSignature
-    && (!renderedPatchShellSignature || renderedPatchShellSignature !== previousPatchShellSignature)) return rejectThreadDetailPatch("rendered-dom-stale");
-  if (previousPatchShellSignature !== conversationPatchShellSignature(nextThread)) return rejectThreadDetailPatch("patch-shell-changed");
+  const preflightPlan = threadDetailPatchPlanApi.planThreadDetailRefreshLocalPatchPreflight({
+    conversationPresent: true,
+    previousThreadPresent: true,
+    nextThreadPresent: true,
+    singleThreadSurfaceAvailable: canPatchSingleThreadConversationDom({ threadId: targetThreadId }),
+    previousLoadingOrError: Boolean(previousThread.mobileLoading || previousThread.mobileLoadError),
+    nextLoadingOrError: Boolean(nextThread.mobileLoading || nextThread.mobileLoadError),
+    renderedConversationSignature: state.renderedConversationSignature,
+    previousConversationSignature,
+    renderedPatchShellSignature,
+    previousPatchShellSignature,
+    nextPatchShellSignature: conversationPatchShellSignature(nextThread),
+  });
+  if (!preflightPlan.canPatch) return rejectThreadDetailPatch(preflightPlan.reason);
   const wasNearBottom = isConversationNearBottom();
   const userReadingCurrentTurn = isUserReadingCurrentTurn({ nearBottom: wasNearBottom });
   const previousKeys = existingConversationRenderKeys();

@@ -163,6 +163,12 @@ Visible-item insert anchoring now also lives in that helper:
 fallback, append-after-previous behavior when the previous node is already the
 last DOM child, the concrete `insertBefore` call, and bounded failure reasons
 while app code keeps item HTML rendering and local patch completion execution.
+Local patch preflight policy now lives in `public/thread-detail-patch-plan.js`.
+`planThreadDetailRefreshLocalPatchPreflight` owns missing root/thread
+classification, tile-pane terminal classification, single-thread surface
+availability, loading/error rejection, rendered-DOM stale rejection, and
+patch-shell change rejection. App code still performs the real root lookup,
+tile-pane patch attempt, signature calculation, and DOM mutation.
 Refresh patch execution planning now also lives in
 `public/thread-detail-render-plan.js`: `planThreadDetailRefreshPatchExecution`
 owns whether a thread refresh should try tile-pane patch, whether

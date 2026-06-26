@@ -2983,8 +2983,9 @@ test("thread tile local patch paths refresh the pane instead of writing a single
   assert.match(functionBody("patchVisibleItemDom"), /if \(!canPatchSingleThreadConversationDom\(\)\) return false;/);
   assert.match(functionBody("patchLiveTextItemDom"), /patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);
   assert.match(functionBody("patchLiveTextItemDom"), /if \(!canPatchSingleThreadConversationDom\(\)\) return false;/);
-  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /patchCurrentThreadTilePaneFromState\(\{ threadId: nextThread\.id \|\| state\.currentThreadId, preserveScroll: true \}\)/);
-  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /canPatchSingleThreadConversationDom\(\{ threadId: nextThread\.id \|\| state\.currentThreadId \}\)/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /const targetThreadId = nextThread\.id \|\| state\.currentThreadId;/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /patchCurrentThreadTilePaneFromState\(\{ threadId: targetThreadId, preserveScroll: true \}\)/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /canPatchSingleThreadConversationDom\(\{ threadId: targetThreadId \}\)/);
 });
 
 test("current-thread refresh patches the current tile pane for metadata-only tile updates", () => {

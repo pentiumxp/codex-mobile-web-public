@@ -132,6 +132,100 @@ test("dom patch surface allows single-thread patching only on single-thread surf
   );
 });
 
+test("local patch preflight preserves root and tile terminal ordering", () => {
+  assert.deepEqual(
+    patchPlan.planThreadDetailRefreshLocalPatchPreflight({
+      stage: "root",
+      conversationPresent: false,
+      previousThreadPresent: true,
+      nextThreadPresent: true,
+    }),
+    { canPatch: false, terminal: false, reason: "missing-conversation-root" },
+  );
+
+  assert.deepEqual(
+    patchPlan.planThreadDetailRefreshLocalPatchPreflight({
+      stage: "root",
+      conversationPresent: true,
+      previousThreadPresent: false,
+      nextThreadPresent: true,
+    }),
+    { canPatch: false, terminal: false, reason: "missing-thread" },
+  );
+
+  assert.deepEqual(
+    patchPlan.planThreadDetailRefreshLocalPatchPreflight({
+      stage: "root",
+      conversationPresent: true,
+      previousThreadPresent: true,
+      nextThreadPresent: true,
+    }),
+    { canPatch: true, terminal: false, reason: "root-ready" },
+  );
+
+  assert.deepEqual(
+    patchPlan.planThreadDetailRefreshLocalPatchPreflight({
+      conversationPresent: true,
+      previousThreadPresent: true,
+      nextThreadPresent: true,
+      tilePanePatched: true,
+    }),
+    { canPatch: true, terminal: true, reason: "tile-pane-patched" },
+  );
+});
+
+test("local patch preflight owns deterministic single-thread rejection policy", () => {
+  const base = {
+    conversationPresent: true,
+    previousThreadPresent: true,
+    nextThreadPresent: true,
+    singleThreadSurfaceAvailable: true,
+    renderedConversationSignature: "old-conversation",
+    previousConversationSignature: "old-conversation",
+    renderedPatchShellSignature: "old-shell",
+    previousPatchShellSignature: "old-shell",
+    nextPatchShellSignature: "old-shell",
+  };
+
+  assert.equal(
+    patchPlan.planThreadDetailRefreshLocalPatchPreflight({
+      ...base,
+      singleThreadSurfaceAvailable: false,
+    }).reason,
+    "single-thread-surface-unavailable",
+  );
+
+  assert.equal(
+    patchPlan.planThreadDetailRefreshLocalPatchPreflight({
+      ...base,
+      previousLoadingOrError: true,
+    }).reason,
+    "loading-or-error-state",
+  );
+
+  assert.equal(
+    patchPlan.planThreadDetailRefreshLocalPatchPreflight({
+      ...base,
+      renderedConversationSignature: "stale-conversation",
+      renderedPatchShellSignature: "",
+    }).reason,
+    "rendered-dom-stale",
+  );
+
+  assert.equal(
+    patchPlan.planThreadDetailRefreshLocalPatchPreflight({
+      ...base,
+      nextPatchShellSignature: "new-shell",
+    }).reason,
+    "patch-shell-changed",
+  );
+
+  assert.deepEqual(
+    patchPlan.planThreadDetailRefreshLocalPatchPreflight(base),
+    { canPatch: true, terminal: false, reason: "preflight-passed" },
+  );
+});
+
 test("thread detail refresh dom patch plan chooses item patch, insert, and replace operations", () => {
   const plan = patchPlan.planThreadDetailRefreshDomPatch([
     {

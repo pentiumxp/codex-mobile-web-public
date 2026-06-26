@@ -409,8 +409,11 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.doesNotMatch(functionBody("refreshCurrentThread"), /recordHomeAiDiagnosticSuccess\(\{[\s\S]*thread_detail_refresh_failed/);
   assert.doesNotMatch(functionBody("refreshCurrentThread"), /skippedDetailRender: !shouldRenderDetail/);
   assert.match(appJs, /function rejectThreadDetailPatch\(reason\)/);
-  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /rejectThreadDetailPatch\("rendered-dom-stale"\)/);
-  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /rejectThreadDetailPatch\("patch-shell-changed"\)/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /threadDetailPatchPlanApi\.planThreadDetailRefreshLocalPatchPreflight\(\{[\s\S]*stage: "root"/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /threadDetailPatchPlanApi\.planThreadDetailRefreshLocalPatchPreflight\(\{[\s\S]*singleThreadSurfaceAvailable: canPatchSingleThreadConversationDom/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /if \(!preflightPlan\.canPatch\) return rejectThreadDetailPatch\(preflightPlan\.reason\);/);
+  assert.doesNotMatch(functionBody("patchCurrentThreadDetailFromRefresh"), /rejectThreadDetailPatch\("rendered-dom-stale"\)/);
+  assert.doesNotMatch(functionBody("patchCurrentThreadDetailFromRefresh"), /rejectThreadDetailPatch\("patch-shell-changed"\)/);
   assert.match(appJs, /function conversationRootSignature\(thread\)/);
   assert.match(appJs, /function conversationPatchShellSignature\(thread\)/);
   assert.match(appJs, /renderedConversationPatchShellSignature: ""/);
@@ -432,8 +435,11 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /function insertTurnArticleElementDom\(turn, source\)/);
   assert.match(appJs, /function patchCurrentThreadDetailFromRefresh\(previousThread, nextThread, previousConversationSignature\)/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /const previousPatchShellSignature = conversationPatchShellSignature\(previousThread\);/);
-  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /state\.renderedConversationSignature !== previousConversationSignature[\s\S]*renderedPatchShellSignature !== previousPatchShellSignature/);
-  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /previousPatchShellSignature !== conversationPatchShellSignature\(nextThread\)/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /renderedConversationSignature: state\.renderedConversationSignature/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /previousConversationSignature,/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /nextPatchShellSignature: conversationPatchShellSignature\(nextThread\)/);
+  assert.doesNotMatch(functionBody("patchCurrentThreadDetailFromRefresh"), /state\.renderedConversationSignature !== previousConversationSignature/);
+  assert.doesNotMatch(functionBody("patchCurrentThreadDetailFromRefresh"), /previousPatchShellSignature !== conversationPatchShellSignature\(nextThread\)/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /updateLiveOperationDockHtml\(renderLiveOperationDock\(nextThread, previousKeys\)\)/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /patchNode\(article, source\);/);
   assert.match(functionBody("insertVisibleItemDom"), /if \(isOperationalItem\(item\)\) return updateLiveOperationDockForLocalPatch\(\);/);

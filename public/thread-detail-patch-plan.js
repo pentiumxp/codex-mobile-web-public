@@ -64,6 +64,32 @@
     return { canPatch: true, surface: "single-thread", reason: "single-thread-surface", threadId };
   }
 
+  function planThreadDetailRefreshLocalPatchPreflight(input = {}) {
+    const conversationPresent = Boolean(input.conversationPresent);
+    const previousThreadPresent = Boolean(input.previousThreadPresent);
+    const nextThreadPresent = Boolean(input.nextThreadPresent);
+    if (!conversationPresent) return { canPatch: false, terminal: false, reason: "missing-conversation-root" };
+    if (!previousThreadPresent || !nextThreadPresent) return { canPatch: false, terminal: false, reason: "missing-thread" };
+    const stage = String(input.stage || "complete");
+    if (stage === "root") return { canPatch: true, terminal: false, reason: "root-ready" };
+    if (input.tilePanePatched) return { canPatch: true, terminal: true, reason: "tile-pane-patched" };
+    if (!input.singleThreadSurfaceAvailable) return { canPatch: false, terminal: false, reason: "single-thread-surface-unavailable" };
+    if (input.previousLoadingOrError || input.nextLoadingOrError) return { canPatch: false, terminal: false, reason: "loading-or-error-state" };
+    const renderedConversationSignature = signatureText(input.renderedConversationSignature);
+    const previousConversationSignature = signatureText(input.previousConversationSignature);
+    const renderedPatchShellSignature = signatureText(input.renderedPatchShellSignature);
+    const previousPatchShellSignature = signatureText(input.previousPatchShellSignature);
+    const nextPatchShellSignature = signatureText(input.nextPatchShellSignature);
+    if (renderedConversationSignature !== previousConversationSignature
+      && (!renderedPatchShellSignature || renderedPatchShellSignature !== previousPatchShellSignature)) {
+      return { canPatch: false, terminal: false, reason: "rendered-dom-stale" };
+    }
+    if (previousPatchShellSignature !== nextPatchShellSignature) {
+      return { canPatch: false, terminal: false, reason: "patch-shell-changed" };
+    }
+    return { canPatch: true, terminal: false, reason: "preflight-passed" };
+  }
+
   function visibleItemPatchShapePreservesExisting(previousEntries, nextEntries) {
     if (!Array.isArray(previousEntries) || !Array.isArray(nextEntries)) return false;
     const previous = previousEntries.map(normalizePatchEntry).filter(Boolean);
@@ -167,6 +193,7 @@
     normalizePatchEntry,
     normalizeRefreshTurnPatchEntry,
     planThreadDetailRefreshDomPatch,
+    planThreadDetailRefreshLocalPatchPreflight,
     planVisibleItemRefreshPatch,
     planThreadDetailDomPatchSurface,
     visibleItemPatchShapePreservesExisting,
