@@ -214,7 +214,13 @@ Current acceleration targets:
    so the session index map read by rollout fallback can be reused by
    session-index fallback in the same pass. This is not a persistent cache or
    prewarm; it only removes duplicate synchronous reads within one cold source
-   build and exposes `fallbackSessionIndexReuseCount` as proof.
+   build and exposes `fallbackSessionIndexReuseCount` as proof. The next
+   source-internal slice reduces discovery waste before stat/sort: rollout
+   directory entries are visited as directories first and by descending name, so
+   the known `sessions/YYYY/MM/DD/rollout-...` layout reaches newer date
+   branches before older ones when the discovery candidate cap is hit. Final
+   results are still sorted by `mtimeMs`, so this narrows cold discovery cost
+   without changing public merge/filter/status ownership.
 3. Large detail cold-path attribution now has a dedicated
    `thread-detail-cold-path-diagnosis-service` that emits bounded
    `coldPathOwner` / `coldPathReason` for projection-cache seeding,

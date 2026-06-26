@@ -29,6 +29,7 @@ const {
   applyLocalActiveThreadStatusToSummary,
   attachRolloutFallbackStatus,
   clearLocalActiveThreadStatus,
+  collectRecentRolloutFiles,
   compactThread,
   filterFallbackThreads,
   hydrateThreadListResultTitlesFromSessionIndex,
@@ -879,6 +880,31 @@ test("rollout session fallback carries agent metadata so subagent rows stay hidd
   }), []);
 });
 
+test("rollout discovery visits newest session directories before the candidate cap", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-rollout-discovery-"));
+  const oldDir = path.join(root, "2024", "01", "01");
+  const newDir = path.join(root, "2026", "06", "26");
+  fs.mkdirSync(oldDir, { recursive: true });
+  fs.mkdirSync(newDir, { recursive: true });
+  const oldTime = new Date("2024-01-01T00:00:00.000Z");
+  const newTime = new Date("2026-06-26T00:00:00.000Z");
+  for (let index = 0; index < 6; index += 1) {
+    const oldPath = path.join(oldDir, `rollout-2024-01-01T00-00-0${index}-019e9000-0000-7000-8000-old00000000${index}.jsonl`);
+    fs.writeFileSync(oldPath, "{}\n", "utf8");
+    fs.utimesSync(oldPath, oldTime, oldTime);
+  }
+  for (let index = 0; index < 4; index += 1) {
+    const newPath = path.join(newDir, `rollout-2026-06-26T00-00-0${index}-019e9000-0000-7000-8000-new00000000${index}.jsonl`);
+    fs.writeFileSync(newPath, "{}\n", "utf8");
+    fs.utimesSync(newPath, newTime, newTime);
+  }
+
+  const files = collectRecentRolloutFiles(root, { maxFiles: 1, maxDepth: 6 });
+
+  assert.equal(files.length, 1);
+  assert.match(files[0].path, /2026/);
+});
+
 test("thread list route uses rollout-aware fallback aggregator", () => {
   const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
   const baselineServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-fallback-baseline-service.js"), "utf8");
@@ -889,6 +915,8 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   const routeBody = serverJs.slice(routeIndex, serverJs.indexOf('const threadRename = url.pathname.match', routeIndex));
 
   assert.match(serverJs, /function readRolloutSessionFallback\(/);
+  assert.match(serverJs, /function compareRecentRolloutDirents\(left, right\)/);
+  assert.match(serverJs, /entries\.sort\(compareRecentRolloutDirents\)/);
   assert.match(serverJs, /function readSessionIndexEntriesForFallback\(maxLines = 2000, options = \{\}\)/);
   assert.match(serverJs, /const sourceContext = options\.sourceContext && typeof options\.sourceContext === "object"/);
   assert.match(serverJs, /incrementBoundedDiagnosticCounter\(diagnostics, "sessionIndexReuseCount"\)/);

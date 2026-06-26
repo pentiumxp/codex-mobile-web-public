@@ -6599,6 +6599,16 @@ function liveQuotaSnapshotForProfiles() {
   };
 }
 
+function compareRecentRolloutDirents(left, right) {
+  const leftIsDir = Boolean(left && typeof left.isDirectory === "function" && left.isDirectory());
+  const rightIsDir = Boolean(right && typeof right.isDirectory === "function" && right.isDirectory());
+  if (leftIsDir !== rightIsDir) return leftIsDir ? -1 : 1;
+  const leftName = String(left && left.name || "");
+  const rightName = String(right && right.name || "");
+  if (leftName === rightName) return 0;
+  return leftName < rightName ? 1 : -1;
+}
+
 function collectRecentRolloutFiles(root, options = {}) {
   const maxFiles = Number(options.maxFiles || 160);
   const maxDepth = Number(options.maxDepth || 6);
@@ -6613,7 +6623,7 @@ function collectRecentRolloutFiles(root, options = {}) {
     } catch (_) {
       return;
     }
-    for (const entry of entries) {
+    for (const entry of entries.sort(compareRecentRolloutDirents)) {
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         visit(fullPath, depth + 1);
@@ -15253,6 +15263,7 @@ module.exports = {
   codeGraphMcpElicitationToolName,
   codeGraphReadOnlyMcpElicitationDecision,
   clearLocalActiveThreadStatus,
+  collectRecentRolloutFiles,
   compactThread,
   enrichThreadItemTimestampsFromRollout,
   filterFallbackThreads,

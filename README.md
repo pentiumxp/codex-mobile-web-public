@@ -162,6 +162,10 @@ cache policy 和 baseline 构建边界混在一起。
   同一 pass 里复用这个 map，并通过 `fallbackSessionIndexReuseCount` 证明复用发生。
   这个 context 不进入 source snapshot、不跨请求持久化、不改变 title hydration 或单线程
   helper 的普通 `readSessionIndexEntries()` 行为。
+- server-only rollout discovery follow-up 调整 `collectRecentRolloutFiles()` 的遍历顺序：
+  对目录项按“目录优先、名称倒序”访问，让 `.codex/sessions/YYYY/MM/DD/rollout-...`
+  这种日期分层结构先进入新的年份/月/日目录。最终返回仍按 `mtimeMs` 排序并按
+  `maxFiles` 截断；当 discovery cap 生效时，不再容易被旧目录先填满候选集合。
 
 这不是新的 fallback 行为，也不是 prewarm/persist。route aggregation、defer
 fallback、app-server result merge 都没有改变；source 层只调整 rollout list

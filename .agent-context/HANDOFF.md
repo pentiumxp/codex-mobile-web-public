@@ -14947,3 +14947,56 @@ The previous full handoff was archived and should be opened only when old proven
   - Remaining Phase B cold-path targets: rollout discovery/sort and merge/filter
     duplication. Use the next deploy readback counters to decide which is worth
     cutting first.
+
+## 2026-06-26 - rollout discovery newest-first local slice
+
+- Scope:
+  - Continued Phase B thread-list cold path optimization after `3206af4`
+    (`reuse session index during fallback baseline`).
+  - This slice narrows rollout discovery waste under the existing candidate
+    cap. It does not change thread-list visibility, merge/filter behavior,
+    status inference, source snapshots, static shell files, or deployment state.
+- Root-cause boundary:
+  - Symptom: `collectRecentRolloutFiles()` stopped after collecting
+    `maxFiles * 4` rollout candidates, but directory traversal used filesystem
+    order. On date-partitioned session roots, older directories could fill the
+    candidate cap before newer branches were visited.
+  - Failing layer: rollout discovery ordering inside server-side fallback source
+    collection, not app-server authority or client rendering.
+  - Violated invariant: a function named `collectRecentRolloutFiles()` should
+    discover recent date branches first when it must stop early.
+  - Closure classification: root-cause discovery-order optimization. No
+    fallback masking, no prewarm, no persistent index, no client dedupe.
+- Changes:
+  - `server.js`
+    - Adds `compareRecentRolloutDirents()` and uses it before visiting
+      directory entries.
+    - The comparator visits directories before files and sorts names
+      descending, matching the `.codex/sessions/YYYY/MM/DD/rollout-...` layout.
+    - Final returned files are still sorted by `mtimeMs` and sliced by
+      `maxFiles`.
+    - Exports `collectRecentRolloutFiles()` for focused behavior coverage.
+  - `test/thread-visibility.test.js`
+    - Adds a temp-dir behavior test proving a newer session branch is visited
+      before an older one when `maxFiles=1` would otherwise hit the candidate
+      cap.
+    - Adds structural guards for the comparator wiring.
+  - Docs updated:
+    - `README.md`
+    - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`
+    - `docs/MODULES.md`
+- Validation:
+  - Focused:
+    `node --test test/thread-list-fallback-baseline-service.test.js test/thread-list-fallback-cache-service.test.js test/thread-list-cold-path-diagnosis-service.test.js test/thread-visibility.test.js test/phase-b-readback-smoke.test.js`
+    passed (`72` tests).
+  - Full `npm test` passed (`1101` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Not deployed by design. This remains a Phase B local module batch.
+- Next:
+  - Commit this local slice.
+  - Remaining Phase B local candidate before a batch deploy: merge/filter
+    duplication. After that, deploy once and run Phase B readback smoke to
+    compare cold counters and warm cache behavior.
