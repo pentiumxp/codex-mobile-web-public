@@ -8936,10 +8936,11 @@ async function loadThread(threadId, options = {}) {
   }
   if (cacheReusePlan.shouldUseCachedCurrent) {
     const renderStartedAt = nowPerfMs();
+    const postMergePlan = threadDetailRenderPlanApi.planThreadDetailRefreshPostMergeEffects();
     followThreadOpenToBottom(threadId);
-    mergeThreadIntoThreadList(state.currentThread);
+    applyThreadDetailRefreshPostMergeEffectsGroup(postMergePlan, "merge");
     const threadListRenderStartedAt = nowPerfMs();
-    renderThreads();
+    applyThreadDetailRefreshPostMergeEffectsGroup(postMergePlan, "thread-list-render");
     const threadListRenderMs = roundedDurationMs(threadListRenderStartedAt);
     const conversationRenderStartedAt = nowPerfMs();
     renderCurrentThread({ stickToBottom: true });

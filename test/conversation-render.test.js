@@ -1866,6 +1866,9 @@ test("loading and thread-list state preserve locally visible live turns", () => 
   assert.match(functionBody("loadThread"), /const cacheReusePlan = planThreadOpenCacheReuse\(\{/);
   assert.match(functionBody("loadThread"), /recordEmptyCachedDetailReuseBlocked\(cacheReusePlan\.reason, state\.currentThread, \{ source \}\)/);
   assert.match(functionBody("loadThread"), /if \(cacheReusePlan\.shouldUseCachedCurrent\) \{/);
+  assert.match(functionBody("loadThread"), /if \(cacheReusePlan\.shouldUseCachedCurrent\) \{\s*const renderStartedAt = nowPerfMs\(\);\s*const postMergePlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPostMergeEffects\(\);\s*followThreadOpenToBottom\(threadId\);\s*applyThreadDetailRefreshPostMergeEffectsGroup\(postMergePlan, "merge"\);\s*const threadListRenderStartedAt = nowPerfMs\(\);\s*applyThreadDetailRefreshPostMergeEffectsGroup\(postMergePlan, "thread-list-render"\);/);
+  assert.doesNotMatch(functionBody("loadThread"), /if \(cacheReusePlan\.shouldUseCachedCurrent\) \{[\s\S]*?mergeThreadIntoThreadList\(state\.currentThread\);[\s\S]*?maybeAutoBackfillThreadHistory\(state\.currentThread, \{ seq: state\.threadLoadSeq, source: "cached-current" \}\);/);
+  assert.doesNotMatch(functionBody("loadThread"), /if \(cacheReusePlan\.shouldUseCachedCurrent\) \{[\s\S]*?const threadListRenderStartedAt = nowPerfMs\(\);\s*renderThreads\(\);[\s\S]*?maybeAutoBackfillThreadHistory\(state\.currentThread, \{ seq: state\.threadLoadSeq, source: "cached-current" \}\);/);
   assert.match(functionBody("loadThread"), /recordEmptyCachedDetailReuseHealthy\("cached-current", state\.currentThread\)/);
   assert.doesNotMatch(functionBody("loadThread"), /threadHasReusableLoadedDetailState\(state\.currentThread\)/);
   assert.doesNotMatch(functionBody("loadThread"), /threadHasLoadedDetailState\(state\.currentThread\)/);

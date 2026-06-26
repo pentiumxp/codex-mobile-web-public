@@ -16731,6 +16731,63 @@ The previous full handoff was archived and should be opened only when old proven
     bodies, task-card bodies, upload bytes, private paths, provider payloads,
     prompts, or long logs are included.
 
+## 2026-06-27 - Phase A cached-current post-merge plan reuse local slice
+
+- Latest local slice:
+  - Continued Phase A/B render/patch ownership after `a935d3f`
+    (`reuse detail post merge plan for first paint`).
+  - The previous first-paint/full-backfill post-merge slice was fully validated
+    and committed as `a935d3f`; it was not deployed by design.
+  - This slice is local/private only and is not deployed by design.
+- Root-cause boundary:
+  - Symptom/risk: ordinary refresh, API first-paint, and full-backfill detail
+    paths already shared `planThreadDetailRefreshPostMergeEffects()`, but the
+    cached-current `loadThread()` short path still hand-wrote thread-list merge
+    and thread-list render side effects. That left one more detail-open path
+    with separate post-merge ordering, increasing future duplicate/missing
+    row, stale status, or flicker risk.
+  - Failing layer: frontend thread-detail cached-current post-merge ownership,
+    not cache-reuse eligibility, server projection, thread detail API reads,
+    DOM patching, Composer behavior, Home AI diagnostics, task-card routing, or
+    shell/cache.
+  - Violated invariant: cached-current detail reuse should share the same
+    declarative post-merge side-effect plan for thread-list merge/render while
+    `public/app.js` only executes real DOM/state side effects.
+- Changes:
+  - `public/app.js` cached-current branch now creates the same post-merge plan
+    and applies its `merge` and `thread-list-render` groups.
+  - The branch preserves existing follow-to-bottom, conversation render,
+    auto-backfill, tile-pane-specific Composer refresh, menu close, projection
+    consistency, cached first-paint telemetry, and load-success diagnostic
+    behavior.
+  - `test/conversation-render.test.js` and `test/mobile-viewport.test.js` now
+    guard that cached-current uses the post-merge plan and does not re-inline
+    the old `mergeThreadIntoThreadList()` / `renderThreads()` sequence.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation:
+  - Focused:
+    `node --test test/conversation-render.test.js test/mobile-viewport.test.js test/thread-detail-render-plan.test.js test/thread-detail-refresh-dom-harness.test.js`
+    passed (`180` tests).
+  - Syntax:
+    `node --check public/app.js` passed.
+  - Standard:
+    `npm run check`, `npm test` (`1145` tests), and `npm run check:macos`
+    passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache
+    bump. This is a local Phase A/B ownership slice to batch with the next
+    module validation/deploy.
+- Next:
+  - Run `git diff --check`, commit locally, then continue Phase A by moving the
+    next remaining `loadThread()` post-render side-effect cluster or Phase B
+    readback cold-path evidence into a testable plan.
+- Privacy:
+  - Only bounded file paths, helper names, effect group names, and test counts
+    are recorded. No secrets, cookies, launch tokens, private thread bodies,
+    task-card bodies, upload bytes, private paths, provider payloads, prompts,
+    or long logs are included.
+
 ## 2026-06-27 - Phase B readback baseline reason routing local slice
 
 - Latest local slice:
