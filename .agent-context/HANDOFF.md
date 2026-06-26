@@ -11793,3 +11793,49 @@ The previous full handoff was archived and should be opened only when old proven
     consume captured surface and scroll policy inputs more explicitly so
     post-patch surface probes cannot change single-thread versus tile completion
     semantics.
+
+## 2026-06-26 - local Phase A local patch completion snapshot validated, not deployed
+
+- Latest code commit:
+  - `e40bbf7 capture local patch completion snapshot`
+- Change:
+  - `completeLocalConversationDomUpdate()` now accepts an explicit completion
+    snapshot from the refresh path while preserving the old self-probing
+    behavior for callers that do not pass one.
+  - `patchCurrentThreadDetailFromRefresh()` captures single-thread completion,
+    conversation render signature, patch-shell signature, and scroll-follow
+    policy before the core DOM patch mutates the thread surface.
+  - The successful local patch transaction now completes DOM state from that
+    snapshot instead of re-probing tile/single surface and re-reading scroll
+    policy after mutation.
+- Root-cause boundary:
+  - Symptom/risk: local patch completion could depend on post-patch app state,
+    making completion semantics sensitive to tile/single surface probes or
+    scroll policy reads that happened after the DOM had already changed.
+  - Failing layer: frontend thread-detail local DOM patch completion and scroll
+    ownership.
+  - Classification: root-cause architecture boundary cleanup. No server
+    projection change, core DOM patch algorithm change, visual layout change,
+    diagnostic transport change, task-card protocol change, fallback,
+    shell/cache bump, deployment, or public push was added.
+- Validation:
+  - Focused source suite passed:
+    `test/conversation-render.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-detail-dom-patch.test.js`, `test/conversation-scroll.test.js`,
+    `test/thread-detail-render-plan.test.js`, and
+    `test/thread-tile-layout-ui.test.js` (`192` tests).
+  - Full source `npm test` passed (`948` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Not deployed by design under the updated cadence. This slice remains part
+    of the next larger Phase A refresh orchestration module.
+  - Production remains at `0.1.11|codex-mobile-shell-v506` until the module-level
+    deploy.
+- Progress:
+  - Overall system-level architecture optimization is now estimated at about
+    `71%`, still in Phase A module assembly.
+- Next suggested slice:
+  - Review the accumulated Phase A local refresh orchestration commits as one
+    module boundary, then either prepare a module-level deploy candidate or
+    continue extracting the remaining refresh completion caller defaults into
+    helper-owned policies before deployment.
