@@ -10851,3 +10851,71 @@ The previous full handoff was archived and should be opened only when old proven
     projection hits are warm but the UI still appears slow, pivot to Phase A
     client render/patch ownership using `thread_detail_first_paint` and
     `thread_refresh_ms` diagnostics.
+
+## 2026-06-26 - v496 thread refresh metadata effect plan deployed
+
+- Latest code commit:
+  - `81a8965 extract thread refresh metadata effect plan`
+- v496 change:
+  - Continued Phase A frontend render/patch ownership convergence.
+  - `public/thread-detail-render-plan.js` now includes ordered
+    `metadataEffects` in `planThreadDetailRefreshOutcomeExecution()`.
+  - `local-patch` refresh effects are limited to current-thread header,
+    tick timer, and plugin navigation state updates.
+  - `metadata-only` refresh effects are current-thread header, live operation
+    dock, tick timer, and scroll-button update scheduling.
+  - `refreshCurrentThread()` now executes the helper-provided effect list
+    instead of re-deciding the metadata side-effect combination from
+    `metadataUpdateMode`. Unknown effect names fail fast with a bounded error
+    instead of being silently ignored.
+  - Static build/cache: `0.1.11|codex-mobile-shell-v496` /
+    `codex-mobile-shell-v496`.
+- Root-cause boundary:
+  - Symptom/risk: Phase A had already moved render/patch/outcome/performance
+    planning out of `refreshCurrentThread()`, but metadata-only and local-patch
+    side-effect combinations were still inline in app code. That made future
+    fixes for flicker, missing messages, duplicate messages, and operation dock
+    state more likely to re-scatter ownership.
+  - Failing layer: frontend thread-detail refresh outcome execution ownership.
+  - Classification: root-cause architecture boundary cleanup. No server
+    projection change, frontend duplicate hiding, forced refresh, skipped
+    refresh, task-card protocol change, or diagnostic-transport fallback was
+    added.
+- Validation:
+  - Focused source suite passed:
+    `test/thread-detail-render-plan.test.js`, `test/conversation-render.test.js`,
+    `test/mobile-viewport.test.js`, `test/thread-goal-service.test.js`, and
+    `test/thread-task-card-route.test.js` (`43` tests in the first subset;
+    `129`/`144` tests in later render/production subsets).
+  - Full source `npm test` passed (`926` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Production deploy:
+  - Deployed through Home AI central macOS plugin deploy path with reason
+    `codex-mobile-thread-refresh-metadata-effect-v496`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T000108Z-plugin-codex-mobile-web-codex-mobile-thread-refresh-metadata-effect-v496`
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v496`,
+    `shellCacheName=codex-mobile-shell-v496`, `version=0.1.11`,
+    `authRequired=true`.
+  - Production focused suite passed (`144` tests).
+  - Source/production SHA parity verified for README/docs, app/static shell,
+    render-plan helper, and focused tests touched by v496.
+- Browser/visual note:
+  - Attempted to connect the in-app Browser plugin for a light visual readback,
+    but the available `node_repl` tool failed before browser setup with an
+    internal sandbox cwd metadata error. No visual/browser evidence was claimed
+    for v496.
+- Privacy:
+  - Evidence recorded only statuses, build ids, test counts, bounded deploy
+    metadata, and short hashes. No message bodies, task-card bodies, uploads,
+    private paths, cookies, access keys, provider payloads, database rows,
+    screenshots, or long logs were copied into docs or handoff.
+- Release:
+  - Public was not pushed for v496.
+- Next suggested slice:
+  - Continue Phase A by extracting the remaining `refreshCurrentThread()`
+    surface execution/orchestration boundaries, especially the tile-vs-single
+    patch attempt result shape and scroll/render side-effect execution. If
+    live diagnostics instead show server cold-path misses, pivot back to Phase B
+    with current `projectionMissReason` evidence.
