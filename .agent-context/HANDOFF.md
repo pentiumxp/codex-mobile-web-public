@@ -11901,3 +11901,51 @@ The previous full handoff was archived and should be opened only when old proven
     rejection -> full render behavior without relying only on `functionBody()`
     source-shape assertions. This should be the final evidence gate before
     deciding whether Phase A can become a module-level deploy candidate.
+
+## 2026-06-26 - local Phase A refresh DOM behavior harness added, not deployed
+
+- Latest code commit:
+  - `47f6ea9 add refresh dom behavior harness`
+- Change:
+  - Added `test/thread-detail-refresh-dom-harness.test.js`.
+  - The harness combines the real `thread-detail-render-plan`,
+    `thread-detail-patch-plan`, and `thread-detail-dom-patch` helpers with a
+    lightweight fake DOM instead of relying only on source-shape assertions.
+  - It proves three Phase A refresh paths:
+    - tile patch success is terminal and does not run full render;
+    - single-thread local patch success updates DOM text and commits before
+      operation-dock post-commit work;
+    - local patch rejection records the bounded reject reason and routes to
+      full render.
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` now records this behavior harness
+    as the Phase A evidence gate.
+- Root-cause boundary:
+  - Symptom/risk: prior Phase A coverage proved many extracted helper policies
+    and app orchestration shapes, but did not behaviorally exercise the
+    refresh DOM path across tile success, local success, and local rejection.
+  - Failing layer: frontend thread-detail refresh behavior validation boundary.
+  - Classification: root-cause validation hardening. No runtime behavior,
+    server projection, visual layout, diagnostic transport, task-card protocol,
+    fallback, shell/cache bump, deployment, or public push was added.
+- Validation:
+  - Focused behavior suite passed:
+    `test/thread-detail-refresh-dom-harness.test.js`,
+    `test/thread-detail-dom-patch.test.js`,
+    `test/thread-detail-render-plan.test.js`, and
+    `test/thread-detail-patch-plan.test.js` (`87` tests).
+  - Full source `npm test` passed (`955` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Not deployed by design under the updated cadence. This is a local test /
+    architecture evidence slice only.
+  - Production remains at `0.1.11|codex-mobile-shell-v506` until a complete
+    Phase A module deploy candidate is selected and validated.
+- Progress:
+  - Overall system-level architecture optimization is now estimated at about
+    `73%`.
+- Next suggested slice:
+  - Do a Phase A module-candidate review against the original objectives:
+    decide whether the local refresh/patch ownership work is now ready for a
+    module-level deploy candidate, or whether one more behavior harness is
+    needed around `refreshCurrentThread()` network/merge/full-render execution
+    rather than helper-level DOM behavior.
