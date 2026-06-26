@@ -18,7 +18,7 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 
 ## 2026-06-26 v532 Phase A Render/Patch Ownership Module
 
-v532 是 Phase A 前端 thread-detail render/patch ownership 的模块级发布候选，
+v532 是 Phase A 前端 thread-detail render/patch ownership 的模块级发布，
 把此前连续本地小切片合并成一次可部署批次，而不是每个小改动单独部署。
 本批次主要收敛 `refreshCurrentThread()`、conversation DOM patch、local patch
 completion、scroll/bottom-follow 和 single-thread shell update 的所有权边界。
@@ -39,8 +39,11 @@ completion、scroll/bottom-follow 和 single-thread shell update 的所有权边
 语义、任务卡协议、诊断调度策略或平铺视图布局。
 
 `CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v532`。
-部署后需要生产读回 `/api/public-config`，确认 `clientBuildId` 和
-`shellCacheName` 均为 `v532`。
+已通过 Home AI 中央 macOS 插件部署脚本部署到生产，生产读回
+`/api/public-config` 确认 `clientBuildId=0.1.11|codex-mobile-shell-v532`、
+`shellCacheName=codex-mobile-shell-v532`。Phase-B readback smoke 返回
+`status=ready`，detail 走 `projection-active-overlay` warm path，active overlay
+gate 为 `ready`；抽样文件 source/prod SHA-256 短 hash 一致。
 
 ## 2026-06-26 Phase A Local Patch Completion Snapshot Slice
 

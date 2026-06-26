@@ -15909,3 +15909,41 @@ The previous full handoff was archived and should be opened only when old proven
 - Next:
   - Either batch the current Phase A module for one deploy/readback or continue
     the next small ownership slice if deployment is intentionally deferred.
+
+## 2026-06-26 - Latest tail marker: Phase A v532 module deployed/read back
+
+- Latest local commits for this deployment batch:
+  - `13c7b4a` - `plan local patch completion snapshot`
+  - `9655fac` - `prepare phase a module shell v532`
+- Deployment:
+  - Used Home AI central macOS plugin deploy script with reason
+    `codex-mobile-phase-a-render-patch-v532`.
+  - Source ref deployed by the central script: `9655faca7b6b`, dirty `false`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T152521Z-plugin-codex-mobile-web-codex-mobile-phase-a-render-patch-v532`.
+  - Launchd label `com.hermesmobile.plugin.codex-mobile` was running after
+    deploy; codex profile audit reported `blockingIssueCount=0`.
+- Production readback:
+  - `/api/public-config`:
+    `clientBuildId=0.1.11|codex-mobile-shell-v532`,
+    `shellCacheName=codex-mobile-shell-v532`,
+    `activeProfileId=previous`.
+  - `scripts/codex-mobile-phase-b-readback-smoke.js --server http://127.0.0.1:8787 --json`
+    passed with `status=ready`, detail `readMode=projection-active-overlay`,
+    `coldPathOwner=warm-path`, and active overlay gate `ready`.
+  - Source/prod short SHA-256 hashes matched for:
+    `public/app.js`, `public/sw.js`, `public/thread-detail-dom-patch.js`,
+    `public/conversation-scroll.js`, `public/thread-detail-render-plan.js`,
+    `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Current state:
+  - Phase A render/patch/scroll ownership batch is now deployed to production.
+  - This does not complete the full system optimization goal. Remaining high
+    value targets are Phase C pane-state architecture and Phase E browser /
+    visual harness coverage, plus continued observation of
+    `conversation_projection_mismatch` diagnostics.
+- Privacy:
+  - Handoff records only bounded build ids, statuses, short hashes, paths, and
+    timing/owner categories. It does not include secrets, keys, cookies,
+    launch tokens, private thread bodies, task-card bodies, uploads, or long
+    logs.
