@@ -102,13 +102,15 @@ test("composer runtime selections persist without typed text", () => {
   assert.doesNotMatch(appJs, /saveDraftForCurrentTarget/, "runtime controls must not call a missing draft-save helper");
 
   const restoreBody = functionBody("applyDraftRuntimeSelection");
-  assert.match(restoreBody, /const hasDraft = Boolean\(draft && typeof draft === "object"\)/);
-  assert.match(restoreBody, /state\.codexFastMode = Boolean\(draft && draft\.fastMode === true\)/);
+  assert.match(restoreBody, /threadTileStatePolicy\.composerDraftRuntimeSelectionPlan/);
+  assert.match(restoreBody, /effectivePermissionMode: effectiveComposerPermissionMode\(draft && draft\.permissionMode\)/);
+  assert.match(restoreBody, /state\.codexFastMode = plan\.fastMode === true/);
   assert.doesNotMatch(restoreBody, /localStorage\.setItem\(STORAGE_CODEX_FAST_MODE/);
   assert.match(restoreBody, /options\.resetRuntimeWhenMissingDraft === true/, "target switching can clear stale runtime overrides when the new target has no draft");
-  assert.match(restoreBody, /state\.composerModel = "";/);
-  assert.match(restoreBody, /state\.composerEffort = "";/);
-  assert.match(restoreBody, /state\.composerPermissionMode = "";/);
+  assert.match(restoreBody, /if \(!plan\.setThreadRuntime\)/);
+  assert.match(restoreBody, /state\.composerModel = plan\.composerModel \|\| "";/);
+  assert.match(restoreBody, /state\.composerEffort = plan\.composerEffort \|\| "";/);
+  assert.match(restoreBody, /state\.composerPermissionMode = plan\.composerPermissionMode \|\| "";/);
 
   const resetBody = functionBody("resetComposerRuntimeSelection");
   assert.match(resetBody, /state\.codexFastMode = false;/, "switching targets should clear Fast until that target draft is restored");

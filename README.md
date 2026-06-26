@@ -107,6 +107,36 @@ node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js te
 本地模块累积，后续与 pane-local draft/runtime 或 command-detail ownership
 一起批量部署。
 
+## 2026-06-26 Phase C Composer Runtime Restore Planning Slice
+
+本地小切片继续推进 Phase C 的 pane-state ownership。上一片已经把共享 Composer
+发送目标和 placeholder 规划迁到 `public/thread-tile-state.js`；本片继续处理
+目标切换后的运行时选择恢复。此前 `applyDraftRuntimeSelection()` 在
+`public/app.js` 中直接判断新线程/旧线程、草稿存在与否、Fast、Model、Reasoning
+和 Permission 的默认/恢复/重置规则。这正是平铺模式里“点击哪个 pane，运行
+设置就跟哪个线程走”的状态边界，不应该继续留在 UI 编排层。
+
+本次修复：
+
+- `public/thread-tile-state.js` 新增 `composerDraftRuntimeSelectionPlan()`，
+  统一规划新线程草稿默认值、旧线程草稿恢复、无草稿保持或重置 runtime、Fast
+  状态、model/effort/permission 选项校验。
+- `public/app.js` 的 `applyDraftRuntimeSelection()` 改为只收集当前选项、默认值和
+  已归一化 permission，然后执行 helper 输出的 state 写入。
+- focused tests 覆盖新线程草稿、无效值回退默认、新线程缺省 permission、旧线程
+  草稿恢复、无草稿保持 runtime、切换 pane 时无草稿重置 runtime，以及 app wiring。
+- 不改变 draft 存储格式、附件恢复、发送协议、server projection、任务卡协议、
+  shell/cache 或部署状态。
+
+闭环验证：
+
+```bash
+node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js test/composer-draft.test.js test/conversation-render.test.js
+```
+
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为 Phase C
+本地模块累积，后续与 pane-local command detail、split sizing 或视觉验证一起批量部署。
+
 ## 2026-06-26 Phase C Pane Scroll Runtime Planning Slice
 
 本地小切片继续推进 Phase C 的 pane-runtime ownership。此前每个平铺窗口的

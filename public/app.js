@@ -4570,30 +4570,33 @@ function defaultNewThreadPermissionMode() {
 }
 
 function applyDraftRuntimeSelection(draft, options = {}) {
-  const hasDraft = Boolean(draft && typeof draft === "object");
-  const model = String(draft && draft.model || "");
-  const effort = String(draft && draft.effort || "");
-  const permission = effectiveComposerPermissionMode(draft && draft.permissionMode);
-  state.codexFastMode = Boolean(draft && draft.fastMode === true);
-  if (state.newThreadDraft) {
-    state.newThreadTitle = String(draft && draft.threadTitle || "").trim();
-    state.newThreadModel = model && state.modelOptions.includes(model) ? model : defaultNewThreadModel();
-    state.newThreadEffort = effort && state.reasoningEffortOptions.includes(effort) ? effort : defaultNewThreadEffort();
-    state.newThreadPermissionMode = permission || defaultNewThreadPermissionMode();
+  const plan = threadTileStatePolicy.composerDraftRuntimeSelectionPlan({
+    draft,
+    newThreadDraft: state.newThreadDraft,
+    modelOptions: state.modelOptions,
+    reasoningEffortOptions: state.reasoningEffortOptions,
+    permissionModeOptions: state.permissionModeOptions,
+    effectivePermissionMode: effectiveComposerPermissionMode(draft && draft.permissionMode),
+    defaultNewThreadModel: defaultNewThreadModel(),
+    defaultNewThreadEffort: defaultNewThreadEffort(),
+    defaultNewThreadPermissionMode: defaultNewThreadPermissionMode(),
+    resetRuntimeWhenMissingDraft: options.resetRuntimeWhenMissingDraft === true,
+  });
+  state.codexFastMode = plan.fastMode === true;
+  if (plan.setNewThreadRuntime) {
+    state.newThreadTitle = plan.newThreadTitle || "";
+    state.newThreadModel = plan.newThreadModel || defaultNewThreadModel();
+    state.newThreadEffort = plan.newThreadEffort || defaultNewThreadEffort();
+    state.newThreadPermissionMode = plan.newThreadPermissionMode || defaultNewThreadPermissionMode();
     return;
   }
-  state.newThreadTitle = "";
-  if (!hasDraft) {
-    if (options.resetRuntimeWhenMissingDraft === true) {
-      state.composerModel = "";
-      state.composerEffort = "";
-      state.composerPermissionMode = "";
-    }
+  if (plan.clearNewThreadTitle) state.newThreadTitle = "";
+  if (!plan.setThreadRuntime) {
     return;
   }
-  state.composerModel = model && state.modelOptions.includes(model) ? model : "";
-  state.composerEffort = effort && state.reasoningEffortOptions.includes(effort) ? effort : "";
-  state.composerPermissionMode = permission && state.permissionModeOptions.includes(permission) ? permission : "";
+  state.composerModel = plan.composerModel || "";
+  state.composerEffort = plan.composerEffort || "";
+  state.composerPermissionMode = plan.composerPermissionMode || "";
 }
 
 function revokeAttachmentPreviewUrls(attachments) {

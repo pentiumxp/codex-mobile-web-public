@@ -739,6 +739,54 @@
     };
   }
 
+  function composerDraftRuntimeSelectionPlan(input = {}) {
+    const draft = input.draft && typeof input.draft === "object" ? input.draft : null;
+    const hasDraft = Boolean(draft);
+    const newThreadDraft = input.newThreadDraft === true;
+    const model = text(draft && draft.model).trim();
+    const effort = text(draft && draft.effort).trim();
+    const permissionMode = text(input.effectivePermissionMode || input.permissionMode).trim();
+    const modelOptions = new Set((Array.isArray(input.modelOptions) ? input.modelOptions : []).map((value) => text(value).trim()).filter(Boolean));
+    const effortOptions = new Set((Array.isArray(input.reasoningEffortOptions || input.effortOptions) ? (input.reasoningEffortOptions || input.effortOptions) : []).map((value) => text(value).trim()).filter(Boolean));
+    const permissionOptions = new Set((Array.isArray(input.permissionModeOptions) ? input.permissionModeOptions : []).map((value) => text(value).trim()).filter(Boolean));
+    const resetRuntimeWhenMissingDraft = input.resetRuntimeWhenMissingDraft === true;
+    const defaultNewThreadModel = text(input.defaultNewThreadModel).trim();
+    const defaultNewThreadEffort = text(input.defaultNewThreadEffort).trim();
+    const defaultNewThreadPermissionMode = text(input.defaultNewThreadPermissionMode).trim();
+    const plan = {
+      action: "composer-draft-runtime-selection",
+      reason: newThreadDraft
+        ? (hasDraft ? "new-thread-draft" : "new-thread-defaults")
+        : (hasDraft ? "thread-draft" : (resetRuntimeWhenMissingDraft ? "missing-draft-reset" : "missing-draft-keep")),
+      mode: newThreadDraft ? "new-thread" : "thread",
+      hasDraft,
+      newThreadDraft,
+      fastMode: Boolean(draft && draft.fastMode === true),
+      clearNewThreadTitle: !newThreadDraft,
+      setNewThreadRuntime: newThreadDraft,
+      setThreadRuntime: !newThreadDraft && (hasDraft || resetRuntimeWhenMissingDraft),
+      newThreadTitle: "",
+      newThreadModel: "",
+      newThreadEffort: "",
+      newThreadPermissionMode: "",
+      composerModel: "",
+      composerEffort: "",
+      composerPermissionMode: "",
+    };
+    if (newThreadDraft) {
+      plan.newThreadTitle = text(draft && draft.threadTitle).trim();
+      plan.newThreadModel = model && modelOptions.has(model) ? model : defaultNewThreadModel;
+      plan.newThreadEffort = effort && effortOptions.has(effort) ? effort : defaultNewThreadEffort;
+      plan.newThreadPermissionMode = permissionMode || defaultNewThreadPermissionMode;
+      return plan;
+    }
+    if (!hasDraft && !resetRuntimeWhenMissingDraft) return plan;
+    plan.composerModel = model && modelOptions.has(model) ? model : "";
+    plan.composerEffort = effort && effortOptions.has(effort) ? effort : "";
+    plan.composerPermissionMode = permissionMode && permissionOptions.has(permissionMode) ? permissionMode : "";
+    return plan;
+  }
+
   function displaySettingsPayload(input = {}, options = {}) {
     const paneThreadIds = normalizePinnedIds(input.paneThreadIds || input.threadTilePinnedIds || [], options);
     const paneCountInput = Object.prototype.hasOwnProperty.call(input, "paneCount")
@@ -1178,6 +1226,7 @@
     activePaneSyncPlan,
     candidatePaneIdsPlan,
     closePanePlan,
+    composerDraftRuntimeSelectionPlan,
     composerTargetPlaceholderPlan,
     composerTargetPlan,
     displaySettingsPayload,

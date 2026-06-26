@@ -16103,3 +16103,50 @@ The previous full handoff was archived and should be opened only when old proven
   - Only bounded file paths, test counts, and architecture state are recorded.
     No secrets, cookies, launch tokens, private thread bodies, task-card bodies,
     uploads, screenshots, or long logs are included.
+
+## 2026-06-26 - Phase C composer runtime restore planning local slice
+
+- Latest local slice:
+  - Continued Phase C pane-state architecture after `796d6b5`
+    (`plan thread tile composer target`). This slice is local/private only and
+    is not deployed by design.
+- Root-cause boundary:
+  - Symptom/risk: tile mode uses one shared bottom Composer whose Fast/model/
+    reasoning/permission controls must follow the active pane. The restore
+    policy for new-thread defaults, thread draft runtime values, missing-draft
+    keep/reset behavior, and option validation was still inline in
+    `public/app.js` `applyDraftRuntimeSelection()`.
+  - Failing layer: frontend thread-tile shared Composer runtime ownership, not
+    draft storage, attachment restore, DOM structure, server projection,
+    task-card protocol, network reads, or shell/cache.
+  - Violated invariant: `public/app.js` should collect current options/defaults
+    and execute state writes; deterministic runtime restore policy should live
+    in a pure helper with focused tests.
+- Changes:
+  - `public/thread-tile-state.js` now exposes
+    `composerDraftRuntimeSelectionPlan()` for new-thread draft/default runtime
+    values, old-thread draft runtime values, missing-draft keep/reset behavior,
+    Fast state, and model/effort/permission option checks.
+  - `public/app.js` now calls that helper from `applyDraftRuntimeSelection()`
+    and only performs the resulting state assignments.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md` with the Phase C boundary.
+- Validation:
+  - Focused:
+    `node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js test/composer-draft.test.js test/conversation-render.test.js`
+    passed (`142` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`1128` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Not deployed. No `CLIENT_BUILD_ID` / PWA shell cache bump. This remains a
+    small Phase C local slice to batch with the next pane-state/runtime module.
+- Next:
+  - Commit locally, then continue Phase C with pane-local command detail state,
+    split sizing, or browser/visual validation around tile Composer
+    target/runtime switching before one batch deploy.
+- Privacy:
+  - Only bounded file paths, test counts, and architecture state are recorded.
+    No secrets, cookies, launch tokens, private thread bodies, task-card bodies,
+    uploads, screenshots, or long logs are included.

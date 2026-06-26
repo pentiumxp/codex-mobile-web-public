@@ -126,6 +126,107 @@ test("thread tile state owns shared composer target planning", () => {
   }).text, "Message Codex");
 });
 
+test("thread tile state owns composer draft runtime restore planning", () => {
+  assert.deepEqual(state.composerDraftRuntimeSelectionPlan({
+    newThreadDraft: true,
+    draft: {
+      threadTitle: "  Planning  ",
+      model: "gpt-5",
+      effort: "xhigh",
+      fastMode: true,
+    },
+    effectivePermissionMode: "full",
+    modelOptions: ["gpt-5", "gpt-5-mini"],
+    reasoningEffortOptions: ["medium", "xhigh"],
+    permissionModeOptions: ["default", "full"],
+    defaultNewThreadModel: "gpt-5-mini",
+    defaultNewThreadEffort: "medium",
+    defaultNewThreadPermissionMode: "default",
+  }), {
+    action: "composer-draft-runtime-selection",
+    reason: "new-thread-draft",
+    mode: "new-thread",
+    hasDraft: true,
+    newThreadDraft: true,
+    fastMode: true,
+    clearNewThreadTitle: false,
+    setNewThreadRuntime: true,
+    setThreadRuntime: false,
+    newThreadTitle: "Planning",
+    newThreadModel: "gpt-5",
+    newThreadEffort: "xhigh",
+    newThreadPermissionMode: "full",
+    composerModel: "",
+    composerEffort: "",
+    composerPermissionMode: "",
+  });
+
+  const newThreadDefaults = state.composerDraftRuntimeSelectionPlan({
+    newThreadDraft: true,
+    draft: { model: "missing", effort: "invalid" },
+    effectivePermissionMode: "",
+    modelOptions: ["gpt-5-mini"],
+    reasoningEffortOptions: ["medium"],
+    defaultNewThreadModel: "gpt-5-mini",
+    defaultNewThreadEffort: "medium",
+    defaultNewThreadPermissionMode: "full",
+  });
+  assert.equal(newThreadDefaults.reason, "new-thread-draft");
+  assert.equal(newThreadDefaults.newThreadModel, "gpt-5-mini");
+  assert.equal(newThreadDefaults.newThreadEffort, "medium");
+  assert.equal(newThreadDefaults.newThreadPermissionMode, "full");
+
+  assert.deepEqual(state.composerDraftRuntimeSelectionPlan({
+    newThreadDraft: false,
+    draft: {
+      model: "gpt-5",
+      effort: "high",
+      fastMode: true,
+    },
+    effectivePermissionMode: "custom",
+    modelOptions: ["gpt-5"],
+    reasoningEffortOptions: ["medium", "high"],
+    permissionModeOptions: ["default", "custom"],
+  }), {
+    action: "composer-draft-runtime-selection",
+    reason: "thread-draft",
+    mode: "thread",
+    hasDraft: true,
+    newThreadDraft: false,
+    fastMode: true,
+    clearNewThreadTitle: true,
+    setNewThreadRuntime: false,
+    setThreadRuntime: true,
+    newThreadTitle: "",
+    newThreadModel: "",
+    newThreadEffort: "",
+    newThreadPermissionMode: "",
+    composerModel: "gpt-5",
+    composerEffort: "high",
+    composerPermissionMode: "custom",
+  });
+
+  const keepRuntime = state.composerDraftRuntimeSelectionPlan({
+    newThreadDraft: false,
+    draft: null,
+  });
+  assert.equal(keepRuntime.reason, "missing-draft-keep");
+  assert.equal(keepRuntime.fastMode, false);
+  assert.equal(keepRuntime.setThreadRuntime, false);
+  assert.equal(keepRuntime.clearNewThreadTitle, true);
+
+  const resetRuntime = state.composerDraftRuntimeSelectionPlan({
+    newThreadDraft: false,
+    draft: null,
+    resetRuntimeWhenMissingDraft: true,
+  });
+  assert.equal(resetRuntime.reason, "missing-draft-reset");
+  assert.equal(resetRuntime.setThreadRuntime, true);
+  assert.equal(resetRuntime.composerModel, "");
+  assert.equal(resetRuntime.composerEffort, "");
+  assert.equal(resetRuntime.composerPermissionMode, "");
+});
+
 test("thread tile state builds and applies display settings payloads", () => {
   const payload = state.displaySettingsPayload({
     threadTileMode: true,
