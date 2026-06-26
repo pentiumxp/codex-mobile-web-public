@@ -18008,3 +18008,58 @@ The previous full handoff was archived and should be opened only when old proven
   - Run full validation, commit locally, then continue Phase A current-thread
     render authority or batch the accumulated module for one deploy/readback
     when requested.
+
+## 2026-06-27 - Latest tail marker: Phase A full-backfill response effects local slice
+
+- Current local state:
+  - Continued Phase A successful detail API response ownership cleanup after
+    `531afd9`.
+  - `backfillFullThreadDetail()` already delegated post-merge, post-render, and
+    telemetry ordering to plan helpers, but its successful API response still
+    directly marked detail loaded, recorded render evidence, synchronized
+    pending server requests, and merged the current thread.
+  - This slice moves that full-backfill successful response sequence into
+    `public/thread-detail-render-plan.js`.
+- Root-cause boundary:
+  - Symptom/risk: first-paint and refresh responses had plan-owned
+    state/evidence effect ordering, while full-backfill kept an inline copy of
+    the same successful response sequence in `public/app.js`. Future edits
+    could diverge full-backfill merge/evidence behavior from other detail API
+    response paths.
+  - Failing layer: frontend full-backfill response state/evidence effect
+    ownership, not full-backfill read strategy, server projection, merge
+    algorithm behavior, DOM patch selection, task-card protocol, Home AI
+    diagnostic intake, or shell/cache.
+  - Violated invariant: successful thread-detail API responses should declare
+    fixed state/evidence effect ordering in pure planning helpers while app
+    code executes the real state writes and merge.
+- Changes:
+  - `public/thread-detail-render-plan.js` now exports
+    `planThreadDetailFullBackfillResponseEffects()`.
+  - `public/app.js` applies that plan in `backfillFullThreadDetail()` before
+    the existing post-merge timing groups.
+  - Reused the existing response-effect executor and its
+    `sync-pending-server-requests` support.
+  - Updated `test/thread-detail-render-plan.test.js`,
+    `test/mobile-viewport.test.js`, and `test/conversation-render.test.js`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation:
+  - Syntax and focused:
+    `node --check public/thread-detail-render-plan.js && node --check public/app.js && node --check test/thread-detail-render-plan.test.js && node --check test/conversation-render.test.js && node --check test/mobile-viewport.test.js && node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js`
+    passed (`195` focused tests).
+  - Full:
+    `npm test` passed (`1164` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache
+    bump. This remains a local Phase A ownership slice to batch with the next
+    module validation/deploy.
+- Progress:
+  - Overall architecture optimization is about `79%`.
+  - Phase A frontend render/projection ownership is about `89%`.
+- Next:
+  - Commit locally, then continue Phase A by moving the next remaining
+    `refreshCurrentThread()` render/patch/scroll authority into pure helpers,
+    or batch the accumulated Phase A local slices for one deploy/readback when
+    requested.

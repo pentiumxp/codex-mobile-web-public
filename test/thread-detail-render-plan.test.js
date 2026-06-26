@@ -262,6 +262,24 @@ test("thread detail first-paint response effects preserve loadThread success ord
   });
 });
 
+test("thread detail full-backfill response effects preserve detail API success order", () => {
+  assert.deepEqual(renderPlan.planThreadDetailFullBackfillResponseEffects({
+    source: "auto-context-full-backfill-source-extra",
+  }), {
+    shouldApply: true,
+    effects: [
+      { type: "mark-thread-detail-loaded" },
+      {
+        type: "remember-render-evidence",
+        source: "auto-context-full-backfill-source-extra-detail-api",
+      },
+      { type: "sync-pending-server-requests" },
+      { type: "merge-current-thread" },
+    ],
+    reason: "full-backfill-response",
+  });
+});
+
 test("thread detail refresh render plan skips stable conversation signatures", () => {
   const plan = renderPlan.planThreadDetailRefreshRender({
     previousConversationSignature: "sig-a",

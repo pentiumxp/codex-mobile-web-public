@@ -262,6 +262,23 @@
     };
   }
 
+  function planThreadDetailFullBackfillResponseEffects(input = {}) {
+    const source = compactReason(input.source, "unknown").slice(0, 40);
+    return {
+      shouldApply: true,
+      effects: [
+        { type: "mark-thread-detail-loaded" },
+        {
+          type: "remember-render-evidence",
+          source: `${source}-detail-api`,
+        },
+        { type: "sync-pending-server-requests" },
+        { type: "merge-current-thread" },
+      ],
+      reason: "full-backfill-response",
+    };
+  }
+
   function planThreadDetailRefreshConsistencyCheck(input = {}) {
     const phase = compactReason(input.projectionConsistencyPhase || input.phase, "");
     const renderMode = compactReason(input.renderMode || input.detailRenderMode, "");
@@ -1399,6 +1416,7 @@
     planThreadDetailFirstPaintPostTimingEffects,
     planThreadDetailFirstPaintPreRenderEffects,
     planThreadDetailFirstPaintResponseEffects,
+    planThreadDetailFullBackfillResponseEffects,
     planThreadDetailLoadErrorEffects,
     planThreadDetailLoadingShellPostStateEffects,
     planThreadDetailFullBackfillPostRenderEffects,

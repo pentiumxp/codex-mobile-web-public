@@ -9989,10 +9989,10 @@ async function backfillFullThreadDetail(threadId, options = {}) {
   const renderStartedAt = nowPerfMs();
   const wasNearBottom = isConversationNearBottom();
   const mergeStartedAt = nowPerfMs();
-  markThreadDetailLoaded(result.thread);
-  rememberThreadDetailRenderEvidence(result.thread, `${String(options.source || "unknown").slice(0, 40)}-detail-api`);
-  syncThreadPendingServerRequests(result.thread);
-  state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
+  const fullBackfillResponsePlan = threadDetailRenderPlanApi.planThreadDetailFullBackfillResponseEffects({
+    source: options.source || "unknown",
+  });
+  applyThreadDetailRefreshResponseEffectsPlan(fullBackfillResponsePlan, { thread: result.thread });
   const postMergePlan = threadDetailRenderPlanApi.planThreadDetailRefreshPostMergeEffects();
   applyThreadDetailRefreshPostMergeEffectsGroup(postMergePlan, "merge");
   const mergeMs = roundedDurationMs(mergeStartedAt);

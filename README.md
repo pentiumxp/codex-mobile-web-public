@@ -2136,6 +2136,40 @@ bump PWA shell/cache。它只把 API first-paint 响应到达后的固定 state/
 - 闭环验证：focused tests 证明 plan 顺序与 app wiring；完整检查通过后再随 Phase A
   模块批量部署。
 
+## 2026-06-27 Local Phase A Full-Backfill Response Effects Slice
+
+这个本地小切片继续 Phase A 的 successful detail API response ownership 收敛。
+`backfillFullThreadDetail()` 此前已经把 post-merge、post-render 和 telemetry
+顺序交给 plan helper，但 API 返回后的 detail-loaded/evidence/pending/merge 顺序
+仍直接写在 `public/app.js` 里。这样 full-backfill 与 first-paint/refresh response
+仍有一套独立状态写入路径。
+
+本次切片新增/调整：
+
+- `public/thread-detail-render-plan.js` 新增
+  `planThreadDetailFullBackfillResponseEffects()`，声明 detail-loaded 标记、render
+  evidence 记录、pending server requests 同步和 current-thread merge 顺序。
+- `public/app.js` 的 `backfillFullThreadDetail()` 成功路径改为执行这个 response
+  effects plan；app 层仍负责真实状态写入、pending request 同步和
+  `mergeThreadPreservingVisibleItems()` 执行。
+- 复用现有 `applyThreadDetailRefreshResponseEffectsPlan()`，不增加新的 fallback、
+  不改变 full-backfill read strategy、scroll、DOM patch、server projection、
+  Home AI diagnostic intake、任务卡协议或 shell/cache。
+- `test/thread-detail-render-plan.test.js` 覆盖 full-backfill response effect shape；
+  `test/mobile-viewport.test.js` 和 `test/conversation-render.test.js` 确认
+  `backfillFullThreadDetail()` 不再内联这串状态写入。
+
+修复边界：
+
+- 症状/风险：full-backfill successful response 的 detail-loaded/evidence/pending/merge
+  顺序仍留在 `backfillFullThreadDetail()`，和 refresh/first-paint response 已有 plan
+  边界不一致。
+- 失败层：前端 full-backfill response state/evidence effect ownership，不是 full
+  read/backfill 策略、merge 算法、DOM patch、server projection、任务卡协议或
+  Home AI diagnostic intake。
+- 闭环验证：focused tests 证明 plan 顺序与 app wiring；完整检查通过后再随 Phase A
+  模块批量部署。
+
 ## 2026-06-26 Local Phase B Server Timing Classifier
 
 这个本地切片继续 Phase B 的大 session / thread-detail cold path 收敛，但只处理

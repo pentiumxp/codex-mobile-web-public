@@ -898,9 +898,11 @@ fixed cached-current post-render sequence inline.
 Ordinary refresh, cached-current first
 paint, API first paint, and full detail backfill no longer maintain separate
 hand-written thread-list post-merge ordering in `public/app.js`; full backfill
-still owns its existing detail-loaded marker, render-evidence write,
-pending-server-request sync, current-thread merge, full render, and bounded
-full-ready telemetry behavior.
+now routes its detail-loaded marker, render-evidence write,
+pending-server-request sync, and current-thread merge through the same planned
+response-effect executor used by refresh and first-paint responses. App code
+still owns the real full-render call and bounded full-ready telemetry
+execution.
 API first-paint response state/evidence effects now also live in
 `public/thread-detail-render-plan.js`:
 `planThreadDetailFirstPaintResponseEffects` declares detail-loaded marking,
@@ -908,6 +910,14 @@ render-evidence recording, pending server-request synchronization, and
 current-thread merge ordering. App code still executes the real state writes and
 merge algorithm, but `loadThread()` no longer owns this successful detail
 response sequence inline.
+Full-backfill response state/evidence effects now also live in
+`public/thread-detail-render-plan.js`:
+`planThreadDetailFullBackfillResponseEffects` declares the same
+detail-loaded/render-evidence/pending-request/current-thread merge order for
+`backfillFullThreadDetail()`. This keeps full-backfill API response ownership
+aligned with refresh and first-paint without changing the full-backfill read
+strategy, merge algorithm, scroll behavior, DOM patch path, or telemetry
+payload shape.
 First-paint post-render side-effect ordering now also lives in
 `public/thread-detail-render-plan.js`:
 `planThreadDetailFirstPaintPostRenderEffects` declares the fixed sequence for
