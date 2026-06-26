@@ -274,6 +274,40 @@ test("v4 projection service preserves context compaction notices across dynamic 
   assert.equal(context.mobileNotice, CONTEXT_COMPACTION_COMPLETE_NOTICE);
 });
 
+test("v4 projection service exposes active overlay snapshot with monotonic revision", () => {
+  const service = createThreadDetailProjectionV4Service({
+    cacheDir: "",
+    policyVersion: "test-v4",
+    maxTurns: 3,
+    now: () => 6000,
+  });
+
+  service.applyNotification("turn/started", {
+    threadId: "thread-1",
+    turn: { id: "turn-1", status: { type: "active" }, items: [] },
+  });
+  const first = service.activeOverlaySnapshot({
+    threadId: "thread-1",
+    activeTurnId: "turn-1",
+  });
+  assert.equal(first.found, true);
+  assert.equal(first.version, "v4");
+  assert.equal(first.overlayRevision, 1);
+
+  service.applyNotification("item/agentMessage/delta", {
+    threadId: "thread-1",
+    turnId: "turn-1",
+    itemId: "agent-1",
+    delta: "partial reply",
+  });
+  const second = service.activeOverlaySnapshot({
+    threadId: "thread-1",
+    activeTurnId: "turn-1",
+  });
+  assert.equal(second.overlayRevision, 2);
+  assert.equal(second.overlayTurn.items[0].mobileProjectionVersion, "v4");
+});
+
 test("v4 projection service treats turn completion as an item-preserving patch", () => {
   const service = createThreadDetailProjectionV4Service({
     cacheDir: "",

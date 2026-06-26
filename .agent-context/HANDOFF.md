@@ -13779,3 +13779,60 @@ The previous full handoff was archived and should be opened only when old proven
     decide whether active large-thread slow opens are blocked by provider
     absence, stale deltas, missing receipt coverage, projection miss, or app-
     server fallback.
+
+## 2026-06-26 - live active overlay provider local-only
+
+- Scope:
+  - Continued Phase B by wiring a real server-owned active overlay provider into
+    the existing fail-closed read-orchestration seam.
+  - This slice does not change client rendering, tile layout, task-card
+    protocol, shell/cache ids, deployment state, or public repository state.
+- Root-cause boundary:
+  - Failing layer addressed: active/running large-thread detail reads that
+    could only avoid full `thread/read` with complete server-owned live
+    evidence.
+  - Violated invariant: a notification-updated live projection shell must not
+    become a normal detail projection, but it can provide bounded active-turn
+    evidence to the active overlay proof gate.
+  - Closure classification: root-cause architecture wiring, not fallback. No UI
+    dedupe, no forced refresh, no hidden retry, no disk read, and no automatic
+    repair-card dispatch.
+- Changes:
+  - `adapters/thread-detail-projection-service.js` exposes
+    `activeOverlaySnapshot()`, a memory-only clone-only snapshot of the matching
+    active turn from dynamic notification-updated entries. It rejects missing
+    thread ids, missing active turn ids, absent entries, and non-dynamic static
+    cache entries.
+  - `adapters/thread-detail-projection-v4-service.js` normalizes active overlay
+    snapshots with v4 visible keys and adds monotonic `overlayRevision`
+    metadata for assistant-delta freshness proof.
+  - Added `adapters/thread-detail-active-overlay-provider-service.js` to convert
+    the snapshot into bounded active overlay policy evidence: active turn id,
+    overlay source, cloned overlay turn, coverage counts, operation/upload/
+    receipt coverage, and v4 revision/timestamp metadata.
+  - `server.js` now injects the provider into
+    `thread-detail-read-orchestration-service`. Missing snapshot, mismatched
+    active turn, incomplete coverage, unknown item kinds, or missing assistant
+    freshness still fail closed to full `thread/read` and report bounded
+    `activeOverlayReason`.
+  - `thread-detail-active-window-overlay-policy-service.js` recognizes
+    `turnUsageSummary` as receipt evidence and preserves bounded provider
+    unavailable reasons.
+  - README, architecture optimization plan, module map, and troubleshooting docs
+    record the provider boundary and local-only status.
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-active-overlay-provider-service.test.js test/thread-detail-active-window-overlay-policy-service.test.js test/thread-detail-read-orchestration-service.test.js test/thread-detail-projection-service.test.js test/thread-detail-projection-v4-service.test.js`
+    passed (`62` tests).
+  - Full source `npm test` passed (`1060` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment status:
+  - Not deployed by design. This remains a local-only small slice under the
+    updated module-batch cadence.
+- Next Phase B candidates:
+  - Add route-level or harness evidence that active large-thread reads in a
+    live notification scenario return `projection-active-overlay` without full
+    `thread/read`.
+  - Batch deploy the Phase B local slices, then inspect production
+    `activeOverlayReason`, `coldPathOwner`, and thread-list fallback source
+    timings before choosing the next root-cause optimization.

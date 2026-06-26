@@ -85,6 +85,7 @@ const { createThreadDetailProjectionService } = require("./adapters/thread-detai
 const { createThreadDetailProjectionV4Service } = require("./adapters/thread-detail-projection-v4-service");
 const { createThreadDetailSummaryService } = require("./adapters/thread-detail-summary-service");
 const { createThreadDetailBoundedReadPolicyService } = require("./adapters/thread-detail-bounded-read-policy-service");
+const { createThreadDetailActiveOverlayProviderService } = require("./adapters/thread-detail-active-overlay-provider-service");
 const { attachThreadDetailDiagnostics } = require("./adapters/thread-detail-performance-service");
 const { createThreadDetailReadOrchestrationService } = require("./adapters/thread-detail-read-orchestration-service");
 const { createThreadListFallbackCacheService } = require("./adapters/thread-list-fallback-cache-service");
@@ -5162,6 +5163,9 @@ const threadDetailBoundedReadPolicyService = createThreadDetailBoundedReadPolicy
   thresholdBytes: THREAD_DETAIL_TURNS_LIST_FIRST_BYTES,
   threadRolloutSizeBytes,
 });
+const threadDetailActiveOverlayProviderService = createThreadDetailActiveOverlayProviderService({
+  projectionService: threadDetailProjectionService,
+});
 const threadDetailReadOrchestrationService = createThreadDetailReadOrchestrationService({
   attachDiagnostics: attachThreadDetailDiagnostics,
   resolveSummary: (requestCodex, threadId, options) => threadDetailSummaryService.resolveSummary(requestCodex, threadId, options),
@@ -5189,6 +5193,7 @@ const threadDetailReadOrchestrationService = createThreadDetailReadOrchestration
     summary,
     runtimeSettings,
   ),
+  resolveActiveWindowOverlay: (input) => threadDetailActiveOverlayProviderService.resolveActiveWindowOverlay(input),
   rememberThreadSummary: (thread) => threadDisplaySummaryCache.remember(thread),
   turnsListThreadReadResult: ({ threadId, summary, runtimeSettings, warning, mode, threadLog }) => turnsListThreadReadResult(
     threadId,

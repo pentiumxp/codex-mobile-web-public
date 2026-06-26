@@ -347,6 +347,17 @@ after a later full list refresh. Those hints also carry
 the hint expires after the stale window so completed work does not keep a
 permanent spinner.
 
+For active/running large threads, `/api/threads/:id` can avoid full
+`thread/read` only when the server-owned live projection has a complete active
+overlay proof. The provider reads only the projection service's in-memory
+notification snapshot and returns a cloned active turn plus bounded counts and
+v4 revision metadata. If `mobileDiagnostics.threadDetailTimings` reports
+`activeOverlayAction=require-full-read`, inspect `activeOverlayReason` first:
+`entry-missing`, `active-turn-missing`, `assistant-delta-unknown`, stale
+assistant evidence, unknown item kind, or missing receipt/operation/upload
+coverage all mean the request intentionally failed closed to full `thread/read`
+instead of rendering an unsafe partial live window.
+
 If a newly submitted message briefly shows local input feedback and then the
 right-side turn timer changes to `已结束` while `/api/threads/:id?mode=recent`
 still returns thread-level `status=active`, check for a stale latest turn row in

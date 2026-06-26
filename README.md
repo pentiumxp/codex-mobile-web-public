@@ -18,6 +18,22 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 
 ## 2026-06-26 Active Window Overlay Orchestration Seam
 
+后续本地小切片已把真实 provider 接到这个 seam 上，但仍保持 fail-closed：
+
+- `thread-detail-projection-service.js` 新增 memory-only、clone-only 的
+  `activeOverlaySnapshot()`。它只读取进程内由 app-server/mux notification 更新的 live
+  projection entry，不读磁盘、不返回完整 thread、不把 notification shell 提升为普通 detail
+  projection。
+- 新增 `thread-detail-active-overlay-provider-service.js`，把 snapshot 转成
+  `thread-detail-active-window-overlay-policy-service.js` 所需的 bounded evidence：active turn、
+  operation/upload/assistant/receipt counts、coverage、v4 revision 和 timestamp。
+- `server.js` 在 `thread-detail-read-orchestration-service.js` 中注入该 provider。active/running
+  线程只有在 projection window、live overlay snapshot、active turn id、coverage 和 assistant
+  freshness 全部可证明时才走 `projection-active-overlay`；缺任何一项仍回到 full `thread/read`。
+
+这个 provider 切片是本地提交候选，尚未单独部署。它不是 UI 去重、不是强制刷新，也不是新的
+fallback cache。
+
 本地小切片继续推进 Phase B 的活跃大线程读取风险收敛。此前
 `thread-detail-active-window-overlay-policy-service.js` 已经定义了 active window overlay
 的 proof gate，但 `thread-detail-read-orchestration-service.js` 没有接线；active/running

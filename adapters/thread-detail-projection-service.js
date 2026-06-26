@@ -784,6 +784,33 @@ function createThreadDetailProjectionService(options = {}) {
     return result.cached;
   }
 
+  function activeOverlaySnapshot(input = {}) {
+    const threadId = String(input.threadId || "").trim();
+    const activeTurnId = String(input.activeTurnId || input.turnId || "").trim();
+    if (!threadId) return { found: false, reason: "missing-thread-id" };
+    if (!activeTurnId) return { found: false, reason: "missing-active-turn-id" };
+    const entry = entryForThread(threadId);
+    if (!entry) return { found: false, reason: "entry-missing" };
+    if (!entry.dynamic) return { found: false, reason: "entry-not-dynamic" };
+    const thread = entry.result && entry.result.thread;
+    if (!thread || typeof thread !== "object") return { found: false, reason: "thread-missing" };
+    const overlayTurn = findTurn(thread, activeTurnId);
+    if (!overlayTurn) return { found: false, reason: "active-turn-missing" };
+    return {
+      found: true,
+      threadId,
+      activeTurnId,
+      overlaySource: "projection-live",
+      overlayTurn: cloneJson(overlayTurn),
+      cachedAtMs: safeNumber(entry.cachedAtMs),
+      updatedAtMs: safeNumber(entry.updatedAtMs),
+      dynamic: Boolean(entry.dynamic),
+      partial: Boolean(entry.partial),
+      partialKind: String(entry.partialKind || ""),
+      signatureHashPresent: Boolean(entry.signatureHash),
+    };
+  }
+
   function forget(threadId) {
     const id = String(threadId || "").trim();
     if (!id) return false;
@@ -854,6 +881,7 @@ function createThreadDetailProjectionService(options = {}) {
   }
 
   return {
+    activeOverlaySnapshot,
     applyNotification,
     forget,
     get,

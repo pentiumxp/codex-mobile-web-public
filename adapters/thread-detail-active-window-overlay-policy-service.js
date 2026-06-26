@@ -108,6 +108,7 @@ function classifyActiveOverlayItem(item) {
     type === "usage"
     || type === "usagesummary"
     || type === "turnusage"
+    || type === "turnusagesummary"
     || type === "turndiagnostic"
     || type === "diagnostic"
     || item.usage
@@ -235,6 +236,10 @@ function planActiveWindowOverlay(input = {}) {
   resultBase.projectionWindowPresent = true;
   if (!authoritativeSource(input.overlaySource)) {
     return Object.assign({}, resultBase, { reason: "non-authoritative-overlay-source" });
+  }
+  const unavailableReason = boundedReason(input.overlayUnavailableReason);
+  if (unavailableReason) {
+    return Object.assign({}, resultBase, { reason: unavailableReason });
   }
   if (!overlayTurn || typeof overlayTurn !== "object") {
     return Object.assign({}, resultBase, { reason: "missing-active-overlay-turn" });

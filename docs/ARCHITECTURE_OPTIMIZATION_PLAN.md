@@ -94,10 +94,14 @@ Current acceleration targets:
    operation, upload, assistant-delta, usage, and diagnostic coverage. The
    local active-overlay orchestration seam now defaults fail-closed and is
    executable in tests: incomplete evidence still falls through to full
-   `thread/read`, while injected complete evidence can return
-   `projection-active-overlay`. The remaining work is a real authoritative
-   provider that can supply bounded overlay evidence from server-owned live
-   state.
+   `thread/read`, while complete evidence can return
+   `projection-active-overlay`. The local provider slice now exposes a
+   memory-only, clone-only active overlay snapshot from the server-owned live
+   notification projection and wires it into read orchestration. It still fails
+   closed unless the snapshot has a matching active turn plus explicit
+   operation/upload/assistant-delta/receipt coverage and v4 revision freshness.
+   The remaining work is production readback after the next Phase B batch
+   deploy and any root-cause fixes indicated by `activeOverlayReason`.
 2. Thread-list cold starts no longer hide source collection inside the fallback
    cache policy. The local `thread-list-fallback-baseline-service` slice now
    owns state DB / rollout session / session-index source collection,

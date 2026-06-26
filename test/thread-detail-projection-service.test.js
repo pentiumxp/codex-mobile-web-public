@@ -157,6 +157,69 @@ test("thread detail projection updates live intermediate items from notification
   assert.equal(agent.text, "partial reply");
 });
 
+test("thread detail projection exposes memory-only active overlay snapshot without promoting notification shell", () => {
+  const service = createThreadDetailProjectionService({
+    cacheDir: "",
+    policyVersion: "test-v1",
+    maxTurns: 3,
+    now: () => 8000,
+  });
+
+  service.applyNotification("turn/started", {
+    threadId: "thread-1",
+    turn: { id: "turn-1", status: { type: "active" }, items: [] },
+  });
+  service.applyNotification("item/started", {
+    threadId: "thread-1",
+    turnId: "turn-1",
+    item: { id: "cmd-1", type: "commandExecution", command: "npm test" },
+  });
+
+  const lookup = service.lookup(signatureInput({ summaryStatus: "active" }), { allowPartial: true });
+  assert.equal(lookup.cached, null);
+  assert.equal(lookup.missReason, "partial-not-seeded");
+
+  const snapshot = service.activeOverlaySnapshot({
+    threadId: "thread-1",
+    activeTurnId: "turn-1",
+  });
+  assert.equal(snapshot.found, true);
+  assert.equal(snapshot.overlaySource, "projection-live");
+  assert.equal(snapshot.partial, true);
+  assert.equal(snapshot.partialKind, "notification-shell");
+  assert.deepEqual(snapshot.overlayTurn.items.map((item) => item.id), ["cmd-1"]);
+
+  snapshot.overlayTurn.items.push({ id: "mutated", type: "agentMessage" });
+  const secondSnapshot = service.activeOverlaySnapshot({
+    threadId: "thread-1",
+    activeTurnId: "turn-1",
+  });
+  assert.deepEqual(secondSnapshot.overlayTurn.items.map((item) => item.id), ["cmd-1"]);
+});
+
+test("thread detail projection active overlay snapshot rejects non-dynamic static cache", () => {
+  const service = createThreadDetailProjectionService({
+    cacheDir: "",
+    policyVersion: "test-v1",
+    maxTurns: 2,
+    now: () => 9000,
+  });
+  service.seed(signatureInput(), {
+    thread: {
+      id: "thread-1",
+      turns: [{ id: "turn-1", status: { type: "active" }, items: [] }],
+    },
+  });
+
+  assert.deepEqual(service.activeOverlaySnapshot({
+    threadId: "thread-1",
+    activeTurnId: "turn-1",
+  }), {
+    found: false,
+    reason: "entry-not-dynamic",
+  });
+});
+
 test("thread detail projection soft-expires completed dynamic cache when rollout signature changes", () => {
   let current = 10000;
   const service = createThreadDetailProjectionService({

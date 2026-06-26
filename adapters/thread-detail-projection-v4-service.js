@@ -120,6 +120,42 @@ function createThreadDetailProjectionV4Service(options = {}) {
     };
   }
 
+  function activeOverlaySnapshot(input = {}) {
+    const snapshot = typeof base.activeOverlaySnapshot === "function"
+      ? base.activeOverlaySnapshot(input)
+      : { found: false, reason: "snapshot-unavailable" };
+    const threadId = String(input.threadId
+      || snapshot && snapshot.threadId
+      || "").trim();
+    const revision = revisionForThread(threadId);
+    if (!snapshot || snapshot.found !== true) {
+      return Object.assign({}, snapshot || { found: false, reason: "snapshot-unavailable" }, {
+        version: PROJECTION_VERSION,
+        overlayRevision: revision,
+      });
+    }
+    const normalizedOverlay = normalizeResult({
+      thread: {
+        id: threadId,
+        turns: [snapshot.overlayTurn],
+      },
+    }, {
+      threadId,
+      source: "projection-live",
+      revision,
+    });
+    const overlayTurn = normalizedOverlay
+      && normalizedOverlay.thread
+      && Array.isArray(normalizedOverlay.thread.turns)
+      ? normalizedOverlay.thread.turns[0]
+      : snapshot.overlayTurn;
+    return Object.assign({}, snapshot, {
+      version: PROJECTION_VERSION,
+      overlayRevision: revision,
+      overlayTurn,
+    });
+  }
+
   function applyNotification(method, params = {}) {
     const normalizedParams = normalizeNotificationParamsForProjectionV4(method, params);
     const changed = base.applyNotification(method, normalizedParams);
@@ -141,6 +177,7 @@ function createThreadDetailProjectionV4Service(options = {}) {
   }
 
   return {
+    activeOverlaySnapshot,
     applyNotification,
     compare,
     forget,
