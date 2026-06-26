@@ -148,8 +148,8 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v499/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v499"/);
+  assert.match(swJs, /codex-mobile-shell-v500/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v500"/);
   assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(swJs, /"\/thread-diagnostic-events\.js"/);
@@ -348,6 +348,8 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(functionBody("refreshCurrentThread"), /Thread detail refresh metadata effects are empty/);
   assert.match(functionBody("refreshCurrentThread"), /else if \(executionPlan\.executionAction === "full-render"\) \{[\s\S]*renderCurrentThread\(\);/);
   assert.match(functionBody("refreshCurrentThread"), /Unknown thread detail refresh execution action/);
+  assert.match(functionBody("refreshCurrentThread"), /const consistencyCheck = executionPlan\.consistencyCheck \|\| \{\};/);
+  assert.match(functionBody("refreshCurrentThread"), /if \(consistencyCheck\.shouldCheck\) \{[\s\S]*checkConversationProjectionConsistency\(consistencyCheck\.phase, \{ renderMode: consistencyCheck\.renderMode \}\);/);
   assert.match(appJs, /function applyThreadDetailRefreshMetadataEffect\(effect\)/);
   assert.match(functionBody("applyThreadDetailRefreshMetadataEffect"), /updateCurrentThreadHeader\(state\.currentThread\)/);
   assert.match(functionBody("applyThreadDetailRefreshMetadataEffect"), /updateLiveOperationDockHtml\(renderLiveOperationDock\(state\.currentThread, existingConversationRenderKeys\(\)\)\)/);

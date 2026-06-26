@@ -16,6 +16,38 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v500 Thread Refresh Consistency Check Plan
+
+v500 继续 Phase A 的前端 render/patch ownership 收敛。v499 已经把
+patch telemetry 字段归一交给 `public/thread-detail-render-plan.js`；本次继续
+缩小 `refreshCurrentThread()` 对 projection-consistency check 的内联判断。
+
+本次切片新增：
+
+- `planThreadDetailRefreshConsistencyCheck()` 统一规划是否需要执行
+  projection consistency check。
+- `planThreadDetailRefreshOutcomeExecution()` 现在输出 `consistencyCheck`
+  对象，包含 `shouldCheck`、`phase`、`renderMode` 和 reason。
+- `refreshCurrentThread()` 不再自己从 `executionPlan.projectionConsistencyPhase`
+  拼接 `checkConversationProjectionConsistency()` 参数，只消费 helper 输出。
+- `full-render` 的 consistency phase 仍由 helper 显式规划为
+  `refresh-full-render`。
+
+修复边界：
+
+- 症状/风险：v498/v499 已经把 refresh execution 和 patch telemetry 外移，
+  但 app 层仍直接判断 `projectionConsistencyPhase` 并拼接 `renderMode`，
+  让 consistency check 的执行条件继续散落在 app 状态机里。
+- 失败层：前端 thread detail refresh consistency-check ownership。
+- 不变量：本次不改变实际 DOM patch、render、projection、diagnostic payload
+  或 task-card 协议；只是把一致性检查的执行计划交给纯 helper。
+- 闭环验证：`test/thread-detail-render-plan.test.js` 覆盖
+  `consistencyCheck` 和 missing-phase skip；`test/mobile-viewport.test.js` /
+  `test/conversation-render.test.js` 验证 app 层消费
+  `executionPlan.consistencyCheck`。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v500`。
+
 ## 2026-06-26 v499 Thread Refresh Patch Telemetry Plan
 
 v499 继续 Phase A 的前端 render/patch ownership 收敛。v498 已经让

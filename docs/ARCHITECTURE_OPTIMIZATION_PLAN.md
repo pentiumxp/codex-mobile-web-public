@@ -189,7 +189,11 @@ operation-dock, timer, navigation-state, and scroll-button updates belong to
 each refresh outcome. It now also exposes an explicit `executionAction`
 (`metadata-effects`, `full-render`, or `none`) and `timingTarget`, so app code
 does not infer the execution branch from `metadataEffects.length` or
-`runFullRender`.
+`runFullRender`. Projection-consistency check planning now also lives in this
+helper: `planThreadDetailRefreshConsistencyCheck` and the
+`consistencyCheck` object on `planThreadDetailRefreshOutcomeExecution` own
+whether to check, the bounded phase, and the render mode, while app code keeps
+only the real `checkConversationProjectionConsistency` call.
 Refresh performance event field planning now lives in
 `public/thread-performance-metrics.js`: `threadDetailRefreshEventFields`
 builds the bounded `thread_refresh_ms` payload, including server timings,

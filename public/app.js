@@ -508,7 +508,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v499";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v500";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -9157,9 +9157,9 @@ async function refreshCurrentThread(options = {}) {
   } else if (executionPlan.executionAction && executionPlan.executionAction !== "none") {
     throw new Error(`Unknown thread detail refresh execution action: ${executionPlan.executionAction}`);
   }
-  const projectionConsistencyPhase = executionPlan.projectionConsistencyPhase || "";
-  if (projectionConsistencyPhase) {
-    checkConversationProjectionConsistency(projectionConsistencyPhase, { renderMode: detailRenderMode });
+  const consistencyCheck = executionPlan.consistencyCheck || {};
+  if (consistencyCheck.shouldCheck) {
+    checkConversationProjectionConsistency(consistencyCheck.phase, { renderMode: consistencyCheck.renderMode });
   }
   const renderElapsedMs = roundedDurationMs(renderStartedAt);
   const refreshPerformance = threadPerformanceMetrics.threadDetailRefreshEventFields(result.thread, {

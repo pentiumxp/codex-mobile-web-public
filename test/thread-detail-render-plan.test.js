@@ -290,6 +290,7 @@ test("thread detail refresh render outcome keeps metadata-only tile patches out 
 test("thread detail refresh outcome execution maps local patch completion to metadata update", () => {
   assert.deepEqual(renderPlan.planThreadDetailRefreshOutcomeExecution({
     renderAction: "local-patch-metadata-update",
+    detailRenderMode: "patch",
     projectionConsistencyPhase: "refresh-local-patch",
   }), {
     renderAction: "local-patch-metadata-update",
@@ -303,6 +304,12 @@ test("thread detail refresh outcome execution maps local patch completion to met
     timingTarget: "metadata-update",
     runFullRender: false,
     projectionConsistencyPhase: "refresh-local-patch",
+    consistencyCheck: {
+      shouldCheck: true,
+      phase: "refresh-local-patch",
+      renderMode: "patch",
+      reason: "phase-present",
+    },
     reason: "local-patch-complete",
   });
 });
@@ -310,6 +317,7 @@ test("thread detail refresh outcome execution maps local patch completion to met
 test("thread detail refresh outcome execution maps metadata-only refreshes", () => {
   assert.deepEqual(renderPlan.planThreadDetailRefreshOutcomeExecution({
     renderAction: "metadata-update",
+    detailRenderMode: "metadata-only",
     projectionConsistencyPhase: "refresh-metadata",
   }), {
     renderAction: "metadata-update",
@@ -324,6 +332,12 @@ test("thread detail refresh outcome execution maps metadata-only refreshes", () 
     timingTarget: "metadata-update",
     runFullRender: false,
     projectionConsistencyPhase: "refresh-metadata",
+    consistencyCheck: {
+      shouldCheck: true,
+      phase: "refresh-metadata",
+      renderMode: "metadata-only",
+      reason: "phase-present",
+    },
     reason: "metadata-only",
   });
 });
@@ -331,6 +345,7 @@ test("thread detail refresh outcome execution maps metadata-only refreshes", () 
 test("thread detail refresh outcome execution gives full render an explicit consistency phase", () => {
   assert.deepEqual(renderPlan.planThreadDetailRefreshOutcomeExecution({
     renderAction: "full-render",
+    detailRenderMode: "full-render",
   }), {
     renderAction: "full-render",
     metadataUpdateMode: "",
@@ -339,6 +354,12 @@ test("thread detail refresh outcome execution gives full render an explicit cons
     timingTarget: "conversation-render",
     runFullRender: true,
     projectionConsistencyPhase: "refresh-full-render",
+    consistencyCheck: {
+      shouldCheck: true,
+      phase: "refresh-full-render",
+      renderMode: "full-render",
+      reason: "phase-present",
+    },
     reason: "full-render",
   });
 });
@@ -346,6 +367,7 @@ test("thread detail refresh outcome execution gives full render an explicit cons
 test("thread detail refresh outcome execution preserves terminal tile-pane patch phases", () => {
   assert.deepEqual(renderPlan.planThreadDetailRefreshOutcomeExecution({
     renderAction: "tile-pane-patch",
+    detailRenderMode: "tile-pane",
     projectionConsistencyPhase: "refresh-local-patch",
   }), {
     renderAction: "tile-pane-patch",
@@ -355,7 +377,24 @@ test("thread detail refresh outcome execution preserves terminal tile-pane patch
     timingTarget: "",
     runFullRender: false,
     projectionConsistencyPhase: "refresh-local-patch",
+    consistencyCheck: {
+      shouldCheck: true,
+      phase: "refresh-local-patch",
+      renderMode: "tile-pane",
+      reason: "phase-present",
+    },
     reason: "tile-pane-patch",
+  });
+});
+
+test("thread detail refresh consistency check planning skips missing phases", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshConsistencyCheck({
+    detailRenderMode: "full-render",
+  }), {
+    shouldCheck: false,
+    phase: "",
+    renderMode: "full-render",
+    reason: "no-phase",
   });
 });
 

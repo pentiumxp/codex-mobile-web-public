@@ -22,6 +22,25 @@
     return (reason || fallback).slice(0, 80);
   }
 
+  function planThreadDetailRefreshConsistencyCheck(input = {}) {
+    const phase = compactReason(input.projectionConsistencyPhase || input.phase, "");
+    const renderMode = compactReason(input.renderMode || input.detailRenderMode, "");
+    if (!phase) {
+      return {
+        shouldCheck: false,
+        phase: "",
+        renderMode,
+        reason: "no-phase",
+      };
+    }
+    return {
+      shouldCheck: true,
+      phase,
+      renderMode,
+      reason: "phase-present",
+    };
+  }
+
   function planThreadDetailRefreshRender(input = {}) {
     const previousConversationSignature = normalizeSignature(input.previousConversationSignature);
     const nextConversationSignature = normalizeSignature(input.nextConversationSignature);
@@ -200,6 +219,10 @@
   function planThreadDetailRefreshOutcomeExecution(outcome = {}) {
     const renderAction = String(outcome.renderAction || "");
     const projectionConsistencyPhase = String(outcome.projectionConsistencyPhase || "");
+    const consistencyCheck = planThreadDetailRefreshConsistencyCheck({
+      projectionConsistencyPhase,
+      detailRenderMode: outcome.detailRenderMode,
+    });
     if (renderAction === "local-patch-metadata-update") {
       return {
         renderAction,
@@ -213,6 +236,7 @@
         timingTarget: "metadata-update",
         runFullRender: false,
         projectionConsistencyPhase,
+        consistencyCheck,
         reason: "local-patch-complete",
       };
     }
@@ -230,6 +254,7 @@
         timingTarget: "metadata-update",
         runFullRender: false,
         projectionConsistencyPhase,
+        consistencyCheck,
         reason: "metadata-only",
       };
     }
@@ -242,6 +267,10 @@
         timingTarget: "conversation-render",
         runFullRender: true,
         projectionConsistencyPhase: "refresh-full-render",
+        consistencyCheck: planThreadDetailRefreshConsistencyCheck({
+          projectionConsistencyPhase: "refresh-full-render",
+          detailRenderMode: outcome.detailRenderMode,
+        }),
         reason: "full-render",
       };
     }
@@ -253,6 +282,7 @@
       timingTarget: "",
       runFullRender: false,
       projectionConsistencyPhase,
+      consistencyCheck,
       reason: renderAction || "none",
     };
   }
@@ -325,6 +355,7 @@
   return {
     finalizeThreadDetailRenderPlan,
     normalizeSignature,
+    planThreadDetailRefreshConsistencyCheck,
     planThreadDetailRefreshPatchAttemptResult,
     planThreadDetailRefreshOutcomeExecution,
     planSingleThreadFullRenderShell,
