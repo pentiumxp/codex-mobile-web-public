@@ -18115,3 +18115,56 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit locally, then continue Phase A on the remaining
     `refreshCurrentThread()` patch/render/scroll orchestration seams, or batch
     the accumulated Phase A local slices for one deploy/readback when requested.
+
+## 2026-06-27 - Latest tail marker: Phase A refresh render input local slice
+
+- Current local state:
+  - Continued Phase A `refreshCurrentThread()` render/patch orchestration cleanup
+    after `1852765`.
+  - `planThreadDetailRefreshRender()` already owned metadata-only versus local
+    patch versus full-render decisions, but `refreshCurrentThread()` still
+    directly selected which signature, DOM count, surface, and visible-shape
+    fields formed the render-plan input.
+  - This slice moves refresh render input field selection into
+    `public/thread-detail-render-plan.js`.
+- Root-cause boundary:
+  - Symptom/risk: render/patch decisions were pure, but the fact-to-input
+    mapping lived in `public/app.js`. Future app orchestration edits could make
+    refresh render-plan input drift and affect full-render/local-patch
+    decisions without touching the tested helper.
+  - Failing layer: frontend refresh render input ownership, not DOM patch
+    execution, merge behavior, server projection, scroll behavior, task-card
+    protocol, Home AI diagnostic intake, or shell/cache.
+  - Violated invariant: app code should collect runtime facts from mounted DOM
+    and state; pure planning helpers should own which facts are normalized into
+    render/patch decision inputs.
+- Changes:
+  - `public/thread-detail-render-plan.js` now exports
+    `planThreadDetailRefreshRenderInput()`.
+  - `public/app.js` uses that helper in `refreshCurrentThread()` before calling
+    `planThreadDetailRefreshRender(refreshRenderInput)`.
+  - The helper supports `nextVisibleShape.visibleTurnCount` while preserving
+    explicit `nextVisibleTurnCount` compatibility for existing direct callers.
+  - Updated `test/thread-detail-render-plan.test.js`,
+    `test/mobile-viewport.test.js`, and `test/conversation-render.test.js`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation:
+  - Syntax and focused:
+    `node --check public/thread-detail-render-plan.js && node --check public/app.js && node --check test/thread-detail-render-plan.test.js && node --check test/conversation-render.test.js && node --check test/mobile-viewport.test.js && node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js`
+    passed (`197` focused tests).
+  - Full:
+    `npm test` passed (`1166` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache
+    bump. This remains a local Phase A ownership slice to batch with the next
+    module validation/deploy.
+- Progress:
+  - Overall architecture optimization is about `81%`.
+  - Phase A frontend render/projection ownership is about `91%`.
+- Next:
+  - Commit locally, then continue Phase A by extracting the next
+    `refreshCurrentThread()` patch surface/execution orchestration seam, or
+    batch the accumulated Phase A local slices for one deploy/readback when
+    requested.

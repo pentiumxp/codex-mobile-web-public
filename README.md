@@ -2202,6 +2202,38 @@ bump PWA shell/cache。它只把 API first-paint 响应到达后的固定 state/
 - 闭环验证：focused tests 证明 input shape 和 app wiring；完整检查通过后再随
   Phase A 模块批量部署。
 
+## 2026-06-27 Local Phase A Refresh Render Input Slice
+
+这个本地小切片开始收敛 `refreshCurrentThread()` 的 render/patch 编排输入口径。
+此前 `planThreadDetailRefreshRender()` 已经负责 metadata-only、local patch 和
+full render 的选择，但 `public/app.js` 仍直接决定哪些 signature、DOM turn count、
+single-thread surface 状态和 visible shape 进入这个计划。这样未来修改 app 编排时
+仍可能让 render-plan 输入字段漂移。
+
+本次切片新增/调整：
+
+- `public/thread-detail-render-plan.js` 新增
+  `planThreadDetailRefreshRenderInput()`，负责从 app 层采集到的事实中选择并规范化
+  refresh render plan 输入字段。
+- `public/app.js` 的 `refreshCurrentThread()` 主路径改为先生成
+  `refreshRenderInput`，再调用 `planThreadDetailRefreshRender(refreshRenderInput)`。
+- helper 支持从 `nextVisibleShape.visibleTurnCount` 取 visible count，也保留
+  显式 `nextVisibleTurnCount` 的兼容入口，现有 harness 和直接调用不受影响。
+- `test/thread-detail-render-plan.test.js` 覆盖 input shape 和显式 count 优先级；
+  `test/mobile-viewport.test.js` 和 `test/conversation-render.test.js` 确认
+  `refreshCurrentThread()` 不再直接手写 render-plan 输入字段。
+- 不改变 refresh API、merge、render/patch 判定结果、DOM patch、scroll、Home AI
+  diagnostic intake、任务卡协议或 shell/cache。
+
+修复边界：
+
+- 症状/风险：render/patch 决策 helper 已存在，但 refresh render input 字段选择仍在
+  `app.js`，容易造成 full-render/local-patch 判定事实口径漂移。
+- 失败层：前端 refresh render input ownership，不是 DOM patch executor、merge
+  算法、server projection 或最终 render outcome。
+- 闭环验证：focused tests 证明 input helper 和 app wiring；完整检查通过后再随
+  Phase A 模块批量部署。
+
 ## 2026-06-26 Local Phase B Server Timing Classifier
 
 这个本地切片继续 Phase B 的大 session / thread-detail cold path 收敛，但只处理

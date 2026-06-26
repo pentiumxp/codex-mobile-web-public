@@ -633,9 +633,13 @@ in `public/thread-detail-render-plan.js`: it decides metadata-only versus local
 patch versus full render from previous/next/rendered conversation signatures,
 prevents local patch attempts when the currently rendered DOM signature is
 already stale, and owns the final refresh render outcome (`renderAction`,
-`detailRenderMode`, and projection-consistency phase). Tile-pane patch success
-is now a terminal render outcome instead of falling through to a single-thread
-full render. Thread/turn-level merge orchestration now lives in
+`detailRenderMode`, and projection-consistency phase). Refresh render input
+field selection also lives in the same helper: app code still measures the
+current mounted DOM/signature facts, but `planThreadDetailRefreshRenderInput`
+owns which facts form the render-plan input, including visible-shape count
+normalization. Tile-pane patch success is now a terminal render outcome instead
+of falling through to a single-thread full render. Thread/turn-level merge
+orchestration now lives in
 `public/thread-detail-merge-state.js`: it coordinates v4 projection delegation,
 incoming turn merge, stale mobile load flag cleanup, active live-turn retention,
 expanded-history preservation, and initial-submission echo cleanup while

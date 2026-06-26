@@ -280,6 +280,35 @@ test("thread detail full-backfill response effects preserve detail API success o
   });
 });
 
+test("thread detail refresh render input owns app fact field selection", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshRenderInput({
+    previousConversationSignature: "prev-sig",
+    nextConversationSignature: "next-sig",
+    renderedConversationSignature: "rendered-sig",
+    previousPatchShellSignature: "shell-prev",
+    renderedPatchShellSignature: "shell-rendered",
+    allowPatch: false,
+    singleThreadSurfaceAvailable: true,
+    renderedDomTurnCount: "2.9",
+    nextVisibleShape: { visibleTurnCount: "4.8" },
+  }), {
+    previousConversationSignature: "prev-sig",
+    nextConversationSignature: "next-sig",
+    renderedConversationSignature: "rendered-sig",
+    previousPatchShellSignature: "shell-prev",
+    renderedPatchShellSignature: "shell-rendered",
+    allowPatch: false,
+    singleThreadSurfaceAvailable: true,
+    renderedDomTurnCount: 2,
+    nextVisibleTurnCount: 4,
+  });
+
+  assert.equal(renderPlan.planThreadDetailRefreshRenderInput({
+    nextVisibleShape: { visibleTurnCount: 4 },
+    nextVisibleTurnCount: 7,
+  }).nextVisibleTurnCount, 7);
+});
+
 test("thread detail refresh render plan skips stable conversation signatures", () => {
   const plan = renderPlan.planThreadDetailRefreshRender({
     previousConversationSignature: "sig-a",

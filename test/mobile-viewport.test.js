@@ -482,7 +482,8 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /const previousConversationSignature = conversationRenderSignature\(state\.currentThread\);/);
   assert.match(appJs, /const threadDetailRenderPlanApi = window\.CodexThreadDetailRenderPlan;/);
   assert.match(appJs, /const previousPatchShellSignature = conversationPatchShellSignature\(previousThread\);/);
-  assert.match(appJs, /threadDetailRenderPlanApi\.planThreadDetailRefreshRender\(\{[\s\S]*previousConversationSignature,[\s\S]*nextConversationSignature,[\s\S]*renderedConversationSignature: state\.renderedConversationSignature,[\s\S]*previousPatchShellSignature,[\s\S]*renderedPatchShellSignature: state\.renderedConversationPatchShellSignature,[\s\S]*\}\);/);
+  assert.match(appJs, /const refreshRenderInput = threadDetailRenderPlanApi\.planThreadDetailRefreshRenderInput\(\{[\s\S]*previousConversationSignature,[\s\S]*nextConversationSignature,[\s\S]*renderedConversationSignature: state\.renderedConversationSignature,[\s\S]*previousPatchShellSignature,[\s\S]*renderedPatchShellSignature: state\.renderedConversationPatchShellSignature,[\s\S]*nextVisibleShape,[\s\S]*\}\);/);
+  assert.match(appJs, /const renderPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshRender\(refreshRenderInput\);/);
   assert.match(functionBody("refreshCurrentThread"), /const shouldRenderDetail = renderPlan\.shouldRenderDetail;/);
   assert.match(functionBody("refreshCurrentThread"), /const postMergePlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPostMergeEffects\(\);/);
   assert.match(functionBody("refreshCurrentThread"), /applyThreadDetailRefreshPostMergeEffectsGroup\(postMergePlan, "merge"\);[\s\S]*const mergeMs = roundedDurationMs\(mergeStartedAt\);/);

@@ -9728,7 +9728,7 @@ async function refreshCurrentThread(options = {}) {
   applyThreadDetailRefreshResponseEffectsPlan(responseEffectsPlan, { thread: result.thread });
   const nextVisibleShape = visibleConversationShape(state.currentThread);
   const nextConversationSignature = conversationRenderSignature(state.currentThread);
-  const renderPlan = threadDetailRenderPlanApi.planThreadDetailRefreshRender({
+  const refreshRenderInput = threadDetailRenderPlanApi.planThreadDetailRefreshRenderInput({
     previousConversationSignature,
     nextConversationSignature,
     renderedConversationSignature: state.renderedConversationSignature,
@@ -9736,8 +9736,9 @@ async function refreshCurrentThread(options = {}) {
     renderedPatchShellSignature: state.renderedConversationPatchShellSignature,
     singleThreadSurfaceAvailable: canPatchSingleThreadConversationDom({ threadId }),
     renderedDomTurnCount: conversationDomTurnIds().length,
-    nextVisibleTurnCount: nextVisibleShape.visibleTurnCount,
+    nextVisibleShape,
   });
+  const renderPlan = threadDetailRenderPlanApi.planThreadDetailRefreshRender(refreshRenderInput);
   const shouldRenderDetail = renderPlan.shouldRenderDetail;
   const postMergePlan = threadDetailRenderPlanApi.planThreadDetailRefreshPostMergeEffects();
   applyThreadDetailRefreshPostMergeEffectsGroup(postMergePlan, "merge");

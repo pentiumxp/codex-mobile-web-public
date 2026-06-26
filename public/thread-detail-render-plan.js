@@ -320,16 +320,35 @@
     };
   }
 
+  function planThreadDetailRefreshRenderInput(input = {}) {
+    const nextVisibleShape = objectOrEmpty(input.nextVisibleShape);
+    const nextVisibleTurnCount = Object.prototype.hasOwnProperty.call(input, "nextVisibleTurnCount")
+      ? input.nextVisibleTurnCount
+      : nextVisibleShape.visibleTurnCount;
+    return {
+      previousConversationSignature: normalizeSignature(input.previousConversationSignature),
+      nextConversationSignature: normalizeSignature(input.nextConversationSignature),
+      renderedConversationSignature: normalizeSignature(input.renderedConversationSignature),
+      previousPatchShellSignature: normalizeSignature(input.previousPatchShellSignature),
+      renderedPatchShellSignature: normalizeSignature(input.renderedPatchShellSignature),
+      allowPatch: input.allowPatch !== false,
+      singleThreadSurfaceAvailable: input.singleThreadSurfaceAvailable === true,
+      renderedDomTurnCount: normalizedCount(input.renderedDomTurnCount),
+      nextVisibleTurnCount: normalizedCount(nextVisibleTurnCount),
+    };
+  }
+
   function planThreadDetailRefreshRender(input = {}) {
-    const previousConversationSignature = normalizeSignature(input.previousConversationSignature);
-    const nextConversationSignature = normalizeSignature(input.nextConversationSignature);
-    const renderedConversationSignature = normalizeSignature(input.renderedConversationSignature);
-    const previousPatchShellSignature = normalizeSignature(input.previousPatchShellSignature);
-    const renderedPatchShellSignature = normalizeSignature(input.renderedPatchShellSignature);
-    const allowPatch = input.allowPatch !== false;
-    const singleThreadSurfaceAvailable = input.singleThreadSurfaceAvailable === true;
-    const renderedDomTurnCount = normalizedCount(input.renderedDomTurnCount);
-    const nextVisibleTurnCount = normalizedCount(input.nextVisibleTurnCount);
+    const renderInput = planThreadDetailRefreshRenderInput(input);
+    const previousConversationSignature = renderInput.previousConversationSignature;
+    const nextConversationSignature = renderInput.nextConversationSignature;
+    const renderedConversationSignature = renderInput.renderedConversationSignature;
+    const previousPatchShellSignature = renderInput.previousPatchShellSignature;
+    const renderedPatchShellSignature = renderInput.renderedPatchShellSignature;
+    const allowPatch = renderInput.allowPatch !== false;
+    const singleThreadSurfaceAvailable = renderInput.singleThreadSurfaceAvailable === true;
+    const renderedDomTurnCount = renderInput.renderedDomTurnCount;
+    const nextVisibleTurnCount = renderInput.nextVisibleTurnCount;
     const renderedDomEmptyForNonemptyDetail = Boolean(
       singleThreadSurfaceAvailable
       && nextVisibleTurnCount > 0
@@ -1468,6 +1487,7 @@
     planThreadDetailHistoryAutoBackfill,
     planThreadDetailHistoryAutoBackfillEffects,
     planThreadDetailRefreshPatchExecution,
+    planThreadDetailRefreshRenderInput,
     planThreadDetailRefreshRender,
     reduceThreadDetailRefreshPatchAttempt,
     threadDetailRefreshPatchAttemptEffectContext,
