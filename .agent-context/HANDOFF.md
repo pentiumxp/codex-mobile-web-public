@@ -15916,11 +15916,16 @@ The previous full handoff was archived and should be opened only when old proven
   - `13c7b4a` - `plan local patch completion snapshot`
   - `9655fac` - `prepare phase a module shell v532`
 - Deployment:
-  - Used Home AI central macOS plugin deploy script with reason
-    `codex-mobile-phase-a-render-patch-v532`.
-  - Source ref deployed by the central script: `9655faca7b6b`, dirty `false`.
-  - Backup:
-    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T152521Z-plugin-codex-mobile-web-codex-mobile-phase-a-render-patch-v532`.
+  - Used Home AI central macOS plugin deploy script first with reason
+    `codex-mobile-phase-a-render-patch-v532` for the runtime/static module.
+  - After recording README/architecture readback evidence, used the same
+    central deploy path again with reason
+    `codex-mobile-phase-a-v532-docs-readback` so production docs stayed in
+    source/prod parity.
+  - Latest source ref deployed by the central script: `55d427891cb8`,
+    dirty `false`.
+  - Latest backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T152731Z-plugin-codex-mobile-web-codex-mobile-phase-a-v532-docs-readback`.
   - Launchd label `com.hermesmobile.plugin.codex-mobile` was running after
     deploy; codex profile audit reported `blockingIssueCount=0`.
 - Production readback:
