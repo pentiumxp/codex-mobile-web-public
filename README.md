@@ -16,6 +16,35 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-27 v533 Phase A Render/Patch Module Readback
+
+v533 是 Phase A 后续本地小切片的模块级部署闭环，覆盖 v532 之后继续完成的
+`refreshCurrentThread()` patch surface / execution / evidence resolution
+编排收敛。该版本只升级静态壳和部署已验证的 Phase A ownership cleanup，不改
+server projection 语义、任务卡协议、Home AI 诊断调度、平铺视图布局或 public
+发布流程。
+
+本批次部署前验证：
+
+```bash
+node --test test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js test/thread-detail-render-plan.test.js test/conversation-render.test.js test/thread-tile-layout-ui.test.js
+npm test
+npm run check
+npm run check:macos
+git diff --check
+```
+
+结果：focused `225` passed；`npm test` `1175` passed；`check`、
+`check:macos`、`git diff --check` passed。部署提交为 `58e5c8e`，
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v533`。
+
+生产通过 Home AI 中央 macOS 插件部署脚本发布，readback 确认
+`clientBuildId=0.1.11|codex-mobile-shell-v533`、
+`shellCacheName=codex-mobile-shell-v533`。普通 readback 首轮仍观察到一次
+`fallback-baseline` rebuild，warm check 命中 `warm-fallback-cache`；当前
+Codex Mobile 线程定向 readback 返回 `decision.status=ready`，detail 走
+`projection-active-overlay`，active overlay gate 为 `ready`。
+
 ## 2026-06-26 v532 Phase A Render/Patch Ownership Module
 
 v532 是 Phase A 前端 thread-detail render/patch ownership 的模块级发布，

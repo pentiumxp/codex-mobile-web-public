@@ -354,17 +354,18 @@ non-partial projections.
 
 ### Phase 2: Frontend State Ownership
 
-Status: Phase A module deployed and read back as `codex-mobile-shell-v532`.
+Status: Phase A module deployed and read back as `codex-mobile-shell-v533`.
 The local Phase A refresh/patch ownership work now has the helper extraction,
-transaction ordering, completion snapshots, attempt aggregation, and
-behavior-level DOM harness needed to deploy as one module instead of many
-small slices. The module remains a root-cause architecture boundary cleanup:
-it changes frontend refresh/patch ownership and validation, not server
-projection semantics, diagnostic dispatch policy, task-card protocol, or
-visual layout. Post-deploy observation should use bounded
-`thread_refresh_ms` and Home AI `conversation_projection_mismatch` diagnostics
-before deciding whether the next repair belongs to DOM patching, server
-projection, SSE/live merge, or pane state.
+transaction ordering, completion snapshots, attempt aggregation, evidence
+resolution, and behavior-level DOM harness needed to deploy as one module
+instead of many small slices. The module remains a root-cause architecture
+boundary cleanup: it changes frontend refresh/patch ownership and validation,
+not server projection semantics, diagnostic dispatch policy, task-card
+protocol, or visual layout. Post-deploy observation should use bounded
+`thread_refresh_ms`, Home AI `conversation_projection_mismatch` diagnostics,
+and Phase-B readback cold-path fields before deciding whether the next repair
+belongs to DOM patching, server projection, SSE/live merge, pane state, or
+thread-list fallback-baseline rebuild cost.
 
 `codex-mobile-shell-v509` also closes a diagnostic blind spot found during
 mobile validation: render signatures and duplicate render keys can both look

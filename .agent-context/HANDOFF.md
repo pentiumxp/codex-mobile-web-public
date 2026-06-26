@@ -18704,3 +18704,43 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit locally. After that, Phase A should be ready for a module-level
     deploy/readback decision unless another high-risk `refreshCurrentThread()`
     seam appears in review.
+
+## 2026-06-27 - Phase A v533 module deployment and readback
+
+- Current local state:
+  - Batched the Phase A render/patch ownership local slices after `5ad7ccc`
+    into a deployable static shell version.
+  - Commit `58e5c8e` bumped `CLIENT_BUILD_ID` and service-worker cache from
+    `codex-mobile-shell-v532` to `codex-mobile-shell-v533`.
+- Validation before deploy:
+  - Focused:
+    `node --test test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js test/thread-detail-render-plan.test.js test/conversation-render.test.js test/thread-tile-layout-ui.test.js`
+    passed (`225` tests).
+  - Full: `npm test` passed (`1175` tests). `npm run check`,
+    `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Deployed through the Home AI central macOS plugin deploy script with reason
+    `codex-mobile-phase-a-render-patch-v533`.
+  - Deploy source ref was `58e5c8e40c38`, dirty false.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T221641Z-plugin-codex-mobile-web-codex-mobile-phase-a-render-patch-v533`.
+  - Production `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v533` and
+    `shellCacheName=codex-mobile-shell-v533`.
+- Readback:
+  - General Phase-B readback smoke passed. First thread-list read observed
+    `fallback-baseline` / `miss-rebuild:rollout`, then warm check hit
+    `warm-fallback-cache`; this is evidence for the next Phase B performance
+    target, not a deployment blocker.
+  - Current Codex Mobile thread targeted readback with
+    `--require-active-overlay` passed: detail read mode
+    `projection-active-overlay`, active overlay gate `ready`,
+    decision `ready`.
+- Progress:
+  - Overall architecture optimization remains about `90%`.
+  - Phase A frontend render/projection ownership is effectively module-closed
+    for now; continue observation through diagnostics and readback.
+- Next:
+  - Move the next optimization slice to Phase B cold-path/session-load
+    attribution and reduction, using the first-read fallback-baseline rebuild
+    evidence rather than adding frontend refresh fallbacks.
