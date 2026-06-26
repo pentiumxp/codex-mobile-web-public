@@ -13282,4 +13282,26 @@ The previous full handoff was archived and should be opened only when old proven
 - Deployment status:
   - First central deploy attempt correctly failed because source was dirty:
     `deploy_source_dirty_requires_allow_dirty`.
-  - Commit first, then redeploy from a clean source tree.
+  - Committed as `10b610d` (`fix thread list summary detail leakage`) and
+    redeployed from a clean source tree through the central Home AI macOS plugin
+    deploy path.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T070830Z-plugin-codex-mobile-web-codex-mobile-thread-list-summary-v523`.
+  - Production `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v523` and
+    `shellCacheName=codex-mobile-shell-v523`.
+  - Production static marker readback confirmed `codex-mobile-shell-v523` in
+    `public/app.js` and `public/sw.js`, the server require for
+    `thread-list-summary-service`, and the client markers
+    `empty_render_with_history_evidence` / `empty_detail_history_recovery`.
+  - Source/prod SHA-256 matched for `public/app.js`, `public/sw.js`,
+    `server.js`, and `adapters/thread-list-summary-service.js`.
+  - Authenticated production Music detail read returned HTTP `200`, `10` turns,
+    item counts `[3,5,3,5,5,4,3,4,3,4]`, `39` visible item keys, `79` omitted
+    turns, read mode `projection-v4-dynamic`, projection state `hit`, and
+    shape hash `c347733fe098db40`.
+  - Authenticated production Music list search returned one matching row and
+    no forbidden detail-only fields (`presentForbidden=[]`, no `turns` field).
+  - Browser plugin DOM smoke was not executed because the Browser runtime failed
+    to initialize with invalid sandbox cwd metadata, and local Playwright is not
+    installed. No temporary dependency was added.
