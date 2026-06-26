@@ -130,6 +130,11 @@ test("readFallback uses cached fallback list after the first complete pass", () 
     sessionIndexCount: 1,
     baselineSourceCount: 3,
     baselineResultCount: 3,
+    baselineFinalFilterPassCount: 3,
+    baselineFinalFilterInputCount: 3,
+    baselineFinalFilterOutputCount: 3,
+    baselineMergeInputCount: 3,
+    baselineMergeOutputCount: 3,
     sourceSnapshotHit: false,
     sourceSnapshotAgeMs: 0,
     sourceSnapshotLimit: 200,
@@ -212,6 +217,13 @@ test("readFallback can build cold baseline through injected baseline service", (
             sessionIndexCount: 6,
             baselineSourceCount: 15,
             baselineResultCount: 2,
+            baselineFinalFilterPassCount: 3,
+            baselineFinalFilterInputCount: 18,
+            baselineFinalFilterOutputCount: 15,
+            baselineMergeInputCount: 15,
+            baselineMergeOutputCount: 12,
+            baselineMergeDuplicateCount: 3,
+            baselineLimitDropCount: 10,
             rolloutFileStatCount: 12,
             rolloutStatusTailReadCount: 2,
             rolloutStatusTailBytes: 8192,
@@ -249,6 +261,13 @@ test("readFallback can build cold baseline through injected baseline service", (
   assert.equal(diagnostics.sessionIndexCount, 6);
   assert.equal(diagnostics.baselineSourceCount, 15);
   assert.equal(diagnostics.baselineResultCount, 2);
+  assert.equal(diagnostics.baselineFinalFilterPassCount, 3);
+  assert.equal(diagnostics.baselineFinalFilterInputCount, 18);
+  assert.equal(diagnostics.baselineFinalFilterOutputCount, 15);
+  assert.equal(diagnostics.baselineMergeInputCount, 15);
+  assert.equal(diagnostics.baselineMergeOutputCount, 12);
+  assert.equal(diagnostics.baselineMergeDuplicateCount, 3);
+  assert.equal(diagnostics.baselineLimitDropCount, 10);
   assert.equal(diagnostics.rolloutFileStatCount, 12);
   assert.equal(diagnostics.rolloutStatusTailReadCount, 2);
   assert.equal(diagnostics.rolloutStatusTailBytes, 8192);
@@ -274,6 +293,13 @@ test("readFallback can build cold baseline through injected baseline service", (
     sessionIndexCount: 6,
     baselineSourceCount: 15,
     baselineResultCount: 2,
+    baselineFinalFilterPassCount: 3,
+    baselineFinalFilterInputCount: 18,
+    baselineFinalFilterOutputCount: 15,
+    baselineMergeInputCount: 15,
+    baselineMergeOutputCount: 12,
+    baselineMergeDuplicateCount: 3,
+    baselineLimitDropCount: 10,
     rolloutFileStatCount: 12,
     rolloutStatusTailReadCount: 2,
     rolloutStatusTailBytes: 8192,

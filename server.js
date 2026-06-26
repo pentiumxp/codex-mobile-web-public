@@ -13566,6 +13566,18 @@ function threadListFallbackSourceDiagnosticTimingFields(diagnostics = {}) {
   };
 }
 
+function threadListFallbackBaselineWorkTimingFields(diagnostics = {}) {
+  return {
+    fallbackBaselineFinalFilterPassCount: Number(diagnostics.baselineFinalFilterPassCount || 0),
+    fallbackBaselineFinalFilterInputCount: Number(diagnostics.baselineFinalFilterInputCount || 0),
+    fallbackBaselineFinalFilterOutputCount: Number(diagnostics.baselineFinalFilterOutputCount || 0),
+    fallbackBaselineMergeInputCount: Number(diagnostics.baselineMergeInputCount || 0),
+    fallbackBaselineMergeOutputCount: Number(diagnostics.baselineMergeOutputCount || 0),
+    fallbackBaselineMergeDuplicateCount: Number(diagnostics.baselineMergeDuplicateCount || 0),
+    fallbackBaselineLimitDropCount: Number(diagnostics.baselineLimitDropCount || 0),
+  };
+}
+
 async function listWorkspaces() {
   const globalState = readGlobalState();
   const roots = visibleWorkspaceRoots(globalState);
@@ -14798,6 +14810,7 @@ async function handleApi(req, res) {
         fallbackSourceSnapshotBuildCount: Number(fallbackDiagnostics.sourceSnapshotBuildCount || 0),
         fallbackSourceSnapshotBuildNumber: Number(fallbackDiagnostics.sourceSnapshotBuildNumber || 0),
         fallbackSourceSnapshotRawCount: Number(fallbackDiagnostics.sourceSnapshotRawCount || 0),
+        ...threadListFallbackBaselineWorkTimingFields(fallbackDiagnostics),
         ...threadListFallbackSourceDiagnosticTimingFields(fallbackDiagnostics),
       });
       const mergeStartedAtMs = Date.now();
@@ -14847,6 +14860,7 @@ async function handleApi(req, res) {
         fallbackSourceSnapshotBuildCount: Number(fallbackDiagnostics.sourceSnapshotBuildCount || 0),
         fallbackSourceSnapshotBuildNumber: Number(fallbackDiagnostics.sourceSnapshotBuildNumber || 0),
         fallbackSourceSnapshotRawCount: Number(fallbackDiagnostics.sourceSnapshotRawCount || 0),
+        ...threadListFallbackBaselineWorkTimingFields(fallbackDiagnostics),
         ...threadListFallbackSourceDiagnosticTimingFields(fallbackDiagnostics),
       });
       if (fallback.length) {

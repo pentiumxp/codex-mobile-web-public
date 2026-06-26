@@ -376,6 +376,12 @@ test("phase B readback summary helpers keep only bounded metadata", () => {
         coldPathOwner: "fallback-baseline",
         coldPathReason: "miss-rebuild:session-index",
         fallbackBaselineSourceCount: 1000000,
+        fallbackBaselineFinalFilterInputCount: 1000000,
+        fallbackBaselineFinalFilterOutputCount: 900000,
+        fallbackBaselineMergeInputCount: 900000,
+        fallbackBaselineMergeOutputCount: 800000,
+        fallbackBaselineMergeDuplicateCount: 123,
+        fallbackBaselineLimitDropCount: 456,
         fallbackRolloutFileStatCount: 12,
         fallbackRolloutStatusTailBytes: 8192,
         fallbackSessionIndexReuseCount: 1,
@@ -386,6 +392,12 @@ test("phase B readback summary helpers keep only bounded metadata", () => {
   });
   assert.equal(list.coldPathOwner, "fallback-baseline");
   assert.equal(list.fallbackBaselineSourceCount, 100000);
+  assert.equal(list.fallbackBaselineFinalFilterInputCount, 100000);
+  assert.equal(list.fallbackBaselineFinalFilterOutputCount, 100000);
+  assert.equal(list.fallbackBaselineMergeInputCount, 100000);
+  assert.equal(list.fallbackBaselineMergeOutputCount, 100000);
+  assert.equal(list.fallbackBaselineMergeDuplicateCount, 123);
+  assert.equal(list.fallbackBaselineLimitDropCount, 456);
   assert.equal(list.fallbackRolloutFileStatCount, 12);
   assert.equal(list.fallbackRolloutStatusTailBytes, 8192);
   assert.equal(list.fallbackSessionIndexReuseCount, 1);

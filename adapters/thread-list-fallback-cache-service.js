@@ -38,6 +38,16 @@ const BASELINE_SOURCE_DIAGNOSTIC_COUNTERS = [
   "sessionIndexEntryCount",
 ];
 
+const BASELINE_WORK_DIAGNOSTIC_COUNTERS = [
+  "baselineFinalFilterPassCount",
+  "baselineFinalFilterInputCount",
+  "baselineFinalFilterOutputCount",
+  "baselineMergeInputCount",
+  "baselineMergeOutputCount",
+  "baselineMergeDuplicateCount",
+  "baselineLimitDropCount",
+];
+
 function boundedCounter(value) {
   const number = Number(value);
   if (!Number.isFinite(number) || number <= 0) return 0;
@@ -48,6 +58,16 @@ function baselineSourceDiagnostics(timings = {}) {
   const out = {};
   if (!timings || typeof timings !== "object") return out;
   for (const key of BASELINE_SOURCE_DIAGNOSTIC_COUNTERS) {
+    const value = boundedCounter(timings[key]);
+    if (value) out[key] = value;
+  }
+  return out;
+}
+
+function baselineWorkDiagnostics(timings = {}) {
+  const out = {};
+  if (!timings || typeof timings !== "object") return out;
+  for (const key of BASELINE_WORK_DIAGNOSTIC_COUNTERS) {
     const value = boundedCounter(timings[key]);
     if (value) out[key] = value;
   }
@@ -341,6 +361,7 @@ function createThreadListFallbackCacheService(options = {}) {
       diagnostics.sessionIndexCount = Number(baselineTimings.sessionIndexCount || 0);
       diagnostics.baselineSourceCount = Number(baselineTimings.baselineSourceCount || 0);
       diagnostics.baselineResultCount = Number(baselineTimings.baselineResultCount || threads.length);
+      Object.assign(diagnostics, baselineWorkDiagnostics(baselineTimings));
       Object.assign(diagnostics, baselineSourceDiagnostics(baselineTimings));
       if (Object.prototype.hasOwnProperty.call(baselineTimings, "sourceSnapshotHit")) {
         diagnostics.sourceSnapshotHit = baselineTimings.sourceSnapshotHit === true;
@@ -360,6 +381,7 @@ function createThreadListFallbackCacheService(options = {}) {
       sessionIndexCount: Number(baselineTimings.sessionIndexCount || 0),
       baselineSourceCount: Number(baselineTimings.baselineSourceCount || 0),
       baselineResultCount: Number(baselineTimings.baselineResultCount || threads.length),
+      ...baselineWorkDiagnostics(baselineTimings),
       ...baselineSourceDiagnostics(baselineTimings),
       ...(Object.prototype.hasOwnProperty.call(baselineTimings, "sourceSnapshotHit") ? {
         sourceSnapshotHit: baselineTimings.sourceSnapshotHit === true,

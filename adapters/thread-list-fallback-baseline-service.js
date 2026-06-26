@@ -57,6 +57,18 @@ function mergeSourceDiagnostics(...diagnosticsList) {
   return out;
 }
 
+function countDuplicateThreadIds(threads) {
+  const seen = new Set();
+  let duplicates = 0;
+  for (const thread of safeThreadList(threads)) {
+    const id = String(thread && thread.id || "").trim();
+    if (!id) continue;
+    if (seen.has(id)) duplicates += 1;
+    else seen.add(id);
+  }
+  return duplicates;
+}
+
 function createThreadListFallbackBaselineService(options = {}) {
   const now = typeof options.now === "function" ? options.now : Date.now;
   const readStateDbFallback = typeof options.readStateDbFallback === "function"
@@ -191,14 +203,19 @@ function createThreadListFallbackBaselineService(options = {}) {
 
   function buildBaselineFromSources(snapshot, bounded, filters = {}) {
     const sources = snapshot && snapshot.sources || {};
+    const stateDbRaw = safeThreadList(sources.stateDb);
+    const rolloutRaw = safeThreadList(sources.rollout);
+    const sessionIndexRaw = safeThreadList(sources.sessionIndex);
     const stateDbThreads = filterSourceThreads(sources.stateDb, filters);
     const rolloutThreads = filterSourceThreads(sources.rollout, filters);
     const sessionIndexThreads = filterSourceThreads(sources.sessionIndex, filters);
-    const threads = safeThreadList(mergeThreadSummaryList([
+    const mergeInput = [
       ...stateDbThreads,
       ...rolloutThreads,
       ...sessionIndexThreads,
-    ])).slice(0, bounded);
+    ];
+    const merged = safeThreadList(mergeThreadSummaryList(mergeInput));
+    const threads = merged.slice(0, bounded);
     return {
       threads,
       counts: {
@@ -207,6 +224,13 @@ function createThreadListFallbackBaselineService(options = {}) {
         sessionIndex: sessionIndexThreads.length,
         baselineSourceCount: stateDbThreads.length + rolloutThreads.length + sessionIndexThreads.length,
         baselineResultCount: threads.length,
+        baselineFinalFilterPassCount: 3,
+        baselineFinalFilterInputCount: stateDbRaw.length + rolloutRaw.length + sessionIndexRaw.length,
+        baselineFinalFilterOutputCount: mergeInput.length,
+        baselineMergeInputCount: mergeInput.length,
+        baselineMergeOutputCount: merged.length,
+        baselineMergeDuplicateCount: countDuplicateThreadIds(mergeInput),
+        baselineLimitDropCount: Math.max(0, merged.length - threads.length),
       },
     };
   }
@@ -221,20 +245,31 @@ function createThreadListFallbackBaselineService(options = {}) {
     const stateDb = snapshot ? null : timedRead("stateDb", readStateDbFallback, bounded, filters, sourceContext);
     const rollout = snapshot ? null : timedRead("rollout", readRolloutSessionFallback, bounded, filters, sourceContext);
     const sessionIndex = snapshot ? null : timedRead("sessionIndex", readSessionIndexFallback, bounded, filters, sourceContext);
+    const directMergeInput = baseline ? [] : [
+      ...stateDb.threads,
+      ...rollout.threads,
+      ...sessionIndex.threads,
+    ];
+    const directMerged = baseline ? [] : safeThreadList(mergeThreadSummaryList(directMergeInput));
     const threads = baseline
       ? baseline.threads
-      : safeThreadList(mergeThreadSummaryList([
-        ...stateDb.threads,
-        ...rollout.threads,
-        ...sessionIndex.threads,
-      ])).slice(0, bounded);
-    const counts = baseline ? baseline.counts : {
-      stateDb: stateDb.count,
-      rollout: rollout.count,
-      sessionIndex: sessionIndex.count,
-      baselineSourceCount: stateDb.count + rollout.count + sessionIndex.count,
-      baselineResultCount: threads.length,
-    };
+      : directMerged.slice(0, bounded);
+    const counts = baseline
+      ? baseline.counts
+      : {
+        stateDb: stateDb.count,
+        rollout: rollout.count,
+        sessionIndex: sessionIndex.count,
+        baselineSourceCount: stateDb.count + rollout.count + sessionIndex.count,
+        baselineResultCount: threads.length,
+        baselineFinalFilterPassCount: 0,
+        baselineFinalFilterInputCount: 0,
+        baselineFinalFilterOutputCount: 0,
+        baselineMergeInputCount: directMergeInput.length,
+        baselineMergeOutputCount: directMerged.length,
+        baselineMergeDuplicateCount: countDuplicateThreadIds(directMergeInput),
+        baselineLimitDropCount: Math.max(0, directMerged.length - threads.length),
+      };
     const sourceTimings = snapshot ? snapshot.timings : {
       stateDbMs: stateDb.elapsedMs,
       rolloutMs: rollout.elapsedMs,
@@ -254,6 +289,13 @@ function createThreadListFallbackBaselineService(options = {}) {
       sessionIndexCount: counts.sessionIndex,
       baselineSourceCount: counts.baselineSourceCount,
       baselineResultCount: counts.baselineResultCount,
+      baselineFinalFilterPassCount: counts.baselineFinalFilterPassCount,
+      baselineFinalFilterInputCount: counts.baselineFinalFilterInputCount,
+      baselineFinalFilterOutputCount: counts.baselineFinalFilterOutputCount,
+      baselineMergeInputCount: counts.baselineMergeInputCount,
+      baselineMergeOutputCount: counts.baselineMergeOutputCount,
+      baselineMergeDuplicateCount: counts.baselineMergeDuplicateCount,
+      baselineLimitDropCount: counts.baselineLimitDropCount,
       ...mergeSourceDiagnostics(sourceTimings),
     };
     if (snapshot) {

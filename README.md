@@ -166,11 +166,18 @@ cache policy 和 baseline 构建边界混在一起。
   对目录项按“目录优先、名称倒序”访问，让 `.codex/sessions/YYYY/MM/DD/rollout-...`
   这种日期分层结构先进入新的年份/月/日目录。最终返回仍按 `mtimeMs` 排序并按
   `maxFiles` 截断；当 discovery cap 生效时，不再容易被旧目录先填满候选集合。
+- server-only merge/filter attribution follow-up 把 fallback baseline 最终过滤与合并
+  去重的工作量也纳入 Phase B 读回证据。baseline timings 现在记录
+  `fallbackBaselineFinalFilter*`、`fallbackBaselineMerge*` 和
+  `fallbackBaselineLimitDropCount`，用来区分慢点是否来自 source I/O、最终
+  cwd/search 过滤、重复 id 合并，还是 limit 截断。字段都是 bounded 数字计数，不包含
+  搜索词、线程标题、cwd、rollout 路径或消息正文。
 
 这不是新的 fallback 行为，也不是 prewarm/persist。route aggregation、defer
 fallback、app-server result merge 都没有改变；source 层只调整 rollout list
 候选的读取顺序、减少同一 pass 里的重复归档扫描、重复 tail 读取和重复 session-index
-读取，并补充冷路径归因计数。readback 仍只把 deferred 之后的完整读和 warm check
+读取，并补充冷路径归因计数。baseline 层只补充 final filter / merge 工作量计数，不改变
+过滤、排序、去重或截断规则。readback 仍只把 deferred 之后的完整读和 warm check
 证据化。该切片暂不单独部署，按新的节奏等待 Phase B 模块批量验证后再统一部署。
 
 ## 2026-06-26 v531 Thread Detail Cold-Path Diagnosis

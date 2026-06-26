@@ -220,7 +220,15 @@ Current acceleration targets:
    the known `sessions/YYYY/MM/DD/rollout-...` layout reaches newer date
    branches before older ones when the discovery candidate cap is hit. Final
    results are still sorted by `mtimeMs`, so this narrows cold discovery cost
-   without changing public merge/filter/status ownership.
+   without changing public merge/filter/status ownership. The follow-up
+   attribution slice makes the remaining baseline work measurable instead of
+   guessed: fallback baseline timings now include bounded
+   `fallbackBaselineFinalFilter*`, `fallbackBaselineMerge*`, and
+   `fallbackBaselineLimitDropCount` fields, so the Phase B batch readback can
+   tell whether the remaining cold cost is source I/O, final `cwd/search`
+   filtering, duplicate-id merge pressure, or limit truncation. This does not
+   alter list data, ordering, visibility, app-server merge behavior, or cache
+   ownership.
 3. Large detail cold-path attribution now has a dedicated
    `thread-detail-cold-path-diagnosis-service` that emits bounded
    `coldPathOwner` / `coldPathReason` for projection-cache seeding,

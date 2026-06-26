@@ -15000,3 +15000,65 @@ The previous full handoff was archived and should be opened only when old proven
   - Remaining Phase B local candidate before a batch deploy: merge/filter
     duplication. After that, deploy once and run Phase B readback smoke to
     compare cold counters and warm cache behavior.
+
+## 2026-06-26 - fallback baseline merge/filter attribution local slice
+
+- Scope:
+  - Continued Phase B thread-list cold path work after `5d5915e`
+    (`prefer newest rollout discovery branches`).
+  - This slice does not change thread-list visibility, ordering, merge
+    semantics, app-server result merge, source snapshots, cache policy, static
+    shell files, or deployment state.
+  - It makes the remaining baseline final-filter / merge work measurable so
+    the next Phase B production readback can distinguish source I/O cost from
+    final `cwd/search` filtering, duplicate-id merge pressure, and limit
+    truncation.
+- Root-cause boundary:
+  - Symptom: Phase B source counters could attribute rollout/session-index I/O
+    but still left "merge/filter duplication" as an unmeasured candidate.
+  - Failing layer under investigation: server-side thread-list fallback
+    baseline assembly, not the client or public list rendering.
+  - Violated invariant: a production cold-path readback should identify whether
+    remaining work belongs to source I/O or baseline final assembly before
+    changing filter/merge ownership.
+  - Closure classification: bounded attribution for a root-cause decision. No
+    fallback masking, no UI dedupe, no skipped refresh, no persistent cache, and
+    no behavior change.
+- Changes:
+  - `adapters/thread-list-fallback-baseline-service.js`
+    - Adds bounded counts for final filter passes/input/output, merge
+      input/output, duplicate id pressure, and limit drops.
+    - Reuses the direct merge result for non-snapshot baselines so diagnostics
+      do not introduce extra merge work.
+  - `adapters/thread-list-fallback-cache-service.js`
+    - Whitelists and forwards the new baseline work counters through miss /
+      rebuild diagnostics and cached source timings.
+  - `server.js`
+    - Exposes the new counters as `fallbackBaselineFinalFilter*`,
+      `fallbackBaselineMerge*`, and `fallbackBaselineLimitDropCount` under
+      `/api/threads` timing diagnostics.
+  - `scripts/codex-mobile-phase-b-readback-smoke.js`
+    - Summarizes the new counters with bounded numeric limits only.
+  - Tests updated:
+    - `test/thread-list-fallback-baseline-service.test.js`
+    - `test/thread-list-fallback-cache-service.test.js`
+    - `test/thread-visibility.test.js`
+    - `test/phase-b-readback-smoke.test.js`
+  - Docs updated:
+    - `README.md`
+    - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`
+    - `docs/MODULES.md`
+- Validation:
+  - Focused:
+    `node --test test/thread-list-fallback-baseline-service.test.js test/thread-list-fallback-cache-service.test.js test/thread-list-cold-path-diagnosis-service.test.js test/thread-visibility.test.js test/phase-b-readback-smoke.test.js`
+    passed (`72` tests).
+  - Full `npm test` passed (`1101` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Not deployed by design. This remains part of the Phase B local module batch.
+- Next:
+  - Commit this local slice.
+  - Phase B is now ready for a module-level deploy/readback candidate unless a
+    current runtime incident forces a narrower hotfix first.

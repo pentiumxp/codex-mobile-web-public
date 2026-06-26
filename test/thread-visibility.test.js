@@ -979,6 +979,11 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeBody, /fallbackSessionIndexCount: Number\(fallbackDiagnostics\.sessionIndexCount \|\| 0\)/);
   assert.match(routeBody, /fallbackBaselineSourceCount: Number\(fallbackDiagnostics\.baselineSourceCount \|\| 0\)/);
   assert.match(routeBody, /fallbackBaselineResultCount: Number\(fallbackDiagnostics\.baselineResultCount \|\| 0\)/);
+  assert.match(routeBody, /threadListFallbackBaselineWorkTimingFields\(fallbackDiagnostics\)/);
+  assert.match(serverJs, /function threadListFallbackBaselineWorkTimingFields\(diagnostics = \{\}\)/);
+  assert.match(serverJs, /fallbackBaselineFinalFilterInputCount: Number\(diagnostics\.baselineFinalFilterInputCount \|\| 0\)/);
+  assert.match(serverJs, /fallbackBaselineMergeInputCount: Number\(diagnostics\.baselineMergeInputCount \|\| 0\)/);
+  assert.match(serverJs, /fallbackBaselineMergeDuplicateCount: Number\(diagnostics\.baselineMergeDuplicateCount \|\| 0\)/);
   assert.match(routeBody, /threadListFallbackSourceDiagnosticTimingFields\(fallbackDiagnostics\)/);
   assert.match(serverJs, /function threadListFallbackSourceDiagnosticTimingFields\(diagnostics = \{\}\)/);
   assert.match(serverJs, /fallbackRolloutFileStatCount: Number\(diagnostics\.rolloutFileStatCount \|\| 0\)/);

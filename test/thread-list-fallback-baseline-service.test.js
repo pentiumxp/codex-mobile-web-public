@@ -63,6 +63,13 @@ test("thread-list fallback baseline reads sources, merges, limits, and records t
     sessionIndexCount: 1,
     baselineSourceCount: 5,
     baselineResultCount: 2,
+    baselineFinalFilterPassCount: 0,
+    baselineFinalFilterInputCount: 0,
+    baselineFinalFilterOutputCount: 0,
+    baselineMergeInputCount: 5,
+    baselineMergeOutputCount: 4,
+    baselineMergeDuplicateCount: 1,
+    baselineLimitDropCount: 2,
   });
 });
 
@@ -213,6 +220,13 @@ test("thread-list fallback baseline reuses source snapshot across filter keys", 
   });
   assert.deepEqual(first.threads.map((thread) => thread.id), ["rollout-alpha", "alpha"]);
   assert.equal(first.timings.sourceSnapshotHit, false);
+  assert.equal(first.timings.baselineFinalFilterPassCount, 3);
+  assert.equal(first.timings.baselineFinalFilterInputCount, 3);
+  assert.equal(first.timings.baselineFinalFilterOutputCount, 2);
+  assert.equal(first.timings.baselineMergeInputCount, 2);
+  assert.equal(first.timings.baselineMergeOutputCount, 2);
+  assert.equal(first.timings.baselineMergeDuplicateCount, 0);
+  assert.equal(first.timings.baselineLimitDropCount, 0);
   assert.deepEqual(calls, { stateDb: 1, rollout: 1, sessionIndex: 1 });
 
   const second = service.readBaseline(2, {
@@ -224,6 +238,11 @@ test("thread-list fallback baseline reuses source snapshot across filter keys", 
   assert.equal(second.timings.sourceSnapshotHit, true);
   assert.equal(second.timings.stateDbMs, 0);
   assert.equal(second.timings.sourceSnapshotBuildCount, 1);
+  assert.equal(second.timings.baselineFinalFilterPassCount, 3);
+  assert.equal(second.timings.baselineFinalFilterInputCount, 3);
+  assert.equal(second.timings.baselineFinalFilterOutputCount, 1);
+  assert.equal(second.timings.baselineMergeInputCount, 1);
+  assert.equal(second.timings.baselineMergeOutputCount, 1);
   assert.deepEqual(calls, { stateDb: 1, rollout: 1, sessionIndex: 1 });
 });
 
