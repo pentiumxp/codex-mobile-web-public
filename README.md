@@ -16,6 +16,36 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v506 Thread Refresh Post-Merge Effects Plan
+
+v506 继续 Phase A 的 `refreshCurrentThread()` 编排收敛。v505 已经把
+tile/single patch surface 判定移到 `public/thread-detail-render-plan.js`；
+本次继续把 refresh 合并后的固定副作用顺序移到同一个 planning helper。
+
+本次切片新增：
+
+- `planThreadDetailRefreshPostMergeEffects()` 固定声明三组 refresh 合并后
+  副作用：thread-list merge、composer/active-turn 同步、thread-list render。
+- `refreshCurrentThread()` 只执行 effect 名称对应的真实副作用，不再内联决定
+  `mergeThreadIntoThreadList()`、`renderComposerSettings()`、
+  `syncActiveTurnFromThread()`、`renderThreads()` 的顺序。
+- `mergeMs`、`composerRenderMs`、`threadListRenderMs` 的计时边界保持原语义：
+  `mergeMs` 仍覆盖 state merge 到列表合并完成，后两项仍分别覆盖 composer/active-turn
+  和线程列表渲染。
+
+修复边界：
+
+- 症状/风险：v505 后 refresh 请求、surface、patch、outcome 和 completion effects
+  均已 helper-owned，但 post-merge 的固定副作用顺序仍散落在 app 主状态机内。
+- 失败层：前端 thread detail refresh post-merge side-effect ownership。
+- 不变量：本次不改变 server projection、DOM patch、full-render fallback、滚动策略、
+  诊断 transport、任务卡协议、平铺布局或视觉表现。
+- 闭环验证：`test/thread-detail-render-plan.test.js` 覆盖 post-merge group 顺序；
+  `test/mobile-viewport.test.js` 和 `test/conversation-render.test.js` 验证
+  `refreshCurrentThread()` 委托给 helper 且不再内联旧顺序。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v506`。
+
 ## 2026-06-26 v505 Thread Refresh Patch Surface Plan
 
 v505 继续 Phase A 的 `refreshCurrentThread()` surface selection 收敛。v504

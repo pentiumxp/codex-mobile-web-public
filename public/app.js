@@ -508,7 +508,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v505";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v506";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -9013,6 +9013,35 @@ function applyThreadDetailRefreshCompletionEffect(effect) {
   throw new Error(`Unknown thread detail refresh completion effect: ${type || "empty"}`);
 }
 
+function applyThreadDetailRefreshPostMergeEffect(effect) {
+  const key = String(effect || "");
+  if (key === "merge-thread-list") {
+    mergeThreadIntoThreadList(state.currentThread);
+    return true;
+  }
+  if (key === "render-composer-settings") {
+    renderComposerSettings();
+    return true;
+  }
+  if (key === "sync-active-turn") {
+    syncActiveTurnFromThread();
+    return true;
+  }
+  if (key === "render-threads") {
+    renderThreads();
+    return true;
+  }
+  throw new Error(`Unknown thread detail refresh post-merge effect: ${key || "empty"}`);
+}
+
+function applyThreadDetailRefreshPostMergeEffectsGroup(plan, timing) {
+  const groups = Array.isArray(plan && plan.groups) ? plan.groups : [];
+  const group = groups.find((item) => item && item.timing === timing);
+  const effects = group && Array.isArray(group.effects) ? group.effects : [];
+  if (!effects.length) throw new Error(`Thread detail refresh post-merge effects missing for ${timing}`);
+  for (const effect of effects) applyThreadDetailRefreshPostMergeEffect(effect);
+}
+
 async function refreshCurrentThread(options = {}) {
   const requestPlan = threadDetailRenderPlanApi.planThreadDetailRefreshRequest({
     threadId: state.currentThreadId,
@@ -9066,14 +9095,14 @@ async function refreshCurrentThread(options = {}) {
     renderedPatchShellSignature: state.renderedConversationPatchShellSignature,
   });
   const shouldRenderDetail = renderPlan.shouldRenderDetail;
-  mergeThreadIntoThreadList(state.currentThread);
+  const postMergePlan = threadDetailRenderPlanApi.planThreadDetailRefreshPostMergeEffects();
+  applyThreadDetailRefreshPostMergeEffectsGroup(postMergePlan, "merge");
   const mergeMs = roundedDurationMs(mergeStartedAt);
   const composerRenderStartedAt = nowPerfMs();
-  renderComposerSettings();
-  syncActiveTurnFromThread();
+  applyThreadDetailRefreshPostMergeEffectsGroup(postMergePlan, "composer-render");
   const composerRenderMs = roundedDurationMs(composerRenderStartedAt);
   const threadListRenderStartedAt = nowPerfMs();
-  renderThreads();
+  applyThreadDetailRefreshPostMergeEffectsGroup(postMergePlan, "thread-list-render");
   const threadListRenderMs = roundedDurationMs(threadListRenderStartedAt);
   let locallyPatchedDetail = false;
   let tilePanePatchedDetail = false;

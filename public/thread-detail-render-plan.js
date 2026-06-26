@@ -177,6 +177,26 @@
     };
   }
 
+  function planThreadDetailRefreshPostMergeEffects() {
+    return {
+      groups: [
+        {
+          timing: "merge",
+          effects: ["merge-thread-list"],
+        },
+        {
+          timing: "composer-render",
+          effects: ["render-composer-settings", "sync-active-turn"],
+        },
+        {
+          timing: "thread-list-render",
+          effects: ["render-threads"],
+        },
+      ],
+      reason: "default-post-merge-effects",
+    };
+  }
+
   function planThreadDetailRefreshPatchAttemptResult(input = {}) {
     const shouldRenderDetail = Boolean(input.shouldRenderDetail);
     const tilePanePatchAttempted = Boolean(input.tilePanePatchAttempted);
@@ -470,6 +490,7 @@
     planThreadDetailRefreshPerformanceInput,
     planThreadDetailRefreshRequest,
     planThreadDetailRefreshPatchSurface,
+    planThreadDetailRefreshPostMergeEffects,
     planSingleThreadFullRenderShell,
     planThreadDetailRefreshPatchExecution,
     planThreadDetailRefreshRender,

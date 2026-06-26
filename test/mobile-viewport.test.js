@@ -148,8 +148,8 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v505/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v505"/);
+  assert.match(swJs, /codex-mobile-shell-v506/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v506"/);
   assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(swJs, /"\/thread-diagnostic-events\.js"/);
@@ -331,7 +331,13 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /const previousPatchShellSignature = conversationPatchShellSignature\(previousThread\);/);
   assert.match(appJs, /threadDetailRenderPlanApi\.planThreadDetailRefreshRender\(\{[\s\S]*previousConversationSignature,[\s\S]*nextConversationSignature,[\s\S]*renderedConversationSignature: state\.renderedConversationSignature,[\s\S]*previousPatchShellSignature,[\s\S]*renderedPatchShellSignature: state\.renderedConversationPatchShellSignature,[\s\S]*\}\);/);
   assert.match(functionBody("refreshCurrentThread"), /const shouldRenderDetail = renderPlan\.shouldRenderDetail;/);
+  assert.match(functionBody("refreshCurrentThread"), /const postMergePlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPostMergeEffects\(\);/);
+  assert.match(functionBody("refreshCurrentThread"), /applyThreadDetailRefreshPostMergeEffectsGroup\(postMergePlan, "merge"\);[\s\S]*const mergeMs = roundedDurationMs\(mergeStartedAt\);/);
+  assert.match(functionBody("refreshCurrentThread"), /applyThreadDetailRefreshPostMergeEffectsGroup\(postMergePlan, "composer-render"\);[\s\S]*const composerRenderMs = roundedDurationMs\(composerRenderStartedAt\);/);
+  assert.match(functionBody("refreshCurrentThread"), /applyThreadDetailRefreshPostMergeEffectsGroup\(postMergePlan, "thread-list-render"\);[\s\S]*const threadListRenderMs = roundedDurationMs\(threadListRenderStartedAt\);/);
   assert.doesNotMatch(functionBody("refreshCurrentThread"), /let detailRenderMode = renderPlan\.detailRenderMode;/);
+  assert.doesNotMatch(functionBody("refreshCurrentThread"), /mergeThreadIntoThreadList\(state\.currentThread\);\s*const mergeMs/);
+  assert.doesNotMatch(functionBody("refreshCurrentThread"), /renderComposerSettings\(\);\s*syncActiveTurnFromThread\(\);/);
   assert.match(functionBody("refreshCurrentThread"), /const patchSurfaceProbePlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchSurface\(\{/);
   assert.match(functionBody("refreshCurrentThread"), /const tilePatchPlan = patchSurfaceProbePlan\.shouldProbeTilePatchSurface[\s\S]*\? threadDetailDomPatchSurface\(\{ threadId \}\)[\s\S]*: null;/);
   assert.match(functionBody("refreshCurrentThread"), /const patchSurfacePlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchSurface\(\{[\s\S]*tilePatchSurface: tilePatchPlan && tilePatchPlan\.surface,[\s\S]*\}\);/);

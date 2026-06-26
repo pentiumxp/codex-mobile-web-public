@@ -213,6 +213,12 @@ Refresh patch surface planning now also lives in this helper:
 tile-pane DOM state and whether the current patch path is a tile surface based
 on tile mode, tile conversation surface state, and the probed DOM patch surface.
 App code still reads the UI state and performs the real DOM probe.
+Refresh post-merge side-effect ordering now also lives in this helper:
+`planThreadDetailRefreshPostMergeEffects` declares the fixed
+thread-list-merge, composer/active-turn sync, and thread-list-render groups
+after state merge. App code still performs the real side effects and preserves
+the existing `mergeMs`, `composerRenderMs`, and `threadListRenderMs` timing
+boundaries.
 Thread refresh failure diagnostic payload planning now lives in
 `public/thread-diagnostic-events.js`: `threadDetailRefreshFailedDiagnosticEvent`
 builds the bounded `thread_detail_refresh_failed` failure report, so

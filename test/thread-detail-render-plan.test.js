@@ -272,6 +272,26 @@ test("thread detail refresh patch surface plan keeps metadata-only probes quiet"
   });
 });
 
+test("thread detail refresh post-merge effects plan preserves timing groups and order", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPostMergeEffects(), {
+    groups: [
+      {
+        timing: "merge",
+        effects: ["merge-thread-list"],
+      },
+      {
+        timing: "composer-render",
+        effects: ["render-composer-settings", "sync-active-turn"],
+      },
+      {
+        timing: "thread-list-render",
+        effects: ["render-threads"],
+      },
+    ],
+    reason: "default-post-merge-effects",
+  });
+});
+
 test("thread detail refresh patch attempt result makes tile pane patch terminal", () => {
   assert.deepEqual(renderPlan.planThreadDetailRefreshPatchAttemptResult({
     shouldRenderDetail: true,
