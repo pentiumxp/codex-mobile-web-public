@@ -737,7 +737,6 @@ const THREAD_TILE_SETTINGS_SAVE_DEBOUNCE_MS = 500;
 const THREAD_TILE_USER_MAX_PANES = Math.max(1, Math.floor(Number(
   threadTileLayoutPolicy.DEFAULT_USER_MAX_PANES || threadTileLayoutPolicy.DEFAULT_MAX_PANES || 6,
 )) || 6);
-const THREAD_TILE_DETAIL_LOAD_MAX_CONCURRENT = Math.max(1, Math.min(4, THREAD_TILE_USER_MAX_PANES));
 const THREAD_TILE_DETAIL_LOAD_QUEUE_DRAIN_MS = 120;
 const THEME_VALUES = new Set(["system", "dark", "light"]);
 const FONT_SIZE_VALUES = new Set(["small", "default", "large", "xlarge", "xxlarge"]);
@@ -13300,13 +13299,17 @@ function ensureThreadTileDetails(ids = []) {
     const cached = state.threadTileDetails.get(id);
     return Boolean(cached && !cached.mobileLoading && !cached.mobileLoadError);
   });
+  const concurrency = threadTileStatePolicy.detailLoadConcurrencyPlan({
+    activeIds: state.threadTileActiveIds,
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+  });
   applyThreadTileDetailLoadQueuePlan(threadTileStatePolicy.detailLoadQueuePlan({
     enabled: state.threadTileMode,
     activeIds: state.threadTileActiveIds,
     controllerIds: Array.from(state.threadTileControllers.keys()),
     loadingIds: Array.from(state.threadTileLoadingIds),
     readyIds,
-    maxConcurrentLoads: THREAD_TILE_DETAIL_LOAD_MAX_CONCURRENT,
+    maxConcurrentLoads: concurrency.maxConcurrentLoads,
   }));
   scheduleThreadTileRefresh();
 }

@@ -197,6 +197,36 @@ node --test test/thread-tile-state.test.js test/thread-tile-layout.test.js test/
 本地模块累积，后续与 split sizing、pane visual smoke 或任务卡 runtime hardening
 一起批量部署。
 
+## 2026-06-27 Phase C Detail Load Concurrency Planning Slice
+
+本地小切片继续推进 Phase C 的 pane-state ownership。此前平铺模式可以显示超过
+4 个 pane，但 `public/app.js` 仍硬编码 `THREAD_TILE_DETAIL_LOAD_MAX_CONCURRENT`
+来限制同时进行的 pane detail reads。这个上限是多窗口正式架构和大 session
+冷路径之间的保护边界：宽屏可以显示更多窗口，但不应该让每个窗口同时触发大
+session detail read。
+
+本次修复：
+
+- `public/thread-tile-state.js` 新增 `DEFAULT_DETAIL_LOAD_MAX_CONCURRENT` 和
+  `detailLoadConcurrencyPlan()`，统一规划 active pane 数量、用户 pane 上限、
+  配置上限和最终 `maxConcurrentLoads`。
+- `public/app.js` 的 `ensureThreadTileDetails()` 改为读取 helper 输出的
+  `maxConcurrentLoads`，不再内联 `Math.min(4, THREAD_TILE_USER_MAX_PANES)`。
+- focused tests 覆盖 6 个 active pane 仍只并发 4 个 detail read、2 个 active
+  pane 只开 2 个、用户上限收窄时跟随上限、非法配置回到默认 4，以及 app wiring。
+- 不改变当前实际并发 cap、detail API、projection/read mode、DOM、CSS、
+  server-saved display settings、任务卡协议、shell/cache 或部署状态。
+
+闭环验证：
+
+```bash
+node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js
+```
+
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；后续如果要真正
+调整并发数，需要结合 Phase B/Phase E 的生产读回和浏览器/视觉 evidence，而不是
+在 app 层硬调参数。
+
 ## 2026-06-26 Phase C Pane Scroll Runtime Planning Slice
 
 本地小切片继续推进 Phase C 的 pane-runtime ownership。此前每个平铺窗口的

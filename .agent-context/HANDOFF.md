@@ -16246,3 +16246,52 @@ The previous full handoff was archived and should be opened only when old proven
   - Only bounded file paths, test counts, and architecture state are recorded.
     No secrets, cookies, launch tokens, private thread bodies, task-card bodies,
     uploads, screenshots, or long logs are included.
+
+## 2026-06-27 - Phase C detail-load concurrency planning local slice
+
+- Latest local slice:
+  - Continued Phase C pane-state/detail-load architecture after `99d3788`
+    (`plan thread tile display layout`). This slice is local/private only and
+    is not deployed by design.
+- Root-cause boundary:
+  - Symptom/risk: wide tile mode can show more than four panes, but starting a
+    detail read for every visible pane can amplify large-session cold-path
+    pressure. The concurrency cap was still hardcoded in `public/app.js` as
+    `Math.min(4, THREAD_TILE_USER_MAX_PANES)`.
+  - Failing layer: frontend thread-tile detail-load concurrency policy, not
+    network execution, detail API behavior, projection/read mode, DOM, CSS,
+    server-saved display settings, task-card protocol, or shell/cache.
+  - Violated invariant: `public/app.js` should collect active pane facts and
+    execute network side effects; deterministic concurrency limit planning
+    should live in a pure helper with focused tests.
+- Changes:
+  - `public/thread-tile-state.js` now exposes
+    `DEFAULT_DETAIL_LOAD_MAX_CONCURRENT` and `detailLoadConcurrencyPlan()` for
+    active pane count, user pane cap, configured cap, and final
+    `maxConcurrentLoads`.
+  - `public/app.js` now calls that helper from `ensureThreadTileDetails()` and
+    passes the planned limit into `detailLoadQueuePlan()`.
+  - `test/thread-tile-state.test.js` covers six-pane/four-load cap,
+    two-pane/two-load cap, user max cap, invalid config fallback, and
+    `test/thread-tile-layout-ui.test.js` guards the app wiring.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md` with the Phase C boundary.
+- Validation:
+  - Focused:
+    `node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js`
+    passed (`33` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`1131` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Not deployed. No `CLIENT_BUILD_ID` / PWA shell cache bump. This remains a
+    small Phase C local slice to batch with the next pane-state/split module.
+- Next:
+  - Commit locally, then continue with split sizing controls, measured
+    production/browser tuning of the detail-load cap, or Phase E visual smoke
+    before one batch deploy.
+- Privacy:
+  - Only bounded file paths, test counts, and architecture state are recorded.
+    No secrets, cookies, launch tokens, private thread bodies, task-card bodies,
+    uploads, screenshots, or long logs are included.

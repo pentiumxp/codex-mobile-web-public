@@ -1090,6 +1090,58 @@ test("thread tile state owns operation mode and signature policy", () => {
   });
 });
 
+test("thread tile state owns detail-load concurrency limits", () => {
+  assert.deepEqual(state.detailLoadConcurrencyPlan({
+    activeIds: ["a", "b", "c", "d", "e", "f"],
+    maxPanes: 12,
+  }), {
+    action: "detail-load-concurrency",
+    reason: "active-panes",
+    activeIds: ["a", "b", "c", "d", "e", "f"],
+    activeCount: 6,
+    configuredMaxConcurrentLoads: 4,
+    maxConcurrentLoads: 4,
+  });
+
+  assert.deepEqual(state.detailLoadConcurrencyPlan({
+    activeIds: ["a", "b"],
+    maxPanes: 12,
+  }), {
+    action: "detail-load-concurrency",
+    reason: "active-panes",
+    activeIds: ["a", "b"],
+    activeCount: 2,
+    configuredMaxConcurrentLoads: 4,
+    maxConcurrentLoads: 2,
+  });
+
+  assert.deepEqual(state.detailLoadConcurrencyPlan({
+    activeIds: ["a", "b", "c", "d"],
+    configuredMaxConcurrentLoads: 8,
+    maxPanes: 3,
+  }), {
+    action: "detail-load-concurrency",
+    reason: "active-panes",
+    activeIds: ["a", "b", "c", "d"],
+    activeCount: 4,
+    configuredMaxConcurrentLoads: 3,
+    maxConcurrentLoads: 3,
+  });
+
+  assert.deepEqual(state.detailLoadConcurrencyPlan({
+    activeIds: [],
+    configuredMaxConcurrentLoads: "bad",
+    maxPanes: 12,
+  }), {
+    action: "detail-load-concurrency",
+    reason: "no-active-panes",
+    activeIds: [],
+    activeCount: 0,
+    configuredMaxConcurrentLoads: 4,
+    maxConcurrentLoads: 4,
+  });
+});
+
 test("thread tile state plans pane refresh scheduling without DOM state", () => {
   assert.deepEqual(state.refreshSchedulePlan({
     enabled: false,

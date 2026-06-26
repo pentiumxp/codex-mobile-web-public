@@ -9,6 +9,7 @@
   }
 }(typeof globalThis !== "undefined" ? globalThis : null, function () {
   const DEFAULT_USER_MAX_PANES = 12;
+  const DEFAULT_DETAIL_LOAD_MAX_CONCURRENT = 4;
   const DEFAULT_OPERATION_BUBBLE_MIN_VISIBLE_MS = 500;
   const DEFAULT_PANE_NEAR_BOTTOM_PX = 48;
   const DEFAULT_PANE_SCROLLABLE_DELTA_PX = 96;
@@ -1180,6 +1181,32 @@
     };
   }
 
+  function detailLoadConcurrencyPlan(input = {}, options = {}) {
+    const activeIds = uniqueIds(input.activeIds || input.ids || []);
+    const maxPanes = maxPaneLimit(input.maxPanes || options.maxPanes || DEFAULT_USER_MAX_PANES);
+    const configuredInput = Object.prototype.hasOwnProperty.call(input, "maxConcurrentLoads")
+      ? input.maxConcurrentLoads
+      : Object.prototype.hasOwnProperty.call(input, "configuredMaxConcurrentLoads")
+        ? input.configuredMaxConcurrentLoads
+        : options.defaultMaxConcurrentLoads;
+    const parsed = Math.floor(Number(configuredInput));
+    const configuredMaxConcurrentLoads = Number.isFinite(parsed) && parsed > 0
+      ? parsed
+      : DEFAULT_DETAIL_LOAD_MAX_CONCURRENT;
+    const boundedConfiguredMax = Math.max(1, Math.min(maxPanes, configuredMaxConcurrentLoads));
+    const maxConcurrentLoads = activeIds.length
+      ? Math.max(1, Math.min(activeIds.length, boundedConfiguredMax))
+      : boundedConfiguredMax;
+    return {
+      action: "detail-load-concurrency",
+      reason: activeIds.length ? "active-panes" : "no-active-panes",
+      activeIds,
+      activeCount: activeIds.length,
+      configuredMaxConcurrentLoads: boundedConfiguredMax,
+      maxConcurrentLoads,
+    };
+  }
+
   function detailLoadQueueDrainPlan(input = {}, options = {}) {
     const activeIds = uniqueIds(input.activeIds || input.ids || []);
     const delayMs = Math.max(0, Number(input.delayMs || options.defaultDelayMs || 0));
@@ -1294,6 +1321,7 @@
   }
 
   return {
+    DEFAULT_DETAIL_LOAD_MAX_CONCURRENT,
     DEFAULT_OPERATION_BUBBLE_MIN_VISIBLE_MS,
     DEFAULT_USER_MAX_PANES,
     activePaneSyncPlan,
@@ -1331,6 +1359,7 @@
     detailLoadPlan,
     detailLoadErrorEffectsPlan,
     detailLoadFinallyEffectsPlan,
+    detailLoadConcurrencyPlan,
     detailLoadQueueDrainPlan,
     detailLoadQueuePlan,
     detailLoadStartEffectsPlan,

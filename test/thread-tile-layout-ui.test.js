@@ -136,7 +136,7 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(functionBody(appJs, "threadTileRenderSignature"), /columnGroups: layout\.columnGroups \|\| \[\]/);
   assert.match(functionBody(appJs, "threadTileRenderSignature"), /splitPairs: threadTilePrunedSplitPairs\(ids\)/);
   assert.match(functionBody(appJs, "threadTileRenderSignature"), /switchMenuPaneId: state\.threadTileSwitchMenuPaneId \|\| ""/);
-  assert.match(appJs, /THREAD_TILE_DETAIL_LOAD_MAX_CONCURRENT = Math\.max\(1, Math\.min\(4, THREAD_TILE_USER_MAX_PANES\)\)/);
+  assert.doesNotMatch(appJs, /THREAD_TILE_DETAIL_LOAD_MAX_CONCURRENT = Math\.max\(1, Math\.min\(4, THREAD_TILE_USER_MAX_PANES\)\)/);
   assert.match(appJs, /THREAD_TILE_DETAIL_LOAD_QUEUE_DRAIN_MS = 120/);
   assert.match(appJs, /threadTileDetailLoadQueueTimer: null/);
 
@@ -148,13 +148,14 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(syncActiveBody, /if \(plan\.settingsChanged\) scheduleThreadDisplaySettingsSave\(\)/);
   const ensureBody = functionBody(appJs, "ensureThreadTileDetails");
   assert.match(ensureBody, /syncThreadTileActivePaneState\(ids\)/);
+  assert.match(ensureBody, /threadTileStatePolicy\.detailLoadConcurrencyPlan/);
   assert.match(ensureBody, /threadTileStatePolicy\.detailLoadQueuePlan/);
   assert.match(ensureBody, /controllerIds: Array\.from\(state\.threadTileControllers\.keys\(\)\)/);
   assert.match(ensureBody, /loadingIds: Array\.from\(state\.threadTileLoadingIds\)/);
   assert.match(ensureBody, /const readyIds = state\.threadTileActiveIds\.filter/);
   assert.match(ensureBody, /state\.threadTileDetails\.get\(id\)/);
   assert.match(ensureBody, /readyIds,/);
-  assert.match(ensureBody, /maxConcurrentLoads: THREAD_TILE_DETAIL_LOAD_MAX_CONCURRENT/);
+  assert.match(ensureBody, /maxConcurrentLoads: concurrency\.maxConcurrentLoads/);
   assert.match(ensureBody, /applyThreadTileDetailLoadQueuePlan/);
   assert.doesNotMatch(ensureBody, /syncThreadTilePinnedIdsFromActiveIds/);
   assert.doesNotMatch(ensureBody, /syncThreadTileSelectedThread/);
