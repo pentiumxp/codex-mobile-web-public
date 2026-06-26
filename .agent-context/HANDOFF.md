@@ -16785,6 +16785,56 @@ The previous full handoff was archived and should be opened only when old proven
     bodies, task-card bodies, upload bytes, private paths, provider payloads,
     prompts, or long logs are included.
 
+## 2026-06-27 - Phase B readback evidence counter local slice
+
+- Latest local slice:
+  - Continued Phase B readback evidence after `05db144`
+    (`route phase b baseline readback reasons`).
+  - The previous baseline reason routing slice was fully validated and
+    committed as `05db144`; it was not deployed by design.
+  - This slice is local/private only and is not deployed by design.
+- Root-cause boundary:
+  - Symptom/risk: Phase B readback decision could now route
+    `final-filter`, `merge-dedupe`, and `limit-drop` reasons to specific
+    next actions, but `decision.evidence` did not carry the bounded counters
+    needed to prove why that label was selected.
+  - Failing layer: bounded Phase B readback evidence packaging, not
+    thread-list data construction, cache behavior, source collection,
+    merge/filter/limit semantics, UI rendering, server projection, Home AI
+    diagnostic intake, task-card routing, or shell/cache.
+  - Violated invariant: root-cause readback should preserve the metadata-safe
+    numeric counters that support the selected owner/nextAction, so later
+    closure can replay evidence without reading private logs.
+- Changes:
+  - `adapters/phase-b-readback-decision-service.js` now uses a shared
+    `boundedCount()` for numeric evidence fields.
+  - `decision.evidence` now includes bounded final-filter input/output counts,
+    merge input/output/duplicate counts, and limit-drop count for both the
+    first thread-list read and deferred follow-up read.
+  - `test/phase-b-readback-decision-service.test.js` verifies the counters,
+    deferred follow-up counter evidence, and count bounding.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation:
+  - Focused:
+    `node --test test/phase-b-readback-decision-service.test.js test/phase-b-readback-smoke.test.js test/thread-list-cold-path-diagnosis-service.test.js`
+    passed (`24` tests).
+  - Syntax:
+    `node --check adapters/phase-b-readback-decision-service.js` passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache bump.
+    This is a Phase B readback evidence slice to batch with the next Phase B
+    module validation/deploy.
+- Next:
+  - Run full validation, commit locally, then continue Phase B with runtime
+    readback evidence or switch to Phase A render/patch ownership if user
+    prioritizes projection mismatch.
+- Privacy:
+  - Only bounded numeric counters, reason labels, owner labels, next-action
+    labels, and test counts are recorded. No secrets, cookies, launch tokens,
+    private thread bodies, task-card bodies, upload bytes, private paths,
+    provider payloads, prompts, or long logs are included.
+
 ## 2026-06-27 - Phase B thread-list baseline work attribution local slice
 
 - Latest local slice:

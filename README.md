@@ -521,6 +521,35 @@ node --check adapters/phase-b-readback-decision-service.js
 
 该切片尚未部署；继续作为 Phase B 模块批量验证前的本地/private commit。
 
+## 2026-06-27 Phase B Readback Evidence Counter Slice
+
+本地小切片继续收紧 Phase B readback evidence。上一片已经把
+`final-filter`、`merge-dedupe`、`limit-drop` 路由到具体 owner / nextAction；这一片
+让 `decision.evidence` 同步携带对应 bounded counters，避免后续读回只能看到原因标签，
+但缺少证明该原因的计数。
+
+本次修复：
+
+- `adapters/phase-b-readback-decision-service.js` 新增统一 `boundedCount()`，把
+  decision evidence 中的计数字段限制为 `0..100000`。
+- `decision.evidence` 现在包含：
+  - `threadListFinalFilterInputCount` / `threadListFinalFilterOutputCount`；
+  - `threadListMergeInputCount` / `threadListMergeOutputCount` /
+    `threadListMergeDuplicateCount`；
+  - `threadListLimitDropCount`；
+  - 对应的 `threadListAfterDeferred*` follow-up 计数。
+- 该变化只增加 metadata-safe 数值 evidence，不改变 readback 请求、fallback list
+  行为、server projection、UI、Home AI 上报协议或部署状态。
+
+闭环验证：
+
+```bash
+node --test test/phase-b-readback-decision-service.test.js test/phase-b-readback-smoke.test.js test/thread-list-cold-path-diagnosis-service.test.js
+node --check adapters/phase-b-readback-decision-service.js
+```
+
+该切片尚未部署；继续作为 Phase B 模块批量验证前的本地/private commit。
+
 ## 2026-06-27 Phase E Thread Tile Visual Fixture Slice
 
 本地小切片开始补 Phase E 的浏览器/视觉回归入口，先覆盖最近反复出问题的平铺

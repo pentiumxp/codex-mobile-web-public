@@ -93,6 +93,8 @@ test("phase B readback decision routes final-filter baseline reason to final-fil
       coldPathOwner: "fallback-baseline",
       coldPathReason: "miss-rebuild:final-filter-empty",
       fallbackCacheDecision: "miss-rebuild",
+      fallbackBaselineFinalFilterInputCount: 20,
+      fallbackBaselineFinalFilterOutputCount: 0,
       resultCount: 0,
     },
     detail: {
@@ -107,6 +109,8 @@ test("phase B readback decision routes final-filter baseline reason to final-fil
   assert.equal(decision.owner, "thread-list-final-filter");
   assert.equal(decision.reason, "miss-rebuild:final-filter-empty");
   assert.equal(decision.nextAction, "optimize-thread-list-final-filter");
+  assert.equal(decision.evidence.threadListFinalFilterInputCount, 20);
+  assert.equal(decision.evidence.threadListFinalFilterOutputCount, 0);
 });
 
 test("phase B readback decision routes merge-dedupe baseline reason to merge owner", () => {
@@ -116,6 +120,9 @@ test("phase B readback decision routes merge-dedupe baseline reason to merge own
       coldPathOwner: "fallback-baseline",
       coldPathReason: "miss-rebuild:merge-dedupe",
       fallbackCacheDecision: "miss-rebuild",
+      fallbackBaselineMergeInputCount: 30,
+      fallbackBaselineMergeOutputCount: 12,
+      fallbackBaselineMergeDuplicateCount: 18,
       resultCount: 10,
     },
     detail: {
@@ -130,6 +137,9 @@ test("phase B readback decision routes merge-dedupe baseline reason to merge own
   assert.equal(decision.owner, "thread-list-fallback-merge");
   assert.equal(decision.reason, "miss-rebuild:merge-dedupe");
   assert.equal(decision.nextAction, "optimize-thread-list-fallback-merge");
+  assert.equal(decision.evidence.threadListMergeInputCount, 30);
+  assert.equal(decision.evidence.threadListMergeOutputCount, 12);
+  assert.equal(decision.evidence.threadListMergeDuplicateCount, 18);
 });
 
 test("phase B readback decision routes limit-drop baseline reason to limit-window owner", () => {
@@ -139,6 +149,7 @@ test("phase B readback decision routes limit-drop baseline reason to limit-windo
       coldPathOwner: "fallback-baseline",
       coldPathReason: "miss-rebuild:limit-drop",
       fallbackCacheDecision: "miss-rebuild",
+      fallbackBaselineLimitDropCount: 6,
       resultCount: 10,
     },
     detail: {
@@ -153,6 +164,7 @@ test("phase B readback decision routes limit-drop baseline reason to limit-windo
   assert.equal(decision.owner, "thread-list-limit-window");
   assert.equal(decision.reason, "miss-rebuild:limit-drop");
   assert.equal(decision.nextAction, "review-thread-list-limit-window");
+  assert.equal(decision.evidence.threadListLimitDropCount, 6);
 });
 
 test("phase B readback decision returns ready for warm or bounded paths", () => {
@@ -276,6 +288,9 @@ test("phase B readback decision routes deferred follow-up baseline reason to spe
       coldPathOwner: "fallback-baseline",
       coldPathReason: "miss-rebuild:merge-dedupe",
       fallbackCacheDecision: "miss-rebuild",
+      fallbackBaselineMergeInputCount: 42,
+      fallbackBaselineMergeOutputCount: 12,
+      fallbackBaselineMergeDuplicateCount: 30,
     },
     detail: {
       readMode: "projection-active-overlay",
@@ -290,6 +305,9 @@ test("phase B readback decision routes deferred follow-up baseline reason to spe
   assert.equal(decision.reason, "miss-rebuild:merge-dedupe");
   assert.equal(decision.nextAction, "optimize-thread-list-fallback-merge");
   assert.equal(decision.evidence.threadListAfterDeferredOwner, "fallback-baseline");
+  assert.equal(decision.evidence.threadListAfterDeferredMergeInputCount, 42);
+  assert.equal(decision.evidence.threadListAfterDeferredMergeOutputCount, 12);
+  assert.equal(decision.evidence.threadListAfterDeferredMergeDuplicateCount, 30);
 });
 
 test("phase B readback decision keeps evidence bounded and private-content free", () => {
@@ -300,6 +318,9 @@ test("phase B readback decision keeps evidence bounded and private-content free"
       coldPathOwner: "fallback-baseline",
       coldPathReason: `miss-rebuild:${"x".repeat(200)}`,
       fallbackCacheDecision: "miss-rebuild",
+      fallbackBaselineFinalFilterInputCount: 999999999,
+      fallbackBaselineMergeDuplicateCount: 999999999,
+      fallbackBaselineLimitDropCount: 999999999,
       privateTitle: "do not copy",
     },
     detail: {
@@ -311,5 +332,8 @@ test("phase B readback decision keeps evidence bounded and private-content free"
 
   assert.ok(decision.evidence.threadListReason.length <= 80);
   assert.ok(decision.evidence.detailReason.length <= 80);
+  assert.equal(decision.evidence.threadListFinalFilterInputCount, 100000);
+  assert.equal(decision.evidence.threadListMergeDuplicateCount, 100000);
+  assert.equal(decision.evidence.threadListLimitDropCount, 100000);
   assert.doesNotMatch(JSON.stringify(decision), /private|prompt|message|do not copy/i);
 });

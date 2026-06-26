@@ -188,8 +188,11 @@ Current acceleration targets:
    readback routing follow-up keeps one-time cold-start rebuilds as H3 observe
    when the warm check proves the same key is already warm, but routes
    unresolved `final-filter*`, `merge-dedupe`, and `limit-drop` baseline
-   reasons to distinct owner/nextAction labels. After the active-detail proof
-   gate became ready, the
+   reasons to distinct owner/nextAction labels. Its follow-up evidence-counter
+   slice carries the same bounded final-filter, merge/dedupe, and limit-drop
+   counts in `decision.evidence`, including deferred follow-up reads, so the
+   selected next action is backed by numeric readback evidence instead of a
+   label alone. After the active-detail proof gate became ready, the
    smoke also verifies deferred thread-list fallback as a sequence instead of a
    single label: if the first list read is deferred while detail is active, it
    performs a follow-up full list read and, when that follow-up builds the

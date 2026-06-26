@@ -12,6 +12,10 @@ function lowerLabel(value, maxLength = 100) {
   return compactLabel(value, maxLength).toLowerCase();
 }
 
+function boundedCount(value) {
+  return Number.isFinite(Number(value)) ? Math.max(0, Math.min(100000, Math.trunc(Number(value)))) : 0;
+}
+
 function buildEvidence(report = {}) {
   const list = objectOrNull(report.threadList) || {};
   const afterDeferred = objectOrNull(report.threadListAfterDeferred) || {};
@@ -22,11 +26,23 @@ function buildEvidence(report = {}) {
     threadListReason: compactLabel(list.coldPathReason, 80),
     threadListCacheDecision: compactLabel(list.fallbackCacheDecision, 80),
     threadListSourceSnapshotHit: list.fallbackSourceSnapshotHit === true,
-    threadListSourceSnapshotRawCount: Number.isFinite(Number(list.fallbackSourceSnapshotRawCount)) ? Math.max(0, Math.min(100000, Math.trunc(Number(list.fallbackSourceSnapshotRawCount)))) : 0,
-    threadListResultCount: Number.isFinite(Number(list.resultCount)) ? Math.max(0, Math.min(100000, Math.trunc(Number(list.resultCount)))) : 0,
+    threadListSourceSnapshotRawCount: boundedCount(list.fallbackSourceSnapshotRawCount),
+    threadListResultCount: boundedCount(list.resultCount),
+    threadListFinalFilterInputCount: boundedCount(list.fallbackBaselineFinalFilterInputCount),
+    threadListFinalFilterOutputCount: boundedCount(list.fallbackBaselineFinalFilterOutputCount),
+    threadListMergeInputCount: boundedCount(list.fallbackBaselineMergeInputCount),
+    threadListMergeOutputCount: boundedCount(list.fallbackBaselineMergeOutputCount),
+    threadListMergeDuplicateCount: boundedCount(list.fallbackBaselineMergeDuplicateCount),
+    threadListLimitDropCount: boundedCount(list.fallbackBaselineLimitDropCount),
     threadListAfterDeferredOwner: compactLabel(afterDeferred.coldPathOwner, 80),
     threadListAfterDeferredReason: compactLabel(afterDeferred.coldPathReason, 80),
     threadListAfterDeferredCacheDecision: compactLabel(afterDeferred.fallbackCacheDecision, 80),
+    threadListAfterDeferredFinalFilterInputCount: boundedCount(afterDeferred.fallbackBaselineFinalFilterInputCount),
+    threadListAfterDeferredFinalFilterOutputCount: boundedCount(afterDeferred.fallbackBaselineFinalFilterOutputCount),
+    threadListAfterDeferredMergeInputCount: boundedCount(afterDeferred.fallbackBaselineMergeInputCount),
+    threadListAfterDeferredMergeOutputCount: boundedCount(afterDeferred.fallbackBaselineMergeOutputCount),
+    threadListAfterDeferredMergeDuplicateCount: boundedCount(afterDeferred.fallbackBaselineMergeDuplicateCount),
+    threadListAfterDeferredLimitDropCount: boundedCount(afterDeferred.fallbackBaselineLimitDropCount),
     threadListWarmCheckOwner: compactLabel(warmCheck.coldPathOwner, 80),
     threadListWarmCheckReason: compactLabel(warmCheck.coldPathReason, 80),
     threadListWarmCheckCacheDecision: compactLabel(warmCheck.fallbackCacheDecision, 80),
@@ -40,7 +56,7 @@ function buildEvidence(report = {}) {
     detailActiveOverlayGate: compactLabel(detail.activeOverlayGate, 80),
     detailActiveOverlayGateReason: compactLabel(detail.activeOverlayGateReason, 80),
     detailActiveOverlayNextAction: compactLabel(detail.activeOverlayNextAction, 100),
-    detailTurnCount: Number.isFinite(Number(detail.turnCount)) ? Math.max(0, Math.min(100000, Math.trunc(Number(detail.turnCount)))) : 0,
+    detailTurnCount: boundedCount(detail.turnCount),
   };
 }
 
