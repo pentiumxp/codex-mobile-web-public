@@ -86,6 +86,75 @@ test("phase B readback decision classifies thread-list fallback baseline work", 
   assert.equal(decision.evidence.threadListReason, "miss-rebuild:rollout");
 });
 
+test("phase B readback decision routes final-filter baseline reason to final-filter owner", () => {
+  const decision = classifyPhaseBReadback({
+    ok: true,
+    threadList: {
+      coldPathOwner: "fallback-baseline",
+      coldPathReason: "miss-rebuild:final-filter-empty",
+      fallbackCacheDecision: "miss-rebuild",
+      resultCount: 0,
+    },
+    detail: {
+      readMode: "projection-v4-cache",
+      readDecision: "projection-hit",
+      coldPathOwner: "warm-path",
+      coldPathReason: "warm-projection-cache",
+    },
+  });
+
+  assert.equal(decision.status, "needs_repair");
+  assert.equal(decision.owner, "thread-list-final-filter");
+  assert.equal(decision.reason, "miss-rebuild:final-filter-empty");
+  assert.equal(decision.nextAction, "optimize-thread-list-final-filter");
+});
+
+test("phase B readback decision routes merge-dedupe baseline reason to merge owner", () => {
+  const decision = classifyPhaseBReadback({
+    ok: true,
+    threadList: {
+      coldPathOwner: "fallback-baseline",
+      coldPathReason: "miss-rebuild:merge-dedupe",
+      fallbackCacheDecision: "miss-rebuild",
+      resultCount: 10,
+    },
+    detail: {
+      readMode: "projection-v4-cache",
+      readDecision: "projection-hit",
+      coldPathOwner: "warm-path",
+      coldPathReason: "warm-projection-cache",
+    },
+  });
+
+  assert.equal(decision.status, "needs_repair");
+  assert.equal(decision.owner, "thread-list-fallback-merge");
+  assert.equal(decision.reason, "miss-rebuild:merge-dedupe");
+  assert.equal(decision.nextAction, "optimize-thread-list-fallback-merge");
+});
+
+test("phase B readback decision routes limit-drop baseline reason to limit-window owner", () => {
+  const decision = classifyPhaseBReadback({
+    ok: true,
+    threadList: {
+      coldPathOwner: "fallback-baseline",
+      coldPathReason: "miss-rebuild:limit-drop",
+      fallbackCacheDecision: "miss-rebuild",
+      resultCount: 10,
+    },
+    detail: {
+      readMode: "projection-v4-cache",
+      readDecision: "projection-hit",
+      coldPathOwner: "warm-path",
+      coldPathReason: "warm-projection-cache",
+    },
+  });
+
+  assert.equal(decision.status, "needs_repair");
+  assert.equal(decision.owner, "thread-list-limit-window");
+  assert.equal(decision.reason, "miss-rebuild:limit-drop");
+  assert.equal(decision.nextAction, "review-thread-list-limit-window");
+});
+
 test("phase B readback decision returns ready for warm or bounded paths", () => {
   const decision = classifyPhaseBReadback({
     ok: true,
@@ -193,6 +262,34 @@ test("phase B readback decision treats one-time cold rebuild plus warm check as 
   assert.equal(decision.reason, "cold-start-rebuild-warmed");
   assert.equal(decision.nextAction, "observe-cold-start-first-rebuild-cost");
   assert.equal(decision.evidence.threadListWarmCheckOwner, "warm-fallback-cache");
+});
+
+test("phase B readback decision routes deferred follow-up baseline reason to specific owner", () => {
+  const decision = classifyPhaseBReadback({
+    ok: true,
+    threadList: {
+      coldPathOwner: "deferred-fallback",
+      coldPathReason: "active-thread-detail",
+      fallbackDeferred: true,
+    },
+    threadListAfterDeferred: {
+      coldPathOwner: "fallback-baseline",
+      coldPathReason: "miss-rebuild:merge-dedupe",
+      fallbackCacheDecision: "miss-rebuild",
+    },
+    detail: {
+      readMode: "projection-active-overlay",
+      readDecision: "projection-active-overlay",
+      coldPathOwner: "warm-path",
+      coldPathReason: "warm-projection-active-overlay",
+    },
+  });
+
+  assert.equal(decision.status, "needs_repair");
+  assert.equal(decision.owner, "thread-list-fallback-merge");
+  assert.equal(decision.reason, "miss-rebuild:merge-dedupe");
+  assert.equal(decision.nextAction, "optimize-thread-list-fallback-merge");
+  assert.equal(decision.evidence.threadListAfterDeferredOwner, "fallback-baseline");
 });
 
 test("phase B readback decision keeps evidence bounded and private-content free", () => {

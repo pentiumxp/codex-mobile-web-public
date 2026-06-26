@@ -182,8 +182,14 @@ Current acceleration targets:
    owner/reason labels, counts, and timings. Its readback decision service
    maps those labels into a bounded `decision` so post-deploy evidence points
    at the next root-cause owner: active overlay proof, projection cache
-   lifecycle, projection input, thread-list fallback baseline, cache freshness,
-   or app-server fallback. After the active-detail proof gate became ready, the
+   lifecycle, projection input, thread-list fallback baseline, final
+   `cwd/search` filtering, fallback merge/dedupe pressure, limit-window
+   truncation, cache freshness, or app-server fallback. The 2026-06-27 local
+   readback routing follow-up keeps one-time cold-start rebuilds as H3 observe
+   when the warm check proves the same key is already warm, but routes
+   unresolved `final-filter*`, `merge-dedupe`, and `limit-drop` baseline
+   reasons to distinct owner/nextAction labels. After the active-detail proof
+   gate became ready, the
    smoke also verifies deferred thread-list fallback as a sequence instead of a
    single label: if the first list read is deferred while detail is active, it
    performs a follow-up full list read and, when that follow-up builds the
@@ -242,7 +248,10 @@ Current acceleration targets:
    now name `final-filter-empty`, `final-filter`, `merge-dedupe`, or
    `limit-drop` instead of the generic `baseline` reason. This keeps Phase B
    readback actionable without changing any fallback source, merge, filter,
-   limit, or cache behavior.
+   limit, or cache behavior. The follow-up readback decision slice consumes
+   those labels directly, so the next action can name final-filter work,
+   fallback merge pressure, or limit-window review instead of sending all
+   unresolved baseline rebuilds back to the generic fallback-baseline bucket.
 3. Large detail cold-path attribution now has a dedicated
    `thread-detail-cold-path-diagnosis-service` that emits bounded
    `coldPathOwner` / `coldPathReason` for projection-cache seeding,

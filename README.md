@@ -487,6 +487,40 @@ node --check adapters/thread-list-cold-path-diagnosis-service.js
 
 该切片尚未部署；它是 Phase B 诊断归因增强，等待下一次 Phase B 模块批量验证和部署。
 
+## 2026-06-27 Phase B Readback Baseline Reason Routing Slice
+
+本地小切片继续把上一段 cold-path 诊断接到 Phase B readback decision。上一片已经能
+在 `coldPathReason` 中暴露 `final-filter-empty`、`final-filter`、`merge-dedupe`
+和 `limit-drop`，但 readback decision 仍会把这些情况归到泛化的
+`thread-list-fallback-baseline` / `optimize-thread-list-fallback-baseline`。这会让
+部署读回之后无法直接判断下一步该修 filter、merge 还是 limit window。
+
+本次修复：
+
+- `adapters/phase-b-readback-decision-service.js` 新增 baseline reason routing：
+  - `final-filter-empty` / `final-filter` -> `thread-list-final-filter`，
+    `optimize-thread-list-final-filter`；
+  - `merge-dedupe` -> `thread-list-fallback-merge`，
+    `optimize-thread-list-fallback-merge`；
+  - `limit-drop` -> `thread-list-limit-window`，
+    `review-thread-list-limit-window`。
+- warm-check 语义保持不变：如果 cold rebuild 后同 key warm check 已经命中，仍然只
+  标记为 H3 observe，不把一次性冷启动成本误判成必须修复。
+- deferred fallback follow-up 如果最终暴露的是 baseline 细分 reason，也会落到同一套
+  具体 owner，而不是被 `thread-list-deferred-fallback` 泛化吞掉。
+- 该变化只影响 Phase B readback 的 root-cause owner / nextAction，不改变
+  thread-list fallback 数据、排序、filter、merge、limit、cache、server projection、
+  前端渲染或 Home AI 诊断协议。
+
+闭环验证：
+
+```bash
+node --test test/phase-b-readback-decision-service.test.js test/phase-b-readback-smoke.test.js test/thread-list-cold-path-diagnosis-service.test.js
+node --check adapters/phase-b-readback-decision-service.js
+```
+
+该切片尚未部署；继续作为 Phase B 模块批量验证前的本地/private commit。
+
 ## 2026-06-27 Phase E Thread Tile Visual Fixture Slice
 
 本地小切片开始补 Phase E 的浏览器/视觉回归入口，先覆盖最近反复出问题的平铺

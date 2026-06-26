@@ -16731,6 +16731,60 @@ The previous full handoff was archived and should be opened only when old proven
     bodies, task-card bodies, upload bytes, private paths, provider payloads,
     prompts, or long logs are included.
 
+## 2026-06-27 - Phase B readback baseline reason routing local slice
+
+- Latest local slice:
+  - Continued Phase B cold-path readback attribution after `5896364`
+    (`attribute thread list baseline cold work`).
+  - The previous thread-list baseline attribution slice was fully validated and
+    committed as `5896364`; it was not deployed by design.
+  - This slice is local/private only and is not deployed by design.
+- Root-cause boundary:
+  - Symptom/risk: `thread-list-cold-path-diagnosis-service` can now emit
+    `final-filter-empty`, `final-filter`, `merge-dedupe`, and `limit-drop`
+    cold-path reasons, but Phase B readback decision still routed unresolved
+    fallback-baseline work to one generic `optimize-thread-list-fallback-baseline`
+    next action.
+  - Failing layer: bounded Phase B readback root-cause decision routing, not
+    thread-list data construction, cache key policy, source collection,
+    merge/filter/limit semantics, UI rendering, server projection, task-card
+    routing, Home AI diagnostic intake, or shell/cache.
+  - Violated invariant: Phase B readback should preserve existing bounded
+    evidence through to the next actionable owner instead of re-flattening
+    specific cold-path reasons into a generic bucket.
+- Changes:
+  - `adapters/phase-b-readback-decision-service.js` now routes baseline
+    `final-filter-empty` / `final-filter` reasons to
+    `thread-list-final-filter` and `optimize-thread-list-final-filter`.
+  - Baseline `merge-dedupe` routes to `thread-list-fallback-merge` and
+    `optimize-thread-list-fallback-merge`.
+  - Baseline `limit-drop` routes to `thread-list-limit-window` and
+    `review-thread-list-limit-window`.
+  - One-time cold rebuilds with a successful same-key warm check remain H3
+    observe; the change applies only to unresolved cold-path work.
+  - Deferred fallback follow-up reads that expose fallback-baseline reason
+    details now use the same specific routing.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation:
+  - Focused:
+    `node --test test/phase-b-readback-decision-service.test.js test/phase-b-readback-smoke.test.js test/thread-list-cold-path-diagnosis-service.test.js`
+    passed (`24` tests).
+  - Syntax:
+    `node --check adapters/phase-b-readback-decision-service.js` passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache bump.
+    This is a Phase B readback decision label-routing slice to batch with the
+    next Phase B module validation/deploy.
+- Next:
+  - Run full validation, commit locally, then continue Phase B with runtime
+    readback evidence or move to Phase A current-thread render authority.
+- Privacy:
+  - Only bounded reason labels, owner labels, next-action labels, and test
+    counts are recorded. No secrets, cookies, launch tokens, private thread
+    bodies, task-card bodies, upload bytes, private paths, provider payloads,
+    prompts, or long logs are included.
+
 ## 2026-06-27 - Phase B thread-list baseline work attribution local slice
 
 - Latest local slice:

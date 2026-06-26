@@ -146,6 +146,45 @@ function isWarmThreadList(list = {}) {
     || list.fallbackSourceSnapshotHit === true;
 }
 
+function fallbackBaselineReasonDecision(reason) {
+  const normalizedReason = lowerLabel(reason, 80);
+  const boundedReason = compactLabel(reason, 80) || "fallback-baseline-build";
+  if (normalizedReason.includes("final-filter-empty") || normalizedReason.includes("final-filter")) {
+    return {
+      status: "needs_repair",
+      priority: "H2",
+      owner: "thread-list-final-filter",
+      reason: boundedReason,
+      nextAction: "optimize-thread-list-final-filter",
+    };
+  }
+  if (normalizedReason.includes("merge-dedupe")) {
+    return {
+      status: "needs_repair",
+      priority: "H2",
+      owner: "thread-list-fallback-merge",
+      reason: boundedReason,
+      nextAction: "optimize-thread-list-fallback-merge",
+    };
+  }
+  if (normalizedReason.includes("limit-drop")) {
+    return {
+      status: "needs_repair",
+      priority: "H2",
+      owner: "thread-list-limit-window",
+      reason: boundedReason,
+      nextAction: "review-thread-list-limit-window",
+    };
+  }
+  return {
+    status: "needs_repair",
+    priority: "H2",
+    owner: "thread-list-fallback-baseline",
+    reason: boundedReason,
+    nextAction: "optimize-thread-list-fallback-baseline",
+  };
+}
+
 function threadListDecision(list = {}, report = {}) {
   const owner = lowerLabel(list.coldPathOwner, 80);
   const reason = compactLabel(list.coldPathReason, 80);
@@ -161,13 +200,7 @@ function threadListDecision(list = {}, report = {}) {
         nextAction: "observe-cold-start-first-rebuild-cost",
       };
     }
-    return {
-      status: "needs_repair",
-      priority: "H2",
-      owner: "thread-list-fallback-baseline",
-      reason: reason || "fallback-baseline-build",
-      nextAction: "optimize-thread-list-fallback-baseline",
-    };
+    return fallbackBaselineReasonDecision(reason);
   }
   if (owner === "fallback-cache-policy") {
     const warmCheck = objectOrNull(report.threadListWarmCheck);
@@ -223,6 +256,9 @@ function threadListDecision(list = {}, report = {}) {
         };
       }
       if (followupOwner === "fallback-baseline" || followupOwner === "fallback-cache-policy") {
+        if (followupOwner === "fallback-baseline") {
+          return fallbackBaselineReasonDecision(followupReason || "deferred-followup-not-warm");
+        }
         return {
           status: "needs_repair",
           priority: "H2",
