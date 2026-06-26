@@ -3047,6 +3047,16 @@ test("conversation html update invalidates stable signatures when the DOM has lo
   assert.match(updateBody, /postClientEvent\("conversation_dom_authority_invalidated"/);
   assert.match(updateBody, /updateReason: updatePlan\.reason \|\| ""/);
   assert.match(functionBody("renderCurrentThread"), /expectedVisibleTurnCount: turns\.length/);
+  assert.match(functionBody("threadTileVisibleShape"), /visibleTurnsForConversation\(thread\)/);
+  assert.match(functionBody("threadTileVisibleShape"), /visibleItemsForTurn\(turn\)\.length/);
+  assert.match(functionBody("threadTileVisibleTurnCount"), /threadTileVisibleShape\(ids\)\.turnCount/);
+  assert.match(functionBody("threadTileDomTurnCount"), /article\.thread-tile-turn\[data-thread-tile-turn\]/);
+  assert.match(functionBody("renderThreadTileLayout"), /const visibleShape = threadTileVisibleShape\(ids\);/);
+  assert.match(functionBody("renderThreadTileLayout"), /const expectedVisibleTurnCount = visibleShape\.turnCount;/);
+  assert.match(functionBody("renderThreadTileLayout"), /const renderedDomTurnCount = threadTileDomTurnCount\(\);/);
+  assert.match(functionBody("renderThreadTileLayout"), /routeKind: "thread-tile"/);
+  assert.match(functionBody("renderThreadTileLayout"), /currentVisibleItems: visibleShape\.visibleItemCount/);
+  assert.match(functionBody("renderThreadTileLayout"), /source: "thread-tile-render"/);
 });
 
 test("thread detail refresh failure delegates diagnostic payloads to helper", () => {

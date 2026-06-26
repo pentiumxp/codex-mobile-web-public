@@ -13560,3 +13560,44 @@ The previous full handoff was archived and should be opened only when old proven
     responses as direct `threads` / direct detail objects. Current production
     uses `data` for list rows and `{ thread: ... }` for detail. Re-running with
     the correct response shape produced the nonempty Music detail above.
+
+## 2026-06-26 - v530 thread-tile DOM authority count ready
+
+- Scope:
+  - Continued the v527-v529 empty-DOM/root-render authority chain by applying
+    the same stable-signature DOM-shape invariant to thread-tile board renders.
+  - This is a root-cause frontend render authority fix, not a UI hiding layer
+    and not a retry/refresh fallback.
+- Root-cause boundary:
+  - Failing layer addressed: frontend thread-tile conversation DOM authority.
+  - Violated invariant: a stable tile-board render signature is only reusable
+    when the mounted tile DOM still contains the expected renderable tile turn
+    rows. Single-thread DOM counting only checks `article.turn[data-turn]`,
+    while tile panes render turns as
+    `article.thread-tile-turn[data-thread-tile-turn]`.
+- Changes:
+  - `public/app.js` adds `threadTileVisibleShape()`,
+    `threadTileVisibleTurnCount()`, and `threadTileDomTurnCount()`.
+  - `renderThreadTileLayout()` now passes expected tile turn count, rendered
+    tile DOM turn count, tile route/action metadata, and bounded pane-id hash
+    into `updateConversationHtml()`.
+  - Empty visible detail mismatch diagnostics can now override route/action/hash
+    so tile authority failures are reported as `thread-tile`, not mislabeled as
+    single-thread empty states.
+  - Static shell/cache bumped to `codex-mobile-shell-v530`.
+  - README, architecture optimization plan, and module map document the new
+    tile DOM authority boundary.
+- Acceleration process update:
+  - The architecture plan now records the faster execution model: sub-agents do
+    disjoint read-only investigations or disjoint write-set work; the main
+    thread keeps architecture decisions, integration, full validation, deploy,
+    and production readback.
+  - A read-only sub-agent identified three next high-value cold-path slices:
+    active large-thread overlay provider, thread-list fallback baseline service,
+    and detail cold-path diagnosis service.
+- Validation before deploy:
+  - Focused:
+    `node --test test/conversation-render.test.js test/mobile-viewport.test.js test/thread-detail-dom-patch.test.js test/thread-tile-layout.test.js test/thread-tile-state.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    passed (`211` tests).
+  - Full source `npm test` passed (`1039` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.

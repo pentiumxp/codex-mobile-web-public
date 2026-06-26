@@ -75,6 +75,39 @@ AI, not independently by Codex Mobile:
 
 ## Optimization Sequence
 
+### Execution Acceleration Rule
+
+The next optimization rounds should batch work by architecture module instead
+of deploying every small UI or diagnostic tweak. The main thread should keep
+the integration path: root-cause boundary decision, code review, focused/full
+test runs, commit, deploy, and production readback. Sub-agents should be used
+for disjoint read-only investigations or disjoint write sets only, such as
+large-session cold-path analysis while the main thread fixes frontend render
+authority. This keeps velocity higher without weakening the Home AI
+root-cause-first rule or introducing masking fallbacks.
+
+Current acceleration targets:
+
+1. Active large-thread detail opens still have the highest full-read risk. The
+   active-read policy intentionally disables partial projection and bounded
+   turns-list shortcuts unless an authoritative active-window overlay can prove
+   operation, upload, assistant-delta, usage, and diagnostic coverage. The next
+   minimal slice is an injected active-overlay provider that defaults
+   fail-closed, with tests for complete evidence using projection+overlay and
+   incomplete evidence staying on full `thread/read`.
+2. Thread-list cold starts still rebuild the process-local fallback baseline in
+   the route path. The next minimal slice is a
+   `thread-list-fallback-baseline-service` that owns source collection, merge,
+   and per-source timings without changing behavior; a later slice can decide
+   whether to persist or prewarm the baseline.
+3. Large detail cold-path attribution is still distributed across summary,
+   projection-input, bounded-read, projection lookup/seed, and performance
+   services. The next minimal slice is a
+   `thread-detail-cold-path-diagnosis-service` that emits bounded
+   `coldPathOwner` / `coldPathReason` for projection-cache seeding,
+   summary-rollout hydration, stale full-cache lifecycle, active full-read, and
+   app-server fallback without changing the read strategy.
+
 ### Phase 1: Evidence And Boundary Cleanup
 
 Status: in progress. Earlier slices added bounded `detailShape` counts to
@@ -360,6 +393,17 @@ signature with `stable-signature-dom-empty`, and repaints nonempty turn rows.
 `--scenario stable-signature-empty-dom` while keeping the original
 `empty-cache` default. The harness emits only bounded build id, thread hash,
 turn/item counts, DOM counts, loaded/loading/error flags, and read mode.
+
+`codex-mobile-shell-v530` extends that same DOM-authority rule to the thread
+tile board. Tile turns are rendered as
+`article.thread-tile-turn[data-thread-tile-turn]`, so the single-thread DOM
+count (`article.turn[data-turn]`) could not prove whether a stable tile-board
+signature was still authoritative. `renderThreadTileLayout()` now computes the
+expected number of renderable tile turns across visible panes and the mounted
+tile DOM turn count before calling `updateConversationHtml()`. Stable
+signatures are therefore reusable for tile boards only when the tile DOM shape
+is compatible; otherwise the same `stable-signature-dom-empty` path performs a
+real render and emits bounded diagnostics.
 
 The first slices extract item visible-field merge policy,
 visible-text render identity / completed-receipt retention, local-only item

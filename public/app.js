@@ -516,7 +516,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v529";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v530";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -6792,17 +6792,17 @@ function emptyVisibleDetailMismatchInput(reason, thread = state.currentThread, d
   const shape = thread ? visibleConversationShape(thread) : { visibleTurnCount: 0, visibleItemCount: 0 };
   return {
     reason,
-    action: "single-thread-empty-state",
-    routeKind: "single-thread",
+    action: details.action || "single-thread-empty-state",
+    routeKind: details.routeKind || "single-thread",
     sourceKind: details.source || (sameThreadEvidence && sameThreadEvidence.sourceKind) || "",
-    threadHash: (sameThreadEvidence && sameThreadEvidence.threadHash) || diagnosticThreadHash(threadId),
+    threadHash: details.threadHash || (sameThreadEvidence && sameThreadEvidence.threadHash) || diagnosticThreadHash(threadId),
     readMode: (sameThreadEvidence && sameThreadEvidence.readMode) || (thread && thread.mobileReadMode) || "",
     renderMode: details.renderMode || "",
-    turns: sameThreadEvidence && sameThreadEvidence.turnCount || 0,
-    visibleItems: sameThreadEvidence && sameThreadEvidence.visibleItemCount || 0,
-    items: sameThreadEvidence && sameThreadEvidence.itemCount || 0,
-    currentTurns: shape.visibleTurnCount,
-    currentVisibleItems: shape.visibleItemCount,
+    turns: Object.prototype.hasOwnProperty.call(details, "turns") ? details.turns : sameThreadEvidence && sameThreadEvidence.turnCount || 0,
+    visibleItems: Object.prototype.hasOwnProperty.call(details, "visibleItems") ? details.visibleItems : sameThreadEvidence && sameThreadEvidence.visibleItemCount || 0,
+    items: Object.prototype.hasOwnProperty.call(details, "items") ? details.items : sameThreadEvidence && sameThreadEvidence.itemCount || 0,
+    currentTurns: Object.prototype.hasOwnProperty.call(details, "currentTurns") ? details.currentTurns : shape.visibleTurnCount,
+    currentVisibleItems: Object.prototype.hasOwnProperty.call(details, "currentVisibleItems") ? details.currentVisibleItems : shape.visibleItemCount,
     domCount: details.domCount,
     previousCount: details.previousCount,
     detailLoaded: Boolean(thread && thread.mobileDetailLoaded),
@@ -6935,6 +6935,29 @@ function conversationDomTurnIds(conversation = $("conversation")) {
   return Array.from(conversation.querySelectorAll("article.turn[data-turn]"))
     .map((node) => String(node && node.getAttribute && node.getAttribute("data-turn") || ""))
     .filter(Boolean);
+}
+
+function threadTileVisibleShape(ids = state.threadTileActiveIds) {
+  return (Array.isArray(ids) ? ids : []).reduce((shape, id) => {
+    const thread = threadTileDisplayThread(id);
+    visibleTurnsForConversation(thread).forEach((turn) => {
+      const itemCount = visibleItemsForTurn(turn).length;
+      if (itemCount > 0) {
+        shape.turnCount += 1;
+        shape.visibleItemCount += itemCount;
+      }
+    });
+    return shape;
+  }, { turnCount: 0, visibleItemCount: 0 });
+}
+
+function threadTileVisibleTurnCount(ids = state.threadTileActiveIds) {
+  return threadTileVisibleShape(ids).turnCount;
+}
+
+function threadTileDomTurnCount(conversation = $("conversation")) {
+  if (!conversation) return 0;
+  return conversation.querySelectorAll("article.thread-tile-turn[data-thread-tile-turn]").length;
 }
 
 function conversationTurnOrderDiagnosticSnapshot(source, extra = {}, deps = {}) {
@@ -12101,7 +12124,12 @@ function updateConversationHtml(html, signature, options = {}) {
   if (updatePlan.reason === "stable-signature-dom-empty" && expectedVisibleTurnCount > 0) {
     recordEmptyVisibleDetailMismatch("stable_signature_dom_empty", state.currentThread, {
       source: options.source || "conversation-update",
+      action: options.action || undefined,
+      routeKind: options.routeKind || undefined,
+      threadHash: options.threadHash || undefined,
       renderMode: updatePlan.action || "full-render",
+      currentTurns: Object.prototype.hasOwnProperty.call(options, "currentTurns") ? options.currentTurns : undefined,
+      currentVisibleItems: Object.prototype.hasOwnProperty.call(options, "currentVisibleItems") ? options.currentVisibleItems : undefined,
       domCount: renderedDomTurnCount,
       previousCount: conversation && conversation.childNodes ? conversation.childNodes.length : 0,
     });
@@ -13475,8 +13503,22 @@ function renderThreadTileLayout(layout, options = {}) {
     </div>`).join("")}
   </div>`;
   const signature = threadTileRenderSignature(displayLayout, ids);
+  const visibleShape = threadTileVisibleShape(ids);
+  const expectedVisibleTurnCount = visibleShape.turnCount;
+  const renderedDomTurnCount = threadTileDomTurnCount();
   setThreadTileConversationMode(true, displayLayout);
-  updateConversationHtml(html, signature, { stickToBottom: options.stickToBottom === true, patchShellSignature: "" });
+  updateConversationHtml(html, signature, {
+    stickToBottom: options.stickToBottom === true,
+    patchShellSignature: "",
+    expectedVisibleTurnCount,
+    renderedDomTurnCount,
+    action: "thread-tile-empty-state",
+    routeKind: "thread-tile",
+    threadHash: diagnosticHash(`thread-tile:${ids.join("|")}`),
+    currentTurns: expectedVisibleTurnCount,
+    currentVisibleItems: visibleShape.visibleItemCount,
+    source: "thread-tile-render",
+  });
   bindThreadTileActions();
   restoreThreadTilePaneScrollState(scrollState);
   if (typeof window.requestAnimationFrame === "function") {

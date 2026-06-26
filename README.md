@@ -16,6 +16,25 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v530 Thread Tile DOM Authority Count
+
+v530 把 v527 的 stable-signature DOM authority 规则补到平铺 board。此前单线程
+`renderCurrentThread()` 已经会把 expected visible turn 数和真实 DOM turn 数交给
+`planConversationHtmlUpdate()`；但平铺 turn 的 DOM 使用
+`article.thread-tile-turn[data-thread-tile-turn]`，不是单线程的 `article.turn[data-turn]`。
+因此平铺整板渲染在签名稳定时仍可能误走 `hydrate-existing`，即使真实 tile DOM 已经丢失。
+
+本次修复：
+
+- `public/app.js` 新增 `threadTileVisibleTurnCount()` 和 `threadTileDomTurnCount()`，
+  分别计算当前平铺窗口应该渲染的 tile turn 数和真实 mounted tile turn 数。
+- `renderThreadTileLayout()` 调用同一个 `updateConversationHtml()` authority path，并传入
+  `expectedVisibleTurnCount`、`renderedDomTurnCount` 和 `source: "thread-tile-render"`。
+- 这不是隐藏空白或强制刷新兜底；它修正的是“平铺 board 的 render signature 也必须接受
+  真实 DOM 形态校验”这个根因边界。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v530`。
+
 ## 2026-06-26 v529 Stable Signature Empty-DOM Visual Harness
 
 v529 不改变运行时渲染策略，补上 v527/v528 事故链的浏览器级回放入口。此前已经在
