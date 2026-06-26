@@ -470,6 +470,7 @@ const state = {
   threadHistoryBusy: false,
   threadHistoryError: "",
   threadHistoryAutoBackfillKeys: new Set(),
+  emptyDetailHistoryRecoveryAtByKey: new Map(),
   perfEventLastReportedAt: {},
   homeAiDiagnosticReporter: homeAiDiagnosticReportingApi.createDiagnosticReporter({
     threshold: homeAiDiagnosticReportingApi.DEFAULT_THRESHOLD,
@@ -515,7 +516,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v522";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v523";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -545,6 +546,7 @@ const PERF_EVENT_THROTTLE_MS = 2000;
 const PERF_RENDER_REPORT_MIN_MS = 16;
 const PERF_SLOW_RENDER_REPORT_MS = 50;
 const PRIMARY_SHELL_CONFLICT_EVIDENCE_MS = 30000;
+const EMPTY_DETAIL_HISTORY_RECOVERY_COOLDOWN_MS = 30000;
 const RUNNING_THREAD_HINT_STALE_MS = 20 * 60 * 1000;
 const SUBMITTED_PROCESSING_HINT_STALE_MS = threadStatusHintPolicy.DEFAULT_SUBMITTED_PROCESSING_HINT_STALE_MS;
 const STATUS_EVENT_FRESHNESS_TOLERANCE_MS = threadStatusHintPolicy.DEFAULT_STATUS_EVENT_FRESHNESS_TOLERANCE_MS;
@@ -6831,6 +6833,46 @@ function recordEmptyVisibleDetailHealthy(source, thread = state.currentThread) {
   }));
 }
 
+function threadHasNonemptyHistoryEvidence(thread) {
+  if (!thread || typeof thread !== "object") return false;
+  if (rolloutSizeBytes(thread) > 0) return true;
+  if (Number(thread.mobileOmittedTurnCount || 0) > 0) return true;
+  if (Array.isArray(thread.mobileVisibleItemKeys) && thread.mobileVisibleItemKeys.length > 0) return true;
+  if (thread.activeTurnId || thread.mobileRolloutActiveTurn) return true;
+  if (Array.isArray(thread.threadTaskCards) && thread.threadTaskCards.length > 0) return true;
+  if (Number(thread.pendingTaskCardCount || 0) > 0) return true;
+  return false;
+}
+
+function maybeRecoverEmptyDetailWithHistoryEvidence(thread, details = {}) {
+  if (!thread || thread.mobileLoading || thread.mobileLoadError) return false;
+  const threadId = String(thread.id || state.currentThreadId || "").trim();
+  if (!threadId || !threadHasNonemptyHistoryEvidence(thread)) return false;
+  const readMode = String(thread.mobileReadMode || "");
+  const size = rolloutSizeBytes(thread);
+  const omitted = Number(thread.mobileOmittedTurnCount || 0);
+  const visibleKeys = Array.isArray(thread.mobileVisibleItemKeys) ? thread.mobileVisibleItemKeys.length : 0;
+  const key = [threadId, readMode, size, omitted, visibleKeys].join("|");
+  const now = Date.now();
+  const last = Number(state.emptyDetailHistoryRecoveryAtByKey.get(key) || 0);
+  if (last && now - last < EMPTY_DETAIL_HISTORY_RECOVERY_COOLDOWN_MS) return false;
+  state.emptyDetailHistoryRecoveryAtByKey.set(key, now);
+  recordEmptyVisibleDetailMismatch("empty_render_with_history_evidence", thread, details);
+  if (!hasThreadDetailRequestInFlight()) {
+    scheduleCurrentThreadRefresh(0, "empty-detail-history-evidence");
+  }
+  postClientEvent("empty_detail_history_recovery", {
+    threadId,
+    readMode,
+    rolloutSizeBytes: size,
+    omittedTurns: omitted,
+    visibleItemKeyCount: visibleKeys,
+    source: String(details.source || "").slice(0, 80),
+    renderMode: String(details.renderMode || "").slice(0, 80),
+  });
+  return true;
+}
+
 function emptyCachedDetailReuseInput(reason, thread = state.currentThread, details = {}) {
   const threadId = String((thread && thread.id) || state.currentThreadId || "").trim();
   const shape = thread ? visibleConversationShape(thread) : { visibleTurnCount: 0, visibleItemCount: 0 };
@@ -6878,14 +6920,17 @@ function checkEmptyVisibleDetailMismatchAfterRender(thread, shellPlan = {}, metr
   if (shellPlan.hasPrimaryContent || shellPlan.emptyMessage !== "No visible turns.") return;
   const threadId = String(thread.id || state.currentThreadId || "").trim();
   const evidence = recentThreadDetailRenderEvidence();
-  if (!evidence || String(evidence.threadId || "") !== threadId) return;
-  if (!evidence.turnCount && !evidence.visibleItemCount) return;
-  recordEmptyVisibleDetailMismatch("empty_render_after_nonempty_detail", thread, {
+  const details = {
     source: metrics.source || "single-thread-render",
     renderMode: metrics.renderMode || "full-render",
     domCount: metrics.domCount,
     previousCount: metrics.previousCount,
-  });
+  };
+  if (evidence && String(evidence.threadId || "") === threadId && (evidence.turnCount || evidence.visibleItemCount)) {
+    recordEmptyVisibleDetailMismatch("empty_render_after_nonempty_detail", thread, details);
+    return;
+  }
+  maybeRecoverEmptyDetailWithHistoryEvidence(thread, details);
 }
 
 function visibleRenderableTurnIds(thread) {

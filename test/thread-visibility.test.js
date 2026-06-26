@@ -11,6 +11,10 @@ const threadDetailReadOrchestrationServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "adapters", "thread-detail-read-orchestration-service.js"),
   "utf8",
 );
+const threadListSummaryServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "adapters", "thread-list-summary-service.js"),
+  "utf8",
+);
 process.env.CODEX_MOBILE_SETTINGS_FILE = path.join(os.tmpdir(), `codex-mobile-thread-visibility-settings-${process.pid}.json`);
 try {
   fs.rmSync(process.env.CODEX_MOBILE_SETTINGS_FILE, { force: true });
@@ -31,6 +35,8 @@ const {
   readRolloutSessionFallbackThreadFromFile,
   rememberLocalActiveThreadStatus,
   sortTurnsChronologically,
+  stripThreadListDetailFields,
+  stripThreadListResultDetailFields,
   taskCardSourceThreadTitle,
   threadDisplayPublicSettings,
   threadDisplayTitle,
@@ -768,6 +774,11 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(serverJs, /function logThreadList\(event, details = \{\}\)/);
   assert.match(serverJs, /const THREAD_LIST_FALLBACK_CACHE_TTL_MS[\s\S]*\|\| "0"/);
   assert.match(serverJs, /createThreadListFallbackCacheService/);
+  assert.match(serverJs, /stripThreadListDetailFields/);
+  assert.match(serverJs, /stripThreadListResultDetailFields/);
+  assert.match(threadListSummaryServiceJs, /THREAD_DETAIL_ONLY_SUMMARY_FIELDS/);
+  assert.match(threadListSummaryServiceJs, /"turns"/);
+  assert.match(threadListSummaryServiceJs, /"mobileDetailLoaded"/);
   assert.match(serverJs, /const threadListFallbackCacheService = createThreadListFallbackCacheService\(\{\s*ttlMs: THREAD_LIST_FALLBACK_CACHE_TTL_MS,/);
   assert.match(serverJs, /function clearThreadListFallbackCache\(\)/);
   assert.match(serverJs, /function upsertThreadListFallbackCacheThread\(thread, options = \{\}\)/);
@@ -1149,6 +1160,87 @@ test("thread list merge does not let notLoaded rows erase settled status", () =>
   }], 10);
 
   assert.equal(result.data[0].status.type, "completed");
+});
+
+test("thread list summaries strip detail-only fields from app-server and fallback rows", () => {
+  const dirtySummary = {
+    id: "019e9000-0000-7000-8000-000000000099",
+    name: "Music",
+    preview: "Music",
+    updatedAt: 1782446410,
+    status: { type: "idle" },
+    turns: [],
+    runtimeSettings: { permissionMode: "custom" },
+    threadTaskCards: [{ id: "ttc-private" }],
+    pendingServerRequests: [{ id: "request-private" }],
+    mobileDetailLoaded: true,
+    mobileLoading: false,
+    mobileLoadError: "",
+    mobileReadMode: "projection-v4-dynamic",
+    mobileDiagnostics: { privateShape: true },
+    mobileProjectionVersion: "v4",
+    mobileVisibleItemKeys: ["private-visible-key"],
+    mobileOlderTurnsCursor: "private-cursor",
+    pendingTaskCardCount: 2,
+  };
+
+  const stripped = stripThreadListDetailFields(dirtySummary);
+  for (const field of [
+    "turns",
+    "runtimeSettings",
+    "threadTaskCards",
+    "pendingServerRequests",
+    "mobileDetailLoaded",
+    "mobileLoading",
+    "mobileLoadError",
+    "mobileReadMode",
+    "mobileDiagnostics",
+    "mobileProjectionVersion",
+    "mobileVisibleItemKeys",
+    "mobileOlderTurnsCursor",
+  ]) {
+    assert.equal(Object.prototype.hasOwnProperty.call(stripped, field), false, `${field} should not be a list field`);
+  }
+  assert.equal(stripped.id, dirtySummary.id);
+  assert.equal(stripped.name, "Music");
+  assert.equal(stripped.pendingTaskCardCount, 2);
+
+  const strippedResult = stripThreadListResultDetailFields({ data: [dirtySummary], threads: [dirtySummary] });
+  assert.equal(Object.prototype.hasOwnProperty.call(strippedResult.data[0], "turns"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(strippedResult.threads[0], "mobileDetailLoaded"), false);
+});
+
+test("thread list merge strips empty detail authority from app-server list rows", () => {
+  const threadId = "019e9000-0000-7000-8000-000000000098";
+  const result = mergeThreadListFallback({
+    data: [{
+      id: threadId,
+      name: "Music",
+      preview: "Music",
+      updatedAt: 1782446410,
+      status: { type: "idle" },
+      turns: [],
+      mobileDetailLoaded: true,
+      mobileReadMode: "projection-v4-dynamic",
+      mobileProjectionVersion: "v4",
+      mobileVisibleItemKeys: ["stale-key"],
+      threadTaskCards: [{ id: "stale-card" }],
+    }],
+  }, [{
+    id: threadId,
+    name: "Music",
+    updatedAt: 1782446411,
+    status: { type: "idle" },
+    mobileFallback: true,
+    turns: [{ id: "fallback-detail-should-not-leak" }],
+    mobileDiagnostics: { stale: true },
+  }], 10);
+
+  assert.equal(result.data[0].id, threadId);
+  assert.equal(result.data[0].mobileFallback, true);
+  for (const field of ["turns", "mobileDetailLoaded", "mobileReadMode", "mobileProjectionVersion", "mobileVisibleItemKeys", "threadTaskCards", "mobileDiagnostics"]) {
+    assert.equal(Object.prototype.hasOwnProperty.call(result.data[0], field), false, `${field} should be stripped from merged list row`);
+  }
 });
 
 test("thread list merge upgrades notLoaded rows from fallback settled status", () => {

@@ -1,3 +1,293 @@
+# 2026-06-26 - local Phase B active read policy extracted
+
+- Scope:
+  - Continued Phase B active/running large-thread read-path work.
+  - This slice extracts the active-thread full-read decision into a pure policy
+    service. It does not enable partial projection for active threads, does not
+    change `thread/read` versus `turns-list` execution order, does not change
+    projection cache contents, and does not alter frontend rendering.
+- Root-cause boundary:
+  - Runtime sampling showed the remaining slow detail class is active/running
+    large threads where partial projection could omit in-progress operation or
+    intermediate items.
+  - The violated long-term invariant is architectural rather than a single
+    bug: active read correctness rules should not be embedded directly in the
+    orchestration flow if future optimization needs an active-window overlay.
+  - The new policy surface makes the current conservative rule explicit:
+    active summaries require full `thread/read` until a later overlay proves it
+    can preserve live/intermediate items without missing or duplicating them.
+- Changes:
+  - Commit `99763b1 extract active thread detail read policy`.
+  - Added `adapters/thread-detail-active-read-policy-service.js`.
+  - `thread-detail-active-read-policy-service` owns:
+    active status normalization, active turn id detection, bounded
+    full-read reason derivation, recent partial/initial turns-list eligibility,
+    and active suppression of large-session bounded-read shortcuts.
+  - `adapters/thread-detail-read-orchestration-service.js` now consumes the
+    policy plan instead of parsing active status inline.
+  - Added `test/thread-detail-active-read-policy-service.test.js`.
+  - Updated README, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`,
+    `docs/MODULES.md`, `package.json` check coverage, and the legacy
+    source-string visibility test to point at the new policy boundary.
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-active-read-policy-service.test.js test/thread-detail-read-orchestration-service.test.js test/thread-detail-performance-service.test.js test/thread-performance-metrics.test.js`
+    passed (`42` tests).
+  - Failure follow-up:
+    `node --test test/thread-visibility.test.js test/thread-detail-active-read-policy-service.test.js test/thread-detail-read-orchestration-service.test.js`
+    passed (`61` tests) after updating an old source-string assertion that
+    expected the previous inline active check.
+  - Full source `npm test` passed (`1018` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Not deployed. This is a local architecture boundary slice with no intended
+    runtime behavior change and no PWA shell/cache bump.
+- Next recommended slice:
+  - Add a pure active-window overlay planning service/test harness. It should
+    define the exact evidence required before active recent reads may use
+    projection plus overlay instead of full `thread/read`: active turn id,
+    operation item presence, user upload visibility, assistant delta freshness,
+    usage/diagnostic receipts, and safe fallback to full read when any invariant
+    is not proven.
+
+# 2026-06-26 - local Phase B active full-read evidence committed
+
+- Runtime sampling before this slice:
+  - Production was still v522:
+    `clientBuildId=0.1.11|codex-mobile-shell-v522`,
+    `shellCacheName=codex-mobile-shell-v522`.
+  - First observed thread-list read after local sampling hit a cold
+    fallback-cache rebuild: `totalMs=2590`, `fallbackMs=2273`,
+    `fallbackRolloutMs=2093`, `fallbackCacheDecision=miss-rebuild`.
+  - Immediate repeated list reads were warm cache hits around `315-340ms`,
+    `fallbackMs=0`, `fallbackCacheDecision=hit`; remaining cost was mostly
+    app-server/list merge/decorate. This supports the current Phase B
+    conclusion that ordinary refresh is not repeatedly rebuilding the fallback
+    baseline once the process is warm.
+  - Large detail samples:
+    - 201MB active/status-error row initially fell back to full `thread-read`
+      with `threadReadMs=1414` because only a partial projection was available
+      and active summaries intentionally require full reads for live operation
+      recovery.
+    - After that full read seeded projection, repeated reads for that large
+      thread hit `projection-v4-dynamic` in roughly `125-221ms`.
+    - 112MB and 45MB idle rows hit warm dynamic projection in roughly
+      `54-157ms`.
+    - 22-40MB rows with no cache first used `turns-list-initial`
+      (`137-258ms`), then repeated reads hit `projection-v4-partial`
+      (`48-54ms`).
+  - All sampling output was bounded to ids hashed with SHA-256 prefixes,
+    status/read modes, counts, rollout-size buckets, timing fields, and reason
+    codes. No titles, message bodies, card bodies, access keys, uploads,
+    cookies, tokens, provider payloads, or raw logs were printed.
+- Root-cause boundary:
+  - The remaining measured slow detail class is not generic idle projection or
+    thread-list fallback rebuild. It is active/running thread detail reads when
+    partial projection would omit in-progress operation/intermediate items.
+  - Correctness still requires full read unless a future active-window overlay
+    strategy proves it can merge live operation evidence over a partial/current
+    window without missing or duplicating items.
+- Changes:
+  - Commit `7cee941 report active detail full-read reasons`.
+  - `adapters/thread-detail-read-orchestration-service.js` now derives a bounded
+    `activeFullReadReason` (`active-turn-id`, `status-active`,
+    `mobile-status-active`, or `local-active-status`) when active summaries
+    force full `thread/read`.
+  - `adapters/thread-detail-performance-service.js` exposes
+    `activeFullReadRequired` and `activeFullReadReason` in
+    `mobileDiagnostics.threadDetailTimings`.
+  - README, architecture optimization plan, and module map document this as
+    evidence-only Phase B diagnostics, not a runtime shortcut.
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-performance-service.test.js test/thread-detail-read-orchestration-service.test.js test/thread-performance-metrics.test.js`
+    passed (`37` tests).
+  - Full source `npm test` passed (`1013` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Not deployed as a standalone local evidence slice. Production remains v522.
+- Next recommended slice:
+  - Design and test an active-window overlay policy before changing runtime
+    reads: partial recent/dynamic projection may only replace full `thread/read`
+    for active threads if current active turn operations, tool calls, user
+    uploads, assistant deltas, and usage/diagnostic receipts can be merged from
+    authoritative live/projection evidence without losing content.
+
+# 2026-06-26 - local Phase B server detail phase classifier committed
+
+- Scope:
+  - Continued Phase B large-session/thread-detail cold-path evidence work.
+  - This is a server diagnostics classifier cleanup only: it does not change
+    thread-detail read strategy, projection cache state, frontend render/patch
+    behavior, Home AI diagnostic transport, or PWA shell/cache.
+  - Not deployed by design as a standalone tiny slice; production remains the
+    latest deployed v522 shell until this diagnostic boundary is bundled with a
+    runtime optimization or the user explicitly asks to deploy it.
+- Root-cause boundary:
+  - Symptom/risk: client first-paint events can classify thread detail phases
+    from bounded fields, but server `mobileDiagnostics.threadDetailTimings.phase`
+    could stay `unknown` or less precise when `readMode` was sparse/generic.
+  - Failing layer: server thread-detail timing diagnostics phase ownership.
+  - Violated invariant: production large-session evidence must distinguish warm
+    projection hits, partial projection hits, bounded turns-list windows,
+    cold full/raw thread reads, fallback turns-list, and summary fallback using
+    bounded enum/status metadata, not private content.
+- Changes:
+  - Commit `49c2c78 align server thread detail phase classification`.
+  - `adapters/thread-detail-performance-service.js` now classifies phase from
+    `readDecision`, `projectionState`, `projectionSource`, and
+    `projectionSeedStatus` when `readMode` is sparse.
+  - Added coverage in `test/thread-detail-performance-service.test.js` for
+    read-decision-only classification and seeded initial windows without
+    leaking turn ids or message body text.
+  - Updated README, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md` with the Phase B evidence boundary.
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-performance-service.test.js test/thread-performance-metrics.test.js test/thread-detail-read-orchestration-service.test.js`
+    passed (`36` tests).
+  - `node --check adapters/thread-detail-performance-service.js` passed.
+  - Full source `npm test` passed (`1012` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Next recommended slice:
+  - Use the now-aligned server/client phase evidence to sample production
+    thread-detail first-paint paths for large threads, then decide whether the
+    next root-cause fix belongs in projection cache persistence, summary-size
+    hydration, active-thread read bypass, or client patch/render ownership.
+
+# 2026-06-26 - v522 empty-detail browser smoke harness deployed
+
+- Scope:
+  - Added a Phase E browser/DOM replay hook for the Music empty-detail failure
+    class fixed in v520/v521.
+  - This is verification infrastructure, not a runtime fallback: it does not
+    synthesize turns, force refresh loops, hide empty states, or alter thread
+    detail authority rules.
+- Changes:
+  - Commit `87c9a2b add empty detail cache visual smoke`.
+  - `public/app.js` Hermes embedded visual harness now exposes
+    `simulateEmptyCachedDetailOpen(threadId)`.
+  - The harness seeds the old bad precondition
+    `turns: [] + mobileDetailLoaded:true` into the current thread, then calls
+    the real `loadThread(threadId, { source: "visual-harness-empty-cache" })`
+    path.
+  - Added `scripts/codex-mobile-empty-detail-cache-smoke.js`, which drives the
+    Home AI live debug server, calls the iframe harness, and checks that the
+    DOM reaches nonempty `.turn[data-turn]` rows instead of staying on
+    `No visible turns.`.
+  - `package.json` `check` now syntax-checks the new smoke script.
+  - README, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and `docs/MODULES.md`
+    document the v522 replay boundary.
+  - Static shell/cache advanced to `codex-mobile-shell-v522`.
+- Privacy/safety boundary:
+  - Harness/smoke results are bounded to `clientBuildId`, `thread_hash`,
+    turn/item counts, loaded/loading/error flags, read mode, and DOM counts.
+  - They do not return thread titles, message text, task-card bodies, upload
+    contents, file paths, URLs, cookies, access keys, launch tokens, provider
+    payloads, or long logs.
+- Validation:
+  - Focused suite passed:
+    `node --test test/mobile-viewport.test.js test/conversation-render.test.js test/thread-detail-state.test.js test/thread-diagnostic-events.test.js test/home-ai-diagnostic-reporting.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    (`171` tests).
+  - `node --check public/app.js && node --check public/sw.js && node --check scripts/codex-mobile-empty-detail-cache-smoke.js`
+    passed.
+  - Full source `npm test` passed (`1010` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment/readback:
+  - Deployed through the Home AI central macOS plugin deploy path.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T055446Z-plugin-codex-mobile-web-manual`.
+  - Production `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v522`,
+    `shellCacheName=codex-mobile-shell-v522`, and build id
+    `677c4f047a5ab153`.
+  - Production marker readback confirmed v522 in `public/app.js` / `public/sw.js`,
+    `simulateEmptyCachedDetailOpen` in `public/app.js`, and
+    `No visible turns` smoke logic in
+    `scripts/codex-mobile-empty-detail-cache-smoke.js`.
+  - Source/prod SHA-256 prefixes matched for changed runtime files, docs, tests,
+    package metadata, and the new smoke script.
+  - Authenticated production Music detail read returned `10` turns with item
+    counts `[3,5,3,5,5,4,3,4,3,4]`, `39` visible items, and read mode
+    `projection-v4-dynamic`.
+- Live visual smoke attempt:
+  - `node scripts/codex-mobile-empty-detail-cache-smoke.js --thread-id 019ef42b-2cb8-7332-ab17-033ec5b48947 --json`
+    was attempted against the Home AI live debug server at `127.0.0.1:19073`.
+  - The server existed, but the run failed before browser evidence with bounded
+    error `500:spawnSync xcrun ETIMEDOUT`.
+  - Treat this as a debug-lane/runtime harness availability limitation, not as
+    evidence that the Codex Mobile empty-detail replay failed.
+- Next recommended slice:
+  - Make the live visual lane itself observable enough that `xcrun` timeouts
+    are classified separately from plugin DOM failures, then run the v522 smoke
+    after the debug lane is healthy. After that, continue Phase B cold/warm
+    detail-path timing evidence for large sessions.
+
+# 2026-06-26 - v521 thread-open cache-reuse policy deployed
+
+- User-visible incident:
+  - User reported `Music 06-23` could enter a state where no turns were visible.
+  - Production detail API for thread `019ef42b-2cb8-7332-ab17-033ec5b48947`
+    continued to return `10` turns and `39` visible items both before and after
+    the fix, so the data was not lost; the failure remained in frontend
+    detail/cache authority and render projection.
+- Root-cause boundary:
+  - Failing layer: frontend single-thread `loadThread()` cached-current reuse
+    policy.
+  - Invariant: opening a thread may reuse cached current detail only when the
+    current detail is both loaded and reusable. An empty
+    `mobileDetailLoaded + turns: []` object must not become display authority
+    and skip the detail API.
+  - Classification: root-cause architecture fix plus bounded diagnostic. No
+    synthetic turns, forced refresh loop, duplicate suppression, or UI-only
+    fallback was added.
+- Changes:
+  - Commit `650d711 extract thread open cache reuse policy`.
+  - `public/thread-detail-state.js` adds `planThreadOpenCacheReuse()`, a pure
+    policy returning `shouldUseCachedCurrent`,
+    `shouldReportEmptyCachedDetail`, and bounded `reason`.
+  - `public/app.js` consumes that plan in `loadThread()`. Nonempty loaded detail
+    can still use `cached-current`; empty loaded detail is blocked from cache
+    authority and the normal detail API path continues.
+  - `public/thread-diagnostic-events.js` adds
+    `empty_cached_detail_reuse_blocked` and success-clear payload builders so
+    recurring empty-cache authority attempts can enter the Home AI
+    Owner-gated diagnostic loop with metadata-only evidence.
+  - README, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and `docs/MODULES.md`
+    document the new policy boundary.
+  - Static shell/cache advanced to `codex-mobile-shell-v521`.
+- Validation:
+  - Focused suite passed:
+    `node --test test/thread-detail-state.test.js test/thread-diagnostic-events.test.js test/conversation-render.test.js test/home-ai-diagnostic-reporting.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    (`170` tests).
+  - `node --check public/app.js && node --check public/thread-detail-state.js && node --check public/thread-diagnostic-events.js && node --check public/sw.js`
+    passed.
+  - Full source `npm test` passed (`1009` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment/readback:
+  - Deployed through the Home AI central macOS plugin deploy path.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T054436Z-plugin-codex-mobile-web-manual`.
+  - Production `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v521`,
+    `shellCacheName=codex-mobile-shell-v521`, and build id
+    `2624c65bfdfa86bc`.
+  - Production marker readback confirmed `planThreadOpenCacheReuse` in
+    `public/app.js` / `public/thread-detail-state.js`,
+    `empty_cached_detail_reuse_blocked` in
+    `public/thread-diagnostic-events.js`, and `codex-mobile-shell-v521` in
+    `public/app.js` / `public/sw.js`.
+  - Source/prod SHA-256 prefixes matched for changed runtime files, docs, and
+    tests.
+  - Authenticated production Music detail read returned `10` turns with item
+    counts `[3,5,3,5,5,4,3,4,3,4]` and `39` visible items.
+- Next recommended slice:
+  - Add a browser/DOM smoke for this exact failure class: seed an empty
+    current-thread detail shell, open the same thread, verify the UI does not
+    render `No visible turns.` from cache, verify a detail API read occurs, and
+    verify the bounded diagnostic fires if the empty-cache authority attempt
+    repeats.
+
 # 2026-06-26 - local Phase B bounded-read policy service validated, not deployed
 
 - Latest code commit:
@@ -12237,3 +12527,759 @@ The previous full handoff was archived and should be opened only when old proven
     `public/sw.js`, `public/thread-diagnostic-events.js`,
     `public/home-ai-diagnostic-reporting.js`, `docs/MODULES.md`, and
     `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+
+## 2026-06-26 - Live detail cache gap root cause fixed and deployed
+
+- Trigger:
+  - User reported Music/Home AI/Codex Mobile thread detail views showing empty
+    or missing turns, stale long receipts, and active turns losing intermediate
+    items after refresh/restart.
+- Root-cause boundary:
+  - Failing layer: server thread-detail projection/cache read orchestration.
+  - Notification-created partial projection shells could be returned as recent
+    detail even though they had no projection signature or item payload.
+  - Active/running large-session reads could take bounded `turns-list-*`
+    windows after restart, losing active-turn intermediate items even though
+    full `thread/read includeTurns` still had them.
+- Changes:
+  - Commit `b289c68 fix live thread detail cache gaps`.
+  - `adapters/thread-detail-projection-service.js` rejects unseeded partial
+    projection shells as `partial-not-seeded` and labels notification shells.
+  - `adapters/thread-detail-read-orchestration-service.js` bypasses partial
+    projection and bounded turns-list windows for active/running summaries,
+    forcing full thread/read with `largeReadReason=active-thread-requires-full-read`.
+  - Tests updated for projection shell rejection, active-thread full-read
+    orchestration, and visibility/source-shape guards.
+- Validation:
+  - Focused `node --test test/thread-detail-projection-service.test.js
+    test/thread-detail-read-orchestration-service.test.js
+    test/thread-visibility.test.js` passed (`78` tests).
+  - Full source `npm test` passed (`976` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment/readback:
+  - Deployed through the central Home AI macOS plugin deploy path with reason
+    `codex-mobile-live-detail-cache-gaps`.
+  - Production file hash prefixes matched for
+    `adapters/thread-detail-projection-service.js`,
+    `adapters/thread-detail-read-orchestration-service.js`, `docs/MODULES.md`,
+    and `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+  - Bounded API readback after deploy showed Home AI/Codex Mobile active
+    threads using `thread-read` with active item counts preserved; Music current
+    thread returned recent/full detail with non-empty turn item counts.
+
+## 2026-06-26 - v510 detail-response diagnostic module deployed
+
+- Trigger:
+  - User asked that client refresh/detail inconsistencies such as empty turns,
+    missing middle content, duplicate/missing messages, and slow session loads
+    be detected and reported through Home AI diagnostic intake instead of
+    relying on user screenshots.
+- Root-cause boundary:
+  - Failing layer: plugin-owned frontend diagnostic coverage for successful
+    but semantically bad thread-detail responses.
+  - Existing diagnostics covered DOM render signature, duplicate render keys,
+    turn order, and refresh API failures, but not detail responses that were
+    already empty shells, active-thread window downgrades, or slow cold paths
+    before DOM render.
+- Changes:
+  - Commit `3040c97 feat: report thread detail contract diagnostics`.
+  - Static shell/cache bumped to `codex-mobile-shell-v510`.
+  - `public/thread-performance-metrics.js` now plans:
+    `thread_detail_slow_path` and
+    `thread_detail_response_contract_mismatch`.
+  - `public/thread-diagnostic-events.js` now builds bounded failure/success
+    payloads for slow detail paths and response-contract mismatches.
+  - `public/home-ai-diagnostic-reporting.js` sanitizer now allows only bounded
+    read-mode, phase, projection source/kind, cursor boolean, count, timing,
+    and short-hash fields for these reports.
+  - `public/app.js` records the diagnostics after successful
+    load/refresh/full-backfill detail responses; repeated failures use the
+    existing threshold/throttle reporter and successful responses clear counts.
+  - The projection-window mismatch rule intentionally reports only projection
+    full/cache responses with `newerCursor`; latest windows with only
+    `olderCursor` are normal recent-history pagination and are not reported.
+- Validation:
+  - Focused diagnostics: `node --test test/thread-performance-metrics.test.js
+    test/thread-diagnostic-events.test.js test/home-ai-diagnostic-reporting.test.js
+    test/mobile-viewport.test.js` passed (`45` tests after final rule
+    narrowing).
+  - Full source `npm test` passed (`986` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment/readback:
+  - Deployed through the central Home AI macOS plugin deploy path.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T033752Z-plugin-codex-mobile-web-manual`.
+  - Production readback returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v510`,
+    `shellCacheName=codex-mobile-shell-v510`, and
+    `buildId=d9f5f3b65cd2d1f8`.
+  - Source/production SHA-256 prefixes matched for `public/app.js`,
+    `public/sw.js`, `public/home-ai-diagnostic-reporting.js`,
+    `public/thread-diagnostic-events.js`, `public/thread-performance-metrics.js`,
+    `docs/MODULES.md`, and `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+  - Bounded Music readback found visible thread
+    `019ef42b-2cb8-7332-ab17-033ec5b48947` (`Music 06-23`) with `10` returned
+    turns and non-empty first/last item counts. Recent mode is
+    `projection-v4-partial/recent-window`; full mode is `turns-list-large`.
+  - Bounded Codex Mobile active-thread readback used `thread-read`,
+    `largeReadReason=active-thread-requires-full-read`, and preserved the active
+    turn item count.
+  - Attempted to return original diagnostic-channel task card
+    `ttc_28cd1a44ca922ca88d`; return tool reported
+    `task_card_not_returnable:replied`, so no additional return card was sent.
+
+## 2026-06-26 - v511 Music thread empty first-paint summary-state fix deployed
+
+- Trigger:
+  - User reported that the Music thread opened with no visible turns and showed
+    `No visible turns.` in the embedded mobile UI.
+- Bounded evidence:
+  - Screenshot showed `Music 06-23` with `No visible turns.` while the thread was
+    idle.
+  - Direct production API readback for thread
+    `019ef42b-2cb8-7332-ab17-033ec5b48947` returned HTTP `200` with `10` turns
+    in both recent/full reads and `3` visible non-reasoning items per turn.
+  - Logs showed the client rendered immediately from a thread-list summary row
+    before the detail response arrived; the summary row has `turns: []` and is
+    not a loaded thread-detail object.
+- Root-cause boundary:
+  - Failing layer: frontend thread-switch state ownership.
+  - Violated invariant: thread-list summary rows may provide title/status/cwd
+    metadata, but must never own the conversation `turns` state for a thread
+    detail view.
+  - Fix classification: root-cause state ownership repair, not a projection
+    fallback. Server detail still returns real bounded detail and diagnostics.
+- Changes:
+  - Commit `3074e15 fix thread switch loading summary state`.
+  - `public/app.js` now forces the initial thread-switch summary shell to
+    `turns: []`, `mobileLoading: true`, and empty `mobileLoadError` after
+    spreading summary metadata, so an unloaded summary cannot render as a final
+    empty conversation.
+  - Static shell/cache bumped to `codex-mobile-shell-v511` in `public/app.js`
+    and `public/sw.js`.
+  - `test/conversation-render.test.js` now asserts the summary -> loading-shell
+    ownership order.
+  - Version assertions updated in `test/mobile-viewport.test.js`,
+    `test/thread-goal-service.test.js`, and `test/thread-task-card-route.test.js`.
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` records the thread-list-summary vs
+    thread-detail ownership boundary.
+- Validation:
+  - Focused: `node --test test/conversation-render.test.js
+    test/mobile-viewport.test.js test/thread-goal-service.test.js
+    test/thread-task-card-route.test.js` passed (`127` tests).
+  - Full source `npm test` passed (`986` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment/readback:
+  - Deployed via Home AI central macOS plugin deploy path.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T034931Z-plugin-codex-mobile-web-manual`.
+  - Production `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v511`,
+    `shellCacheName=codex-mobile-shell-v511`, and
+    `buildId=668b788f5a290d2d`.
+  - Source/prod SHA-256 prefixes matched for `public/app.js`, `public/sw.js`,
+    and `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+  - Post-deploy Music readback returned recent `readMode=turns-list-initial`,
+    full `readMode=turns-list-large`, both with `10` returned turns and visible
+    item counts `[3,3,3,3,3,3,3,3,3,3]`.
+- Residual:
+  - `.agent-context/HANDOFF.md` remains dirty as local context only and was not
+    included in the deployment commit.
+
+## 2026-06-26 - v512 thread-list summary cannot masquerade as detail deployed
+
+- Trigger:
+  - After v511, user reported the Music thread could still show `No visible
+    turns.` with no turn cards visible.
+- Bounded evidence:
+  - Production detail for Music thread
+    `019ef42b-2cb8-7332-ab17-033ec5b48947` returned `10` turns with non-empty
+    visible item counts when read through the authenticated detail API.
+  - Production thread-list API still returned the Music summary row with a
+    `turns: []` field. The stale detail-shaped field could survive local
+    summary merging and make `loadThread` treat the current thread as already
+    loaded.
+- Root-cause boundary:
+  - Failing layer: frontend thread-list/detail state ownership.
+  - Violated invariant: list summaries must not carry or preserve detail-only
+    fields such as `turns`, `runtimeSettings`, task-card detail arrays, loading
+    flags, or read diagnostics.
+  - This is a state-boundary repair. It does not hide projection errors and does
+    not add a render-only fallback.
+- Changes:
+  - Commit `73a0bbb fix thread summary detail boundary`.
+  - `public/app.js` adds loaded-detail detection, sanitizes list responses and
+    list merges through `threadListSummaryFromDetailThread`, and refuses the
+    cached-current path unless the current thread has loaded-detail evidence.
+  - `renderCurrentThread` detects summary-only current thread state, records a
+    bounded `thread_summary_detail_recovery` client event, renders the loading
+    shell, and schedules an immediate detail refresh.
+  - Static shell/cache bumped to `codex-mobile-shell-v512`.
+  - `test/conversation-render.test.js` adds executable coverage proving list
+    summaries cannot masquerade as detail and stale `turns: []` cannot survive
+    summary merge.
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` records the second-stage evidence.
+- Validation:
+  - Full source `npm test` passed (`987` tests).
+  - `npm run check:macos` and `git diff --check` passed.
+- Deployment/readback:
+  - Deployed via Home AI central macOS plugin deploy path.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T040404Z-plugin-codex-mobile-web-manual`.
+  - Production `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v512` and
+    `shellCacheName=codex-mobile-shell-v512`.
+  - Source/prod SHA-256 prefixes matched for `public/app.js`, `public/sw.js`,
+    `test/conversation-render.test.js`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+  - Authenticated production Music detail read returned `10` turns with visible
+    counts `[3,5,3,5,5,4,3,4,3,4]`; the list row still has `turns: []`, which
+    is now explicitly sanitized on the client before it can reach detail
+    rendering.
+
+## 2026-06-26 - v513 thread summary/detail state policy extracted and deployed
+
+- Goal slice:
+  - Continue Phase A frontend state-ownership architecture cleanup after the
+    v511/v512 Music empty-detail incident.
+- Root-cause boundary:
+  - Failing layer: frontend thread-list/detail state ownership.
+  - Violated invariant: thread-list summaries may carry display metadata but
+    must not preserve or prove loaded thread-detail state.
+  - This slice is architecture extraction plus stronger policy coverage, not a
+    UI fallback or render suppression.
+- Changes:
+  - Commit `e79186c extract thread summary detail state policy`.
+  - `public/thread-detail-state.js` now owns:
+    - thread-list summary sanitization;
+    - loaded-detail detection for empty `turns: []` details;
+    - summary-only current-thread detection;
+    - summary merge planning that cannot preserve stale detail/projection
+      fields.
+  - `public/app.js` now delegates the summary/detail policy to
+    `CodexThreadDetailState` and keeps only real state mutation, refresh
+    scheduling, and render orchestration.
+  - Static shell/cache bumped to `codex-mobile-shell-v513`.
+  - `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md` document the v513 boundary.
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-state.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js test/app-update.test.js`
+    passed (`151` tests).
+  - Full source `npm test` passed (`989` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment/readback:
+  - Deployed through the central Home AI macOS plugin deploy path.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T041218Z-plugin-codex-mobile-web-manual`.
+  - Production `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v513` and
+    `shellCacheName=codex-mobile-shell-v513`.
+  - Source/prod SHA-256 prefixes matched for `public/app.js`,
+    `public/sw.js`, `public/thread-detail-state.js`, `README.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, `docs/MODULES.md`, and
+    `test/thread-detail-state.test.js`.
+  - Authenticated production Music detail read returned `10` turns with visible
+    counts `[3,5,3,5,5,4,3,4,3,4]`. The production list row still has
+    `turns: []`, but has no `mobileReadMode` or `mobileDiagnostics`; v513
+    additionally strips stale detail-only fields at client ingress and merge.
+
+## 2026-06-26 - v514 summary-only current-thread recovery plan deployed
+
+- Goal slice:
+  - Continue Phase A frontend state-ownership architecture cleanup by removing
+    summary-only current-thread recovery policy from `renderCurrentThread`.
+- Root-cause boundary:
+  - Failing layer: frontend thread-detail state ownership / render
+    orchestration boundary.
+  - Violated invariant: summary-only recovery is a state policy; app code may
+    execute the planned state write, diagnostic event, and refresh, but should
+    not own the detection/state-shaping branches.
+  - This remains a root-cause architecture cleanup after the Music empty-detail
+    incident. It is not a UI fallback.
+- Changes:
+  - Commit `c9265a6 extract summary recovery state plan`.
+  - `public/thread-detail-state.js` adds
+    `planSummaryOnlyCurrentThreadRecovery()`, which:
+    - detects summary-only current-thread shells;
+    - returns sanitized loading-shell thread state;
+    - returns bounded `thread_summary_detail_recovery` event fields;
+    - declares whether an immediate `summary-detail-recovery` refresh should be
+      scheduled.
+  - `public/app.js` now executes that plan instead of inlining the detection,
+    state assembly, event payload, and controller checks.
+  - Static shell/cache bumped to `codex-mobile-shell-v514`.
+  - `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md` document the v514 boundary.
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-state.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js test/app-update.test.js`
+    passed (`153` tests).
+  - Full source `npm test` passed (`991` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment/readback:
+  - Deployed through the central Home AI macOS plugin deploy path.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T041741Z-plugin-codex-mobile-web-manual`.
+  - Production `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v514` and
+    `shellCacheName=codex-mobile-shell-v514`.
+  - Source/prod SHA-256 prefixes matched for `public/app.js`,
+    `public/sw.js`, `public/thread-detail-state.js`, `README.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, `docs/MODULES.md`, and
+    `test/thread-detail-state.test.js`.
+  - Authenticated production Music detail read returned `10` turns with visible
+    counts `[3,5,3,5,5,4,3,4,3,4]`. The list row still has `turns: []` and no
+    detail diagnostics; v514 keeps the client-side recovery policy centralized
+    in `thread-detail-state`.
+
+## 2026-06-26 - v515 empty-detail merge authority deployed
+
+- Trigger:
+  - User reported `Music 06-23` showing zero visible turns on mobile, with the
+    page displaying `No visible turns.`.
+  - Screenshot/state evidence: header showed `Music 06-23`; production list
+    summary had `turns: 0`, but authenticated production detail read for
+    thread `019ef42b-2cb8-7332-ab17-033ec5b48947` returned `10` turns with
+    item counts `[3,5,3,5,5,4,3,4,3,4]`.
+- Root-cause boundary:
+  - Failing layer: frontend thread-detail merge authority / single-thread render
+    orchestration.
+  - Violated invariant: an empty incoming detail window cannot be treated as
+    more authoritative than an existing current-thread state that already has
+    visible turns.
+  - This is a state merge invariant, not a UI fallback; the UI should not need
+    to hide or reinterpret `No visible turns.` after a bad overwrite.
+- Changes:
+  - Commit `1df0986 fix empty detail merge authority`.
+  - `public/thread-detail-merge-state.js` now refuses to let empty incoming
+    `turns: []` erase an existing visible detail state.
+  - `public/thread-detail-render-plan.js` adds
+    `planSingleThreadEarlyShellExecution()` for loading/load-error terminal
+    shell execution plans.
+  - `public/app.js` executes the early-shell plan and no longer owns the
+    loading/load-error branch policy inline.
+  - Static shell/cache bumped to `codex-mobile-shell-v515`.
+  - `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md` document the v515 boundary.
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-merge-state.test.js test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js test/app-update.test.js`
+    passed (`191` tests).
+  - Full source `npm test` passed (`995` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment/readback:
+  - Deployed through the central Home AI macOS plugin deploy path.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T042627Z-plugin-codex-mobile-web-manual`.
+  - Production `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v515` and
+    `shellCacheName=codex-mobile-shell-v515`.
+  - Source/prod SHA-256 prefixes matched for `public/app.js`,
+    `public/sw.js`, `public/thread-detail-merge-state.js`,
+    `public/thread-detail-render-plan.js`, `README.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, `docs/MODULES.md`,
+    `test/thread-detail-merge-state.test.js`,
+    `test/thread-detail-render-plan.test.js`, and
+    `test/conversation-render.test.js`.
+  - Authenticated production Music detail read after deploy still returned
+    `10` turns, visible counts `[3,5,3,5,5,4,3,4,3,4]`, read mode
+    `projection-v4-dynamic`, projection version `v4`, and status `idle`.
+
+## 2026-06-26 - v516 v4 projection empty-merge authority deployed
+
+- Goal slice:
+  - Continue Phase A state-ownership cleanup after reviewing v515 against the
+    actual production Music path.
+- Root-cause boundary:
+  - v515 added the empty-incoming guard to the generic
+    `thread-detail-merge-state` path.
+  - Production Music detail reads through `projection-v4-dynamic`, which uses
+    the dedicated `mergeV4ProjectionThread()` callback before the generic merge
+    path can enforce that invariant.
+  - Violated invariant: all thread-detail merge paths, including v4 projection,
+    must refuse to let an empty incoming `turns: []` window erase an existing
+    visible current-thread detail state.
+- Changes:
+  - Commit `3fb0c03 harden v4 empty detail merge`.
+  - `mergeV4ProjectionThread()` now computes existing and incoming visible
+    weight and preserves existing turns when incoming is empty and has no
+    visible weight.
+  - The v4 path still accepts bounded incoming metadata such as
+    `mobileReadMode` and projection revision.
+  - `test/conversation-render.test.js` adds a v4 projection regression test
+    for existing visible detail plus empty incoming projection.
+  - Static shell/cache bumped to `codex-mobile-shell-v516`.
+  - `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md` document the v516 boundary and the remaining temporary
+    app-owned v4 callback.
+- Validation:
+  - Focused:
+    `node --test test/conversation-render.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js test/app-update.test.js`
+    passed (`138` tests).
+  - Full source `npm test` passed (`996` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment/readback:
+  - Deployed through the central Home AI macOS plugin deploy path.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T043318Z-plugin-codex-mobile-web-manual`.
+  - Production `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v516` and
+    `shellCacheName=codex-mobile-shell-v516`.
+  - Source/prod SHA-256 prefixes matched for `public/app.js`,
+    `public/sw.js`, `README.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, `docs/MODULES.md`,
+    `test/conversation-render.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-goal-service.test.js`, and
+    `test/thread-task-card-route.test.js`.
+  - Authenticated production Music detail read after deploy returned `10`
+    turns, visible counts `[3,5,3,5,5,4,3,4,3,4]`, read mode
+    `projection-v4-dynamic`, projection version `v4`, status `idle`, and
+    omitted turns `79`.
+- Next recommended slice:
+  - Extract the remaining v4-specific projection merge callback out of
+    `public/app.js` into a pure helper so v4 merge authority, pending overlay,
+    regressive-revision handling, and empty-incoming preservation live in the
+    same testable module instead of app code.
+
+## 2026-06-26 - v517 embedded thread selection ownership deployed
+
+- Incident:
+  - User reported Music showed no turns, and Home AI/Codex Mobile embedded
+    threads intermittently showed only an old card/receipt or blank history
+    even though the thread should have recent content.
+  - Production API evidence showed Music detail was not empty:
+    authenticated `GET /api/threads/019ef42b-2cb8-7332-ab17-033ec5b48947?mode=recent`
+    returned read mode `projection-v4-dynamic`, projection version `v4`, `10`
+    turns, and item counts `[3,5,3,5,5,4,3,4,3,4]`.
+  - Production client-event evidence before the fix showed repeated
+    `conversation_render_ms` events with `threadId=""`, `childCount=1`, and
+    about `5.6KB` HTML under v515/v516 clients after valid thread detail
+    renders. That means the client rendered the Hermes Primary shell while a
+    thread view should still have owned the conversation surface.
+- Root-cause boundary:
+  - Failing layer: frontend embedded/mobile startup, workspace refresh, and
+    thread-list restore selection ownership.
+  - Violated invariant: if there is a current thread id, current thread state,
+    active detail load controller, or startup thread-open intent, list/workspace
+    recovery paths must not clear selection or render the Primary shell.
+  - This is separate from the v515/v516 merge authority fixes: the detail data
+    existed; the frontend selection owner was being reset.
+- Changes:
+  - Commit `93d710f fix embedded thread detail selection ownership`.
+  - Added `hasThreadDetailSelectionIntent()` and
+    `shouldRenderPrimaryConversationShell()` in `public/app.js`.
+  - `loadWorkspaces()` and `loadThreads()` now render the Primary shell only
+    through `shouldRenderPrimaryConversationShell()`, not merely because
+    `state.currentThread` is temporarily null.
+  - `restoreThreadSelection()` exits when there is any active thread-selection
+    intent. Hermes embed now returns to Primary only when truly empty.
+  - `showHermesPluginPrimaryPage()` now suppresses non-forced calls while a
+    thread load/startup open/mobile loading state is active and emits bounded
+    `plugin_primary_suppressed_thread_open` diagnostics instead of clearing
+    selection.
+  - Explicit route/back/sidebar actions call `showHermesPluginPrimaryPage()` with
+    `force: true` and a bounded source label.
+  - Extracted v4 projection merge policy from `public/app.js` into
+    `public/thread-detail-v4-merge-state.js`; wired it into `index.html`,
+    `sw.js`, `server.js` build-id inputs, `PAGE_SHELL_ASSETS`, and `npm run
+    check`.
+  - Added `test/thread-detail-v4-merge-state.test.js`; updated app-update,
+    conversation-render, mobile-viewport, Hermes route, voice-input, and tile
+    layout tests for the new module and selection-owner invariant.
+  - Static shell/cache bumped to `codex-mobile-shell-v517`.
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-v4-merge-state.test.js test/thread-detail-merge-state.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/hermes-plugin-route.test.js test/app-update.test.js test/plugin-voice-input.test.js test/thread-tile-layout-ui.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    passed (`164` tests).
+  - Full source `npm test` passed (`1001` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - In-app Browser plugin initialization failed in this continuation due a
+    Node REPL sandbox metadata error, and no local Playwright package was
+    installed, so browser smoke was not performed through Browser. Production
+    HTTP/static readback was used instead.
+- Deployment/readback:
+  - Deployed through the central Home AI macOS plugin deploy path.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T045259Z-plugin-codex-mobile-web-manual`.
+  - Production `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v517` and
+    `shellCacheName=codex-mobile-shell-v517`.
+  - Production HTTP static readback:
+    `index.html` includes `thread-detail-v4-merge-state.js`; `sw.js` and
+    `app.js` include `codex-mobile-shell-v517`; `app.js` includes
+    `plugin_primary_suppressed_thread_open`.
+  - Source/prod SHA-256 prefixes matched for `public/app.js`,
+    `public/index.html`, `public/sw.js`,
+    `public/thread-detail-v4-merge-state.js`, `server.js`, `package.json`,
+    `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+  - Authenticated production Music detail read after deploy returned `10` turns
+    with item counts `[3,5,3,5,5,4,3,4,3,4]`, read mode
+    `projection-v4-dynamic`, and projection version `v4`.
+- Next recommended slice:
+  - Continue the diagnostic automation project: if the client renders a
+    `threadId=""` Primary shell shortly after a successful thread detail read
+    or while a thread-open intent exists, report a bounded
+    `conversation_projection_mismatch` / selection-owner diagnostic to Home AI
+    so Owner can dispatch a repair card without relying on manual screenshots.
+
+## 2026-06-26 - v518 detail-loaded ownership and primary-shell diagnostics deployed
+
+- Incident/evidence:
+  - User reported `Music 06-23` rendered `No visible turns.` on mobile.
+  - Screenshot confirmed the client was not merely scrolled behind a long
+    receipt: the single-thread surface showed the task toolbar plus
+    `No visible turns.`.
+  - Authenticated production detail read for
+    `019ef42b-2cb8-7332-ab17-033ec5b48947` returned `200`, title
+    `Music 06-23`, read mode `projection-v4-dynamic`, projection version `v4`,
+    `10` turns, and item counts `[3,5,3,5,5,4,3,4,3,4]`.
+  - Bounded item-shape read showed those turns contained visible
+    `userMessage`/`agentMessage` items. The failure layer was therefore client
+    loaded-detail state ownership, not missing server data.
+- Root-cause boundary:
+  - Failing layer: frontend thread-detail loaded-state policy.
+  - Violated invariant: an empty `turns: []` object with list/runtime metadata
+    must not be treated as loaded detail unless a real detail API path produced
+    it. List summaries, task-card metadata, runtime settings, or read-mode
+    fields cannot own the conversation surface as a stable empty thread.
+- Changes:
+  - Commit `f1235ea fix thread detail empty shell ownership`.
+  - `public/thread-detail-state.js` now treats empty `turns: []` as loaded only
+    when client-owned `mobileDetailLoaded === true` is present.
+  - `public/app.js` sets `mobileDetailLoaded` only after successful detail API
+    reads in `loadThread()`, `refreshCurrentThread()`, and
+    `backfillFullThreadDetail()`.
+  - `mobileDetailLoaded` is stripped from thread-list summaries so list refresh
+    cannot write stale loaded-detail authority back into detail state.
+  - Added bounded `primary_shell_selection_conflict` diagnostics in
+    `public/thread-diagnostic-events.js` and app trigger points for suppressed
+    Primary-shell selection or embedded Primary shell rendered shortly after a
+    successful thread-detail render.
+  - Updated README and architecture/module docs with the v518 ownership rule
+    and diagnostic boundary.
+  - Static shell/cache bumped to `codex-mobile-shell-v518`.
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-state.test.js test/conversation-render.test.js test/thread-detail-render-plan.test.js test/thread-diagnostic-events.test.js test/home-ai-diagnostic-reporting.test.js`
+    passed (`185` tests).
+  - Full source `npm test` passed (`1004` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment/readback:
+  - Deployed through the central Home AI macOS plugin deploy path.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T051514Z-plugin-codex-mobile-web-manual`.
+  - Production `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v518` and
+    `shellCacheName=codex-mobile-shell-v518`.
+  - Production static readback confirmed `mobileDetailLoaded` in `app.js` and
+    `thread-detail-state.js`, `primaryShellSelectionConflictDiagnosticEvent`
+    and `primary_shell_selection_conflict` in `thread-diagnostic-events.js`,
+    and `codex-mobile-shell-v518` in `sw.js`.
+  - Source/prod SHA-256 prefixes matched for `public/app.js`,
+    `public/sw.js`, `public/thread-detail-state.js`,
+    `public/thread-diagnostic-events.js`, `README.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, `docs/MODULES.md`,
+    `test/thread-detail-state.test.js`, `test/conversation-render.test.js`,
+    `test/thread-diagnostic-events.test.js`, and
+    `test/home-ai-diagnostic-reporting.test.js`.
+  - Authenticated production Music detail read after deploy still returned
+    `10` turns with item counts `[3,5,3,5,5,4,3,4,3,4]`, read mode
+    `projection-v4-dynamic`, projection version `v4`, and shape hash
+    `15c0c006ec704ae6`.
+- Next recommended slice:
+  - Add browser/DOM-level live verification around single-thread empty-state
+    recovery and expand diagnostics to report repeated client-visible
+    `No visible turns.` when the server detail contract reports nonzero visible
+    turns.
+
+## 2026-06-26 - v519 empty detail mismatch diagnostics deployed
+
+- Incident/evidence:
+  - v518 fixed the concrete Music `No visible turns.` root cause by tightening
+    loaded-detail ownership, but the broader product requirement remains: if a
+    client visibly renders an empty conversation shortly after the same client
+    saw nonempty detail evidence, Codex Mobile must detect that automatically
+    and report bounded evidence to Home AI instead of depending on screenshots.
+- Root-cause boundary:
+  - Failing layer addressed in this slice: frontend render/detail evidence
+    consistency diagnostics.
+  - Violated invariant: a single-thread `No visible turns.` render is suspicious
+    when the same thread has recent nonempty detail API/detail render evidence;
+    that contradiction must be observable via Home AI's Owner-gated diagnostic
+    report channel.
+  - This is diagnostic closure, not a masking fallback. The UI is not hidden,
+    forcibly refreshed, or deduped to conceal the mismatch, and the plugin does
+    not auto-dispatch repair cards.
+- Changes:
+  - Commit `a5fbef9 report empty detail render mismatches`.
+  - `public/thread-diagnostic-events.js` adds bounded
+    `empty_visible_detail_mismatch` failure/success payload builders.
+  - `public/app.js` records bounded same-thread detail evidence on successful
+    detail API paths in `loadThread()`, `refreshCurrentThread()`, and
+    `backfillFullThreadDetail()` before merge/render.
+  - `renderCurrentThread()` checks actual single-thread full renders that emit
+    `No visible turns.`; if recent same-thread evidence has nonzero visible
+    turn/item counts, it records an H2 `empty_visible_detail_mismatch` failure.
+  - Normal nonempty detail renders record success clear input for the same
+    diagnostic signature.
+  - README, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and `docs/MODULES.md`
+    document the v519 diagnostic boundary.
+  - Static shell/cache bumped to `codex-mobile-shell-v519`.
+- Privacy boundary:
+  - Diagnostic payload includes only thread hash, read/render mode, source kind,
+    visible turn/item counts, DOM/previous counts, detail-loaded flag, mobile
+    loading flag, and evidence age.
+  - Tests cover stripping unsafe message/body/title/url/private-token-shaped
+    fields; no message text, task-card body, upload bytes, private path, URL,
+    cookie, token, prompt, provider payload, or long log is reported.
+- Validation:
+  - Focused:
+    `node --test test/thread-diagnostic-events.test.js test/home-ai-diagnostic-reporting.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    passed (`152` tests).
+  - Full source `npm test` passed (`1007` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment/readback:
+  - Deployed through the central Home AI macOS plugin deploy path.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T052519Z-plugin-codex-mobile-web-manual`.
+  - Production `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v519` and
+    `shellCacheName=codex-mobile-shell-v519`.
+  - Production static marker readback confirmed
+    `checkEmptyVisibleDetailMismatchAfterRender` and `mobileDetailLoaded` in
+    `app.js`, `emptyVisibleDetailMismatchDiagnosticEvent` and
+    `empty_visible_detail_mismatch` in `thread-diagnostic-events.js`, and
+    `codex-mobile-shell-v519` in `sw.js`.
+  - Source/prod SHA-256 prefixes matched for `public/app.js`, `public/sw.js`,
+    `public/thread-diagnostic-events.js`, `README.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, `docs/MODULES.md`,
+    `test/thread-diagnostic-events.test.js`,
+    `test/home-ai-diagnostic-reporting.test.js`, and
+    `test/conversation-render.test.js`.
+  - Authenticated production Music detail read after deploy still returned `10`
+    turns with item counts `[3,5,3,5,5,4,3,4,3,4]`, read mode
+    `projection-v4-dynamic`, projection version `v4`, and shape hash
+    `15c0c006ec704ae6`.
+- Next recommended slice:
+  - Build browser/DOM-level live verification for single-thread empty-state
+    recovery and diagnostic emission, then broaden to duplicate/missing message
+    replay diagnostics where the DOM can be compared against the current
+    projection signature.
+
+## 2026-06-26 - v520 empty cached-current detail reuse fix deployed
+
+- Incident/evidence:
+  - User reported `Music 06-23` on mobile showed the single-thread header and
+    toolbar but the conversation body was stable `No visible turns.`.
+  - Screenshot confirmed this was a single-thread detail surface, not tile mode
+    and not a long receipt covering newer content.
+  - Production detail API for
+    `019ef42b-2cb8-7332-ab17-033ec5b48947` returned title `Music 06-23`,
+    cwd `/Users/xuxin/Documents/Music`, status `idle`, read mode
+    `projection-v4-dynamic`, projection version `v4`, `10` turns, item counts
+    `[3,5,3,5,5,4,3,4,3,4]`, `39` visible items, and `79` omitted turns.
+  - Production logs around the report showed server `[thread-detail]` reads for
+    Music returning `returnedTurns=10`, while the visible client state was
+    already an empty current-thread detail. This separated the failure from the
+    server projection layer.
+- Root-cause boundary:
+  - Failing layer: frontend `loadThread()` cached-current detail reuse policy.
+  - Violated invariant: `mobileDetailLoaded` proves only that a detail API path
+    once completed; it does not make an empty `turns: []` current-thread object
+    reusable as the authority for reopening the same thread.
+  - Strongest root cause: after v518, an empty
+    `turns: [] + mobileDetailLoaded:true` state could bypass summary-only
+    recovery and also satisfy the same-thread cached-current branch. Reopening
+    the same thread then rendered the cached empty detail and skipped the
+    server detail API, even though the server projection had nonzero turns.
+- Changes:
+  - Commit `81d6f4c fix empty cached thread detail reuse`.
+  - `public/thread-detail-state.js` adds
+    `threadHasReusableLoadedDetailState()`, separating loaded detail from
+    reusable loaded detail. Only loaded detail with nonempty `turns` can be
+    reused by open-thread cached-current.
+  - `public/app.js` changes `loadThread()` cached-current to require
+    `threadHasReusableLoadedDetailState(state.currentThread)`.
+  - `public/app.js` also strips detail-only fields from the thread-list summary
+    before constructing the loading current-thread shell, so list rows cannot
+    carry `mobileDetailLoaded` back into current detail authority.
+  - README, architecture plan, and module map document the v520 cache authority
+    rule.
+  - Static shell/cache bumped to `codex-mobile-shell-v520`.
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-state.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    passed (`146` tests).
+  - Full source `npm test` passed (`1007` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment/readback:
+  - Deployed through the central Home AI macOS plugin deploy path.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T053610Z-plugin-codex-mobile-web-manual`.
+  - Production `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v520` and
+    `shellCacheName=codex-mobile-shell-v520`.
+  - Production static readback confirmed `/app.js` contains
+    `threadHasReusableLoadedDetailState`,
+    `threadListSummaryFromDetailThread(summary) || summary`, and
+    `codex-mobile-shell-v520`; `/thread-detail-state.js` contains
+    `threadHasReusableLoadedDetailState`; `/sw.js` contains
+    `codex-mobile-shell-v520`.
+  - Source/prod SHA-256 prefixes matched for `public/app.js`, `public/sw.js`,
+    `public/thread-detail-state.js`, README, architecture/module docs, and
+    focused tests.
+- Next recommended slice:
+  - Add a live browser/DOM smoke that opens a thread from an intentionally empty
+    current-thread cache and verifies that the next state reaches the detail API
+    rather than rendering `No visible turns.` from cache. Then extend the
+    diagnostic reporter to catch cached-current empty authority attempts if they
+    recur in production.
+
+## 2026-06-26 - v523 thread-list summary authority boundary fix
+
+- Incident/evidence:
+  - User reported `Music 06-23` showed the toolbar and `No visible turns.`
+    with no turn rows.
+  - Direct authenticated Codex Mobile detail read for
+    `019ef42b-2cb8-7332-ab17-033ec5b48947` returned `10` turns, `39`
+    visible item keys, read mode `projection-v4-dynamic`, projection version
+    `v4`, and `79` omitted turns. This separated the failure from the server
+    detail/projection layer.
+  - A thread-list/search response for Music could expose fallback/list summary
+    rows with `turns: []` and detail-shaped metadata. That violates the list
+    summary boundary and can let an empty summary become current detail
+    authority in the browser.
+- Root-cause boundary:
+  - Failing layer: server thread-list summary shaping plus frontend empty-detail
+    contradiction detection.
+  - Violated invariant: `/api/threads` list rows are summaries only. They must
+    not carry `turns`, runtime settings, pending server requests, projection
+    metadata, visible item keys, or `mobileDetailLoaded` into client detail
+    state.
+  - Strongest root cause: prior v520/v521 blocked empty cached-current reuse,
+    but list/fallback rows could still leak detail-only empty fields into
+    later current-thread state.
+- Changes:
+  - Added `adapters/thread-list-summary-service.js` to strip detail-only fields
+    from list rows.
+  - `server.js` applies that stripping during list merge, list status
+    normalization, and task-card count decoration.
+  - `public/app.js` records `empty_render_with_history_evidence` and schedules
+    a real detail refresh when the DOM renders `No visible turns.` while the
+    current thread still has bounded history evidence such as rollout size,
+    omitted turns, visible item keys, active turn state, or pending task-card
+    count.
+  - Static shell/cache bumped to `codex-mobile-shell-v523`.
+  - README, architecture plan, and module map document the new boundary.
+- Validation before deploy:
+  - Focused:
+    `node --test test/thread-visibility.test.js test/conversation-render.test.js test/thread-detail-state.test.js test/thread-diagnostic-events.test.js test/home-ai-diagnostic-reporting.test.js test/thread-detail-active-window-overlay-policy-service.test.js`
+    passed (`200` tests).
+  - Full source `npm test` passed (`1030` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment status:
+  - First central deploy attempt correctly failed because source was dirty:
+    `deploy_source_dirty_requires_allow_dirty`.
+  - Commit first, then redeploy from a clean source tree.

@@ -1880,6 +1880,14 @@ test("loading and thread-list state preserve locally visible live turns", () => 
   assert.match(functionBody("renderCurrentThread"), /threadDetailRenderPlanApi\.planSingleThreadFullRenderShell/);
   assert.doesNotMatch(functionBody("renderCurrentThread"), /Thread failed:/);
   assert.doesNotMatch(functionBody("renderCurrentThread"), /No visible turns\./);
+  assert.match(appJs, /const EMPTY_DETAIL_HISTORY_RECOVERY_COOLDOWN_MS = 30000;/);
+  assert.match(appJs, /function threadHasNonemptyHistoryEvidence\(/);
+  assert.match(appJs, /function maybeRecoverEmptyDetailWithHistoryEvidence\(/);
+  assert.match(functionBody("threadHasNonemptyHistoryEvidence"), /rolloutSizeBytes\(thread\) > 0/);
+  assert.match(functionBody("threadHasNonemptyHistoryEvidence"), /thread\.mobileOmittedTurnCount/);
+  assert.match(functionBody("maybeRecoverEmptyDetailWithHistoryEvidence"), /recordEmptyVisibleDetailMismatch\("empty_render_with_history_evidence", thread, details\)/);
+  assert.match(functionBody("maybeRecoverEmptyDetailWithHistoryEvidence"), /scheduleCurrentThreadRefresh\(0, "empty-detail-history-evidence"\)/);
+  assert.match(functionBody("maybeRecoverEmptyDetailWithHistoryEvidence"), /postClientEvent\("empty_detail_history_recovery"/);
   assert.match(functionBody("renderCurrentThread"), /const loadingNote = thread\.mobileLoading/);
   assert.match(functionBody("reconcileThreadStatusHints"), /currentLiveTurnSupportsThreadStatusHint\(id\)/);
   assert.match(functionBody("statusIconInfo"), /state\.runningThreadIds\.has\(id\)[\s\S]*currentLiveTurnSupportsThreadStatusHint\(id\)/);

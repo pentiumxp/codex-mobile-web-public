@@ -88,6 +88,10 @@ const { createThreadDetailBoundedReadPolicyService } = require("./adapters/threa
 const { attachThreadDetailDiagnostics } = require("./adapters/thread-detail-performance-service");
 const { createThreadDetailReadOrchestrationService } = require("./adapters/thread-detail-read-orchestration-service");
 const { createThreadListFallbackCacheService } = require("./adapters/thread-list-fallback-cache-service");
+const {
+  stripThreadListDetailFields,
+  stripThreadListResultDetailFields,
+} = require("./adapters/thread-list-summary-service");
 const { createThreadTurnCompactionPolicyService } = require("./adapters/thread-turn-compaction-policy-service");
 const { createThreadCompletionDiagnosticService } = require("./adapters/thread-completion-diagnostic-service");
 const { createChatGptProBridgeService } = require("./adapters/chatgpt-pro-bridge-service");
@@ -3130,13 +3134,15 @@ function mergeThreadSummaryList(threads) {
     if (!thread || !thread.id) continue;
     const id = String(thread.id);
     if (archivedIds.has(id)) continue;
-    const displayThread = normalizeThreadSummaryLiveStatus(mergeThreadWithCachedDisplaySummary(thread));
+    const displayThread = stripThreadListDetailFields(
+      normalizeThreadSummaryLiveStatus(mergeThreadWithCachedDisplaySummary(thread)),
+    );
     const merged = normalizeThreadSummaryLiveStatus(byId.has(id) ? mergeThreadDisplaySummary(byId.get(id), displayThread) : displayThread);
     if (threadHasArchiveSignal(merged) || isSubagentThreadSummary(merged)) {
       byId.delete(id);
       continue;
     }
-    byId.set(id, merged);
+    byId.set(id, stripThreadListDetailFields(merged));
   }
   return sortThreadListSummaries(
     hydrateThreadListTitlesFromSessionIndex([...byId.values()])
@@ -3158,9 +3164,9 @@ function mergeThreadListFallback(result, fallbackThreads = [], limit = 80) {
 function normalizeThreadListResultStatuses(result) {
   if (!result || typeof result !== "object") return result;
   const out = Object.assign({}, result);
-  if (Array.isArray(out.data)) out.data = out.data.map((thread) => normalizeThreadSummaryLiveStatus(thread));
-  if (Array.isArray(out.threads)) out.threads = out.threads.map((thread) => normalizeThreadSummaryLiveStatus(thread));
-  return out;
+  if (Array.isArray(out.data)) out.data = out.data.map((thread) => stripThreadListDetailFields(normalizeThreadSummaryLiveStatus(thread)));
+  if (Array.isArray(out.threads)) out.threads = out.threads.map((thread) => stripThreadListDetailFields(normalizeThreadSummaryLiveStatus(thread)));
+  return stripThreadListResultDetailFields(out);
 }
 
 function threadListSummaryTimestampMs(thread) {
@@ -11982,11 +11988,12 @@ function attachThreadGoalToThread(thread) {
 
 function attachThreadTaskCardCountsToSummary(thread) {
   if (!thread || typeof thread !== "object" || !thread.id) return thread;
+  const summary = stripThreadListDetailFields(thread);
   const taskCardCounts = threadTaskCardService.pendingCountsForThread(thread.id);
-  thread.pendingTaskCardCount = taskCardCounts.pendingTotal;
-  thread.pendingIncomingTaskCardCount = taskCardCounts.pendingIncoming;
-  thread.pendingOutgoingTaskCardCount = taskCardCounts.pendingOutgoing;
-  return thread;
+  summary.pendingTaskCardCount = taskCardCounts.pendingTotal;
+  summary.pendingIncomingTaskCardCount = taskCardCounts.pendingIncoming;
+  summary.pendingOutgoingTaskCardCount = taskCardCounts.pendingOutgoing;
+  return summary;
 }
 
 function attachThreadGoalsToThreadListResult(result) {
@@ -11995,8 +12002,8 @@ function attachThreadGoalsToThreadListResult(result) {
 
 function attachThreadTaskCardCountsToThreadListResult(result) {
   if (!result || typeof result !== "object") return result;
-  if (Array.isArray(result.data)) result.data.forEach(attachThreadTaskCardCountsToSummary);
-  if (Array.isArray(result.threads)) result.threads.forEach(attachThreadTaskCardCountsToSummary);
+  if (Array.isArray(result.data)) result.data = result.data.map(attachThreadTaskCardCountsToSummary);
+  if (Array.isArray(result.threads)) result.threads = result.threads.map(attachThreadTaskCardCountsToSummary);
   return result;
 }
 
@@ -15136,6 +15143,8 @@ module.exports = {
   sortTurnsChronologically,
   staticCompressionCacheStats,
   staticCompressionEncoding,
+  stripThreadListDetailFields,
+  stripThreadListResultDetailFields,
   stripMarkdownFileTarget,
   taskCardSourceThreadTitle,
   threadDisplayPublicSettings,

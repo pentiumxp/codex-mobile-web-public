@@ -113,7 +113,12 @@ non-partial projections.
   and falls back to full `thread/read`; `thread-detail-active-read-policy-service`
   now owns that decision boundary, so any later active-turn overlay optimization
   has to prove itself against a pure policy surface rather than patching the
-  orchestration path inline.
+  orchestration path inline. The follow-up
+  `thread-detail-active-window-overlay-policy-service` defines that proof gate:
+  active projection overlay remains fail-closed unless the active turn id,
+  projection window, authoritative overlay source, matched active turn, operation
+  coverage, upload visibility, assistant delta freshness, and usage/diagnostic
+  receipt coverage are all explicit and bounded.
 - Keep thread-list fallback cache evidence in
   `mobileDiagnostics.threadListTimings`. The cache now reports
   `fallbackCacheDecision` (`hit`, `miss-rebuild`, `expired-rebuild`), bounded
@@ -272,6 +277,19 @@ Home AI live debug server to assert that the DOM reaches nonempty turn rows
 instead of staying on `No visible turns.`. This is verification infrastructure,
 not a runtime fallback: the smoke records only build id, thread hash,
 turn/item counts, loaded/loading/error flags, read mode, and DOM counts.
+
+`codex-mobile-shell-v523` closes the next ownership boundary for the same
+visible failure class. `/api/threads` list rows are not detail authorities and
+must never expose `turns: []`, `mobileDetailLoaded`, projection metadata, visible
+item keys, or pending server request bodies. `adapters/thread-list-summary-service.js`
+now strips those fields during list merge/status normalization/task-card count
+decoration so fallback/app-server summaries cannot overwrite a loaded detail
+surface with an empty shell. The client also records
+`empty_render_with_history_evidence` and refreshes the real detail API when a
+rendered empty state conflicts with bounded history evidence such as rollout
+size, omitted turns, visible item keys, active turn state, or pending task cards.
+That refresh is observable diagnostic recovery for an invariant violation, not a
+UI masking fallback or synthetic content path.
 
 The first slices extract item visible-field merge policy,
 visible-text render identity / completed-receipt retention, local-only item

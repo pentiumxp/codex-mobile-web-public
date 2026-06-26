@@ -16,6 +16,34 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v523 Thread List Summary Authority Boundary
+
+v523 修复 Music 线程再次进入后显示 `No visible turns.` 的同一类事故，但失败层已经
+从 v520/v521 的 cached-current 复用，进一步收窄到服务端线程列表摘要和前端详情权威
+的边界。生产读回显示 Music 详情 API 本身仍返回 `10` 个 turn、`39` 个 visible item、
+`projection-v4-dynamic` 和 `79` 个 omitted turns；问题是列表接口可能把 fallback/list
+row 里的 `turns: []`、`mobileDetailLoaded`、`mobileReadMode`、`mobileVisibleItemKeys`
+等 detail-only 字段带给客户端，后续某些路径会把这个空列表摘要当成详情态渲染。
+
+本次切片新增/调整：
+
+- 新增 `adapters/thread-list-summary-service.js`，集中定义线程列表摘要必须剥离的
+  detail-only 字段。线程列表只能携带标题、状态、时间、cwd、pending task-card count
+  等摘要信息，不能携带 `turns` 或任何 detail/projection 权威字段。
+- `server.js` 的 list merge、status normalization 和 task-card count decoration 都调用
+  该服务，确保 app-server list row、fallback row 和合并结果不会把空 detail authority
+  泄漏到 `/api/threads`。
+- `public/app.js` 增加 `empty_render_with_history_evidence` 检测：如果页面实际渲染
+  `No visible turns.`，但当前线程仍有 rollout size、omitted turn count、
+  visible item key、active turn 或 pending task-card 等历史证据，会记录 bounded
+  diagnostic 并触发一次真实详情刷新。
+- 这个前端动作不是合成内容或静默去重；它只在“空详情和已有历史证据矛盾”时把状态
+  重新交还给 detail API，同时把证据送入 Home AI Owner-gated diagnostic channel。
+- `test/thread-visibility.test.js` 覆盖 list summary stripping 和 list/fallback merge 不再
+  泄漏空 detail 字段；`test/conversation-render.test.js` 覆盖空详情历史证据恢复触发。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v523`。
+
 ## 2026-06-26 Local Phase B Server Timing Classifier
 
 这个本地切片继续 Phase B 的大 session / thread-detail cold path 收敛，但只处理
@@ -46,6 +74,13 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 - `test/thread-detail-active-read-policy-service.test.js` 覆盖 idle/recent 允许
   partial projection、active turn/status 禁止 partial、以及 active 状态压制 large
   bounded turns-list 的策略边界。
+- `thread-detail-active-window-overlay-policy-service` 新增 active-window overlay
+  资格判定：只有 active turn id、projection window、权威 overlay source、匹配 active
+  turn、operation/upload/assistant/receipt 覆盖证据都完整时，才会返回
+  `use-projection-overlay`；任何未知、stale 或不匹配都保持 `require-full-read`。
+- `test/thread-detail-active-window-overlay-policy-service.test.js` 覆盖完整证据通过、
+  缺 active id、缺 projection window、非权威 source、active turn mismatch、未知 item、
+  stale assistant delta 和 receipt coverage unknown 的失败闭合。
 - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` 和 `docs/MODULES.md` 记录这个
   Phase B 证据分类边界。
 
@@ -60,6 +95,8 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
   任务卡正文、上传内容、私有路径、URL、cookies、tokens、provider payload 或长日志。
 - active full-read reason 是解释性诊断，不是允许跳过 full read 的兜底；下一步如果要优化
   active 大线程首屏，必须另行证明 active turn overlay/operation 中间项不会丢失。
+- active-window overlay 计划器目前不接入 runtime；它只定义未来接入前必须满足的证据门槛，
+  防止用 partial projection 直接绕过 full read 后重新引入少消息、少命令或重复回执。
 - 闭环验证：focused tests 覆盖 sparse readMode 分类和隐私边界；完整检查通过后再把它作为
   Phase B 后续大 session 采样和 runtime 优化的证据基础。
 
