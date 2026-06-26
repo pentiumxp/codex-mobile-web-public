@@ -11232,3 +11232,65 @@ The previous full handoff was archived and should be opened only when old proven
     `refreshCurrentThread()` into a pure plan, or pivot to Phase B if fresh
     diagnostics show server cold-path misses rather than client refresh
     ownership issues.
+
+## 2026-06-26 - v502 thread refresh completion effects plan deployed
+
+- Latest code commit:
+  - `8140fcc extract thread refresh completion effects plan`
+- v502 change:
+  - Continued Phase A frontend render/patch ownership convergence.
+  - `public/thread-detail-render-plan.js` now owns refresh completion
+    side-effect planning through `planThreadDetailRefreshCompletionEffects()`.
+  - The helper emits the existing refresh-success effects: clear
+    `thread_detail_refresh_failed` diagnostic state, schedule usage-backfill
+    refresh, and schedule live polling.
+  - `public/app.js` now executes those planned effects through
+    `applyThreadDetailRefreshCompletionEffect()` instead of hard-coding the
+    success diagnostic payload and scheduler calls at the end of
+    `refreshCurrentThread()`.
+  - Static build/cache: `0.1.11|codex-mobile-shell-v502` /
+    `codex-mobile-shell-v502`.
+- Root-cause boundary:
+  - Symptom/risk: after v499-v501, patch telemetry, consistency-check, and
+    performance-input ownership had moved into helpers, but the refresh
+    completion tail still directly selected diagnostic/scheduler side effects
+    inside `refreshCurrentThread()`.
+  - Failing layer: frontend thread-detail refresh completion side-effect
+    ownership.
+  - Classification: root-cause architecture boundary cleanup. No server
+    projection change, frontend duplicate hiding, forced refresh, skipped
+    refresh, task-card protocol change, diagnostic-transport fallback, polling
+    cadence change, usage-backfill behavior change, or visual layout change was
+    added.
+- Validation:
+  - Focused source suite passed:
+    `test/thread-detail-render-plan.test.js`,
+    `test/conversation-render.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-goal-service.test.js`, `test/thread-task-card-route.test.js`,
+    and `test/thread-tile-layout-ui.test.js` (`154` tests).
+  - Full source `npm test` passed (`933` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Production deploy:
+  - Deployed through Home AI central macOS plugin deploy path with reason
+    `codex-mobile-thread-refresh-completion-effects-v502`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T004837Z-plugin-codex-mobile-web-codex-mobile-thread-refresh-completion-effects-v502`
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v502`,
+    `shellCacheName=codex-mobile-shell-v502`, `version=0.1.11`,
+    `authRequired=true`.
+  - Production focused suite passed (`154` tests).
+  - Source/production SHA parity verified for README/docs, app/static shell,
+    render-plan helper, and focused tests touched by v502.
+- Privacy:
+  - Evidence recorded only statuses, build ids, test counts, bounded deploy
+    metadata, and short hashes. No message bodies, task-card bodies, uploads,
+    private paths, cookies, access keys, provider payloads, database rows,
+    screenshots, or long logs were copied into docs or handoff.
+- Release:
+  - Public was not pushed for v502.
+- Next suggested slice:
+  - Continue Phase A by extracting the refresh failure diagnostic payload from
+    the `refreshCurrentThread()` catch path into the diagnostic/planning helper,
+    or pivot to Phase B if fresh production diagnostics show server cold-path
+    misses instead of client refresh ownership issues.
