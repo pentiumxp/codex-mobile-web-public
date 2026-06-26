@@ -709,6 +709,89 @@ test("thread detail projection keeps partial recent windows memory-only", () => 
   }
 });
 
+test("thread detail projection treats cursor-backed turns-list seed as partial", () => {
+  const dir = tempDir();
+  try {
+    const service = createThreadDetailProjectionService({
+      cacheDir: dir,
+      policyVersion: "test-v1",
+      maxTurns: 2,
+      now: () => 1000,
+    });
+
+    const seeded = service.seed(signatureInput(), {
+      thread: {
+        id: "thread-1",
+        mobileReadMode: "turns-list-large",
+        mobileOlderTurnsCursor: "older-cursor",
+        mobileNewerTurnsCursor: "newer-cursor",
+        turns: [{ id: "turn-window", items: [] }],
+      },
+    });
+
+    assert.equal(seeded.partial, true);
+    assert.equal(seeded.partialKind, "turns-list-window");
+    assert.equal(service.get(signatureInput()), null);
+    assert.equal(service.lookup(signatureInput()).missReason, "partial-not-allowed");
+
+    const cached = service.get(signatureInput(), { allowPartial: true });
+    assert.ok(cached);
+    assert.equal(cached.partial, true);
+    assert.equal(cached.partialKind, "turns-list-window");
+    assert.deepEqual(cached.result.thread.turns.map((turn) => turn.id), ["turn-window"]);
+
+    const restoredService = createThreadDetailProjectionService({
+      cacheDir: dir,
+      policyVersion: "test-v1",
+      maxTurns: 2,
+      now: () => 2000,
+    });
+    assert.equal(restoredService.get(signatureInput(), { allowPartial: true }), null);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("thread detail projection drops legacy disk cache that persisted a turns-list window as full", () => {
+  const dir = tempDir();
+  try {
+    const service = createThreadDetailProjectionService({
+      cacheDir: dir,
+      policyVersion: "test-v1",
+      maxTurns: 2,
+      now: () => 1000,
+    });
+    service.seed(signatureInput(), {
+      thread: {
+        id: "thread-1",
+        turns: [{ id: "turn-full", items: [] }],
+      },
+    });
+
+    const files = fs.readdirSync(dir).filter((name) => name.endsWith(".json"));
+    assert.equal(files.length, 1);
+    const filePath = path.join(dir, files[0]);
+    const raw = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    raw.dynamic = true;
+    raw.result.thread.mobileReadMode = "turns-list-large";
+    raw.result.thread.mobileOlderTurnsCursor = "older-cursor";
+    raw.result.thread.mobileNewerTurnsCursor = "newer-cursor";
+    fs.writeFileSync(filePath, `${JSON.stringify(raw)}\n`, "utf8");
+
+    const restoredService = createThreadDetailProjectionService({
+      cacheDir: dir,
+      policyVersion: "test-v1",
+      maxTurns: 2,
+      now: () => 2000,
+    });
+
+    assert.equal(restoredService.lookup(signatureInput(), { allowPartial: true }).missReason, "entry-missing");
+    assert.equal(fs.existsSync(filePath), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("thread detail projection partial seed cannot replace an existing full cache", () => {
   const service = createThreadDetailProjectionService({
     cacheDir: "",

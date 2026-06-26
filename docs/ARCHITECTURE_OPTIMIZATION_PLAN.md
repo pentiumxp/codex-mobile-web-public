@@ -530,6 +530,11 @@ metadata.
   an incorrect full `projection-v4-cache`. This optimizes repeated recent opens
   of large sessions without presenting a bounded current window as
   authoritative complete history.
+- Cursor-backed `turns-list*` windows are now treated as partial projection
+  state even if the seeding caller forgot to pass `partial:true`. The projection
+  cache also drops legacy disk entries that persisted such a window as a full
+  dynamic cache, so `mode=full` cannot reuse a recent/current turns-list window
+  as `projection-v4-dynamic`.
 - Projection cache lookup now reports bounded miss reasons and may delete a
   stale full disk entry only when the existing full cache is proven unusable by
   `dynamic-summary-stale` or a signature mismatch reason. It does not delete

@@ -112,6 +112,41 @@ test("v4 projection service preserves partial recent-window opt-in semantics", (
   }
 });
 
+test("v4 projection service marks cursor-backed turns-list windows as partial", () => {
+  const service = createThreadDetailProjectionV4Service({
+    cacheDir: "",
+    policyVersion: "test-v4",
+    maxTurns: 3,
+    now: () => 2000,
+  });
+  const seeded = service.seed(signatureInput(), {
+    thread: {
+      id: "thread-1",
+      mobileReadMode: "turns-list-large",
+      mobileOlderTurnsCursor: "older-cursor",
+      mobileNewerTurnsCursor: "newer-cursor",
+      turns: [{
+        id: "turn-window",
+        items: [{ id: "user-1", type: "userMessage" }],
+      }],
+    },
+  });
+
+  assert.equal(seeded.partial, true);
+  assert.equal(seeded.partialKind, "turns-list-window");
+  assert.equal(service.get(signatureInput()), null);
+  assert.equal(service.lookup(signatureInput()).missReason, "partial-not-allowed");
+
+  const cached = service.get(signatureInput(), { allowPartial: true });
+  assert.ok(cached);
+  assert.equal(cached.version, "v4");
+  assert.equal(cached.partial, true);
+  assert.equal(cached.partialKind, "turns-list-window");
+  assert.equal(cached.result.thread.mobileProjectionVersion, "v4");
+  assert.equal(cached.result.thread.turns[0].items[0].mobileProjectionSource, "partial");
+  assert.deepEqual(cached.result.thread.mobileVisibleItemKeys, ["turn-window:user:user-1"]);
+});
+
 test("v4 projection service exposes bounded lookup miss reasons", () => {
   const service = createThreadDetailProjectionV4Service({
     cacheDir: "",

@@ -527,6 +527,42 @@ function trimTurns(thread, maxTurns) {
   if (thread.turns.length > limit) thread.turns = thread.turns.slice(-limit);
 }
 
+function hasCursor(value) {
+  return Boolean(String(value || "").trim());
+}
+
+function threadReadMode(thread) {
+  return String(thread && thread.mobileReadMode || "").trim();
+}
+
+function isTurnsListWindowThread(thread) {
+  if (!thread || typeof thread !== "object") return false;
+  const mode = threadReadMode(thread);
+  if (!/^turns-list(?:-|$)/.test(mode)) return false;
+  return hasCursor(thread.mobileOlderTurnsCursor) || hasCursor(thread.mobileNewerTurnsCursor);
+}
+
+function isNonFullWindowThread(thread) {
+  if (!thread || typeof thread !== "object") return false;
+  if (hasCursor(thread.mobileNewerTurnsCursor)) return true;
+  return isTurnsListWindowThread(thread);
+}
+
+function partialKindForWindowThread(thread, fallback = "recent-window") {
+  const mode = threadReadMode(thread);
+  if (mode === "turns-list-large") return "turns-list-window";
+  if (mode === "turns-list") return "turns-list-window";
+  return String(fallback || "recent-window").slice(0, 80);
+}
+
+function markWindowEntryPartial(entry, kind = "") {
+  if (!entry || !entry.result || !entry.result.thread) return false;
+  if (!isNonFullWindowThread(entry.result.thread)) return false;
+  entry.partial = true;
+  entry.partialKind = partialKindForWindowThread(entry.result.thread, kind || entry.partialKind || "recent-window");
+  return true;
+}
+
 function createThreadDetailProjectionService(options = {}) {
   const cacheDir = String(options.cacheDir || "").trim();
   const policyVersion = String(options.policyVersion || "1");
@@ -617,7 +653,12 @@ function createThreadDetailProjectionService(options = {}) {
     if (!threadId || !result || typeof result !== "object" || !result.thread) return null;
     const signature = projectionSignature(Object.assign({}, input, { policyVersion, maxTurns }));
     const existing = entryForThread(threadId);
-    const partial = optionsForSeed.partial === true;
+    const explicitPartial = optionsForSeed.partial === true;
+    const windowPartial = isNonFullWindowThread(result.thread);
+    const partial = explicitPartial || windowPartial;
+    const partialKind = partial
+      ? partialKindForWindowThread(result.thread, optionsForSeed.partialKind || "recent-window")
+      : "";
     let replacedStaleFull = false;
     let staleFullReason = "";
     if (partial && existing && !existing.partial) {
@@ -648,7 +689,7 @@ function createThreadDetailProjectionService(options = {}) {
       lastPersistedAtMs: 0,
       dynamic: false,
       partial,
-      partialKind: partial ? String(optionsForSeed.partialKind || "recent-window").slice(0, 80) : "",
+      partialKind,
       result: cloneJson(result),
     };
     normalizeProjectionThreadUserMessages(entry.result.thread);
@@ -684,6 +725,10 @@ function createThreadDetailProjectionService(options = {}) {
       partialKind: String(raw.partialKind || ""),
       result: raw.result,
     };
+    if (entry.partial || markWindowEntryPartial(entry)) {
+      removePersistedEntry(threadId);
+      return null;
+    }
     memory.set(threadId, entry);
     return entry;
   }
@@ -697,6 +742,7 @@ function createThreadDetailProjectionService(options = {}) {
     if (!entry) entry = readDisk(threadId);
     if (!entry) return { cached: null, missReason: "entry-missing" };
     if (!entry.result) return { cached: null, missReason: "entry-empty" };
+    if (!entry.partial && markWindowEntryPartial(entry)) removePersistedEntry(threadId);
     if (entry.partial && optionsForGet.allowPartial !== true) return { cached: null, missReason: "partial-not-allowed" };
 
     const summaryUpdatedAtMs = safeNumber(input.summaryUpdatedAtMs);
@@ -798,6 +844,7 @@ function createThreadDetailProjectionService(options = {}) {
     normalizeProjectionThreadUserMessages(thread);
     normalizeProjectionSupersededLiveTurns(thread);
     trimTurns(thread, maxTurns);
+    markWindowEntryPartial(entry);
     entry.updatedAtMs = now();
     entry.dynamic = true;
     persistDynamicEntry(entry, method);
