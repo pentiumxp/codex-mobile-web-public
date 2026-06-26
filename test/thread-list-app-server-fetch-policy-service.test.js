@@ -4,7 +4,9 @@ const assert = require("node:assert/strict");
 const { test } = require("node:test");
 
 const {
+  countThreadListRows,
   planThreadListAppServerFetch,
+  threadListAppServerLatencyTimingFields,
   threadListAppServerFetchTimingFields,
 } = require("../adapters/thread-list-app-server-fetch-policy-service");
 
@@ -101,5 +103,51 @@ test("thread-list app-server fetch policy normalizes limits and timing fields", 
     appServerRequestLimit: 500,
     appServerRequestReason: `long-${"x".repeat(75)}`,
     appServerOverfetchFactor: 500,
+  });
+});
+
+test("thread-list app-server latency fields split rpc and local post-processing", () => {
+  const fields = threadListAppServerLatencyTimingFields({
+    rawResult: { data: [{ id: "private-1" }, { id: "private-2" }, { id: "private-3" }] },
+    visibleResult: { data: [{ id: "private-1" }, { id: "private-2" }] },
+    filteredResult: { data: [{ id: "private-1" }] },
+    rpcMs: 1234,
+    visibleFilterMs: 5,
+    workspaceFilterMs: 7,
+    privatePrompt: "do not copy",
+  });
+
+  assert.deepEqual(fields, {
+    appServerRpcMs: 1234,
+    appServerVisibleFilterMs: 5,
+    appServerWorkspaceFilterMs: 7,
+    appServerPostProcessMs: 12,
+    appServerRawCount: 3,
+    appServerVisibleCount: 2,
+    appServerFilteredCount: 1,
+  });
+  assert.doesNotMatch(JSON.stringify(fields), /private|prompt/);
+});
+
+test("thread-list app-server latency fields are bounded and count data or threads arrays", () => {
+  assert.equal(countThreadListRows({ data: [{}, {}] }), 2);
+  assert.equal(countThreadListRows({ threads: [{}, {}, {}] }), 3);
+  assert.equal(countThreadListRows([{}, {}, {}, {}]), 4);
+
+  assert.deepEqual(threadListAppServerLatencyTimingFields({
+    rawCount: 9999999,
+    visibleCount: -1,
+    filteredCount: "bad",
+    rpcMs: 999999999,
+    visibleFilterMs: -5,
+    workspaceFilterMs: "bad",
+  }), {
+    appServerRpcMs: 600000,
+    appServerVisibleFilterMs: 0,
+    appServerWorkspaceFilterMs: 0,
+    appServerPostProcessMs: 0,
+    appServerRawCount: 100000,
+    appServerVisibleCount: 0,
+    appServerFilteredCount: 0,
   });
 });

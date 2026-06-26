@@ -354,6 +354,13 @@ function summarizeThreadList(result = {}) {
     appServerOverfetchFactor: boundedNumber(timings && timings.appServerOverfetchFactor),
     totalMs: boundedNumber(timings && timings.totalMs),
     appServerMs: boundedNumber(timings && timings.appServerMs),
+    appServerRpcMs: boundedNumber(timings && timings.appServerRpcMs),
+    appServerVisibleFilterMs: boundedNumber(timings && timings.appServerVisibleFilterMs),
+    appServerWorkspaceFilterMs: boundedNumber(timings && timings.appServerWorkspaceFilterMs),
+    appServerPostProcessMs: boundedNumber(timings && timings.appServerPostProcessMs),
+    appServerRawCount: boundedCount(timings && timings.appServerRawCount),
+    appServerVisibleCount: boundedCount(timings && timings.appServerVisibleCount),
+    appServerFilteredCount: boundedCount(timings && timings.appServerFilteredCount),
     fallbackMs: boundedNumber(timings && timings.fallbackMs),
     mergeMs: boundedNumber(timings && timings.mergeMs),
   };

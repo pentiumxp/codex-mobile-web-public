@@ -6,6 +6,18 @@ function boundedLimit(value, fallback = 80) {
   return Math.max(1, Math.min(200, Math.trunc(number)));
 }
 
+function boundedCount(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return 0;
+  return Math.min(100000, Math.trunc(number));
+}
+
+function boundedMs(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return 0;
+  return Math.min(10 * 60 * 1000, Math.trunc(number));
+}
+
 function compactLabel(value, fallback = "", maxLength = 80) {
   return String(value || fallback || "").trim().slice(0, maxLength);
 }
@@ -22,6 +34,14 @@ function boundedOverfetchLimit(requestedLimit, multiplier = 2, floor = 80, ceili
   const limit = boundedLimit(requestedLimit);
   const raw = Math.max(limit * multiplier, floor);
   return Math.max(limit, Math.min(ceiling, Math.trunc(raw)));
+}
+
+function countThreadListRows(result) {
+  if (Array.isArray(result)) return boundedCount(result.length);
+  if (!result || typeof result !== "object") return 0;
+  if (Array.isArray(result.data)) return boundedCount(result.data.length);
+  if (Array.isArray(result.threads)) return boundedCount(result.threads.length);
+  return 0;
 }
 
 function planThreadListAppServerFetch(input = {}) {
@@ -111,7 +131,31 @@ function threadListAppServerFetchTimingFields(plan = {}) {
   };
 }
 
+function threadListAppServerLatencyTimingFields(input = {}) {
+  const source = input && typeof input === "object" ? input : {};
+  const rpcMs = boundedMs(source.rpcMs);
+  const visibleFilterMs = boundedMs(source.visibleFilterMs);
+  const workspaceFilterMs = boundedMs(source.workspaceFilterMs);
+  return {
+    appServerRpcMs: rpcMs,
+    appServerVisibleFilterMs: visibleFilterMs,
+    appServerWorkspaceFilterMs: workspaceFilterMs,
+    appServerPostProcessMs: boundedMs(visibleFilterMs + workspaceFilterMs),
+    appServerRawCount: boundedCount(
+      source.rawCount !== undefined ? source.rawCount : countThreadListRows(source.rawResult),
+    ),
+    appServerVisibleCount: boundedCount(
+      source.visibleCount !== undefined ? source.visibleCount : countThreadListRows(source.visibleResult),
+    ),
+    appServerFilteredCount: boundedCount(
+      source.filteredCount !== undefined ? source.filteredCount : countThreadListRows(source.filteredResult),
+    ),
+  };
+}
+
 module.exports = {
+  countThreadListRows,
   planThreadListAppServerFetch,
+  threadListAppServerLatencyTimingFields,
   threadListAppServerFetchTimingFields,
 };

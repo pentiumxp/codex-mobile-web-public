@@ -96,6 +96,7 @@ const {
 } = require("./adapters/thread-list-fallback-prewarm-service");
 const {
   planThreadListAppServerFetch,
+  threadListAppServerLatencyTimingFields,
   threadListAppServerFetchTimingFields,
 } = require("./adapters/thread-list-app-server-fetch-policy-service");
 const { diagnoseThreadListColdPath } = require("./adapters/thread-list-cold-path-diagnosis-service");
@@ -14893,10 +14894,23 @@ async function handleApi(req, res) {
         }
       }
       const appServerStartedAtMs = Date.now();
-      const appServerResult = filterThreadListByCwd(
-        filterVisibleThreads(await codex.request("thread/list", params, { timeoutMs: READ_RPC_TIMEOUT_MS }), globalState),
-        cwd,
-      );
+      const appServerRpcStartedAtMs = Date.now();
+      const appServerRawResult = await codex.request("thread/list", params, { timeoutMs: READ_RPC_TIMEOUT_MS });
+      markTiming("appServerRpcMs", appServerRpcStartedAtMs);
+      const appServerVisibleFilterStartedAtMs = Date.now();
+      const appServerVisibleResult = filterVisibleThreads(appServerRawResult, globalState);
+      markTiming("appServerVisibleFilterMs", appServerVisibleFilterStartedAtMs);
+      const appServerWorkspaceFilterStartedAtMs = Date.now();
+      const appServerResult = filterThreadListByCwd(appServerVisibleResult, cwd);
+      markTiming("appServerWorkspaceFilterMs", appServerWorkspaceFilterStartedAtMs);
+      Object.assign(timings, threadListAppServerLatencyTimingFields({
+        rawResult: appServerRawResult,
+        visibleResult: appServerVisibleResult,
+        filteredResult: appServerResult,
+        rpcMs: timings.appServerRpcMs,
+        visibleFilterMs: timings.appServerVisibleFilterMs,
+        workspaceFilterMs: timings.appServerWorkspaceFilterMs,
+      }));
       markTiming("appServerMs", appServerStartedAtMs);
       const shouldDeferFallback = shouldDeferThreadListFallbackForActiveDetail({
         deferFallback,

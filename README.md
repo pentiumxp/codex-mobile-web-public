@@ -16,6 +16,45 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-27 Phase B App-Server List Latency Attribution Slice
+
+本地小切片继续 v535 之后的 Phase B。v535 读回确认 fallback/prewarm 已经不是
+前台首屏瓶颈：列表可走 `fallback-source-snapshot` 或 `warm-fallback-cache`，
+app-server 请求窗口也已收窄到 `80`。但同一读回仍显示 `appServerMs` 约
+`1789-2077ms`。此前这个字段把 app-server RPC、可见性过滤、workspace 过滤和计数
+全部混在一起，无法判断下一步应该修 mux/RPC、app-server `thread/list`，还是
+Mobile server 后处理。
+
+本切片不改变线程列表行为，只把 `/api/threads` 的 app-server list 路径拆成
+metadata-only 诊断字段：
+
+- `appServerRpcMs`
+- `appServerVisibleFilterMs`
+- `appServerWorkspaceFilterMs`
+- `appServerPostProcessMs`
+- `appServerRawCount`
+- `appServerVisibleCount`
+- `appServerFilteredCount`
+
+这些字段由 `thread-list-app-server-fetch-policy-service` 统一 bounding 和计数，
+并进入 Phase B readback summary / decision evidence。后续生产部署读回就可以直接
+判断 2 秒级 `appServerMs` 是 RPC 侧耗时，还是本地过滤/后处理耗时。该切片不 bump
+`CLIENT_BUILD_ID` / PWA shell cache，不部署；等下一组 Phase B 归因/修复合成模块后
+统一发布。
+
+验证：
+
+```bash
+node --test test/thread-list-app-server-fetch-policy-service.test.js test/thread-visibility.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js
+npm run check
+npm run check:macos
+npm test
+git diff --check
+```
+
+结果：focused `80` passed；`npm test` `1195` passed；`check` 和
+`check:macos`、`git diff --check` passed。
+
 ## 2026-06-27 v535 Phase B Thread-List Refresh Module
 
 v535 把 v534 之后的两个本地 Phase B 小切片收束成一个模块部署：

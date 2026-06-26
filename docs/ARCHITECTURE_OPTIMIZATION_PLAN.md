@@ -261,10 +261,14 @@ Current acceleration targets:
    limit was bounded to `80`, and targeted active detail still returned
    `projection-active-overlay` with the active overlay gate `ready`. The same
    readback also exposed the next Phase B owner: even with an 80-row app-server
-   window, `appServerMs` was still around 1.8-2.1s, so the next investigation
-   should target app-server `thread/list` / mux/RPC latency or server-side
-   merge/decorate timing rather than another fallback baseline change. The next local
-   slice makes that attribution explicit: fallback baseline source reads now
+   window, `appServerMs` was still around 1.8-2.1s. The follow-up local
+   attribution slice now splits that coarse field into `appServerRpcMs`,
+   `appServerVisibleFilterMs`, `appServerWorkspaceFilterMs`,
+   `appServerPostProcessMs`, and raw/visible/filtered row counts, so the next
+   production readback can distinguish mux/RPC/app-server latency from Mobile
+   server post-processing without reading private thread content. Earlier local
+   fallback attribution slices also made baseline source work explicit:
+   fallback baseline source reads now
    carry bounded counters for rollout directory reads, JSONL stat/collect/sort
    counts, candidate scans, head reads/bytes, final status tail reads/bytes,
    and `session_index.jsonl` read/line/entry counts. The counters are numeric

@@ -257,6 +257,14 @@ test("phase B readback decision treats one-time cold rebuild plus warm check as 
       appServerRequestLimit: 80,
       appServerRequestReason: "default-bounded-overfetch",
       appServerOverfetchFactor: 2,
+      appServerMs: 130,
+      appServerRpcMs: 120,
+      appServerVisibleFilterMs: 4,
+      appServerWorkspaceFilterMs: 6,
+      appServerPostProcessMs: 10,
+      appServerRawCount: 20,
+      appServerVisibleCount: 18,
+      appServerFilteredCount: 16,
     },
     threadListWarmCheck: {
       coldPathOwner: "warm-fallback-cache",
@@ -281,6 +289,14 @@ test("phase B readback decision treats one-time cold rebuild plus warm check as 
   assert.equal(decision.evidence.threadListAppServerRequestLimit, 80);
   assert.equal(decision.evidence.threadListAppServerRequestReason, "default-bounded-overfetch");
   assert.equal(decision.evidence.threadListAppServerOverfetchFactor, 2);
+  assert.equal(decision.evidence.threadListAppServerMs, 130);
+  assert.equal(decision.evidence.threadListAppServerRpcMs, 120);
+  assert.equal(decision.evidence.threadListAppServerVisibleFilterMs, 4);
+  assert.equal(decision.evidence.threadListAppServerWorkspaceFilterMs, 6);
+  assert.equal(decision.evidence.threadListAppServerPostProcessMs, 10);
+  assert.equal(decision.evidence.threadListAppServerRawCount, 20);
+  assert.equal(decision.evidence.threadListAppServerVisibleCount, 18);
+  assert.equal(decision.evidence.threadListAppServerFilteredCount, 16);
   assert.equal(decision.evidence.threadListWarmCheckOwner, "warm-fallback-cache");
 });
 

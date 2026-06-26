@@ -19093,3 +19093,54 @@ The previous full handoff was archived and should be opened only when old proven
 - Next:
   - Commit this readback documentation locally.
   - Continue Phase B with app-server list latency attribution.
+
+## 2026-06-27 - Phase B app-server list latency attribution local slice
+
+- Current local state:
+  - Continued after the deployed v535 list-refresh module (`7308e00` recorded
+    the v535 readback documentation).
+  - v535 production readback showed fallback/prewarm is no longer the active
+    foreground blocker, but ordinary app-server list refresh still reported
+    coarse `appServerMs` around `1789-2077ms` with
+    `appServerRequestLimit=80`.
+- Root-cause boundary:
+  - Symptom/risk: `appServerMs` was too coarse to determine whether the
+    remaining large-session list delay belongs to app-server/mux RPC or Mobile
+    server post-processing.
+  - Failing layer: `/api/threads` app-server list diagnostics/readback
+    attribution, not fallback/prewarm rebuilds, detail projection, frontend
+    patching, task-card routing, or Home AI host diagnostics.
+  - Violated invariant: Phase B production readback must distinguish
+    app-server RPC latency from local visible/workspace filtering and
+    post-processing using bounded metadata only.
+- Changes:
+  - `server.js` now stages `thread/list` as raw app-server result, visible
+    filter result, and workspace-filtered result before assigning the same
+    final `appServerResult`.
+  - `adapters/thread-list-app-server-fetch-policy-service.js` now exports
+    bounded latency/count helpers for:
+    `appServerRpcMs`, `appServerVisibleFilterMs`,
+    `appServerWorkspaceFilterMs`, `appServerPostProcessMs`,
+    `appServerRawCount`, `appServerVisibleCount`, and
+    `appServerFilteredCount`.
+  - `scripts/codex-mobile-phase-b-readback-smoke.js` and
+    `adapters/phase-b-readback-decision-service.js` preserve those bounded
+    fields in readback summaries/decision evidence.
+  - Updated focused tests plus `README.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and `docs/MODULES.md`.
+- Validation:
+  - Focused syntax/tests:
+    `node --check adapters/thread-list-app-server-fetch-policy-service.js && node --check server.js && node --check scripts/codex-mobile-phase-b-readback-smoke.js && node --check test/thread-list-app-server-fetch-policy-service.test.js && node --check test/thread-visibility.test.js && node --check test/phase-b-readback-smoke.test.js && node --check test/phase-b-readback-decision-service.test.js && node --test test/thread-list-app-server-fetch-policy-service.test.js test/thread-visibility.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js`
+    passed (`80` focused tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `npm test` passed (`1195` tests).
+  - `git diff --check` passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache
+    bump. This is a local diagnostic attribution slice to batch into the next
+    module deploy.
+- Next:
+  - Commit locally, then continue Phase B using the next production readback
+    to decide whether the remaining delay is mux/app-server RPC or Mobile-side
+    list post-processing.
