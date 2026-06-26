@@ -264,6 +264,42 @@
     };
   }
 
+  function planThreadOpenLoadingShell(input = {}) {
+    const threadId = String(input.threadId || input.requestedThreadId || "").trim();
+    const summaryThread = input.summaryThread || input.summary || null;
+    const summaryId = String(summaryThread && summaryThread.id || "").trim();
+    if (!threadId) {
+      return {
+        currentThreadId: "",
+        thread: null,
+        hasSummary: false,
+        summaryAccepted: false,
+        hadListTurnsField: false,
+        reason: "missing-thread-id",
+      };
+    }
+    const summaryAccepted = Boolean(summaryThread && summaryId === threadId);
+    const summary = summaryAccepted ? threadListSummaryFromDetailThread(summaryThread) : null;
+    const base = summary || {
+      id: threadId,
+      name: threadId,
+      preview: threadId,
+    };
+    return {
+      currentThreadId: threadId,
+      thread: Object.assign({}, base, {
+        id: threadId,
+        turns: [],
+        mobileLoading: true,
+        mobileLoadError: "",
+      }),
+      hasSummary: Boolean(summaryThread),
+      summaryAccepted,
+      hadListTurnsField: Boolean(summaryThread && Object.prototype.hasOwnProperty.call(summaryThread, "turns")),
+      reason: summaryAccepted ? "summary-loading-shell" : "fallback-loading-shell",
+    };
+  }
+
   function threadIsSummaryOnlyCurrentThread(thread, currentThreadId) {
     return Boolean(thread
       && currentThreadId
@@ -492,6 +528,7 @@
     hasNonemptyThreadDetailRenderEvidence,
     mergeThreadSummaryIntoList,
     planEmptyDetailHistoryRecovery,
+    planThreadOpenLoadingShell,
     planThreadOpenCacheReuse,
     planSummaryOnlyCurrentThreadRecovery,
     planSummaryOnlyCurrentThreadRecoveryEffects,

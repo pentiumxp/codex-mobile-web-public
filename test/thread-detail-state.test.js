@@ -11,6 +11,7 @@ const {
   hasNonemptyThreadDetailRenderEvidence,
   mergeThreadSummaryIntoList,
   planEmptyDetailHistoryRecovery,
+  planThreadOpenLoadingShell,
   planThreadOpenCacheReuse,
   planSummaryOnlyCurrentThreadRecovery,
   planSummaryOnlyCurrentThreadRecoveryEffects,
@@ -407,6 +408,60 @@ test("thread detail state plans open-thread cache reuse without accepting empty 
     shouldReportEmptyCachedDetail: false,
     reason: "current-thread-loading",
   });
+});
+
+test("thread detail state plans open-thread loading shell from summary without detail ownership", () => {
+  const plan = planThreadOpenLoadingShell({
+    threadId: "thread-1",
+    summaryThread: {
+      id: "thread-1",
+      name: "Readable title",
+      preview: "Preview text",
+      status: { type: "active" },
+      turns: [{ id: "stale-turn" }],
+      threadTaskCards: [{ id: "private-card" }],
+      runtimeSettings: { effort: "xhigh" },
+      mobileDiagnostics: { private: "detail" },
+      mobileDetailLoaded: true,
+      mobileReadMode: "projection-v4-dynamic",
+    },
+  });
+
+  assert.equal(plan.currentThreadId, "thread-1");
+  assert.equal(plan.reason, "summary-loading-shell");
+  assert.equal(plan.hasSummary, true);
+  assert.equal(plan.summaryAccepted, true);
+  assert.equal(plan.hadListTurnsField, true);
+  assert.equal(plan.thread.id, "thread-1");
+  assert.equal(plan.thread.name, "Readable title");
+  assert.equal(plan.thread.preview, "Preview text");
+  assert.deepEqual(plan.thread.status, { type: "active" });
+  assert.deepEqual(plan.thread.turns, []);
+  assert.equal(plan.thread.mobileLoading, true);
+  assert.equal(plan.thread.mobileLoadError, "");
+  assert.equal(Object.prototype.hasOwnProperty.call(plan.thread, "threadTaskCards"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(plan.thread, "runtimeSettings"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(plan.thread, "mobileDiagnostics"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(plan.thread, "mobileDetailLoaded"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(plan.thread, "mobileReadMode"), false);
+
+  const missingSummary = planThreadOpenLoadingShell({ threadId: "thread-2" });
+  assert.equal(missingSummary.reason, "fallback-loading-shell");
+  assert.equal(missingSummary.thread.id, "thread-2");
+  assert.equal(missingSummary.thread.name, "thread-2");
+  assert.deepEqual(missingSummary.thread.turns, []);
+  assert.equal(missingSummary.thread.mobileLoading, true);
+
+  const mismatchedSummary = planThreadOpenLoadingShell({
+    threadId: "thread-3",
+    summaryThread: { id: "thread-other", name: "Wrong thread", turns: [{ id: "wrong" }] },
+  });
+  assert.equal(mismatchedSummary.reason, "fallback-loading-shell");
+  assert.equal(mismatchedSummary.hasSummary, true);
+  assert.equal(mismatchedSummary.summaryAccepted, false);
+  assert.equal(mismatchedSummary.hadListTurnsField, true);
+  assert.equal(mismatchedSummary.thread.id, "thread-3");
+  assert.equal(mismatchedSummary.thread.name, "thread-3");
 });
 
 test("thread detail summary merge cannot preserve stale detail fields", () => {

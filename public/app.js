@@ -8977,18 +8977,16 @@ async function loadThread(threadId, options = {}) {
   clearTimeout(state.pollTimer);
   markThreadViewed(threadId);
   const summary = state.threads.find((thread) => thread.id === threadId);
-  state.currentThreadId = threadId;
+  const loadingShellPlan = threadDetailStateApi.planThreadOpenLoadingShell({ threadId, summaryThread: summary });
+  state.currentThreadId = loadingShellPlan.currentThreadId || threadId;
   state.startupThreadOpenPending = false;
-  state.currentThread = summary ? Object.assign({}, threadListSummaryFromDetailThread(summary) || summary, {
-    turns: [],
-    mobileLoading: true,
-    mobileLoadError: "",
-  }) : {
+  state.currentThread = loadingShellPlan.thread || {
     id: threadId,
     name: threadId,
     preview: threadId,
     turns: [],
     mobileLoading: true,
+    mobileLoadError: "",
   };
   followThreadOpenToBottom(threadId);
   restoreDraftForCurrentTarget();

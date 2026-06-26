@@ -16618,3 +16618,60 @@ The previous full handoff was archived and should be opened only when old proven
     layout metrics only. No secrets, cookies, launch tokens, private thread
     bodies, task-card bodies, upload bytes, private paths, provider payloads,
     prompts, or long logs are included.
+
+## 2026-06-27 - Phase A thread-open loading shell ownership local slice
+
+- Latest local slice:
+  - Returned from Phase E fixture work to Phase A/B projection/render state
+    ownership after `2be71e0` (`extend thread tile visual keyboard fixture`).
+    This slice is local/private only and is not deployed by design.
+- Root-cause boundary:
+  - Symptom/risk: thread opens can show empty/partial history when a thread-list
+    summary row with `turns: []` or stale detail metadata is treated as current
+    conversation detail while the real detail API response is still in flight.
+  - Failing layer: frontend current-thread loading-shell state ownership, not
+    server projection, DOM patching, task-card protocol, Home AI host/proxy,
+    CSS, or shell/cache.
+  - Violated invariant: thread-list summaries may provide title/status/workspace
+    context, but they must not own current conversation `turns` or detail-only
+    metadata during a thread open.
+- Changes:
+  - `public/thread-detail-state.js` now exposes
+    `planThreadOpenLoadingShell()`.
+  - The helper accepts only id-matched summaries, strips detail-only fields,
+    and produces a bounded loading shell with `turns: []`,
+    `mobileLoading: true`, and `mobileLoadError: ""`.
+  - Missing or mismatched summaries fail closed to a bounded fallback shell for
+    the requested thread id.
+  - `public/app.js` `loadThread()` now executes that helper instead of
+    constructing the summary/loading shell inline.
+  - `test/thread-detail-state.test.js` covers stale turns, task-card arrays,
+    runtime settings, diagnostics, loaded-detail markers, read modes, missing
+    summary, and mismatched-summary branches.
+  - `test/conversation-render.test.js` guards app wiring and prevents the old
+    inline summary/detail construction from returning.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-state.test.js test/conversation-render.test.js test/thread-detail-render-plan.test.js`
+    passed (`186` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`1137` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Not deployed. No `CLIENT_BUILD_ID` / PWA shell cache bump. This is a
+    Phase A state-ownership slice to batch with the next projection/render
+    ownership changes before one module deploy.
+- Next:
+  - Continue Phase A by extracting more current-thread render/patch authority
+    from `refreshCurrentThread()` / `renderCurrentThread()`, especially
+    projection mismatch outcome classification and refresh/DOM authority
+    diagnostics; or continue Phase B if runtime readback points to cold-path
+    source ownership.
+- Privacy:
+  - Only bounded file paths, helper branch names, and test counts are recorded.
+    No secrets, cookies, launch tokens, private thread bodies, task-card bodies,
+    upload bytes, private paths, provider payloads, prompts, or long logs are
+    included.

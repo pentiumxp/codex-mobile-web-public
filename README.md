@@ -352,6 +352,41 @@ node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js te
 该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为 Phase C
 本地模块累积。
 
+## 2026-06-27 Phase A Thread Open Loading Shell Ownership Slice
+
+本地小切片回到 Phase A/B 的投影/渲染状态所有权问题，针对近期反复出现的
+“打开线程只看到空白/一条卡片/中间断档”风险。根因边界不是让客户端隐藏空白，
+而是保证线程列表 summary 永远不能冒充 thread detail conversation。
+
+此前 `loadThread()` 在 `public/app.js` 里直接用列表 summary 拼出当前线程的
+loading shell。虽然已有 `threadListSummaryFromDetailThread()` 会剥掉部分 detail-only
+字段，但这个关键状态所有权仍散落在 app 编排层，后续很容易再次把 stale `turns`、
+`threadTaskCards`、`runtimeSettings` 或诊断字段带回当前 detail shell。
+
+本次修复：
+
+- `public/thread-detail-state.js` 新增 `planThreadOpenLoadingShell()`，统一生成打开线程时的
+  loading shell。
+- helper 只接受 id 匹配的 summary，并且只保留 summary-safe 字段；输出固定的
+  `turns: []`、`mobileLoading: true`、`mobileLoadError: ""`。
+- id 不匹配或没有 summary 时 fail-closed 到 bounded fallback shell，不复用错误 summary。
+- `public/app.js` 的 `loadThread()` 改为调用该 helper，不再内联拼接 summary/loading detail。
+- `test/thread-detail-state.test.js` 增加 helper 行为测试，证明 stale `turns`、
+  `threadTaskCards`、`runtimeSettings`、`mobileDiagnostics`、`mobileDetailLoaded`、
+  `mobileReadMode` 不会进入 loading shell。
+- `test/conversation-render.test.js` 更新 app wiring，防止未来把内联 summary 拼接逻辑加回来。
+- 不改变 API、server projection、DOM 结构、CSS、task-card 协议、shell/cache 或部署状态。
+
+闭环验证：
+
+```bash
+node --test test/thread-detail-state.test.js test/conversation-render.test.js test/thread-detail-render-plan.test.js
+```
+
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；它是 Phase A 的
+本地/private commit 候选，后续应继续拆 current-thread render/patch authority 和
+projection mismatch 诊断。
+
 ## 2026-06-27 Phase E Thread Tile Visual Fixture Slice
 
 本地小切片开始补 Phase E 的浏览器/视觉回归入口，先覆盖最近反复出问题的平铺

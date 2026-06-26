@@ -1859,7 +1859,10 @@ test("loading and thread-list state preserve locally visible live turns", () => 
   assert.match(appJs, /function threadIsLoadingWithoutVisibleTurns\(/);
   assert.match(functionBody("conversationRenderSignature"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) return `loading\\|/);
   assert.match(functionBody("conversationRootSignature"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) return `loading\\|/);
-  assert.match(functionBody("loadThread"), /Object\.assign\(\{\}, threadListSummaryFromDetailThread\(summary\) \|\| summary, \{\s*turns: \[\],\s*mobileLoading: true,\s*mobileLoadError: "",\s*\}\)/);
+  assert.match(functionBody("loadThread"), /const loadingShellPlan = threadDetailStateApi\.planThreadOpenLoadingShell\(\{ threadId, summaryThread: summary \}\);/);
+  assert.match(functionBody("loadThread"), /state\.currentThreadId = loadingShellPlan\.currentThreadId \|\| threadId;/);
+  assert.match(functionBody("loadThread"), /state\.currentThread = loadingShellPlan\.thread \|\| \{[\s\S]*id: threadId,[\s\S]*name: threadId,[\s\S]*preview: threadId,[\s\S]*turns: \[\],[\s\S]*mobileLoading: true,[\s\S]*mobileLoadError: "",[\s\S]*\};/);
+  assert.doesNotMatch(functionBody("loadThread"), /Object\.assign\(\{\}, threadListSummaryFromDetailThread\(summary\) \|\| summary/);
   assert.match(functionBody("loadThread"), /const cacheReusePlan = planThreadOpenCacheReuse\(\{/);
   assert.match(functionBody("loadThread"), /recordEmptyCachedDetailReuseBlocked\(cacheReusePlan\.reason, state\.currentThread, \{ source \}\)/);
   assert.match(functionBody("loadThread"), /if \(cacheReusePlan\.shouldUseCachedCurrent\) \{/);

@@ -384,6 +384,15 @@ ordered effects for current-thread state replacement, bounded
 `summary-detail-recovery` refresh scheduling. `public/app.js` executes these
 effects but no longer re-owns the recovery state/event/refresh order.
 
+The 2026-06-27 local Phase A follow-up moves ordinary thread-open loading-shell
+construction into the same state policy. `planThreadOpenLoadingShell()` accepts
+only id-matched thread-list summaries, strips detail-only fields, and produces
+the bounded `turns: []` / `mobileLoading: true` shell that waits for the real
+detail API response. `loadThread()` now executes this plan instead of inlining
+summary/detail ownership logic, so stale list `turns`, task-card arrays,
+runtime settings, diagnostics, or read-mode metadata cannot regain authority
+over the current conversation while a detail open is in flight.
+
 `codex-mobile-shell-v515` adds the next ownership rule from the same Music
 incident class: an incoming empty `turns: []` detail response cannot wipe out an
 existing current-thread state that already has visible turns. That merge
