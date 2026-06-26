@@ -740,6 +740,13 @@ run, snapshots the thread id and load sequence, normalizes recent/full mode,
 selects the bounded API query and timeout, and records whether an active
 refresh controller should be aborted. App code still performs the real abort
 and network request.
+Refresh response effect planning now also lives in this helper:
+`planThreadDetailRefreshResponseEffects` decides whether a completed refresh
+response still belongs to the current thread/load sequence, then declares the
+ordered detail-loaded mark, bounded render-evidence write, and current-thread
+merge effects. App code still performs the real marker/evidence/merge calls,
+but `refreshCurrentThread()` no longer owns the stale-response guard or the
+response-merge effect order directly.
 Local conversation DOM patch completion effects are now also planned in
 `public/thread-detail-dom-patch.js`:
 `planLocalConversationDomUpdateCompletionEffects` maps an already-decided

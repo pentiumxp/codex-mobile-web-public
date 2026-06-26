@@ -68,6 +68,51 @@ test("thread detail refresh request plan handles full mode and missing thread", 
   });
 });
 
+test("thread detail refresh response effects apply only to current thread sequence", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshResponseEffects({
+    threadId: "thread-1",
+    seq: 7,
+    currentThreadId: "thread-1",
+    currentThreadSeq: 7,
+    source: "resume",
+  }), {
+    shouldApply: true,
+    effects: [
+      { type: "mark-thread-detail-loaded" },
+      {
+        type: "remember-render-evidence",
+        source: "resume-detail-api",
+      },
+      { type: "merge-current-thread" },
+    ],
+    reason: "current-thread",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshResponseEffects({
+    threadId: "thread-1",
+    seq: 7,
+    currentThreadId: "thread-2",
+    currentThreadSeq: 7,
+    source: "resume",
+  }), {
+    shouldApply: false,
+    effects: [],
+    reason: "stale-thread",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshResponseEffects({
+    threadId: "thread-1",
+    seq: 7,
+    currentThreadId: "thread-1",
+    currentThreadSeq: 8,
+    source: "resume",
+  }), {
+    shouldApply: false,
+    effects: [],
+    reason: "stale-seq",
+  });
+});
+
 test("thread detail history auto-backfill triggers for leading workflow receipts", () => {
   const plan = renderPlan.planThreadDetailHistoryAutoBackfill({
     thread: {

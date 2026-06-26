@@ -9271,6 +9271,30 @@ function applyThreadDetailRefreshPostMergeEffectsGroup(plan, timing) {
   for (const effect of effects) applyThreadDetailRefreshPostMergeEffect(effect);
 }
 
+function applyThreadDetailRefreshResponseEffect(effect, context = {}) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  const thread = context.thread;
+  if (type === "mark-thread-detail-loaded") {
+    markThreadDetailLoaded(thread);
+    return true;
+  }
+  if (type === "remember-render-evidence") {
+    rememberThreadDetailRenderEvidence(thread, String(item.source || "refresh-detail-api"));
+    return true;
+  }
+  if (type === "merge-current-thread") {
+    state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, thread);
+    return true;
+  }
+  throw new Error(`Unknown thread detail refresh response effect: ${type || "empty"}`);
+}
+
+function applyThreadDetailRefreshResponseEffectsPlan(plan, context = {}) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applyThreadDetailRefreshResponseEffect(effect, context);
+}
+
 function applyThreadDetailRefreshExecutionEffect(effect) {
   const item = effect && typeof effect === "object" ? effect : {};
   const type = String(item.type || "");
@@ -9401,15 +9425,20 @@ async function refreshCurrentThread(options = {}) {
     if (state.refreshThreadController === controller) state.refreshThreadController = null;
   }
   const apiElapsedMs = roundedDurationMs(apiStartedAt);
-  if (state.currentThreadId !== threadId || seq !== state.threadLoadSeq) return;
+  const responseEffectsPlan = threadDetailRenderPlanApi.planThreadDetailRefreshResponseEffects({
+    threadId,
+    seq,
+    currentThreadId: state.currentThreadId,
+    currentThreadSeq: state.threadLoadSeq,
+    source,
+  });
+  if (!responseEffectsPlan.shouldApply) return;
   const renderStartedAt = nowPerfMs();
   const mergeStartedAt = nowPerfMs();
   const previousThread = state.currentThread;
   const previousConversationSignature = conversationRenderSignature(state.currentThread);
   const previousPatchShellSignature = conversationPatchShellSignature(previousThread);
-  markThreadDetailLoaded(result.thread);
-  rememberThreadDetailRenderEvidence(result.thread, `${source}-detail-api`);
-  state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
+  applyThreadDetailRefreshResponseEffectsPlan(responseEffectsPlan, { thread: result.thread });
   const nextVisibleShape = visibleConversationShape(state.currentThread);
   const nextConversationSignature = conversationRenderSignature(state.currentThread);
   const renderPlan = threadDetailRenderPlanApi.planThreadDetailRefreshRender({

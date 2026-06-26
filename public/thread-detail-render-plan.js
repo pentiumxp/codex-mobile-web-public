@@ -169,6 +169,35 @@
     };
   }
 
+  function planThreadDetailRefreshResponseEffects(input = {}) {
+    const threadId = text(input.threadId || input.requestThreadId).trim();
+    const currentThreadId = text(input.currentThreadId).trim();
+    const seq = Number(input.seq ?? input.requestSeq);
+    const currentSeq = Number(input.currentThreadSeq ?? input.threadLoadSeq);
+    const source = compactReason(input.source, "refresh");
+    const staleThread = Boolean(threadId && currentThreadId && threadId !== currentThreadId);
+    const staleSeq = Boolean(Number.isFinite(seq) && Number.isFinite(currentSeq) && seq !== currentSeq);
+    if (staleThread || staleSeq) {
+      return {
+        shouldApply: false,
+        effects: [],
+        reason: staleThread ? "stale-thread" : "stale-seq",
+      };
+    }
+    return {
+      shouldApply: true,
+      effects: [
+        { type: "mark-thread-detail-loaded" },
+        {
+          type: "remember-render-evidence",
+          source: `${source}-detail-api`,
+        },
+        { type: "merge-current-thread" },
+      ],
+      reason: "current-thread",
+    };
+  }
+
   function planThreadDetailRefreshConsistencyCheck(input = {}) {
     const phase = compactReason(input.projectionConsistencyPhase || input.phase, "");
     const renderMode = compactReason(input.renderMode || input.detailRenderMode, "");
@@ -811,6 +840,7 @@
     normalizeSignature,
     planThreadDetailRefreshCompletionEffects,
     planThreadDetailRefreshConsistencyCheck,
+    planThreadDetailRefreshResponseEffects,
     planThreadDetailRefreshPatchAttemptEffects,
     planThreadDetailRefreshPatchAttemptResult,
     planThreadDetailRefreshOutcomeExecution,

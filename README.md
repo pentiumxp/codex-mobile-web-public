@@ -16,6 +16,45 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 Phase A Refresh Response Effects Slice
+
+本地小切片继续推进 Phase A 的 `refreshCurrentThread()` 所有权收敛。此前
+refresh 请求、patch 尝试、执行结果、completion effects 已经逐步计划化，
+但 API 响应回来之后仍由 `public/app.js` 直接判断是否仍是当前 thread/seq，
+并内联执行 `markThreadDetailLoaded()`、detail render evidence 记录和
+`mergeThreadPreservingVisibleItems()`。这部分是后续 patch/full-render 判断的
+输入源，继续散在 app 主文件里会让旧响应覆盖、merge 顺序和可见项签名问题难以
+单独测试。
+
+本次修复：
+
+- `public/thread-detail-render-plan.js` 新增
+  `planThreadDetailRefreshResponseEffects()`，统一判断 refresh 响应是否仍匹配
+  当前 thread/seq，并输出有序 effects。
+- `public/app.js` 新增
+  `applyThreadDetailRefreshResponseEffect()` /
+  `applyThreadDetailRefreshResponseEffectsPlan()`，只执行真实 loaded 标记、
+  bounded render evidence 记录和 current-thread merge。
+- `refreshCurrentThread()` 不再内联 stale response guard 或 response merge
+  前置动作。
+- 不改变 API 路径、merge 策略、local patch eligibility、full-render 判定、
+  诊断字段、任务卡协议、server projection 或 shell/cache。
+
+闭环验证：
+
+```bash
+node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js
+npm run check
+npm test
+npm run check:macos
+git diff --check
+```
+
+结果：focused `169` passed；full `npm test` `1110` passed；
+`npm run check`、`npm run check:macos`、`git diff --check` 均通过。
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，
+尚未部署；继续作为 Phase A 模块的一部分累积。
+
 ## 2026-06-26 Phase A Summary Recovery Effects Slice
 
 本地小切片继续推进 Phase A 的 thread detail state ownership。此前

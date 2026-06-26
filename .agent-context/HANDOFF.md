@@ -15358,6 +15358,56 @@ The previous full handoff was archived and should be opened only when old proven
 - Next:
   - Commit locally.
 
+## 2026-06-26 - Phase A refresh response effects slice
+
+- Context:
+  - Follows local commit `b518060` (`plan summary recovery effects`).
+  - This is the sixth local Phase A render/patch ownership slice and remains
+    intentionally undeployed until batched into a coherent module.
+- Root-cause boundary:
+  - Symptom/risk: `refreshCurrentThread()` already delegated request planning,
+    patch attempts, outcome execution, performance input, and completion
+    effects, but still directly owned the post-API stale response guard and the
+    ordered detail-loaded/evidence/merge state effects.
+  - Failing layer: frontend refresh response ownership, not server projection,
+    merge policy, local DOM patching, task-card protocol, diagnostic transport,
+    or shell/cache.
+  - Violated invariant: once refresh request identity is snapshotted by a pure
+    plan, the response applicability check and response-state effect order
+    should also be planned by a testable helper. `public/app.js` should perform
+    real state mutation only after executing that plan.
+  - Closure classification: architecture-boundary cleanup. It does not hide
+    duplicate/missing messages, force refresh, skip refresh, alter merge
+    semantics, change local patch eligibility, change full-render selection,
+    change diagnostic fields, or change shell/cache.
+- Changes:
+  - `public/thread-detail-render-plan.js`
+    - Added `planThreadDetailRefreshResponseEffects()`.
+  - `public/app.js`
+    - Added `applyThreadDetailRefreshResponseEffect()` /
+      `applyThreadDetailRefreshResponseEffectsPlan()`.
+    - `refreshCurrentThread()` now uses the planned response effects instead
+      of inlining stale-response guard plus detail-loaded/evidence/merge calls.
+  - Tests/docs updated:
+    - `test/thread-detail-render-plan.test.js`
+    - `test/conversation-render.test.js`
+    - `README.md`
+    - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`
+    - `docs/MODULES.md`
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js`
+    passed (`169` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`1110` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Not deployed by design. This is a local Phase A slice for a future
+    module-level deploy.
+- Next:
+  - Commit locally.
+
 ## 2026-06-26 - Phase A summary recovery effects slice
 
 - Context:

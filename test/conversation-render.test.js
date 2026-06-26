@@ -3033,7 +3033,10 @@ test("empty visible detail mismatches are diagnosed from recent detail evidence"
   assert.match(functionBody("renderCurrentThread"), /applySingleThreadShellPostUpdateEffectsPlan\(postUpdateEffectsPlan,/);
   assert.match(functionBody("applySingleThreadShellPostUpdateEffect"), /checkEmptyVisibleDetailMismatchAfterRender\(context\.thread, context\.shellPlan, \{/);
   assert.match(functionBody("loadThread"), /markThreadDetailLoaded\(result\.thread\);\s*rememberThreadDetailRenderEvidence\(result\.thread, `\$\{source\}-detail-api`\);/);
-  assert.match(functionBody("refreshCurrentThread"), /markThreadDetailLoaded\(result\.thread\);\s*rememberThreadDetailRenderEvidence\(result\.thread, `\$\{source\}-detail-api`\);/);
+  assert.match(functionBody("refreshCurrentThread"), /threadDetailRenderPlanApi\.planThreadDetailRefreshResponseEffects\(\{/);
+  assert.match(functionBody("refreshCurrentThread"), /applyThreadDetailRefreshResponseEffectsPlan\(responseEffectsPlan, \{ thread: result\.thread \}\);/);
+  assert.match(functionBody("applyThreadDetailRefreshResponseEffect"), /markThreadDetailLoaded\(thread\);/);
+  assert.match(functionBody("applyThreadDetailRefreshResponseEffect"), /rememberThreadDetailRenderEvidence\(thread, String\(item\.source \|\| "refresh-detail-api"\)\);/);
   assert.match(functionBody("backfillFullThreadDetail"), /markThreadDetailLoaded\(result\.thread\);\s*rememberThreadDetailRenderEvidence\(result\.thread, `\$\{String\(options\.source \|\| "unknown"\)\.slice\(0, 40\)\}-detail-api`\);/);
 });
 
@@ -4316,7 +4319,10 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(functionBody("loadThread"), /state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);\s*mergeThreadIntoThreadList\(state\.currentThread\);/);
   assert.match(functionBody("loadThread"), /markThreadDetailLoaded\(result\.thread\);\s*rememberThreadDetailRenderEvidence\(result\.thread, `\$\{source\}-detail-api`\);\s*syncThreadPendingServerRequests\(result\.thread\);\s*state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);/);
   assert.match(functionBody("loadThread"), /threadPerformanceMetrics\.threadDetailFirstPaintEventFields\(result\.thread, \{/);
-  assert.match(functionBody("refreshCurrentThread"), /markThreadDetailLoaded\(result\.thread\);\s*rememberThreadDetailRenderEvidence\(result\.thread, `\$\{source\}-detail-api`\);\s*state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);[\s\S]*const postMergePlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPostMergeEffects\(\);/);
+  assert.match(functionBody("refreshCurrentThread"), /const responseEffectsPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshResponseEffects\(\{/);
+  assert.match(functionBody("refreshCurrentThread"), /if \(!responseEffectsPlan\.shouldApply\) return;/);
+  assert.match(functionBody("refreshCurrentThread"), /applyThreadDetailRefreshResponseEffectsPlan\(responseEffectsPlan, \{ thread: result\.thread \}\);[\s\S]*const postMergePlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPostMergeEffects\(\);/);
+  assert.match(functionBody("applyThreadDetailRefreshResponseEffect"), /state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, thread\);/);
   assert.match(functionBody("refreshCurrentThread"), /applyThreadDetailRefreshPostMergeEffectsGroup\(postMergePlan, "merge"\);[\s\S]*const mergeMs = roundedDurationMs\(mergeStartedAt\);/);
   assert.match(functionBody("backfillFullThreadDetail"), /markThreadDetailLoaded\(result\.thread\);\s*rememberThreadDetailRenderEvidence\(result\.thread, `\$\{String\(options\.source \|\| "unknown"\)\.slice\(0, 40\)\}-detail-api`\);\s*syncThreadPendingServerRequests\(result\.thread\);\s*state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);\s*mergeThreadIntoThreadList\(state\.currentThread\);/);
   assert.match(functionBody("backfillFullThreadDetail"), /threadPerformanceMetrics\.threadDetailFullReadyEventFields\(result\.thread, \{/);
