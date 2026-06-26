@@ -11472,3 +11472,66 @@ The previous full handoff was archived and should be opened only when old proven
     execution side-effect planning from `refreshCurrentThread()`. If production
     diagnostics show server cold-path misses, pivot to Phase B with current
     `thread_refresh_ms` and projection miss evidence.
+
+## 2026-06-26 - v506 thread refresh post-merge effects plan deployed
+
+- Latest code commit:
+  - `835bd65 extract thread refresh post-merge effects plan`
+- v506 change:
+  - Continued Phase A frontend thread-detail ownership convergence.
+  - `public/thread-detail-render-plan.js` now owns
+    `planThreadDetailRefreshPostMergeEffects()`.
+  - The helper declares the fixed post-merge effect groups for current-thread
+    refresh: thread-list merge, composer/settings plus active-turn sync, and
+    thread-list render.
+  - `refreshCurrentThread()` now executes those effect names through app-owned
+    side-effect functions instead of inlining the order directly in the main
+    refresh state machine.
+  - Static build/cache: `0.1.11|codex-mobile-shell-v506` /
+    `codex-mobile-shell-v506`.
+- Root-cause boundary:
+  - Symptom/risk: after v505, request, surface, patch, outcome, performance,
+    completion, and failure-diagnostic planning were helper-owned, but the
+    post-merge refresh side-effect order still lived directly in
+    `refreshCurrentThread()`.
+  - Failing layer: frontend thread-detail refresh post-merge side-effect
+    ownership.
+  - Classification: root-cause architecture boundary cleanup. No server
+    projection change, DOM patch behavior, full-render fallback, scroll policy,
+    diagnostic transport, task-card protocol, tile layout, duplicate hiding, or
+    visual behavior change was added.
+- Validation:
+  - Focused source suite passed:
+    `test/thread-detail-render-plan.test.js`, `test/conversation-render.test.js`,
+    `test/mobile-viewport.test.js`, `test/thread-goal-service.test.js`,
+    `test/thread-task-card-route.test.js`, and `test/thread-tile-layout-ui.test.js`
+    (`160` tests).
+  - Full source `npm test` passed (`940` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Production deploy:
+  - Deployed through Home AI central macOS plugin deploy path with reason
+    `codex-mobile-thread-refresh-post-merge-effects-v506`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T011817Z-plugin-codex-mobile-web-codex-mobile-thread-refresh-post-merge-effects-v506`
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v506`,
+    `shellCacheName=codex-mobile-shell-v506`, `version=0.1.11`,
+    `authRequired=true`.
+  - Production focused suite passed (`160` tests).
+  - Source/production SHA parity verified for README/docs, app/static shell,
+    render-plan helper, and focused tests touched by v506.
+- Privacy:
+  - Evidence recorded only statuses, build ids, test counts, bounded deploy
+    metadata, and short hashes. No message bodies, task-card bodies, uploads,
+    private paths, cookies, access keys, provider payloads, database rows,
+    screenshots, or long logs were copied into docs or handoff.
+- Release:
+  - Public was not pushed for v506.
+- Progress:
+  - Overall system-level architecture optimization is now estimated at about
+    `67%`.
+- Next suggested slice:
+  - Continue Phase A by extracting full-render execution side-effect planning
+    or scroll ownership from `refreshCurrentThread()`. If production
+    diagnostics show server cold-path misses, pivot to Phase B with current
+    `thread_refresh_ms` and projection miss evidence.
