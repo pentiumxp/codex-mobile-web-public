@@ -18744,3 +18744,43 @@ The previous full handoff was archived and should be opened only when old proven
   - Move the next optimization slice to Phase B cold-path/session-load
     attribution and reduction, using the first-read fallback-baseline rebuild
     evidence rather than adding frontend refresh fallbacks.
+
+## 2026-06-27 - Phase B thread-list fallback prewarm local slice
+
+- Current local state:
+  - Started the next Phase B slice after the v533 Phase A module deploy/readback.
+  - v533 production readback proved the active detail path is ready, but the
+    first thread-list read after restart/deploy still reported
+    `fallback-baseline` / `miss-rebuild:rollout`; same-key warm check then hit
+    `warm-fallback-cache`.
+- Root-cause boundary:
+  - Symptom/risk: the expensive once-per-process fallback baseline/source
+    snapshot build can still occur on the first foreground list open.
+  - Failing layer: server thread-list fallback cache startup lifecycle, not
+    app-server authority, fallback merge/filter/limit semantics, frontend
+    refresh, task-card protocol, or Home AI diagnostics.
+  - Violated invariant: after cold start/redeploy the process may rebuild once,
+    but ordinary user foreground list opens should normally see an already warm
+    fallback cache/source snapshot when the listener has been idle briefly.
+- Changes in progress:
+  - Added `adapters/thread-list-fallback-prewarm-service.js`.
+  - Server startup now schedules one delayed default-list fallback prewarm with
+    default limit `40`.
+  - Prewarm defers and retries while a thread detail request is in flight, so
+    it should not contend with first paint.
+  - Added env controls:
+    `CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM`,
+    `CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_DELAY_MS`,
+    `CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_RETRY_MS`,
+    `CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_MAX_DEFERRALS`, and
+    `CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_LIMIT`.
+  - Updated `package.json` check coverage, `README.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and `docs/MODULES.md`.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache bump.
+  - This is intended as a local Phase B slice to batch into the next module
+    deploy/readback.
+- Next validation:
+  - Run syntax and focused tests for the new service, fallback cache/baseline,
+    cold-path diagnosis, Phase B readback decision/smoke, and server source
+    wiring.

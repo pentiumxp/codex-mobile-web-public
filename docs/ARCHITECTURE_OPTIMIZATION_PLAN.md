@@ -218,7 +218,15 @@ Current acceleration targets:
    filter/merge pass and reuses the already-read rollout tail when checking
    stale context-only active evidence, so the remaining first cold rebuild work
    can be measured against candidate discovery/sort and final-candidate status
-   parsing rather than repeated per-row directory/tail scans. The next local
+   parsing rather than repeated per-row directory/tail scans. The startup
+   prewarm slice then moves the existing process-lifetime fallback
+   baseline/source snapshot build to a delayed background path after cold start
+   or deploy restart. It uses `thread-list-fallback-prewarm-service`, is
+   bounded and metadata-only, and does not change app-server authority,
+   fallback merge/filter/limit semantics, persistence, frontend refresh, or
+   repeated-rebuild diagnostics. If a thread detail request is in flight, the
+   startup prewarm defers and retries instead of contending with first paint.
+   The next local
    slice makes that attribution explicit: fallback baseline source reads now
    carry bounded counters for rollout directory reads, JSONL stat/collect/sort
    counts, candidate scans, head reads/bytes, final status tail reads/bytes,

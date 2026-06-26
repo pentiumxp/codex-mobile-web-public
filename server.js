@@ -90,6 +90,7 @@ const { attachThreadDetailDiagnostics } = require("./adapters/thread-detail-perf
 const { createThreadDetailReadOrchestrationService } = require("./adapters/thread-detail-read-orchestration-service");
 const { handleThreadDetailReadRoute } = require("./adapters/thread-detail-route-service");
 const { createThreadListFallbackCacheService } = require("./adapters/thread-list-fallback-cache-service");
+const { createThreadListFallbackPrewarmService } = require("./adapters/thread-list-fallback-prewarm-service");
 const { diagnoseThreadListColdPath } = require("./adapters/thread-list-cold-path-diagnosis-service");
 const {
   stripThreadListDetailFields,
@@ -901,6 +902,23 @@ const THREAD_DETAIL_TURNS_LIST_FIRST_BYTES = Math.max(
 const MAX_LIVE_OPERATION_ITEMS = Math.max(1, Math.min(30, Number(process.env.CODEX_MOBILE_LIVE_OPERATION_ITEMS || "12")));
 const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "fileChange", "dynamicToolCall", "mcpToolCall"]);
 const THREAD_LIST_FALLBACK_CACHE_TTL_MS = Math.max(0, Number(process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_TTL_MS || "0"));
+const THREAD_LIST_FALLBACK_PREWARM_ENABLED = !/^(0|false|no|off)$/i.test(process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM || "1");
+const THREAD_LIST_FALLBACK_PREWARM_DELAY_MS = Math.max(
+  0,
+  Math.min(10 * 60 * 1000, Number(process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_DELAY_MS || "1500")),
+);
+const THREAD_LIST_FALLBACK_PREWARM_RETRY_MS = Math.max(
+  100,
+  Math.min(10 * 60 * 1000, Number(process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_RETRY_MS || "2500")),
+);
+const THREAD_LIST_FALLBACK_PREWARM_MAX_DEFERRALS = Math.max(
+  0,
+  Math.min(100, Number(process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_MAX_DEFERRALS || "5")),
+);
+const THREAD_LIST_FALLBACK_PREWARM_LIMIT = Math.max(
+  1,
+  Math.min(200, Number(process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_LIMIT || "40")),
+);
 let activeThreadDetailRequestCount = 0;
 threadDetailProjectionService = THREAD_DETAIL_PROJECTION_V4_ENABLED
   ? createThreadDetailProjectionV4Service({
@@ -13569,6 +13587,25 @@ function readThreadListFallback(limit = 80, filters = {}) {
   return threadListFallbackCacheService.readFallback(limit, filters);
 }
 
+const threadListFallbackPrewarmService = createThreadListFallbackPrewarmService({
+  readFallback: readThreadListFallback,
+  readGlobalState,
+  shouldRun: () => (activeThreadDetailRequestCount > 0
+    ? { run: false, reason: "active-detail-in-flight" }
+    : { run: true }),
+  logger: console,
+});
+
+function scheduleThreadListFallbackPrewarm() {
+  return threadListFallbackPrewarmService.schedule({
+    enabled: THREAD_LIST_FALLBACK_PREWARM_ENABLED,
+    delayMs: THREAD_LIST_FALLBACK_PREWARM_DELAY_MS,
+    retryDelayMs: THREAD_LIST_FALLBACK_PREWARM_RETRY_MS,
+    maxDeferrals: THREAD_LIST_FALLBACK_PREWARM_MAX_DEFERRALS,
+    limit: THREAD_LIST_FALLBACK_PREWARM_LIMIT,
+  });
+}
+
 function threadListFallbackSourceDiagnosticTimingFields(diagnostics = {}) {
   return {
     fallbackRolloutDirectoryReadCount: Number(diagnostics.rolloutDirectoryReadCount || 0),
@@ -15286,6 +15323,7 @@ function startServer() {
     }
     console.log(DISABLE_AUTH ? "Authentication disabled by CODEX_MOBILE_DISABLE_AUTH." : `Authentication enabled; key source is env CODEX_MOBILE_KEY or ${AUTH_KEY_FILE}.`);
     scheduleStartupAppUpdateCheck();
+    scheduleThreadListFallbackPrewarm();
   });
 }
 

@@ -16,6 +16,35 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-27 Phase B Thread-List Fallback Prewarm Slice
+
+本地小切片开始处理 v533 readback 暴露的下一阶段问题：生产重启或部署后，首次
+thread-list 读取仍会在用户前台路径里完成一次 `fallback-baseline` /
+`miss-rebuild:rollout`，随后同 key warm check 立即变为 `warm-fallback-cache`。
+这说明当前系统已经满足“进程内一次重建后复用”的方向，但首次重建仍可能落在
+用户首屏。
+
+本次修复新增 `adapters/thread-list-fallback-prewarm-service.js`，把默认线程列表
+fallback cache / source snapshot 的启动预热变成独立可测试策略。server listener
+启动后会按 `CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_DELAY_MS` 延迟调度一次默认
+列表预热，默认 limit 与客户端默认列表 limit 对齐为 `40`。这不会改变
+app-server authority、fallback merge/filter/limit 语义、线程列表排序、前端刷新、
+任务卡协议或诊断上报；它只把已有的一次性 source baseline 构建尽量移到后台，
+并保留 bounded metadata-only 结果日志。
+
+新增开关：
+
+- `CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM=0` 可禁用启动预热。
+- `CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_DELAY_MS` 默认 `1500`。
+- `CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_RETRY_MS` 默认 `2500`。
+- `CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_MAX_DEFERRALS` 默认 `5`。
+- `CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_LIMIT` 默认 `40`。
+
+本切片是本地提交候选，尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；
+后续会和 Phase B cold-path 模块一起做生产 readback，目标证据是首次用户
+`/api/threads?limit=40` 能直接命中 warm fallback cache，或至少复用
+source snapshot 而不再前台扫描 rollout/source baseline。
+
 ## 2026-06-27 v533 Phase A Render/Patch Module Readback
 
 v533 是 Phase A 后续本地小切片的模块级部署闭环，覆盖 v532 之后继续完成的
@@ -8006,6 +8035,11 @@ VAPID details:
 | `CODEX_MOBILE_ROLLOUT_ENRICHMENT_CONTEXT_BYTES` | Legacy fallback tail bytes for server-side thread-detail enrichment if the incremental rollout index cannot read the file, default `33554432`. Normal enrichment uses the per-thread incremental JSONL index and does not increase the client turn payload. |
 | `CODEX_MOBILE_ROLLOUT_ACTIVE_STATUS_WINDOW_MS` | Recent-activity window used when rollout-session fallback infers an `active` thread-list status from bounded rollout-tail events, default `1800000` (`30 minutes`). |
 | `CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_TTL_MS` | Optional diagnostic max age for the expensive state DB / rollout / session-index fallback baseline, default `0` meaning no time-based expiry for the running server process. Normal production behavior builds the baseline after cold start/redeploy/restart and then updates cached thread summaries incrementally from app-server list results and turn/status/title/archive/new-thread events. Silent list refreshes that run while a thread detail request is in flight use `fallback=defer`, and the server also defers ordinary list fallback when an active detail request is being served, so cold rollout scans do not contend with first paint or live detail refreshes. |
+| `CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM` | Startup default-list fallback prewarm toggle, default enabled. Set to `0` / `false` / `off` to disable. |
+| `CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_DELAY_MS` | Delay before the one-shot startup fallback prewarm, default `1500`. |
+| `CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_RETRY_MS` | Retry delay when startup prewarm is deferred because a thread detail request is currently in flight, default `2500`. |
+| `CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_MAX_DEFERRALS` | Maximum startup prewarm deferrals while thread detail first paint is active, default `5`. |
+| `CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_LIMIT` | Thread-list limit used by the startup fallback prewarm, default `40` to match the client list page size. |
 | `CODEX_MOBILE_ROLLOUT_WARNING_BYTES` | Rollout JSONL size threshold for UI warnings and the continuation action, default `209715200` (`200MB`). |
 | `CODEX_MOBILE_CONTINUATION_BOOTSTRAP_CHARS` | Max characters in the rollout continuation bootstrap message, default `52000`. |
 | `CODEX_MOBILE_CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS` | Max source handoff excerpt characters included inline in a continuation bootstrap, default `12000`. |

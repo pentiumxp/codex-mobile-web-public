@@ -913,6 +913,7 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
   const baselineServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-fallback-baseline-service.js"), "utf8");
   const cacheServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-fallback-cache-service.js"), "utf8");
+  const prewarmServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-fallback-prewarm-service.js"), "utf8");
   const coldPathDiagnosisServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-cold-path-diagnosis-service.js"), "utf8");
   const routeIndex = serverJs.indexOf('if (url.pathname === "/api/threads" && req.method === "GET")');
   assert.ok(routeIndex >= 0, "missing thread list route");
@@ -938,6 +939,7 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(serverJs, /createThreadListFallbackCacheService/);
   assert.match(baselineServiceJs, /createThreadListFallbackBaselineService/);
   assert.match(cacheServiceJs, /createThreadListFallbackBaselineService/);
+  assert.match(prewarmServiceJs, /createThreadListFallbackPrewarmService/);
   assert.match(coldPathDiagnosisServiceJs, /diagnoseThreadListColdPath/);
   assert.match(serverJs, /diagnoseThreadListColdPath/);
   assert.match(serverJs, /stripThreadListDetailFields/);
@@ -946,6 +948,13 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(threadListSummaryServiceJs, /"turns"/);
   assert.match(threadListSummaryServiceJs, /"mobileDetailLoaded"/);
   assert.match(serverJs, /const threadListFallbackCacheService = createThreadListFallbackCacheService\(\{\s*ttlMs: THREAD_LIST_FALLBACK_CACHE_TTL_MS,/);
+  assert.match(serverJs, /const THREAD_LIST_FALLBACK_PREWARM_ENABLED = !\/\^\(0\|false\|no\|off\)\$\/i\.test\(process\.env\.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM \|\| "1"\)/);
+  assert.match(serverJs, /const THREAD_LIST_FALLBACK_PREWARM_RETRY_MS = Math\.max\([\s\S]*process\.env\.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_RETRY_MS \|\| "2500"/);
+  assert.match(serverJs, /const THREAD_LIST_FALLBACK_PREWARM_MAX_DEFERRALS = Math\.max\([\s\S]*process\.env\.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_MAX_DEFERRALS \|\| "5"/);
+  assert.match(serverJs, /const THREAD_LIST_FALLBACK_PREWARM_LIMIT = Math\.max\([\s\S]*process\.env\.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_LIMIT \|\| "40"/);
+  assert.match(serverJs, /const threadListFallbackPrewarmService = createThreadListFallbackPrewarmService\(\{[\s\S]*readFallback: readThreadListFallback,[\s\S]*readGlobalState,[\s\S]*shouldRun: \(\) => \(activeThreadDetailRequestCount > 0[\s\S]*active-detail-in-flight[\s\S]*logger: console,[\s\S]*\}\);/);
+  assert.match(serverJs, /function scheduleThreadListFallbackPrewarm\(\) \{[\s\S]*threadListFallbackPrewarmService\.schedule\(\{[\s\S]*enabled: THREAD_LIST_FALLBACK_PREWARM_ENABLED,[\s\S]*delayMs: THREAD_LIST_FALLBACK_PREWARM_DELAY_MS,[\s\S]*retryDelayMs: THREAD_LIST_FALLBACK_PREWARM_RETRY_MS,[\s\S]*maxDeferrals: THREAD_LIST_FALLBACK_PREWARM_MAX_DEFERRALS,[\s\S]*limit: THREAD_LIST_FALLBACK_PREWARM_LIMIT,[\s\S]*\}\);[\s\S]*\}/);
+  assert.match(functionBody(serverJs, "startServer"), /scheduleThreadListFallbackPrewarm\(\);/);
   assert.match(serverJs, /function clearThreadListFallbackCache\(\)/);
   assert.match(serverJs, /function upsertThreadListFallbackCacheThread\(thread, options = \{\}\)/);
   assert.match(serverJs, /function removeThreadFromThreadListFallbackCache\(threadId\)/);
