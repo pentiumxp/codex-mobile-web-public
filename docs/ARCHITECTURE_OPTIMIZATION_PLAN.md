@@ -201,7 +201,14 @@ Current acceleration targets:
    filter/merge pass and reuses the already-read rollout tail when checking
    stale context-only active evidence, so the remaining first cold rebuild work
    can be measured against candidate discovery/sort and final-candidate status
-   parsing rather than repeated per-row directory/tail scans.
+   parsing rather than repeated per-row directory/tail scans. The next local
+   slice makes that attribution explicit: fallback baseline source reads now
+   carry bounded counters for rollout directory reads, JSONL stat/collect/sort
+   counts, candidate scans, head reads/bytes, final status tail reads/bytes,
+   and `session_index.jsonl` read/line/entry counts. The counters are numeric
+   only and pass through a whitelist in the baseline/cache layers, so production
+   readback can identify the next root-cause owner without copying thread
+   titles, prompts, rollout paths, or logs.
 3. Large detail cold-path attribution now has a dedicated
    `thread-detail-cold-path-diagnosis-service` that emits bounded
    `coldPathOwner` / `coldPathReason` for projection-cache seeding,
@@ -274,9 +281,18 @@ non-partial projections.
   incremental-update count. The local baseline-service slice also reports
   `fallbackStateDbCount`, `fallbackRolloutCount`, `fallbackSessionIndexCount`,
   `fallbackBaselineSourceCount`, and `fallbackBaselineResultCount` beside the
-  existing per-source timings. These fields prove whether an observed slow list
-  load is a first baseline build, TTL expiry, cache miss, deferred fallback,
-  warm in-process reuse, source-read volume, or post-merge result size.
+  existing per-source timings. The Phase B attribution slice extends this with
+  `fallbackRolloutDirectoryReadCount`, `fallbackRolloutFileStatCount`,
+  `fallbackRolloutFileCollectedCount`, `fallbackRolloutFileSortedCount`,
+  `fallbackRolloutCandidateFileCount`,
+  `fallbackRolloutCandidateScannedCount`, `fallbackRolloutHeadReadCount`,
+  `fallbackRolloutHeadBytes`, `fallbackRolloutStatusTailReadCount`,
+  `fallbackRolloutStatusTailBytes`, `fallbackSessionIndexReadCount`,
+  `fallbackSessionIndexLineCount`, and `fallbackSessionIndexEntryCount`. These
+  fields prove whether an observed slow list load is a first baseline build,
+  TTL expiry, cache miss, deferred fallback, warm in-process reuse, source-read
+  volume, rollout discovery/head/tail work, session-index volume, or post-merge
+  result size.
   `thread-list-cold-path-diagnosis-service.js` also emits bounded
   `coldPathOwner` / `coldPathReason` from those fields so production readback
   can be grouped without copying thread titles, prompts, paths, or logs.

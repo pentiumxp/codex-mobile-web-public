@@ -146,12 +146,21 @@ cache policy 和 baseline 构建边界混在一起。
   反复扫描 archived session 目录；`inferRolloutFallbackStatus()` 已经读取过的
   rollout tail 会传给 stale context-only active evidence，不再为了同一个最终候选
   二次读取 tail。归档过滤和 stale-active 转 idle 的语义保持不变。
+- server-only attribution follow-up 只增加 bounded 数字计数，不改变列表行为。
+  rollout fallback 读源现在记录目录读取、JSONL stat/collect/sort、候选扫描、
+  head read/bytes、最终候选 status tail read/bytes；session index fallback 记录
+  `session_index.jsonl` read/line/entry 数。baseline service 给每个 source reader
+  独立 diagnostics 容器，只把白名单数字计数合并进 timings；cache service 和
+  `/api/threads` 再把这些字段暴露为 `fallbackRollout*` /
+  `fallbackSessionIndex*`。路径、prompt、线程标题、搜索词和日志不会进入这些
+  diagnostics。下一次 Phase B 生产 readback 可以直接区分慢点是 rollout discovery、
+  head 解析、final status tail、session index 体量，还是后续 merge/filter。
 
 这不是新的 fallback 行为，也不是 prewarm/persist。route aggregation、defer
 fallback、app-server result merge 都没有改变；source 层只调整 rollout list
-候选的读取顺序，并减少同一 pass 里的重复归档扫描和重复 tail 读取。readback 仍只把
-deferred 之后的完整读和 warm check 证据化。该切片暂不单独部署，按新的节奏等待
-Phase B 模块批量验证后再统一部署。
+候选的读取顺序、减少同一 pass 里的重复归档扫描和重复 tail 读取，并补充冷路径
+归因计数。readback 仍只把 deferred 之后的完整读和 warm check 证据化。该切片暂不
+单独部署，按新的节奏等待 Phase B 模块批量验证后再统一部署。
 
 ## 2026-06-26 v531 Thread Detail Cold-Path Diagnosis
 

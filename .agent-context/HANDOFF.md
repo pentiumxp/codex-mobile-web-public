@@ -14817,3 +14817,70 @@ The previous full handoff was archived and should be opened only when old proven
     files statted/sorted, status-tail reads/bytes, session-index reads, and
     archived-id scans so production readback can attribute any remaining
     first-cold cost without private logs.
+
+## 2026-06-26 - fallback cold path attribution counters local slice
+
+- Scope:
+  - Continued Phase B thread-list cold path work after `d8f4a64` (`reuse
+    fallback cold rebuild scans`).
+  - This slice converts the remaining first-cold uncertainty into bounded
+    readback evidence. It does not change list ordering, visibility, cache
+    policy, fallback semantics, static shell files, or deployment state.
+- Root-cause boundary:
+  - Symptom: after repeated-scan reductions, the next bottleneck still needed
+    evidence before changing source discovery, session-index reuse, or
+    merge/filter work.
+  - Failing layer: insufficient source-internal diagnostics inside the
+    thread-list fallback baseline path.
+  - Violated invariant: production readback should be able to distinguish
+    rollout discovery/stat/head/tail work, session-index volume, and final
+    merge/filter work without private logs or message contents.
+  - Closure classification: root-cause observability for Phase B cold-path
+    optimization. No masking fallback, no client dedupe, no prewarm, no
+    persistence, and no broad refresh behavior.
+- Changes:
+  - `server.js`
+    - Added bounded numeric counters for rollout directory reads, JSONL
+      stat/collect/sort counts, candidate file/scanned counts, rollout head
+      reads/bytes, final-candidate status tail reads/bytes, and
+      `session_index.jsonl` read/line/entry counts.
+    - `/api/threads` maps these counters into
+      `mobileDiagnostics.threadListTimings.fallbackRollout*` and
+      `fallbackSessionIndex*` fields.
+  - `adapters/thread-list-fallback-baseline-service.js`
+    - Gives each source reader an isolated diagnostics object.
+    - Merges only whitelisted positive numeric counters into baseline timings,
+      dropping paths, prompts, titles, search text, and any non-counter fields.
+  - `adapters/thread-list-fallback-cache-service.js`
+    - Propagates the whitelisted baseline counters into `readFallback()`
+      diagnostics and cached baseline timings.
+  - `scripts/codex-mobile-phase-b-readback-smoke.js`
+    - Includes the new metadata-only source counters in the Phase B readback
+      summary.
+  - Tests updated:
+    - `test/thread-list-fallback-baseline-service.test.js`
+    - `test/thread-list-fallback-cache-service.test.js`
+    - `test/thread-visibility.test.js`
+    - `test/phase-b-readback-smoke.test.js`
+  - Docs updated:
+    - `README.md`
+    - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`
+    - `docs/MODULES.md`
+- Validation:
+  - Focused:
+    `node --test test/thread-list-fallback-baseline-service.test.js test/thread-list-fallback-cache-service.test.js test/thread-list-cold-path-diagnosis-service.test.js test/thread-visibility.test.js test/phase-b-readback-smoke.test.js`
+    passed (`70` tests).
+  - Full `npm test` passed (`1099` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Not deployed by design. This is another Phase B local runtime slice. Batch
+    it with the next coherent Phase B module before one production
+    restart/readback.
+- Next:
+  - Commit this local slice.
+  - Use the new counters after the next deploy/readback to decide the next
+    root-cause target:
+    rollout discovery/sort, session-index reuse, final-candidate status tail
+    cost, or merge/filter duplication.

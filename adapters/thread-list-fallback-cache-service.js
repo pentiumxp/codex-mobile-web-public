@@ -19,6 +19,40 @@ function shortStableHash(value) {
   return hash.toString(36).padStart(6, "0").slice(0, 10);
 }
 
+const BASELINE_SOURCE_DIAGNOSTIC_COUNTERS = [
+  "rolloutDirectoryReadCount",
+  "rolloutFileStatCount",
+  "rolloutFileCollectedCount",
+  "rolloutFileSortedCount",
+  "rolloutCandidateFileCount",
+  "rolloutCandidateScannedCount",
+  "rolloutHeadReadCount",
+  "rolloutHeadBytes",
+  "rolloutSummaryReadCount",
+  "rolloutStatusAttachCount",
+  "rolloutStatusTailReadCount",
+  "rolloutStatusTailBytes",
+  "sessionIndexReadCount",
+  "sessionIndexLineCount",
+  "sessionIndexEntryCount",
+];
+
+function boundedCounter(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return 0;
+  return Math.min(Number.MAX_SAFE_INTEGER, Math.trunc(number));
+}
+
+function baselineSourceDiagnostics(timings = {}) {
+  const out = {};
+  if (!timings || typeof timings !== "object") return out;
+  for (const key of BASELINE_SOURCE_DIAGNOSTIC_COUNTERS) {
+    const value = boundedCounter(timings[key]);
+    if (value) out[key] = value;
+  }
+  return out;
+}
+
 function createThreadListFallbackCacheService(options = {}) {
   const ttlMs = Math.max(0, Number(options.ttlMs || 0));
   const maxEntries = Math.max(1, Number(options.maxEntries || 12));
@@ -306,6 +340,7 @@ function createThreadListFallbackCacheService(options = {}) {
       diagnostics.sessionIndexCount = Number(baselineTimings.sessionIndexCount || 0);
       diagnostics.baselineSourceCount = Number(baselineTimings.baselineSourceCount || 0);
       diagnostics.baselineResultCount = Number(baselineTimings.baselineResultCount || threads.length);
+      Object.assign(diagnostics, baselineSourceDiagnostics(baselineTimings));
       if (Object.prototype.hasOwnProperty.call(baselineTimings, "sourceSnapshotHit")) {
         diagnostics.sourceSnapshotHit = baselineTimings.sourceSnapshotHit === true;
         diagnostics.sourceSnapshotAgeMs = Number(baselineTimings.sourceSnapshotAgeMs || 0);
@@ -324,6 +359,7 @@ function createThreadListFallbackCacheService(options = {}) {
       sessionIndexCount: Number(baselineTimings.sessionIndexCount || 0),
       baselineSourceCount: Number(baselineTimings.baselineSourceCount || 0),
       baselineResultCount: Number(baselineTimings.baselineResultCount || threads.length),
+      ...baselineSourceDiagnostics(baselineTimings),
       ...(Object.prototype.hasOwnProperty.call(baselineTimings, "sourceSnapshotHit") ? {
         sourceSnapshotHit: baselineTimings.sourceSnapshotHit === true,
         sourceSnapshotAgeMs: Number(baselineTimings.sourceSnapshotAgeMs || 0),

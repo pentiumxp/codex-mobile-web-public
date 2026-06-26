@@ -94,6 +94,43 @@ test("thread-list fallback baseline normalizes invalid source results without co
   assert.doesNotMatch(JSON.stringify(baseline), /privatePrompt|do not export/);
 });
 
+test("thread-list fallback baseline exposes only bounded source diagnostics", () => {
+  const service = createThreadListFallbackBaselineService({
+    now: () => 100,
+    readStateDbFallback(limit, filters) {
+      filters.diagnostics.sessionIndexReadCount = 1;
+      filters.diagnostics.privatePath = "/Users/private/session_index.jsonl";
+      return [{ id: "state", updatedAt: 100 }];
+    },
+    readRolloutSessionFallback(limit, filters) {
+      filters.diagnostics.rolloutFileStatCount = 12.9;
+      filters.diagnostics.rolloutStatusTailBytes = 4096;
+      filters.diagnostics.rawPrompt = "do not export";
+      return [{ id: "rollout", updatedAt: 200 }];
+    },
+    readSessionIndexFallback(limit, filters) {
+      filters.diagnostics.sessionIndexReadCount = 2;
+      filters.diagnostics.sessionIndexLineCount = 300;
+      filters.diagnostics.sessionIndexEntryCount = 40;
+      filters.diagnostics.threadTitle = "private title";
+      return [];
+    },
+    mergeThreadSummaryList: mergeByUpdatedAt,
+  });
+
+  const baseline = service.readBaseline(10, {});
+
+  assert.equal(baseline.timings.rolloutFileStatCount, 12);
+  assert.equal(baseline.timings.rolloutStatusTailBytes, 4096);
+  assert.equal(baseline.timings.sessionIndexReadCount, 3);
+  assert.equal(baseline.timings.sessionIndexLineCount, 300);
+  assert.equal(baseline.timings.sessionIndexEntryCount, 40);
+  assert.doesNotMatch(
+    JSON.stringify(baseline.timings),
+    /privatePath|session_index|rawPrompt|do not export|threadTitle|private title/,
+  );
+});
+
 test("thread-list fallback baseline reuses source snapshot across filter keys", () => {
   let nowMs = 1000;
   const calls = { stateDb: 0, rollout: 0, sessionIndex: 0 };

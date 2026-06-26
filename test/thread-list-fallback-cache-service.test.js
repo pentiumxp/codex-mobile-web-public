@@ -212,6 +212,12 @@ test("readFallback can build cold baseline through injected baseline service", (
             sessionIndexCount: 6,
             baselineSourceCount: 15,
             baselineResultCount: 2,
+            rolloutFileStatCount: 12,
+            rolloutStatusTailReadCount: 2,
+            rolloutStatusTailBytes: 8192,
+            sessionIndexReadCount: 3,
+            sessionIndexLineCount: 500,
+            privatePath: "/Users/private/session_index.jsonl",
           },
         };
       },
@@ -242,6 +248,12 @@ test("readFallback can build cold baseline through injected baseline service", (
   assert.equal(diagnostics.sessionIndexCount, 6);
   assert.equal(diagnostics.baselineSourceCount, 15);
   assert.equal(diagnostics.baselineResultCount, 2);
+  assert.equal(diagnostics.rolloutFileStatCount, 12);
+  assert.equal(diagnostics.rolloutStatusTailReadCount, 2);
+  assert.equal(diagnostics.rolloutStatusTailBytes, 8192);
+  assert.equal(diagnostics.sessionIndexReadCount, 3);
+  assert.equal(diagnostics.sessionIndexLineCount, 500);
+  assert.equal(diagnostics.privatePath, undefined);
 
   const hitDiagnostics = {};
   directService.readFallback(2, {
@@ -260,6 +272,11 @@ test("readFallback can build cold baseline through injected baseline service", (
     sessionIndexCount: 6,
     baselineSourceCount: 15,
     baselineResultCount: 2,
+    rolloutFileStatCount: 12,
+    rolloutStatusTailReadCount: 2,
+    rolloutStatusTailBytes: 8192,
+    sessionIndexReadCount: 3,
+    sessionIndexLineCount: 500,
   });
 });
 

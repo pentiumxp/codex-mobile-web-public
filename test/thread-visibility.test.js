@@ -609,15 +609,22 @@ test("rollout session list fallback can defer status until final candidates", ()
   ].join("\n"), "utf8");
   fs.utimesSync(rolloutPath, now, now);
 
+  const diagnostics = {};
   const candidate = readRolloutSessionFallbackThreadFromFile(
     rolloutPath,
     { id: threadId },
-    { includeStatus: false },
+    { includeStatus: false, diagnostics },
   );
   assert.equal(candidate.status.type, "notLoaded");
+  assert.equal(diagnostics.rolloutHeadReadCount, 1);
+  assert.equal(diagnostics.rolloutSummaryReadCount, 1);
+  assert.equal(diagnostics.rolloutStatusTailReadCount, undefined);
 
-  const finalCandidate = attachRolloutFallbackStatus(candidate, { nowMs: now.getTime() });
+  const finalCandidate = attachRolloutFallbackStatus(candidate, { nowMs: now.getTime(), diagnostics });
   assert.equal(finalCandidate.status.type, "active");
+  assert.equal(diagnostics.rolloutStatusAttachCount, 1);
+  assert.equal(diagnostics.rolloutStatusTailReadCount, 1);
+  assert.ok(diagnostics.rolloutStatusTailBytes > 0);
 });
 
 test("context-only stale active rollout turn is normalized to idle", () => {
@@ -882,12 +889,12 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   const routeBody = serverJs.slice(routeIndex, serverJs.indexOf('const threadRename = url.pathname.match', routeIndex));
 
   assert.match(serverJs, /function readRolloutSessionFallback\(/);
-  assert.match(serverJs, /readRolloutSessionFallbackThreadFromFile\(file, indexEntries\.get\(id\) \|\| \{ id \}, \{ includeStatus: false \}\)/);
-  assert.match(serverJs, /filterFallbackThreads\(threads, Object\.assign\(\{\}, filters, \{ archivedIds \}\)\)[\s\S]*\.slice\(0, limit\)[\s\S]*\.map\(\(thread\) => attachRolloutFallbackStatus\(thread\)\)/);
+  assert.match(serverJs, /readRolloutSessionFallbackThreadFromFile\(file, indexEntries\.get\(id\) \|\| \{ id \}, \{[\s\S]*includeStatus: false,[\s\S]*diagnostics,[\s\S]*\}\)/);
+  assert.match(serverJs, /filterFallbackThreads\(threads, Object\.assign\(\{\}, filters, \{ archivedIds \}\)\)[\s\S]*\.slice\(0, limit\)[\s\S]*\.map\(\(thread\) => attachRolloutFallbackStatus\(thread, \{ diagnostics \}\)\)/);
   assert.match(serverJs, /function filterFallbackThreads\(threads, filters = \{\}\) \{[\s\S]*const archivedIds = filters\.archivedIds[\s\S]*archivedSessionThreadIds\(\)/);
   assert.match(serverJs, /function filterFallbackThreads\(threads, filters = \{\}\) \{[\s\S]*threadHasArchiveSignal\(thread, archivedIds\)/);
   assert.match(serverJs, /function rolloutLatestTurnEvidence\(rolloutPath, stat = null, options = \{\}\) \{[\s\S]*const tail = typeof options\.tail === "string" \? options\.tail : readRolloutTail\(rolloutPath\)/);
-  assert.match(serverJs, /function inferRolloutFallbackStatus\(rolloutPath, stat = null, nowMs = Date\.now\(\)\) \{[\s\S]*staleContextOnlyActiveEvidenceForRollout\(rolloutPath, \{ stat, nowMs, tail \}\)/);
+  assert.match(serverJs, /function inferRolloutFallbackStatus\(rolloutPath, stat = null, nowMs = Date\.now\(\), options = \{\}\) \{[\s\S]*counterPrefix: "rolloutStatusTail"[\s\S]*staleContextOnlyActiveEvidenceForRollout\(rolloutPath, \{ stat, nowMs, tail \}\)/);
   assert.match(serverJs, /function readThreadListFallback\(/);
   assert.match(serverJs, /function logThreadList\(event, details = \{\}\)/);
   assert.match(serverJs, /const THREAD_LIST_FALLBACK_CACHE_TTL_MS[\s\S]*\|\| "0"/);
@@ -939,6 +946,11 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeBody, /fallbackSessionIndexCount: Number\(fallbackDiagnostics\.sessionIndexCount \|\| 0\)/);
   assert.match(routeBody, /fallbackBaselineSourceCount: Number\(fallbackDiagnostics\.baselineSourceCount \|\| 0\)/);
   assert.match(routeBody, /fallbackBaselineResultCount: Number\(fallbackDiagnostics\.baselineResultCount \|\| 0\)/);
+  assert.match(routeBody, /threadListFallbackSourceDiagnosticTimingFields\(fallbackDiagnostics\)/);
+  assert.match(serverJs, /function threadListFallbackSourceDiagnosticTimingFields\(diagnostics = \{\}\)/);
+  assert.match(serverJs, /fallbackRolloutFileStatCount: Number\(diagnostics\.rolloutFileStatCount \|\| 0\)/);
+  assert.match(serverJs, /fallbackRolloutStatusTailBytes: Number\(diagnostics\.rolloutStatusTailBytes \|\| 0\)/);
+  assert.match(serverJs, /fallbackSessionIndexReadCount: Number\(diagnostics\.sessionIndexReadCount \|\| 0\)/);
   assert.match(routeBody, /const fallbackMode = String\(url\.searchParams\.get\("fallback"\) \|\| ""\)/);
   assert.match(routeBody, /const deferFallback = fallbackMode === "defer" && !cursor && !archived && !searchTerm/);
   assert.match(routeBody, /const shouldDeferFallback = shouldDeferThreadListFallbackForActiveDetail\(\{[\s\S]*deferFallback,[\s\S]*cursor,[\s\S]*archived,[\s\S]*searchTerm,[\s\S]*cwd,[\s\S]*\}\);/);

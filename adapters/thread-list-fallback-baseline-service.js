@@ -19,6 +19,43 @@ function elapsedMs(now, startedAtMs) {
   return Math.max(0, Number(now()) - Number(startedAtMs || now()));
 }
 
+const SAFE_SOURCE_DIAGNOSTIC_COUNTERS = new Set([
+  "rolloutDirectoryReadCount",
+  "rolloutFileStatCount",
+  "rolloutFileCollectedCount",
+  "rolloutFileSortedCount",
+  "rolloutCandidateFileCount",
+  "rolloutCandidateScannedCount",
+  "rolloutHeadReadCount",
+  "rolloutHeadBytes",
+  "rolloutSummaryReadCount",
+  "rolloutStatusAttachCount",
+  "rolloutStatusTailReadCount",
+  "rolloutStatusTailBytes",
+  "sessionIndexReadCount",
+  "sessionIndexLineCount",
+  "sessionIndexEntryCount",
+]);
+
+function safeDiagnosticCounter(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return 0;
+  return Math.min(Number.MAX_SAFE_INTEGER, Math.trunc(number));
+}
+
+function mergeSourceDiagnostics(...diagnosticsList) {
+  const out = {};
+  for (const diagnostics of diagnosticsList) {
+    if (!diagnostics || typeof diagnostics !== "object") continue;
+    for (const key of SAFE_SOURCE_DIAGNOSTIC_COUNTERS) {
+      const value = safeDiagnosticCounter(diagnostics[key]);
+      if (!value) continue;
+      out[key] = safeDiagnosticCounter(Number(out[key] || 0) + value);
+    }
+  }
+  return out;
+}
+
 function createThreadListFallbackBaselineService(options = {}) {
   const now = typeof options.now === "function" ? options.now : Date.now;
   const readStateDbFallback = typeof options.readStateDbFallback === "function"
@@ -42,12 +79,16 @@ function createThreadListFallbackBaselineService(options = {}) {
 
   function timedRead(name, reader, limit, filters) {
     const startedAtMs = Number(now());
-    const threads = safeThreadList(reader(limit, filters));
+    const sourceDiagnostics = {};
+    const threads = safeThreadList(reader(limit, Object.assign({}, filters || {}, {
+      diagnostics: sourceDiagnostics,
+    })));
     return {
       name,
       threads,
       elapsedMs: elapsedMs(now, startedAtMs),
       count: threads.length,
+      diagnostics: mergeSourceDiagnostics(sourceDiagnostics),
     };
   }
 
@@ -114,6 +155,11 @@ function createThreadListFallbackBaselineService(options = {}) {
     };
     sourceSnapshots.set(key, snapshot);
     trimSourceSnapshotCache();
+    const sourceDiagnostics = mergeSourceDiagnostics(
+      stateDb.diagnostics,
+      rollout.diagnostics,
+      sessionIndex.diagnostics,
+    );
     return {
       hit: false,
       key,
@@ -128,6 +174,7 @@ function createThreadListFallbackBaselineService(options = {}) {
         stateDbCount: stateDb.count,
         rolloutCount: rollout.count,
         sessionIndexCount: sessionIndex.count,
+        ...sourceDiagnostics,
       },
     };
   }
@@ -185,6 +232,11 @@ function createThreadListFallbackBaselineService(options = {}) {
       stateDbMs: stateDb.elapsedMs,
       rolloutMs: rollout.elapsedMs,
       sessionIndexMs: sessionIndex.elapsedMs,
+      ...mergeSourceDiagnostics(
+        stateDb.diagnostics,
+        rollout.diagnostics,
+        sessionIndex.diagnostics,
+      ),
     };
     const timings = {
       stateDbMs: sourceTimings.stateDbMs,
@@ -195,6 +247,7 @@ function createThreadListFallbackBaselineService(options = {}) {
       sessionIndexCount: counts.sessionIndex,
       baselineSourceCount: counts.baselineSourceCount,
       baselineResultCount: counts.baselineResultCount,
+      ...mergeSourceDiagnostics(sourceTimings),
     };
     if (snapshot) {
       timings.sourceSnapshotHit = snapshot.hit === true;
