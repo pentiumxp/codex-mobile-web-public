@@ -13539,7 +13539,24 @@ The previous full handoff was archived and should be opened only when old proven
   - Full source `npm test` passed (`1039` tests).
   - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
 - Deployment status:
-  - Not deployed yet at this checkpoint. Next step is to commit clean source,
-    deploy through the central Home AI macOS plugin deploy path, read back
-    `/api/public-config`, static markers, source/prod hashes, and a bounded
-    authenticated Music detail shape.
+  - Code committed as `a480f30` (`add stable signature empty dom visual harness`).
+  - Deployed through the central Home AI macOS plugin deploy path from clean source.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T082604Z-plugin-codex-mobile-web-codex-mobile-stable-signature-empty-dom-harness-v529`.
+  - Production `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v529` and
+    `shellCacheName=codex-mobile-shell-v529`.
+  - Production static marker readback confirmed `codex-mobile-shell-v529`,
+    `simulateStableSignatureEmptyDom`, `stable-signature-empty-dom`,
+    per-run `runKey`, and `__codexMobileEmptyDetailCacheSmoke`.
+  - Source/prod SHA-256 matched for `public/app.js`, `public/sw.js`,
+    `scripts/codex-mobile-empty-detail-cache-smoke.js`, README, architecture
+    optimization plan, and module map.
+  - Authenticated production Music detail read returned HTTP `200`, `10`
+    turns, item counts `[3,5,3,5,5,4,3,4,3,4]`, `39` visible item keys,
+    `79` omitted turns, read mode `projection-v4-dynamic`, and no forbidden
+    detail-only fields on the matching thread-list row.
+  - Note: early post-deploy readback attempts mistakenly parsed thread/list
+    responses as direct `threads` / direct detail objects. Current production
+    uses `data` for list rows and `{ thread: ... }` for detail. Re-running with
+    the correct response shape produced the nonempty Music detail above.
