@@ -13544,23 +13544,20 @@ function threadTilePaneElement(threadId) {
 }
 
 function threadTileRenderSignature(layout, ids) {
-  return JSON.stringify({
-    view: "thread-tiles",
-    columns: layout.columns,
-    rows: layout.rows,
-    visiblePanes: layout.visiblePanes || ids.length,
-    capacityPanes: layout.capacityPanes || layout.maxPanes,
-    desiredPaneCount: normalizeThreadTilePaneCount(state.threadTilePaneCount, 0),
-    columnGroups: layout.columnGroups || [],
-    splitPairs: threadTilePrunedSplitPairs(ids),
+  return threadTileStatePolicy.paneRenderSignaturePlan({
+    layout,
     ids,
-    selected: effectiveThreadTileSelectedThreadId(ids),
-    loading: ids.filter((id) => state.threadTileLoadingIds.has(id)),
+    desiredPaneCount: normalizeThreadTilePaneCount(state.threadTilePaneCount, 0),
+    splitPairs: threadTilePrunedSplitPairs(ids),
+    selectedThreadId: effectiveThreadTileSelectedThreadId(ids),
+    loadingIds: ids.filter((id) => state.threadTileLoadingIds.has(id)),
     switchMenuPaneId: state.threadTileSwitchMenuPaneId || "",
     errors: ids.map((id) => [id, threadTileError(id)]),
     operations: ids.map((id) => [id, threadTileOperationSignature(id)]),
-    threads: ids.map((id) => conversationRenderSignature(threadTileDisplayThread(id))),
-  });
+    threadSignatures: ids.map((id) => conversationRenderSignature(threadTileDisplayThread(id))),
+  }, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+  }).signature;
 }
 
 function patchThreadTilePane(threadId, options = {}) {

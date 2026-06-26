@@ -1015,6 +1015,11 @@ count, user pane cap, configured cap, and final `maxConcurrentLoads` are
 helper-owned while `public/app.js` keeps network execution. Runtime detail
 reads are still capped separately from visible pane count, so wide screens can
 show more panes without starting every large thread detail read at once.
+Pane render signature schema planning now also lives there: columns/rows,
+visible/capacity panes, desired pane count, column groups, split pairs,
+selected pane, loading/error/operation signatures, and per-pane thread
+conversation signatures are assembled into one helper-owned JSON signature
+while `public/app.js` only supplies current facts and render callbacks.
 Pane-local scroll runtime policy now also
 lives there: near-bottom metrics, hold clear/remember decisions, bottom-jump
 button visibility, and restore-distance versus bottom-follow choices are
@@ -1074,6 +1079,7 @@ Target:
   outside app.js; detail-load queue/abort/drain planning is also outside app.js;
   automatic/effective/min/max pane-count planning is also outside app.js;
   pane display layout and overflow split column planning is also outside app.js;
+  pane render signature schema planning is also outside app.js;
   pane detail-load concurrency limit planning is also outside app.js;
   pane-local scroll hold/bottom-button/restore planning is also outside app.js;
   refresh, first-paint, and full-backfill performance event field ownership is

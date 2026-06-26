@@ -16295,3 +16295,54 @@ The previous full handoff was archived and should be opened only when old proven
   - Only bounded file paths, test counts, and architecture state are recorded.
     No secrets, cookies, launch tokens, private thread bodies, task-card bodies,
     uploads, screenshots, or long logs are included.
+
+## 2026-06-27 - Phase C pane render signature planning local slice
+
+- Latest local slice:
+  - Continued Phase C pane-state/render-authority architecture after `77628d0`
+    (`plan thread tile detail load concurrency`). This slice is local/private
+    only and is not deployed by design.
+- Root-cause boundary:
+  - Symptom/risk: tile board render signatures decide whether the board can be
+    reused/patched or must be fully rendered. The signature schema was still
+    assembled inline in `public/app.js`, mixing DOM orchestration with
+    deterministic state-signature ownership and making future
+    duplicate/missing/render-mismatch diagnostics harder to reason about.
+  - Failing layer: frontend thread-tile render signature schema policy, not DOM
+    rendering, CSS, server projection, detail reads, task-card protocol, or
+    shell/cache.
+  - Violated invariant: `public/app.js` should collect current app facts and
+    execute render side effects; the tile render signature schema should live
+    in a pure helper with focused tests.
+- Changes:
+  - `public/thread-tile-state.js` now exposes `paneRenderSignaturePlan()` for
+    tile board signature object/string construction.
+  - The helper filters stale loading/error/operation facts to current pane ids,
+    preserving current behavior while preventing non-visible pane state from
+    entering the board signature.
+  - `public/app.js` now calls the helper from `threadTileRenderSignature()` and
+    only supplies desired pane count, split pairs, selected pane, loading ids,
+    error pairs, operation signatures, and per-pane conversation signatures.
+  - `test/thread-tile-state.test.js` covers the schema and stale-state
+    filtering; `test/thread-tile-layout-ui.test.js` guards app wiring.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md` with the Phase C boundary.
+- Validation:
+  - Focused:
+    `node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js test/conversation-render.test.js`
+    passed (`142` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`1132` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Not deployed. No `CLIENT_BUILD_ID` / PWA shell cache bump. This remains a
+    small Phase C local slice to batch with the next pane-state/render module.
+- Next:
+  - Commit locally, then continue with split sizing controls, Phase E pane
+    visual smoke, or Phase D task-card runtime hardening before one batch
+    deploy.
+- Privacy:
+  - Only bounded file paths, test counts, and architecture state are recorded.
+    No secrets, cookies, launch tokens, private thread bodies, task-card bodies,
+    uploads, screenshots, or long logs are included.

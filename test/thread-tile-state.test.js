@@ -78,6 +78,54 @@ test("thread tile state keeps explicit split pairs in display layout", () => {
   assert.equal(plan.displayLayout.rows, 2);
 });
 
+test("thread tile state owns pane render signature schema", () => {
+  const plan = state.paneRenderSignaturePlan({
+    layout: {
+      columns: 3,
+      rows: 2,
+      visiblePanes: 4,
+      capacityPanes: 6,
+      maxPanes: 6,
+      columnGroups: [["a"], ["b", "c"], ["d"]],
+    },
+    ids: ["a", "b", "c", "d"],
+    desiredPaneCount: "5",
+    splitPairs: [{ anchorId: "b", childId: "c" }],
+    selectedThreadId: "b",
+    loadingIds: ["d", "stale", "d"],
+    switchMenuPaneId: "a",
+    errors: [["a", ""], ["d", "load failed"], ["stale", "hidden"]],
+    operations: [["b", { mode: "compact", entry: "cmd" }], ["stale", { mode: "expanded" }]],
+    threadSignatures: ["sig-a", "sig-b", "sig-c", "sig-d"],
+  }, { maxPanes: 12 });
+
+  assert.deepEqual(plan.signatureObject, {
+    view: "thread-tiles",
+    columns: 3,
+    rows: 2,
+    visiblePanes: 4,
+    capacityPanes: 6,
+    desiredPaneCount: 5,
+    columnGroups: [["a"], ["b", "c"], ["d"]],
+    splitPairs: [{ anchorId: "b", childId: "c" }],
+    ids: ["a", "b", "c", "d"],
+    selected: "b",
+    loading: ["d"],
+    switchMenuPaneId: "a",
+    errors: [["a", ""], ["d", "load failed"]],
+    operations: [["b", { mode: "compact", entry: "cmd" }]],
+    threads: ["sig-a", "sig-b", "sig-c", "sig-d"],
+  });
+  assert.equal(plan.signature, JSON.stringify(plan.signatureObject));
+
+  assert.equal(state.paneRenderSignaturePlan({
+    layout: { columns: 1, rows: 1 },
+    ids: ["a"],
+    desiredPaneCount: 0,
+    paneCount: 4,
+  }).signatureObject.desiredPaneCount, 0);
+});
+
 test("thread tile state selects active pane without depending on app globals", () => {
   assert.equal(state.effectiveSelectedThreadId({
     enabled: false,

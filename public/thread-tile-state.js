@@ -227,6 +227,60 @@
     };
   }
 
+  function normalizeIdValuePairs(values = [], ids = []) {
+    const idSet = new Set(uniqueIds(ids));
+    return (Array.isArray(values) ? values : []).map((entry) => {
+      if (Array.isArray(entry)) return [text(entry[0]).trim(), entry.length > 1 ? entry[1] : ""];
+      if (entry && typeof entry === "object") {
+        return [
+          text(entry.id || entry.threadId || entry.paneId).trim(),
+          Object.prototype.hasOwnProperty.call(entry, "value") ? entry.value
+            : Object.prototype.hasOwnProperty.call(entry, "signature") ? entry.signature
+              : Object.prototype.hasOwnProperty.call(entry, "error") ? entry.error
+                : "",
+        ];
+      }
+      return ["", ""];
+    }).filter((entry) => entry[0] && (!idSet.size || idSet.has(entry[0])));
+  }
+
+  function paneRenderSignaturePlan(input = {}, options = {}) {
+    const layout = input.layout && typeof input.layout === "object" ? input.layout : {};
+    const ids = uniqueIds(input.ids || input.threadIds || []);
+    const idSet = new Set(ids);
+    const signatureObject = {
+      view: "thread-tiles",
+      columns: layout.columns,
+      rows: layout.rows,
+      visiblePanes: layout.visiblePanes || ids.length,
+      capacityPanes: layout.capacityPanes || layout.maxPanes,
+      desiredPaneCount: normalizePaneCount(
+        Object.prototype.hasOwnProperty.call(input, "desiredPaneCount") ? input.desiredPaneCount : input.paneCount,
+        {
+          fallback: 0,
+          maxPanes: options.maxPanes,
+        },
+      ),
+      columnGroups: normalizeColumnGroups(input.columnGroups || layout.columnGroups || []),
+      splitPairs: Array.isArray(input.splitPairs || input.paneSplitPairs) ? (input.splitPairs || input.paneSplitPairs) : [],
+      ids,
+      selected: text(input.selectedThreadId || input.selected).trim(),
+      loading: uniqueIds(input.loadingIds || input.loading || []).filter((id) => !idSet.size || idSet.has(id)),
+      switchMenuPaneId: text(input.switchMenuPaneId).trim(),
+      errors: normalizeIdValuePairs(input.errors || input.errorPairs || [], ids),
+      operations: normalizeIdValuePairs(input.operations || input.operationSignatures || [], ids),
+      threads: (Array.isArray(input.threadSignatures || input.threads) ? (input.threadSignatures || input.threads) : [])
+        .map((value) => String(value || "")),
+    };
+    return {
+      action: "pane-render-signature",
+      reason: ids.length ? "thread-ids" : "empty",
+      ids,
+      signatureObject,
+      signature: JSON.stringify(signatureObject),
+    };
+  }
+
   function paneScrollMetrics(input = {}, options = {}) {
     const scrollHeight = nonNegativeNumber(input.scrollHeight);
     const clientHeight = nonNegativeNumber(input.clientHeight);
@@ -1350,6 +1404,7 @@
     paneCountChangePlan,
     paneCountStatePlan,
     paneDisplayLayoutPlan,
+    paneRenderSignaturePlan,
     paneSelectionPlan,
     paneSlotMutationEffectsPlan,
     paneScrollHoldPlan,

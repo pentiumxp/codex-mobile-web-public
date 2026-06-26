@@ -131,11 +131,11 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(tileLayoutBody, /bindThreadTileActions\(\)/);
   assert.match(tileLayoutBody, /restoreThreadTilePaneScrollState\(scrollState\)/);
   assert.match(tileLayoutBody, /threadTileRenderSignature\(displayLayout, ids\)/);
-  assert.match(functionBody(appJs, "threadTileRenderSignature"), /view: "thread-tiles"/);
+  assert.match(functionBody(appJs, "threadTileRenderSignature"), /threadTileStatePolicy\.paneRenderSignaturePlan/);
   assert.match(functionBody(appJs, "threadTileRenderSignature"), /desiredPaneCount: normalizeThreadTilePaneCount\(state\.threadTilePaneCount, 0\)/);
-  assert.match(functionBody(appJs, "threadTileRenderSignature"), /columnGroups: layout\.columnGroups \|\| \[\]/);
   assert.match(functionBody(appJs, "threadTileRenderSignature"), /splitPairs: threadTilePrunedSplitPairs\(ids\)/);
   assert.match(functionBody(appJs, "threadTileRenderSignature"), /switchMenuPaneId: state\.threadTileSwitchMenuPaneId \|\| ""/);
+  assert.match(functionBody(appJs, "threadTileRenderSignature"), /threadSignatures: ids\.map\(\(id\) => conversationRenderSignature\(threadTileDisplayThread\(id\)\)\)/);
   assert.doesNotMatch(appJs, /THREAD_TILE_DETAIL_LOAD_MAX_CONCURRENT = Math\.max\(1, Math\.min\(4, THREAD_TILE_USER_MAX_PANES\)\)/);
   assert.match(appJs, /THREAD_TILE_DETAIL_LOAD_QUEUE_DRAIN_MS = 120/);
   assert.match(appJs, /threadTileDetailLoadQueueTimer: null/);

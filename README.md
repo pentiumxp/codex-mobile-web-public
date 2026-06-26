@@ -227,6 +227,39 @@ node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js
 调整并发数，需要结合 Phase B/Phase E 的生产读回和浏览器/视觉 evidence，而不是
 在 app 层硬调参数。
 
+## 2026-06-27 Phase C Pane Render Signature Planning Slice
+
+本地小切片继续推进 Phase C，并把平铺模式的 render signature schema 从
+`public/app.js` 迁到 `public/thread-tile-state.js`。此前
+`threadTileRenderSignature()` 在 app 层直接拼出 tile board 的 JSON 签名，
+包括 columns/rows、visible/capacity panes、desired pane count、columnGroups、
+splitPairs、selected pane、loading/error/operation 状态和每个 pane 的
+conversation signature。这个签名决定 tile board 是否复用、patch 还是整板重绘，
+是投影/渲染一致性的关键证据，不应继续由 DOM 编排层内联维护。
+
+本次修复：
+
+- `public/thread-tile-state.js` 新增 `paneRenderSignaturePlan()`，统一规划
+  tile board render signature object 和 JSON 字符串。
+- helper 会按当前 pane ids 过滤 stale loading/error/operation signature，
+  避免已经不在可见 pane 的状态污染当前 board 签名。
+- `public/app.js` 的 `threadTileRenderSignature()` 现在只收集真实 app facts：
+  desired pane count、split pairs、selected pane、loading ids、errors、
+  operation signatures、thread conversation signatures，然后交给 helper。
+- focused tests 覆盖签名 schema、stale pane 状态过滤、显式 `desiredPaneCount=0`
+  不被 fallback 覆盖，以及 app wiring。
+- 不改变 DOM、CSS、thread detail read、server projection、任务卡协议、
+  shell/cache 或部署状态。
+
+闭环验证：
+
+```bash
+node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js test/conversation-render.test.js
+```
+
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为 Phase C
+本地模块累积。
+
 ## 2026-06-26 Phase C Pane Scroll Runtime Planning Slice
 
 本地小切片继续推进 Phase C 的 pane-runtime ownership。此前每个平铺窗口的
