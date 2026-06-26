@@ -522,21 +522,10 @@
     return null;
   }
 
-  function applyThreadDetailPatchTransaction(input = {}) {
-    const applyPatch = typeof input.applyPatch === "function" ? input.applyPatch : null;
-    if (!applyPatch) return result(false, "missing-apply-patch", { effectsApplied: 0 });
-    let patchResult = null;
-    try {
-      patchResult = applyPatch();
-    } catch (_) {
-      return result(false, "apply-patch-threw", { effectsApplied: 0 });
-    }
-    const counts = Object.assign({ effectsApplied: 0 }, resultCounts(patchResult));
-    if (!callbackOk(patchResult)) return result(false, callbackReason(patchResult, "patch-failed"), counts);
-
-    const effects = Array.isArray(input.afterSuccess) ? input.afterSuccess : [];
-    for (let index = 0; index < effects.length; index += 1) {
-      const effect = normalizeTransactionEffect(effects[index], index);
+  function applyTransactionEffects(effects, patchResult, counts, countKey) {
+    const list = Array.isArray(effects) ? effects : [];
+    for (let index = 0; index < list.length; index += 1) {
+      const effect = normalizeTransactionEffect(list[index], index);
       if (!effect) return result(false, "invalid-transaction-effect", counts);
       let effectResult = null;
       try {
@@ -548,7 +537,39 @@
         return result(false, callbackReason(effectResult, `${effect.name || "effect"}-failed`), counts);
       }
       counts.effectsApplied += 1;
+      counts[countKey] = Number(counts[countKey] || 0) + 1;
     }
+    return result(true, "effects-applied", counts);
+  }
+
+  function applyThreadDetailPatchTransaction(input = {}) {
+    const applyPatch = typeof input.applyPatch === "function" ? input.applyPatch : null;
+    if (!applyPatch) return result(false, "missing-apply-patch", {
+      effectsApplied: 0,
+      commitEffectsApplied: 0,
+      postCommitEffectsApplied: 0,
+    });
+    let patchResult = null;
+    try {
+      patchResult = applyPatch();
+    } catch (_) {
+      return result(false, "apply-patch-threw", {
+        effectsApplied: 0,
+        commitEffectsApplied: 0,
+        postCommitEffectsApplied: 0,
+      });
+    }
+    const counts = Object.assign({
+      effectsApplied: 0,
+      commitEffectsApplied: 0,
+      postCommitEffectsApplied: 0,
+    }, resultCounts(patchResult));
+    if (!callbackOk(patchResult)) return result(false, callbackReason(patchResult, "patch-failed"), counts);
+
+    const commitResult = applyTransactionEffects(input.commitEffects, patchResult, counts, "commitEffectsApplied");
+    if (!commitResult.ok) return commitResult;
+    const postCommitResult = applyTransactionEffects(input.afterSuccess, patchResult, counts, "postCommitEffectsApplied");
+    if (!postCommitResult.ok) return postCommitResult;
     return result(true, "transaction-applied", counts);
   }
 

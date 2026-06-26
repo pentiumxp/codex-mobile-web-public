@@ -918,6 +918,8 @@ test("thread detail patch transaction runs success effects only after patch succ
     patched: 2,
     inserted: 1,
     effectsApplied: 2,
+    commitEffectsApplied: 0,
+    postCommitEffectsApplied: 2,
   });
   assert.deepEqual(calls, ["patch", "dock", "bind"]);
 
@@ -937,7 +939,76 @@ test("thread detail patch transaction runs success effects only after patch succ
   assert.equal(failed.ok, false);
   assert.equal(failed.reason, "item-patch-failed");
   assert.equal(failed.effectsApplied, 0);
+  assert.equal(failed.commitEffectsApplied, 0);
+  assert.equal(failed.postCommitEffectsApplied, 0);
   assert.deepEqual(calls, ["patch"]);
+});
+
+test("thread detail patch transaction runs post-commit effects only after commit succeeds", () => {
+  const calls = [];
+  const failedCommit = domPatch.applyThreadDetailPatchTransaction({
+    applyPatch: () => {
+      calls.push("patch");
+      return { ok: true };
+    },
+    commitEffects: [
+      {
+        name: "complete",
+        apply: () => {
+          calls.push("complete");
+          return { ok: false, reason: "complete-dom-update-failed" };
+        },
+      },
+    ],
+    afterSuccess: [
+      {
+        name: "dock",
+        apply: () => {
+          calls.push("dock");
+          return { ok: true };
+        },
+      },
+    ],
+  });
+
+  assert.equal(failedCommit.ok, false);
+  assert.equal(failedCommit.reason, "complete-dom-update-failed");
+  assert.equal(failedCommit.effectsApplied, 0);
+  assert.equal(failedCommit.commitEffectsApplied, 0);
+  assert.equal(failedCommit.postCommitEffectsApplied, 0);
+  assert.deepEqual(calls, ["patch", "complete"]);
+
+  calls.length = 0;
+  const success = domPatch.applyThreadDetailPatchTransaction({
+    applyPatch: () => {
+      calls.push("patch");
+      return { ok: true };
+    },
+    commitEffects: [
+      {
+        name: "complete",
+        apply: () => {
+          calls.push("complete");
+          return { ok: true };
+        },
+      },
+    ],
+    afterSuccess: [
+      {
+        name: "dock",
+        apply: () => {
+          calls.push("dock");
+          return { ok: true };
+        },
+      },
+    ],
+  });
+
+  assert.equal(success.ok, true);
+  assert.equal(success.effectsApplied, 2);
+  assert.equal(success.commitEffectsApplied, 1);
+  assert.equal(success.postCommitEffectsApplied, 1);
+  assert.deepEqual(calls, ["patch", "complete", "dock"]);
 });
 
 test("thread detail patch transaction reports bounded effect failures", () => {

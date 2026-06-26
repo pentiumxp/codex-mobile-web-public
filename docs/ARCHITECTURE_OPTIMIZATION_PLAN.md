@@ -194,6 +194,11 @@ the core turn DOM patch first and only executes success effects such as
 operation-dock refresh, action rebinding, and local DOM completion after the
 core patch succeeds. This prevents failed turn patches from updating
 operation-dock state while leaving conversation DOM on the old signature.
+The transaction now separates commit effects from post-commit effects:
+conversation DOM completion is the commit gate, and operation-dock refresh /
+action rebinding run only after that gate succeeds. This prevents a completion
+failure from leaving dock/action state ahead of committed conversation
+signatures.
 Local DOM patch completion can now consume an explicit completion snapshot from
 the refresh path. The snapshot captures single-thread completion, render
 signature, patch-shell signature, and scroll-follow policy before the turn DOM

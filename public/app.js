@@ -13859,6 +13859,19 @@ function patchCurrentThreadDetailFromRefresh(previousThread, nextThread, previou
         return { ok: true };
       },
     }),
+    commitEffects: [
+      {
+        name: "complete-local-conversation-dom-update",
+        apply: () => completeLocalConversationDomUpdate(
+          conversation,
+          wasNearBottom,
+          userReadingCurrentTurn,
+          completionSnapshot,
+        )
+          ? { ok: true }
+          : { ok: false, reason: "complete-dom-update-failed" },
+      },
+    ],
     afterSuccess: [
       {
         name: "update-live-operation-dock",
@@ -13873,17 +13886,6 @@ function patchCurrentThreadDetailFromRefresh(previousThread, nextThread, previou
           bindCurrentThreadActions();
           return { ok: true };
         },
-      },
-      {
-        name: "complete-local-conversation-dom-update",
-        apply: () => completeLocalConversationDomUpdate(
-          conversation,
-          wasNearBottom,
-          userReadingCurrentTurn,
-          completionSnapshot,
-        )
-          ? { ok: true }
-          : { ok: false, reason: "complete-dom-update-failed" },
       },
     ],
   });

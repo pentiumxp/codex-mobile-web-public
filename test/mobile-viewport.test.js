@@ -447,7 +447,9 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.doesNotMatch(functionBody("patchCurrentThreadDetailFromRefresh"), /previousPatchShellSignature !== conversationPatchShellSignature\(nextThread\)/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /threadDetailDomPatchApi\.applyThreadDetailPatchTransaction\(\{/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /applyPatch: \(\) => threadDetailDomPatchApi\.applyThreadTurnRefreshDomPatch\(\{/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /commitEffects: \[[\s\S]*name: "complete-local-conversation-dom-update"/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /afterSuccess: \[/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /name: "complete-local-conversation-dom-update"[\s\S]*afterSuccess: \[[\s\S]*name: "update-live-operation-dock"/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /name: "update-live-operation-dock"/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /updateLiveOperationDockHtml\(renderLiveOperationDock\(nextThread, previousKeys\)\)/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /name: "bind-current-thread-actions"[\s\S]*bindCurrentThreadActions\(\);/);
