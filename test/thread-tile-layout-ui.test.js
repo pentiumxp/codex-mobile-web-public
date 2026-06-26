@@ -370,6 +370,14 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(appJs, /function threadTilePaneTimerState\(/);
   assert.match(appJs, /function patchThreadTilePane\(/);
   assert.match(appJs, /function scheduleRenderThreadTilePane\(/);
+  const schedulePaneBody = functionBody(appJs, "scheduleRenderThreadTilePane");
+  assert.match(schedulePaneBody, /threadTileStatePolicy\.paneRenderFramePlan/);
+  assert.match(schedulePaneBody, /enabled: state\.threadTileMode/);
+  assert.match(schedulePaneBody, /visible: id \? threadTilePaneIsVisible\(id\) : false/);
+  assert.match(schedulePaneBody, /hasFrame: id \? state\.threadTilePaneRenderFramesById\.has\(id\) : false/);
+  assert.match(schedulePaneBody, /if \(plan\.action === "skip" \|\| !plan\.returnValue\) return false/);
+  assert.match(schedulePaneBody, /if \(!plan\.scheduleFrame\) return true/);
+  assert.match(schedulePaneBody, /if \(!patchThreadTilePane\(id, options\) && plan\.fullRenderOnPatchMiss\) scheduleRenderCurrentThread\(\)/);
   assert.match(appJs, /function rememberThreadTilePaneScrollPosition\(/);
   assert.match(functionBody(appJs, "scheduleThreadTileRefresh"), /threadTileStatePolicy\.refreshSchedulePlan/);
   assert.match(functionBody(appJs, "refreshThreadTileDetails"), /threadTileStatePolicy\.refreshTargetIds/);

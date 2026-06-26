@@ -260,6 +260,37 @@ node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js te
 该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为 Phase C
 本地模块累积。
 
+## 2026-06-27 Phase C Pane Render Frame Planning Slice
+
+本地小切片继续推进 Phase C，把平铺窗口局部 render frame 的调度策略从
+`public/app.js` 迁到 `public/thread-tile-state.js`。此前
+`scheduleRenderThreadTilePane()` 直接在 app 层判断缺失 id、tile mode、pane
+可见性、是否已有待执行 frame，以及 patch 失败后是否触发整板 render。这条路径
+正好处在“局部 pane patch”和“整板 full render”的交界处，错误时容易造成重复排帧、
+整屏闪动或 patch 失败后不可解释地刷新整板。
+
+本次修复：
+
+- `public/thread-tile-state.js` 新增 `paneRenderFramePlan()`，统一规划
+  missing-id、disabled、pane-not-visible、already-scheduled 和
+  schedule-pane-render 分支。
+- `public/app.js` 的 `scheduleRenderThreadTilePane()` 现在只执行
+  requestAnimationFrame / setTimeout、实际 pane patch，以及 helper 明确允许时的
+  full-render-on-patch-miss side effect。
+- focused tests 覆盖不重复排帧、不可见 pane 不排帧、已排帧返回成功但不重复安排、
+  以及 patch miss 是否允许整板 render。
+- 不改变 DOM 结构、CSS、thread detail read、server projection、任务卡协议、
+  shell/cache 或部署状态。
+
+闭环验证：
+
+```bash
+node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js test/conversation-render.test.js
+```
+
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为 Phase C
+本地模块累积。
+
 ## 2026-06-26 Phase C Pane Scroll Runtime Planning Slice
 
 本地小切片继续推进 Phase C 的 pane-runtime ownership。此前每个平铺窗口的

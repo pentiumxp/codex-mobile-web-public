@@ -1137,6 +1137,58 @@
     };
   }
 
+  function paneRenderFramePlan(input = {}) {
+    const id = text(input.threadId || input.paneId).trim();
+    if (!id) {
+      return {
+        action: "skip",
+        reason: "missing-id",
+        id: "",
+        scheduleFrame: false,
+        returnValue: false,
+        fullRenderOnPatchMiss: false,
+      };
+    }
+    if (input.enabled !== true) {
+      return {
+        action: "skip",
+        reason: "disabled",
+        id,
+        scheduleFrame: false,
+        returnValue: false,
+        fullRenderOnPatchMiss: false,
+      };
+    }
+    if (input.visible !== true) {
+      return {
+        action: "skip",
+        reason: "pane-not-visible",
+        id,
+        scheduleFrame: false,
+        returnValue: false,
+        fullRenderOnPatchMiss: false,
+      };
+    }
+    if (input.hasFrame === true) {
+      return {
+        action: "already-scheduled",
+        reason: "frame-active",
+        id,
+        scheduleFrame: false,
+        returnValue: true,
+        fullRenderOnPatchMiss: false,
+      };
+    }
+    return {
+      action: "schedule-pane-render",
+      reason: "ready",
+      id,
+      scheduleFrame: true,
+      returnValue: true,
+      fullRenderOnPatchMiss: input.fullRenderOnPatchMiss !== false,
+    };
+  }
+
   function refreshDelayMs(value, options = {}) {
     const defaultDelayMs = Math.max(0, Number(options.defaultDelayMs || 0));
     const minDelayMs = Math.max(0, Number(options.minDelayMs || 500));
@@ -1404,6 +1456,7 @@
     paneCountChangePlan,
     paneCountStatePlan,
     paneDisplayLayoutPlan,
+    paneRenderFramePlan,
     paneRenderSignaturePlan,
     paneSelectionPlan,
     paneSlotMutationEffectsPlan,

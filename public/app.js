@@ -13627,11 +13627,17 @@ function patchCurrentThreadTilePaneFromState(options = {}) {
 
 function scheduleRenderThreadTilePane(threadId, options = {}) {
   const id = String(threadId || "").trim();
-  if (!id || !state.threadTileMode || !threadTilePaneIsVisible(id)) return false;
-  if (state.threadTilePaneRenderFramesById.has(id)) return true;
+  const plan = threadTileStatePolicy.paneRenderFramePlan({
+    threadId: id,
+    enabled: state.threadTileMode,
+    visible: id ? threadTilePaneIsVisible(id) : false,
+    hasFrame: id ? state.threadTilePaneRenderFramesById.has(id) : false,
+  });
+  if (plan.action === "skip" || !plan.returnValue) return false;
+  if (!plan.scheduleFrame) return true;
   const render = () => {
     state.threadTilePaneRenderFramesById.delete(id);
-    if (!patchThreadTilePane(id, options)) scheduleRenderCurrentThread();
+    if (!patchThreadTilePane(id, options) && plan.fullRenderOnPatchMiss) scheduleRenderCurrentThread();
   };
   const frame = window.requestAnimationFrame
     ? window.requestAnimationFrame(render)

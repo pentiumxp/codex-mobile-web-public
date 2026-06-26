@@ -126,6 +126,81 @@ test("thread tile state owns pane render signature schema", () => {
   }).signatureObject.desiredPaneCount, 0);
 });
 
+test("thread tile state plans pane render frame scheduling", () => {
+  assert.deepEqual(state.paneRenderFramePlan({
+    threadId: "",
+    enabled: true,
+    visible: true,
+  }), {
+    action: "skip",
+    reason: "missing-id",
+    id: "",
+    scheduleFrame: false,
+    returnValue: false,
+    fullRenderOnPatchMiss: false,
+  });
+
+  assert.deepEqual(state.paneRenderFramePlan({
+    threadId: "a",
+    enabled: false,
+    visible: true,
+  }), {
+    action: "skip",
+    reason: "disabled",
+    id: "a",
+    scheduleFrame: false,
+    returnValue: false,
+    fullRenderOnPatchMiss: false,
+  });
+
+  assert.deepEqual(state.paneRenderFramePlan({
+    threadId: "a",
+    enabled: true,
+    visible: false,
+  }), {
+    action: "skip",
+    reason: "pane-not-visible",
+    id: "a",
+    scheduleFrame: false,
+    returnValue: false,
+    fullRenderOnPatchMiss: false,
+  });
+
+  assert.deepEqual(state.paneRenderFramePlan({
+    threadId: "a",
+    enabled: true,
+    visible: true,
+    hasFrame: true,
+  }), {
+    action: "already-scheduled",
+    reason: "frame-active",
+    id: "a",
+    scheduleFrame: false,
+    returnValue: true,
+    fullRenderOnPatchMiss: false,
+  });
+
+  assert.deepEqual(state.paneRenderFramePlan({
+    threadId: "a",
+    enabled: true,
+    visible: true,
+  }), {
+    action: "schedule-pane-render",
+    reason: "ready",
+    id: "a",
+    scheduleFrame: true,
+    returnValue: true,
+    fullRenderOnPatchMiss: true,
+  });
+
+  assert.equal(state.paneRenderFramePlan({
+    threadId: "a",
+    enabled: true,
+    visible: true,
+    fullRenderOnPatchMiss: false,
+  }).fullRenderOnPatchMiss, false);
+});
+
 test("thread tile state selects active pane without depending on app globals", () => {
   assert.equal(state.effectiveSelectedThreadId({
     enabled: false,
