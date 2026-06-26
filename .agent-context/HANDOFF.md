@@ -13435,3 +13435,37 @@ The previous full handoff was archived and should be opened only when old proven
     shape hash `c347733fe098db40`.
   - Authenticated production Music list search returned one matching row and
     no forbidden detail-only fields (`presentForbidden=[]`, no `turns` field).
+
+## 2026-06-26 - v527 conversation DOM authority guard deployed
+
+- User-visible incident:
+  - Music thread `019ef42b-2cb8-7332-ab17-033ec5b48947` showed `No visible turns.` on the mobile single-thread page even though production detail reads were nonempty.
+  - This was not a server projection/list-summary miss: authenticated production detail read returned `10` turns, item counts `[3,5,3,5,5,4,3,4,3,4]`, `39` visible item keys, `79` omitted turns, and read mode `projection-v4-dynamic`.
+- Root-cause boundary:
+  - Failing layer: frontend conversation DOM update authority.
+  - Violated invariant: `renderedConversationSignature === signature` is not sufficient to skip a real DOM update when the mounted single-thread DOM has lost all `article.turn[data-turn]` nodes but the next/current thread state has visible turns.
+  - Strongest root cause: v526 fixed this at the refresh render-plan layer, but `updateConversationHtml()` / `planConversationHtmlUpdate()` still had a lower-level `hydrate-existing` path that trusted the stable signature without checking rendered DOM shape.
+  - Closure classification: root-cause fix, not fallback. No synthetic content, no broad retry, no client-side duplicate hiding.
+- Changes:
+  - `public/thread-detail-dom-patch.js` now accepts `expectedVisibleTurnCount` and `renderedDomTurnCount` in `planConversationHtmlUpdate()` and returns `stable-signature-dom-empty` instead of `hydrate-existing` when a stable signature conflicts with an empty DOM.
+  - `public/app.js` passes expected visible turn count for single-thread renders, records bounded `stable_signature_dom_empty` diagnostics, emits `conversation_dom_authority_invalidated`, and reports `updateReason` in `conversation_render_ms`.
+  - Static shell/cache bumped to `codex-mobile-shell-v527`.
+  - README, architecture optimization plan, and module map document the DOM authority guard.
+- Validation before deploy:
+  - Focused:
+    `node --test test/thread-detail-dom-patch.test.js test/thread-detail-render-plan.test.js test/thread-detail-state.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    passed (`237` tests).
+  - Full source `npm test` passed (`1037` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment status:
+  - Code committed as `e998c39` (`fix conversation dom authority guard`).
+  - Deployed through the central Home AI macOS plugin deploy path from clean source.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T075753Z-plugin-codex-mobile-web-codex-mobile-conversation-dom-authority-v527`.
+  - Production `/api/public-config` returned `clientBuildId=0.1.11|codex-mobile-shell-v527` and `shellCacheName=codex-mobile-shell-v527`.
+  - Production static marker readback confirmed `codex-mobile-shell-v527`, `stable_signature_dom_empty`, `conversation_dom_authority_invalidated`, `expectedVisibleTurnCount`, and `stable-signature-dom-empty`.
+  - Source/prod SHA-256 matched for `public/app.js`, `public/sw.js`, `public/thread-detail-dom-patch.js`, README, architecture optimization plan, and module map.
+  - Authenticated production Music detail read returned HTTP `200` and the nonempty shape above.
+- Notes:
+  - The first post-deploy Music detail verification attempt used `X-Access-Key` and returned `401`; the real client header is `X-Codex-Mobile-Key`. Re-running with the correct header returned HTTP `200`.
+  - Browser visual smoke was not run in this slice. User should refresh the PWA/WebView to pick up shell v527 before judging the mobile UI path.
