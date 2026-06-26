@@ -13890,3 +13890,51 @@ The previous full handoff was archived and should be opened only when old proven
   - Use the new evidence fields after deploy to decide whether remaining slow
     opens come from projection miss/staleness, assistant freshness, missing
     receipt coverage, or thread-list fallback cold paths.
+
+## 2026-06-26 - thread detail route boundary local-only
+
+- Scope:
+  - Continued Phase B by extracting the `/api/threads/:id` read-route
+    coordination from `server.js` into a focused adapter.
+  - This is a small local-only architecture slice. It does not deploy, bump the
+    shell/cache, change UI, or publish Public.
+- Root-cause boundary:
+  - Failing layer addressed: route-level behavior for large-thread detail reads
+    was still partly source-string asserted inside `server.js`, making it hard
+    to prove `mode=recent`, bounded route logging, response sending, and
+    incomplete-response semantics independently.
+  - Violated invariant: high-risk thread-detail coordination should be
+    executable behavior, not coupled to a monolithic route body or regex checks
+    against `server.js`.
+  - Closure classification: root-cause boundary extraction and executable test
+    coverage, not a fallback or client-side masking layer.
+- Changes:
+  - Added `adapters/thread-detail-route-service.js` with
+    `handleThreadDetailReadRoute()`. It maps `mode=recent` to
+    `preferRecentTurns`, builds bounded `threadLog` entries with elapsed time,
+    sends the JSON response, preserves `complete=false`, and leaves HTTP
+    matching/lifecycle ownership in `server.js`.
+  - `server.js` now delegates `/api/threads/:id` read-route coordination to
+    the adapter while continuing to track request lifecycle at the HTTP layer.
+  - Added `test/thread-detail-route-service.test.js` for recent-mode mapping,
+    complete logging, `complete=false` suppression, status/body response, and
+    invalid wiring behavior.
+  - Updated old source-string tests to assert the new route boundary instead of
+    requiring inline `sendJson` / `preferRecentTurns` code in `server.js`.
+  - README, architecture optimization plan, and module map document the new
+    boundary.
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-route-service.test.js test/thread-visibility.test.js`
+    passed (`48` tests).
+  - Full source `npm test` passed (`1065` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment status:
+  - Not deployed by design. This remains part of the Phase B local batch.
+- Next Phase B candidates:
+  - Add route/server smoke around the real `/api/threads/:id?mode=recent`
+    response after batching local slices, then deploy once the module batch is
+    coherent.
+  - Continue decomposing `server.js` only where it creates direct evidence for
+    large-session load correctness, projection consistency, or task-card
+    runtime safety.

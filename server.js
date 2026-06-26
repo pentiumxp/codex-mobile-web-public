@@ -88,6 +88,7 @@ const { createThreadDetailBoundedReadPolicyService } = require("./adapters/threa
 const { createThreadDetailActiveOverlayProviderService } = require("./adapters/thread-detail-active-overlay-provider-service");
 const { attachThreadDetailDiagnostics } = require("./adapters/thread-detail-performance-service");
 const { createThreadDetailReadOrchestrationService } = require("./adapters/thread-detail-read-orchestration-service");
+const { handleThreadDetailReadRoute } = require("./adapters/thread-detail-route-service");
 const { createThreadListFallbackCacheService } = require("./adapters/thread-list-fallback-cache-service");
 const {
   stripThreadListDetailFields,
@@ -14788,26 +14789,14 @@ async function handleApi(req, res) {
   if (threadRead && req.method === "GET") {
     trackThreadDetailRequestLifecycle(res);
     const threadId = decodeURIComponent(threadRead[1]);
-    const detailMode = String(url.searchParams.get("mode") || "").trim().toLowerCase();
-    const preferRecentTurns = detailMode === "recent";
-    const requestStartedAtMs = Date.now();
-    const threadLog = (event, details = {}) => logThreadDetail(event, Object.assign({
-      threadId,
-      elapsedMs: Date.now() - requestStartedAtMs,
-    }, details));
-    const detailResponse = await threadDetailReadOrchestrationService.readThreadDetail({
+    await handleThreadDetailReadRoute({
       codex,
       threadId,
-      preferRecentTurns,
-      threadLog,
+      url,
+      readThreadDetail: (request) => threadDetailReadOrchestrationService.readThreadDetail(request),
+      sendJson: (status, body) => sendJson(res, status, body),
+      logThreadDetail,
     });
-    sendJson(res, detailResponse.status || 200, detailResponse.body || {});
-    if (detailResponse.complete !== false) {
-      threadLog("complete", {
-        status: detailResponse.status || 200,
-        mode: detailResponse.mode || "unknown",
-      });
-    }
     return;
   }
   const threadTurns = url.pathname.match(/^\/api\/threads\/([^/]+)\/turns$/);

@@ -11,6 +11,10 @@ const threadDetailReadOrchestrationServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "adapters", "thread-detail-read-orchestration-service.js"),
   "utf8",
 );
+const threadDetailRouteServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "adapters", "thread-detail-route-service.js"),
+  "utf8",
+);
 const threadListSummaryServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "adapters", "thread-list-summary-service.js"),
   "utf8",
@@ -233,7 +237,8 @@ test("thread detail defaults to ten turns and exposes an older cursor when compa
   assert.match(serverJs, /function olderTurnsCursorBeforeTurn\(turn\)/);
   assert.match(serverJs, /return JSON\.stringify\(\{ turnId, includeAnchor: false \}\);/);
   assert.match(serverJs, /out\.mobileOlderTurnsCursor = olderTurnsCursorBeforeTurn\(out\.turns\[0\]\);/);
-  assert.match(serverJs, /const preferRecentTurns = detailMode === "recent";/);
+  assert.match(serverJs, /handleThreadDetailReadRoute\(\{/);
+  assert.match(threadDetailRouteServiceJs, /const preferRecentTurns = detailModeFromUrl\(url\) === "recent";/);
   assert.match(threadDetailReadOrchestrationServiceJs, /planActiveThreadDetailReadPolicy\(\{ summary, preferRecentTurns \}\)/);
   assert.match(threadDetailReadOrchestrationServiceJs, /if \(activeReadPolicy\.shouldUseInitialTurnsList\) \{/);
   assert.match(threadDetailReadOrchestrationServiceJs, /"turns-list-initial"/);

@@ -7,6 +7,7 @@ const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
 const routingServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-task-card-routing-service.js"), "utf8");
+const threadDetailRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-detail-route-service.js"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
@@ -316,7 +317,9 @@ test("server materializes structured task-card drafts from thread detail", () =>
   assert.match(serverJs, /maybeMaterializeThreadTaskCardDrafts\(msg\.method, msg\.params \|\| null\)/);
   assert.match(serverJs, /prepareResponse: prepareThreadDetailResponseResult/);
   assert.match(serverJs, /threadDetailReadOrchestrationService\.readThreadDetail/);
-  assert.match(serverJs, /sendJson\(res, detailResponse\.status \|\| 200, detailResponse\.body \|\| \{\}\)/);
+  assert.match(serverJs, /handleThreadDetailReadRoute\(\{/);
+  assert.match(threadDetailRouteServiceJs, /const preferRecentTurns = detailModeFromUrl\(url\) === "recent"/);
+  assert.match(threadDetailRouteServiceJs, /sendJson\(status, body\)/);
 });
 
 test("conversation render includes task card signature, toolbar, and action handlers", () => {
