@@ -193,7 +193,11 @@ does not infer the execution branch from `metadataEffects.length` or
 helper: `planThreadDetailRefreshConsistencyCheck` and the
 `consistencyCheck` object on `planThreadDetailRefreshOutcomeExecution` own
 whether to check, the bounded phase, and the render mode, while app code keeps
-only the real `checkConversationProjectionConsistency` call.
+only the real `checkConversationProjectionConsistency` call. Refresh
+performance input assembly now also lives in this helper:
+`planThreadDetailRefreshPerformanceInput` combines measured timings with
+`renderPlan`, `renderOutcome`, and `patchAttemptResult`, so app code no longer
+maintains separate performance-only render mode/action/patch duration fields.
 Refresh performance event field planning now lives in
 `public/thread-performance-metrics.js`: `threadDetailRefreshEventFields`
 builds the bounded `thread_refresh_ms` payload, including server timings,

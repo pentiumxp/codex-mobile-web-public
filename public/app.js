@@ -508,7 +508,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v500";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v501";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -9076,10 +9076,7 @@ async function refreshCurrentThread(options = {}) {
   let locallyPatchedDetail = false;
   let tilePanePatchedDetail = false;
   let conversationRenderMs = 0;
-  let detailPatchMs = 0;
   let metadataUpdateMs = 0;
-  let detailRenderMode = renderPlan.detailRenderMode;
-  let refreshRenderAction = "";
   let renderOutcome = null;
   let patchRejectReason = "";
   state.threadDetailPatchRejectReason = "";
@@ -9122,7 +9119,6 @@ async function refreshCurrentThread(options = {}) {
   });
   locallyPatchedDetail = patchAttemptResult.locallyPatchedDetail;
   tilePanePatchedDetail = patchAttemptResult.tilePanePatchedDetail;
-  detailPatchMs = patchAttemptResult.detailPatchMs;
   patchRejectReason = patchAttemptResult.patchRejectReason;
   if (patchAttemptResult.reportLocalPatchRejected) {
     const previousVisibleShape = visibleConversationShape(previousThread);
@@ -9137,8 +9133,6 @@ async function refreshCurrentThread(options = {}) {
     }));
   }
   renderOutcome = threadDetailRenderPlanApi.finalizeThreadDetailRenderPlan(renderPlan, patchAttemptResult.finalizeResult);
-  detailRenderMode = renderOutcome.detailRenderMode;
-  refreshRenderAction = renderOutcome.renderAction;
   locallyPatchedDetail = renderOutcome.locallyPatchedDetail;
   tilePanePatchedDetail = renderOutcome.tilePanePatchedDetail;
   const executionPlan = threadDetailRenderPlanApi.planThreadDetailRefreshOutcomeExecution(renderOutcome);
@@ -9162,27 +9156,26 @@ async function refreshCurrentThread(options = {}) {
     checkConversationProjectionConsistency(consistencyCheck.phase, { renderMode: consistencyCheck.renderMode });
   }
   const renderElapsedMs = roundedDurationMs(renderStartedAt);
-  const refreshPerformance = threadPerformanceMetrics.threadDetailRefreshEventFields(result.thread, {
+  const refreshPerformanceInput = threadDetailRenderPlanApi.planThreadDetailRefreshPerformanceInput({
     source,
     threadId,
     requestedMode,
-    elapsedMs: roundedDurationMs(refreshStartedAt),
-    apiElapsedMs,
-    renderElapsedMs,
-    mergeMs,
-    composerRenderMs,
-    threadListRenderMs,
-    conversationRenderMs,
-    detailPatchMs,
-    metadataUpdateMs,
-    detailRenderMode,
-    refreshRenderAction,
-    renderPlanReason: renderPlan.reason,
-    patchRejectReason,
-    skippedDetailRender: !shouldRenderDetail,
-    locallyPatchedDetail,
-    tilePanePatchedDetail,
+    shouldRenderDetail,
+    renderPlan,
+    renderOutcome,
+    patchAttemptResult,
+    timings: {
+      elapsedMs: roundedDurationMs(refreshStartedAt),
+      apiElapsedMs,
+      renderElapsedMs,
+      mergeMs,
+      composerRenderMs,
+      threadListRenderMs,
+      conversationRenderMs,
+      metadataUpdateMs,
+    },
   });
+  const refreshPerformance = threadPerformanceMetrics.threadDetailRefreshEventFields(result.thread, refreshPerformanceInput);
   postPerformanceEvent("thread_refresh_ms", refreshPerformance, {
     key: "thread_refresh_ms",
     minIntervalMs: PERF_EVENT_THROTTLE_MS,

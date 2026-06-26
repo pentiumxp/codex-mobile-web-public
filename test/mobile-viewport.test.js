@@ -148,8 +148,8 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v500/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v500"/);
+  assert.match(swJs, /codex-mobile-shell-v501/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v501"/);
   assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(swJs, /"\/thread-diagnostic-events\.js"/);
@@ -324,7 +324,7 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /const previousPatchShellSignature = conversationPatchShellSignature\(previousThread\);/);
   assert.match(appJs, /threadDetailRenderPlanApi\.planThreadDetailRefreshRender\(\{[\s\S]*previousConversationSignature,[\s\S]*nextConversationSignature,[\s\S]*renderedConversationSignature: state\.renderedConversationSignature,[\s\S]*previousPatchShellSignature,[\s\S]*renderedPatchShellSignature: state\.renderedConversationPatchShellSignature,[\s\S]*\}\);/);
   assert.match(functionBody("refreshCurrentThread"), /const shouldRenderDetail = renderPlan\.shouldRenderDetail;/);
-  assert.match(functionBody("refreshCurrentThread"), /let detailRenderMode = renderPlan\.detailRenderMode;/);
+  assert.doesNotMatch(functionBody("refreshCurrentThread"), /let detailRenderMode = renderPlan\.detailRenderMode;/);
   assert.match(functionBody("refreshCurrentThread"), /const tilePatchPlan = shouldRenderDetail \? threadDetailDomPatchSurface\(\{ threadId \}\) : null;/);
   assert.match(functionBody("refreshCurrentThread"), /const tileSurfaceRefresh = Boolean\([\s\S]*state\.threadTileMode[\s\S]*isThreadTileConversationSurface\(\)[\s\S]*tilePatchPlan && tilePatchPlan\.surface === "thread-tile-pane"[\s\S]*\);/);
   assert.match(functionBody("refreshCurrentThread"), /threadDetailRenderPlanApi\.planThreadDetailRefreshPatchExecution\(\{[\s\S]*shouldRenderDetail,[\s\S]*canPatch: renderPlan\.canPatch,[\s\S]*tileSurfaceRefresh,[\s\S]*\}\);/);
@@ -336,12 +336,12 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.doesNotMatch(functionBody("refreshCurrentThread"), /renderPlan\.canPatch && !tileSurfaceRefresh/);
   assert.match(functionBody("refreshCurrentThread"), /const patchAttemptResult = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchAttemptResult\(\{/);
   assert.match(functionBody("refreshCurrentThread"), /tilePanePatchMs,[\s\S]*localPatchMs,[\s\S]*patchRejectReason: state\.threadDetailPatchRejectReason/);
-  assert.match(functionBody("refreshCurrentThread"), /detailPatchMs = patchAttemptResult\.detailPatchMs;/);
+  assert.doesNotMatch(functionBody("refreshCurrentThread"), /detailPatchMs = patchAttemptResult\.detailPatchMs;/);
   assert.match(functionBody("refreshCurrentThread"), /patchRejectReason = patchAttemptResult\.patchRejectReason;/);
   assert.match(functionBody("refreshCurrentThread"), /if \(patchAttemptResult\.reportLocalPatchRejected\) \{/);
   assert.match(functionBody("refreshCurrentThread"), /let renderOutcome = null;/);
   assert.match(functionBody("refreshCurrentThread"), /renderOutcome = threadDetailRenderPlanApi\.finalizeThreadDetailRenderPlan\(renderPlan, patchAttemptResult\.finalizeResult\);/);
-  assert.match(functionBody("refreshCurrentThread"), /refreshRenderAction = renderOutcome\.renderAction;/);
+  assert.doesNotMatch(functionBody("refreshCurrentThread"), /refreshRenderAction = renderOutcome\.renderAction;/);
   assert.match(functionBody("refreshCurrentThread"), /const executionPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshOutcomeExecution\(renderOutcome\);/);
   assert.match(functionBody("refreshCurrentThread"), /const metadataEffects = Array\.isArray\(executionPlan\.metadataEffects\)[\s\S]*\? executionPlan\.metadataEffects[\s\S]*: \[\];/);
   assert.match(functionBody("refreshCurrentThread"), /if \(executionPlan\.executionAction === "metadata-effects"\) \{[\s\S]*for \(const effect of metadataEffects\) applyThreadDetailRefreshMetadataEffect\(effect\);/);
@@ -355,14 +355,11 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(functionBody("applyThreadDetailRefreshMetadataEffect"), /updateLiveOperationDockHtml\(renderLiveOperationDock\(state\.currentThread, existingConversationRenderKeys\(\)\)\)/);
   assert.match(functionBody("applyThreadDetailRefreshMetadataEffect"), /publishPluginNavigationState\(\)/);
   assert.match(functionBody("applyThreadDetailRefreshMetadataEffect"), /scheduleScrollToBottomButtonUpdate\(\)/);
-  assert.match(functionBody("refreshCurrentThread"), /const refreshPerformance = threadPerformanceMetrics\.threadDetailRefreshEventFields\(result\.thread, \{/);
+  assert.match(functionBody("refreshCurrentThread"), /const refreshPerformanceInput = threadDetailRenderPlanApi\.planThreadDetailRefreshPerformanceInput\(\{/);
+  assert.match(functionBody("refreshCurrentThread"), /shouldRenderDetail,[\s\S]*renderPlan,[\s\S]*renderOutcome,[\s\S]*patchAttemptResult,[\s\S]*timings: \{/);
+  assert.match(functionBody("refreshCurrentThread"), /const refreshPerformance = threadPerformanceMetrics\.threadDetailRefreshEventFields\(result\.thread, refreshPerformanceInput\);/);
   assert.match(functionBody("refreshCurrentThread"), /postPerformanceEvent\("thread_refresh_ms", refreshPerformance, \{/);
-  assert.match(appJs, /skippedDetailRender: !shouldRenderDetail/);
-  assert.match(appJs, /locallyPatchedDetail,/);
-  assert.match(appJs, /tilePanePatchedDetail,/);
-  assert.match(appJs, /refreshRenderAction,/);
-  assert.match(appJs, /renderPlanReason: renderPlan\.reason/);
-  assert.match(appJs, /patchRejectReason,/);
+  assert.doesNotMatch(functionBody("refreshCurrentThread"), /skippedDetailRender: !shouldRenderDetail/);
   assert.match(appJs, /function rejectThreadDetailPatch\(reason\)/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /rejectThreadDetailPatch\("rendered-dom-stale"\)/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /rejectThreadDetailPatch\("patch-shell-changed"\)/);

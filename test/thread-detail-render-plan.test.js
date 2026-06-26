@@ -398,6 +398,59 @@ test("thread detail refresh consistency check planning skips missing phases", ()
   });
 });
 
+test("thread detail refresh performance input combines render and patch plans", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPerformanceInput({
+    source: "refresh",
+    threadId: "thread-1",
+    requestedMode: "recent",
+    shouldRenderDetail: true,
+    renderPlan: {
+      detailRenderMode: "patch",
+      reason: "signature-changed",
+    },
+    renderOutcome: {
+      detailRenderMode: "patch",
+      renderAction: "local-patch-metadata-update",
+      locallyPatchedDetail: true,
+      tilePanePatchedDetail: false,
+    },
+    patchAttemptResult: {
+      detailPatchMs: 7.6,
+      patchRejectReason: "shape-changed",
+    },
+    timings: {
+      elapsedMs: 25.4,
+      apiElapsedMs: 10.2,
+      renderElapsedMs: 8.9,
+      mergeMs: 1.1,
+      composerRenderMs: 2.2,
+      threadListRenderMs: 3.3,
+      conversationRenderMs: 4.4,
+      metadataUpdateMs: 5.5,
+    },
+  }), {
+    source: "refresh",
+    threadId: "thread-1",
+    requestedMode: "recent",
+    elapsedMs: 25.4,
+    apiElapsedMs: 10.2,
+    renderElapsedMs: 8.9,
+    mergeMs: 1.1,
+    composerRenderMs: 2.2,
+    threadListRenderMs: 3.3,
+    conversationRenderMs: 4.4,
+    detailPatchMs: 7.6,
+    metadataUpdateMs: 5.5,
+    detailRenderMode: "patch",
+    refreshRenderAction: "local-patch-metadata-update",
+    renderPlanReason: "signature-changed",
+    patchRejectReason: "shape-changed",
+    skippedDetailRender: false,
+    locallyPatchedDetail: true,
+    tilePanePatchedDetail: false,
+  });
+});
+
 test("single-thread full render shell plans loading state", () => {
   assert.deepEqual(renderPlan.planSingleThreadFullRenderShell({
     threadId: "thread-1",

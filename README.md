@@ -16,6 +16,40 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v501 Thread Refresh Performance Input Plan
+
+v501 继续 Phase A 的前端 render/patch ownership 收敛。v500 已经把
+projection-consistency check 的执行计划交给
+`public/thread-detail-render-plan.js`；本次继续缩小 `refreshCurrentThread()`
+对 `thread_refresh_ms` performance input 的内联组装。
+
+本次切片新增：
+
+- `planThreadDetailRefreshPerformanceInput()` 统一组合 refresh performance
+  输入字段。
+- helper 从 `renderPlan`、`renderOutcome` 和 `patchAttemptResult` 中提取
+  `detailRenderMode`、`refreshRenderAction`、`detailPatchMs`、
+  `patchRejectReason`、patch success flags 和 skip 状态。
+- `refreshCurrentThread()` 不再自己维护 `detailRenderMode`、
+  `refreshRenderAction` 或 `detailPatchMs` 这类 performance-input 策略变量；
+  它只测量真实耗时并把结果交给 helper。
+- `thread-performance-metrics.js` 仍负责最终事件字段的 bounded 输出。
+
+修复边界：
+
+- 症状/风险：v499/v500 已经把 patch telemetry 和 consistency check 外移，
+  但 app 层仍手工拼接 performance input，容易让 render outcome、patch
+  result 和 `thread_refresh_ms` 诊断字段再次漂移。
+- 失败层：前端 thread detail refresh performance-input ownership。
+- 不变量：本次不改变真实 DOM patch、render、server projection、
+  performance event 名称、diagnostic 传输、task-card 协议或视觉布局。
+- 闭环验证：`test/thread-detail-render-plan.test.js` 覆盖
+  `planThreadDetailRefreshPerformanceInput()`；`test/mobile-viewport.test.js` /
+  `test/conversation-render.test.js` 验证 app 层通过
+  `refreshPerformanceInput` 调用 `threadDetailRefreshEventFields()`。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v501`。
+
 ## 2026-06-26 v500 Thread Refresh Consistency Check Plan
 
 v500 继续 Phase A 的前端 render/patch ownership 收敛。v499 已经把

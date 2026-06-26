@@ -22,6 +22,10 @@
     return (reason || fallback).slice(0, 80);
   }
 
+  function objectOrEmpty(value) {
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  }
+
   function planThreadDetailRefreshConsistencyCheck(input = {}) {
     const phase = compactReason(input.projectionConsistencyPhase || input.phase, "");
     const renderMode = compactReason(input.renderMode || input.detailRenderMode, "");
@@ -287,6 +291,34 @@
     };
   }
 
+  function planThreadDetailRefreshPerformanceInput(input = {}) {
+    const renderPlan = objectOrEmpty(input.renderPlan);
+    const renderOutcome = objectOrEmpty(input.renderOutcome);
+    const patchAttemptResult = objectOrEmpty(input.patchAttemptResult);
+    const timings = objectOrEmpty(input.timings);
+    return {
+      source: compactReason(input.source, ""),
+      threadId: compactReason(input.threadId, ""),
+      requestedMode: compactReason(input.requestedMode, ""),
+      elapsedMs: normalizedDurationMs(timings.elapsedMs),
+      apiElapsedMs: normalizedDurationMs(timings.apiElapsedMs),
+      renderElapsedMs: normalizedDurationMs(timings.renderElapsedMs),
+      mergeMs: normalizedDurationMs(timings.mergeMs),
+      composerRenderMs: normalizedDurationMs(timings.composerRenderMs),
+      threadListRenderMs: normalizedDurationMs(timings.threadListRenderMs),
+      conversationRenderMs: normalizedDurationMs(timings.conversationRenderMs),
+      detailPatchMs: normalizedDurationMs(patchAttemptResult.detailPatchMs),
+      metadataUpdateMs: normalizedDurationMs(timings.metadataUpdateMs),
+      detailRenderMode: compactReason(renderOutcome.detailRenderMode || renderPlan.detailRenderMode, ""),
+      refreshRenderAction: compactReason(renderOutcome.renderAction, ""),
+      renderPlanReason: compactReason(renderPlan.reason, ""),
+      patchRejectReason: compactReason(patchAttemptResult.patchRejectReason, ""),
+      skippedDetailRender: input.shouldRenderDetail === false,
+      locallyPatchedDetail: Boolean(renderOutcome.locallyPatchedDetail),
+      tilePanePatchedDetail: Boolean(renderOutcome.tilePanePatchedDetail),
+    };
+  }
+
   function text(value) {
     return String(value ?? "");
   }
@@ -358,6 +390,7 @@
     planThreadDetailRefreshConsistencyCheck,
     planThreadDetailRefreshPatchAttemptResult,
     planThreadDetailRefreshOutcomeExecution,
+    planThreadDetailRefreshPerformanceInput,
     planSingleThreadFullRenderShell,
     planThreadDetailRefreshPatchExecution,
     planThreadDetailRefreshRender,

@@ -2991,12 +2991,12 @@ test("current-thread refresh patches the current tile pane for metadata-only til
   assert.match(body, /patchCurrentThreadTilePaneFromState\(\{ threadId, preserveScroll: true \}\)/);
   assert.match(body, /const patchAttemptResult = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchAttemptResult\(\{/);
   assert.match(body, /tilePanePatchMs,[\s\S]*localPatchMs,[\s\S]*patchRejectReason: state\.threadDetailPatchRejectReason/);
-  assert.match(body, /detailPatchMs = patchAttemptResult\.detailPatchMs;/);
+  assert.doesNotMatch(body, /detailPatchMs = patchAttemptResult\.detailPatchMs;/);
   assert.match(body, /patchRejectReason = patchAttemptResult\.patchRejectReason;/);
   assert.match(body, /if \(patchAttemptResult\.reportLocalPatchRejected\) \{/);
   assert.match(body, /renderOutcome = threadDetailRenderPlanApi\.finalizeThreadDetailRenderPlan\(renderPlan, patchAttemptResult\.finalizeResult\);/);
-  assert.match(body, /detailRenderMode = renderOutcome\.detailRenderMode;/);
-  assert.match(body, /refreshRenderAction = renderOutcome\.renderAction;/);
+  assert.doesNotMatch(body, /detailRenderMode = renderOutcome\.detailRenderMode;/);
+  assert.doesNotMatch(body, /refreshRenderAction = renderOutcome\.renderAction;/);
   assert.match(body, /let renderOutcome = null;/);
   assert.match(body, /const executionPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshOutcomeExecution\(renderOutcome\);/);
   assert.match(body, /const metadataEffects = Array\.isArray\(executionPlan\.metadataEffects\)[\s\S]*\? executionPlan\.metadataEffects[\s\S]*: \[\];/);
@@ -3007,7 +3007,9 @@ test("current-thread refresh patches the current tile pane for metadata-only til
   assert.match(appJs, /function applyThreadDetailRefreshMetadataEffect\(effect\)/);
   assert.match(body, /const consistencyCheck = executionPlan\.consistencyCheck \|\| \{\};/);
   assert.match(body, /checkConversationProjectionConsistency\(consistencyCheck\.phase, \{ renderMode: consistencyCheck\.renderMode \}\)/);
-  assert.match(body, /const refreshPerformance = threadPerformanceMetrics\.threadDetailRefreshEventFields\(result\.thread, \{/);
+  assert.match(body, /const refreshPerformanceInput = threadDetailRenderPlanApi\.planThreadDetailRefreshPerformanceInput\(\{/);
+  assert.match(body, /shouldRenderDetail,[\s\S]*renderPlan,[\s\S]*renderOutcome,[\s\S]*patchAttemptResult,[\s\S]*timings: \{/);
+  assert.match(body, /const refreshPerformance = threadPerformanceMetrics\.threadDetailRefreshEventFields\(result\.thread, refreshPerformanceInput\);/);
   assert.match(body, /postPerformanceEvent\("thread_refresh_ms", refreshPerformance, \{/);
 });
 
