@@ -52,20 +52,20 @@ function diagnosticsAttacher(result, input) {
   return result;
 }
 
-function createActiveOverlayHarness() {
+function createActiveOverlayHarness(options = {}) {
   const calls = [];
   let nowMs = 10_000;
   const now = () => {
     nowMs += 100;
     return nowMs;
   };
-  const summary = {
+  const summary = Object.assign({
     id: "thread-1",
     status: { type: "active" },
     activeTurnId: "turn-live",
     rolloutPath: "/tmp/codex-mobile-live-overlay-rollout.jsonl",
     updatedAtMs: 10,
-  };
+  }, options.summary || {});
   const projectionInputService = createThreadDetailProjectionInputService({
     maxTurns: 3,
     rolloutStatsForPath: () => ({ sizeBytes: 24_000_000, mtimeMs: 1000 }),
@@ -211,6 +211,28 @@ test("read orchestration uses live projection provider for active overlay withou
   assert.equal(timings.activeOverlayUploadItems, 0);
   assert.equal(timings.activeOverlayAssistantItems, 1);
   assert.equal(timings.activeOverlayReceiptItems, 1);
+});
+
+test("read orchestration uses projection-inferred active turn when summary lacks activeTurnId", async () => {
+  const { calls, service } = createActiveOverlayHarness({ summary: { activeTurnId: "" } });
+  const response = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: true,
+    threadLog: () => {},
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.mode, "projection-active-overlay");
+  assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["turn-window", "turn-live"]);
+  assert.equal(calls.includes("thread-read"), false);
+  assert.equal(calls.includes("turns-list"), false);
+  const timings = response.body.thread.mobileDiagnostics.threadDetailTimings;
+  assert.equal(timings.activeFullReadRequired, true);
+  assert.equal(timings.activeFullReadReason, "status-active");
+  assert.equal(timings.activeOverlayAction, "use-projection-overlay");
+  assert.equal(timings.activeOverlayReason, "overlay-evidence-complete");
+  assert.equal(timings.activeOverlaySource, "projection-live");
 });
 
 test("thread detail route smoke returns active overlay from mode=recent without full thread/read", async () => {

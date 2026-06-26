@@ -14242,3 +14242,57 @@ The previous full handoff was archived and should be opened only when old proven
     overlay coverage: active list/detail state lacks a reliable active turn id,
     so projection misses still force expensive full-thread reads and can
     contribute to missing/late visible replies.
+
+## 2026-06-26 - active overlay active-turn ownership local slice
+
+- Scope:
+  - Started the next active-detail module slice after production readback
+    identified `activeOverlayReason=missing-active-turn-id`.
+  - This is a local source/test/docs slice. It has not been deployed or pushed
+    Public under the new cadence; batch it with the rest of the active-detail
+    module before production deploy/readback.
+- Root-cause boundary:
+  - Symptom: active thread detail can have summary `status=active` but no
+    summary-level active turn id. The active overlay provider then fails before
+    querying the server-owned live projection shell and read orchestration
+    falls back to full `thread/read`.
+  - Failing layer: server active-overlay provider / live projection shell
+    ownership, not client rendering or UI dedupe.
+  - Violated invariant: a server-owned live notification projection that
+    receives `turn/started` and active item events must own the current active
+    turn id needed by the active-overlay proof gate. Summary rows are allowed to
+    prove only active status.
+  - Root cause: `thread-detail-projection-service` updated the notification
+    shell turn contents but did not retain `thread.activeTurnId`, and
+    `thread-detail-active-overlay-provider-service` required
+    `summaryActiveTurnId()` before asking the projection service for a snapshot.
+  - Closure classification: root-cause ownership fix. No fallback, no client
+    refresh/dedupe, no proof-gate relaxation.
+- Changes:
+  - `adapters/thread-detail-projection-service.js`
+    - Retains `thread.activeTurnId` on `turn/started` and active item/delta
+      notifications.
+    - Clears it when the same turn completes.
+    - Lets `activeOverlaySnapshot()` infer the active turn from live projection
+      state when the caller does not provide an active turn id.
+  - `adapters/thread-detail-active-overlay-provider-service.js`
+    - Calls the projection snapshot API even when summary only exposes active
+      status, then uses the snapshot's bounded active turn id if available.
+    - Still returns bounded unavailable reasons when the snapshot or evidence
+      is missing.
+  - Tests:
+    - Projection service snapshot inference and completion clearing.
+    - Provider inference from live projection with summary-only active status.
+    - Read orchestration integration returning `projection-active-overlay`
+      without full `thread/read` when summary lacks `activeTurnId`.
+  - README, architecture optimization plan, and module map were updated to
+    reflect the deployed Phase B readback and this local follow-up slice.
+- Validation so far:
+  - Focused:
+    `node --test test/thread-detail-projection-service.test.js test/thread-detail-projection-v4-service.test.js test/thread-detail-active-overlay-provider-service.test.js test/thread-detail-active-overlay-integration.test.js test/thread-detail-read-orchestration-service.test.js test/phase-b-readback-decision-service.test.js`
+    passed (`62` tests).
+- Next validation:
+  - Run full `npm test`, `npm run check`, `npm run check:macos`, and
+    `git diff --check`.
+  - Commit locally if full validation passes. Do not deploy this single slice
+    unless the active-detail module is ready or the user explicitly requests it.

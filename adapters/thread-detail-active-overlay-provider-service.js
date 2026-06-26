@@ -60,12 +60,13 @@ function createThreadDetailActiveOverlayProviderService(options = {}) {
 
   function resolveActiveWindowOverlay(input = {}) {
     const threadId = text(input.threadId);
-    const activeTurnId = summaryActiveTurnId(input.summary);
-    if (!activeTurnId) return unavailableOverlayInput("", "missing-active-turn-id");
     if (!projectionService || typeof projectionService.activeOverlaySnapshot !== "function") {
-      return unavailableOverlayInput(activeTurnId, "snapshot-api-unavailable");
+      return unavailableOverlayInput(summaryActiveTurnId(input.summary), "snapshot-api-unavailable");
     }
-    const snapshot = projectionService.activeOverlaySnapshot({ threadId, activeTurnId });
+    const summaryTurnId = summaryActiveTurnId(input.summary);
+    const snapshot = projectionService.activeOverlaySnapshot({ threadId, activeTurnId: summaryTurnId });
+    const activeTurnId = summaryTurnId || text(snapshot && snapshot.activeTurnId);
+    if (!activeTurnId) return unavailableOverlayInput("", snapshot && snapshot.reason || "missing-active-turn-id");
     if (!snapshot || snapshot.found !== true) {
       return unavailableOverlayInput(activeTurnId, snapshot && snapshot.reason || "snapshot-missing");
     }

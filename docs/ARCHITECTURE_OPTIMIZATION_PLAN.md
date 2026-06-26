@@ -111,8 +111,18 @@ Current acceleration targets:
    proves that this route boundary can call the real read orchestration and
    return `projection-active-overlay` for a recent active-window read without
    invoking full `thread/read` or `turns-list`.
-   The remaining work is production readback after the next Phase B batch
-   deploy and any root-cause fixes indicated by `activeOverlayReason`.
+   Production readback after the Phase B deploy showed the next active-overlay
+   failure reason as `missing-active-turn-id`: the summary row could say
+   `status=active` while omitting a concrete active turn id. The follow-up local
+   slice keeps the proof gate strict but moves active turn ownership into the
+   server-owned live projection shell: `turn/started` and active item
+   notifications now retain `thread.activeTurnId`, completion clears it, and
+   the overlay provider may ask the projection service to infer the current
+   active turn when the summary only proves active status. Focused integration
+   coverage proves this can return `projection-active-overlay` without full
+   `thread/read` while preserving fail-closed behavior for missing snapshots,
+   stale assistant evidence, and completed turns. This slice is local-only until
+   the next active-detail module batch deploy/readback.
 2. Thread-list cold starts no longer hide source collection inside the fallback
    cache policy. The local `thread-list-fallback-baseline-service` slice now
    owns state DB / rollout session / session-index source collection,

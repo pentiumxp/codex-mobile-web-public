@@ -181,9 +181,9 @@ test("thread detail projection exposes memory-only active overlay snapshot witho
 
   const snapshot = service.activeOverlaySnapshot({
     threadId: "thread-1",
-    activeTurnId: "turn-1",
   });
   assert.equal(snapshot.found, true);
+  assert.equal(snapshot.activeTurnId, "turn-1");
   assert.equal(snapshot.overlaySource, "projection-live");
   assert.equal(snapshot.partial, true);
   assert.equal(snapshot.partialKind, "notification-shell");
@@ -192,9 +192,31 @@ test("thread detail projection exposes memory-only active overlay snapshot witho
   snapshot.overlayTurn.items.push({ id: "mutated", type: "agentMessage" });
   const secondSnapshot = service.activeOverlaySnapshot({
     threadId: "thread-1",
-    activeTurnId: "turn-1",
   });
   assert.deepEqual(secondSnapshot.overlayTurn.items.map((item) => item.id), ["cmd-1"]);
+});
+
+test("thread detail projection clears inferred active overlay turn after completion", () => {
+  const service = createThreadDetailProjectionService({
+    cacheDir: "",
+    policyVersion: "test-v1",
+    maxTurns: 3,
+    now: () => 8500,
+  });
+
+  service.applyNotification("turn/started", {
+    threadId: "thread-1",
+    turn: { id: "turn-1", status: { type: "active" }, items: [] },
+  });
+  service.applyNotification("turn/completed", {
+    threadId: "thread-1",
+    turn: { id: "turn-1", status: { type: "completed" }, items: [] },
+  });
+
+  assert.deepEqual(service.activeOverlaySnapshot({ threadId: "thread-1" }), {
+    found: false,
+    reason: "missing-active-turn-id",
+  });
 });
 
 test("thread detail projection active overlay snapshot rejects non-dynamic static cache", () => {

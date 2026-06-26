@@ -36,6 +36,11 @@ function isRestingStatus(value) {
   return /^(idle|completed|complete|success|succeeded|failed|failure|cancelled|canceled|interrupted|error)$/.test(status);
 }
 
+function isActiveLikeStatus(value) {
+  const status = normalizeStatus(value).replace(/[_\s]+/g, "-");
+  return /^(active|running|started|pending|queued|processing|inprogress|in-progress)$/i.test(status);
+}
+
 function projectionSignature(input = {}) {
   const stats = input.rolloutStats || {};
   const signature = {
@@ -150,6 +155,30 @@ function ensureThread(result, threadId) {
 function findTurn(thread, turnId) {
   if (!thread || !Array.isArray(thread.turns) || !turnId) return null;
   return thread.turns.find((turn) => String(turn && turn.id || "") === turnId) || null;
+}
+
+function turnId(turn) {
+  return String(turn && (turn.id || turn.turnId || turn.turn_id) || "").trim();
+}
+
+function inferredActiveTurnId(thread) {
+  if (!thread || typeof thread !== "object") return "";
+  const explicit = String(thread.activeTurnId || thread.active_turn_id || "").trim();
+  if (explicit) return explicit;
+  const turns = Array.isArray(thread.turns) ? thread.turns : [];
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    const id = turnId(turn);
+    if (id && isActiveLikeStatus(turn && turn.status)) return id;
+  }
+  if (!isActiveLikeStatus(thread.status)) return "";
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    const id = turnId(turn);
+    if (!id || isRestingStatus(turn && turn.status)) continue;
+    if (Array.isArray(turn.items) && turn.items.length > 0) return id;
+  }
+  return "";
 }
 
 function isTextReceiptItem(item) {
@@ -786,14 +815,14 @@ function createThreadDetailProjectionService(options = {}) {
 
   function activeOverlaySnapshot(input = {}) {
     const threadId = String(input.threadId || "").trim();
-    const activeTurnId = String(input.activeTurnId || input.turnId || "").trim();
     if (!threadId) return { found: false, reason: "missing-thread-id" };
-    if (!activeTurnId) return { found: false, reason: "missing-active-turn-id" };
     const entry = entryForThread(threadId);
     if (!entry) return { found: false, reason: "entry-missing" };
     if (!entry.dynamic) return { found: false, reason: "entry-not-dynamic" };
     const thread = entry.result && entry.result.thread;
     if (!thread || typeof thread !== "object") return { found: false, reason: "thread-missing" };
+    const activeTurnId = String(input.activeTurnId || input.turnId || inferredActiveTurnId(thread)).trim();
+    if (!activeTurnId) return { found: false, reason: "missing-active-turn-id" };
     const overlayTurn = findTurn(thread, activeTurnId);
     if (!overlayTurn) return { found: false, reason: "active-turn-missing" };
     return {
@@ -852,23 +881,44 @@ function createThreadDetailProjectionService(options = {}) {
     } else if (method === "turn/started" || method === "turn/completed") {
       const turn = params.turn && typeof params.turn === "object" ? cloneJson(params.turn) : { id: turnIdFromParams(params) };
       if (turn && turn.id) ensureTurn(thread, String(turn.id), turn);
-      if (method === "turn/started") thread.status = { type: "active" };
-      if (method === "turn/completed") thread.status = turn.status || params.status || { type: "completed" };
+      if (method === "turn/started") {
+        thread.status = { type: "active" };
+        if (turn && turn.id) thread.activeTurnId = String(turn.id);
+      }
+      if (method === "turn/completed") {
+        thread.status = turn.status || params.status || { type: "completed" };
+        if (turn && turn.id && String(thread.activeTurnId || "") === String(turn.id)) delete thread.activeTurnId;
+      }
     } else if (method === "item/started" || method === "item/completed") {
       const turnId = turnIdFromParams(params);
-      if (turnId && params.item) upsertItem(ensureTurn(thread, turnId), params.item);
+      if (turnId && params.item) {
+        if (isActiveLikeStatus(thread.status)) thread.activeTurnId = turnId;
+        upsertItem(ensureTurn(thread, turnId), params.item);
+      }
     } else if (method === "item/agentMessage/delta") {
       const turnId = turnIdFromParams(params);
-      if (turnId) appendItemText(ensureTurn(thread, turnId), String(params.itemId || ""), "agentMessage", "text", params.delta || "");
+      if (turnId) {
+        if (isActiveLikeStatus(thread.status)) thread.activeTurnId = turnId;
+        appendItemText(ensureTurn(thread, turnId), String(params.itemId || ""), "agentMessage", "text", params.delta || "");
+      }
     } else if (method === "item/reasoning/textDelta" || method === "item/reasoning/summaryTextDelta") {
       const turnId = turnIdFromParams(params);
-      if (turnId) appendItemText(ensureTurn(thread, turnId), String(params.itemId || ""), "reasoning", "text", params.delta || "");
+      if (turnId) {
+        if (isActiveLikeStatus(thread.status)) thread.activeTurnId = turnId;
+        appendItemText(ensureTurn(thread, turnId), String(params.itemId || ""), "reasoning", "text", params.delta || "");
+      }
     } else if (method === "item/commandExecution/outputDelta") {
       const turnId = turnIdFromParams(params);
-      if (turnId) appendItemText(ensureTurn(thread, turnId), String(params.itemId || ""), "commandExecution", "aggregatedOutput", params.delta || "");
+      if (turnId) {
+        if (isActiveLikeStatus(thread.status)) thread.activeTurnId = turnId;
+        appendItemText(ensureTurn(thread, turnId), String(params.itemId || ""), "commandExecution", "aggregatedOutput", params.delta || "");
+      }
     } else if (method === "item/fileChange/outputDelta") {
       const turnId = turnIdFromParams(params);
-      if (turnId) appendItemText(ensureTurn(thread, turnId), String(params.itemId || ""), "fileChange", "aggregatedOutput", params.delta || "");
+      if (turnId) {
+        if (isActiveLikeStatus(thread.status)) thread.activeTurnId = turnId;
+        appendItemText(ensureTurn(thread, turnId), String(params.itemId || ""), "fileChange", "aggregatedOutput", params.delta || "");
+      }
     }
     normalizeProjectionThreadUserMessages(thread);
     normalizeProjectionSupersededLiveTurns(thread);

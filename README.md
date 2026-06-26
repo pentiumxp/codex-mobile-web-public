@@ -44,8 +44,16 @@ Phase B 的活跃大线程读取风险已经从 proof gate 推进到真实 provi
 - `test/thread-detail-active-overlay-integration.test.js` 现在额外覆盖 route-level smoke：
   `/api/threads/:id?mode=recent` 通过 route service 调用真实 read orchestration 时，能返回
   `projection-active-overlay`，并证明没有调用 full `thread/read` 或 `turns-list`。
+- Phase B 已部署生产并完成 readback。线程列表第二次进入已命中
+  `warm-fallback-cache`，但 active 线程详情仍暴露
+  `activeOverlayReason=missing-active-turn-id`。后续本地切片修正这个服务端
+  状态所有权断点：live notification projection 在 `turn/started` 和 active item
+  通知中保留 `thread.activeTurnId`，`turn/completed` 清理它；当 summary 只有
+  `status=active` 时，active overlay provider 可以从 server-owned live projection
+  推断当前 active turn，再继续走原有 proof gate。缺 snapshot、assistant freshness
+  不足或 completed turn 仍然 fail-closed 到 full `thread/read`。
 
-该模块仍未单独部署，按新的节奏等待 Phase B 小切片凑成完整模块后统一部署和生产读回。
+这个 follow-up 仍是本地小切片，按新的节奏等待 active-detail 模块凑齐后统一部署和生产读回。
 它不是 UI 去重、不是强制刷新，也不是新的 fallback cache。
 
 ## 2026-06-26 Thread List Fallback Baseline Service

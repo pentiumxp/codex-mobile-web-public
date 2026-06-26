@@ -103,6 +103,61 @@ test("active overlay provider converts live projection snapshot into complete po
   assert.equal(plan.reason, "overlay-evidence-complete");
 });
 
+test("active overlay provider derives active turn from live projection when summary only says active", () => {
+  const projectionService = createThreadDetailProjectionV4Service({
+    cacheDir: "",
+    policyVersion: "test-v4",
+    maxTurns: 3,
+    now: (() => {
+      let current = 20000;
+      return () => {
+        current += 100;
+        return current;
+      };
+    })(),
+  });
+  projectionService.applyNotification("turn/started", {
+    threadId: "thread-1",
+    turn: { id: "turn-1", status: { type: "active" }, items: [] },
+  });
+  projectionService.applyNotification("item/started", {
+    threadId: "thread-1",
+    turnId: "turn-1",
+    item: { id: "cmd-1", type: "commandExecution", status: "running" },
+  });
+  projectionService.applyNotification("item/agentMessage/delta", {
+    threadId: "thread-1",
+    turnId: "turn-1",
+    itemId: "agent-1",
+    delta: "partial reply",
+  });
+  projectionService.applyNotification("item/completed", {
+    threadId: "thread-1",
+    turnId: "turn-1",
+    item: { id: "usage-1", type: "turnUsageSummary" },
+  });
+
+  const provider = createThreadDetailActiveOverlayProviderService({ projectionService });
+  const input = provider.resolveActiveWindowOverlay({
+    threadId: "thread-1",
+    summary: activeSummary({ activeTurnId: "" }),
+    projectionThread: projectionThread(),
+  });
+
+  assert.equal(input.activeTurnId, "turn-1");
+  assert.equal(input.overlaySource, "projection-live");
+  assert.equal(input.operationCoverage, "present");
+  assert.equal(input.uploadCoverage, "none");
+  assert.equal(input.receiptCoverage, "present");
+
+  const plan = planActiveWindowOverlay(Object.assign({}, input, {
+    summary: activeSummary({ activeTurnId: "" }),
+    projectionThread: projectionThread(),
+  }));
+  assert.equal(plan.action, "use-projection-overlay");
+  assert.equal(plan.reason, "overlay-evidence-complete");
+});
+
 test("active overlay provider fails closed when live snapshot is missing", () => {
   const projectionService = createThreadDetailProjectionV4Service({
     cacheDir: "",
