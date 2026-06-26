@@ -1769,6 +1769,9 @@ test("live detail refresh can patch changed visible items without replacing the 
   assert.doesNotMatch(functionBody("applyVisibleItemsOnlyRefreshPatch"), /for \(const operation of patchPlan\.operations\)/);
   assert.doesNotMatch(functionBody("applyVisibleItemsOnlyRefreshPatch"), /article\.insertBefore\(source, lastPatchedNode/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /threadDetailPatchPlanApi\.planThreadDetailRefreshDomPatch\(turnPatchEntries\)/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /threadDetailDomPatchApi\.applyThreadDetailPatchTransaction\(\{/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /applyPatch: \(\) => threadDetailDomPatchApi\.applyThreadTurnRefreshDomPatch\(\{/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /afterSuccess: \[/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /threadDetailDomPatchApi\.applyThreadTurnRefreshDomPatch/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /applyItemPatch:/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /insertTurnElement:/);

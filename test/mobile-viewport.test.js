@@ -440,7 +440,14 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /nextPatchShellSignature: conversationPatchShellSignature\(nextThread\)/);
   assert.doesNotMatch(functionBody("patchCurrentThreadDetailFromRefresh"), /state\.renderedConversationSignature !== previousConversationSignature/);
   assert.doesNotMatch(functionBody("patchCurrentThreadDetailFromRefresh"), /previousPatchShellSignature !== conversationPatchShellSignature\(nextThread\)/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /threadDetailDomPatchApi\.applyThreadDetailPatchTransaction\(\{/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /applyPatch: \(\) => threadDetailDomPatchApi\.applyThreadTurnRefreshDomPatch\(\{/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /afterSuccess: \[/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /name: "update-live-operation-dock"/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /updateLiveOperationDockHtml\(renderLiveOperationDock\(nextThread, previousKeys\)\)/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /name: "bind-current-thread-actions"[\s\S]*bindCurrentThreadActions\(\);/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /name: "complete-local-conversation-dom-update"[\s\S]*completeLocalConversationDomUpdate\(conversation, wasNearBottom, userReadingCurrentTurn\)/);
+  assert.doesNotMatch(functionBody("patchCurrentThreadDetailFromRefresh"), /updateLiveOperationDockHtml\(renderLiveOperationDock\(nextThread, previousKeys\)\);\s*const applyResult = threadDetailDomPatchApi\.applyThreadTurnRefreshDomPatch/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /patchNode\(article, source\);/);
   assert.match(functionBody("insertVisibleItemDom"), /if \(isOperationalItem\(item\)\) return updateLiveOperationDockForLocalPatch\(\);/);
   assert.match(functionBody("insertVisibleItemDom"), /article = insertTurnArticleDom\(turn, previousKeys\);/);

@@ -13826,35 +13826,56 @@ function patchCurrentThreadDetailFromRefresh(previousThread, nextThread, previou
   });
   const turnPatchPlan = threadDetailPatchPlanApi.planThreadDetailRefreshDomPatch(turnPatchEntries);
   if (!turnPatchPlan.canPatch) return rejectThreadDetailPatch(turnPatchPlan.reason || "turn-patch-plan-rejected");
-  updateLiveOperationDockHtml(renderLiveOperationDock(nextThread, previousKeys));
-  const applyResult = threadDetailDomPatchApi.applyThreadTurnRefreshDomPatch({
-    patchPlan: turnPatchPlan,
-    findTurnByKey: (key) => turnByKey.get(String(key || "")),
-    applyItemPatch: (turn, operation) => {
-      const patchPlan = itemPatchPlanByTurnKey.get(operation.key);
-      return applyVisibleItemsOnlyRefreshPatch(turn, patchPlan, previousKeys)
+  const applyResult = threadDetailDomPatchApi.applyThreadDetailPatchTransaction({
+    applyPatch: () => threadDetailDomPatchApi.applyThreadTurnRefreshDomPatch({
+      patchPlan: turnPatchPlan,
+      findTurnByKey: (key) => turnByKey.get(String(key || "")),
+      applyItemPatch: (turn, operation) => {
+        const patchPlan = itemPatchPlanByTurnKey.get(operation.key);
+        return applyVisibleItemsOnlyRefreshPatch(turn, patchPlan, previousKeys)
+          ? { ok: true }
+          : { ok: false, reason: "item-patch-failed" };
+      },
+      renderTurnElement: (turn) => threadDetailDomPatchApi.createTurnArticleElement({
+        document,
+        turn,
+        previousKeys,
+        renderTurnHtml: (candidate, keys) => renderTurn(candidate, keys),
+      }),
+      insertTurnElement: (source, turn) => insertTurnArticleElementDom(turn, source)
         ? { ok: true }
-        : { ok: false, reason: "item-patch-failed" };
-    },
-    renderTurnElement: (turn) => threadDetailDomPatchApi.createTurnArticleElement({
-      document,
-      turn,
-      previousKeys,
-      renderTurnHtml: (candidate, keys) => renderTurn(candidate, keys),
+        : { ok: false, reason: "insert-turn-failed" },
+      replaceTurnElement: (source, turn) => {
+        const article = turnArticleNode(turn);
+        if (!article) return { ok: false, reason: "replace-turn-missing-article" };
+        patchNode(article, source);
+        return { ok: true };
+      },
     }),
-    insertTurnElement: (source, turn) => insertTurnArticleElementDom(turn, source)
-      ? { ok: true }
-      : { ok: false, reason: "insert-turn-failed" },
-    replaceTurnElement: (source, turn) => {
-      const article = turnArticleNode(turn);
-      if (!article) return { ok: false, reason: "replace-turn-missing-article" };
-      patchNode(article, source);
-      return { ok: true };
-    },
+    afterSuccess: [
+      {
+        name: "update-live-operation-dock",
+        apply: () => {
+          updateLiveOperationDockHtml(renderLiveOperationDock(nextThread, previousKeys));
+          return { ok: true };
+        },
+      },
+      {
+        name: "bind-current-thread-actions",
+        apply: () => {
+          bindCurrentThreadActions();
+          return { ok: true };
+        },
+      },
+      {
+        name: "complete-local-conversation-dom-update",
+        apply: () => completeLocalConversationDomUpdate(conversation, wasNearBottom, userReadingCurrentTurn)
+          ? { ok: true }
+          : { ok: false, reason: "complete-dom-update-failed" },
+      },
+    ],
   });
   if (!applyResult.ok) return rejectThreadDetailPatch(applyResult.reason || "turn-patch-apply-failed");
-  bindCurrentThreadActions();
-  if (!completeLocalConversationDomUpdate(conversation, wasNearBottom, userReadingCurrentTurn)) return rejectThreadDetailPatch("complete-dom-update-failed");
   return acceptThreadDetailPatch("patched");
 }
 

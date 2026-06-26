@@ -889,6 +889,85 @@ test("turn dom patch returns bounded failure reasons", () => {
   }).reason, "invalid-turn-operation");
 });
 
+test("thread detail patch transaction runs success effects only after patch success", () => {
+  const calls = [];
+  const success = domPatch.applyThreadDetailPatchTransaction({
+    applyPatch: () => {
+      calls.push("patch");
+      return { ok: true, reason: "applied", patched: 2, inserted: 1 };
+    },
+    afterSuccess: [
+      {
+        name: "dock",
+        apply: () => {
+          calls.push("dock");
+          return { ok: true };
+        },
+      },
+      () => {
+        calls.push("bind");
+        return true;
+      },
+    ],
+  });
+
+  assert.deepEqual(success, {
+    ok: true,
+    reason: "transaction-applied",
+    reused: 0,
+    patched: 2,
+    inserted: 1,
+    effectsApplied: 2,
+  });
+  assert.deepEqual(calls, ["patch", "dock", "bind"]);
+
+  calls.length = 0;
+  const failed = domPatch.applyThreadDetailPatchTransaction({
+    applyPatch: () => {
+      calls.push("patch");
+      return { ok: false, reason: "item-patch-failed" };
+    },
+    afterSuccess: [
+      () => {
+        calls.push("dock");
+        return { ok: true };
+      },
+    ],
+  });
+  assert.equal(failed.ok, false);
+  assert.equal(failed.reason, "item-patch-failed");
+  assert.equal(failed.effectsApplied, 0);
+  assert.deepEqual(calls, ["patch"]);
+});
+
+test("thread detail patch transaction reports bounded effect failures", () => {
+  assert.equal(domPatch.applyThreadDetailPatchTransaction({}).reason, "missing-apply-patch");
+  assert.equal(domPatch.applyThreadDetailPatchTransaction({
+    applyPatch: () => ({ ok: true }),
+    afterSuccess: [null],
+  }).reason, "invalid-transaction-effect");
+  assert.equal(domPatch.applyThreadDetailPatchTransaction({
+    applyPatch: () => ({ ok: true }),
+    afterSuccess: [
+      {
+        name: "complete",
+        apply: () => ({ ok: false, reason: "complete-dom-update-failed" }),
+      },
+    ],
+  }).reason, "complete-dom-update-failed");
+  assert.equal(domPatch.applyThreadDetailPatchTransaction({
+    applyPatch: () => ({ ok: true }),
+    afterSuccess: [
+      {
+        name: "dock",
+        apply: () => {
+          throw new Error("boom");
+        },
+      },
+    ],
+  }).reason, "dock-threw");
+});
+
 test("turn article insertion anchors after the nearest rendered previous turn", () => {
   const turnA = { id: "a" };
   const turnB = { id: "b" };

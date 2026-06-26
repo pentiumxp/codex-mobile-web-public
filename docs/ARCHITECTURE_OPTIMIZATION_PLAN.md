@@ -188,6 +188,12 @@ The local DOM patch executor now returns a structured `{ ok, reason }` result
 directly to the patch-attempt executor, so refresh rejection reasons no longer
 move through transient global app state before telemetry and diagnostics read
 them.
+Local DOM patch transaction ordering now also lives in
+`public/thread-detail-dom-patch.js`. `applyThreadDetailPatchTransaction` runs
+the core turn DOM patch first and only executes success effects such as
+operation-dock refresh, action rebinding, and local DOM completion after the
+core patch succeeds. This prevents failed turn patches from updating
+operation-dock state while leaving conversation DOM on the old signature.
 Refresh outcome execution planning now also lives in the same helper module:
 `planThreadDetailRefreshOutcomeExecution` maps render outcomes to metadata
 update mode, full-render execution, and projection-consistency phase. This

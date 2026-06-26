@@ -501,6 +501,57 @@
     return result(true, "applied", counts);
   }
 
+  function resultCounts(source = {}) {
+    const counts = {};
+    for (const key of ["reused", "patched", "inserted", "itemPatched", "replaced"]) {
+      if (Number.isFinite(Number(source[key]))) counts[key] = Number(source[key]);
+    }
+    return counts;
+  }
+
+  function normalizeTransactionEffect(effect, index) {
+    if (typeof effect === "function") {
+      return { name: `effect-${index}`, apply: effect };
+    }
+    if (effect && typeof effect === "object" && typeof effect.apply === "function") {
+      return {
+        name: String(effect.name || `effect-${index}`),
+        apply: effect.apply,
+      };
+    }
+    return null;
+  }
+
+  function applyThreadDetailPatchTransaction(input = {}) {
+    const applyPatch = typeof input.applyPatch === "function" ? input.applyPatch : null;
+    if (!applyPatch) return result(false, "missing-apply-patch", { effectsApplied: 0 });
+    let patchResult = null;
+    try {
+      patchResult = applyPatch();
+    } catch (_) {
+      return result(false, "apply-patch-threw", { effectsApplied: 0 });
+    }
+    const counts = Object.assign({ effectsApplied: 0 }, resultCounts(patchResult));
+    if (!callbackOk(patchResult)) return result(false, callbackReason(patchResult, "patch-failed"), counts);
+
+    const effects = Array.isArray(input.afterSuccess) ? input.afterSuccess : [];
+    for (let index = 0; index < effects.length; index += 1) {
+      const effect = normalizeTransactionEffect(effects[index], index);
+      if (!effect) return result(false, "invalid-transaction-effect", counts);
+      let effectResult = null;
+      try {
+        effectResult = effect.apply(patchResult);
+      } catch (_) {
+        return result(false, `${effect.name || "effect"}-threw`, counts);
+      }
+      if (!callbackOk(effectResult)) {
+        return result(false, callbackReason(effectResult, `${effect.name || "effect"}-failed`), counts);
+      }
+      counts.effectsApplied += 1;
+    }
+    return result(true, "transaction-applied", counts);
+  }
+
   function applyLiveTextItemDomPatch(input = {}) {
     const root = input.root || input.conversation || null;
     if (!root || typeof root.querySelector !== "function") return result(false, "missing-root");
@@ -538,6 +589,7 @@
 
   return {
     applyLiveTextItemDomPatch,
+    applyThreadDetailPatchTransaction,
     applyThreadTurnRefreshDomPatch,
     applyVisibleItemRefreshDomPatch,
     canPatchNode,
