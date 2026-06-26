@@ -43,10 +43,38 @@ git diff --check
 结果：focused `124` passed；`npm test` `1199` passed；`check`、`check:macos`、
 `git diff --check` passed。
 
-部署后需要用 `scripts/codex-mobile-phase-b-readback-smoke.js` 读回
-`clientBuildId=0.1.11|codex-mobile-shell-v536`、`shellCacheName=codex-mobile-shell-v536`，
-并观察 `appServerRpcMs`、filter fields、`appServerMeasuredMs`、
-`appServerUnattributedMs` 和 decision owner。
+已通过 Home AI 中央 macOS 插件部署脚本部署，source ref `f9d262d0e1ae`，reason
+`codex-mobile-phase-b-app-server-attribution-v536`，backup path：
+`/Users/hermes-host/HermesMobile/backups/deploy/20260626T235211Z-plugin-codex-mobile-web-codex-mobile-phase-b-app-server-attribution-v536`。
+
+生产读回：
+
+- `/api/public-config` 返回 `clientBuildId=0.1.11|codex-mobile-shell-v536`、
+  `shellCacheName=codex-mobile-shell-v536`。
+- 一般 Phase B readback：
+  `threadListFallbackPrewarm.completed=true`；
+  thread-list 为 `fallback-source-snapshot` / `source-snapshot-hit`；
+  `appServerRequestLimit=80`；
+  `appServerMs=1939`，`appServerRpcMs=1853`，
+  `appServerVisibleFilterMs=86`，`appServerMeasuredMs=1939`，
+  `appServerUnattributedMs=0`；
+  decision=`needs_repair`，owner=`app-server-thread-list-rpc`。
+- 当前 Codex Mobile 线程 targeted readback：
+  thread-list 为 `warm-fallback-cache` / `cache-hit`；
+  `appServerMs=92`，`appServerRpcMs=8`，
+  `appServerVisibleFilterMs=84`，`appServerMeasuredMs=92`，
+  `appServerUnattributedMs=0`；
+  detail=`projection-active-overlay`，active overlay gate=`ready`；
+  decision=`ready`。
+- Source/prod short SHA-256 readback matched for `public/app.js`,
+  `public/sw.js`, `server.js`,
+  `adapters/thread-list-app-server-fetch-policy-service.js`,
+  `adapters/phase-b-readback-decision-service.js`, and
+  `scripts/codex-mobile-phase-b-readback-smoke.js`.
+
+生产观察：这次模块把剩余慢点从泛化 `appServerMs` 收窄到 RPC 路径。下一步不应继续改
+fallback/prewarm，也不应先优化本地 filter；应检查 Codex app-server/mux 的
+`thread/list` RPC 延迟来源。
 
 ## 2026-06-27 Phase B App-Server List Residual Attribution Slice
 

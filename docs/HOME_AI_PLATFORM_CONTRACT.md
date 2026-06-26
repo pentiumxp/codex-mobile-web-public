@@ -228,31 +228,45 @@ Minimum closure for Codex Mobile production changes:
   `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
 - LaunchDaemon: `system/com.hermesmobile.plugin.codex-mobile`.
 - Loopback production URL: `http://127.0.0.1:8787`.
-- Current verified shell after the Phase B thread-list fallback prewarm module:
-  `0.1.11|codex-mobile-shell-v534`.
+- Current verified shell after the Phase B app-server list attribution module:
+  `0.1.11|codex-mobile-shell-v536`.
 - Source ref deployed for runtime/static change:
-  `07b78c1372b1` with clean source worktree at deploy time.
+  `f9d262d0e1ae` with clean source worktree at deploy time.
 - Backup path:
-  `/Users/hermes-host/HermesMobile/backups/deploy/20260626T225522Z-plugin-codex-mobile-web-codex-mobile-phase-b-prewarm-v534`.
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260626T235211Z-plugin-codex-mobile-web-codex-mobile-phase-b-app-server-attribution-v536`.
 - Production smoke confirmed `/api/public-config` reports
-  `clientBuildId=0.1.11|codex-mobile-shell-v534`,
-  `shellCacheName=codex-mobile-shell-v534`, `version=0.1.11`, and
+  `clientBuildId=0.1.11|codex-mobile-shell-v536`,
+  `shellCacheName=codex-mobile-shell-v536`, `version=0.1.11`, and
   `authRequired=true`.
-- Bounded Phase B readback confirmed `threadListFallbackPrewarm.completed=true`;
-  the ordinary first thread-list sample hit `warm-fallback-cache` / `cache-hit`,
-  and the targeted current-thread sample reused `fallback-source-snapshot`
-  instead of scanning rollout source. The targeted detail sample used
-  `projection-active-overlay` with active overlay gate `ready`.
+- Bounded Phase B readback confirmed `threadListFallbackPrewarm.completed=true`.
+  The general sample used `fallback-source-snapshot` /
+  `source-snapshot-hit`, bounded the app-server request to 80 rows, and
+  classified the remaining thread-list latency as
+  `app-server-thread-list-rpc` with `appServerMs=1939`,
+  `appServerRpcMs=1853`, `appServerVisibleFilterMs=86`,
+  `appServerMeasuredMs=1939`, and `appServerUnattributedMs=0`.
+- Targeted current-thread readback used `warm-fallback-cache` / `cache-hit`;
+  detail used `projection-active-overlay` with active overlay gate `ready`, and
+  the Phase B decision was `ready`.
 - Validation before deploy:
-  focused Phase B/static shell tests passed (`120` tests), `npm test` passed
-  (`1187` tests), `npm run check` passed, `npm run check:macos` passed, and
+  focused Phase B/static shell tests passed (`124` tests), `npm test` passed
+  (`1199` tests), `npm run check` passed, `npm run check:macos` passed, and
   `git diff --check` passed.
 - Deployment validation also ran the central production file-hash, LaunchDaemon,
   public-config, and non-strict auth-profile audit checks. The auth-profile
   audit remained non-blocking with zero blocking issues.
+- Source/prod short SHA-256 readback matched for `public/app.js`,
+  `public/sw.js`, `server.js`,
+  `adapters/thread-list-app-server-fetch-policy-service.js`,
+  `adapters/phase-b-readback-decision-service.js`, and
+  `scripts/codex-mobile-phase-b-readback-smoke.js`.
+- The earlier 2026-06-27 `codex-mobile-shell-v535` list-refresh evidence is
+  historical after this v536 app-server attribution deployment.
+- The earlier 2026-06-27 `codex-mobile-shell-v534` prewarm evidence is
+  historical after this v536 app-server attribution deployment.
 - The earlier 2026-06-25 `codex-mobile-shell-v437` tile-title menu and
-  Composer placeholder evidence is historical after this v534 Phase B
-  deployment.
+  Composer placeholder evidence is historical after this v536 app-server
+  attribution deployment.
 - The earlier 2026-06-25 `codex-mobile-shell-v434` tile-mode Composer
   placeholder evidence is historical after the v435 thread-detail merge
   deployment.

@@ -19280,3 +19280,54 @@ The previous full handoff was archived and should be opened only when old proven
     preferably both general and targeted current-thread readback, and record
     `appServerRpcMs`, filter timings, `appServerMeasuredMs`,
     `appServerUnattributedMs`, and the decision owner.
+
+## 2026-06-27 - Phase B v536 app-server attribution module deployed/read back
+
+- Current production state:
+  - Deployed local source ref `f9d262d0e1ae` through the Home AI central macOS
+    plugin deploy script with reason
+    `codex-mobile-phase-b-app-server-attribution-v536`.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T235211Z-plugin-codex-mobile-web-codex-mobile-phase-b-app-server-attribution-v536`.
+  - Production `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v536` and
+    `shellCacheName=codex-mobile-shell-v536`.
+- Validation before deploy:
+  - Focused Phase B/static shell tests passed (`124` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `npm test` passed (`1199` tests).
+  - `git diff --check` passed.
+- Deployment validation:
+  - Central deploy returned `ok=true`.
+  - LaunchDaemon check reported `system/com.hermesmobile.plugin.codex-mobile`
+    running.
+  - Public-config health check passed.
+  - Non-strict auth-profile audit had zero blocking issues.
+  - Source/prod short SHA-256 readback matched for:
+    `public/app.js`, `public/sw.js`, `server.js`,
+    `adapters/thread-list-app-server-fetch-policy-service.js`,
+    `adapters/phase-b-readback-decision-service.js`, and
+    `scripts/codex-mobile-phase-b-readback-smoke.js`.
+- Readback:
+  - General Phase B readback:
+    `threadListFallbackPrewarm.completed=true`;
+    thread-list `coldPathOwner=fallback-source-snapshot`,
+    `coldPathReason=source-snapshot-hit`, `appServerRequestLimit=80`,
+    `appServerMs=1939`, `appServerRpcMs=1853`,
+    `appServerVisibleFilterMs=86`, `appServerMeasuredMs=1939`,
+    `appServerUnattributedMs=0`; decision
+    `needs_repair/app-server-thread-list-rpc`.
+  - Targeted current Codex Mobile thread readback:
+    thread-list `warm-fallback-cache/cache-hit`, `appServerMs=92`,
+    `appServerRpcMs=8`, `appServerVisibleFilterMs=84`,
+    `appServerMeasuredMs=92`, `appServerUnattributedMs=0`; detail
+    `projection-active-overlay` with active overlay gate `ready`; decision
+    `ready`.
+- Production observation / next root-cause owner:
+  - v536 proves the long ordinary list refresh sample is dominated by
+    app-server/mux RPC, not fallback/prewarm, local visible filtering, workspace
+    filtering, or unattributed Mobile server time.
+  - Next Phase B work should investigate Codex app-server `thread/list` /
+    mux/RPC latency and decide whether the fix belongs in request cadence,
+    mux transport, app-server list payload size, or app-server-side filtering.

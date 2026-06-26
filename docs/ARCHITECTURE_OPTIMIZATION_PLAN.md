@@ -277,7 +277,10 @@ Current acceleration targets:
    remainder dominates, readback now routes to
    `thread-list-app-server-attribution` / `split-thread-list-app-server-residual-timing`
    rather than guessing a runtime owner. These app-server attribution slices
-   are now prepared as `codex-mobile-shell-v536` for a module deploy/readback.
+   deployed as `codex-mobile-shell-v536`. Production readback showed
+   `appServerMs=1939` with `appServerRpcMs=1853`, local filter timing at 86ms,
+   and `appServerUnattributedMs=0`, so the next Phase B owner is
+   `app-server-thread-list-rpc`, not fallback/prewarm or local filtering.
    Earlier local
    fallback attribution slices also made baseline source work explicit:
    fallback baseline source reads now
