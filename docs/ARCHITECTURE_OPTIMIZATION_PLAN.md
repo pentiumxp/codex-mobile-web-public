@@ -199,6 +199,11 @@ the refresh path. The snapshot captures single-thread completion, render
 signature, patch-shell signature, and scroll-follow policy before the turn DOM
 patch is applied, so completion no longer has to re-probe tile/single surface or
 re-read scroll policy after the DOM mutation.
+Patch-attempt result aggregation now also lives in the render-plan helper:
+the helper provides the empty attempt state, effect-context derivation, and
+tile/local attempt reducer while app code only performs the real DOM patch
+effect. This keeps tile/local timing, success flags, and rejection reason
+ownership out of the refresh orchestration body.
 Refresh outcome execution planning now also lives in the same helper module:
 `planThreadDetailRefreshOutcomeExecution` maps render outcomes to metadata
 update mode, full-render execution, and projection-consistency phase. This

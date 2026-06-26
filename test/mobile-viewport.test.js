@@ -357,6 +357,11 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.doesNotMatch(functionBody("refreshCurrentThread"), /if \(shouldRenderDetail && !tilePanePatchedDetail && patchExecutionPlan\.tryLocalPatch\)/);
   assert.doesNotMatch(functionBody("refreshCurrentThread"), /renderPlan\.canPatch && !tileSurfaceRefresh/);
   assert.match(appJs, /function applyThreadDetailRefreshPatchAttemptEffectsPlan\(plan, context = \{\}\)/);
+  assert.match(functionBody("applyThreadDetailRefreshPatchAttemptEffectsPlan"), /let result = threadDetailRenderPlanApi\.emptyThreadDetailRefreshPatchAttempt\(\);/);
+  assert.match(functionBody("applyThreadDetailRefreshPatchAttemptEffectsPlan"), /threadDetailRenderPlanApi\.threadDetailRefreshPatchAttemptEffectContext\(context, result\)/);
+  assert.match(functionBody("applyThreadDetailRefreshPatchAttemptEffectsPlan"), /threadDetailRenderPlanApi\.reduceThreadDetailRefreshPatchAttempt\(result, attempt\)/);
+  assert.doesNotMatch(functionBody("applyThreadDetailRefreshPatchAttemptEffectsPlan"), /tilePanePatchMs \+=/);
+  assert.doesNotMatch(functionBody("applyThreadDetailRefreshPatchAttemptEffectsPlan"), /localPatchMs \+=/);
   assert.match(functionBody("applyThreadDetailRefreshPatchAttemptEffect"), /patchCurrentThreadTilePaneFromState\(\{[\s\S]*threadId: context\.threadId,[\s\S]*preserveScroll: item\.preserveScroll !== false,/);
   assert.match(functionBody("applyThreadDetailRefreshPatchAttemptEffect"), /patchCurrentThreadDetailFromRefresh\([\s\S]*context\.previousThread,[\s\S]*state\.currentThread,[\s\S]*context\.previousConversationSignature,/);
   assert.match(functionBody("applyThreadDetailRefreshPatchAttemptEffect"), /const patchResult = patchCurrentThreadDetailFromRefresh\(/);

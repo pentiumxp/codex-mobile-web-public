@@ -340,6 +340,67 @@ test("thread detail refresh patch attempt effects plan omits local patch for met
   });
 });
 
+test("thread detail refresh patch attempt aggregation starts from a bounded empty result", () => {
+  assert.deepEqual(renderPlan.emptyThreadDetailRefreshPatchAttempt(), {
+    tilePanePatchAttempted: false,
+    tilePanePatchedDetail: false,
+    localPatchAttempted: false,
+    locallyPatchedDetail: false,
+    tilePanePatchMs: 0,
+    localPatchMs: 0,
+    patchRejectReason: "",
+  });
+});
+
+test("thread detail refresh patch attempt context exposes prior tile success only", () => {
+  assert.deepEqual(renderPlan.threadDetailRefreshPatchAttemptEffectContext({
+    threadId: "thread-1",
+    previousConversationSignature: "sig-a",
+  }, {
+    tilePanePatchedDetail: true,
+    patchRejectReason: "ignored",
+  }), {
+    threadId: "thread-1",
+    previousConversationSignature: "sig-a",
+    tilePanePatchedDetail: true,
+  });
+});
+
+test("thread detail refresh patch attempt aggregation accumulates attempt timing and status", () => {
+  const afterTile = renderPlan.reduceThreadDetailRefreshPatchAttempt(
+    renderPlan.emptyThreadDetailRefreshPatchAttempt(),
+    {
+      tilePanePatchAttempted: true,
+      tilePanePatchedDetail: false,
+      tilePanePatchMs: 3.5,
+    },
+  );
+  assert.deepEqual(afterTile, {
+    tilePanePatchAttempted: true,
+    tilePanePatchedDetail: false,
+    localPatchAttempted: false,
+    locallyPatchedDetail: false,
+    tilePanePatchMs: 3.5,
+    localPatchMs: 0,
+    patchRejectReason: "",
+  });
+
+  assert.deepEqual(renderPlan.reduceThreadDetailRefreshPatchAttempt(afterTile, {
+    localPatchAttempted: true,
+    locallyPatchedDetail: false,
+    localPatchMs: 4.25,
+    patchRejectReason: "rendered-dom-stale",
+  }), {
+    tilePanePatchAttempted: true,
+    tilePanePatchedDetail: false,
+    localPatchAttempted: true,
+    locallyPatchedDetail: false,
+    tilePanePatchMs: 3.5,
+    localPatchMs: 4.25,
+    patchRejectReason: "rendered-dom-stale",
+  });
+});
+
 test("thread detail refresh patch attempt result makes tile pane patch terminal", () => {
   assert.deepEqual(renderPlan.planThreadDetailRefreshPatchAttemptResult({
     shouldRenderDetail: true,

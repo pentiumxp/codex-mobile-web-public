@@ -222,6 +222,46 @@
     };
   }
 
+  function emptyThreadDetailRefreshPatchAttempt() {
+    return {
+      tilePanePatchAttempted: false,
+      tilePanePatchedDetail: false,
+      localPatchAttempted: false,
+      locallyPatchedDetail: false,
+      tilePanePatchMs: 0,
+      localPatchMs: 0,
+      patchRejectReason: "",
+    };
+  }
+
+  function threadDetailRefreshPatchAttemptEffectContext(context = {}, aggregate = {}) {
+    return Object.assign({}, objectOrEmpty(context), {
+      tilePanePatchedDetail: Boolean(aggregate && aggregate.tilePanePatchedDetail),
+    });
+  }
+
+  function reduceThreadDetailRefreshPatchAttempt(aggregate = {}, attempt = {}) {
+    const result = Object.assign(
+      emptyThreadDetailRefreshPatchAttempt(),
+      objectOrEmpty(aggregate),
+    );
+    const patchAttempt = objectOrEmpty(attempt);
+    if (patchAttempt.tilePanePatchAttempted) {
+      result.tilePanePatchAttempted = true;
+      result.tilePanePatchedDetail = Boolean(patchAttempt.tilePanePatchedDetail);
+      result.tilePanePatchMs = normalizedDurationMs(result.tilePanePatchMs)
+        + normalizedDurationMs(patchAttempt.tilePanePatchMs);
+    }
+    if (patchAttempt.localPatchAttempted) {
+      result.localPatchAttempted = true;
+      result.locallyPatchedDetail = Boolean(patchAttempt.locallyPatchedDetail);
+      result.localPatchMs = normalizedDurationMs(result.localPatchMs)
+        + normalizedDurationMs(patchAttempt.localPatchMs);
+      result.patchRejectReason = compactReason(patchAttempt.patchRejectReason, "");
+    }
+    return result;
+  }
+
   function planThreadDetailRefreshPatchAttemptResult(input = {}) {
     const shouldRenderDetail = Boolean(input.shouldRenderDetail);
     const tilePanePatchAttempted = Boolean(input.tilePanePatchAttempted);
@@ -554,6 +594,7 @@
   }
 
   return {
+    emptyThreadDetailRefreshPatchAttempt,
     finalizeThreadDetailRenderPlan,
     normalizeSignature,
     planThreadDetailRefreshCompletionEffects,
@@ -569,5 +610,7 @@
     planSingleThreadFullRenderShell,
     planThreadDetailRefreshPatchExecution,
     planThreadDetailRefreshRender,
+    reduceThreadDetailRefreshPatchAttempt,
+    threadDetailRefreshPatchAttemptEffectContext,
   };
 }));

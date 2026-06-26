@@ -9125,31 +9125,11 @@ function applyThreadDetailRefreshPatchAttemptEffect(effect, context) {
 
 function applyThreadDetailRefreshPatchAttemptEffectsPlan(plan, context = {}) {
   const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
-  const result = {
-    tilePanePatchAttempted: false,
-    tilePanePatchedDetail: false,
-    localPatchAttempted: false,
-    locallyPatchedDetail: false,
-    tilePanePatchMs: 0,
-    localPatchMs: 0,
-    patchRejectReason: "",
-  };
+  let result = threadDetailRenderPlanApi.emptyThreadDetailRefreshPatchAttempt();
   for (const effect of effects) {
-    const attempt = applyThreadDetailRefreshPatchAttemptEffect(effect, {
-      ...context,
-      tilePanePatchedDetail: result.tilePanePatchedDetail,
-    });
-    if (attempt.tilePanePatchAttempted) {
-      result.tilePanePatchAttempted = true;
-      result.tilePanePatchedDetail = Boolean(attempt.tilePanePatchedDetail);
-      result.tilePanePatchMs += Number(attempt.tilePanePatchMs || 0);
-    }
-    if (attempt.localPatchAttempted) {
-      result.localPatchAttempted = true;
-      result.locallyPatchedDetail = Boolean(attempt.locallyPatchedDetail);
-      result.localPatchMs += Number(attempt.localPatchMs || 0);
-      result.patchRejectReason = attempt.patchRejectReason || "";
-    }
+    const attemptContext = threadDetailRenderPlanApi.threadDetailRefreshPatchAttemptEffectContext(context, result);
+    const attempt = applyThreadDetailRefreshPatchAttemptEffect(effect, attemptContext);
+    result = threadDetailRenderPlanApi.reduceThreadDetailRefreshPatchAttempt(result, attempt);
   }
   return result;
 }
