@@ -16,6 +16,28 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v528 Missing DOM Turn Diagnostic Coverage
+
+v528 补上 v527 之后的诊断闭环缺口：如果当前线程状态已经有可见 turn，但真实 DOM 里
+`article.turn[data-turn]` 数量为 0，之前的 turn-order 诊断会因为 `domIds.length === 0`
+直接返回 `null`，导致“页面一个 turn 都看不见”这种状态不一定进入 Home AI 的
+`conversation_projection_mismatch` 诊断链路。
+
+本次修复：
+
+- `public/thread-diagnostic-events.js` 新增 `turnOrderDiagnosticSnapshot()`，把 expected turn
+  ids 与 DOM turn ids 的对比从 `public/app.js` 移到可测试 helper。
+- expected 非空而 DOM 为空现在会形成明确的 `turn_order_mismatch`，并记录 bounded
+  `missing_dom_turn_count`、`order_mismatch_count` 和 `latest_mismatch_count`。
+- `public/app.js` 只收集当前线程 expected ids、DOM ids 和安全 hash，然后委托 helper
+  生成诊断 snapshot；不记录消息正文、任务卡正文、上传内容、私有路径、cookies、tokens
+  或长日志。
+
+这仍然只走 Home AI Owner-gated diagnostic report，不自动派修复卡，也不改变页面渲染或
+刷新行为。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v528`。
+
 ## 2026-06-26 v527 Conversation DOM Authority Guard
 
 v527 继续修复 Music 线程显示 `No visible turns.` 的同一条根因链。生产读回和本地

@@ -335,6 +335,17 @@ state has visible turns but the DOM has zero turn articles, the helper returns
 diagnostics record `stable_signature_dom_empty` /
 `conversation_dom_authority_invalidated`.
 
+`codex-mobile-shell-v528` closes the diagnostic side of that same failure
+class. Turn-order diagnostics used to treat an empty DOM turn-id list as
+insufficient evidence and returned `null`, even when the current thread state
+had visible turns. That made the exact user-visible state "no turns can be
+seen" less likely to reach Home AI's Owner-gated diagnostic remediation loop.
+`public/thread-diagnostic-events.js` now owns
+`turnOrderDiagnosticSnapshot()`: expected turn ids and DOM turn ids are compared
+in the helper, and expected-nonempty / DOM-empty surfaces become bounded
+`turn_order_mismatch` evidence with `missing_dom_turn_count`. `public/app.js`
+only supplies expected ids, DOM ids, and safe thread/turn hashes.
+
 The first slices extract item visible-field merge policy,
 visible-text render identity / completed-receipt retention, local-only item
 retention/drop policy, and live-to-completed same-turn visible-item preservation

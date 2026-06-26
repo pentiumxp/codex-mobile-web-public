@@ -64,6 +64,8 @@
     if (orderMismatchCount) out.order_mismatch_count = orderMismatchCount;
     const latestMismatchCount = boundedCount(source.latest_mismatch_count || source.latestMismatchCount);
     if (latestMismatchCount) out.latest_mismatch_count = latestMismatchCount;
+    const missingDomTurnCount = boundedCount(source.missing_dom_turn_count || source.missingDomTurnCount);
+    if (missingDomTurnCount) out.missing_dom_turn_count = missingDomTurnCount;
     return out;
   }
 
@@ -163,6 +165,51 @@
     });
   }
 
+  function turnOrderDiagnosticSnapshot(input = {}, deps = {}) {
+    const source = input && typeof input === "object" ? input : {};
+    const expectedIds = Array.isArray(source.expectedTurnIds)
+      ? source.expectedTurnIds.map((id) => String(id || "")).filter(Boolean)
+      : [];
+    const domIds = Array.isArray(source.domTurnIds)
+      ? source.domTurnIds.map((id) => String(id || "")).filter(Boolean)
+      : [];
+    if (!expectedIds.length) return null;
+    const comparableCount = Math.min(expectedIds.length, domIds.length);
+    let orderMismatchCount = Math.abs(expectedIds.length - domIds.length);
+    for (let index = 0; index < comparableCount; index += 1) {
+      if (expectedIds[index] !== domIds[index]) orderMismatchCount += 1;
+    }
+    const expectedLatestId = expectedIds[expectedIds.length - 1] || "";
+    const domLatestId = domIds[domIds.length - 1] || "";
+    const latestMismatch = Boolean(
+      expectedLatestId
+      && (!domLatestId || expectedLatestId !== domLatestId)
+    );
+    const turnHash = compactToken(
+      source.turnHash || (typeof deps.turnHash === "function" ? deps.turnHash(expectedLatestId) : ""),
+      "",
+      80,
+    );
+    return projectionDiagnosticSnapshot({
+      context: {
+        surface: "conversation-render",
+        action: source.source || source.action,
+        read_mode: source.readMode || source.read_mode,
+        render_mode: source.renderMode || source.render_mode,
+        thread_hash: source.threadHash || source.thread_hash,
+        turn_hash: turnHash,
+      },
+      counts: {
+        dom_count: domIds.length,
+        visible_count: expectedIds.length,
+        turn_count: expectedIds.length,
+        order_mismatch_count: orderMismatchCount,
+        latest_mismatch_count: latestMismatch ? 1 : 0,
+        missing_dom_turn_count: !domIds.length ? expectedIds.length : 0,
+      },
+    });
+  }
+
   function hasRenderSignatureMismatch(snapshot) {
     const normalized = projectionDiagnosticSnapshot(snapshot);
     return Boolean(normalized.renderedSignature && normalized.renderedSignature !== normalized.currentSignature);
@@ -174,7 +221,9 @@
 
   function hasTurnOrderMismatch(snapshot) {
     const counts = projectionDiagnosticSnapshot(snapshot).counts;
-    return counts.order_mismatch_count > 0 || counts.latest_mismatch_count > 0;
+    return counts.order_mismatch_count > 0
+      || counts.latest_mismatch_count > 0
+      || counts.missing_dom_turn_count > 0;
   }
 
   function renderSignatureMismatchDiagnosticEvent(snapshot = {}) {
@@ -269,6 +318,7 @@
           turn_hash: context.turn_hash || "",
           order_mismatch_count: counts.order_mismatch_count || 0,
           latest_mismatch_count: counts.latest_mismatch_count || 0,
+          missing_dom_turn_count: counts.missing_dom_turn_count || 0,
         },
       }],
     };
@@ -762,6 +812,7 @@
     threadDetailResponseContractDiagnosticSuccess,
     threadDetailSlowPathDiagnosticEvent,
     threadDetailSlowPathDiagnosticSuccess,
+    turnOrderDiagnosticSnapshot,
     threadDetailRefreshFailedDiagnosticEvent,
     turnOrderMismatchDiagnosticEvent,
     turnOrderMismatchDiagnosticSuccess,

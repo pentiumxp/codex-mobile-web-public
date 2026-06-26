@@ -516,7 +516,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v527";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v528";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -6950,32 +6950,16 @@ function conversationTurnOrderDiagnosticSnapshot(source, extra = {}, deps = {}) 
   if (tileMode || tileDomActive) return null;
   const expectedIds = Array.isArray(deps.expectedTurnIds) ? deps.expectedTurnIds.map(String).filter(Boolean) : visibleRenderableTurnIds(thread);
   const domIds = Array.isArray(deps.domTurnIds) ? deps.domTurnIds.map(String).filter(Boolean) : conversationDomTurnIds(conversation);
-  if (!expectedIds.length || !domIds.length) return null;
-  const comparableCount = Math.min(expectedIds.length, domIds.length);
-  let orderMismatchCount = Math.abs(expectedIds.length - domIds.length);
-  for (let index = 0; index < comparableCount; index += 1) {
-    if (expectedIds[index] !== domIds[index]) orderMismatchCount += 1;
-  }
   const expectedLatestId = expectedIds[expectedIds.length - 1] || "";
-  const domLatestId = domIds[domIds.length - 1] || "";
-  const latestMismatch = Boolean(expectedLatestId && domLatestId && expectedLatestId !== domLatestId);
-  return {
-    context: {
-      surface: "conversation-render",
-      action: source,
-      read_mode: thread.mobileReadMode || "",
-      render_mode: extra.renderMode || "",
-      thread_hash: diagnosticThreadHash(thread.id || state.currentThreadId),
-      turn_hash: diagnosticTurnHash(expectedLatestId),
-    },
-    counts: {
-      dom_count: domIds.length,
-      visible_count: expectedIds.length,
-      turn_count: expectedIds.length,
-      order_mismatch_count: orderMismatchCount,
-      latest_mismatch_count: latestMismatch ? 1 : 0,
-    },
-  };
+  return threadDiagnosticEventsApi.turnOrderDiagnosticSnapshot({
+    source,
+    readMode: thread.mobileReadMode || "",
+    renderMode: extra.renderMode || "",
+    threadHash: diagnosticThreadHash(thread.id || state.currentThreadId),
+    turnHash: diagnosticTurnHash(expectedLatestId),
+    expectedTurnIds: expectedIds,
+    domTurnIds: domIds,
+  });
 }
 
 function conversationProjectionDiagnosticSnapshot(source, extra = {}, deps = {}) {

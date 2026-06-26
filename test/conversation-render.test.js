@@ -2986,6 +2986,16 @@ test("conversation projection consistency delegates report payloads to diagnosti
   assert.match(appJs, /const threadDiagnosticEventsApi = window\.CodexThreadDiagnosticEvents;/);
 });
 
+test("conversation turn-order diagnostics delegate empty DOM mismatch planning to helper", () => {
+  const body = functionBody("conversationTurnOrderDiagnosticSnapshot");
+  assert.match(body, /threadDiagnosticEventsApi\.turnOrderDiagnosticSnapshot\(\{/);
+  assert.match(body, /expectedTurnIds: expectedIds/);
+  assert.match(body, /domTurnIds: domIds/);
+  assert.match(body, /turnHash: diagnosticTurnHash\(expectedLatestId\)/);
+  assert.doesNotMatch(body, /!domIds\.length\) return null/);
+  assert.doesNotMatch(body, /orderMismatchCount = Math\.abs/);
+});
+
 test("primary shell selection conflicts are diagnosed instead of silently clearing thread detail", () => {
   assert.match(appJs, /lastThreadDetailRenderEvidence: null/);
   assert.match(appJs, /const PRIMARY_SHELL_CONFLICT_EVIDENCE_MS = 30000/);

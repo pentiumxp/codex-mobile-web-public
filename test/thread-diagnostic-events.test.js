@@ -254,6 +254,7 @@ test("thread diagnostic events build turn-order mismatch payloads and success in
     turn_hash: "turn_hash_with_spaces",
     order_mismatch_count: 2,
     latest_mismatch_count: 1,
+    missing_dom_turn_count: 0,
   });
   assert.deepEqual(diagnostics.turnOrderMismatchDiagnosticSuccess(snapshot), {
     category: "conversation_projection_mismatch",
@@ -262,6 +263,45 @@ test("thread diagnostic events build turn-order mismatch payloads and success in
     context: event.context,
   });
   assert.equal(JSON.stringify(event).includes("private"), false);
+});
+
+test("thread diagnostic events treat missing DOM turns as turn-order mismatch evidence", () => {
+  const snapshot = diagnostics.turnOrderDiagnosticSnapshot({
+    source: "first-paint",
+    readMode: "projection-v4-dynamic",
+    renderMode: "first-paint",
+    threadHash: "thread/hash with spaces",
+    expectedTurnIds: ["turn-a", "turn-b", "turn-private"],
+    domTurnIds: [],
+    body: "private body ignored",
+  }, {
+    turnHash: () => "h_latest",
+  });
+  assert.ok(snapshot);
+  assert.equal(diagnostics.hasTurnOrderMismatch(snapshot), true);
+  assert.deepEqual(snapshot.context, {
+    surface: "conversation-render",
+    action: "first-paint",
+    read_mode: "projection-v4-dynamic",
+    render_mode: "first-paint",
+    thread_hash: "thread_hash_with_spaces",
+    turn_hash: "h_latest",
+  });
+  assert.deepEqual(snapshot.counts, {
+    dom_count: 0,
+    duplicate_count: 0,
+    visible_count: 3,
+    turn_count: 3,
+    order_mismatch_count: 3,
+    latest_mismatch_count: 1,
+    missing_dom_turn_count: 3,
+  });
+
+  const event = diagnostics.turnOrderMismatchDiagnosticEvent(snapshot);
+  assert.equal(event.diagnostic_type, "turn_order_mismatch");
+  assert.equal(event.breadcrumbs[0].fields.missing_dom_turn_count, 3);
+  assert.equal(JSON.stringify(event).includes("turn-private"), false);
+  assert.equal(JSON.stringify(event).includes("private body"), false);
 });
 
 test("thread diagnostic events build primary shell selection conflict payloads", () => {
