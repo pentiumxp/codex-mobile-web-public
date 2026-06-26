@@ -205,12 +205,15 @@ test("live and final message renders stay anchored when the user is at bottom", 
   assert.match(functionBody("patchLiveTextItemDom"), /patchElement: \(target, source\) => \{[\s\S]*patchNode\(target, source\);[\s\S]*return target;/);
   assert.match(functionBody("patchLiveTextItemDom"), /completeLocalConversationDomUpdate\(patchResult\.target, wasNearBottom, userReadingCurrentTurn\)/);
   assert.match(functionBody("completeLocalConversationDomUpdate"), /threadDetailDomPatchApi\.planLocalConversationDomUpdateCompletion\(\{/);
-  assert.match(functionBody("completeLocalConversationDomUpdate"), /state\.renderedConversationSignature = completionPlan\.nextRenderedConversationSignature;/);
+  assert.match(functionBody("completeLocalConversationDomUpdate"), /threadDetailDomPatchApi\.planLocalConversationDomUpdateCompletionEffects\(completionPlan\)/);
+  assert.match(functionBody("completeLocalConversationDomUpdate"), /applyLocalConversationDomUpdateCompletionEffectsPlan\(effectsPlan, \{ root \}\)/);
+  assert.match(functionBody("applyLocalConversationDomUpdateCompletionEffect"), /state\.renderedConversationSignature = String\(item\.value \|\| ""\);/);
   assert.match(functionBody("completeLocalConversationDomUpdate"), /conversationScroll\.planLocalPatchScrollCompletion\(\{/);
   assert.match(functionBody("completeLocalConversationDomUpdate"), /autoScrollHold: shouldHoldAutoScrollForCurrentTurn\(\),/);
   assert.match(functionBody("completeLocalConversationDomUpdate"), /submittedMessageFollow: shouldFollowSubmittedMessageToBottom\(\),/);
   assert.match(functionBody("completeLocalConversationDomUpdate"), /viewportFollow: shouldFollowViewportChangeToBottom\(\),/);
-  assert.match(functionBody("completeLocalConversationDomUpdate"), /if \(completionPlan\.scrollAction === "scroll-to-bottom"\) \{/);
+  assert.doesNotMatch(functionBody("completeLocalConversationDomUpdate"), /completionPlan\.scrollAction === "scroll-to-bottom"/);
+  assert.match(functionBody("applyLocalConversationDomUpdateCompletionEffect"), /if \(type === "schedule-conversation-to-bottom"\) \{/);
   assert.doesNotMatch(functionBody("completeLocalConversationDomUpdate"), /!userReadingCurrentTurn && !shouldHoldAutoScrollForCurrentTurn\(\) && \(wasNearBottom/);
 
   const sustainBody = functionBody("sustainSubmittedMessageBottomFollow");

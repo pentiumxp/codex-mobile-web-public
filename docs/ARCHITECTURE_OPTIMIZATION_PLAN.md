@@ -733,6 +733,18 @@ run, snapshots the thread id and load sequence, normalizes recent/full mode,
 selects the bounded API query and timeout, and records whether an active
 refresh controller should be aborted. App code still performs the real abort
 and network request.
+Local conversation DOM patch completion effects are now also planned in
+`public/thread-detail-dom-patch.js`:
+`planLocalConversationDomUpdateCompletionEffects` maps an already-decided
+tile/single completion plan to ordered commit effects for root hydration,
+rendered conversation signature writeback, patch-shell signature writeback,
+and scroll/bottom-button scheduling. `public/app.js` still executes the real
+DOM/state/scroll calls, but `completeLocalConversationDomUpdate()` no longer
+branches directly on `completionPlan.hydrateRoot`, signature writeback flags,
+or `completionPlan.scrollAction`. This is a local Phase A slice only; it does
+not change server projection semantics, local patch eligibility,
+scroll-follow policy, diagnostic dispatch, task-card protocol, shell/cache
+version, or production deployment state.
 Refresh patch surface planning now also lives in this helper:
 `planThreadDetailRefreshPatchSurface` decides whether the refresh should probe
 tile-pane DOM state and whether the current patch path is a tile surface based

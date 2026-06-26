@@ -15187,3 +15187,60 @@ The previous full handoff was archived and should be opened only when old proven
   - If no new incident appears, move the architecture work to the next
     objective slice: Phase A render/patch ownership or Phase C pane-state,
     depending on user priority.
+
+## 2026-06-26 - Phase A local DOM completion effects slice
+
+- Context:
+  - Continuing the system-level architecture optimization goal after Phase B
+    active-overlay readback closed `missing-active-turn-id`.
+  - User direction is now to avoid deploying every small optimization; local
+    slices should be committed and batched into a coherent module before
+    production deploy.
+- Root-cause boundary:
+  - Symptom/risk: `completeLocalConversationDomUpdate()` had already delegated
+    tile/single completion decisions to `public/thread-detail-dom-patch.js`,
+    but the post-completion side effects still branched directly in
+    `public/app.js` for root hydration, rendered conversation signature
+    writeback, patch-shell signature writeback, and scroll/bottom-button
+    scheduling.
+  - Failing layer: frontend thread-detail local DOM patch completion ownership,
+    not server projection, task-card protocol, or diagnostic transport.
+  - Violated invariant: local patch completion should have a testable commit
+    plan, with `app.js` executing real effects but not re-deciding the effect
+    list after the helper has classified completion.
+  - Closure classification: architecture-boundary cleanup with no behavior
+    fallback. It does not hide duplicates, force refresh, skip refresh, change
+    projection semantics, change scroll-follow policy, or change shell/cache.
+- Changes:
+  - `public/thread-detail-dom-patch.js`
+    - Added local `objectOrEmpty`.
+    - Added `planLocalConversationDomUpdateCompletionEffects()` to turn a
+      completion plan into ordered effects for hydration, rendered signature
+      writeback, patch-shell signature writeback, and scroll/bottom-button
+      scheduling.
+  - `public/app.js`
+    - Added `applyLocalConversationDomUpdateCompletionEffect()` and
+      `applyLocalConversationDomUpdateCompletionEffectsPlan()`.
+    - `completeLocalConversationDomUpdate()` now executes the planned effects
+      instead of branching on `completionPlan.hydrateRoot`, signature flags, or
+      `completionPlan.scrollAction`.
+  - Tests/docs updated:
+    - `test/thread-detail-dom-patch.test.js`
+    - `test/conversation-render.test.js`
+    - `test/turn-scroll-controls.test.js`
+    - `test/mobile-viewport.test.js`
+    - `README.md`
+    - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`
+    - `docs/MODULES.md`
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-dom-patch.test.js test/conversation-render.test.js test/turn-scroll-controls.test.js test/mobile-viewport.test.js`
+    passed (`165` tests).
+- Deployment:
+  - Not deployed by design. This is a Phase A local slice to batch before a
+    future module-level deploy.
+- Next:
+  - Run `npm run check` / `git diff --check`, then create a local commit.
+  - Continue Phase A by extracting the remaining render/patch post-effect and
+    scroll ownership seams from `public/app.js`, or move to Phase C if the next
+    user priority is pane-state stability.

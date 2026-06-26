@@ -28,6 +28,10 @@
     return result(ok, boundedReason, counts);
   }
 
+  function objectOrEmpty(value) {
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  }
+
   function renderKeyForNode(node) {
     return node && node.nodeType === ELEMENT_NODE && typeof node.getAttribute === "function"
       ? node.getAttribute("data-render-key") || ""
@@ -256,6 +260,44 @@
       nextRenderedConversationSignature: String(input.conversationSignature || ""),
       nextRenderedConversationPatchShellSignature: String(input.patchShellSignature || ""),
       scrollAction,
+    };
+  }
+
+  function planLocalConversationDomUpdateCompletionEffects(plan = {}) {
+    const completionPlan = objectOrEmpty(plan);
+    if (!completionPlan.complete) {
+      return {
+        effects: [],
+        reason: "completion-incomplete",
+      };
+    }
+    const effects = [];
+    if (completionPlan.hydrateRoot) {
+      effects.push({
+        type: "hydrate-root",
+        hydrateOptions: objectOrEmpty(completionPlan.hydrateOptions),
+      });
+    }
+    if (completionPlan.updateRenderedConversationSignature) {
+      effects.push({
+        type: "set-rendered-conversation-signature",
+        value: String(completionPlan.nextRenderedConversationSignature || ""),
+      });
+    }
+    if (completionPlan.updatePatchShellSignature) {
+      effects.push({
+        type: "set-rendered-conversation-patch-shell-signature",
+        value: String(completionPlan.nextRenderedConversationPatchShellSignature || ""),
+      });
+    }
+    if (completionPlan.scrollAction === "scroll-to-bottom") {
+      effects.push({ type: "schedule-conversation-to-bottom" });
+    } else if (completionPlan.scrollAction === "update-bottom-button") {
+      effects.push({ type: "schedule-scroll-button-update" });
+    }
+    return {
+      effects,
+      reason: effects.length ? "completion-effects" : "no-completion-effects",
     };
   }
 
@@ -637,6 +679,7 @@
     patchNode,
     planConversationHtmlUpdate,
     planLocalConversationDomUpdateCompletion,
+    planLocalConversationDomUpdateCompletionEffects,
     renderKeyForNode,
     resolveTurnInsertAnchor,
     syncAttributes,

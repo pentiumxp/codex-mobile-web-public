@@ -16,6 +16,44 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 Phase A Local Patch Completion Effects Slice
+
+本地小切片继续推进 Phase A 的前端 thread detail render/patch ownership
+收敛，当前不部署。此前 `completeLocalConversationDomUpdate()` 已经把
+tile/single completion 判断交给 `public/thread-detail-dom-patch.js`，但
+完成后的 hydrate、render signature 写回、patch-shell signature 写回、
+scroll-to-bottom / bottom-button 调度仍在 `public/app.js` 里直接分支执行。
+这让 local patch 成功后的 commit 副作用仍分散在主 app 文件里，后续排查
+“patch 成功但滚动/签名/按钮状态不一致”时缺少可测试边界。
+
+本次修复：
+
+- `public/thread-detail-dom-patch.js` 新增
+  `planLocalConversationDomUpdateCompletionEffects()`。它只把 completion
+  plan 转成有序 effects：hydrate root、写回 rendered conversation
+  signature、写回 patch-shell signature、调度到底部或更新底部按钮。
+- `public/app.js` 新增
+  `applyLocalConversationDomUpdateCompletionEffect()` 和
+  `applyLocalConversationDomUpdateCompletionEffectsPlan()`，只执行真实 DOM /
+  state / scroll side effects，不再重新判断 completion plan 的分支。
+- `completeLocalConversationDomUpdate()` 仍负责读取实时条件、调用 completion
+  planner，并在 planner 返回 complete 后执行 effects。行为保持不变：
+  不隐藏重复消息、不强制刷新、不跳过刷新、不修改 server projection、task-card
+  协议、诊断上报或 shell/cache。
+- focused tests 覆盖 single-thread completion effect 顺序、tile-pane terminal
+  no-op、blocked completion no-op、bottom-button 更新，以及 `app.js` 不再内联
+  local completion scroll/signature 分支。
+
+闭环验证：
+
+```bash
+node --test test/thread-detail-dom-patch.test.js test/conversation-render.test.js test/turn-scroll-controls.test.js test/mobile-viewport.test.js
+```
+
+结果：`165` passed。该切片只改变前端源码和测试，尚未 bump
+`CLIENT_BUILD_ID` / PWA shell cache，尚未部署；按当前节奏会先累积为一个
+Phase A 模块后再部署验证。
+
 ## 2026-06-26 Active Window Overlay Orchestration Seam
 
 Phase B 的活跃大线程读取风险已经从 proof gate 推进到真实 provider

@@ -567,7 +567,8 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /function completeLocalConversationDomUpdate\(root, wasNearBottom, userReadingCurrentTurn, options = \{\}\)/);
   assert.match(functionBody("completeLocalConversationDomUpdate"), /threadDetailDomPatchApi\.planLocalConversationDomUpdateCompletion\(\{/);
   assert.match(functionBody("completeLocalConversationDomUpdate"), /const scrollPlan = options && options\.scrollPlan/);
-  assert.match(functionBody("completeLocalConversationDomUpdate"), /if \(completionPlan\.hydrateRoot\) hydrateThreadDetailSurface\(root, completionPlan\.hydrateOptions \|\| \{\}\);/);
+  assert.match(functionBody("completeLocalConversationDomUpdate"), /const effectsPlan = threadDetailDomPatchApi\.planLocalConversationDomUpdateCompletionEffects\(completionPlan\);/);
+  assert.match(functionBody("applyLocalConversationDomUpdateCompletionEffect"), /hydrateThreadDetailSurface\(context\.root, item\.hydrateOptions \|\| \{\}\);/);
   assert.match(functionBody("upsertItem"), /if \(structureChanged\) scheduleRenderCurrentThread\(\);[\s\S]*else if \(canPatchExistingItem\)[\s\S]*else if \(!insertVisibleItemDom\(turn, nextItem\)\)/);
   assert.match(functionBody("appendToItem"), /if \(isOperationalItem\(item\)\) updateLiveOperationDockForLocalPatch\(\);[\s\S]*else if \(createdItem\) \{/);
   assert.match(stylesCss, /\.live-operation-dock\s*{[\s\S]*min-height:\s*var\(--live-operation-dock-compact-height, 40px\);[\s\S]*contain:\s*layout paint;/);

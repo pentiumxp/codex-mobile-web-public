@@ -13983,6 +13983,37 @@ function hydrateThreadDetailSurface(root, options = {}) {
   });
 }
 
+function applyLocalConversationDomUpdateCompletionEffect(effect, context = {}) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  if (type === "hydrate-root") {
+    hydrateThreadDetailSurface(context.root, item.hydrateOptions || {});
+    return;
+  }
+  if (type === "set-rendered-conversation-signature") {
+    state.renderedConversationSignature = String(item.value || "");
+    return;
+  }
+  if (type === "set-rendered-conversation-patch-shell-signature") {
+    state.renderedConversationPatchShellSignature = String(item.value || "");
+    return;
+  }
+  if (type === "schedule-conversation-to-bottom") {
+    scheduleConversationToBottom();
+    return;
+  }
+  if (type === "schedule-scroll-button-update") {
+    scheduleScrollToBottomButtonUpdate();
+    return;
+  }
+  throw new Error(`Unknown local conversation DOM completion effect: ${type || "empty"}`);
+}
+
+function applyLocalConversationDomUpdateCompletionEffectsPlan(plan, context = {}) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applyLocalConversationDomUpdateCompletionEffect(effect, context);
+}
+
 function completeLocalConversationDomUpdate(root, wasNearBottom, userReadingCurrentTurn, options = {}) {
   const hasOption = (key) => Object.prototype.hasOwnProperty.call(options || {}, key);
   const tilePanePatched = hasOption("tilePanePatched")
@@ -14017,18 +14048,8 @@ function completeLocalConversationDomUpdate(root, wasNearBottom, userReadingCurr
     scrollAction: scrollPlan.action,
   });
   if (!completionPlan.complete) return false;
-  if (completionPlan.hydrateRoot) hydrateThreadDetailSurface(root, completionPlan.hydrateOptions || {});
-  if (completionPlan.updateRenderedConversationSignature) {
-    state.renderedConversationSignature = completionPlan.nextRenderedConversationSignature;
-  }
-  if (completionPlan.updatePatchShellSignature) {
-    state.renderedConversationPatchShellSignature = completionPlan.nextRenderedConversationPatchShellSignature;
-  }
-  if (completionPlan.scrollAction === "scroll-to-bottom") {
-    scheduleConversationToBottom();
-  } else if (completionPlan.scrollAction === "update-bottom-button") {
-    scheduleScrollToBottomButtonUpdate();
-  }
+  const effectsPlan = threadDetailDomPatchApi.planLocalConversationDomUpdateCompletionEffects(completionPlan);
+  applyLocalConversationDomUpdateCompletionEffectsPlan(effectsPlan, { root });
   return true;
 }
 

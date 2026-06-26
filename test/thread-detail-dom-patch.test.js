@@ -440,6 +440,88 @@ test("local conversation DOM update completion plan updates single-thread signat
   assert.equal(noRootPlan.scrollAction, "update-bottom-button");
 });
 
+test("local conversation DOM update completion effects plan orders commit effects", () => {
+  const completionPlan = domPatch.planLocalConversationDomUpdateCompletion({
+    tilePanePatched: false,
+    canPatchSingleThread: true,
+    hasRoot: true,
+    conversationSignature: "sig-next",
+    patchShellSignature: "shell-next",
+    scrollAction: "scroll-to-bottom",
+  });
+
+  assert.deepEqual(domPatch.planLocalConversationDomUpdateCompletionEffects(completionPlan), {
+    effects: [
+      {
+        type: "hydrate-root",
+        hydrateOptions: {},
+      },
+      {
+        type: "set-rendered-conversation-signature",
+        value: "sig-next",
+      },
+      {
+        type: "set-rendered-conversation-patch-shell-signature",
+        value: "shell-next",
+      },
+      {
+        type: "schedule-conversation-to-bottom",
+      },
+    ],
+    reason: "completion-effects",
+  });
+});
+
+test("local conversation DOM update completion effects plan preserves terminal no-op states", () => {
+  const tilePanePlan = domPatch.planLocalConversationDomUpdateCompletion({
+    tilePanePatched: true,
+    canPatchSingleThread: true,
+    hasRoot: true,
+    conversationSignature: "sig-next",
+    patchShellSignature: "shell-next",
+    scrollAction: "scroll-to-bottom",
+  });
+  assert.deepEqual(domPatch.planLocalConversationDomUpdateCompletionEffects(tilePanePlan), {
+    effects: [],
+    reason: "no-completion-effects",
+  });
+
+  const blockedPlan = domPatch.planLocalConversationDomUpdateCompletion({
+    tilePanePatched: false,
+    canPatchSingleThread: false,
+    hasRoot: true,
+    conversationSignature: "sig-next",
+    patchShellSignature: "shell-next",
+    scrollAction: "update-bottom-button",
+  });
+  assert.deepEqual(domPatch.planLocalConversationDomUpdateCompletionEffects(blockedPlan), {
+    effects: [],
+    reason: "completion-incomplete",
+  });
+
+  const updateButtonPlan = domPatch.planLocalConversationDomUpdateCompletion({
+    tilePanePatched: false,
+    canPatchSingleThread: true,
+    hasRoot: false,
+    conversationSignature: "sig-next",
+    patchShellSignature: "",
+    scrollAction: "update-bottom-button",
+  });
+  assert.deepEqual(domPatch.planLocalConversationDomUpdateCompletionEffects(updateButtonPlan).effects, [
+    {
+      type: "set-rendered-conversation-signature",
+      value: "sig-next",
+    },
+    {
+      type: "set-rendered-conversation-patch-shell-signature",
+      value: "",
+    },
+    {
+      type: "schedule-scroll-button-update",
+    },
+  ]);
+});
+
 function applyFixture(article, patchPlan, options = {}) {
   return domPatch.applyVisibleItemRefreshDomPatch({
     article,
