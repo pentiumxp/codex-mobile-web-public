@@ -38,6 +38,8 @@ function createHarness(overrides = {}) {
             projectionMissReason: String(input.projectionMissReason || ""),
             projectionSeedStatus: String(input.projectionSeedStatus || ""),
             projectionSeedSource: String(input.projectionSeedSource || ""),
+            activeFullReadRequired: input.activeFullReadRequired === true,
+            activeFullReadReason: String(input.activeFullReadReason || ""),
             timings: Object.assign({}, input.timings),
             totalMs: input.totalMs,
             largeReadProtected: Boolean(input.largeReadProtected),
@@ -345,6 +347,8 @@ test("active recent thread detail skips partial windows and bounded turns/list",
   assert.equal(calls.includes("turns-list:turns-list-large"), false);
   assert.ok(calls.includes("thread-read"));
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "full-thread-read");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeFullReadRequired, true);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeFullReadReason, "active-turn-id");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadProtected, false);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadReason, "active-thread-requires-full-read");
 });
@@ -377,6 +381,8 @@ test("active full thread detail skips bounded turns/list", async () => {
   assert.equal(calls.includes("turns-list:turns-list-large"), false);
   assert.ok(calls.includes("thread-read"));
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "full-thread-read");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeFullReadRequired, true);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeFullReadReason, "status-active");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadReason, "active-thread-requires-full-read");
 });
 

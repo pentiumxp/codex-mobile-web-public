@@ -49,6 +49,8 @@ test("thread detail diagnostics classify warm projection and bounded timings", (
     projectionMissReason: "",
     projectionSeedStatus: "",
     projectionSeedSource: "",
+    activeFullReadRequired: false,
+    activeFullReadReason: "",
     returnedTurns: 2,
     omittedTurns: 128,
     rolloutSizeBytes: 2800000,
@@ -169,6 +171,27 @@ test("thread detail diagnostics classify seeded initial windows without leaking 
   assert.equal(diagnostics.projectionSeedSource, "turns-list-initial");
   assert.equal(diagnostics.returnedTurns, 1);
   assert.doesNotMatch(JSON.stringify(diagnostics), /private-turn-id|private response body/);
+});
+
+test("thread detail diagnostics expose bounded active full-read reasons", () => {
+  const diagnostics = buildThreadDetailDiagnostics({
+    requestMode: "recent",
+    readMode: "thread-read",
+    readDecision: "full-thread-read",
+    activeFullReadRequired: true,
+    activeFullReadReason: "active-turn-id-extra-detail-that-should-be-bounded",
+    thread: {
+      turns: [{
+        id: "private-active-turn-id",
+        items: [{ type: "operation", text: "private command output" }],
+      }],
+    },
+  });
+
+  assert.equal(diagnostics.phase, "cold-thread-read");
+  assert.equal(diagnostics.activeFullReadRequired, true);
+  assert.equal(diagnostics.activeFullReadReason, "active-turn-id-extra-detail-that-should-be-bounded");
+  assert.doesNotMatch(JSON.stringify(diagnostics), /private-active-turn-id|private command output/);
 });
 
 test("thread detail diagnostics attach to thread without copying private body content", () => {

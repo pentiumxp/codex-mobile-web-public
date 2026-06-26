@@ -92,13 +92,15 @@ function summaryActiveTurnId(summary) {
   ));
 }
 
-function summaryRequiresFullThreadRead(summary) {
+function summaryFullThreadReadReason(summary) {
   if (!summary || typeof summary !== "object") return false;
-  if (summaryActiveTurnId(summary)) return true;
-  if (isActiveLikeStatus(summary.status)) return true;
-  if (isActiveLikeStatus(summary.mobileStatus)) return true;
-  if (isActiveLikeStatus(summary.mobileLocalActiveStatus && summary.mobileLocalActiveStatus.status)) return true;
-  return false;
+  if (summaryActiveTurnId(summary)) return "active-turn-id";
+  if (isActiveLikeStatus(summary.status)) return "status-active";
+  if (isActiveLikeStatus(summary.mobileStatus)) return "mobile-status-active";
+  if (isActiveLikeStatus(summary.mobileLocalActiveStatus && summary.mobileLocalActiveStatus.status)) {
+    return "local-active-status";
+  }
+  return "";
 }
 
 function createThreadDetailReadOrchestrationService(options = {}) {
@@ -163,6 +165,8 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       projectionMissReason: context.projectionMissReason || "",
       projectionSeedStatus: context.projectionSeedStatus || "",
       projectionSeedSource: context.projectionSeedSource || "",
+      activeFullReadRequired: context.activeFullReadRequired === true,
+      activeFullReadReason: context.activeFullReadReason || "",
       timings: context.timer.timings,
       totalMs: context.timer.elapsedMs(),
       rolloutSizeBytes: result && result.thread ? threadRolloutSizeBytes(result.thread) : 0,
@@ -210,7 +214,10 @@ function createThreadDetailReadOrchestrationService(options = {}) {
     timer.mark("summaryMs", summaryStartedAtMs);
     const summary = summaryResult && summaryResult.summary || null;
     context.summarySource = summaryResult && summaryResult.source || "";
-    const activeSummaryRequiresFullRead = summaryRequiresFullThreadRead(summary);
+    const activeSummaryFullReadReason = summaryFullThreadReadReason(summary);
+    const activeSummaryRequiresFullRead = Boolean(activeSummaryFullReadReason);
+    context.activeFullReadRequired = activeSummaryRequiresFullRead;
+    context.activeFullReadReason = activeSummaryFullReadReason || "";
     const runtimeSettings = threadRuntimeSettings(threadId, summary);
     if (summary && isHiddenThread(summary, visibility)) {
       threadLog("hidden", { status: 404 });

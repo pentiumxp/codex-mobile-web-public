@@ -82,6 +82,8 @@ function buildThreadDetailDiagnostics(input = {}) {
     projectionMissReason: compactLabel(input.projectionMissReason, 80),
     projectionSeedStatus: compactLabel(input.projectionSeedStatus, 80),
     projectionSeedSource: compactLabel(input.projectionSeedSource, 80),
+    activeFullReadRequired: input.activeFullReadRequired === true,
+    activeFullReadReason: compactLabel(input.activeFullReadReason, 80),
     returnedTurns: safeCount(input.returnedTurns || counts.returnedTurns),
     omittedTurns: safeCount(input.omittedTurns || counts.omittedTurns),
     rolloutSizeBytes: safeCount(input.rolloutSizeBytes),

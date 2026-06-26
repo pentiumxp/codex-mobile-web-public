@@ -34,9 +34,15 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
   `warm-projection-partial`、`bounded-large-thread-window`、
   `cold-turns-list-initial-seeded-partial`、`cold-thread-read-raw`、
   `cold-thread-read`、`fallback-turns-list` 或 `fallback-summary`。
+- `thread-detail-read-orchestration-service` 现在把 active/running summary
+  为什么要求 full `thread/read` 写入 diagnostics：
+  `activeFullReadRequired` 和 `activeFullReadReason`。这只解释为什么 recent partial
+  projection / large bounded turns-list 被跳过，不改变现有 correctness 规则。
 - `test/thread-detail-performance-service.test.js` 增加 read-decision-only
-  分类覆盖，以及 seeded initial window 诊断不泄露 turn id、消息正文等私有内容的
-  隐私边界测试。
+  分类覆盖、active full-read reason 覆盖，以及 seeded initial window 诊断不泄露
+  turn id、消息正文等私有内容的隐私边界测试。
+- `test/thread-detail-read-orchestration-service.test.js` 覆盖 active turn id 和
+  active status 两种 full-read bypass reason。
 - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` 和 `docs/MODULES.md` 记录这个
   Phase B 证据分类边界。
 
@@ -49,6 +55,8 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 - 失败层：服务端 thread detail timing diagnostics phase ownership。
 - 不变量：phase 只能由已有的 bounded enum/status/metadata 推导，不读取或复制消息正文、
   任务卡正文、上传内容、私有路径、URL、cookies、tokens、provider payload 或长日志。
+- active full-read reason 是解释性诊断，不是允许跳过 full read 的兜底；下一步如果要优化
+  active 大线程首屏，必须另行证明 active turn overlay/operation 中间项不会丢失。
 - 闭环验证：focused tests 覆盖 sparse readMode 分类和隐私边界；完整检查通过后再把它作为
   Phase B 后续大 session 采样和 runtime 优化的证据基础。
 

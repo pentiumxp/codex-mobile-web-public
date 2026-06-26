@@ -107,7 +107,11 @@ non-partial projections.
   first-paint samples explainable even when `readMode` is sparse or generic,
   for example distinguishing `projection-hit` cache versus dynamic hits,
   seeded initial turns-list windows, raw/full thread reads, and summary
-  fallback without changing the actual read strategy.
+  fallback without changing the actual read strategy. It also records
+  `activeFullReadRequired` / `activeFullReadReason` when an active/running
+  summary intentionally skips partial projection or bounded turns-list shortcuts
+  and falls back to full `thread/read`; that evidence is the boundary for any
+  later active-turn overlay optimization.
 - Keep thread-list fallback cache evidence in
   `mobileDiagnostics.threadListTimings`. The cache now reports
   `fallbackCacheDecision` (`hit`, `miss-rebuild`, `expired-rebuild`), bounded
