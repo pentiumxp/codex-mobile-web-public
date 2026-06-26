@@ -80,7 +80,7 @@ test("voice input helper builds Home AI embedded-plugin protocol messages", () =
 });
 
 test("voice input bridge is limited to Hermes embed mode and uses plugin scripts", () => {
-  assert.match(indexHtml, /<script src="\/plugin-voice-input\.js"><\/script>\s*<script src="\/home-ai-diagnostic-reporting\.js"><\/script>\s*<script src="\/thread-diagnostic-events\.js"><\/script>\s*<script src="\/thread-status-hints\.js"><\/script>\s*<script src="\/thread-performance-metrics\.js"><\/script>\s*<script src="\/live-operation-dock-state\.js"><\/script>\s*<script src="\/thread-detail-state\.js"><\/script>\s*<script src="\/thread-detail-render-plan\.js"><\/script>\s*<script src="\/thread-detail-merge-state\.js"><\/script>\s*<script src="\/thread-detail-patch-plan\.js"><\/script>\s*<script src="\/thread-detail-dom-patch\.js"><\/script>\s*<script src="\/thread-detail-actions\.js"><\/script>\s*<script src="\/thread-tile-actions\.js"><\/script>\s*<script src="\/thread-tile-state\.js"><\/script>\s*<script src="\/thread-tile-layout\.js"><\/script>\s*<script src="\/build-refresh-policy\.js"><\/script>\s*<script src="\/app\.js"><\/script>/);
+  assert.match(indexHtml, /<script src="\/plugin-voice-input\.js"><\/script>\s*<script src="\/home-ai-diagnostic-reporting\.js"><\/script>\s*<script src="\/thread-diagnostic-events\.js"><\/script>\s*<script src="\/thread-status-hints\.js"><\/script>\s*<script src="\/thread-performance-metrics\.js"><\/script>\s*<script src="\/live-operation-dock-state\.js"><\/script>\s*<script src="\/thread-detail-state\.js"><\/script>\s*<script src="\/thread-detail-render-plan\.js"><\/script>\s*<script src="\/thread-detail-merge-state\.js"><\/script>\s*<script src="\/thread-detail-v4-merge-state\.js"><\/script>\s*<script src="\/thread-detail-patch-plan\.js"><\/script>\s*<script src="\/thread-detail-dom-patch\.js"><\/script>\s*<script src="\/thread-detail-actions\.js"><\/script>\s*<script src="\/thread-tile-actions\.js"><\/script>\s*<script src="\/thread-tile-state\.js"><\/script>\s*<script src="\/thread-tile-layout\.js"><\/script>\s*<script src="\/build-refresh-policy\.js"><\/script>\s*<script src="\/app\.js"><\/script>/);
   assert.match(swJs, /"\/plugin-voice-input\.js"/);
   assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(swJs, /"\/thread-diagnostic-events\.js"/);
@@ -90,6 +90,7 @@ test("voice input bridge is limited to Hermes embed mode and uses plugin scripts
   assert.match(swJs, /"\/thread-detail-state\.js"/);
   assert.match(swJs, /"\/thread-detail-render-plan\.js"/);
   assert.match(swJs, /"\/thread-detail-merge-state\.js"/);
+  assert.match(swJs, /"\/thread-detail-v4-merge-state\.js"/);
   assert.match(swJs, /"\/thread-detail-patch-plan\.js"/);
   assert.match(swJs, /"\/thread-detail-dom-patch\.js"/);
   assert.match(swJs, /"\/thread-detail-actions\.js"/);
@@ -105,6 +106,7 @@ test("voice input bridge is limited to Hermes embed mode and uses plugin scripts
   assert.match(appJs, /"\/thread-detail-state\.js"/);
   assert.match(appJs, /"\/thread-detail-render-plan\.js"/);
   assert.match(appJs, /"\/thread-detail-merge-state\.js"/);
+  assert.match(appJs, /"\/thread-detail-v4-merge-state\.js"/);
   assert.match(appJs, /"\/thread-detail-patch-plan\.js"/);
   assert.match(appJs, /"\/thread-detail-dom-patch\.js"/);
   assert.match(appJs, /"\/thread-detail-actions\.js"/);

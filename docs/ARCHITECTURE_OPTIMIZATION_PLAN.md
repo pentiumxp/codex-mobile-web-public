@@ -174,6 +174,22 @@ refuses to let an empty projection window erase existing visible turns while
 still accepting bounded incoming metadata such as read mode and projection
 revision.
 
+`codex-mobile-shell-v517` fixes the next root-cause layer from the same
+incident class: embedded/mobile startup, workspace refresh, and thread-list
+restore paths could render the Hermes Primary shell while a thread detail open
+intent was still active. Production evidence showed Music detail returning
+visible projection turns while the client emitted a blank `threadId=""`
+conversation render. The ownership rule is now explicit in
+`public/app.js`: `hasThreadDetailSelectionIntent()` covers current thread state,
+current thread id, active detail load controller, and startup thread-open intent;
+`shouldRenderPrimaryConversationShell()` is the only allowed guard for list and
+workspace paths that want to render the Primary shell. Non-forced
+`showHermesPluginPrimaryPage()` calls are suppressed during active thread loads
+and emit bounded diagnostics instead of clearing selection. The v4 projection
+merge policy is also extracted into `public/thread-detail-v4-merge-state.js`,
+with executable tests, so the remaining large `public/app.js` state boundary is
+smaller and the Music projection invariant is directly covered.
+
 The first slices extract item visible-field merge policy,
 visible-text render identity / completed-receipt retention, local-only item
 retention/drop policy, and live-to-completed same-turn visible-item preservation

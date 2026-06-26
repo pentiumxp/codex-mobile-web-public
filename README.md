@@ -16,6 +16,41 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v517 Embedded Thread Selection Ownership
+
+v517 修复 Music/Home AI 嵌入场景里“服务端 detail 有 turns，但移动端进入后只看到
+空壳或一个旧回执”的状态所有权问题。生产证据显示 Music
+`/api/threads/019ef42b-2cb8-7332-ab17-033ec5b48947?mode=recent` 仍返回
+`10` 个可见 turns，失败层不是 session 数据缺失，而是前端在 workspace/thread-list
+恢复过程中把当前线程意图误判为空，渲染了 Hermes 插件 Primary shell。
+
+本次切片新增/调整：
+
+- 新增 `hasThreadDetailSelectionIntent()` / `shouldRenderPrimaryConversationShell()`：
+  只要存在 `currentThreadId`、thread detail load controller、startup open intent 或
+  当前 detail state，就禁止列表/Workspace 加载路径重画 Primary 空壳。
+- `restoreThreadSelection()` 在已有线程打开意图时直接退出；Hermes embed 只有在确实
+  没有线程意图时才回到 Primary。
+- `showHermesPluginPrimaryPage()` 增加非强制调用保护，并记录
+  `plugin_primary_suppressed_thread_open` bounded 事件，防止线程打开过程中被恢复路径
+  清空选择。
+- 将 v4 projection merge policy 从 `public/app.js` 拆到
+  `public/thread-detail-v4-merge-state.js`，并接入 HTML、Service Worker、server
+  build-id 文件清单。
+- 新增 `test/thread-detail-v4-merge-state.test.js`，并更新 mobile/route/conversation
+  tests，覆盖 Primary 空壳防回退和 v4 projection merge 不变量。
+
+修复边界：
+
+- 症状/风险：生产 detail 已有可见 turns，前端却渲染 `threadId=""` 的空 conversation
+  shell，用户看到历史 turn 消失或被旧回执遮挡。
+- 失败层：Hermes embedded/mobile resume 与 thread-list restore 的 current-thread
+  selection ownership。
+- 不变量：有明确线程打开意图时，任何列表、Workspace 或嵌入恢复路径都不能清空当前
+  thread selection，也不能渲染 Primary shell。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v517`。
+
 ## 2026-06-26 v516 V4 Projection Empty-Merge Authority
 
 v516 修正 v515 后继续复核发现的真实路径缺口：Music 生产 detail read mode 是

@@ -175,8 +175,8 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 });
 
 test("public app shell cache advances with static frontend changes", () => {
-  assert.match(swJs, /codex-mobile-shell-v516/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v516"/);
+  assert.match(swJs, /codex-mobile-shell-v517/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v517"/);
   assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(swJs, /"\/thread-diagnostic-events\.js"/);
@@ -187,6 +187,7 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(swJs, /"\/thread-detail-state\.js"/);
   assert.match(swJs, /"\/thread-detail-render-plan\.js"/);
   assert.match(swJs, /"\/thread-detail-merge-state\.js"/);
+  assert.match(swJs, /"\/thread-detail-v4-merge-state\.js"/);
   assert.match(swJs, /"\/thread-detail-patch-plan\.js"/);
   assert.match(swJs, /"\/thread-detail-dom-patch\.js"/);
   assert.match(swJs, /"\/thread-detail-actions\.js"/);
@@ -300,7 +301,15 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /if \(state\.currentThreadId && state\.currentThread && !state\.currentThread\.mobileLoading && !state\.currentThread\.mobileLoadError\) \{/);
   assert.match(appJs, /return shouldPollCurrentThread\(\) \|\| currentThreadListRowChanged\(\);/);
   assert.match(appJs, /const foregroundRefresh = currentThreadNeedsForegroundRefresh\(\);[\s\S]*mobile_resume_thread_refresh_scheduled[\s\S]*if \(foregroundRefresh\) scheduleCurrentThreadRefresh\(250, "resume"\);[\s\S]*else await refreshCurrentThread\(\{ source: "resume" \}\);[\s\S]*else if \(state\.currentThreadId\) \{[\s\S]*await refreshCurrentThread\(\{ source: "resume" \}\);[\s\S]*else \{[\s\S]*await restoreThreadSelection\(\);/);
-  assert.match(appJs, /async function restoreThreadSelection\(\) \{[\s\S]*if \(isHermesEmbedMode\(\)\) \{[\s\S]*showHermesPluginPrimaryPage\(\);[\s\S]*return;/);
+  assert.match(appJs, /function hasThreadDetailSelectionIntent\(\) \{[\s\S]*state\.currentThreadId[\s\S]*state\.threadLoadController[\s\S]*state\.startupThreadOpenPending/);
+  assert.match(appJs, /function shouldRenderPrimaryConversationShell\(\) \{[\s\S]*return !hasThreadDetailSelectionIntent\(\) && !state\.newThreadDraft;/);
+  assert.match(functionBody("loadWorkspaces"), /if \(shouldRenderPrimaryConversationShell\(\)\) renderCurrentThread\(\);/);
+  assert.match(functionBody("loadThreads"), /if \(shouldRenderPrimaryConversationShell\(\)\) renderCurrentThread\(\);/);
+  assert.doesNotMatch(functionBody("loadWorkspaces"), /if \(!state\.currentThread\) renderCurrentThread\(\);/);
+  assert.doesNotMatch(functionBody("loadThreads"), /if \(!state\.currentThread\) renderCurrentThread\(\);/);
+  assert.match(appJs, /function showHermesPluginPrimaryPage\(options = \{\}\) \{[\s\S]*const force = options\.force === true;[\s\S]*plugin_primary_suppressed_thread_open/);
+  assert.match(functionBody("showHermesPluginPrimaryPage"), /state\.threadLoadController[\s\S]*state\.startupThreadOpenPending[\s\S]*state\.currentThread && state\.currentThread\.mobileLoading/);
+  assert.match(appJs, /async function restoreThreadSelection\(\) \{[\s\S]*if \(hasThreadDetailSelectionIntent\(\)\) return;[\s\S]*showHermesPluginPrimaryPage\(\{ source: "restore-empty" \}\);[\s\S]*return;/);
   assert.match(appJs, /renderCurrentThread\(\{ stickToBottom: true \}\);\s*\n\s*publishPluginNavigationState\(\{ force: true \}\);\s*\n\s*updateComposerControls\(\);/);
   assert.doesNotMatch(appJs, /function shouldOpenLargeThreadHistoryAtTop/);
   assert.doesNotMatch(appJs, /function threadOpenRenderOptions/);

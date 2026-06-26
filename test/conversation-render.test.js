@@ -14,6 +14,7 @@ const threadDetailPatchPlan = require(path.join(root, "public", "thread-detail-p
 const threadDiagnosticEvents = require(path.join(root, "public", "thread-diagnostic-events.js"));
 const { createThreadDetailStatePolicy } = require(path.join(root, "public", "thread-detail-state.js"));
 const { createThreadDetailMergePolicy } = require(path.join(root, "public", "thread-detail-merge-state.js"));
+const { createThreadDetailV4MergePolicy } = require(path.join(root, "public", "thread-detail-v4-merge-state.js"));
 
 function functionBodyFrom(source, name) {
   const start = source.indexOf(`function ${name}(`);
@@ -810,19 +811,6 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "threadDurableUserMessages",
     "shouldDropInitialSubmissionEchoTurn",
     "threadHasInitialSubmissionEcho",
-    "isV4ProjectionThread",
-    "shouldPreserveV4PendingOverlayItem",
-    "v4ThreadHasPendingMatch",
-    "appendV4PendingOverlayItem",
-    "copyTurnWithOnlyItems",
-    "applyV4PendingOverlay",
-    "v4ProjectionRevisionValue",
-    "isV4ProjectionRefreshRegressive",
-    "isActiveLikeProjectionTurn",
-    "incomingTurnsClearlySupersedeExistingTurn",
-    "existingV4TurnHasOnlyMatchedPendingItems",
-    "shouldPreserveExistingV4ProjectionTurn",
-    "mergeV4ProjectionThread",
     "comparableVisibleTextItem",
     "comparableVisibleText",
     "visibleTextItemsLikelySame",
@@ -843,7 +831,7 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "mergeTurnPreservingVisibleItems",
     "mergeThreadPreservingVisibleItems",
   ].map((name) => functionSourceFrom(appJs, name));
-  return Function("createThreadDetailStatePolicy", "createThreadDetailMergePolicy", `
+  return Function("createThreadDetailStatePolicy", "createThreadDetailMergePolicy", "createThreadDetailV4MergePolicy", `
 const MAX_EXPANDED_VISIBLE_TURNS = 40;
 const state = { activeTurnId: "local-start-turn", currentThreadId: "thread-new" };
 function isReasoningItem(item) { return Boolean(item && item.type === "reasoning"); }
@@ -889,9 +877,26 @@ const threadDetailStatePolicy = createThreadDetailStatePolicy({
   visibleTextItemsLikelySame,
   completedReceiptItemsLikelySame,
 });
+const threadDetailV4MergePolicy = createThreadDetailV4MergePolicy({
+  normalizeThreadVisibleUserMessages,
+  turnVisibleWeight,
+  isOptimisticUserMessage,
+  isRecentlySubmittedUserMessage,
+  isReasoningItem,
+  userMessageHasSubmissionId,
+  userMessagesCanShadow,
+  isTurnComplete,
+  isRunningStatus,
+  isIncompleteInterruptedTurn,
+  turnHasActiveLiveItems,
+  turnOrderMs,
+  mergeTurnPreservingVisibleItems,
+  sortTurnsForDisplay,
+  maxVisibleTurnsForThread,
+});
 const threadDetailMergePolicy = createThreadDetailMergePolicy({
-  isV4ProjectionThread,
-  mergeV4ProjectionThread,
+  isV4ProjectionThread: threadDetailV4MergePolicy.isV4ProjectionThread,
+  mergeV4ProjectionThread: threadDetailV4MergePolicy.mergeV4ProjectionThread,
   normalizeThreadVisibleUserMessages,
   turnVisibleWeight,
   shouldPreserveExistingTurnVisibleItems: (existingTurn, incomingTurn, existingWeight) => (
@@ -906,7 +911,7 @@ const threadDetailMergePolicy = createThreadDetailMergePolicy({
   maxExpandedVisibleTurns: MAX_EXPANDED_VISIBLE_TURNS,
 });
 return mergeThreadPreservingVisibleItems;
-`)(createThreadDetailStatePolicy, createThreadDetailMergePolicy);
+`)(createThreadDetailStatePolicy, createThreadDetailMergePolicy, createThreadDetailV4MergePolicy);
 }
 
 function evaluatedNormalizeThreadVisibleUserMessages() {

@@ -107,6 +107,10 @@ const threadDetailMergeStateApi = window.CodexThreadDetailMergeState;
 if (!threadDetailMergeStateApi) {
   throw new Error("CodexThreadDetailMergeState script failed to load");
 }
+const threadDetailV4MergeStateApi = window.CodexThreadDetailV4MergeState;
+if (!threadDetailV4MergeStateApi) {
+  throw new Error("CodexThreadDetailV4MergeState script failed to load");
+}
 const threadDetailPatchPlanApi = window.CodexThreadDetailPatchPlan;
 if (!threadDetailPatchPlanApi) {
   throw new Error("CodexThreadDetailPatchPlan script failed to load");
@@ -510,7 +514,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v516";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v517";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -565,6 +569,7 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/thread-detail-state.js",
   "/thread-detail-render-plan.js",
   "/thread-detail-merge-state.js",
+  "/thread-detail-v4-merge-state.js",
   "/thread-detail-patch-plan.js",
   "/thread-detail-dom-patch.js",
   "/thread-detail-actions.js",
@@ -580,9 +585,26 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/icons/icon-512.png",
   "/icons/apple-touch-icon.png",
 ]);
+const threadDetailV4MergePolicy = threadDetailV4MergeStateApi.createThreadDetailV4MergePolicy({
+  normalizeThreadVisibleUserMessages,
+  turnVisibleWeight,
+  isOptimisticUserMessage,
+  isRecentlySubmittedUserMessage,
+  isReasoningItem,
+  userMessageHasSubmissionId,
+  userMessagesCanShadow,
+  isTurnComplete,
+  isRunningStatus,
+  isIncompleteInterruptedTurn,
+  turnHasActiveLiveItems,
+  turnOrderMs,
+  mergeTurnPreservingVisibleItems,
+  sortTurnsForDisplay,
+  maxVisibleTurnsForThread,
+});
 const threadDetailMergePolicy = threadDetailMergeStateApi.createThreadDetailMergePolicy({
-  isV4ProjectionThread,
-  mergeV4ProjectionThread,
+  isV4ProjectionThread: threadDetailV4MergePolicy.isV4ProjectionThread,
+  mergeV4ProjectionThread: threadDetailV4MergePolicy.mergeV4ProjectionThread,
   normalizeThreadVisibleUserMessages,
   turnVisibleWeight,
   shouldPreserveExistingTurnVisibleItems: (existingTurn, incomingTurn, existingWeight) => (
@@ -5664,160 +5686,6 @@ function threadHasInitialSubmissionEcho(thread, initialSubmissionId) {
   });
 }
 
-function isV4ProjectionThread(thread) {
-  return Boolean(thread && (thread.mobileProjectionVersion === "v4"
-    || (thread.mobileProjection && thread.mobileProjection.version === "v4")));
-}
-
-function shouldPreserveV4PendingOverlayItem(item) {
-  return Boolean(item
-    && item.type === "userMessage"
-    && isOptimisticUserMessage(item)
-    && (isRecentlySubmittedUserMessage(item) || item.mobileSendError));
-}
-
-function v4ThreadHasPendingMatch(thread, pendingItem) {
-  if (!pendingItem || pendingItem.type !== "userMessage") return false;
-  const submissionId = String(pendingItem.clientSubmissionId || "").trim();
-  for (const turn of Array.isArray(thread && thread.turns) ? thread.turns : []) {
-    for (const item of Array.isArray(turn && turn.items) ? turn.items : []) {
-      if (!item || item.type !== "userMessage") continue;
-      if (submissionId && userMessageHasSubmissionId(item, submissionId)) return true;
-      if (!isOptimisticUserMessage(item) && userMessagesCanShadow(item, pendingItem)) return true;
-    }
-  }
-  return false;
-}
-
-function appendV4PendingOverlayItem(turn, item) {
-  if (!turn || !item) return;
-  turn.items = Array.isArray(turn.items) ? turn.items : [];
-  const submissionId = String(item.clientSubmissionId || "").trim();
-  const alreadyPresent = turn.items.some((existing) => existing && (
-    (submissionId && userMessageHasSubmissionId(existing, submissionId))
-    || existing.id === item.id
-    || userMessagesCanShadow(existing, item)
-  ));
-  if (!alreadyPresent) turn.items.push(item);
-}
-
-function copyTurnWithOnlyItems(turn, items) {
-  return Object.assign({}, turn || {}, {
-    items: (items || []).slice(),
-  });
-}
-
-function applyV4PendingOverlay(existingThread, mergedThread) {
-  if (!existingThread || !mergedThread || !Array.isArray(existingThread.turns)) return mergedThread;
-  mergedThread.turns = Array.isArray(mergedThread.turns) ? mergedThread.turns : [];
-  const turnsById = new Map(mergedThread.turns.map((turn) => [String(turn && turn.id || ""), turn]));
-  for (const existingTurn of existingThread.turns) {
-    const pendingItems = (Array.isArray(existingTurn && existingTurn.items) ? existingTurn.items : [])
-      .filter((item) => shouldPreserveV4PendingOverlayItem(item)
-        && !v4ThreadHasPendingMatch(mergedThread, item));
-    if (!pendingItems.length) continue;
-    const targetTurn = turnsById.get(String(existingTurn.id || ""));
-    if (targetTurn) {
-      pendingItems.forEach((item) => appendV4PendingOverlayItem(targetTurn, item));
-      continue;
-    }
-    const overlayTurn = copyTurnWithOnlyItems(existingTurn, pendingItems);
-    overlayTurn.mobilePendingOverlay = true;
-    mergedThread.turns.push(overlayTurn);
-    if (overlayTurn.id) turnsById.set(String(overlayTurn.id), overlayTurn);
-  }
-  return mergedThread;
-}
-
-function v4ProjectionRevisionValue(thread) {
-  const direct = Number(thread && thread.mobileProjectionRevision);
-  if (Number.isFinite(direct) && direct > 0) return Math.trunc(direct);
-  const nested = Number(thread && thread.mobileProjection && thread.mobileProjection.revision);
-  return Number.isFinite(nested) && nested > 0 ? Math.trunc(nested) : 0;
-}
-
-function isV4ProjectionRefreshRegressive(existingThread, incomingThread) {
-  const existingRevision = v4ProjectionRevisionValue(existingThread);
-  const incomingRevision = v4ProjectionRevisionValue(incomingThread);
-  return Boolean(existingRevision && incomingRevision && incomingRevision < existingRevision);
-}
-
-function isActiveLikeProjectionTurn(turn) {
-  return Boolean(turn
-    && !isTurnComplete(turn)
-    && (isRunningStatus(turn.status) || isIncompleteInterruptedTurn(turn) || turnHasActiveLiveItems(turn)));
-}
-
-function incomingTurnsClearlySupersedeExistingTurn(existingTurn, incomingTurns) {
-  const existingOrder = turnOrderMs(existingTurn);
-  if (!existingOrder) return false;
-  return (incomingTurns || []).some((incomingTurn) => {
-    if (!incomingTurn || String(incomingTurn.id || "") === String(existingTurn && existingTurn.id || "")) return false;
-    const incomingOrder = turnOrderMs(incomingTurn);
-    return Boolean(incomingOrder && incomingOrder > existingOrder);
-  });
-}
-
-function existingV4TurnHasOnlyMatchedPendingItems(existingTurn, incomingTurns) {
-  const visibleItems = (Array.isArray(existingTurn && existingTurn.items) ? existingTurn.items : [])
-    .filter((item) => item && itemVisibleWeight(item) > 0 && !isReasoningItem(item));
-  return Boolean(visibleItems.length && visibleItems.every((item) => shouldPreserveV4PendingOverlayItem(item)
-    && v4ThreadHasPendingMatch({ turns: incomingTurns || [] }, item)));
-}
-
-function shouldPreserveExistingV4ProjectionTurn(existingThread, incomingThread, existingTurn, incomingTurns) {
-  if (!existingTurn || turnVisibleWeight(existingTurn) <= 0) return false;
-  const id = String(existingTurn.id || "");
-  if (id && (incomingTurns || []).some((turn) => String(turn && turn.id || "") === id)) return false;
-  if (existingV4TurnHasOnlyMatchedPendingItems(existingTurn, incomingTurns)) return false;
-  const activeLike = isActiveLikeProjectionTurn(existingTurn);
-  const regressiveRefresh = isV4ProjectionRefreshRegressive(existingThread, incomingThread);
-  if (!activeLike && !regressiveRefresh) return false;
-  return !incomingTurnsClearlySupersedeExistingTurn(existingTurn, incomingTurns);
-}
-
-function mergeV4ProjectionThread(existingThread, incomingThread) {
-  if (!existingThread || !incomingThread || existingThread.id !== incomingThread.id) {
-    return normalizeThreadVisibleUserMessages(incomingThread);
-  }
-  const merged = Object.assign({}, existingThread, incomingThread);
-  if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoading")) delete merged.mobileLoading;
-  if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoadError")) delete merged.mobileLoadError;
-  if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileReadWarning")) delete merged.mobileReadWarning;
-  if (Array.isArray(incomingThread.turns)) {
-    const existingTurns = Array.isArray(existingThread.turns) ? existingThread.turns : [];
-    const incomingTurns = incomingThread.turns.slice();
-    const existingVisibleWeight = existingTurns.reduce((total, turn) => total + turnVisibleWeight(turn), 0);
-    const incomingVisibleWeight = incomingTurns.reduce((total, turn) => total + turnVisibleWeight(turn), 0);
-    if (!incomingTurns.length && existingTurns.length && existingVisibleWeight > 0 && incomingVisibleWeight === 0) {
-      merged.turns = existingTurns;
-      return normalizeThreadVisibleUserMessages(merged);
-    }
-    const existingById = new Map(existingTurns.map((turn) => [String(turn && turn.id || ""), turn]));
-    merged.turns = incomingTurns.map((incomingTurn) => {
-      const existingTurn = existingById.get(String(incomingTurn && incomingTurn.id || ""));
-      return existingTurn ? mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) : incomingTurn;
-    });
-    for (const existingTurn of existingTurns) {
-      if (shouldPreserveExistingV4ProjectionTurn(existingThread, incomingThread, existingTurn, merged.turns)) {
-        merged.turns.push(existingTurn);
-      }
-    }
-    applyV4PendingOverlay(existingThread, merged);
-    merged.turns = sortTurnsForDisplay(merged.turns).slice(-maxVisibleTurnsForThread(merged));
-  }
-  if (isV4ProjectionRefreshRegressive(existingThread, incomingThread)) {
-    const existingRevision = v4ProjectionRevisionValue(existingThread);
-    if (existingRevision) {
-      merged.mobileProjectionRevision = existingRevision;
-      if (merged.mobileProjection && typeof merged.mobileProjection === "object") {
-        merged.mobileProjection = Object.assign({}, merged.mobileProjection, { revision: existingRevision });
-      }
-    }
-  }
-  return normalizeThreadVisibleUserMessages(merged);
-}
-
 function comparableVisibleTextItem(item) {
   return Boolean(item && (item.type === "agentMessage" || item.type === "plan"));
 }
@@ -8162,7 +8030,7 @@ function applyPendingPluginRouteHintFocus() {
     return true;
   }
   state.pendingPluginRouteHint = null;
-  showHermesPluginPrimaryPage();
+  showHermesPluginPrimaryPage({ force: true, source: "route-hint-target-missing" });
   if (plan.diagnostic) setPluginRouteDiagnostic(plan.diagnostic.message, { error: plan.diagnostic.error });
   recordHomeAiDiagnosticFailure({
     category: "thread_session_load_failed",
@@ -8221,7 +8089,7 @@ async function openHermesPluginRouteHint(hint) {
   clearThreadUrl();
   if (plan.action === "primary") {
     if (plan.diagnostic) setPluginRouteDiagnostic(plan.diagnostic.message, { error: plan.diagnostic.error });
-    showHermesPluginPrimaryPage();
+    showHermesPluginPrimaryPage({ force: true, source: "route-hint-primary" });
     return true;
   }
   try {
@@ -8248,7 +8116,7 @@ async function openHermesPluginRouteHint(hint) {
     return true;
   } catch (error) {
     state.pendingPluginRouteHint = null;
-    showHermesPluginPrimaryPage();
+    showHermesPluginPrimaryPage({ force: true, source: "route-hint-open-failed" });
     setPluginRouteDiagnostic(plan.targetId ? "Notification target is unavailable" : "Notification thread is unavailable", {
       error: true,
     });
@@ -8369,7 +8237,7 @@ async function loadWorkspaces() {
     menu.innerHTML = workspaceSidebarOptionsHtml();
   }
   updateWorkspacePath();
-  if (!state.currentThread) renderCurrentThread();
+  if (shouldRenderPrimaryConversationShell()) renderCurrentThread();
 }
 
 function workspaceSidebarOptionsHtml() {
@@ -8585,6 +8453,19 @@ function renderThreadListLoading() {
   state.renderedThreadListSignature = `loading|${state.selectedCwd}|${$("threadSearch").value.trim()}`;
 }
 
+function hasThreadDetailSelectionIntent() {
+  return Boolean(
+    state.currentThread
+    || state.currentThreadId
+    || state.threadLoadController
+    || state.startupThreadOpenPending,
+  );
+}
+
+function shouldRenderPrimaryConversationShell() {
+  return !hasThreadDetailSelectionIntent() && !state.newThreadDraft;
+}
+
 function clearThreadListDeferredFallbackTimer() {
   if (!state.threadListDeferredFallbackTimer) return;
   clearTimeout(state.threadListDeferredFallbackTimer);
@@ -8658,7 +8539,7 @@ async function loadThreads(options = {}) {
     if (result && result.mobileDeferredFallback && !state.selectedCwd && !search) {
       scheduleThreadListDeferredFallback();
     }
-    if (!state.currentThread) renderCurrentThread();
+    if (shouldRenderPrimaryConversationShell()) renderCurrentThread();
     const listPerformance = threadPerformanceMetrics.threadListEventFields(result);
     postPerformanceEvent("thread_list_rendered", {
       elapsedMs: roundedDurationMs(loadStartedAt),
@@ -9760,8 +9641,22 @@ function syncHermesPluginPageLevel() {
   document.documentElement.classList.toggle("embed-hermes-primary", isHermesPluginPrimaryPage());
 }
 
-function showHermesPluginPrimaryPage() {
+function showHermesPluginPrimaryPage(options = {}) {
   if (!isHermesEmbedMode()) return false;
+  const force = options.force === true;
+  if (!force && (
+    state.threadLoadController
+    || state.startupThreadOpenPending
+    || (state.currentThread && state.currentThread.mobileLoading)
+  )) {
+    postClientEvent("plugin_primary_suppressed_thread_open", {
+      source: String(options.source || "").slice(0, 80),
+      currentThreadId: state.currentThreadId || "",
+      hasThreadLoadController: Boolean(state.threadLoadController),
+      startupThreadOpenPending: Boolean(state.startupThreadOpenPending),
+    });
+    return false;
+  }
   clearCurrentThreadSelection();
   state.newThreadDraft = false;
   const sidebar = $("sidebar");
@@ -9799,7 +9694,7 @@ function refreshSidebarListAfterOpen() {
 
 function openSidebarMenu() {
   if (isHermesEmbedMode()) {
-    showHermesPluginPrimaryPage();
+    showHermesPluginPrimaryPage({ force: true, source: "sidebar" });
     return;
   }
   const sidebar = $("sidebar");
@@ -11548,7 +11443,7 @@ function handlePluginBack(event) {
     renderCurrentThread();
     handled = true;
   } else if (state.currentThreadId || state.newThreadDraft || state.selectedCwd) {
-    handled = showHermesPluginPrimaryPage();
+    handled = showHermesPluginPrimaryPage({ force: true, source: "plugin-back" });
   } else if (isSidebarOpen()) {
     closeSidebarMenu();
     handled = true;
@@ -11743,10 +11638,10 @@ function renderThreads(result = null) {
 }
 
 async function restoreThreadSelection() {
-  if (state.currentThread) return;
+  if (hasThreadDetailSelectionIntent()) return;
   if (isHermesEmbedMode()) {
     state.startupThreadOpenPending = false;
-    showHermesPluginPrimaryPage();
+    showHermesPluginPrimaryPage({ source: "restore-empty" });
     return;
   }
   const savedThreadId = localStorage.getItem(STORAGE_THREAD_ID) || "";
