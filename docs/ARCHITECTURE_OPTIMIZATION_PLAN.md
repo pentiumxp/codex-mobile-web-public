@@ -219,6 +219,11 @@ Refresh patch surface planning now also lives in this helper:
 tile-pane DOM state and whether the current patch path is a tile surface based
 on tile mode, tile conversation surface state, and the probed DOM patch surface.
 App code still reads the UI state and performs the real DOM probe.
+Refresh patch-attempt effect planning now also lives in this helper:
+`planThreadDetailRefreshPatchAttemptEffects` declares the tile-pane patch and
+local-patch attempt order. App code still performs the real DOM patch calls and
+timing, but `refreshCurrentThread()` no longer inlines tile/local patch attempt
+loops or synchronizes those booleans directly.
 Refresh post-merge side-effect ordering now also lives in this helper:
 `planThreadDetailRefreshPostMergeEffects` declares the fixed
 thread-list-merge, composer/active-turn sync, and thread-list-render groups

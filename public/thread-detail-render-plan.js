@@ -197,6 +197,31 @@
     };
   }
 
+  function planThreadDetailRefreshPatchAttemptEffects(input = {}) {
+    const shouldRenderDetail = Boolean(input.shouldRenderDetail);
+    const tryTilePanePatch = Boolean(input.tryTilePanePatch);
+    const tryLocalPatch = Boolean(input.tryLocalPatch);
+    const effects = [];
+    if (tryTilePanePatch) {
+      effects.push({
+        type: "tile-pane-patch",
+        timingTarget: "tile-pane-patch",
+        preserveScroll: true,
+      });
+    }
+    if (shouldRenderDetail && tryLocalPatch) {
+      effects.push({
+        type: "local-patch",
+        timingTarget: "local-patch",
+        skipWhenTilePanePatched: true,
+      });
+    }
+    return {
+      effects,
+      reason: effects.length ? "patch-attempt-effects" : "no-patch-attempt-effects",
+    };
+  }
+
   function planThreadDetailRefreshPatchAttemptResult(input = {}) {
     const shouldRenderDetail = Boolean(input.shouldRenderDetail);
     const tilePanePatchAttempted = Boolean(input.tilePanePatchAttempted);
@@ -533,6 +558,7 @@
     normalizeSignature,
     planThreadDetailRefreshCompletionEffects,
     planThreadDetailRefreshConsistencyCheck,
+    planThreadDetailRefreshPatchAttemptEffects,
     planThreadDetailRefreshPatchAttemptResult,
     planThreadDetailRefreshOutcomeExecution,
     planThreadDetailRefreshExecutionEffects,

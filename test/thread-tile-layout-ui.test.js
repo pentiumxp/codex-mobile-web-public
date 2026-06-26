@@ -404,8 +404,12 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(refreshBody, /const tilePatchPlan = patchSurfaceProbePlan\.shouldProbeTilePatchSurface[\s\S]*\? threadDetailDomPatchSurface\(\{ threadId \}\)[\s\S]*: null;/);
   assert.match(refreshBody, /const patchSurfacePlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchSurface\(\{[\s\S]*threadTileMode: state\.threadTileMode,[\s\S]*threadTileConversationSurface,[\s\S]*tilePatchSurface: tilePatchPlan && tilePatchPlan\.surface,[\s\S]*\}\);/);
   assert.match(refreshBody, /threadDetailRenderPlanApi\.planThreadDetailRefreshPatchExecution\(\{[\s\S]*canPatch: renderPlan\.canPatch,[\s\S]*tileSurfaceRefresh: patchSurfacePlan\.tileSurfaceRefresh,[\s\S]*\}\);/);
+  assert.match(refreshBody, /const patchAttemptEffectsPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchAttemptEffects\(\{/);
+  assert.match(refreshBody, /tryTilePanePatch: patchExecutionPlan\.tryTilePanePatch/);
+  assert.match(refreshBody, /tryLocalPatch: patchExecutionPlan\.tryLocalPatch/);
+  assert.match(refreshBody, /const patchAttempt = applyThreadDetailRefreshPatchAttemptEffectsPlan\(patchAttemptEffectsPlan, \{/);
   assert.match(refreshBody, /threadDetailRenderPlanApi\.planThreadDetailRefreshPatchAttemptResult\(\{/);
-  assert.match(refreshBody, /if \(shouldRenderDetail && !tilePanePatchedDetail && patchExecutionPlan\.tryLocalPatch\)/);
+  assert.doesNotMatch(refreshBody, /if \(shouldRenderDetail && !tilePanePatchedDetail && patchExecutionPlan\.tryLocalPatch\)/);
   assert.doesNotMatch(refreshBody, /renderPlan\.canPatch && !tileSurfaceRefresh/);
   assert.doesNotMatch(refreshBody, /tilePatchPlan && tilePatchPlan\.surface === "thread-tile-pane"/);
 });

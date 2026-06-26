@@ -292,6 +292,54 @@ test("thread detail refresh post-merge effects plan preserves timing groups and 
   });
 });
 
+test("thread detail refresh patch attempt effects plan preserves tile before local patch order", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchAttemptEffects({
+    shouldRenderDetail: true,
+    tryTilePanePatch: true,
+    tryLocalPatch: true,
+  }), {
+    effects: [
+      {
+        type: "tile-pane-patch",
+        timingTarget: "tile-pane-patch",
+        preserveScroll: true,
+      },
+      {
+        type: "local-patch",
+        timingTarget: "local-patch",
+        skipWhenTilePanePatched: true,
+      },
+    ],
+    reason: "patch-attempt-effects",
+  });
+});
+
+test("thread detail refresh patch attempt effects plan omits local patch for metadata-only or blocked attempts", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchAttemptEffects({
+    shouldRenderDetail: false,
+    tryTilePanePatch: true,
+    tryLocalPatch: true,
+  }), {
+    effects: [
+      {
+        type: "tile-pane-patch",
+        timingTarget: "tile-pane-patch",
+        preserveScroll: true,
+      },
+    ],
+    reason: "patch-attempt-effects",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchAttemptEffects({
+    shouldRenderDetail: true,
+    tryTilePanePatch: false,
+    tryLocalPatch: false,
+  }), {
+    effects: [],
+    reason: "no-patch-attempt-effects",
+  });
+});
+
 test("thread detail refresh patch attempt result makes tile pane patch terminal", () => {
   assert.deepEqual(renderPlan.planThreadDetailRefreshPatchAttemptResult({
     shouldRenderDetail: true,

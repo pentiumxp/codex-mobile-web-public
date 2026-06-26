@@ -9085,6 +9085,71 @@ function applyThreadDetailRefreshExecutionEffectsPlan(plan) {
   return timings;
 }
 
+function applyThreadDetailRefreshPatchAttemptEffect(effect, context) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  if (type === "tile-pane-patch") {
+    const startedAt = nowPerfMs();
+    return {
+      tilePanePatchAttempted: true,
+      tilePanePatchedDetail: patchCurrentThreadTilePaneFromState({
+        threadId: context.threadId,
+        preserveScroll: item.preserveScroll !== false,
+      }),
+      tilePanePatchMs: roundedDurationMs(startedAt),
+    };
+  }
+  if (type === "local-patch") {
+    if (item.skipWhenTilePanePatched && context.tilePanePatchedDetail) {
+      return {
+        localPatchAttempted: false,
+        locallyPatchedDetail: false,
+        localPatchMs: 0,
+      };
+    }
+    const startedAt = nowPerfMs();
+    return {
+      localPatchAttempted: true,
+      locallyPatchedDetail: patchCurrentThreadDetailFromRefresh(
+        context.previousThread,
+        state.currentThread,
+        context.previousConversationSignature,
+      ),
+      localPatchMs: roundedDurationMs(startedAt),
+    };
+  }
+  throw new Error(`Unknown thread detail refresh patch attempt effect: ${type || "empty"}`);
+}
+
+function applyThreadDetailRefreshPatchAttemptEffectsPlan(plan, context = {}) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  const result = {
+    tilePanePatchAttempted: false,
+    tilePanePatchedDetail: false,
+    localPatchAttempted: false,
+    locallyPatchedDetail: false,
+    tilePanePatchMs: 0,
+    localPatchMs: 0,
+  };
+  for (const effect of effects) {
+    const attempt = applyThreadDetailRefreshPatchAttemptEffect(effect, {
+      ...context,
+      tilePanePatchedDetail: result.tilePanePatchedDetail,
+    });
+    if (attempt.tilePanePatchAttempted) {
+      result.tilePanePatchAttempted = true;
+      result.tilePanePatchedDetail = Boolean(attempt.tilePanePatchedDetail);
+      result.tilePanePatchMs += Number(attempt.tilePanePatchMs || 0);
+    }
+    if (attempt.localPatchAttempted) {
+      result.localPatchAttempted = true;
+      result.locallyPatchedDetail = Boolean(attempt.locallyPatchedDetail);
+      result.localPatchMs += Number(attempt.localPatchMs || 0);
+    }
+  }
+  return result;
+}
+
 async function refreshCurrentThread(options = {}) {
   const requestPlan = threadDetailRenderPlanApi.planThreadDetailRefreshRequest({
     threadId: state.currentThreadId,
@@ -9174,22 +9239,22 @@ async function refreshCurrentThread(options = {}) {
     canPatch: renderPlan.canPatch,
     tileSurfaceRefresh: patchSurfacePlan.tileSurfaceRefresh,
   });
-  let tilePanePatchAttempted = false;
-  let localPatchAttempted = false;
-  let tilePanePatchMs = 0;
-  let localPatchMs = 0;
-  if (patchExecutionPlan.tryTilePanePatch) {
-    tilePanePatchAttempted = true;
-    const tilePatchStartedAt = nowPerfMs();
-    tilePanePatchedDetail = patchCurrentThreadTilePaneFromState({ threadId, preserveScroll: true });
-    tilePanePatchMs = roundedDurationMs(tilePatchStartedAt);
-  }
-  if (shouldRenderDetail && !tilePanePatchedDetail && patchExecutionPlan.tryLocalPatch) {
-    localPatchAttempted = true;
-    const patchStartedAt = nowPerfMs();
-    locallyPatchedDetail = patchCurrentThreadDetailFromRefresh(previousThread, state.currentThread, previousConversationSignature);
-    localPatchMs = roundedDurationMs(patchStartedAt);
-  }
+  const patchAttemptEffectsPlan = threadDetailRenderPlanApi.planThreadDetailRefreshPatchAttemptEffects({
+    shouldRenderDetail,
+    tryTilePanePatch: patchExecutionPlan.tryTilePanePatch,
+    tryLocalPatch: patchExecutionPlan.tryLocalPatch,
+  });
+  const patchAttempt = applyThreadDetailRefreshPatchAttemptEffectsPlan(patchAttemptEffectsPlan, {
+    threadId,
+    previousThread,
+    previousConversationSignature,
+  });
+  const tilePanePatchAttempted = patchAttempt.tilePanePatchAttempted;
+  const localPatchAttempted = patchAttempt.localPatchAttempted;
+  const tilePanePatchMs = patchAttempt.tilePanePatchMs;
+  const localPatchMs = patchAttempt.localPatchMs;
+  tilePanePatchedDetail = patchAttempt.tilePanePatchedDetail;
+  locallyPatchedDetail = patchAttempt.locallyPatchedDetail;
   const patchAttemptResult = threadDetailRenderPlanApi.planThreadDetailRefreshPatchAttemptResult({
     shouldRenderDetail,
     tilePanePatchAttempted,
