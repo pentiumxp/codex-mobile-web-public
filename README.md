@@ -16,6 +16,37 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v498 Thread Refresh Outcome Execution Action Plan
+
+v498 继续 Phase A 的前端 render/patch ownership 收敛。v497 已经把
+tile/local patch attempt 的结果解释交给
+`public/thread-detail-render-plan.js`；本次继续缩小 `refreshCurrentThread()`
+在 outcome 之后的执行分支。
+
+本次切片新增：
+
+- `planThreadDetailRefreshOutcomeExecution()` 现在输出显式
+  `executionAction`。
+- `metadata-effects` 表示执行 helper 规划出的 metadata effect 序列。
+- `full-render` 表示执行完整 `renderCurrentThread()`。
+- `none` 表示 tile-pane patch 等终态结果不需要额外 DOM 写入。
+- `refreshCurrentThread()` 不再通过 `metadataEffects.length` 或
+  `runFullRender` 隐式决定执行路径；未知 action 会 fail-fast。
+
+修复边界：
+
+- 症状/风险：outcome execution 已经输出 metadata effect 序列，但 app 层仍用
+  “metadataEffects 是否为空”作为执行分支，这会让 metadata-only、local patch、
+  full render、tile terminal 的关系再次变成隐式状态机。
+- 失败层：前端 thread detail refresh outcome execution ownership。
+- 不变量：本次不改变真实 DOM 写入函数、server projection、task-card 协议、
+  诊断传输或视觉布局；只是把执行动作选择交给纯 helper。
+- 闭环验证：`test/thread-detail-render-plan.test.js` 覆盖
+  `executionAction` / `timingTarget`；`test/mobile-viewport.test.js` /
+  `test/conversation-render.test.js` 验证 app 层按显式 action 执行。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v498`。
+
 ## 2026-06-26 v497 Thread Refresh Patch Attempt Result Plan
 
 v497 继续 Phase A 的前端 render/patch ownership 收敛。v496 已经把

@@ -148,8 +148,8 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v497/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v497"/);
+  assert.match(swJs, /codex-mobile-shell-v498/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v498"/);
   assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(swJs, /"\/thread-diagnostic-events\.js"/);
@@ -339,8 +339,10 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(functionBody("refreshCurrentThread"), /refreshRenderAction = renderOutcome\.renderAction;/);
   assert.match(functionBody("refreshCurrentThread"), /const executionPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshOutcomeExecution\(renderOutcome\);/);
   assert.match(functionBody("refreshCurrentThread"), /const metadataEffects = Array\.isArray\(executionPlan\.metadataEffects\)[\s\S]*\? executionPlan\.metadataEffects[\s\S]*: \[\];/);
-  assert.match(functionBody("refreshCurrentThread"), /if \(metadataEffects\.length\) \{[\s\S]*for \(const effect of metadataEffects\) applyThreadDetailRefreshMetadataEffect\(effect\);/);
-  assert.match(functionBody("refreshCurrentThread"), /else if \(executionPlan\.runFullRender\) \{[\s\S]*renderCurrentThread\(\);/);
+  assert.match(functionBody("refreshCurrentThread"), /if \(executionPlan\.executionAction === "metadata-effects"\) \{[\s\S]*for \(const effect of metadataEffects\) applyThreadDetailRefreshMetadataEffect\(effect\);/);
+  assert.match(functionBody("refreshCurrentThread"), /Thread detail refresh metadata effects are empty/);
+  assert.match(functionBody("refreshCurrentThread"), /else if \(executionPlan\.executionAction === "full-render"\) \{[\s\S]*renderCurrentThread\(\);/);
+  assert.match(functionBody("refreshCurrentThread"), /Unknown thread detail refresh execution action/);
   assert.match(appJs, /function applyThreadDetailRefreshMetadataEffect\(effect\)/);
   assert.match(functionBody("applyThreadDetailRefreshMetadataEffect"), /updateCurrentThreadHeader\(state\.currentThread\)/);
   assert.match(functionBody("applyThreadDetailRefreshMetadataEffect"), /updateLiveOperationDockHtml\(renderLiveOperationDock\(state\.currentThread, existingConversationRenderKeys\(\)\)\)/);

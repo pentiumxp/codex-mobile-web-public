@@ -184,7 +184,10 @@ after the render outcome is known. The same plan now also owns the ordered
 metadata effect list for `local-patch` and `metadata-only` refreshes, so app
 code executes explicit effect names instead of re-deciding which header,
 operation-dock, timer, navigation-state, and scroll-button updates belong to
-each refresh outcome.
+each refresh outcome. It now also exposes an explicit `executionAction`
+(`metadata-effects`, `full-render`, or `none`) and `timingTarget`, so app code
+does not infer the execution branch from `metadataEffects.length` or
+`runFullRender`.
 Refresh performance event field planning now lives in
 `public/thread-performance-metrics.js`: `threadDetailRefreshEventFields`
 builds the bounded `thread_refresh_ms` payload, including server timings,

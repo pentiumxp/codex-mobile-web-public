@@ -2995,8 +2995,10 @@ test("current-thread refresh patches the current tile pane for metadata-only til
   assert.match(body, /let renderOutcome = null;/);
   assert.match(body, /const executionPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshOutcomeExecution\(renderOutcome\);/);
   assert.match(body, /const metadataEffects = Array\.isArray\(executionPlan\.metadataEffects\)[\s\S]*\? executionPlan\.metadataEffects[\s\S]*: \[\];/);
-  assert.match(body, /if \(metadataEffects\.length\) \{[\s\S]*for \(const effect of metadataEffects\) applyThreadDetailRefreshMetadataEffect\(effect\);/);
-  assert.match(body, /else if \(executionPlan\.runFullRender\) \{/);
+  assert.match(body, /if \(executionPlan\.executionAction === "metadata-effects"\) \{[\s\S]*for \(const effect of metadataEffects\) applyThreadDetailRefreshMetadataEffect\(effect\);/);
+  assert.match(body, /Thread detail refresh metadata effects are empty/);
+  assert.match(body, /else if \(executionPlan\.executionAction === "full-render"\) \{/);
+  assert.match(body, /Unknown thread detail refresh execution action/);
   assert.match(appJs, /function applyThreadDetailRefreshMetadataEffect\(effect\)/);
   assert.match(body, /const projectionConsistencyPhase = executionPlan\.projectionConsistencyPhase \|\| "";/);
   assert.match(body, /checkConversationProjectionConsistency\(projectionConsistencyPhase, \{ renderMode: detailRenderMode \}\)/);

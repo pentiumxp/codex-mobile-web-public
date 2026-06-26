@@ -508,7 +508,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v497";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v498";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -9139,14 +9139,17 @@ async function refreshCurrentThread(options = {}) {
   const metadataEffects = Array.isArray(executionPlan.metadataEffects)
     ? executionPlan.metadataEffects
     : [];
-  if (metadataEffects.length) {
+  if (executionPlan.executionAction === "metadata-effects") {
+    if (!metadataEffects.length) throw new Error("Thread detail refresh metadata effects are empty");
     const metadataStartedAt = nowPerfMs();
     for (const effect of metadataEffects) applyThreadDetailRefreshMetadataEffect(effect);
     metadataUpdateMs = roundedDurationMs(metadataStartedAt);
-  } else if (executionPlan.runFullRender) {
+  } else if (executionPlan.executionAction === "full-render") {
     const conversationRenderStartedAt = nowPerfMs();
     renderCurrentThread();
     conversationRenderMs = roundedDurationMs(conversationRenderStartedAt);
+  } else if (executionPlan.executionAction && executionPlan.executionAction !== "none") {
+    throw new Error(`Unknown thread detail refresh execution action: ${executionPlan.executionAction}`);
   }
   const projectionConsistencyPhase = executionPlan.projectionConsistencyPhase || "";
   if (projectionConsistencyPhase) {
