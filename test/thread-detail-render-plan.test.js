@@ -1187,6 +1187,88 @@ test("thread detail refresh outcome execution preserves terminal tile-pane patch
   });
 });
 
+test("thread detail refresh outcome execution stage composes outcome, execution effects, and consistency effects", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshOutcomeExecutionStage({
+    renderPlan: {
+      shouldRenderDetail: true,
+      detailRenderMode: "patch",
+    },
+    patchAttemptResult: {
+      finalizeResult: {
+        locallyPatchedDetail: true,
+        tilePanePatchedDetail: false,
+      },
+    },
+  }), {
+    renderOutcome: {
+      detailRenderMode: "patch",
+      locallyPatchedDetail: true,
+      tilePanePatchedDetail: false,
+      renderAction: "local-patch-metadata-update",
+      projectionConsistencyPhase: "refresh-local-patch",
+    },
+    executionPlan: {
+      renderAction: "local-patch-metadata-update",
+      metadataUpdateMode: "local-patch",
+      metadataEffects: [
+        "update-current-thread-header",
+        "update-tick-timer",
+        "publish-plugin-navigation-state",
+      ],
+      executionAction: "metadata-effects",
+      timingTarget: "metadata-update",
+      runFullRender: false,
+      projectionConsistencyPhase: "refresh-local-patch",
+      consistencyCheck: {
+        shouldCheck: true,
+        phase: "refresh-local-patch",
+        renderMode: "patch",
+        reason: "phase-present",
+      },
+      reason: "local-patch-complete",
+    },
+    executionEffectsPlan: {
+      effects: [
+        {
+          type: "metadata-effects",
+          metadataEffects: [
+            "update-current-thread-header",
+            "update-tick-timer",
+            "publish-plugin-navigation-state",
+          ],
+          timingTarget: "metadata-update",
+          requireEffects: true,
+        },
+      ],
+      reason: "metadata-effects",
+    },
+    consistencyCheckEffectsPlan: {
+      effects: [
+        {
+          type: "conversation-projection-consistency-check",
+          phase: "refresh-local-patch",
+          renderMode: "patch",
+        },
+      ],
+      reason: "consistency-check",
+    },
+    reason: "local-patch-complete",
+  });
+
+  assert.equal(renderPlan.planThreadDetailRefreshOutcomeExecutionStage({
+    renderPlan: {
+      shouldRenderDetail: true,
+      detailRenderMode: "full-render",
+    },
+    patchAttemptResult: {
+      finalizeResult: {
+        locallyPatchedDetail: false,
+        tilePanePatchedDetail: false,
+      },
+    },
+  }).executionEffectsPlan.effects[0].type, "full-render");
+});
+
 test("thread detail refresh consistency check planning skips missing phases", () => {
   assert.deepEqual(renderPlan.planThreadDetailRefreshConsistencyCheck({
     detailRenderMode: "full-render",

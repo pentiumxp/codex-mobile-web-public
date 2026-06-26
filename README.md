@@ -45,6 +45,41 @@ completion、scroll/bottom-follow 和 single-thread shell update 的所有权边
 `status=ready`，detail 走 `projection-active-overlay` warm path，active overlay
 gate 为 `ready`；抽样文件 source/prod SHA-256 短 hash 一致。
 
+## 2026-06-27 Phase A Refresh Outcome Execution Stage Slice
+
+本地小切片继续收敛 `refreshCurrentThread()` 的 outcome/execution/consistency
+所有权。此前 render outcome、execution action/effects 和 projection consistency
+effect 已经分别由 `public/thread-detail-render-plan.js` 的纯 helper 负责，但
+`public/app.js` 仍把这些 helper 串在一起，直接维护
+`finalizeThreadDetailRenderPlan()` -> `planThreadDetailRefreshOutcomeExecution()` ->
+`planThreadDetailRefreshExecutionEffects()` ->
+`planThreadDetailRefreshConsistencyCheckEffects()` 的固定组合关系。
+
+本次修复：
+
+- `public/thread-detail-render-plan.js` 新增
+  `planThreadDetailRefreshOutcomeExecutionStage()`，统一从 `renderPlan` +
+  `patchAttemptResult` 组合出 `renderOutcome`、`executionPlan`、
+  `executionEffectsPlan` 和 `consistencyCheckEffectsPlan`。
+- `public/app.js` 的 `refreshCurrentThread()` 只调用 stage helper，然后执行真实
+  metadata/full-render/consistency side effects；不再手动串联这些 outcome helper。
+- `test/thread-detail-render-plan.test.js` 覆盖 stage helper 的 patch/full-render
+  输出形状。
+- `test/conversation-render.test.js` 和 `test/mobile-viewport.test.js` 验证
+  `refreshCurrentThread()` 不再直接调用底层 outcome/execution/consistency helper。
+- 不改变 refresh API、DOM patch、full render、metadata update、consistency check、
+  server projection、任务卡协议、诊断协议、shell/cache 或部署状态。
+
+闭环验证：
+
+```bash
+node --check public/thread-detail-render-plan.js && node --check public/app.js && node --check test/thread-detail-render-plan.test.js && node --check test/conversation-render.test.js && node --check test/mobile-viewport.test.js && node --check test/thread-tile-layout-ui.test.js
+node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-tile-layout-ui.test.js
+```
+
+结果：focused `204` passed。该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，
+尚未部署；继续作为 Phase A 模块的一部分累积。
+
 ## 2026-06-27 Phase A/B Detail Post-Merge, Post-Render, And Telemetry Plan Reuse Slice
 
 本地小切片继续收敛 thread detail 状态所有权。v506 已经让普通

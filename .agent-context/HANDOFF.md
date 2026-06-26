@@ -18279,3 +18279,57 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit locally, then continue Phase A by extracting the next refresh outcome
     / execution / consistency seam, or batch the accumulated Phase A local
     slices for one deploy/readback when requested.
+
+## 2026-06-27 - Latest tail marker: Phase A refresh outcome execution stage local slice
+
+- Current local state:
+  - Continued Phase A `refreshCurrentThread()` outcome/execution ownership
+    cleanup after `91dbe6f`.
+  - Render outcome finalization, execution planning, execution-effect
+    planning, and consistency-check effect planning already lived in
+    `public/thread-detail-render-plan.js`, but `refreshCurrentThread()` still
+    directly composed that helper chain.
+- Root-cause boundary:
+  - Symptom/risk: the outcome/execution/consistency helper chain was pure and
+    tested, but its fixed composition still lived in `public/app.js`. Future
+    app orchestration edits could make patch/full-render execution, metadata
+    effects, and consistency-check effects drift from the tested plan layer.
+  - Failing layer: frontend refresh outcome execution stage composition
+    ownership, not DOM patch execution, merge behavior, server projection,
+    scroll behavior, task-card protocol, Home AI diagnostic intake, or
+    shell/cache.
+  - Violated invariant: app code should execute real metadata/full-render and
+    consistency side effects; pure planning helpers should own the fixed
+    composition from render and patch-attempt facts to outcome, execution
+    effects, and consistency effects.
+- Changes:
+  - `public/thread-detail-render-plan.js` now exports
+    `planThreadDetailRefreshOutcomeExecutionStage()`.
+  - `public/app.js` uses that helper in `refreshCurrentThread()` and no longer
+    hand-wires `finalizeThreadDetailRenderPlan()`,
+    `planThreadDetailRefreshOutcomeExecution()`,
+    `planThreadDetailRefreshExecutionEffects()`, and
+    `planThreadDetailRefreshConsistencyCheckEffects()` in app orchestration.
+  - Updated `test/thread-detail-render-plan.test.js`,
+    `test/conversation-render.test.js`, and `test/mobile-viewport.test.js`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation:
+  - Syntax and focused:
+    `node --check public/thread-detail-render-plan.js && node --check public/app.js && node --check test/thread-detail-render-plan.test.js && node --check test/conversation-render.test.js && node --check test/mobile-viewport.test.js && node --check test/thread-tile-layout-ui.test.js && node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-tile-layout-ui.test.js`
+    passed (`204` focused tests).
+  - Full:
+    `npm test` passed (`1169` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache
+    bump. This remains a local Phase A ownership slice to batch with the next
+    module validation/deploy.
+- Progress:
+  - Overall architecture optimization is about `84%`.
+  - Phase A frontend render/projection ownership is about `94%`.
+- Next:
+  - Commit locally, then either continue Phase A on the next remaining
+    `refreshCurrentThread()` performance/telemetry/completion stage boundary or
+    batch the accumulated Phase A local slices for one deploy/readback when
+    requested.

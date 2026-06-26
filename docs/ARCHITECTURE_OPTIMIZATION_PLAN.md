@@ -783,6 +783,14 @@ metadata-update, full-render, no-op, or bounded unknown effect entries. App code
 still performs real metadata updates and `renderCurrentThread()` calls, but
 `refreshCurrentThread()` no longer branches directly on
 `executionPlan.executionAction`.
+The fixed composition from render outcome to execution and consistency effects
+now also lives in the helper:
+`planThreadDetailRefreshOutcomeExecutionStage` takes the already planned
+`renderPlan` plus the executed `patchAttemptResult`, finalizes
+`renderOutcome`, derives `executionPlan`, then returns the execution and
+consistency effect plans as one stage. This keeps `refreshCurrentThread()` from
+hand-wiring the outcome/execution/consistency helper chain while still leaving
+real metadata updates, full render, and consistency checks in app code.
 Refresh completion side-effect planning now also lives in this helper:
 `planThreadDetailRefreshCompletionEffects` decides the success diagnostic clear,
 usage-backfill refresh scheduling, and live-poll scheduling effects, while app

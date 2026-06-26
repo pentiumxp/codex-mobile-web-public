@@ -853,6 +853,24 @@
     };
   }
 
+  function planThreadDetailRefreshOutcomeExecutionStage(input = {}) {
+    const renderPlan = objectOrEmpty(input.renderPlan);
+    const patchAttemptResult = objectOrEmpty(input.patchAttemptResult);
+    const renderOutcome = finalizeThreadDetailRenderPlan(renderPlan, patchAttemptResult.finalizeResult);
+    const executionPlan = planThreadDetailRefreshOutcomeExecution(renderOutcome);
+    const executionEffectsPlan = planThreadDetailRefreshExecutionEffects(executionPlan);
+    const consistencyCheckEffectsPlan = planThreadDetailRefreshConsistencyCheckEffects(
+      executionPlan.consistencyCheck || {},
+    );
+    return {
+      renderOutcome,
+      executionPlan,
+      executionEffectsPlan,
+      consistencyCheckEffectsPlan,
+      reason: executionPlan.reason,
+    };
+  }
+
   function planThreadDetailRefreshPerformanceInput(input = {}) {
     const renderPlan = objectOrEmpty(input.renderPlan);
     const renderOutcome = objectOrEmpty(input.renderOutcome);
@@ -1552,6 +1570,7 @@
     planThreadDetailRefreshPatchRejectedDiagnostic,
     planThreadDetailRefreshPatchRejectedDiagnosticEffects,
     planThreadDetailRefreshOutcomeExecution,
+    planThreadDetailRefreshOutcomeExecutionStage,
     planThreadDetailRefreshExecutionEffects,
     planThreadDetailRefreshPerformanceInput,
     planThreadDetailRefreshTelemetryEffects,

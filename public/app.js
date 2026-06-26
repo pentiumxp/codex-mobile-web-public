@@ -9804,16 +9804,17 @@ async function refreshCurrentThread(options = {}) {
   locallyPatchedDetail = patchAttemptResult.locallyPatchedDetail;
   tilePanePatchedDetail = patchAttemptResult.tilePanePatchedDetail;
   applyThreadDetailRefreshPatchRejectedDiagnosticEffectsPlan(patchAttemptResultStage.patchRejectedDiagnosticEffectsPlan);
-  renderOutcome = threadDetailRenderPlanApi.finalizeThreadDetailRenderPlan(renderPlan, patchAttemptResult.finalizeResult);
+  const outcomeExecutionStage = threadDetailRenderPlanApi.planThreadDetailRefreshOutcomeExecutionStage({
+    renderPlan,
+    patchAttemptResult,
+  });
+  renderOutcome = outcomeExecutionStage.renderOutcome;
   locallyPatchedDetail = renderOutcome.locallyPatchedDetail;
   tilePanePatchedDetail = renderOutcome.tilePanePatchedDetail;
-  const executionPlan = threadDetailRenderPlanApi.planThreadDetailRefreshOutcomeExecution(renderOutcome);
-  const executionEffectsPlan = threadDetailRenderPlanApi.planThreadDetailRefreshExecutionEffects(executionPlan);
-  const executionTimings = applyThreadDetailRefreshExecutionEffectsPlan(executionEffectsPlan);
+  const executionTimings = applyThreadDetailRefreshExecutionEffectsPlan(outcomeExecutionStage.executionEffectsPlan);
   metadataUpdateMs += executionTimings.metadataUpdateMs;
   conversationRenderMs += executionTimings.conversationRenderMs;
-  const consistencyCheckEffectsPlan = threadDetailRenderPlanApi.planThreadDetailRefreshConsistencyCheckEffects(executionPlan.consistencyCheck || {});
-  applyThreadDetailRefreshConsistencyCheckEffectsPlan(consistencyCheckEffectsPlan);
+  applyThreadDetailRefreshConsistencyCheckEffectsPlan(outcomeExecutionStage.consistencyCheckEffectsPlan);
   const renderElapsedMs = roundedDurationMs(renderStartedAt);
   const refreshPerformanceInput = threadDetailRenderPlanApi.planThreadDetailRefreshPerformanceInput({
     source,
