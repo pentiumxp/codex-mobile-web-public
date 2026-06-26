@@ -15798,3 +15798,30 @@ The previous full handoff was archived and should be opened only when old proven
 - Next:
   - Continue Phase A or batch the current module for one deploy/readback when
     requested.
+
+## 2026-06-26 - Latest tail marker: Phase A auto-scroll hold planning slice
+
+- Latest local commit for this continuation slice:
+  - Message: `plan auto scroll hold from scroll`.
+- Current state:
+  - This is the sixteenth local Phase A render/patch/scroll ownership slice.
+  - Not deployed by design; no `CLIENT_BUILD_ID` / PWA shell cache bump.
+- Root-cause boundary:
+  - `updateConversationAutoScrollHoldFromScroll()` directly decided whether
+    user scroll should clear auto-scroll hold, remember hold for the current
+    turn, or do nothing.
+  - `public/conversation-scroll.js` now owns
+    `planConversationAutoScrollHoldFromScroll()`, while `public/app.js`
+    supplies near-bottom/recent-scroll/current-turn facts and executes only
+    the real hold side effects.
+- Validation:
+  - Focused:
+    `node --test test/conversation-scroll.test.js test/turn-scroll-controls.test.js test/mobile-viewport.test.js test/conversation-render.test.js`
+    passed (`136` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`1120` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit locally, then continue Phase A or batch the current module for one
+    deploy/readback when requested.

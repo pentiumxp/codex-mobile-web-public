@@ -179,6 +179,31 @@
     };
   }
 
+  function planConversationAutoScrollHoldFromScroll(options = {}) {
+    if (options.nearBottom) {
+      return {
+        action: "clear-hold",
+        reason: "near-bottom",
+      };
+    }
+    if (!options.recentScrollIntent) {
+      return {
+        action: "none",
+        reason: "no-recent-scroll-intent",
+      };
+    }
+    if (options.hasCurrentTurn) {
+      return {
+        action: "remember-hold",
+        reason: "current-turn-candidate",
+      };
+    }
+    return {
+      action: "none",
+      reason: "no-current-turn",
+    };
+  }
+
   function planFullRenderScroll(options = {}) {
     const explicitNoStickToBottom = options.stickToBottom === false || Boolean(options.scrollToTurnReceiptStart);
     const shouldFollowBottom = !explicitNoStickToBottom
@@ -252,6 +277,7 @@
     extendSubmittedMessageFollow,
     createViewportFollow,
     isNearBottom,
+    planConversationAutoScrollHoldFromScroll,
     planConversationJumpButtons,
     planFullRenderScroll,
     planLocalPatchScrollCompletion,

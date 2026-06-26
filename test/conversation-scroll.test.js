@@ -257,6 +257,44 @@ test("user-reading-current-turn planning keeps manual reading hold explicit", ()
   });
 });
 
+test("auto-scroll hold planning reacts only to explicit scroll facts", () => {
+  assert.deepEqual(conversationScroll.planConversationAutoScrollHoldFromScroll({
+    nearBottom: true,
+    recentScrollIntent: true,
+    hasCurrentTurn: true,
+  }), {
+    action: "clear-hold",
+    reason: "near-bottom",
+  });
+
+  assert.deepEqual(conversationScroll.planConversationAutoScrollHoldFromScroll({
+    nearBottom: false,
+    recentScrollIntent: false,
+    hasCurrentTurn: true,
+  }), {
+    action: "none",
+    reason: "no-recent-scroll-intent",
+  });
+
+  assert.deepEqual(conversationScroll.planConversationAutoScrollHoldFromScroll({
+    nearBottom: false,
+    recentScrollIntent: true,
+    hasCurrentTurn: true,
+  }), {
+    action: "remember-hold",
+    reason: "current-turn-candidate",
+  });
+
+  assert.deepEqual(conversationScroll.planConversationAutoScrollHoldFromScroll({
+    nearBottom: false,
+    recentScrollIntent: true,
+    hasCurrentTurn: false,
+  }), {
+    action: "none",
+    reason: "no-current-turn",
+  });
+});
+
 test("full render scroll planning preserves bottom-follow precedence", () => {
   assert.deepEqual(conversationScroll.planFullRenderScroll({
     stickToBottom: false,

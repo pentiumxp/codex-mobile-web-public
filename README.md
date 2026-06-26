@@ -16,6 +16,44 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 Phase A Auto-Scroll Hold Planning Slice
+
+本地小切片继续推进 Phase A 的 scroll ownership 收敛。此前
+`updateConversationAutoScrollHoldFromScroll()` 在 `public/app.js` 里直接决定
+用户滚动后是否清理 auto-scroll hold、是否因为最近手动滚动且存在当前 turn
+候选而记住 hold。这是“用户正在读当前输出”策略的相邻状态机；如果继续留在
+app 主文件里，bottom-follow、当前回执跳转和长回执阅读 hold 容易继续分叉。
+
+本次修复：
+
+- `public/conversation-scroll.js` 新增
+  `planConversationAutoScrollHoldFromScroll()`，根据 near-bottom、
+  recent scroll intent、current-turn candidate 产出 `clear-hold`、
+  `remember-hold` 或 `none`。
+- `public/app.js` 的 `updateConversationAutoScrollHoldFromScroll()` 改为只采集
+  当前 DOM/状态事实并执行真实 `clearConversationAutoScrollHold()` /
+  `rememberConversationAutoScrollHold()` side effect。
+- 保留原短路顺序：near-bottom 为真时直接规划 clear；不在底部时才检查最近
+  滚动意图；只有最近滚动意图存在时才读取 current-turn candidate。
+- focused tests 覆盖清理 hold、无最近滚动意图 noop、当前 turn 候选 remember、
+  无当前 turn 候选 noop，并验证 app wiring 不再内联策略。
+- 不改变 DOM、按钮位置、scroll 动作、projection、任务卡协议或 shell/cache。
+
+闭环验证：
+
+```bash
+node --test test/conversation-scroll.test.js test/turn-scroll-controls.test.js test/mobile-viewport.test.js test/conversation-render.test.js
+npm run check
+npm test
+npm run check:macos
+git diff --check
+```
+
+结果：focused `136` passed；full `npm test` `1120` passed；
+`npm run check`、`npm run check:macos`、`git diff --check` 均通过。
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，
+尚未部署；继续作为 Phase A 模块的一部分累积。
+
 ## 2026-06-26 Phase A User Reading Current Turn Planning Slice
 
 本地小切片继续推进 Phase A 的 scroll ownership 收敛。此前

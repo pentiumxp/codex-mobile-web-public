@@ -907,11 +907,16 @@ decision and bounded reason for full conversation renders. User-reading-current-
 planning now also lives in `public/conversation-scroll.js` through
 `planUserReadingCurrentTurn`: app code supplies near-bottom, active auto-scroll
 hold, recent manual scroll intent, and current-turn candidate facts while the
-helper owns the final `userReadingCurrentTurn` classification. Conversation
-jump button visibility planning now also lives in `public/conversation-scroll.js`
-through `planConversationJumpButtons`: app code supplies thread/load state,
-scrollability, near-bottom state, and receipt-target visibility while the helper
-owns the mutually exclusive bottom-jump versus receipt-jump decision.
+helper owns the final `userReadingCurrentTurn` classification. Auto-scroll hold
+updates from manual scroll now also live there through
+`planConversationAutoScrollHoldFromScroll`: app code supplies near-bottom,
+recent manual scroll intent, and current-turn candidate facts while the helper
+decides whether the real side effect should clear hold, remember hold, or do
+nothing. Conversation jump button visibility planning now also lives in
+`public/conversation-scroll.js` through `planConversationJumpButtons`: app code
+supplies thread/load state, scrollability, near-bottom state, and receipt-target
+visibility while the helper owns the mutually exclusive bottom-jump versus
+receipt-jump decision.
 Single-thread shell
 conversation update input planning now also lives in
 `public/thread-detail-render-plan.js`: early-shell and full-render shell paths

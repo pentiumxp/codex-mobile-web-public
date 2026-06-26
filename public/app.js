@@ -20199,12 +20199,20 @@ function isUserReadingCurrentTurn(options = {}) {
 }
 
 function updateConversationAutoScrollHoldFromScroll() {
-  if (isConversationNearBottom()) {
+  const nearBottom = isConversationNearBottom();
+  const planInput = { nearBottom };
+  if (!nearBottom) {
+    planInput.recentScrollIntent = hasRecentConversationScrollIntent();
+    if (planInput.recentScrollIntent) {
+      planInput.hasCurrentTurn = Boolean(turnForConversationAutoScrollHold());
+    }
+  }
+  const plan = conversationScroll.planConversationAutoScrollHoldFromScroll(planInput);
+  if (plan.action === "clear-hold") {
     clearConversationAutoScrollHold();
     return;
   }
-  if (!hasRecentConversationScrollIntent()) return;
-  if (turnForConversationAutoScrollHold()) rememberConversationAutoScrollHold();
+  if (plan.action === "remember-hold") rememberConversationAutoScrollHold();
 }
 
 function clearRecentCompletedReplyAnchor() {

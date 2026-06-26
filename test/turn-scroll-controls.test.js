@@ -120,8 +120,14 @@ test("manual conversation scroll pauses live auto-stick until the user returns t
   assert.match(appJs, /function updateConversationAutoScrollHoldFromScroll\(\)/);
   assert.match(appJs, /function turnForConversationAutoScrollHold\(\)/);
   assert.match(appJs, /const turn = turnForConversationAutoScrollHold\(\);/);
-  assert.match(appJs, /if \(!hasRecentConversationScrollIntent\(\)\) return;/);
-  assert.match(appJs, /if \(turnForConversationAutoScrollHold\(\)\) rememberConversationAutoScrollHold\(\);/);
+  assert.match(functionBody("updateConversationAutoScrollHoldFromScroll"), /const planInput = \{ nearBottom \};/);
+  assert.match(functionBody("updateConversationAutoScrollHoldFromScroll"), /planInput\.recentScrollIntent = hasRecentConversationScrollIntent\(\);/);
+  assert.match(functionBody("updateConversationAutoScrollHoldFromScroll"), /planInput\.hasCurrentTurn = Boolean\(turnForConversationAutoScrollHold\(\)\);/);
+  assert.match(functionBody("updateConversationAutoScrollHoldFromScroll"), /const plan = conversationScroll\.planConversationAutoScrollHoldFromScroll\(planInput\);/);
+  assert.match(functionBody("updateConversationAutoScrollHoldFromScroll"), /if \(plan\.action === "clear-hold"\) \{\s*clearConversationAutoScrollHold\(\);\s*return;\s*\}/);
+  assert.match(functionBody("updateConversationAutoScrollHoldFromScroll"), /if \(plan\.action === "remember-hold"\) rememberConversationAutoScrollHold\(\);/);
+  assert.doesNotMatch(functionBody("updateConversationAutoScrollHoldFromScroll"), /if \(!hasRecentConversationScrollIntent\(\)\) return;/);
+  assert.doesNotMatch(functionBody("updateConversationAutoScrollHoldFromScroll"), /if \(turnForConversationAutoScrollHold\(\)\) rememberConversationAutoScrollHold\(\);/);
   assert.doesNotMatch(appJs, /if \(Date\.now\(\) < state\.programmaticScrollUntilMs\) return;\s*if \(isConversationNearBottom\(\)\)/);
   assert.doesNotMatch(appJs, /const shouldFollowBottom = shouldFollowSubmittedMessageToBottom\(\) \|\| shouldFollowViewportChangeToBottom\(\);/);
   assert.doesNotMatch(appJs, /const shouldStickToBottom = shouldFollowBottom/);
