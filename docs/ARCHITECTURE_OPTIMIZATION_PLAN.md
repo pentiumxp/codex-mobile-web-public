@@ -1008,7 +1008,11 @@ explicit user pane count are normalized into automatic, effective, min, and
 max pane counts as one bounded plan while `public/app.js` only supplies current
 thread/list facts. Runtime detail reads are now capped separately from visible
 pane count, so wide screens can still show more panes without starting every
-large thread detail read at once.
+large thread detail read at once. Pane-local scroll runtime policy now also
+lives there: near-bottom metrics, hold clear/remember decisions, bottom-jump
+button visibility, and restore-distance versus bottom-follow choices are
+planned from bounded scroll facts while `public/app.js` keeps DOM reads/writes
+and ARIA/class side effects.
 App code can no
 longer fall through from tile mode into the
 single-thread patch path without an explicit policy decision, fall through from
@@ -1051,6 +1055,7 @@ Target:
   is also outside app.js; detail-load lifecycle side-effect planning is also
   outside app.js; detail-load queue/abort/drain planning is also outside app.js;
   automatic/effective/min/max pane-count planning is also outside app.js;
+  pane-local scroll hold/bottom-button/restore planning is also outside app.js;
   refresh, first-paint, and full-backfill performance event field ownership is
   also outside app.js;
   operation card content and final template planning are now outside app.js;
@@ -1320,7 +1325,9 @@ Target:
   also now lives there, including start/success/error/finally state/render
   intent. Effective pane-count planning also now lives there, so automatic
   current/running-thread sizing, explicit user-requested counts, min close
-  bounds, and max add bounds share one helper-owned plan. Continue moving pane
+  bounds, and max add bounds share one helper-owned plan. Pane-local scroll
+  planning also now lives there, so near-bottom, hold, bottom-jump visibility,
+  and patch restore-distance decisions are helper-owned. Continue moving pane
   widths, per-pane drafts, max concurrent detail reads, pane-local
   send/approval/interrupt ownership, command detail panels, and mobile collapse
   behavior into testable helpers without DOM side effects.

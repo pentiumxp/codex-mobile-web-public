@@ -16003,3 +16003,53 @@ The previous full handoff was archived and should be opened only when old proven
   - Only bounded file paths, test counts, build/slice labels, and architecture
     state are recorded. No secrets, cookies, launch tokens, private thread
     bodies, task-card bodies, uploads, or long logs are included.
+
+## 2026-06-26 - Phase C pane scroll runtime planning local slice
+
+- Latest local slice:
+  - Continued Phase C pane-state/runtime architecture after `29bd2a0`
+    (`plan thread tile pane counts`). This slice is local/private only and is
+    not deployed by design.
+- Root-cause boundary:
+  - Symptom/risk: each tile pane should behave like a smaller single-thread
+    window, but pane-local scroll runtime decisions were still inline in
+    `public/app.js`: near-bottom threshold, scroll-hold remember/clear,
+    bottom-jump button visibility, and restore-distance versus bottom-follow
+    after pane patches.
+  - Failing layer: frontend thread-tile pane-local runtime policy, not DOM
+    structure, CSS, server projection, task-card protocol, network reads, or
+    shell/cache.
+  - Violated invariant: `public/app.js` should own DOM reads/writes and
+    class/ARIA side effects; deterministic pane-local scroll policy should be
+    helper-owned and covered by focused tests.
+- Changes:
+  - `public/thread-tile-state.js` now exposes `paneScrollMetrics()`,
+    `paneScrollHoldPlan()`, `paneBottomButtonPlan()`, and
+    `paneScrollRestorePlan()`.
+  - `public/app.js` now uses those plans for tile-pane scroll snapshots,
+    near-bottom checks, hold Map mutation, bottom button show/hide, and pane
+    patch scroll restoration while keeping real DOM effects local.
+  - Tests cover 48px near-bottom behavior, 96px scrollable button behavior,
+    hold clear/remember, stick-to-bottom override, restore-distance top
+    calculation, and app wiring.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md` with the Phase C boundary.
+- Validation:
+  - Focused:
+    `node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js test/thread-tile-actions.test.js test/thread-tile-layout.test.js test/turn-scroll-controls.test.js`
+    passed (`55` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`1126` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Not deployed. No `CLIENT_BUILD_ID` / PWA shell cache bump. This remains a
+    small Phase C local slice to batch with the next pane-state/runtime module.
+- Next:
+  - Continue Phase C with split sizing, pane-local draft/runtime ownership, or
+    pane-local command detail state. Batch a deploy only after a coherent
+    pane-state module is ready.
+- Privacy:
+  - Only bounded file paths, test counts, and architecture state are recorded.
+    No secrets, cookies, launch tokens, private thread bodies, task-card bodies,
+    uploads, screenshots, or long logs are included.

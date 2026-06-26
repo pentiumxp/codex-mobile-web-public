@@ -76,6 +76,34 @@ node --test test/thread-tile-state.test.js test/thread-tile-layout.test.js test/
 该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为 Phase C
 本地模块累积。
 
+## 2026-06-26 Phase C Pane Scroll Runtime Planning Slice
+
+本地小切片继续推进 Phase C 的 pane-runtime ownership。此前每个平铺窗口的
+滚动距离、near-bottom 判断、是否记住阅读位置、底部跳转按钮是否显示、patch 后
+恢复距离还是沉底，都由 `public/app.js` 直接写阈值和条件。这些规则决定每个 pane
+是否像一个独立的缩小单线程窗口，不应该继续散落在 DOM 编排层。
+
+本次修复：
+
+- `public/thread-tile-state.js` 新增 pane-local scroll plans：
+  `paneScrollMetrics()`、`paneScrollHoldPlan()`、`paneBottomButtonPlan()`、
+  `paneScrollRestorePlan()`。
+- `public/app.js` 仍负责真实 DOM 读取、`scrollTop` 写入、按钮 class/ARIA 切换和
+  `threadTilePaneScrollHoldById` Map 写入；但 near-bottom、hold、show/hide、
+  restore-distance 的策略判断不再内联。
+- focused tests 覆盖 48px near-bottom、96px scrollable button 阈值、hold clear/
+  remember、stick-to-bottom 覆盖、恢复距离 top 计算，以及 app wiring 调用 helper。
+- 不改变 DOM 结构、CSS、网络、server projection、任务卡协议、shell/cache 或部署状态。
+
+闭环验证：
+
+```bash
+node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js test/thread-tile-actions.test.js test/thread-tile-layout.test.js test/turn-scroll-controls.test.js
+```
+
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为 Phase C
+本地模块累积。
+
 ## 2026-06-26 Phase A Local Patch Completion Snapshot Slice
 
 本地小切片继续推进 Phase A 的 thread-detail render/patch ownership 收敛。

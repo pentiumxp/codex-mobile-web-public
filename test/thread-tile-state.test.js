@@ -543,6 +543,67 @@ test("thread tile state owns effective pane count policy", () => {
   assert.equal(empty.maxPaneCount, 1);
 });
 
+test("thread tile state owns pane scroll hold and restore policy", () => {
+  const near = state.paneScrollMetrics({
+    scrollHeight: 1000,
+    clientHeight: 400,
+    scrollTop: 552,
+    hold: true,
+  });
+  assert.equal(near.distanceFromBottom, 48);
+  assert.equal(near.nearBottom, true);
+  assert.equal(near.hold, true);
+  assert.deepEqual(state.paneScrollHoldPlan(near), {
+    action: "pane-scroll-hold",
+    reason: "near-bottom",
+    rememberHold: false,
+    clearHold: true,
+    metrics: near,
+  });
+
+  const away = state.paneScrollMetrics({
+    scrollHeight: 1000,
+    clientHeight: 400,
+    scrollTop: 500,
+  });
+  assert.equal(away.distanceFromBottom, 100);
+  assert.equal(away.nearBottom, false);
+  assert.equal(state.paneScrollHoldPlan(away).rememberHold, true);
+  assert.deepEqual(state.paneBottomButtonPlan({ metrics: away }), {
+    action: "pane-bottom-button",
+    reason: "show",
+    shouldShow: true,
+    scrollable: true,
+    scrollableDeltaPx: 96,
+    metrics: away,
+  });
+  assert.equal(state.paneBottomButtonPlan({
+    scrollHeight: 450,
+    clientHeight: 400,
+    scrollTop: 0,
+  }).reason, "not-scrollable");
+
+  const heldAway = Object.assign({}, away, { hold: true });
+  assert.deepEqual(state.paneScrollRestorePlan({
+    previous: heldAway,
+    scrollHeight: 1200,
+    clientHeight: 400,
+  }), {
+    action: "pane-scroll-restore",
+    reason: "restore-distance",
+    mode: "restore-distance",
+    top: 700,
+    hold: true,
+  });
+  assert.equal(state.paneScrollRestorePlan({
+    previous: heldAway,
+    rememberedHold: false,
+    stickToBottom: true,
+    scrollHeight: 1200,
+    clientHeight: 400,
+  }).mode, "bottom");
+});
+
 test("thread tile state plans explicit pane selection", () => {
   assert.equal(state.selectPanePlan({
     enabled: false,

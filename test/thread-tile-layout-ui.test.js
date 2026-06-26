@@ -365,10 +365,13 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(appJs, /function rememberThreadTilePaneScrollPosition\(/);
   assert.match(functionBody(appJs, "scheduleThreadTileRefresh"), /threadTileStatePolicy\.refreshSchedulePlan/);
   assert.match(functionBody(appJs, "refreshThreadTileDetails"), /threadTileStatePolicy\.refreshTargetIds/);
-  assert.match(functionBody(appJs, "captureThreadTilePaneScrollState"), /hold: state\.threadTilePaneScrollHoldById\.get\(id\) === true/);
-  assert.match(functionBody(appJs, "rememberThreadTilePaneScrollPosition"), /state\.threadTilePaneScrollHoldById\.set\(id, true\)/);
-  assert.match(functionBody(appJs, "rememberThreadTilePaneScrollPosition"), /state\.threadTilePaneScrollHoldById\.delete\(id\)/);
-  assert.match(functionBody(appJs, "restoreThreadTilePaneElementScrollState"), /!hold/);
+  assert.match(functionBody(appJs, "captureThreadTilePaneScrollState"), /threadTileStatePolicy\.paneScrollMetrics/);
+  assert.match(functionBody(appJs, "captureThreadTilePaneElementScrollState"), /threadTileStatePolicy\.paneScrollMetrics/);
+  assert.match(functionBody(appJs, "rememberThreadTilePaneScrollPosition"), /threadTileStatePolicy\.paneScrollHoldPlan/);
+  assert.match(functionBody(appJs, "applyThreadTilePaneScrollHoldPlan"), /state\.threadTilePaneScrollHoldById\.set\(threadId, true\)/);
+  assert.match(functionBody(appJs, "applyThreadTilePaneScrollHoldPlan"), /state\.threadTilePaneScrollHoldById\.delete\(threadId\)/);
+  assert.match(functionBody(appJs, "updateThreadTileBottomButtonForBody"), /threadTileStatePolicy\.paneBottomButtonPlan/);
+  assert.match(functionBody(appJs, "restoreThreadTilePaneElementScrollState"), /threadTileStatePolicy\.paneScrollRestorePlan/);
   assert.match(functionBody(appJs, "toggleThreadTileSwitchMenu"), /patchThreadTilePane\(id, \{ preserveScroll: true \}\)/);
   assert.match(functionBody(appJs, "applyThreadTileDetailLoadFinallyEffects"), /scheduleRenderThreadTilePane\(id, \{ preserveScroll: effect\.preserveScroll !== false \}\)/);
   assert.match(functionBody(appJs, "applyThreadTileSelectedPaneEffects"), /patchThreadTilePane\(id, \{ preserveScroll: effect\.patchPreserveScroll !== false \}\)/);

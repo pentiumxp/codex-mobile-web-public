@@ -10,6 +10,8 @@
 }(typeof globalThis !== "undefined" ? globalThis : null, function () {
   const DEFAULT_USER_MAX_PANES = 12;
   const DEFAULT_OPERATION_BUBBLE_MIN_VISIBLE_MS = 500;
+  const DEFAULT_PANE_NEAR_BOTTOM_PX = 48;
+  const DEFAULT_PANE_SCROLLABLE_DELTA_PX = 96;
 
   function text(value) {
     return String(value || "");
@@ -18,6 +20,11 @@
   function nowValue(value) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : Date.now();
+  }
+
+  function nonNegativeNumber(value, fallback = 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
   }
 
   function maxPaneLimit(maxPanes = DEFAULT_USER_MAX_PANES) {
@@ -161,6 +168,77 @@
       effectivePaneCount,
       minPaneCount,
       maxPaneCount: maxCandidateCount,
+    };
+  }
+
+  function paneScrollMetrics(input = {}, options = {}) {
+    const scrollHeight = nonNegativeNumber(input.scrollHeight);
+    const clientHeight = nonNegativeNumber(input.clientHeight);
+    const scrollTop = nonNegativeNumber(input.scrollTop);
+    const nearBottomPx = nonNegativeNumber(options.nearBottomPx || input.nearBottomPx, DEFAULT_PANE_NEAR_BOTTOM_PX);
+    const distanceFromBottom = Math.max(0, scrollHeight - clientHeight - scrollTop);
+    return {
+      action: "pane-scroll-metrics",
+      distanceFromBottom,
+      nearBottom: distanceFromBottom <= nearBottomPx,
+      hold: input.hold === true,
+      scrollHeight,
+      clientHeight,
+      scrollTop,
+      nearBottomPx,
+    };
+  }
+
+  function paneScrollHoldPlan(input = {}, options = {}) {
+    const metrics = input.action === "pane-scroll-metrics" ? input : paneScrollMetrics(input, options);
+    return {
+      action: "pane-scroll-hold",
+      reason: metrics.nearBottom ? "near-bottom" : "away-from-bottom",
+      rememberHold: metrics.nearBottom !== true,
+      clearHold: metrics.nearBottom === true,
+      metrics,
+    };
+  }
+
+  function paneBottomButtonPlan(input = {}, options = {}) {
+    const metrics = input.metrics && input.metrics.action === "pane-scroll-metrics"
+      ? input.metrics
+      : paneScrollMetrics(input, options);
+    const scrollableDeltaPx = nonNegativeNumber(options.scrollableDeltaPx || input.scrollableDeltaPx, DEFAULT_PANE_SCROLLABLE_DELTA_PX);
+    const scrollable = Math.max(0, metrics.scrollHeight - metrics.clientHeight) > scrollableDeltaPx;
+    const shouldShow = Boolean(scrollable && !metrics.nearBottom);
+    return {
+      action: "pane-bottom-button",
+      reason: shouldShow ? "show" : (scrollable ? "near-bottom" : "not-scrollable"),
+      shouldShow,
+      scrollable,
+      scrollableDeltaPx,
+      metrics,
+    };
+  }
+
+  function paneScrollRestorePlan(input = {}, options = {}) {
+    const previous = input.previous && typeof input.previous === "object" ? input.previous : null;
+    const rememberedHold = input.rememberedHold === true;
+    const hold = Boolean(previous && previous.hold === true) || rememberedHold;
+    const scrollHeight = nonNegativeNumber(input.scrollHeight);
+    const clientHeight = nonNegativeNumber(input.clientHeight);
+    const distanceFromBottom = nonNegativeNumber(previous && previous.distanceFromBottom);
+    if (input.stickToBottom === true || !previous || !hold || previous.nearBottom === true) {
+      return {
+        action: "pane-scroll-restore",
+        reason: input.stickToBottom === true ? "stick-to-bottom" : (!previous ? "missing-previous" : (!hold ? "no-hold" : "previous-near-bottom")),
+        mode: "bottom",
+        top: Math.max(0, scrollHeight),
+        hold,
+      };
+    }
+    return {
+      action: "pane-scroll-restore",
+      reason: "restore-distance",
+      mode: "restore-distance",
+      top: Math.max(0, scrollHeight - clientHeight - distanceFromBottom),
+      hold,
     };
   }
 
@@ -1069,10 +1147,14 @@
     operationBubbleSnapshot,
     operationDockPlan,
     operationSignature,
+    paneBottomButtonPlan,
     paneCountChangePlan,
     paneCountStatePlan,
     paneSelectionPlan,
     paneSlotMutationEffectsPlan,
+    paneScrollHoldPlan,
+    paneScrollMetrics,
+    paneScrollRestorePlan,
     prependSplitPair,
     detailLoadPlan,
     detailLoadErrorEffectsPlan,

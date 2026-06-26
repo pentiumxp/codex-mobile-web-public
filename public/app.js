@@ -12934,12 +12934,12 @@ function captureThreadTilePaneScrollState() {
     const id = pane.getAttribute("data-thread-tile-pane") || "";
     const body = pane.querySelector(".thread-tile-pane-body");
     if (!id || !body) return;
-    const distanceFromBottom = Math.max(0, Number(body.scrollHeight || 0) - Number(body.clientHeight || 0) - Number(body.scrollTop || 0));
-    states.set(id, {
-      distanceFromBottom,
-      nearBottom: distanceFromBottom <= 48,
+    states.set(id, threadTileStatePolicy.paneScrollMetrics({
+      scrollHeight: body.scrollHeight,
+      clientHeight: body.clientHeight,
+      scrollTop: body.scrollTop,
       hold: state.threadTilePaneScrollHoldById.get(id) === true,
-    });
+    }));
   });
   return states;
 }
@@ -12948,12 +12948,12 @@ function captureThreadTilePaneElementScrollState(pane) {
   const id = String(pane && pane.getAttribute && pane.getAttribute("data-thread-tile-pane") || "");
   const body = pane && pane.querySelector(".thread-tile-pane-body");
   if (!body) return null;
-  const distanceFromBottom = Math.max(0, Number(body.scrollHeight || 0) - Number(body.clientHeight || 0) - Number(body.scrollTop || 0));
-  return {
-    distanceFromBottom,
-    nearBottom: distanceFromBottom <= 48,
+  return threadTileStatePolicy.paneScrollMetrics({
+    scrollHeight: body.scrollHeight,
+    clientHeight: body.clientHeight,
+    scrollTop: body.scrollTop,
     hold: id ? state.threadTilePaneScrollHoldById.get(id) === true : false,
-  };
+  });
 }
 
 function scrollThreadTilePaneBodyToBottom(body, options = {}) {
@@ -12970,24 +12970,43 @@ function scrollThreadTilePaneBodyToBottom(body, options = {}) {
 
 function isThreadTilePaneNearBottom(body) {
   if (!body) return true;
-  return Math.max(0, Number(body.scrollHeight || 0) - Number(body.clientHeight || 0) - Number(body.scrollTop || 0)) <= 48;
+  return threadTileStatePolicy.paneScrollMetrics({
+    scrollHeight: body.scrollHeight,
+    clientHeight: body.clientHeight,
+    scrollTop: body.scrollTop,
+  }).nearBottom;
+}
+
+function applyThreadTilePaneScrollHoldPlan(id, plan) {
+  const threadId = String(id || "");
+  if (!threadId || !plan || plan.action !== "pane-scroll-hold") return;
+  if (plan.clearHold) state.threadTilePaneScrollHoldById.delete(threadId);
+  else if (plan.rememberHold) state.threadTilePaneScrollHoldById.set(threadId, true);
 }
 
 function rememberThreadTilePaneScrollPosition(body) {
   const pane = body && body.closest && body.closest("[data-thread-tile-pane]");
   const id = String(pane && pane.getAttribute("data-thread-tile-pane") || "");
   if (!id || !body) return;
-  if (isThreadTilePaneNearBottom(body)) state.threadTilePaneScrollHoldById.delete(id);
-  else state.threadTilePaneScrollHoldById.set(id, true);
+  applyThreadTilePaneScrollHoldPlan(id, threadTileStatePolicy.paneScrollHoldPlan({
+    scrollHeight: body.scrollHeight,
+    clientHeight: body.clientHeight,
+    scrollTop: body.scrollTop,
+  }));
 }
 
 function updateThreadTileBottomButtonForBody(body) {
   const pane = body && body.closest && body.closest("[data-thread-tile-pane]");
   const button = pane && pane.querySelector("[data-thread-tile-bottom]");
   if (!button || !body) return;
-  rememberThreadTilePaneScrollPosition(body);
-  const isScrollable = Number(body.scrollHeight || 0) - Number(body.clientHeight || 0) > 96;
-  const shouldShow = Boolean(isScrollable && !isThreadTilePaneNearBottom(body));
+  const metrics = threadTileStatePolicy.paneScrollMetrics({
+    scrollHeight: body.scrollHeight,
+    clientHeight: body.clientHeight,
+    scrollTop: body.scrollTop,
+  });
+  applyThreadTilePaneScrollHoldPlan(pane.getAttribute("data-thread-tile-pane") || "", threadTileStatePolicy.paneScrollHoldPlan(metrics));
+  const plan = threadTileStatePolicy.paneBottomButtonPlan({ metrics });
+  const shouldShow = Boolean(plan.shouldShow);
   button.classList.toggle("hidden", !shouldShow);
   button.setAttribute("aria-hidden", shouldShow ? "false" : "true");
   button.tabIndex = shouldShow ? 0 : -1;
@@ -13007,9 +13026,13 @@ function restoreThreadTilePaneScrollState(scrollState = new Map()) {
     const body = pane.querySelector(".thread-tile-pane-body");
     if (!id || !body) return;
     const previous = scrollState.get(id);
-    const hold = previous && previous.hold === true;
-    if (hold && !previous.nearBottom) {
-      body.scrollTop = Math.max(0, Number(body.scrollHeight || 0) - Number(body.clientHeight || 0) - Number(previous.distanceFromBottom || 0));
+    const plan = threadTileStatePolicy.paneScrollRestorePlan({
+      previous,
+      scrollHeight: body.scrollHeight,
+      clientHeight: body.clientHeight,
+    });
+    if (plan.mode === "restore-distance") {
+      body.scrollTop = plan.top;
       updateThreadTileBottomButtonForBody(body);
       return;
     }
@@ -13021,12 +13044,18 @@ function restoreThreadTilePaneElementScrollState(pane, previous, options = {}) {
   const body = pane && pane.querySelector(".thread-tile-pane-body");
   if (!body) return;
   const id = String(pane && pane.getAttribute && pane.getAttribute("data-thread-tile-pane") || "");
-  const hold = Boolean(previous && previous.hold === true) || (id && state.threadTilePaneScrollHoldById.get(id) === true);
-  if (options.stickToBottom || !previous || !hold || previous.nearBottom) {
+  const plan = threadTileStatePolicy.paneScrollRestorePlan({
+    previous,
+    rememberedHold: Boolean(id && state.threadTilePaneScrollHoldById.get(id) === true),
+    stickToBottom: options.stickToBottom === true,
+    scrollHeight: body.scrollHeight,
+    clientHeight: body.clientHeight,
+  });
+  if (plan.mode !== "restore-distance") {
     scrollThreadTilePaneBodyToBottom(body);
     return;
   }
-  body.scrollTop = Math.max(0, Number(body.scrollHeight || 0) - Number(body.clientHeight || 0) - Number(previous.distanceFromBottom || 0));
+  body.scrollTop = plan.top;
   updateThreadTileBottomButtonForBody(body);
 }
 
