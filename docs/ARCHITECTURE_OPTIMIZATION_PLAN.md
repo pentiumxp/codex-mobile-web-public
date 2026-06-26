@@ -907,7 +907,10 @@ decision and bounded reason for full conversation renders. Bottom-follow lease
 evaluation now also lives there through `planBottomFollowLeaseEvaluation`:
 submitted-message and viewport follow code supplies user-reading, lease-active,
 and lease-presence facts while the helper owns the shared should-follow versus
-clear-lease decision. User-reading-current-turn
+clear-lease decision. Bottom-follow retry scheduling now also lives there
+through `planBottomFollowScrollSchedule`: app code owns real timer side effects,
+while the helper owns the retry delay sequence and old-timer-clear intent.
+User-reading-current-turn
 planning now also lives in `public/conversation-scroll.js` through
 `planUserReadingCurrentTurn`: app code supplies near-bottom, active auto-scroll
 hold, recent manual scroll intent, and current-turn candidate facts while the

@@ -156,6 +156,22 @@ test("bottom-follow lease planning owns user-reading and inactive cleanup", () =
   });
 });
 
+test("bottom-follow scroll schedule owns retry delays", () => {
+  const firstPlan = conversationScroll.planBottomFollowScrollSchedule();
+  assert.deepEqual(firstPlan, {
+    clearExistingTimers: true,
+    delaysMs: [0, 80, 240, 600, 1200],
+    reason: "bottom-follow-retry",
+  });
+
+  firstPlan.delaysMs.push(9999);
+  assert.deepEqual(conversationScroll.planBottomFollowScrollSchedule(), {
+    clearExistingTimers: true,
+    delaysMs: [0, 80, 240, 600, 1200],
+    reason: "bottom-follow-retry",
+  });
+});
+
 test("local patch scroll completion follows bottom only when policy allows", () => {
   assert.deepEqual(conversationScroll.planLocalPatchScrollCompletion({
     nearBottom: true,

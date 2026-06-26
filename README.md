@@ -16,6 +16,42 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 Phase A Bottom-Follow Schedule Planning Slice
+
+本地小切片继续推进 Phase A 的 scroll ownership 收敛。此前
+`scheduleBottomFollowScroll()` 在 `public/app.js` 里直接硬编码
+`[0, 80, 240, 600, 1200]` 的 bottom-follow 重试节奏，同时执行真实 timer
+side effect。这个延迟策略属于 bottom-follow 行为约束，应该和其他 scroll
+policy 一样由 `public/conversation-scroll.js` 统一声明。
+
+本次修复：
+
+- `public/conversation-scroll.js` 新增
+  `planBottomFollowScrollSchedule()` 和
+  `DEFAULT_BOTTOM_FOLLOW_DELAYS_MS`，统一产出 `clearExistingTimers`、
+  `delaysMs` 和 bounded reason。
+- `public/app.js` 的 `scheduleBottomFollowScroll()` 改为读取 schedule plan；
+  app 仍只负责真实 `clearBottomFollowTimers()`、`setTimeout()`、timer 列表维护和
+  `scheduleConversationToBottom()` side effect。
+- focused tests 覆盖默认延迟序列、返回数组不可污染下一次 plan，以及 app wiring
+  不再内联延迟表。
+- 不改变 DOM、按钮位置、scroll 动作、projection、任务卡协议或 shell/cache。
+
+闭环验证：
+
+```bash
+node --test test/conversation-scroll.test.js test/turn-scroll-controls.test.js test/mobile-viewport.test.js test/conversation-render.test.js
+npm run check
+npm test
+npm run check:macos
+git diff --check
+```
+
+结果：focused `138` passed；full `npm test` `1122` passed；
+`npm run check`、`npm run check:macos`、`git diff --check` 均通过。
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，
+尚未部署；继续作为 Phase A 模块的一部分累积。
+
 ## 2026-06-26 Phase A Bottom-Follow Lease Planning Slice
 
 本地小切片继续推进 Phase A 的 scroll ownership 收敛。此前

@@ -193,8 +193,11 @@ test("successful message submit follows the new turn to the bottom", () => {
   assert.match(appJs, /function scheduleConversationToBottom\(\)/);
   assert.match(functionBody("scheduleConversationToBottom"), /if \(state\.bottomScrollFrame\) return/);
   assert.match(functionBody("scheduleConversationToBottom"), /scrollConversationToBottom\(\)/);
-  assert.match(functionBody("scheduleBottomFollowScroll"), /clearBottomFollowTimers\(\);/);
+  assert.match(functionBody("scheduleBottomFollowScroll"), /const plan = conversationScroll\.planBottomFollowScrollSchedule\(\);/);
+  assert.match(functionBody("scheduleBottomFollowScroll"), /if \(plan\.clearExistingTimers\) clearBottomFollowTimers\(\);/);
+  assert.match(functionBody("scheduleBottomFollowScroll"), /plan\.delaysMs\.forEach\(\(delay\) => \{/);
   assert.match(functionBody("scheduleBottomFollowScroll"), /state\.bottomFollowTimers\.push\(timer\);/);
+  assert.doesNotMatch(functionBody("scheduleBottomFollowScroll"), /\[0, 80, 240, 600, 1200\]\.forEach/);
 });
 
 test("live and final message renders stay anchored when the user is at bottom", () => {

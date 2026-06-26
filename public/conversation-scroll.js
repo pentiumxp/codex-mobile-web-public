@@ -12,6 +12,7 @@
   const DEFAULT_SUBMIT_FOLLOW_MS = 15000;
   const DEFAULT_VIEWPORT_FOLLOW_MS = 3200;
   const DEFAULT_RECENT_BOTTOM_MS = 120000;
+  const DEFAULT_BOTTOM_FOLLOW_DELAYS_MS = Object.freeze([0, 80, 240, 600, 1200]);
 
   function numberOrZero(value) {
     const numeric = Number(value);
@@ -110,6 +111,14 @@
       shouldFollow: false,
       clearLease: false,
       reason: "no-lease",
+    };
+  }
+
+  function planBottomFollowScrollSchedule() {
+    return {
+      clearExistingTimers: true,
+      delaysMs: DEFAULT_BOTTOM_FOLLOW_DELAYS_MS.slice(),
+      reason: "bottom-follow-retry",
     };
   }
 
@@ -302,11 +311,13 @@
     DEFAULT_SUBMIT_FOLLOW_MS,
     DEFAULT_VIEWPORT_FOLLOW_MS,
     DEFAULT_RECENT_BOTTOM_MS,
+    DEFAULT_BOTTOM_FOLLOW_DELAYS_MS,
     createSubmittedMessageFollow,
     extendSubmittedMessageFollow,
     createViewportFollow,
     isNearBottom,
     planBottomFollowLeaseEvaluation,
+    planBottomFollowScrollSchedule,
     planConversationAutoScrollHoldFromScroll,
     planConversationJumpButtons,
     planFullRenderScroll,

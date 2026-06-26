@@ -20030,8 +20030,9 @@ function shouldFollowViewportChangeToBottom() {
 }
 
 function scheduleBottomFollowScroll(shouldFollow) {
-  clearBottomFollowTimers();
-  [0, 80, 240, 600, 1200].forEach((delay) => {
+  const plan = conversationScroll.planBottomFollowScrollSchedule();
+  if (plan.clearExistingTimers) clearBottomFollowTimers();
+  plan.delaysMs.forEach((delay) => {
     const timer = window.setTimeout(() => {
       state.bottomFollowTimers = state.bottomFollowTimers.filter((entry) => entry !== timer);
       if (shouldFollow()) scheduleConversationToBottom();

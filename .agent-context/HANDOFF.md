@@ -15853,3 +15853,28 @@ The previous full handoff was archived and should be opened only when old proven
 - Next:
   - Commit locally, then continue Phase A or batch the current module for one
     deploy/readback when requested.
+
+## 2026-06-26 - Latest tail marker: Phase A bottom-follow schedule planning slice
+
+- Latest local commit for this continuation slice:
+  - Message: `plan bottom follow scroll schedule`.
+- Current state:
+  - This is the eighteenth local Phase A render/patch/scroll ownership slice.
+  - Not deployed by design; no `CLIENT_BUILD_ID` / PWA shell cache bump.
+- Root-cause boundary:
+  - `scheduleBottomFollowScroll()` directly owned the hard-coded
+    `[0, 80, 240, 600, 1200]` retry delay sequence for bottom-follow scrolls.
+  - `public/conversation-scroll.js` now owns
+    `planBottomFollowScrollSchedule()`, while `public/app.js` executes only
+    the real timer clear/create and bottom-scroll side effects.
+- Validation:
+  - Focused:
+    `node --test test/conversation-scroll.test.js test/turn-scroll-controls.test.js test/mobile-viewport.test.js test/conversation-render.test.js`
+    passed (`138` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`1122` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit locally, then continue Phase A or batch the current module for one
+    deploy/readback when requested.
