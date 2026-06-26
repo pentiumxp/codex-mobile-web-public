@@ -52,6 +52,36 @@ function summarizePrewarmResult({ status, limit, startedAtMs, finishedAtMs, thre
   };
 }
 
+function summarizePrewarmStatus(status = {}, config = {}) {
+  const safeStatus = status && typeof status === "object" ? status : {};
+  const normalized = normalizePrewarmConfig(config);
+  const lastResult = safeStatus.lastResult && typeof safeStatus.lastResult === "object"
+    ? safeStatus.lastResult
+    : {};
+  return {
+    enabled: normalized.enabled,
+    scheduled: safeStatus.scheduled === true,
+    running: safeStatus.running === true,
+    completed: safeStatus.completed === true,
+    deferralCount: boundedCount(safeStatus.deferralCount),
+    delayMs: normalized.delayMs,
+    retryDelayMs: normalized.retryDelayMs,
+    maxDeferrals: normalized.maxDeferrals,
+    limit: normalized.limit,
+    lastStatus: compactLabel(lastResult.status, "", 40),
+    lastErrorCode: compactLabel(lastResult.errorCode, "", 80),
+    lastCacheDecision: compactLabel(lastResult.cacheDecision, "", 80),
+    lastCacheHit: lastResult.cacheHit === true,
+    lastSourceSnapshotHit: lastResult.sourceSnapshotHit === true,
+    lastResultCount: boundedCount(lastResult.resultCount),
+    lastElapsedMs: boundedCount(lastResult.elapsedMs),
+    lastSourceSnapshotBuildCount: boundedCount(lastResult.sourceSnapshotBuildCount),
+    lastSourceSnapshotRawCount: boundedCount(lastResult.sourceSnapshotRawCount),
+    lastBaselineSourceCount: boundedCount(lastResult.baselineSourceCount),
+    lastBaselineResultCount: boundedCount(lastResult.baselineResultCount),
+  };
+}
+
 function defaultLogger() {
   return console;
 }
@@ -236,4 +266,5 @@ module.exports = {
   createThreadListFallbackPrewarmService,
   normalizePrewarmConfig,
   summarizePrewarmResult,
+  summarizePrewarmStatus,
 };

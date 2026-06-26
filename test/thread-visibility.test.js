@@ -952,8 +952,12 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(serverJs, /const THREAD_LIST_FALLBACK_PREWARM_RETRY_MS = Math\.max\([\s\S]*process\.env\.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_RETRY_MS \|\| "2500"/);
   assert.match(serverJs, /const THREAD_LIST_FALLBACK_PREWARM_MAX_DEFERRALS = Math\.max\([\s\S]*process\.env\.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_MAX_DEFERRALS \|\| "5"/);
   assert.match(serverJs, /const THREAD_LIST_FALLBACK_PREWARM_LIMIT = Math\.max\([\s\S]*process\.env\.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_LIMIT \|\| "40"/);
+  assert.match(serverJs, /summarizePrewarmStatus/);
   assert.match(serverJs, /const threadListFallbackPrewarmService = createThreadListFallbackPrewarmService\(\{[\s\S]*readFallback: readThreadListFallback,[\s\S]*readGlobalState,[\s\S]*shouldRun: \(\) => \(activeThreadDetailRequestCount > 0[\s\S]*active-detail-in-flight[\s\S]*logger: console,[\s\S]*\}\);/);
-  assert.match(serverJs, /function scheduleThreadListFallbackPrewarm\(\) \{[\s\S]*threadListFallbackPrewarmService\.schedule\(\{[\s\S]*enabled: THREAD_LIST_FALLBACK_PREWARM_ENABLED,[\s\S]*delayMs: THREAD_LIST_FALLBACK_PREWARM_DELAY_MS,[\s\S]*retryDelayMs: THREAD_LIST_FALLBACK_PREWARM_RETRY_MS,[\s\S]*maxDeferrals: THREAD_LIST_FALLBACK_PREWARM_MAX_DEFERRALS,[\s\S]*limit: THREAD_LIST_FALLBACK_PREWARM_LIMIT,[\s\S]*\}\);[\s\S]*\}/);
+  assert.match(serverJs, /function threadListFallbackPrewarmConfig\(\) \{[\s\S]*enabled: THREAD_LIST_FALLBACK_PREWARM_ENABLED,[\s\S]*delayMs: THREAD_LIST_FALLBACK_PREWARM_DELAY_MS,[\s\S]*retryDelayMs: THREAD_LIST_FALLBACK_PREWARM_RETRY_MS,[\s\S]*maxDeferrals: THREAD_LIST_FALLBACK_PREWARM_MAX_DEFERRALS,[\s\S]*limit: THREAD_LIST_FALLBACK_PREWARM_LIMIT,[\s\S]*\}/);
+  assert.match(serverJs, /function threadListFallbackPrewarmPublicStatus\(\) \{[\s\S]*summarizePrewarmStatus\([\s\S]*threadListFallbackPrewarmService\.status\(\),[\s\S]*threadListFallbackPrewarmConfig\(\),[\s\S]*\)/);
+  assert.match(serverJs, /threadListFallbackPrewarm:\s*threadListFallbackPrewarmPublicStatus\(\)/);
+  assert.match(serverJs, /function scheduleThreadListFallbackPrewarm\(\) \{[\s\S]*threadListFallbackPrewarmService\.schedule\(threadListFallbackPrewarmConfig\(\)\);[\s\S]*\}/);
   assert.match(functionBody(serverJs, "startServer"), /scheduleThreadListFallbackPrewarm\(\);/);
   assert.match(serverJs, /function clearThreadListFallbackCache\(\)/);
   assert.match(serverJs, /function upsertThreadListFallbackCacheThread\(thread, options = \{\}\)/);

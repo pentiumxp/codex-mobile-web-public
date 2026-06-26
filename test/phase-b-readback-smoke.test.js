@@ -45,6 +45,23 @@ test("phase B readback smoke collects bounded diagnostics without private fields
         clientBuildId: "0.1.11|codex-mobile-shell-test",
         shellCacheName: "codex-mobile-shell-test",
         authRequired: true,
+        threadListFallbackPrewarm: {
+          enabled: true,
+          scheduled: false,
+          running: false,
+          completed: true,
+          deferralCount: 0,
+          delayMs: 1500,
+          retryDelayMs: 2500,
+          maxDeferrals: 5,
+          limit: 40,
+          lastStatus: "completed",
+          lastCacheDecision: "miss-rebuild",
+          lastSourceSnapshotHit: true,
+          lastResultCount: 1,
+          lastElapsedMs: 25,
+          privateThreadId: "SHOULD NOT LEAK",
+        },
       });
       return;
     }
@@ -116,6 +133,9 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.threadList.coldPathReason, "miss-rebuild:rollout");
   assert.equal(report.threadList.fallbackSourceSnapshotHit, true);
   assert.equal(report.threadList.fallbackSourceSnapshotRawCount, 12);
+  assert.equal(report.publicConfig.threadListFallbackPrewarm.completed, true);
+  assert.equal(report.publicConfig.threadListFallbackPrewarm.lastSourceSnapshotHit, true);
+  assert.equal(report.publicConfig.threadListFallbackPrewarm.lastResultCount, 1);
   assert.equal(report.detail.readMode, "projection-active-overlay");
   assert.equal(report.detail.activeOverlayReason, "overlay-evidence-complete");
   assert.equal(report.detail.activeOverlayGate, "ready");
@@ -130,7 +150,7 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   ]);
   assert.equal(seen.every((item) => item.authorization === ""), true);
   const serialized = JSON.stringify(report);
-  assert.doesNotMatch(serialized, /PRIVATE|MESSAGE BODY|do not leak/);
+  assert.doesNotMatch(serialized, /PRIVATE|MESSAGE BODY|do not leak|SHOULD NOT LEAK/);
 });
 
 test("phase B readback smoke fails when required thread-list cold path fields are missing", async (t) => {

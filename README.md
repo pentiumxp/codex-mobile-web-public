@@ -30,7 +30,13 @@ fallback cache / source snapshot 的启动预热变成独立可测试策略。se
 列表预热，默认 limit 与客户端默认列表 limit 对齐为 `40`。这不会改变
 app-server authority、fallback merge/filter/limit 语义、线程列表排序、前端刷新、
 任务卡协议或诊断上报；它只把已有的一次性 source baseline 构建尽量移到后台，
-并保留 bounded metadata-only 结果日志。
+并保留 bounded metadata-only 结果日志。后续本地切片又把同一份 bounded
+预热状态接入 `/api/public-config` 和 Phase B readback：只暴露
+`enabled/scheduled/running/completed`、deferral count、last status/error code、
+cache decision、cache/source-snapshot hit、结果数量和耗时等字段，不暴露线程
+id、标题、消息、任务卡正文、rollout 路径或日志。这样部署读回时如果首次列表
+仍然冷，可以明确区分预热失败、预热尚未完成、预热已完成但 cache key/source
+snapshot 没对齐，而不是继续泛化为 `fallback-baseline`。
 
 新增开关：
 

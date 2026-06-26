@@ -17,11 +17,26 @@ function boundedCount(value) {
 }
 
 function buildEvidence(report = {}) {
+  const publicConfig = objectOrNull(report.publicConfig) || {};
+  const prewarm = objectOrNull(publicConfig.threadListFallbackPrewarm) || {};
   const list = objectOrNull(report.threadList) || {};
   const afterDeferred = objectOrNull(report.threadListAfterDeferred) || {};
   const warmCheck = objectOrNull(report.threadListWarmCheck) || {};
   const detail = objectOrNull(report.detail) || {};
   return {
+    threadListPrewarmEnabled: prewarm.enabled === true,
+    threadListPrewarmScheduled: prewarm.scheduled === true,
+    threadListPrewarmRunning: prewarm.running === true,
+    threadListPrewarmCompleted: prewarm.completed === true,
+    threadListPrewarmDeferralCount: boundedCount(prewarm.deferralCount),
+    threadListPrewarmLastStatus: compactLabel(prewarm.lastStatus, 40),
+    threadListPrewarmLastErrorCode: compactLabel(prewarm.lastErrorCode, 80),
+    threadListPrewarmLastCacheDecision: compactLabel(prewarm.lastCacheDecision, 80),
+    threadListPrewarmLastCacheHit: prewarm.lastCacheHit === true,
+    threadListPrewarmLastSourceSnapshotHit: prewarm.lastSourceSnapshotHit === true,
+    threadListPrewarmLastResultCount: boundedCount(prewarm.lastResultCount),
+    threadListPrewarmLastElapsedMs: boundedCount(prewarm.lastElapsedMs),
+    threadListPrewarmLastSourceSnapshotRawCount: boundedCount(prewarm.lastSourceSnapshotRawCount),
     threadListOwner: compactLabel(list.coldPathOwner, 80),
     threadListReason: compactLabel(list.coldPathReason, 80),
     threadListCacheDecision: compactLabel(list.fallbackCacheDecision, 80),
@@ -201,12 +216,56 @@ function fallbackBaselineReasonDecision(reason) {
   };
 }
 
+function threadListPrewarmDecision(list = {}, report = {}) {
+  const publicConfig = objectOrNull(report.publicConfig) || {};
+  const prewarm = objectOrNull(publicConfig.threadListFallbackPrewarm);
+  if (!prewarm || prewarm.enabled !== true) return null;
+  const lastStatus = lowerLabel(prewarm.lastStatus, 40);
+  const lastErrorCode = compactLabel(prewarm.lastErrorCode, 80);
+  if (lastStatus === "failed") {
+    return {
+      status: "needs_repair",
+      priority: "H2",
+      owner: "thread-list-fallback-prewarm",
+      reason: lastErrorCode ? `prewarm-failed:${lastErrorCode}`.slice(0, 100) : "prewarm-failed",
+      nextAction: "repair-thread-list-fallback-prewarm",
+    };
+  }
+  if (prewarm.completed !== true) {
+    let reason = "prewarm-not-completed";
+    if (prewarm.scheduled === true) reason = "prewarm-scheduled";
+    else if (prewarm.running === true) reason = "prewarm-running";
+    else if (lastStatus === "deferred") reason = "prewarm-deferred";
+    return {
+      status: "observe",
+      priority: "H3",
+      owner: "thread-list-fallback-prewarm",
+      reason,
+      nextAction: "verify-startup-prewarm-timing",
+    };
+  }
+  const listIsWarm = isWarmThreadList(list);
+  if (!listIsWarm && prewarm.lastCacheHit !== true && prewarm.lastSourceSnapshotHit !== true) {
+    return {
+      status: "needs_repair",
+      priority: "H2",
+      owner: "thread-list-fallback-prewarm",
+      reason: "prewarm-completed-but-list-cold",
+      nextAction: "align-thread-list-prewarm-cache-key",
+    };
+  }
+  return null;
+}
+
 function threadListDecision(list = {}, report = {}) {
   const owner = lowerLabel(list.coldPathOwner, 80);
   const reason = compactLabel(list.coldPathReason, 80);
   if (!owner || owner === "warm-fallback-cache" || owner === "fallback-source-snapshot") return null;
+  const prewarmDecision = threadListPrewarmDecision(list, report);
+  if (prewarmDecision && prewarmDecision.status === "needs_repair") return prewarmDecision;
   if (owner === "fallback-baseline") {
     const warmCheck = objectOrNull(report.threadListWarmCheck);
+    if (prewarmDecision) return prewarmDecision;
     if (warmCheck && isWarmThreadList(warmCheck)) {
       return {
         status: "observe",
@@ -220,6 +279,7 @@ function threadListDecision(list = {}, report = {}) {
   }
   if (owner === "fallback-cache-policy") {
     const warmCheck = objectOrNull(report.threadListWarmCheck);
+    if (prewarmDecision) return prewarmDecision;
     if (warmCheck && isWarmThreadList(warmCheck)) {
       return {
         status: "observe",

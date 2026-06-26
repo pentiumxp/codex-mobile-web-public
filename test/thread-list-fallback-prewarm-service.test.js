@@ -7,6 +7,7 @@ const {
   createThreadListFallbackPrewarmService,
   normalizePrewarmConfig,
   summarizePrewarmResult,
+  summarizePrewarmStatus,
 } = require("../adapters/thread-list-fallback-prewarm-service");
 
 test("thread-list fallback prewarm normalizes bounded default config", () => {
@@ -208,4 +209,56 @@ test("thread-list fallback prewarm result summary is metadata-only", () => {
     errorCode: "",
   });
   assert.doesNotMatch(JSON.stringify(summary), /private-thread-id|private title/);
+});
+
+test("thread-list fallback prewarm public status is metadata-only", () => {
+  const status = summarizePrewarmStatus({
+    scheduled: false,
+    running: false,
+    completed: true,
+    deferralCount: 2,
+    lastResult: {
+      status: "completed",
+      limit: 40,
+      elapsedMs: 123,
+      resultCount: 4,
+      cacheDecision: "miss-rebuild",
+      cacheHit: false,
+      sourceSnapshotHit: true,
+      sourceSnapshotRawCount: 12,
+      baselineSourceCount: 12,
+      baselineResultCount: 4,
+      privateThreadId: "should-not-leak",
+    },
+  }, {
+    enabled: true,
+    delayMs: 1500,
+    retryDelayMs: 2500,
+    maxDeferrals: 5,
+    limit: 40,
+  });
+
+  assert.deepEqual(status, {
+    enabled: true,
+    scheduled: false,
+    running: false,
+    completed: true,
+    deferralCount: 2,
+    delayMs: 1500,
+    retryDelayMs: 2500,
+    maxDeferrals: 5,
+    limit: 40,
+    lastStatus: "completed",
+    lastErrorCode: "",
+    lastCacheDecision: "miss-rebuild",
+    lastCacheHit: false,
+    lastSourceSnapshotHit: true,
+    lastResultCount: 4,
+    lastElapsedMs: 123,
+    lastSourceSnapshotBuildCount: 0,
+    lastSourceSnapshotRawCount: 12,
+    lastBaselineSourceCount: 12,
+    lastBaselineResultCount: 4,
+  });
+  assert.doesNotMatch(JSON.stringify(status), /should-not-leak/);
 });

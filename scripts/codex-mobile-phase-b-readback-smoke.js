@@ -175,11 +175,34 @@ function threadRows(result) {
 }
 
 function summarizePublicConfig(config = {}) {
+  const prewarm = objectOrNull(config.threadListFallbackPrewarm) || {};
   return {
     version: compactLabel(config.version, 40),
     clientBuildId: compactLabel(config.clientBuildId, 120),
     shellCacheName: compactLabel(config.shellCacheName, 120),
     authRequired: config.authRequired === true,
+    threadListFallbackPrewarm: {
+      enabled: prewarm.enabled === true,
+      scheduled: prewarm.scheduled === true,
+      running: prewarm.running === true,
+      completed: prewarm.completed === true,
+      deferralCount: boundedCount(prewarm.deferralCount),
+      delayMs: boundedNumber(prewarm.delayMs),
+      retryDelayMs: boundedNumber(prewarm.retryDelayMs),
+      maxDeferrals: boundedCount(prewarm.maxDeferrals),
+      limit: boundedCount(prewarm.limit),
+      lastStatus: compactLabel(prewarm.lastStatus, 40),
+      lastErrorCode: compactLabel(prewarm.lastErrorCode, 80),
+      lastCacheDecision: compactLabel(prewarm.lastCacheDecision, 80),
+      lastCacheHit: prewarm.lastCacheHit === true,
+      lastSourceSnapshotHit: prewarm.lastSourceSnapshotHit === true,
+      lastResultCount: boundedCount(prewarm.lastResultCount),
+      lastElapsedMs: boundedNumber(prewarm.lastElapsedMs),
+      lastSourceSnapshotBuildCount: boundedCount(prewarm.lastSourceSnapshotBuildCount),
+      lastSourceSnapshotRawCount: boundedCount(prewarm.lastSourceSnapshotRawCount),
+      lastBaselineSourceCount: boundedCount(prewarm.lastBaselineSourceCount),
+      lastBaselineResultCount: boundedCount(prewarm.lastBaselineResultCount),
+    },
   };
 }
 

@@ -226,7 +226,11 @@ Current acceleration targets:
    fallback merge/filter/limit semantics, persistence, frontend refresh, or
    repeated-rebuild diagnostics. If a thread detail request is in flight, the
    startup prewarm defers and retries instead of contending with first paint.
-   The next local
+   The readback observability follow-up exposes the prewarm lifecycle as
+   bounded `/api/public-config` metadata and folds it into the Phase B
+   decision service, so a cold post-deploy list sample can be routed to
+   prewarm failure, not-yet-completed timing, or cache-key/source-snapshot
+   alignment instead of a generic fallback-baseline owner. The next local
    slice makes that attribution explicit: fallback baseline source reads now
    carry bounded counters for rollout directory reads, JSONL stat/collect/sort
    counts, candidate scans, head reads/bytes, final status tail reads/bytes,

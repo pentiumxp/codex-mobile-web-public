@@ -276,6 +276,76 @@ test("phase B readback decision treats one-time cold rebuild plus warm check as 
   assert.equal(decision.evidence.threadListWarmCheckOwner, "warm-fallback-cache");
 });
 
+test("phase B readback decision routes failed prewarm before generic fallback baseline", () => {
+  const decision = classifyPhaseBReadback({
+    ok: true,
+    publicConfig: {
+      threadListFallbackPrewarm: {
+        enabled: true,
+        completed: false,
+        lastStatus: "failed",
+        lastErrorCode: "EPRIVATE_SHOULD_NOT_EXPAND",
+      },
+    },
+    threadList: {
+      coldPathOwner: "fallback-baseline",
+      coldPathReason: "miss-rebuild:rollout",
+      fallbackCacheDecision: "miss-rebuild",
+    },
+    detail: {
+      readMode: "projection-active-overlay",
+      readDecision: "projection-active-overlay",
+      coldPathOwner: "warm-path",
+      coldPathReason: "warm-projection-active-overlay",
+    },
+  });
+
+  assert.equal(decision.status, "needs_repair");
+  assert.equal(decision.owner, "thread-list-fallback-prewarm");
+  assert.equal(decision.reason, "prewarm-failed:EPRIVATE_SHOULD_NOT_EXPAND");
+  assert.equal(decision.nextAction, "repair-thread-list-fallback-prewarm");
+  assert.equal(decision.evidence.threadListPrewarmLastStatus, "failed");
+  assert.equal(decision.evidence.threadListPrewarmLastErrorCode, "EPRIVATE_SHOULD_NOT_EXPAND");
+});
+
+test("phase B readback decision routes completed prewarm with cold list to cache-key alignment", () => {
+  const decision = classifyPhaseBReadback({
+    ok: true,
+    publicConfig: {
+      threadListFallbackPrewarm: {
+        enabled: true,
+        completed: true,
+        lastStatus: "completed",
+        lastCacheDecision: "miss-rebuild",
+        lastCacheHit: false,
+        lastSourceSnapshotHit: false,
+        lastResultCount: 20,
+        lastSourceSnapshotRawCount: 30,
+      },
+    },
+    threadList: {
+      coldPathOwner: "fallback-baseline",
+      coldPathReason: "miss-rebuild:rollout",
+      fallbackCacheDecision: "miss-rebuild",
+      fallbackCacheHit: false,
+      fallbackSourceSnapshotHit: false,
+    },
+    detail: {
+      readMode: "projection-active-overlay",
+      readDecision: "projection-active-overlay",
+      coldPathOwner: "warm-path",
+      coldPathReason: "warm-projection-active-overlay",
+    },
+  });
+
+  assert.equal(decision.status, "needs_repair");
+  assert.equal(decision.owner, "thread-list-fallback-prewarm");
+  assert.equal(decision.reason, "prewarm-completed-but-list-cold");
+  assert.equal(decision.nextAction, "align-thread-list-prewarm-cache-key");
+  assert.equal(decision.evidence.threadListPrewarmCompleted, true);
+  assert.equal(decision.evidence.threadListPrewarmLastResultCount, 20);
+});
+
 test("phase B readback decision routes deferred follow-up baseline reason to specific owner", () => {
   const decision = classifyPhaseBReadback({
     ok: true,

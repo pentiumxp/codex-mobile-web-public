@@ -18762,7 +18762,7 @@ The previous full handoff was archived and should be opened only when old proven
   - Violated invariant: after cold start/redeploy the process may rebuild once,
     but ordinary user foreground list opens should normally see an already warm
     fallback cache/source snapshot when the listener has been idle briefly.
-- Changes in progress:
+- Changes:
   - Added `adapters/thread-list-fallback-prewarm-service.js`.
   - Server startup now schedules one delayed default-list fallback prewarm with
     default limit `40`.
@@ -18784,3 +18784,45 @@ The previous full handoff was archived and should be opened only when old proven
   - Run syntax and focused tests for the new service, fallback cache/baseline,
     cold-path diagnosis, Phase B readback decision/smoke, and server source
     wiring.
+
+## 2026-06-27 - Phase B prewarm readback observability local slice
+
+- Current local state:
+  - Continued Phase B immediately after local commit `90d4d72`.
+  - The startup prewarm service warmed the fallback cache/source snapshot, but
+    deploy/readback evidence would only see the later `/api/threads` result.
+    If the list still came back cold, there was no bounded way to distinguish
+    prewarm not run, prewarm deferred, prewarm failed, or completed prewarm not
+    aligning with the list cache/source-snapshot key.
+- Root-cause boundary:
+  - Symptom/risk: Phase B readback could keep routing cold first-list evidence
+    to generic `fallback-baseline` even when the real failing layer is the
+    startup prewarm lifecycle.
+  - Failing layer: prewarm lifecycle observability/readback decision, not
+    fallback merge/filter/limit semantics, app-server authority, frontend
+    refresh, task-card protocol, Home AI diagnostic dispatch, or PWA shell.
+  - Violated invariant: a server-side performance optimization that is intended
+    to remove foreground cold work must expose bounded lifecycle evidence so
+    production validation can identify the owning layer if it does not help.
+- Changes in progress:
+  - `thread-list-fallback-prewarm-service` now summarizes a metadata-only public
+    status: enabled/scheduled/running/completed, deferral count, config bounds,
+    last status/error code, cache/source-snapshot hit, result counts, and
+    elapsed/source counts.
+  - `/api/public-config` now includes `threadListFallbackPrewarm` using that
+    sanitized summary.
+  - `scripts/codex-mobile-phase-b-readback-smoke.js` carries the bounded
+    prewarm status in `publicConfig`.
+  - `phase-b-readback-decision-service` can route cold list evidence to
+    `thread-list-fallback-prewarm` for failed prewarm or completed-prewarm but
+    cold-list cache-key/source-snapshot mismatch.
+  - Updated focused tests and docs. No shell/cache bump and no deploy.
+- Validation:
+  - Syntax plus focused tests for prewarm service, Phase B decision, Phase B
+    smoke, and thread visibility wiring passed (`77` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`1184` tests).
+  - `git diff --check` passed.
+- Next:
+  - Commit locally.
+  - Keep batching Phase B local slices before the next module deploy/readback.

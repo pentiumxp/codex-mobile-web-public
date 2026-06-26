@@ -90,7 +90,10 @@ const { attachThreadDetailDiagnostics } = require("./adapters/thread-detail-perf
 const { createThreadDetailReadOrchestrationService } = require("./adapters/thread-detail-read-orchestration-service");
 const { handleThreadDetailReadRoute } = require("./adapters/thread-detail-route-service");
 const { createThreadListFallbackCacheService } = require("./adapters/thread-list-fallback-cache-service");
-const { createThreadListFallbackPrewarmService } = require("./adapters/thread-list-fallback-prewarm-service");
+const {
+  createThreadListFallbackPrewarmService,
+  summarizePrewarmStatus,
+} = require("./adapters/thread-list-fallback-prewarm-service");
 const { diagnoseThreadListColdPath } = require("./adapters/thread-list-cold-path-diagnosis-service");
 const {
   stripThreadListDetailFields,
@@ -13596,14 +13599,25 @@ const threadListFallbackPrewarmService = createThreadListFallbackPrewarmService(
   logger: console,
 });
 
-function scheduleThreadListFallbackPrewarm() {
-  return threadListFallbackPrewarmService.schedule({
+function threadListFallbackPrewarmConfig() {
+  return {
     enabled: THREAD_LIST_FALLBACK_PREWARM_ENABLED,
     delayMs: THREAD_LIST_FALLBACK_PREWARM_DELAY_MS,
     retryDelayMs: THREAD_LIST_FALLBACK_PREWARM_RETRY_MS,
     maxDeferrals: THREAD_LIST_FALLBACK_PREWARM_MAX_DEFERRALS,
     limit: THREAD_LIST_FALLBACK_PREWARM_LIMIT,
-  });
+  };
+}
+
+function threadListFallbackPrewarmPublicStatus() {
+  return summarizePrewarmStatus(
+    threadListFallbackPrewarmService.status(),
+    threadListFallbackPrewarmConfig(),
+  );
+}
+
+function scheduleThreadListFallbackPrewarm() {
+  return threadListFallbackPrewarmService.schedule(threadListFallbackPrewarmConfig());
 }
 
 function threadListFallbackSourceDiagnosticTimingFields(diagnostics = {}) {
@@ -13743,6 +13757,7 @@ async function handleApi(req, res) {
         repository: PUBLIC_RELEASE_REPOSITORY,
         branch: PUBLIC_RELEASE_BRANCH,
       },
+      threadListFallbackPrewarm: threadListFallbackPrewarmPublicStatus(),
       workspaceCreate: {
         enabled: true,
         defaultRoot: workspaceRegistryService.defaultCreateRoot(),
