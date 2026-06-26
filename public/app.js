@@ -516,7 +516,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v526";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v527";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -12042,6 +12042,10 @@ function checkPrimaryShellSelectionConflictAfterRender(metrics = {}) {
 
 function updateConversationHtml(html, signature, options = {}) {
   const conversation = $("conversation");
+  const expectedVisibleTurnCount = Math.max(0, Number(options.expectedVisibleTurnCount || 0));
+  const renderedDomTurnCount = Object.prototype.hasOwnProperty.call(options, "renderedDomTurnCount")
+    ? Math.max(0, Number(options.renderedDomTurnCount || 0))
+    : conversationDomTurnIds(conversation).length;
   const updatePlan = threadDetailDomPatchApi.planConversationHtmlUpdate({
     signature,
     renderedConversationSignature: state.renderedConversationSignature,
@@ -12049,6 +12053,8 @@ function updateConversationHtml(html, signature, options = {}) {
     patchShellSignature: options.patchShellSignature,
     stickToBottom: options.stickToBottom,
     hasExistingChildren: Boolean(conversation && conversation.childNodes && conversation.childNodes.length),
+    expectedVisibleTurnCount,
+    renderedDomTurnCount,
   });
   if (updatePlan.action === "hydrate-existing") {
     if (updatePlan.updatePatchShellSignature) {
@@ -12058,6 +12064,21 @@ function updateConversationHtml(html, signature, options = {}) {
     if (updatePlan.scrollAction === "scroll-to-bottom") scheduleConversationToBottom();
     else scheduleScrollToBottomButtonUpdate();
     return false;
+  }
+  if (updatePlan.reason === "stable-signature-dom-empty" && expectedVisibleTurnCount > 0) {
+    recordEmptyVisibleDetailMismatch("stable_signature_dom_empty", state.currentThread, {
+      source: options.source || "conversation-update",
+      renderMode: updatePlan.action || "full-render",
+      domCount: renderedDomTurnCount,
+      previousCount: conversation && conversation.childNodes ? conversation.childNodes.length : 0,
+    });
+    postClientEvent("conversation_dom_authority_invalidated", {
+      threadId: state.currentThreadId || "",
+      reason: updatePlan.reason,
+      expectedVisibleTurnCount,
+      renderedDomTurnCount,
+      action: updatePlan.action || "",
+    });
   }
   const startedAt = nowPerfMs();
   const previousChildCount = conversation ? conversation.childNodes.length : 0;
@@ -12087,6 +12108,7 @@ function updateConversationHtml(html, signature, options = {}) {
     stickToBottom: Boolean(options.stickToBottom),
     threadId: state.currentThreadId || "",
     currentThreadStatus: statusText(state.currentThread && state.currentThread.status),
+    updateReason: updatePlan.reason || "",
   }, {
     key: "conversation_render_ms",
     minIntervalMs: forceReport ? 0 : PERF_EVENT_THROTTLE_MS,
@@ -14528,7 +14550,12 @@ function renderCurrentThread(options = {}) {
     updateConversationHtml(
       earlyShellPlan.html,
       earlyShellPlan.conversationSignature,
-      { stickToBottom: earlyShellPlan.stickToBottom, patchShellSignature: earlyShellPlan.patchShellSignature },
+      {
+        stickToBottom: earlyShellPlan.stickToBottom,
+        patchShellSignature: earlyShellPlan.patchShellSignature,
+        expectedVisibleTurnCount: 0,
+        source: "single-thread-early-shell",
+      },
     );
     if (earlyShellPlan.bindRetry) {
       const retry = $("retryCurrentThread");
@@ -14583,6 +14610,8 @@ function renderCurrentThread(options = {}) {
   updateConversationHtml(shellPlan.html, conversationRenderSignature(thread), {
     stickToBottom: shouldStickToBottom,
     patchShellSignature: conversationPatchShellSignature(thread),
+    expectedVisibleTurnCount: turns.length,
+    source: "single-thread-render",
   });
   checkEmptyVisibleDetailMismatchAfterRender(thread, shellPlan, {
     source: "single-thread-render",

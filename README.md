@@ -16,6 +16,28 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v527 Conversation DOM Authority Guard
+
+v527 继续修复 Music 线程显示 `No visible turns.` 的同一条根因链。生产读回和本地
+认证 detail API 仍证明 Music 详情本身是非空的：`10` 个 turn、`39` 个 visible item key、
+`79` 个 omitted turns。v526 已经修正了 `refreshCurrentThread()` 的刷新计划，但用户仍能
+看到单线程页面停在空壳，说明还有更底层入口：`updateConversationHtml()` 会把
+`renderedConversationSignature === signature` 直接交给 `hydrate-existing`，即使真实 DOM
+已经没有任何 `article.turn[data-turn]`。
+
+本次修复：
+
+- `public/thread-detail-dom-patch.js` 的 `planConversationHtmlUpdate()` 新增
+  `expectedVisibleTurnCount` 和 `renderedDomTurnCount` 输入；当签名稳定、下一状态有 visible
+  turn、但当前 DOM turn 数为 0 时，返回 `stable-signature-dom-empty` 并执行真实 HTML 更新。
+- `public/app.js` 在单线程 full render 时传入 expected visible turn 数，并在 lower-level
+  DOM authority 被判定失效时记录 `stable_signature_dom_empty` 诊断和
+  `conversation_dom_authority_invalidated` client event。
+- 这不是“空白后再刷一次”的兜底，而是修正 DOM 更新层的核心不变量：投影签名只有在真实
+  DOM 形态也匹配时才可以跳过重绘。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v527`。
+
 ## 2026-06-26 v526 Empty DOM / Stable Signature Authority Fix
 
 v526 修复 Music 线程在服务端 detail 正常返回 `10` 个 turn 的情况下，手机端仍稳定显示

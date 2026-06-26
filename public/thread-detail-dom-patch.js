@@ -171,12 +171,20 @@
     const renderedConversationPatchShellSignature = String(input.renderedConversationPatchShellSignature || "");
     const patchShellSignature = String(input.patchShellSignature || "");
     const stableSignature = renderedConversationSignature === signature;
+    const expectedVisibleTurnCount = Math.max(0, Number(input.expectedVisibleTurnCount || 0));
+    const renderedDomTurnCount = Math.max(0, Number(input.renderedDomTurnCount || 0));
+    const stableSignatureButMissingTurns = Boolean(
+      stableSignature
+      && expectedVisibleTurnCount > 0
+      && renderedDomTurnCount <= 0
+    );
     const scrollAction = input.stickToBottom ? "scroll-to-bottom" : "update-bottom-button";
-    if (stableSignature) {
+    if (stableSignature && !stableSignatureButMissingTurns) {
       return {
         action: "hydrate-existing",
         changed: false,
         stableSignature: true,
+        reason: "signature-stable",
         signature,
         patchShellSignature,
         updateRenderedConversationSignature: false,
@@ -195,7 +203,8 @@
       action: input.hasExistingChildren ? "patch-html" : "set-inner-html",
       fallbackAction: "set-inner-html",
       changed: true,
-      stableSignature: false,
+      stableSignature,
+      reason: stableSignatureButMissingTurns ? "stable-signature-dom-empty" : "signature-changed",
       signature,
       patchShellSignature,
       updateRenderedConversationSignature: true,

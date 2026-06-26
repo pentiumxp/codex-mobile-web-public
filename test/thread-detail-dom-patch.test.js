@@ -273,6 +273,7 @@ test("conversation HTML update plan preserves stable signatures without repainti
     action: "hydrate-existing",
     changed: false,
     stableSignature: true,
+    reason: "signature-stable",
     signature: "sig-a",
     patchShellSignature: "",
     updateRenderedConversationSignature: false,
@@ -312,6 +313,7 @@ test("conversation HTML update plan selects patch or innerHTML for changed signa
     fallbackAction: "set-inner-html",
     changed: true,
     stableSignature: false,
+    reason: "signature-changed",
     signature: "sig-next",
     patchShellSignature: "shell-next",
     updateRenderedConversationSignature: true,
@@ -330,6 +332,37 @@ test("conversation HTML update plan selects patch or innerHTML for changed signa
   });
   assert.equal(emptyTargetPlan.action, "set-inner-html");
   assert.equal(emptyTargetPlan.scrollAction, "update-bottom-button");
+});
+
+test("conversation HTML update plan invalidates stable signatures when visible turns are missing from DOM", () => {
+  const plan = domPatch.planConversationHtmlUpdate({
+    signature: "sig-a",
+    renderedConversationSignature: "sig-a",
+    renderedConversationPatchShellSignature: "shell-old",
+    patchShellSignature: "shell-new",
+    stickToBottom: true,
+    hasExistingChildren: true,
+    expectedVisibleTurnCount: 3,
+    renderedDomTurnCount: 0,
+  });
+
+  assert.equal(plan.action, "patch-html");
+  assert.equal(plan.changed, true);
+  assert.equal(plan.stableSignature, true);
+  assert.equal(plan.reason, "stable-signature-dom-empty");
+  assert.equal(plan.updateRenderedConversationSignature, true);
+  assert.equal(plan.updatePatchShellSignature, true);
+  assert.equal(plan.nextRenderedConversationSignature, "sig-a");
+  assert.equal(plan.nextRenderedConversationPatchShellSignature, "shell-new");
+
+  const healthyPlan = domPatch.planConversationHtmlUpdate({
+    signature: "sig-a",
+    renderedConversationSignature: "sig-a",
+    expectedVisibleTurnCount: 3,
+    renderedDomTurnCount: 2,
+  });
+  assert.equal(healthyPlan.action, "hydrate-existing");
+  assert.equal(healthyPlan.reason, "signature-stable");
 });
 
 test("local conversation DOM update completion plan preserves tile pane terminal state", () => {

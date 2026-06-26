@@ -3026,6 +3026,19 @@ test("thread refresh render planning invalidates empty DOM for nonempty single-t
   assert.match(body, /nextVisibleTurnCount: nextVisibleShape\.visibleTurnCount/);
 });
 
+test("conversation html update invalidates stable signatures when the DOM has lost visible turns", () => {
+  const updateBody = functionBody("updateConversationHtml");
+  assert.match(updateBody, /const expectedVisibleTurnCount = Math\.max\(0, Number\(options\.expectedVisibleTurnCount \|\| 0\)\);/);
+  assert.match(updateBody, /conversationDomTurnIds\(conversation\)\.length/);
+  assert.match(updateBody, /expectedVisibleTurnCount,/);
+  assert.match(updateBody, /renderedDomTurnCount,/);
+  assert.match(updateBody, /updatePlan\.reason === "stable-signature-dom-empty"/);
+  assert.match(updateBody, /recordEmptyVisibleDetailMismatch\("stable_signature_dom_empty"/);
+  assert.match(updateBody, /postClientEvent\("conversation_dom_authority_invalidated"/);
+  assert.match(updateBody, /updateReason: updatePlan\.reason \|\| ""/);
+  assert.match(functionBody("renderCurrentThread"), /expectedVisibleTurnCount: turns\.length/);
+});
+
 test("thread detail refresh failure delegates diagnostic payloads to helper", () => {
   const body = functionBody("refreshCurrentThread");
   assert.match(body, /recordHomeAiDiagnosticFailure\(threadDiagnosticEventsApi\.threadDetailRefreshFailedDiagnosticEvent\(\{/);

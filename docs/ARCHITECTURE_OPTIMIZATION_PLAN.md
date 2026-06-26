@@ -322,6 +322,19 @@ stable signature with `rendered-dom-empty` and forces a full render. This fixes
 the root state-ownership mismatch instead of adding an extra retry or synthetic
 content fallback.
 
+`codex-mobile-shell-v527` closes the lower-level conversation update path that
+remained after v526. `updateConversationHtml()` previously trusted
+`renderedConversationSignature === signature` before checking whether the
+currently mounted DOM still contained the expected turn articles. That allowed a
+single-thread surface to stay on `No visible turns.` even while the current
+thread detail state was visibly nonempty. `planConversationHtmlUpdate()` now
+receives `expectedVisibleTurnCount` and `renderedDomTurnCount`; stable
+signatures are reusable only when the DOM shape is compatible. If the next
+state has visible turns but the DOM has zero turn articles, the helper returns
+`stable-signature-dom-empty`, the app executes a real HTML update, and bounded
+diagnostics record `stable_signature_dom_empty` /
+`conversation_dom_authority_invalidated`.
+
 The first slices extract item visible-field merge policy,
 visible-text render identity / completed-receipt retention, local-only item
 retention/drop policy, and live-to-completed same-turn visible-item preservation
