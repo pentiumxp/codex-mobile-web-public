@@ -17677,5 +17677,61 @@ The previous full handoff was archived and should be opened only when old proven
   - Overall architecture optimization is about `72%`.
   - Phase A frontend render/projection ownership is about `82%`.
 - Next:
+  - Committed locally as `48e543c`
+    (`plan first paint after render effects`). Continue Phase A current-thread
+    render authority or batch the accumulated module for one deploy/readback
+    when requested.
+
+## 2026-06-27 - Latest tail marker: Phase A first-paint post-timing effects local slice
+
+- Current local state:
+  - Continued Phase A `loadThread()` ownership cleanup after `48e543c`.
+  - API first-paint auto-backfill now goes through an after-render plan, but
+    `loadThread()` still directly called
+    `checkConversationProjectionConsistency("first-paint", { renderMode:
+    "first-paint" })` after measuring `postRenderMs`.
+  - This slice moves that post-render-timing consistency check into
+    `public/thread-detail-render-plan.js` while preserving the existing
+    timing boundary.
+- Root-cause boundary:
+  - Symptom/risk: first-paint render completion still had a fixed projection
+    consistency side effect directly embedded in `loadThread()`.
+  - Failing layer: frontend first-paint post-timing side-effect ownership, not
+    projection cache selection, app-server detail reads, server projection,
+    DOM patch selection, scroll anchoring, task-card routing, Home AI
+    diagnostic intake, or shell/cache.
+  - Violated invariant: fixed thread-detail side-effect selection should be
+    declared by pure planning helpers; app code should execute the real effect
+    and preserve timing boundaries explicitly.
+- Changes:
+  - `public/thread-detail-render-plan.js` now exports
+    `planThreadDetailFirstPaintPostTimingEffects()`.
+  - The plan declares the `check-conversation-projection-consistency` effect
+    for `phase=first-paint` / `renderMode=first-paint`.
+  - `public/app.js` now applies that plan immediately after `postRenderMs` is
+    calculated and before `renderElapsedMs`, preserving the previous timing
+    scope.
+  - Updated `test/thread-detail-render-plan.test.js` and
+    `test/mobile-viewport.test.js`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation so far:
+  - Focused:
+    `node --test test/thread-detail-render-plan.test.js test/mobile-viewport.test.js test/conversation-render.test.js test/turn-scroll-controls.test.js`
+    passed (`194` tests).
+  - Syntax:
+    `node --check public/thread-detail-render-plan.js && node --check public/app.js && node --check test/thread-detail-render-plan.test.js && node --check test/mobile-viewport.test.js`
+    passed.
+  - Full:
+    `npm test` passed (`1157` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache
+    bump. This remains a local Phase A ownership slice to batch with the next
+    module validation/deploy.
+- Progress:
+  - Overall architecture optimization is about `73%`.
+  - Phase A frontend render/projection ownership is about `83%`.
+- Next:
   - Commit locally, then continue Phase A current-thread render authority or
     batch the accumulated module for one deploy/readback when requested.

@@ -916,6 +916,11 @@ that runs after `renderCurrentThread({ stickToBottom: true })` and before
 `postRenderStartedAt`. This keeps the original performance timing boundary
 while removing the last direct first-paint history auto-backfill call from
 `loadThread()`.
+First-paint post-timing projection-consistency checking is planned separately:
+`planThreadDetailFirstPaintPostTimingEffects` declares the
+`check-conversation-projection-consistency` effect that runs after
+`postRenderMs` is measured. This preserves the existing timing scope while
+removing another direct fixed effect call from `loadThread()`.
 First-paint telemetry/reporting side-effect ordering now also lives in
 `public/thread-detail-render-plan.js`:
 `planThreadDetailFirstPaintTelemetryEffects` declares the fixed sequence for

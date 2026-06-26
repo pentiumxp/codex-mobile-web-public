@@ -904,6 +904,19 @@
     };
   }
 
+  function planThreadDetailFirstPaintPostTimingEffects() {
+    return {
+      effects: [
+        {
+          type: "check-conversation-projection-consistency",
+          phase: "first-paint",
+          renderMode: "first-paint",
+        },
+      ],
+      reason: "first-paint-post-timing",
+    };
+  }
+
   function planThreadDetailCachedCurrentPostRenderEffects(input = {}) {
     const seq = Number(input.seq);
     const threadId = compactReason(input.threadId, "");
@@ -1276,6 +1289,7 @@
     planThreadDetailCachedCurrentTelemetryEffects,
     planThreadDetailCachedCurrentPostRenderEffects,
     planThreadDetailFirstPaintAfterRenderEffects,
+    planThreadDetailFirstPaintPostTimingEffects,
     planThreadDetailFullBackfillPostRenderEffects,
     planThreadDetailFullBackfillTelemetryEffects,
     planThreadDetailFirstPaintPostRenderEffects,

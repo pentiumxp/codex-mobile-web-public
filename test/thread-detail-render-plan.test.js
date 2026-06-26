@@ -1273,6 +1273,19 @@ test("thread detail first-paint after-render effects plan preserves auto-backfil
   });
 });
 
+test("thread detail first-paint post-timing effects plan preserves consistency boundary", () => {
+  assert.deepEqual(renderPlan.planThreadDetailFirstPaintPostTimingEffects(), {
+    effects: [
+      {
+        type: "check-conversation-projection-consistency",
+        phase: "first-paint",
+        renderMode: "first-paint",
+      },
+    ],
+    reason: "first-paint-post-timing",
+  });
+});
+
 test("thread detail cached-current post-render effects plan preserves order and runtime guards", () => {
   assert.deepEqual(renderPlan.planThreadDetailCachedCurrentPostRenderEffects({
     threadId: "thread-1",

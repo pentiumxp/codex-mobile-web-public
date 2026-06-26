@@ -9108,7 +9108,8 @@ async function loadThread(threadId, options = {}) {
   });
   applyThreadDetailPostRenderEffectsPlan(firstPaintPostRenderPlan, { thread: result.thread });
   const postRenderMs = roundedDurationMs(postRenderStartedAt);
-  checkConversationProjectionConsistency("first-paint", { renderMode: "first-paint" });
+  const firstPaintPostTimingPlan = threadDetailRenderPlanApi.planThreadDetailFirstPaintPostTimingEffects();
+  applyThreadDetailPostRenderEffectsPlan(firstPaintPostTimingPlan, { thread: result.thread });
   const renderElapsedMs = roundedDurationMs(renderStartedAt);
   const firstPaintPerformance = threadPerformanceMetrics.threadDetailFirstPaintEventFields(result.thread, {
     source,
