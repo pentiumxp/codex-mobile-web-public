@@ -545,11 +545,13 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(functionBody("applyThreadDetailRefreshPatchAttemptEffect"), /item\.skipWhenTilePanePatched && context\.tilePanePatchedDetail/);
   assert.match(functionBody("refreshCurrentThread"), /const patchAttemptResultEvidenceStage = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchAttemptResultEvidenceStage\(\{/);
   assert.match(functionBody("refreshCurrentThread"), /patchAttempt,[\s\S]*renderPlan,[\s\S]*readMode: result\.thread && result\.thread\.mobileReadMode/);
-  assert.match(functionBody("refreshCurrentThread"), /let patchAttemptResultStage = patchAttemptResultEvidenceStage\.patchAttemptResultStage;/);
+  assert.doesNotMatch(functionBody("refreshCurrentThread"), /let patchAttemptResultStage = patchAttemptResultEvidenceStage\.patchAttemptResultStage;/);
   assert.match(functionBody("refreshCurrentThread"), /const patchRejectedVisibleShapeEvidence = applyThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffectsPlan\([\s\S]*patchAttemptResultEvidenceStage\.visibleShapeEvidenceEffectsPlan,[\s\S]*previousThread,[\s\S]*nextThread: state\.currentThread,[\s\S]*\);/);
-  assert.match(functionBody("refreshCurrentThread"), /if \(patchRejectedVisibleShapeEvidence\.collected\) \{/);
-  assert.match(functionBody("refreshCurrentThread"), /patchAttemptResultStage = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchAttemptResultEvidenceCompletionStage\(\{/);
-  assert.match(functionBody("refreshCurrentThread"), /visibleShapeEvidence: patchRejectedVisibleShapeEvidence,/);
+  assert.match(functionBody("refreshCurrentThread"), /const patchAttemptResultResolutionStage = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchAttemptResultEvidenceResolutionStage\(\{/);
+  assert.match(functionBody("refreshCurrentThread"), /patchAttemptResultStage: patchAttemptResultEvidenceStage\.patchAttemptResultStage,[\s\S]*visibleShapeEvidence: patchRejectedVisibleShapeEvidence,/);
+  assert.match(functionBody("refreshCurrentThread"), /const patchAttemptResultStage = patchAttemptResultResolutionStage\.patchAttemptResultStage;/);
+  assert.doesNotMatch(functionBody("refreshCurrentThread"), /if \(patchRejectedVisibleShapeEvidence\.collected\)/);
+  assert.doesNotMatch(functionBody("refreshCurrentThread"), /planThreadDetailRefreshPatchAttemptResultEvidenceCompletionStage\(\{/);
   assert.doesNotMatch(functionBody("refreshCurrentThread"), /previousVisibleShape: visibleConversationShape\(previousThread\)/);
   assert.doesNotMatch(functionBody("refreshCurrentThread"), /nextVisibleShape: visibleConversationShape\(state\.currentThread\)/);
   assert.match(functionBody("refreshCurrentThread"), /const patchAttemptResult = patchAttemptResultStage\.patchAttemptResult;/);

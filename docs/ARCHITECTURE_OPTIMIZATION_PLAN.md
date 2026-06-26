@@ -820,6 +820,13 @@ The refresh path now also stops mirroring patch state in app-local booleans:
 `patchAttemptResult` and the final `renderOutcome`, not by extra
 `refreshCurrentThread()` variables that can drift across patch attempt, result,
 and outcome stages.
+Patch-attempt result evidence resolution now also lives in the helper:
+`planThreadDetailRefreshPatchAttemptResultEvidenceResolutionStage` receives the
+real visible-shape evidence result from app code and decides whether to keep the
+original result stage or complete it with collected shape evidence. App code
+still collects the actual DOM-derived shape evidence, but it no longer branches
+directly on `patchRejectedVisibleShapeEvidence.collected` or calls the
+completion stage itself.
 Refresh completion side-effect planning now also lives in this helper:
 `planThreadDetailRefreshCompletionEffects` decides the success diagnostic clear,
 usage-backfill refresh scheduling, and live-poll scheduling effects, while app

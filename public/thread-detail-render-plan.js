@@ -835,6 +835,30 @@
     });
   }
 
+  function planThreadDetailRefreshPatchAttemptResultEvidenceResolutionStage(input = {}) {
+    const patchAttemptResultStage = objectOrEmpty(input.patchAttemptResultStage);
+    const visibleShapeEvidence = objectOrEmpty(input.visibleShapeEvidence);
+    if (!visibleShapeEvidence.collected) {
+      return {
+        patchAttemptResultStage,
+        resolvedFromEvidence: false,
+        reason: compactReason(patchAttemptResultStage.reason, "visible-shapes-not-collected"),
+      };
+    }
+    const completedStage = planThreadDetailRefreshPatchAttemptResultEvidenceCompletionStage({
+      shouldRenderDetail: input.shouldRenderDetail,
+      patchAttempt: input.patchAttempt,
+      renderPlan: input.renderPlan,
+      readMode: input.readMode,
+      visibleShapeEvidence,
+    });
+    return {
+      patchAttemptResultStage: completedStage,
+      resolvedFromEvidence: true,
+      reason: completedStage.reason,
+    };
+  }
+
   function finalizeThreadDetailRenderPlan(plan = {}, result = {}) {
     const tilePanePatchedDetail = Boolean(result.tilePanePatchedDetail);
     const locallyPatchedDetail = Boolean(result.locallyPatchedDetail);
@@ -1711,6 +1735,7 @@
     planThreadDetailRefreshPatchAttemptResultStage,
     planThreadDetailRefreshPatchAttemptResultEvidenceStage,
     planThreadDetailRefreshPatchAttemptResultEvidenceCompletionStage,
+    planThreadDetailRefreshPatchAttemptResultEvidenceResolutionStage,
     planThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffects,
     planThreadDetailRefreshPatchRejectedDiagnostic,
     planThreadDetailRefreshPatchRejectedDiagnosticEffects,

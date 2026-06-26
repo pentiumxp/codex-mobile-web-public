@@ -3208,11 +3208,13 @@ test("current-thread refresh patches the current tile pane for metadata-only til
   assert.match(functionBody("applyThreadDetailRefreshPatchAttemptEffect"), /item\.skipWhenTilePanePatched && context\.tilePanePatchedDetail/);
   assert.match(body, /const patchAttemptResultEvidenceStage = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchAttemptResultEvidenceStage\(\{/);
   assert.match(body, /patchAttempt,[\s\S]*renderPlan,[\s\S]*readMode: result\.thread && result\.thread\.mobileReadMode/);
-  assert.match(body, /let patchAttemptResultStage = patchAttemptResultEvidenceStage\.patchAttemptResultStage;/);
+  assert.doesNotMatch(body, /let patchAttemptResultStage = patchAttemptResultEvidenceStage\.patchAttemptResultStage;/);
   assert.match(body, /const patchRejectedVisibleShapeEvidence = applyThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffectsPlan\([\s\S]*patchAttemptResultEvidenceStage\.visibleShapeEvidenceEffectsPlan,[\s\S]*previousThread,[\s\S]*nextThread: state\.currentThread,[\s\S]*\);/);
-  assert.match(body, /if \(patchRejectedVisibleShapeEvidence\.collected\) \{/);
-  assert.match(body, /patchAttemptResultStage = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchAttemptResultEvidenceCompletionStage\(\{/);
-  assert.match(body, /visibleShapeEvidence: patchRejectedVisibleShapeEvidence,/);
+  assert.match(body, /const patchAttemptResultResolutionStage = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchAttemptResultEvidenceResolutionStage\(\{/);
+  assert.match(body, /patchAttemptResultStage: patchAttemptResultEvidenceStage\.patchAttemptResultStage,[\s\S]*visibleShapeEvidence: patchRejectedVisibleShapeEvidence,/);
+  assert.match(body, /const patchAttemptResultStage = patchAttemptResultResolutionStage\.patchAttemptResultStage;/);
+  assert.doesNotMatch(body, /if \(patchRejectedVisibleShapeEvidence\.collected\)/);
+  assert.doesNotMatch(body, /planThreadDetailRefreshPatchAttemptResultEvidenceCompletionStage\(\{/);
   assert.doesNotMatch(body, /previousVisibleShape: visibleConversationShape\(previousThread\)/);
   assert.doesNotMatch(body, /nextVisibleShape: visibleConversationShape\(state\.currentThread\)/);
   assert.match(body, /const patchAttemptResult = patchAttemptResultStage\.patchAttemptResult;/);

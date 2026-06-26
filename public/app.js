@@ -9801,7 +9801,6 @@ async function refreshCurrentThread(options = {}) {
     renderPlan,
     readMode: result.thread && result.thread.mobileReadMode,
   });
-  let patchAttemptResultStage = patchAttemptResultEvidenceStage.patchAttemptResultStage;
   const patchRejectedVisibleShapeEvidence = applyThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffectsPlan(
     patchAttemptResultEvidenceStage.visibleShapeEvidenceEffectsPlan,
     {
@@ -9809,15 +9808,15 @@ async function refreshCurrentThread(options = {}) {
       nextThread: state.currentThread,
     },
   );
-  if (patchRejectedVisibleShapeEvidence.collected) {
-    patchAttemptResultStage = threadDetailRenderPlanApi.planThreadDetailRefreshPatchAttemptResultEvidenceCompletionStage({
-      shouldRenderDetail,
-      patchAttempt,
-      renderPlan,
-      readMode: result.thread && result.thread.mobileReadMode,
-      visibleShapeEvidence: patchRejectedVisibleShapeEvidence,
-    });
-  }
+  const patchAttemptResultResolutionStage = threadDetailRenderPlanApi.planThreadDetailRefreshPatchAttemptResultEvidenceResolutionStage({
+    shouldRenderDetail,
+    patchAttempt,
+    renderPlan,
+    readMode: result.thread && result.thread.mobileReadMode,
+    patchAttemptResultStage: patchAttemptResultEvidenceStage.patchAttemptResultStage,
+    visibleShapeEvidence: patchRejectedVisibleShapeEvidence,
+  });
+  const patchAttemptResultStage = patchAttemptResultResolutionStage.patchAttemptResultStage;
   const patchAttemptResult = patchAttemptResultStage.patchAttemptResult;
   applyThreadDetailRefreshPatchRejectedDiagnosticEffectsPlan(patchAttemptResultStage.patchRejectedDiagnosticEffectsPlan);
   const outcomeExecutionStage = threadDetailRenderPlanApi.planThreadDetailRefreshOutcomeExecutionStage({

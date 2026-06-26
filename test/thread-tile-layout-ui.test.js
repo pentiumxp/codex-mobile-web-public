@@ -465,10 +465,13 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.doesNotMatch(refreshBody, /tileSurfaceRefresh: patchSurfacePlan\.tileSurfaceRefresh/);
   assert.match(refreshBody, /const patchAttempt = applyThreadDetailRefreshPatchAttemptEffectsPlan\(patchAttemptEffectsPlan, \{/);
   assert.match(refreshBody, /const patchAttemptResultEvidenceStage = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchAttemptResultEvidenceStage\(\{/);
-  assert.match(refreshBody, /let patchAttemptResultStage = patchAttemptResultEvidenceStage\.patchAttemptResultStage;/);
+  assert.doesNotMatch(refreshBody, /let patchAttemptResultStage = patchAttemptResultEvidenceStage\.patchAttemptResultStage;/);
   assert.match(refreshBody, /const patchRejectedVisibleShapeEvidence = applyThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffectsPlan\([\s\S]*patchAttemptResultEvidenceStage\.visibleShapeEvidenceEffectsPlan,[\s\S]*previousThread,[\s\S]*nextThread: state\.currentThread,[\s\S]*\);/);
-  assert.match(refreshBody, /if \(patchRejectedVisibleShapeEvidence\.collected\) \{/);
-  assert.match(refreshBody, /patchAttemptResultStage = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchAttemptResultEvidenceCompletionStage\(\{/);
+  assert.match(refreshBody, /const patchAttemptResultResolutionStage = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchAttemptResultEvidenceResolutionStage\(\{/);
+  assert.match(refreshBody, /patchAttemptResultStage: patchAttemptResultEvidenceStage\.patchAttemptResultStage,[\s\S]*visibleShapeEvidence: patchRejectedVisibleShapeEvidence,/);
+  assert.match(refreshBody, /const patchAttemptResultStage = patchAttemptResultResolutionStage\.patchAttemptResultStage;/);
+  assert.doesNotMatch(refreshBody, /if \(patchRejectedVisibleShapeEvidence\.collected\)/);
+  assert.doesNotMatch(refreshBody, /planThreadDetailRefreshPatchAttemptResultEvidenceCompletionStage\(\{/);
   assert.match(refreshBody, /applyThreadDetailRefreshPatchRejectedDiagnosticEffectsPlan\(patchAttemptResultStage\.patchRejectedDiagnosticEffectsPlan\);/);
   assert.match(appJs, /function applyThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffectsPlan\(plan, context = \{\}\)/);
   assert.match(functionBody(appJs, "applyThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffect"), /previousVisibleShape: visibleConversationShape\(context\.previousThread\)/);

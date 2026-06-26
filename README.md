@@ -45,6 +45,37 @@ completion、scroll/bottom-follow 和 single-thread shell update 的所有权边
 `status=ready`，detail 走 `projection-active-overlay` warm path，active overlay
 gate 为 `ready`；抽样文件 source/prod SHA-256 短 hash 一致。
 
+## 2026-06-27 Phase A Patch Evidence Resolution Slice
+
+本地小切片继续收敛 `refreshCurrentThread()` 的 patch-attempt result evidence
+编排。此前 visible-shape evidence 的请求和 completion stage 已在
+`public/thread-detail-render-plan.js` 中，但 `public/app.js` 仍直接检查
+`patchRejectedVisibleShapeEvidence.collected`，并决定是否调用 completion stage。
+这让 patch rejection evidence 的完成条件仍散在 app 主状态机里。
+
+本次修复：
+
+- `public/thread-detail-render-plan.js` 新增
+  `planThreadDetailRefreshPatchAttemptResultEvidenceResolutionStage()`。
+- `refreshCurrentThread()` 只执行真实 visible-shape evidence effect，然后把
+  evidence result 交给 resolution stage；不再直接分支判断 `collected`。
+- `test/thread-detail-render-plan.test.js` 覆盖 collected / not collected 两条路径。
+- `test/conversation-render.test.js`、`test/mobile-viewport.test.js` 和
+  `test/thread-tile-layout-ui.test.js` 验证 app.js 不再直接调用 completion stage
+  或保留旧 `let patchAttemptResultStage` 镜像。
+- 不改变 visible-shape 采集、patch rejection diagnostic payload、DOM patch、
+  full render、server projection、任务卡协议、诊断上报或 shell/cache。
+
+闭环验证：
+
+```bash
+node --check public/thread-detail-render-plan.js && node --check public/app.js && node --check test/thread-detail-render-plan.test.js && node --check test/conversation-render.test.js && node --check test/mobile-viewport.test.js && node --check test/thread-tile-layout-ui.test.js
+node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-tile-layout-ui.test.js
+```
+
+结果：focused `210` passed。该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，
+尚未部署；继续作为 Phase A 模块的一部分累积。
+
 ## 2026-06-27 Phase A Patch Surface Execution Stage Slice
 
 本地小切片继续收敛 `refreshCurrentThread()` 的 patch surface / execution

@@ -1267,6 +1267,29 @@ test("thread detail refresh patch attempt evidence stage owns visible-shape requ
     visibleItemCount: 5,
   });
 
+  const unresolvedStage = renderPlan.planThreadDetailRefreshPatchAttemptResultEvidenceResolutionStage({
+    ...rejectedInput,
+    patchAttemptResultStage: evidenceStage.patchAttemptResultStage,
+    visibleShapeEvidence: {
+      collected: false,
+    },
+  });
+  assert.equal(unresolvedStage.resolvedFromEvidence, false);
+  assert.equal(unresolvedStage.patchAttemptResultStage, evidenceStage.patchAttemptResultStage);
+  assert.equal(unresolvedStage.reason, "visible-shapes-required");
+
+  const resolvedStage = renderPlan.planThreadDetailRefreshPatchAttemptResultEvidenceResolutionStage({
+    ...rejectedInput,
+    patchAttemptResultStage: evidenceStage.patchAttemptResultStage,
+    visibleShapeEvidence: {
+      collected: true,
+      previousVisibleShape: { visibleItemCount: 3 },
+      nextVisibleShape: { visibleItemCount: 5 },
+    },
+  });
+  assert.equal(resolvedStage.resolvedFromEvidence, true);
+  assert.deepEqual(resolvedStage.patchAttemptResultStage, completedStage);
+
   const quietStage = renderPlan.planThreadDetailRefreshPatchAttemptResultEvidenceStage({
     shouldRenderDetail: true,
     patchAttempt: {
