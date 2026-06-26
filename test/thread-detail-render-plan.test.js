@@ -1004,6 +1004,74 @@ test("single-thread shell conversation update plans stable update inputs", () =>
   });
 });
 
+test("single-thread shell post-update effects preserve early retry ordering", () => {
+  assert.deepEqual(renderPlan.planSingleThreadShellPostUpdateEffects({
+    shellPlan: {
+      bindRetry: true,
+      retryThreadId: "thread-2",
+    },
+    updateTickTimer: true,
+    publishPluginNavigationState: true,
+    reason: "single-thread-early-shell",
+  }), {
+    effects: [
+      {
+        type: "bind-retry-current-thread",
+        threadId: "thread-2",
+      },
+      {
+        type: "update-tick-timer",
+      },
+      {
+        type: "publish-plugin-navigation-state",
+      },
+    ],
+    reason: "single-thread-early-shell",
+  });
+});
+
+test("single-thread shell post-update effects preserve full-render ordering", () => {
+  assert.deepEqual(renderPlan.planSingleThreadShellPostUpdateEffects({
+    checkEmptyVisibleDetailMismatch: true,
+    source: "single-thread-render",
+    renderMode: "full-render",
+    domCount: 4,
+    previousCount: 3,
+    bindCurrentThreadActions: true,
+    scrollToTurnReceiptStart: "turn-9",
+    applyPendingPluginRouteHintFocus: true,
+    updateTickTimer: true,
+    publishPluginNavigationState: true,
+  }), {
+    effects: [
+      {
+        type: "check-empty-visible-detail-mismatch",
+        source: "single-thread-render",
+        renderMode: "full-render",
+        domCount: 4,
+        previousCount: 3,
+      },
+      {
+        type: "bind-current-thread-actions",
+      },
+      {
+        type: "scroll-turn-receipt-start",
+        turnId: "turn-9",
+      },
+      {
+        type: "apply-pending-plugin-route-hint-focus",
+      },
+      {
+        type: "update-tick-timer",
+      },
+      {
+        type: "publish-plugin-navigation-state",
+      },
+    ],
+    reason: "single-thread-shell-post-update",
+  });
+});
+
 test("single-thread full render shell plans escaped load error retry", () => {
   const plan = renderPlan.planSingleThreadFullRenderShell({
     threadId: "thread-1",

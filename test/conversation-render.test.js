@@ -1877,7 +1877,8 @@ test("loading and thread-list state preserve locally visible live turns", () => 
   assert.match(functionBody("renderCurrentThread"), /if \(earlyShellPlan\.shouldRender\) \{/);
   assert.match(functionBody("renderCurrentThread"), /threadDetailRenderPlanApi\.planSingleThreadShellConversationUpdate\(\{[\s\S]*shellPlan: earlyShellPlan,/);
   assert.match(functionBody("renderCurrentThread"), /updateConversationHtml\(\s*earlyUpdatePlan\.html,\s*earlyUpdatePlan\.conversationSignature,\s*earlyUpdatePlan\.options,/);
-  assert.match(functionBody("renderCurrentThread"), /earlyShellPlan\.bindRetry/);
+  assert.match(functionBody("renderCurrentThread"), /threadDetailRenderPlanApi\.planSingleThreadShellPostUpdateEffects\(\{[\s\S]*bindRetry: earlyShellPlan\.bindRetry,/);
+  assert.match(functionBody("renderCurrentThread"), /applySingleThreadShellPostUpdateEffectsPlan\(earlyPostUpdateEffectsPlan,/);
   assert.match(functionBody("renderCurrentThread"), /threadDetailRenderPlanApi\.planSingleThreadFullRenderShell/);
   assert.doesNotMatch(functionBody("renderCurrentThread"), /Thread failed:/);
   assert.doesNotMatch(functionBody("renderCurrentThread"), /No visible turns\./);
@@ -3024,7 +3025,9 @@ test("empty visible detail mismatches are diagnosed from recent detail evidence"
   assert.match(functionBody("checkEmptyVisibleDetailMismatchAfterRender"), /threadDetailStateApi\.hasNonemptyThreadDetailRenderEvidence\(/);
   assert.match(functionBody("checkEmptyVisibleDetailMismatchAfterRender"), /threadDetailStateApi\.sameThreadDetailRenderEvidence\(\{ evidence, threadId \}\)/);
   assert.match(functionBody("checkEmptyVisibleDetailMismatchAfterRender"), /recordEmptyVisibleDetailMismatch\("empty_render_after_nonempty_detail"/);
-  assert.match(functionBody("renderCurrentThread"), /checkEmptyVisibleDetailMismatchAfterRender\(thread, shellPlan, \{/);
+  assert.match(functionBody("renderCurrentThread"), /threadDetailRenderPlanApi\.planSingleThreadShellPostUpdateEffects\(\{[\s\S]*checkEmptyVisibleDetailMismatch: true,/);
+  assert.match(functionBody("renderCurrentThread"), /applySingleThreadShellPostUpdateEffectsPlan\(postUpdateEffectsPlan,/);
+  assert.match(functionBody("applySingleThreadShellPostUpdateEffect"), /checkEmptyVisibleDetailMismatchAfterRender\(context\.thread, context\.shellPlan, \{/);
   assert.match(functionBody("loadThread"), /markThreadDetailLoaded\(result\.thread\);\s*rememberThreadDetailRenderEvidence\(result\.thread, `\$\{source\}-detail-api`\);/);
   assert.match(functionBody("refreshCurrentThread"), /markThreadDetailLoaded\(result\.thread\);\s*rememberThreadDetailRenderEvidence\(result\.thread, `\$\{source\}-detail-api`\);/);
   assert.match(functionBody("backfillFullThreadDetail"), /markThreadDetailLoaded\(result\.thread\);\s*rememberThreadDetailRenderEvidence\(result\.thread, `\$\{String\(options\.source \|\| "unknown"\)\.slice\(0, 40\)\}-detail-api`\);/);

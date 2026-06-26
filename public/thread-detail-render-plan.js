@@ -775,6 +775,36 @@
     };
   }
 
+  function planSingleThreadShellPostUpdateEffects(input = {}) {
+    const shellPlan = objectOrEmpty(input.shellPlan);
+    const effects = [];
+    if (input.bindRetry || shellPlan.bindRetry) {
+      effects.push({
+        type: "bind-retry-current-thread",
+        threadId: text(input.retryThreadId || shellPlan.retryThreadId).trim(),
+      });
+    }
+    if (input.checkEmptyVisibleDetailMismatch) {
+      effects.push({
+        type: "check-empty-visible-detail-mismatch",
+        source: compactReason(input.source, "single-thread-render"),
+        renderMode: compactReason(input.renderMode, "full-render"),
+        domCount: normalizedCount(input.domCount),
+        previousCount: normalizedCount(input.previousCount),
+      });
+    }
+    if (input.bindCurrentThreadActions) effects.push({ type: "bind-current-thread-actions" });
+    const turnId = text(input.scrollToTurnReceiptStart).trim();
+    if (turnId) effects.push({ type: "scroll-turn-receipt-start", turnId });
+    if (input.applyPendingPluginRouteHintFocus) effects.push({ type: "apply-pending-plugin-route-hint-focus" });
+    if (input.updateTickTimer) effects.push({ type: "update-tick-timer" });
+    if (input.publishPluginNavigationState) effects.push({ type: "publish-plugin-navigation-state" });
+    return {
+      effects,
+      reason: compactReason(input.reason, effects.length ? "single-thread-shell-post-update" : "no-post-update-effects"),
+    };
+  }
+
   return {
     emptyThreadDetailRefreshPatchAttempt,
     finalizeThreadDetailRenderPlan,
@@ -792,6 +822,7 @@
     planSingleThreadEarlyShellExecution,
     planSingleThreadFullRenderShell,
     planSingleThreadShellConversationUpdate,
+    planSingleThreadShellPostUpdateEffects,
     planThreadDetailHistoryAutoBackfill,
     planThreadDetailRefreshPatchExecution,
     planThreadDetailRefreshRender,

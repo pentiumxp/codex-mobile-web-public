@@ -14568,6 +14568,54 @@ function renderThreadHistoryNote(thread, omitted, previousKeys = new Set()) {
   </div>`;
 }
 
+function applySingleThreadShellPostUpdateEffect(effect, context = {}) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  if (type === "bind-retry-current-thread") {
+    const retry = $("retryCurrentThread");
+    if (retry) {
+      const retryThreadId = String(item.threadId || context.threadId || "");
+      retry.onclick = () => loadThread(retryThreadId, { source: "retry" }).catch(showError);
+    }
+    return;
+  }
+  if (type === "check-empty-visible-detail-mismatch") {
+    checkEmptyVisibleDetailMismatchAfterRender(context.thread, context.shellPlan, {
+      source: String(item.source || "single-thread-render"),
+      renderMode: String(item.renderMode || "full-render"),
+      domCount: Math.max(0, Number(item.domCount || 0)),
+      previousCount: Math.max(0, Number(item.previousCount || 0)),
+    });
+    return;
+  }
+  if (type === "bind-current-thread-actions") {
+    bindCurrentThreadActions();
+    return;
+  }
+  if (type === "scroll-turn-receipt-start") {
+    scrollConversationToTurnReceiptStart(item.turnId);
+    return;
+  }
+  if (type === "apply-pending-plugin-route-hint-focus") {
+    applyPendingPluginRouteHintFocus();
+    return;
+  }
+  if (type === "update-tick-timer") {
+    updateTickTimer();
+    return;
+  }
+  if (type === "publish-plugin-navigation-state") {
+    publishPluginNavigationState();
+    return;
+  }
+  throw new Error(`Unknown single-thread shell post-update effect: ${type || "empty"}`);
+}
+
+function applySingleThreadShellPostUpdateEffectsPlan(plan, context = {}) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applySingleThreadShellPostUpdateEffect(effect, context);
+}
+
 function renderCurrentThread(options = {}) {
   syncThreadDetailLayoutState();
   syncThreadTileToggle();
@@ -14656,12 +14704,19 @@ function renderCurrentThread(options = {}) {
       earlyUpdatePlan.conversationSignature,
       earlyUpdatePlan.options,
     );
-    if (earlyShellPlan.bindRetry) {
-      const retry = $("retryCurrentThread");
-      if (retry) retry.onclick = () => loadThread(earlyShellPlan.retryThreadId || thread.id || state.currentThreadId, { source: "retry" }).catch(showError);
-    }
-    updateTickTimer();
-    publishPluginNavigationState();
+    const earlyPostUpdateEffectsPlan = threadDetailRenderPlanApi.planSingleThreadShellPostUpdateEffects({
+      shellPlan: earlyShellPlan,
+      bindRetry: earlyShellPlan.bindRetry,
+      retryThreadId: earlyShellPlan.retryThreadId || thread.id || state.currentThreadId,
+      updateTickTimer: true,
+      publishPluginNavigationState: true,
+      reason: "single-thread-early-shell",
+    });
+    applySingleThreadShellPostUpdateEffectsPlan(earlyPostUpdateEffectsPlan, {
+      thread,
+      shellPlan: earlyShellPlan,
+      threadId: thread.id || state.currentThreadId || "",
+    });
     return;
   }
   const turns = visibleTurnsForConversation(thread);
@@ -14715,17 +14770,24 @@ function renderCurrentThread(options = {}) {
     source: "single-thread-render",
   });
   updateConversationHtml(shellUpdatePlan.html, shellUpdatePlan.conversationSignature, shellUpdatePlan.options);
-  checkEmptyVisibleDetailMismatchAfterRender(thread, shellPlan, {
+  const postUpdateEffectsPlan = threadDetailRenderPlanApi.planSingleThreadShellPostUpdateEffects({
+    shellPlan,
     source: "single-thread-render",
     renderMode: "full-render",
+    checkEmptyVisibleDetailMismatch: true,
     domCount: $("conversation") ? $("conversation").childNodes.length : 0,
     previousCount: previousChildCount,
+    bindCurrentThreadActions: true,
+    scrollToTurnReceiptStart: options.scrollToTurnReceiptStart,
+    applyPendingPluginRouteHintFocus: true,
+    updateTickTimer: true,
+    publishPluginNavigationState: true,
   });
-  bindCurrentThreadActions();
-  if (options.scrollToTurnReceiptStart) scrollConversationToTurnReceiptStart(options.scrollToTurnReceiptStart);
-  applyPendingPluginRouteHintFocus();
-  updateTickTimer();
-  publishPluginNavigationState();
+  applySingleThreadShellPostUpdateEffectsPlan(postUpdateEffectsPlan, {
+    thread,
+    shellPlan,
+    threadId: thread.id || state.currentThreadId || "",
+  });
 }
 
 function renderNewThreadDraft() {

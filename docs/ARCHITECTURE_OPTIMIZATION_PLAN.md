@@ -851,7 +851,12 @@ conversation update input planning now also lives in
 produce stable `updateConversationHtml()` inputs for HTML, conversation
 signature, patch-shell signature, expected visible turn count, source, and
 bottom-follow intent while app code keeps the real DOM update and retry/action
-binding.
+binding. Single-thread shell post-update effect planning now also lives there:
+early-shell retry binding plus tick/navigation, and full-render empty-detail
+diagnostic checks, action binding, receipt-start scroll, route-hint focus,
+tick, and navigation publish are emitted as ordered effects while app code keeps
+the actual DOM queries, event binding, scroll calls, timers, and navigation
+posting.
 Thread detail click action recognition now
 lives in `public/thread-detail-actions.js`: app code still owns event listener
 wiring and business execution, but selector priority, root containment,
@@ -940,8 +945,9 @@ Target:
   hydration orchestration is now outside app.js for thread detail surfaces;
   live text item DOM patch sequencing is now outside app.js for streaming
   assistant/plan updates; keyed DOM child reconciliation and `patchHtml`
-	  parsing/execution are now outside app.js; single-thread full-render shell
-	  planning and shell update input planning are now outside app.js;
+  parsing/execution are now outside app.js; single-thread full-render shell
+  planning, shell update input planning, and shell post-update effect planning
+  are now outside app.js;
   click-action recognition is now outside app.js for conversation surfaces;
   thread-tile interaction recognition is now outside app.js for tile surfaces;
   core thread-tile pane-state normalization and operation bubble signature/

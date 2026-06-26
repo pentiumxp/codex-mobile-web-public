@@ -16,6 +16,45 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 Phase A Single-Thread Shell Post-Update Effects Slice
+
+本地小切片继续推进 Phase A，把 `renderCurrentThread()` 的 full-render
+后置动作顺序计划化。上一切片已经把 single-thread shell 的
+`updateConversationHtml()` 输入转成 helper 输出；本次处理 DOM 更新之后的
+retry binding、empty-detail diagnostic、action binding、receipt-start scroll、
+plugin route hint focus、tick timer 和 plugin navigation publish。
+
+此前这些动作都直接写在 `renderCurrentThread()` 中。虽然行为正确，但顺序和
+适用条件不能作为纯策略测试覆盖：early shell 有 retry/tick/navigation，正常
+full render 有 empty-detail 检查、绑定事件、可选滚动、route hint focus、
+tick/navigation。后续排查“full render 后又闪/错焦点/没绑定按钮”时，这仍是
+主 app 文件里的隐式流程。
+
+本次修复：
+
+- `public/thread-detail-render-plan.js` 新增
+  `planSingleThreadShellPostUpdateEffects()`，输出有序 effects。
+- `public/app.js` 新增
+  `applySingleThreadShellPostUpdateEffect()` /
+  `applySingleThreadShellPostUpdateEffectsPlan()`，只执行真实 DOM、事件绑定、
+  scroll、timer 和 navigation 副作用。
+- early shell 和 normal full-render shell 都改成执行计划好的 post-update
+  effects。
+- 不改变 shell HTML、retry 行为、empty-detail diagnostic 条件、scroll
+  policy、route hint focus、server projection、local patch eligibility、任务卡
+  协议或 shell/cache。
+
+闭环验证：
+
+```bash
+node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/turn-scroll-controls.test.js test/mobile-viewport.test.js
+```
+
+结果：`174` passed。提交前完整验证：`npm run check`、`npm test`
+（`1109` passed）、`npm run check:macos`、`git diff --check` 均通过。
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为
+Phase A 模块的一部分累积。
+
 ## 2026-06-26 Phase A Single-Thread Shell Update Input Slice
 
 本地小切片继续推进 Phase A，让 `renderCurrentThread()` 更接近“只编排、

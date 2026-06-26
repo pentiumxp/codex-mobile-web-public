@@ -15357,3 +15357,55 @@ The previous full handoff was archived and should be opened only when old proven
     module-level deploy.
 - Next:
   - Commit locally.
+
+## 2026-06-26 - Phase A single-thread shell post-update effects slice
+
+- Context:
+  - Follows local commit `6553a63` (`plan single thread shell updates`).
+  - This is the fourth local Phase A render/patch ownership slice and remains
+    intentionally undeployed until batched into a coherent module.
+- Root-cause boundary:
+  - Symptom/risk: after `renderCurrentThread()` updated the single-thread
+    conversation shell, it still directly owned the post-update sequence for
+    retry binding, empty-detail mismatch diagnostics, current-thread action
+    binding, optional receipt-start scrolling, plugin route hint focus, tick
+    timer update, and plugin navigation publishing.
+  - Failing layer: frontend single-thread shell post-update effect ordering, not
+    server projection, local DOM patching, task-card protocol, diagnostic
+    transport, or shell/cache.
+  - Violated invariant: once shell render/update inputs are planned by helper
+    modules, the post-update effect order should also be planned by a testable
+    helper. `public/app.js` should execute real DOM/event/timer/scroll effects,
+    not silently own the policy order.
+  - Closure classification: architecture-boundary cleanup. It does not hide
+    duplicate/missing messages, force refresh, skip refresh, change shell HTML,
+    change retry semantics, change empty-detail diagnostic conditions, change
+    scroll policy, change route-hint focus behavior, or change shell/cache.
+- Changes:
+  - `public/thread-detail-render-plan.js`
+    - Added `planSingleThreadShellPostUpdateEffects()`.
+  - `public/app.js`
+    - Added `applySingleThreadShellPostUpdateEffect()` /
+      `applySingleThreadShellPostUpdateEffectsPlan()`.
+    - Early shell and normal full-render shell paths now execute planned
+      post-update effects instead of inlining the effect sequence.
+  - Tests/docs updated:
+    - `test/thread-detail-render-plan.test.js`
+    - `test/conversation-render.test.js`
+    - `test/turn-scroll-controls.test.js`
+    - `README.md`
+    - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`
+    - `docs/MODULES.md`
+- Validation so far:
+  - Focused:
+    `node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/turn-scroll-controls.test.js test/mobile-viewport.test.js`
+    passed (`174` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`1109` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Not deployed by design. This is a local Phase A slice for a future
+    module-level deploy.
+- Next:
+  - Commit locally.
