@@ -818,6 +818,12 @@ Thread refresh failure diagnostic payload planning now lives in
 builds the bounded `thread_detail_refresh_failed` failure report, so
 `refreshCurrentThread()` no longer owns category/type/context/count/breadcrumb
 selection for refresh API failures.
+Thread refresh failure diagnostic effect planning now also lives in
+`public/thread-detail-render-plan.js`:
+`planThreadDetailRefreshFailureDiagnosticEffects` converts bounded failure
+metadata into a diagnostic-failure effect. App code still performs the real
+Home AI diagnostic side effect and preserves abort/throw behavior, but
+`refreshCurrentThread()` no longer calls the failure reporter directly.
 Refresh performance event field planning now lives in
 `public/thread-performance-metrics.js`: `threadDetailRefreshEventFields`
 builds the bounded `thread_refresh_ms` payload, including server timings,

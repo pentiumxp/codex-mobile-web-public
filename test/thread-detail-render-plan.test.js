@@ -1009,6 +1009,43 @@ test("thread detail refresh telemetry effects plan preserves event and diagnosti
   });
 });
 
+test("thread detail refresh failure diagnostic effects plan bounds failure input", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshFailureDiagnosticEffects({
+    errorCode: "network_error",
+    durationBucket: "1s-3s",
+    statusCode: "503",
+    threadHash: "abc123",
+  }), {
+    effects: [
+      {
+        type: "thread-detail-refresh-failed-diagnostic-failure",
+        diagnosticInput: {
+          errorCode: "network_error",
+          durationBucket: "1s-3s",
+          statusCode: "503",
+          threadHash: "abc123",
+        },
+      },
+    ],
+    reason: "refresh-failed-diagnostic",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshFailureDiagnosticEffects({}), {
+    effects: [
+      {
+        type: "thread-detail-refresh-failed-diagnostic-failure",
+        diagnosticInput: {
+          errorCode: "thread_detail_refresh_failed",
+          durationBucket: "",
+          statusCode: "",
+          threadHash: "",
+        },
+      },
+    ],
+    reason: "refresh-failed-diagnostic",
+  });
+});
+
 test("thread detail refresh execution effects plan maps metadata, full render, none, and unknown actions", () => {
   assert.deepEqual(renderPlan.planThreadDetailRefreshExecutionEffects({
     executionAction: "metadata-effects",

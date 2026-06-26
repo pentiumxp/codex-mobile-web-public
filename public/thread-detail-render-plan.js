@@ -714,6 +714,23 @@
     };
   }
 
+  function planThreadDetailRefreshFailureDiagnosticEffects(input = {}) {
+    return {
+      effects: [
+        {
+          type: "thread-detail-refresh-failed-diagnostic-failure",
+          diagnosticInput: {
+            errorCode: compactReason(input.errorCode || input.error_code, "thread_detail_refresh_failed"),
+            durationBucket: compactReason(input.durationBucket || input.duration_bucket, ""),
+            statusCode: compactReason(input.statusCode || input.status_code, ""),
+            threadHash: compactReason(input.threadHash || input.thread_hash, ""),
+          },
+        },
+      ],
+      reason: "refresh-failed-diagnostic",
+    };
+  }
+
   function planThreadDetailRefreshExecutionEffects(input = {}) {
     const executionAction = compactReason(input.executionAction, "");
     const metadataEffects = Array.isArray(input.metadataEffects) ? input.metadataEffects.slice() : [];
@@ -951,6 +968,7 @@
     planThreadDetailRefreshExecutionEffects,
     planThreadDetailRefreshPerformanceInput,
     planThreadDetailRefreshTelemetryEffects,
+    planThreadDetailRefreshFailureDiagnosticEffects,
     planThreadDetailRefreshRequest,
     planThreadDetailRefreshPatchSurface,
     planThreadDetailRefreshPostMergeEffects,

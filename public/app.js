@@ -9377,6 +9377,21 @@ function applyThreadDetailRefreshTelemetryEffectsPlan(plan, context = {}) {
   for (const effect of effects) applyThreadDetailRefreshTelemetryEffect(effect, context);
 }
 
+function applyThreadDetailRefreshFailureDiagnosticEffect(effect) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  if (type === "thread-detail-refresh-failed-diagnostic-failure") {
+    recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.threadDetailRefreshFailedDiagnosticEvent(item.diagnosticInput || {}));
+    return true;
+  }
+  throw new Error(`Unknown thread detail refresh failure diagnostic effect: ${type || "empty"}`);
+}
+
+function applyThreadDetailRefreshFailureDiagnosticEffectsPlan(plan) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applyThreadDetailRefreshFailureDiagnosticEffect(effect);
+}
+
 function applyThreadDetailRefreshPatchRejectedDiagnosticEffect(effect) {
   const item = effect && typeof effect === "object" ? effect : {};
   const type = String(item.type || "");
@@ -9468,12 +9483,13 @@ async function refreshCurrentThread(options = {}) {
     });
   } catch (err) {
     if (controller.signal.aborted || err.name === "AbortError") return;
-    recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.threadDetailRefreshFailedDiagnosticEvent({
+    const failureEffectsPlan = threadDetailRenderPlanApi.planThreadDetailRefreshFailureDiagnosticEffects({
       errorCode: diagnosticErrorCode(err, "thread_detail_refresh_failed"),
       durationBucket: diagnosticDurationBucket(roundedDurationMs(refreshStartedAt)),
       statusCode: diagnosticErrorStatus(err),
       threadHash: diagnosticThreadHash(threadId),
-    }));
+    });
+    applyThreadDetailRefreshFailureDiagnosticEffectsPlan(failureEffectsPlan);
     throw err;
   } finally {
     if (state.refreshThreadController === controller) state.refreshThreadController = null;

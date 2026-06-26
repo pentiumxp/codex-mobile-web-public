@@ -414,8 +414,12 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(functionBody("refreshCurrentThread"), /if \(requestPlan\.abortActiveRefresh && state\.refreshThreadController\) state\.refreshThreadController\.abort\(\);/);
   assert.match(functionBody("refreshCurrentThread"), /api\(threadDetailApiPath\(threadId, requestPlan\.query\), \{[\s\S]*timeoutMs: requestPlan\.timeoutMs,/);
   assert.doesNotMatch(functionBody("refreshCurrentThread"), /const requestedMode = options\.full === true \|\| String\(options\.mode \|\| ""\)\.toLowerCase\(\) === "full"/);
-  assert.match(functionBody("refreshCurrentThread"), /recordHomeAiDiagnosticFailure\(threadDiagnosticEventsApi\.threadDetailRefreshFailedDiagnosticEvent\(\{[\s\S]*errorCode: diagnosticErrorCode\(err, "thread_detail_refresh_failed"\),[\s\S]*durationBucket: diagnosticDurationBucket\(roundedDurationMs\(refreshStartedAt\)\),[\s\S]*statusCode: diagnosticErrorStatus\(err\),[\s\S]*threadHash: diagnosticThreadHash\(threadId\),[\s\S]*\}\)\);/);
+  assert.match(functionBody("refreshCurrentThread"), /const failureEffectsPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshFailureDiagnosticEffects\(\{[\s\S]*errorCode: diagnosticErrorCode\(err, "thread_detail_refresh_failed"\),[\s\S]*durationBucket: diagnosticDurationBucket\(roundedDurationMs\(refreshStartedAt\)\),[\s\S]*statusCode: diagnosticErrorStatus\(err\),[\s\S]*threadHash: diagnosticThreadHash\(threadId\),[\s\S]*\}\);/);
+  assert.match(functionBody("refreshCurrentThread"), /applyThreadDetailRefreshFailureDiagnosticEffectsPlan\(failureEffectsPlan\);/);
+  assert.match(appJs, /function applyThreadDetailRefreshFailureDiagnosticEffectsPlan\(plan\)/);
+  assert.match(functionBody("applyThreadDetailRefreshFailureDiagnosticEffect"), /threadDiagnosticEventsApi\.threadDetailRefreshFailedDiagnosticEvent\(item\.diagnosticInput \|\| \{\}\)/);
   assert.doesNotMatch(functionBody("refreshCurrentThread"), /recordHomeAiDiagnosticFailure\(\{[\s\S]*diagnostic_type: "thread_detail_refresh_failed"/);
+  assert.doesNotMatch(functionBody("refreshCurrentThread"), /recordHomeAiDiagnosticFailure\(threadDiagnosticEventsApi\.threadDetailRefreshFailedDiagnosticEvent\(\{/);
   assert.match(appJs, /const previousConversationSignature = conversationRenderSignature\(state\.currentThread\);/);
   assert.match(appJs, /const threadDetailRenderPlanApi = window\.CodexThreadDetailRenderPlan;/);
   assert.match(appJs, /const previousPatchShellSignature = conversationPatchShellSignature\(previousThread\);/);
