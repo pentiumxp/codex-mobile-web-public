@@ -9783,6 +9783,39 @@ function threadHistoryAutoBackfillKey(thread) {
   ].join("|");
 }
 
+function applyThreadDetailHistoryAutoBackfillEffect(effect) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  if (type === "remember-history-auto-backfill-key") {
+    const key = String(item.key || "");
+    if (key) state.threadHistoryAutoBackfillKeys.add(key);
+    return true;
+  }
+  if (type === "post-client-event") {
+    postClientEvent(String(item.eventName || ""), item.payload || {});
+    return true;
+  }
+  if (type === "schedule-load-older-thread-turns") {
+    const threadId = String(item.threadId || "");
+    const seq = Number(item.seq || 0);
+    const delayMs = Math.max(0, Number(item.delayMs || 0));
+    setTimeout(() => {
+      if (state.currentThreadId !== threadId || seq !== state.threadLoadSeq) return;
+      loadOlderThreadTurns({
+        preserveScroll: item.preserveScroll !== false,
+        source: String(item.source || "auto-context").slice(0, 40),
+      }).catch(showError);
+    }, delayMs);
+    return true;
+  }
+  throw new Error(`Unknown thread detail history auto-backfill effect: ${type || "empty"}`);
+}
+
+function applyThreadDetailHistoryAutoBackfillEffectsPlan(plan) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applyThreadDetailHistoryAutoBackfillEffect(effect);
+}
+
 function maybeAutoBackfillThreadHistory(thread, options = {}) {
   if (!thread || !thread.id) return;
   const key = threadHistoryAutoBackfillKey(thread);
@@ -9792,21 +9825,19 @@ function maybeAutoBackfillThreadHistory(thread, options = {}) {
     historyBusy: state.threadHistoryBusy,
   });
   if (!plan.shouldLoad) return;
-  state.threadHistoryAutoBackfillKeys.add(key);
   const threadId = String(thread.id || state.currentThreadId || "");
   const seq = Number(options.seq || state.threadLoadSeq || 0);
-  postClientEvent("thread_history_auto_backfill", {
+  const effectsPlan = threadDetailRenderPlanApi.planThreadDetailHistoryAutoBackfillEffects({
+    plan,
+    key,
+    threadId,
+    seq,
     source: String(options.source || "unknown").slice(0, 40),
-    reason: plan.reason,
-    counts: plan.counts,
-    thread_hash: diagnosticThreadHash(threadId),
+    threadHash: diagnosticThreadHash(threadId),
     readMode: String(thread.mobileReadMode || ""),
     buildId: CLIENT_BUILD_ID,
   });
-  setTimeout(() => {
-    if (state.currentThreadId !== threadId || seq !== state.threadLoadSeq) return;
-    loadOlderThreadTurns({ preserveScroll: true, source: "auto-context" }).catch(showError);
-  }, 0);
+  applyThreadDetailHistoryAutoBackfillEffectsPlan(effectsPlan);
 }
 
 function threadDetailApiPath(threadId, params = {}) {

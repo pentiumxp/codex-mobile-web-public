@@ -425,8 +425,12 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /maybeLoadOlderThreadTurnsFromScroll\(\);/);
   assert.match(appJs, /function maybeAutoBackfillThreadHistory\(thread, options = \{\}\)/);
   assert.match(appJs, /planThreadDetailHistoryAutoBackfill\(\{/);
-  assert.match(appJs, /thread_history_auto_backfill/);
-  assert.match(appJs, /loadOlderThreadTurns\(\{ preserveScroll: true, source: "auto-context" \}\)/);
+  assert.match(functionBody("maybeAutoBackfillThreadHistory"), /const effectsPlan = threadDetailRenderPlanApi\.planThreadDetailHistoryAutoBackfillEffects\(\{[\s\S]*plan,[\s\S]*key,[\s\S]*threadId,[\s\S]*seq,[\s\S]*source: String\(options\.source \|\| "unknown"\)\.slice\(0, 40\),[\s\S]*threadHash: diagnosticThreadHash\(threadId\),[\s\S]*readMode: String\(thread\.mobileReadMode \|\| ""\),[\s\S]*buildId: CLIENT_BUILD_ID,[\s\S]*\}\);/);
+  assert.match(functionBody("maybeAutoBackfillThreadHistory"), /applyThreadDetailHistoryAutoBackfillEffectsPlan\(effectsPlan\);/);
+  assert.doesNotMatch(functionBody("maybeAutoBackfillThreadHistory"), /postClientEvent\("thread_history_auto_backfill"/);
+  assert.doesNotMatch(functionBody("maybeAutoBackfillThreadHistory"), /setTimeout\(\(\) => \{/);
+  assert.match(functionBody("applyThreadDetailHistoryAutoBackfillEffect"), /postClientEvent\(String\(item\.eventName \|\| ""\), item\.payload \|\| \{\}\);/);
+  assert.match(functionBody("applyThreadDetailHistoryAutoBackfillEffect"), /loadOlderThreadTurns\(\{[\s\S]*preserveScroll: item\.preserveScroll !== false,[\s\S]*source: String\(item\.source \|\| "auto-context"\)\.slice\(0, 40\),[\s\S]*\}\)\.catch\(showError\);/);
   assert.match(appJs, /data-load-older-turns/);
   assert.match(appJs, /loadOlderThreadTurns\(\{ preserveScroll: true, source: "button" \}\)/);
   assert.match(appJs, /cursor: threadTurnsCursorParam\(cursor\)/);

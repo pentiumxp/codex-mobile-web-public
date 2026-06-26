@@ -142,6 +142,48 @@
     return Object.assign({}, base, { reason: "recent-window-has-context" });
   }
 
+  function planThreadDetailHistoryAutoBackfillEffects(input = {}) {
+    const plan = objectOrEmpty(input.plan);
+    if (!plan.shouldLoad) {
+      return {
+        effects: [],
+        reason: compactReason(plan.reason, "not-needed"),
+      };
+    }
+    const source = compactReason(input.source, "unknown").slice(0, 40);
+    const threadId = compactReason(input.threadId, "");
+    const seq = Number(input.seq);
+    return {
+      effects: [
+        {
+          type: "remember-history-auto-backfill-key",
+          key: compactReason(input.key, ""),
+        },
+        {
+          type: "post-client-event",
+          eventName: "thread_history_auto_backfill",
+          payload: {
+            source,
+            reason: compactReason(plan.reason, ""),
+            counts: objectOrEmpty(plan.counts),
+            thread_hash: compactReason(input.threadHash, ""),
+            readMode: compactReason(input.readMode, ""),
+            buildId: compactReason(input.buildId, ""),
+          },
+        },
+        {
+          type: "schedule-load-older-thread-turns",
+          threadId,
+          seq: Number.isFinite(seq) ? seq : 0,
+          delayMs: normalizedDurationMs(input.delayMs),
+          preserveScroll: true,
+          source: "auto-context",
+        },
+      ],
+      reason: "history-auto-backfill-effects",
+    };
+  }
+
   function planThreadDetailRefreshRequest(input = {}) {
     const options = objectOrEmpty(input.options);
     const threadId = input.threadId || input.currentThreadId || "";
@@ -1210,6 +1252,7 @@
     planSingleThreadShellConversationUpdate,
     planSingleThreadShellPostUpdateEffects,
     planThreadDetailHistoryAutoBackfill,
+    planThreadDetailHistoryAutoBackfillEffects,
     planThreadDetailRefreshPatchExecution,
     planThreadDetailRefreshRender,
     reduceThreadDetailRefreshPatchAttempt,

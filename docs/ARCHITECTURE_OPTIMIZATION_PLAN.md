@@ -962,6 +962,14 @@ declares the forced `thread_detail_full_ready` event and
 `thread-detail-full-backfill` response diagnostic call. App code still owns the
 real network/DOM/timer side effects and the performance field extraction, but
 `backfillFullThreadDetail()` no longer owns this fixed ordering inline.
+History auto-backfill effect ordering now also lives in
+`public/thread-detail-render-plan.js`:
+`planThreadDetailHistoryAutoBackfillEffects` turns an already-computed
+auto-backfill decision into ordered effects for remembering the backfill key,
+posting the bounded `thread_history_auto_backfill` client event, and scheduling
+the older-turn load. App code still owns the real state mutation, timer, and
+network call, but `maybeAutoBackfillThreadHistory()` no longer owns the event
+payload shape or fixed load scheduling inline.
 The same helper now plans detail-response diagnostic contracts:
 `planThreadDetailSlowPathDiagnostic` detects repeated slow detail opens,
 refreshes, and backfills from bounded timing fields, and

@@ -140,6 +140,33 @@ node --check public/thread-detail-render-plan.js && node --check public/app.js
 该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为 Phase A
 本地/private commit 累积。
 
+## 2026-06-27 Phase A History Auto-Backfill Effects Planning Slice
+
+本地小切片继续收敛 history auto-backfill 的 side-effect ownership。此前
+`maybeAutoBackfillThreadHistory()` 已经通过纯 helper 判断 workflow-dominated /
+recent-window 是否需要向上补历史，但它仍在 `public/app.js` 中直接记录
+auto-backfill key、组装 `thread_history_auto_backfill` client event payload，并调度
+`loadOlderThreadTurns()`。这让“何时补历史”和“补历史后固定副作用顺序”分散在两处。
+
+本次修复：
+
+- `public/thread-detail-render-plan.js` 新增
+  `planThreadDetailHistoryAutoBackfillEffects()`，声明 auto-backfill 后的固定
+  effect 顺序：记录 signature key、发送 bounded client event、调度 older-turns
+  load。
+- `public/app.js` 新增 executor，只负责执行真实 state/timer/network side effect；
+  事件名、payload 字段和调度 source 不再由 `maybeAutoBackfillThreadHistory()`
+  内联拥有。
+- `test/thread-detail-render-plan.test.js` 覆盖 event payload、effect 顺序、
+  source 截断和非加载路径。
+- `test/mobile-viewport.test.js` 覆盖 app wiring，防止 `app.js` 重新内联事件名或
+  固定调度调用。
+- focused tests 已验证 `thread-detail-render-plan`、mobile viewport、
+  conversation render 和 scroll controls 相关路径。
+
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为 Phase A
+本地/private commit 累积。
+
 ## 2026-06-26 Phase C Pane Count State Planning Slice
 
 本地小切片开始推进 Phase C 的 pane-state 架构化。此前平铺模式的自动窗口数、

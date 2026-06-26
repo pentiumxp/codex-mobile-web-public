@@ -187,6 +187,63 @@ test("thread detail history auto-backfill respects cursor and busy guards", () =
   assert.equal(renderPlan.planThreadDetailHistoryAutoBackfill({ thread: Object.assign({}, thread, { mobileHistoryExpanded: true }) }).reason, "history-expanded");
 });
 
+test("thread detail history auto-backfill effects plan owns event and load scheduling", () => {
+  const decision = {
+    shouldLoad: true,
+    reason: "workflow-dominated-window",
+    counts: {
+      turnCount: 4,
+      workflowItemCount: 3,
+      textItemCount: 4,
+    },
+  };
+  assert.deepEqual(renderPlan.planThreadDetailHistoryAutoBackfillEffects({
+    plan: decision,
+    key: "thread-1|cursor-a|first|last",
+    threadId: "thread-1",
+    seq: 7,
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA",
+    threadHash: "hash-1",
+    readMode: "turns-list-initial",
+    buildId: "build-1",
+  }), {
+    effects: [
+      {
+        type: "remember-history-auto-backfill-key",
+        key: "thread-1|cursor-a|first|last",
+      },
+      {
+        type: "post-client-event",
+        eventName: "thread_history_auto_backfill",
+        payload: {
+          source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR",
+          reason: "workflow-dominated-window",
+          counts: decision.counts,
+          thread_hash: "hash-1",
+          readMode: "turns-list-initial",
+          buildId: "build-1",
+        },
+      },
+      {
+        type: "schedule-load-older-thread-turns",
+        threadId: "thread-1",
+        seq: 7,
+        delayMs: 0,
+        preserveScroll: true,
+        source: "auto-context",
+      },
+    ],
+    reason: "history-auto-backfill-effects",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailHistoryAutoBackfillEffects({
+    plan: { shouldLoad: false, reason: "recent-window-has-context" },
+  }), {
+    effects: [],
+    reason: "recent-window-has-context",
+  });
+});
+
 test("thread detail refresh render plan skips stable conversation signatures", () => {
   const plan = renderPlan.planThreadDetailRefreshRender({
     previousConversationSignature: "sig-a",

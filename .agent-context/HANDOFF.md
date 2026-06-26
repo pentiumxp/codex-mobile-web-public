@@ -17504,6 +17504,61 @@ The previous full handoff was archived and should be opened only when old proven
     `npm test` passed (`1153` tests).
   - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
 - Next:
-  - Run full validation, update this marker if needed, commit locally, then
-    continue Phase A or batch the accumulated module for one deploy/readback
+  - Committed locally as `1ef7b48` (`plan full backfill post render effects`).
+    Continue Phase A or batch the accumulated module for one deploy/readback
     when requested.
+
+## 2026-06-27 - Latest tail marker: Phase A history auto-backfill effects local slice
+
+- Current local state:
+  - Continued Phase A ownership cleanup after `1ef7b48`.
+  - `maybeAutoBackfillThreadHistory()` already delegated the
+    workflow-dominated/recent-window decision to `public/thread-detail-render-plan.js`,
+    but still owned the follow-up side-effect sequence inline.
+  - This slice moves the fixed auto-backfill follow-up sequence into a pure
+    render-plan helper while leaving real state/timer/network side effects in
+    `public/app.js`.
+- Root-cause boundary:
+  - Symptom/risk: recent-window auto-backfill decision, event payload shape,
+    backfill-key recording, and older-turn load scheduling were split across
+    helper and app code. That kept thread-open history recovery behavior more
+    fragile during projection/render refactors.
+  - Failing layer: frontend history auto-backfill side-effect ownership, not
+    server projection, older-turn API reads, scroll anchoring, task-card
+    routing, Home AI diagnostic intake, or shell/cache.
+  - Violated invariant: fixed render/detail side-effect ordering and bounded
+    event payload selection should be declared by pure planning helpers; app
+    code should only execute runtime side effects.
+- Changes:
+  - `public/thread-detail-render-plan.js` now exports
+    `planThreadDetailHistoryAutoBackfillEffects()`.
+  - The helper plans ordered effects for remembering the auto-backfill key,
+    posting the bounded `thread_history_auto_backfill` client event, and
+    scheduling `loadOlderThreadTurns()` with the preserved scroll/source
+    semantics.
+  - `public/app.js` now applies those effects through
+    `applyThreadDetailHistoryAutoBackfillEffectsPlan()`.
+  - Updated `test/thread-detail-render-plan.test.js` and
+    `test/mobile-viewport.test.js`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation so far:
+  - Focused:
+    `node --test test/thread-detail-render-plan.test.js test/mobile-viewport.test.js test/conversation-render.test.js test/turn-scroll-controls.test.js`
+    passed (`191` tests).
+  - Syntax:
+    `node --check public/thread-detail-render-plan.js && node --check public/app.js && node --check test/thread-detail-render-plan.test.js && node --check test/mobile-viewport.test.js`
+    passed.
+  - Full:
+    `npm test` passed (`1154` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache
+    bump. This remains a local Phase A ownership slice to batch with the next
+    module validation/deploy.
+- Progress:
+  - Overall architecture optimization is about `70%`.
+  - Phase A frontend render/projection ownership is about `80%`.
+- Next:
+  - Commit locally, then continue Phase A current-thread render authority or
+    batch the accumulated module for one deploy/readback when requested.
