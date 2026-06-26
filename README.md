@@ -459,6 +459,34 @@ node --check public/thread-diagnostic-events.js && node --check public/app.js
 该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为 Phase A/B
 本地/private commit 累积。
 
+## 2026-06-27 Phase B Thread-List Baseline Work Attribution Slice
+
+本地小切片继续推进 Phase B 的线程列表冷路径证据化。此前
+`thread-list-cold-path-diagnosis-service` 已经能把 cold list 归因到
+`state-db`、`rollout`、`session-index`、fallback cache policy、source snapshot
+或 app-server，但当 source reader 不是明显主因时，readback 仍只会落到泛化的
+`miss-rebuild:baseline`。这会让下一步无法区分慢在最终 cwd/search 过滤、重复
+thread merge、还是 list limit 截断。
+
+本次修复：
+
+- `adapters/thread-list-cold-path-diagnosis-service.js` 的 baseline reason 在没有
+  dominant source 时，会继续使用已有 bounded counters 归因为
+  `final-filter-empty`、`final-filter`、`merge-dedupe` 或 `limit-drop`。
+- 该变化只影响 `coldPathReason` 诊断/读回标签，不改变 thread-list 数据、排序、
+  cache key、fallback source collection、merge/filter/limit 语义或 UI。
+- `test/thread-list-cold-path-diagnosis-service.test.js` 覆盖 final filter、merge
+  dedupe、limit drop，以及 dominant source 仍优先的行为。
+
+闭环验证：
+
+```bash
+node --test test/thread-list-cold-path-diagnosis-service.test.js test/phase-b-readback-decision-service.test.js test/phase-b-readback-smoke.test.js test/thread-visibility.test.js
+node --check adapters/thread-list-cold-path-diagnosis-service.js
+```
+
+该切片尚未部署；它是 Phase B 诊断归因增强，等待下一次 Phase B 模块批量验证和部署。
+
 ## 2026-06-27 Phase E Thread Tile Visual Fixture Slice
 
 本地小切片开始补 Phase E 的浏览器/视觉回归入口，先覆盖最近反复出问题的平铺

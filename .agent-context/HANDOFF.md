@@ -16731,6 +16731,56 @@ The previous full handoff was archived and should be opened only when old proven
     bodies, task-card bodies, upload bytes, private paths, provider payloads,
     prompts, or long logs are included.
 
+## 2026-06-27 - Phase B thread-list baseline work attribution local slice
+
+- Latest local slice:
+  - Continued Phase B cold-path evidence after `85070dd`
+    (`plan thread detail response diagnostic effects`).
+  - The prior Phase A/B response-diagnostic slice was fully validated and
+    committed as `85070dd`; it was not deployed by design.
+  - This slice is local/private only and is not deployed by design.
+- Root-cause boundary:
+  - Symptom/risk: thread-list cold rebuild readback could still report a
+    generic `miss-rebuild:baseline` when source reader timing/counts were not
+    dominant, making it harder to decide whether the remaining cost was final
+    filtering, duplicate merge work, or limit truncation.
+  - Failing layer: bounded Phase B cold-path diagnosis/readback attribution,
+    not fallback source collection, cache key policy, app-server thread list,
+    UI rendering, server projection, task-card routing, or shell/cache.
+  - Violated invariant: Phase B readback should identify the next root-cause
+    owner from existing bounded counters before changing cache or source
+    behavior.
+- Changes:
+  - `adapters/thread-list-cold-path-diagnosis-service.js` now uses existing
+    `fallbackBaselineFinalFilter*`, `fallbackBaselineMerge*`, and
+    `fallbackBaselineLimitDropCount` counters when no dominant state-db /
+    rollout / session-index source is present.
+  - New bounded reasons are `final-filter-empty`, `final-filter`,
+    `merge-dedupe`, and `limit-drop`, all prefixed by the existing rebuild
+    reason such as `miss-rebuild`.
+  - Dominant source attribution still wins when state DB, rollout, or
+    session-index timing/count evidence is present.
+  - `test/thread-list-cold-path-diagnosis-service.test.js` covers final
+    filter, merge dedupe, and limit drop attribution.
+  - Updated `README.md` and `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Validation:
+  - Focused:
+    `node --test test/thread-list-cold-path-diagnosis-service.test.js test/phase-b-readback-decision-service.test.js test/phase-b-readback-smoke.test.js test/thread-visibility.test.js`
+    passed (`69` tests).
+  - Syntax:
+    `node --check adapters/thread-list-cold-path-diagnosis-service.js` passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache bump.
+    This is a server-side diagnosis label slice to batch with the next Phase B
+    module validation/deploy.
+- Next:
+  - Run full validation, commit locally, then continue Phase B with readback
+    evidence or return to Phase A current-thread render authority.
+- Privacy:
+  - Only bounded reason labels and numeric counters are recorded. No secrets,
+    cookies, launch tokens, private thread bodies, task-card bodies, upload
+    bytes, private paths, provider payloads, prompts, or long logs are included.
+
 ## 2026-06-27 - Phase A/B thread-detail response diagnostic effects local slice
 
 - Latest local slice:

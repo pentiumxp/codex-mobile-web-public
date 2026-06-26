@@ -236,7 +236,13 @@ Current acceleration targets:
    tell whether the remaining cold cost is source I/O, final `cwd/search`
    filtering, duplicate-id merge pressure, or limit truncation. This does not
    alter list data, ordering, visibility, app-server merge behavior, or cache
-   ownership.
+   ownership. The 2026-06-27 local attribution follow-up also uses those
+   counters in `thread-list-cold-path-diagnosis-service`: when state DB,
+   rollout, or session-index is not the dominant source, `coldPathReason` can
+   now name `final-filter-empty`, `final-filter`, `merge-dedupe`, or
+   `limit-drop` instead of the generic `baseline` reason. This keeps Phase B
+   readback actionable without changing any fallback source, merge, filter,
+   limit, or cache behavior.
 3. Large detail cold-path attribution now has a dedicated
    `thread-detail-cold-path-diagnosis-service` that emits bounded
    `coldPathOwner` / `coldPathReason` for projection-cache seeding,

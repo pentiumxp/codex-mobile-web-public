@@ -36,6 +36,22 @@ function baselineReason(prefix, input = {}) {
   const sourceCount = numberValue(input.fallbackBaselineSourceCount);
   const resultCount = numberValue(input.fallbackBaselineResultCount);
   if (!sourceCount && !resultCount) return `${prefix}:empty-baseline`.slice(0, 80);
+  const finalFilterInputCount = numberValue(input.fallbackBaselineFinalFilterInputCount);
+  const finalFilterOutputCount = numberValue(input.fallbackBaselineFinalFilterOutputCount);
+  const mergeInputCount = numberValue(input.fallbackBaselineMergeInputCount);
+  const mergeOutputCount = numberValue(input.fallbackBaselineMergeOutputCount);
+  const mergeDuplicateCount = numberValue(input.fallbackBaselineMergeDuplicateCount);
+  const limitDropCount = numberValue(input.fallbackBaselineLimitDropCount);
+  if (finalFilterInputCount > 0 && finalFilterOutputCount === 0) {
+    return `${prefix}:final-filter-empty`.slice(0, 80);
+  }
+  if (finalFilterInputCount > finalFilterOutputCount && finalFilterOutputCount > 0) {
+    return `${prefix}:final-filter`.slice(0, 80);
+  }
+  if (mergeDuplicateCount > 0 || mergeInputCount > mergeOutputCount && mergeOutputCount > 0) {
+    return `${prefix}:merge-dedupe`.slice(0, 80);
+  }
+  if (limitDropCount > 0) return `${prefix}:limit-drop`.slice(0, 80);
   return `${prefix}:baseline`.slice(0, 80);
 }
 

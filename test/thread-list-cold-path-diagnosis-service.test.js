@@ -64,6 +64,47 @@ test("thread-list cold path diagnosis attributes miss rebuilds to dominant basel
   });
 });
 
+test("thread-list cold path diagnosis attributes baseline rebuild work when source is not dominant", () => {
+  assert.deepEqual(diagnoseThreadListColdPath({
+    fallbackCacheDecision: "miss-rebuild",
+    fallbackBaselineSourceCount: 30,
+    fallbackBaselineResultCount: 4,
+    fallbackBaselineFinalFilterInputCount: 30,
+    fallbackBaselineFinalFilterOutputCount: 4,
+  }), {
+    owner: "fallback-baseline",
+    reason: "miss-rebuild:final-filter",
+  });
+
+  assert.deepEqual(diagnoseThreadListColdPath({
+    fallbackCacheDecision: "miss-rebuild",
+    fallbackBaselineSourceCount: 30,
+    fallbackBaselineResultCount: 20,
+    fallbackBaselineFinalFilterInputCount: 30,
+    fallbackBaselineFinalFilterOutputCount: 30,
+    fallbackBaselineMergeInputCount: 30,
+    fallbackBaselineMergeOutputCount: 20,
+    fallbackBaselineMergeDuplicateCount: 10,
+  }), {
+    owner: "fallback-baseline",
+    reason: "miss-rebuild:merge-dedupe",
+  });
+
+  assert.deepEqual(diagnoseThreadListColdPath({
+    fallbackCacheDecision: "miss-rebuild",
+    fallbackBaselineSourceCount: 30,
+    fallbackBaselineResultCount: 20,
+    fallbackBaselineFinalFilterInputCount: 30,
+    fallbackBaselineFinalFilterOutputCount: 30,
+    fallbackBaselineMergeInputCount: 20,
+    fallbackBaselineMergeOutputCount: 20,
+    fallbackBaselineLimitDropCount: 10,
+  }), {
+    owner: "fallback-baseline",
+    reason: "miss-rebuild:limit-drop",
+  });
+});
+
 test("thread-list cold path diagnosis distinguishes ttl rebuilds and app-server paths", () => {
   assert.deepEqual(diagnoseThreadListColdPath({
     fallbackCacheDecision: "expired-rebuild",
