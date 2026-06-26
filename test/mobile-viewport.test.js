@@ -515,7 +515,9 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /renderedConversationPatchShellSignature: ""/);
   assert.match(functionBody("updateConversationHtml"), /threadDetailDomPatchApi\.planConversationHtmlUpdate\(\{/);
   assert.match(functionBody("updateConversationHtml"), /patchShellSignature: options\.patchShellSignature,/);
-  assert.match(functionBody("updateConversationHtml"), /state\.renderedConversationPatchShellSignature = updatePlan\.nextRenderedConversationPatchShellSignature;/);
+  assert.match(functionBody("updateConversationHtml"), /threadDetailDomPatchApi\.planConversationHtmlUpdateEffects\(updatePlan\)/);
+  assert.match(functionBody("updateConversationHtml"), /applyConversationHtmlUpdateEffectsPlan\(effectsPlan, \{ root: conversation \}\)/);
+  assert.doesNotMatch(functionBody("updateConversationHtml"), /state\.renderedConversationPatchShellSignature = updatePlan\.nextRenderedConversationPatchShellSignature;/);
   assert.match(appJs, /function rolloutWarningSignature\(thread\)/);
   assert.doesNotMatch(functionBody("conversationRootSignature"), /rolloutSizeBytes: rolloutSizeBytes\(thread\)/);
   assert.doesNotMatch(functionBody("conversationRenderSignature"), /rolloutSizeBytes: rolloutSizeBytes\(thread\)/);
@@ -562,13 +564,14 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(functionBody("insertTurnArticleDom"), /threadDetailDomPatchApi\.createTurnArticleElement/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /renderTurnElement: \(turn\) => threadDetailDomPatchApi\.createTurnArticleElement/);
   assert.match(functionBody("hydrateThreadDetailSurface"), /threadDetailDomPatchApi\.hydrateRenderedSurface/);
-  assert.match(functionBody("updateConversationHtml"), /hydrateThreadDetailSurface\(conversation/);
+  assert.match(functionBody("updateConversationHtml"), /applyConversationHtmlUpdateEffectsPlan\(effectsPlan, \{ root: conversation \}\)/);
+  assert.match(functionBody("applyThreadDetailDomUpdateEffect"), /hydrateThreadDetailSurface\(context\.root, item\.hydrateOptions \|\| \{\}\)/);
   assert.match(functionBody("patchThreadTilePane"), /hydrateThreadDetailSurface\(patchedPane, \{ imageScanDelays: \[0, 180\] \}\)/);
   assert.match(appJs, /function completeLocalConversationDomUpdate\(root, wasNearBottom, userReadingCurrentTurn, options = \{\}\)/);
   assert.match(functionBody("completeLocalConversationDomUpdate"), /threadDetailDomPatchApi\.planLocalConversationDomUpdateCompletion\(\{/);
   assert.match(functionBody("completeLocalConversationDomUpdate"), /const scrollPlan = options && options\.scrollPlan/);
   assert.match(functionBody("completeLocalConversationDomUpdate"), /const effectsPlan = threadDetailDomPatchApi\.planLocalConversationDomUpdateCompletionEffects\(completionPlan\);/);
-  assert.match(functionBody("applyLocalConversationDomUpdateCompletionEffect"), /hydrateThreadDetailSurface\(context\.root, item\.hydrateOptions \|\| \{\}\);/);
+  assert.match(functionBody("applyThreadDetailDomUpdateEffect"), /hydrateThreadDetailSurface\(context\.root, item\.hydrateOptions \|\| \{\}\);/);
   assert.match(functionBody("upsertItem"), /if \(structureChanged\) scheduleRenderCurrentThread\(\);[\s\S]*else if \(canPatchExistingItem\)[\s\S]*else if \(!insertVisibleItemDom\(turn, nextItem\)\)/);
   assert.match(functionBody("appendToItem"), /if \(isOperationalItem\(item\)\) updateLiveOperationDockForLocalPatch\(\);[\s\S]*else if \(createdItem\) \{/);
   assert.match(stylesCss, /\.live-operation-dock\s*{[\s\S]*min-height:\s*var\(--live-operation-dock-compact-height, 40px\);[\s\S]*contain:\s*layout paint;/);

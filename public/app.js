@@ -12112,13 +12112,9 @@ function updateConversationHtml(html, signature, options = {}) {
     expectedVisibleTurnCount,
     renderedDomTurnCount,
   });
+  const effectsPlan = threadDetailDomPatchApi.planConversationHtmlUpdateEffects(updatePlan);
   if (updatePlan.action === "hydrate-existing") {
-    if (updatePlan.updatePatchShellSignature) {
-      state.renderedConversationPatchShellSignature = updatePlan.nextRenderedConversationPatchShellSignature;
-    }
-    hydrateThreadDetailSurface(conversation, updatePlan.hydrateOptions);
-    if (updatePlan.scrollAction === "scroll-to-bottom") scheduleConversationToBottom();
-    else scheduleScrollToBottomButtonUpdate();
+    applyConversationHtmlUpdateEffectsPlan(effectsPlan, { root: conversation });
     return false;
   }
   if (updatePlan.reason === "stable-signature-dom-empty" && expectedVisibleTurnCount > 0) {
@@ -12150,15 +12146,7 @@ function updateConversationHtml(html, signature, options = {}) {
     console.warn("Conversation patch failed; falling back to full render.", err);
     conversation.innerHTML = html;
   }
-  hydrateThreadDetailSurface(conversation, updatePlan.hydrateOptions);
-  if (updatePlan.updateRenderedConversationSignature) {
-    state.renderedConversationSignature = updatePlan.nextRenderedConversationSignature;
-  }
-  if (updatePlan.updatePatchShellSignature) {
-    state.renderedConversationPatchShellSignature = updatePlan.nextRenderedConversationPatchShellSignature;
-  }
-  if (updatePlan.scrollAction === "scroll-to-bottom") scheduleConversationToBottom();
-  else scheduleScrollToBottomButtonUpdate();
+  applyConversationHtmlUpdateEffectsPlan(effectsPlan, { root: conversation });
   const renderElapsedMs = roundedDurationMs(startedAt);
   const forceReport = renderElapsedMs >= PERF_SLOW_RENDER_REPORT_MS;
   postPerformanceEvent("conversation_render_ms", {
@@ -13983,7 +13971,7 @@ function hydrateThreadDetailSurface(root, options = {}) {
   });
 }
 
-function applyLocalConversationDomUpdateCompletionEffect(effect, context = {}) {
+function applyThreadDetailDomUpdateEffect(effect, context = {}) {
   const item = effect && typeof effect === "object" ? effect : {};
   const type = String(item.type || "");
   if (type === "hydrate-root") {
@@ -14006,12 +13994,24 @@ function applyLocalConversationDomUpdateCompletionEffect(effect, context = {}) {
     scheduleScrollToBottomButtonUpdate();
     return;
   }
-  throw new Error(`Unknown local conversation DOM completion effect: ${type || "empty"}`);
+  throw new Error(`Unknown thread detail DOM update effect: ${type || "empty"}`);
+}
+
+function applyThreadDetailDomUpdateEffectsPlan(plan, context = {}) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applyThreadDetailDomUpdateEffect(effect, context);
+}
+
+function applyLocalConversationDomUpdateCompletionEffect(effect, context = {}) {
+  applyThreadDetailDomUpdateEffect(effect, context);
 }
 
 function applyLocalConversationDomUpdateCompletionEffectsPlan(plan, context = {}) {
-  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
-  for (const effect of effects) applyLocalConversationDomUpdateCompletionEffect(effect, context);
+  applyThreadDetailDomUpdateEffectsPlan(plan, context);
+}
+
+function applyConversationHtmlUpdateEffectsPlan(plan, context = {}) {
+  applyThreadDetailDomUpdateEffectsPlan(plan, context);
 }
 
 function completeLocalConversationDomUpdate(root, wasNearBottom, userReadingCurrentTurn, options = {}) {

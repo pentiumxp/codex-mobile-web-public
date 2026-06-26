@@ -15244,3 +15244,64 @@ The previous full handoff was archived and should be opened only when old proven
   - Continue Phase A by extracting the remaining render/patch post-effect and
     scroll ownership seams from `public/app.js`, or move to Phase C if the next
     user priority is pane-state stability.
+
+## 2026-06-26 - Phase A conversation HTML update effects slice
+
+- Context:
+  - Follows local commit `1d695fc` (`plan local dom completion effects`).
+  - This is the second local Phase A post-effect ownership slice and remains
+    intentionally undeployed until batched into a module.
+- Root-cause boundary:
+  - Symptom/risk: `planConversationHtmlUpdate()` already decided stable
+    signature hydration, changed render, DOM-empty invalidation, hydrate
+    options, and scroll action, but `updateConversationHtml()` still branched
+    directly on update-plan signature flags and scroll action after the plan
+    was computed.
+  - Failing layer: frontend conversation HTML update post-effect ownership,
+    not server projection, local patch eligibility, task-card protocol, or
+    diagnostic transport.
+  - Violated invariant: once a DOM update plan is computed, post-DOM effects
+    should be planned in a testable helper and executed by `app.js` without
+    re-deciding signature writeback, hydration, or scroll scheduling.
+  - Closure classification: architecture-boundary cleanup. It does not hide
+    duplicate/missing messages, force refresh, skip refresh, change
+    `patch-html` / `innerHTML` fallback behavior, change stable-DOM-empty
+    diagnostics, or change shell/cache.
+- Changes:
+  - `public/thread-detail-dom-patch.js`
+    - Added `scrollEffectFromAction()`.
+    - Added `planConversationHtmlUpdateEffects()`.
+    - Reused the scroll-effect helper from
+      `planLocalConversationDomUpdateCompletionEffects()`.
+  - `public/app.js`
+    - Renamed the core executor boundary to
+      `applyThreadDetailDomUpdateEffect()` /
+      `applyThreadDetailDomUpdateEffectsPlan()`.
+    - Kept local completion wrapper names for the local patch path.
+    - Added `applyConversationHtmlUpdateEffectsPlan()` and changed
+      `updateConversationHtml()` to execute planned effects for both
+      `hydrate-existing` and changed-render paths.
+  - Tests/docs updated:
+    - `test/thread-detail-dom-patch.test.js`
+    - `test/conversation-render.test.js`
+    - `test/turn-scroll-controls.test.js`
+    - `test/mobile-viewport.test.js`
+    - `README.md`
+    - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`
+    - `docs/MODULES.md`
+	- Validation:
+	  - Focused:
+	    `node --test test/thread-detail-dom-patch.test.js test/conversation-render.test.js test/turn-scroll-controls.test.js test/mobile-viewport.test.js test/mermaid-render.test.js test/github-link-preview-ui.test.js`
+	    passed (`180` tests).
+	  - `npm run check` passed.
+	  - `npm test` passed (`1106` tests).
+	  - `npm run check:macos` passed.
+	  - `git diff --check` passed.
+	- Deployment:
+	  - Not deployed by design. This is a local Phase A slice for a future
+	    module-level deploy.
+	- Next:
+	  - Commit locally.
+	  - Continue Phase A toward remaining `renderCurrentThread()` / full-render
+	    shell post-effect seams or switch to Phase C pane-state if user priority
+	    changes.

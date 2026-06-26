@@ -16,6 +16,49 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 Phase A Conversation HTML Update Effects Slice
+
+本地小切片继续推进 Phase A 的 render/patch ownership 收敛，当前不部署。
+上一切片已经把 local DOM patch completion 的后置副作用计划化；本次处理
+`updateConversationHtml()` 里的另一条主路径：full render / hydrate-existing
+conversation HTML 更新。
+
+此前 `public/thread-detail-dom-patch.js` 的 `planConversationHtmlUpdate()` 已经
+能决定 stable signature、patch-html、set-inner-html、DOM-empty invalidation、
+hydrate options 和 scroll action，但 `public/app.js` 仍在
+`updateConversationHtml()` 里直接分支执行 patch-shell signature 写回、root
+hydration、rendered conversation signature 写回、scroll-to-bottom /
+bottom-button 调度。这样 full-render 和 hydrate-existing 的后置副作用仍不能
+单独测试，也容易和 local patch completion 的副作用边界分叉。
+
+本次修复：
+
+- `public/thread-detail-dom-patch.js` 新增
+  `planConversationHtmlUpdateEffects()`，把 conversation HTML update plan 转成
+  有序 effects。
+  - `hydrate-existing` 路径保持旧顺序：先写回 patch-shell signature，再 hydrate，
+    再执行 scroll/bottom-button 调度。
+  - changed render 路径保持旧顺序：先 hydrate，再写回 rendered conversation
+    signature / patch-shell signature，再执行 scroll/bottom-button 调度。
+- `public/app.js` 把 DOM effect executor 泛化为
+  `applyThreadDetailDomUpdateEffect()` /
+  `applyThreadDetailDomUpdateEffectsPlan()`，`updateConversationHtml()` 和
+  `completeLocalConversationDomUpdate()` 都只执行 helper 计划好的 effects。
+- 不改变真实 `patch-html` / `innerHTML` / fallback render、stable-DOM-empty
+  诊断、performance event、server projection、local patch eligibility、
+  scroll-follow policy、task-card 协议或 shell/cache。
+
+闭环验证：
+
+```bash
+node --test test/thread-detail-dom-patch.test.js test/conversation-render.test.js test/turn-scroll-controls.test.js test/mobile-viewport.test.js test/mermaid-render.test.js test/github-link-preview-ui.test.js
+```
+
+结果：`180` passed。提交前完整验证：`npm run check`、`npm test`
+（`1106` passed）、`npm run check:macos`、`git diff --check` 均通过。
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；会和同类
+Phase A 小切片一起组成模块后再统一部署验证。
+
 ## 2026-06-26 Phase A Local Patch Completion Effects Slice
 
 本地小切片继续推进 Phase A 的前端 thread detail render/patch ownership

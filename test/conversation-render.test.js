@@ -2321,7 +2321,8 @@ test("failed conversation images collapse into a neutral fallback", () => {
   assert.equal(image.dataset.imageLoadError, "1");
   assert.match(appJs, /\$\("conversation"\)\.addEventListener\("error", handleConversationImageError, true\)/);
   assert.match(appJs, /\$\("conversation"\)\.addEventListener\("load", handleConversationImageLoad, true\)/);
-  assert.match(functionBody("updateConversationHtml"), /hydrateThreadDetailSurface\(conversation/);
+  assert.match(functionBody("updateConversationHtml"), /applyConversationHtmlUpdateEffectsPlan\(effectsPlan, \{ root: conversation \}\)/);
+  assert.match(functionBody("applyThreadDetailDomUpdateEffect"), /hydrateThreadDetailSurface\(context\.root, item\.hydrateOptions \|\| \{\}\)/);
   assert.match(functionBody("scheduleFailedAppImageScan"), /hydrateProtectedAppImages\(root, "scheduled-scan"\)/);
   assert.match(functionBody("handleConversationImageError"), /handleProtectedAppImageError\(image\)/);
   assert.match(functionBody("shouldHydrateProtectedAppImage"), /isIosWebKitBrowser\(\) \|\| imageDiagnosticSourceKind\(src\) === "upload" \|\| shouldRenderProtectedImageDirectly\(src\)/);
@@ -3087,7 +3088,7 @@ test("thread tile local patch paths refresh the pane instead of writing a single
   assert.match(functionBody("completeLocalConversationDomUpdate"), /const patchShellSignature = hasOption\("patchShellSignature"\)/);
   assert.match(functionBody("completeLocalConversationDomUpdate"), /threadDetailDomPatchApi\.planLocalConversationDomUpdateCompletionEffects\(completionPlan\)/);
   assert.match(functionBody("completeLocalConversationDomUpdate"), /applyLocalConversationDomUpdateCompletionEffectsPlan\(effectsPlan, \{ root \}\)/);
-  assert.match(functionBody("applyLocalConversationDomUpdateCompletionEffect"), /state\.renderedConversationSignature = String\(item\.value \|\| ""\);/);
+  assert.match(functionBody("applyThreadDetailDomUpdateEffect"), /state\.renderedConversationSignature = String\(item\.value \|\| ""\);/);
   assert.doesNotMatch(functionBody("completeLocalConversationDomUpdate"), /state\.renderedConversationSignature = completionPlan\.nextRenderedConversationSignature/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /const completionSnapshot = \{/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /conversationSignature: conversationRenderSignature\(nextThread\)/);

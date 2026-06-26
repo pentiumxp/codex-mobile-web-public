@@ -221,6 +221,64 @@
     };
   }
 
+  function scrollEffectFromAction(scrollAction) {
+    if (scrollAction === "scroll-to-bottom") return { type: "schedule-conversation-to-bottom" };
+    if (scrollAction === "update-bottom-button") return { type: "schedule-scroll-button-update" };
+    return null;
+  }
+
+  function planConversationHtmlUpdateEffects(plan = {}) {
+    const updatePlan = objectOrEmpty(plan);
+    const action = String(updatePlan.action || "");
+    const effects = [];
+    const scrollEffect = scrollEffectFromAction(updatePlan.scrollAction);
+    if (action === "hydrate-existing") {
+      if (updatePlan.updatePatchShellSignature) {
+        effects.push({
+          type: "set-rendered-conversation-patch-shell-signature",
+          value: String(updatePlan.nextRenderedConversationPatchShellSignature || ""),
+        });
+      }
+      effects.push({
+        type: "hydrate-root",
+        hydrateOptions: objectOrEmpty(updatePlan.hydrateOptions),
+      });
+      if (scrollEffect) effects.push(scrollEffect);
+      return {
+        effects,
+        reason: effects.length ? "hydrate-existing-effects" : "no-update-effects",
+      };
+    }
+    if (action !== "patch-html" && action !== "set-inner-html") {
+      return {
+        effects: [],
+        reason: action ? "unknown-action" : "missing-action",
+      };
+    }
+
+    effects.push({
+      type: "hydrate-root",
+      hydrateOptions: objectOrEmpty(updatePlan.hydrateOptions),
+    });
+    if (updatePlan.updateRenderedConversationSignature) {
+      effects.push({
+        type: "set-rendered-conversation-signature",
+        value: String(updatePlan.nextRenderedConversationSignature || ""),
+      });
+    }
+    if (updatePlan.updatePatchShellSignature) {
+      effects.push({
+        type: "set-rendered-conversation-patch-shell-signature",
+        value: String(updatePlan.nextRenderedConversationPatchShellSignature || ""),
+      });
+    }
+    if (scrollEffect) effects.push(scrollEffect);
+    return {
+      effects,
+      reason: effects.length ? "conversation-update-effects" : "no-update-effects",
+    };
+  }
+
   function planLocalConversationDomUpdateCompletion(input = {}) {
     if (input.tilePanePatched) {
       return {
@@ -290,11 +348,8 @@
         value: String(completionPlan.nextRenderedConversationPatchShellSignature || ""),
       });
     }
-    if (completionPlan.scrollAction === "scroll-to-bottom") {
-      effects.push({ type: "schedule-conversation-to-bottom" });
-    } else if (completionPlan.scrollAction === "update-bottom-button") {
-      effects.push({ type: "schedule-scroll-button-update" });
-    }
+    const scrollEffect = scrollEffectFromAction(completionPlan.scrollAction);
+    if (scrollEffect) effects.push(scrollEffect);
     return {
       effects,
       reason: effects.length ? "completion-effects" : "no-completion-effects",
@@ -678,6 +733,7 @@
     patchHtml,
     patchNode,
     planConversationHtmlUpdate,
+    planConversationHtmlUpdateEffects,
     planLocalConversationDomUpdateCompletion,
     planLocalConversationDomUpdateCompletionEffects,
     renderKeyForNode,

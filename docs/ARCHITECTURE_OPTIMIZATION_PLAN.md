@@ -745,6 +745,17 @@ or `completionPlan.scrollAction`. This is a local Phase A slice only; it does
 not change server projection semantics, local patch eligibility,
 scroll-follow policy, diagnostic dispatch, task-card protocol, shell/cache
 version, or production deployment state.
+Conversation HTML update effects are now planned in the same DOM-patch helper:
+`planConversationHtmlUpdateEffects` turns the result of
+`planConversationHtmlUpdate` into ordered effects for hydrate-existing and
+changed-render paths. It preserves the existing order of patch-shell signature
+writeback before hydrate on stable-signature hydration, and hydrate before
+rendered-signature writeback on changed renders. `public/app.js` still owns the
+real patch-html / innerHTML mutation, fallback-to-innerHTML behavior,
+performance timing, and primary-shell conflict check, but it no longer branches
+directly on update-plan signature flags or scroll action after the DOM update
+plan has been computed. This keeps full-render/hydrate-existing and local
+patch completion on the same post-effect planning model.
 Refresh patch surface planning now also lives in this helper:
 `planThreadDetailRefreshPatchSurface` decides whether the refresh should probe
 tile-pane DOM state and whether the current patch path is a tile surface based

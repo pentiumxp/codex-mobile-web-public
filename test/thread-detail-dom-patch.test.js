@@ -365,6 +365,79 @@ test("conversation HTML update plan invalidates stable signatures when visible t
   assert.equal(healthyPlan.reason, "signature-stable");
 });
 
+test("conversation HTML update effects preserve hydrate-existing ordering", () => {
+  const updatePlan = domPatch.planConversationHtmlUpdate({
+    signature: "sig-a",
+    renderedConversationSignature: "sig-a",
+    renderedConversationPatchShellSignature: "shell-old",
+    patchShellSignature: "shell-next",
+    stickToBottom: true,
+    hasExistingChildren: true,
+  });
+
+  assert.deepEqual(domPatch.planConversationHtmlUpdateEffects(updatePlan), {
+    effects: [
+      {
+        type: "set-rendered-conversation-patch-shell-signature",
+        value: "shell-next",
+      },
+      {
+        type: "hydrate-root",
+        hydrateOptions: {
+          imageScanDelays: [0, 180],
+          skipRichHydration: true,
+        },
+      },
+      {
+        type: "schedule-conversation-to-bottom",
+      },
+    ],
+    reason: "hydrate-existing-effects",
+  });
+});
+
+test("conversation HTML update effects preserve changed-render ordering", () => {
+  const updatePlan = domPatch.planConversationHtmlUpdate({
+    signature: "sig-next",
+    renderedConversationSignature: "sig-old",
+    patchShellSignature: "shell-next",
+    stickToBottom: false,
+    hasExistingChildren: true,
+  });
+
+  assert.deepEqual(domPatch.planConversationHtmlUpdateEffects(updatePlan), {
+    effects: [
+      {
+        type: "hydrate-root",
+        hydrateOptions: {},
+      },
+      {
+        type: "set-rendered-conversation-signature",
+        value: "sig-next",
+      },
+      {
+        type: "set-rendered-conversation-patch-shell-signature",
+        value: "shell-next",
+      },
+      {
+        type: "schedule-scroll-button-update",
+      },
+    ],
+    reason: "conversation-update-effects",
+  });
+});
+
+test("conversation HTML update effects ignore missing or unknown actions", () => {
+  assert.deepEqual(domPatch.planConversationHtmlUpdateEffects({}), {
+    effects: [],
+    reason: "missing-action",
+  });
+  assert.deepEqual(domPatch.planConversationHtmlUpdateEffects({ action: "unknown", scrollAction: "scroll-to-bottom" }), {
+    effects: [],
+    reason: "unknown-action",
+  });
+});
+
 test("local conversation DOM update completion plan preserves tile pane terminal state", () => {
   assert.deepEqual(domPatch.planLocalConversationDomUpdateCompletion({
     tilePanePatched: true,

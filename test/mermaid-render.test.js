@@ -163,7 +163,9 @@ test("mobile app ships a custom Mermaid preview dialog and lazy runtime loader",
   assert.match(appJs, /function hydrateMermaidDiagrams\(/);
   assert.match(appJs, /function hydrateThreadDetailSurface\(/);
   assert.match(appJs, /hydrateMermaid:\s*options\.skipRichHydration \? null : hydrateMermaidDiagrams/);
-  assert.match(appJs, /hydrateThreadDetailSurface\(conversation, updatePlan\.hydrateOptions\)/);
+  assert.match(appJs, /threadDetailDomPatchApi\.planConversationHtmlUpdateEffects\(updatePlan\)/);
+  assert.match(appJs, /applyConversationHtmlUpdateEffectsPlan\(effectsPlan, \{ root: conversation \}\)/);
+  assert.match(appJs, /hydrateThreadDetailSurface\(context\.root, item\.hydrateOptions \|\| \{\}\)/);
   assert.match(appJs, /hydrateMermaidDiagrams\(\$\("filePreviewBody"\)\)/);
   assert.match(appJs, /function mermaidRenderCandidates\(/);
   assert.match(appJs, /function openMermaidPreview\(/);
