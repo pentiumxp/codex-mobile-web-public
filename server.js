@@ -84,6 +84,7 @@ const { createThreadDetailProjectionResultService } = require("./adapters/thread
 const { createThreadDetailProjectionService } = require("./adapters/thread-detail-projection-service");
 const { createThreadDetailProjectionV4Service } = require("./adapters/thread-detail-projection-v4-service");
 const { createThreadDetailSummaryService } = require("./adapters/thread-detail-summary-service");
+const { createThreadDetailBoundedReadPolicyService } = require("./adapters/thread-detail-bounded-read-policy-service");
 const { attachThreadDetailDiagnostics } = require("./adapters/thread-detail-performance-service");
 const { createThreadDetailReadOrchestrationService } = require("./adapters/thread-detail-read-orchestration-service");
 const { createThreadListFallbackCacheService } = require("./adapters/thread-list-fallback-cache-service");
@@ -5150,6 +5151,10 @@ const threadDetailSummaryService = createThreadDetailSummaryService({
   applyLocalActiveThreadStatusToSummary,
   threadRolloutSizeBytes,
 });
+const threadDetailBoundedReadPolicyService = createThreadDetailBoundedReadPolicyService({
+  thresholdBytes: THREAD_DETAIL_TURNS_LIST_FIRST_BYTES,
+  threadRolloutSizeBytes,
+});
 const threadDetailReadOrchestrationService = createThreadDetailReadOrchestrationService({
   attachDiagnostics: attachThreadDetailDiagnostics,
   resolveSummary: (requestCodex, threadId, options) => threadDetailSummaryService.resolveSummary(requestCodex, threadId, options),
@@ -5188,33 +5193,7 @@ const threadDetailReadOrchestrationService = createThreadDetailReadOrchestration
   ),
   readFullThread: readFullThreadDetailForOrchestrator,
   seedProjection: (input, result, optionsForSeed = {}) => threadDetailProjectionService.seed(input, result, optionsForSeed),
-  preferBoundedReadBeforeFullRead: ({ summary, projection }) => {
-    const thresholdBytes = THREAD_DETAIL_TURNS_LIST_FIRST_BYTES;
-    if (thresholdBytes <= 0) {
-      return { prefer: false, thresholdBytes, reason: "disabled" };
-    }
-    const stats = projection && projection.rolloutStats || {};
-    let sizeBytes = Number(stats.sizeBytes || stats.size || 0);
-    let source = sizeBytes > 0 ? "projection" : "";
-    if (!source) {
-      sizeBytes = threadRolloutSizeBytes(summary);
-      source = sizeBytes > 0 ? "summary" : "";
-    }
-    if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
-      return {
-        prefer: false,
-        thresholdBytes,
-        reason: "no-rollout-size",
-      };
-    }
-    return {
-      prefer: sizeBytes >= thresholdBytes,
-      rolloutSizeBytes: sizeBytes,
-      thresholdBytes,
-      source,
-      reason: sizeBytes >= thresholdBytes ? "large-rollout" : "below-threshold",
-    };
-  },
+  preferBoundedReadBeforeFullRead: (input) => threadDetailBoundedReadPolicyService.preferBoundedReadBeforeFullRead(input),
   prepareResponse: prepareThreadDetailResponseResult,
   fallbackThreadReadResult: fallbackThreadReadResultForOrchestrator,
   isReadTimeoutError,

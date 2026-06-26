@@ -477,7 +477,12 @@ mismatch, dynamic summary staleness, and dynamic signature mismatch. It also
 cleans up unusable stale full disk cache entries when a recent partial seed
 proves the old full cache is no longer reusable through `dynamic-summary-stale`
 or signature mismatch, so service restarts do not re-read the same invalid full
-projection.
+projection. This slice extracts the large-session bounded-read decision into
+`adapters/thread-detail-bounded-read-policy-service.js`: `server.js` now only
+supplies the configured threshold and summary rollout-size resolver, while the
+pure service owns projection-vs-summary size priority, `>=` threshold
+semantics, disabled/no-size behavior, and bounded decision source/reason
+metadata.
 
 - The coordinator owns summary resolution, hidden-thread rejection, projection
   hit, `mode=recent` initial turns-list, full `thread/read`, turns-list
