@@ -387,6 +387,43 @@ node --test test/thread-detail-state.test.js test/conversation-render.test.js te
 本地/private commit 候选，后续应继续拆 current-thread render/patch authority 和
 projection mismatch 诊断。
 
+## 2026-06-27 Phase A Projection Consistency Effects Planning Slice
+
+本地小切片继续推进 Phase A 的投影/渲染诊断所有权收敛。此前
+`conversationProjectionDiagnosticSnapshot()` 已经把 tile/single/transition
+snapshot 规划迁到 `public/thread-diagnostic-events.js`，但
+`checkConversationProjectionConsistency()` 仍在 `public/app.js` 里直接判断
+render signature mismatch、duplicate render keys 和 turn-order mismatch，并直接
+拼接失败/成功诊断事件。这让 app 编排层继续拥有“诊断结果判定”。
+
+本次修复：
+
+- `public/thread-diagnostic-events.js` 新增
+  `conversationProjectionConsistencyEffects()`，统一把 projection snapshot 和
+  turn-order snapshot 规划成 bounded diagnostic failure/success effects。
+- `public/app.js` 保留真实状态读取和 `recordHomeAiDiagnosticFailure()` /
+  `recordHomeAiDiagnosticSuccess()` side effect，但不再内联 mismatch/duplicate/order
+  判定分支。
+- `test/thread-diagnostic-events.test.js` 覆盖纯 helper 的失败、成功、无 snapshot
+  和隐私边界。
+- `test/conversation-render.test.js` 防止 app 重新调用低层 mismatch helper 或直接
+  构造诊断 payload。
+- `test/mobile-viewport.test.js` 同步 turn-order 诊断 wiring 断言，避免旧的内联
+  `hasTurnOrderMismatch()` 期望把边界拉回 app 层。
+- 不改变诊断阈值、Home AI 上报协议、DOM 渲染、server projection、任务卡协议、
+  shell/cache 或部署状态。
+
+闭环验证：
+
+```bash
+node --test test/thread-diagnostic-events.test.js test/conversation-render.test.js test/mobile-viewport.test.js
+node --check public/thread-diagnostic-events.js && node --check public/app.js
+```
+
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为 Phase A
+本地/private commit 累积，后续再与更大的 render/projection ownership 模块一起
+统一验证和部署。
+
 ## 2026-06-27 Phase E Thread Tile Visual Fixture Slice
 
 本地小切片开始补 Phase E 的浏览器/视觉回归入口，先覆盖最近反复出问题的平铺

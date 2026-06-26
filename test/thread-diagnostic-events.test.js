@@ -304,6 +304,69 @@ test("thread diagnostic events treat missing DOM turns as turn-order mismatch ev
   assert.equal(JSON.stringify(event).includes("private body"), false);
 });
 
+test("thread diagnostic events plan projection consistency effects without app state", () => {
+  const snapshot = {
+    renderedSignature: "rendered-a",
+    currentSignature: "current-b",
+    context: {
+      action: "refresh",
+      read_mode: "projection-v4-dynamic",
+      render_mode: "full-render",
+      unsafe_prompt: "private prompt ignored",
+    },
+    counts: {
+      dom_count: 4,
+      duplicate_count: 2,
+      visible_count: 6,
+      turn_count: 3,
+    },
+  };
+  const orderSnapshot = diagnostics.turnOrderDiagnosticSnapshot({
+    source: "refresh",
+    readMode: "projection-v4-dynamic",
+    renderMode: "full-render",
+    expectedTurnIds: ["turn-a", "turn-b"],
+    domTurnIds: ["turn-b", "turn-a"],
+  }, {
+    turnHash: () => "turn_hash",
+  });
+
+  const plan = diagnostics.conversationProjectionConsistencyEffects({ snapshot, orderSnapshot });
+  assert.equal(plan.reason, "projection-consistency-effects");
+  assert.deepEqual(plan.effects.map((effect) => [effect.type, effect.diagnosticType, effect.reason]), [
+    ["diagnostic-failure", "render_signature_mismatch", "render-signature-mismatch"],
+    ["diagnostic-failure", "duplicate_render_keys", "duplicate-render-keys"],
+    ["diagnostic-failure", "turn_order_mismatch", "turn-order-mismatch"],
+  ]);
+  assert.equal(plan.effects[0].diagnostic.diagnostic_type, "render_signature_mismatch");
+  assert.equal(plan.effects[1].diagnostic.diagnostic_type, "duplicate_render_keys");
+  assert.equal(plan.effects[2].diagnostic.diagnostic_type, "turn_order_mismatch");
+  assert.equal(JSON.stringify(plan).includes("private prompt"), false);
+
+  const healthy = diagnostics.conversationProjectionConsistencyEffects({
+    snapshot: Object.assign({}, snapshot, {
+      renderedSignature: "same",
+      currentSignature: "same",
+      counts: Object.assign({}, snapshot.counts, { duplicate_count: 0 }),
+    }),
+    orderSnapshot: diagnostics.turnOrderDiagnosticSnapshot({
+      source: "refresh",
+      expectedTurnIds: ["turn-a", "turn-b"],
+      domTurnIds: ["turn-a", "turn-b"],
+    }),
+  });
+  assert.deepEqual(healthy.effects.map((effect) => [effect.type, effect.diagnosticType, effect.reason]), [
+    ["diagnostic-success", "render_signature_mismatch", "render-signature-match"],
+    ["diagnostic-success", "duplicate_render_keys", "no-duplicate-render-keys"],
+    ["diagnostic-success", "turn_order_mismatch", "turn-order-match"],
+  ]);
+
+  assert.deepEqual(diagnostics.conversationProjectionConsistencyEffects(), {
+    effects: [],
+    reason: "no-snapshot",
+  });
+});
+
 test("thread diagnostic events build primary shell selection conflict payloads", () => {
   const event = diagnostics.primaryShellSelectionConflictDiagnosticEvent({
     reason: "primary shell after detail",

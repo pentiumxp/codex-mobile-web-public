@@ -393,6 +393,15 @@ summary/detail ownership logic, so stale list `turns`, task-card arrays,
 runtime settings, diagnostics, or read-mode metadata cannot regain authority
 over the current conversation while a detail open is in flight.
 
+The next 2026-06-27 local Phase A follow-up moves projection-consistency
+diagnostic outcome planning into `public/thread-diagnostic-events.js`.
+`conversationProjectionConsistencyEffects()` now receives the projection and
+turn-order snapshots and emits bounded failure/success effects for render
+signature mismatch, duplicate render keys, and turn-order mismatch. The app
+still performs the real Home AI diagnostic reporting side effects, but it no
+longer owns the mismatch/duplicate/order classification branches or diagnostic
+payload selection.
+
 `codex-mobile-shell-v515` adds the next ownership rule from the same Music
 incident class: an incoming empty `turns: []` detail response cannot wipe out an
 existing current-thread state that already has visible turns. That merge

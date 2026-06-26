@@ -7037,28 +7037,34 @@ function conversationProjectionDiagnosticSnapshot(source, extra = {}, deps = {})
   });
 }
 
+function applyConversationProjectionConsistencyEffect(effect) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  if (!item.type) return;
+  if (item.type === "diagnostic-failure") {
+    recordHomeAiDiagnosticFailure(item.diagnostic || {});
+    return;
+  }
+  if (item.type === "diagnostic-success") {
+    recordHomeAiDiagnosticSuccess(item.diagnostic || {});
+    return;
+  }
+  throw new Error(`Unknown conversation projection consistency effect: ${item.type}`);
+}
+
+function applyConversationProjectionConsistencyEffectsPlan(plan) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applyConversationProjectionConsistencyEffect(effect);
+}
+
 function checkConversationProjectionConsistency(source, extra = {}) {
   if (!state.currentThread || state.currentThread.mobileLoading || state.currentThread.mobileLoadError) return;
   recordPrimaryShellSelectionHealthy(source, state.currentThread);
   recordEmptyVisibleDetailHealthy(source, state.currentThread);
   const snapshot = conversationProjectionDiagnosticSnapshot(source, extra);
   if (!snapshot) return;
-  if (threadDiagnosticEventsApi.hasRenderSignatureMismatch(snapshot)) {
-    recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.renderSignatureMismatchDiagnosticEvent(snapshot));
-  } else {
-    recordHomeAiDiagnosticSuccess(threadDiagnosticEventsApi.renderSignatureMismatchDiagnosticSuccess(snapshot));
-  }
-  if (threadDiagnosticEventsApi.hasDuplicateRenderKeys(snapshot)) {
-    recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.duplicateRenderKeysDiagnosticEvent(snapshot));
-  } else {
-    recordHomeAiDiagnosticSuccess(threadDiagnosticEventsApi.duplicateRenderKeysDiagnosticSuccess(snapshot));
-  }
   const orderSnapshot = conversationTurnOrderDiagnosticSnapshot(source, extra);
-  if (orderSnapshot && threadDiagnosticEventsApi.hasTurnOrderMismatch(orderSnapshot)) {
-    recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.turnOrderMismatchDiagnosticEvent(orderSnapshot));
-  } else if (orderSnapshot) {
-    recordHomeAiDiagnosticSuccess(threadDiagnosticEventsApi.turnOrderMismatchDiagnosticSuccess(orderSnapshot));
-  }
+  const effectsPlan = threadDiagnosticEventsApi.conversationProjectionConsistencyEffects({ snapshot, orderSnapshot });
+  applyConversationProjectionConsistencyEffectsPlan(effectsPlan);
 }
 
 function startUiWatchdog() {

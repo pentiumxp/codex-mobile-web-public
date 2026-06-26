@@ -2985,12 +2985,19 @@ test("conversation projection diagnostic snapshot delegates planning to helper",
 test("conversation projection consistency delegates report payloads to diagnostic helpers", () => {
   const body = functionBody("checkConversationProjectionConsistency");
   assert.match(body, /recordPrimaryShellSelectionHealthy\(source, state\.currentThread\)/);
-  assert.match(body, /threadDiagnosticEventsApi\.hasRenderSignatureMismatch\(snapshot\)/);
-  assert.match(body, /recordHomeAiDiagnosticFailure\(threadDiagnosticEventsApi\.renderSignatureMismatchDiagnosticEvent\(snapshot\)\)/);
-  assert.match(body, /recordHomeAiDiagnosticSuccess\(threadDiagnosticEventsApi\.renderSignatureMismatchDiagnosticSuccess\(snapshot\)\)/);
-  assert.match(body, /threadDiagnosticEventsApi\.hasDuplicateRenderKeys\(snapshot\)/);
-  assert.match(body, /recordHomeAiDiagnosticFailure\(threadDiagnosticEventsApi\.duplicateRenderKeysDiagnosticEvent\(snapshot\)\)/);
-  assert.match(body, /recordHomeAiDiagnosticSuccess\(threadDiagnosticEventsApi\.duplicateRenderKeysDiagnosticSuccess\(snapshot\)\)/);
+  assert.match(body, /const orderSnapshot = conversationTurnOrderDiagnosticSnapshot\(source, extra\);/);
+  assert.match(body, /threadDiagnosticEventsApi\.conversationProjectionConsistencyEffects\(\{ snapshot, orderSnapshot \}\)/);
+  assert.match(body, /applyConversationProjectionConsistencyEffectsPlan\(effectsPlan\)/);
+  assert.match(appJs, /function applyConversationProjectionConsistencyEffect\(effect\)/);
+  assert.match(functionBody("applyConversationProjectionConsistencyEffect"), /recordHomeAiDiagnosticFailure\(item\.diagnostic \|\| \{\}\)/);
+  assert.match(functionBody("applyConversationProjectionConsistencyEffect"), /recordHomeAiDiagnosticSuccess\(item\.diagnostic \|\| \{\}\)/);
+  assert.match(functionBody("applyConversationProjectionConsistencyEffectsPlan"), /for \(const effect of effects\) applyConversationProjectionConsistencyEffect\(effect\)/);
+  assert.doesNotMatch(body, /threadDiagnosticEventsApi\.hasRenderSignatureMismatch\(snapshot\)/);
+  assert.doesNotMatch(body, /threadDiagnosticEventsApi\.hasDuplicateRenderKeys\(snapshot\)/);
+  assert.doesNotMatch(body, /threadDiagnosticEventsApi\.hasTurnOrderMismatch\(orderSnapshot\)/);
+  assert.doesNotMatch(body, /threadDiagnosticEventsApi\.renderSignatureMismatchDiagnosticEvent/);
+  assert.doesNotMatch(body, /threadDiagnosticEventsApi\.duplicateRenderKeysDiagnosticEvent/);
+  assert.doesNotMatch(body, /threadDiagnosticEventsApi\.turnOrderMismatchDiagnosticEvent/);
   assert.doesNotMatch(body, /diagnostic_type: "render_signature_mismatch"/);
   assert.doesNotMatch(body, /diagnostic_type: "duplicate_render_keys"/);
   assert.match(appJs, /const threadDiagnosticEventsApi = window\.CodexThreadDiagnosticEvents;/);

@@ -16675,3 +16675,58 @@ The previous full handoff was archived and should be opened only when old proven
     No secrets, cookies, launch tokens, private thread bodies, task-card bodies,
     upload bytes, private paths, provider payloads, prompts, or long logs are
     included.
+
+## 2026-06-27 - Phase A projection consistency effects planning local slice
+
+- Latest local slice:
+  - Continued Phase A projection/render diagnostic ownership after `d1b5759`
+    (`plan thread open loading shell ownership`).
+  - This slice is local/private only and is not deployed by design.
+- Root-cause boundary:
+  - Symptom/risk: client/server projection drift can show duplicate, missing,
+    or reordered visible items. The client needs deterministic bounded
+    diagnostics, but `public/app.js` still owned the projection consistency
+    mismatch/duplicate/order outcome branches.
+  - Failing layer: frontend diagnostic outcome planning, not Home AI host
+    intake, server projection, DOM rendering, CSS, task-card routing, or
+    shell/cache.
+  - Violated invariant: `public/app.js` should collect real runtime evidence
+    and execute reporting side effects; pure helpers should own bounded
+    diagnostic classification and payload/effect planning.
+- Changes:
+  - `public/thread-diagnostic-events.js` now exposes
+    `conversationProjectionConsistencyEffects()`.
+  - The helper converts projection and turn-order snapshots into bounded
+    failure/success effects for `render_signature_mismatch`,
+    `duplicate_render_keys`, and `turn_order_mismatch`.
+  - `public/app.js` `checkConversationProjectionConsistency()` now gets
+    snapshots, asks the helper for an effects plan, and only executes
+    `recordHomeAiDiagnosticFailure()` / `recordHomeAiDiagnosticSuccess()`.
+  - `test/thread-diagnostic-events.test.js` covers failure, success, no-snapshot,
+    and privacy behavior for the pure effects helper.
+  - `test/conversation-render.test.js` guards the app wiring so the low-level
+    mismatch helper calls and inline diagnostic construction do not return.
+  - `test/mobile-viewport.test.js` now asserts the same turn-order diagnostic
+    wiring boundary through the projection-consistency effects helper instead
+    of the old inline `hasTurnOrderMismatch()` path.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation:
+  - Focused:
+    `node --test test/thread-diagnostic-events.test.js test/conversation-render.test.js test/mobile-viewport.test.js`
+    passed.
+  - Syntax:
+    `node --check public/thread-diagnostic-events.js && node --check public/app.js`
+    passed.
+- Deployment:
+  - Not deployed. No `CLIENT_BUILD_ID` / PWA shell cache bump. This is a
+    Phase A diagnostic ownership slice to batch with the next projection/render
+    module before one deploy/readback.
+- Next:
+  - Run full validation, commit locally, then continue Phase A/B with remaining
+    current-thread render/patch authority and large-session cold-path evidence.
+- Privacy:
+  - Only bounded file paths, helper names, diagnostic type labels, and test
+    counts are recorded. No secrets, cookies, launch tokens, private thread
+    bodies, task-card bodies, upload bytes, private paths, provider payloads,
+    prompts, or long logs are included.

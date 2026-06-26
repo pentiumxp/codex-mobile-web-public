@@ -39,9 +39,11 @@ test("client turn ordering follows server started-at-first semantics", () => {
 
   const consistencyBody = functionBody("checkConversationProjectionConsistency");
   assert.match(consistencyBody, /const orderSnapshot = conversationTurnOrderDiagnosticSnapshot\(source, extra\);/);
-  assert.match(consistencyBody, /hasTurnOrderMismatch\(orderSnapshot\)/);
-  assert.match(consistencyBody, /turnOrderMismatchDiagnosticEvent\(orderSnapshot\)/);
-  assert.match(consistencyBody, /turnOrderMismatchDiagnosticSuccess\(orderSnapshot\)/);
+  assert.match(consistencyBody, /threadDiagnosticEventsApi\.conversationProjectionConsistencyEffects\(\{ snapshot, orderSnapshot \}\)/);
+  assert.match(consistencyBody, /applyConversationProjectionConsistencyEffectsPlan\(effectsPlan\)/);
+  assert.doesNotMatch(consistencyBody, /hasTurnOrderMismatch\(orderSnapshot\)/);
+  assert.doesNotMatch(consistencyBody, /turnOrderMismatchDiagnosticEvent\(orderSnapshot\)/);
+  assert.doesNotMatch(consistencyBody, /turnOrderMismatchDiagnosticSuccess\(orderSnapshot\)/);
 });
 
 test("thread detail response diagnostics are planned before Home AI reporting", () => {

@@ -333,6 +333,50 @@
     };
   }
 
+  function conversationProjectionConsistencyEffects(input = {}) {
+    const source = input && typeof input === "object" ? input : {};
+    const snapshot = source.snapshot || null;
+    const orderSnapshot = source.orderSnapshot || null;
+    const effects = [];
+    if (snapshot) {
+      const normalized = projectionDiagnosticSnapshot(snapshot);
+      const signatureMismatch = hasRenderSignatureMismatch(normalized);
+      effects.push({
+        type: signatureMismatch ? "diagnostic-failure" : "diagnostic-success",
+        diagnostic: signatureMismatch
+          ? renderSignatureMismatchDiagnosticEvent(normalized)
+          : renderSignatureMismatchDiagnosticSuccess(normalized),
+        diagnosticType: "render_signature_mismatch",
+        reason: signatureMismatch ? "render-signature-mismatch" : "render-signature-match",
+      });
+      const duplicateKeys = hasDuplicateRenderKeys(normalized);
+      effects.push({
+        type: duplicateKeys ? "diagnostic-failure" : "diagnostic-success",
+        diagnostic: duplicateKeys
+          ? duplicateRenderKeysDiagnosticEvent(normalized)
+          : duplicateRenderKeysDiagnosticSuccess(normalized),
+        diagnosticType: "duplicate_render_keys",
+        reason: duplicateKeys ? "duplicate-render-keys" : "no-duplicate-render-keys",
+      });
+    }
+    if (orderSnapshot) {
+      const normalizedOrder = projectionDiagnosticSnapshot(orderSnapshot);
+      const turnOrderMismatch = hasTurnOrderMismatch(normalizedOrder);
+      effects.push({
+        type: turnOrderMismatch ? "diagnostic-failure" : "diagnostic-success",
+        diagnostic: turnOrderMismatch
+          ? turnOrderMismatchDiagnosticEvent(normalizedOrder)
+          : turnOrderMismatchDiagnosticSuccess(normalizedOrder),
+        diagnosticType: "turn_order_mismatch",
+        reason: turnOrderMismatch ? "turn-order-mismatch" : "turn-order-match",
+      });
+    }
+    return {
+      effects,
+      reason: effects.length ? "projection-consistency-effects" : "no-snapshot",
+    };
+  }
+
   function primaryShellSelectionConflictContext(input = {}) {
     const source = input && typeof input === "object" ? input : {};
     const context = {
@@ -807,6 +851,7 @@
     hasRenderSignatureMismatch,
     hasTurnOrderMismatch,
     conversationProjectionDiagnosticSnapshot,
+    conversationProjectionConsistencyEffects,
     primaryShellSelectionConflictDiagnosticEvent,
     primaryShellSelectionConflictDiagnosticSuccess,
     projectionDiagnosticContext,
