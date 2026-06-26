@@ -319,6 +319,30 @@
     };
   }
 
+  function planThreadDetailRefreshCompletionEffects(input = {}) {
+    const threadHash = compactReason(input.threadHash, "");
+    return {
+      effects: [
+        {
+          type: "diagnostic-success",
+          payload: {
+            category: "thread_session_load_failed",
+            diagnostic_type: "thread_detail_refresh_failed",
+            error_code: "thread_detail_refresh_failed",
+            context: {
+              surface: "thread-session",
+              action: "thread-detail-refresh",
+              thread_hash: threadHash,
+            },
+          },
+        },
+        { type: "schedule-usage-backfill-refresh" },
+        { type: "schedule-live-poll" },
+      ],
+      reason: "refresh-complete",
+    };
+  }
+
   function text(value) {
     return String(value ?? "");
   }
@@ -387,6 +411,7 @@
   return {
     finalizeThreadDetailRenderPlan,
     normalizeSignature,
+    planThreadDetailRefreshCompletionEffects,
     planThreadDetailRefreshConsistencyCheck,
     planThreadDetailRefreshPatchAttemptResult,
     planThreadDetailRefreshOutcomeExecution,

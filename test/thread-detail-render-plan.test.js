@@ -451,6 +451,31 @@ test("thread detail refresh performance input combines render and patch plans", 
   });
 });
 
+test("thread detail refresh completion effects plan bounded success side effects", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshCompletionEffects({
+    threadHash: "abc123",
+  }), {
+    effects: [
+      {
+        type: "diagnostic-success",
+        payload: {
+          category: "thread_session_load_failed",
+          diagnostic_type: "thread_detail_refresh_failed",
+          error_code: "thread_detail_refresh_failed",
+          context: {
+            surface: "thread-session",
+            action: "thread-detail-refresh",
+            thread_hash: "abc123",
+          },
+        },
+      },
+      { type: "schedule-usage-backfill-refresh" },
+      { type: "schedule-live-poll" },
+    ],
+    reason: "refresh-complete",
+  });
+});
+
 test("single-thread full render shell plans loading state", () => {
   assert.deepEqual(renderPlan.planSingleThreadFullRenderShell({
     threadId: "thread-1",

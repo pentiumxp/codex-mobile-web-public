@@ -198,6 +198,10 @@ performance input assembly now also lives in this helper:
 `planThreadDetailRefreshPerformanceInput` combines measured timings with
 `renderPlan`, `renderOutcome`, and `patchAttemptResult`, so app code no longer
 maintains separate performance-only render mode/action/patch duration fields.
+Refresh completion side-effect planning now also lives in this helper:
+`planThreadDetailRefreshCompletionEffects` decides the success diagnostic clear,
+usage-backfill refresh scheduling, and live-poll scheduling effects, while app
+code only executes those effect names.
 Refresh performance event field planning now lives in
 `public/thread-performance-metrics.js`: `threadDetailRefreshEventFields`
 builds the bounded `thread_refresh_ms` payload, including server timings,

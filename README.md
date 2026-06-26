@@ -16,6 +16,39 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v502 Thread Refresh Completion Effects Plan
+
+v502 继续 Phase A 的前端 render/patch ownership 收敛。v501 已经把
+`thread_refresh_ms` 的 performance input 组装交给
+`public/thread-detail-render-plan.js`；本次继续缩小 `refreshCurrentThread()`
+对刷新完成后收尾副作用的内联硬编码。
+
+本次切片新增：
+
+- `planThreadDetailRefreshCompletionEffects()` 统一规划 refresh 成功后的
+  completion effects。
+- helper 产出三个既有动作：清除 `thread_detail_refresh_failed` 诊断、
+  安排 usage backfill refresh、安排 live poll。
+- `refreshCurrentThread()` 不再自己硬编码成功诊断 payload 和两个 scheduler
+  调用，只负责执行 helper 产出的 effect。
+- app 层新增 `applyThreadDetailRefreshCompletionEffect()`，只执行真实副作用，
+  不决定哪些完成动作应该发生。
+
+修复边界：
+
+- 症状/风险：v499-v501 已经把 patch telemetry、consistency check 和
+  performance input 外移，但 refresh 完成后的诊断/轮询/usage backfill
+  收尾仍直接散落在 app 状态机尾部。
+- 失败层：前端 thread detail refresh completion side-effect ownership。
+- 不变量：本次不改变真实 DOM patch、render、server projection、诊断类别、
+  轮询时机、usage backfill 行为、task-card 协议或视觉布局。
+- 闭环验证：`test/thread-detail-render-plan.test.js` 覆盖 completion effects；
+  `test/mobile-viewport.test.js` / `test/conversation-render.test.js` 验证 app
+  通过 `completionPlan.effects` 执行，而不是在 `refreshCurrentThread()` 结尾
+  直接硬编码成功诊断 payload。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v502`。
+
 ## 2026-06-26 v501 Thread Refresh Performance Input Plan
 
 v501 继续 Phase A 的前端 render/patch ownership 收敛。v500 已经把

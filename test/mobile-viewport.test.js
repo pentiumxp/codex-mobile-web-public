@@ -148,8 +148,8 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v501/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v501"/);
+  assert.match(swJs, /codex-mobile-shell-v502/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v502"/);
   assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(swJs, /"\/thread-diagnostic-events\.js"/);
@@ -359,6 +359,13 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(functionBody("refreshCurrentThread"), /shouldRenderDetail,[\s\S]*renderPlan,[\s\S]*renderOutcome,[\s\S]*patchAttemptResult,[\s\S]*timings: \{/);
   assert.match(functionBody("refreshCurrentThread"), /const refreshPerformance = threadPerformanceMetrics\.threadDetailRefreshEventFields\(result\.thread, refreshPerformanceInput\);/);
   assert.match(functionBody("refreshCurrentThread"), /postPerformanceEvent\("thread_refresh_ms", refreshPerformance, \{/);
+  assert.match(functionBody("refreshCurrentThread"), /const completionPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshCompletionEffects\(\{[\s\S]*threadHash: diagnosticThreadHash\(threadId\),[\s\S]*\}\);/);
+  assert.match(functionBody("refreshCurrentThread"), /for \(const effect of completionPlan\.effects\) applyThreadDetailRefreshCompletionEffect\(effect\);/);
+  assert.match(appJs, /function applyThreadDetailRefreshCompletionEffect\(effect\)/);
+  assert.match(functionBody("applyThreadDetailRefreshCompletionEffect"), /recordHomeAiDiagnosticSuccess\(item\.payload \|\| \{\}\)/);
+  assert.match(functionBody("applyThreadDetailRefreshCompletionEffect"), /scheduleUsageBackfillRefresh\(\)/);
+  assert.match(functionBody("applyThreadDetailRefreshCompletionEffect"), /scheduleLivePollIfNeeded\(\)/);
+  assert.doesNotMatch(functionBody("refreshCurrentThread"), /recordHomeAiDiagnosticSuccess\(\{[\s\S]*thread_detail_refresh_failed/);
   assert.doesNotMatch(functionBody("refreshCurrentThread"), /skippedDetailRender: !shouldRenderDetail/);
   assert.match(appJs, /function rejectThreadDetailPatch\(reason\)/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /rejectThreadDetailPatch\("rendered-dom-stale"\)/);

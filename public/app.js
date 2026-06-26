@@ -508,7 +508,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v501";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v502";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -8995,6 +8995,24 @@ function applyThreadDetailRefreshMetadataEffect(effect) {
   throw new Error(`Unknown thread detail refresh metadata effect: ${key || "empty"}`);
 }
 
+function applyThreadDetailRefreshCompletionEffect(effect) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  if (type === "diagnostic-success") {
+    recordHomeAiDiagnosticSuccess(item.payload || {});
+    return true;
+  }
+  if (type === "schedule-usage-backfill-refresh") {
+    scheduleUsageBackfillRefresh();
+    return true;
+  }
+  if (type === "schedule-live-poll") {
+    scheduleLivePollIfNeeded();
+    return true;
+  }
+  throw new Error(`Unknown thread detail refresh completion effect: ${type || "empty"}`);
+}
+
 async function refreshCurrentThread(options = {}) {
   if (!state.currentThreadId) return;
   markIdleActivity("同步");
@@ -9180,18 +9198,10 @@ async function refreshCurrentThread(options = {}) {
     key: "thread_refresh_ms",
     minIntervalMs: PERF_EVENT_THROTTLE_MS,
   });
-  recordHomeAiDiagnosticSuccess({
-    category: "thread_session_load_failed",
-    diagnostic_type: "thread_detail_refresh_failed",
-    error_code: "thread_detail_refresh_failed",
-    context: {
-      surface: "thread-session",
-      action: "thread-detail-refresh",
-      thread_hash: diagnosticThreadHash(threadId),
-    },
+  const completionPlan = threadDetailRenderPlanApi.planThreadDetailRefreshCompletionEffects({
+    threadHash: diagnosticThreadHash(threadId),
   });
-  scheduleUsageBackfillRefresh();
-  scheduleLivePollIfNeeded();
+  for (const effect of completionPlan.effects) applyThreadDetailRefreshCompletionEffect(effect);
 }
 
 function threadTurnsCursorParam(cursor) {

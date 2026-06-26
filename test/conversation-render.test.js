@@ -3011,6 +3011,9 @@ test("current-thread refresh patches the current tile pane for metadata-only til
   assert.match(body, /shouldRenderDetail,[\s\S]*renderPlan,[\s\S]*renderOutcome,[\s\S]*patchAttemptResult,[\s\S]*timings: \{/);
   assert.match(body, /const refreshPerformance = threadPerformanceMetrics\.threadDetailRefreshEventFields\(result\.thread, refreshPerformanceInput\);/);
   assert.match(body, /postPerformanceEvent\("thread_refresh_ms", refreshPerformance, \{/);
+  assert.match(body, /const completionPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshCompletionEffects\(\{/);
+  assert.match(body, /for \(const effect of completionPlan\.effects\) applyThreadDetailRefreshCompletionEffect\(effect\);/);
+  assert.doesNotMatch(body, /recordHomeAiDiagnosticSuccess\(\{[\s\S]*thread_detail_refresh_failed/);
 });
 
 test("image view render keys include their image source", () => {
