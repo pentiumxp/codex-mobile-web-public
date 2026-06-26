@@ -100,13 +100,13 @@ Current acceleration targets:
    `thread-list-fallback-baseline-service` that owns source collection, merge,
    and per-source timings without changing behavior; a later slice can decide
    whether to persist or prewarm the baseline.
-3. Large detail cold-path attribution is still distributed across summary,
-   projection-input, bounded-read, projection lookup/seed, and performance
-   services. The next minimal slice is a
+3. Large detail cold-path attribution now has a dedicated
    `thread-detail-cold-path-diagnosis-service` that emits bounded
    `coldPathOwner` / `coldPathReason` for projection-cache seeding,
    summary-rollout hydration, stale full-cache lifecycle, active full-read, and
-   app-server fallback without changing the read strategy.
+   app-server fallback without changing the read strategy. The remaining Phase B
+   work is to use that attribution to prioritize active-overlay and thread-list
+   fallback-baseline changes.
 
 ### Phase 1: Evidence And Boundary Cleanup
 
@@ -152,6 +152,13 @@ non-partial projections.
   projection window, authoritative overlay source, matched active turn, operation
   coverage, upload visibility, assistant delta freshness, and usage/diagnostic
   receipt coverage are all explicit and bounded.
+  `codex-mobile-shell-v531` adds the next attribution layer without changing
+  read behavior: `thread-detail-cold-path-diagnosis-service` maps existing
+  bounded timing fields into `coldPathOwner` / `coldPathReason`, so a cold
+  `thread_detail_first_paint`, `thread_refresh_ms`, or Home AI slow-path case
+  can directly distinguish projection-cache misses, missing projection input,
+  summary-sourced large windows, active read policy full reads, app-server
+  `thread/read`, app-server `thread/turns/list`, and summary fallback.
 - Keep thread-list fallback cache evidence in
   `mobileDiagnostics.threadListTimings`. The cache now reports
   `fallbackCacheDecision` (`hit`, `miss-rebuild`, `expired-rebuild`), bounded

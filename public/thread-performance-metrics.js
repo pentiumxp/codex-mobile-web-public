@@ -285,6 +285,7 @@
     const elapsedMs = boundedTiming(fields.elapsedMs || fields.clientTimings && fields.clientTimings.elapsedMs) || 0;
     const apiElapsedMs = boundedTiming(fields.apiElapsedMs || fields.clientTimings && fields.clientTimings.apiElapsedMs) || 0;
     const renderElapsedMs = boundedTiming(fields.renderElapsedMs || fields.clientTimings && fields.clientTimings.renderElapsedMs) || 0;
+    const serverTimings = objectOrNull(fields.serverTimings) || {};
     const slowElapsed = elapsedMs >= thresholdMs;
     const slowApi = apiElapsedMs >= thresholdMs;
     const slowRender = renderElapsedMs >= thresholdMs;
@@ -318,6 +319,8 @@
       renderElapsedMs,
       readMode: compactLabel(fields.readMode, 80),
       performancePhase,
+      coldPathOwner: compactLabel(fields.coldPathOwner || serverTimings.coldPathOwner, 80),
+      coldPathReason: compactLabel(fields.coldPathReason || serverTimings.coldPathReason, 80),
       source: compactLabel(fields.source || source.source, 40),
       action: compactLabel(source.action || "thread-detail", 80),
       threadHash: compactLabel(source.threadHash || source.thread_hash, 80),

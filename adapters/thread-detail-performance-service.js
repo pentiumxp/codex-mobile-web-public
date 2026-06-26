@@ -1,5 +1,9 @@
 "use strict";
 
+const {
+  diagnoseThreadDetailColdPath,
+} = require("./thread-detail-cold-path-diagnosis-service");
+
 function safeDurationMs(value) {
   const number = Number(value);
   if (!Number.isFinite(number) || number < 0) return 0;
@@ -93,6 +97,9 @@ function buildThreadDetailDiagnostics(input = {}) {
     largeReadSource: nonEmptyText(input.largeReadSource),
     largeReadReason: nonEmptyText(input.largeReadReason),
   };
+  const coldPath = diagnoseThreadDetailColdPath(output);
+  output.coldPathOwner = compactLabel(coldPath.owner, 80);
+  output.coldPathReason = compactLabel(coldPath.reason, 80);
   for (const key of [
     "summaryMs",
     "projectionMs",

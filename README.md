@@ -16,6 +16,29 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v531 Thread Detail Cold-Path Diagnosis
+
+v531 推进 Phase B 的大 session 冷路径证据化。此前
+`mobileDiagnostics.threadDetailTimings.phase` 已经能区分 warm projection、bounded
+turns-list、full `thread/read` 和 fallback，但还不能直接说明慢路径归属哪个架构层。排查时
+仍要人工组合 `projectionState`、`projectionMissReason`、`largeReadReason`、
+`activeFullReadReason` 等字段。
+
+本次修复：
+
+- 新增 `adapters/thread-detail-cold-path-diagnosis-service.js`，把已有 bounded 字段归因为
+  `coldPathOwner` / `coldPathReason`，覆盖 projection cache、projection input、summary、
+  active read policy、app-server thread/read、turns/list fallback 和 summary fallback。
+- `adapters/thread-detail-performance-service.js` 在 `threadDetailTimings` 中附带
+  `coldPathOwner` / `coldPathReason`；这只增强诊断，不改变 detail read 策略。
+- `public/thread-performance-metrics.js` 和 `public/thread-diagnostic-events.js` 把这两个字段透传到
+  slow-path diagnostic，方便 Home AI case 直接看到归因层。
+
+隐私边界不变：只输出 bounded owner/reason、计数和耗时，不输出消息正文、任务卡正文、
+上传内容、私有路径、cookies、tokens 或长日志。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v531`。
+
 ## 2026-06-26 v530 Thread Tile DOM Authority Count
 
 v530 把 v527 的 stable-signature DOM authority 规则补到平铺 board。此前单线程

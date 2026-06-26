@@ -464,6 +464,10 @@ test("thread performance metrics plan slow detail path diagnostics only at thres
     renderElapsedMs: 300,
     readMode: "thread-read",
     performancePhase: "cold-thread-read",
+    serverTimings: {
+      coldPathOwner: "projection-cache",
+      coldPathReason: "projection-miss:static-signature-mismatch",
+    },
     detailShape: { turns: 10, visibleItems: 30, omittedTurns: 2 },
     rolloutSizeBytes: 2 * 1024 * 1024,
   }, {
@@ -478,6 +482,8 @@ test("thread performance metrics plan slow detail path diagnostics only at thres
   assert.equal(planned.severityHint, "H2");
   assert.equal(planned.threadHash, "h_thread");
   assert.equal(planned.durationBucket, "10_30s");
+  assert.equal(planned.coldPathOwner, "projection-cache");
+  assert.equal(planned.coldPathReason, "projection-miss:static-signature-mismatch");
   assert.equal(planned.rolloutSizeBytes, 2 * 1024 * 1024);
 });
 

@@ -633,6 +633,8 @@
     const readMode = compactToken(source.readMode || source.read_mode, "", 80);
     const renderMode = compactToken(source.renderMode || source.render_mode, "", 80);
     const performancePhase = compactToken(source.performancePhase || source.performance_phase, "", 80);
+    const coldPathOwner = compactToken(source.coldPathOwner || source.cold_path_owner, "", 80);
+    const coldPathReason = compactToken(source.coldPathReason || source.cold_path_reason, "", 80);
     const threadHash = compactToken(source.threadHash || source.thread_hash, "", 80);
     const durationBucket = compactToken(source.durationBucket || source.duration_bucket, "", 80);
     const counts = {
@@ -654,6 +656,8 @@
     if (readMode) context.read_mode = readMode;
     if (renderMode) context.render_mode = renderMode;
     if (performancePhase) context.performance_phase = performancePhase;
+    if (coldPathOwner) context.cold_path_owner = coldPathOwner;
+    if (coldPathReason) context.cold_path_reason = coldPathReason;
     return {
       category: "thread_session_slow_path",
       diagnostic_type: "thread_detail_slow_path",
@@ -672,6 +676,8 @@
           read_mode: readMode,
           render_mode: renderMode,
           performance_phase: performancePhase,
+          cold_path_owner: coldPathOwner,
+          cold_path_reason: coldPathReason,
           elapsed_ms: counts.elapsed_ms,
           api_elapsed_ms: counts.api_elapsed_ms,
           render_elapsed_ms: counts.render_elapsed_ms,

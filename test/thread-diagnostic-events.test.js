@@ -656,6 +656,8 @@ test("thread diagnostic events build bounded slow path payloads", () => {
     readMode: "thread-read",
     renderMode: "first-paint",
     performancePhase: "cold-thread-read",
+    coldPathOwner: "projection-cache",
+    coldPathReason: "projection-miss:static-signature-mismatch",
     threadHash: "thread/hash",
     durationBucket: "10_30s",
     elapsedMs: 17000,
@@ -674,6 +676,9 @@ test("thread diagnostic events build bounded slow path payloads", () => {
   assert.equal(event.error_code, "api-slow");
   assert.equal(event.context.thread_hash, "thread_hash");
   assert.equal(event.context.performance_phase, "cold-thread-read");
+  assert.equal(event.context.cold_path_owner, "projection-cache");
+  assert.equal(event.context.cold_path_reason, "projection-miss:static-signature-mismatch");
+  assert.equal(event.breadcrumbs[0].fields.cold_path_owner, "projection-cache");
   assert.equal(event.counts.elapsed_ms, 17000);
   assert.equal(event.counts.api_elapsed_ms, 12000);
   assert.equal(event.counts.threshold_ms, 8000);

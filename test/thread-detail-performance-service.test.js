@@ -59,6 +59,8 @@ test("thread detail diagnostics classify warm projection and bounded timings", (
     largeReadThresholdBytes: 0,
     largeReadSource: "",
     largeReadReason: "",
+    coldPathOwner: "warm-path",
+    coldPathReason: "warm-projection-cache",
     summaryMs: 3,
     projectionMs: 1,
     turnsListInitialMs: 0,
@@ -105,6 +107,8 @@ test("thread detail diagnostics expose bounded projection and seed decisions", (
   assert.equal(diagnostics.projectionMissReason, "static-signature-mismatch-extra-detail-that-should-not-grow-with-private-context");
   assert.equal(diagnostics.projectionSeedStatus, "seeded");
   assert.equal(diagnostics.projectionSeedSource, "turns-list-large");
+  assert.equal(diagnostics.coldPathOwner, "projection-cache");
+  assert.equal(diagnostics.coldPathReason, "projection-miss:static-signature-mismatch-extra-detail-that-should-not-grow-with");
   assert.equal(JSON.stringify(diagnostics).includes("turn-1"), false);
 });
 
@@ -169,6 +173,8 @@ test("thread detail diagnostics classify seeded initial windows without leaking 
   assert.equal(diagnostics.readDecision, "initial-turns-list");
   assert.equal(diagnostics.projectionSeedStatus, "seeded-partial");
   assert.equal(diagnostics.projectionSeedSource, "turns-list-initial");
+  assert.equal(diagnostics.coldPathOwner, "projection-cache");
+  assert.equal(diagnostics.coldPathReason, "seeded-partial-current-window");
   assert.equal(diagnostics.returnedTurns, 1);
   assert.doesNotMatch(JSON.stringify(diagnostics), /private-turn-id|private response body/);
 });
@@ -191,6 +197,8 @@ test("thread detail diagnostics expose bounded active full-read reasons", () => 
   assert.equal(diagnostics.phase, "cold-thread-read");
   assert.equal(diagnostics.activeFullReadRequired, true);
   assert.equal(diagnostics.activeFullReadReason, "active-turn-id-extra-detail-that-should-be-bounded");
+  assert.equal(diagnostics.coldPathOwner, "active-read-policy");
+  assert.equal(diagnostics.coldPathReason, "active-turn-id-extra-detail-that-should-be-bounded");
   assert.doesNotMatch(JSON.stringify(diagnostics), /private-active-turn-id|private command output/);
 });
 
@@ -214,6 +222,8 @@ test("thread detail diagnostics attach to thread without copying private body co
 
   assert.equal(returned, result);
   assert.equal(returned.thread.mobileDiagnostics.threadDetailTimings.phase, "cold-thread-read");
+  assert.equal(returned.thread.mobileDiagnostics.threadDetailTimings.coldPathOwner, "projection-input");
+  assert.equal(returned.thread.mobileDiagnostics.threadDetailTimings.coldPathReason, "projection-input-unavailable");
   assert.equal(returned.thread.mobileDiagnostics.threadDetailTimings.threadReadMs, 25);
   assert.doesNotMatch(
     JSON.stringify(returned.thread.mobileDiagnostics.threadDetailTimings),

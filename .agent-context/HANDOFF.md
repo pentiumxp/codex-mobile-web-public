@@ -13623,3 +13623,52 @@ The previous full handoff was archived and should be opened only when old proven
     `79` omitted turns, and read mode `projection-v4-dynamic`.
   - Authenticated production Music list search returned one matching row and no
     forbidden detail-only fields.
+
+## 2026-06-26 - v531 thread-detail cold-path diagnosis local-only
+
+- Scope:
+  - Started the next Phase B large-session optimization slice by adding a
+    bounded cold-path diagnosis service for thread detail loads.
+  - This slice does not change the read strategy, projection cache strategy, UI
+    rendering, or deployment state. It only maps existing bounded diagnostics
+    into durable attribution fields for the next optimization steps.
+- Root-cause boundary:
+  - Failing layer under investigation: large-session and cold thread-detail load
+    latency.
+  - Violated invariant being instrumented: slow detail opens must identify the
+    owning path instead of collapsing every delay into a generic client or
+    server slow-path report.
+  - Closure classification: diagnostic attribution, not fallback behavior. No
+    hidden refresh, no extra retry loop, no synthetic projection, and no
+    automatic repair-card dispatch.
+- Changes:
+  - Added `adapters/thread-detail-cold-path-diagnosis-service.js` with bounded
+    owner/reason classification for warm projection, active full-read policy,
+    projection cache misses, missing projection input, summary-sourced windows,
+    turns-list fallback, thread-read fallback, and unknown states.
+  - `adapters/thread-detail-performance-service.js` now adds
+    `coldPathOwner` and `coldPathReason` to the server timing diagnostics.
+  - `public/thread-performance-metrics.js` carries those fields into slow-path
+    diagnostic planning, including values nested under `serverTimings`.
+  - `public/thread-diagnostic-events.js` includes the cold-path owner/reason in
+    bounded diagnostic context and breadcrumb fields.
+  - Static shell/cache constants were bumped to `codex-mobile-shell-v531` so the
+    next batched deployment can expose the new client diagnostic fields.
+  - README, architecture optimization plan, and module map document the v531
+    local-only slice.
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-cold-path-diagnosis-service.test.js test/thread-detail-performance-service.test.js test/thread-detail-read-orchestration-service.test.js test/thread-performance-metrics.test.js test/thread-diagnostic-events.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    passed (`85` tests).
+  - Full source `npm test` passed (`1046` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment status:
+  - Not deployed by design. The user changed the optimization cadence: small
+    slices should be validated and locally committed, then deployed only after a
+    larger complete module is ready.
+- Next Phase B candidates:
+  - Extract active large-thread overlay ownership from the route/controller.
+  - Serviceize thread-list fallback baseline/freshness decisions.
+  - Use the new cold-path owner/reason evidence to decide whether the next
+    root-cause fix belongs to projection input, projection cache, summary
+    lookup, active-read policy, or app-server fallback.
