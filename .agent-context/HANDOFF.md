@@ -13601,3 +13601,25 @@ The previous full handoff was archived and should be opened only when old proven
     passed (`211` tests).
   - Full source `npm test` passed (`1039` tests).
   - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment status:
+  - Code committed as `a930fa3` (`fix thread tile dom authority count`) and
+    deployed from a clean source tree through the central Home AI macOS plugin
+    deploy path.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T084442Z-plugin-codex-mobile-web-codex-mobile-thread-tile-dom-authority-v530`.
+  - Production `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v530` and
+    `shellCacheName=codex-mobile-shell-v530`.
+  - Production static marker readback confirmed
+    `codex-mobile-shell-v530`, `threadTileVisibleShape`,
+    `threadTileDomTurnCount`, `thread-tile-render`,
+    `thread-tile-empty-state`, and `data-thread-tile-turn`.
+  - Source/prod SHA-256 matched for `public/app.js`, `public/sw.js`,
+    `test/conversation-render.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-goal-service.test.js`, `test/thread-task-card-route.test.js`,
+    README, architecture optimization plan, and module map.
+  - Authenticated production Music detail read returned HTTP `200`, `10`
+    turns, item counts `[3,5,3,5,5,4,3,4,3,4]`, `39` visible item keys,
+    `79` omitted turns, and read mode `projection-v4-dynamic`.
+  - Authenticated production Music list search returned one matching row and no
+    forbidden detail-only fields.
