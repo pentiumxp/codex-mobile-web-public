@@ -100,7 +100,14 @@ non-partial projections.
   reading private conversation data. Recent-mode projection hits may now report
   `projection-v4-partial` / `projection-partial` with source `partial`; those
   modes mean only the bounded current window is cached, not the complete
-  thread history.
+  thread history. The latest local server-diagnostics slice aligns the
+  server-side `threadDetailTimings.phase` classifier with the same bounded
+  evidence fields used by the client: `readDecision`, `projectionState`,
+  `projectionSource`, and `projectionSeedStatus`. That keeps production
+  first-paint samples explainable even when `readMode` is sparse or generic,
+  for example distinguishing `projection-hit` cache versus dynamic hits,
+  seeded initial turns-list windows, raw/full thread reads, and summary
+  fallback without changing the actual read strategy.
 - Keep thread-list fallback cache evidence in
   `mobileDiagnostics.threadListTimings`. The cache now reports
   `fallbackCacheDecision` (`hit`, `miss-rebuild`, `expired-rebuild`), bounded

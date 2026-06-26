@@ -23,16 +23,34 @@ function compactLabel(value, maxLength = 80) {
 function classifyThreadDetailPhase(readMode, options = {}) {
   const mode = nonEmptyText(readMode).toLowerCase();
   if (options.cached === true) return "warm-client-current";
-  if (!mode) return "unknown";
-  if (/projection-v?\d*-partial|projection-partial/.test(mode)) return "warm-projection-partial";
-  if (/projection-v?\d*-cache|projection-cache/.test(mode)) return "warm-projection-cache";
-  if (/projection-v?\d*-dynamic|projection-dynamic/.test(mode)) return "warm-projection-dynamic";
-  if (/turns-list-large/.test(mode)) return "bounded-large-thread-window";
-  if (/turns-list-initial/.test(mode)) return "cold-turns-list-initial";
-  if (/turns-list/.test(mode)) return "fallback-turns-list";
-  if (/thread-read-raw/.test(mode)) return "cold-thread-read-raw";
-  if (/thread-read/.test(mode)) return "cold-thread-read";
-  if (/summary-timeout|unmaterialized|fallback/.test(mode)) return "fallback-summary";
+  const readDecision = nonEmptyText(options.readDecision).toLowerCase();
+  const projectionState = nonEmptyText(options.projectionState).toLowerCase();
+  const projectionSource = nonEmptyText(options.projectionSource).toLowerCase();
+  const projectionSeedStatus = nonEmptyText(options.projectionSeedStatus).toLowerCase();
+  if (readDecision === "projection-partial-hit" || /projection-v?\d*-partial|projection-partial/.test(mode)) {
+    return "warm-projection-partial";
+  }
+  if (readDecision === "projection-hit" || projectionState === "hit") {
+    if (/dynamic/.test(projectionSource) || /projection-v?\d*-dynamic|projection-dynamic/.test(mode)) {
+      return "warm-projection-dynamic";
+    }
+    return "warm-projection-cache";
+  }
+  if (readDecision === "bounded-large-turns-list" || /turns-list-large/.test(mode)) {
+    return "bounded-large-thread-window";
+  }
+  if (readDecision === "initial-turns-list" || /turns-list-initial/.test(mode)) {
+    return projectionSeedStatus === "seeded-partial"
+      ? "cold-turns-list-initial-seeded-partial"
+      : "cold-turns-list-initial";
+  }
+  if (readDecision === "raw-thread-read" || /thread-read-raw/.test(mode)) return "cold-thread-read-raw";
+  if (readDecision === "full-thread-read" || /thread-read/.test(mode)) return "cold-thread-read";
+  if (readDecision === "fallback-turns-list" || /turns-list/.test(mode)) return "fallback-turns-list";
+  if (readDecision === "summary-fallback" || /summary-timeout|unmaterialized|fallback/.test(mode)) {
+    return "fallback-summary";
+  }
+  if (!mode && !readDecision && !projectionState) return "unknown";
   return "unknown";
 }
 

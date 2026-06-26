@@ -16,6 +16,42 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 Local Phase B Server Timing Classifier
+
+这个本地切片继续 Phase B 的大 session / thread-detail cold path 收敛，但只处理
+服务端诊断证据口径，不改变线程详情读取策略、不改变 projection cache、不改变前端
+渲染，也不 bump PWA shell/cache。生产当前仍以最近一次部署版本为准，后续如果把这个
+诊断口径与更多 runtime 优化合并成完整模块，再统一部署验证。
+
+本次切片新增/调整：
+
+- `adapters/thread-detail-performance-service.js` 的 `classifyThreadDetailPhase()`
+  不再只依赖 `readMode` 字符串。它会优先使用已有 bounded 字段：
+  `readDecision`、`projectionState`、`projectionSource` 和
+  `projectionSeedStatus`。
+- 当 `readMode` 为空或过于泛化时，服务端仍能把一次 thread detail 读分类为
+  `warm-projection-cache`、`warm-projection-dynamic`、
+  `warm-projection-partial`、`bounded-large-thread-window`、
+  `cold-turns-list-initial-seeded-partial`、`cold-thread-read-raw`、
+  `cold-thread-read`、`fallback-turns-list` 或 `fallback-summary`。
+- `test/thread-detail-performance-service.test.js` 增加 read-decision-only
+  分类覆盖，以及 seeded initial window 诊断不泄露 turn id、消息正文等私有内容的
+  隐私边界测试。
+- `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` 和 `docs/MODULES.md` 记录这个
+  Phase B 证据分类边界。
+
+修复边界：
+
+- 症状/风险：大 session 首屏慢或线程详情缺失时，客户端 first-paint 事件已经有
+  `performancePhase`，但服务端 `mobileDiagnostics.threadDetailTimings.phase`
+  仍可能因为 `readMode` 稀疏而落到 `unknown`，导致无法判断慢点是在 warm projection、
+  bounded turns-list、cold thread/read 还是 summary fallback。
+- 失败层：服务端 thread detail timing diagnostics phase ownership。
+- 不变量：phase 只能由已有的 bounded enum/status/metadata 推导，不读取或复制消息正文、
+  任务卡正文、上传内容、私有路径、URL、cookies、tokens、provider payload 或长日志。
+- 闭环验证：focused tests 覆盖 sparse readMode 分类和隐私边界；完整检查通过后再把它作为
+  Phase B 后续大 session 采样和 runtime 优化的证据基础。
+
 ## 2026-06-26 v522 Empty Detail Browser Smoke Harness
 
 v522 给 v520/v521 的 Music 空详情事故补上浏览器/DOM 级回归入口。它不改变线程

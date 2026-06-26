@@ -106,6 +106,71 @@ test("thread detail diagnostics expose bounded projection and seed decisions", (
   assert.equal(JSON.stringify(diagnostics).includes("turn-1"), false);
 });
 
+test("thread detail phase classification uses bounded read decisions without read mode", () => {
+  assert.equal(
+    classifyThreadDetailPhase("", { readDecision: "projection-hit", projectionSource: "cache" }),
+    "warm-projection-cache",
+  );
+  assert.equal(
+    classifyThreadDetailPhase("", { readDecision: "projection-hit", projectionSource: "dynamic" }),
+    "warm-projection-dynamic",
+  );
+  assert.equal(
+    classifyThreadDetailPhase("", { projectionState: "hit", projectionSource: "cache" }),
+    "warm-projection-cache",
+  );
+  assert.equal(
+    classifyThreadDetailPhase("", { readDecision: "projection-partial-hit" }),
+    "warm-projection-partial",
+  );
+  assert.equal(
+    classifyThreadDetailPhase("", {
+      readDecision: "initial-turns-list",
+      projectionSeedStatus: "seeded-partial",
+    }),
+    "cold-turns-list-initial-seeded-partial",
+  );
+  assert.equal(
+    classifyThreadDetailPhase("", { readDecision: "raw-thread-read" }),
+    "cold-thread-read-raw",
+  );
+  assert.equal(
+    classifyThreadDetailPhase("", { readDecision: "full-thread-read" }),
+    "cold-thread-read",
+  );
+  assert.equal(
+    classifyThreadDetailPhase("", { readDecision: "fallback-turns-list" }),
+    "fallback-turns-list",
+  );
+  assert.equal(
+    classifyThreadDetailPhase("", { readDecision: "summary-fallback" }),
+    "fallback-summary",
+  );
+});
+
+test("thread detail diagnostics classify seeded initial windows without leaking private items", () => {
+  const diagnostics = buildThreadDetailDiagnostics({
+    requestMode: "recent",
+    readMode: "",
+    readDecision: "initial-turns-list",
+    projectionSeedStatus: "seeded-partial",
+    projectionSeedSource: "turns-list-initial",
+    thread: {
+      turns: [{
+        id: "private-turn-id",
+        items: [{ type: "agentMessage", text: "private response body" }],
+      }],
+    },
+  });
+
+  assert.equal(diagnostics.phase, "cold-turns-list-initial-seeded-partial");
+  assert.equal(diagnostics.readDecision, "initial-turns-list");
+  assert.equal(diagnostics.projectionSeedStatus, "seeded-partial");
+  assert.equal(diagnostics.projectionSeedSource, "turns-list-initial");
+  assert.equal(diagnostics.returnedTurns, 1);
+  assert.doesNotMatch(JSON.stringify(diagnostics), /private-turn-id|private response body/);
+});
+
 test("thread detail diagnostics attach to thread without copying private body content", () => {
   const result = {
     thread: {
