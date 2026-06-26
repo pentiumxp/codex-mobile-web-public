@@ -5184,6 +5184,7 @@ const threadDetailReadOrchestrationService = createThreadDetailReadOrchestration
         lookedUp && lookedUp.cached,
         summary,
         runtimeSettings,
+        optionsForProjection,
       ),
       missReason: lookedUp && lookedUp.missReason || "",
     };
@@ -5192,6 +5193,7 @@ const threadDetailReadOrchestrationService = createThreadDetailReadOrchestration
     threadDetailProjectionService.get(input, optionsForProjection),
     summary,
     runtimeSettings,
+    optionsForProjection,
   ),
   resolveActiveWindowOverlay: (input) => threadDetailActiveOverlayProviderService.resolveActiveWindowOverlay(input),
   rememberThreadSummary: (thread) => threadDisplaySummaryCache.remember(thread),
@@ -5221,8 +5223,8 @@ function threadDetailProjectionInput(threadId, summary) {
   return threadDetailProjectionInputService.projectionInput(threadId, summary);
 }
 
-function prepareProjectedThreadReadResult(cached, summary, runtimeSettings) {
-  return threadDetailProjectionResultService.prepareProjectedThreadReadResult(cached, summary, runtimeSettings);
+function prepareProjectedThreadReadResult(cached, summary, runtimeSettings, options = {}) {
+  return threadDetailProjectionResultService.prepareProjectedThreadReadResult(cached, summary, runtimeSettings, options);
 }
 
 function finalizeThreadDetailProjectionResult(result, details = {}) {

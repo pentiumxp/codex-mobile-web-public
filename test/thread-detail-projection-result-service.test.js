@@ -232,3 +232,40 @@ test("projection result rejects cached detail missing the local active turn", ()
   assert.ok(current);
   assert.equal(current.thread.turns[0].id, "turn-new");
 });
+
+test("projection result allows missing local active turn only for active overlay window assembly", () => {
+  const service = createThreadDetailProjectionResultService({
+    maxTurns: 5,
+    now: () => 1000,
+  });
+  const cached = {
+    partial: true,
+    partialKind: "recent-window",
+    version: "v4",
+    cachedAtMs: 800,
+    updatedAtMs: 900,
+    result: {
+      thread: {
+        id: "thread-1",
+        turns: [{
+          id: "turn-window",
+          items: [{ id: "agent-window", type: "agentMessage" }],
+        }],
+      },
+    },
+  };
+  const summary = {
+    id: "thread-1",
+    status: { type: "active" },
+    activeTurnId: "turn-live",
+    mobileLocalActiveStatus: { turnId: "turn-live" },
+  };
+
+  assert.equal(service.prepareProjectedThreadReadResult(cached, summary, {}), null);
+
+  const overlayWindow = service.prepareProjectedThreadReadResult(cached, summary, {}, { activeOverlay: true });
+  assert.ok(overlayWindow);
+  assert.equal(overlayWindow.thread.turns[0].id, "turn-window");
+  assert.equal(overlayWindow.thread.mobileReadMode, "projection-v4-partial");
+  assert.equal(overlayWindow.thread.mobileProjection.partial, true);
+});

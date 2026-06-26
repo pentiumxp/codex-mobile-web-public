@@ -59,9 +59,9 @@ function createThreadDetailProjectionResultService(options = {}) {
     return projectedThreadHasTurn(cached && cached.result && cached.result.thread, localActiveTurnId);
   }
 
-  function prepareProjectedThreadReadResult(cached, summary, runtimeSettings) {
+  function prepareProjectedThreadReadResult(cached, summary, runtimeSettings, options = {}) {
     if (!cached || !cached.result || !cached.result.thread) return null;
-    if (!projectedThreadSatisfiesLocalActiveSummary(cached, summary)) return null;
+    if (options.activeOverlay !== true && !projectedThreadSatisfiesLocalActiveSummary(cached, summary)) return null;
     const mergedResult = Object.assign({}, cached.result, {
       thread: mergeThreadDisplaySummary(cached.result.thread, summary) || cached.result.thread,
     });

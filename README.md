@@ -18,7 +18,8 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 
 ## 2026-06-26 Active Window Overlay Orchestration Seam
 
-后续本地小切片已把真实 provider 接到这个 seam 上，但仍保持 fail-closed：
+Phase B 的活跃大线程读取风险已经从 proof gate 推进到真实 provider
+接线，但仍保持 fail-closed：
 
 - `thread-detail-projection-service.js` 新增 memory-only、clone-only 的
   `activeOverlaySnapshot()`。它只读取进程内由 app-server/mux notification 更新的 live
@@ -30,30 +31,16 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 - `server.js` 在 `thread-detail-read-orchestration-service.js` 中注入该 provider。active/running
   线程只有在 projection window、live overlay snapshot、active turn id、coverage 和 assistant
   freshness 全部可证明时才走 `projection-active-overlay`；缺任何一项仍回到 full `thread/read`。
+- `thread-detail-projection-result-service.js` 保持普通 projection 命中必须包含本地 active turn
+  的旧规则；只有 active overlay window assembly 可以临时接受“不含 active turn 的 partial
+  projection window”，因为随后会合入 provider 的 live active turn 并经过 proof gate。
+- `test/thread-detail-active-overlay-integration.test.js` 使用真实 v4 projection service、projection
+  input/result service、active overlay provider 和 read orchestration 组合验证：普通 projection
+  lookup 仍拒绝 partial，active-overlay lookup 可取得 partial window，最终返回
+  `projection-active-overlay`，且不调用 full `thread/read` 或 `turns-list`。
 
-这个 provider 切片是本地提交候选，尚未单独部署。它不是 UI 去重、不是强制刷新，也不是新的
-fallback cache。
-
-本地小切片继续推进 Phase B 的活跃大线程读取风险收敛。此前
-`thread-detail-active-window-overlay-policy-service.js` 已经定义了 active window overlay
-的 proof gate，但 `thread-detail-read-orchestration-service.js` 没有接线；active/running
-线程仍会禁用 partial projection 和 bounded turns-list，最后回到 full `thread/read`。
-
-本次修复：
-
-- 收紧 active overlay proof gate：assistant delta 不能再仅凭存在 assistant item 推断为
-  fresh，必须有显式 freshness、revision 或 timestamp 证据，否则 fail-closed。
-- 新增 `mergeProjectionThreadWithActiveOverlay()`，只在 policy 证明完整后把 active overlay turn
-  合入 projection window。
-- `thread-detail-read-orchestration-service.js` 新增可注入
-  `resolveActiveWindowOverlay` 接线点。默认 provider 为空，所以生产默认行为不变；只有注入 provider
-  且 proof gate 返回 `use-projection-overlay` 时，才返回 `projection-active-overlay`，否则继续旧路径
-  full `thread/read`。
-- `threadDetailTimings` 新增 bounded active overlay diagnostics，包括 action、reason、source、
-  item counts 和 `activeOverlayMs`，不记录消息正文、上传路径或私有内容。
-
-该切片仍不接真实 provider、不改变默认读取行为、不单独部署。它只是把“未来可以不用 full read”
-的安全入口放到可测试 orchestration 边界。
+该模块仍未单独部署，按新的节奏等待 Phase B 小切片凑成完整模块后统一部署和生产读回。
+它不是 UI 去重、不是强制刷新，也不是新的 fallback cache。
 
 ## 2026-06-26 Thread List Fallback Baseline Service
 

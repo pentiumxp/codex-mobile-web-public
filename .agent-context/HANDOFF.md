@@ -13836,3 +13836,57 @@ The previous full handoff was archived and should be opened only when old proven
   - Batch deploy the Phase B local slices, then inspect production
     `activeOverlayReason`, `coldPathOwner`, and thread-list fallback source
     timings before choosing the next root-cause optimization.
+
+## 2026-06-26 - active overlay real-service integration local-only
+
+- Scope:
+  - Continued Phase B by proving the active overlay path through real service
+    composition instead of only provider/policy mocks.
+  - This slice keeps the same local-only cadence: no deployment, no shell/cache
+    bump, no frontend UI change, and no public push.
+- Root-cause boundary:
+  - Failing layer addressed: the provider was wired, but the real projection
+    result service still rejected partial windows that lacked the local active
+    turn before the provider could merge the live active turn.
+  - Violated invariant: ordinary projection hits must contain the local active
+    turn, but active-overlay assembly is a narrow exception because the
+    provider supplies that active turn and the proof gate validates coverage
+    before response.
+  - Closure classification: root-cause integration fix and test coverage, not
+    fallback behavior. No client dedupe, no forced refresh, no retry loop, and
+    no automatic repair-card dispatch.
+- Changes:
+  - `adapters/thread-detail-projection-result-service.js` now accepts an
+    `{ activeOverlay: true }` option. Normal projection hits still reject cached
+    details missing the local active turn; only active-overlay assembly can
+    prepare a partial projection window without that turn.
+  - `server.js` forwards projection lookup options into
+    `prepareProjectedThreadReadResult()`, so the active-overlay branch can use
+    the narrow exception while normal projection lookup cannot.
+  - Added `test/thread-detail-active-overlay-integration.test.js`, which uses
+    real v4 projection, projection input/result, active overlay provider, and
+    read orchestration services. It proves normal lookup rejects partial,
+    active-overlay lookup gets the partial window, the provider merges the live
+    notification turn, and no full `thread/read` or `turns-list` call occurs.
+  - `test/thread-detail-projection-result-service.test.js` locks the normal
+    projection invariant and the active-overlay-only exception.
+  - `test/turn-usage-summary-service.test.js` source-string coverage was
+    updated to assert the options wrapper instead of the old three-argument
+    call shape.
+  - README, architecture optimization plan, and module map document the
+    integration boundary and the current local-only status.
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-active-overlay-integration.test.js test/thread-detail-projection-result-service.test.js test/turn-usage-summary-service.test.js`
+    passed (`18` tests).
+  - Full source `npm test` passed (`1062` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment status:
+  - Not deployed by design. This remains part of the Phase B local batch.
+- Next Phase B candidates:
+  - Add a route/server smoke or production readback after batching these slices
+    to confirm real `/api/threads/:id?mode=recent` active loads expose
+    `projection-active-overlay` and bounded `activeOverlayReason` values.
+  - Use the new evidence fields after deploy to decide whether remaining slow
+    opens come from projection miss/staleness, assistant freshness, missing
+    receipt coverage, or thread-list fallback cold paths.

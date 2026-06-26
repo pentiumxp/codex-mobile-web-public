@@ -100,6 +100,10 @@ Current acceleration targets:
    notification projection and wires it into read orchestration. It still fails
    closed unless the snapshot has a matching active turn plus explicit
    operation/upload/assistant-delta/receipt coverage and v4 revision freshness.
+   The real-service integration slice also preserves the normal projection
+   invariant: ordinary projection hits must contain the local active turn, while
+   only active-overlay window assembly may accept a partial projection window
+   that lacks that active turn before merging the proof-gated live overlay.
    The remaining work is production readback after the next Phase B batch
    deploy and any root-cause fixes indicated by `activeOverlayReason`.
 2. Thread-list cold starts no longer hide source collection inside the fallback

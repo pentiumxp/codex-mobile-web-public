@@ -302,7 +302,8 @@ test("thread detail usage read targets returned turns beyond the rollout tail", 
   assert.match(serverJs, /readRolloutTurnUsageSummaries\(rolloutPath, \{\s*targetTurnIds: out\.turns\.map\(\(turn\) => turn && turn\.id\)\.filter\(Boolean\),\s*\}\)/);
   assert.match(serverJs, /createThreadDetailProjectionResultService/);
   assert.match(serverJs, /const threadDetailProjectionResultService = createThreadDetailProjectionResultService\(\{\s*maxTurns: MAX_FULL_THREAD_TURNS,\s*compactThreadReadResult,\s*mergeThreadDisplaySummary,/);
-  assert.match(serverJs, /return threadDetailProjectionResultService\.prepareProjectedThreadReadResult\(cached, summary, runtimeSettings\);/);
+  assert.match(serverJs, /function prepareProjectedThreadReadResult\(cached, summary, runtimeSettings, options = \{\}\) \{/);
+  assert.match(serverJs, /return threadDetailProjectionResultService\.prepareProjectedThreadReadResult\(cached, summary, runtimeSettings, options\);/);
 });
 
 test("thread detail rollout scans stay bounded for very large sessions", () => {
