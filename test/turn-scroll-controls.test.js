@@ -86,7 +86,10 @@ test("current-turn reply jump shares one floating slot with the bottom jump", ()
   assert.match(appJs, /function isNodeStartAboveConversationViewport\(node\)/);
   assert.match(appJs, /return rect\.top < viewport\.top \+ 24;/);
   assert.match(appJs, /isNodeStartAboveConversationViewport\(replyNode\)/);
-  assert.match(functionBody("updateScrollToBottomButton"), /const shouldShowReply = Boolean\(\s*!shouldShow/);
+  assert.match(functionBody("updateScrollToBottomButton"), /const jumpPlan = conversationScroll\.planConversationJumpButtons\(\{/);
+  assert.match(functionBody("updateScrollToBottomButton"), /const shouldShow = Boolean\(jumpPlan\.showBottom\);/);
+  assert.match(functionBody("updateScrollToBottomButton"), /const shouldShowReply = Boolean\(jumpPlan\.showReply\);/);
+  assert.doesNotMatch(functionBody("updateScrollToBottomButton"), /const shouldShowReply = Boolean\(\s*!shouldShow/);
   assert.match(appJs, /scrollToTurnReply"\)\)\s*\$\("scrollToTurnReply"\)\.addEventListener\("click", scrollConversationToTurnReply\)/);
   assert.match(appJs, /function ensureUsageSummaryExpandedVisible\(summary\)/);
   assert.match(appJs, /function handleUsageSummaryToggle\(event\)/);

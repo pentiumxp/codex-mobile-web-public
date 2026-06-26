@@ -161,6 +161,55 @@ test("local patch scroll completion follows bottom only when policy allows", () 
   });
 });
 
+test("conversation jump button planning keeps bottom and reply jumps mutually exclusive", () => {
+  assert.deepEqual(conversationScroll.planConversationJumpButtons({
+    hasThread: true,
+    isScrollable: true,
+    nearBottom: false,
+    hasReplyTarget: true,
+    replyTargetAbove: true,
+  }), {
+    showBottom: true,
+    showReply: false,
+    reason: "bottom-available",
+  });
+
+  assert.deepEqual(conversationScroll.planConversationJumpButtons({
+    hasThread: true,
+    isScrollable: true,
+    nearBottom: true,
+    hasReplyTarget: true,
+    replyTargetAbove: true,
+  }), {
+    showBottom: false,
+    showReply: true,
+    reason: "reply-available",
+  });
+
+  assert.deepEqual(conversationScroll.planConversationJumpButtons({
+    hasThread: true,
+    isScrollable: true,
+    nearBottom: true,
+    hasReplyTarget: false,
+    replyTargetAbove: true,
+  }), {
+    showBottom: false,
+    showReply: false,
+    reason: "hidden",
+  });
+
+  assert.deepEqual(conversationScroll.planConversationJumpButtons({
+    hasThread: true,
+    loading: true,
+    isScrollable: true,
+    nearBottom: false,
+  }), {
+    showBottom: false,
+    showReply: false,
+    reason: "not-available",
+  });
+});
+
 test("full render scroll planning preserves bottom-follow precedence", () => {
   assert.deepEqual(conversationScroll.planFullRenderScroll({
     stickToBottom: false,

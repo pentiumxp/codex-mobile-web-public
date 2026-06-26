@@ -365,6 +365,14 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.doesNotMatch(appJs, /scrollConversationToTop/);
   assert.doesNotMatch(appJs, /scrollToTop/);
   assert.match(appJs, /const explicitNoStickToBottom = options\.stickToBottom === false \|\| Boolean\(options\.scrollToTurnReceiptStart\);/);
+  assert.match(functionBody("updateScrollToBottomButton"), /conversationScroll\.planConversationJumpButtons\(\{/);
+  assert.match(functionBody("updateScrollToBottomButton"), /hasThread: Boolean\(state\.currentThread\),/);
+  assert.match(functionBody("updateScrollToBottomButton"), /nearBottom: isConversationNearBottom\(\),/);
+  assert.match(functionBody("updateScrollToBottomButton"), /hasReplyTarget: Boolean\(replyNode\),/);
+  assert.match(functionBody("updateScrollToBottomButton"), /replyTargetAbove: Boolean\(replyNode && isNodeStartAboveConversationViewport\(replyNode\)\),/);
+  assert.match(functionBody("updateScrollToBottomButton"), /const shouldShow = Boolean\(jumpPlan\.showBottom\);/);
+  assert.match(functionBody("updateScrollToBottomButton"), /const shouldShowReply = Boolean\(jumpPlan\.showReply\);/);
+  assert.doesNotMatch(functionBody("updateScrollToBottomButton"), /!shouldShow[\s\S]*state\.currentThread[\s\S]*isNodeStartAboveConversationViewport/);
   assert.match(appJs, /renderCurrentThread\(\{ stickToBottom: true \}\);\s*\n\s*const conversationRenderMs = roundedDurationMs\(conversationRenderStartedAt\);\s*\n\s*maybeAutoBackfillThreadHistory\(state\.currentThread, \{ seq: state\.threadLoadSeq, source: "cached-current" \}\);\s*\n\s*if \(replacedTilePaneForThreadListOpen\) \{[\s\S]*restoreDraftForCurrentTarget\(\{ resetRuntimeWhenMissingDraft: true \}\);[\s\S]*updateComposerControls\(\);[\s\S]*\}\s*\n\s*if \(isMenuOverlayMode\(\)\) closeSidebarMenu\(\);/);
   assert.match(appJs, /renderCurrentThread\(\{ stickToBottom: true \}\);\s*\n\s*const conversationRenderMs = roundedDurationMs\(conversationRenderStartedAt\);\s*\n\s*maybeAutoBackfillThreadHistory\(state\.currentThread, \{ seq, source: "first-paint" \}\);\s*\n\s*const postRenderStartedAt = nowPerfMs\(\);\s*\n\s*publishPluginNavigationState\(\{ force: true \}\);\s*\n\s*restoreConnectionState\(\);/);
   assert.match(appJs, /const PLUGIN_EMBED_BACK_EDGE_SWIPE_PX = 44/);

@@ -121,6 +121,33 @@
     };
   }
 
+  function planConversationJumpButtons(options = {}) {
+    const canShow = Boolean(
+      options.hasThread
+        && !options.loading
+        && !options.loadError
+        && options.isScrollable,
+    );
+    const showBottom = Boolean(canShow && !options.nearBottom);
+    const showReply = Boolean(
+      canShow
+        && !showBottom
+        && options.hasReplyTarget
+        && options.replyTargetAbove,
+    );
+    return {
+      showBottom,
+      showReply,
+      reason: !canShow
+        ? "not-available"
+        : showBottom
+          ? "bottom-available"
+          : showReply
+            ? "reply-available"
+            : "hidden",
+    };
+  }
+
   function planFullRenderScroll(options = {}) {
     const explicitNoStickToBottom = options.stickToBottom === false || Boolean(options.scrollToTurnReceiptStart);
     const shouldFollowBottom = !explicitNoStickToBottom
@@ -194,6 +221,7 @@
     extendSubmittedMessageFollow,
     createViewportFollow,
     isNearBottom,
+    planConversationJumpButtons,
     planFullRenderScroll,
     planLocalPatchScrollCompletion,
     shouldFollowViewport,

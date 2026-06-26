@@ -16,6 +16,42 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 Phase A Conversation Jump Button Planning Slice
+
+本地小切片继续推进 Phase A 的 scroll ownership 收敛。此前单线程对话区的
+向下跳转按钮和当前回执跳转按钮互斥显示规则直接写在 `public/app.js` 的
+`updateScrollToBottomButton()` 里，和 DOM 查询、class/tabIndex 更新混在一起。
+这类逻辑曾多次因为移动端按钮位置和互斥状态出问题，应该由纯 scroll policy
+helper 决定。
+
+本次修复：
+
+- `public/conversation-scroll.js` 新增
+  `planConversationJumpButtons()`，根据线程可用性、加载状态、是否可滚动、
+  是否在底部、回执目标是否存在且在视口上方，产出 `showBottom` /
+  `showReply`。
+- `public/app.js` 的 `updateScrollToBottomButton()` 改为调用该 helper；
+  app 仍只负责真实 DOM 查询和按钮 class/aria/tabIndex 更新。
+- focused tests 覆盖底部按钮和回执跳转按钮互斥、加载态隐藏、无回执目标隐藏，
+  以及 app wiring 不再内联长条件串。
+- 不改变按钮 DOM、位置、样式、scroll 行为、projection、任务卡协议或
+  shell/cache。
+
+闭环验证：
+
+```bash
+node --test test/conversation-scroll.test.js test/mobile-viewport.test.js test/conversation-render.test.js test/turn-scroll-controls.test.js
+npm run check
+npm test
+npm run check:macos
+git diff --check
+```
+
+结果：focused `134` passed；full `npm test` `1118` passed；
+`npm run check`、`npm run check:macos`、`git diff --check` 均通过。
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，
+尚未部署；继续作为 Phase A 模块的一部分累积。
+
 ## 2026-06-26 Phase A Refresh Completion Effects Executor Slice
 
 本地小切片继续推进 Phase A 的 `refreshCurrentThread()` 所有权收敛。此前

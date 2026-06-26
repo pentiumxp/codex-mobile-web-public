@@ -85,7 +85,7 @@ Add new service modules when logic has independent inputs/outputs, state rules, 
 | `public/draft-store.js` | Browser-local draft persistence, runtime-only next-turn model/effort/permission draft state, and resumable attachment draft data. |
 | `public/markdown-renderer.js` | Markdown rendering rules for conversation/source text. |
 | `public/viewport-metrics.js` | Visual viewport and keyboard-shrink helpers. |
-| `public/conversation-scroll.js` | Scroll position and bottom-follow helpers, including near-bottom metrics, submitted-message/viewport follow leases, local-patch scroll completion planning, and single-thread full-render bottom-follow planning. |
+| `public/conversation-scroll.js` | Scroll position and bottom-follow helpers, including near-bottom metrics, submitted-message/viewport follow leases, local-patch scroll completion planning, single-thread full-render bottom-follow planning, and mutually exclusive bottom-jump versus receipt-jump button visibility planning. |
 | `public/image-compressor.js` | Browser-side image compression before upload. |
 | `public/plugin-embed.js` | Hermes iframe embed-mode helper for launch detection, bounded appearance/query parsing, notification/task-card route-hint open/focus/scrub policy, navigation/back eligibility messages, back messages, and internal-window policy. |
 | `public/plugin-voice-input.js` | Home AI embedded-plugin voice-input protocol helper for `voice_input.*` capability, insert-result, start/stop, and commit-result messages. It is inert for standalone Codex Mobile Web unless the page is running in `/?embed=hermes`. |

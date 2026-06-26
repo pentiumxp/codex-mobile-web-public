@@ -903,7 +903,12 @@ binding, hydration, and action binding. Single-thread full-render
 bottom-follow planning now lives in `public/conversation-scroll.js` through
 `planFullRenderScroll`: app code supplies near-bottom/user-reading/auto-hold
 and follow-lease inputs, while the helper owns the final `stickToBottom`
-decision and bounded reason for full conversation renders. Single-thread shell
+decision and bounded reason for full conversation renders. Conversation jump
+button visibility planning now also lives in `public/conversation-scroll.js`
+through `planConversationJumpButtons`: app code supplies thread/load state,
+scrollability, near-bottom state, and receipt-target visibility while the helper
+owns the mutually exclusive bottom-jump versus receipt-jump decision.
+Single-thread shell
 conversation update input planning now also lives in
 `public/thread-detail-render-plan.js`: early-shell and full-render shell paths
 produce stable `updateConversationHtml()` inputs for HTML, conversation

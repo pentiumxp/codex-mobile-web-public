@@ -15668,6 +15668,32 @@ The previous full handoff was archived and should be opened only when old proven
   - Continue Phase A or batch the current module for one deploy/readback when
     requested.
 
+## 2026-06-26 - Latest tail marker: Phase A conversation jump button planning slice
+
+- Latest local commit for this continuation slice:
+  - Message: `plan conversation jump button visibility`.
+- Current state:
+  - This is the fourteenth local Phase A render/patch/scroll ownership slice.
+  - Not deployed by design; no `CLIENT_BUILD_ID` / PWA shell cache bump.
+- Root-cause boundary:
+  - `updateScrollToBottomButton()` still directly owned the long condition chain
+    deciding whether to show the bottom jump or current-receipt jump affordance.
+  - `public/conversation-scroll.js` now owns
+    `planConversationJumpButtons()`, including the mutual exclusion between
+    bottom-jump and receipt-jump buttons. `public/app.js` supplies DOM state and
+    applies the real class/aria/tabIndex updates.
+- Validation:
+  - Focused:
+    `node --test test/conversation-scroll.test.js test/mobile-viewport.test.js test/conversation-render.test.js test/turn-scroll-controls.test.js`
+    passed (`134` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`1118` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit locally, then continue Phase A or batch the current module for one
+    deploy/readback when requested.
+
 ## 2026-06-26 - Latest tail marker: Phase A refresh completion effects executor slice
 
 - Latest local commit for this continuation slice:

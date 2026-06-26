@@ -20441,28 +20441,23 @@ function updateScrollToBottomButton() {
   const el = $("conversation");
   if (!button || !el) return;
   const isScrollable = el.scrollHeight - el.clientHeight > 128;
-  const shouldShow = Boolean(
-    state.currentThread
-      && !state.currentThread.mobileLoading
-      && !state.currentThread.mobileLoadError
-      && isScrollable
-      && !isConversationNearBottom(),
-  );
+  const replyAnchor = replyButton ? currentRecentCompletedReplyAnchor() : null;
+  const replyNode = replyButton ? turnFinalReceiptNode(replyAnchor) : null;
+  const jumpPlan = conversationScroll.planConversationJumpButtons({
+    hasThread: Boolean(state.currentThread),
+    loading: Boolean(state.currentThread && state.currentThread.mobileLoading),
+    loadError: Boolean(state.currentThread && state.currentThread.mobileLoadError),
+    isScrollable,
+    nearBottom: isConversationNearBottom(),
+    hasReplyTarget: Boolean(replyNode),
+    replyTargetAbove: Boolean(replyNode && isNodeStartAboveConversationViewport(replyNode)),
+  });
+  const shouldShow = Boolean(jumpPlan.showBottom);
   button.classList.toggle("hidden", !shouldShow);
   button.setAttribute("aria-hidden", shouldShow ? "false" : "true");
   button.tabIndex = shouldShow ? 0 : -1;
   if (!replyButton) return;
-  const replyAnchor = currentRecentCompletedReplyAnchor();
-  const replyNode = turnFinalReceiptNode(replyAnchor);
-  const shouldShowReply = Boolean(
-    !shouldShow
-      && state.currentThread
-      && !state.currentThread.mobileLoading
-      && !state.currentThread.mobileLoadError
-      && isScrollable
-      && replyNode
-      && isNodeStartAboveConversationViewport(replyNode),
-  );
+  const shouldShowReply = Boolean(jumpPlan.showReply);
   replyButton.classList.toggle("hidden", !shouldShowReply);
   replyButton.setAttribute("aria-hidden", shouldShowReply ? "false" : "true");
   replyButton.tabIndex = shouldShowReply ? 0 : -1;
