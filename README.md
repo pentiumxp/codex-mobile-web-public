@@ -116,8 +116,9 @@ cache policy 和 baseline 构建边界混在一起。
   和可选的 `projection-active-overlay`，输出仅包含 build id、hash、read mode、
   owner/reason、计数和耗时。如果首个 thread-list 读因为 active detail 被
   `fallbackDeferred`，它会在 detail readback 后再读一次完整列表；如果这次完整读触发
-  cold fallback baseline，还会立刻做一次同 key warm check，证明是否只在
-  cold start / deploy 后重建一次。
+  cold fallback baseline，还会立刻做一次同 key warm check。普通首个完整列表读如果是
+  cold fallback baseline、且没有命中 source snapshot，也会做同 key warm check。这样可以
+  证明是否只在 cold start / deploy 后重建一次。
 - 新增 `adapters/phase-b-readback-decision-service.js`，把 readback 输出归类成
   `decision`：例如 active overlay proof gate、projection cache lifecycle、
   projection input、thread-list fallback baseline、cache freshness 或 app-server

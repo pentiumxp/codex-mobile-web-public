@@ -28,6 +28,8 @@ function usage() {
     "  --require-active-overlay    Fail unless detail readback is projection-active-overlay.",
     "  --no-verify-deferred-fallback",
     "                              Do not run follow-up list reads after fallback is deferred.",
+    "  --no-verify-thread-list-warm-check",
+    "                              Do not run a same-key warm check after cold fallback rebuilds.",
     "  --skip-detail               Only validate public-config and thread-list diagnostics.",
     "  --allow-missing-cold-path   Do not fail if old production lacks coldPathOwner fields.",
     "  --no-auth                   Do not send an auth key.",
@@ -58,6 +60,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     requireActiveOverlay: false,
     requireThreadListColdPath: true,
     verifyDeferredFallback: true,
+    verifyThreadListWarmCheck: true,
     skipDetail: false,
     noAuth: false,
     json: false,
@@ -78,6 +81,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     else if (arg === "--timeout-ms") options.timeoutMs = readPositiveInt(next(), options.timeoutMs);
     else if (arg === "--require-active-overlay") options.requireActiveOverlay = true;
     else if (arg === "--no-verify-deferred-fallback") options.verifyDeferredFallback = false;
+    else if (arg === "--no-verify-thread-list-warm-check") options.verifyThreadListWarmCheck = false;
     else if (arg === "--skip-detail") options.skipDetail = true;
     else if (arg === "--allow-missing-cold-path") options.requireThreadListColdPath = false;
     else if (arg === "--no-auth") options.noAuth = true;
@@ -338,6 +342,19 @@ function evaluateChecks(report, options = {}) {
   return checks;
 }
 
+function shouldWarmCheckThreadList(summary = {}) {
+  if (!summary || typeof summary !== "object") return false;
+  if (summary.fallbackDeferred) return false;
+  if (summary.fallbackSourceSnapshotHit === true) return false;
+  const decision = lowerLabel(summary.fallbackCacheDecision, 80);
+  const owner = lowerLabel(summary.coldPathOwner, 80);
+  if (owner === "fallback-source-snapshot") return false;
+  return decision === "miss-rebuild"
+    || decision === "expired-rebuild"
+    || owner === "fallback-baseline"
+    || owner === "fallback-cache-policy";
+}
+
 function firstFailure(checks = {}) {
   for (const [key, value] of Object.entries(checks)) {
     if (!value) return key;
@@ -381,16 +398,13 @@ async function run(options = {}, env = process.env) {
   if (options.verifyDeferredFallback && report.threadList && report.threadList.fallbackDeferred) {
     const deferredFollowupResult = await fetchJson(requestUrl(options, "/api/threads", { limit: options.listLimit }), options, key);
     report.threadListAfterDeferred = summarizeThreadList(deferredFollowupResult);
-    const followupDecision = lowerLabel(report.threadListAfterDeferred.fallbackCacheDecision, 80);
-    const followupOwner = lowerLabel(report.threadListAfterDeferred.coldPathOwner, 80);
-    if (!report.threadListAfterDeferred.fallbackDeferred
-      && (followupDecision === "miss-rebuild"
-        || followupDecision === "expired-rebuild"
-        || followupOwner === "fallback-baseline"
-        || followupOwner === "fallback-cache-policy")) {
+    if (options.verifyThreadListWarmCheck && shouldWarmCheckThreadList(report.threadListAfterDeferred)) {
       const warmCheckResult = await fetchJson(requestUrl(options, "/api/threads", { limit: options.listLimit }), options, key);
       report.threadListWarmCheck = summarizeThreadList(warmCheckResult);
     }
+  } else if (options.verifyThreadListWarmCheck && shouldWarmCheckThreadList(report.threadList)) {
+      const warmCheckResult = await fetchJson(requestUrl(options, "/api/threads", { limit: options.listLimit }), options, key);
+      report.threadListWarmCheck = summarizeThreadList(warmCheckResult);
   }
 
   report.checks = evaluateChecks(report, options);

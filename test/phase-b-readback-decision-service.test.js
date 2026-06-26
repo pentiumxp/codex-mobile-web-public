@@ -165,6 +165,36 @@ test("phase B readback decision treats warmed deferred fallback as observed not 
   assert.equal(decision.evidence.threadListWarmCheckOwner, "warm-fallback-cache");
 });
 
+test("phase B readback decision treats one-time cold rebuild plus warm check as observed", () => {
+  const decision = classifyPhaseBReadback({
+    ok: true,
+    threadList: {
+      coldPathOwner: "fallback-baseline",
+      coldPathReason: "miss-rebuild:rollout",
+      fallbackCacheDecision: "miss-rebuild",
+    },
+    threadListWarmCheck: {
+      coldPathOwner: "warm-fallback-cache",
+      coldPathReason: "cache-hit",
+      fallbackCacheDecision: "hit",
+      fallbackCacheHit: true,
+    },
+    detail: {
+      readMode: "projection-active-overlay",
+      readDecision: "projection-active-overlay",
+      coldPathOwner: "warm-path",
+      coldPathReason: "warm-projection-active-overlay",
+    },
+  });
+
+  assert.equal(decision.status, "observe");
+  assert.equal(decision.priority, "H3");
+  assert.equal(decision.owner, "thread-list-fallback-baseline");
+  assert.equal(decision.reason, "cold-start-rebuild-warmed");
+  assert.equal(decision.nextAction, "observe-cold-start-first-rebuild-cost");
+  assert.equal(decision.evidence.threadListWarmCheckOwner, "warm-fallback-cache");
+});
+
 test("phase B readback decision keeps evidence bounded and private-content free", () => {
   const decision = classifyPhaseBReadback({
     ok: true,

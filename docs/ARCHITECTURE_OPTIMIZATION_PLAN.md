@@ -181,7 +181,11 @@ Current acceleration targets:
    performs a follow-up full list read and, when that follow-up builds the
    fallback baseline, a same-key warm check. This proves whether the server is
    doing the acceptable cold-start/deploy one-time rebuild or repeatedly
-   exposing cold fallback work to foreground list opens. The first root-cause
+   exposing cold fallback work to foreground list opens. The same-key warm
+   check also runs for an ordinary first full-list `miss-rebuild` /
+   `expired-rebuild` when it has not already hit the source snapshot, so a
+   post-deploy cold sample can prove the once-only invariant instead of being
+   misclassified as an immediate repair. The first root-cause
    optimization from that decision path is memory-only source snapshot reuse
    below the final-list
    cache: different `cwd/search/limit` final-list keys can reuse the same

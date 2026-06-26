@@ -14535,6 +14535,9 @@ The previous full handoff was archived and should be opened only when old proven
       read is deferred, the smoke reads the same list again after detail
       readback. If that follow-up performs `miss-rebuild` /
       `expired-rebuild`, it immediately performs a same-key warm check.
+    - Also performs the same-key warm check for an ordinary first full-list
+      `miss-rebuild` / `expired-rebuild` when the read did not already hit the
+      source snapshot.
     - Adds bounded `threadListAfterDeferred` and `threadListWarmCheck`
       summaries to the JSON report.
     - Adds `--no-verify-deferred-fallback` for explicitly disabling this
@@ -14543,18 +14546,22 @@ The previous full handoff was archived and should be opened only when old proven
     - Carries after-deferred/warm-check evidence in bounded decision metadata.
     - Classifies a deferred first read followed by a warm same-key check as
       H3 observe (`deferred-followup-warmed`) instead of H2 repair.
-    - Still reports H2 if deferred follow-up reaches fallback baseline/cache
-      policy and no warm check proves the once-only invariant.
+    - Classifies an ordinary post-restart/post-deploy cold rebuild followed by
+      a warm same-key check as H3 observe (`cold-start-rebuild-warmed`) instead
+      of H2 repair.
+    - Still reports H2 if fallback baseline/cache policy appears without warm
+      evidence proving the once-only invariant.
   - Tests:
-    - Script-level mock server proves initial deferred -> follow-up
-      `miss-rebuild` -> warm `hit` path and privacy bounds.
-    - Decision-service test proves warmed deferred fallback is observed, not
-      treated as broken.
+    - Script-level mock servers prove initial deferred -> follow-up
+      `miss-rebuild` -> warm `hit` and ordinary cold -> warm `hit` paths with
+      privacy bounds.
+    - Decision-service tests prove warmed deferred fallback and warmed one-time
+      cold rebuild are observed, not treated as broken.
   - README, architecture optimization plan, and module map were updated.
 - Validation so far:
   - Focused:
     `node --test test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js`
-    passed (`13` tests).
+    passed (`15` tests).
 - Next:
   - Run `npm run check`, `git diff --check`, and the relevant focused tests
     again if edits continue.

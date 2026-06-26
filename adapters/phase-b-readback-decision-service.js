@@ -151,6 +151,16 @@ function threadListDecision(list = {}, report = {}) {
   const reason = compactLabel(list.coldPathReason, 80);
   if (!owner || owner === "warm-fallback-cache" || owner === "fallback-source-snapshot") return null;
   if (owner === "fallback-baseline") {
+    const warmCheck = objectOrNull(report.threadListWarmCheck);
+    if (warmCheck && isWarmThreadList(warmCheck)) {
+      return {
+        status: "observe",
+        priority: "H3",
+        owner: "thread-list-fallback-baseline",
+        reason: "cold-start-rebuild-warmed",
+        nextAction: "observe-cold-start-first-rebuild-cost",
+      };
+    }
     return {
       status: "needs_repair",
       priority: "H2",
@@ -160,6 +170,16 @@ function threadListDecision(list = {}, report = {}) {
     };
   }
   if (owner === "fallback-cache-policy") {
+    const warmCheck = objectOrNull(report.threadListWarmCheck);
+    if (warmCheck && isWarmThreadList(warmCheck)) {
+      return {
+        status: "observe",
+        priority: "H3",
+        owner: "thread-list-cache-freshness",
+        reason: "cold-start-rebuild-warmed",
+        nextAction: "observe-cold-start-first-rebuild-cost",
+      };
+    }
     return {
       status: "needs_repair",
       priority: "H2",
