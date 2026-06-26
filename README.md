@@ -16,6 +16,32 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v532 Phase A Render/Patch Ownership Module
+
+v532 是 Phase A 前端 thread-detail render/patch ownership 的模块级发布候选，
+把此前连续本地小切片合并成一次可部署批次，而不是每个小改动单独部署。
+本批次主要收敛 `refreshCurrentThread()`、conversation DOM patch、local patch
+completion、scroll/bottom-follow 和 single-thread shell update 的所有权边界。
+
+本批次的根因边界：
+
+- `public/app.js` 继续向“编排真实 DOM/network/timer side effect”的方向收缩；
+  refresh/patch/scroll 的策略判断尽量进入纯 helper。
+- `public/thread-detail-render-plan.js` 负责 refresh request/response、patch
+  surface、attempt、telemetry、completion、post-merge 等计划。
+- `public/thread-detail-dom-patch.js` 负责 DOM patch 事务、completion snapshot、
+  completion effects 和 conversation HTML update effects。
+- `public/conversation-scroll.js` 负责 bottom-follow lease、retry schedule、
+  reading hold、auto-scroll hold、local-patch/full-render scroll planning。
+
+这不是前端状态机的完整终局；Phase C 的 pane-state 和 Phase E 的浏览器视觉
+回归仍需继续推进。本次发布只处理 Phase A 模块边界，不改变 server projection
+语义、任务卡协议、诊断调度策略或平铺视图布局。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v532`。
+部署后需要生产读回 `/api/public-config`，确认 `clientBuildId` 和
+`shellCacheName` 均为 `v532`。
+
 ## 2026-06-26 Phase A Local Patch Completion Snapshot Slice
 
 本地小切片继续推进 Phase A 的 thread-detail render/patch ownership 收敛。
