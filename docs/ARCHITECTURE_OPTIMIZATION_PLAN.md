@@ -886,6 +886,15 @@ telemetry/reporting ordering now also lives in
 `planThreadDetailCachedCurrentTelemetryEffects`, preserving the legacy
 `thread_detail_first_paint`, `thread_switch_cached`, and load-success
 diagnostic-clear sequence without adding API first-paint response diagnostics.
+Cached-current post-render side-effect ordering now also lives in
+`public/thread-detail-render-plan.js`:
+`planThreadDetailCachedCurrentPostRenderEffects` declares the cached-current
+sequence for history auto-backfill, tile-pane Composer restore when the
+thread-list open replaced a pane slot, overlay menu close, projection
+consistency check, empty cached-detail healthy clear, and silent side-chat load
+when needed. App code still supplies the live runtime booleans and executes the
+real state/DOM/network side effects, but `loadThread()` no longer owns this
+fixed cached-current post-render sequence inline.
 Ordinary refresh, cached-current first
 paint, API first paint, and full detail backfill no longer maintain separate
 hand-written thread-list post-merge ordering in `public/app.js`; first paint and

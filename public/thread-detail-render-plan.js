@@ -890,6 +890,43 @@
     };
   }
 
+  function planThreadDetailCachedCurrentPostRenderEffects(input = {}) {
+    const seq = Number(input.seq);
+    const threadId = compactReason(input.threadId, "");
+    const source = compactReason(input.source, "cached-current").slice(0, 40);
+    const effects = [
+      {
+        type: "history-auto-backfill",
+        seq: Number.isFinite(seq) ? seq : 0,
+        source,
+      },
+    ];
+    if (input.replacedTilePane) effects.push({ type: "restore-composer-for-replaced-tile-pane" });
+    effects.push(
+      { type: "close-sidebar-menu-if-overlay" },
+      {
+        type: "check-conversation-projection-consistency",
+        phase: "cached-current",
+        renderMode: "cached-current",
+      },
+      {
+        type: "record-empty-cached-detail-reuse-healthy",
+        reason: "cached-current",
+      },
+    );
+    if (!input.hasSideChat) {
+      effects.push({
+        type: "load-side-chat",
+        threadId,
+        silent: true,
+      });
+    }
+    return {
+      effects,
+      reason: "cached-current-post-render",
+    };
+  }
+
   function planThreadDetailFullBackfillPostRenderEffects() {
     return {
       effects: [
@@ -1223,6 +1260,7 @@
     finalizeThreadDetailRenderPlan,
     normalizeSignature,
     planThreadDetailCachedCurrentTelemetryEffects,
+    planThreadDetailCachedCurrentPostRenderEffects,
     planThreadDetailFullBackfillPostRenderEffects,
     planThreadDetailFullBackfillTelemetryEffects,
     planThreadDetailFirstPaintPostRenderEffects,

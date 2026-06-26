@@ -17560,5 +17560,65 @@ The previous full handoff was archived and should be opened only when old proven
   - Overall architecture optimization is about `70%`.
   - Phase A frontend render/projection ownership is about `80%`.
 - Next:
+  - Committed locally as `26186f4`
+    (`plan history auto backfill effects`). Continue Phase A current-thread
+    render authority or batch the accumulated module for one deploy/readback
+    when requested.
+
+## 2026-06-27 - Latest tail marker: Phase A cached-current post-render effects local slice
+
+- Current local state:
+  - Continued Phase A `loadThread()` ownership cleanup after `26186f4`.
+  - Cached-current thread open already reused post-merge and telemetry plans,
+    but still owned its fixed post-render sequence inline after
+    `renderCurrentThread({ stickToBottom: true })`.
+  - This slice moves that cached-current post-render sequence into
+    `public/thread-detail-render-plan.js` while preserving the existing cache
+    reuse decision, render timing boundaries, and telemetry semantics.
+- Root-cause boundary:
+  - Symptom/risk: cached-current, API first-paint, and full-backfill thread-open
+    paths had uneven post-render ownership. Cached-current still directly
+    called history auto-backfill, tile-pane Composer restore, menu close,
+    projection consistency, empty-cache healthy clear, and side-chat silent
+    load from `public/app.js`.
+  - Failing layer: frontend cached-current post-render side-effect ownership,
+    not projection cache selection, app-server detail reads, server projection,
+    DOM patch selection, task-card routing, Home AI diagnostic intake, or
+    shell/cache.
+  - Violated invariant: fixed thread-detail post-render side-effect ordering
+    should be declared by pure planning helpers; app code should supply live
+    runtime booleans and execute the actual side effects.
+- Changes:
+  - `public/thread-detail-render-plan.js` now exports
+    `planThreadDetailCachedCurrentPostRenderEffects()`.
+  - The plan declares ordered effects for history auto-backfill, optional
+    tile-pane Composer restore, overlay menu close, projection consistency
+    check, empty cached-detail healthy clear, and optional side-chat silent
+    load.
+  - `public/app.js` extends `applyThreadDetailPostRenderEffectsPlan()` to
+    execute those effects and calls the cached-current post-render plan from
+    `loadThread()`.
+  - Updated `test/thread-detail-render-plan.test.js`,
+    `test/mobile-viewport.test.js`, and `test/conversation-render.test.js`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation so far:
+  - Focused:
+    `node --test test/thread-detail-render-plan.test.js test/mobile-viewport.test.js test/conversation-render.test.js test/turn-scroll-controls.test.js`
+    passed (`192` tests).
+  - Syntax:
+    `node --check public/thread-detail-render-plan.js && node --check public/app.js && node --check test/thread-detail-render-plan.test.js && node --check test/mobile-viewport.test.js && node --check test/conversation-render.test.js`
+    passed.
+  - Full:
+    `npm test` passed (`1155` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache
+    bump. This remains a local Phase A ownership slice to batch with the next
+    module validation/deploy.
+- Progress:
+  - Overall architecture optimization is about `71%`.
+  - Phase A frontend render/projection ownership is about `81%`.
+- Next:
   - Commit locally, then continue Phase A current-thread render authority or
     batch the accumulated module for one deploy/readback when requested.

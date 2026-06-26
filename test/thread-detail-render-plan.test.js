@@ -1244,6 +1244,62 @@ test("thread detail first-paint post-render effects plan preserves order and bou
   });
 });
 
+test("thread detail cached-current post-render effects plan preserves order and runtime guards", () => {
+  assert.deepEqual(renderPlan.planThreadDetailCachedCurrentPostRenderEffects({
+    threadId: "thread-1",
+    seq: 7,
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA",
+    replacedTilePane: true,
+    hasSideChat: false,
+  }), {
+    effects: [
+      {
+        type: "history-auto-backfill",
+        seq: 7,
+        source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR",
+      },
+      { type: "restore-composer-for-replaced-tile-pane" },
+      { type: "close-sidebar-menu-if-overlay" },
+      {
+        type: "check-conversation-projection-consistency",
+        phase: "cached-current",
+        renderMode: "cached-current",
+      },
+      {
+        type: "record-empty-cached-detail-reuse-healthy",
+        reason: "cached-current",
+      },
+      {
+        type: "load-side-chat",
+        threadId: "thread-1",
+        silent: true,
+      },
+    ],
+    reason: "cached-current-post-render",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailCachedCurrentPostRenderEffects({
+    threadId: "thread-2",
+    seq: "bad",
+    hasSideChat: true,
+  }), {
+    effects: [
+      { type: "history-auto-backfill", seq: 0, source: "cached-current" },
+      { type: "close-sidebar-menu-if-overlay" },
+      {
+        type: "check-conversation-projection-consistency",
+        phase: "cached-current",
+        renderMode: "cached-current",
+      },
+      {
+        type: "record-empty-cached-detail-reuse-healthy",
+        reason: "cached-current",
+      },
+    ],
+    reason: "cached-current-post-render",
+  });
+});
+
 test("thread detail first-paint telemetry effects plan preserves bounded event order", () => {
   const performanceEvent = { detailRenderMode: "first-paint", cached: false, renderElapsedMs: 12 };
   assert.deepEqual(renderPlan.planThreadDetailFirstPaintTelemetryEffects({

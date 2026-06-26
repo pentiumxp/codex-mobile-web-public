@@ -8946,16 +8946,14 @@ async function loadThread(threadId, options = {}) {
     const conversationRenderStartedAt = nowPerfMs();
     renderCurrentThread({ stickToBottom: true });
     const conversationRenderMs = roundedDurationMs(conversationRenderStartedAt);
-    maybeAutoBackfillThreadHistory(state.currentThread, { seq: state.threadLoadSeq, source: "cached-current" });
-    if (replacedTilePaneForThreadListOpen) {
-      restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
-      renderComposerSettings();
-      updateComposerControls();
-    }
-    if (isMenuOverlayMode()) closeSidebarMenu();
-    checkConversationProjectionConsistency("cached-current", { renderMode: "cached-current" });
-    recordEmptyCachedDetailReuseHealthy("cached-current", state.currentThread);
-    if (!state.threadSideChats.has(threadId)) loadSideChat(threadId, { silent: true }).catch(showError);
+    const cachedCurrentPostRenderPlan = threadDetailRenderPlanApi.planThreadDetailCachedCurrentPostRenderEffects({
+      threadId,
+      seq: state.threadLoadSeq,
+      source: "cached-current",
+      replacedTilePane: replacedTilePaneForThreadListOpen,
+      hasSideChat: state.threadSideChats.has(threadId),
+    });
+    applyThreadDetailPostRenderEffectsPlan(cachedCurrentPostRenderPlan, { thread: state.currentThread });
     const renderElapsedMs = roundedDurationMs(renderStartedAt);
     const firstPaintPerformance = threadPerformanceMetrics.threadDetailFirstPaintEventFields(state.currentThread, {
       source,
@@ -9262,8 +9260,36 @@ function applyThreadDetailPostRenderEffect(effect, context = {}) {
     updateComposerControls();
     return true;
   }
+  if (type === "history-auto-backfill") {
+    maybeAutoBackfillThreadHistory(context.thread, {
+      seq: Number(item.seq || 0),
+      source: String(item.source || "unknown").slice(0, 40),
+    });
+    return true;
+  }
+  if (type === "restore-composer-for-replaced-tile-pane") {
+    restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
+    renderComposerSettings();
+    updateComposerControls();
+    return true;
+  }
   if (type === "close-sidebar-menu-if-overlay") {
     if (isMenuOverlayMode()) closeSidebarMenu();
+    return true;
+  }
+  if (type === "check-conversation-projection-consistency") {
+    checkConversationProjectionConsistency(String(item.phase || ""), {
+      renderMode: String(item.renderMode || ""),
+    });
+    return true;
+  }
+  if (type === "record-empty-cached-detail-reuse-healthy") {
+    recordEmptyCachedDetailReuseHealthy(String(item.reason || ""), context.thread);
+    return true;
+  }
+  if (type === "load-side-chat") {
+    const sideChatThreadId = String(item.threadId || "");
+    if (sideChatThreadId) loadSideChat(sideChatThreadId, { silent: item.silent !== false }).catch(showError);
     return true;
   }
   if (type === "backfill-full-thread-detail-if-needed") {
