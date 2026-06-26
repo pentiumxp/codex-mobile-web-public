@@ -424,6 +424,41 @@ node --check public/thread-diagnostic-events.js && node --check public/app.js
 本地/private commit 累积，后续再与更大的 render/projection ownership 模块一起
 统一验证和部署。
 
+## 2026-06-27 Phase A/B Thread Detail Response Diagnostic Effects Slice
+
+本地小切片继续推进 Phase A/B 的诊断 outcome ownership。此前
+`recordThreadDetailResponseDiagnostics()` 已经使用
+`threadPerformanceMetrics.planThreadDetailSlowPathDiagnostic()` 和
+`planThreadDetailResponseContractDiagnostic()` 产出事实计划，但 `public/app.js` 仍直接
+判断 `slowPlan.shouldReport` / `contractPlan.shouldReport`，并直接选择 failure 或
+success payload。这让详情慢路径、active window downgrade、empty projection shell
+等大 session 关键诊断的结果判定继续留在 app 编排层。
+
+本次修复：
+
+- `public/thread-diagnostic-events.js` 新增
+  `threadDetailResponseDiagnosticEffects()`，统一把 slow-path plan 和
+  response-contract plan 转成 bounded diagnostic failure/success effects。
+- `public/app.js` 的 `recordThreadDetailResponseDiagnostics()` 继续收集真实
+  performance event、thread hash、duration bucket 和 contract 输入，但只执行 helper
+  输出的 Home AI diagnostic side effects。
+- `test/thread-diagnostic-events.test.js` 覆盖 slow failure、contract success、
+  全健康路径、无计划路径和隐私边界。
+- `test/conversation-render.test.js`、`test/mobile-viewport.test.js` 防止 app 重新
+  内联 `shouldReport` 分支或直接调用 response diagnostic payload builder。
+- 不改变慢路径阈值、response contract 判定、Home AI 上报协议、DOM 渲染、
+  server projection、任务卡协议、shell/cache 或部署状态。
+
+闭环验证：
+
+```bash
+node --test test/thread-diagnostic-events.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-performance-metrics.test.js
+node --check public/thread-diagnostic-events.js && node --check public/app.js
+```
+
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为 Phase A/B
+本地/private commit 累积。
+
 ## 2026-06-27 Phase E Thread Tile Visual Fixture Slice
 
 本地小切片开始补 Phase E 的浏览器/视觉回归入口，先覆盖最近反复出问题的平铺

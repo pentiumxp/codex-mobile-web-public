@@ -402,6 +402,14 @@ still performs the real Home AI diagnostic reporting side effects, but it no
 longer owns the mismatch/duplicate/order classification branches or diagnostic
 payload selection.
 
+The follow-up Phase A/B local slice applies the same rule to thread-detail
+response diagnostics. `threadPerformanceMetrics` still owns slow-path and
+response-contract fact planning, but `threadDetailResponseDiagnosticEffects()`
+now turns those plans into failure/success diagnostic effects. `public/app.js`
+keeps the real performance event collection and Home AI reporting side effects,
+without owning `shouldReport` branching for slow detail reads, response
+contract mismatches, active-window downgrades, or empty projection shells.
+
 `codex-mobile-shell-v515` adds the next ownership rule from the same Music
 incident class: an incoming empty `turns: []` detail response cannot wipe out an
 existing current-thread state that already has visible turns. That merge

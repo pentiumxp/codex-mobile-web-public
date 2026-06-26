@@ -16730,3 +16730,62 @@ The previous full handoff was archived and should be opened only when old proven
     counts are recorded. No secrets, cookies, launch tokens, private thread
     bodies, task-card bodies, upload bytes, private paths, provider payloads,
     prompts, or long logs are included.
+
+## 2026-06-27 - Phase A/B thread-detail response diagnostic effects local slice
+
+- Latest local slice:
+  - Continued Phase A/B diagnostic outcome ownership after `302b5b4`
+    (`plan projection consistency diagnostic effects`).
+  - The previous projection-consistency slice was fully validated and committed
+    as `302b5b4`; it was not deployed by design.
+  - This slice is local/private only and is not deployed by design.
+- Root-cause boundary:
+  - Symptom/risk: large-session or active-detail incidents need precise slow
+    path and response-contract diagnostics, but `public/app.js` still owned the
+    `slowPlan.shouldReport` / `contractPlan.shouldReport` failure-vs-success
+    branches.
+  - Failing layer: frontend diagnostic outcome planning at the Phase A/B
+    boundary, not Home AI intake, performance fact extraction, server
+    projection, DOM rendering, CSS, task-card routing, or shell/cache.
+  - Violated invariant: performance helpers should produce bounded facts,
+    diagnostic helpers should classify effects/payloads, and `public/app.js`
+    should only collect live runtime input and execute Home AI reporting side
+    effects.
+- Changes:
+  - `public/thread-diagnostic-events.js` now exposes
+    `threadDetailResponseDiagnosticEffects()`.
+  - The helper converts slow-path and response-contract plans into bounded
+    failure/success effects for `thread_detail_slow_path` and
+    `thread_detail_response_contract_mismatch`.
+  - `public/app.js` `recordThreadDetailResponseDiagnostics()` still builds
+    `slowPlan` and `contractPlan` from `threadPerformanceMetrics`, but now asks
+    the diagnostic helper for effects and only executes
+    `recordHomeAiDiagnosticFailure()` / `recordHomeAiDiagnosticSuccess()`.
+  - `test/thread-diagnostic-events.test.js` covers slow failure, contract
+    success, healthy slow/contract success, no-plan behavior, and privacy.
+  - `test/conversation-render.test.js` and `test/mobile-viewport.test.js`
+    guard the app wiring so direct `shouldReport` branches and direct payload
+    builder calls do not return.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation:
+  - Focused:
+    `node --test test/thread-diagnostic-events.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-performance-metrics.test.js`
+    passed (`154` tests).
+  - Syntax:
+    `node --check public/thread-diagnostic-events.js && node --check public/app.js`
+    passed.
+- Deployment:
+  - Not deployed. No `CLIENT_BUILD_ID` / PWA shell cache bump. This is a
+    Phase A/B diagnostic ownership slice to batch with the next projection,
+    render, or cold-path module before one deploy/readback.
+- Next:
+  - Run full validation, commit locally, then either continue Phase A with the
+    remaining `recordThreadDetailResponseDiagnostics()` adjacent side-effect
+    reducers / current-thread render authority, or pivot to Phase B cold-path
+    readback attribution if user prioritizes large-session load time.
+- Privacy:
+  - Only bounded file paths, helper names, diagnostic type labels, and test
+    counts are recorded. No secrets, cookies, launch tokens, private thread
+    bodies, task-card bodies, upload bytes, private paths, provider payloads,
+    prompts, or long logs are included.

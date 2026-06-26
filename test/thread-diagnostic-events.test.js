@@ -832,3 +832,79 @@ test("thread diagnostic events build bounded detail response contract payloads",
     },
   });
 });
+
+test("thread diagnostic events plan thread detail response effects without app state", () => {
+  const plan = diagnostics.threadDetailResponseDiagnosticEffects({
+    slowPlan: {
+      shouldReport: true,
+      reason: "api-slow",
+      severityHint: "H2",
+      thresholdMs: 8000,
+      elapsedMs: 17000,
+      apiElapsedMs: 12000,
+      renderElapsedMs: 300,
+      action: "thread-detail-refresh",
+      threadHash: "thread/hash",
+      durationBucket: "10_30s",
+      readMode: "thread-read",
+      renderMode: "first-paint",
+      performancePhase: "cold-thread-read",
+      coldPathOwner: "projection-cache",
+      coldPathReason: "projection-miss",
+      prompt: "private prompt ignored",
+    },
+    contractPlan: {
+      shouldReport: false,
+      reason: "ok",
+      action: "thread-detail-refresh",
+      threadHash: "thread/hash",
+      readMode: "thread-read",
+      renderMode: "first-paint",
+      performancePhase: "cold-thread-read",
+      body: "private body ignored",
+    },
+  });
+
+  assert.equal(plan.reason, "thread-detail-response-diagnostic-effects");
+  assert.deepEqual(plan.effects.map((effect) => [effect.type, effect.diagnosticType, effect.reason]), [
+    ["diagnostic-failure", "thread_detail_slow_path", "api-slow"],
+    ["diagnostic-success", "thread_detail_response_contract_mismatch", "thread-detail-response-contract-ok"],
+  ]);
+  assert.equal(plan.effects[0].diagnostic.diagnostic_type, "thread_detail_slow_path");
+  assert.equal(plan.effects[0].diagnostic.context.thread_hash, "thread_hash");
+  assert.equal(plan.effects[1].diagnostic.diagnostic_type, "thread_detail_response_contract_mismatch");
+  assert.equal(plan.effects[1].diagnostic.context.thread_hash, "thread_hash");
+  assert.equal(JSON.stringify(plan).includes("private"), false);
+
+  const healthy = diagnostics.threadDetailResponseDiagnosticEffects({
+    slowPlan: {
+      shouldReport: false,
+      reason: "below-threshold",
+    },
+    slowSuccessInput: {
+      action: "thread-detail-load",
+      threadHash: "thread/hash",
+      readMode: "projection-v4-dynamic",
+      renderMode: "first-paint",
+    },
+    contractPlan: {
+      shouldReport: false,
+      reason: "ok",
+      action: "thread-detail-load",
+      threadHash: "thread/hash",
+      readMode: "projection-v4-dynamic",
+      renderMode: "first-paint",
+    },
+  });
+  assert.deepEqual(healthy.effects.map((effect) => [effect.type, effect.diagnosticType, effect.reason]), [
+    ["diagnostic-success", "thread_detail_slow_path", "thread-detail-slow-path-ok"],
+    ["diagnostic-success", "thread_detail_response_contract_mismatch", "thread-detail-response-contract-ok"],
+  ]);
+  assert.equal(healthy.effects[0].diagnostic.context.read_mode, "projection-v4-dynamic");
+  assert.equal(healthy.effects[1].diagnostic.context.read_mode, "projection-v4-dynamic");
+
+  assert.deepEqual(diagnostics.threadDetailResponseDiagnosticEffects(), {
+    effects: [],
+    reason: "no-diagnostic-plans",
+  });
+});

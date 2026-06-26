@@ -837,6 +837,39 @@
     };
   }
 
+  function threadDetailResponseDiagnosticEffects(input = {}) {
+    const source = input && typeof input === "object" ? input : {};
+    const effects = [];
+    const slowPlan = source.slowPlan && typeof source.slowPlan === "object" ? source.slowPlan : null;
+    if (slowPlan) {
+      const shouldReport = slowPlan.shouldReport === true;
+      effects.push({
+        type: shouldReport ? "diagnostic-failure" : "diagnostic-success",
+        diagnostic: shouldReport
+          ? threadDetailSlowPathDiagnosticEvent(slowPlan)
+          : threadDetailSlowPathDiagnosticSuccess(source.slowSuccessInput || {}),
+        diagnosticType: "thread_detail_slow_path",
+        reason: shouldReport ? compactToken(slowPlan.reason, "thread-detail-slow-path", 80) : "thread-detail-slow-path-ok",
+      });
+    }
+    const contractPlan = source.contractPlan && typeof source.contractPlan === "object" ? source.contractPlan : null;
+    if (contractPlan) {
+      const shouldReport = contractPlan.shouldReport === true;
+      effects.push({
+        type: shouldReport ? "diagnostic-failure" : "diagnostic-success",
+        diagnostic: shouldReport
+          ? threadDetailResponseContractDiagnosticEvent(contractPlan)
+          : threadDetailResponseContractDiagnosticSuccess(contractPlan),
+        diagnosticType: "thread_detail_response_contract_mismatch",
+        reason: shouldReport ? compactToken(contractPlan.reason, "thread-detail-response-contract", 80) : "thread-detail-response-contract-ok",
+      });
+    }
+    return {
+      effects,
+      reason: effects.length ? "thread-detail-response-diagnostic-effects" : "no-diagnostic-plans",
+    };
+  }
+
   return {
     boundedCount,
     compactToken,
@@ -860,6 +893,7 @@
     renderSignatureMismatchDiagnosticEvent,
     renderSignatureMismatchDiagnosticSuccess,
     threadDetailResponseContractDiagnosticEvent,
+    threadDetailResponseDiagnosticEffects,
     threadDetailResponseContractDiagnosticSuccess,
     threadDetailSlowPathDiagnosticEvent,
     threadDetailSlowPathDiagnosticSuccess,

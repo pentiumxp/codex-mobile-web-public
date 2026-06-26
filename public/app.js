@@ -6652,6 +6652,25 @@ function recordHomeAiDiagnosticSuccess(input = {}) {
   }));
 }
 
+function applyThreadDetailResponseDiagnosticEffect(effect) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  if (!item.type) return;
+  if (item.type === "diagnostic-failure") {
+    recordHomeAiDiagnosticFailure(item.diagnostic || {});
+    return;
+  }
+  if (item.type === "diagnostic-success") {
+    recordHomeAiDiagnosticSuccess(item.diagnostic || {});
+    return;
+  }
+  throw new Error(`Unknown thread detail response diagnostic effect: ${item.type}`);
+}
+
+function applyThreadDetailResponseDiagnosticEffectsPlan(plan) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applyThreadDetailResponseDiagnosticEffect(effect);
+}
+
 function recordThreadDetailResponseDiagnostics(performanceEvent = {}, input = {}) {
   const source = input && typeof input === "object" ? input : {};
   const threadId = String(source.threadId || state.currentThreadId || "");
@@ -6664,16 +6683,6 @@ function recordThreadDetailResponseDiagnostics(performanceEvent = {}, input = {}
     threadHash,
     durationBucket,
   });
-  if (slowPlan.shouldReport) {
-    recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.threadDetailSlowPathDiagnosticEvent(slowPlan));
-  } else {
-    recordHomeAiDiagnosticSuccess(threadDiagnosticEventsApi.threadDetailSlowPathDiagnosticSuccess({
-      action,
-      threadHash,
-      readMode: performanceEvent && performanceEvent.readMode || "",
-      renderMode: performanceEvent && performanceEvent.clientTimings && performanceEvent.clientTimings.detailRenderMode || "",
-    }));
-  }
   const contractPlan = threadPerformanceMetrics.planThreadDetailResponseContractDiagnostic(performanceEvent, {
     action,
     threadHash,
@@ -6681,11 +6690,17 @@ function recordThreadDetailResponseDiagnostics(performanceEvent = {}, input = {}
     thread: source.thread,
     expectedActiveFullRead: source.expectedActiveFullRead,
   });
-  if (contractPlan.shouldReport) {
-    recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.threadDetailResponseContractDiagnosticEvent(contractPlan));
-  } else {
-    recordHomeAiDiagnosticSuccess(threadDiagnosticEventsApi.threadDetailResponseContractDiagnosticSuccess(contractPlan));
-  }
+  const effectsPlan = threadDiagnosticEventsApi.threadDetailResponseDiagnosticEffects({
+    slowPlan,
+    slowSuccessInput: {
+      action,
+      threadHash,
+      readMode: performanceEvent && performanceEvent.readMode || "",
+      renderMode: performanceEvent && performanceEvent.clientTimings && performanceEvent.clientTimings.detailRenderMode || "",
+    },
+    contractPlan,
+  });
+  applyThreadDetailResponseDiagnosticEffectsPlan(effectsPlan);
 }
 
 function conversationDomShape() {

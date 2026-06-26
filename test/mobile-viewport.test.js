@@ -49,11 +49,16 @@ test("client turn ordering follows server started-at-first semantics", () => {
 test("thread detail response diagnostics are planned before Home AI reporting", () => {
   const body = functionBody("recordThreadDetailResponseDiagnostics");
   assert.match(body, /threadPerformanceMetrics\.planThreadDetailSlowPathDiagnostic\(performanceEvent, \{/);
-  assert.match(body, /threadDiagnosticEventsApi\.threadDetailSlowPathDiagnosticEvent\(slowPlan\)/);
-  assert.match(body, /threadDiagnosticEventsApi\.threadDetailSlowPathDiagnosticSuccess\(\{/);
   assert.match(body, /threadPerformanceMetrics\.planThreadDetailResponseContractDiagnostic\(performanceEvent, \{/);
-  assert.match(body, /threadDiagnosticEventsApi\.threadDetailResponseContractDiagnosticEvent\(contractPlan\)/);
-  assert.match(body, /threadDiagnosticEventsApi\.threadDetailResponseContractDiagnosticSuccess\(contractPlan\)/);
+  assert.match(body, /threadDiagnosticEventsApi\.threadDetailResponseDiagnosticEffects\(\{/);
+  assert.match(body, /slowPlan,/);
+  assert.match(body, /slowSuccessInput: \{/);
+  assert.match(body, /contractPlan,/);
+  assert.match(body, /applyThreadDetailResponseDiagnosticEffectsPlan\(effectsPlan\)/);
+  assert.match(functionBody("applyThreadDetailResponseDiagnosticEffect"), /recordHomeAiDiagnosticFailure\(item\.diagnostic \|\| \{\}\)/);
+  assert.match(functionBody("applyThreadDetailResponseDiagnosticEffect"), /recordHomeAiDiagnosticSuccess\(item\.diagnostic \|\| \{\}\)/);
+  assert.doesNotMatch(body, /threadDetailSlowPathDiagnosticEvent\(slowPlan\)/);
+  assert.doesNotMatch(body, /threadDetailResponseContractDiagnosticEvent\(contractPlan\)/);
   assert.doesNotMatch(body, /taskBody|messageText|rawPrompt|upload/);
 });
 

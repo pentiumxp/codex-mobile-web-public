@@ -3220,6 +3220,24 @@ test("current-thread refresh patches the current tile pane for metadata-only til
   assert.doesNotMatch(body, /recordHomeAiDiagnosticSuccess\(\{[\s\S]*thread_detail_refresh_failed/);
 });
 
+test("thread detail response diagnostics delegate outcome effects to helper", () => {
+  const body = functionBody("recordThreadDetailResponseDiagnostics");
+  assert.match(body, /const slowPlan = threadPerformanceMetrics\.planThreadDetailSlowPathDiagnostic\(performanceEvent, \{/);
+  assert.match(body, /const contractPlan = threadPerformanceMetrics\.planThreadDetailResponseContractDiagnostic\(performanceEvent, \{/);
+  assert.match(body, /const effectsPlan = threadDiagnosticEventsApi\.threadDetailResponseDiagnosticEffects\(\{/);
+  assert.match(body, /slowPlan,/);
+  assert.match(body, /slowSuccessInput: \{/);
+  assert.match(body, /contractPlan,/);
+  assert.match(body, /applyThreadDetailResponseDiagnosticEffectsPlan\(effectsPlan\);/);
+  assert.match(appJs, /function applyThreadDetailResponseDiagnosticEffectsPlan\(plan\)/);
+  assert.match(functionBody("applyThreadDetailResponseDiagnosticEffect"), /recordHomeAiDiagnosticFailure\(item\.diagnostic \|\| \{\}\)/);
+  assert.match(functionBody("applyThreadDetailResponseDiagnosticEffect"), /recordHomeAiDiagnosticSuccess\(item\.diagnostic \|\| \{\}\)/);
+  assert.doesNotMatch(body, /if \(slowPlan\.shouldReport\)/);
+  assert.doesNotMatch(body, /if \(contractPlan\.shouldReport\)/);
+  assert.doesNotMatch(body, /threadDetailSlowPathDiagnosticEvent\(slowPlan\)/);
+  assert.doesNotMatch(body, /threadDetailResponseContractDiagnosticEvent\(contractPlan\)/);
+});
+
 test("image view render keys include their image source", () => {
   const body = functionBody("stableItemKey");
   assert.match(body, /item\.type === "imageView" \|\| item\.type === "imageGeneration"/);
