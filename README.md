@@ -16,6 +16,27 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v529 Stable Signature Empty-DOM Visual Harness
+
+v529 不改变运行时渲染策略，补上 v527/v528 事故链的浏览器级回放入口。此前已经在
+`public/thread-detail-dom-patch.js` 中修正了“render signature 稳定但真实 DOM 已空”
+的根因，但 Home AI live-debug visual smoke 只能回放“cached-current detail 为空”的
+场景，还不能直接验证真实非空 detail 被空 DOM 遮住后能否恢复。
+
+本次修复：
+
+- Hermes embedded `window.__codexMobileVisualHarness` 新增
+  `simulateStableSignatureEmptyDom(threadId)`。它先通过真实 `loadThread()` 载入非空
+  detail，再保留当前 render signature、清空 conversation DOM，最后调用真实
+  `renderCurrentThread()`，验证 lower-level DOM authority guard 会重新绘制非空 turns。
+- `scripts/codex-mobile-empty-detail-cache-smoke.js` 新增
+  `--scenario stable-signature-empty-dom`，默认仍是旧的 `empty-cache` 场景，便于生产
+  live-debug 选择不同故障类。
+- harness 和 smoke 输出仍只包含 build id、thread hash、turn/item/DOM 计数、加载状态和
+  read mode，不输出消息正文、任务卡正文、上传内容、私有路径、cookies、tokens 或长日志。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v529`。
+
 ## 2026-06-26 v528 Missing DOM Turn Diagnostic Coverage
 
 v528 补上 v527 之后的诊断闭环缺口：如果当前线程状态已经有可见 turn，但真实 DOM 里

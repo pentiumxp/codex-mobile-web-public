@@ -516,7 +516,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v528";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v529";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -10857,6 +10857,54 @@ async function simulateEmptyCachedDetailOpenForHarness(threadId) {
   };
 }
 
+async function simulateStableSignatureEmptyDomForHarness(threadId) {
+  const id = String(threadId || state.currentThreadId || "").trim();
+  const threadHash = diagnosticThreadHash(id);
+  if (!id) {
+    return {
+      ok: false,
+      error: "missing_thread_id",
+      clientBuildId: CLIENT_BUILD_ID,
+      thread_hash: "",
+      before: null,
+      after: null,
+      domBefore: null,
+      domAfter: null,
+    };
+  }
+  await loadThread(id, { source: "visual-harness-stable-signature-seed" });
+  const before = visualHarnessThreadShape(state.currentThread);
+  const signature = conversationRenderSignature(state.currentThread);
+  const patchShellSignature = conversationPatchShellSignature(state.currentThread);
+  const conversation = $("conversation");
+  const domBefore = {
+    turnCount: conversationDomTurnIds(conversation).length,
+    itemCount: conversation ? conversation.querySelectorAll(".item[data-item]").length : 0,
+  };
+  state.renderedConversationSignature = signature;
+  state.renderedConversationPatchShellSignature = patchShellSignature;
+  if (conversation) conversation.innerHTML = '<div class="empty-state">No visible turns.</div>';
+  renderCurrentThread({ stickToBottom: true, source: "visual-harness-stable-signature-empty-dom" });
+  const afterConversation = $("conversation");
+  const hasEmptyState = afterConversation ? Boolean(afterConversation.querySelector(".empty-state")) : false;
+  const domAfter = {
+    turnCount: conversationDomTurnIds(afterConversation).length,
+    itemCount: afterConversation ? afterConversation.querySelectorAll(".item[data-item]").length : 0,
+    emptyState: hasEmptyState ? "empty-state" : "",
+  };
+  const after = visualHarnessThreadShape(state.currentThread);
+  return {
+    ok: Boolean(before.visibleTurnCount && after.visibleTurnCount && domAfter.turnCount > 0 && !hasEmptyState),
+    error: after.loadError ? "thread_detail_load_error" : "",
+    clientBuildId: CLIENT_BUILD_ID,
+    thread_hash: threadHash,
+    before,
+    after,
+    domBefore,
+    domAfter,
+  };
+}
+
 function refreshSideChatFormButtons() {
   const textarea = sideChatDraftTextarea();
   if (!textarea) return;
@@ -10918,6 +10966,7 @@ function installCodexMobileVisualHarnessFacade() {
       },
       openThread: (threadId) => loadThread(String(threadId || ""), { source: "visual-harness" }),
       simulateEmptyCachedDetailOpen: (threadId) => simulateEmptyCachedDetailOpenForHarness(threadId),
+      simulateStableSignatureEmptyDom: (threadId) => simulateStableSignatureEmptyDomForHarness(threadId),
       loadSideChat: (threadId) => loadSideChat(String(threadId || sideChatThreadId()), { silent: true }),
       ensureSideChatDraftVisible,
       autoSizeSideChatDraftTextarea,

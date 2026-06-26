@@ -346,6 +346,21 @@ in the helper, and expected-nonempty / DOM-empty surfaces become bounded
 `turn_order_mismatch` evidence with `missing_dom_turn_count`. `public/app.js`
 only supplies expected ids, DOM ids, and safe thread/turn hashes.
 
+`codex-mobile-shell-v529` adds the browser/visual replay coverage for the lower
+DOM-authority branch fixed in v527. The Hermes embedded
+`window.__codexMobileVisualHarness` now exposes
+`simulateStableSignatureEmptyDom(threadId)`: it opens a real nonempty thread
+detail through `loadThread()`, records the current conversation render
+signature as if it were still authoritative, replaces the mounted conversation
+DOM with the empty-state shell, and then calls the real `renderCurrentThread()`.
+The expected outcome is that `planConversationHtmlUpdate()` sees
+expected-visible-turns versus zero rendered DOM turns, invalidates the stable
+signature with `stable-signature-dom-empty`, and repaints nonempty turn rows.
+`scripts/codex-mobile-empty-detail-cache-smoke.js` now accepts
+`--scenario stable-signature-empty-dom` while keeping the original
+`empty-cache` default. The harness emits only bounded build id, thread hash,
+turn/item counts, DOM counts, loaded/loading/error flags, and read mode.
+
 The first slices extract item visible-field merge policy,
 visible-text render identity / completed-receipt retention, local-only item
 retention/drop policy, and live-to-completed same-turn visible-item preservation

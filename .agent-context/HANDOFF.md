@@ -13500,3 +13500,46 @@ The previous full handoff was archived and should be opened only when old proven
   - Production static marker readback confirmed `turnOrderDiagnosticSnapshot`, `missing_dom_turn_count`, and `codex-mobile-shell-v528`.
   - Source/prod SHA-256 matched for `public/app.js`, `public/sw.js`, `public/thread-diagnostic-events.js`, README, architecture optimization plan, and module map.
   - Authenticated production Music detail read still returned HTTP `200`, `10` turns, `39` visible item keys, `79` omitted turns, and read mode `projection-v4-dynamic`.
+
+## 2026-06-26 - v529 stable-signature empty-DOM visual harness ready
+
+- Scope:
+  - Continued the v527/v528 Music empty-DOM incident chain by adding a browser/
+    visual replay harness for the lower-level DOM authority branch.
+  - Runtime rendering semantics are unchanged. This is verification
+    infrastructure so the fixed `stable-signature-dom-empty` path can be
+    replayed through a real embedded browser surface.
+- Root-cause boundary:
+  - Failing layer covered: frontend conversation DOM update authority.
+  - Violated invariant under replay: a stable render signature is not
+    authoritative if the mounted single-thread conversation DOM has lost all
+    turn articles while the current thread detail state still has visible turns.
+  - Closure classification: Phase E harness coverage. No UI hiding, no
+    synthetic content, no broad refresh loop, no automatic repair-card dispatch.
+- Changes:
+  - `public/app.js` adds
+    `simulateStableSignatureEmptyDomForHarness(threadId)` and exposes it as
+    `window.__codexMobileVisualHarness.simulateStableSignatureEmptyDom()` in
+    Hermes embedded mode.
+  - The harness loads a real nonempty detail through `loadThread()`, records
+    the current render signature, replaces the conversation DOM with the empty
+    state, then calls the real `renderCurrentThread()` path. It returns only
+    bounded counts, build id, thread hash, load flags, and read mode.
+  - `scripts/codex-mobile-empty-detail-cache-smoke.js` now supports
+    `--scenario stable-signature-empty-dom` while keeping `empty-cache` as the
+    default. Each smoke run gets a per-run browser key so repeated same-thread
+    checks do not reuse stale in-page results.
+  - Static shell/cache bumped to `codex-mobile-shell-v529`.
+  - README, architecture optimization plan, and module map document the new
+    visual replay scenario.
+- Validation before deploy:
+  - Focused:
+    `node --test test/mobile-viewport.test.js test/thread-detail-dom-patch.test.js test/conversation-render.test.js test/thread-diagnostic-events.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    passed (`187` tests).
+  - Full source `npm test` passed (`1039` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment status:
+  - Not deployed yet at this checkpoint. Next step is to commit clean source,
+    deploy through the central Home AI macOS plugin deploy path, read back
+    `/api/public-config`, static markers, source/prod hashes, and a bounded
+    authenticated Music detail shape.

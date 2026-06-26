@@ -177,31 +177,55 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 test("visual harness can replay empty cached detail openings without exposing thread content", () => {
   const installBody = functionBody("installCodexMobileVisualHarnessFacade");
   const harnessBody = functionBody("simulateEmptyCachedDetailOpenForHarness");
+  const stableDomHarnessBody = functionBody("simulateStableSignatureEmptyDomForHarness");
   const shapeBody = functionBody("visualHarnessThreadShape");
   const smokeScript = fs.readFileSync(path.resolve(__dirname, "..", "scripts", "codex-mobile-empty-detail-cache-smoke.js"), "utf8");
+  const smokeHarness = require(path.resolve(__dirname, "..", "scripts", "codex-mobile-empty-detail-cache-smoke.js"));
 
   assert.match(installBody, /simulateEmptyCachedDetailOpen:\s*\(threadId\) => simulateEmptyCachedDetailOpenForHarness\(threadId\)/);
+  assert.match(installBody, /simulateStableSignatureEmptyDom:\s*\(threadId\) => simulateStableSignatureEmptyDomForHarness\(threadId\)/);
   assert.match(harnessBody, /state\.currentThread = \{[\s\S]*turns:\s*\[\],[\s\S]*mobileDetailLoaded:\s*true,[\s\S]*mobileReadMode:\s*"visual-harness-empty-cache"/);
   assert.match(harnessBody, /await loadThread\(id, \{ source: "visual-harness-empty-cache" \}\)/);
   assert.match(harnessBody, /thread_hash:\s*threadHash/);
   assert.match(harnessBody, /before,[\s\S]*after,/);
+  assert.match(stableDomHarnessBody, /await loadThread\(id, \{ source: "visual-harness-stable-signature-seed" \}\)/);
+  assert.match(stableDomHarnessBody, /const signature = conversationRenderSignature\(state\.currentThread\)/);
+  assert.match(stableDomHarnessBody, /state\.renderedConversationSignature = signature/);
+  assert.match(stableDomHarnessBody, /state\.renderedConversationPatchShellSignature = patchShellSignature/);
+  assert.match(stableDomHarnessBody, /conversation\.innerHTML = '<div class="empty-state">No visible turns\.<\/div>'/);
+  assert.match(stableDomHarnessBody, /renderCurrentThread\(\{ stickToBottom: true, source: "visual-harness-stable-signature-empty-dom" \}\)/);
+  assert.match(stableDomHarnessBody, /const hasEmptyState = afterConversation \? Boolean\(afterConversation\.querySelector\("\.empty-state"\)\) : false/);
+  assert.match(stableDomHarnessBody, /emptyState: hasEmptyState \? "empty-state" : ""/);
+  assert.match(stableDomHarnessBody, /domBefore/);
+  assert.match(stableDomHarnessBody, /domAfter/);
+  assert.doesNotMatch(stableDomHarnessBody, /textContent|innerText|node\.innerHTML/);
+  assert.doesNotMatch(stableDomHarnessBody, /text|message|prompt|cookie|token|contentUrl|localPath|filePath/);
   assert.match(shapeBody, /visibleConversationShape\(thread\)/);
   assert.match(shapeBody, /visibleTurnCount/);
   assert.match(shapeBody, /visibleItemCount/);
   assert.match(shapeBody, /itemCount/);
   assert.doesNotMatch(harnessBody, /text|message|prompt|cookie|token|contentUrl|localPath|filePath/);
 
-  assert.match(smokeScript, /simulateEmptyCachedDetailOpen\(threadId\)/);
+  assert.match(smokeScript, /methodName = scenario === "stable-signature-empty-dom" \? "simulateStableSignatureEmptyDom" : "simulateEmptyCachedDetailOpen"/);
+  assert.match(smokeScript, /harness\[methodName\]\(threadId\)/);
+  assert.match(smokeScript, /const runKey = String\(arguments\[2\] \|\| "default"\)/);
+  assert.match(smokeScript, /"__codexMobileEmptyDetailCacheSmoke:" \+ scenario \+ ":" \+ runKey/);
+  assert.match(smokeScript, /args: \[options\.threadId, options\.scenario, runKey\]/);
+  assert.match(smokeScript, /simulateStableSignatureEmptyDom/);
+  assert.match(smokeScript, /stable-signature-empty-dom/);
+  assert.match(smokeScript, /--scenario <name>/);
   assert.match(smokeScript, /No visible turns/);
   assert.match(smokeScript, /thread_hash/);
   assert.match(smokeScript, /turnCount/);
   assert.match(smokeScript, /itemCount/);
+  assert.equal(smokeHarness.parseArgs(["--scenario", "stable-signature-empty-dom"]).scenario, "stable-signature-empty-dom");
+  assert.throws(() => smokeHarness.parseArgs(["--scenario", "unknown"]), /unknown_scenario:unknown/);
   assert.doesNotMatch(smokeScript, /innerText|rawPrompt|taskBody|accessKey|cookie|uploadBytes|providerPayload/);
 });
 
 test("public app shell cache advances with static frontend changes", () => {
-  assert.match(swJs, /codex-mobile-shell-v528/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v528"/);
+  assert.match(swJs, /codex-mobile-shell-v529/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v529"/);
   assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(swJs, /"\/thread-diagnostic-events\.js"/);

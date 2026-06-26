@@ -6,6 +6,7 @@ const path = require("node:path");
 const DEFAULT_DEBUG_URL = "http://127.0.0.1:19073/";
 const DEFAULT_THREAD_ID = "019ef42b-2cb8-7332-ab17-033ec5b48947";
 const DEFAULT_ARTIFACT_DIR = path.join(process.env.HOME || "/tmp", ".homeai-qa", "artifacts");
+const SCENARIOS = new Set(["empty-cache", "stable-signature-empty-dom"]);
 
 function parseArgs(argv = process.argv.slice(2)) {
   const out = {
@@ -13,6 +14,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     threadId: DEFAULT_THREAD_ID,
     appUrl: "",
     artifactDir: DEFAULT_ARTIFACT_DIR,
+    scenario: "empty-cache",
     screenshot: "",
     timeoutMs: 20000,
     waitMs: 1800,
@@ -26,6 +28,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     else if (item === "--thread-id") out.threadId = next() || out.threadId;
     else if (item === "--app-url") out.appUrl = next();
     else if (item === "--artifact-dir") out.artifactDir = next() || out.artifactDir;
+    else if (item === "--scenario") out.scenario = next() || out.scenario;
     else if (item === "--screenshot") out.screenshot = next();
     else if (item === "--timeout-ms") out.timeoutMs = readPositiveInt(next(), out.timeoutMs);
     else if (item === "--wait-ms") out.waitMs = readPositiveInt(next(), out.waitMs);
@@ -39,6 +42,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     }
   }
   out.debugUrl = normalizeBaseUrl(out.debugUrl);
+  if (!SCENARIOS.has(out.scenario)) throw new Error(`unknown_scenario:${out.scenario}`);
   return out;
 }
 
@@ -63,15 +67,18 @@ function printHelp() {
     "Usage: node scripts/codex-mobile-empty-detail-cache-smoke.js [options]",
     "",
     "Uses the Home AI iOS/PWA live debug server to replay the Codex Mobile",
-    "empty cached-current detail failure. The plugin iframe seeds an empty",
-    "loaded current detail, opens the same thread through the real loadThread",
-    "path, and asserts that the DOM reaches nonempty detail instead of staying",
-    "on 'No visible turns.'.",
+    "thread detail render failure classes. The default scenario seeds an empty",
+    "loaded current detail and opens the same thread through the real loadThread",
+    "path. The stable-signature scenario loads a real nonempty detail, clears",
+    "the mounted DOM while preserving the rendered signature, and asserts that",
+    "the DOM authority guard renders nonempty turns instead of staying on",
+    "'No visible turns.'.",
     "",
     "Options:",
     "  --debug-url <url>    Live debug server, default http://127.0.0.1:19073/",
     "  --thread-id <id>     Real nonempty Codex thread id to open.",
     "  --app-url <url>      Optional Home AI PWA URL to open first.",
+    "  --scenario <name>    empty-cache or stable-signature-empty-dom.",
     "  --screenshot <path>  Screenshot artifact path.",
     "  --json               Print JSON only.",
   ].join("\n"));
@@ -108,7 +115,7 @@ async function postJson(options, pathname, body) {
 }
 
 async function acquireLease(options) {
-  const owner = `codex-mobile-empty-detail-cache:${process.pid}`;
+  const owner = `codex-mobile-empty-detail-cache:${options.scenario}:${process.pid}`;
   const response = await postJson(options, "/api/lease", {
     owner,
     ttlMs: Math.max(120000, options.timeoutMs * 4 + options.waitMs * options.attempts + 30000),
@@ -135,7 +142,7 @@ async function postAction(options, body) {
 
 function defaultScreenshotPath(options) {
   const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+$/, "Z");
-  return path.join(options.artifactDir, `codex-mobile-empty-detail-cache-${stamp}.png`);
+  return path.join(options.artifactDir, `codex-mobile-empty-detail-cache-${options.scenario}-${stamp}.png`);
 }
 
 async function saveScreenshot(options) {
@@ -151,23 +158,26 @@ async function saveScreenshot(options) {
 
 const MEASURE_SCRIPT = `
   const threadId = String(arguments[0] || "");
+  const scenario = String(arguments[1] || "empty-cache");
+  const runKey = String(arguments[2] || "default").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) || "default";
   const frame = document.querySelector("#codexPluginHost .embedded-plugin-frame, .embedded-plugin-frame");
   if (!frame) return { ok: false, error: "plugin_frame_missing", retryAfterMs: 900 };
   const win = frame.contentWindow;
   const doc = frame.contentDocument || (win && win.document);
   if (!win || !doc || doc.readyState === "loading") return { ok: false, error: "plugin_frame_loading", retryAfterMs: 900 };
   const harness = win.__codexMobileVisualHarness;
-  if (!harness || typeof harness.simulateEmptyCachedDetailOpen !== "function") {
+  const methodName = scenario === "stable-signature-empty-dom" ? "simulateStableSignatureEmptyDom" : "simulateEmptyCachedDetailOpen";
+  if (!harness || typeof harness[methodName] !== "function") {
     return { ok: false, error: "visual_harness_unavailable", retryAfterMs: 900 };
   }
-  const key = "__codexMobileEmptyDetailCacheSmoke";
+  const key = "__codexMobileEmptyDetailCacheSmoke:" + scenario + ":" + runKey;
   const existing = win[key];
-  if (!existing || existing.threadId !== threadId) {
-    win[key] = { threadId, status: "running", startedAt: Date.now(), result: null, error: "" };
-    Promise.resolve(harness.simulateEmptyCachedDetailOpen(threadId)).then((result) => {
-      win[key] = { threadId, status: "done", startedAt: win[key] && win[key].startedAt || Date.now(), result, error: "" };
+  if (!existing || existing.threadId !== threadId || existing.scenario !== scenario || existing.runKey !== runKey) {
+    win[key] = { threadId, scenario, runKey, status: "running", startedAt: Date.now(), result: null, error: "" };
+    Promise.resolve(harness[methodName](threadId)).then((result) => {
+      win[key] = { threadId, scenario, runKey, status: "done", startedAt: win[key] && win[key].startedAt || Date.now(), result, error: "" };
     }).catch((err) => {
-      win[key] = { threadId, status: "failed", startedAt: win[key] && win[key].startedAt || Date.now(), result: null, error: String(err && err.message || err).slice(0, 160) };
+      win[key] = { threadId, scenario, runKey, status: "failed", startedAt: win[key] && win[key].startedAt || Date.now(), result: null, error: String(err && err.message || err).slice(0, 160) };
     });
     return { ok: false, error: "smoke_started", retryAfterMs: 1800 };
   }
@@ -182,10 +192,13 @@ const MEASURE_SCRIPT = `
   return {
     ok: Boolean(result && result.ok && turnCount > 0 && !/No visible turns\\./.test(emptyState)),
     error: existing.status === "failed" ? (existing.error || "smoke_failed") : "",
+    scenario,
     clientBuildId: result && result.clientBuildId || "",
     thread_hash: result && result.thread_hash || "",
     before: result && result.before || null,
     after: result && result.after || null,
+    domBefore: result && result.domBefore || null,
+    domAfter: result && result.domAfter || null,
     dom: {
       turnCount,
       itemCount,
@@ -195,9 +208,11 @@ const MEASURE_SCRIPT = `
 `;
 
 async function run(options) {
+  const runKey = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
   const report = {
     ok: false,
     debugUrl: options.debugUrl,
+    scenario: options.scenario,
     threadId: options.threadId,
     startedAt: new Date().toISOString(),
     recovery: [],
@@ -225,7 +240,7 @@ async function run(options) {
       const metrics = await postAction(options, {
         type: "js",
         script: MEASURE_SCRIPT,
-        args: [options.threadId],
+        args: [options.threadId, options.scenario, runKey],
       });
       report.metrics = metrics;
       if (metrics && metrics.ok) break;
