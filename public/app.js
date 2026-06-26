@@ -13629,19 +13629,41 @@ function patchThreadTilePane(threadId, options = {}) {
   const template = document.createElement("template");
   template.innerHTML = renderThreadTilePane(id, displayLayout, previousKeys);
   const sourcePane = template.content.firstElementChild;
-  if (!sourcePane) return false;
+  let completion = threadTileStatePolicy.panePatchCompletionPlan({
+    threadId: id,
+    sourcePanePresent: Boolean(sourcePane),
+  });
+  if (!completion.returnValue) return false;
   const patchedPane = patchNode(pane, sourcePane);
-  hydrateThreadDetailSurface(patchedPane, { imageScanDelays: [0, 180] });
-  restoreThreadTilePaneElementScrollState(patchedPane, previousScroll, options);
-  if (typeof window.requestAnimationFrame === "function") {
-    window.requestAnimationFrame(() => updateThreadTileBottomButtonForBody(patchedPane.querySelector(".thread-tile-pane-body")));
-  } else {
-    updateThreadTileBottomButtonForBody(patchedPane.querySelector(".thread-tile-pane-body"));
+  completion = threadTileStatePolicy.panePatchCompletionPlan({
+    threadId: id,
+    sourcePanePresent: true,
+    patchedPanePresent: Boolean(patchedPane),
+    requestAnimationFrameAvailable: typeof window.requestAnimationFrame === "function",
+  });
+  if (!completion.returnValue) return false;
+  if (completion.hydrate) hydrateThreadDetailSurface(patchedPane, { imageScanDelays: [0, 180] });
+  if (completion.restoreScroll) restoreThreadTilePaneElementScrollState(patchedPane, previousScroll, options);
+  if (completion.updateBottomButton) {
+    const updateBottomButton = () => updateThreadTileBottomButtonForBody(patchedPane.querySelector(".thread-tile-pane-body"));
+    if (completion.updateBottomButtonMode === "animation-frame" && typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(updateBottomButton);
+    } else {
+      updateBottomButton();
+    }
   }
-  state.renderedConversationSignature = threadTileRenderSignature(displayLayout, ids);
-  state.renderedConversationPatchShellSignature = "";
-  bindThreadTileActions();
-  return true;
+  if (completion.writeRenderSignature) {
+    state.renderedConversationSignature = threadTileRenderSignature(displayLayout, ids);
+  }
+  if (completion.clearPatchShellSignature) {
+    state.renderedConversationPatchShellSignature = "";
+  }
+  if (completion.bindActions) {
+    bindThreadTileActions();
+  } else {
+    return false;
+  }
+  return completion.returnValue;
 }
 
 function isThreadTileConversationSurface() {

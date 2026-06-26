@@ -310,6 +310,91 @@ test("thread tile state plans pane patch preflight", () => {
   });
 });
 
+test("thread tile state plans pane patch completion side effects", () => {
+  assert.deepEqual(state.panePatchCompletionPlan({
+    threadId: "",
+    sourcePanePresent: true,
+  }), {
+    action: "skip",
+    reason: "missing-id",
+    id: "",
+    returnValue: false,
+    hydrate: false,
+    restoreScroll: false,
+    updateBottomButton: false,
+    updateBottomButtonMode: "none",
+    writeRenderSignature: false,
+    clearPatchShellSignature: false,
+    bindActions: false,
+  });
+
+  assert.deepEqual(state.panePatchCompletionPlan({
+    threadId: "a",
+    sourcePanePresent: false,
+  }), {
+    action: "skip",
+    reason: "missing-source-pane",
+    id: "a",
+    returnValue: false,
+    hydrate: false,
+    restoreScroll: false,
+    updateBottomButton: false,
+    updateBottomButtonMode: "none",
+    writeRenderSignature: false,
+    clearPatchShellSignature: false,
+    bindActions: false,
+  });
+
+  assert.deepEqual(state.panePatchCompletionPlan({
+    threadId: "a",
+    sourcePanePresent: true,
+  }), {
+    action: "continue",
+    reason: "source-pane-ready",
+    id: "a",
+    returnValue: true,
+    hydrate: false,
+    restoreScroll: false,
+    updateBottomButton: false,
+    updateBottomButtonMode: "none",
+    writeRenderSignature: false,
+    clearPatchShellSignature: false,
+    bindActions: false,
+  });
+
+  assert.equal(state.panePatchCompletionPlan({
+    threadId: "a",
+    sourcePanePresent: true,
+    patchedPanePresent: false,
+  }).reason, "missing-patched-pane");
+
+  assert.deepEqual(state.panePatchCompletionPlan({
+    threadId: "a",
+    sourcePanePresent: true,
+    patchedPanePresent: true,
+    requestAnimationFrameAvailable: true,
+  }), {
+    action: "complete-pane-patch",
+    reason: "ready",
+    id: "a",
+    returnValue: true,
+    hydrate: true,
+    restoreScroll: true,
+    updateBottomButton: true,
+    updateBottomButtonMode: "animation-frame",
+    writeRenderSignature: true,
+    clearPatchShellSignature: true,
+    bindActions: true,
+  });
+
+  assert.equal(state.panePatchCompletionPlan({
+    threadId: "a",
+    sourcePanePresent: true,
+    patchedPanePresent: true,
+    requestAnimationFrameAvailable: false,
+  }).updateBottomButtonMode, "sync");
+});
+
 test("thread tile state selects active pane without depending on app globals", () => {
   assert.equal(state.effectiveSelectedThreadId({
     enabled: false,

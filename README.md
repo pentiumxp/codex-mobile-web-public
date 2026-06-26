@@ -322,6 +322,36 @@ node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js te
 该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为 Phase C
 本地模块累积。
 
+## 2026-06-27 Phase C Pane Patch Completion Planning Slice
+
+本地小切片继续推进 Phase C，把平铺窗口局部 DOM patch 成功后的 completion side
+effect 顺序从 `public/app.js` 迁到 `public/thread-tile-state.js`。上一片已经把
+`patchThreadTilePane()` 的 preflight failure reason 变成可测试策略；本片继续处理
+source pane 缺失、patch 后 pane 缺失、hydrate、scroll restore、bottom button
+更新、render signature 写回、patch shell signature 清理和 action 绑定这些后置步骤。
+
+本次修复：
+
+- `public/thread-tile-state.js` 新增 `panePatchCompletionPlan()`，统一规划
+  missing-id、missing-source-pane、source-pane-ready、missing-patched-pane 和
+  complete-pane-patch 分支。
+- helper 明确输出 hydrate、restoreScroll、updateBottomButton、writeRenderSignature、
+  clearPatchShellSignature、bindActions 和 bottom-button 更新模式。
+- `public/app.js` 的 `patchThreadTilePane()` 现在只按 helper 的计划执行真实 DOM
+  side effects；`patchNode`、hydrate、scroll restore 和 action binding 仍然留在 app 层。
+- focused tests 覆盖 completion 分支和 app wiring。
+- 不改变 DOM 结构、CSS、thread detail read、server projection、任务卡协议、
+  shell/cache 或部署状态。
+
+闭环验证：
+
+```bash
+node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js test/conversation-render.test.js
+```
+
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为 Phase C
+本地模块累积。
+
 ## 2026-06-26 Phase C Pane Scroll Runtime Planning Slice
 
 本地小切片继续推进 Phase C 的 pane-runtime ownership。此前每个平铺窗口的

@@ -16445,3 +16445,55 @@ The previous full handoff was archived and should be opened only when old proven
   - Only bounded file paths, test counts, and architecture state are recorded.
     No secrets, cookies, launch tokens, private thread bodies, task-card bodies,
     uploads, screenshots, or long logs are included.
+
+## 2026-06-27 - Phase C pane patch completion planning local slice
+
+- Latest local slice:
+  - Continued Phase C pane-state/render-patch architecture after `dec2538`
+    (`plan thread tile patch preflight`). This slice is local/private only and
+    is not deployed by design.
+- Root-cause boundary:
+  - Symptom/risk: after tile pane preflight succeeds, `patchThreadTilePane()`
+    still owned the completion branch inline: source pane missing, patch
+    result handling, hydrate, scroll restore, bottom-button update, render
+    signature writeback, patch-shell signature clear, and action binding. This
+    made successful pane-local patch transactions harder to audit when
+    investigating jitter or fallback to full board render.
+  - Failing layer: frontend thread-tile pane patch completion/result planning,
+    not keyed DOM patching, CSS, server projection, detail reads, task-card
+    protocol, or shell/cache.
+  - Violated invariant: `public/app.js` should execute real DOM side effects;
+    deterministic patch completion intent and failure reason classification
+    should live in a pure helper with focused tests.
+- Changes:
+  - `public/thread-tile-state.js` now exposes `panePatchCompletionPlan()` for
+    missing-id, missing-source-pane, source-pane-ready, missing-patched-pane,
+    and complete-pane-patch branches.
+  - The helper outputs side-effect intent for hydrate, restoreScroll,
+    updateBottomButton, bottom-button update mode, writeRenderSignature,
+    clearPatchShellSignature, and bindActions.
+  - `public/app.js` now follows that plan from `patchThreadTilePane()` while
+    keeping `patchNode`, hydration, scroll restore, signature writeback, and
+    action binding as app-owned DOM side effects.
+  - `test/thread-tile-state.test.js` covers the completion branches;
+    `test/thread-tile-layout-ui.test.js` guards app wiring.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md` with the Phase C boundary.
+- Validation:
+  - Focused:
+    `node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js test/conversation-render.test.js`
+    passed (`145` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`1135` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Not deployed. No `CLIENT_BUILD_ID` / PWA shell cache bump. This remains a
+    small Phase C local slice to batch with the next pane-state/render module.
+- Next:
+  - Commit locally, then continue with Phase E pane visual smoke, split sizing
+    controls, or Phase D task-card runtime hardening before one batch deploy.
+- Privacy:
+  - Only bounded file paths, test counts, and architecture state are recorded.
+    No secrets, cookies, launch tokens, private thread bodies, task-card bodies,
+    uploads, screenshots, or long logs are included.

@@ -380,6 +380,18 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(patchPaneBody, /ids,/);
   assert.match(patchPaneBody, /panePresent: Boolean\(pane\)/);
   assert.match(patchPaneBody, /if \(!preflight\.canPatch\) return false/);
+  assert.match(patchPaneBody, /threadTileStatePolicy\.panePatchCompletionPlan/);
+  assert.match(patchPaneBody, /sourcePanePresent: Boolean\(sourcePane\)/);
+  assert.match(patchPaneBody, /patchedPanePresent: Boolean\(patchedPane\)/);
+  assert.match(patchPaneBody, /requestAnimationFrameAvailable: typeof window\.requestAnimationFrame === "function"/);
+  assert.match(patchPaneBody, /if \(!completion\.returnValue\) return false/);
+  assert.match(patchPaneBody, /if \(completion\.hydrate\) hydrateThreadDetailSurface/);
+  assert.match(patchPaneBody, /if \(completion\.restoreScroll\) restoreThreadTilePaneElementScrollState/);
+  assert.match(patchPaneBody, /completion\.updateBottomButtonMode === "animation-frame"/);
+  assert.match(patchPaneBody, /if \(completion\.writeRenderSignature\)/);
+  assert.match(patchPaneBody, /if \(completion\.clearPatchShellSignature\)/);
+  assert.match(patchPaneBody, /if \(completion\.bindActions\)/);
+  assert.match(patchPaneBody, /return completion\.returnValue/);
   assert.match(appJs, /function scheduleRenderThreadTilePane\(/);
   const schedulePaneBody = functionBody(appJs, "scheduleRenderThreadTilePane");
   assert.match(schedulePaneBody, /threadTileStatePolicy\.paneRenderFramePlan/);

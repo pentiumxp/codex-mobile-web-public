@@ -1246,6 +1246,48 @@
     };
   }
 
+  function panePatchCompletionSkip(reason, details = {}) {
+    return Object.assign({
+      action: "skip",
+      reason,
+      id: "",
+      returnValue: false,
+      hydrate: false,
+      restoreScroll: false,
+      updateBottomButton: false,
+      updateBottomButtonMode: "none",
+      writeRenderSignature: false,
+      clearPatchShellSignature: false,
+      bindActions: false,
+    }, details);
+  }
+
+  function panePatchCompletionPlan(input = {}) {
+    const id = text(input.threadId || input.paneId).trim();
+    if (!id) return panePatchCompletionSkip("missing-id");
+    if (input.sourcePanePresent !== true) return panePatchCompletionSkip("missing-source-pane", { id });
+    if (!Object.prototype.hasOwnProperty.call(input, "patchedPanePresent")) {
+      return Object.assign(panePatchCompletionSkip("source-pane-ready", { id }), {
+        action: "continue",
+        returnValue: true,
+      });
+    }
+    if (input.patchedPanePresent === false) return panePatchCompletionSkip("missing-patched-pane", { id });
+    return {
+      action: "complete-pane-patch",
+      reason: "ready",
+      id,
+      returnValue: true,
+      hydrate: true,
+      restoreScroll: true,
+      updateBottomButton: true,
+      updateBottomButtonMode: input.requestAnimationFrameAvailable === true ? "animation-frame" : "sync",
+      writeRenderSignature: true,
+      clearPatchShellSignature: true,
+      bindActions: true,
+    };
+  }
+
   function refreshDelayMs(value, options = {}) {
     const defaultDelayMs = Math.max(0, Number(options.defaultDelayMs || 0));
     const minDelayMs = Math.max(0, Number(options.minDelayMs || 500));
@@ -1513,6 +1555,7 @@
     paneCountChangePlan,
     paneCountStatePlan,
     paneDisplayLayoutPlan,
+    panePatchCompletionPlan,
     panePatchPreflightPlan,
     paneRenderFramePlan,
     paneRenderSignaturePlan,
