@@ -508,7 +508,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v511";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v512";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -4746,14 +4746,41 @@ function threadListSummaryFromDetailThread(thread) {
   return summary;
 }
 
+function threadHasLoadedDetailState(thread) {
+  if (!thread || typeof thread !== "object") return false;
+  if (thread.mobileLoading || thread.mobileLoadError) return false;
+  if (!Array.isArray(thread.turns)) return false;
+  if (thread.turns.length > 0) return true;
+  return Boolean(
+    Object.prototype.hasOwnProperty.call(thread, "mobileReadMode")
+    || Object.prototype.hasOwnProperty.call(thread, "mobileDiagnostics")
+    || Object.prototype.hasOwnProperty.call(thread, "mobileProjectionVersion")
+    || Object.prototype.hasOwnProperty.call(thread, "mobileProjection")
+    || Object.prototype.hasOwnProperty.call(thread, "mobileOlderTurnsCursor")
+    || Object.prototype.hasOwnProperty.call(thread, "mobileNewerTurnsCursor")
+    || Object.prototype.hasOwnProperty.call(thread, "runtimeSettings")
+    || Object.prototype.hasOwnProperty.call(thread, "threadTaskCards")
+  );
+}
+
+function threadIsSummaryOnlyCurrentThread(thread) {
+  return Boolean(thread
+    && state.currentThreadId
+    && String(thread.id || "") === String(state.currentThreadId || "")
+    && !threadHasLoadedDetailState(thread)
+    && !thread.mobileLoading
+    && !thread.mobileLoadError);
+}
+
 function mergeThreadIntoThreadList(thread) {
   const summary = threadListSummaryFromDetailThread(thread);
   if (!summary) return false;
   const id = String(summary.id);
   const index = state.threads.findIndex((entry) => String(entry && entry.id || "") === id);
   if (index >= 0) {
+    const existingSummary = threadListSummaryFromDetailThread(state.threads[index]) || {};
     state.threads = state.threads.map((entry, entryIndex) => (
-      entryIndex === index ? Object.assign({}, entry, summary) : entry
+      entryIndex === index ? Object.assign({}, existingSummary, summary) : entry
     ));
   } else {
     state.threads = [summary, ...state.threads];
@@ -8652,7 +8679,8 @@ async function loadThreads(options = {}) {
     const apiElapsedMs = roundedDurationMs(apiStartedAt);
     if (seq !== state.threadListLoadSeq) return null;
     const renderStartedAt = nowPerfMs();
-    state.threads = visibleThreads(result.data || []);
+    state.threads = visibleThreads(result.data || [])
+      .map((thread) => threadListSummaryFromDetailThread(thread) || thread);
     state.workspaceTokenUsage = result.mobileTokenUsage || null;
     state.threadListLoadedAtMs = Date.now();
     reconcileThreadStatusHints(state.threads);
@@ -8786,6 +8814,7 @@ async function loadThread(threadId, options = {}) {
   const replacedTilePaneForThreadListOpen = replaceLastThreadTilePaneForThreadListOpen(threadId, { source });
   if (threadId === state.currentThreadId
     && state.currentThread
+    && threadHasLoadedDetailState(state.currentThread)
     && !state.currentThread.mobileLoading
     && !state.currentThread.mobileLoadError) {
     const renderStartedAt = nowPerfMs();
@@ -14244,7 +14273,7 @@ function renderCurrentThread(options = {}) {
     renderNewThreadDraft();
     return;
   }
-  const thread = state.currentThread;
+  let thread = state.currentThread;
   if (!thread) {
     if (state.startupThreadOpenPending) {
       renderStartupThreadOpening();
@@ -14283,6 +14312,24 @@ function renderCurrentThread(options = {}) {
   }
   updateCurrentThreadHeader(thread);
   setThreadTileConversationMode(false);
+  if (threadIsSummaryOnlyCurrentThread(thread)) {
+    const hadTurnsField = Object.prototype.hasOwnProperty.call(thread, "turns");
+    state.currentThread = Object.assign({}, threadListSummaryFromDetailThread(thread) || thread, {
+      turns: [],
+      mobileLoading: true,
+      mobileLoadError: "",
+    });
+    thread = state.currentThread;
+    postClientEvent("thread_summary_detail_recovery", {
+      threadId: state.currentThreadId || thread.id || "",
+      reason: "summary-only-current-thread",
+      hasListTurnsField: hadTurnsField,
+      buildId: CLIENT_BUILD_ID,
+    });
+    if (!state.threadLoadController && !state.refreshThreadController) {
+      scheduleCurrentThreadRefresh(0, "summary-detail-recovery");
+    }
+  }
   if (threadIsLoadingWithoutVisibleTurns(thread)) {
     const shellPlan = threadDetailRenderPlanApi.planSingleThreadFullRenderShell({
       threadId: state.currentThreadId || thread.id || "",

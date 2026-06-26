@@ -45,11 +45,19 @@ Observed in Music thread `019ef42b-2cb8-7332-ab17-033ec5b48947` on
   items.
 - The client briefly rendered the summary row as a thread-detail conversation,
   which exposed `No visible turns.` before the detail response settled.
+- A follow-up report showed the same thread stuck on the empty detail view even
+  though direct `/api/threads/<id>?mode=recent` and full reads returned `10`
+  visible turns. The thread-list API row still carried a `turns: []` field, and
+  detail-to-list merging preserved that stale detail-shaped field on the list
+  object.
 
 Conclusion: a thread-list summary row is not a loaded thread detail. During
 thread switches, the client must force a loading shell until the detail response
 arrives; summary metadata can provide title/status/workspace context, but it
-must not own the conversation `turns` state.
+must not own the conversation `turns` state. Thread-list rows must be sanitized
+so they do not retain `turns`, task-card detail arrays, runtime settings, or
+loading/error detail flags; a current thread without loaded-detail evidence must
+request detail instead of taking the cached-current render path.
 
 ### Platform Incident Intake
 
