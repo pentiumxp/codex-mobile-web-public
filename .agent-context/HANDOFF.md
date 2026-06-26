@@ -15305,3 +15305,55 @@ The previous full handoff was archived and should be opened only when old proven
 	  - Continue Phase A toward remaining `renderCurrentThread()` / full-render
 	    shell post-effect seams or switch to Phase C pane-state if user priority
 	    changes.
+
+## 2026-06-26 - Phase A single-thread shell update input slice
+
+- Context:
+  - Follows local commit `c883d98` (`plan conversation html update effects`).
+  - This is the third local Phase A render/patch ownership slice and remains
+    intentionally undeployed until batched into a coherent module.
+- Root-cause boundary:
+  - Symptom/risk: single-thread early shell and full-render shell HTML planning
+    already lived in `public/thread-detail-render-plan.js`, but
+    `renderCurrentThread()` still directly assembled the
+    `updateConversationHtml()` input object: conversation signature,
+    patch-shell signature, bottom-follow flag, expected visible turn count, and
+    source.
+  - Failing layer: frontend single-thread shell update input ownership, not
+    server projection, local DOM patching, task-card protocol, diagnostic
+    transport, or shell/cache.
+  - Violated invariant: once shell HTML is planned by a helper, the corresponding
+    conversation-update input should also be planned in a testable helper.
+    `public/app.js` should execute the DOM update and bind real events, not
+    re-own the update-input policy.
+  - Closure classification: architecture-boundary cleanup. It does not hide
+    duplicate/missing messages, force refresh, skip refresh, change shell HTML,
+    change retry binding, change DOM patch behavior, change scroll policy,
+    change diagnostics, or change shell/cache.
+- Changes:
+  - `public/thread-detail-render-plan.js`
+    - Added `planSingleThreadShellConversationUpdate()`.
+  - `public/app.js`
+    - Early shell and normal full-render shell paths now call the helper and pass
+      its `{ html, conversationSignature, options }` result into
+      `updateConversationHtml()`.
+  - Tests/docs updated:
+    - `test/thread-detail-render-plan.test.js`
+    - `test/conversation-render.test.js`
+    - `test/turn-scroll-controls.test.js`
+    - `README.md`
+    - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`
+    - `docs/MODULES.md`
+- Validation so far:
+  - Focused:
+    `node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/turn-scroll-controls.test.js test/mobile-viewport.test.js`
+    passed (`172` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`1107` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Not deployed by design. This is a local Phase A slice for a future
+    module-level deploy.
+- Next:
+  - Commit locally.

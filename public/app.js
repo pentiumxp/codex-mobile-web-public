@@ -14643,15 +14643,18 @@ function renderCurrentThread(options = {}) {
   });
   if (earlyShellPlan.shouldRender) {
     if (earlyShellPlan.clearLiveOperationDock) updateLiveOperationDockHtml("");
+    const earlyUpdatePlan = threadDetailRenderPlanApi.planSingleThreadShellConversationUpdate({
+      shellPlan: earlyShellPlan,
+      conversationSignature: earlyShellPlan.conversationSignature,
+      patchShellSignature: earlyShellPlan.patchShellSignature,
+      stickToBottom: earlyShellPlan.stickToBottom,
+      expectedVisibleTurnCount: 0,
+      source: "single-thread-early-shell",
+    });
     updateConversationHtml(
-      earlyShellPlan.html,
-      earlyShellPlan.conversationSignature,
-      {
-        stickToBottom: earlyShellPlan.stickToBottom,
-        patchShellSignature: earlyShellPlan.patchShellSignature,
-        expectedVisibleTurnCount: 0,
-        source: "single-thread-early-shell",
-      },
+      earlyUpdatePlan.html,
+      earlyUpdatePlan.conversationSignature,
+      earlyUpdatePlan.options,
     );
     if (earlyShellPlan.bindRetry) {
       const retry = $("retryCurrentThread");
@@ -14703,12 +14706,15 @@ function renderCurrentThread(options = {}) {
   });
   updateLiveOperationDockHtml(liveOperationDock);
   const previousChildCount = $("conversation") ? $("conversation").childNodes.length : 0;
-  updateConversationHtml(shellPlan.html, conversationRenderSignature(thread), {
-    stickToBottom: shouldStickToBottom,
+  const shellUpdatePlan = threadDetailRenderPlanApi.planSingleThreadShellConversationUpdate({
+    shellPlan,
+    conversationSignature: conversationRenderSignature(thread),
     patchShellSignature: conversationPatchShellSignature(thread),
+    stickToBottom: shouldStickToBottom,
     expectedVisibleTurnCount: turns.length,
     source: "single-thread-render",
   });
+  updateConversationHtml(shellUpdatePlan.html, shellUpdatePlan.conversationSignature, shellUpdatePlan.options);
   checkEmptyVisibleDetailMismatchAfterRender(thread, shellPlan, {
     source: "single-thread-render",
     renderMode: "full-render",

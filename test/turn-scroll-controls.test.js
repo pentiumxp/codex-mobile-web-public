@@ -181,7 +181,8 @@ test("live and final message renders stay anchored when the user is at bottom", 
     /autoScrollHold: shouldHoldAutoScrollForCurrentTurn\(\),/,
     /viewportFollow: shouldFollowViewportChangeToBottom\(\),/,
     /const shouldStickToBottom = Boolean\(fullRenderScrollPlan\.stickToBottom\);/,
-    /updateConversationHtml\(shellPlan\.html, conversationRenderSignature\(thread\), \{[\s\S]*stickToBottom: shouldStickToBottom,[\s\S]*patchShellSignature: conversationPatchShellSignature\(thread\),[\s\S]*\}\);/,
+    /const shellUpdatePlan = threadDetailRenderPlanApi\.planSingleThreadShellConversationUpdate\(\{[\s\S]*?patchShellSignature: conversationPatchShellSignature\(thread\),[\s\S]*?stickToBottom: shouldStickToBottom,[\s\S]*?\}\);/,
+    /updateConversationHtml\(shellUpdatePlan\.html, shellUpdatePlan\.conversationSignature, shellUpdatePlan\.options\);/,
   ]);
 
   const updateBody = functionBody("updateConversationHtml");

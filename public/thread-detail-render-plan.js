@@ -759,6 +759,22 @@
     };
   }
 
+  function planSingleThreadShellConversationUpdate(input = {}) {
+    const shellPlan = objectOrEmpty(input.shellPlan);
+    const source = compactReason(input.source, "single-thread-render");
+    return {
+      html: text(shellPlan.html),
+      conversationSignature: text(input.conversationSignature),
+      options: {
+        stickToBottom: Boolean(input.stickToBottom),
+        patchShellSignature: text(input.patchShellSignature),
+        expectedVisibleTurnCount: normalizedCount(input.expectedVisibleTurnCount),
+        source,
+      },
+      reason: source,
+    };
+  }
+
   return {
     emptyThreadDetailRefreshPatchAttempt,
     finalizeThreadDetailRenderPlan,
@@ -775,6 +791,7 @@
     planThreadDetailRefreshPostMergeEffects,
     planSingleThreadEarlyShellExecution,
     planSingleThreadFullRenderShell,
+    planSingleThreadShellConversationUpdate,
     planThreadDetailHistoryAutoBackfill,
     planThreadDetailRefreshPatchExecution,
     planThreadDetailRefreshRender,

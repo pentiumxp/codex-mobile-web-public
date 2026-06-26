@@ -1875,7 +1875,8 @@ test("loading and thread-list state preserve locally visible live turns", () => 
   assert.match(functionBody("renderCurrentThread"), /loadingWithoutVisibleTurns: threadIsLoadingWithoutVisibleTurns\(thread\)/);
   assert.match(functionBody("renderCurrentThread"), /loadError: thread\.mobileLoadError/);
   assert.match(functionBody("renderCurrentThread"), /if \(earlyShellPlan\.shouldRender\) \{/);
-  assert.match(functionBody("renderCurrentThread"), /updateConversationHtml\(\s*earlyShellPlan\.html,\s*earlyShellPlan\.conversationSignature,/);
+  assert.match(functionBody("renderCurrentThread"), /threadDetailRenderPlanApi\.planSingleThreadShellConversationUpdate\(\{[\s\S]*shellPlan: earlyShellPlan,/);
+  assert.match(functionBody("renderCurrentThread"), /updateConversationHtml\(\s*earlyUpdatePlan\.html,\s*earlyUpdatePlan\.conversationSignature,\s*earlyUpdatePlan\.options,/);
   assert.match(functionBody("renderCurrentThread"), /earlyShellPlan\.bindRetry/);
   assert.match(functionBody("renderCurrentThread"), /threadDetailRenderPlanApi\.planSingleThreadFullRenderShell/);
   assert.doesNotMatch(functionBody("renderCurrentThread"), /Thread failed:/);
@@ -3048,6 +3049,7 @@ test("conversation html update invalidates stable signatures when the DOM has lo
   assert.match(updateBody, /postClientEvent\("conversation_dom_authority_invalidated"/);
   assert.match(updateBody, /updateReason: updatePlan\.reason \|\| ""/);
   assert.match(functionBody("renderCurrentThread"), /expectedVisibleTurnCount: turns\.length/);
+  assert.match(functionBody("renderCurrentThread"), /updateConversationHtml\(shellUpdatePlan\.html, shellUpdatePlan\.conversationSignature, shellUpdatePlan\.options\)/);
   assert.match(functionBody("threadTileVisibleShape"), /visibleTurnsForConversation\(thread\)/);
   assert.match(functionBody("threadTileVisibleShape"), /visibleItemsForTurn\(turn\)\.length/);
   assert.match(functionBody("threadTileVisibleTurnCount"), /threadTileVisibleShape\(ids\)\.turnCount/);

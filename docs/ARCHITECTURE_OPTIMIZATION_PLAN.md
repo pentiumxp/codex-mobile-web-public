@@ -845,7 +845,13 @@ binding, hydration, and action binding. Single-thread full-render
 bottom-follow planning now lives in `public/conversation-scroll.js` through
 `planFullRenderScroll`: app code supplies near-bottom/user-reading/auto-hold
 and follow-lease inputs, while the helper owns the final `stickToBottom`
-decision and bounded reason for full conversation renders.
+decision and bounded reason for full conversation renders. Single-thread shell
+conversation update input planning now also lives in
+`public/thread-detail-render-plan.js`: early-shell and full-render shell paths
+produce stable `updateConversationHtml()` inputs for HTML, conversation
+signature, patch-shell signature, expected visible turn count, source, and
+bottom-follow intent while app code keeps the real DOM update and retry/action
+binding.
 Thread detail click action recognition now
 lives in `public/thread-detail-actions.js`: app code still owns event listener
 wiring and business execution, but selector priority, root containment,
@@ -934,8 +940,8 @@ Target:
   hydration orchestration is now outside app.js for thread detail surfaces;
   live text item DOM patch sequencing is now outside app.js for streaming
   assistant/plan updates; keyed DOM child reconciliation and `patchHtml`
-  parsing/execution are now outside app.js; single-thread full-render shell
-  planning is now outside app.js;
+	  parsing/execution are now outside app.js; single-thread full-render shell
+	  planning and shell update input planning are now outside app.js;
   click-action recognition is now outside app.js for conversation surfaces;
   thread-tile interaction recognition is now outside app.js for tile surfaces;
   core thread-tile pane-state normalization and operation bubble signature/

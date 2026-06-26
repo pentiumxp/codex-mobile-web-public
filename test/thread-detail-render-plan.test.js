@@ -961,6 +961,49 @@ test("single-thread early shell execution leaves detail content to full render p
   });
 });
 
+test("single-thread shell conversation update plans stable update inputs", () => {
+  assert.deepEqual(renderPlan.planSingleThreadShellConversationUpdate({
+    shellPlan: {
+      html: "<turn/>",
+    },
+    conversationSignature: "detail|thread-1",
+    patchShellSignature: "patch|thread-1",
+    stickToBottom: true,
+    expectedVisibleTurnCount: 2,
+    source: "single-thread-render",
+  }), {
+    html: "<turn/>",
+    conversationSignature: "detail|thread-1",
+    options: {
+      stickToBottom: true,
+      patchShellSignature: "patch|thread-1",
+      expectedVisibleTurnCount: 2,
+      source: "single-thread-render",
+    },
+    reason: "single-thread-render",
+  });
+
+  assert.deepEqual(renderPlan.planSingleThreadShellConversationUpdate({
+    shellPlan: {
+      html: "<loading/>",
+    },
+    conversationSignature: "loading|thread-2",
+    patchShellSignature: "patch|thread-2",
+    stickToBottom: false,
+    source: "single-thread-early-shell",
+  }), {
+    html: "<loading/>",
+    conversationSignature: "loading|thread-2",
+    options: {
+      stickToBottom: false,
+      patchShellSignature: "patch|thread-2",
+      expectedVisibleTurnCount: 0,
+      source: "single-thread-early-shell",
+    },
+    reason: "single-thread-early-shell",
+  });
+});
+
 test("single-thread full render shell plans escaped load error retry", () => {
   const plan = renderPlan.planSingleThreadFullRenderShell({
     threadId: "thread-1",

@@ -16,6 +16,41 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 Phase A Single-Thread Shell Update Input Slice
+
+本地小切片继续推进 Phase A，让 `renderCurrentThread()` 更接近“只编排、
+只执行 DOM 副作用”。上一切片已经把 `updateConversationHtml()` 的后置副作用
+计划化；本次处理它的上游：single-thread early shell 和 full shell 调用
+`updateConversationHtml()` 时的输入拼装。
+
+此前 loading / load-error early shell 和正常 full-render shell 都已由
+`public/thread-detail-render-plan.js` 生成 HTML，但 `public/app.js` 仍直接拼
+`conversationSignature`、`patchShellSignature`、`stickToBottom`、
+`expectedVisibleTurnCount` 和 `source` 后调用 `updateConversationHtml()`。
+这让 shell 选择已经服务化，但 shell update 输入边界仍散在主 app 文件里。
+
+本次修复：
+
+- `public/thread-detail-render-plan.js` 新增
+  `planSingleThreadShellConversationUpdate()`，把 shell plan 和签名/scroll/count
+  输入转成稳定的 `{ html, conversationSignature, options }`。
+- `renderCurrentThread()` 的 early shell 和 full-render shell 都执行这个 update
+  input plan，再调用 `updateConversationHtml()`。
+- 不改变 shell HTML、retry binding、live operation dock 清理、full-render scroll
+  policy、conversation DOM update、empty detail diagnostic、server projection、
+  local patch eligibility、任务卡协议或 shell/cache。
+
+闭环验证：
+
+```bash
+node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/turn-scroll-controls.test.js test/mobile-viewport.test.js
+```
+
+结果：`172` passed。提交前完整验证：`npm run check`、`npm test`
+（`1107` passed）、`npm run check:macos`、`git diff --check` 均通过。
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为
+Phase A 模块的一部分累积。
+
 ## 2026-06-26 Phase A Conversation HTML Update Effects Slice
 
 本地小切片继续推进 Phase A 的 render/patch ownership 收敛，当前不部署。
