@@ -122,7 +122,14 @@ Current acceleration targets:
    coverage proves this can return `projection-active-overlay` without full
    `thread/read` while preserving fail-closed behavior for missing snapshots,
    stale assistant evidence, and completed turns. This slice is local-only until
-   the next active-detail module batch deploy/readback.
+   the next active-detail module batch deploy/readback. The next local slice
+   separates ordinary projection staleness from active-overlay window
+   eligibility: `dynamic-summary-stale` still invalidates normal projection
+   hits, but a proof-gated active overlay lookup may reuse that same dynamic
+   entry as a bounded projection window when the summary is still active and
+   the caller explicitly requests `{ allowPartial: true, activeOverlay: true }`.
+   The live overlay proof gate still owns the final decision; stale windows are
+   not exposed as ordinary detail projections.
 2. Thread-list cold starts no longer hide source collection inside the fallback
    cache policy. The local `thread-list-fallback-baseline-service` slice now
    owns state DB / rollout session / session-index source collection,

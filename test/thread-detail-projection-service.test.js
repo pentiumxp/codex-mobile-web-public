@@ -219,6 +219,57 @@ test("thread detail projection clears inferred active overlay turn after complet
   });
 });
 
+test("thread detail projection allows stale active summary only for active overlay window lookup", () => {
+  let current = 10000;
+  const service = createThreadDetailProjectionService({
+    cacheDir: "",
+    policyVersion: "test-v1",
+    maxTurns: 3,
+    now: () => current,
+  });
+
+  service.seed(signatureInput({
+    summaryStatus: "active",
+    summaryUpdatedAtMs: 1000,
+  }), {
+    thread: {
+      id: "thread-1",
+      mobileReadMode: "turns-list-initial",
+      turns: [{ id: "older-turn", items: [{ id: "agent-old", type: "agentMessage" }] }],
+    },
+  }, {
+    partial: true,
+    partialKind: "recent-window",
+  });
+  current = 11000;
+  service.applyNotification("turn/started", {
+    threadId: "thread-1",
+    turn: { id: "turn-1", status: { type: "active" }, items: [] },
+  });
+
+  const staleInput = signatureInput({
+    summaryStatus: "active",
+    summaryUpdatedAtMs: 20000,
+  });
+
+  const ordinary = service.lookup(staleInput, { allowPartial: true });
+  assert.equal(ordinary.cached, null);
+  assert.equal(ordinary.missReason, "dynamic-summary-stale");
+
+  const overlay = service.lookup(staleInput, { allowPartial: true, activeOverlay: true });
+  assert.ok(overlay.cached);
+  assert.equal(overlay.missReason, "");
+  assert.equal(overlay.cached.partial, true);
+  assert.deepEqual(overlay.cached.result.thread.turns.map((turn) => turn.id), ["older-turn", "turn-1"]);
+
+  const restingOverlay = service.lookup(signatureInput({
+    summaryStatus: "completed",
+    summaryUpdatedAtMs: 20000,
+  }), { allowPartial: true, activeOverlay: true });
+  assert.equal(restingOverlay.cached, null);
+  assert.equal(restingOverlay.missReason, "dynamic-summary-stale");
+});
+
 test("thread detail projection active overlay snapshot rejects non-dynamic static cache", () => {
   const service = createThreadDetailProjectionService({
     cacheDir: "",

@@ -235,6 +235,35 @@ test("read orchestration uses projection-inferred active turn when summary lacks
   assert.equal(timings.activeOverlaySource, "projection-live");
 });
 
+test("read orchestration uses active overlay window despite active summary staleness", async () => {
+  const { calls, service } = createActiveOverlayHarness({
+    summary: {
+      activeTurnId: "",
+      updatedAtMs: 60_000,
+    },
+  });
+  const response = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: true,
+    threadLog: () => {},
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.mode, "projection-active-overlay");
+  assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), [
+    "projection-lookup:full:partial-not-allowed",
+    "projection-lookup:partial:hit",
+  ]);
+  assert.equal(calls.includes("thread-read"), false);
+  assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["turn-window", "turn-live"]);
+  const timings = response.body.thread.mobileDiagnostics.threadDetailTimings;
+  assert.equal(timings.projectionMissReason, "");
+  assert.equal(timings.activeFullReadReason, "status-active");
+  assert.equal(timings.activeOverlayAction, "use-projection-overlay");
+  assert.equal(timings.activeOverlayReason, "overlay-evidence-complete");
+});
+
 test("thread detail route smoke returns active overlay from mode=recent without full thread/read", async () => {
   const { calls, service } = createActiveOverlayHarness();
   const sent = [];

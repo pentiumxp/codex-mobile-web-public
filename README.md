@@ -52,6 +52,12 @@ Phase B 的活跃大线程读取风险已经从 proof gate 推进到真实 provi
   `status=active` 时，active overlay provider 可以从 server-owned live projection
   推断当前 active turn，再继续走原有 proof gate。缺 snapshot、assistant freshness
   不足或 completed turn 仍然 fail-closed 到 full `thread/read`。
+- 第二个本地切片处理 production readback 同时暴露的
+  `projectionMissReason=dynamic-summary-stale`。普通 projection 命中仍然会因为
+  summary 更新较新而 miss；只有 active overlay 路径在同时传入
+  `allowPartial=true` 和 `activeOverlay=true`、且 summary 仍是 active/running 时，
+  才能把这个动态 entry 当作 bounded projection window。最终是否返回仍由
+  active overlay proof gate 决定，不把 stale window 暴露成普通 detail cache。
 
 这个 follow-up 仍是本地小切片，按新的节奏等待 active-detail 模块凑齐后统一部署和生产读回。
 它不是 UI 去重、不是强制刷新，也不是新的 fallback cache。

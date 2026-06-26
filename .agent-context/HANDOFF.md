@@ -14296,3 +14296,50 @@ The previous full handoff was archived and should be opened only when old proven
     `git diff --check`.
   - Commit locally if full validation passes. Do not deploy this single slice
     unless the active-detail module is ready or the user explicitly requests it.
+
+## 2026-06-26 - active overlay stale-window lookup local slice
+
+- Scope:
+  - Continued the active-detail module with a second local slice after the
+    production readback also showed `projectionMissReason=dynamic-summary-stale`.
+  - This is not deployed or pushed Public. Batch with the active-detail module
+    before production readback.
+- Root-cause boundary:
+  - Symptom: active overlay orchestration asks for a projection window with
+    `{ allowPartial: true, activeOverlay: true }`, but the projection cache
+    treats a summary timestamp newer than the dynamic entry as
+    `dynamic-summary-stale`. That can leave the overlay provider with a live
+    turn but no projection window, forcing full `thread/read`.
+  - Failing layer: projection lookup policy for active-overlay window assembly.
+  - Violated invariant: ordinary projection hits must fail closed on stale
+    summary evidence, but active-overlay assembly has a stricter downstream
+    proof gate and may use an older dynamic entry as a bounded window skeleton
+    when the summary is still active and live overlay evidence will supply the
+    current turn.
+  - Root cause: `thread-detail-projection-service.lookup()` had a single
+    summary-staleness rule shared by ordinary projection reads and
+    proof-gated active overlay window reads.
+  - Closure classification: root-cause policy split. No UI fallback, no forced
+    refresh, no ordinary stale projection reuse, and no proof-gate relaxation.
+- Changes:
+  - `adapters/thread-detail-projection-service.js`
+    - Keeps `dynamic-summary-stale` behavior for normal lookups.
+    - Allows a dynamic summary-stale entry only when the caller explicitly
+      passes `activeOverlay=true`, `allowPartial=true`, and the summary status
+      remains active/running.
+  - Tests:
+    - Projection service proves ordinary stale lookup still misses, active
+      overlay lookup can reuse the window, and resting summaries still miss.
+    - Read orchestration integration proves active overlay can return
+      `projection-active-overlay` despite active summary staleness without
+      full `thread/read`.
+  - README, architecture optimization plan, and module map were updated.
+- Validation so far:
+  - Focused:
+    `node --test test/thread-detail-projection-service.test.js test/thread-detail-projection-v4-service.test.js test/thread-detail-active-overlay-provider-service.test.js test/thread-detail-active-overlay-integration.test.js test/thread-detail-read-orchestration-service.test.js test/phase-b-readback-decision-service.test.js`
+    passed (`64` tests).
+- Next validation:
+  - Run full `npm test`, `npm run check`, `npm run check:macos`, and
+    `git diff --check`.
+  - Commit locally if full validation passes. Do not deploy this single slice
+    unless the active-detail module is ready or the user explicitly requests it.

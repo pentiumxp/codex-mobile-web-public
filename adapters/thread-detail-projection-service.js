@@ -777,7 +777,13 @@ function createThreadDetailProjectionService(options = {}) {
 
     const summaryUpdatedAtMs = safeNumber(input.summaryUpdatedAtMs);
     if (entry.dynamic) {
-      if (summaryUpdatedAtMs && entry.updatedAtMs && summaryUpdatedAtMs > entry.updatedAtMs + 2000) {
+      const allowActiveOverlaySummaryStaleWindow = optionsForGet.activeOverlay === true
+        && optionsForGet.allowPartial === true
+        && isActiveLikeStatus(input.summaryStatus);
+      if (!allowActiveOverlaySummaryStaleWindow
+        && summaryUpdatedAtMs
+        && entry.updatedAtMs
+        && summaryUpdatedAtMs > entry.updatedAtMs + 2000) {
         return { cached: null, missReason: "dynamic-summary-stale" };
       }
       if (dynamicBackingSignatureChanged(entry.signature, signature)) {
