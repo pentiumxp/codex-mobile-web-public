@@ -378,6 +378,7 @@ test("phase B readback summary helpers keep only bounded metadata", () => {
         fallbackBaselineSourceCount: 1000000,
         fallbackRolloutFileStatCount: 12,
         fallbackRolloutStatusTailBytes: 8192,
+        fallbackSessionIndexReuseCount: 1,
         fallbackSessionIndexLineCount: 2500,
         totalMs: 999999999,
       },
@@ -387,6 +388,7 @@ test("phase B readback summary helpers keep only bounded metadata", () => {
   assert.equal(list.fallbackBaselineSourceCount, 100000);
   assert.equal(list.fallbackRolloutFileStatCount, 12);
   assert.equal(list.fallbackRolloutStatusTailBytes, 8192);
+  assert.equal(list.fallbackSessionIndexReuseCount, 1);
   assert.equal(list.fallbackSessionIndexLineCount, 2500);
   assert.equal(list.totalMs, 600000);
   assert.doesNotMatch(JSON.stringify(list), /private title|thread-secret/);

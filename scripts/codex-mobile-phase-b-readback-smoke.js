@@ -217,6 +217,7 @@ function summarizeThreadList(result = {}) {
     fallbackRolloutStatusTailReadCount: boundedCount(timings && timings.fallbackRolloutStatusTailReadCount),
     fallbackRolloutStatusTailBytes: boundedNumber(timings && timings.fallbackRolloutStatusTailBytes),
     fallbackSessionIndexReadCount: boundedCount(timings && timings.fallbackSessionIndexReadCount),
+    fallbackSessionIndexReuseCount: boundedCount(timings && timings.fallbackSessionIndexReuseCount),
     fallbackSessionIndexLineCount: boundedCount(timings && timings.fallbackSessionIndexLineCount),
     fallbackSessionIndexEntryCount: boundedCount(timings && timings.fallbackSessionIndexEntryCount),
     totalMs: boundedNumber(timings && timings.totalMs),

@@ -208,7 +208,13 @@ Current acceleration targets:
    and `session_index.jsonl` read/line/entry counts. The counters are numeric
    only and pass through a whitelist in the baseline/cache layers, so production
    readback can identify the next root-cause owner without copying thread
-   titles, prompts, rollout paths, or logs.
+   titles, prompts, rollout paths, or logs. A follow-up narrows one of those
+   counters directly: one fallback baseline read now carries a temporary
+   `sourceContext` through state DB / rollout / session-index source readers,
+   so the session index map read by rollout fallback can be reused by
+   session-index fallback in the same pass. This is not a persistent cache or
+   prewarm; it only removes duplicate synchronous reads within one cold source
+   build and exposes `fallbackSessionIndexReuseCount` as proof.
 3. Large detail cold-path attribution now has a dedicated
    `thread-detail-cold-path-diagnosis-service` that emits bounded
    `coldPathOwner` / `coldPathReason` for projection-cache seeding,
@@ -288,11 +294,12 @@ non-partial projections.
   `fallbackRolloutCandidateScannedCount`, `fallbackRolloutHeadReadCount`,
   `fallbackRolloutHeadBytes`, `fallbackRolloutStatusTailReadCount`,
   `fallbackRolloutStatusTailBytes`, `fallbackSessionIndexReadCount`,
-  `fallbackSessionIndexLineCount`, and `fallbackSessionIndexEntryCount`. These
-  fields prove whether an observed slow list load is a first baseline build,
-  TTL expiry, cache miss, deferred fallback, warm in-process reuse, source-read
-  volume, rollout discovery/head/tail work, session-index volume, or post-merge
-  result size.
+  `fallbackSessionIndexReuseCount`, `fallbackSessionIndexLineCount`, and
+  `fallbackSessionIndexEntryCount`. These fields prove whether an observed slow
+  list load is a first baseline build, TTL expiry, cache miss, deferred
+  fallback, warm in-process reuse, source-read volume, rollout
+  discovery/head/tail work, session-index volume/reuse, or post-merge result
+  size.
   `thread-list-cold-path-diagnosis-service.js` also emits bounded
   `coldPathOwner` / `coldPathReason` from those fields so production readback
   can be grouped without copying thread titles, prompts, paths, or logs.

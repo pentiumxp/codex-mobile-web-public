@@ -14884,3 +14884,66 @@ The previous full handoff was archived and should be opened only when old proven
     root-cause target:
     rollout discovery/sort, session-index reuse, final-candidate status tail
     cost, or merge/filter duplication.
+
+## 2026-06-26 - fallback baseline session-index reuse local slice
+
+- Scope:
+  - Continued Phase B thread-list cold path optimization after `a5922f7`
+    (`instrument fallback cold path counters`).
+  - This slice removes one confirmed duplicate synchronous source read inside a
+    single fallback baseline build: rollout fallback and session-index fallback
+    can now share the same `session_index.jsonl` map through a temporary
+    per-baseline `sourceContext`.
+  - No list ordering, visibility filtering, app-server merge behavior, static
+    shell files, or deployment state changed.
+- Root-cause boundary:
+  - Symptom: the previous diagnostics slice made session-index read volume
+    visible but still allowed rollout fallback and session-index fallback to
+    read the same index independently during the same cold source pass.
+  - Failing layer: source collection inside the thread-list fallback baseline,
+    not the client, route cache policy, or app-server authority.
+  - Violated invariant: one cold baseline build should not repeat identical
+    `session_index.jsonl` reads when a larger map is already available in the
+    same source pass.
+  - Closure classification: root-cause I/O reuse optimization. No persistent
+    cache, no prewarm, no fallback masking, and no cross-request hidden state.
+- Changes:
+  - `adapters/thread-list-fallback-baseline-service.js`
+    - Creates a temporary `sourceContext` for one source build and passes it to
+      the state DB, rollout, and session-index source readers.
+    - Keeps `sourceContext` out of source snapshots and public diagnostics.
+    - Whitelists `sessionIndexReuseCount` as a bounded numeric diagnostic.
+  - `server.js`
+    - Adds `readSessionIndexEntriesForFallback()` for fallback source reads.
+    - Reuses a cached in-pass session-index `Map` only when it satisfies the
+      requested line limit.
+    - Reports `fallbackSessionIndexReuseCount` through `/api/threads`
+      diagnostics.
+  - `scripts/codex-mobile-phase-b-readback-smoke.js`
+    - Includes `fallbackSessionIndexReuseCount` in metadata-only readback
+      summaries.
+  - Tests updated:
+    - `test/thread-list-fallback-baseline-service.test.js`
+    - `test/thread-list-fallback-cache-service.test.js`
+    - `test/thread-visibility.test.js`
+    - `test/phase-b-readback-smoke.test.js`
+  - Docs updated:
+    - `README.md`
+    - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`
+    - `docs/MODULES.md`
+- Validation:
+  - Focused:
+    `node --test test/thread-list-fallback-baseline-service.test.js test/thread-list-fallback-cache-service.test.js test/thread-list-cold-path-diagnosis-service.test.js test/thread-visibility.test.js test/phase-b-readback-smoke.test.js`
+    passed (`71` tests).
+  - Full `npm test` passed (`1100` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Not deployed by design. Batch this with the current Phase B local module
+    before one production restart/readback.
+- Next:
+  - Commit this local slice.
+  - Remaining Phase B cold-path targets: rollout discovery/sort and merge/filter
+    duplication. Use the next deploy readback counters to decide which is worth
+    cutting first.

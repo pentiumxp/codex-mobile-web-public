@@ -131,6 +131,43 @@ test("thread-list fallback baseline exposes only bounded source diagnostics", ()
   );
 });
 
+test("thread-list fallback baseline shares a source context only within one baseline read", () => {
+  const seenContexts = [];
+  const service = createThreadListFallbackBaselineService({
+    now: () => 100,
+    readStateDbFallback(limit, filters) {
+      assert.ok(filters.sourceContext);
+      filters.sourceContext.stateSeen = true;
+      seenContexts.push(filters.sourceContext);
+      return [{ id: "state", updatedAt: 100 }];
+    },
+    readRolloutSessionFallback(limit, filters) {
+      assert.equal(filters.sourceContext.stateSeen, true);
+      filters.sourceContext.sessionIndexEntries = new Map([["rollout", { id: "rollout" }]]);
+      filters.diagnostics.sessionIndexReadCount = 1;
+      seenContexts.push(filters.sourceContext);
+      return [{ id: "rollout", updatedAt: 200 }];
+    },
+    readSessionIndexFallback(limit, filters) {
+      assert.equal(filters.sourceContext.sessionIndexEntries.get("rollout").id, "rollout");
+      filters.diagnostics.sessionIndexReuseCount = 1;
+      seenContexts.push(filters.sourceContext);
+      return [{ id: "session", updatedAt: 50 }];
+    },
+    mergeThreadSummaryList: mergeByUpdatedAt,
+  });
+
+  const baseline = service.readBaseline(10, {});
+
+  assert.equal(seenContexts.length, 3);
+  assert.equal(seenContexts[0], seenContexts[1]);
+  assert.equal(seenContexts[1], seenContexts[2]);
+  assert.equal(baseline.timings.sessionIndexReadCount, 1);
+  assert.equal(baseline.timings.sessionIndexReuseCount, 1);
+  assert.equal(baseline.timings.sourceContext, undefined);
+  assert.doesNotMatch(JSON.stringify(baseline.timings), /sessionIndexEntries/);
+});
+
 test("thread-list fallback baseline reuses source snapshot across filter keys", () => {
   let nowMs = 1000;
   const calls = { stateDb: 0, rollout: 0, sessionIndex: 0 };

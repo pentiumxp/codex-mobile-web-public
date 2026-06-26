@@ -216,6 +216,7 @@ test("readFallback can build cold baseline through injected baseline service", (
             rolloutStatusTailReadCount: 2,
             rolloutStatusTailBytes: 8192,
             sessionIndexReadCount: 3,
+            sessionIndexReuseCount: 1,
             sessionIndexLineCount: 500,
             privatePath: "/Users/private/session_index.jsonl",
           },
@@ -252,6 +253,7 @@ test("readFallback can build cold baseline through injected baseline service", (
   assert.equal(diagnostics.rolloutStatusTailReadCount, 2);
   assert.equal(diagnostics.rolloutStatusTailBytes, 8192);
   assert.equal(diagnostics.sessionIndexReadCount, 3);
+  assert.equal(diagnostics.sessionIndexReuseCount, 1);
   assert.equal(diagnostics.sessionIndexLineCount, 500);
   assert.equal(diagnostics.privatePath, undefined);
 
@@ -276,6 +278,7 @@ test("readFallback can build cold baseline through injected baseline service", (
     rolloutStatusTailReadCount: 2,
     rolloutStatusTailBytes: 8192,
     sessionIndexReadCount: 3,
+    sessionIndexReuseCount: 1,
     sessionIndexLineCount: 500,
   });
 });

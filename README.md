@@ -155,12 +155,19 @@ cache policy 和 baseline 构建边界混在一起。
   `fallbackSessionIndex*`。路径、prompt、线程标题、搜索词和日志不会进入这些
   diagnostics。下一次 Phase B 生产 readback 可以直接区分慢点是 rollout discovery、
   head 解析、final status tail、session index 体量，还是后续 merge/filter。
+- server-only source-context follow-up 复用同一次 fallback baseline 里的
+  `session_index.jsonl` 读取。baseline service 为一次 cold source read 创建临时
+  `sourceContext`，传给 state DB、rollout 和 session-index 三路 source reader；
+  rollout fallback 先读取较大的 session index map 后，session-index fallback 可以在
+  同一 pass 里复用这个 map，并通过 `fallbackSessionIndexReuseCount` 证明复用发生。
+  这个 context 不进入 source snapshot、不跨请求持久化、不改变 title hydration 或单线程
+  helper 的普通 `readSessionIndexEntries()` 行为。
 
 这不是新的 fallback 行为，也不是 prewarm/persist。route aggregation、defer
 fallback、app-server result merge 都没有改变；source 层只调整 rollout list
-候选的读取顺序、减少同一 pass 里的重复归档扫描和重复 tail 读取，并补充冷路径
-归因计数。readback 仍只把 deferred 之后的完整读和 warm check 证据化。该切片暂不
-单独部署，按新的节奏等待 Phase B 模块批量验证后再统一部署。
+候选的读取顺序、减少同一 pass 里的重复归档扫描、重复 tail 读取和重复 session-index
+读取，并补充冷路径归因计数。readback 仍只把 deferred 之后的完整读和 warm check
+证据化。该切片暂不单独部署，按新的节奏等待 Phase B 模块批量验证后再统一部署。
 
 ## 2026-06-26 v531 Thread Detail Cold-Path Diagnosis
 

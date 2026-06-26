@@ -33,6 +33,7 @@ const BASELINE_SOURCE_DIAGNOSTIC_COUNTERS = [
   "rolloutStatusTailReadCount",
   "rolloutStatusTailBytes",
   "sessionIndexReadCount",
+  "sessionIndexReuseCount",
   "sessionIndexLineCount",
   "sessionIndexEntryCount",
 ];

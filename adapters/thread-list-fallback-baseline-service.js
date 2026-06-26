@@ -33,6 +33,7 @@ const SAFE_SOURCE_DIAGNOSTIC_COUNTERS = new Set([
   "rolloutStatusTailReadCount",
   "rolloutStatusTailBytes",
   "sessionIndexReadCount",
+  "sessionIndexReuseCount",
   "sessionIndexLineCount",
   "sessionIndexEntryCount",
 ]);
@@ -77,12 +78,16 @@ function createThreadListFallbackBaselineService(options = {}) {
   const sourceSnapshots = new Map();
   let sourceSnapshotBuildCount = 0;
 
-  function timedRead(name, reader, limit, filters) {
+  function timedRead(name, reader, limit, filters, sourceContext = null) {
     const startedAtMs = Number(now());
     const sourceDiagnostics = {};
-    const threads = safeThreadList(reader(limit, Object.assign({}, filters || {}, {
+    const readFilters = Object.assign({}, filters || {}, {
       diagnostics: sourceDiagnostics,
-    })));
+    });
+    if (sourceContext && typeof sourceContext === "object") {
+      readFilters.sourceContext = sourceContext;
+    }
+    const threads = safeThreadList(reader(limit, readFilters));
     return {
       name,
       threads,
@@ -138,9 +143,10 @@ function createThreadListFallbackBaselineService(options = {}) {
     }
 
     const readFilters = sourceSnapshotFilters(filters);
-    const stateDb = timedRead("stateDb", readStateDbFallback, requiredLimit, readFilters);
-    const rollout = timedRead("rollout", readRolloutSessionFallback, requiredLimit, readFilters);
-    const sessionIndex = timedRead("sessionIndex", readSessionIndexFallback, requiredLimit, readFilters);
+    const sourceContext = {};
+    const stateDb = timedRead("stateDb", readStateDbFallback, requiredLimit, readFilters, sourceContext);
+    const rollout = timedRead("rollout", readRolloutSessionFallback, requiredLimit, readFilters, sourceContext);
+    const sessionIndex = timedRead("sessionIndex", readSessionIndexFallback, requiredLimit, readFilters, sourceContext);
     sourceSnapshotBuildCount += 1;
     const snapshot = {
       cachedAt: Number(now()),
@@ -211,9 +217,10 @@ function createThreadListFallbackBaselineService(options = {}) {
     const baseline = snapshot
       ? buildBaselineFromSources(snapshot, bounded, filters)
       : null;
-    const stateDb = snapshot ? null : timedRead("stateDb", readStateDbFallback, bounded, filters);
-    const rollout = snapshot ? null : timedRead("rollout", readRolloutSessionFallback, bounded, filters);
-    const sessionIndex = snapshot ? null : timedRead("sessionIndex", readSessionIndexFallback, bounded, filters);
+    const sourceContext = snapshot ? null : {};
+    const stateDb = snapshot ? null : timedRead("stateDb", readStateDbFallback, bounded, filters, sourceContext);
+    const rollout = snapshot ? null : timedRead("rollout", readRolloutSessionFallback, bounded, filters, sourceContext);
+    const sessionIndex = snapshot ? null : timedRead("sessionIndex", readSessionIndexFallback, bounded, filters, sourceContext);
     const threads = baseline
       ? baseline.threads
       : safeThreadList(mergeThreadSummaryList([

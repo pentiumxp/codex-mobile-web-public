@@ -12919,6 +12919,26 @@ function readSessionIndexEntries(maxLines = 2000, options = {}) {
   return byId;
 }
 
+function readSessionIndexEntriesForFallback(maxLines = 2000, options = {}) {
+  const requestedLines = Math.max(1, Math.trunc(Number(maxLines) || 2000));
+  const diagnostics = options.diagnostics && typeof options.diagnostics === "object" ? options.diagnostics : null;
+  const sourceContext = options.sourceContext && typeof options.sourceContext === "object"
+    ? options.sourceContext
+    : null;
+  if (!sourceContext) return readSessionIndexEntries(requestedLines, { diagnostics });
+  const cachedEntries = sourceContext.sessionIndexEntries;
+  const cachedMaxLines = Number(sourceContext.sessionIndexMaxLines || 0);
+  if (cachedEntries && typeof cachedEntries.get === "function" && cachedMaxLines >= requestedLines) {
+    incrementBoundedDiagnosticCounter(diagnostics, "sessionIndexReuseCount");
+    incrementBoundedDiagnosticCounter(diagnostics, "sessionIndexEntryCount", cachedEntries.size || 0);
+    return cachedEntries;
+  }
+  const entries = readSessionIndexEntries(requestedLines, { diagnostics });
+  sourceContext.sessionIndexEntries = entries;
+  sourceContext.sessionIndexMaxLines = requestedLines;
+  return entries;
+}
+
 function hydrateThreadTitleFromSessionIndex(thread, indexEntries = readSessionIndexEntries()) {
   if (!thread || typeof thread !== "object") return thread || null;
   const id = String(thread.id || thread.threadId || "").trim();
@@ -13364,7 +13384,10 @@ function attachRolloutFallbackStatus(thread, options = {}) {
 function readRolloutSessionFallback(limit = 80, filters = {}) {
   const diagnostics = filters.diagnostics && typeof filters.diagnostics === "object" ? filters.diagnostics : null;
   const rowLimit = Math.min(1000, Math.max(limit * 8, 200));
-  const indexEntries = readSessionIndexEntries(Math.max(rowLimit * 2, 2000), { diagnostics });
+  const indexEntries = readSessionIndexEntriesForFallback(Math.max(rowLimit * 2, 2000), {
+    diagnostics,
+    sourceContext: filters.sourceContext,
+  });
   const archivedIds = archivedSessionThreadIds();
   const threads = [];
   const seen = new Set();
@@ -13406,7 +13429,10 @@ function readSessionIndexFallback(limit = 80, filters = {}) {
     if (filters.cwd || projectlessThreadIds.size === 0) return [];
     const archivedIds = archivedSessionThreadIds();
     const byId = new Map();
-    for (const entry of readSessionIndexEntries(1000, { diagnostics }).values()) {
+    for (const entry of readSessionIndexEntriesForFallback(1000, {
+      diagnostics,
+      sourceContext: filters.sourceContext,
+    }).values()) {
       if (!entry.id || !projectlessThreadIds.has(entry.id)) continue;
       if (archivedIds.has(entry.id)) continue;
       const updatedAt = entry.updated_at ? Math.floor(Date.parse(entry.updated_at) / 1000) : 0;
@@ -13524,6 +13550,7 @@ function threadListFallbackSourceDiagnosticTimingFields(diagnostics = {}) {
     fallbackRolloutStatusTailReadCount: Number(diagnostics.rolloutStatusTailReadCount || 0),
     fallbackRolloutStatusTailBytes: Number(diagnostics.rolloutStatusTailBytes || 0),
     fallbackSessionIndexReadCount: Number(diagnostics.sessionIndexReadCount || 0),
+    fallbackSessionIndexReuseCount: Number(diagnostics.sessionIndexReuseCount || 0),
     fallbackSessionIndexLineCount: Number(diagnostics.sessionIndexLineCount || 0),
     fallbackSessionIndexEntryCount: Number(diagnostics.sessionIndexEntryCount || 0),
   };
