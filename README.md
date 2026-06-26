@@ -45,6 +45,41 @@ completion、scroll/bottom-follow 和 single-thread shell update 的所有权边
 `status=ready`，detail 走 `projection-active-overlay` warm path，active overlay
 gate 为 `ready`；抽样文件 source/prod SHA-256 短 hash 一致。
 
+## 2026-06-27 Phase A Post-Merge Timing Executor Slice
+
+本地小切片继续收敛 thread-detail refresh / first-paint / full-backfill 的
+post-merge 执行形状。此前 `planThreadDetailRefreshPostMergeEffects()` 已经在
+`public/thread-detail-render-plan.js` 中拥有 merge、composer-render、
+thread-list-render 三组 effect 顺序，但 `public/app.js` 仍在多个路径重复手写
+`nowPerfMs()`、执行 group、`roundedDurationMs()` 的计时模式。重复计时形状会让
+refresh、first-paint、full-backfill 和 cached-current 之间继续存在漂移风险。
+
+本次修复：
+
+- `public/app.js` 新增
+  `applyThreadDetailRefreshTimedPostMergeEffectsGroup()`，统一执行一个
+  post-merge group 并返回该 group 的 bounded duration。
+- `refreshCurrentThread()` 与 `backfillFullThreadDetail()` 的 merge /
+  composer-render / thread-list-render 计时改为走 timed executor。
+- `loadThread()` 的 composer-render、thread-list-render 和 cached-current
+  thread-list-render 也改为走 timed executor。
+- `loadThread()` first-paint 的 merge 计时保持原语义：merge group 执行后仍包含
+  first-paint pre-render effect 的耗时，因此没有强行改成 timed executor。
+- `test/conversation-render.test.js` 和 `test/mobile-viewport.test.js` 覆盖新的
+  executor 以及各调用路径。
+- 不改变 post-merge effect 顺序、thread merge、composer render、thread-list
+  render、first-paint pre-render 插入点、server projection、任务卡协议或 shell/cache。
+
+闭环验证：
+
+```bash
+node --check public/app.js && node --check test/conversation-render.test.js && node --check test/mobile-viewport.test.js && node --check test/composer-draft.test.js
+node --test test/composer-draft.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-tile-layout-ui.test.js test/thread-detail-render-plan.test.js
+```
+
+结果：focused `213` passed。该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，
+尚未部署；继续作为 Phase A 模块的一部分累积。
+
 ## 2026-06-27 Phase A Refresh Patch Outcome Mirror Cleanup Slice
 
 本地小切片继续收敛 `refreshCurrentThread()` 的状态所有权。此前 patch attempt、

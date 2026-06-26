@@ -121,7 +121,7 @@ test("composer runtime selections persist without typed text", () => {
   assert.match(loadThreadBody, /applyThreadDetailRefreshResponseEffectsPlan\(firstPaintResponsePlan, \{ thread: result\.thread \}\);/);
   assert.match(functionBody("applyThreadDetailRefreshResponseEffect"), /state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, thread\);/);
   assert.match(loadThreadBody, /const firstPaintDraftRestorePlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintDraftRestoreEffects\(\);/);
-  assert.match(loadThreadBody, /applyThreadDetailPostRenderEffectsPlan\(firstPaintDraftRestorePlan, \{ thread: state\.currentThread \}\);[\s\S]*applyThreadDetailRefreshPostMergeEffectsGroup\(postMergePlan, "composer-render"\)/, "thread load should restore persisted runtime selections");
+  assert.match(loadThreadBody, /applyThreadDetailPostRenderEffectsPlan\(firstPaintDraftRestorePlan, \{ thread: state\.currentThread \}\);[\s\S]*applyThreadDetailRefreshTimedPostMergeEffectsGroup\(postMergePlan, "composer-render"\)/, "thread load should restore persisted runtime selections");
   assert.match(loadThreadBody, /planThreadDetailLoadingShellPostStateEffects\(\{[\s\S]*threadId,[\s\S]*source,[\s\S]*\}\)/, "loading shell opens should restore target runtime selections through the post-state plan");
   assert.match(functionBody("applyThreadDetailPostRenderEffect"), /if \(type === "restore-draft-for-current-target"\) \{[\s\S]*restoreDraftForCurrentTarget\(\);/);
   assert.match(functionBody("applyThreadDetailPostRenderEffect"), /if \(type === "render-composer-settings"\) \{[\s\S]*renderComposerSettings\(\);/);

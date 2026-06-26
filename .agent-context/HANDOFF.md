@@ -18556,3 +18556,54 @@ The previous full handoff was archived and should be opened only when old proven
     requested or use the next turn to audit the last remaining
     `refreshCurrentThread()` app-orchestration responsibilities before moving to
     Phase B/C.
+
+## 2026-06-27 - Latest tail marker: Phase A post-merge timing executor local slice
+
+- Current local state:
+  - Continued Phase A post-merge execution cleanup after `4c46fb0`.
+  - `planThreadDetailRefreshPostMergeEffects()` already owned group ordering,
+    but `refreshCurrentThread()`, first-paint, full-backfill, and cached-current
+    still repeated group timing boilerplate in `public/app.js`.
+- Root-cause boundary:
+  - Symptom/risk: post-merge effects were planned, but the app had multiple
+    hand-written `nowPerfMs()` / execute group / `roundedDurationMs()` sequences.
+    Future edits could make refresh, first-paint, full-backfill, and
+    cached-current timing/reporting drift even though the effect groups are
+    identical.
+  - Failing layer: frontend post-merge effect timing execution, not post-merge
+    effect selection, thread merge semantics, composer rendering, thread-list
+    rendering, server projection, task-card protocol, Home AI diagnostics, or
+    shell/cache.
+  - Violated invariant: the plan layer owns group order; app code should execute
+    groups through one bounded timing executor instead of repeating timing
+    boilerplate across paths.
+- Changes:
+  - `public/app.js` added
+    `applyThreadDetailRefreshTimedPostMergeEffectsGroup()`.
+  - `refreshCurrentThread()` and `backfillFullThreadDetail()` now use that helper
+    for merge, composer-render, and thread-list-render timing.
+  - `loadThread()` uses it for first-paint composer-render/thread-list-render and
+    cached-current thread-list-render. The first-paint merge timing remains
+    unchanged because it intentionally includes the pre-render effect phase.
+  - Updated `test/conversation-render.test.js` and
+    `test/mobile-viewport.test.js`; `test/composer-draft.test.js` was updated
+    to keep the draft-restore-before-composer-render assertion aligned with the
+    timed executor.
+  - Updated `README.md` and `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Validation:
+  - Syntax and focused:
+    `node --check public/app.js && node --check test/conversation-render.test.js && node --check test/mobile-viewport.test.js && node --check test/composer-draft.test.js && node --test test/composer-draft.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-tile-layout-ui.test.js test/thread-detail-render-plan.test.js`
+    passed (`213` focused tests).
+  - Full validation was run before local commit:
+    `npm test` passed (`1174` tests). `npm run check`, `npm run check:macos`,
+    and `git diff --check` passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache bump
+    unless this slice is later batched into a deployable Phase A module.
+- Progress:
+  - Overall architecture optimization is about `89%`.
+  - Phase A frontend render/projection ownership is about `98%`.
+- Next:
+  - Commit locally. After that, Phase A is close to a deployable module
+    boundary; choose either one more app-orchestration audit slice or a batched
+    deploy/readback when requested.

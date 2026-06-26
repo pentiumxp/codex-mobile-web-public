@@ -837,6 +837,15 @@ ordered detail-loaded mark, bounded render-evidence write, and current-thread
 merge effects. App code still performs the real marker/evidence/merge calls,
 but `refreshCurrentThread()` no longer owns the stale-response guard or the
 response-merge effect order directly.
+Post-merge timing execution is now consolidated in app code:
+`applyThreadDetailRefreshTimedPostMergeEffectsGroup` executes one planned
+post-merge group and returns its bounded duration. This keeps
+`refreshCurrentThread()`, first-paint, full-backfill, and cached-current paths
+from hand-writing separate `nowPerfMs()` / group execution /
+`roundedDurationMs()` patterns while preserving the planned group order from
+`planThreadDetailRefreshPostMergeEffects`. First-paint merge timing intentionally
+keeps its existing broader window because pre-render effects are part of that
+measured phase.
 Local conversation DOM patch completion effects are now also planned in
 `public/thread-detail-dom-patch.js`:
 `planLocalConversationDomUpdateCompletionEffects` maps an already-decided
