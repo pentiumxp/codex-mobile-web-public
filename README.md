@@ -16,6 +16,30 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v524 Empty Detail Recovery Policy Extraction
+
+v524 延续 v523 的 Music 空详情根因链路，但这次不改变投影、列表、DOM 或诊断
+语义；它把 `public/app.js` 里“空详情但有历史证据”的判断抽到
+`public/thread-detail-state.js`，让状态所有权规则继续从主 app 编排层移到可测试
+helper。
+
+本次切片新增/调整：
+
+- `public/thread-detail-state.js` 新增
+  `emptyDetailHistoryEvidenceForThread()` 和
+  `planEmptyDetailHistoryRecovery()`。
+- helper 统一判断哪些 bounded 字段能证明一个线程不应稳定显示为空：
+  rollout size、omitted turn count、visible item key count、active turn、
+  thread task-card count、pending task-card count。
+- helper 返回 `shouldRecover`、`recoveryKey`、`diagnosticReason` 和 bounded
+  `event`，`public/app.js` 只负责冷却计时、记录诊断、调度真实 detail refresh。
+- 冷却、loading/load-error fail-closed、弱证据拒绝和隐私边界都有
+  `test/thread-detail-state.test.js` 覆盖。
+- `test/conversation-render.test.js` 确认 `app.js` 消费 helper plan，不再内联
+  `threadHasNonemptyHistoryEvidence()` 策略。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v524`。
+
 ## 2026-06-26 v523 Thread List Summary Authority Boundary
 
 v523 修复 Music 线程再次进入后显示 `No visible turns.` 的同一类事故，但失败层已经

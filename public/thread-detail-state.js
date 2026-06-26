@@ -52,6 +52,91 @@
     return Array.isArray(thread.turns) && thread.turns.length > 0;
   }
 
+  function rolloutSizeBytesFromThread(thread) {
+    const size = Number(thread && thread.rolloutSizeBytes);
+    return Number.isFinite(size) && size > 0 ? size : 0;
+  }
+
+  function emptyDetailHistoryEvidenceForThread(thread) {
+    const rolloutSizeBytes = rolloutSizeBytesFromThread(thread);
+    const omittedTurns = Math.max(0, Math.trunc(Number(thread && thread.mobileOmittedTurnCount) || 0));
+    const visibleItemKeyCount = Array.isArray(thread && thread.mobileVisibleItemKeys)
+      ? thread.mobileVisibleItemKeys.length
+      : 0;
+    const taskCardCount = Array.isArray(thread && thread.threadTaskCards)
+      ? thread.threadTaskCards.length
+      : 0;
+    const pendingTaskCardCount = Math.max(0, Math.trunc(Number(thread && thread.pendingTaskCardCount) || 0));
+    const hasActiveTurnEvidence = Boolean(thread && (thread.activeTurnId || thread.mobileRolloutActiveTurn));
+    return {
+      hasEvidence: rolloutSizeBytes > 0
+        || omittedTurns > 0
+        || visibleItemKeyCount > 0
+        || hasActiveTurnEvidence
+        || taskCardCount > 0
+        || pendingTaskCardCount > 0,
+      rolloutSizeBytes,
+      omittedTurns,
+      visibleItemKeyCount,
+      hasActiveTurnEvidence,
+      taskCardCount,
+      pendingTaskCardCount,
+    };
+  }
+
+  function planEmptyDetailHistoryRecovery(input = {}) {
+    const thread = input.thread;
+    if (!thread || typeof thread !== "object") {
+      return { shouldRecover: false, reason: "missing-thread" };
+    }
+    if (thread.mobileLoading) {
+      return { shouldRecover: false, reason: "thread-loading" };
+    }
+    if (thread.mobileLoadError) {
+      return { shouldRecover: false, reason: "thread-load-error" };
+    }
+    const threadId = String(input.threadId || input.currentThreadId || thread.id || "").trim();
+    if (!threadId) {
+      return { shouldRecover: false, reason: "missing-thread-id" };
+    }
+    const evidence = emptyDetailHistoryEvidenceForThread(thread);
+    if (!evidence.hasEvidence) {
+      return { shouldRecover: false, reason: "no-history-evidence", evidence };
+    }
+    const readMode = String(thread.mobileReadMode || "");
+    const recoveryKey = [threadId, readMode, evidence.rolloutSizeBytes, evidence.omittedTurns, evidence.visibleItemKeyCount].join("|");
+    const nowMs = Number.isFinite(Number(input.nowMs)) ? Number(input.nowMs) : Date.now();
+    const lastRecoveredAtMs = Number(input.lastRecoveredAtMs || 0);
+    const cooldownMs = Math.max(0, Number(input.cooldownMs || 0));
+    if (lastRecoveredAtMs && cooldownMs && nowMs - lastRecoveredAtMs < cooldownMs) {
+      return {
+        shouldRecover: false,
+        reason: "cooldown",
+        evidence,
+        recoveryKey,
+        nowMs,
+      };
+    }
+    const details = input.details && typeof input.details === "object" ? input.details : {};
+    return {
+      shouldRecover: true,
+      reason: "empty-detail-history-evidence",
+      evidence,
+      recoveryKey,
+      nowMs,
+      diagnosticReason: "empty_render_with_history_evidence",
+      event: {
+        threadId,
+        readMode,
+        rolloutSizeBytes: evidence.rolloutSizeBytes,
+        omittedTurns: evidence.omittedTurns,
+        visibleItemKeyCount: evidence.visibleItemKeyCount,
+        source: String(details.source || "").slice(0, 80),
+        renderMode: String(details.renderMode || "").slice(0, 80),
+      },
+    };
+  }
+
   function planThreadOpenCacheReuse(input = {}) {
     const requestedThreadId = String(input.requestedThreadId || input.threadId || "").trim();
     const currentThreadId = String(input.currentThreadId || "").trim();
@@ -310,9 +395,12 @@
 
   return {
     createThreadDetailStatePolicy,
+    emptyDetailHistoryEvidenceForThread,
     mergeThreadSummaryIntoList,
+    planEmptyDetailHistoryRecovery,
     planThreadOpenCacheReuse,
     planSummaryOnlyCurrentThreadRecovery,
+    rolloutSizeBytesFromThread,
     threadHasLoadedDetailState,
     threadHasReusableLoadedDetailState,
     threadIsSummaryOnlyCurrentThread,

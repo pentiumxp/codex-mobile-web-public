@@ -291,6 +291,16 @@ size, omitted turns, visible item keys, active turn state, or pending task cards
 That refresh is observable diagnostic recovery for an invariant violation, not a
 UI masking fallback or synthetic content path.
 
+`codex-mobile-shell-v524` moves that empty-detail/history-evidence recovery
+decision out of `public/app.js` into `public/thread-detail-state.js`.
+`emptyDetailHistoryEvidenceForThread()` and `planEmptyDetailHistoryRecovery()`
+now own the bounded evidence set, recovery signature, cooldown reason, and
+diagnostic event fields. `public/app.js` keeps only effect execution:
+cooldown-state storage, Home AI diagnostic recording, detail refresh scheduling,
+and client event emission. This continues Phase 2's ownership direction: state
+authority decisions live in testable helpers; the app shell remains the
+orchestrator.
+
 The first slices extract item visible-field merge policy,
 visible-text render identity / completed-receipt retention, local-only item
 retention/drop policy, and live-to-completed same-turn visible-item preservation

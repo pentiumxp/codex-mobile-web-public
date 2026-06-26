@@ -13305,3 +13305,40 @@ The previous full handoff was archived and should be opened only when old proven
   - Browser plugin DOM smoke was not executed because the Browser runtime failed
     to initialize with invalid sandbox cwd metadata, and local Playwright is not
     installed. No temporary dependency was added.
+
+## 2026-06-26 - v524 empty-detail history recovery policy extraction
+
+- Scope:
+  - Continued Phase 2 frontend state ownership cleanup after v523.
+  - No projection, list, DOM patch, or task-card protocol semantics changed.
+    This slice moves the v523 empty-detail/history-evidence decision out of
+    `public/app.js` into the pure `public/thread-detail-state.js` policy module.
+- Root-cause boundary:
+  - Failing layer addressed: frontend state ownership / empty-detail recovery
+    policy placement.
+  - Violated invariant: `public/app.js` should orchestrate effects but not own
+    the policy that decides which bounded thread fields prove an empty detail
+    render contradicts existing history.
+  - Closure classification: architecture boundary cleanup; not a fallback and
+    not a masking layer. The existing recovery still schedules a real detail
+    refresh only after a bounded contradiction is detected.
+- Changes:
+  - `public/thread-detail-state.js` adds
+    `rolloutSizeBytesFromThread()`, `emptyDetailHistoryEvidenceForThread()`,
+    and `planEmptyDetailHistoryRecovery()`.
+  - The helper owns the bounded evidence set: rollout size, omitted turns,
+    visible item keys, active turn evidence, task-card count, and pending
+    task-card count.
+  - `public/app.js` now consumes the helper plan, keeps only cooldown storage,
+    diagnostic recording, refresh scheduling, and client-event emission.
+  - Static shell/cache bumped to `codex-mobile-shell-v524`.
+  - README, architecture optimization plan, and module map document the new
+    policy boundary.
+- Validation before deploy:
+  - Focused:
+    `node --test test/thread-detail-state.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    passed (`150` tests).
+  - Full source `npm test` passed (`1032` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment status:
+  - Pending commit/deploy from clean source.

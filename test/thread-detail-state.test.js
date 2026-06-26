@@ -6,9 +6,12 @@ const { test } = require("node:test");
 
 const {
   createThreadDetailStatePolicy,
+  emptyDetailHistoryEvidenceForThread,
   mergeThreadSummaryIntoList,
+  planEmptyDetailHistoryRecovery,
   planThreadOpenCacheReuse,
   planSummaryOnlyCurrentThreadRecovery,
+  rolloutSizeBytesFromThread,
   threadHasLoadedDetailState,
   threadHasReusableLoadedDetailState,
   threadIsSummaryOnlyCurrentThread,
@@ -436,6 +439,87 @@ test("thread detail summary merge cannot preserve stale detail fields", () => {
   assert.equal(Object.prototype.hasOwnProperty.call(result.threads[0], "mobileDetailLoaded"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(result.threads[0], "mobileReadMode"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(result.threads[0], "mobileDiagnostics"), false);
+});
+
+test("thread detail empty-history recovery plans bounded detail refresh evidence", () => {
+  const thread = {
+    id: "thread-1",
+    mobileReadMode: "projection-v4-dynamic",
+    rolloutSizeBytes: 46888840,
+    mobileOmittedTurnCount: 79,
+    mobileVisibleItemKeys: ["a", "b"],
+    threadTaskCards: [{ id: "ttc-private-body" }],
+  };
+
+  assert.equal(rolloutSizeBytesFromThread(thread), 46888840);
+  assert.deepEqual(emptyDetailHistoryEvidenceForThread(thread), {
+    hasEvidence: true,
+    rolloutSizeBytes: 46888840,
+    omittedTurns: 79,
+    visibleItemKeyCount: 2,
+    hasActiveTurnEvidence: false,
+    taskCardCount: 1,
+    pendingTaskCardCount: 0,
+  });
+
+  const plan = planEmptyDetailHistoryRecovery({
+    thread,
+    currentThreadId: "thread-1",
+    nowMs: 1000,
+    cooldownMs: 30000,
+    details: {
+      source: "single-thread-render",
+      renderMode: "full-render",
+      rawMessageText: "private text must not be copied",
+      taskCardBody: "private card body must not be copied",
+    },
+  });
+
+  assert.equal(plan.shouldRecover, true);
+  assert.equal(plan.reason, "empty-detail-history-evidence");
+  assert.equal(plan.recoveryKey, "thread-1|projection-v4-dynamic|46888840|79|2");
+  assert.equal(plan.diagnosticReason, "empty_render_with_history_evidence");
+  assert.deepEqual(plan.event, {
+    threadId: "thread-1",
+    readMode: "projection-v4-dynamic",
+    rolloutSizeBytes: 46888840,
+    omittedTurns: 79,
+    visibleItemKeyCount: 2,
+    source: "single-thread-render",
+    renderMode: "full-render",
+  });
+  assert.equal(JSON.stringify(plan).includes("private text"), false);
+  assert.equal(JSON.stringify(plan).includes("private card body"), false);
+});
+
+test("thread detail empty-history recovery fails closed for weak or cooling evidence", () => {
+  assert.equal(planEmptyDetailHistoryRecovery({ thread: null }).reason, "missing-thread");
+  assert.equal(planEmptyDetailHistoryRecovery({ thread: { id: "t", mobileLoading: true } }).reason, "thread-loading");
+  assert.equal(planEmptyDetailHistoryRecovery({ thread: { id: "t", mobileLoadError: "failed" } }).reason, "thread-load-error");
+  assert.equal(planEmptyDetailHistoryRecovery({ thread: { id: "t" } }).reason, "no-history-evidence");
+
+  const activeEvidence = planEmptyDetailHistoryRecovery({
+    thread: { id: "t", activeTurnId: "turn-active" },
+    nowMs: 100,
+  });
+  assert.equal(activeEvidence.shouldRecover, true);
+  assert.equal(activeEvidence.evidence.hasActiveTurnEvidence, true);
+
+  const pendingEvidence = planEmptyDetailHistoryRecovery({
+    thread: { id: "t", pendingTaskCardCount: 1 },
+    nowMs: 100,
+  });
+  assert.equal(pendingEvidence.shouldRecover, true);
+  assert.equal(pendingEvidence.evidence.pendingTaskCardCount, 1);
+
+  const cooling = planEmptyDetailHistoryRecovery({
+    thread: { id: "t", rolloutSizeBytes: 1 },
+    nowMs: 1000,
+    lastRecoveredAtMs: 900,
+    cooldownMs: 30000,
+  });
+  assert.equal(cooling.shouldRecover, false);
+  assert.equal(cooling.reason, "cooldown");
 });
 
 test("thread detail state plans summary-only current-thread recovery", () => {
