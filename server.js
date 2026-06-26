@@ -9952,6 +9952,11 @@ function rememberProjectlessThreadId(threadId) {
   }
 }
 
+function statusTurnId(status) {
+  if (!status || typeof status !== "object") return "";
+  return String(status.turnId || status.turn_id || status.activeTurnId || status.active_turn_id || "").trim();
+}
+
 function rowToFallbackThread(row) {
   const updatedAt = Number(row.updated_at || row.updatedAt || 0);
   const name = row.title || row.thread_name || null;
@@ -9959,7 +9964,8 @@ function rowToFallbackThread(row) {
   const status = row.status && typeof row.status === "object"
     ? row.status
     : { type: String(row.status || "notLoaded") };
-  return attachThreadTaskCardCountsToSummary(annotateThreadRolloutStats({
+  const activeTurnId = statusTurnId(status);
+  const summary = {
     id: row.id,
     name,
     preview,
@@ -9977,7 +9983,9 @@ function rowToFallbackThread(row) {
     sandboxPolicy: row.sandbox_policy || null,
     approvalPolicy: row.approval_mode || null,
     mobileFallback: true,
-  }));
+  };
+  if (activeTurnId && isThreadListLiveStatus(status)) summary.activeTurnId = activeTurnId;
+  return attachThreadTaskCardCountsToSummary(annotateThreadRolloutStats(summary));
 }
 
 function sqlString(value) {
@@ -13279,22 +13287,35 @@ function inferRolloutFallbackStatus(rolloutPath, stat = null, nowMs = Date.now()
   if (staleContextOnlyActive) return staleContextOnlyActiveStatus({ type: "active" }, staleContextOnlyActive);
   let lastActivityMs = 0;
   let lastTerminalMs = 0;
+  let currentTurnId = "";
+  let lastActivityTurnId = "";
   for (const line of tail.split(/\r?\n/)) {
     if (!line || !line.trim()) continue;
     const entry = parseJsonLine(line);
     if (!entry || !entry.type) continue;
-    const timestampMs = timestampToMs(entry.timestamp || (entry.payload && entry.payload.timestamp));
+    const payload = entry.payload && typeof entry.payload === "object" ? entry.payload : {};
+    const timestampMs = timestampToMs(entry.timestamp || payload.timestamp);
     if (!timestampMs) continue;
+    const eventType = entry.type === "event_msg" ? String(payload.type || "") : "";
+    const explicitTurnId = rolloutEntryTurnId(entry);
+    if (entry.type === "event_msg" && eventType === "task_started" && explicitTurnId) {
+      currentTurnId = explicitTurnId;
+    }
     if (isRolloutTerminalEntry(entry)) {
       lastTerminalMs = Math.max(lastTerminalMs, timestampMs);
       continue;
     }
-    if (isRolloutActivityEntry(entry)) lastActivityMs = Math.max(lastActivityMs, timestampMs);
+    if (isRolloutActivityEntry(entry)) {
+      if (timestampMs >= lastActivityMs) {
+        lastActivityTurnId = explicitTurnId || currentTurnId || lastActivityTurnId;
+      }
+      lastActivityMs = Math.max(lastActivityMs, timestampMs);
+    }
   }
   if (lastTerminalMs && lastTerminalMs >= lastActivityMs) return { type: "completed" };
   const recentActivityMs = lastActivityMs > lastTerminalMs ? Math.max(lastActivityMs, mtimeMs) : 0;
   if (recentActivityMs && nowMs - recentActivityMs <= ROLLOUT_ACTIVE_STATUS_WINDOW_MS) {
-    return { type: "active" };
+    return { type: "active", turnId: lastActivityTurnId || "" };
   }
   return null;
 }
@@ -13388,7 +13409,10 @@ function attachRolloutFallbackStatus(thread, options = {}) {
   incrementBoundedDiagnosticCounter(diagnostics, "rolloutStatusAttachCount");
   const status = inferRolloutFallbackStatus(rolloutPath, stat, options.nowMs || Date.now(), { diagnostics });
   if (!status) return thread;
-  return Object.assign({}, thread, { status });
+  const activeTurnId = statusTurnId(status);
+  const out = Object.assign({}, thread, { status });
+  if (activeTurnId && isThreadListLiveStatus(status)) out.activeTurnId = activeTurnId;
+  return out;
 }
 
 function readRolloutSessionFallback(limit = 80, filters = {}) {

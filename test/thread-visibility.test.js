@@ -573,6 +573,8 @@ test("rollout session fallback infers active and completed status from rollout t
   const touched = readRolloutSessionFallbackThreadFromFile(touchedPath, { id: touchedThreadId });
 
   assert.equal(active.status.type, "active");
+  assert.equal(active.status.turnId, "turn-active");
+  assert.equal(active.activeTurnId, "turn-active");
   assert.equal(completed.status.type, "completed");
   assert.equal(touched.status.type, "notLoaded");
 });
@@ -623,6 +625,8 @@ test("rollout session list fallback can defer status until final candidates", ()
 
   const finalCandidate = attachRolloutFallbackStatus(candidate, { nowMs: now.getTime(), diagnostics });
   assert.equal(finalCandidate.status.type, "active");
+  assert.equal(finalCandidate.status.turnId, "turn-active");
+  assert.equal(finalCandidate.activeTurnId, "turn-active");
   assert.equal(diagnostics.rolloutStatusAttachCount, 1);
   assert.equal(diagnostics.rolloutStatusTailReadCount, 1);
   assert.ok(diagnostics.rolloutStatusTailBytes > 0);

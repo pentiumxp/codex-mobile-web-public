@@ -15062,3 +15062,76 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit this local slice.
   - Phase B is now ready for a module-level deploy/readback candidate unless a
     current runtime incident forces a narrower hotfix first.
+
+## 2026-06-26 - Phase B module deploy/readback and active turn-id follow-up
+
+- Phase B module deployment:
+  - Deployed Codex Mobile plugin source commit `6fc3a4a`
+    (`instrument fallback baseline merge filters`) through the Home AI central
+    macOS plugin deploy path.
+  - Deploy reason: `codex-mobile-phase-b-module`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T123225Z-plugin-codex-mobile-web-codex-mobile-phase-b-module`.
+  - Production health/readback returned `clientBuildId=0.1.11|codex-mobile-shell-v531`
+    and `shellCacheName=codex-mobile-shell-v531`; unchanged shell is expected
+    because this Phase B module did not modify static frontend shell files.
+- Phase B readback result:
+  - `scripts/codex-mobile-phase-b-readback-smoke.js --server http://127.0.0.1:8787 --json`
+    passed with metadata-only output.
+  - First list read after deploy:
+    `coldPathOwner=fallback-baseline`,
+    `coldPathReason=miss-rebuild:rollout`,
+    `fallbackCacheDecision=miss-rebuild`,
+    `fallbackMs=1457`,
+    `mergeMs=48`.
+  - Same-key warm check:
+    `coldPathOwner=warm-fallback-cache`,
+    `fallbackCacheDecision=hit`,
+    `fallbackMs=1`.
+  - New baseline work counters were present:
+    `fallbackBaselineFinalFilterPassCount=3`,
+    `fallbackBaselineFinalFilterInputCount=27`,
+    `fallbackBaselineFinalFilterOutputCount=27`,
+    `fallbackBaselineMergeInputCount=27`,
+    `fallbackBaselineMergeOutputCount=11`,
+    `fallbackBaselineMergeDuplicateCount=0`,
+    `fallbackBaselineLimitDropCount=0`.
+  - Interpretation: current thread-list cold sample is still dominated by
+    rollout/app-server cold work, not final baseline merge/filter duplication.
+    Warm cache behavior is correct after the first rebuild.
+- Active detail follow-up found by readback:
+  - Detail read selected by smoke still fell back to `thread-read`.
+  - Bounded reason:
+    `activeOverlayGate=needs_repair`,
+    `activeOverlayReason=missing-active-turn-id`,
+    `activeOverlayNextAction=retain-active-turn-id`.
+  - Strongest root-cause hypothesis: cold/deploy restart can leave no live
+    projection snapshot for an active thread. Rollout fallback can still infer
+    `status=active` from tail activity but previously returned only
+    `{ type: "active" }`, so the summary had no concrete `activeTurnId` for the
+    active-overlay proof gate.
+- Local follow-up fix:
+  - `server.js`
+    - `inferRolloutFallbackStatus()` now tracks the latest activity turn id
+      from rollout tail, including `task_started.turn_id`.
+    - Active rollout status returns `{ type: "active", turnId }` when a turn id
+      is known.
+    - `rowToFallbackThread()` and `attachRolloutFallbackStatus()` promote an
+      active status turn id into top-level `activeTurnId` on fallback summaries.
+    - Terminal rollout entries still take precedence, so completed turns are
+      not promoted to active.
+  - Tests updated:
+    - `test/thread-visibility.test.js`.
+  - Docs updated:
+    - `README.md`
+    - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`
+    - `docs/MODULES.md`
+- Validation so far:
+  - Focused:
+    `node --test test/thread-visibility.test.js test/thread-detail-active-read-policy-service.test.js test/thread-detail-active-overlay-provider-service.test.js test/thread-detail-active-overlay-integration.test.js test/thread-detail-read-orchestration-service.test.js test/phase-b-readback-smoke.test.js`
+    passed (`85` tests).
+- Next:
+  - Run full validation.
+  - Commit the active turn-id follow-up.
+  - Deploy and rerun Phase B readback smoke to confirm whether the active
+    overlay gate advances past `missing-active-turn-id`.

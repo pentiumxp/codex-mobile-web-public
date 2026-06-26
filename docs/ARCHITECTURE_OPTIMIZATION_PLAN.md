@@ -121,8 +121,14 @@ Current acceleration targets:
    active turn when the summary only proves active status. Focused integration
    coverage proves this can return `projection-active-overlay` without full
    `thread/read` while preserving fail-closed behavior for missing snapshots,
-   stale assistant evidence, and completed turns. This slice is local-only until
-   the next active-detail module batch deploy/readback. The next local slice
+   stale assistant evidence, and completed turns. A later Phase B module
+   readback exposed the colder restart boundary that the live snapshot path
+   cannot cover: rollout fallback could mark a summary `status=active` from
+   tail activity while omitting the concrete active turn id. The server-only
+   follow-up carries `task_started.turn_id` from rollout tail status into the
+   fallback summary as `activeTurnId`, so active-read policy can enter the same
+   proof gate after cold start or deploy restart. Terminal rollout entries
+   still win, so completed turns are not promoted to active. The next local slice
    separates ordinary projection staleness from active-overlay window
    eligibility: `dynamic-summary-stale` still invalidates normal projection
    hits, but a proof-gated active overlay lookup may reuse that same dynamic
