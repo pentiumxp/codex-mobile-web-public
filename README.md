@@ -16,6 +16,62 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-27 v535 Phase B Thread-List Refresh Module
+
+v535 把 v534 之后的两个本地 Phase B 小切片收束成一个模块部署：
+
+- `aaeb3b2`：warm fallback initial shell。默认列表在已有 warm cache 时可先返回
+  `mobileDeferredAppServer=true` 的首屏 shell，不同步等待 app-server list。
+- `e037a74`：app-server fetch-window policy。普通 authoritative refresh 的
+  app-server list 请求窗口从 route 内联规则抽成
+  `thread-list-app-server-fetch-policy-service`，默认/search 列表不再无条件取 500
+  条，而是 bounded overfetch。
+- `bf72619`：升级 `CLIENT_BUILD_ID` 和 PWA shell cache 到
+  `codex-mobile-shell-v535`。
+
+发布前验证：
+
+```bash
+node --test test/thread-list-app-server-fetch-policy-service.test.js test/thread-list-fallback-cache-service.test.js test/thread-list-cold-path-diagnosis-service.test.js test/thread-performance-metrics.test.js test/thread-visibility.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js test/app-update.test.js test/build-refresh-policy.test.js
+npm run check
+npm run check:macos
+npm test
+git diff --check
+```
+
+结果：focused `148` passed；`npm test` `1193` passed；`check`、
+`check:macos`、`git diff --check` passed。通过 Home AI 中央 macOS 插件部署脚本
+发布，source ref `bf726194c000`，reason
+`codex-mobile-phase-b-list-refresh-v535`，backup path：
+`/Users/hermes-host/HermesMobile/backups/deploy/20260626T232446Z-plugin-codex-mobile-web-codex-mobile-phase-b-list-refresh-v535`。
+
+生产 readback：
+
+- `/api/public-config` 返回
+  `clientBuildId=0.1.11|codex-mobile-shell-v535`、
+  `shellCacheName=codex-mobile-shell-v535`。
+- `threadListFallbackPrewarm.completed=true`，
+  `lastCacheDecision=miss-rebuild`，`lastResultCount=11`，
+  `lastElapsedMs=1458`。
+- 通用 Phase B readback 通过，decision 为 `ready`。
+  首个 thread-list 读回没有前台 rollout/source 扫描，走
+  `fallback-source-snapshot`，`fallbackSourceSnapshotHit=true`，
+  `appServerRequestLimit=80`，`appServerRequestReason=default-bounded-overfetch`。
+- 定向当前 Codex Mobile 线程 readback 通过，thread-list 为
+  `warm-fallback-cache` / `cache-hit`，detail 为
+  `projection-active-overlay`，active overlay gate 为 `ready`。
+- Source/prod SHA-256 短哈希匹配：
+  `public/app.js` `a48a09db519d0ba7`，
+  `public/sw.js` `6cc191676ffe9cd1`，
+  `server.js` `3eb2f3f140df4224`，
+  `adapters/thread-list-app-server-fetch-policy-service.js` `6abf190bcbb91862`，
+  `scripts/codex-mobile-phase-b-readback-smoke.js` `953925f618efe2a9`。
+
+生产观察：即使 app-server list 请求窗口已从旧的 500 收窄到 80，readback 仍看到
+`appServerMs` 约 `1789-2077ms`。这说明下一轮 Phase B 不应再优先盯 fallback
+baseline，而应直接分析 app-server `thread/list` 本身、mux/RPC 延迟、state-db-only
+读取或后续 merge/decorate 的真实耗时。
+
 ## 2026-06-27 Phase B App-Server Fetch Window Policy Slice
 
 本地小切片继续收敛 v534 之后的 thread-list 冷/热路径。前一切片已经把

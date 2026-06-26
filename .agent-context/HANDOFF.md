@@ -19040,3 +19040,56 @@ The previous full handoff was archived and should be opened only when old proven
     of the app-server fetch-window policy at module deployment, then decide
     whether the remaining large-session cost belongs to app-server list
     latency, detail projection cache, or rollout/session-index source work.
+
+## 2026-06-27 - Phase B v535 list-refresh module deployment and readback
+
+- Current local state:
+  - Batched the v534 follow-up local slices into a deployable Phase B
+    list-refresh module:
+    - `aaeb3b2` warm fallback initial shell.
+    - `e037a74` app-server fetch-window policy and diagnostics.
+    - `bf72619` shell/cache bump to `codex-mobile-shell-v535`.
+  - Worktree was clean before deploy; source ref was `bf726194c000`.
+- Validation before deploy:
+  - Focused:
+    `node --test test/thread-list-app-server-fetch-policy-service.test.js test/thread-list-fallback-cache-service.test.js test/thread-list-cold-path-diagnosis-service.test.js test/thread-performance-metrics.test.js test/thread-visibility.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js test/app-update.test.js test/build-refresh-policy.test.js`
+    passed (`148` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `npm test` passed (`1193` tests).
+  - `git diff --check` passed.
+- Deployment:
+  - Deployed through the Home AI central macOS plugin deploy script with reason
+    `codex-mobile-phase-b-list-refresh-v535`.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T232446Z-plugin-codex-mobile-web-codex-mobile-phase-b-list-refresh-v535`.
+  - Production `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v535` and
+    `shellCacheName=codex-mobile-shell-v535`.
+- Readback:
+  - `threadListFallbackPrewarm.completed=true`,
+    `lastCacheDecision=miss-rebuild`, `lastResultCount=11`,
+    `lastElapsedMs=1458`.
+  - General Phase B readback passed with decision `ready`.
+    The first thread-list read reused `fallback-source-snapshot`,
+    `fallbackSourceSnapshotHit=true`, `appServerRequestLimit=80`, and
+    `appServerRequestReason=default-bounded-overfetch`; detail read was
+    `projection-active-overlay` with gate `ready`.
+  - Targeted current Codex Mobile thread readback passed with thread-list
+    `warm-fallback-cache` / `cache-hit`, `appServerRequestLimit=80`, detail
+    `projection-active-overlay`, active overlay gate `ready`.
+  - Source/prod short SHA-256 hashes matched for:
+    `public/app.js`, `public/sw.js`, `server.js`,
+    `adapters/thread-list-app-server-fetch-policy-service.js`, and
+    `scripts/codex-mobile-phase-b-readback-smoke.js`.
+- Production observation / next root-cause owner:
+  - The fallback/prewarm side is no longer the active foreground blocker in
+    this readback.
+  - Even with app-server list bounded to 80 rows, `appServerMs` remained around
+    `1789-2077ms`.
+  - Next Phase B work should instrument and isolate app-server `thread/list`
+    / mux/RPC latency versus server merge/decorate timing, rather than adding
+    another fallback cache layer.
+- Next:
+  - Commit this readback documentation locally.
+  - Continue Phase B with app-server list latency attribution.

@@ -254,7 +254,16 @@ Current acceleration targets:
    filtering semantics are not app-server-authoritative. The route and Phase B
    readback now expose `appServerRequestedLimit`, `appServerRequestLimit`,
    `appServerRequestReason`, and `appServerOverfetchFactor` as metadata-only
-   diagnostics. The next local
+   diagnostics. The `codex-mobile-shell-v535` module deploy/readback confirmed
+   the combined list-refresh boundary in production: public config reported
+   v535, startup prewarm completed, the first list read reused
+   `fallback-source-snapshot` or `warm-fallback-cache`, app-server request
+   limit was bounded to `80`, and targeted active detail still returned
+   `projection-active-overlay` with the active overlay gate `ready`. The same
+   readback also exposed the next Phase B owner: even with an 80-row app-server
+   window, `appServerMs` was still around 1.8-2.1s, so the next investigation
+   should target app-server `thread/list` / mux/RPC latency or server-side
+   merge/decorate timing rather than another fallback baseline change. The next local
    slice makes that attribution explicit: fallback baseline source reads now
    carry bounded counters for rollout directory reads, JSONL stat/collect/sort
    counts, candidate scans, head reads/bytes, final status tail reads/bytes,
