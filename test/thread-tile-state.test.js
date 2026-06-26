@@ -201,6 +201,115 @@ test("thread tile state plans pane render frame scheduling", () => {
   }).fullRenderOnPatchMiss, false);
 });
 
+test("thread tile state plans pane patch preflight", () => {
+  assert.deepEqual(state.panePatchPreflightPlan({
+    threadId: "",
+    enabled: true,
+    visible: true,
+  }), {
+    action: "skip",
+    reason: "missing-id",
+    canPatch: false,
+    shouldContinue: false,
+    id: "",
+    ids: [],
+  });
+
+  assert.deepEqual(state.panePatchPreflightPlan({
+    threadId: "a",
+    enabled: true,
+    visible: true,
+  }), {
+    action: "continue",
+    reason: "pending-facts",
+    canPatch: false,
+    shouldContinue: true,
+    id: "a",
+    ids: [],
+  });
+
+  assert.equal(state.panePatchPreflightPlan({
+    threadId: "a",
+    enabled: false,
+    visible: true,
+  }).reason, "disabled");
+  assert.equal(state.panePatchPreflightPlan({
+    threadId: "a",
+    enabled: true,
+    visible: false,
+  }).reason, "pane-not-visible");
+  assert.equal(state.panePatchPreflightPlan({
+    threadId: "a",
+    enabled: true,
+    visible: true,
+    conversationPresent: false,
+  }).reason, "missing-conversation");
+  assert.equal(state.panePatchPreflightPlan({
+    threadId: "a",
+    enabled: true,
+    visible: true,
+    conversationPresent: true,
+    tileSurface: false,
+  }).reason, "not-tile-surface");
+  assert.equal(state.panePatchPreflightPlan({
+    threadId: "a",
+    enabled: true,
+    visible: true,
+    conversationPresent: true,
+    tileSurface: true,
+    boardPresent: false,
+  }).reason, "missing-board");
+  assert.equal(state.panePatchPreflightPlan({
+    threadId: "a",
+    enabled: true,
+    visible: true,
+    conversationPresent: true,
+    tileSurface: true,
+    boardPresent: true,
+    layoutEnabled: false,
+  }).reason, "layout-disabled");
+  assert.equal(state.panePatchPreflightPlan({
+    threadId: "a",
+    enabled: true,
+    visible: true,
+    conversationPresent: true,
+    tileSurface: true,
+    boardPresent: true,
+    layoutEnabled: true,
+    ids: ["b"],
+  }).reason, "pane-not-candidate");
+  assert.equal(state.panePatchPreflightPlan({
+    threadId: "a",
+    enabled: true,
+    visible: true,
+    conversationPresent: true,
+    tileSurface: true,
+    boardPresent: true,
+    layoutEnabled: true,
+    ids: ["a"],
+    panePresent: false,
+  }).reason, "missing-pane");
+
+  assert.deepEqual(state.panePatchPreflightPlan({
+    threadId: "a",
+    enabled: true,
+    visible: true,
+    conversationPresent: true,
+    tileSurface: true,
+    boardPresent: true,
+    layoutEnabled: true,
+    ids: ["a", "b"],
+    panePresent: true,
+  }), {
+    action: "patch-pane",
+    reason: "ready",
+    canPatch: true,
+    shouldContinue: true,
+    id: "a",
+    ids: ["a", "b"],
+  });
+});
+
 test("thread tile state selects active pane without depending on app globals", () => {
   assert.equal(state.effectiveSelectedThreadId({
     enabled: false,

@@ -1082,6 +1082,8 @@ Target:
   pane render signature schema planning is also outside app.js;
   pane render frame scheduling and patch-miss full-render policy are also
   outside app.js;
+  pane-local patch preflight and failure-reason classification are also outside
+  app.js;
   pane detail-load concurrency limit planning is also outside app.js;
   pane-local scroll hold/bottom-button/restore planning is also outside app.js;
   refresh, first-paint, and full-backfill performance event field ownership is

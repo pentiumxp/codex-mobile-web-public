@@ -369,6 +369,17 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(appJs, /function turnTimerStateHtml\(/);
   assert.match(appJs, /function threadTilePaneTimerState\(/);
   assert.match(appJs, /function patchThreadTilePane\(/);
+  const patchPaneBody = functionBody(appJs, "patchThreadTilePane");
+  assert.match(patchPaneBody, /threadTileStatePolicy\.panePatchPreflightPlan/);
+  assert.match(patchPaneBody, /enabled: state\.threadTileMode/);
+  assert.match(patchPaneBody, /visible: id \? threadTilePaneIsVisible\(id\) : false/);
+  assert.match(patchPaneBody, /conversationPresent: Boolean\(conversation\)/);
+  assert.match(patchPaneBody, /tileSurface: Boolean\(conversation && conversation\.classList\.contains\("thread-tile-mode"\)\)/);
+  assert.match(patchPaneBody, /boardPresent: Boolean\(board\)/);
+  assert.match(patchPaneBody, /layoutEnabled: Boolean\(layout && layout\.enabled\)/);
+  assert.match(patchPaneBody, /ids,/);
+  assert.match(patchPaneBody, /panePresent: Boolean\(pane\)/);
+  assert.match(patchPaneBody, /if \(!preflight\.canPatch\) return false/);
   assert.match(appJs, /function scheduleRenderThreadTilePane\(/);
   const schedulePaneBody = functionBody(appJs, "scheduleRenderThreadTilePane");
   assert.match(schedulePaneBody, /threadTileStatePolicy\.paneRenderFramePlan/);

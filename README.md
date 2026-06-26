@@ -291,6 +291,37 @@ node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js te
 该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为 Phase C
 本地模块累积。
 
+## 2026-06-27 Phase C Pane Patch Preflight Planning Slice
+
+本地小切片继续推进 Phase C，把平铺窗口局部 DOM patch 的 preflight 判断从
+`public/app.js` 迁到 `public/thread-tile-state.js`。此前 `patchThreadTilePane()`
+直接在 app 层串联判断：缺失 pane id、tile mode 关闭、pane 不可见、conversation
+不是 tile surface、tile board 缺失、layout disabled、候选 ids 不包含当前 pane、
+目标 pane DOM 缺失。任一分支失败都会让上层更容易退到整板 render，所以这条路径
+是解释平铺跳动、局部刷新失败和整板重绘的关键证据边界。
+
+本次修复：
+
+- `public/thread-tile-state.js` 新增 `panePatchPreflightPlan()`，统一规划
+  missing-id、disabled、pane-not-visible、missing-conversation、not-tile-surface、
+  missing-board、layout-disabled、pane-not-candidate、missing-pane 和 ready 分支。
+- helper 支持分阶段 preflight：app 层仍按原顺序短路，先确认基础状态，再查 DOM、
+  layout、candidate ids 和 pane element，避免引入额外 layout/DOM 副作用。
+- `public/app.js` 的 `patchThreadTilePane()` 现在只收集真实 DOM/layout facts 并执行
+  patch、hydrate、scroll restore、signature writeback 和 action binding。
+- focused tests 覆盖 preflight 分支和 app wiring。
+- 不改变 DOM 结构、CSS、thread detail read、server projection、任务卡协议、
+  shell/cache 或部署状态。
+
+闭环验证：
+
+```bash
+node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js test/conversation-render.test.js
+```
+
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为 Phase C
+本地模块累积。
+
 ## 2026-06-26 Phase C Pane Scroll Runtime Planning Slice
 
 本地小切片继续推进 Phase C 的 pane-runtime ownership。此前每个平铺窗口的

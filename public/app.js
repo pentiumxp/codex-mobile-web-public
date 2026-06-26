@@ -13562,18 +13562,68 @@ function threadTileRenderSignature(layout, ids) {
 
 function patchThreadTilePane(threadId, options = {}) {
   const id = String(threadId || "").trim();
-  if (!id || !state.threadTileMode || !threadTilePaneIsVisible(id)) return false;
+  let preflight = threadTileStatePolicy.panePatchPreflightPlan({
+    threadId: id,
+    enabled: state.threadTileMode,
+    visible: id ? threadTilePaneIsVisible(id) : false,
+  });
+  if (!preflight.shouldContinue) return false;
   const conversation = $("conversation");
-  if (!conversation || !conversation.classList.contains("thread-tile-mode")) return false;
+  preflight = threadTileStatePolicy.panePatchPreflightPlan({
+    threadId: id,
+    enabled: state.threadTileMode,
+    visible: true,
+    conversationPresent: Boolean(conversation),
+    tileSurface: Boolean(conversation && conversation.classList.contains("thread-tile-mode")),
+  });
+  if (!preflight.shouldContinue) return false;
   const board = conversation.querySelector("[data-thread-tile-board]");
-  if (!board) return false;
+  preflight = threadTileStatePolicy.panePatchPreflightPlan({
+    threadId: id,
+    enabled: state.threadTileMode,
+    visible: true,
+    conversationPresent: true,
+    tileSurface: true,
+    boardPresent: Boolean(board),
+  });
+  if (!preflight.shouldContinue) return false;
   const layout = threadTileLayout();
-  if (!layout.enabled) return false;
+  preflight = threadTileStatePolicy.panePatchPreflightPlan({
+    threadId: id,
+    enabled: state.threadTileMode,
+    visible: true,
+    conversationPresent: true,
+    tileSurface: true,
+    boardPresent: true,
+    layoutEnabled: Boolean(layout && layout.enabled),
+  });
+  if (!preflight.shouldContinue) return false;
   const ids = threadTileCandidateIds(layout);
-  if (!ids.includes(id)) return false;
+  preflight = threadTileStatePolicy.panePatchPreflightPlan({
+    threadId: id,
+    enabled: state.threadTileMode,
+    visible: true,
+    conversationPresent: true,
+    tileSurface: true,
+    boardPresent: true,
+    layoutEnabled: true,
+    ids,
+  });
+  if (!preflight.shouldContinue) return false;
   const displayLayout = threadTileDisplayLayout(layout, ids);
   const pane = options.paneElement || threadTilePaneElement(id);
-  if (!pane) return false;
+  preflight = threadTileStatePolicy.panePatchPreflightPlan({
+    threadId: id,
+    enabled: state.threadTileMode,
+    visible: true,
+    conversationPresent: true,
+    tileSurface: true,
+    boardPresent: true,
+    layoutEnabled: true,
+    ids,
+    panePresent: Boolean(pane),
+  });
+  if (!preflight.canPatch) return false;
   const previousScroll = captureThreadTilePaneElementScrollState(pane);
   const previousKeys = existingConversationRenderKeys();
   const template = document.createElement("template");

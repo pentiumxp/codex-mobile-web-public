@@ -16397,3 +16397,51 @@ The previous full handoff was archived and should be opened only when old proven
   - Only bounded file paths, test counts, and architecture state are recorded.
     No secrets, cookies, launch tokens, private thread bodies, task-card bodies,
     uploads, screenshots, or long logs are included.
+
+## 2026-06-27 - Phase C pane patch preflight planning local slice
+
+- Latest local slice:
+  - Continued Phase C pane-state/render-patch architecture after `00d436b`
+    (`plan thread tile render frames`). This slice is local/private only and
+    is not deployed by design.
+- Root-cause boundary:
+  - Symptom/risk: `patchThreadTilePane()` is the critical branch between a
+    pane-local DOM patch and upstream full tile-board render fallback. Inline
+    app-layer preflight checks made patch failures harder to classify when
+    investigating visible jitter, missing pane content, or full-board redraws.
+  - Failing layer: frontend thread-tile pane patch preflight policy, not DOM
+    patch application, CSS, server projection, detail reads, task-card
+    protocol, or shell/cache.
+  - Violated invariant: `public/app.js` should collect DOM/layout facts and
+    execute patch side effects; deterministic patch eligibility and failure
+    reason classification should live in a pure helper with focused tests.
+- Changes:
+  - `public/thread-tile-state.js` now exposes `panePatchPreflightPlan()` for
+    missing-id, disabled, pane-not-visible, missing-conversation,
+    not-tile-surface, missing-board, layout-disabled, pane-not-candidate,
+    missing-pane, pending-facts, and ready branches.
+  - `public/app.js` now calls the helper from `patchThreadTilePane()` while
+    preserving the previous short-circuit order before DOM/layout work.
+  - `test/thread-tile-state.test.js` covers the preflight branches;
+    `test/thread-tile-layout-ui.test.js` guards app wiring.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md` with the Phase C boundary.
+- Validation:
+  - Focused:
+    `node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js test/conversation-render.test.js`
+    passed (`144` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`1134` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Not deployed. No `CLIENT_BUILD_ID` / PWA shell cache bump. This remains a
+    small Phase C local slice to batch with the next pane-state/render module.
+- Next:
+  - Commit locally, then continue with pane patch completion/result planning,
+    Phase E pane visual smoke, or Phase D task-card runtime hardening before
+    one batch deploy.
+- Privacy:
+  - Only bounded file paths, test counts, and architecture state are recorded.
+    No secrets, cookies, launch tokens, private thread bodies, task-card bodies,
+    uploads, screenshots, or long logs are included.

@@ -1189,6 +1189,63 @@
     };
   }
 
+  function booleanFact(input = {}, key) {
+    return Object.prototype.hasOwnProperty.call(input, key) ? input[key] === true : null;
+  }
+
+  function panePatchPreflightSkip(reason, details = {}) {
+    return Object.assign({
+      action: "skip",
+      reason,
+      canPatch: false,
+      shouldContinue: false,
+      id: "",
+      ids: [],
+    }, details);
+  }
+
+  function panePatchPreflightPlan(input = {}) {
+    const id = text(input.threadId || input.paneId).trim();
+    const hasIds = Array.isArray(input.ids || input.activeIds);
+    const ids = uniqueIds(input.ids || input.activeIds || []);
+    if (!id) return panePatchPreflightSkip("missing-id", { id: "", ids });
+    if (input.enabled !== true) return panePatchPreflightSkip("disabled", { id, ids });
+    if (input.visible !== true) return panePatchPreflightSkip("pane-not-visible", { id, ids });
+
+    const conversationPresent = booleanFact(input, "conversationPresent");
+    if (conversationPresent === false) return panePatchPreflightSkip("missing-conversation", { id, ids });
+
+    const tileSurface = booleanFact(input, "tileSurface");
+    if (tileSurface === false) return panePatchPreflightSkip("not-tile-surface", { id, ids });
+
+    const boardPresent = booleanFact(input, "boardPresent");
+    if (boardPresent === false) return panePatchPreflightSkip("missing-board", { id, ids });
+
+    const layoutEnabled = booleanFact(input, "layoutEnabled");
+    if (layoutEnabled === false) return panePatchPreflightSkip("layout-disabled", { id, ids });
+
+    if (hasIds && !ids.includes(id)) return panePatchPreflightSkip("pane-not-candidate", { id, ids });
+
+    const panePresent = booleanFact(input, "panePresent");
+    if (panePresent === false) return panePatchPreflightSkip("missing-pane", { id, ids });
+
+    const factsComplete = conversationPresent === true
+      && tileSurface === true
+      && boardPresent === true
+      && layoutEnabled === true
+      && panePresent === true
+      && hasIds;
+
+    return {
+      action: factsComplete ? "patch-pane" : "continue",
+      reason: factsComplete ? "ready" : "pending-facts",
+      canPatch: factsComplete,
+      shouldContinue: true,
+      id,
+      ids,
+    };
+  }
+
   function refreshDelayMs(value, options = {}) {
     const defaultDelayMs = Math.max(0, Number(options.defaultDelayMs || 0));
     const minDelayMs = Math.max(0, Number(options.minDelayMs || 500));
@@ -1456,6 +1513,7 @@
     paneCountChangePlan,
     paneCountStatePlan,
     paneDisplayLayoutPlan,
+    panePatchPreflightPlan,
     paneRenderFramePlan,
     paneRenderSignaturePlan,
     paneSelectionPlan,
