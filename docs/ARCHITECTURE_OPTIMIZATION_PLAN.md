@@ -136,6 +136,17 @@ and the Home AI diagnostic channel can emit bounded `turn_order_mismatch`
 reports when DOM turn ids do not match the expected visible turn order or when
 the latest visible turn is not the latest DOM turn.
 
+`codex-mobile-shell-v513` moves the thread-list-summary versus loaded-detail
+boundary into `public/thread-detail-state.js` instead of leaving it as local
+`public/app.js` state logic. The helper now strips detail-only fields before
+thread rows enter or re-enter the list, detects whether an empty `turns: []`
+object is a real loaded empty detail or only a summary shell, and merges
+summary rows without preserving stale detail/projection fields. `public/app.js`
+still owns the real state mutation, network refresh, and render scheduling, but
+it no longer owns this policy. This directly follows the v511/v512 Music
+incident: a list row with `turns: []` must not masquerade as a thread-detail
+conversation.
+
 The first slices extract item visible-field merge policy,
 visible-text render identity / completed-receipt retention, local-only item
 retention/drop policy, and live-to-completed same-turn visible-item preservation

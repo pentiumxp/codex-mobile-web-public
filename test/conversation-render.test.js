@@ -83,32 +83,6 @@ function evaluatedAttachmentSummaryParser() {
   return Function(`${sources.join("\n")}\nreturn splitAttachmentSummaryText;`)();
 }
 
-function evaluatedThreadSummaryBoundaryHarness() {
-  const sources = [
-    "threadListSummaryFromDetailThread",
-    "threadHasLoadedDetailState",
-    "threadIsSummaryOnlyCurrentThread",
-    "mergeThreadIntoThreadList",
-  ].map((name) => functionSourceFrom(appJs, name));
-  return Function(`
-const state = {
-  currentThreadId: "thread-1",
-  threads: [],
-};
-function visibleThreads(threads = state.threads) {
-  return threads || [];
-}
-${sources.join("\n")}
-return {
-  state,
-  threadListSummaryFromDetailThread,
-  threadHasLoadedDetailState,
-  threadIsSummaryOnlyCurrentThread,
-  mergeThreadIntoThreadList,
-};
-`)();
-}
-
 function evaluatedInputContentRenderer() {
   return evaluatedInputContentRendererWithKey("");
 }
@@ -1885,7 +1859,7 @@ test("loading and thread-list state preserve locally visible live turns", () => 
   assert.match(functionBody("loadThread"), /threadHasLoadedDetailState\(state\.currentThread\)/);
   assert.match(functionBody("loadThreads"), /threadListSummaryFromDetailThread\(thread\) \|\| thread/);
   assert.match(functionSourceFrom(appJs, "renderCurrentThread"), /let thread = state\.currentThread;/);
-  assert.match(functionBody("renderCurrentThread"), /threadIsSummaryOnlyCurrentThread\(thread\)/);
+  assert.match(functionBody("renderCurrentThread"), /threadDetailStateApi\.threadIsSummaryOnlyCurrentThread\(thread, state\.currentThreadId\)/);
   assert.match(functionBody("renderCurrentThread"), /scheduleCurrentThreadRefresh\(0, "summary-detail-recovery"\)/);
   assert.match(functionBody("renderCurrentThread"), /threadDetailRenderPlanApi\.planSingleThreadFullRenderShell/);
   assert.doesNotMatch(functionBody("renderCurrentThread"), /Thread failed:/);
@@ -1893,56 +1867,6 @@ test("loading and thread-list state preserve locally visible live turns", () => 
   assert.match(functionBody("renderCurrentThread"), /const loadingNote = thread\.mobileLoading/);
   assert.match(functionBody("reconcileThreadStatusHints"), /currentLiveTurnSupportsThreadStatusHint\(id\)/);
   assert.match(functionBody("statusIconInfo"), /state\.runningThreadIds\.has\(id\)[\s\S]*currentLiveTurnSupportsThreadStatusHint\(id\)/);
-});
-
-test("thread-list summaries cannot masquerade as loaded thread details", () => {
-  const harness = evaluatedThreadSummaryBoundaryHarness();
-  const summary = harness.threadListSummaryFromDetailThread({
-    id: "thread-1",
-    name: "Music",
-    turns: [{ id: "turn-private" }],
-    runtimeSettings: { model: "private" },
-    threadTaskCards: [{ id: "ttc-private" }],
-    mobileLoading: true,
-    mobileLoadError: "private error",
-    mobileReadWarning: "private warning",
-    mobileReadMode: "recent",
-  });
-  assert.equal(Object.prototype.hasOwnProperty.call(summary, "turns"), false);
-  assert.equal(Object.prototype.hasOwnProperty.call(summary, "runtimeSettings"), false);
-  assert.equal(Object.prototype.hasOwnProperty.call(summary, "threadTaskCards"), false);
-  assert.equal(Object.prototype.hasOwnProperty.call(summary, "mobileLoading"), false);
-  assert.equal(Object.prototype.hasOwnProperty.call(summary, "mobileLoadError"), false);
-  assert.equal(Object.prototype.hasOwnProperty.call(summary, "mobileReadWarning"), false);
-
-  assert.equal(harness.threadHasLoadedDetailState({ id: "thread-1", turns: [] }), false);
-  assert.equal(harness.threadHasLoadedDetailState({ id: "thread-1", turns: [], mobileReadMode: "recent" }), true);
-  assert.equal(harness.threadHasLoadedDetailState({ id: "thread-1", turns: [{ id: "turn-1", items: [] }] }), true);
-  assert.equal(harness.threadHasLoadedDetailState({ id: "thread-1", turns: [{ id: "turn-1" }], mobileLoading: true }), false);
-
-  assert.equal(harness.threadIsSummaryOnlyCurrentThread({ id: "thread-1", turns: [] }), true);
-  assert.equal(harness.threadIsSummaryOnlyCurrentThread({ id: "thread-1", turns: [], mobileReadMode: "recent" }), false);
-  assert.equal(harness.threadIsSummaryOnlyCurrentThread({ id: "other", turns: [] }), false);
-
-  harness.state.threads = [{
-    id: "thread-1",
-    name: "Old",
-    turns: [],
-    mobileLoading: false,
-    threadTaskCards: [{ id: "stale" }],
-  }];
-  harness.mergeThreadIntoThreadList({
-    id: "thread-1",
-    name: "New",
-    turns: [{ id: "turn-1" }],
-    runtimeSettings: { model: "private" },
-    threadTaskCards: [{ id: "new" }],
-    mobileReadMode: "recent",
-  });
-  assert.equal(harness.state.threads[0].name, "New");
-  assert.equal(Object.prototype.hasOwnProperty.call(harness.state.threads[0], "turns"), false);
-  assert.equal(Object.prototype.hasOwnProperty.call(harness.state.threads[0], "runtimeSettings"), false);
-  assert.equal(Object.prototype.hasOwnProperty.call(harness.state.threads[0], "threadTaskCards"), false);
 });
 
 test("long agent messages keep a stable render path when a turn completes", () => {
@@ -4225,9 +4149,9 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.doesNotMatch(functionBody("reconcileThreadStatusHints"), /else if \(!isRunning && wasRunning\)/);
 
   const listMergeBody = functionBody("mergeThreadIntoThreadList");
-  assert.match(listMergeBody, /threadListSummaryFromDetailThread\(thread\)/);
-  assert.match(listMergeBody, /const existingSummary = threadListSummaryFromDetailThread\(state\.threads\[index\]\) \|\| \{\};/);
-  assert.match(listMergeBody, /Object\.assign\(\{\}, existingSummary, summary\)/);
+  assert.match(listMergeBody, /threadDetailStateApi\.mergeThreadSummaryIntoList\(state\.threads, thread, \{ visibleThreads \}\)/);
+  assert.doesNotMatch(appJs, /function threadListSummaryFromDetailThread\(/);
+  assert.doesNotMatch(appJs, /function threadHasLoadedDetailState\(/);
   const optimisticBody = functionBody("markThreadOptimisticallyActive");
   assert.match(optimisticBody, /const runningStatus = \{ type: "active" \};/);
   assert.match(optimisticBody, /noteSubmittedProcessingThreadHint\(id\)/);

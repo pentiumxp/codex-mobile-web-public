@@ -4,7 +4,13 @@ const assert = require("node:assert/strict");
 const path = require("node:path");
 const { test } = require("node:test");
 
-const { createThreadDetailStatePolicy } = require(path.resolve(__dirname, "..", "public", "thread-detail-state.js"));
+const {
+  createThreadDetailStatePolicy,
+  mergeThreadSummaryIntoList,
+  threadHasLoadedDetailState,
+  threadIsSummaryOnlyCurrentThread,
+  threadListSummaryFromDetailThread,
+} = require(path.resolve(__dirname, "..", "public", "thread-detail-state.js"));
 
 function createPolicy(overrides = {}) {
   return createThreadDetailStatePolicy(Object.assign({
@@ -279,4 +285,100 @@ test("thread detail state does not force render identity when visible text items
   assert.equal(merged.id, "incoming");
   assert.equal(merged.text, "longer visible response");
   assert.equal(merged.startedAtMs, 456);
+});
+
+test("thread detail summaries strip detail-only state before entering thread lists", () => {
+  const summary = threadListSummaryFromDetailThread({
+    id: "thread-1",
+    name: "Music",
+    status: "completed",
+    turns: [{ id: "turn-private" }],
+    runtimeSettings: { model: "private" },
+    threadTaskCards: [{ id: "ttc-private" }],
+    mobileLoading: true,
+    mobileLoadError: "private error",
+    mobileReadWarning: "private warning",
+    mobileReadMode: "recent",
+    mobileDiagnostics: { detail: "private" },
+    mobileProjectionVersion: 4,
+    mobileProjection: { source: "detail" },
+    mobileProjectionRevision: "rev",
+    mobileVisibleItemKeys: ["item-1"],
+    mobileOlderTurnsCursor: "older",
+    mobileNewerTurnsCursor: "newer",
+    pendingTaskCardCount: 2,
+  });
+
+  assert.equal(summary.id, "thread-1");
+  assert.equal(summary.name, "Music");
+  assert.equal(summary.status, "completed");
+  assert.equal(summary.pendingTaskCardCount, 2);
+  for (const field of [
+    "turns",
+    "runtimeSettings",
+    "threadTaskCards",
+    "mobileLoading",
+    "mobileLoadError",
+    "mobileReadWarning",
+    "mobileReadMode",
+    "mobileDiagnostics",
+    "mobileProjectionVersion",
+    "mobileProjection",
+    "mobileProjectionRevision",
+    "mobileVisibleItemKeys",
+    "mobileOlderTurnsCursor",
+    "mobileNewerTurnsCursor",
+  ]) {
+    assert.equal(Object.prototype.hasOwnProperty.call(summary, field), false, `${field} should be stripped`);
+  }
+});
+
+test("thread detail loaded-state policy distinguishes empty detail from summary shells", () => {
+  assert.equal(threadHasLoadedDetailState({ id: "thread-1", turns: [] }), false);
+  assert.equal(threadHasLoadedDetailState({ id: "thread-1", turns: [], mobileReadMode: "recent" }), true);
+  assert.equal(threadHasLoadedDetailState({ id: "thread-1", turns: [], mobileDiagnostics: {} }), true);
+  assert.equal(threadHasLoadedDetailState({ id: "thread-1", turns: [], runtimeSettings: {} }), true);
+  assert.equal(threadHasLoadedDetailState({ id: "thread-1", turns: [], threadTaskCards: [] }), true);
+  assert.equal(threadHasLoadedDetailState({ id: "thread-1", turns: [{ id: "turn-1", items: [] }] }), true);
+  assert.equal(threadHasLoadedDetailState({ id: "thread-1", turns: [{ id: "turn-1" }], mobileLoading: true }), false);
+  assert.equal(threadHasLoadedDetailState({ id: "thread-1", turns: [{ id: "turn-1" }], mobileLoadError: "failed" }), false);
+
+  assert.equal(threadIsSummaryOnlyCurrentThread({ id: "thread-1", turns: [] }, "thread-1"), true);
+  assert.equal(threadIsSummaryOnlyCurrentThread({ id: "thread-1", turns: [], mobileReadMode: "recent" }, "thread-1"), false);
+  assert.equal(threadIsSummaryOnlyCurrentThread({ id: "other", turns: [] }, "thread-1"), false);
+});
+
+test("thread detail summary merge cannot preserve stale detail fields", () => {
+  const result = mergeThreadSummaryIntoList([{
+    id: "thread-1",
+    name: "Old",
+    turns: [],
+    mobileLoading: false,
+    mobileReadMode: "stale",
+    mobileDiagnostics: { detail: "stale" },
+    threadTaskCards: [{ id: "stale" }],
+  }, {
+    id: "thread-hidden",
+    hidden: true,
+  }], {
+    id: "thread-1",
+    name: "New",
+    turns: [{ id: "turn-1" }],
+    runtimeSettings: { model: "private" },
+    threadTaskCards: [{ id: "new" }],
+    mobileReadMode: "recent",
+  }, {
+    visibleThreads(threads) {
+      return threads.filter((thread) => !thread.hidden);
+    },
+  });
+
+  assert.equal(result.changed, true);
+  assert.equal(result.threads.length, 1);
+  assert.equal(result.threads[0].name, "New");
+  assert.equal(Object.prototype.hasOwnProperty.call(result.threads[0], "turns"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(result.threads[0], "runtimeSettings"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(result.threads[0], "threadTaskCards"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(result.threads[0], "mobileReadMode"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(result.threads[0], "mobileDiagnostics"), false);
 });

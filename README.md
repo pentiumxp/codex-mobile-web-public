@@ -16,6 +16,36 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v513 Thread Summary/Detail State Boundary
+
+v513 是 Phase A 前端状态所有权收敛的继续推进，直接吸收 v511/v512 Music
+线程空白事故的根因：线程列表摘要行可能带着 `turns: []` 进入详情渲染路径，
+并被误判成已经加载过的 thread detail。
+
+本次切片新增/调整：
+
+- `public/thread-detail-state.js` 现在拥有 thread-list summary 与 loaded detail
+  的边界规则。
+- 列表摘要进入或合并回 thread list 前，会删除 `turns`、`runtimeSettings`、
+  `threadTaskCards`、`mobileReadMode`、`mobileDiagnostics`、projection cursor 等
+  detail-only 字段。
+- 空 `turns: []` 不再自动代表“已加载空详情”；必须有 read/projection/runtime/task-card
+  等详情证据，才算 loaded detail。
+- `public/app.js` 只负责真实 state mutation、网络刷新和 render 调度，不再内联维护这组
+  ownership policy。
+
+修复边界：
+
+- 症状/风险：列表摘要字段污染会导致详情页稳定显示 `No visible turns.`，即使
+  `/api/threads/:id?mode=recent` 实际返回了完整 recent window。
+- 失败层：前端 thread-list/detail state ownership。
+- 不变量：列表摘要只能提供标题、状态、工作区和计数类元数据，不能拥有或证明
+  conversation detail state。
+- 闭环验证：`test/thread-detail-state.test.js` 增加行为测试；
+  `test/conversation-render.test.js` 验证 `app.js` 只委托 helper。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v513`。
+
 ## 2026-06-26 v507 Phase A Refresh/Patch Module Deploy
 
 v507 把 v506 之后累积的 Phase A `refreshCurrentThread()` 编排优化作为一个

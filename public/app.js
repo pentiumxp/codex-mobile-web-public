@@ -486,6 +486,8 @@ const threadDetailStatePolicy = threadDetailStateApi.createThreadDetailStatePoli
   visibleTextItemsLikelySame,
   completedReceiptItemsLikelySame,
 });
+const threadListSummaryFromDetailThread = threadDetailStateApi.threadListSummaryFromDetailThread;
+const threadHasLoadedDetailState = threadDetailStateApi.threadHasLoadedDetailState;
 
 function setAuthKey(value) {
   const next = String(value || "");
@@ -508,7 +510,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v512";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v513";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -4734,59 +4736,11 @@ function markThreadOptimisticallyActive(threadId) {
   }
 }
 
-function threadListSummaryFromDetailThread(thread) {
-  if (!thread || typeof thread !== "object" || !thread.id) return null;
-  const summary = Object.assign({}, thread);
-  delete summary.turns;
-  delete summary.runtimeSettings;
-  delete summary.threadTaskCards;
-  delete summary.mobileLoading;
-  delete summary.mobileLoadError;
-  delete summary.mobileReadWarning;
-  return summary;
-}
-
-function threadHasLoadedDetailState(thread) {
-  if (!thread || typeof thread !== "object") return false;
-  if (thread.mobileLoading || thread.mobileLoadError) return false;
-  if (!Array.isArray(thread.turns)) return false;
-  if (thread.turns.length > 0) return true;
-  return Boolean(
-    Object.prototype.hasOwnProperty.call(thread, "mobileReadMode")
-    || Object.prototype.hasOwnProperty.call(thread, "mobileDiagnostics")
-    || Object.prototype.hasOwnProperty.call(thread, "mobileProjectionVersion")
-    || Object.prototype.hasOwnProperty.call(thread, "mobileProjection")
-    || Object.prototype.hasOwnProperty.call(thread, "mobileOlderTurnsCursor")
-    || Object.prototype.hasOwnProperty.call(thread, "mobileNewerTurnsCursor")
-    || Object.prototype.hasOwnProperty.call(thread, "runtimeSettings")
-    || Object.prototype.hasOwnProperty.call(thread, "threadTaskCards")
-  );
-}
-
-function threadIsSummaryOnlyCurrentThread(thread) {
-  return Boolean(thread
-    && state.currentThreadId
-    && String(thread.id || "") === String(state.currentThreadId || "")
-    && !threadHasLoadedDetailState(thread)
-    && !thread.mobileLoading
-    && !thread.mobileLoadError);
-}
-
 function mergeThreadIntoThreadList(thread) {
-  const summary = threadListSummaryFromDetailThread(thread);
-  if (!summary) return false;
-  const id = String(summary.id);
-  const index = state.threads.findIndex((entry) => String(entry && entry.id || "") === id);
-  if (index >= 0) {
-    const existingSummary = threadListSummaryFromDetailThread(state.threads[index]) || {};
-    state.threads = state.threads.map((entry, entryIndex) => (
-      entryIndex === index ? Object.assign({}, existingSummary, summary) : entry
-    ));
-  } else {
-    state.threads = [summary, ...state.threads];
-  }
-  state.threads = visibleThreads(state.threads);
-  return true;
+  const result = threadDetailStateApi.mergeThreadSummaryIntoList(state.threads, thread, { visibleThreads });
+  if (!result.changed) return false;
+  state.threads = result.threads;
+  return result.changed;
 }
 
 function isRunningStatus(status) {
@@ -14312,7 +14266,7 @@ function renderCurrentThread(options = {}) {
   }
   updateCurrentThreadHeader(thread);
   setThreadTileConversationMode(false);
-  if (threadIsSummaryOnlyCurrentThread(thread)) {
+  if (threadDetailStateApi.threadIsSummaryOnlyCurrentThread(thread, state.currentThreadId)) {
     const hadTurnsField = Object.prototype.hasOwnProperty.call(thread, "turns");
     state.currentThread = Object.assign({}, threadListSummaryFromDetailThread(thread) || thread, {
       turns: [],

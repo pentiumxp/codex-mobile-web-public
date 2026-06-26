@@ -8,8 +8,89 @@
     root.CodexThreadDetailState = api;
   }
 }(typeof globalThis !== "undefined" ? globalThis : null, function () {
+  const DETAIL_ONLY_SUMMARY_FIELDS = Object.freeze([
+    "turns",
+    "runtimeSettings",
+    "threadTaskCards",
+    "mobileLoading",
+    "mobileLoadError",
+    "mobileReadWarning",
+    "mobileReadMode",
+    "mobileDiagnostics",
+    "mobileProjectionVersion",
+    "mobileProjection",
+    "mobileProjectionRevision",
+    "mobileVisibleItemKeys",
+    "mobileOlderTurnsCursor",
+    "mobileNewerTurnsCursor",
+  ]);
+
   function defaultVisibleWeight(item) {
     return item ? JSON.stringify(item).length : 0;
+  }
+
+  function threadListSummaryFromDetailThread(thread) {
+    if (!thread || typeof thread !== "object" || !thread.id) return null;
+    const summary = Object.assign({}, thread);
+    for (const field of DETAIL_ONLY_SUMMARY_FIELDS) {
+      delete summary[field];
+    }
+    return summary;
+  }
+
+  function threadHasLoadedDetailState(thread) {
+    if (!thread || typeof thread !== "object") return false;
+    if (thread.mobileLoading || thread.mobileLoadError) return false;
+    if (!Array.isArray(thread.turns)) return false;
+    if (thread.turns.length > 0) return true;
+    return Boolean(
+      Object.prototype.hasOwnProperty.call(thread, "mobileReadMode")
+      || Object.prototype.hasOwnProperty.call(thread, "mobileDiagnostics")
+      || Object.prototype.hasOwnProperty.call(thread, "mobileProjectionVersion")
+      || Object.prototype.hasOwnProperty.call(thread, "mobileProjection")
+      || Object.prototype.hasOwnProperty.call(thread, "mobileOlderTurnsCursor")
+      || Object.prototype.hasOwnProperty.call(thread, "mobileNewerTurnsCursor")
+      || Object.prototype.hasOwnProperty.call(thread, "runtimeSettings")
+      || Object.prototype.hasOwnProperty.call(thread, "threadTaskCards")
+    );
+  }
+
+  function threadIsSummaryOnlyCurrentThread(thread, currentThreadId) {
+    return Boolean(thread
+      && currentThreadId
+      && String(thread.id || "") === String(currentThreadId || "")
+      && !threadHasLoadedDetailState(thread)
+      && !thread.mobileLoading
+      && !thread.mobileLoadError);
+  }
+
+  function mergeThreadSummaryIntoList(threads, thread, options = {}) {
+    const summary = threadListSummaryFromDetailThread(thread);
+    const currentThreads = Array.isArray(threads) ? threads : [];
+    if (!summary) {
+      return {
+        changed: false,
+        threads: currentThreads,
+      };
+    }
+    const id = String(summary.id);
+    const index = currentThreads.findIndex((entry) => String(entry && entry.id || "") === id);
+    let nextThreads;
+    if (index >= 0) {
+      const existingSummary = threadListSummaryFromDetailThread(currentThreads[index]) || {};
+      nextThreads = currentThreads.map((entry, entryIndex) => (
+        entryIndex === index ? Object.assign({}, existingSummary, summary) : entry
+      ));
+    } else {
+      nextThreads = [summary, ...currentThreads];
+    }
+    const visibleThreads = typeof options.visibleThreads === "function"
+      ? options.visibleThreads
+      : (value) => value;
+    return {
+      changed: true,
+      threads: visibleThreads(nextThreads),
+    };
   }
 
   function createThreadDetailStatePolicy(options = {}) {
@@ -132,5 +213,9 @@
 
   return {
     createThreadDetailStatePolicy,
+    mergeThreadSummaryIntoList,
+    threadHasLoadedDetailState,
+    threadIsSummaryOnlyCurrentThread,
+    threadListSummaryFromDetailThread,
   };
 }));
