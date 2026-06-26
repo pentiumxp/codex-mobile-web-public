@@ -492,7 +492,7 @@ const threadDetailStatePolicy = threadDetailStateApi.createThreadDetailStatePoli
   completedReceiptItemsLikelySame,
 });
 const threadListSummaryFromDetailThread = threadDetailStateApi.threadListSummaryFromDetailThread;
-const threadHasReusableLoadedDetailState = threadDetailStateApi.threadHasReusableLoadedDetailState;
+const planThreadOpenCacheReuse = threadDetailStateApi.planThreadOpenCacheReuse;
 
 function setAuthKey(value) {
   const next = String(value || "");
@@ -515,7 +515,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v520";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v521";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -6831,6 +6831,48 @@ function recordEmptyVisibleDetailHealthy(source, thread = state.currentThread) {
   }));
 }
 
+function emptyCachedDetailReuseInput(reason, thread = state.currentThread, details = {}) {
+  const threadId = String((thread && thread.id) || state.currentThreadId || "").trim();
+  const shape = thread ? visibleConversationShape(thread) : { visibleTurnCount: 0, visibleItemCount: 0 };
+  const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+  const itemCount = turns.reduce((total, turn) => total + (Array.isArray(turn && turn.items) ? turn.items.length : 0), 0);
+  return {
+    reason,
+    action: "thread-open-cache-reuse",
+    routeKind: "single-thread",
+    sourceKind: details.source || "",
+    threadHash: diagnosticThreadHash(threadId),
+    readMode: thread && thread.mobileReadMode || "",
+    currentTurns: shape.visibleTurnCount,
+    currentVisibleItems: shape.visibleItemCount,
+    items: itemCount,
+    detailLoaded: Boolean(thread && thread.mobileDetailLoaded),
+    reusableDetail: Boolean(details.reusableDetail),
+    mobileLoading: Boolean(thread && thread.mobileLoading),
+    threadTaskCardCount: Array.isArray(thread && thread.threadTaskCards) ? thread.threadTaskCards.length : 0,
+  };
+}
+
+function recordEmptyCachedDetailReuseBlocked(reason, thread = state.currentThread, details = {}) {
+  return recordHomeAiDiagnosticFailure(
+    threadDiagnosticEventsApi.emptyCachedDetailReuseBlockedDiagnosticEvent(
+      emptyCachedDetailReuseInput(reason, thread, details),
+    ),
+  );
+}
+
+function recordEmptyCachedDetailReuseHealthy(source, thread = state.currentThread) {
+  const threadId = String((thread && thread.id) || state.currentThreadId || "").trim();
+  if (!threadId) return null;
+  return recordHomeAiDiagnosticSuccess(threadDiagnosticEventsApi.emptyCachedDetailReuseDiagnosticSuccess({
+    action: "thread-open-cache-reuse",
+    routeKind: "single-thread",
+    sourceKind: source,
+    threadHash: diagnosticThreadHash(threadId),
+    readMode: thread && thread.mobileReadMode || "",
+  }));
+}
+
 function checkEmptyVisibleDetailMismatchAfterRender(thread, shellPlan = {}, metrics = {}) {
   if (!thread || thread.mobileLoading || thread.mobileLoadError) return;
   if (shellPlan.hasPrimaryContent || shellPlan.emptyMessage !== "No visible turns.") return;
@@ -8805,11 +8847,15 @@ async function loadThread(threadId, options = {}) {
     state.continuationSourceThreadId = "";
   }
   const replacedTilePaneForThreadListOpen = replaceLastThreadTilePaneForThreadListOpen(threadId, { source });
-  if (threadId === state.currentThreadId
-    && state.currentThread
-    && threadHasReusableLoadedDetailState(state.currentThread)
-    && !state.currentThread.mobileLoading
-    && !state.currentThread.mobileLoadError) {
+  const cacheReusePlan = planThreadOpenCacheReuse({
+    requestedThreadId: threadId,
+    currentThreadId: state.currentThreadId,
+    currentThread: state.currentThread,
+  });
+  if (cacheReusePlan.shouldReportEmptyCachedDetail) {
+    recordEmptyCachedDetailReuseBlocked(cacheReusePlan.reason, state.currentThread, { source });
+  }
+  if (cacheReusePlan.shouldUseCachedCurrent) {
     const renderStartedAt = nowPerfMs();
     followThreadOpenToBottom(threadId);
     mergeThreadIntoThreadList(state.currentThread);
@@ -8827,6 +8873,7 @@ async function loadThread(threadId, options = {}) {
     }
     if (isMenuOverlayMode()) closeSidebarMenu();
     checkConversationProjectionConsistency("cached-current", { renderMode: "cached-current" });
+    recordEmptyCachedDetailReuseHealthy("cached-current", state.currentThread);
     if (!state.threadSideChats.has(threadId)) loadSideChat(threadId, { silent: true }).catch(showError);
     const renderElapsedMs = roundedDurationMs(renderStartedAt);
     const firstPaintPerformance = threadPerformanceMetrics.threadDetailFirstPaintEventFields(state.currentThread, {

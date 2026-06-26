@@ -240,6 +240,17 @@ API. `loadThread()` also strips detail-only fields from thread-list summaries
 before constructing a loading current-thread shell, so list rows cannot restore
 `mobileDetailLoaded` into the detail owner.
 
+`codex-mobile-shell-v521` moves that open-thread cache authority rule out of
+ad-hoc `app.js` branching into `planThreadOpenCacheReuse()` in
+`public/thread-detail-state.js`. The plan names whether cached-current may be
+used, whether an empty cached detail authority attempt should be reported, and
+the bounded reason. `loadThread()` consumes that plan, records
+`empty_cached_detail_reuse_blocked` through the Home AI diagnostic reporter
+when an empty `mobileDetailLoaded` state tries to become authority, and then
+continues to the normal detail API path. This keeps the root-cause fix at the
+state ownership boundary: no UI hiding, forced refresh loop, synthetic turns,
+or duplicate suppression is introduced.
+
 The first slices extract item visible-field merge policy,
 visible-text render identity / completed-receipt retention, local-only item
 retention/drop policy, and live-to-completed same-turn visible-item preservation

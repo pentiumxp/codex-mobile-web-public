@@ -434,6 +434,75 @@
     };
   }
 
+  function emptyCachedDetailReuseContext(input = {}) {
+    const source = input && typeof input === "object" ? input : {};
+    const context = {
+      surface: "thread-session",
+      action: compactToken(source.action, "thread-open-cache-reuse", 80),
+      route_kind: compactToken(source.routeKind || source.route_kind, "single-thread", 80),
+    };
+    const readMode = compactToken(source.readMode || source.read_mode, "", 80);
+    const sourceKind = compactToken(source.sourceKind || source.source_kind, "", 80);
+    const threadHash = compactToken(source.threadHash || source.thread_hash, "", 80);
+    if (readMode) context.read_mode = readMode;
+    if (sourceKind) context.source_kind = sourceKind;
+    if (threadHash) context.thread_hash = threadHash;
+    return context;
+  }
+
+  function emptyCachedDetailReuseCounts(input = {}) {
+    const source = input && typeof input === "object" ? input : {};
+    return {
+      current_turn_count: boundedCount(source.currentTurns || source.current_turn_count),
+      current_visible_count: boundedCount(source.currentVisibleItems || source.current_visible_count),
+      item_count: boundedCount(source.items || source.item_count),
+      detail_loaded: source.detailLoaded || source.detail_loaded ? 1 : 0,
+      reusable_detail: source.reusableDetail || source.reusable_detail ? 1 : 0,
+      mobile_loading: source.mobileLoading || source.mobile_loading ? 1 : 0,
+      thread_task_card_count: boundedCount(source.threadTaskCardCount || source.thread_task_card_count),
+    };
+  }
+
+  function emptyCachedDetailReuseBlockedDiagnosticEvent(input = {}) {
+    const source = input && typeof input === "object" ? input : {};
+    const context = emptyCachedDetailReuseContext(source);
+    const counts = emptyCachedDetailReuseCounts(source);
+    const reason = compactToken(source.reason, "empty_cached_detail_reuse_blocked", 80);
+    return {
+      category: "conversation_projection_mismatch",
+      diagnostic_type: "empty_cached_detail_reuse_blocked",
+      severity_hint: "H2",
+      evidence_confidence: 0.8,
+      error_code: reason,
+      context,
+      counts,
+      breadcrumbs: [{
+        kind: "thread-session",
+        code: "thread-open-cache-reuse",
+        status: "blocked",
+        fields: {
+          read_mode: context.read_mode || "",
+          source_kind: context.source_kind || "",
+          thread_hash: context.thread_hash || "",
+          current_turn_count: counts.current_turn_count,
+          current_visible_count: counts.current_visible_count,
+          item_count: counts.item_count,
+          detail_loaded: counts.detail_loaded,
+          reusable_detail: counts.reusable_detail,
+        },
+      }],
+    };
+  }
+
+  function emptyCachedDetailReuseDiagnosticSuccess(input = {}) {
+    return {
+      category: "conversation_projection_mismatch",
+      diagnostic_type: "empty_cached_detail_reuse_blocked",
+      error_code: "empty_cached_detail_reuse_blocked",
+      context: emptyCachedDetailReuseContext(input),
+    };
+  }
+
   function detailPatchRejectedDiagnosticEvent(input = {}) {
     const readMode = compactToken(input.readMode, "", 80);
     const renderMode = compactToken(input.renderMode, "", 80);
@@ -674,6 +743,8 @@
     detailPatchRejectedDiagnosticEvent,
     duplicateRenderKeysDiagnosticEvent,
     duplicateRenderKeysDiagnosticSuccess,
+    emptyCachedDetailReuseBlockedDiagnosticEvent,
+    emptyCachedDetailReuseDiagnosticSuccess,
     emptyVisibleDetailMismatchDiagnosticEvent,
     emptyVisibleDetailMismatchDiagnosticSuccess,
     hasDuplicateRenderKeys,

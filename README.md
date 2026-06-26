@@ -16,6 +16,36 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v521 Thread Open Cache-Reuse Policy And Diagnostics
+
+v521 在 v520 的 Music 空详情根因修复上继续收敛架构边界：同线程打开时是否允许复用
+当前 detail cache，不再由 `public/app.js` 直接拼条件判断，而是由
+`public/thread-detail-state.js` 的 `planThreadOpenCacheReuse()` 给出可测试计划。
+
+本次切片新增/调整：
+
+- `public/thread-detail-state.js` 新增 `planThreadOpenCacheReuse()`，返回
+  `shouldUseCachedCurrent`、`shouldReportEmptyCachedDetail` 和 bounded `reason`。
+- `public/app.js` 的 `loadThread()` 改为消费该计划：非空可复用 detail 走
+  `cached-current`；空 `mobileDetailLoaded` detail 被明确阻断并继续走 detail API。
+- `public/thread-diagnostic-events.js` 新增
+  `empty_cached_detail_reuse_blocked` payload builder。若空 cached detail 试图成为同线程
+  打开权威，客户端记录 H2 bounded diagnostic，经 Home AI Owner-gated diagnostic report
+  通道进入闭环；正常 cached-current 复用记录 success clear。
+- `test/thread-detail-state.test.js`、`test/thread-diagnostic-events.test.js` 和
+  `test/conversation-render.test.js` 覆盖策略计划、隐私安全 payload、以及 `loadThread()`
+  不再内联缓存权威判断。
+
+修复边界：
+
+- 失败层：frontend thread-open detail cache authority policy。
+- 不变量：缓存复用是状态所有权决策，必须由纯策略模块给出 reason；阻断异常空缓存只做
+  诊断和继续读取服务端权威 detail，不隐藏、不强制刷新、不合成 turns。
+- 诊断只包含 thread hash、read/source kind、turn/item 计数、detail-loaded/reusable 标记；
+  不包含线程标题、消息正文、任务卡正文、上传内容、私有路径、URL、cookies、tokens 或长日志。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v521`。
+
 ## 2026-06-26 v520 Empty Cached Detail Revalidation
 
 v520 修复 Music 线程在移动端进入后稳定显示 `No visible turns.` 的根因。现场证据显示

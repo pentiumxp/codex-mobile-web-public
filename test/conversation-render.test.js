@@ -1860,7 +1860,11 @@ test("loading and thread-list state preserve locally visible live turns", () => 
   assert.match(functionBody("conversationRenderSignature"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) return `loading\\|/);
   assert.match(functionBody("conversationRootSignature"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) return `loading\\|/);
   assert.match(functionBody("loadThread"), /Object\.assign\(\{\}, threadListSummaryFromDetailThread\(summary\) \|\| summary, \{\s*turns: \[\],\s*mobileLoading: true,\s*mobileLoadError: "",\s*\}\)/);
-  assert.match(functionBody("loadThread"), /threadHasReusableLoadedDetailState\(state\.currentThread\)/);
+  assert.match(functionBody("loadThread"), /const cacheReusePlan = planThreadOpenCacheReuse\(\{/);
+  assert.match(functionBody("loadThread"), /recordEmptyCachedDetailReuseBlocked\(cacheReusePlan\.reason, state\.currentThread, \{ source \}\)/);
+  assert.match(functionBody("loadThread"), /if \(cacheReusePlan\.shouldUseCachedCurrent\) \{/);
+  assert.match(functionBody("loadThread"), /recordEmptyCachedDetailReuseHealthy\("cached-current", state\.currentThread\)/);
+  assert.doesNotMatch(functionBody("loadThread"), /threadHasReusableLoadedDetailState\(state\.currentThread\)/);
   assert.doesNotMatch(functionBody("loadThread"), /threadHasLoadedDetailState\(state\.currentThread\)/);
   assert.match(functionBody("loadThreads"), /threadListSummaryFromDetailThread\(thread\) \|\| thread/);
   assert.match(functionSourceFrom(appJs, "renderCurrentThread"), /let thread = state\.currentThread;/);

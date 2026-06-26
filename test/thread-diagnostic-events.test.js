@@ -421,6 +421,77 @@ test("thread diagnostic events build empty visible detail mismatch payloads", ()
   assert.equal(JSON.stringify(event).includes("private"), false);
 });
 
+test("thread diagnostic events build empty cached detail reuse payloads", () => {
+  const event = diagnostics.emptyCachedDetailReuseBlockedDiagnosticEvent({
+    reason: "empty loaded detail not reusable",
+    sourceKind: "thread list",
+    threadHash: "thread/hash with spaces",
+    readMode: "projection-v4-dynamic",
+    currentTurns: 0,
+    currentVisibleItems: 0,
+    items: 0,
+    detailLoaded: true,
+    reusableDetail: false,
+    mobileLoading: false,
+    threadTaskCardCount: 3,
+    prompt: "private prompt ignored",
+    body: "private body ignored",
+    token: "secret ignored",
+  });
+
+  assert.equal(event.category, "conversation_projection_mismatch");
+  assert.equal(event.diagnostic_type, "empty_cached_detail_reuse_blocked");
+  assert.equal(event.severity_hint, "H2");
+  assert.equal(event.evidence_confidence, 0.8);
+  assert.equal(event.error_code, "empty_loaded_detail_not_reusable");
+  assert.deepEqual(event.context, {
+    surface: "thread-session",
+    action: "thread-open-cache-reuse",
+    route_kind: "single-thread",
+    read_mode: "projection-v4-dynamic",
+    source_kind: "thread_list",
+    thread_hash: "thread_hash_with_spaces",
+  });
+  assert.deepEqual(event.counts, {
+    current_turn_count: 0,
+    current_visible_count: 0,
+    item_count: 0,
+    detail_loaded: 1,
+    reusable_detail: 0,
+    mobile_loading: 0,
+    thread_task_card_count: 3,
+  });
+  assert.deepEqual(event.breadcrumbs[0].fields, {
+    read_mode: "projection-v4-dynamic",
+    source_kind: "thread_list",
+    thread_hash: "thread_hash_with_spaces",
+    current_turn_count: 0,
+    current_visible_count: 0,
+    item_count: 0,
+    detail_loaded: 1,
+    reusable_detail: 0,
+  });
+  assert.deepEqual(diagnostics.emptyCachedDetailReuseDiagnosticSuccess({
+    sourceKind: "cached-current",
+    threadHash: "thread/hash with spaces",
+    readMode: "projection-v4-dynamic",
+  }), {
+    category: "conversation_projection_mismatch",
+    diagnostic_type: "empty_cached_detail_reuse_blocked",
+    error_code: "empty_cached_detail_reuse_blocked",
+    context: {
+      surface: "thread-session",
+      action: "thread-open-cache-reuse",
+      route_kind: "single-thread",
+      read_mode: "projection-v4-dynamic",
+      source_kind: "cached-current",
+      thread_hash: "thread_hash_with_spaces",
+    },
+  });
+  assert.equal(JSON.stringify(event).includes("private"), false);
+  assert.equal(JSON.stringify(event).includes("secret"), false);
+});
+
 test("thread diagnostic events plan tile conversation projection snapshots", () => {
   const calls = [];
   const snapshot = diagnostics.conversationProjectionDiagnosticSnapshot({

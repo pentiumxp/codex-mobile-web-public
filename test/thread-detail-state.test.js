@@ -7,6 +7,7 @@ const { test } = require("node:test");
 const {
   createThreadDetailStatePolicy,
   mergeThreadSummaryIntoList,
+  planThreadOpenCacheReuse,
   planSummaryOnlyCurrentThreadRecovery,
   threadHasLoadedDetailState,
   threadHasReusableLoadedDetailState,
@@ -356,6 +357,48 @@ test("thread detail loaded-state policy distinguishes empty detail from summary 
   assert.equal(threadIsSummaryOnlyCurrentThread({ id: "thread-1", turns: [], threadTaskCards: [] }, "thread-1"), true);
   assert.equal(threadIsSummaryOnlyCurrentThread({ id: "thread-1", turns: [], mobileDetailLoaded: true }, "thread-1"), false);
   assert.equal(threadIsSummaryOnlyCurrentThread({ id: "other", turns: [] }, "thread-1"), false);
+});
+
+test("thread detail state plans open-thread cache reuse without accepting empty loaded detail", () => {
+  assert.deepEqual(planThreadOpenCacheReuse({
+    requestedThreadId: "thread-1",
+    currentThreadId: "thread-1",
+    currentThread: { id: "thread-1", turns: [{ id: "turn-1", items: [] }], mobileDetailLoaded: true },
+  }), {
+    shouldUseCachedCurrent: true,
+    shouldReportEmptyCachedDetail: false,
+    reason: "reusable-loaded-detail",
+  });
+
+  assert.deepEqual(planThreadOpenCacheReuse({
+    requestedThreadId: "thread-1",
+    currentThreadId: "thread-1",
+    currentThread: { id: "thread-1", turns: [], mobileDetailLoaded: true, mobileReadMode: "projection-v4-dynamic" },
+  }), {
+    shouldUseCachedCurrent: false,
+    shouldReportEmptyCachedDetail: true,
+    reason: "empty-loaded-detail-not-reusable",
+  });
+
+  assert.deepEqual(planThreadOpenCacheReuse({
+    requestedThreadId: "thread-2",
+    currentThreadId: "thread-1",
+    currentThread: { id: "thread-1", turns: [{ id: "turn-1" }], mobileDetailLoaded: true },
+  }), {
+    shouldUseCachedCurrent: false,
+    shouldReportEmptyCachedDetail: false,
+    reason: "different-current-thread",
+  });
+
+  assert.deepEqual(planThreadOpenCacheReuse({
+    requestedThreadId: "thread-1",
+    currentThreadId: "thread-1",
+    currentThread: { id: "thread-1", turns: [{ id: "turn-1" }], mobileLoading: true },
+  }), {
+    shouldUseCachedCurrent: false,
+    shouldReportEmptyCachedDetail: false,
+    reason: "current-thread-loading",
+  });
 });
 
 test("thread detail summary merge cannot preserve stale detail fields", () => {

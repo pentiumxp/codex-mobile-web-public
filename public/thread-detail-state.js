@@ -52,6 +52,74 @@
     return Array.isArray(thread.turns) && thread.turns.length > 0;
   }
 
+  function planThreadOpenCacheReuse(input = {}) {
+    const requestedThreadId = String(input.requestedThreadId || input.threadId || "").trim();
+    const currentThreadId = String(input.currentThreadId || "").trim();
+    const thread = input.currentThread || input.thread || null;
+    const threadId = String(thread && thread.id || "").trim();
+    if (!requestedThreadId) {
+      return {
+        shouldUseCachedCurrent: false,
+        shouldReportEmptyCachedDetail: false,
+        reason: "missing-requested-thread-id",
+      };
+    }
+    if (requestedThreadId !== currentThreadId) {
+      return {
+        shouldUseCachedCurrent: false,
+        shouldReportEmptyCachedDetail: false,
+        reason: "different-current-thread",
+      };
+    }
+    if (!thread || typeof thread !== "object") {
+      return {
+        shouldUseCachedCurrent: false,
+        shouldReportEmptyCachedDetail: false,
+        reason: "missing-current-thread",
+      };
+    }
+    if (threadId && threadId !== requestedThreadId) {
+      return {
+        shouldUseCachedCurrent: false,
+        shouldReportEmptyCachedDetail: false,
+        reason: "current-thread-id-mismatch",
+      };
+    }
+    if (thread.mobileLoading) {
+      return {
+        shouldUseCachedCurrent: false,
+        shouldReportEmptyCachedDetail: false,
+        reason: "current-thread-loading",
+      };
+    }
+    if (thread.mobileLoadError) {
+      return {
+        shouldUseCachedCurrent: false,
+        shouldReportEmptyCachedDetail: false,
+        reason: "current-thread-load-error",
+      };
+    }
+    if (threadHasReusableLoadedDetailState(thread)) {
+      return {
+        shouldUseCachedCurrent: true,
+        shouldReportEmptyCachedDetail: false,
+        reason: "reusable-loaded-detail",
+      };
+    }
+    if (threadHasLoadedDetailState(thread) && Array.isArray(thread.turns) && thread.turns.length === 0) {
+      return {
+        shouldUseCachedCurrent: false,
+        shouldReportEmptyCachedDetail: true,
+        reason: "empty-loaded-detail-not-reusable",
+      };
+    }
+    return {
+      shouldUseCachedCurrent: false,
+      shouldReportEmptyCachedDetail: false,
+      reason: "not-loaded-detail",
+    };
+  }
+
   function threadIsSummaryOnlyCurrentThread(thread, currentThreadId) {
     return Boolean(thread
       && currentThreadId
@@ -243,6 +311,7 @@
   return {
     createThreadDetailStatePolicy,
     mergeThreadSummaryIntoList,
+    planThreadOpenCacheReuse,
     planSummaryOnlyCurrentThreadRecovery,
     threadHasLoadedDetailState,
     threadHasReusableLoadedDetailState,
