@@ -11043,3 +11043,65 @@ The previous full handoff was archived and should be opened only when old proven
     patch attempt execution timing/diagnostic accounting, or pivot to Phase B
     if production diagnostics show server cold-path projection misses rather
     than client render/patch ownership issues.
+
+## 2026-06-26 - v499 thread refresh patch telemetry plan deployed
+
+- Latest code commit:
+  - `506f424 extract thread refresh patch telemetry plan`
+- v499 change:
+  - Continued Phase A frontend render/patch ownership convergence.
+  - `public/thread-detail-render-plan.js`
+    `planThreadDetailRefreshPatchAttemptResult()` now also owns patch telemetry
+    selection for `detailPatchMs`, `patchTimingSource`, and normalized
+    `patchRejectReason`.
+  - `refreshCurrentThread()` now only measures the concrete tile/local DOM patch
+    attempts and passes those bounded durations into the helper. The helper
+    decides whether tile timing, local timing, or no patch timing belongs in
+    `thread_refresh_ms`.
+  - Local patch rejected reason is normalized and bounded by the helper before
+    app code passes it to the existing bounded projection-mismatch diagnostic.
+  - Static build/cache: `0.1.11|codex-mobile-shell-v499` /
+    `codex-mobile-shell-v499`.
+- Root-cause boundary:
+  - Symptom/risk: after v498, app code no longer inferred refresh execution
+    action, but it still owned patch telemetry accounting. That left
+    `detailPatchMs` and local rejection reason selection beside real DOM calls,
+    making performance and diagnostic payloads easier to diverge from patch
+    result policy.
+  - Failing layer: frontend thread-detail refresh patch telemetry ownership.
+  - Classification: root-cause architecture boundary cleanup. No server
+    projection change, frontend duplicate hiding, forced refresh, skipped
+    refresh, task-card protocol change, diagnostic-transport fallback, or visual
+    layout change was added.
+- Validation:
+  - Focused source suite passed:
+    `test/thread-detail-render-plan.test.js`,
+    `test/conversation-render.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-goal-service.test.js`, `test/thread-task-card-route.test.js`,
+    and `test/thread-tile-layout-ui.test.js` (`151` tests).
+  - Full source `npm test` passed (`930` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Production deploy:
+  - Deployed through Home AI central macOS plugin deploy path with reason
+    `codex-mobile-thread-refresh-patch-telemetry-v499`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T002654Z-plugin-codex-mobile-web-codex-mobile-thread-refresh-patch-telemetry-v499`
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v499`,
+    `shellCacheName=codex-mobile-shell-v499`, `version=0.1.11`,
+    `authRequired=true`.
+  - Production focused suite passed (`151` tests).
+  - Source/production SHA parity verified for README/docs, app/static shell,
+    render-plan helper, and focused tests touched by v499.
+- Privacy:
+  - Evidence recorded only statuses, build ids, test counts, bounded deploy
+    metadata, and short hashes. No message bodies, task-card bodies, uploads,
+    private paths, cookies, access keys, provider payloads, database rows,
+    screenshots, or long logs were copied into docs or handoff.
+- Release:
+  - Public was not pushed for v499.
+- Next suggested slice:
+  - Continue Phase A by extracting projection-consistency check planning or
+    refresh performance payload assembly boundaries from `refreshCurrentThread()`.
+    If production diagnostics instead show server cold-path projection misses,
+    pivot to Phase B with current `projectionMissReason` evidence.
