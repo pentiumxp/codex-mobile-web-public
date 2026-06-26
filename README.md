@@ -16,6 +16,20 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v435 修复完成线程残留运行中 Spinner
+
+v435 修复移动端线程列表里已完成 session 仍残留 running spinner 的问题。
+前端本地会保存 `runningThreadIds` / `runningThreadHintedAtById`，用于在刚发出
+消息但 app-server 列表还没更新时保持 spinner 可见。之前如果这个本地 hint
+时间晚于服务端完成时间，`completed` 行会被当作可能的旧数据，从而继续显示
+spinner。
+
+现在策略收紧为：replay 的旧完成通知仍保守保留，避免误清真正运行中的线程；
+但普通线程列表/详情返回 terminal 状态（例如 `completed`、`failed`、
+`interrupted`）时，该 terminal 状态优先于本地 hint，会清掉 spinner。这个修复
+不改 app-server 或 rollout 状态来源，只修正浏览器本地状态清理边界。PWA shell
+cache 升级到 `codex-mobile-shell-v435`。
+
 ## 2026-06-25 v434 平铺模式 Composer 目标改为输入框提示
 
 v434 修正 v433 的显示方式：不再在 Composer 上方增加独立目标条，因为那会

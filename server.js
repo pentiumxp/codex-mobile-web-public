@@ -5853,6 +5853,9 @@ function mergeRawOperationIntoItem(existing, rawOperation) {
 
 function mergeRecentRawOperationsIntoTurn(thread, turn, options = {}) {
   if (!turn || !Array.isArray(turn.items)) return;
+  const allowMissingRawOperationInsert = options.allowMissingRawOperationInsert !== undefined
+    ? Boolean(options.allowMissingRawOperationInsert)
+    : isLiveTurn(turn);
   const rawOperations = readRecentRawOperations(thread, turn.id, {
     includeCompleted: true,
     maxOperations: options.maxOperations || MAX_LIVE_OPERATION_ITEMS,
@@ -5878,6 +5881,7 @@ function mergeRecentRawOperationsIntoTurn(thread, turn, options = {}) {
       mergeRawOperationIntoItem(existing, rawOperation);
       continue;
     }
+    if (!allowMissingRawOperationInsert) continue;
     turn.items.push(rawOperation);
     if (key) existingByKey.set(key, rawOperation);
     if (signature) existingBySignature.set(signature, rawOperation);
