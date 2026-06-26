@@ -14617,3 +14617,62 @@ The previous full handoff was archived and should be opened only when old proven
   - Deploy, then rerun
     `node scripts/codex-mobile-phase-b-readback-smoke.js --server http://127.0.0.1:8787 --require-active-overlay --json`
     to confirm the active projection hit no longer bypasses the proof gate.
+
+## 2026-06-26 - active projection proof gate deployed and Phase B readback observed
+
+- Deployment:
+  - Committed `756f4ba` (`gate active projection readbacks`) after focused,
+    full, static, macOS, and diff-check validation.
+  - Deployed through Home AI central macOS plugin deploy path with reason
+    `codex-mobile-phase-b-readback-warm-check`.
+  - Deploy source ref: `756f4ba6ffc1`, dirty false.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T112930Z-plugin-codex-mobile-web-codex-mobile-phase-b-readback-warm-check`.
+  - Health check returned `version=0.1.11`,
+    `clientBuildId=0.1.11|codex-mobile-shell-v531`, and
+    `shellCacheName=codex-mobile-shell-v531`. Static shell files were not
+    changed, so no shell/cache bump was expected.
+- Validation before deploy:
+  - Focused:
+    `node --test test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js test/thread-detail-read-orchestration-service.test.js test/thread-detail-active-overlay-integration.test.js`
+    passed (`36` tests).
+  - Full `npm test` passed (`1095` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Production readback:
+  - Command:
+    `node scripts/codex-mobile-phase-b-readback-smoke.js --server http://127.0.0.1:8787 --require-active-overlay --json`
+    passed.
+  - Thread list first read:
+    - `coldPathOwner=fallback-baseline`.
+    - `coldPathReason=miss-rebuild:rollout`.
+    - total about `2737ms`, fallback about `2348ms`.
+    - `fallbackSourceSnapshotRawCount=27`.
+  - Thread list warm check:
+    - `coldPathOwner=warm-fallback-cache`.
+    - `coldPathReason=cache-hit`.
+    - total about `420ms`, fallback `0ms`.
+  - Detail read:
+    - `readMode=projection-active-overlay`.
+    - `readDecision=projection-active-overlay`.
+    - `coldPathOwner=warm-path`.
+    - `coldPathReason=warm-projection-active-overlay`.
+    - `activeOverlayAction=use-projection-overlay`.
+    - `activeOverlayReason=overlay-evidence-complete`.
+    - `activeOverlayGate=ready`.
+  - Decision:
+    - `status=observe`, `priority=H3`, owner
+      `thread-list-fallback-baseline`, reason
+      `cold-start-rebuild-warmed`, next action
+      `observe-cold-start-first-rebuild-cost`.
+- Current conclusion:
+  - Active/running thread detail no longer bypasses the live overlay proof gate
+    through ordinary projection hits.
+  - The post-deploy list cold path currently satisfies the user's invariant:
+    the first full list after restart may rebuild fallback baseline, and the
+    same-key warm check immediately hits the process-lifetime cache.
+  - The next optimization slice should focus on reducing first cold rebuild
+    cost (`fallbackMs` about `2.3s` in this readback) or pivot back to
+    frontend render/patch ownership if fresh diagnostics show visible message
+    mismatch/flash symptoms.

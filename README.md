@@ -82,7 +82,11 @@ Phase B 的活跃大线程读取风险已经从 proof gate 推进到真实 provi
 `activeOverlayGate=ready`、`activeOverlayReason=overlay-evidence-complete`，
 detail 冷路径归类为 `warm-projection-active-overlay`。本次没有修改静态 shell，
 所以 `clientBuildId` / `shellCacheName` 仍为 `codex-mobile-shell-v531`。
-第五个切片仍是本地 runtime 修正，等待验证/提交/部署读回。
+第五个切片已随 `756f4ba` 部署到 Mac 生产并完成读回。读回显示 active detail
+继续为 `projection-active-overlay` / `activeOverlayGate=ready`；部署后首个
+thread-list 完整读是 `miss-rebuild:rollout`，但同 key warm check 立即变为
+`warm-fallback-cache` / `cache-hit`，因此当前结论是 cold start / deploy 后一次性
+fallback rebuild 可观察，普通重复刷新没有复发为反复冷建。
 这不是 UI 去重、不是强制刷新，也不是新的 fallback cache；后续如果仍有大
 session 慢路径，应优先看 thread-list deferred/cold fallback 和剩余客户端
 render/patch 指标，而不是回退 active detail overlay。
