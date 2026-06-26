@@ -16,7 +16,7 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
-## 2026-06-27 Phase B Thread-List Fallback Prewarm Slice
+## 2026-06-27 v534 Phase B Thread-List Fallback Prewarm Module
 
 本地小切片开始处理 v533 readback 暴露的下一阶段问题：生产重启或部署后，首次
 thread-list 读取仍会在用户前台路径里完成一次 `fallback-baseline` /
@@ -57,10 +57,39 @@ snapshot 没对齐，而不是继续泛化为 `fallback-baseline`。
   - `CODEX_MOBILE_PHASE_B_PREWARM_POLL_MS` 默认 `250`。
   - CLI 可用 `--no-wait-prewarm`、`--prewarm-settle-ms`、`--prewarm-poll-ms`。
 
-本批次已经从本地切片收束为 `codex-mobile-shell-v534` 模块发布候选；
-部署后会和 Phase B cold-path 模块一起做生产 readback，目标证据是首次用户
-`/api/threads?limit=40` 能直接命中 warm fallback cache，或至少复用
-source snapshot 而不再前台扫描 rollout/source baseline。
+本批次从 3 个本地切片收束为 `codex-mobile-shell-v534` 模块并已部署：
+
+- `90d4d72`：启动后预热 thread-list fallback cache/source snapshot。
+- `48e4940`：在 `/api/public-config` 和 Phase B readback 中暴露 bounded
+  prewarm lifecycle。
+- `fad39b5`：readback 在首个 `/api/threads` 前等待 prewarm settle。
+- `07b78c1`：升级 `CLIENT_BUILD_ID` 和 PWA shell cache 到 v534。
+
+部署前验证：
+
+```bash
+node --test test/thread-list-fallback-prewarm-service.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js test/thread-visibility.test.js test/app-update.test.js test/build-refresh-policy.test.js test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js
+npm run check
+npm run check:macos
+npm test
+git diff --check
+```
+
+结果：focused `120` passed；`npm test` `1187` passed；`check`、
+`check:macos`、`git diff --check` passed。生产通过 Home AI 中央 macOS
+插件部署脚本发布，source ref `07b78c1372b1`，backup path：
+`/Users/hermes-host/HermesMobile/backups/deploy/20260626T225522Z-plugin-codex-mobile-web-codex-mobile-phase-b-prewarm-v534`。
+
+生产 readback 确认 `/api/public-config` 返回
+`clientBuildId=0.1.11|codex-mobile-shell-v534`、
+`shellCacheName=codex-mobile-shell-v534`，`threadListFallbackPrewarm.completed=true`。
+prewarm 本身完成了一次 bounded baseline/source snapshot build：
+`lastCacheDecision=miss-rebuild`、`lastResultCount=11`、`lastSourceSnapshotRawCount=27`、
+`lastElapsedMs=1639`。随后普通 Phase B readback 的首个 thread-list 已命中
+`warm-fallback-cache` / `cache-hit`，没有再走前台 fallback rebuild。定向当前
+Codex Mobile 线程的 readback 也不再扫描 rollout source，而是复用
+`fallback-source-snapshot`；detail 路径继续走 `projection-active-overlay`，
+active overlay gate 为 `ready`，整体 decision 为 `ready`。
 
 ## 2026-06-27 v533 Phase A Render/Patch Module Readback
 

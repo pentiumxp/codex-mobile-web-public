@@ -15358,6 +15358,52 @@ The previous full handoff was archived and should be opened only when old proven
 - Next:
   - Commit locally.
 
+## 2026-06-27 - Phase B v534 prewarm module deployed and read back
+
+- Current local state:
+  - Batched the Phase B thread-list fallback prewarm work into a module-level
+    deploy after local commits `90d4d72`, `48e4940`, and `fad39b5`.
+  - Commit `07b78c1` bumped `CLIENT_BUILD_ID` and service-worker cache from
+    `codex-mobile-shell-v533` to `codex-mobile-shell-v534`.
+- Validation before deploy:
+  - Focused:
+    `node --test test/thread-list-fallback-prewarm-service.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js test/thread-visibility.test.js test/app-update.test.js test/build-refresh-policy.test.js test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js`
+    passed (`120` tests).
+  - Full: `npm test` passed (`1187` tests). `npm run check`,
+    `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Deployed through the Home AI central macOS plugin deploy script with reason
+    `codex-mobile-phase-b-prewarm-v534`.
+  - Deploy source ref was `07b78c1372b1`, dirty false.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T225522Z-plugin-codex-mobile-web-codex-mobile-phase-b-prewarm-v534`.
+  - Production `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v534` and
+    `shellCacheName=codex-mobile-shell-v534`.
+- Readback:
+  - `/api/public-config` exposed `threadListFallbackPrewarm.completed=true`,
+    `lastStatus=completed`, `lastCacheDecision=miss-rebuild`,
+    `lastResultCount=11`, `lastSourceSnapshotRawCount=27`, and
+    `lastElapsedMs=1639`.
+  - General Phase-B readback smoke passed. The first thread-list sample after
+    prewarm hit `warm-fallback-cache` / `cache-hit`; detail read mode was
+    `projection-active-overlay`, active overlay gate was `ready`, and decision
+    was `ready`.
+  - Current Codex Mobile thread targeted readback with
+    `--require-active-overlay` passed. The targeted list sample reused
+    `fallback-source-snapshot` instead of scanning rollout source; detail read
+    mode remained `projection-active-overlay`, active overlay gate `ready`,
+    decision `ready`.
+- Progress:
+  - Overall architecture optimization is about `94%`.
+  - Phase B thread-list prewarm module is closed for the current deploy/readback
+    gate. Broader Phase B cold-path work continues, focused on the remaining
+    app-server time and any future diagnostics from real large-session opens.
+- Next:
+  - Continue Phase B with bounded evidence for the remaining `appServerMs`
+    portion of thread-list/detail reads, or move to Phase C pane-state
+    architecture if the user prioritizes split-screen stability.
+
 ## 2026-06-26 - Phase A patch rejection diagnostic input slice
 
 - Context:

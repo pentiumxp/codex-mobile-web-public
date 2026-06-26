@@ -235,7 +235,11 @@ Current acceleration targets:
    prewarm reaches completed/failed or a bounded timeout, preserving both
    initial and settled metadata. This makes the module deploy gate prove
    whether a foreground cold list happened before or after startup prewarm
-   rather than guessing from the list result alone. The next local
+   rather than guessing from the list result alone. The `codex-mobile-shell-v534`
+   module deploy/readback confirmed this boundary in production: prewarm
+   completed, ordinary first thread-list read hit `warm-fallback-cache`, and
+   targeted readback reused `fallback-source-snapshot` instead of scanning
+   rollout source. The next local
    slice makes that attribution explicit: fallback baseline source reads now
    carry bounded counters for rollout directory reads, JSONL stat/collect/sort
    counts, candidate scans, head reads/bytes, final status tail reads/bytes,

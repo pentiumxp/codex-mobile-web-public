@@ -222,35 +222,37 @@ Minimum closure for Codex Mobile production changes:
 
 ## Latest Production Evidence
 
-2026-06-25 Mac production deployment:
+2026-06-27 Mac production deployment:
 
 - Production source path:
   `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
 - LaunchDaemon: `system/com.hermesmobile.plugin.codex-mobile`.
 - Loopback production URL: `http://127.0.0.1:8787`.
-- Current verified shell after tile-title menu restoration and Composer target
-  placeholder scope correction:
-  `0.1.11|codex-mobile-shell-v437`.
-- Source ref deployed for code change:
-  `fdd72864f652` with clean source worktree at deploy time.
+- Current verified shell after the Phase B thread-list fallback prewarm module:
+  `0.1.11|codex-mobile-shell-v534`.
+- Source ref deployed for runtime/static change:
+  `07b78c1372b1` with clean source worktree at deploy time.
 - Backup path:
-  `/Users/hermes-host/HermesMobile/backups/deploy/20260625T052512Z-plugin-codex-mobile-web-manual`.
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260626T225522Z-plugin-codex-mobile-web-codex-mobile-phase-b-prewarm-v534`.
 - Production smoke confirmed `/api/public-config` reports
-  `clientBuildId=0.1.11|codex-mobile-shell-v437`,
-  `shellCacheName=codex-mobile-shell-v437`, `version=0.1.11`,
-  `authRequired=true`, production `workspacePath` above, and build id
-  `983c98892640c564`.
-- Source/production short SHA-256 samples matched after deploy:
-  `public/app.js` `817512c463905ba4`,
-  `public/sw.js` `997956d5a7d1bab8`,
-  `README.md` `04bcb6aeb694fe93`, and
-  `test/thread-tile-layout-ui.test.js` `4d766f23e3740a46`.
+  `clientBuildId=0.1.11|codex-mobile-shell-v534`,
+  `shellCacheName=codex-mobile-shell-v534`, `version=0.1.11`, and
+  `authRequired=true`.
+- Bounded Phase B readback confirmed `threadListFallbackPrewarm.completed=true`;
+  the ordinary first thread-list sample hit `warm-fallback-cache` / `cache-hit`,
+  and the targeted current-thread sample reused `fallback-source-snapshot`
+  instead of scanning rollout source. The targeted detail sample used
+  `projection-active-overlay` with active overlay gate `ready`.
 - Validation before deploy:
-  focused tile/composer/mobile/goal/task-card tests passed (`34` tests),
-  `npm run check` passed, and `git diff --check` passed.
+  focused Phase B/static shell tests passed (`120` tests), `npm test` passed
+  (`1187` tests), `npm run check` passed, `npm run check:macos` passed, and
+  `git diff --check` passed.
 - Deployment validation also ran the central production file-hash, LaunchDaemon,
   public-config, and non-strict auth-profile audit checks. The auth-profile
   audit remained non-blocking with zero blocking issues.
+- The earlier 2026-06-25 `codex-mobile-shell-v437` tile-title menu and
+  Composer placeholder evidence is historical after this v534 Phase B
+  deployment.
 - The earlier 2026-06-25 `codex-mobile-shell-v434` tile-mode Composer
   placeholder evidence is historical after the v435 thread-detail merge
   deployment.
