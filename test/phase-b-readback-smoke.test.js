@@ -10,6 +10,7 @@ const {
   run,
   summarizeThreadDetail,
   summarizeThreadList,
+  summarizePublicConfig,
 } = require("../scripts/codex-mobile-phase-b-readback-smoke");
 
 function listen(server) {
@@ -34,6 +35,19 @@ function createMockServer(handler) {
     }));
   });
 }
+
+test("phase B readback smoke parses prewarm settle options", () => {
+  const parsed = parseArgs([
+    "--prewarm-settle-ms",
+    "9000",
+    "--prewarm-poll-ms",
+    "100",
+  ], {});
+
+  assert.equal(parsed.prewarmSettleMs, 9000);
+  assert.equal(parsed.prewarmPollMs, 100);
+  assert.equal(parseArgs(["--no-wait-prewarm"], {}).prewarmSettleMs, 0);
+});
 
 test("phase B readback smoke collects bounded diagnostics without private fields", async (t) => {
   const seen = [];
@@ -151,6 +165,100 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(seen.every((item) => item.authorization === ""), true);
   const serialized = JSON.stringify(report);
   assert.doesNotMatch(serialized, /PRIVATE|MESSAGE BODY|do not leak|SHOULD NOT LEAK/);
+});
+
+test("phase B readback smoke waits for prewarm settle before reading thread list", async (t) => {
+  const publicConfigs = [
+    {
+      clientBuildId: "0.1.11|codex-mobile-shell-test",
+      threadListFallbackPrewarm: {
+        enabled: true,
+        scheduled: true,
+        running: false,
+        completed: false,
+        lastStatus: "",
+      },
+    },
+    {
+      clientBuildId: "0.1.11|codex-mobile-shell-test",
+      threadListFallbackPrewarm: {
+        enabled: true,
+        scheduled: false,
+        running: true,
+        completed: false,
+        lastStatus: "",
+      },
+    },
+    {
+      clientBuildId: "0.1.11|codex-mobile-shell-test",
+      threadListFallbackPrewarm: {
+        enabled: true,
+        scheduled: false,
+        running: false,
+        completed: true,
+        lastStatus: "completed",
+        lastCacheDecision: "miss-rebuild",
+        lastSourceSnapshotHit: true,
+        lastResultCount: 2,
+      },
+    },
+  ];
+  const seen = [];
+  const server = createMockServer(({ url, send }) => {
+    seen.push(url.pathname);
+    if (url.pathname === "/api/public-config") {
+      send(200, publicConfigs.shift() || publicConfigs[publicConfigs.length - 1]);
+      return;
+    }
+    if (url.pathname === "/api/threads") {
+      send(200, {
+        data: [{ id: "thread-1", name: "private title" }],
+        mobileDiagnostics: {
+          threadListTimings: {
+            fallbackCacheHit: true,
+            fallbackCacheDecision: "hit",
+            coldPathOwner: "warm-fallback-cache",
+            coldPathReason: "cache-hit",
+          },
+        },
+      });
+      return;
+    }
+    send(404, { error: "not_found" });
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const baseUrl = await listen(server);
+  const options = parseArgs([
+    "--server",
+    baseUrl,
+    "--no-auth",
+    "--skip-detail",
+    "--prewarm-settle-ms",
+    "1000",
+    "--prewarm-poll-ms",
+    "50",
+  ]);
+  options.sleep = async () => {};
+
+  const report = await run(options);
+
+  assert.equal(report.ok, true);
+  assert.equal(report.publicConfigInitial.threadListFallbackPrewarm.scheduled, true);
+  assert.equal(report.publicConfig.threadListFallbackPrewarm.completed, true);
+  assert.equal(report.publicConfig.threadListFallbackPrewarm.lastSourceSnapshotHit, true);
+  assert.equal(report.threadListPrewarmSettle.attempted, true);
+  assert.equal(report.threadListPrewarmSettle.settled, true);
+  assert.equal(report.threadListPrewarmSettle.reason, "prewarm-completed");
+  assert.equal(report.threadListPrewarmSettle.sampleCount, 3);
+  assert.ok(report.threadListPrewarmSettle.elapsedMs <= 50);
+  assert.equal(report.threadList.coldPathOwner, "warm-fallback-cache");
+  assert.deepEqual(seen, [
+    "/api/public-config",
+    "/api/public-config",
+    "/api/public-config",
+    "/api/threads",
+  ]);
+  assert.doesNotMatch(JSON.stringify(report), /private title/);
 });
 
 test("phase B readback smoke fails when required thread-list cold path fields are missing", async (t) => {
@@ -389,6 +497,23 @@ test("phase B readback smoke verifies ordinary cold fallback warm check", async 
 });
 
 test("phase B readback summary helpers keep only bounded metadata", () => {
+  const publicConfig = summarizePublicConfig({
+    clientBuildId: "0.1.11|codex-mobile-shell-test",
+    threadListFallbackPrewarm: {
+      enabled: true,
+      completed: false,
+      running: true,
+      lastStatus: "running",
+      lastErrorCode: `private-path-${"x".repeat(200)}`,
+      privateThreadId: "thread-secret",
+      privateTitle: "private title",
+    },
+  });
+  assert.equal(publicConfig.threadListFallbackPrewarm.enabled, true);
+  assert.equal(publicConfig.threadListFallbackPrewarm.running, true);
+  assert.ok(publicConfig.threadListFallbackPrewarm.lastErrorCode.length <= 80);
+  assert.doesNotMatch(JSON.stringify(publicConfig), /thread-secret|private title/);
+
   const list = summarizeThreadList({
     data: [{ id: "thread-secret", name: "private title" }],
     mobileDiagnostics: {

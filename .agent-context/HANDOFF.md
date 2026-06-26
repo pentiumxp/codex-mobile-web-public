@@ -18826,3 +18826,47 @@ The previous full handoff was archived and should be opened only when old proven
 - Next:
   - Commit locally.
   - Keep batching Phase B local slices before the next module deploy/readback.
+
+## 2026-06-27 - Phase B prewarm settle readback local slice
+
+- Current local state:
+  - Continued Phase B after local commit `48e4940`.
+  - `/api/public-config` exposed prewarm lifecycle status, but the Phase B
+    smoke still read `/api/threads` immediately after the first public-config
+    sample. Right after deploy/restart this could observe
+    `prewarm-scheduled` / `prewarm-running` and then read the list before the
+    prewarm had a chance to complete.
+- Root-cause boundary:
+  - Symptom/risk: production readback could misclassify a foreground cold
+    thread-list read because it sampled the list before the startup prewarm had
+    reached a terminal state.
+  - Failing layer: Phase B readback sampling lifecycle, not thread-list cache
+    behavior, fallback source semantics, app-server authority, frontend render,
+    task-card protocol, or Home AI diagnostics.
+  - Violated invariant: the deploy/readback gate should prove whether the first
+    list read happened before or after prewarm completion rather than infer it
+    from a single public-config snapshot.
+- Changes:
+  - `scripts/codex-mobile-phase-b-readback-smoke.js` now supports
+    `--prewarm-settle-ms`, `--prewarm-poll-ms`, and `--no-wait-prewarm`.
+  - Default readback waits up to `4000ms`, polling every `250ms`, before the
+    first `/api/threads` read when prewarm is scheduled/running/deferred/not
+    completed.
+  - The report now includes `publicConfigInitial`, settled `publicConfig`, and
+    `threadListPrewarmSettle` with attempted/settled/reason/sampleCount/elapsed
+    metadata only.
+  - `phase-b-readback-decision-service` evidence includes settle fields and can
+    classify settle timeout as an H3 timing observation.
+  - Updated README, architecture plan, module docs, and focused tests.
+- Validation so far:
+  - Syntax plus focused Phase B readback smoke/decision tests passed (`24`
+    tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `npm test` passed (`1187` tests).
+  - `git diff --check` passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache
+    bump. Keep batching into the next Phase B module deploy/readback.
+- Next:
+  - Commit locally.

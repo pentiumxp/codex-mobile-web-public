@@ -19,6 +19,7 @@ function boundedCount(value) {
 function buildEvidence(report = {}) {
   const publicConfig = objectOrNull(report.publicConfig) || {};
   const prewarm = objectOrNull(publicConfig.threadListFallbackPrewarm) || {};
+  const prewarmSettle = objectOrNull(report.threadListPrewarmSettle) || {};
   const list = objectOrNull(report.threadList) || {};
   const afterDeferred = objectOrNull(report.threadListAfterDeferred) || {};
   const warmCheck = objectOrNull(report.threadListWarmCheck) || {};
@@ -37,6 +38,11 @@ function buildEvidence(report = {}) {
     threadListPrewarmLastResultCount: boundedCount(prewarm.lastResultCount),
     threadListPrewarmLastElapsedMs: boundedCount(prewarm.lastElapsedMs),
     threadListPrewarmLastSourceSnapshotRawCount: boundedCount(prewarm.lastSourceSnapshotRawCount),
+    threadListPrewarmSettleAttempted: prewarmSettle.attempted === true,
+    threadListPrewarmSettleSettled: prewarmSettle.settled === true,
+    threadListPrewarmSettleReason: compactLabel(prewarmSettle.reason, 80),
+    threadListPrewarmSettleSampleCount: boundedCount(prewarmSettle.sampleCount),
+    threadListPrewarmSettleElapsedMs: boundedCount(prewarmSettle.elapsedMs),
     threadListOwner: compactLabel(list.coldPathOwner, 80),
     threadListReason: compactLabel(list.coldPathReason, 80),
     threadListCacheDecision: compactLabel(list.fallbackCacheDecision, 80),
@@ -220,6 +226,16 @@ function threadListPrewarmDecision(list = {}, report = {}) {
   const publicConfig = objectOrNull(report.publicConfig) || {};
   const prewarm = objectOrNull(publicConfig.threadListFallbackPrewarm);
   if (!prewarm || prewarm.enabled !== true) return null;
+  const settle = objectOrNull(report.threadListPrewarmSettle) || {};
+  if (settle.attempted === true && settle.settled !== true) {
+    return {
+      status: "observe",
+      priority: "H3",
+      owner: "thread-list-fallback-prewarm",
+      reason: compactLabel(settle.reason, 80) || "prewarm-settle-timeout",
+      nextAction: "verify-startup-prewarm-timing",
+    };
+  }
   const lastStatus = lowerLabel(prewarm.lastStatus, 40);
   const lastErrorCode = compactLabel(prewarm.lastErrorCode, 80);
   if (lastStatus === "failed") {

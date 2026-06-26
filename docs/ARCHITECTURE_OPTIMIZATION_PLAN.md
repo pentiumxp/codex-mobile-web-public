@@ -230,7 +230,12 @@ Current acceleration targets:
    bounded `/api/public-config` metadata and folds it into the Phase B
    decision service, so a cold post-deploy list sample can be routed to
    prewarm failure, not-yet-completed timing, or cache-key/source-snapshot
-   alignment instead of a generic fallback-baseline owner. The next local
+   alignment instead of a generic fallback-baseline owner. The readback settle
+   follow-up then samples `/api/public-config` before the first list read until
+   prewarm reaches completed/failed or a bounded timeout, preserving both
+   initial and settled metadata. This makes the module deploy gate prove
+   whether a foreground cold list happened before or after startup prewarm
+   rather than guessing from the list result alone. The next local
    slice makes that attribution explicit: fallback baseline source reads now
    carry bounded counters for rollout directory reads, JSONL stat/collect/sort
    counts, candidate scans, head reads/bytes, final status tail reads/bytes,

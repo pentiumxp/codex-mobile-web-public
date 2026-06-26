@@ -346,6 +346,48 @@ test("phase B readback decision routes completed prewarm with cold list to cache
   assert.equal(decision.evidence.threadListPrewarmLastResultCount, 20);
 });
 
+test("phase B readback decision records prewarm settle timeout as timing observation", () => {
+  const decision = classifyPhaseBReadback({
+    ok: true,
+    publicConfig: {
+      threadListFallbackPrewarm: {
+        enabled: true,
+        scheduled: false,
+        running: true,
+        completed: false,
+        lastStatus: "",
+      },
+    },
+    threadListPrewarmSettle: {
+      attempted: true,
+      settled: false,
+      reason: "prewarm-settle-timeout",
+      sampleCount: 4,
+      elapsedMs: 1000,
+    },
+    threadList: {
+      coldPathOwner: "fallback-baseline",
+      coldPathReason: "miss-rebuild:rollout",
+      fallbackCacheDecision: "miss-rebuild",
+    },
+    detail: {
+      readMode: "projection-active-overlay",
+      readDecision: "projection-active-overlay",
+      coldPathOwner: "warm-path",
+      coldPathReason: "warm-projection-active-overlay",
+    },
+  });
+
+  assert.equal(decision.status, "observe");
+  assert.equal(decision.priority, "H3");
+  assert.equal(decision.owner, "thread-list-fallback-prewarm");
+  assert.equal(decision.reason, "prewarm-settle-timeout");
+  assert.equal(decision.nextAction, "verify-startup-prewarm-timing");
+  assert.equal(decision.evidence.threadListPrewarmSettleAttempted, true);
+  assert.equal(decision.evidence.threadListPrewarmSettleSettled, false);
+  assert.equal(decision.evidence.threadListPrewarmSettleSampleCount, 4);
+});
+
 test("phase B readback decision routes deferred follow-up baseline reason to specific owner", () => {
   const decision = classifyPhaseBReadback({
     ok: true,

@@ -25,6 +25,9 @@ function usage() {
     "  --thread-id <id>            Thread id for detail readback. Defaults to first list row.",
     "  --list-limit <n>            Thread-list limit. Default: 20.",
     "  --timeout-ms <n>            Request timeout. Default: 15000.",
+    "  --prewarm-settle-ms <n>     Wait for startup prewarm to finish before list read. Default: 4000.",
+    "  --prewarm-poll-ms <n>       Prewarm settle polling interval. Default: 250.",
+    "  --no-wait-prewarm          Do not wait for startup prewarm to settle.",
     "  --require-active-overlay    Fail unless detail readback is projection-active-overlay.",
     "  --no-verify-deferred-fallback",
     "                              Do not run follow-up list reads after fallback is deferred.",
@@ -57,6 +60,8 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     threadId: "",
     listLimit: 20,
     timeoutMs: 15000,
+    prewarmSettleMs: readPositiveInt(env.CODEX_MOBILE_PHASE_B_PREWARM_SETTLE_MS || "4000", 4000),
+    prewarmPollMs: readPositiveInt(env.CODEX_MOBILE_PHASE_B_PREWARM_POLL_MS || "250", 250),
     requireActiveOverlay: false,
     requireThreadListColdPath: true,
     verifyDeferredFallback: true,
@@ -79,6 +84,9 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     else if (arg === "--thread-id") options.threadId = next();
     else if (arg === "--list-limit") options.listLimit = readPositiveInt(next(), options.listLimit);
     else if (arg === "--timeout-ms") options.timeoutMs = readPositiveInt(next(), options.timeoutMs);
+    else if (arg === "--prewarm-settle-ms") options.prewarmSettleMs = readPositiveInt(next(), options.prewarmSettleMs);
+    else if (arg === "--prewarm-poll-ms") options.prewarmPollMs = readPositiveInt(next(), options.prewarmPollMs);
+    else if (arg === "--no-wait-prewarm") options.prewarmSettleMs = 0;
     else if (arg === "--require-active-overlay") options.requireActiveOverlay = true;
     else if (arg === "--no-verify-deferred-fallback") options.verifyDeferredFallback = false;
     else if (arg === "--no-verify-thread-list-warm-check") options.verifyThreadListWarmCheck = false;
@@ -90,6 +98,8 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
   }
   options.server = normalizeBaseUrl(options.server);
   options.listLimit = Math.max(1, Math.min(200, options.listLimit));
+  options.prewarmSettleMs = Math.max(0, Math.min(60 * 1000, options.prewarmSettleMs));
+  options.prewarmPollMs = Math.max(50, Math.min(10 * 1000, options.prewarmPollMs));
   return options;
 }
 
@@ -168,6 +178,10 @@ function lowerLabel(value, maxLength = 100) {
   return compactLabel(value, maxLength).toLowerCase();
 }
 
+function defaultSleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+}
+
 function threadRows(result) {
   if (Array.isArray(result && result.data)) return result.data;
   if (Array.isArray(result && result.threads)) return result.threads;
@@ -203,6 +217,90 @@ function summarizePublicConfig(config = {}) {
       lastBaselineSourceCount: boundedCount(prewarm.lastBaselineSourceCount),
       lastBaselineResultCount: boundedCount(prewarm.lastBaselineResultCount),
     },
+  };
+}
+
+function prewarmSettleReason(publicConfig = {}) {
+  const prewarm = objectOrNull(publicConfig.threadListFallbackPrewarm);
+  if (!prewarm) return "prewarm-missing";
+  if (prewarm.enabled !== true) return "prewarm-disabled";
+  if (prewarm.completed === true) return "prewarm-completed";
+  const lastStatus = lowerLabel(prewarm.lastStatus, 40);
+  if (lastStatus === "failed") return "prewarm-failed";
+  if (prewarm.running === true) return "prewarm-running";
+  if (prewarm.scheduled === true) return "prewarm-scheduled";
+  if (lastStatus === "deferred") return "prewarm-deferred";
+  return "prewarm-not-completed";
+}
+
+function shouldWaitForPrewarm(publicConfig = {}, options = {}) {
+  if (!options || Number(options.prewarmSettleMs || 0) <= 0) return false;
+  const reason = prewarmSettleReason(publicConfig);
+  return reason === "prewarm-running"
+    || reason === "prewarm-scheduled"
+    || reason === "prewarm-deferred"
+    || reason === "prewarm-not-completed";
+}
+
+function summarizePrewarmSettle({ attempted, settled, reason, sampleCount, elapsedMs }) {
+  return {
+    attempted: attempted === true,
+    settled: settled === true,
+    reason: compactLabel(reason, 80),
+    sampleCount: boundedCount(sampleCount),
+    elapsedMs: boundedNumber(elapsedMs),
+  };
+}
+
+async function settlePublicConfigPrewarm(initialPublicConfig, options = {}, key = "") {
+  const startedAt = Date.now();
+  let current = initialPublicConfig;
+  let currentSummary = summarizePublicConfig(current);
+  let sampleCount = 1;
+  if (!shouldWaitForPrewarm(currentSummary, options)) {
+    return {
+      publicConfig: currentSummary,
+      settle: summarizePrewarmSettle({
+        attempted: false,
+        settled: true,
+        reason: prewarmSettleReason(currentSummary),
+        sampleCount,
+        elapsedMs: 0,
+      }),
+    };
+  }
+  const sleep = typeof options.sleep === "function" ? options.sleep : defaultSleep;
+  const maxWaitMs = Number(options.prewarmSettleMs || 0);
+  const pollMs = Number(options.prewarmPollMs || 250);
+  const maxPolls = Math.max(1, Math.ceil(maxWaitMs / Math.max(1, pollMs)));
+  for (let pollIndex = 0; pollIndex < maxPolls; pollIndex += 1) {
+    await sleep(pollMs);
+    current = await fetchJson(requestUrl(options, "/api/public-config"), options, key);
+    currentSummary = summarizePublicConfig(current);
+    sampleCount += 1;
+    const reason = prewarmSettleReason(currentSummary);
+    if (!shouldWaitForPrewarm(currentSummary, options)) {
+      return {
+        publicConfig: currentSummary,
+        settle: summarizePrewarmSettle({
+          attempted: true,
+          settled: true,
+          reason,
+          sampleCount,
+          elapsedMs: Date.now() - startedAt,
+        }),
+      };
+    }
+  }
+  return {
+    publicConfig: currentSummary,
+    settle: summarizePrewarmSettle({
+      attempted: true,
+      settled: false,
+      reason: "prewarm-settle-timeout",
+      sampleCount,
+      elapsedMs: Date.now() - startedAt,
+    }),
   };
 }
 
@@ -414,7 +512,9 @@ async function run(options = {}, env = process.env) {
     ok: false,
     server: options.server,
     privacy: "metadata_only",
+    publicConfigInitial: null,
     publicConfig: null,
+    threadListPrewarmSettle: null,
     threadList: null,
     threadListAfterDeferred: null,
     threadListWarmCheck: null,
@@ -424,7 +524,10 @@ async function run(options = {}, env = process.env) {
     failure: "",
   };
   const publicConfig = await fetchJson(requestUrl(options, "/api/public-config"), options, key);
-  report.publicConfig = summarizePublicConfig(publicConfig);
+  report.publicConfigInitial = summarizePublicConfig(publicConfig);
+  const settledPublicConfig = await settlePublicConfigPrewarm(publicConfig, options, key);
+  report.publicConfig = settledPublicConfig.publicConfig;
+  report.threadListPrewarmSettle = settledPublicConfig.settle;
 
   const listResult = await fetchJson(requestUrl(options, "/api/threads", { limit: options.listLimit }), options, key);
   report.threadList = summarizeThreadList(listResult);
@@ -491,6 +594,8 @@ module.exports = {
   evaluateChecks,
   parseArgs,
   run,
+  settlePublicConfigPrewarm,
   summarizeThreadDetail,
   summarizeThreadList,
+  summarizePublicConfig,
 };
