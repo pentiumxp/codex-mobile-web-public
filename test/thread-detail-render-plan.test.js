@@ -586,6 +586,59 @@ test("thread detail refresh performance input combines render and patch plans", 
   });
 });
 
+test("thread detail refresh execution effects plan maps metadata, full render, none, and unknown actions", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshExecutionEffects({
+    executionAction: "metadata-effects",
+    metadataEffects: ["update-current-thread-header"],
+  }), {
+    effects: [
+      {
+        type: "metadata-effects",
+        timingTarget: "metadata-update",
+        metadataEffects: ["update-current-thread-header"],
+        requireEffects: true,
+      },
+    ],
+    reason: "metadata-effects",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshExecutionEffects({
+    executionAction: "full-render",
+    metadataEffects: ["ignored"],
+  }), {
+    effects: [
+      {
+        type: "full-render",
+        timingTarget: "conversation-render",
+        metadataEffects: [],
+        requireEffects: false,
+      },
+    ],
+    reason: "full-render",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshExecutionEffects({
+    executionAction: "none",
+  }), {
+    effects: [],
+    reason: "none",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshExecutionEffects({
+    executionAction: "surprise",
+  }), {
+    effects: [
+      {
+        type: "surprise",
+        timingTarget: "",
+        metadataEffects: [],
+        requireEffects: false,
+      },
+    ],
+    reason: "unknown-execution-action",
+  });
+});
+
 test("thread detail refresh completion effects plan bounded success side effects", () => {
   assert.deepEqual(renderPlan.planThreadDetailRefreshCompletionEffects({
     threadHash: "abc123",

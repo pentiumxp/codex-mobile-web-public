@@ -9042,6 +9042,49 @@ function applyThreadDetailRefreshPostMergeEffectsGroup(plan, timing) {
   for (const effect of effects) applyThreadDetailRefreshPostMergeEffect(effect);
 }
 
+function applyThreadDetailRefreshExecutionEffect(effect) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  if (type === "metadata-effects") {
+    const metadataEffects = Array.isArray(item.metadataEffects) ? item.metadataEffects : [];
+    if (item.requireEffects && !metadataEffects.length) {
+      throw new Error("Thread detail refresh metadata effects are empty");
+    }
+    const metadataStartedAt = nowPerfMs();
+    for (const metadataEffect of metadataEffects) applyThreadDetailRefreshMetadataEffect(metadataEffect);
+    return {
+      timingTarget: "metadata-update",
+      elapsedMs: roundedDurationMs(metadataStartedAt),
+    };
+  }
+  if (type === "full-render") {
+    const conversationRenderStartedAt = nowPerfMs();
+    renderCurrentThread();
+    return {
+      timingTarget: "conversation-render",
+      elapsedMs: roundedDurationMs(conversationRenderStartedAt),
+    };
+  }
+  throw new Error(`Unknown thread detail refresh execution action: ${type || "empty"}`);
+}
+
+function applyThreadDetailRefreshExecutionEffectsPlan(plan) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  const timings = {
+    metadataUpdateMs: 0,
+    conversationRenderMs: 0,
+  };
+  for (const effect of effects) {
+    const executionResult = applyThreadDetailRefreshExecutionEffect(effect);
+    if (executionResult.timingTarget === "metadata-update") {
+      timings.metadataUpdateMs += executionResult.elapsedMs;
+    } else if (executionResult.timingTarget === "conversation-render") {
+      timings.conversationRenderMs += executionResult.elapsedMs;
+    }
+  }
+  return timings;
+}
+
 async function refreshCurrentThread(options = {}) {
   const requestPlan = threadDetailRenderPlanApi.planThreadDetailRefreshRequest({
     threadId: state.currentThreadId,
@@ -9176,21 +9219,10 @@ async function refreshCurrentThread(options = {}) {
   locallyPatchedDetail = renderOutcome.locallyPatchedDetail;
   tilePanePatchedDetail = renderOutcome.tilePanePatchedDetail;
   const executionPlan = threadDetailRenderPlanApi.planThreadDetailRefreshOutcomeExecution(renderOutcome);
-  const metadataEffects = Array.isArray(executionPlan.metadataEffects)
-    ? executionPlan.metadataEffects
-    : [];
-  if (executionPlan.executionAction === "metadata-effects") {
-    if (!metadataEffects.length) throw new Error("Thread detail refresh metadata effects are empty");
-    const metadataStartedAt = nowPerfMs();
-    for (const effect of metadataEffects) applyThreadDetailRefreshMetadataEffect(effect);
-    metadataUpdateMs = roundedDurationMs(metadataStartedAt);
-  } else if (executionPlan.executionAction === "full-render") {
-    const conversationRenderStartedAt = nowPerfMs();
-    renderCurrentThread();
-    conversationRenderMs = roundedDurationMs(conversationRenderStartedAt);
-  } else if (executionPlan.executionAction && executionPlan.executionAction !== "none") {
-    throw new Error(`Unknown thread detail refresh execution action: ${executionPlan.executionAction}`);
-  }
+  const executionEffectsPlan = threadDetailRenderPlanApi.planThreadDetailRefreshExecutionEffects(executionPlan);
+  const executionTimings = applyThreadDetailRefreshExecutionEffectsPlan(executionEffectsPlan);
+  metadataUpdateMs += executionTimings.metadataUpdateMs;
+  conversationRenderMs += executionTimings.conversationRenderMs;
   const consistencyCheck = executionPlan.consistencyCheck || {};
   if (consistencyCheck.shouldCheck) {
     checkConversationProjectionConsistency(consistencyCheck.phase, { renderMode: consistencyCheck.renderMode });

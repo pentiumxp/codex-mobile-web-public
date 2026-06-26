@@ -391,6 +391,54 @@
     };
   }
 
+  function planThreadDetailRefreshExecutionEffects(input = {}) {
+    const executionAction = compactReason(input.executionAction, "");
+    const metadataEffects = Array.isArray(input.metadataEffects) ? input.metadataEffects.slice() : [];
+    if (executionAction === "metadata-effects") {
+      return {
+        effects: [
+          {
+            type: "metadata-effects",
+            timingTarget: "metadata-update",
+            metadataEffects,
+            requireEffects: true,
+          },
+        ],
+        reason: "metadata-effects",
+      };
+    }
+    if (executionAction === "full-render") {
+      return {
+        effects: [
+          {
+            type: "full-render",
+            timingTarget: "conversation-render",
+            metadataEffects: [],
+            requireEffects: false,
+          },
+        ],
+        reason: "full-render",
+      };
+    }
+    if (!executionAction || executionAction === "none") {
+      return {
+        effects: [],
+        reason: executionAction || "none",
+      };
+    }
+    return {
+      effects: [
+        {
+          type: executionAction,
+          timingTarget: "",
+          metadataEffects: [],
+          requireEffects: false,
+        },
+      ],
+      reason: "unknown-execution-action",
+    };
+  }
+
   function planThreadDetailRefreshCompletionEffects(input = {}) {
     const threadHash = compactReason(input.threadHash, "");
     return {
@@ -487,6 +535,7 @@
     planThreadDetailRefreshConsistencyCheck,
     planThreadDetailRefreshPatchAttemptResult,
     planThreadDetailRefreshOutcomeExecution,
+    planThreadDetailRefreshExecutionEffects,
     planThreadDetailRefreshPerformanceInput,
     planThreadDetailRefreshRequest,
     planThreadDetailRefreshPatchSurface,

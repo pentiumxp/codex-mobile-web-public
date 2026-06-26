@@ -198,6 +198,12 @@ performance input assembly now also lives in this helper:
 `planThreadDetailRefreshPerformanceInput` combines measured timings with
 `renderPlan`, `renderOutcome`, and `patchAttemptResult`, so app code no longer
 maintains separate performance-only render mode/action/patch duration fields.
+Refresh execution-effect planning now also lives in this helper:
+`planThreadDetailRefreshExecutionEffects` maps outcome execution actions to
+metadata-update, full-render, no-op, or bounded unknown effect entries. App code
+still performs real metadata updates and `renderCurrentThread()` calls, but
+`refreshCurrentThread()` no longer branches directly on
+`executionPlan.executionAction`.
 Refresh completion side-effect planning now also lives in this helper:
 `planThreadDetailRefreshCompletionEffects` decides the success diagnostic clear,
 usage-backfill refresh scheduling, and live-poll scheduling effects, while app
