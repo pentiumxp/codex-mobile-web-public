@@ -19241,3 +19241,42 @@ The previous full handoff was archived and should be opened only when old proven
     readback should show whether remaining large-session list latency belongs
     to RPC/filter, an unmeasured server phase that needs another timing split,
     or an H3 inconclusive sample that needs more evidence.
+
+## 2026-06-27 - Phase B v536 app-server attribution module prepared
+
+- Current local state:
+  - Batched the v535 follow-up app-server list attribution slices into a
+    deployable module:
+    - `ac43b73` app-server list latency split/count diagnostics.
+    - `da7a4e2` app-server list latency readback decision routing.
+    - `8ff2d5b` app-server list residual latency attribution.
+  - Bumped `CLIENT_BUILD_ID` and PWA shell cache to
+    `codex-mobile-shell-v536`.
+- Root-cause boundary:
+  - Symptom/risk: v535 production readback showed `appServerMs` still around
+    1.8-2.1s after fallback/prewarm and request-window work, but the next
+    owner was not observable enough to repair safely.
+  - Failing layer: Phase B production readback attribution for ordinary
+    app-server thread-list refresh, not fallback/prewarm, detail projection,
+    frontend patching, or task-card workflow.
+  - Violated invariant: module readback should produce bounded enough timing
+    and decision evidence to choose RPC, filter/post-process, unattributed
+    server timing split, or H3 sampling without private logs or message data.
+- Validation before deploy:
+  - Focused:
+    `node --test test/thread-list-app-server-fetch-policy-service.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js test/thread-visibility.test.js test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js test/app-update.test.js test/build-refresh-policy.test.js`
+    passed (`124` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `npm test` passed (`1199` tests).
+  - `git diff --check` passed.
+- Deployment:
+  - Not deployed yet at the time of this entry. Next step is local commit,
+    central macOS plugin deploy, then Phase B readback smoke for v536.
+- Next:
+  - Commit the v536 bump locally.
+  - Deploy through Home AI central macOS plugin deploy path.
+  - Run `scripts/codex-mobile-phase-b-readback-smoke.js` against production,
+    preferably both general and targeted current-thread readback, and record
+    `appServerRpcMs`, filter timings, `appServerMeasuredMs`,
+    `appServerUnattributedMs`, and the decision owner.

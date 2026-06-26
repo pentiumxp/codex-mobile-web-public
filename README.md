@@ -16,6 +16,38 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-27 v536 Phase B App-Server List Attribution Module
+
+v536 把 v535 后的 3 个本地 Phase B app-server list 归因切片收束成一个模块：
+
+- `ac43b73`：把 `/api/threads` 的 app-server list 粗粒度 `appServerMs` 拆成
+  RPC、visible filter、workspace filter、post-process 和 raw/visible/filtered
+  row counts。
+- `da7a4e2`：让 Phase B readback decision 消费这些字段，把高延迟样本路由到
+  RPC/filter/post-process 或 H3 inconclusive owner。
+- `8ff2d5b`：补 `appServerMeasuredMs` / `appServerUnattributedMs`，避免把未测量
+  余量误归因到 RPC 或 filter。
+- 当前模块 bump：升级 `CLIENT_BUILD_ID` 和 PWA shell cache 到
+  `codex-mobile-shell-v536`。
+
+预部署验证：
+
+```bash
+node --test test/thread-list-app-server-fetch-policy-service.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js test/thread-visibility.test.js test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js test/app-update.test.js test/build-refresh-policy.test.js
+npm run check
+npm run check:macos
+npm test
+git diff --check
+```
+
+结果：focused `124` passed；`npm test` `1199` passed；`check`、`check:macos`、
+`git diff --check` passed。
+
+部署后需要用 `scripts/codex-mobile-phase-b-readback-smoke.js` 读回
+`clientBuildId=0.1.11|codex-mobile-shell-v536`、`shellCacheName=codex-mobile-shell-v536`，
+并观察 `appServerRpcMs`、filter fields、`appServerMeasuredMs`、
+`appServerUnattributedMs` 和 decision owner。
+
 ## 2026-06-27 Phase B App-Server List Residual Attribution Slice
 
 本地小切片继续 app-server list latency attribution。上一片 decision 已经能用

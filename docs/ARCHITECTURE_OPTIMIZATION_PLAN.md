@@ -276,7 +276,9 @@ Current acceleration targets:
    `appServerMeasuredMs` and `appServerUnattributedMs`; if the unmeasured
    remainder dominates, readback now routes to
    `thread-list-app-server-attribution` / `split-thread-list-app-server-residual-timing`
-   rather than guessing a runtime owner. Earlier local
+   rather than guessing a runtime owner. These app-server attribution slices
+   are now prepared as `codex-mobile-shell-v536` for a module deploy/readback.
+   Earlier local
    fallback attribution slices also made baseline source work explicit:
    fallback baseline source reads now
    carry bounded counters for rollout directory reads, JSONL stat/collect/sort
