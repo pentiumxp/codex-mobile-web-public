@@ -10980,3 +10980,66 @@ The previous full handoff was archived and should be opened only when old proven
     scroll/render side-effect execution boundaries, or pivot to Phase B if live
     diagnostics show server cold-path projection misses instead of client
     patch/render ownership issues.
+
+## 2026-06-26 - v498 thread refresh execution action plan deployed
+
+- Latest code commit:
+  - `190e615 extract thread refresh execution action plan`
+- v498 change:
+  - Continued Phase A frontend render/patch ownership convergence.
+  - `public/thread-detail-render-plan.js` now makes
+    `planThreadDetailRefreshOutcomeExecution()` return explicit
+    `executionAction` and `timingTarget` fields.
+  - `executionAction=metadata-effects` drives the planned metadata effect
+    sequence, `executionAction=full-render` drives `renderCurrentThread()`, and
+    `executionAction=none` covers terminal tile-pane patch outcomes that need
+    no additional DOM write.
+  - `refreshCurrentThread()` no longer infers the execution branch from
+    `metadataEffects.length` or `runFullRender`; unknown execution actions and
+    empty metadata-effect action plans fail fast with bounded errors.
+  - Static build/cache: `0.1.11|codex-mobile-shell-v498` /
+    `codex-mobile-shell-v498`.
+- Root-cause boundary:
+  - Symptom/risk: after v497, patch-attempt result interpretation was
+    service-owned, but outcome execution still used an implicit branch in app
+    code based on metadata effect array length versus full-render flags. That
+    made metadata-only, local patch, full render, and terminal tile-pane patch
+    execution easier to diverge again.
+  - Failing layer: frontend thread-detail refresh outcome execution action
+    ownership.
+  - Classification: root-cause architecture boundary cleanup. No server
+    projection change, frontend duplicate hiding, forced refresh, skipped
+    refresh, task-card protocol change, diagnostic-transport fallback, or visual
+    layout change was added.
+- Validation:
+  - Focused source suite passed:
+    `test/thread-detail-render-plan.test.js`,
+    `test/conversation-render.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-goal-service.test.js`, `test/thread-task-card-route.test.js`,
+    and `test/thread-tile-layout-ui.test.js` (`150` tests).
+  - Full source `npm test` passed (`929` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Production deploy:
+  - Deployed through Home AI central macOS plugin deploy path with reason
+    `codex-mobile-thread-refresh-execution-action-v498`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T001939Z-plugin-codex-mobile-web-codex-mobile-thread-refresh-execution-action-v498`
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v498`,
+    `shellCacheName=codex-mobile-shell-v498`, `version=0.1.11`,
+    `authRequired=true`.
+  - Production focused suite passed (`150` tests).
+  - Source/production SHA parity verified for README/docs, app/static shell,
+    render-plan helper, and focused tests touched by v498.
+- Privacy:
+  - Evidence recorded only statuses, build ids, test counts, bounded deploy
+    metadata, and short hashes. No message bodies, task-card bodies, uploads,
+    private paths, cookies, access keys, provider payloads, database rows,
+    screenshots, or long logs were copied into docs or handoff.
+- Release:
+  - Public was not pushed for v498.
+- Next suggested slice:
+  - Continue Phase A by extracting the remaining `refreshCurrentThread()`
+    patch attempt execution timing/diagnostic accounting, or pivot to Phase B
+    if production diagnostics show server cold-path projection misses rather
+    than client render/patch ownership issues.
