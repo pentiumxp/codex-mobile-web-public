@@ -853,6 +853,38 @@ test("thread detail refresh consistency check planning skips missing phases", ()
   });
 });
 
+test("thread detail refresh consistency check effects plan owns check execution intent", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshConsistencyCheckEffects({
+    consistencyCheck: {
+      shouldCheck: true,
+      phase: "refresh-local-patch",
+      renderMode: "patch",
+      reason: "phase-present",
+    },
+  }), {
+    effects: [
+      {
+        type: "conversation-projection-consistency-check",
+        phase: "refresh-local-patch",
+        renderMode: "patch",
+      },
+    ],
+    reason: "consistency-check",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshConsistencyCheckEffects({
+    consistencyCheck: {
+      shouldCheck: false,
+      phase: "",
+      renderMode: "full-render",
+      reason: "no-phase",
+    },
+  }), {
+    effects: [],
+    reason: "no-phase",
+  });
+});
+
 test("thread detail refresh performance input combines render and patch plans", () => {
   assert.deepEqual(renderPlan.planThreadDetailRefreshPerformanceInput({
     source: "refresh",

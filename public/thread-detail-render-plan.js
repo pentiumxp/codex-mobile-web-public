@@ -217,6 +217,28 @@
     };
   }
 
+  function planThreadDetailRefreshConsistencyCheckEffects(input = {}) {
+    const consistencyCheck = objectOrEmpty(input.consistencyCheck || input);
+    const phase = compactReason(consistencyCheck.phase, "");
+    const renderMode = compactReason(consistencyCheck.renderMode, "");
+    if (!consistencyCheck.shouldCheck || !phase) {
+      return {
+        effects: [],
+        reason: compactReason(consistencyCheck.reason, "no-consistency-check"),
+      };
+    }
+    return {
+      effects: [
+        {
+          type: "conversation-projection-consistency-check",
+          phase,
+          renderMode,
+        },
+      ],
+      reason: "consistency-check",
+    };
+  }
+
   function planThreadDetailRefreshRender(input = {}) {
     const previousConversationSignature = normalizeSignature(input.previousConversationSignature);
     const nextConversationSignature = normalizeSignature(input.nextConversationSignature);
@@ -869,6 +891,7 @@
     normalizeSignature,
     planThreadDetailRefreshCompletionEffects,
     planThreadDetailRefreshConsistencyCheck,
+    planThreadDetailRefreshConsistencyCheckEffects,
     planThreadDetailRefreshResponseEffects,
     planThreadDetailRefreshPatchAttemptEffects,
     planThreadDetailRefreshPatchAttemptResult,

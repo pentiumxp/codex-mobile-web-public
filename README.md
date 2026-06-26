@@ -16,6 +16,43 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 Phase A Consistency Check Effects Slice
+
+本地小切片继续推进 Phase A 的 `refreshCurrentThread()` 所有权收敛。此前
+`planThreadDetailRefreshOutcomeExecution()` 已经产出 `consistencyCheck`，
+但 `public/app.js` 仍直接判断 `shouldCheck` 并调用
+`checkConversationProjectionConsistency()`。这让 refresh outcome 后的
+projection consistency 检查执行顺序继续留在主 app 文件里。
+
+本次修复：
+
+- `public/thread-detail-render-plan.js` 新增
+  `planThreadDetailRefreshConsistencyCheckEffects()`，把 consistency check
+  结果转成有序 effects。
+- `public/app.js` 新增
+  `applyThreadDetailRefreshConsistencyCheckEffect()` /
+  `applyThreadDetailRefreshConsistencyCheckEffectsPlan()`，只执行真实
+  projection consistency 检查。
+- `refreshCurrentThread()` 不再直接分支调用
+  `checkConversationProjectionConsistency()`。
+- 不改变 consistency check 判定、render mode/phase、patch/full-render 决策、
+  诊断 payload、server projection、任务卡协议或 shell/cache。
+
+闭环验证：
+
+```bash
+node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js
+npm run check
+npm test
+npm run check:macos
+git diff --check
+```
+
+结果：focused `172` passed；full `npm test` `1113` passed；
+`npm run check`、`npm run check:macos`、`git diff --check` 均通过。
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，
+尚未部署；继续作为 Phase A 模块的一部分累积。
+
 ## 2026-06-26 Phase A Patch Rejection Diagnostic Input Slice
 
 本地小切片继续推进 Phase A 的 `refreshCurrentThread()` 所有权收敛。此前

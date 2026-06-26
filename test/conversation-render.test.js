@@ -3179,8 +3179,10 @@ test("current-thread refresh patches the current tile pane for metadata-only til
   assert.match(functionBody("applyThreadDetailRefreshExecutionEffect"), /renderCurrentThread\(\);/);
   assert.match(functionBody("applyThreadDetailRefreshExecutionEffect"), /Unknown thread detail refresh execution action/);
   assert.match(appJs, /function applyThreadDetailRefreshMetadataEffect\(effect\)/);
-  assert.match(body, /const consistencyCheck = executionPlan\.consistencyCheck \|\| \{\};/);
-  assert.match(body, /checkConversationProjectionConsistency\(consistencyCheck\.phase, \{ renderMode: consistencyCheck\.renderMode \}\)/);
+  assert.match(body, /const consistencyCheckEffectsPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshConsistencyCheckEffects\(executionPlan\.consistencyCheck \|\| \{\}\);/);
+  assert.match(body, /applyThreadDetailRefreshConsistencyCheckEffectsPlan\(consistencyCheckEffectsPlan\);/);
+  assert.match(functionBody("applyThreadDetailRefreshConsistencyCheckEffect"), /checkConversationProjectionConsistency\(String\(item\.phase \|\| ""\), \{ renderMode: String\(item\.renderMode \|\| ""\) \}\);/);
+  assert.doesNotMatch(body, /if \(consistencyCheck\.shouldCheck\)/);
   assert.match(body, /const refreshPerformanceInput = threadDetailRenderPlanApi\.planThreadDetailRefreshPerformanceInput\(\{/);
   assert.match(body, /shouldRenderDetail,[\s\S]*renderPlan,[\s\S]*renderOutcome,[\s\S]*patchAttemptResult,[\s\S]*timings: \{/);
   assert.match(body, /const refreshPerformance = threadPerformanceMetrics\.threadDetailRefreshEventFields\(result\.thread, refreshPerformanceInput\);/);

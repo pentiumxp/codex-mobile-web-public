@@ -789,6 +789,12 @@ should be passed into `threadDiagnosticEventsApi.detailPatchRejectedDiagnosticEv
 App code still triggers the real Home AI diagnostic side effect, but
 `refreshCurrentThread()` no longer owns patch-rejection diagnostic field
 selection directly.
+Projection consistency-check effect planning now also lives in this helper:
+`planThreadDetailRefreshConsistencyCheckEffects` converts an already-decided
+consistency-check plan into an ordered effect for
+`checkConversationProjectionConsistency`. App code still performs the real
+projection consistency check, but `refreshCurrentThread()` no longer branches
+directly on `consistencyCheck.shouldCheck`.
 Refresh post-merge side-effect ordering now also lives in this helper:
 `planThreadDetailRefreshPostMergeEffects` declares the fixed
 thread-list-merge, composer/active-turn sync, and thread-list-render groups

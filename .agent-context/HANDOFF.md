@@ -15588,3 +15588,29 @@ The previous full handoff was archived and should be opened only when old proven
   - Continue Phase A with one more local `refreshCurrentThread()` ownership
     slice or batch the current Phase A module for a single deploy/readback when
     requested.
+
+## 2026-06-26 - Latest tail marker: Phase A consistency check effects slice
+
+- Latest local commit for this continuation slice:
+  - Message: `plan consistency check effects`.
+- Current state:
+  - This is the eighth local Phase A render/patch ownership slice.
+  - Not deployed by design; no `CLIENT_BUILD_ID` / PWA shell cache bump.
+- Root-cause boundary:
+  - `planThreadDetailRefreshOutcomeExecution()` already produced the
+    consistency-check decision, but `refreshCurrentThread()` still directly
+    branched on `consistencyCheck.shouldCheck`.
+  - `public/thread-detail-render-plan.js` now plans ordered consistency-check
+    effects; `public/app.js` only executes the real
+    `checkConversationProjectionConsistency()` side effect.
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js`
+    passed (`172` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`1113` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Either batch the current Phase A module for one deploy/readback, or continue
+    with one more local `refreshCurrentThread()` ownership slice.

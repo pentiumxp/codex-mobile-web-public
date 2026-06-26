@@ -9338,6 +9338,21 @@ function applyThreadDetailRefreshExecutionEffectsPlan(plan) {
   return timings;
 }
 
+function applyThreadDetailRefreshConsistencyCheckEffect(effect) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  if (type === "conversation-projection-consistency-check") {
+    checkConversationProjectionConsistency(String(item.phase || ""), { renderMode: String(item.renderMode || "") });
+    return true;
+  }
+  throw new Error(`Unknown thread detail refresh consistency effect: ${type || "empty"}`);
+}
+
+function applyThreadDetailRefreshConsistencyCheckEffectsPlan(plan) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applyThreadDetailRefreshConsistencyCheckEffect(effect);
+}
+
 function applyThreadDetailRefreshPatchAttemptEffect(effect, context) {
   const item = effect && typeof effect === "object" ? effect : {};
   const type = String(item.type || "");
@@ -9532,10 +9547,8 @@ async function refreshCurrentThread(options = {}) {
   const executionTimings = applyThreadDetailRefreshExecutionEffectsPlan(executionEffectsPlan);
   metadataUpdateMs += executionTimings.metadataUpdateMs;
   conversationRenderMs += executionTimings.conversationRenderMs;
-  const consistencyCheck = executionPlan.consistencyCheck || {};
-  if (consistencyCheck.shouldCheck) {
-    checkConversationProjectionConsistency(consistencyCheck.phase, { renderMode: consistencyCheck.renderMode });
-  }
+  const consistencyCheckEffectsPlan = threadDetailRenderPlanApi.planThreadDetailRefreshConsistencyCheckEffects(executionPlan.consistencyCheck || {});
+  applyThreadDetailRefreshConsistencyCheckEffectsPlan(consistencyCheckEffectsPlan);
   const renderElapsedMs = roundedDurationMs(renderStartedAt);
   const refreshPerformanceInput = threadDetailRenderPlanApi.planThreadDetailRefreshPerformanceInput({
     source,

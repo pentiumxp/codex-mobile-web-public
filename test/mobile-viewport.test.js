@@ -485,8 +485,9 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(functionBody("applyThreadDetailRefreshExecutionEffect"), /for \(const metadataEffect of metadataEffects\) applyThreadDetailRefreshMetadataEffect\(metadataEffect\);/);
   assert.match(functionBody("applyThreadDetailRefreshExecutionEffect"), /renderCurrentThread\(\);/);
   assert.match(functionBody("applyThreadDetailRefreshExecutionEffect"), /Unknown thread detail refresh execution action/);
-  assert.match(functionBody("refreshCurrentThread"), /const consistencyCheck = executionPlan\.consistencyCheck \|\| \{\};/);
-  assert.match(functionBody("refreshCurrentThread"), /if \(consistencyCheck\.shouldCheck\) \{[\s\S]*checkConversationProjectionConsistency\(consistencyCheck\.phase, \{ renderMode: consistencyCheck\.renderMode \}\);/);
+  assert.match(functionBody("refreshCurrentThread"), /const consistencyCheckEffectsPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshConsistencyCheckEffects\(executionPlan\.consistencyCheck \|\| \{\}\);/);
+  assert.match(functionBody("refreshCurrentThread"), /applyThreadDetailRefreshConsistencyCheckEffectsPlan\(consistencyCheckEffectsPlan\);/);
+  assert.match(functionBody("applyThreadDetailRefreshConsistencyCheckEffect"), /checkConversationProjectionConsistency\(String\(item\.phase \|\| ""\), \{ renderMode: String\(item\.renderMode \|\| ""\) \}\);/);
   assert.match(appJs, /function applyThreadDetailRefreshMetadataEffect\(effect\)/);
   assert.match(functionBody("applyThreadDetailRefreshMetadataEffect"), /updateCurrentThreadHeader\(state\.currentThread\)/);
   assert.match(functionBody("applyThreadDetailRefreshMetadataEffect"), /updateLiveOperationDockHtml\(renderLiveOperationDock\(state\.currentThread, existingConversationRenderKeys\(\)\)\)/);
