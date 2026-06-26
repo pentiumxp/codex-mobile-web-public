@@ -49,7 +49,8 @@ test("current-turn reply jump shares one floating slot with the bottom jump", ()
   assert.match(appJs, /refreshCurrentThread\(\{\s*source: "post-completion",\s*full: true,\s*\}\)\.catch\(showError\);/);
   assert.match(appJs, /function latestSuccessfulCompletedTurnMissingUsage\(\)/);
   assert.match(appJs, /function scheduleUsageBackfillRefresh\(delay = 1200\)/);
-  assert.match(functionBody("loadThread"), /renderCurrentThread\(\{ stickToBottom: true \}\);[\s\S]*scheduleUsageBackfillRefresh\(\);[\s\S]*postPerformanceEvent\("thread_detail_first_paint"/);
+  assert.match(functionBody("loadThread"), /renderCurrentThread\(\{ stickToBottom: true \}\);[\s\S]*const firstPaintPostRenderPlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintPostRenderEffects\(\{[\s\S]*\}\);[\s\S]*applyThreadDetailFirstPaintPostRenderEffectsPlan\(firstPaintPostRenderPlan, \{ thread: result\.thread \}\);[\s\S]*postPerformanceEvent\("thread_detail_first_paint"/);
+  assert.match(functionBody("applyThreadDetailFirstPaintPostRenderEffect"), /if \(type === "schedule-usage-backfill-refresh"\) \{[\s\S]*scheduleUsageBackfillRefresh\(\);/);
   assert.match(appJs, /scheduleUsageBackfillRefresh\(1400\)/);
   assert.match(appJs, /refreshCurrentThread\(\{ source: "usage-backfill" \}\)\.catch\(showError\);/);
   assert.match(appJs, /state\.usageBackfillAttempts >= 6/);

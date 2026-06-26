@@ -822,6 +822,27 @@
     };
   }
 
+  function planThreadDetailFirstPaintPostRenderEffects(input = {}) {
+    const seq = Number(input.seq);
+    return {
+      effects: [
+        { type: "publish-plugin-navigation-state", force: true },
+        { type: "restore-connection-state" },
+        { type: "schedule-live-poll", delayMs: 1200 },
+        { type: "update-composer-controls" },
+        { type: "close-sidebar-menu-if-overlay" },
+        {
+          type: "backfill-full-thread-detail-if-needed",
+          threadId: compactReason(input.threadId, ""),
+          seq: Number.isFinite(seq) ? seq : 0,
+          source: compactReason(input.source, "").slice(0, 40),
+        },
+        { type: "schedule-usage-backfill-refresh" },
+      ],
+      reason: "first-paint-post-render",
+    };
+  }
+
   function text(value) {
     return String(value ?? "");
   }
@@ -975,6 +996,7 @@
     emptyThreadDetailRefreshPatchAttempt,
     finalizeThreadDetailRenderPlan,
     normalizeSignature,
+    planThreadDetailFirstPaintPostRenderEffects,
     planThreadDetailRefreshCompletionEffects,
     planThreadDetailRefreshConsistencyCheck,
     planThreadDetailRefreshConsistencyCheckEffects,

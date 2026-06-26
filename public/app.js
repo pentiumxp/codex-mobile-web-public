@@ -9123,15 +9123,12 @@ async function loadThread(threadId, options = {}) {
   const conversationRenderMs = roundedDurationMs(conversationRenderStartedAt);
   maybeAutoBackfillThreadHistory(state.currentThread, { seq, source: "first-paint" });
   const postRenderStartedAt = nowPerfMs();
-  publishPluginNavigationState({ force: true });
-  restoreConnectionState();
-  scheduleLivePollIfNeeded(1200);
-  updateComposerControls();
-  if (isMenuOverlayMode()) closeSidebarMenu();
-  if (shouldBackfillFullThreadDetail(result.thread)) {
-    backfillFullThreadDetail(threadId, { seq, source }).catch(() => {});
-  }
-  scheduleUsageBackfillRefresh();
+  const firstPaintPostRenderPlan = threadDetailRenderPlanApi.planThreadDetailFirstPaintPostRenderEffects({
+    threadId,
+    seq,
+    source,
+  });
+  applyThreadDetailFirstPaintPostRenderEffectsPlan(firstPaintPostRenderPlan, { thread: result.thread });
   const postRenderMs = roundedDurationMs(postRenderStartedAt);
   checkConversationProjectionConsistency("first-paint", { renderMode: "first-paint" });
   const renderElapsedMs = roundedDurationMs(renderStartedAt);
@@ -9280,6 +9277,51 @@ function applyThreadDetailRefreshCompletionEffect(effect) {
 function applyThreadDetailRefreshCompletionEffectsPlan(plan) {
   const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
   for (const effect of effects) applyThreadDetailRefreshCompletionEffect(effect);
+}
+
+function applyThreadDetailFirstPaintPostRenderEffect(effect, context = {}) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  if (type === "publish-plugin-navigation-state") {
+    publishPluginNavigationState({ force: Boolean(item.force) });
+    return true;
+  }
+  if (type === "restore-connection-state") {
+    restoreConnectionState();
+    return true;
+  }
+  if (type === "schedule-live-poll") {
+    const delayMs = Number(item.delayMs);
+    scheduleLivePollIfNeeded(Number.isFinite(delayMs) && delayMs >= 0 ? delayMs : undefined);
+    return true;
+  }
+  if (type === "update-composer-controls") {
+    updateComposerControls();
+    return true;
+  }
+  if (type === "close-sidebar-menu-if-overlay") {
+    if (isMenuOverlayMode()) closeSidebarMenu();
+    return true;
+  }
+  if (type === "backfill-full-thread-detail-if-needed") {
+    if (shouldBackfillFullThreadDetail(context.thread)) {
+      backfillFullThreadDetail(String(item.threadId || ""), {
+        seq: Number(item.seq || 0),
+        source: String(item.source || "").slice(0, 40),
+      }).catch(() => {});
+    }
+    return true;
+  }
+  if (type === "schedule-usage-backfill-refresh") {
+    scheduleUsageBackfillRefresh();
+    return true;
+  }
+  throw new Error(`Unknown thread detail first-paint post-render effect: ${type || "empty"}`);
+}
+
+function applyThreadDetailFirstPaintPostRenderEffectsPlan(plan, context = {}) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applyThreadDetailFirstPaintPostRenderEffect(effect, context);
 }
 
 function applyThreadDetailRefreshPostMergeEffect(effect) {

@@ -4389,6 +4389,11 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.doesNotMatch(functionBody("backfillFullThreadDetail"), /mergeThreadIntoThreadList\(state\.currentThread\);\s*const mergeMs/);
   assert.doesNotMatch(functionBody("backfillFullThreadDetail"), /renderComposerSettings\(\);\s*syncActiveTurnFromThread\(\);/);
   assert.match(functionBody("backfillFullThreadDetail"), /threadPerformanceMetrics\.threadDetailFullReadyEventFields\(result\.thread, \{/);
+  assert.match(functionBody("loadThread"), /const firstPaintPostRenderPlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintPostRenderEffects\(\{[\s\S]*threadId,[\s\S]*seq,[\s\S]*source,[\s\S]*\}\);[\s\S]*applyThreadDetailFirstPaintPostRenderEffectsPlan\(firstPaintPostRenderPlan, \{ thread: result\.thread \}\);[\s\S]*const postRenderMs = roundedDurationMs\(postRenderStartedAt\);/);
+  assert.match(functionBody("applyThreadDetailFirstPaintPostRenderEffect"), /publishPluginNavigationState\(\{ force: Boolean\(item\.force\) \}\)/);
+  assert.match(functionBody("applyThreadDetailFirstPaintPostRenderEffect"), /scheduleLivePollIfNeeded\(Number\.isFinite\(delayMs\) && delayMs >= 0 \? delayMs : undefined\)/);
+  assert.match(functionBody("applyThreadDetailFirstPaintPostRenderEffect"), /if \(shouldBackfillFullThreadDetail\(context\.thread\)\)/);
+  assert.doesNotMatch(functionBody("loadThread"), /publishPluginNavigationState\(\{ force: true \}\);\s*restoreConnectionState\(\);\s*scheduleLivePollIfNeeded\(1200\);/);
   const sendBody = functionBody("sendMessage");
   assert.match(sendBody, /const targetThreadId = currentComposerThreadId\(\);/);
   assert.match(sendBody, /const previousThreadStatus = snapshotThreadStatus\(targetThreadId\);/);

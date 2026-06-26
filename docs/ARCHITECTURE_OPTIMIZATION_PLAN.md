@@ -888,6 +888,14 @@ full backfill still own their existing detail-loaded marker, render-evidence
 write, pending-server-request sync, current-thread merge, local
 draft/follow/connect behavior, full render, and bounded first-paint/full-ready
 telemetry behavior.
+First-paint post-render side-effect ordering now also lives in
+`public/thread-detail-render-plan.js`:
+`planThreadDetailFirstPaintPostRenderEffects` declares the fixed sequence for
+plugin navigation publishing, connection restore, delayed live polling,
+Composer control refresh, conditional overlay-menu close, conditional full
+detail backfill, and Usage backfill. App code still evaluates runtime
+conditions and performs the actual DOM/timer/network side effects, but
+`loadThread()` no longer owns this fixed post-render ordering inline.
 Thread refresh failure diagnostic payload planning now lives in
 `public/thread-diagnostic-events.js`: `threadDetailRefreshFailedDiagnosticEvent`
 builds the bounded `thread_detail_refresh_failed` failure report, so

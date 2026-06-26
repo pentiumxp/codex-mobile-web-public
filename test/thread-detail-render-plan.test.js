@@ -1153,6 +1153,40 @@ test("thread detail refresh completion effects plan bounded success side effects
   });
 });
 
+test("thread detail first-paint post-render effects plan preserves order and bounds inputs", () => {
+  assert.deepEqual(renderPlan.planThreadDetailFirstPaintPostRenderEffects({
+    threadId: "thread-1",
+    seq: 7,
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA",
+  }), {
+    effects: [
+      { type: "publish-plugin-navigation-state", force: true },
+      { type: "restore-connection-state" },
+      { type: "schedule-live-poll", delayMs: 1200 },
+      { type: "update-composer-controls" },
+      { type: "close-sidebar-menu-if-overlay" },
+      {
+        type: "backfill-full-thread-detail-if-needed",
+        threadId: "thread-1",
+        seq: 7,
+        source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR",
+      },
+      { type: "schedule-usage-backfill-refresh" },
+    ],
+    reason: "first-paint-post-render",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailFirstPaintPostRenderEffects({
+    threadId: "thread-2",
+    seq: "not-a-number",
+  }).effects[5], {
+    type: "backfill-full-thread-detail-if-needed",
+    threadId: "thread-2",
+    seq: 0,
+    source: "",
+  });
+});
+
 test("single-thread full render shell plans loading state", () => {
   assert.deepEqual(renderPlan.planSingleThreadFullRenderShell({
     threadId: "thread-1",

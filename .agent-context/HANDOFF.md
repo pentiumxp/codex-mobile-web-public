@@ -17062,3 +17062,60 @@ The previous full handoff was archived and should be opened only when old proven
     counts are recorded. No secrets, cookies, launch tokens, private thread
     bodies, task-card bodies, upload bytes, private paths, provider payloads,
     prompts, or long logs are included.
+
+## 2026-06-27 - Phase A first-paint post-render plan reuse local slice
+
+- Latest local slice:
+  - Continued Phase A render/patch ownership after `5db2d87`
+    (`reuse detail post merge plan for cached current`).
+  - The previous cached-current post-merge slice was fully validated and
+    committed as `5db2d87`; it was not deployed by design.
+  - This slice is local/private only and is not deployed by design.
+- Root-cause boundary:
+  - Symptom/risk: `loadThread()` successful first-paint still hand-wrote a
+    fixed post-render side-effect sequence after conversation render:
+    plugin-navigation publish, connection restore, delayed live poll,
+    Composer-control refresh, overlay-menu close, optional full-detail
+    backfill, and Usage backfill. Keeping that sequence inline leaves more
+    thread-open ordering rules in `public/app.js`.
+  - Failing layer: frontend first-paint post-render side-effect ownership, not
+    API reads, projection cache, merge policy, DOM patch choice, scroll policy,
+    task-card routing, Home AI diagnostic intake, or shell/cache.
+  - Violated invariant: first-paint fixed post-render ordering should be
+    declared by a pure plan while `public/app.js` only executes real runtime
+    side effects and evaluates runtime-only conditions at execution time.
+- Changes:
+  - `public/thread-detail-render-plan.js` now exports
+    `planThreadDetailFirstPaintPostRenderEffects()`.
+  - The plan declares ordered effects for plugin navigation publish,
+    connection restore, delayed live poll, Composer controls, conditional
+    overlay-menu close, conditional full-detail backfill, and Usage backfill.
+  - `public/app.js` now applies that plan through
+    `applyThreadDetailFirstPaintPostRenderEffectsPlan()` while preserving the
+    existing runtime checks for menu-overlay state and
+    `shouldBackfillFullThreadDetail()`.
+  - Updated `test/thread-detail-render-plan.test.js`,
+    `test/conversation-render.test.js`, and `test/mobile-viewport.test.js`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-detail-refresh-dom-harness.test.js`
+    passed (`181` tests).
+  - Syntax:
+    `node --check public/thread-detail-render-plan.js && node --check public/app.js`
+    passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache
+    bump. This is a local Phase A ownership slice to batch with the next module
+    validation/deploy.
+- Next:
+  - Run full validation, commit locally, then continue Phase A by extracting the
+    remaining first-paint telemetry/switch-complete/diagnostic success cluster,
+    or switch to Phase B cold-path evidence if large-session load time becomes
+    the priority.
+- Privacy:
+  - Only bounded file paths, helper names, effect names, and test counts are
+    recorded. No secrets, cookies, launch tokens, private thread bodies,
+    task-card bodies, upload bytes, private paths, provider payloads, prompts,
+    or long logs are included.
