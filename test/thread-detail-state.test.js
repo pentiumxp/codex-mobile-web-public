@@ -13,6 +13,7 @@ const {
   planEmptyDetailHistoryRecovery,
   planThreadOpenCacheReuse,
   planSummaryOnlyCurrentThreadRecovery,
+  planSummaryOnlyCurrentThreadRecoveryEffects,
   recentThreadDetailRenderEvidence,
   rolloutSizeBytesFromThread,
   sameThreadDetailRenderEvidence,
@@ -602,17 +603,42 @@ test("thread detail state plans summary-only current-thread recovery", () => {
     hasListTurnsField: true,
     buildId: "build-v1",
   });
+
+  assert.deepEqual(planSummaryOnlyCurrentThreadRecoveryEffects(plan), {
+    effects: [
+      {
+        type: "set-current-thread",
+        thread: plan.nextThread,
+      },
+      {
+        type: "post-client-event",
+        name: "thread_summary_detail_recovery",
+        payload: plan.event,
+      },
+      {
+        type: "schedule-current-thread-refresh",
+        delayMs: 0,
+        reason: "summary-detail-recovery",
+      },
+    ],
+    reason: "summary-only-current-thread",
+  });
 });
 
 test("thread detail state does not schedule recovery when detail is loaded or refresh is active", () => {
-  assert.deepEqual(planSummaryOnlyCurrentThreadRecovery({
+  const notRecoveredPlan = planSummaryOnlyCurrentThreadRecovery({
     thread: { id: "thread-1", turns: [], mobileDetailLoaded: true, mobileReadMode: "recent" },
     currentThreadId: "thread-1",
-  }), {
+  });
+  assert.deepEqual(notRecoveredPlan, {
     shouldRecover: false,
     shouldScheduleRefresh: false,
     nextThread: { id: "thread-1", turns: [], mobileDetailLoaded: true, mobileReadMode: "recent" },
     event: null,
+    reason: "not-summary-only-current-thread",
+  });
+  assert.deepEqual(planSummaryOnlyCurrentThreadRecoveryEffects(notRecoveredPlan), {
+    effects: [],
     reason: "not-summary-only-current-thread",
   });
 

@@ -14616,6 +14616,29 @@ function applySingleThreadShellPostUpdateEffectsPlan(plan, context = {}) {
   for (const effect of effects) applySingleThreadShellPostUpdateEffect(effect, context);
 }
 
+function applySummaryOnlyCurrentThreadRecoveryEffect(effect) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  if (type === "set-current-thread") {
+    state.currentThread = item.thread || null;
+    return;
+  }
+  if (type === "post-client-event") {
+    postClientEvent(String(item.name || ""), item.payload || {});
+    return;
+  }
+  if (type === "schedule-current-thread-refresh") {
+    scheduleCurrentThreadRefresh(Math.max(0, Number(item.delayMs || 0)), String(item.reason || "refresh"));
+    return;
+  }
+  throw new Error(`Unknown summary-only current thread recovery effect: ${type || "empty"}`);
+}
+
+function applySummaryOnlyCurrentThreadRecoveryEffectsPlan(plan) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applySummaryOnlyCurrentThreadRecoveryEffect(effect);
+}
+
 function renderCurrentThread(options = {}) {
   syncThreadDetailLayoutState();
   syncThreadTileToggle();
@@ -14672,12 +14695,9 @@ function renderCurrentThread(options = {}) {
     hasRefreshThreadController: Boolean(state.refreshThreadController),
   });
   if (summaryRecoveryPlan.shouldRecover) {
-    state.currentThread = summaryRecoveryPlan.nextThread;
+    const summaryRecoveryEffectsPlan = threadDetailStateApi.planSummaryOnlyCurrentThreadRecoveryEffects(summaryRecoveryPlan);
+    applySummaryOnlyCurrentThreadRecoveryEffectsPlan(summaryRecoveryEffectsPlan);
     thread = state.currentThread;
-    postClientEvent("thread_summary_detail_recovery", summaryRecoveryPlan.event);
-    if (summaryRecoveryPlan.shouldScheduleRefresh) {
-      scheduleCurrentThreadRefresh(0, "summary-detail-recovery");
-    }
   }
   const earlyShellPlan = threadDetailRenderPlanApi.planSingleThreadEarlyShellExecution({
     threadId: thread.id || state.currentThreadId || "",

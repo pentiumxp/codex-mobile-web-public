@@ -40,6 +40,10 @@
     return String(value || "").slice(0, maxLength);
   }
 
+  function objectOrEmpty(value) {
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  }
+
   function threadListSummaryFromDetailThread(thread) {
     if (!thread || typeof thread !== "object" || !thread.id) return null;
     const summary = Object.assign({}, thread);
@@ -301,6 +305,39 @@
     };
   }
 
+  function planSummaryOnlyCurrentThreadRecoveryEffects(plan = {}) {
+    const recoveryPlan = objectOrEmpty(plan);
+    const effects = [];
+    if (!recoveryPlan.shouldRecover) {
+      return {
+        effects,
+        reason: shortString(recoveryPlan.reason || "not-recovered"),
+      };
+    }
+    effects.push({
+      type: "set-current-thread",
+      thread: recoveryPlan.nextThread || null,
+    });
+    if (recoveryPlan.event) {
+      effects.push({
+        type: "post-client-event",
+        name: "thread_summary_detail_recovery",
+        payload: recoveryPlan.event,
+      });
+    }
+    if (recoveryPlan.shouldScheduleRefresh) {
+      effects.push({
+        type: "schedule-current-thread-refresh",
+        delayMs: 0,
+        reason: "summary-detail-recovery",
+      });
+    }
+    return {
+      effects,
+      reason: shortString(recoveryPlan.reason || "summary-only-current-thread"),
+    };
+  }
+
   function mergeThreadSummaryIntoList(threads, thread, options = {}) {
     const summary = threadListSummaryFromDetailThread(thread);
     const currentThreads = Array.isArray(threads) ? threads : [];
@@ -457,6 +494,7 @@
     planEmptyDetailHistoryRecovery,
     planThreadOpenCacheReuse,
     planSummaryOnlyCurrentThreadRecovery,
+    planSummaryOnlyCurrentThreadRecoveryEffects,
     recentThreadDetailRenderEvidence,
     rolloutSizeBytesFromThread,
     sameThreadDetailRenderEvidence,

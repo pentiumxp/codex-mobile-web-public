@@ -377,6 +377,13 @@ keeps the v511/v512 root-cause repair in one focused state-ownership module
 instead of splitting detection, sanitization, and recovery across the main app
 render function.
 
+The 2026-06-26 local Phase A follow-up makes the same boundary explicit for
+post-plan execution: `planSummaryOnlyCurrentThreadRecoveryEffects()` now emits
+ordered effects for current-thread state replacement, bounded
+`thread_summary_detail_recovery` client events, and optional
+`summary-detail-recovery` refresh scheduling. `public/app.js` executes these
+effects but no longer re-owns the recovery state/event/refresh order.
+
 `codex-mobile-shell-v515` adds the next ownership rule from the same Music
 incident class: an incoming empty `turns: []` detail response cannot wipe out an
 existing current-thread state that already has visible turns. That merge

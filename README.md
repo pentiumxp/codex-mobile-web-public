@@ -16,6 +16,44 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 Phase A Summary Recovery Effects Slice
+
+本地小切片继续推进 Phase A 的 thread detail state ownership。此前
+`public/thread-detail-state.js` 已经通过 `planSummaryOnlyCurrentThreadRecovery()`
+决定 summary-only current thread 是否应该恢复成 loading shell，并给出净化后的
+`nextThread`、bounded client event 和是否需要立即 refresh。但
+`renderCurrentThread()` 仍直接执行 `state.currentThread` 写入、client event 上报和
+`summary-detail-recovery` refresh 调度。
+
+本次修复：
+
+- `public/thread-detail-state.js` 新增
+  `planSummaryOnlyCurrentThreadRecoveryEffects()`，把 recovery plan 转成有序
+  effects：写入 current thread、发送 bounded client event、按需调度 refresh。
+- `public/app.js` 新增
+  `applySummaryOnlyCurrentThreadRecoveryEffect()` /
+  `applySummaryOnlyCurrentThreadRecoveryEffectsPlan()`，只执行真实 state/event/timer
+  副作用。
+- `renderCurrentThread()` 不再内联 summary recovery 的 state/event/refresh 分支。
+- 不改变 summary-only 判定、loading-shell 内容、诊断字段、refresh reason、
+  conversation render、server projection、local patch eligibility、任务卡协议或
+  shell/cache。
+
+闭环验证：
+
+```bash
+node --test test/thread-detail-state.test.js test/conversation-render.test.js test/mobile-viewport.test.js
+npm run check
+npm test
+npm run check:macos
+git diff --check
+```
+
+结果：focused `139` passed；full `npm test` `1109` passed；
+`npm run check`、`npm run check:macos`、`git diff --check` 均通过。
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，
+尚未部署；继续作为 Phase A 模块的一部分累积。
+
 ## 2026-06-26 Phase A Single-Thread Shell Post-Update Effects Slice
 
 本地小切片继续推进 Phase A，把 `renderCurrentThread()` 的 full-render

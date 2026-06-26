@@ -15358,6 +15358,59 @@ The previous full handoff was archived and should be opened only when old proven
 - Next:
   - Commit locally.
 
+## 2026-06-26 - Phase A summary recovery effects slice
+
+- Context:
+  - Follows local commit `0a04296` (`plan single thread post update effects`).
+  - This is the fifth local Phase A state/render ownership slice and remains
+    intentionally undeployed until batched into a coherent module.
+- Root-cause boundary:
+  - Symptom/risk: `planSummaryOnlyCurrentThreadRecovery()` already decided when
+    a summary-only current thread should become a loading shell and whether a
+    bounded recovery event/refresh was required, but `renderCurrentThread()`
+    still directly owned the state replacement, client event, and refresh
+    scheduling order.
+  - Failing layer: frontend summary-only current-thread recovery effect
+    ownership, not server projection, local DOM patching, task-card protocol,
+    diagnostic transport, or shell/cache.
+  - Violated invariant: summary-only recovery is a state-ownership strategy.
+    Once the recovery plan is computed, state/event/refresh effects should be
+    planned in a testable helper and executed by `public/app.js` without
+    re-owning the effect order.
+  - Closure classification: architecture-boundary cleanup. It does not hide
+    duplicate/missing messages, force refresh, skip refresh, change
+    summary-only detection, change loading-shell shape, change diagnostic
+    fields, change refresh reason, or change shell/cache.
+- Changes:
+  - `public/thread-detail-state.js`
+    - Added `objectOrEmpty()`.
+    - Added `planSummaryOnlyCurrentThreadRecoveryEffects()`.
+  - `public/app.js`
+    - Added `applySummaryOnlyCurrentThreadRecoveryEffect()` /
+      `applySummaryOnlyCurrentThreadRecoveryEffectsPlan()`.
+    - `renderCurrentThread()` now executes planned recovery effects instead of
+      inlining `state.currentThread`, `postClientEvent`, and
+      `scheduleCurrentThreadRefresh` branches.
+  - Tests/docs updated:
+    - `test/thread-detail-state.test.js`
+    - `test/conversation-render.test.js`
+    - `README.md`
+    - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`
+    - `docs/MODULES.md`
+- Validation so far:
+  - Focused:
+    `node --test test/thread-detail-state.test.js test/conversation-render.test.js test/mobile-viewport.test.js`
+    passed (`139` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`1109` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Not deployed by design. This is a local Phase A slice for a future
+    module-level deploy.
+- Next:
+  - Commit locally.
+
 ## 2026-06-26 - Phase A single-thread shell post-update effects slice
 
 - Context:

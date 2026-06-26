@@ -1869,8 +1869,12 @@ test("loading and thread-list state preserve locally visible live turns", () => 
   assert.match(functionBody("loadThreads"), /threadListSummaryFromDetailThread\(thread\) \|\| thread/);
   assert.match(functionSourceFrom(appJs, "renderCurrentThread"), /let thread = state\.currentThread;/);
   assert.match(functionBody("renderCurrentThread"), /threadDetailStateApi\.planSummaryOnlyCurrentThreadRecovery\(\{/);
-  assert.match(functionBody("renderCurrentThread"), /postClientEvent\("thread_summary_detail_recovery", summaryRecoveryPlan\.event\)/);
-  assert.match(functionBody("renderCurrentThread"), /scheduleCurrentThreadRefresh\(0, "summary-detail-recovery"\)/);
+  assert.match(functionBody("renderCurrentThread"), /threadDetailStateApi\.planSummaryOnlyCurrentThreadRecoveryEffects\(summaryRecoveryPlan\)/);
+  assert.match(functionBody("renderCurrentThread"), /applySummaryOnlyCurrentThreadRecoveryEffectsPlan\(summaryRecoveryEffectsPlan\)/);
+  assert.match(functionBody("applySummaryOnlyCurrentThreadRecoveryEffect"), /postClientEvent\(String\(item\.name \|\| ""\), item\.payload \|\| \{\}\)/);
+  assert.match(functionBody("applySummaryOnlyCurrentThreadRecoveryEffect"), /scheduleCurrentThreadRefresh\(Math\.max\(0, Number\(item\.delayMs \|\| 0\)\), String\(item\.reason \|\| "refresh"\)\)/);
+  assert.doesNotMatch(functionBody("renderCurrentThread"), /postClientEvent\("thread_summary_detail_recovery", summaryRecoveryPlan\.event\)/);
+  assert.doesNotMatch(functionBody("renderCurrentThread"), /scheduleCurrentThreadRefresh\(0, "summary-detail-recovery"\)/);
   assert.match(functionBody("renderCurrentThread"), /threadDetailRenderPlanApi\.planSingleThreadEarlyShellExecution\(\{/);
   assert.match(functionBody("renderCurrentThread"), /loadingWithoutVisibleTurns: threadIsLoadingWithoutVisibleTurns\(thread\)/);
   assert.match(functionBody("renderCurrentThread"), /loadError: thread\.mobileLoadError/);
