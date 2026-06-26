@@ -76,6 +76,11 @@ cache policy 和 baseline 构建边界混在一起。
   `/api/threads/:id?mode=recent`，验证 `coldPathOwner`、thread-detail timings
   和可选的 `projection-active-overlay`，输出仅包含 build id、hash、read mode、
   owner/reason、计数和耗时。
+- 新增 `adapters/phase-b-readback-decision-service.js`，把 readback 输出归类成
+  `decision`：例如 active overlay proof gate、projection cache lifecycle、
+  projection input、thread-list fallback baseline、cache freshness 或 app-server
+  fallback。这样 Phase B 批量部署后可以按 bounded 字段直接决定下一步 root-cause
+  修复方向，而不是人工解释私有日志或肉眼观察。
 
 这不是新的 fallback 行为，也不是 prewarm/persist。source 内部实现、route
 aggregation、defer fallback、app-server result merge 都没有改变。该切片暂不

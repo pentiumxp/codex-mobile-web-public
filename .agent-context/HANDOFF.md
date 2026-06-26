@@ -14083,3 +14083,54 @@ The previous full handoff was archived and should be opened only when old proven
   - Use the readback result to choose the next root-cause target:
     fallback-baseline source collection, cache freshness, projection miss
     lifecycle, or app-server fallback.
+
+## 2026-06-26 - Phase B readback decision local-only
+
+- Scope:
+  - Continued Phase B by making the readback smoke output directly actionable.
+  - This is local-only decision tooling and documentation. It does not deploy,
+    bump shell/cache, change runtime read strategy, change UI, push Public, or
+    read private thread/card/upload bodies.
+- Root-cause boundary:
+  - Failing layer addressed: Phase B readback could verify bounded fields, but
+    still required humans to map `coldPathOwner`, `coldPathReason`, read mode,
+    projection state, and active-overlay evidence into the next root-cause
+    repair target.
+  - Violated invariant: post-deploy Phase B validation should produce an
+    explicit bounded next action such as active-overlay coverage, projection
+    cache lifecycle, projection input availability, thread-list fallback
+    baseline, cache freshness, or app-server fallback. It should not require
+    private logs, message text, card bodies, upload contents, or visual guesswork.
+  - Closure classification: decision-policy extraction only. No fallback,
+    cache rebuild policy, prewarm/persist behavior, forced refresh, client
+    dedupe, or projection behavior change.
+- Changes:
+  - Added `adapters/phase-b-readback-decision-service.js`. It maps the
+    bounded Phase B readback report into a `decision` with `status`,
+    `priority`, `owner`, `reason`, `nextAction`, and safe evidence fields.
+  - `scripts/codex-mobile-phase-b-readback-smoke.js` now includes that
+    `decision` in its JSON output.
+  - Added `test/phase-b-readback-decision-service.test.js` for missing
+    readback contract fields, active-overlay gaps, projection-cache misses,
+    thread-list fallback-baseline ownership, ready warm paths, and
+    privacy-bounded evidence.
+  - `package.json`, README, architecture optimization plan, and module map now
+    register the decision boundary.
+  - A read-only subagent reviewed the next Phase B root-cause target and
+    independently recommended thread-list fallback source snapshot/reuse below
+    the final-list cache as the next local coding slice.
+- Validation:
+  - Focused:
+    `node --test test/phase-b-readback-decision-service.test.js test/phase-b-readback-smoke.test.js test/thread-list-cold-path-diagnosis-service.test.js test/thread-detail-performance-service.test.js`
+    passed (`21` tests).
+  - Full source `npm test` passed (`1079` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment status:
+  - Not deployed by design. This remains part of the Phase B local batch.
+- Next Phase B candidate:
+  - Implement memory-only thread-list fallback source snapshot/reuse under
+    `thread-list-fallback-baseline-service`, so repeated final-list cache misses
+    for different `cwd/search/limit` keys can reuse the same state DB / rollout
+    / session-index candidate source set before applying existing filtering and
+    merge policy. Keep it memory-only, bounded, observable, and covered by
+    focused tests.

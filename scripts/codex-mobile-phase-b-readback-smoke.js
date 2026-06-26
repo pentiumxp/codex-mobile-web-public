@@ -5,6 +5,9 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const {
+  classifyPhaseBReadback,
+} = require("../adapters/phase-b-readback-decision-service");
 
 function usage() {
   return [
@@ -248,6 +251,7 @@ async function run(options = {}, env = process.env) {
     publicConfig: null,
     threadList: null,
     detail: null,
+    decision: null,
     checks: {},
     failure: "",
   };
@@ -272,6 +276,9 @@ async function run(options = {}, env = process.env) {
   report.checks = evaluateChecks(report, options);
   report.failure = firstFailure(report.checks);
   report.ok = !report.failure;
+  report.decision = classifyPhaseBReadback(report, {
+    allowMissingColdPath: !options.requireThreadListColdPath,
+  });
   return report;
 }
 
