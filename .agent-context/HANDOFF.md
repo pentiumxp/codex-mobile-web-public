@@ -14192,3 +14192,53 @@ The previous full handoff was archived and should be opened only when old proven
     `fallback-source-snapshot` ready, shift to projection-cache or active-overlay
     evidence; if it still shows `fallback-baseline`, inspect source snapshot key
     invalidation/freshness before adding any broader cache.
+
+## 2026-06-26 - Phase B module deployed and readback classified
+
+- Scope:
+  - Home AI redirected the routine Codex Mobile Web deploy/readback card back to
+    the plugin-owned loop. The plugin thread completed the validation,
+    production deploy, and bounded Phase B readback from this workspace.
+  - No source edits were made in this step.
+- Source state:
+  - Deployed source commit: `bc9b8b3a58de` (`reuse thread list fallback source
+    snapshots`).
+  - Source worktree was clean before deploy.
+- Validation before deploy:
+  - `npm test` passed (`1083` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Central Home AI macOS deploy command succeeded for plugin
+    `codex-mobile-web`.
+  - Production path: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T103932Z-plugin-codex-mobile-web-codex-mobile-phase-b-module`.
+  - Production health readback returned `version=0.1.11`,
+    `clientBuildId=0.1.11|codex-mobile-shell-v531`,
+    `shellCacheName=codex-mobile-shell-v531`. This batch did not touch static
+    shell files, so no shell/cache bump was expected.
+- Phase B readback:
+  - First production smoke after restart:
+    - thread list: `coldPathOwner=fallback-baseline`,
+      `coldPathReason=miss-rebuild:rollout`, total about `3132ms`,
+      fallback about `2671ms`, source snapshot build count `1`.
+    - detail: active thread used full thread read,
+      `projectionState=miss`, `projectionMissReason=dynamic-summary-stale`,
+      `activeOverlayAction=require-full-read`,
+      `activeOverlayReason=missing-active-turn-id`.
+    - decision: `needs_repair`, `priority=H1`, `owner=active-overlay`,
+      `nextAction=complete-active-window-overlay-coverage`.
+  - Second production smoke:
+    - thread list: `coldPathOwner=warm-fallback-cache`,
+      `coldPathReason=cache-hit`, total about `499ms`, fallback about `1ms`.
+    - detail remained active full read with the same active-overlay gap.
+- Current conclusion:
+  - The deployed Phase B source snapshot/cache work improves warm thread-list
+    reads and proves that repeated entry after the initial post-restart cold
+    read no longer rebuilds fallback sources.
+  - The next high-priority optimization target should be active thread detail
+    overlay coverage: active list/detail state lacks a reliable active turn id,
+    so projection misses still force expensive full-thread reads and can
+    contribute to missing/late visible replies.
