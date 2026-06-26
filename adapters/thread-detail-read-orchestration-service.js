@@ -301,40 +301,45 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       : null;
     context.projectionMissReason = projectionLookup && projectionLookup.missReason || "";
     timer.mark("projectionMs", projectionStartedAtMs);
-    if (projected && projected.thread) {
+    const projectedThread = projected && projected.thread || null;
+    if (projectedThread) {
       context.projectionState = "hit";
       context.projectionMissReason = "";
-      const projectionInfo = projectionDiagnosticsFromThread(projected.thread);
+      const projectionInfo = projectionDiagnosticsFromThread(projectedThread);
       context.projectionSource = projectionInfo.source;
       context.projectionVersion = projectionInfo.version;
       context.projectionAgeMs = projectionInfo.ageMs;
-      if (isHiddenThread(projected.thread, visibility)) {
+      if (isHiddenThread(projectedThread, visibility)) {
         threadLog("projection_hidden", {
           durationMs: now() - projectionStartedAtMs,
           status: 404,
         });
         return hiddenResponse();
       }
-      rememberThreadSummary(projected.thread);
-      threadLog("projection_hit", {
+      threadLog(activeReadPolicy.activeFullReadRequired && resolveActiveWindowOverlay
+        ? "projection_hit_active_overlay_required"
+        : "projection_hit", {
         durationMs: now() - projectionStartedAtMs,
-        mode: projected.thread.mobileReadMode,
-        returnedTurns: Array.isArray(projected.thread.turns) ? projected.thread.turns.length : null,
-        omittedTurns: projected.thread.mobileOmittedTurnCount || 0,
+        mode: projectedThread.mobileReadMode,
+        returnedTurns: Array.isArray(projectedThread.turns) ? projectedThread.turns.length : null,
+        omittedTurns: projectedThread.mobileOmittedTurnCount || 0,
       });
-      return {
-        status: 200,
-        mode: projected.thread.mobileReadMode || "projection",
-        body: await prepareAndAttach(projected, context, {
-          threadId,
-          source: projected.thread.mobileReadMode || "projection",
-          readDecision: projected.thread.mobileProjection && projected.thread.mobileProjection.partial
-            ? "projection-partial-hit"
-            : "projection-hit",
-        }),
-      };
+      if (!activeReadPolicy.activeFullReadRequired || !resolveActiveWindowOverlay) {
+        rememberThreadSummary(projectedThread);
+        return {
+          status: 200,
+          mode: projectedThread.mobileReadMode || "projection",
+          body: await prepareAndAttach(projected, context, {
+            threadId,
+            source: projectedThread.mobileReadMode || "projection",
+            readDecision: projectedThread.mobileProjection && projectedThread.mobileProjection.partial
+              ? "projection-partial-hit"
+              : "projection-hit",
+          }),
+        };
+      }
     }
-    if (projection) {
+    if (projection && !projectedThread) {
       context.projectionState = "miss";
       if (!context.projectionMissReason) context.projectionMissReason = "result-missing";
     }
@@ -347,7 +352,12 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       const overlayProjected = overlayProjectionLookup
         ? overlayProjectionLookup.result
         : projectedThreadResult(projection, summary, runtimeSettings, { allowPartial: true, activeOverlay: true });
-      const projectionThread = overlayProjected && overlayProjected.thread || null;
+      const activeOverlayProjected = overlayProjected && overlayProjected.thread
+        ? overlayProjected
+        : projected && projected.thread
+          ? projected
+          : null;
+      const projectionThread = activeOverlayProjected && activeOverlayProjected.thread || null;
       let overlayInput = null;
       try {
         overlayInput = await resolveActiveWindowOverlay({
@@ -367,7 +377,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
         projectionThread,
       }));
       let activeOverlayProjectionThread = projectionThread;
-      let activeOverlayProjected = overlayProjected;
+      let activeOverlayProjectionResult = activeOverlayProjected;
       if (activeOverlayPlan.reason === "missing-projection-window"
         && overlayInput
         && overlayInput.overlayTurn
@@ -391,7 +401,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
           }
           timer.mark("activeOverlayWindowMs", activeWindowStartedAtMs);
           activeOverlayProjectionThread = asActiveOverlayProjectionWindow(activeWindowResult, overlayInput);
-          activeOverlayProjected = activeOverlayProjectionThread
+          activeOverlayProjectionResult = activeOverlayProjectionThread
             ? Object.assign({}, activeWindowResult || {}, { thread: activeOverlayProjectionThread })
             : activeWindowResult;
           activeOverlayPlan = planActiveWindowOverlay(Object.assign({}, overlayInput || {}, {
@@ -438,7 +448,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
             counts: activeOverlayPlan.counts,
           },
         );
-        const result = Object.assign({}, activeOverlayProjected || {}, { thread: mergedThread });
+        const result = Object.assign({}, activeOverlayProjectionResult || {}, { thread: mergedThread });
         if (isHiddenThread(result && result.thread, visibility)) {
           threadLog("active_overlay_hidden", {
             durationMs: now() - activeOverlayStartedAtMs,

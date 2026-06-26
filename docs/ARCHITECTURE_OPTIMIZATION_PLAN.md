@@ -149,7 +149,13 @@ Current acceleration targets:
    overlay window slice showed `readMode=projection-active-overlay`,
    `activeOverlayGate=ready`, and `activeOverlayReason=overlay-evidence-complete`;
    the remaining readback decision is only H3 observation for thread-list
-   deferred fallback while active thread detail is prioritized.
+   deferred fallback while active thread detail is prioritized. A later
+   readback sample exposed one more active-detail ownership gap: an ordinary
+   `projection-v4-dynamic` hit could return before the active-overlay proof
+   seam even though summary status remained active. The next runtime slice
+   treats that projection hit only as a window candidate for active/running
+   summaries; active detail still has to pass the server-owned live overlay
+   provider and proof gate before returning without full `thread/read`.
 2. Thread-list cold starts no longer hide source collection inside the fallback
    cache policy. The local `thread-list-fallback-baseline-service` slice now
    owns state DB / rollout session / session-index source collection,
@@ -169,8 +175,15 @@ Current acceleration targets:
    maps those labels into a bounded `decision` so post-deploy evidence points
    at the next root-cause owner: active overlay proof, projection cache
    lifecycle, projection input, thread-list fallback baseline, cache freshness,
-   or app-server fallback. The first root-cause optimization from that
-   decision path is memory-only source snapshot reuse below the final-list
+   or app-server fallback. After the active-detail proof gate became ready, the
+   smoke also verifies deferred thread-list fallback as a sequence instead of a
+   single label: if the first list read is deferred while detail is active, it
+   performs a follow-up full list read and, when that follow-up builds the
+   fallback baseline, a same-key warm check. This proves whether the server is
+   doing the acceptable cold-start/deploy one-time rebuild or repeatedly
+   exposing cold fallback work to foreground list opens. The first root-cause
+   optimization from that decision path is memory-only source snapshot reuse
+   below the final-list
    cache: different `cwd/search/limit` final-list keys can reuse the same
    visibility-scoped state DB / rollout / session-index source set, while the
    existing filter/merge/limit semantics still produce each public list.

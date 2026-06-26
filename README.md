@@ -71,12 +71,18 @@ Phase B 的活跃大线程读取风险已经从 proof gate 推进到真实 provi
   active overlay proof gate。只有 proof gate 通过时才返回 `projection-active-overlay`；
   这个 partial window 不持久化、不成为普通 projection cache，也不会放宽普通
   projection 的 staleness / active-turn 规则。
+- 第五个本地切片处理后续 readback 暴露的 active 普通 projection hit 早退问题。
+  如果 summary 仍是 active/running，即使普通 `projection-v4-dynamic` 已经命中，
+  read orchestration 也不能直接返回该 projection；它只能把这个 projection 当作
+  active overlay window，再通过 server-owned live overlay provider 和 proof gate
+  合入当前 active turn。缺 provider 或 coverage 仍然 fail-closed。
 
-这个 follow-up 已随 `c1497eb` 部署到 Mac 生产并完成 Phase B readback。
+这个 follow-up 的前四个切片已随 `c1497eb` 部署到 Mac 生产并完成 Phase B readback。
 生产 `/api/threads/:id?mode=recent` 返回 `readMode=projection-active-overlay`、
 `activeOverlayGate=ready`、`activeOverlayReason=overlay-evidence-complete`，
 detail 冷路径归类为 `warm-projection-active-overlay`。本次没有修改静态 shell，
 所以 `clientBuildId` / `shellCacheName` 仍为 `codex-mobile-shell-v531`。
+第五个切片仍是本地 runtime 修正，等待验证/提交/部署读回。
 这不是 UI 去重、不是强制刷新，也不是新的 fallback cache；后续如果仍有大
 session 慢路径，应优先看 thread-list deferred/cold fallback 和剩余客户端
 render/patch 指标，而不是回退 active detail overlay。
@@ -108,7 +114,10 @@ cache policy 和 baseline 构建边界混在一起。
   生产读回工具。它只请求 `/api/public-config`、`/api/threads` 和
   `/api/threads/:id?mode=recent`，验证 `coldPathOwner`、thread-detail timings
   和可选的 `projection-active-overlay`，输出仅包含 build id、hash、read mode、
-  owner/reason、计数和耗时。
+  owner/reason、计数和耗时。如果首个 thread-list 读因为 active detail 被
+  `fallbackDeferred`，它会在 detail readback 后再读一次完整列表；如果这次完整读触发
+  cold fallback baseline，还会立刻做一次同 key warm check，证明是否只在
+  cold start / deploy 后重建一次。
 - 新增 `adapters/phase-b-readback-decision-service.js`，把 readback 输出归类成
   `decision`：例如 active overlay proof gate、projection cache lifecycle、
   projection input、thread-list fallback baseline、cache freshness 或 app-server
@@ -122,8 +131,9 @@ cache policy 和 baseline 构建边界混在一起。
   重扫 source。
 
 这不是新的 fallback 行为，也不是 prewarm/persist。source 内部实现、route
-aggregation、defer fallback、app-server result merge 都没有改变。该切片暂不
-单独部署，按新的节奏等待 Phase B 模块批量验证后再统一部署。
+aggregation、defer fallback、app-server result merge 都没有改变；readback 只是把
+deferred 之后的完整读和 warm check 证据化。该切片暂不单独部署，按新的节奏等待
+Phase B 模块批量验证后再统一部署。
 
 ## 2026-06-26 v531 Thread Detail Cold-Path Diagnosis
 

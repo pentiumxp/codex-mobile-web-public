@@ -26,6 +26,8 @@ function usage() {
     "  --list-limit <n>            Thread-list limit. Default: 20.",
     "  --timeout-ms <n>            Request timeout. Default: 15000.",
     "  --require-active-overlay    Fail unless detail readback is projection-active-overlay.",
+    "  --no-verify-deferred-fallback",
+    "                              Do not run follow-up list reads after fallback is deferred.",
     "  --skip-detail               Only validate public-config and thread-list diagnostics.",
     "  --allow-missing-cold-path   Do not fail if old production lacks coldPathOwner fields.",
     "  --no-auth                   Do not send an auth key.",
@@ -55,6 +57,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     timeoutMs: 15000,
     requireActiveOverlay: false,
     requireThreadListColdPath: true,
+    verifyDeferredFallback: true,
     skipDetail: false,
     noAuth: false,
     json: false,
@@ -74,6 +77,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     else if (arg === "--list-limit") options.listLimit = readPositiveInt(next(), options.listLimit);
     else if (arg === "--timeout-ms") options.timeoutMs = readPositiveInt(next(), options.timeoutMs);
     else if (arg === "--require-active-overlay") options.requireActiveOverlay = true;
+    else if (arg === "--no-verify-deferred-fallback") options.verifyDeferredFallback = false;
     else if (arg === "--skip-detail") options.skipDetail = true;
     else if (arg === "--allow-missing-cold-path") options.requireThreadListColdPath = false;
     else if (arg === "--no-auth") options.noAuth = true;
@@ -185,6 +189,7 @@ function summarizeThreadList(result = {}) {
     coldPathOwner: compactLabel(timings && timings.coldPathOwner, 80),
     coldPathReason: compactLabel(timings && timings.coldPathReason, 80),
     fallbackCacheDecision: compactLabel(timings && timings.fallbackCacheDecision, 80),
+    fallbackCacheHit: timings && timings.fallbackCacheHit === true,
     fallbackDeferred: timings && timings.fallbackDeferred === true,
     fallbackDeferredReason: compactLabel(timings && timings.fallbackDeferredReason, 80),
     fallbackBaselineSourceCount: boundedCount(timings && timings.fallbackBaselineSourceCount),
@@ -348,6 +353,8 @@ async function run(options = {}, env = process.env) {
     privacy: "metadata_only",
     publicConfig: null,
     threadList: null,
+    threadListAfterDeferred: null,
+    threadListWarmCheck: null,
     detail: null,
     decision: null,
     checks: {},
@@ -369,6 +376,21 @@ async function run(options = {}, env = process.env) {
       mode: "recent",
     }), options, key);
     report.detail = summarizeThreadDetail(detailResult, threadId);
+  }
+
+  if (options.verifyDeferredFallback && report.threadList && report.threadList.fallbackDeferred) {
+    const deferredFollowupResult = await fetchJson(requestUrl(options, "/api/threads", { limit: options.listLimit }), options, key);
+    report.threadListAfterDeferred = summarizeThreadList(deferredFollowupResult);
+    const followupDecision = lowerLabel(report.threadListAfterDeferred.fallbackCacheDecision, 80);
+    const followupOwner = lowerLabel(report.threadListAfterDeferred.coldPathOwner, 80);
+    if (!report.threadListAfterDeferred.fallbackDeferred
+      && (followupDecision === "miss-rebuild"
+        || followupDecision === "expired-rebuild"
+        || followupOwner === "fallback-baseline"
+        || followupOwner === "fallback-cache-policy")) {
+      const warmCheckResult = await fetchJson(requestUrl(options, "/api/threads", { limit: options.listLimit }), options, key);
+      report.threadListWarmCheck = summarizeThreadList(warmCheckResult);
+    }
   }
 
   report.checks = evaluateChecks(report, options);

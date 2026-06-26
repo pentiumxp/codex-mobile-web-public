@@ -178,6 +178,111 @@ test("phase B readback smoke fails when required thread-list cold path fields ar
   assert.equal(allowed.ok, true);
 });
 
+test("phase B readback smoke verifies deferred fallback follow-up and warm check", async (t) => {
+  const threadListResponses = [
+    {
+      data: [{ id: "thread-1", name: "private title" }],
+      mobileDeferredFallback: true,
+      mobileDiagnostics: {
+        threadListTimings: {
+          totalMs: 25,
+          appServerMs: 20,
+          fallbackMs: 0,
+          fallbackDeferred: true,
+          fallbackDeferredReason: "active-thread-detail",
+          coldPathOwner: "deferred-fallback",
+          coldPathReason: "active-thread-detail",
+        },
+      },
+    },
+    {
+      data: [{ id: "thread-1", name: "private title" }],
+      mobileDiagnostics: {
+        threadListTimings: {
+          totalMs: 1200,
+          appServerMs: 120,
+          fallbackMs: 900,
+          fallbackCacheDecision: "miss-rebuild",
+          fallbackBaselineSourceCount: 30,
+          fallbackBaselineResultCount: 20,
+          coldPathOwner: "fallback-baseline",
+          coldPathReason: "miss-rebuild:rollout",
+        },
+      },
+    },
+    {
+      data: [{ id: "thread-1", name: "private title" }],
+      mobileDiagnostics: {
+        threadListTimings: {
+          totalMs: 90,
+          appServerMs: 80,
+          fallbackMs: 1,
+          fallbackCacheHit: true,
+          fallbackCacheDecision: "hit",
+          fallbackCacheIncrementalUpdates: 0,
+          coldPathOwner: "warm-fallback-cache",
+          coldPathReason: "cache-hit",
+        },
+      },
+    },
+  ];
+  const seen = [];
+  const server = createMockServer(({ url, send }) => {
+    seen.push(url.pathname);
+    if (url.pathname === "/api/public-config") {
+      send(200, { clientBuildId: "0.1.11|codex-mobile-shell-test" });
+      return;
+    }
+    if (url.pathname === "/api/threads") {
+      send(200, threadListResponses.shift() || threadListResponses[threadListResponses.length - 1]);
+      return;
+    }
+    if (url.pathname === "/api/threads/thread-1") {
+      send(200, {
+        thread: {
+          id: "thread-1",
+          mobileReadMode: "projection-active-overlay",
+          turns: [{ id: "turn-1", items: [] }],
+          mobileDiagnostics: {
+            threadDetailTimings: {
+              readDecision: "projection-active-overlay",
+              coldPathOwner: "warm-path",
+              coldPathReason: "warm-projection-active-overlay",
+              projectionState: "hit",
+              activeOverlayAction: "use-projection-overlay",
+              activeOverlayReason: "overlay-evidence-complete",
+            },
+          },
+        },
+      });
+      return;
+    }
+    send(404, { error: "not_found" });
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const baseUrl = await listen(server);
+
+  const report = await run(parseArgs(["--server", baseUrl, "--no-auth", "--require-active-overlay"]));
+
+  assert.equal(report.ok, true);
+  assert.equal(report.threadList.coldPathOwner, "deferred-fallback");
+  assert.equal(report.threadListAfterDeferred.coldPathOwner, "fallback-baseline");
+  assert.equal(report.threadListAfterDeferred.fallbackCacheDecision, "miss-rebuild");
+  assert.equal(report.threadListWarmCheck.coldPathOwner, "warm-fallback-cache");
+  assert.equal(report.threadListWarmCheck.fallbackCacheHit, true);
+  assert.equal(report.decision.status, "observe");
+  assert.equal(report.decision.reason, "deferred-followup-warmed");
+  assert.equal(report.decision.nextAction, "observe-cold-start-first-rebuild-cost");
+  assert.deepEqual(seen, [
+    "/api/public-config",
+    "/api/threads",
+    "/api/threads/thread-1",
+    "/api/threads",
+    "/api/threads",
+  ]);
+  assert.doesNotMatch(JSON.stringify(report), /private title/);
+});
+
 test("phase B readback summary helpers keep only bounded metadata", () => {
   const list = summarizeThreadList({
     data: [{ id: "thread-secret", name: "private title" }],

@@ -14,6 +14,8 @@ function lowerLabel(value, maxLength = 100) {
 
 function buildEvidence(report = {}) {
   const list = objectOrNull(report.threadList) || {};
+  const afterDeferred = objectOrNull(report.threadListAfterDeferred) || {};
+  const warmCheck = objectOrNull(report.threadListWarmCheck) || {};
   const detail = objectOrNull(report.detail) || {};
   return {
     threadListOwner: compactLabel(list.coldPathOwner, 80),
@@ -22,6 +24,12 @@ function buildEvidence(report = {}) {
     threadListSourceSnapshotHit: list.fallbackSourceSnapshotHit === true,
     threadListSourceSnapshotRawCount: Number.isFinite(Number(list.fallbackSourceSnapshotRawCount)) ? Math.max(0, Math.min(100000, Math.trunc(Number(list.fallbackSourceSnapshotRawCount)))) : 0,
     threadListResultCount: Number.isFinite(Number(list.resultCount)) ? Math.max(0, Math.min(100000, Math.trunc(Number(list.resultCount)))) : 0,
+    threadListAfterDeferredOwner: compactLabel(afterDeferred.coldPathOwner, 80),
+    threadListAfterDeferredReason: compactLabel(afterDeferred.coldPathReason, 80),
+    threadListAfterDeferredCacheDecision: compactLabel(afterDeferred.fallbackCacheDecision, 80),
+    threadListWarmCheckOwner: compactLabel(warmCheck.coldPathOwner, 80),
+    threadListWarmCheckReason: compactLabel(warmCheck.coldPathReason, 80),
+    threadListWarmCheckCacheDecision: compactLabel(warmCheck.fallbackCacheDecision, 80),
     detailOwner: compactLabel(detail.coldPathOwner, 80),
     detailReason: compactLabel(detail.coldPathReason, 80),
     detailReadMode: compactLabel(detail.readMode, 100),
@@ -128,7 +136,17 @@ function detailDecision(detail = {}) {
   return null;
 }
 
-function threadListDecision(list = {}) {
+function isWarmThreadList(list = {}) {
+  const owner = lowerLabel(list.coldPathOwner, 80);
+  const decision = lowerLabel(list.fallbackCacheDecision, 80);
+  return owner === "warm-fallback-cache"
+    || owner === "fallback-source-snapshot"
+    || decision === "hit"
+    || list.fallbackCacheHit === true
+    || list.fallbackSourceSnapshotHit === true;
+}
+
+function threadListDecision(list = {}, report = {}) {
   const owner = lowerLabel(list.coldPathOwner, 80);
   const reason = compactLabel(list.coldPathReason, 80);
   if (!owner || owner === "warm-fallback-cache" || owner === "fallback-source-snapshot") return null;
@@ -160,6 +178,40 @@ function threadListDecision(list = {}) {
     };
   }
   if (owner === "deferred-fallback") {
+    const afterDeferred = objectOrNull(report.threadListAfterDeferred);
+    const warmCheck = objectOrNull(report.threadListWarmCheck);
+    if (afterDeferred && isWarmThreadList(afterDeferred)) return null;
+    if (warmCheck && isWarmThreadList(warmCheck)) {
+      return {
+        status: "observe",
+        priority: "H3",
+        owner: "thread-list-deferred-fallback",
+        reason: "deferred-followup-warmed",
+        nextAction: "observe-cold-start-first-rebuild-cost",
+      };
+    }
+    if (afterDeferred) {
+      const followupOwner = lowerLabel(afterDeferred.coldPathOwner, 80);
+      const followupReason = compactLabel(afterDeferred.coldPathReason, 80);
+      if (followupOwner === "deferred-fallback") {
+        return {
+          status: "observe",
+          priority: "H3",
+          owner: "thread-list-deferred-fallback",
+          reason: followupReason || "deferred-followup-still-deferred",
+          nextAction: "observe-active-detail-contention",
+        };
+      }
+      if (followupOwner === "fallback-baseline" || followupOwner === "fallback-cache-policy") {
+        return {
+          status: "needs_repair",
+          priority: "H2",
+          owner: "thread-list-deferred-fallback",
+          reason: followupReason || "deferred-followup-not-warm",
+          nextAction: "verify-deferred-fallback-warm-cache",
+        };
+      }
+    }
     return {
       status: "observe",
       priority: "H3",
@@ -175,7 +227,7 @@ function classifyPhaseBReadback(report = {}, options = {}) {
   const failure = checkFailureDecision(report, options);
   const detail = objectOrNull(report.detail) || {};
   const list = objectOrNull(report.threadList) || {};
-  const decision = failure || detailDecision(detail) || threadListDecision(list) || {
+  const decision = failure || detailDecision(detail) || threadListDecision(list, report) || {
     status: "ready",
     priority: "H3",
     owner: "phase-b-readback",

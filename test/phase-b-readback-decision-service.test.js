@@ -129,6 +129,42 @@ test("phase B readback decision treats source snapshot hits as ready evidence", 
   assert.equal(decision.evidence.threadListSourceSnapshotRawCount, 12);
 });
 
+test("phase B readback decision treats warmed deferred fallback as observed not broken", () => {
+  const decision = classifyPhaseBReadback({
+    ok: true,
+    threadList: {
+      coldPathOwner: "deferred-fallback",
+      coldPathReason: "active-thread-detail",
+      fallbackDeferred: true,
+    },
+    threadListAfterDeferred: {
+      coldPathOwner: "fallback-baseline",
+      coldPathReason: "miss-rebuild:rollout",
+      fallbackCacheDecision: "miss-rebuild",
+    },
+    threadListWarmCheck: {
+      coldPathOwner: "warm-fallback-cache",
+      coldPathReason: "cache-hit",
+      fallbackCacheDecision: "hit",
+      fallbackCacheHit: true,
+    },
+    detail: {
+      readMode: "projection-active-overlay",
+      readDecision: "projection-active-overlay",
+      coldPathOwner: "warm-path",
+      coldPathReason: "warm-projection-active-overlay",
+    },
+  });
+
+  assert.equal(decision.status, "observe");
+  assert.equal(decision.priority, "H3");
+  assert.equal(decision.owner, "thread-list-deferred-fallback");
+  assert.equal(decision.reason, "deferred-followup-warmed");
+  assert.equal(decision.nextAction, "observe-cold-start-first-rebuild-cost");
+  assert.equal(decision.evidence.threadListAfterDeferredOwner, "fallback-baseline");
+  assert.equal(decision.evidence.threadListWarmCheckOwner, "warm-fallback-cache");
+});
+
 test("phase B readback decision keeps evidence bounded and private-content free", () => {
   const decision = classifyPhaseBReadback({
     ok: true,

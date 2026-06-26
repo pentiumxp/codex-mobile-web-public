@@ -14503,3 +14503,110 @@ The previous full handoff was archived and should be opened only when old proven
   - The next Phase B target should be thread-list deferred/cold fallback
     observation or client render/patch ownership, depending on fresh live
     diagnostics. Do not regress active-overlay proof-gate strictness.
+
+## 2026-06-26 - deferred thread-list readback verification local slice
+
+- Scope:
+  - Started the next Phase B thread-list cold/deferred path slice after active
+    detail readback reached `projection-active-overlay`.
+  - This slice changes only local readback/decision tooling and docs. It does
+    not change runtime server behavior, frontend behavior, shell/cache files,
+    fallback cache policy, prewarm, or persistence.
+- Root-cause boundary:
+  - Symptom: production readback can show `coldPathOwner=deferred-fallback`
+    and `fallbackDeferredReason=active-thread-detail`, but a single readback
+    sample cannot prove whether the deferred full list later becomes warm or
+    whether the next foreground list still pays repeated cold fallback rebuild
+    cost.
+  - Failing layer addressed: Phase B evidence/readback classification, not the
+    actual thread-list fallback runtime.
+  - Violated invariant: after cold start/redeploy/restart, fallback baseline
+    rebuild may happen once, but repeated normal foreground refreshes should
+    hit warm cache/source snapshot or receive bounded evidence identifying the
+    true cold owner.
+  - Root cause: the Phase B smoke stopped at the initial deferred thread-list
+    response and classified it as H3 observation without verifying the
+    follow-up full list and same-key warm check.
+  - Closure classification: diagnostic/readback evidence only. No fallback,
+    no prewarm, no forced refresh, no cache invalidation change.
+- Changes:
+  - `scripts/codex-mobile-phase-b-readback-smoke.js`
+    - Adds default deferred-fallback verification. If the first thread-list
+      read is deferred, the smoke reads the same list again after detail
+      readback. If that follow-up performs `miss-rebuild` /
+      `expired-rebuild`, it immediately performs a same-key warm check.
+    - Adds bounded `threadListAfterDeferred` and `threadListWarmCheck`
+      summaries to the JSON report.
+    - Adds `--no-verify-deferred-fallback` for explicitly disabling this
+      follow-up during narrow smoke runs.
+  - `adapters/phase-b-readback-decision-service.js`
+    - Carries after-deferred/warm-check evidence in bounded decision metadata.
+    - Classifies a deferred first read followed by a warm same-key check as
+      H3 observe (`deferred-followup-warmed`) instead of H2 repair.
+    - Still reports H2 if deferred follow-up reaches fallback baseline/cache
+      policy and no warm check proves the once-only invariant.
+  - Tests:
+    - Script-level mock server proves initial deferred -> follow-up
+      `miss-rebuild` -> warm `hit` path and privacy bounds.
+    - Decision-service test proves warmed deferred fallback is observed, not
+      treated as broken.
+  - README, architecture optimization plan, and module map were updated.
+- Validation so far:
+  - Focused:
+    `node --test test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js`
+    passed (`13` tests).
+- Next:
+  - Run `npm run check`, `git diff --check`, and the relevant focused tests
+    again if edits continue.
+  - Commit locally if validation remains green.
+  - Do not deploy this slice by itself; it is readback tooling/docs only and
+    should be batched unless a later runtime/static change requires deployment.
+
+## 2026-06-26 - active projection hit proof-gate local slice
+
+- Scope:
+  - Continued Phase B active-detail work after the updated readback script
+    exposed a new production state: the selected active thread returned
+    `readMode=projection-v4-dynamic`, `readDecision=projection-hit`,
+    `activeFullReadRequired=true`, and no active overlay diagnostics. The
+    `--require-active-overlay` readback correctly failed because the ordinary
+    projection hit returned before the active-overlay proof seam.
+  - This is a runtime read-orchestration fix plus tests/docs. It has not yet
+    been deployed at the time this section is written.
+- Root-cause boundary:
+  - Symptom: active/running summary state can coexist with a warm dynamic
+    projection hit. Returning that projection directly skips live overlay
+    validation and can miss intermediate command/output/assistant state.
+  - Failing layer: thread-detail read orchestration return ordering.
+  - Violated invariant: for active/running summaries, ordinary projection hits
+    may provide a stable window, but they are not the final authority. The
+    server-owned live overlay provider and active-window proof gate must still
+    decide whether the response can avoid full `thread/read`.
+  - Root cause: `thread-detail-read-orchestration-service.js` returned any
+    projection hit before the active overlay branch, even when
+    `activeFullReadRequired=true`.
+  - Closure classification: root-cause ownership/order fix. No client dedupe,
+    no forced refresh, no proof-gate relaxation.
+- Changes:
+  - `adapters/thread-detail-read-orchestration-service.js`
+    - Records ordinary projection hits for active summaries but does not return
+      them when an active-overlay provider is available.
+    - Uses the ordinary projected thread as the active-overlay window candidate
+      if the explicit active-overlay lookup has no result.
+    - Keeps the old fast projection return for non-active summaries or when no
+      active-overlay provider is wired.
+  - `test/thread-detail-read-orchestration-service.test.js`
+    - Adds coverage for active `projection-v4-dynamic` hits passing through the
+      overlay provider/proof gate and returning `projection-active-overlay`
+      without full `thread/read`.
+  - README, architecture optimization plan, and module map were updated.
+- Validation so far:
+  - Focused active/readback set:
+    `node --test test/thread-detail-read-orchestration-service.test.js test/thread-detail-active-overlay-integration.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js`
+    passed (`34` tests).
+- Next:
+  - Run full validation.
+  - Commit this runtime fix together with the deferred-readback tooling slice.
+  - Deploy, then rerun
+    `node scripts/codex-mobile-phase-b-readback-smoke.js --server http://127.0.0.1:8787 --require-active-overlay --json`
+    to confirm the active projection hit no longer bypasses the proof gate.
