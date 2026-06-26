@@ -64,6 +64,13 @@ Phase B 的活跃大线程读取风险已经从 proof gate 推进到真实 provi
   assistant/receipt count。下一次批量部署后，如果仍没有进入
   `projection-active-overlay`，readback 可以直接指出下一层是 active turn、stale
   window、snapshot、assistant freshness、receipt coverage 还是 source authority。
+- 第四个本地切片处理 readback gate 暴露的 `missing-projection-window`。当普通
+  projection lookup 没有可用窗口、但 server-owned active overlay provider 已经给出
+  live active turn 和 bounded coverage evidence 时，read orchestration 可以先读取一个
+  `turns-list-active-overlay-window` 作为 partial projection window skeleton，再重新经过
+  active overlay proof gate。只有 proof gate 通过时才返回 `projection-active-overlay`；
+  这个 partial window 不持久化、不成为普通 projection cache，也不会放宽普通
+  projection 的 staleness / active-turn 规则。
 
 这个 follow-up 仍是本地小切片，按新的节奏等待 active-detail 模块凑齐后统一部署和生产读回。
 它不是 UI 去重、不是强制刷新，也不是新的 fallback cache。

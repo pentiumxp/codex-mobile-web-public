@@ -136,7 +136,16 @@ Current acceleration targets:
    Post-deploy readback can now identify whether the next blocker is active
    turn ownership, stale window lookup, missing snapshot, assistant freshness,
    receipt coverage, item-kind normalization, or source authority without
-   reading private message text or logs.
+   reading private message text or logs. The bounded-window slice then handles
+   the `missing-projection-window` gate without turning it into a generic
+   fallback: when projection lookup has no reusable window but the
+   server-owned live overlay provider has already produced an active turn and
+   bounded coverage evidence, read orchestration can build a
+   `turns-list-active-overlay-window` skeleton, mark it as a non-persisted
+   partial active-overlay window, and re-run the proof gate. Ordinary
+   projection reads still reject stale or partial windows, and the active
+   response is emitted only if the proof gate returns
+   `use-projection-overlay`.
 2. Thread-list cold starts no longer hide source collection inside the fallback
    cache policy. The local `thread-list-fallback-baseline-service` slice now
    owns state DB / rollout session / session-index source collection,

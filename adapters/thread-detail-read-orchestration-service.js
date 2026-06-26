@@ -82,6 +82,30 @@ function projectionDiagnosticsFromThread(thread) {
   };
 }
 
+function asActiveOverlayProjectionWindow(result, overlayInput = {}) {
+  const thread = result && result.thread && typeof result.thread === "object" ? result.thread : null;
+  if (!thread) return null;
+  const existingProjection = thread.mobileProjection && typeof thread.mobileProjection === "object"
+    ? thread.mobileProjection
+    : {};
+  const overlayRevision = safeNonNegativeNumber(overlayInput.overlayRevision);
+  const overlayTimestampMs = safeNonNegativeNumber(overlayInput.overlayTimestampMs);
+  thread.mobileReadMode = "projection-active-window";
+  thread.mobileProjection = Object.assign({}, existingProjection, {
+    source: "partial",
+    version: "active-window",
+    partial: true,
+    partialKind: "turns-list-active-overlay-window",
+    activeOverlayWindow: true,
+    revision: overlayRevision || safeNonNegativeNumber(existingProjection.revision),
+    updatedAtMs: overlayTimestampMs || safeNonNegativeNumber(existingProjection.updatedAtMs),
+    ageMs: 0,
+  });
+  if (overlayRevision) thread.mobileProjectionRevision = overlayRevision;
+  if (overlayTimestampMs) thread.mobileProjectionUpdatedAtMs = overlayTimestampMs;
+  return thread;
+}
+
 function createThreadDetailReadOrchestrationService(options = {}) {
   const now = typeof options.now === "function" ? options.now : defaultNow;
   const attachDiagnostics = typeof options.attachDiagnostics === "function"
@@ -338,10 +362,57 @@ function createThreadDetailReadOrchestrationService(options = {}) {
         overlayInput = { reason: "resolver-error", error: safeErrorMessage(err) };
         threadLog("active_overlay_resolve_error", { error: safeErrorMessage(err) });
       }
-      const activeOverlayPlan = planActiveWindowOverlay(Object.assign({}, overlayInput || {}, {
+      let activeOverlayPlan = planActiveWindowOverlay(Object.assign({}, overlayInput || {}, {
         summary,
         projectionThread,
       }));
+      let activeOverlayProjectionThread = projectionThread;
+      let activeOverlayProjected = overlayProjected;
+      if (activeOverlayPlan.reason === "missing-projection-window"
+        && overlayInput
+        && overlayInput.overlayTurn
+        && turnsListThreadReadResult) {
+        const activeWindowStartedAtMs = now();
+        try {
+          const activeWindowResult = await turnsListThreadReadResult({
+            threadId,
+            summary,
+            runtimeSettings,
+            warning: "",
+            mode: "turns-list-active-overlay-window",
+            threadLog,
+          });
+          if (isHiddenThread(activeWindowResult && activeWindowResult.thread, visibility)) {
+            threadLog("active_overlay_window_hidden", {
+              durationMs: now() - activeWindowStartedAtMs,
+              status: 404,
+            });
+            return hiddenResponse();
+          }
+          timer.mark("activeOverlayWindowMs", activeWindowStartedAtMs);
+          activeOverlayProjectionThread = asActiveOverlayProjectionWindow(activeWindowResult, overlayInput);
+          activeOverlayProjected = activeOverlayProjectionThread
+            ? Object.assign({}, activeWindowResult || {}, { thread: activeOverlayProjectionThread })
+            : activeWindowResult;
+          activeOverlayPlan = planActiveWindowOverlay(Object.assign({}, overlayInput || {}, {
+            summary,
+            projectionThread: activeOverlayProjectionThread,
+            projectionRevision: overlayInput.overlayRevision || overlayInput.projectionRevision,
+            projectionTimestampMs: overlayInput.overlayTimestampMs || overlayInput.projectionTimestampMs,
+          }));
+          threadLog("active_overlay_window", {
+            durationMs: now() - activeWindowStartedAtMs,
+            action: activeOverlayPlan.action || "require-full-read",
+            reason: activeOverlayPlan.reason || "",
+          });
+        } catch (err) {
+          threadLog("active_overlay_window_error", {
+            durationMs: now() - activeWindowStartedAtMs,
+            timeout: isReadTimeoutError(err),
+            error: safeErrorMessage(err),
+          });
+        }
+      }
       timer.mark("activeOverlayMs", activeOverlayStartedAtMs);
       context.activeOverlayAction = activeOverlayPlan.action || "require-full-read";
       context.activeOverlayReason = activeOverlayPlan.reason || "";
@@ -356,9 +427,9 @@ function createThreadDetailReadOrchestrationService(options = {}) {
         reason: context.activeOverlayReason,
         source: context.activeOverlaySource,
       });
-      if (activeOverlayPlan.action === "use-projection-overlay" && projectionThread) {
+      if (activeOverlayPlan.action === "use-projection-overlay" && activeOverlayProjectionThread) {
         const mergedThread = mergeProjectionThreadWithActiveOverlay(
-          projectionThread,
+          activeOverlayProjectionThread,
           overlayInput && overlayInput.overlayTurn,
           {
             readMode: "projection-active-overlay",
@@ -367,7 +438,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
             counts: activeOverlayPlan.counts,
           },
         );
-        const result = Object.assign({}, overlayProjected || {}, { thread: mergedThread });
+        const result = Object.assign({}, activeOverlayProjected || {}, { thread: mergedThread });
         if (isHiddenThread(result && result.thread, visibility)) {
           threadLog("active_overlay_hidden", {
             durationMs: now() - activeOverlayStartedAtMs,

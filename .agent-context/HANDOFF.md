@@ -14397,3 +14397,62 @@ The previous full handoff was archived and should be opened only when old proven
     `git diff --check`.
   - Commit locally if full validation passes. Do not deploy this single slice
     unless the active-detail module is ready or the user explicitly requests it.
+
+## 2026-06-26 - active overlay bounded projection window local slice
+
+- Scope:
+  - Continued the active-detail module with a fourth local slice after the
+    deployed readback gate classified the remaining active detail blocker as
+    `activeOverlayGateReason=missing-projection-window`.
+  - This is a server read-orchestration/root-cause slice plus tests/docs. It
+    has not been pushed Public. Under the current cadence, small slices are
+    committed locally and deployed only when the module is ready for a batch
+    production readback.
+- Root-cause boundary:
+  - Symptom: an active thread can have a server-owned live overlay snapshot
+    with the current active turn and coverage evidence, but no reusable
+    projection window. The proof gate then reports `missing-projection-window`
+    and orchestration falls back to full `thread/read`.
+  - Failing layer: thread-detail read orchestration's active-overlay window
+    assembly, not client render dedupe, scroll behavior, or UI refresh.
+  - Violated invariant: active overlay may avoid full `thread/read` only when
+    both sides are present: a bounded projection/window skeleton for stable
+    historical turns and an authoritative live active turn from the provider.
+    Missing the window should not force a full read if a bounded current window
+    can be built and then proven by the same active overlay policy.
+  - Root cause: read orchestration had only two active paths: reuse an existing
+    projection window or full `thread/read`. It did not have a non-persisted
+    `turns-list` window skeleton path for the strict active-overlay proof gate.
+  - Closure classification: root-cause policy/ownership fix. No frontend
+    duplicate hiding, no forced refresh, no ordinary stale/partial projection
+    exposure, and no proof-gate relaxation.
+- Changes:
+  - `adapters/thread-detail-read-orchestration-service.js`
+    - Adds a bounded `turns-list-active-overlay-window` path only after the
+      first active-overlay plan fails with `missing-projection-window` and the
+      provider has already supplied a live overlay turn.
+    - Marks that result as a non-persisted partial active-overlay window, then
+      re-runs `planActiveWindowOverlay()` with the provider revision/timestamp.
+    - Still falls back to full `thread/read` when provider evidence is missing
+      or the second proof gate does not return `use-projection-overlay`.
+  - `test/thread-detail-read-orchestration-service.test.js`
+    - Proves the new path returns `projection-active-overlay`, preserves older
+      bounded turns plus the live active turn, records bounded diagnostics, and
+      does not call full `thread/read`.
+  - `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md` document the active-overlay window skeleton boundary.
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-read-orchestration-service.test.js test/thread-detail-active-overlay-integration.test.js test/thread-detail-active-overlay-provider-service.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js`
+    passed (`35` tests).
+  - Full `npm test` passed (`1090` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit this local slice.
+  - If the active-detail module is considered ready for the next batch, deploy
+    through the central macOS plugin deploy script and run
+    `scripts/codex-mobile-phase-b-readback-smoke.js --require-active-overlay`
+    to see whether production reaches `projection-active-overlay` or exposes
+    the next proof-gate reason.
