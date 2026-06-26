@@ -647,6 +647,62 @@ test("thread detail refresh patch attempt effects plan omits local patch for met
   });
 });
 
+test("thread detail refresh patch execution stage owns execution and attempt effect composition", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchExecutionStage({
+    renderPlan: {
+      shouldRenderDetail: true,
+      canPatch: true,
+    },
+    patchSurfacePlan: {
+      tileSurfaceRefresh: false,
+    },
+  }), {
+    patchExecutionPlan: {
+      tryTilePanePatch: true,
+      tryLocalPatch: true,
+      updateMetadataOnTileMiss: false,
+      fallbackAction: "full-render",
+      localPatchBlockedReason: "",
+      reason: "local-patch-eligible",
+    },
+    patchAttemptEffectsPlan: {
+      effects: [
+        {
+          type: "tile-pane-patch",
+          timingTarget: "tile-pane-patch",
+          preserveScroll: true,
+        },
+        {
+          type: "local-patch",
+          timingTarget: "local-patch",
+          skipWhenTilePanePatched: true,
+        },
+      ],
+      reason: "patch-attempt-effects",
+    },
+    reason: "local-patch-eligible",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchExecutionStage({
+    renderPlan: {
+      shouldRenderDetail: true,
+      canPatch: true,
+    },
+    patchSurfacePlan: {
+      tileSurfaceRefresh: true,
+    },
+  }).patchAttemptEffectsPlan, {
+    effects: [
+      {
+        type: "tile-pane-patch",
+        timingTarget: "tile-pane-patch",
+        preserveScroll: true,
+      },
+    ],
+    reason: "patch-attempt-effects",
+  });
+});
+
 test("thread detail refresh patch attempt aggregation starts from a bounded empty result", () => {
   assert.deepEqual(renderPlan.emptyThreadDetailRefreshPatchAttempt(), {
     tilePanePatchAttempted: false,

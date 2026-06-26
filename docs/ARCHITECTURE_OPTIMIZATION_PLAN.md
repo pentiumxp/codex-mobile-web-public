@@ -710,9 +710,11 @@ Refresh patch execution planning now also lives in
 `public/thread-detail-render-plan.js`: `planThreadDetailRefreshPatchExecution`
 owns whether a thread refresh should try tile-pane patch, whether
 single-thread local patch is eligible, whether a metadata-only tile miss should
-update metadata without full render, and which fallback action applies. App code
-keeps real DOM patch attempts, metadata writes, full render execution, and
-diagnostic/performance reporting.
+update metadata without full render, and which fallback action applies.
+`planThreadDetailRefreshPatchExecutionStage` owns the composition from
+`renderPlan` plus `patchSurfacePlan` into both the execution plan and ordered
+patch-attempt effects. App code keeps real DOM patch attempts, metadata writes,
+full render execution, and diagnostic/performance reporting.
 Refresh patch attempt result planning now also lives there:
 `planThreadDetailRefreshPatchAttemptResult` normalizes tile-pane success,
 local-patch success, local-patch rejection, metadata-only tile misses, and

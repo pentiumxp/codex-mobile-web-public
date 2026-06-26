@@ -3180,9 +3180,10 @@ test("thread tile local patch paths refresh the pane instead of writing a single
 test("current-thread refresh patches the current tile pane for metadata-only tile updates", () => {
   const body = functionBody("refreshCurrentThread");
   assert.match(body, /let tilePanePatchedDetail = false;/);
-  assert.match(body, /threadDetailRenderPlanApi\.planThreadDetailRefreshPatchExecution\(\{/);
-  assert.match(body, /const patchAttemptEffectsPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchAttemptEffects\(\{/);
-  assert.match(body, /tryTilePanePatch: patchExecutionPlan\.tryTilePanePatch,[\s\S]*tryLocalPatch: patchExecutionPlan\.tryLocalPatch,/);
+  assert.match(body, /const patchExecutionStage = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchExecutionStage\(\{/);
+  assert.match(body, /renderPlan,[\s\S]*patchSurfacePlan,/);
+  assert.match(body, /const patchExecutionPlan = patchExecutionStage\.patchExecutionPlan;/);
+  assert.match(body, /const patchAttemptEffectsPlan = patchExecutionStage\.patchAttemptEffectsPlan;/);
   assert.match(body, /const patchAttempt = applyThreadDetailRefreshPatchAttemptEffectsPlan\(patchAttemptEffectsPlan, \{/);
   assert.match(body, /const tilePanePatchAttempted = patchAttempt\.tilePanePatchAttempted;/);
   assert.match(body, /const localPatchAttempted = patchAttempt\.localPatchAttempted;/);
@@ -3193,6 +3194,8 @@ test("current-thread refresh patches the current tile pane for metadata-only til
   assert.doesNotMatch(body, /if \(patchExecutionPlan\.tryTilePanePatch\)/);
   assert.doesNotMatch(body, /if \(shouldRenderDetail && !tilePanePatchedDetail && patchExecutionPlan\.tryLocalPatch\)/);
   assert.doesNotMatch(body, /renderPlan\.canPatch && !tileSurfaceRefresh/);
+  assert.doesNotMatch(body, /canPatch: renderPlan\.canPatch/);
+  assert.doesNotMatch(body, /tileSurfaceRefresh: patchSurfacePlan\.tileSurfaceRefresh/);
   assert.match(appJs, /function applyThreadDetailRefreshPatchAttemptEffectsPlan\(plan, context = \{\}\)/);
   assert.match(functionBody("applyThreadDetailRefreshPatchAttemptEffectsPlan"), /let result = threadDetailRenderPlanApi\.emptyThreadDetailRefreshPatchAttempt\(\);/);
   assert.match(functionBody("applyThreadDetailRefreshPatchAttemptEffectsPlan"), /threadDetailRenderPlanApi\.threadDetailRefreshPatchAttemptEffectContext\(context, result\)/);

@@ -512,11 +512,12 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(functionBody("applyThreadDetailRefreshPatchSurfaceProbeEffect"), /threadDetailDomPatchSurface\(\{[\s\S]*threadId: String\(item\.threadId \|\| context\.threadId \|\| ""\),[\s\S]*\}\);/);
   assert.doesNotMatch(functionBody("refreshCurrentThread"), /patchSurfaceProbePlan\.shouldProbeTilePatchSurface[\s\S]*\? threadDetailDomPatchSurface/);
   assert.match(functionBody("refreshCurrentThread"), /const patchSurfacePlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchSurface\(\{[\s\S]*tilePatchSurface: tilePatchPlan && tilePatchPlan\.surface,[\s\S]*\}\);/);
-  assert.match(functionBody("refreshCurrentThread"), /threadDetailRenderPlanApi\.planThreadDetailRefreshPatchExecution\(\{[\s\S]*shouldRenderDetail,[\s\S]*canPatch: renderPlan\.canPatch,[\s\S]*tileSurfaceRefresh,[\s\S]*\}\);/);
-  assert.match(functionBody("refreshCurrentThread"), /tileSurfaceRefresh: patchSurfacePlan\.tileSurfaceRefresh/);
+  assert.match(functionBody("refreshCurrentThread"), /const patchExecutionStage = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchExecutionStage\(\{[\s\S]*renderPlan,[\s\S]*patchSurfacePlan,[\s\S]*\}\);/);
+  assert.match(functionBody("refreshCurrentThread"), /const patchExecutionPlan = patchExecutionStage\.patchExecutionPlan;/);
+  assert.match(functionBody("refreshCurrentThread"), /const patchAttemptEffectsPlan = patchExecutionStage\.patchAttemptEffectsPlan;/);
+  assert.doesNotMatch(functionBody("refreshCurrentThread"), /canPatch: renderPlan\.canPatch/);
+  assert.doesNotMatch(functionBody("refreshCurrentThread"), /tileSurfaceRefresh: patchSurfacePlan\.tileSurfaceRefresh/);
   assert.doesNotMatch(functionBody("refreshCurrentThread"), /tilePatchPlan && tilePatchPlan\.surface === "thread-tile-pane"/);
-  assert.match(functionBody("refreshCurrentThread"), /const patchAttemptEffectsPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchAttemptEffects\(\{/);
-  assert.match(functionBody("refreshCurrentThread"), /tryTilePanePatch: patchExecutionPlan\.tryTilePanePatch,[\s\S]*tryLocalPatch: patchExecutionPlan\.tryLocalPatch,/);
   assert.match(functionBody("refreshCurrentThread"), /const patchAttempt = applyThreadDetailRefreshPatchAttemptEffectsPlan\(patchAttemptEffectsPlan, \{/);
   assert.match(functionBody("refreshCurrentThread"), /const tilePanePatchAttempted = patchAttempt\.tilePanePatchAttempted;/);
   assert.match(functionBody("refreshCurrentThread"), /const localPatchAttempted = patchAttempt\.localPatchAttempted;/);

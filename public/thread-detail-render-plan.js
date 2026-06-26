@@ -520,6 +520,35 @@
     };
   }
 
+  function planThreadDetailRefreshPatchExecutionStage(input = {}) {
+    const renderPlan = objectOrEmpty(input.renderPlan);
+    const patchSurfacePlan = objectOrEmpty(input.patchSurfacePlan);
+    const shouldRenderDetail = Object.prototype.hasOwnProperty.call(input, "shouldRenderDetail")
+      ? Boolean(input.shouldRenderDetail)
+      : Boolean(renderPlan.shouldRenderDetail);
+    const canPatch = Object.prototype.hasOwnProperty.call(input, "canPatch")
+      ? Boolean(input.canPatch)
+      : Boolean(renderPlan.canPatch);
+    const tileSurfaceRefresh = Object.prototype.hasOwnProperty.call(input, "tileSurfaceRefresh")
+      ? Boolean(input.tileSurfaceRefresh)
+      : Boolean(patchSurfacePlan.tileSurfaceRefresh);
+    const patchExecutionPlan = planThreadDetailRefreshPatchExecution({
+      shouldRenderDetail,
+      canPatch,
+      tileSurfaceRefresh,
+    });
+    const patchAttemptEffectsPlan = planThreadDetailRefreshPatchAttemptEffects({
+      shouldRenderDetail,
+      tryTilePanePatch: patchExecutionPlan.tryTilePanePatch,
+      tryLocalPatch: patchExecutionPlan.tryLocalPatch,
+    });
+    return {
+      patchExecutionPlan,
+      patchAttemptEffectsPlan,
+      reason: patchExecutionPlan.reason,
+    };
+  }
+
   function emptyThreadDetailRefreshPatchAttempt() {
     return {
       tilePanePatchAttempted: false,
@@ -1480,6 +1509,7 @@
     planThreadDetailRefreshPatchSurface,
     planThreadDetailRefreshPatchSurfaceProbeEffects,
     planThreadDetailRefreshPostMergeEffects,
+    planThreadDetailRefreshPatchExecutionStage,
     planSingleThreadEarlyShellExecution,
     planSingleThreadFullRenderShell,
     planSingleThreadShellConversationUpdate,

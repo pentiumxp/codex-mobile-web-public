@@ -18168,3 +18168,59 @@ The previous full handoff was archived and should be opened only when old proven
     `refreshCurrentThread()` patch surface/execution orchestration seam, or
     batch the accumulated Phase A local slices for one deploy/readback when
     requested.
+
+## 2026-06-27 - Latest tail marker: Phase A refresh patch execution stage local slice
+
+- Current local state:
+  - Continued Phase A `refreshCurrentThread()` patch orchestration cleanup after
+    `b902463`.
+  - `planThreadDetailRefreshPatchExecution()` already owned whether a refresh
+    should try tile-pane patch, single-thread local patch, metadata-only
+    metadata update, or full-render fallback.
+  - `planThreadDetailRefreshPatchAttemptEffects()` already owned ordered patch
+    attempt effects.
+  - `refreshCurrentThread()` still directly composed `renderPlan.canPatch`,
+    `patchSurfacePlan.tileSurfaceRefresh`, `tryTilePanePatch`, and
+    `tryLocalPatch` into the attempt-effects input.
+- Root-cause boundary:
+  - Symptom/risk: execution planning and patch-attempt effect ordering were
+    pure, but their stage composition still lived in `public/app.js`. Future
+    app orchestration edits could make tile/single patch attempt conditions
+    drift from the tested plan layer.
+  - Failing layer: frontend refresh patch execution stage composition
+    ownership, not DOM patch execution, merge behavior, server projection,
+    scroll behavior, task-card protocol, Home AI diagnostic intake, or
+    shell/cache.
+  - Violated invariant: app code should execute real DOM probe/patch/render
+    side effects; pure planning helpers should own the fixed composition from
+    render and surface facts to patch execution and attempt effect order.
+- Changes:
+  - `public/thread-detail-render-plan.js` now exports
+    `planThreadDetailRefreshPatchExecutionStage()`.
+  - `public/app.js` uses that helper in `refreshCurrentThread()` and no longer
+    hand-wires `canPatch`, `tileSurfaceRefresh`, `tryTilePanePatch`, or
+    `tryLocalPatch` into attempt effects.
+  - Updated `test/thread-detail-render-plan.test.js`,
+    `test/conversation-render.test.js`, `test/mobile-viewport.test.js`, and
+    `test/thread-tile-layout-ui.test.js`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation:
+  - Syntax and focused:
+    `node --check public/thread-detail-render-plan.js && node --check public/app.js && node --check test/thread-detail-render-plan.test.js && node --check test/conversation-render.test.js && node --check test/mobile-viewport.test.js && node --check test/thread-tile-layout-ui.test.js && node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-tile-layout-ui.test.js`
+    passed (`202` focused tests).
+  - Full:
+    `npm test` passed (`1167` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache
+    bump. This remains a local Phase A ownership slice to batch with the next
+    module validation/deploy.
+- Progress:
+  - Overall architecture optimization is about `82%`.
+  - Phase A frontend render/projection ownership is about `92%`.
+- Next:
+  - Commit locally, then continue Phase A by extracting the next
+    `refreshCurrentThread()` patch-attempt result / diagnostic input
+    composition seam, or batch the accumulated Phase A local slices for one
+    deploy/readback when requested.

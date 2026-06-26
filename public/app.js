@@ -9771,16 +9771,12 @@ async function refreshCurrentThread(options = {}) {
     threadTileConversationSurface,
     tilePatchSurface: tilePatchPlan && tilePatchPlan.surface,
   });
-  const patchExecutionPlan = threadDetailRenderPlanApi.planThreadDetailRefreshPatchExecution({
-    shouldRenderDetail,
-    canPatch: renderPlan.canPatch,
-    tileSurfaceRefresh: patchSurfacePlan.tileSurfaceRefresh,
+  const patchExecutionStage = threadDetailRenderPlanApi.planThreadDetailRefreshPatchExecutionStage({
+    renderPlan,
+    patchSurfacePlan,
   });
-  const patchAttemptEffectsPlan = threadDetailRenderPlanApi.planThreadDetailRefreshPatchAttemptEffects({
-    shouldRenderDetail,
-    tryTilePanePatch: patchExecutionPlan.tryTilePanePatch,
-    tryLocalPatch: patchExecutionPlan.tryLocalPatch,
-  });
+  const patchExecutionPlan = patchExecutionStage.patchExecutionPlan;
+  const patchAttemptEffectsPlan = patchExecutionStage.patchAttemptEffectsPlan;
   const patchAttempt = applyThreadDetailRefreshPatchAttemptEffectsPlan(patchAttemptEffectsPlan, {
     threadId,
     previousThread,
