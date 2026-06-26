@@ -90,6 +90,10 @@ test("phase B readback smoke collects bounded diagnostics without private fields
           threadListTimings: {
             totalMs: 40,
             appServerMs: 12,
+            appServerRequestedLimit: 40,
+            appServerRequestLimit: 80,
+            appServerRequestReason: "default-bounded-overfetch",
+            appServerOverfetchFactor: 2,
             fallbackMs: 8,
             mergeMs: 2,
             fallbackCacheDecision: "miss-rebuild",
@@ -145,6 +149,10 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.ok, true);
   assert.equal(report.threadList.coldPathOwner, "fallback-baseline");
   assert.equal(report.threadList.coldPathReason, "miss-rebuild:rollout");
+  assert.equal(report.threadList.appServerRequestedLimit, 40);
+  assert.equal(report.threadList.appServerRequestLimit, 80);
+  assert.equal(report.threadList.appServerRequestReason, "default-bounded-overfetch");
+  assert.equal(report.threadList.appServerOverfetchFactor, 2);
   assert.equal(report.threadList.fallbackSourceSnapshotHit, true);
   assert.equal(report.threadList.fallbackSourceSnapshotRawCount, 12);
   assert.equal(report.publicConfig.threadListFallbackPrewarm.completed, true);
@@ -531,12 +539,20 @@ test("phase B readback summary helpers keep only bounded metadata", () => {
         fallbackRolloutStatusTailBytes: 8192,
         fallbackSessionIndexReuseCount: 1,
         fallbackSessionIndexLineCount: 2500,
+        appServerRequestedLimit: 40,
+        appServerRequestLimit: 80,
+        appServerRequestReason: "default-bounded-overfetch",
+        appServerOverfetchFactor: 2,
         totalMs: 999999999,
       },
     },
   });
   assert.equal(list.coldPathOwner, "fallback-baseline");
   assert.equal(list.fallbackBaselineSourceCount, 100000);
+  assert.equal(list.appServerRequestedLimit, 40);
+  assert.equal(list.appServerRequestLimit, 80);
+  assert.equal(list.appServerRequestReason, "default-bounded-overfetch");
+  assert.equal(list.appServerOverfetchFactor, 2);
   assert.equal(list.fallbackBaselineFinalFilterInputCount, 100000);
   assert.equal(list.fallbackBaselineFinalFilterOutputCount, 100000);
   assert.equal(list.fallbackBaselineMergeInputCount, 100000);

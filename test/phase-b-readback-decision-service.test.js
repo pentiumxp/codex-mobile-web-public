@@ -253,6 +253,10 @@ test("phase B readback decision treats one-time cold rebuild plus warm check as 
       coldPathOwner: "fallback-baseline",
       coldPathReason: "miss-rebuild:rollout",
       fallbackCacheDecision: "miss-rebuild",
+      appServerRequestedLimit: 40,
+      appServerRequestLimit: 80,
+      appServerRequestReason: "default-bounded-overfetch",
+      appServerOverfetchFactor: 2,
     },
     threadListWarmCheck: {
       coldPathOwner: "warm-fallback-cache",
@@ -273,6 +277,10 @@ test("phase B readback decision treats one-time cold rebuild plus warm check as 
   assert.equal(decision.owner, "thread-list-fallback-baseline");
   assert.equal(decision.reason, "cold-start-rebuild-warmed");
   assert.equal(decision.nextAction, "observe-cold-start-first-rebuild-cost");
+  assert.equal(decision.evidence.threadListAppServerRequestedLimit, 40);
+  assert.equal(decision.evidence.threadListAppServerRequestLimit, 80);
+  assert.equal(decision.evidence.threadListAppServerRequestReason, "default-bounded-overfetch");
+  assert.equal(decision.evidence.threadListAppServerOverfetchFactor, 2);
   assert.equal(decision.evidence.threadListWarmCheckOwner, "warm-fallback-cache");
 });
 

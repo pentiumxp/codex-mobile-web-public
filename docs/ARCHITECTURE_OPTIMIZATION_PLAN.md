@@ -245,7 +245,16 @@ Current acceleration targets:
    `initial=warm-fallback` requests, and mark the result as
    `mobileDeferredAppServer` / `appServerDeferred`. The client then schedules a
    normal authoritative refresh. This moves already-warmed list data onto the
-   first-paint path without hiding the later app-server merge. The next local
+   first-paint path without hiding the later app-server merge. The follow-up
+   app-server fetch-window slice then extracts the ordinary `thread/list`
+   request limit into `thread-list-app-server-fetch-policy-service`. Default
+   and search lists now use bounded overfetch (`max(limit * 2, 80)`) instead of
+   the old unconditional 500-row window, while cursor pages stay exact and
+   workspace/archived paths preserve the legacy 500-row window because their
+   filtering semantics are not app-server-authoritative. The route and Phase B
+   readback now expose `appServerRequestedLimit`, `appServerRequestLimit`,
+   `appServerRequestReason`, and `appServerOverfetchFactor` as metadata-only
+   diagnostics. The next local
    slice makes that attribution explicit: fallback baseline source reads now
    carry bounded counters for rollout directory reads, JSONL stat/collect/sort
    counts, candidate scans, head reads/bytes, final status tail reads/bytes,

@@ -18964,3 +18964,79 @@ The previous full handoff was archived and should be opened only when old proven
     bump. Keep batching into the next Phase B module deploy/readback.
 - Next:
   - Commit locally.
+
+## 2026-06-27 - Phase B v534 deploy and warm fallback initial shell checkpoint
+
+- Current local state:
+  - The earlier Phase B prewarm slices were batched into shell `v534` and
+    deployed through the Home AI central macOS plugin deploy path.
+  - Production readback confirmed `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v534` and
+    `shellCacheName=codex-mobile-shell-v534`.
+  - Readback showed thread-list fallback prewarm completed; the ordinary first
+    list read hit `warm-fallback-cache` / `cache-hit`, and targeted current
+    thread detail read stayed on `projection-active-overlay` with the active
+    overlay gate `ready`.
+  - Local commit `aaeb3b2` then added the warm fallback initial shell:
+    default `initial=warm-fallback` list requests can read an existing warm
+    cache without building fallback baseline, return
+    `mobileDeferredAppServer=true`, and let the client schedule the normal
+    authoritative refresh.
+- Deployment:
+  - `aaeb3b2` is a local-only Phase B slice. It did not bump
+    `CLIENT_BUILD_ID` / PWA shell cache and was not deployed.
+- Next:
+  - Continue Phase B by reducing and evidencing the ordinary authoritative
+    app-server list refresh path. Do not deploy every small slice; batch into a
+    module before the next deploy/readback.
+
+## 2026-06-27 - Phase B app-server fetch window policy local slice
+
+- Current local state:
+  - Continued Phase B after local commit `aaeb3b2`.
+  - The warm fallback initial shell removes app-server list from first paint
+    when a warm cache exists, but the subsequent ordinary authoritative refresh
+    still requested `Math.max(limit, 500)` rows from app-server for every
+    non-cursor list.
+- Root-cause boundary:
+  - Symptom/risk: after fallback cache is warm, normal thread-list refresh can
+    still be delayed by an overbroad app-server list request that is unrelated
+    to fallback rebuild cost.
+  - Failing layer: server `/api/threads` app-server fetch-window policy, not
+    fallback cache/prewarm/source snapshot, frontend refresh, projection
+    rendering, task-card workflow, or Home AI diagnostics.
+  - Violated invariant: the route should request only the bounded app-server
+    window required by the list semantics, and it should expose metadata-only
+    evidence for that window in readback.
+- Changes:
+  - Added `adapters/thread-list-app-server-fetch-policy-service.js`.
+  - Default and search list refreshes now use bounded overfetch:
+    `max(limit * 2, 80)` capped to `500`.
+  - Cursor pages request exactly the page `limit`.
+  - Workspace-filter and archived paths keep the legacy `500` app-server
+    window because their filtering semantics are not fully app-server-owned.
+  - `/api/threads` writes bounded diagnostics:
+    `appServerRequestedLimit`, `appServerRequestLimit`,
+    `appServerRequestReason`, and `appServerOverfetchFactor`.
+  - Phase B readback smoke and decision evidence now preserve these bounded
+    fields.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and focused
+    tests.
+- Validation:
+  - Focused syntax/tests:
+    `node --check adapters/thread-list-app-server-fetch-policy-service.js && node --check server.js && node --check scripts/codex-mobile-phase-b-readback-smoke.js && node --check test/thread-list-app-server-fetch-policy-service.test.js && node --check test/thread-visibility.test.js && node --check test/phase-b-readback-smoke.test.js && node --check test/phase-b-readback-decision-service.test.js && node --test test/thread-list-app-server-fetch-policy-service.test.js test/thread-visibility.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js`
+    passed (`78` focused tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `npm test` passed (`1193` tests).
+  - `git diff --check` passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache
+    bump. Keep batching Phase B local slices before the next module
+    deploy/readback.
+- Next:
+  - Commit locally.
+  - Continue Phase B with the next cold-path target: measure production impact
+    of the app-server fetch-window policy at module deployment, then decide
+    whether the remaining large-session cost belongs to app-server list
+    latency, detail projection cache, or rollout/session-index source work.

@@ -94,6 +94,10 @@ const {
   createThreadListFallbackPrewarmService,
   summarizePrewarmStatus,
 } = require("./adapters/thread-list-fallback-prewarm-service");
+const {
+  planThreadListAppServerFetch,
+  threadListAppServerFetchTimingFields,
+} = require("./adapters/thread-list-app-server-fetch-policy-service");
 const { diagnoseThreadListColdPath } = require("./adapters/thread-list-cold-path-diagnosis-service");
 const {
   stripThreadListDetailFields,
@@ -14808,9 +14812,17 @@ async function handleApi(req, res) {
       sendJson(res, 200, { data: [] });
       return;
     }
+    const appServerFetchPlan = planThreadListAppServerFetch({
+      limit,
+      cursor,
+      archived,
+      cwd,
+      searchTerm,
+    });
+    Object.assign(timings, threadListAppServerFetchTimingFields(appServerFetchPlan));
     const params = {
       cursor,
-      limit: cursor ? limit : Math.max(limit, 500),
+      limit: appServerFetchPlan.appServerLimit,
       sortKey: "updated_at",
       sortDirection: "desc",
       archived,

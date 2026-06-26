@@ -16,6 +16,50 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-27 Phase B App-Server Fetch Window Policy Slice
+
+本地小切片继续收敛 v534 之后的 thread-list 冷/热路径。前一切片已经把
+`initial=warm-fallback` 接到首屏 shell，使 warm fallback cache 可以先返回，
+再由客户端调度普通 authoritative refresh。这个普通刷新还有一个独立问题：
+`/api/threads` route 仍把 app-server `thread/list` 请求窗口写死成
+`Math.max(limit, 500)`，默认列表即使只需要 40 或 80 条，也会先等待 500 条
+app-server list 结果。
+
+本切片新增 `adapters/thread-list-app-server-fetch-policy-service.js`，把
+app-server list 请求窗口从 `server.js` 抽成可测试策略：
+
+- cursor 翻页：精确按当前页 `limit` 请求，不额外 overfetch。
+- workspace filter：保留旧的 500 条窗口，因为 cwd 是 app-server 返回后在
+  Mobile server 侧过滤，不能在这里收窄语义。
+- archived：保留旧的 500 条窗口，避免影响低频但语义敏感的归档列表。
+- search/default：改为 bounded overfetch，默认 `max(limit * 2, 80)`，上限 500。
+
+server route 会把策略结果写入 `mobileDiagnostics.threadListTimings`：
+
+- `appServerRequestedLimit`
+- `appServerRequestLimit`
+- `appServerRequestReason`
+- `appServerOverfetchFactor`
+
+Phase B readback smoke 和 decision evidence 也会保留这些 bounded 字段。这样下一次
+模块部署读回如果仍出现“fallback 已经 warm，但 authoritative refresh 仍慢”，可以
+直接判断慢点是否还在 app-server 请求窗口，而不需要靠日志或私有会话内容推断。
+
+验证：
+
+```bash
+node --test test/thread-list-app-server-fetch-policy-service.test.js test/thread-visibility.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js
+npm run check
+npm run check:macos
+npm test
+git diff --check
+```
+
+结果：focused `78` passed；`npm test` `1193` passed；`check`、`check:macos`、
+`git diff --check` passed。该切片未 bump `CLIENT_BUILD_ID` / PWA shell cache，
+未部署；继续作为 Phase B 本地提交，等待后续 cold-path/app-server 优化凑成模块后
+统一部署/readback。
+
 ## 2026-06-27 Phase B Warm Fallback Initial Shell Slice
 
 本地小切片继续 v534 之后的 Phase B。v534 已经证明 thread-list fallback

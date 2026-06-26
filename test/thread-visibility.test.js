@@ -914,6 +914,7 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   const baselineServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-fallback-baseline-service.js"), "utf8");
   const cacheServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-fallback-cache-service.js"), "utf8");
   const prewarmServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-fallback-prewarm-service.js"), "utf8");
+  const appServerFetchPolicyJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-app-server-fetch-policy-service.js"), "utf8");
   const coldPathDiagnosisServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-cold-path-diagnosis-service.js"), "utf8");
   const routeIndex = serverJs.indexOf('if (url.pathname === "/api/threads" && req.method === "GET")');
   assert.ok(routeIndex >= 0, "missing thread list route");
@@ -940,7 +941,11 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(baselineServiceJs, /createThreadListFallbackBaselineService/);
   assert.match(cacheServiceJs, /createThreadListFallbackBaselineService/);
   assert.match(prewarmServiceJs, /createThreadListFallbackPrewarmService/);
+  assert.match(appServerFetchPolicyJs, /planThreadListAppServerFetch/);
+  assert.match(appServerFetchPolicyJs, /threadListAppServerFetchTimingFields/);
   assert.match(coldPathDiagnosisServiceJs, /diagnoseThreadListColdPath/);
+  assert.match(serverJs, /planThreadListAppServerFetch/);
+  assert.match(serverJs, /threadListAppServerFetchTimingFields/);
   assert.match(serverJs, /diagnoseThreadListColdPath/);
   assert.match(serverJs, /stripThreadListDetailFields/);
   assert.match(serverJs, /stripThreadListResultDetailFields/);
@@ -1012,6 +1017,11 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeBody, /const deferFallback = fallbackMode === "defer" && !cursor && !archived && !searchTerm/);
   assert.match(routeBody, /const initialMode = String\(url\.searchParams\.get\("initial"\) \|\| ""\)/);
   assert.match(routeBody, /const allowWarmFallbackInitial = initialMode === "warm-fallback" && !cursor && !archived && !searchTerm && !cwd/);
+  assert.match(routeBody, /const appServerFetchPlan = planThreadListAppServerFetch\(\{[\s\S]*limit,[\s\S]*cursor,[\s\S]*archived,[\s\S]*cwd,[\s\S]*searchTerm,[\s\S]*\}\);/);
+  assert.match(routeBody, /Object\.assign\(timings, threadListAppServerFetchTimingFields\(appServerFetchPlan\)\)/);
+  assert.match(routeBody, /limit: appServerFetchPlan\.appServerLimit/);
+  assert.match(appServerFetchPolicyJs, /appServerRequestLimit/);
+  assert.match(appServerFetchPolicyJs, /appServerRequestReason/);
   assert.match(routeBody, /readThreadListCachedFallback\(limit, \{ cwd, searchTerm, globalState, diagnostics: fallbackDiagnostics \}\)/);
   assert.match(routeBody, /decorated\.mobileDeferredAppServer = true/);
   assert.match(routeBody, /decorated\.mobileInitialSource = "warm-fallback-cache"/);
