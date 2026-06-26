@@ -726,6 +726,15 @@ request, diagnostic plan, and diagnostic effect plan, including whether a
 failed local patch attempt should emit the projection-mismatch diagnostic. App
 code keeps real DOM calls, bounded visible-shape measurement only when the
 stage asks for it, and diagnostic transport execution.
+The visible-shape evidence request itself is now an explicit effect-plan stage:
+`planThreadDetailRefreshPatchAttemptResultEvidenceStage` returns the initial
+result stage plus a `collect-patch-rejected-visible-shapes` effect only for
+rejected local patches that need bounded previous/current shape counts. After
+app code executes the real `visibleConversationShape()` calls,
+`planThreadDetailRefreshPatchAttemptResultEvidenceCompletionStage` recomputes
+the result/diagnostic stage from that bounded evidence. This keeps the evidence
+collection condition and completion shape inside the render-plan helper while
+leaving real DOM-derived measurement in app code.
 The local DOM patch executor now returns a structured `{ ok, reason }` result
 directly to the patch-attempt executor, so refresh rejection reasons no longer
 move through transient global app state before telemetry and diagnostics read

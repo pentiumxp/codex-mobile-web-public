@@ -1136,6 +1136,68 @@ test("thread detail refresh patch attempt result stage requests shapes only for 
   });
 });
 
+test("thread detail refresh patch attempt evidence stage owns visible-shape request and completion", () => {
+  const rejectedInput = {
+    shouldRenderDetail: true,
+    renderPlan: {
+      detailRenderMode: "patch",
+      reason: "patch-shell-stable",
+    },
+    readMode: "projection-v4-dynamic",
+    patchAttempt: {
+      tilePanePatchAttempted: true,
+      tilePanePatchedDetail: false,
+      localPatchAttempted: true,
+      locallyPatchedDetail: false,
+      localPatchMs: 7,
+      patchRejectReason: "rendered-dom-stale",
+    },
+  };
+  const evidenceStage = renderPlan.planThreadDetailRefreshPatchAttemptResultEvidenceStage(rejectedInput);
+
+  assert.equal(evidenceStage.needsPatchRejectedVisibleShapes, true);
+  assert.equal(evidenceStage.reason, "visible-shapes-required");
+  assert.deepEqual(evidenceStage.visibleShapeEvidenceEffectsPlan, {
+    effects: [
+      {
+        type: "collect-patch-rejected-visible-shapes",
+      },
+    ],
+    reason: "visible-shapes-required",
+  });
+
+  const completedStage = renderPlan.planThreadDetailRefreshPatchAttemptResultEvidenceCompletionStage({
+    ...rejectedInput,
+    visibleShapeEvidence: {
+      previousVisibleShape: { visibleItemCount: 3 },
+      nextVisibleShape: { visibleItemCount: 5 },
+    },
+  });
+  assert.equal(completedStage.needsPatchRejectedVisibleShapes, false);
+  assert.deepEqual(completedStage.patchRejectedDiagnosticPlan.diagnosticInput, {
+    readMode: "projection-v4-dynamic",
+    renderMode: "patch",
+    renderPlanReason: "patch-shell-stable",
+    patchRejectReason: "rendered-dom-stale",
+    previousVisibleItemCount: 3,
+    visibleItemCount: 5,
+  });
+
+  const quietStage = renderPlan.planThreadDetailRefreshPatchAttemptResultEvidenceStage({
+    shouldRenderDetail: true,
+    patchAttempt: {
+      tilePanePatchAttempted: true,
+      tilePanePatchedDetail: true,
+      tilePanePatchMs: 2,
+    },
+  });
+  assert.equal(quietStage.needsPatchRejectedVisibleShapes, false);
+  assert.deepEqual(quietStage.visibleShapeEvidenceEffectsPlan, {
+    effects: [],
+    reason: "not-rejected",
+  });
+});
+
 test("thread detail refresh render outcome treats tile pane patch as terminal", () => {
   const plan = renderPlan.planThreadDetailRefreshRender({
     previousConversationSignature: "sig-a",

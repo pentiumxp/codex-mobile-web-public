@@ -719,6 +719,24 @@
     return Object.prototype.hasOwnProperty.call(objectOrEmpty(object), key);
   }
 
+  function planThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffects(input = {}) {
+    const stage = objectOrEmpty(input.patchAttemptResultStage || input.stage);
+    if (!stage.needsPatchRejectedVisibleShapes) {
+      return {
+        effects: [],
+        reason: compactReason(stage.reason, "visible-shapes-not-required"),
+      };
+    }
+    return {
+      effects: [
+        {
+          type: "collect-patch-rejected-visible-shapes",
+        },
+      ],
+      reason: "visible-shapes-required",
+    };
+  }
+
   function planThreadDetailRefreshPatchAttemptResultStage(input = {}) {
     const patchAttempt = objectOrEmpty(input.patchAttempt);
     const patchAttemptResult = planThreadDetailRefreshPatchAttemptResult({
@@ -763,6 +781,31 @@
       patchRejectedDiagnosticEffectsPlan,
       reason: patchRejectedDiagnosticPlan.reason,
     };
+  }
+
+  function planThreadDetailRefreshPatchAttemptResultEvidenceStage(input = {}) {
+    const patchAttemptResultStage = planThreadDetailRefreshPatchAttemptResultStage(input);
+    const visibleShapeEvidenceEffectsPlan = planThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffects({
+      patchAttemptResultStage,
+    });
+    return {
+      patchAttemptResultStage,
+      visibleShapeEvidenceEffectsPlan,
+      needsPatchRejectedVisibleShapes: patchAttemptResultStage.needsPatchRejectedVisibleShapes,
+      reason: patchAttemptResultStage.reason,
+    };
+  }
+
+  function planThreadDetailRefreshPatchAttemptResultEvidenceCompletionStage(input = {}) {
+    const visibleShapeEvidence = objectOrEmpty(input.visibleShapeEvidence);
+    return planThreadDetailRefreshPatchAttemptResultStage({
+      shouldRenderDetail: input.shouldRenderDetail,
+      patchAttempt: input.patchAttempt,
+      renderPlan: input.renderPlan,
+      readMode: input.readMode,
+      previousVisibleShape: visibleShapeEvidence.previousVisibleShape,
+      nextVisibleShape: visibleShapeEvidence.nextVisibleShape,
+    });
   }
 
   function finalizeThreadDetailRenderPlan(plan = {}, result = {}) {
@@ -1639,6 +1682,9 @@
     planThreadDetailRefreshPatchAttemptEffects,
     planThreadDetailRefreshPatchAttemptResult,
     planThreadDetailRefreshPatchAttemptResultStage,
+    planThreadDetailRefreshPatchAttemptResultEvidenceStage,
+    planThreadDetailRefreshPatchAttemptResultEvidenceCompletionStage,
+    planThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffects,
     planThreadDetailRefreshPatchRejectedDiagnostic,
     planThreadDetailRefreshPatchRejectedDiagnosticEffects,
     planThreadDetailRefreshOutcomeExecution,

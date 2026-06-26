@@ -45,6 +45,50 @@ completion、scroll/bottom-follow 和 single-thread shell update 的所有权边
 `status=ready`，detail 走 `projection-active-overlay` warm path，active overlay
 gate 为 `ready`；抽样文件 source/prod SHA-256 短 hash 一致。
 
+## 2026-06-27 Phase A Patch Rejected Visible-Shape Evidence Slice
+
+本地小切片继续收敛 `refreshCurrentThread()` 的 patch rejection evidence
+ownership。此前 result stage 已经能判断 local patch rejection 是否需要
+previous/current visible-shape evidence，但 `public/app.js` 仍直接在主 refresh
+编排里判断 `needsPatchRejectedVisibleShapes`，并直接把
+`visibleConversationShape(previousThread)` / `visibleConversationShape(state.currentThread)`
+传回 result stage。这让 evidence 采集条件和完成后的 result-stage 重算继续散落在
+app 主状态机里。
+
+本次修复：
+
+- `public/thread-detail-render-plan.js` 新增
+  `planThreadDetailRefreshPatchAttemptResultEvidenceStage()`，统一产出初始
+  `patchAttemptResultStage` 和 visible-shape evidence effect plan。
+- `public/thread-detail-render-plan.js` 新增
+  `planThreadDetailRefreshPatchAttemptResultEvidenceCompletionStage()`，在 app
+  执行真实 evidence 采集后，重新产出带 bounded visible-shape counts 的 result /
+  diagnostic stage。
+- `public/thread-detail-render-plan.js` 新增
+  `planThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffects()`，只在 local
+  patch rejected 且需要 evidence 时声明
+  `collect-patch-rejected-visible-shapes` effect。
+- `public/app.js` 保留真实 `visibleConversationShape()` 执行，但通过
+  `applyThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffectsPlan()` 执行
+  明确 effect；`refreshCurrentThread()` 不再直接判断
+  `needsPatchRejectedVisibleShapes` 或直接传入 shape 采集调用。
+- `test/thread-detail-render-plan.test.js` 覆盖 evidence stage 和 completion stage；
+  `test/conversation-render.test.js`、`test/mobile-viewport.test.js`、
+  `test/thread-tile-layout-ui.test.js` 验证 app wiring 不再直接采集 rejected
+  visible shapes。
+- 不改变 DOM patch、render outcome、diagnostic payload 字段、server projection、
+  scroll、任务卡协议、shell/cache 或部署状态。
+
+闭环验证：
+
+```bash
+node --check public/thread-detail-render-plan.js && node --check public/app.js && node --check test/thread-detail-render-plan.test.js && node --check test/conversation-render.test.js && node --check test/mobile-viewport.test.js && node --check test/thread-tile-layout-ui.test.js
+node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-tile-layout-ui.test.js
+```
+
+结果：focused `209` passed。该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，
+尚未部署；继续作为 Phase A 模块的一部分累积。
+
 ## 2026-06-27 Phase A Patch Surface Probe Stage Slice
 
 本地小切片继续收敛 `refreshCurrentThread()` 的 patch surface ownership。此前

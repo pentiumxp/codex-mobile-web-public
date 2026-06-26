@@ -18449,3 +18449,61 @@ The previous full handoff was archived and should be opened only when old proven
     visible-shape evidence collection stage for rejected local patches, or
     batch the accumulated Phase A local slices for one deploy/readback when
     requested.
+
+## 2026-06-27 - Latest tail marker: Phase A patch rejected visible-shape evidence local slice
+
+- Current local state:
+  - Continued Phase A `refreshCurrentThread()` patch rejection evidence
+    ownership cleanup after `57f7d5a`.
+  - `planThreadDetailRefreshPatchAttemptResultStage()` already owned whether a
+    rejected local patch needed visible-shape evidence, but
+    `refreshCurrentThread()` still directly checked
+    `needsPatchRejectedVisibleShapes` and called `visibleConversationShape()`
+    inline.
+- Root-cause boundary:
+  - Symptom/risk: local patch rejection diagnostics were planned in the helper,
+    but the evidence collection condition and result-stage completion pass were
+    still split into app orchestration. Future refresh edits could drift the
+    shape evidence condition from the tested result/diagnostic stage.
+  - Failing layer: frontend refresh patch rejection evidence-stage ownership,
+    not real DOM measurement, DOM patch execution, server projection, merge
+    behavior, scroll behavior, task-card protocol, Home AI diagnostic intake, or
+    shell/cache.
+  - Violated invariant: app code should execute real DOM-derived measurements
+    only through explicit effects; pure planning helpers should own whether
+    bounded shape evidence is required and how that evidence completes the
+    result/diagnostic stage.
+- Changes:
+  - `public/thread-detail-render-plan.js` now exports
+    `planThreadDetailRefreshPatchAttemptResultEvidenceStage()`,
+    `planThreadDetailRefreshPatchAttemptResultEvidenceCompletionStage()`, and
+    `planThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffects()`.
+  - `public/app.js` now executes a
+    `collect-patch-rejected-visible-shapes` evidence effect when planned, then
+    passes the bounded evidence into the completion stage. It no longer directly
+    branches on `needsPatchRejectedVisibleShapes` or directly passes inline
+    `visibleConversationShape(previousThread/state.currentThread)` calls into
+    the render-plan helper.
+  - Updated `test/thread-detail-render-plan.test.js`,
+    `test/conversation-render.test.js`, `test/mobile-viewport.test.js`, and
+    `test/thread-tile-layout-ui.test.js`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation:
+  - Syntax and focused:
+    `node --check public/thread-detail-render-plan.js && node --check public/app.js && node --check test/thread-detail-render-plan.test.js && node --check test/conversation-render.test.js && node --check test/mobile-viewport.test.js && node --check test/thread-tile-layout-ui.test.js && node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-tile-layout-ui.test.js`
+    passed (`209` focused tests).
+  - Full:
+    `npm test` passed (`1174` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache
+    bump. This remains a local Phase A ownership slice to batch with the next
+    module validation/deploy.
+- Progress:
+  - Overall architecture optimization is about `87%`.
+  - Phase A frontend render/projection ownership is about `97%`.
+- Next:
+  - Commit locally, then either batch the accumulated Phase A local slices for
+    one deploy/readback when requested or continue the remaining app orchestration
+    cleanup before moving to the next module boundary.

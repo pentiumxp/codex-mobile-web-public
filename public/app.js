@@ -9603,6 +9603,29 @@ function applyThreadDetailRefreshPatchRejectedDiagnosticEffectsPlan(plan) {
   for (const effect of effects) applyThreadDetailRefreshPatchRejectedDiagnosticEffect(effect);
 }
 
+function applyThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffect(effect, context = {}) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  if (type === "collect-patch-rejected-visible-shapes") {
+    return {
+      collected: true,
+      previousVisibleShape: visibleConversationShape(context.previousThread),
+      nextVisibleShape: visibleConversationShape(context.nextThread),
+    };
+  }
+  throw new Error(`Unknown thread detail refresh visible-shape evidence effect: ${type || "empty"}`);
+}
+
+function applyThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffectsPlan(plan, context = {}) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  let evidence = { collected: false };
+  for (const effect of effects) {
+    const nextEvidence = applyThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffect(effect, context);
+    if (nextEvidence && nextEvidence.collected) evidence = nextEvidence;
+  }
+  return evidence;
+}
+
 function applyThreadDetailRefreshPatchAttemptEffect(effect, context) {
   const item = effect && typeof effect === "object" ? effect : {};
   const type = String(item.type || "");
@@ -9783,20 +9806,27 @@ async function refreshCurrentThread(options = {}) {
   });
   tilePanePatchedDetail = patchAttempt.tilePanePatchedDetail;
   locallyPatchedDetail = patchAttempt.locallyPatchedDetail;
-  let patchAttemptResultStage = threadDetailRenderPlanApi.planThreadDetailRefreshPatchAttemptResultStage({
+  const patchAttemptResultEvidenceStage = threadDetailRenderPlanApi.planThreadDetailRefreshPatchAttemptResultEvidenceStage({
     shouldRenderDetail,
     patchAttempt,
     renderPlan,
     readMode: result.thread && result.thread.mobileReadMode,
   });
-  if (patchAttemptResultStage.needsPatchRejectedVisibleShapes) {
-    patchAttemptResultStage = threadDetailRenderPlanApi.planThreadDetailRefreshPatchAttemptResultStage({
+  let patchAttemptResultStage = patchAttemptResultEvidenceStage.patchAttemptResultStage;
+  const patchRejectedVisibleShapeEvidence = applyThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffectsPlan(
+    patchAttemptResultEvidenceStage.visibleShapeEvidenceEffectsPlan,
+    {
+      previousThread,
+      nextThread: state.currentThread,
+    },
+  );
+  if (patchRejectedVisibleShapeEvidence.collected) {
+    patchAttemptResultStage = threadDetailRenderPlanApi.planThreadDetailRefreshPatchAttemptResultEvidenceCompletionStage({
       shouldRenderDetail,
       patchAttempt,
       renderPlan,
       readMode: result.thread && result.thread.mobileReadMode,
-      previousVisibleShape: visibleConversationShape(previousThread),
-      nextVisibleShape: visibleConversationShape(state.currentThread),
+      visibleShapeEvidence: patchRejectedVisibleShapeEvidence,
     });
   }
   const patchAttemptResult = patchAttemptResultStage.patchAttemptResult;
