@@ -387,6 +387,38 @@ node scripts/codex-mobile-thread-tile-visual-fixture.js --width 3000 --height 15
 验证能力的本地/private commit，后续应继续补真实 embedded/PWA live-debug
 场景，而不是用 fixture 替代生产读回。
 
+## 2026-06-27 Phase E Thread Tile Composer Keyboard Fixture Slice
+
+本地小切片继续补 Phase E 的平铺视觉证据，针对用户反馈过的 Composer 输入时
+偶发整体下沉、全屏重绘、pane 区域跳动问题。此前已有 CSS 断言证明
+`html.embed-hermes.thread-tile-open.keyboard-open .app` 应保持 `transform: none`，
+但没有真实浏览器 fixture 去量化键盘/输入态下 board、pane、composer 的实际 rect。
+
+本次修复：
+
+- `scripts/codex-mobile-thread-tile-visual-fixture.js` 新增 `--keyboard` 和
+  `--typed-lines <count>`，用 fake typed composer content 模拟输入框扩高。
+- fixture 现在记录并验证 `.app` computed transform、message input rect、
+  composer/input containment、typed input 稳定性，以及原有 pane/board/composer
+  不重叠约束。
+- `test/thread-tile-layout-ui.test.js` 增加参数解析、composer 高度计算、fake typed
+  content、keyboard HTML 和隐私边界覆盖。
+- 真实 Chrome fixture 已覆盖 `1800x920`、3 pane、keyboard-open、4 行输入内容，
+  证明 `appTransform=none`、输入框留在 composer 内、composer 只压缩 conversation
+  高度而不遮挡 pane。
+- 不改变运行时 DOM、CSS、server projection、任务卡协议、shell/cache 或部署状态。
+
+闭环验证：
+
+```bash
+node --test test/thread-tile-layout-ui.test.js test/thread-tile-state.test.js test/thread-tile-layout.test.js
+node scripts/codex-mobile-thread-tile-visual-fixture.js --width 1800 --height 920 --panes 3 --keyboard --typed-lines 4 --json
+```
+
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；它继续作为 Phase E
+验证能力的本地/private commit，后续应补长 turn streaming、任务卡展开折叠、
+图片渲染和真实 Home AI embedded/PWA live-debug 覆盖。
+
 ## 2026-06-26 Phase C Pane Scroll Runtime Planning Slice
 
 本地小切片继续推进 Phase C 的 pane-runtime ownership。此前每个平铺窗口的

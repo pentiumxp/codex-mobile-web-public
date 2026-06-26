@@ -497,7 +497,12 @@ test("thread tile visual fixture validates wide-screen panes without private con
   assert.equal(overlayModel.displayLayout.columnGroups.filter((group) => group.length > 1).length, 1);
 
   assert.equal(threadTileVisualFixture.parseArgs(["--width", "2600", "--panes", "6", "--font-size", "xxlarge"]).panes, 6);
+  assert.equal(threadTileVisualFixture.parseArgs(["--keyboard", "--typed-lines", "4"]).keyboard, true);
+  assert.equal(threadTileVisualFixture.parseArgs(["--keyboard", "--typed-lines", "4"]).typedLines, 4);
   assert.deepEqual(threadTileVisualFixture.parseArgs(["--split", "pane-b:pane-e"]).splits, [{ anchorId: "pane-b", childId: "pane-e" }]);
+  assert.equal(threadTileVisualFixture.composerInputHeightPx(4), 110);
+  assert.equal(threadTileVisualFixture.composerHeightPx(4), 158);
+  assert.equal(threadTileVisualFixture.typedComposerText(2), "fixture composer input line 1\nfixture composer input line 2");
   const html = threadTileVisualFixture.fixtureHtml(stylesCss, {
     width: 3000,
     height: 1500,
@@ -511,6 +516,21 @@ test("thread tile visual fixture validates wide-screen panes without private con
   assert.match(html, /durationVisible/);
   assert.match(html, /hiddenBottomButtons/);
   assert.doesNotMatch(html, /accessKey|cookie|launchToken|taskBody|rawPrompt|providerPayload|uploadBytes/);
+
+  const keyboardHtml = threadTileVisualFixture.fixtureHtml(stylesCss, {
+    width: 1800,
+    height: 920,
+    panes: 3,
+    menuOverlay: false,
+    keyboard: true,
+    typedLines: 4,
+  });
+  assert.match(keyboardHtml, /thread-tile-open keyboard-open/);
+  assert.match(keyboardHtml, /fixture composer input line 4/);
+  assert.match(keyboardHtml, /appTransformStable/);
+  assert.match(keyboardHtml, /typedInputStable/);
+  assert.match(keyboardHtml, /inputInsideComposer/);
+  assert.match(keyboardHtml, /--composer-height:158px/);
 
   assert.match(packageJson, /scripts\/codex-mobile-thread-tile-visual-fixture\.js/);
 });

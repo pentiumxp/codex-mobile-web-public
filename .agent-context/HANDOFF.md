@@ -16557,3 +16557,64 @@ The previous full handoff was archived and should be opened only when old proven
     layout metrics only. No secrets, cookies, launch tokens, private thread
     bodies, task-card bodies, upload bytes, private paths, provider payloads,
     prompts, or long logs are included.
+
+## 2026-06-27 - Phase E thread tile Composer keyboard fixture local slice
+
+- Latest local slice:
+  - Continued Phase E browser/visual coverage after `ddfb029`
+    (`add thread tile visual fixture`). This slice is local/private only and is
+    not deployed by design.
+- Root-cause boundary:
+  - Symptom/risk: Composer input in tile mode can be reported as causing
+    whole-screen shift/repaint. The previous Phase E fixture proved wide/overlay
+    pane layout, but did not prove embedded keyboard-open and typed Composer
+    content keep the app transform, board, panes, and shared Composer stable.
+  - Failing layer: missing browser/visual evidence for tile Composer keyboard
+    state, not runtime server projection, task-card protocol, Home AI host
+    proxy, shell/cache, or a new client-side masking fallback.
+  - Violated invariant: Phase E visual closure for tile mode must measure real
+    Chrome DOM rects and computed transform for keyboard/input states, not only
+    source-string CSS assertions.
+- Changes:
+  - `scripts/codex-mobile-thread-tile-visual-fixture.js` now accepts
+    `--keyboard` and `--typed-lines <count>`.
+  - The fixture simulates bounded fake typed Composer text, adjusts the fake
+    Composer/input height, and validates app transform stability, input
+    containment, typed input stability, and the existing pane/board/composer
+    non-overlap checks.
+  - `test/thread-tile-layout-ui.test.js` covers argument parsing, fake typed
+    text, Composer height calculations, keyboard HTML output, validation hooks,
+    and privacy boundaries.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation:
+  - Focused:
+    `node --test test/thread-tile-layout-ui.test.js test/thread-tile-state.test.js test/thread-tile-layout.test.js`
+    passed (`54` tests).
+  - Real headless Chrome fixture:
+    `node scripts/codex-mobile-thread-tile-visual-fixture.js --width 3000 --height 1500 --panes 5 --json`
+    passed, preserving the prior one-row 5-pane wide layout evidence.
+  - Real headless Chrome fixture:
+    `node scripts/codex-mobile-thread-tile-visual-fixture.js --width 1800 --height 920 --panes 3 --keyboard --typed-lines 4 --json`
+    passed with `appTransform=none`, `inputInsideComposer=true`, and
+    `typedInputStable=true`.
+  - Screenshot visually inspected:
+    `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-thread-tile-3pane-wide-20260626T172239Z-90154-hltexz.png`.
+  - `npm run check` passed.
+  - `npm test` passed (`1136` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Not deployed. No `CLIENT_BUILD_ID` / PWA shell cache bump. This is another
+    Phase E verification capability slice to batch with later browser/visual
+    coverage before one module deploy.
+- Next:
+  - Continue Phase E with real embedded/PWA smoke around long-turn streaming,
+    task-card expand/collapse, upload/generated image rendering, and PWA shell
+    refresh; or return to Phase A/B projection mismatch and large-session
+    ownership if user prioritizes runtime fixes over more harness coverage.
+- Privacy:
+  - Fixture content is fake and bounded. Artifacts record screenshots and
+    layout metrics only. No secrets, cookies, launch tokens, private thread
+    bodies, task-card bodies, upload bytes, private paths, provider payloads,
+    prompts, or long logs are included.

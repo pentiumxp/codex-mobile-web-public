@@ -26,6 +26,8 @@ function usage() {
     "  --sidebar-width <px>     Sidebar width for non-overlay desktop layout.",
     "  --font-size <name>       default, large, xlarge, or xxlarge.",
     "  --split <a:b>            Explicit split pair using fixture ids pane-a:pane-b.",
+    "  --keyboard               Render the fixture in embedded keyboard-open mode.",
+    "  --typed-lines <count>    Simulate typed composer content, default 0.",
     "  --json                   Print JSON only.",
   ].join("\n");
 }
@@ -39,6 +41,8 @@ function parseArgs(argv = process.argv.slice(2)) {
     sidebarWidth: 0,
     fontSize: "default",
     splits: [],
+    keyboard: false,
+    typedLines: 0,
     json: false,
     help: false,
   };
@@ -52,11 +56,14 @@ function parseArgs(argv = process.argv.slice(2)) {
     else if (arg === "--sidebar-width") out.sidebarWidth = readNonNegativeInt(next(), out.sidebarWidth);
     else if (arg === "--font-size") out.fontSize = normalizeFontSize(next());
     else if (arg === "--split") out.splits.push(readSplitPair(next()));
+    else if (arg === "--keyboard") out.keyboard = true;
+    else if (arg === "--typed-lines") out.typedLines = readNonNegativeInt(next(), out.typedLines);
     else if (arg === "--json") out.json = true;
     else if (arg === "--help" || arg === "-h") out.help = true;
     else throw new Error(`Unknown argument: ${arg}`);
   }
   out.panes = Math.max(1, Math.min(12, out.panes));
+  out.typedLines = Math.max(0, Math.min(12, out.typedLines));
   out.splits = out.splits.filter(Boolean);
   return out;
 }
@@ -177,7 +184,29 @@ function renderOperationDock(id) {
   </div>`;
 }
 
-function renderComposer() {
+function composerInputHeightPx(typedLines = 0) {
+  const lines = Math.max(1, readNonNegativeInt(typedLines, 0) || 1);
+  return Math.max(44, Math.min(160, 22 + (lines * 22)));
+}
+
+function composerHeightPx(typedLines = 0) {
+  return 92 + Math.max(0, composerInputHeightPx(typedLines) - 44);
+}
+
+function typedComposerText(typedLines = 0) {
+  const lines = Math.max(0, readNonNegativeInt(typedLines, 0));
+  if (!lines) return "";
+  const out = [];
+  for (let index = 0; index < lines; index += 1) {
+    out.push(`fixture composer input line ${index + 1}`);
+  }
+  return out.join("\n");
+}
+
+function renderComposer(options = {}) {
+  const typedLines = readNonNegativeInt(options.typedLines, 0);
+  const text = typedComposerText(typedLines);
+  const inputStyle = typedLines > 0 ? ` style="height:${composerInputHeightPx(typedLines)}px;"` : "";
   return `<form id="composer" class="composer">
     <div class="attachment-picker-cell">
       <button id="attachFiles" class="icon-button composer-icon file-picker" type="button" aria-label="Attach files" disabled><span aria-hidden="true">+</span></button>
@@ -192,7 +221,7 @@ function renderComposer() {
         <button id="composerPermissionControl" class="composer-control-card" type="button"><span class="composer-chip-label">权限</span><span class="composer-chip-value">Workspace</span></button>
         <button id="quotaUsage" class="composer-control-card quota-usage quota-ok" type="button"><span class="quota-inline"><span class="quota-inline-part"><span class="quota-inline-label">额度</span><span>42%</span></span></span></button>
       </div>
-      <div id="messageInput" class="message-input has-target-placeholder" contenteditable="true" role="textbox" data-placeholder="发送到 Fixture 1"></div>
+      <div id="messageInput" class="message-input has-target-placeholder" contenteditable="true" role="textbox" data-placeholder="发送到 Fixture 1"${inputStyle}>${htmlEscape(text)}</div>
     </div>
     <button id="sendMessage" type="submit">Send</button>
   </form>`;
@@ -205,8 +234,11 @@ function fixtureHtml(css, options = {}) {
   const height = readPositiveInt(options.height, 1500);
   const width = readPositiveInt(options.width, 3000);
   const fontSize = normalizeFontSize(options.fontSize);
+  const keyboardClass = options.keyboard ? " keyboard-open" : "";
+  const typedLines = readNonNegativeInt(options.typedLines, 0);
+  const expectedComposerHeight = composerHeightPx(typedLines);
   return `<!doctype html>
-<html class="embed-hermes thread-tile-open" data-theme="dark" data-font-size="${htmlEscape(fontSize)}" style="--app-height:${height}px;--app-top:0px;--host-top-safe-area:0px;--host-bottom-safe-area:0px;--composer-height:92px;">
+<html class="embed-hermes thread-tile-open${keyboardClass}" data-theme="dark" data-font-size="${htmlEscape(fontSize)}" style="--app-height:${height}px;--app-top:0px;--host-top-safe-area:0px;--host-bottom-safe-area:0px;--composer-height:${expectedComposerHeight}px;">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -230,7 +262,7 @@ function fixtureHtml(css, options = {}) {
         </div>
       </section>
       <section id="liveOperationDock" class="live-operation-dock" hidden></section>
-      ${renderComposer()}
+      ${renderComposer(options)}
     </main>
   </div>
   <pre id="fixtureResult" class="fixture-result"></pre>
@@ -254,10 +286,18 @@ function fixtureHtml(css, options = {}) {
       const conversation = rect("#conversation");
       const board = rect(".thread-tile-board");
       const composer = rect("#composer");
+      const app = document.querySelector(".app");
+      const appRect = rect(app);
+      const input = document.querySelector("#messageInput");
+      const inputRect = rect(input);
       const dock = rect(".thread-tile-operation-dock");
       const bubble = rect(".mobile-operation-bubble");
       const durationNode = document.querySelector(".mobile-operation-bubble-duration");
       const duration = rect(durationNode);
+      const appTransform = app ? getComputedStyle(app).transform : "";
+      const appTransformStable = !app || appTransform === "none" || appTransform === "matrix(1, 0, 0, 1, 0, 0)";
+      const inputText = input ? (input.textContent || "") : "";
+      const typedLines = ${typedLines};
       const hiddenBottomButtons = Array.from(document.querySelectorAll(".thread-tile-bottom-button"))
         .every((node) => getComputedStyle(node).display === "none" || node.getClientRects().length === 0);
       const paneOverlaps = [];
@@ -270,6 +310,8 @@ function fixtureHtml(css, options = {}) {
       const nonSplitColumnsFullHeight = columns.filter((column) => column.paneCount === 1).every((column) => board && Math.abs(column.rect.height - board.height) <= 2);
       const durationVisible = !durationNode || (duration && bubble && duration.right <= bubble.right + 1 && durationNode.scrollWidth <= durationNode.clientWidth + 1);
       const operationDockOverlay = !dock || (conversation && bubble && dock.bottom <= conversation.bottom + 1 && bubble.bottom <= conversation.bottom + 1);
+      const inputInsideComposer = Boolean(inputRect && composer && inputRect.left >= composer.left - 1 && inputRect.right <= composer.right + 1 && inputRect.top >= composer.top - 1 && inputRect.bottom <= composer.bottom + 1);
+      const typedInputStable = !typedLines || (inputText.includes("fixture composer input line 1") && inputRect && inputRect.height >= 44 && inputInsideComposer);
       const result = {
         viewport: { width: ${width}, height: ${height} },
         model: ${JSON.stringify({
@@ -282,8 +324,11 @@ function fixtureHtml(css, options = {}) {
           },
           expectedSingleRow: model.expectedSingleRow,
           expectedOverflowSplit: model.expectedOverflowSplit,
+          keyboard: Boolean(options.keyboard),
+          typedLines,
+          expectedComposerHeight,
         })},
-        rects: { conversation, board, composer, dock, bubble, duration },
+        rects: { app: appRect, conversation, board, composer, input: inputRect, dock, bubble, duration },
         paneCount: panes.length,
         columnCount: columns.length,
         splitColumnCount: columns.filter((column) => column.paneCount > 1).length,
@@ -297,6 +342,10 @@ function fixtureHtml(css, options = {}) {
         nonSplitColumnsFullHeight,
         durationVisible,
         operationDockOverlay,
+        appTransform,
+        appTransformStable,
+        inputInsideComposer,
+        typedInputStable,
       };
       result.ok = Boolean(result.paneCount === ${model.ids.length}
         && result.columnCount === result.model.displayLayout.columns
@@ -308,6 +357,9 @@ function fixtureHtml(css, options = {}) {
         && result.nonSplitColumnsFullHeight
         && result.durationVisible
         && result.operationDockOverlay
+        && result.appTransformStable
+        && result.inputInsideComposer
+        && result.typedInputStable
         && (!result.model.expectedSingleRow || result.splitColumnCount === 0)
         && (!result.model.expectedOverflowSplit || result.splitColumnCount >= 1));
       document.getElementById("fixtureResult").textContent = JSON.stringify(result);
@@ -388,8 +440,11 @@ if (require.main === module) {
 
 module.exports = {
   buildTileFixtureModel,
+  composerHeightPx,
+  composerInputHeightPx,
   extractResult,
   fixtureHtml,
   parseArgs,
   run,
+  typedComposerText,
 };

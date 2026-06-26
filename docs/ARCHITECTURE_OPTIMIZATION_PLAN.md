@@ -1278,10 +1278,16 @@ Current local coverage:
   The fixture records only bounded layout metrics and screenshots with fake
   content; it does not read private thread bodies, task-card bodies, uploads,
   paths, cookies, tokens, prompts, or logs.
+- The same fixture now covers embedded keyboard/composer input stability with
+  `--keyboard --typed-lines <n>`. It verifies computed `.app` transform remains
+  stable, typed message input stays inside the shared Composer, Composer stays
+  below the tile conversation, and panes/board do not overlap after input growth.
+  This is a Phase E evidence hook for the intermittent Composer input/full-screen
+  repaint complaint, not a runtime fallback or masking layer.
 - This does not replace Home AI embedded/PWA live-debug coverage. The next
-  Phase E slices still need real browser smoke around Composer input, long-turn
-  streaming, task-card expand/collapse, upload/generated image rendering, and
-  PWA shell refresh.
+  Phase E slices still need real browser smoke around long-turn streaming,
+  task-card expand/collapse, upload/generated image rendering, and PWA shell
+  refresh.
 
 Current diagnostic intake bridge:
 
