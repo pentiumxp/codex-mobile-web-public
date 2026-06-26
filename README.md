@@ -16,6 +16,44 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 Phase A User Reading Current Turn Planning Slice
+
+本地小切片继续推进 Phase A 的 scroll ownership 收敛。此前
+`isUserReadingCurrentTurn()` 直接在 `public/app.js` 里组合 near-bottom、
+auto-scroll hold、最近手动滚动意图和当前 turn 候选判定。这个结果会影响
+submitted-message follow、viewport follow、full-render stick-to-bottom 和
+local patch scroll completion；如果判定继续散落在 app 主文件里，移动端长回执
+容易复发“用户正在读当前输出却被拉到底部”或“应该沉底却被 hold 住”的问题。
+
+本次修复：
+
+- `public/conversation-scroll.js` 新增
+  `planUserReadingCurrentTurn()`，用纯策略返回
+  `userReadingCurrentTurn` 和 bounded reason。
+- `public/app.js` 的 `isUserReadingCurrentTurn()` 改为只采集当前 DOM/状态事实：
+  near-bottom、auto-scroll hold、recent scroll intent、current-turn candidate；
+  最终判定交给 scroll helper。
+- 保留原短路顺序：near-bottom 为真时不读取 hold/current-turn；hold 为真时不再
+  读取 recent/current-turn，避免 helper 抽取引入额外滚动副作用。
+- focused tests 覆盖 near-bottom、auto-scroll hold、无最近滚动意图、当前 turn
+  候选和无候选分支，并验证 app wiring 调用 helper。
+- 不改变 DOM、按钮位置、scroll 动作、projection、任务卡协议或 shell/cache。
+
+闭环验证：
+
+```bash
+node --test test/conversation-scroll.test.js test/turn-scroll-controls.test.js test/mobile-viewport.test.js test/conversation-render.test.js
+npm run check
+npm test
+npm run check:macos
+git diff --check
+```
+
+结果：focused `135` passed；full `npm test` `1119` passed；
+`npm run check`、`npm run check:macos`、`git diff --check` 均通过。
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，
+尚未部署；继续作为 Phase A 模块的一部分累积。
+
 ## 2026-06-26 Phase A Conversation Jump Button Planning Slice
 
 本地小切片继续推进 Phase A 的 scroll ownership 收敛。此前单线程对话区的

@@ -105,6 +105,11 @@ test("manual conversation scroll pauses live auto-stick until the user returns t
   assert.match(appJs, /const CONVERSATION_SCROLL_INTENT_MS = 1200;/);
   assert.match(appJs, /function hasRecentConversationScrollIntent\(nowMs = Date\.now\(\)\)/);
   assert.match(appJs, /const userReadingCurrentTurn = isUserReadingCurrentTurn\(\{ nearBottom \}\);/);
+  assert.match(functionBody("isUserReadingCurrentTurn"), /const planInput = \{ nearBottom \};/);
+  assert.match(functionBody("isUserReadingCurrentTurn"), /planInput\.autoScrollHold = shouldHoldAutoScrollForCurrentTurn\(\);/);
+  assert.match(functionBody("isUserReadingCurrentTurn"), /planInput\.recentScrollIntent = hasRecentConversationScrollIntent\(\);/);
+  assert.match(functionBody("isUserReadingCurrentTurn"), /planInput\.hasCurrentTurn = Boolean\(turnForConversationAutoScrollHold\(\)\);/);
+  assert.match(functionBody("isUserReadingCurrentTurn"), /const plan = conversationScroll\.planUserReadingCurrentTurn\(planInput\);/);
   assert.match(appJs, /const sustainedSubmittedFollow = !explicitNoStickToBottom[\s\S]*sustainSubmittedMessageBottomFollowFromThread\(thread\);/);
   assert.match(appJs, /const fullRenderScrollPlan = conversationScroll\.planFullRenderScroll\(\{/);
   assert.match(appJs, /submittedMessageFollow: shouldFollowSubmittedMessageToBottom\(\),/);

@@ -210,6 +210,53 @@ test("conversation jump button planning keeps bottom and reply jumps mutually ex
   });
 });
 
+test("user-reading-current-turn planning keeps manual reading hold explicit", () => {
+  assert.deepEqual(conversationScroll.planUserReadingCurrentTurn({
+    nearBottom: true,
+    autoScrollHold: true,
+    recentScrollIntent: true,
+    hasCurrentTurn: true,
+  }), {
+    userReadingCurrentTurn: false,
+    reason: "near-bottom",
+  });
+
+  assert.deepEqual(conversationScroll.planUserReadingCurrentTurn({
+    nearBottom: false,
+    autoScrollHold: true,
+  }), {
+    userReadingCurrentTurn: true,
+    reason: "auto-scroll-hold",
+  });
+
+  assert.deepEqual(conversationScroll.planUserReadingCurrentTurn({
+    nearBottom: false,
+    recentScrollIntent: false,
+    hasCurrentTurn: true,
+  }), {
+    userReadingCurrentTurn: false,
+    reason: "no-recent-scroll-intent",
+  });
+
+  assert.deepEqual(conversationScroll.planUserReadingCurrentTurn({
+    nearBottom: false,
+    recentScrollIntent: true,
+    hasCurrentTurn: true,
+  }), {
+    userReadingCurrentTurn: true,
+    reason: "current-turn-candidate",
+  });
+
+  assert.deepEqual(conversationScroll.planUserReadingCurrentTurn({
+    nearBottom: false,
+    recentScrollIntent: true,
+    hasCurrentTurn: false,
+  }), {
+    userReadingCurrentTurn: false,
+    reason: "no-current-turn",
+  });
+});
+
 test("full render scroll planning preserves bottom-follow precedence", () => {
   assert.deepEqual(conversationScroll.planFullRenderScroll({
     stickToBottom: false,

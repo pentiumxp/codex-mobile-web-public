@@ -20184,10 +20184,18 @@ function isUserReadingCurrentTurn(options = {}) {
   const nearBottom = Object.prototype.hasOwnProperty.call(options, "nearBottom")
     ? Boolean(options.nearBottom)
     : isConversationNearBottom();
-  if (nearBottom) return false;
-  if (shouldHoldAutoScrollForCurrentTurn()) return true;
-  if (!hasRecentConversationScrollIntent()) return false;
-  return Boolean(turnForConversationAutoScrollHold());
+  const planInput = { nearBottom };
+  if (!nearBottom) {
+    planInput.autoScrollHold = shouldHoldAutoScrollForCurrentTurn();
+    if (!planInput.autoScrollHold) {
+      planInput.recentScrollIntent = hasRecentConversationScrollIntent();
+      if (planInput.recentScrollIntent) {
+        planInput.hasCurrentTurn = Boolean(turnForConversationAutoScrollHold());
+      }
+    }
+  }
+  const plan = conversationScroll.planUserReadingCurrentTurn(planInput);
+  return Boolean(plan.userReadingCurrentTurn);
 }
 
 function updateConversationAutoScrollHoldFromScroll() {

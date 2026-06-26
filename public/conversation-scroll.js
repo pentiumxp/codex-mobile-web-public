@@ -148,6 +148,37 @@
     };
   }
 
+  function planUserReadingCurrentTurn(options = {}) {
+    if (options.nearBottom) {
+      return {
+        userReadingCurrentTurn: false,
+        reason: "near-bottom",
+      };
+    }
+    if (options.autoScrollHold) {
+      return {
+        userReadingCurrentTurn: true,
+        reason: "auto-scroll-hold",
+      };
+    }
+    if (!options.recentScrollIntent) {
+      return {
+        userReadingCurrentTurn: false,
+        reason: "no-recent-scroll-intent",
+      };
+    }
+    if (options.hasCurrentTurn) {
+      return {
+        userReadingCurrentTurn: true,
+        reason: "current-turn-candidate",
+      };
+    }
+    return {
+      userReadingCurrentTurn: false,
+      reason: "no-current-turn",
+    };
+  }
+
   function planFullRenderScroll(options = {}) {
     const explicitNoStickToBottom = options.stickToBottom === false || Boolean(options.scrollToTurnReceiptStart);
     const shouldFollowBottom = !explicitNoStickToBottom
@@ -224,6 +255,7 @@
     planConversationJumpButtons,
     planFullRenderScroll,
     planLocalPatchScrollCompletion,
+    planUserReadingCurrentTurn,
     shouldFollowViewport,
     shouldFollowSubmittedMessage,
     shouldStartViewportFollow,
