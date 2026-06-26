@@ -13469,3 +13469,34 @@ The previous full handoff was archived and should be opened only when old proven
 - Notes:
   - The first post-deploy Music detail verification attempt used `X-Access-Key` and returned `401`; the real client header is `X-Codex-Mobile-Key`. Re-running with the correct header returned HTTP `200`.
   - Browser visual smoke was not run in this slice. User should refresh the PWA/WebView to pick up shell v527 before judging the mobile UI path.
+
+## 2026-06-26 - v528 missing DOM turn diagnostic coverage deployed
+
+- Scope:
+  - Continued the v527 Music empty-detail incident chain by closing a diagnostic blind spot, not by changing rendering behavior.
+  - `conversationTurnOrderDiagnosticSnapshot()` previously returned `null` when DOM turn ids were empty, even if expected visible turn ids were nonempty. That meant the user-visible state "no turns can be seen" could avoid normal `turn_order_mismatch` reporting.
+- Root-cause boundary:
+  - Failing layer: frontend projection/render diagnostic policy.
+  - Violated invariant: expected-nonempty / DOM-empty is strong mismatch evidence, not insufficient evidence.
+  - Closure classification: diagnostic coverage and ownership extraction. No UI hiding, no synthetic content, no broad refresh loop, no automatic repair-card dispatch.
+- Changes:
+  - `public/thread-diagnostic-events.js` adds `turnOrderDiagnosticSnapshot()` and `missing_dom_turn_count` support.
+  - `public/app.js` delegates turn-order snapshot planning to the helper and only supplies expected ids, DOM ids, and safe thread/turn hashes.
+  - Expected nonempty / DOM empty now reports bounded `turn_order_mismatch` evidence through the existing Home AI Owner-gated diagnostic channel.
+  - Static shell/cache bumped to `codex-mobile-shell-v528`.
+  - README, architecture optimization plan, and module map document the diagnostic boundary.
+- Validation before deploy:
+  - Focused:
+    `node --test test/thread-diagnostic-events.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    passed (`149` tests).
+  - Full source `npm test` passed (`1039` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment status:
+  - Code committed as `660373e` (`improve missing dom turn diagnostics`).
+  - Deployed through the central Home AI macOS plugin deploy path from clean source.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T080730Z-plugin-codex-mobile-web-codex-mobile-missing-dom-turn-diagnostics-v528`.
+  - Production `/api/public-config` returned `clientBuildId=0.1.11|codex-mobile-shell-v528` and `shellCacheName=codex-mobile-shell-v528`.
+  - Production static marker readback confirmed `turnOrderDiagnosticSnapshot`, `missing_dom_turn_count`, and `codex-mobile-shell-v528`.
+  - Source/prod SHA-256 matched for `public/app.js`, `public/sw.js`, `public/thread-diagnostic-events.js`, README, architecture optimization plan, and module map.
+  - Authenticated production Music detail read still returned HTTP `200`, `10` turns, `39` visible item keys, `79` omitted turns, and read mode `projection-v4-dynamic`.
