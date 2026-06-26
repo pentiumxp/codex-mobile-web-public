@@ -15952,3 +15952,54 @@ The previous full handoff was archived and should be opened only when old proven
     timing/owner categories. It does not include secrets, keys, cookies,
     launch tokens, private thread bodies, task-card bodies, uploads, or long
     logs.
+
+## 2026-06-26 - Phase C pane count state planning local slice
+
+- Latest local slice:
+  - Phase C pane-state architecture continues after the deployed v532 Phase A
+    baseline. This slice is local/private only and is not deployed by design.
+- Root-cause boundary:
+  - Symptom/risk:平铺模式的自动窗口数、显式窗口数、生效窗口数、最小关闭数和
+    最大新增数仍由 `public/app.js` 直接组合 layout capacity、候选线程、运行
+    线程、当前线程和用户保存的 pane count。这会让宽屏/iPad/手动加窗/
+    overflow split 的状态策略继续散落在 UI 编排层。
+  - Failing layer: frontend thread-tile pane-state ownership, not DOM render,
+    server projection, task-card protocol, network reads, or shell/cache.
+  - Violated invariant: `public/app.js` should supply real DOM/thread facts and
+    execute side effects; deterministic pane-state rules should live in a pure
+    helper with focused tests.
+- Changes:
+  - `public/thread-tile-state.js` now exposes `paneCountStatePlan()` to
+    normalize layout capacity, candidate ids, max candidate ids, running/current
+    thread ids, and explicit pane count into `autoPaneCount`,
+    `effectivePaneCount`, `minPaneCount`, and `maxPaneCount`.
+  - `public/app.js` now collects thread/list/layout facts through
+    `threadTilePaneCountState()`; `autoThreadTilePaneCount()`,
+    `effectiveThreadTilePaneCount()`, `threadTileMinimumPaneCount()`, and
+    `threadTileMaximumPaneCount()` read helper output instead of owning the
+    policy.
+  - Added coverage for automatic current/running-thread sizing, explicit count
+    above recommended capacity but inside candidate/user limits, empty-candidate
+    fallback, and `explicitPaneCount: 0` precedence over legacy fields.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md` with the Phase C boundary.
+- Validation:
+  - Focused:
+    `node --test test/thread-tile-state.test.js test/thread-tile-layout.test.js test/thread-tile-layout-ui.test.js test/thread-tile-actions.test.js`
+    passed (`48` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`1125` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Not deployed. No `CLIENT_BUILD_ID` / PWA shell cache bump. This is a small
+    Phase C local slice to batch with the next pane-state module before one
+    production deployment.
+- Next:
+  - Continue Phase C by moving the next pane runtime ownership boundary out of
+    `public/app.js`, likely split sizing / pane-local draft/runtime ownership /
+    pane-local command-detail state, before batching a deployable module.
+- Privacy:
+  - Only bounded file paths, test counts, build/slice labels, and architecture
+    state are recorded. No secrets, cookies, launch tokens, private thread
+    bodies, task-card bodies, uploads, or long logs are included.

@@ -115,6 +115,55 @@
     };
   }
 
+  function paneCountStatePlan(input = {}, options = {}) {
+    const maxPanes = maxPaneLimit(options.maxPanes || input.maxPanes || DEFAULT_USER_MAX_PANES);
+    const capacity = Math.max(1, normalizePaneCount(input.capacity || input.layoutCapacity, {
+      fallback: 1,
+      maxPanes,
+    }) || 1);
+    const candidateIds = uniqueIds(input.candidateIds || input.defaultIds || []).slice(0, capacity);
+    const candidateCount = candidateIds.length;
+    const maxCandidateIds = uniqueIds(input.maxCandidateIds || input.maximumCandidateIds || input.allCandidateIds || candidateIds);
+    const maxCandidateCount = Math.max(1, Math.min(maxPanes, maxCandidateIds.length || candidateCount || 1));
+    const runningSet = new Set(uniqueIds(input.runningIds || []));
+    const currentThreadId = text(input.currentThreadId).trim();
+    if (currentThreadId) runningSet.add(currentThreadId);
+    const runningCount = runningSet.size;
+    const explicitPaneCountInput = Object.prototype.hasOwnProperty.call(input, "explicitPaneCount")
+      ? input.explicitPaneCount
+      : Object.prototype.hasOwnProperty.call(input, "paneCount")
+        ? input.paneCount
+        : input.threadTilePaneCount;
+    const explicitPaneCount = normalizePaneCount(explicitPaneCountInput, {
+      fallback: 0,
+      maxPanes,
+    });
+    let autoPaneCount = 1;
+    if (candidateCount > 0) {
+      const baseline = capacity > 1 ? Math.min(2, candidateCount, capacity) : 1;
+      autoPaneCount = Math.max(1, Math.min(capacity, candidateCount, Math.max(baseline, runningCount)));
+    }
+    const effectivePaneCount = explicitPaneCount > 0
+      ? Math.max(1, Math.min(maxCandidateCount, explicitPaneCount))
+      : Math.max(1, Math.min(capacity, candidateCount || 1, autoPaneCount));
+    const minPaneCount = Math.min(capacity, candidateCount || 1) >= 2 ? 2 : 1;
+    return {
+      action: "pane-count-state",
+      reason: explicitPaneCount > 0 ? "explicit" : "auto",
+      capacity,
+      candidateIds,
+      candidateCount,
+      maxCandidateIds,
+      maxCandidateCount,
+      runningCount,
+      explicitPaneCount,
+      autoPaneCount,
+      effectivePaneCount,
+      minPaneCount,
+      maxPaneCount: maxCandidateCount,
+    };
+  }
+
   function switchMenuOptionsPlan(input = {}) {
     const currentId = text(input.currentId || input.currentThreadId || input.threadId).trim();
     return uniqueIds([
@@ -1021,6 +1070,7 @@
     operationDockPlan,
     operationSignature,
     paneCountChangePlan,
+    paneCountStatePlan,
     paneSelectionPlan,
     paneSlotMutationEffectsPlan,
     prependSplitPair,

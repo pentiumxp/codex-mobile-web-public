@@ -74,7 +74,11 @@ test("thread tile layout is wired as an explicit shell policy", () => {
   assert.match(layoutBody, /verticalChromePx: threadTileVerticalChromePx\(\)/);
   assert.match(appJs, /function effectiveThreadTilePaneCount\(/);
   assert.match(functionBody(appJs, "threadTileLayoutCapacity"), /layout\.recommendedMaxPanes \|\| layout\.maxPanes/);
-  assert.match(functionBody(appJs, "effectiveThreadTilePaneCount"), /if \(explicit > 0\) \{[\s\S]*threadTileMaximumPaneCount\(layout\)[\s\S]*explicit/);
+  assert.match(functionBody(appJs, "threadTilePaneCountState"), /threadTileStatePolicy\.paneCountStatePlan/);
+  assert.match(functionBody(appJs, "threadTilePaneCountState"), /candidateIds: defaultThreadTileCandidateIds\(layout, \{ maxPanes: capacity \}\)/);
+  assert.match(functionBody(appJs, "threadTilePaneCountState"), /maxCandidateIds: defaultThreadTileCandidateIds\(layout, \{ maxPanes: THREAD_TILE_USER_MAX_PANES \}\)/);
+  assert.match(functionBody(appJs, "threadTilePaneCountState"), /runningIds: threadTileRunningPaneIds\(\)/);
+  assert.match(functionBody(appJs, "effectiveThreadTilePaneCount"), /threadTilePaneCountState\(layout\)\.effectivePaneCount/);
   assert.match(appJs, /function setThreadTilePaneCount\(/);
   assert.match(appJs, /function closeThreadTilePane\(/);
   const setCountBody = functionBody(appJs, "setThreadTilePaneCount");
@@ -183,7 +187,7 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(candidateBody, /currentThreadId: state\.currentThreadId/);
   assert.match(candidateBody, /selectPinnedThreadTileIds: threadTileLayoutPolicy\.selectPinnedThreadTileIds/);
   assert.match(candidateBody, /return plan\.ids/);
-  assert.match(functionBody(appJs, "threadTileMaximumPaneCount"), /THREAD_TILE_USER_MAX_PANES/);
+  assert.match(functionBody(appJs, "threadTileMaximumPaneCount"), /threadTilePaneCountState\(layout\)\.maxPaneCount/);
   assert.match(functionBody(appJs, "defaultThreadTileCandidateIds"), /THREAD_TILE_USER_MAX_PANES/);
 
   const loadBody = functionBody(appJs, "loadThreadTileDetail");

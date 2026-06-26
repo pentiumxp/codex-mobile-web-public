@@ -12403,30 +12403,36 @@ function defaultThreadTileCandidateIds(layout = threadTileLayout(), options = {}
   });
 }
 
-function autoThreadTilePaneCount(layout = threadTileLayout()) {
-  const capacity = threadTileLayoutCapacity(layout);
-  const candidates = defaultThreadTileCandidateIds(layout, { maxPanes: capacity });
-  const candidateCount = candidates.length;
-  if (!candidateCount) return 1;
-  const runningIds = new Set();
+function threadTileRunningPaneIds() {
+  const runningIds = [];
   visibleThreads(state.threads).forEach((thread) => {
     const id = String(thread && thread.id || "");
-    if (id && isRunningStatus(thread && thread.status)) runningIds.add(id);
+    if (id && isRunningStatus(thread && thread.status)) runningIds.push(id);
   });
-  if (state.currentThreadId) runningIds.add(String(state.currentThreadId));
-  const baseline = capacity > 1 ? Math.min(2, candidateCount, capacity) : 1;
-  return Math.max(1, Math.min(capacity, candidateCount, Math.max(baseline, runningIds.size)));
+  if (state.currentThreadId) runningIds.push(String(state.currentThreadId));
+  return threadTileStatePolicy.uniqueIds(runningIds);
+}
+
+function threadTilePaneCountState(layout = threadTileLayout()) {
+  const capacity = threadTileLayoutCapacity(layout);
+  return threadTileStatePolicy.paneCountStatePlan({
+    capacity,
+    candidateIds: defaultThreadTileCandidateIds(layout, { maxPanes: capacity }),
+    maxCandidateIds: defaultThreadTileCandidateIds(layout, { maxPanes: THREAD_TILE_USER_MAX_PANES }),
+    runningIds: threadTileRunningPaneIds(),
+    currentThreadId: state.currentThreadId,
+    explicitPaneCount: state.threadTilePaneCount,
+  }, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+  });
+}
+
+function autoThreadTilePaneCount(layout = threadTileLayout()) {
+  return threadTilePaneCountState(layout).autoPaneCount;
 }
 
 function effectiveThreadTilePaneCount(layout = threadTileLayout()) {
-  const capacity = threadTileLayoutCapacity(layout);
-  const explicit = normalizeThreadTilePaneCount(state.threadTilePaneCount, 0);
-  if (explicit > 0) {
-    return Math.max(1, Math.min(threadTileMaximumPaneCount(layout), explicit));
-  }
-  const desired = autoThreadTilePaneCount(layout);
-  const candidateCount = defaultThreadTileCandidateIds(layout, { maxPanes: capacity }).length || 1;
-  return Math.max(1, Math.min(capacity, candidateCount, desired));
+  return threadTilePaneCountState(layout).effectivePaneCount;
 }
 
 function threadTileDisplayLayout(layout = threadTileLayout(), ids = []) {
@@ -13383,14 +13389,11 @@ function applyThreadTileOperationModeTogglePlan(effect) {
 }
 
 function threadTileMinimumPaneCount(layout = threadTileLayout()) {
-  const capacity = threadTileLayoutCapacity(layout);
-  const candidateCount = defaultThreadTileCandidateIds(layout, { maxPanes: capacity }).length || 1;
-  return Math.min(capacity, candidateCount) >= 2 ? 2 : 1;
+  return threadTilePaneCountState(layout).minPaneCount;
 }
 
 function threadTileMaximumPaneCount(layout = threadTileLayout()) {
-  const candidateCount = defaultThreadTileCandidateIds(layout, { maxPanes: THREAD_TILE_USER_MAX_PANES }).length || 1;
-  return Math.max(1, Math.min(THREAD_TILE_USER_MAX_PANES, candidateCount));
+  return threadTilePaneCountState(layout).maxPaneCount;
 }
 
 function setThreadTilePaneCount(nextCount, options = {}) {

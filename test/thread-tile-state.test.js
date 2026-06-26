@@ -496,6 +496,53 @@ test("thread tile state plans pane count changes and selection fallback", () => 
   });
 });
 
+test("thread tile state owns effective pane count policy", () => {
+  const auto = state.paneCountStatePlan({
+    capacity: 4,
+    candidateIds: ["current", "music", "home", "mail"],
+    maxCandidateIds: ["current", "music", "home", "mail", "note", "movie"],
+    runningIds: ["music", "home"],
+    currentThreadId: "current",
+    explicitPaneCount: 0,
+  }, { maxPanes: 12 });
+  assert.equal(auto.reason, "auto");
+  assert.equal(auto.autoPaneCount, 3);
+  assert.equal(auto.effectivePaneCount, 3);
+  assert.equal(auto.minPaneCount, 2);
+  assert.equal(auto.maxPaneCount, 6);
+
+  const explicit = state.paneCountStatePlan({
+    capacity: 4,
+    candidateIds: ["a", "b", "c", "d"],
+    maxCandidateIds: ["a", "b", "c", "d", "e", "f"],
+    explicitPaneCount: 5,
+  }, { maxPanes: 12 });
+  assert.equal(explicit.reason, "explicit");
+  assert.equal(explicit.effectivePaneCount, 5);
+  assert.equal(explicit.maxPaneCount, 6);
+
+  const explicitZero = state.paneCountStatePlan({
+    capacity: 4,
+    candidateIds: ["a", "b", "c", "d"],
+    maxCandidateIds: ["a", "b", "c", "d", "e", "f"],
+    explicitPaneCount: 0,
+    paneCount: 5,
+  }, { maxPanes: 12 });
+  assert.equal(explicitZero.reason, "auto");
+  assert.equal(explicitZero.effectivePaneCount, 2);
+
+  const empty = state.paneCountStatePlan({
+    capacity: 6,
+    candidateIds: [],
+    maxCandidateIds: [],
+    runningIds: ["missing"],
+  }, { maxPanes: 12 });
+  assert.equal(empty.autoPaneCount, 1);
+  assert.equal(empty.effectivePaneCount, 1);
+  assert.equal(empty.minPaneCount, 1);
+  assert.equal(empty.maxPaneCount, 1);
+});
+
 test("thread tile state plans explicit pane selection", () => {
   assert.equal(state.selectPanePlan({
     enabled: false,

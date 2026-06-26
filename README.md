@@ -45,6 +45,37 @@ completion、scroll/bottom-follow 和 single-thread shell update 的所有权边
 `status=ready`，detail 走 `projection-active-overlay` warm path，active overlay
 gate 为 `ready`；抽样文件 source/prod SHA-256 短 hash 一致。
 
+## 2026-06-26 Phase C Pane Count State Planning Slice
+
+本地小切片开始推进 Phase C 的 pane-state 架构化。此前平铺模式的自动窗口数、
+显式窗口数、生效窗口数、最小关闭数和最大新增数仍由 `public/app.js` 直接组合：
+app 同时读取 layout capacity、候选线程、运行线程、当前线程和用户保存的 pane
+count。这会让宽屏/平板/手动加窗/overflow split 的规则继续散落在 UI 编排层。
+
+本次修复：
+
+- `public/thread-tile-state.js` 新增 `paneCountStatePlan()`，统一把 layout
+  capacity、default candidate ids、max candidate ids、running/current thread ids
+  和 explicit pane count 归一化成 `autoPaneCount`、`effectivePaneCount`、
+  `minPaneCount`、`maxPaneCount`。
+- `public/app.js` 新增 `threadTilePaneCountState()`，只负责收集真实线程列表、
+  current thread、running status 和 layout facts，然后读取 helper plan；
+  `autoThreadTilePaneCount()`、`effectiveThreadTilePaneCount()`、
+  `threadTileMinimumPaneCount()`、`threadTileMaximumPaneCount()` 不再内联策略。
+- focused tests 覆盖自动模式根据 current/running thread 扩大窗口数、显式
+  pane count 可以超过推荐 capacity 但受候选线程和用户上限约束、空候选回到
+  单窗口，以及 app wiring 不再要求旧的内联判断。
+- 不改变 DOM、网络、timer、server projection、任务卡协议、shell/cache 或部署状态。
+
+闭环验证：
+
+```bash
+node --test test/thread-tile-state.test.js test/thread-tile-layout.test.js test/thread-tile-layout-ui.test.js test/thread-tile-actions.test.js
+```
+
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为 Phase C
+本地模块累积。
+
 ## 2026-06-26 Phase A Local Patch Completion Snapshot Slice
 
 本地小切片继续推进 Phase A 的 thread-detail render/patch ownership 收敛。

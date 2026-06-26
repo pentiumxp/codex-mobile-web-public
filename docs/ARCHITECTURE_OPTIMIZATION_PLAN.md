@@ -1002,9 +1002,13 @@ drain scheduling now also live there: active pane ids, controller ids, loading
 ids, max concurrent load slots, abort ids, load ids, deferred ids, active pane
 drain eligibility, and drain delay are computed as bounded plans while
 `public/app.js` keeps real AbortController aborts, timers, and network
-execution. Runtime detail reads are now capped separately from visible pane
-count, so wide screens can still show more panes without starting every large
-thread detail read at once.
+execution. Effective pane-count state now also lives there: layout capacity,
+default candidate ids, maximum candidate ids, running/current thread ids, and
+explicit user pane count are normalized into automatic, effective, min, and
+max pane counts as one bounded plan while `public/app.js` only supplies current
+thread/list facts. Runtime detail reads are now capped separately from visible
+pane count, so wide screens can still show more panes without starting every
+large thread detail read at once.
 App code can no
 longer fall through from tile mode into the
 single-thread patch path without an explicit policy decision, fall through from
@@ -1046,6 +1050,7 @@ Target:
   pane slot mutation side-effect planning including pane count/close execution
   is also outside app.js; detail-load lifecycle side-effect planning is also
   outside app.js; detail-load queue/abort/drain planning is also outside app.js;
+  automatic/effective/min/max pane-count planning is also outside app.js;
   refresh, first-paint, and full-backfill performance event field ownership is
   also outside app.js;
   operation card content and final template planning are now outside app.js;
@@ -1313,7 +1318,10 @@ Target:
   side-effect planning also now lives there, including draft/Composer/patch
   intent for active pane changes. Detail-load lifecycle side-effect planning
   also now lives there, including start/success/error/finally state/render
-  intent. Continue moving pane widths, per-pane drafts, max concurrent detail reads, pane-local
+  intent. Effective pane-count planning also now lives there, so automatic
+  current/running-thread sizing, explicit user-requested counts, min close
+  bounds, and max add bounds share one helper-owned plan. Continue moving pane
+  widths, per-pane drafts, max concurrent detail reads, pane-local
   send/approval/interrupt ownership, command detail panels, and mobile collapse
   behavior into testable helpers without DOM side effects.
 - Treat each pane as a scaled mobile single-thread runtime instance. Shared
