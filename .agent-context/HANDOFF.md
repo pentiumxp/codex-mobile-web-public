@@ -11105,3 +11105,66 @@ The previous full handoff was archived and should be opened only when old proven
     refresh performance payload assembly boundaries from `refreshCurrentThread()`.
     If production diagnostics instead show server cold-path projection misses,
     pivot to Phase B with current `projectionMissReason` evidence.
+
+## 2026-06-26 - v500 thread refresh consistency check plan deployed
+
+- Latest code commit:
+  - `45c4f33 extract thread refresh consistency check plan`
+- v500 change:
+  - Continued Phase A frontend render/patch ownership convergence.
+  - `public/thread-detail-render-plan.js` now owns projection-consistency check
+    planning through `planThreadDetailRefreshConsistencyCheck()`.
+  - `planThreadDetailRefreshOutcomeExecution()` returns a structured
+    `consistencyCheck` object with `shouldCheck`, bounded `phase`,
+    `renderMode`, and reason.
+  - `refreshCurrentThread()` no longer derives the consistency-check branch
+    directly from `executionPlan.projectionConsistencyPhase`; it only invokes
+    the existing real `checkConversationProjectionConsistency()` call when the
+    helper-planned `consistencyCheck.shouldCheck` is true.
+  - Full-render refreshes still explicitly use the `refresh-full-render`
+    consistency phase, now planned by the helper.
+  - Static build/cache: `0.1.11|codex-mobile-shell-v500` /
+    `codex-mobile-shell-v500`.
+- Root-cause boundary:
+  - Symptom/risk: after v498/v499, app code no longer owned execution-action
+    branching or patch telemetry selection, but it still owned
+    projection-consistency check condition and render-mode wiring. That kept one
+    more refresh-state branch embedded in `public/app.js`.
+  - Failing layer: frontend thread-detail refresh consistency-check ownership.
+  - Classification: root-cause architecture boundary cleanup. No server
+    projection change, frontend duplicate hiding, forced refresh, skipped
+    refresh, task-card protocol change, diagnostic-transport fallback, or
+    visual layout change was added.
+- Validation:
+  - Focused source suite passed:
+    `test/thread-detail-render-plan.test.js`,
+    `test/conversation-render.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-goal-service.test.js`, `test/thread-task-card-route.test.js`,
+    and `test/thread-tile-layout-ui.test.js` (`152` tests).
+  - Full source `npm test` passed (`931` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Production deploy:
+  - Deployed through Home AI central macOS plugin deploy path with reason
+    `codex-mobile-thread-refresh-consistency-check-v500`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T003458Z-plugin-codex-mobile-web-codex-mobile-thread-refresh-consistency-check-v500`
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v500`,
+    `shellCacheName=codex-mobile-shell-v500`, `version=0.1.11`,
+    `authRequired=true`.
+  - Production focused suite passed (`152` tests).
+  - Source/production SHA parity verified for README/docs, app/static shell,
+    render-plan helper, and focused tests touched by v500.
+- Privacy:
+  - Evidence recorded only statuses, build ids, test counts, bounded deploy
+    metadata, and short hashes. No message bodies, task-card bodies, uploads,
+    private paths, cookies, access keys, provider payloads, database rows,
+    screenshots, or long logs were copied into docs or handoff.
+- Release:
+  - Public was not pushed for v500.
+- Next suggested slice:
+  - Continue Phase A by extracting refresh performance payload assembly or
+    scroll/render side-effect ownership from `refreshCurrentThread()`. If live
+    diagnostics show remaining slow-path misses are server cold-path rather
+    than client render/patch ownership, pivot to Phase B with current
+    `projectionMissReason` and `thread_refresh_ms` evidence.
