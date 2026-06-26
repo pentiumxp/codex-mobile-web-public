@@ -16497,3 +16497,63 @@ The previous full handoff was archived and should be opened only when old proven
   - Only bounded file paths, test counts, and architecture state are recorded.
     No secrets, cookies, launch tokens, private thread bodies, task-card bodies,
     uploads, screenshots, or long logs are included.
+
+## 2026-06-27 - Phase E thread tile visual fixture local slice
+
+- Latest local slice:
+  - Started Phase E browser/visual coverage after the Phase C pane patch
+    completion slice. This slice is local/private only and is not deployed by
+    design.
+- Root-cause boundary:
+  - Symptom/risk: unit tests could prove thread-tile helper grouping, but not
+    whether the real CSS/DOM layout produced sparse second rows, overlapping
+    panes, fixed bottom-control rows, operation-bubble duration clipping, or
+    Composer/pane overlap on wide displays.
+  - Failing layer: missing browser/visual evidence for thread-tile layout, not
+    runtime thread projection, task-card protocol, CSS behavior changes,
+    Home AI host/proxy, or shell/cache.
+  - Violated invariant: Phase E visual closure should exercise the same helper
+    output through real browser layout before relying on screenshots or
+    user-observed regressions.
+- Changes:
+  - Added `scripts/codex-mobile-thread-tile-visual-fixture.js`.
+  - The fixture uses `public/thread-tile-layout.js` and
+    `public/thread-tile-state.js` to build bounded fake pane layouts, loads
+    real `public/styles.css`, drives headless Chrome, writes screenshots, and
+    validates DOM rect metrics.
+  - Covered 3000px wide 5-pane layout as one row and overlay/tablet-landscape
+    5-pane layout as four columns with only one vertical split column.
+  - Validates pane/board/composer bounds, pane non-overlap, non-split column
+    full height, hidden bottom buttons not occupying fixed layout, pane-local
+    operation bubble overlay bounds, and visible command duration text.
+  - Added `test/thread-tile-layout-ui.test.js` coverage for model/HTML/privacy
+    bounds and added the new script to `npm run check`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation:
+  - Focused:
+    `node --test test/thread-tile-layout-ui.test.js test/thread-tile-state.test.js test/thread-tile-layout.test.js`
+    passed (`54` tests).
+  - Real headless Chrome fixtures:
+    `node scripts/codex-mobile-thread-tile-visual-fixture.js --width 3000 --height 1500 --panes 5 --json`
+    passed, producing one-row 5-pane wide layout evidence.
+  - Real headless Chrome fixtures:
+    `node scripts/codex-mobile-thread-tile-visual-fixture.js --width 3000 --height 1500 --panes 5 --menu-overlay --json`
+    passed, producing one vertical split-column overlay evidence.
+  - `npm run check` passed.
+  - `npm test` passed (`1136` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Not deployed. No `CLIENT_BUILD_ID` / PWA shell cache bump. This is a
+    Phase E verification capability slice to batch with later browser/visual
+    coverage before one module deploy.
+- Next:
+  - Continue Phase E with embedded/PWA live-debug coverage for Composer input,
+    long-turn streaming, task-card expand/collapse, image rendering, or PWA
+    shell refresh.
+- Privacy:
+  - Fixture content is fake and bounded. Artifacts record screenshots and
+    layout metrics only. No secrets, cookies, launch tokens, private thread
+    bodies, task-card bodies, upload bytes, private paths, provider payloads,
+    prompts, or long logs are included.

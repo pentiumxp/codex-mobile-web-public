@@ -9,6 +9,8 @@ const root = path.resolve(__dirname, "..");
 const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
+const packageJson = fs.readFileSync(path.join(root, "package.json"), "utf8");
+const threadTileVisualFixture = require(path.join(root, "scripts", "codex-mobile-thread-tile-visual-fixture.js"));
 
 function functionBody(source, name) {
   const start = source.indexOf(`function ${name}(`);
@@ -462,6 +464,55 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.doesNotMatch(refreshBody, /if \(shouldRenderDetail && !tilePanePatchedDetail && patchExecutionPlan\.tryLocalPatch\)/);
   assert.doesNotMatch(refreshBody, /renderPlan\.canPatch && !tileSurfaceRefresh/);
   assert.doesNotMatch(refreshBody, /tilePatchPlan && tilePatchPlan\.surface === "thread-tile-pane"/);
+});
+
+test("thread tile visual fixture validates wide-screen panes without private content", () => {
+  const wideModel = threadTileVisualFixture.buildTileFixtureModel({
+    width: 3000,
+    height: 1500,
+    panes: 5,
+    menuOverlay: false,
+    sidebarWidth: 0,
+  });
+  assert.equal(wideModel.layout.enabled, true);
+  assert.equal(wideModel.layout.reason, "wide");
+  assert.equal(wideModel.expectedSingleRow, true);
+  assert.equal(wideModel.displayLayout.visiblePanes, 5);
+  assert.equal(wideModel.displayLayout.columns, 5);
+  assert.equal(wideModel.displayLayout.rows, 1);
+  assert.deepEqual(wideModel.displayLayout.columnGroups, [["pane-a"], ["pane-b"], ["pane-c"], ["pane-d"], ["pane-e"]]);
+
+  const overlayModel = threadTileVisualFixture.buildTileFixtureModel({
+    width: 3000,
+    height: 1500,
+    panes: 5,
+    menuOverlay: true,
+  });
+  assert.equal(overlayModel.layout.enabled, true);
+  assert.equal(overlayModel.layout.reason, "tablet-landscape");
+  assert.equal(overlayModel.expectedOverflowSplit, true);
+  assert.equal(overlayModel.displayLayout.visiblePanes, 5);
+  assert.equal(overlayModel.displayLayout.columns, 4);
+  assert.equal(overlayModel.displayLayout.rows, 2);
+  assert.equal(overlayModel.displayLayout.columnGroups.filter((group) => group.length > 1).length, 1);
+
+  assert.equal(threadTileVisualFixture.parseArgs(["--width", "2600", "--panes", "6", "--font-size", "xxlarge"]).panes, 6);
+  assert.deepEqual(threadTileVisualFixture.parseArgs(["--split", "pane-b:pane-e"]).splits, [{ anchorId: "pane-b", childId: "pane-e" }]);
+  const html = threadTileVisualFixture.fixtureHtml(stylesCss, {
+    width: 3000,
+    height: 1500,
+    panes: 5,
+    menuOverlay: false,
+  });
+  assert.match(html, /thread-tile-board/);
+  assert.match(html, /thread-tile-operation-dock/);
+  assert.match(html, /mobile-operation-bubble-duration/);
+  assert.match(html, /composer-control-card/);
+  assert.match(html, /durationVisible/);
+  assert.match(html, /hiddenBottomButtons/);
+  assert.doesNotMatch(html, /accessKey|cookie|launchToken|taskBody|rawPrompt|providerPayload|uploadBytes/);
+
+  assert.match(packageJson, /scripts\/codex-mobile-thread-tile-visual-fixture\.js/);
 });
 
 test("thread tile composer targets the active pane without replacing the shared composer", () => {

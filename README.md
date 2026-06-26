@@ -352,6 +352,41 @@ node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js te
 该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为 Phase C
 本地模块累积。
 
+## 2026-06-27 Phase E Thread Tile Visual Fixture Slice
+
+本地小切片开始补 Phase E 的浏览器/视觉回归入口，先覆盖最近反复出问题的平铺
+多 pane 布局。此前平铺相关测试主要验证纯 helper 和 app wiring；它们能证明
+5 个 pane 应该如何分组，但不能证明真实 CSS/DOM 下是否出现整板换行、pane
+遮挡、底部按钮固定占行、operation bubble 时间被截断，或者 Composer 和 pane
+互相覆盖。
+
+本次修复：
+
+- 新增 `scripts/codex-mobile-thread-tile-visual-fixture.js`，用现有
+  `public/thread-tile-layout.js` 和 `public/thread-tile-state.js` 生成 bounded
+  fixture，再加载真实 `public/styles.css` 通过 headless Chrome 截图和 DOM rect
+  检查平铺布局。
+- fixture 覆盖两类关键场景：3000px 宽屏 5 pane 应保持一行 5 列；overlay/
+  tablet-landscape 容量受限时，5 pane 应只让一个目标列上下分屏，其他列保持满高。
+- 检查项包括 pane/board/composer 边界、pane 不互相重叠、非 split 列满高、
+  hidden bottom button 不占固定行、pane-local operation bubble 不越界、命令
+  duration 文本不被截断。
+- `test/thread-tile-layout-ui.test.js` 增加脚本模型/HTML/隐私边界覆盖，`npm run check`
+  也检查新脚本语法。
+- 不改变运行时 DOM、CSS、server projection、任务卡协议、shell/cache 或部署状态。
+
+闭环验证：
+
+```bash
+node --test test/thread-tile-layout-ui.test.js test/thread-tile-state.test.js test/thread-tile-layout.test.js
+node scripts/codex-mobile-thread-tile-visual-fixture.js --width 3000 --height 1500 --panes 5 --json
+node scripts/codex-mobile-thread-tile-visual-fixture.js --width 3000 --height 1500 --panes 5 --menu-overlay --json
+```
+
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；它是 Phase E
+验证能力的本地/private commit，后续应继续补真实 embedded/PWA live-debug
+场景，而不是用 fixture 替代生产读回。
+
 ## 2026-06-26 Phase C Pane Scroll Runtime Planning Slice
 
 本地小切片继续推进 Phase C 的 pane-runtime ownership。此前每个平铺窗口的

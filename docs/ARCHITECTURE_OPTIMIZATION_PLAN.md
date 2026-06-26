@@ -1263,6 +1263,26 @@ Target:
 - Prefer evidence-driven fixes over client-only duplicate filtering or visual
   masking.
 
+Current local coverage:
+
+- The first thread-tile Phase E fixture is local/private and not deployed.
+  `scripts/codex-mobile-thread-tile-visual-fixture.js` uses the existing
+  `public/thread-tile-layout.js` and `public/thread-tile-state.js` policies
+  plus real `public/styles.css` to render bounded fake pane content in headless
+  Chrome. It verifies that wide desktop CSS viewports can keep five panes in
+  one row, while overlay/tablet-landscape capacity pressure packs overflow
+  panes into one vertical split column instead of creating a sparse second row.
+  It also checks pane/board/composer bounds, non-overlap, non-split columns
+  staying full height, hidden bottom buttons not occupying fixed layout rows,
+  pane-local operation bubble overlay bounds, and command duration visibility.
+  The fixture records only bounded layout metrics and screenshots with fake
+  content; it does not read private thread bodies, task-card bodies, uploads,
+  paths, cookies, tokens, prompts, or logs.
+- This does not replace Home AI embedded/PWA live-debug coverage. The next
+  Phase E slices still need real browser smoke around Composer input, long-turn
+  streaming, task-card expand/collapse, upload/generated image rendering, and
+  PWA shell refresh.
+
 Current diagnostic intake bridge:
 
 - v441 closes the remaining thread-tile local-patch signature boundary.
