@@ -448,15 +448,17 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(notificationBody, /loadThreadTileDetail\(params\.threadId, \{ force: true, background: true/);
 
   const refreshBody = functionBody(appJs, "refreshCurrentThread");
-  assert.match(refreshBody, /const patchSurfaceProbePlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchSurface\(\{/);
-  assert.match(refreshBody, /const patchSurfaceProbeEffectsPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchSurfaceProbeEffects\(\{/);
-  assert.match(refreshBody, /const tilePatchPlan = applyThreadDetailRefreshPatchSurfaceProbeEffectsPlan\(patchSurfaceProbeEffectsPlan, \{ threadId \}\);/);
+  assert.match(refreshBody, /const patchSurfaceProbeStage = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchSurfaceProbeStage\(\{/);
+  assert.match(refreshBody, /shouldRenderDetail,[\s\S]*threadTileMode: state\.threadTileMode,[\s\S]*threadTileConversationSurface,[\s\S]*threadId,/);
+  assert.match(refreshBody, /const tilePatchPlan = applyThreadDetailRefreshPatchSurfaceProbeEffectsPlan\([\s\S]*patchSurfaceProbeStage\.patchSurfaceProbeEffectsPlan,[\s\S]*\{ threadId \},[\s\S]*\);/);
   assert.match(appJs, /function applyThreadDetailRefreshPatchSurfaceProbeEffectsPlan\(plan, context = \{\}\)/);
   assert.match(functionBody(appJs, "applyThreadDetailRefreshPatchSurfaceProbeEffect"), /threadDetailDomPatchSurface\(\{[\s\S]*threadId: String\(item\.threadId \|\| context\.threadId \|\| ""\),[\s\S]*\}\);/);
   assert.doesNotMatch(refreshBody, /patchSurfaceProbePlan\.shouldProbeTilePatchSurface[\s\S]*\? threadDetailDomPatchSurface/);
-  assert.match(refreshBody, /const patchSurfacePlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchSurface\(\{[\s\S]*threadTileMode: state\.threadTileMode,[\s\S]*threadTileConversationSurface,[\s\S]*tilePatchSurface: tilePatchPlan && tilePatchPlan\.surface,[\s\S]*\}\);/);
-  assert.match(refreshBody, /const patchExecutionStage = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchExecutionStage\(\{[\s\S]*renderPlan,[\s\S]*patchSurfacePlan,[\s\S]*\}\);/);
-  assert.match(refreshBody, /const patchExecutionPlan = patchExecutionStage\.patchExecutionPlan;/);
+  assert.doesNotMatch(refreshBody, /planThreadDetailRefreshPatchSurface\(\{/);
+  assert.doesNotMatch(refreshBody, /planThreadDetailRefreshPatchSurfaceProbeEffects\(\{/);
+  assert.match(refreshBody, /const patchSurfaceResultStage = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchSurfaceResultStage\(\{[\s\S]*threadTileMode: state\.threadTileMode,[\s\S]*threadTileConversationSurface,[\s\S]*tilePatchPlan,[\s\S]*\}\);/);
+  assert.match(refreshBody, /const patchExecutionStage = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchExecutionStage\(\{[\s\S]*renderPlan,[\s\S]*patchSurfacePlan: patchSurfaceResultStage\.patchSurfacePlan,[\s\S]*\}\);/);
+  assert.doesNotMatch(refreshBody, /const patchExecutionPlan = patchExecutionStage\.patchExecutionPlan;/);
   assert.match(refreshBody, /const patchAttemptEffectsPlan = patchExecutionStage\.patchAttemptEffectsPlan;/);
   assert.doesNotMatch(refreshBody, /canPatch: renderPlan\.canPatch/);
   assert.doesNotMatch(refreshBody, /tileSurfaceRefresh: patchSurfacePlan\.tileSurfaceRefresh/);

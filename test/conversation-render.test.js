@@ -3181,8 +3181,8 @@ test("current-thread refresh patches the current tile pane for metadata-only til
   const body = functionBody("refreshCurrentThread");
   assert.match(body, /let tilePanePatchedDetail = false;/);
   assert.match(body, /const patchExecutionStage = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchExecutionStage\(\{/);
-  assert.match(body, /renderPlan,[\s\S]*patchSurfacePlan,/);
-  assert.match(body, /const patchExecutionPlan = patchExecutionStage\.patchExecutionPlan;/);
+  assert.match(body, /renderPlan,[\s\S]*patchSurfacePlan: patchSurfaceResultStage\.patchSurfacePlan,/);
+  assert.doesNotMatch(body, /const patchExecutionPlan = patchExecutionStage\.patchExecutionPlan;/);
   assert.match(body, /const patchAttemptEffectsPlan = patchExecutionStage\.patchAttemptEffectsPlan;/);
   assert.match(body, /const patchAttempt = applyThreadDetailRefreshPatchAttemptEffectsPlan\(patchAttemptEffectsPlan, \{/);
   assert.match(body, /tilePanePatchedDetail = patchAttempt\.tilePanePatchedDetail;/);

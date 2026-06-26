@@ -45,6 +45,42 @@ completion、scroll/bottom-follow 和 single-thread shell update 的所有权边
 `status=ready`，detail 走 `projection-active-overlay` warm path，active overlay
 gate 为 `ready`；抽样文件 source/prod SHA-256 短 hash 一致。
 
+## 2026-06-27 Phase A Patch Surface Probe Stage Slice
+
+本地小切片继续收敛 `refreshCurrentThread()` 的 patch surface ownership。此前
+`planThreadDetailRefreshPatchSurface()` 和
+`planThreadDetailRefreshPatchSurfaceProbeEffects()` 已经分别负责 surface 分类和
+DOM probe effect，但 `public/app.js` 仍直接串联“探测前 surface plan -> probe
+effects -> 真实 DOM probe -> 探测结果 surface plan”。这让 tile pane / single
+thread surface 的两阶段判定继续留在主 app 文件里。
+
+本次修复：
+
+- `public/thread-detail-render-plan.js` 新增
+  `planThreadDetailRefreshPatchSurfaceProbeStage()`，统一产出探测前 surface plan
+  和 DOM probe effects。
+- `public/thread-detail-render-plan.js` 新增
+  `planThreadDetailRefreshPatchSurfaceResultStage()`，用真实 DOM probe 返回的
+  `tilePatchPlan.surface` 产出最终 patch surface plan。
+- `public/app.js` 仍执行真实 `threadDetailDomPatchSurface()` 探测，但不再直接调用
+  底层 surface/probe helper，也去掉了未使用的 `patchExecutionPlan` 中间变量。
+- `test/thread-detail-render-plan.test.js` 覆盖 probe/result stage 输出形状；
+  `test/mobile-viewport.test.js` 和 `test/thread-tile-layout-ui.test.js` 验证
+  `refreshCurrentThread()` 只调用 stage helper；`test/conversation-render.test.js`
+  验证 patch execution stage 消费最终 surface stage。
+- 不改变 tile-pane 探测、single-thread patch、metadata-only 行为、DOM patch、
+  full render、server projection、任务卡协议、shell/cache 或部署状态。
+
+闭环验证：
+
+```bash
+node --check public/thread-detail-render-plan.js && node --check public/app.js && node --check test/thread-detail-render-plan.test.js && node --check test/conversation-render.test.js && node --check test/mobile-viewport.test.js && node --check test/thread-tile-layout-ui.test.js
+node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-tile-layout-ui.test.js
+```
+
+结果：focused `208` passed。该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，
+尚未部署；继续作为 Phase A 模块的一部分累积。
+
 ## 2026-06-27 Phase A Refresh Reporting Stage Slice
 
 本地小切片继续收敛 `refreshCurrentThread()` 的 refresh 完成后 reporting /

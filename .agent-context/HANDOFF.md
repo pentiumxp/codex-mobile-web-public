@@ -18390,3 +18390,62 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit locally, then either continue Phase A by extracting the remaining
     DOM-evidence shape collection / patch-surface probe loops, or batch the
     accumulated Phase A local slices for one deploy/readback when requested.
+
+## 2026-06-27 - Latest tail marker: Phase A patch surface probe stage local slice
+
+- Current local state:
+  - Continued Phase A `refreshCurrentThread()` patch-surface ownership cleanup
+    after `2a77225`.
+  - `planThreadDetailRefreshPatchSurface()` and
+    `planThreadDetailRefreshPatchSurfaceProbeEffects()` already owned surface
+    classification and DOM probe intent, but `refreshCurrentThread()` still
+    directly composed pre-probe planning, real DOM probe execution, and
+    post-probe final surface planning.
+- Root-cause boundary:
+  - Symptom/risk: tile/single surface classification was pure and tested, but
+    the two-stage probe composition still lived in `public/app.js`. Future app
+    orchestration edits could drift tile-pane, tile-conversation, and
+    single-thread patch eligibility before patch execution planning.
+  - Failing layer: frontend refresh patch-surface probe/result stage
+    composition ownership, not real DOM probing, DOM patch execution, merge
+    behavior, server projection, scroll behavior, task-card protocol, Home AI
+    diagnostic intake, or shell/cache.
+  - Violated invariant: app code should execute the real
+    `threadDetailDomPatchSurface()` probe; pure planning helpers should own the
+    fixed pre-probe and post-probe surface plans around that runtime evidence.
+- Changes:
+  - `public/thread-detail-render-plan.js` now exports
+    `planThreadDetailRefreshPatchSurfaceProbeStage()` and
+    `planThreadDetailRefreshPatchSurfaceResultStage()`.
+  - `public/app.js` uses those helpers in `refreshCurrentThread()` and no
+    longer directly calls `planThreadDetailRefreshPatchSurface()` or
+    `planThreadDetailRefreshPatchSurfaceProbeEffects()` from the app
+    orchestration body.
+  - `public/app.js` still executes the real DOM probe through
+    `applyThreadDetailRefreshPatchSurfaceProbeEffectsPlan()`.
+  - Removed the unused `patchExecutionPlan` local variable from
+    `refreshCurrentThread()`.
+  - Updated `test/thread-detail-render-plan.test.js`,
+    `test/conversation-render.test.js`, `test/mobile-viewport.test.js`, and
+    `test/thread-tile-layout-ui.test.js`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation:
+  - Syntax and focused:
+    `node --check public/thread-detail-render-plan.js && node --check public/app.js && node --check test/thread-detail-render-plan.test.js && node --check test/conversation-render.test.js && node --check test/mobile-viewport.test.js && node --check test/thread-tile-layout-ui.test.js && node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-tile-layout-ui.test.js`
+    passed (`208` focused tests).
+  - Full:
+    `npm test` passed (`1173` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache
+    bump. This remains a local Phase A ownership slice to batch with the next
+    module validation/deploy.
+- Progress:
+  - Overall architecture optimization is about `86%`.
+  - Phase A frontend render/projection ownership is about `96%`.
+- Next:
+  - Commit locally, then either continue Phase A by extracting the remaining
+    visible-shape evidence collection stage for rejected local patches, or
+    batch the accumulated Phase A local slices for one deploy/readback when
+    requested.

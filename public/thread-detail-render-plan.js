@@ -475,6 +475,37 @@
     };
   }
 
+  function planThreadDetailRefreshPatchSurfaceProbeStage(input = {}) {
+    const patchSurfaceProbePlan = planThreadDetailRefreshPatchSurface({
+      shouldRenderDetail: input.shouldRenderDetail,
+      threadTileMode: input.threadTileMode,
+      threadTileConversationSurface: input.threadTileConversationSurface,
+    });
+    const patchSurfaceProbeEffectsPlan = planThreadDetailRefreshPatchSurfaceProbeEffects({
+      patchSurfacePlan: patchSurfaceProbePlan,
+      threadId: input.threadId,
+    });
+    return {
+      patchSurfaceProbePlan,
+      patchSurfaceProbeEffectsPlan,
+      reason: patchSurfaceProbeEffectsPlan.reason,
+    };
+  }
+
+  function planThreadDetailRefreshPatchSurfaceResultStage(input = {}) {
+    const tilePatchPlan = objectOrEmpty(input.tilePatchPlan);
+    const patchSurfacePlan = planThreadDetailRefreshPatchSurface({
+      shouldRenderDetail: input.shouldRenderDetail,
+      threadTileMode: input.threadTileMode,
+      threadTileConversationSurface: input.threadTileConversationSurface,
+      tilePatchSurface: input.tilePatchSurface || tilePatchPlan.surface,
+    });
+    return {
+      patchSurfacePlan,
+      reason: patchSurfacePlan.reason,
+    };
+  }
+
   function planThreadDetailRefreshPostMergeEffects() {
     return {
       groups: [
@@ -1621,6 +1652,8 @@
     planThreadDetailRefreshRequest,
     planThreadDetailRefreshPatchSurface,
     planThreadDetailRefreshPatchSurfaceProbeEffects,
+    planThreadDetailRefreshPatchSurfaceProbeStage,
+    planThreadDetailRefreshPatchSurfaceResultStage,
     planThreadDetailRefreshPostMergeEffects,
     planThreadDetailRefreshPatchExecutionStage,
     planSingleThreadEarlyShellExecution,

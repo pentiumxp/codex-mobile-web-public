@@ -752,6 +752,12 @@ the refresh path. The snapshot captures single-thread completion, render
 signature, patch-shell signature, and scroll-follow policy before the turn DOM
 patch is applied, so completion no longer has to re-probe tile/single surface or
 re-read scroll policy after the DOM mutation.
+Patch-surface probe stage composition now also lives in
+`public/thread-detail-render-plan.js`: the helper owns the pre-probe surface
+plan, DOM-probe effect plan, and final surface plan after the app executes the
+real DOM probe. `refreshCurrentThread()` still executes
+`threadDetailDomPatchSurface()` through the effect executor, but it no longer
+hand-wires the two surface-plan calls around the probe result.
 Patch-attempt result aggregation now also lives in the render-plan helper:
 the helper provides the empty attempt state, effect-context derivation, and
 tile/local attempt reducer while app code only performs the real DOM patch

@@ -9755,27 +9755,26 @@ async function refreshCurrentThread(options = {}) {
   let metadataUpdateMs = 0;
   let renderOutcome = null;
   const threadTileConversationSurface = isThreadTileConversationSurface();
-  const patchSurfaceProbePlan = threadDetailRenderPlanApi.planThreadDetailRefreshPatchSurface({
+  const patchSurfaceProbeStage = threadDetailRenderPlanApi.planThreadDetailRefreshPatchSurfaceProbeStage({
     shouldRenderDetail,
     threadTileMode: state.threadTileMode,
     threadTileConversationSurface,
-  });
-  const patchSurfaceProbeEffectsPlan = threadDetailRenderPlanApi.planThreadDetailRefreshPatchSurfaceProbeEffects({
-    patchSurfacePlan: patchSurfaceProbePlan,
     threadId,
   });
-  const tilePatchPlan = applyThreadDetailRefreshPatchSurfaceProbeEffectsPlan(patchSurfaceProbeEffectsPlan, { threadId });
-  const patchSurfacePlan = threadDetailRenderPlanApi.planThreadDetailRefreshPatchSurface({
+  const tilePatchPlan = applyThreadDetailRefreshPatchSurfaceProbeEffectsPlan(
+    patchSurfaceProbeStage.patchSurfaceProbeEffectsPlan,
+    { threadId },
+  );
+  const patchSurfaceResultStage = threadDetailRenderPlanApi.planThreadDetailRefreshPatchSurfaceResultStage({
     shouldRenderDetail,
     threadTileMode: state.threadTileMode,
     threadTileConversationSurface,
-    tilePatchSurface: tilePatchPlan && tilePatchPlan.surface,
+    tilePatchPlan,
   });
   const patchExecutionStage = threadDetailRenderPlanApi.planThreadDetailRefreshPatchExecutionStage({
     renderPlan,
-    patchSurfacePlan,
+    patchSurfacePlan: patchSurfaceResultStage.patchSurfacePlan,
   });
-  const patchExecutionPlan = patchExecutionStage.patchExecutionPlan;
   const patchAttemptEffectsPlan = patchExecutionStage.patchAttemptEffectsPlan;
   const patchAttempt = applyThreadDetailRefreshPatchAttemptEffectsPlan(patchAttemptEffectsPlan, {
     threadId,

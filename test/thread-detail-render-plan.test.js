@@ -579,6 +579,87 @@ test("thread detail refresh patch surface probe effects plan owns DOM probe inte
   });
 });
 
+test("thread detail refresh patch surface probe stage composes probe plan and DOM probe effects", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchSurfaceProbeStage({
+    shouldRenderDetail: true,
+    threadTileMode: false,
+    threadTileConversationSurface: false,
+    threadId: "thread-1",
+  }), {
+    patchSurfaceProbePlan: {
+      shouldProbeTilePatchSurface: true,
+      tileSurfaceRefresh: false,
+      tilePatchSurface: "",
+      reason: "single-thread-surface",
+    },
+    patchSurfaceProbeEffectsPlan: {
+      effects: [
+        {
+          type: "probe-thread-detail-dom-patch-surface",
+          threadId: "thread-1",
+        },
+      ],
+      reason: "patch-surface-probe",
+    },
+    reason: "patch-surface-probe",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchSurfaceProbeStage({
+    shouldRenderDetail: false,
+    threadTileMode: false,
+    threadTileConversationSurface: false,
+    threadId: "thread-1",
+  }), {
+    patchSurfaceProbePlan: {
+      shouldProbeTilePatchSurface: false,
+      tileSurfaceRefresh: false,
+      tilePatchSurface: "",
+      reason: "metadata-only-single-thread-surface",
+    },
+    patchSurfaceProbeEffectsPlan: {
+      effects: [],
+      reason: "metadata-only-single-thread-surface",
+    },
+    reason: "metadata-only-single-thread-surface",
+  });
+});
+
+test("thread detail refresh patch surface result stage composes final surface from DOM probe result", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchSurfaceResultStage({
+    shouldRenderDetail: true,
+    threadTileMode: false,
+    threadTileConversationSurface: false,
+    tilePatchPlan: {
+      surface: "thread-tile-pane",
+    },
+  }), {
+    patchSurfacePlan: {
+      shouldProbeTilePatchSurface: true,
+      tileSurfaceRefresh: true,
+      tilePatchSurface: "thread-tile-pane",
+      reason: "tile-patch-surface",
+    },
+    reason: "tile-patch-surface",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchSurfaceResultStage({
+    shouldRenderDetail: true,
+    threadTileMode: false,
+    threadTileConversationSurface: false,
+    tilePatchPlan: {
+      surface: "single-thread",
+    },
+  }), {
+    patchSurfacePlan: {
+      shouldProbeTilePatchSurface: true,
+      tileSurfaceRefresh: false,
+      tilePatchSurface: "single-thread",
+      reason: "single-thread-surface",
+    },
+    reason: "single-thread-surface",
+  });
+});
+
 test("thread detail refresh post-merge effects plan preserves timing groups and order", () => {
   assert.deepEqual(renderPlan.planThreadDetailRefreshPostMergeEffects(), {
     groups: [
