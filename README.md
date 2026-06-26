@@ -103,6 +103,43 @@ node --check public/thread-detail-render-plan.js && node --check public/app.js
 该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为 Phase A/B
 本地/private commit 累积。
 
+## 2026-06-27 Phase A Full-Backfill Post-Render And Telemetry Planning Slice
+
+本地小切片继续收敛 `backfillFullThreadDetail()` 的 side-effect ownership。此前
+full-backfill 已经复用 post-merge plan，但它在 conversation render 之后仍直接内联
+Usage backfill、live poll、Composer controls，以及
+`thread_detail_full_ready` performance event 和 response diagnostics 上报。这让
+first-paint 与 full-backfill 的后置副作用边界不一致。
+
+本次修复：
+
+- `public/thread-detail-render-plan.js` 新增
+  `planThreadDetailFullBackfillPostRenderEffects()`，声明 full-backfill render
+  后固定顺序：Usage backfill、live poll、Composer controls。
+- `public/thread-detail-render-plan.js` 新增
+  `planThreadDetailFullBackfillTelemetryEffects()`，声明
+  `thread_detail_full_ready` performance event 和
+  `thread-detail-full-backfill` response diagnostics。
+- `public/app.js` 的 `backfillFullThreadDetail()` 保留原有 API、merge、render、
+  timing 和 `threadPerformanceMetrics.threadDetailFullReadyEventFields()` 语义，
+  只把后置 side-effect 顺序交给 plan 和通用 post-render executor。
+- focused tests 覆盖 full-backfill post-render/telemetry plan，并防止
+  `backfillFullThreadDetail()` 重新内联 `scheduleUsageBackfillRefresh()` /
+  `scheduleLivePollIfNeeded()` / `updateComposerControls()` 或直接调用
+  `postPerformanceEvent("thread_detail_full_ready")`。
+- 不改变 full-backfill read strategy、server projection、DOM patch、scroll、
+  Home AI diagnostic intake、任务卡协议、shell/cache 或部署状态。
+
+闭环验证：
+
+```bash
+node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-performance-metrics.test.js test/turn-scroll-controls.test.js
+node --check public/thread-detail-render-plan.js && node --check public/app.js
+```
+
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为 Phase A
+本地/private commit 累积。
+
 ## 2026-06-26 Phase C Pane Count State Planning Slice
 
 本地小切片开始推进 Phase C 的 pane-state 架构化。此前平铺模式的自动窗口数、

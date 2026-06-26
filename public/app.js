@@ -9104,7 +9104,7 @@ async function loadThread(threadId, options = {}) {
     seq,
     source,
   });
-  applyThreadDetailFirstPaintPostRenderEffectsPlan(firstPaintPostRenderPlan, { thread: result.thread });
+  applyThreadDetailPostRenderEffectsPlan(firstPaintPostRenderPlan, { thread: result.thread });
   const postRenderMs = roundedDurationMs(postRenderStartedAt);
   checkConversationProjectionConsistency("first-paint", { renderMode: "first-paint" });
   const renderElapsedMs = roundedDurationMs(renderStartedAt);
@@ -9242,7 +9242,7 @@ function applyThreadDetailRefreshCompletionEffectsPlan(plan) {
   for (const effect of effects) applyThreadDetailRefreshCompletionEffect(effect);
 }
 
-function applyThreadDetailFirstPaintPostRenderEffect(effect, context = {}) {
+function applyThreadDetailPostRenderEffect(effect, context = {}) {
   const item = effect && typeof effect === "object" ? effect : {};
   const type = String(item.type || "");
   if (type === "publish-plugin-navigation-state") {
@@ -9279,12 +9279,12 @@ function applyThreadDetailFirstPaintPostRenderEffect(effect, context = {}) {
     scheduleUsageBackfillRefresh();
     return true;
   }
-  throw new Error(`Unknown thread detail first-paint post-render effect: ${type || "empty"}`);
+  throw new Error(`Unknown thread detail post-render effect: ${type || "empty"}`);
 }
 
-function applyThreadDetailFirstPaintPostRenderEffectsPlan(plan, context = {}) {
+function applyThreadDetailPostRenderEffectsPlan(plan, context = {}) {
   const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
-  for (const effect of effects) applyThreadDetailFirstPaintPostRenderEffect(effect, context);
+  for (const effect of effects) applyThreadDetailPostRenderEffect(effect, context);
 }
 
 function applyThreadDetailFirstPaintTelemetryEffect(effect, context = {}) {
@@ -9871,9 +9871,8 @@ async function backfillFullThreadDetail(threadId, options = {}) {
   renderCurrentThread({ stickToBottom: wasNearBottom });
   const conversationRenderMs = roundedDurationMs(conversationRenderStartedAt);
   const postRenderStartedAt = nowPerfMs();
-  scheduleUsageBackfillRefresh();
-  scheduleLivePollIfNeeded();
-  updateComposerControls();
+  const fullBackfillPostRenderPlan = threadDetailRenderPlanApi.planThreadDetailFullBackfillPostRenderEffects();
+  applyThreadDetailPostRenderEffectsPlan(fullBackfillPostRenderPlan);
   const postRenderMs = roundedDurationMs(postRenderStartedAt);
   const renderElapsedMs = roundedDurationMs(renderStartedAt);
   const source = String(options.source || "unknown").slice(0, 40);
@@ -9890,12 +9889,11 @@ async function backfillFullThreadDetail(threadId, options = {}) {
     postRenderMs,
     detailRenderMode: "full-backfill",
   });
-  postPerformanceEvent("thread_detail_full_ready", fullReadyPerformance, { force: true });
-  recordThreadDetailResponseDiagnostics(fullReadyPerformance, {
-    action: "thread-detail-full-backfill",
+  const fullBackfillTelemetryPlan = threadDetailRenderPlanApi.planThreadDetailFullBackfillTelemetryEffects({
+    performanceEvent: fullReadyPerformance,
     threadId: id,
-    thread: result.thread,
   });
+  applyThreadDetailRefreshTelemetryEffectsPlan(fullBackfillTelemetryPlan, { thread: result.thread });
 }
 
 function preserveConversationScrollAfterPrepend(previousScrollTop, previousScrollHeight) {

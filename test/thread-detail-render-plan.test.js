@@ -1251,6 +1251,41 @@ test("thread detail first-paint telemetry effects plan preserves bounded event o
   });
 });
 
+test("thread detail full-backfill effects plans preserve post-render and telemetry order", () => {
+  assert.deepEqual(renderPlan.planThreadDetailFullBackfillPostRenderEffects(), {
+    effects: [
+      { type: "schedule-usage-backfill-refresh" },
+      { type: "schedule-live-poll" },
+      { type: "update-composer-controls" },
+    ],
+    reason: "full-backfill-post-render",
+  });
+
+  const performanceEvent = { detailRenderMode: "full-backfill", renderElapsedMs: 22 };
+  assert.deepEqual(renderPlan.planThreadDetailFullBackfillTelemetryEffects({
+    performanceEvent,
+    threadId: "thread-1",
+  }), {
+    effects: [
+      {
+        type: "post-performance-event",
+        eventName: "thread_detail_full_ready",
+        payload: performanceEvent,
+        options: { force: true },
+      },
+      {
+        type: "record-thread-detail-response-diagnostics",
+        performanceEvent,
+        context: {
+          action: "thread-detail-full-backfill",
+          threadId: "thread-1",
+        },
+      },
+    ],
+    reason: "full-backfill-telemetry",
+  });
+});
+
 test("thread detail cached-current telemetry effects plan preserves legacy event shape", () => {
   const performanceEvent = { detailRenderMode: "cached-current", cached: true, renderElapsedMs: 8 };
   assert.deepEqual(renderPlan.planThreadDetailCachedCurrentTelemetryEffects({

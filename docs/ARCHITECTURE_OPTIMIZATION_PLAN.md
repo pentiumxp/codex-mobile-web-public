@@ -953,6 +953,15 @@ payloads, including cached/warm-client phase handling, server/client timings,
 detail shape, read mode, turn counts, omitted-turn counts where relevant, and
 rollout size. This keeps large-session cold/warm path evidence consistent
 across initial open, cached current open, refresh, and full backfill.
+Full-backfill post-render and telemetry side-effect ordering now also lives in
+`public/thread-detail-render-plan.js`:
+`planThreadDetailFullBackfillPostRenderEffects` declares the Usage backfill,
+live poll, and Composer-control refresh sequence after the full-backfill
+conversation render, while `planThreadDetailFullBackfillTelemetryEffects`
+declares the forced `thread_detail_full_ready` event and
+`thread-detail-full-backfill` response diagnostic call. App code still owns the
+real network/DOM/timer side effects and the performance field extraction, but
+`backfillFullThreadDetail()` no longer owns this fixed ordering inline.
 The same helper now plans detail-response diagnostic contracts:
 `planThreadDetailSlowPathDiagnostic` detects repeated slow detail opens,
 refreshes, and backfills from bounded timing fields, and

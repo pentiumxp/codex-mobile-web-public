@@ -17005,6 +17005,92 @@ The previous full handoff was archived and should be opened only when old proven
     task-card bodies, upload bytes, private paths, provider payloads, prompts,
     or long logs are included.
 
+## 2026-06-27 - Latest tail marker: Phase A full-backfill post-render and telemetry slice
+
+- Current local state:
+  - Working slice continues Phase A ownership cleanup after `b306f5d`.
+  - `public/thread-detail-render-plan.js` now owns full-backfill post-render
+    side-effect ordering and full-ready telemetry ordering through
+    `planThreadDetailFullBackfillPostRenderEffects()` and
+    `planThreadDetailFullBackfillTelemetryEffects()`.
+  - `public/app.js` now uses the shared `applyThreadDetailPostRenderEffectsPlan()`
+    executor for first-paint and full-backfill post-render effects.
+  - This is local/private only and is not deployed by design.
+- Validation so far:
+  - Focused:
+    `node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-performance-metrics.test.js test/turn-scroll-controls.test.js`
+    passed (`207` tests).
+  - Syntax:
+    `node --check public/thread-detail-render-plan.js && node --check public/app.js && node --check test/thread-detail-render-plan.test.js && node --check test/conversation-render.test.js && node --check test/mobile-viewport.test.js && node --check test/turn-scroll-controls.test.js`
+    passed.
+  - Full:
+    `npm test` passed (`1153` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Next:
+  - Commit locally, then continue Phase A or batch the accumulated module for
+    one deploy/readback when requested.
+
+## 2026-06-27 - Phase A full-backfill post-render and telemetry plan local slice
+
+- Latest local slice:
+  - Continued Phase A `backfillFullThreadDetail()` ownership reduction after
+    `b306f5d` (`plan thread switch start event`).
+  - The previous switch-start slice was fully validated and committed; it was
+    not deployed by design.
+  - This slice is local/private only and is not deployed by design.
+- Root-cause boundary:
+  - Symptom/risk: full-backfill already reused the shared post-merge plan, but
+    still hand-wrote post-render side effects and `thread_detail_full_ready`
+    telemetry/diagnostic calls inline. That kept one more thread-detail render
+    path with its own fixed ordering in `public/app.js`.
+  - Failing layer: frontend full-backfill post-render/telemetry ordering, not
+    server projection, read strategy, merge policy, DOM patch choice, Home AI
+    diagnostic intake, task-card routing, shell/cache, or deployment.
+  - Violated invariant: fixed full-backfill side-effect order should be
+    declared by pure plans while `public/app.js` only executes real runtime
+    side effects and supplies live timing/thread inputs.
+- Changes:
+  - `public/thread-detail-render-plan.js` now exports
+    `planThreadDetailFullBackfillPostRenderEffects()`.
+  - `public/thread-detail-render-plan.js` now exports
+    `planThreadDetailFullBackfillTelemetryEffects()`.
+  - `backfillFullThreadDetail()` now applies the post-render plan through the
+    shared post-render executor and applies full-ready telemetry through the
+    existing refresh telemetry executor.
+  - `test/thread-detail-render-plan.test.js` covers full-backfill post-render
+    and telemetry plan order.
+  - `test/conversation-render.test.js` and `test/mobile-viewport.test.js`
+    guard the app wiring and prevent direct inline post-render /
+    `thread_detail_full_ready` telemetry calls from returning.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-performance-metrics.test.js test/turn-scroll-controls.test.js`
+    passed (`207` tests).
+  - Syntax:
+    `node --check public/thread-detail-render-plan.js && node --check public/app.js && node --check test/thread-detail-render-plan.test.js && node --check test/conversation-render.test.js && node --check test/mobile-viewport.test.js && node --check test/turn-scroll-controls.test.js`
+    passed.
+  - Full:
+    `npm test` passed (`1153` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache
+    bump. This remains a local Phase A ownership slice to batch with the next
+    module validation/deploy.
+- Progress estimate:
+  - Overall architecture optimization is about `68%` after this slice's focused
+    validation; Phase A is about `78%`.
+- Next:
+  - Run full validation, commit locally, then continue Phase A with remaining
+    current-thread render authority or prepare the accumulated Phase A module
+    for a single deploy/readback when requested.
+- Privacy:
+  - Only bounded file paths, helper names, effect names, event names, and test
+    counts are recorded. No secrets, cookies, launch tokens, private thread
+    bodies, task-card bodies, upload bytes, private paths, provider payloads,
+    prompts, or long logs are included.
+
 ## 2026-06-27 - Phase A thread-detail switch start client event plan local slice
 
 - Latest local slice:
@@ -17395,3 +17481,29 @@ The previous full handoff was archived and should be opened only when old proven
     recorded. No secrets, cookies, launch tokens, private thread bodies,
     task-card bodies, upload bytes, private paths, provider payloads, prompts,
     or long logs are included.
+
+## 2026-06-27 - Latest tail marker: Phase A full-backfill post-render and telemetry slice
+
+- Current local state:
+  - Working slice continues Phase A ownership cleanup after `b306f5d`.
+  - `public/thread-detail-render-plan.js` now owns full-backfill post-render
+    side-effect ordering and full-ready telemetry ordering through
+    `planThreadDetailFullBackfillPostRenderEffects()` and
+    `planThreadDetailFullBackfillTelemetryEffects()`.
+  - `public/app.js` now uses the shared `applyThreadDetailPostRenderEffectsPlan()`
+    executor for first-paint and full-backfill post-render effects.
+  - This is local/private only and is not deployed by design.
+- Validation so far:
+  - Focused:
+    `node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-performance-metrics.test.js test/turn-scroll-controls.test.js`
+    passed (`207` tests).
+  - Syntax:
+    `node --check public/thread-detail-render-plan.js && node --check public/app.js && node --check test/thread-detail-render-plan.test.js && node --check test/conversation-render.test.js && node --check test/mobile-viewport.test.js && node --check test/turn-scroll-controls.test.js`
+    passed.
+  - Full:
+    `npm test` passed (`1153` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Next:
+  - Run full validation, update this marker if needed, commit locally, then
+    continue Phase A or batch the accumulated module for one deploy/readback
+    when requested.

@@ -848,6 +848,17 @@
     };
   }
 
+  function planThreadDetailFullBackfillPostRenderEffects() {
+    return {
+      effects: [
+        { type: "schedule-usage-backfill-refresh" },
+        { type: "schedule-live-poll" },
+        { type: "update-composer-controls" },
+      ],
+      reason: "full-backfill-post-render",
+    };
+  }
+
   function planThreadDetailFirstPaintTelemetryEffects(input = {}) {
     const source = compactReason(input.source, "").slice(0, 40);
     const threadId = compactReason(input.threadId, "");
@@ -899,6 +910,30 @@
         },
       ],
       reason: "first-paint-telemetry",
+    };
+  }
+
+  function planThreadDetailFullBackfillTelemetryEffects(input = {}) {
+    const threadId = compactReason(input.threadId, "");
+    const performanceEvent = objectOrEmpty(input.performanceEvent);
+    return {
+      effects: [
+        {
+          type: "post-performance-event",
+          eventName: "thread_detail_full_ready",
+          payload: performanceEvent,
+          options: { force: true },
+        },
+        {
+          type: "record-thread-detail-response-diagnostics",
+          performanceEvent,
+          context: {
+            action: "thread-detail-full-backfill",
+            threadId,
+          },
+        },
+      ],
+      reason: "full-backfill-telemetry",
     };
   }
 
@@ -1146,6 +1181,8 @@
     finalizeThreadDetailRenderPlan,
     normalizeSignature,
     planThreadDetailCachedCurrentTelemetryEffects,
+    planThreadDetailFullBackfillPostRenderEffects,
+    planThreadDetailFullBackfillTelemetryEffects,
     planThreadDetailFirstPaintPostRenderEffects,
     planThreadDetailFirstPaintTelemetryEffects,
     planThreadDetailSwitchCancelledClientEvent,
