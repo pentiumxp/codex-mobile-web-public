@@ -26,6 +26,112 @@
     return value && typeof value === "object" && !Array.isArray(value) ? value : {};
   }
 
+  function textContentFromValue(value) {
+    if (value == null) return "";
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      return String(value);
+    }
+    if (Array.isArray(value)) return value.map(textContentFromValue).join("");
+    if (typeof value !== "object") return "";
+    if (typeof value.text === "string") return value.text;
+    if (typeof value.markdown === "string") return value.markdown;
+    if (typeof value.content === "string" || Array.isArray(value.content)) return textContentFromValue(value.content);
+    if (typeof value.summary === "string" || Array.isArray(value.summary)) return textContentFromValue(value.summary);
+    return "";
+  }
+
+  function itemVisibleText(item) {
+    if (typeof item === "string") return item;
+    const value = objectOrEmpty(item);
+    return [
+      textContentFromValue(value.text),
+      textContentFromValue(value.markdown),
+      textContentFromValue(value.content),
+      textContentFromValue(value.summary),
+    ].join("");
+  }
+
+  function textLooksLikeWorkflowCard(value) {
+    const body = String(value || "");
+    return /^\s*\[Cross-thread task card/im.test(body)
+      || /^\s*Task card id:/im.test(body)
+      || /^\s*Source workspace:/im.test(body)
+      || /^\s*Source thread:/im.test(body)
+      || /^\s*Approval:/im.test(body)
+      || /^\s*Workflow mode:/im.test(body)
+      || /^\s*Auto-return:/im.test(body)
+      || /^\s*Return required:/im.test(body)
+      || /^\s*Return policy:/im.test(body);
+  }
+
+  function analyzeThreadDetailHistoryWindow(thread) {
+    const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+    const counts = {
+      turnCount: turns.length,
+      textItemCount: 0,
+      workflowItemCount: 0,
+      ordinaryUserMessageCount: 0,
+      leadingAssistantOnlyWorkflowTurns: 0,
+    };
+    let stillLeading = true;
+    for (const turn of turns) {
+      const items = Array.isArray(turn && turn.items) ? turn.items : [];
+      let turnHasText = false;
+      let turnHasWorkflow = false;
+      let turnHasOrdinaryUser = false;
+      for (const item of items) {
+        const itemType = String(item && item.type || "");
+        const textValue = itemVisibleText(item).trim();
+        if (!textValue) continue;
+        turnHasText = true;
+        counts.textItemCount += 1;
+        const workflow = textLooksLikeWorkflowCard(textValue);
+        if (workflow) {
+          counts.workflowItemCount += 1;
+          turnHasWorkflow = true;
+        }
+        if (itemType === "userMessage" && !workflow) {
+          counts.ordinaryUserMessageCount += 1;
+          turnHasOrdinaryUser = true;
+        }
+      }
+      if (stillLeading && turnHasText && turnHasWorkflow && !turnHasOrdinaryUser) {
+        counts.leadingAssistantOnlyWorkflowTurns += 1;
+      } else if (turnHasText) {
+        stillLeading = false;
+      }
+    }
+    return counts;
+  }
+
+  function planThreadDetailHistoryAutoBackfill(input = {}) {
+    const thread = objectOrEmpty(input.thread);
+    const counts = analyzeThreadDetailHistoryWindow(thread);
+    const hasOlder = Boolean(input.hasOlder || thread.mobileOlderTurnsCursor);
+    const base = {
+      shouldLoad: false,
+      reason: "",
+      counts,
+    };
+    if (!hasOlder) return Object.assign({}, base, { reason: "no-older-cursor" });
+    if (input.alreadyRequested) return Object.assign({}, base, { reason: "already-requested" });
+    if (input.historyBusy || input.busy) return Object.assign({}, base, { reason: "history-busy" });
+    if (input.mobileHistoryExpanded || thread.mobileHistoryExpanded) return Object.assign({}, base, { reason: "history-expanded" });
+    if (thread.mobileLoading) return Object.assign({}, base, { reason: "thread-loading" });
+    if (counts.turnCount <= 0) return Object.assign({}, base, { shouldLoad: true, reason: "empty-recent-window" });
+    if (counts.leadingAssistantOnlyWorkflowTurns >= 3 && counts.workflowItemCount > 0) {
+      return Object.assign({}, base, { shouldLoad: true, reason: "leading-workflow-receipts" });
+    }
+    const workflowRatio = counts.textItemCount > 0 ? counts.workflowItemCount / counts.textItemCount : 0;
+    if (counts.workflowItemCount >= 3 && workflowRatio >= 0.45) {
+      return Object.assign({}, base, { shouldLoad: true, reason: "workflow-dominated-window" });
+    }
+    if (counts.ordinaryUserMessageCount < 2 && counts.workflowItemCount > 0) {
+      return Object.assign({}, base, { shouldLoad: true, reason: "sparse-conversation-context" });
+    }
+    return Object.assign({}, base, { reason: "recent-window-has-context" });
+  }
+
   function planThreadDetailRefreshRequest(input = {}) {
     const options = objectOrEmpty(input.options);
     const threadId = input.threadId || input.currentThreadId || "";
@@ -608,6 +714,7 @@
     planThreadDetailRefreshPatchSurface,
     planThreadDetailRefreshPostMergeEffects,
     planSingleThreadFullRenderShell,
+    planThreadDetailHistoryAutoBackfill,
     planThreadDetailRefreshPatchExecution,
     planThreadDetailRefreshRender,
     reduceThreadDetailRefreshPatchAttempt,

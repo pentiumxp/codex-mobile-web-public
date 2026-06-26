@@ -6,6 +6,14 @@ const { test } = require("node:test");
 
 const renderPlan = require(path.resolve(__dirname, "..", "public", "thread-detail-render-plan.js"));
 
+function turn(id, items) {
+  return { id, items };
+}
+
+function item(type, text) {
+  return { type, text };
+}
+
 test("thread detail refresh request plan defaults to recent mode", () => {
   assert.deepEqual(renderPlan.planThreadDetailRefreshRequest({
     threadId: "thread-1",
@@ -58,6 +66,80 @@ test("thread detail refresh request plan handles full mode and missing thread", 
     abortActiveRefresh: false,
     reason: "missing-thread-id",
   });
+});
+
+test("thread detail history auto-backfill triggers for leading workflow receipts", () => {
+  const plan = renderPlan.planThreadDetailHistoryAutoBackfill({
+    thread: {
+      id: "thread-workflow",
+      mobileOlderTurnsCursor: { before: "cursor-1" },
+      turns: [
+        turn("t1", [item("agentMessage", "Task card id: ttc_1\nReturn policy: terminal receipt")]),
+        turn("t2", [item("agentMessage", "Source workspace: /workspace\nApproval: target approval bypassed")]),
+        turn("t3", [item("agentMessage", "Workflow mode: autonomous\nAuto-return: when complete")]),
+        turn("t4", [item("userMessage", "normal user message")]),
+      ],
+    },
+  });
+
+  assert.equal(plan.shouldLoad, true);
+  assert.equal(plan.reason, "leading-workflow-receipts");
+  assert.equal(plan.counts.leadingAssistantOnlyWorkflowTurns, 3);
+});
+
+test("thread detail history auto-backfill triggers for workflow dominated windows", () => {
+  const plan = renderPlan.planThreadDetailHistoryAutoBackfill({
+    thread: {
+      id: "thread-dominated",
+      mobileOlderTurnsCursor: "cursor-2",
+      turns: [
+        turn("t1", [item("userMessage", "[Cross-thread task card sent by source thread]\nTitle: A")]),
+        turn("t2", [item("agentMessage", "ordinary assistant response")]),
+        turn("t3", [item("userMessage", "Task card id: ttc_2\nReturn required: yes")]),
+        turn("t4", [item("agentMessage", "normal receipt")]),
+        turn("t5", [item("userMessage", "Source thread: Home AI\nWorkflow mode: autonomous")]),
+        turn("t6", [item("userMessage", "short normal user request")]),
+      ],
+    },
+  });
+
+  assert.equal(plan.shouldLoad, true);
+  assert.equal(plan.reason, "workflow-dominated-window");
+  assert.equal(plan.counts.workflowItemCount, 3);
+});
+
+test("thread detail history auto-backfill leaves ordinary recent windows alone", () => {
+  const plan = renderPlan.planThreadDetailHistoryAutoBackfill({
+    thread: {
+      id: "thread-normal",
+      mobileOlderTurnsCursor: "cursor-3",
+      turns: [
+        turn("t1", [item("userMessage", "first ordinary request"), item("agentMessage", "first answer")]),
+        turn("t2", [item("userMessage", "second ordinary request"), item("agentMessage", "second answer")]),
+        turn("t3", [item("userMessage", "third ordinary request"), item("agentMessage", "third answer")]),
+      ],
+    },
+  });
+
+  assert.equal(plan.shouldLoad, false);
+  assert.equal(plan.reason, "recent-window-has-context");
+});
+
+test("thread detail history auto-backfill respects cursor and busy guards", () => {
+  const thread = {
+    id: "thread-guard",
+    mobileOlderTurnsCursor: "cursor-4",
+    turns: [
+      turn("t1", [item("agentMessage", "Task card id: ttc_3\nReturn policy: terminal")]),
+      turn("t2", [item("agentMessage", "Task card id: ttc_4\nReturn policy: terminal")]),
+      turn("t3", [item("agentMessage", "Task card id: ttc_5\nReturn policy: terminal")]),
+    ],
+  };
+
+  assert.equal(renderPlan.planThreadDetailHistoryAutoBackfill({ thread: Object.assign({}, thread, { mobileOlderTurnsCursor: "" }) }).reason, "no-older-cursor");
+  assert.equal(renderPlan.planThreadDetailHistoryAutoBackfill({ thread, alreadyRequested: true }).reason, "already-requested");
+  assert.equal(renderPlan.planThreadDetailHistoryAutoBackfill({ thread, historyBusy: true }).reason, "history-busy");
+  assert.equal(renderPlan.planThreadDetailHistoryAutoBackfill({ thread: Object.assign({}, thread, { mobileHistoryExpanded: true }) }).reason, "history-expanded");
 });
 
 test("thread detail refresh render plan skips stable conversation signatures", () => {

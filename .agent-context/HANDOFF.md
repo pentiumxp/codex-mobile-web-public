@@ -12127,3 +12127,45 @@ The previous full handoff was archived and should be opened only when old proven
     module-level deploy candidate, or whether one more behavior harness is
     needed around `refreshCurrentThread()` network/merge/full-render execution
     rather than helper-level DOM behavior.
+
+## 2026-06-26 - urgent workflow-dominated first-paint history auto-backfill, deploy pending
+
+- Trigger:
+  - User reported that the Home AI thread sometimes opened on mobile with only
+    a Music task-card/receipt-like window and no visible historical context,
+    while later the same thread could scroll to older history.
+- Root-cause boundary:
+  - Symptom: recent-mode first paint could be dominated by workflow/task-card
+    receipt turns while the server response still exposed `mobileOlderTurnsCursor`.
+  - Failing layer: frontend first-paint history-window policy. Existing
+    top-scroll/button pagination worked, but it depended on user scroll intent
+    and could leave a mobile first paint looking like history was missing.
+  - Fix classification: root-cause policy repair. It does not delete/hide task
+    cards, synthesize messages, force full thread reads, or mask projection
+    mismatches.
+- Changes:
+  - `public/thread-detail-render-plan.js` now owns
+    `planThreadDetailHistoryAutoBackfill()`, a pure bounded classifier for
+    workflow-dominated recent windows with an older cursor.
+  - `public/app.js` calls the classifier after cached-current and first-paint
+    renders, records one bounded `thread_history_auto_backfill` event, and loads
+    one older-history page through the existing cursor route with scroll
+    preservation.
+  - The shell/cache build was bumped to `codex-mobile-shell-v508`.
+  - Docs/tests were updated in `docs/MODULES.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`,
+    `test/thread-detail-render-plan.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-goal-service.test.js`, and
+    `test/thread-task-card-route.test.js`.
+- Validation:
+  - Focused: `node --test test/thread-detail-render-plan.test.js
+    test/mobile-viewport.test.js test/conversation-render.test.js` passed
+    (`152` tests).
+  - Version/focused: `node --test test/thread-detail-render-plan.test.js
+    test/mobile-viewport.test.js test/thread-task-card-route.test.js
+    test/thread-goal-service.test.js` passed (`65` tests).
+  - Full source `npm test` passed (`969` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Source changes are ready for commit and Mac production deployment via the
+    central Home AI plugin deploy path.

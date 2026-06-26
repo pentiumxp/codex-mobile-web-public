@@ -148,8 +148,8 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v507/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v507"/);
+  assert.match(swJs, /codex-mobile-shell-v508/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v508"/);
   assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(swJs, /"\/thread-diagnostic-events\.js"/);
@@ -279,8 +279,8 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.doesNotMatch(appJs, /scrollConversationToTop/);
   assert.doesNotMatch(appJs, /scrollToTop/);
   assert.match(appJs, /const explicitNoStickToBottom = options\.stickToBottom === false \|\| Boolean\(options\.scrollToTurnReceiptStart\);/);
-  assert.match(appJs, /renderCurrentThread\(\{ stickToBottom: true \}\);\s*\n\s*const conversationRenderMs = roundedDurationMs\(conversationRenderStartedAt\);\s*\n\s*if \(replacedTilePaneForThreadListOpen\) \{[\s\S]*restoreDraftForCurrentTarget\(\{ resetRuntimeWhenMissingDraft: true \}\);[\s\S]*updateComposerControls\(\);[\s\S]*\}\s*\n\s*if \(isMenuOverlayMode\(\)\) closeSidebarMenu\(\);/);
-  assert.match(appJs, /renderCurrentThread\(\{ stickToBottom: true \}\);\s*\n\s*const conversationRenderMs = roundedDurationMs\(conversationRenderStartedAt\);\s*\n\s*const postRenderStartedAt = nowPerfMs\(\);\s*\n\s*publishPluginNavigationState\(\{ force: true \}\);\s*\n\s*restoreConnectionState\(\);/);
+  assert.match(appJs, /renderCurrentThread\(\{ stickToBottom: true \}\);\s*\n\s*const conversationRenderMs = roundedDurationMs\(conversationRenderStartedAt\);\s*\n\s*maybeAutoBackfillThreadHistory\(state\.currentThread, \{ seq: state\.threadLoadSeq, source: "cached-current" \}\);\s*\n\s*if \(replacedTilePaneForThreadListOpen\) \{[\s\S]*restoreDraftForCurrentTarget\(\{ resetRuntimeWhenMissingDraft: true \}\);[\s\S]*updateComposerControls\(\);[\s\S]*\}\s*\n\s*if \(isMenuOverlayMode\(\)\) closeSidebarMenu\(\);/);
+  assert.match(appJs, /renderCurrentThread\(\{ stickToBottom: true \}\);\s*\n\s*const conversationRenderMs = roundedDurationMs\(conversationRenderStartedAt\);\s*\n\s*maybeAutoBackfillThreadHistory\(state\.currentThread, \{ seq, source: "first-paint" \}\);\s*\n\s*const postRenderStartedAt = nowPerfMs\(\);\s*\n\s*publishPluginNavigationState\(\{ force: true \}\);\s*\n\s*restoreConnectionState\(\);/);
   assert.match(appJs, /const PLUGIN_EMBED_BACK_EDGE_SWIPE_PX = 44/);
   assert.match(appJs, /function installHermesPluginBackSwipeGuard\(\)/);
   assert.match(appJs, /pluginEmbedApi\.navigationMessage\(state, pluginNavigationUiState\(\)\)/);
@@ -308,6 +308,10 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /conversation\.scrollTop > THREAD_HISTORY_TOP_LOAD_PX/);
   assert.match(appJs, /loadOlderThreadTurns\(\{ preserveScroll: true, source: "scroll-top" \}\)/);
   assert.match(appJs, /maybeLoadOlderThreadTurnsFromScroll\(\);/);
+  assert.match(appJs, /function maybeAutoBackfillThreadHistory\(thread, options = \{\}\)/);
+  assert.match(appJs, /planThreadDetailHistoryAutoBackfill\(\{/);
+  assert.match(appJs, /thread_history_auto_backfill/);
+  assert.match(appJs, /loadOlderThreadTurns\(\{ preserveScroll: true, source: "auto-context" \}\)/);
   assert.match(appJs, /data-load-older-turns/);
   assert.match(appJs, /loadOlderThreadTurns\(\{ preserveScroll: true, source: "button" \}\)/);
   assert.match(appJs, /cursor: threadTurnsCursorParam\(cursor\)/);

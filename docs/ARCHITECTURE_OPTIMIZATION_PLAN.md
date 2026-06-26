@@ -92,7 +92,7 @@ non-partial projections.
 
 ### Phase 2: Frontend State Ownership
 
-Status: Phase A module deploy candidate as of `codex-mobile-shell-v507`.
+Status: Phase A module deploy candidate as of `codex-mobile-shell-v508`.
 The local Phase A refresh/patch ownership work now has the helper extraction,
 transaction ordering, completion snapshots, attempt aggregation, and
 behavior-level DOM harness needed to deploy as one module instead of many

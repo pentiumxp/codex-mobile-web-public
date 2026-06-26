@@ -465,6 +465,7 @@ const state = {
   imageAuthRefreshRequested: false,
   threadHistoryBusy: false,
   threadHistoryError: "",
+  threadHistoryAutoBackfillKeys: new Set(),
   perfEventLastReportedAt: {},
   homeAiDiagnosticReporter: homeAiDiagnosticReportingApi.createDiagnosticReporter({
     threshold: homeAiDiagnosticReportingApi.DEFAULT_THRESHOLD,
@@ -507,7 +508,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v507";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v508";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -8692,6 +8693,7 @@ async function loadThread(threadId, options = {}) {
     const conversationRenderStartedAt = nowPerfMs();
     renderCurrentThread({ stickToBottom: true });
     const conversationRenderMs = roundedDurationMs(conversationRenderStartedAt);
+    maybeAutoBackfillThreadHistory(state.currentThread, { seq: state.threadLoadSeq, source: "cached-current" });
     if (replacedTilePaneForThreadListOpen) {
       restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
       renderComposerSettings();
@@ -8862,6 +8864,7 @@ async function loadThread(threadId, options = {}) {
   const conversationRenderStartedAt = nowPerfMs();
   renderCurrentThread({ stickToBottom: true });
   const conversationRenderMs = roundedDurationMs(conversationRenderStartedAt);
+  maybeAutoBackfillThreadHistory(state.currentThread, { seq, source: "first-paint" });
   const postRenderStartedAt = nowPerfMs();
   publishPluginNavigationState({ force: true });
   restoreConnectionState();
@@ -9319,6 +9322,44 @@ function turnsArrayFromListResult(result) {
 
 function shouldBackfillFullThreadDetail(thread) {
   return /turns-list-initial/i.test(String(thread && thread.mobileReadMode || ""));
+}
+
+function threadHistoryAutoBackfillKey(thread) {
+  const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+  const firstTurn = turns[0] || {};
+  const lastTurn = turns[turns.length - 1] || {};
+  return [
+    state.currentThreadId || thread.id || "",
+    threadTurnsCursorSignature(thread && thread.mobileOlderTurnsCursor),
+    firstTurn.id || firstTurn.startedAt || "",
+    lastTurn.id || lastTurn.startedAt || "",
+  ].join("|");
+}
+
+function maybeAutoBackfillThreadHistory(thread, options = {}) {
+  if (!thread || !thread.id) return;
+  const key = threadHistoryAutoBackfillKey(thread);
+  const plan = threadDetailRenderPlanApi.planThreadDetailHistoryAutoBackfill({
+    thread,
+    alreadyRequested: state.threadHistoryAutoBackfillKeys.has(key),
+    historyBusy: state.threadHistoryBusy,
+  });
+  if (!plan.shouldLoad) return;
+  state.threadHistoryAutoBackfillKeys.add(key);
+  const threadId = String(thread.id || state.currentThreadId || "");
+  const seq = Number(options.seq || state.threadLoadSeq || 0);
+  postClientEvent("thread_history_auto_backfill", {
+    source: String(options.source || "unknown").slice(0, 40),
+    reason: plan.reason,
+    counts: plan.counts,
+    thread_hash: diagnosticThreadHash(threadId),
+    readMode: String(thread.mobileReadMode || ""),
+    buildId: CLIENT_BUILD_ID,
+  });
+  setTimeout(() => {
+    if (state.currentThreadId !== threadId || seq !== state.threadLoadSeq) return;
+    loadOlderThreadTurns({ preserveScroll: true, source: "auto-context" }).catch(showError);
+  }, 0);
 }
 
 function threadDetailApiPath(threadId, params = {}) {
