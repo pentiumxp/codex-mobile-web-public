@@ -35,6 +35,22 @@ Conclusion: active no-output latency is a separate diagnostic target from
 empty completed turns. It needs timing evidence from server detail phases and
 client first-paint/refresh events before changing projection or UI behavior.
 
+### Thread-List Summary Rendered As Empty Detail
+
+Observed in Music thread `019ef42b-2cb8-7332-ab17-033ec5b48947` on
+2026-06-26:
+
+- The thread list row was a lightweight summary with `turns: []`.
+- The detail API returned a bounded recent window with `10` turns and visible
+  items.
+- The client briefly rendered the summary row as a thread-detail conversation,
+  which exposed `No visible turns.` before the detail response settled.
+
+Conclusion: a thread-list summary row is not a loaded thread detail. During
+thread switches, the client must force a loading shell until the detail response
+arrives; summary metadata can provide title/status/workspace context, but it
+must not own the conversation `turns` state.
+
 ### Platform Incident Intake
 
 The user proposed frontend diagnostics that POST evidence to a server and
