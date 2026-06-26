@@ -694,6 +694,51 @@
     return activeIds[0] || "";
   }
 
+  function composerTargetPlan(input = {}, options = {}) {
+    const newThreadDraft = input.newThreadDraft === true;
+    const activeIds = normalizePinnedIds(input.activeIds || input.ids || [], { maxPanes: options.maxPanes || input.maxPanes });
+    const tileContext = Boolean(input.threadTileMode === true && input.tileSurfaceActive === true && activeIds.length);
+    const selectedThreadId = effectiveSelectedThreadId({
+      enabled: input.threadTileMode === true,
+      activeIds,
+      selectedThreadId: input.selectedThreadId,
+      currentThreadId: input.currentThreadId,
+      maxPanes: options.maxPanes || input.maxPanes,
+    });
+    const currentThreadId = text(input.currentThreadId).trim();
+    return {
+      action: "composer-target",
+      reason: newThreadDraft ? "new-thread" : (selectedThreadId ? "selected-pane" : (currentThreadId ? "current-thread" : "missing-thread")),
+      mode: newThreadDraft ? "new-thread" : "thread",
+      newThreadDraft,
+      tileContext,
+      activeIds,
+      selectedThreadId,
+      currentThreadId,
+      targetThreadId: newThreadDraft ? "" : (selectedThreadId || currentThreadId || ""),
+    };
+  }
+
+  function composerTargetPlaceholderPlan(input = {}) {
+    if (input.newThreadDraft === true || String(input.mode || "") === "new-thread") {
+      return {
+        action: "composer-target-placeholder",
+        reason: "new-thread",
+        showTargetPlaceholder: false,
+        text: text(input.newThreadPlaceholder || "输入第一条消息"),
+      };
+    }
+    const targetThreadId = text(input.targetThreadId).trim();
+    const targetTitle = text(input.targetTitle || targetThreadId).trim();
+    const showTargetPlaceholder = Boolean(input.tileContext === true && targetThreadId && input.hasTargetThread === true);
+    return {
+      action: "composer-target-placeholder",
+      reason: showTargetPlaceholder ? "tile-target" : "default",
+      showTargetPlaceholder,
+      text: showTargetPlaceholder ? `发送到：${targetTitle || targetThreadId}` : text(input.defaultPlaceholder || "Message Codex"),
+    };
+  }
+
   function displaySettingsPayload(input = {}, options = {}) {
     const paneThreadIds = normalizePinnedIds(input.paneThreadIds || input.threadTilePinnedIds || [], options);
     const paneCountInput = Object.prototype.hasOwnProperty.call(input, "paneCount")
@@ -1133,6 +1178,8 @@
     activePaneSyncPlan,
     candidatePaneIdsPlan,
     closePanePlan,
+    composerTargetPlaceholderPlan,
+    composerTargetPlan,
     displaySettingsPayload,
     dropPaneIntent,
     effectiveSelectedThreadId,

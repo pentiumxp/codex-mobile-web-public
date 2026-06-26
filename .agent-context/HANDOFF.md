@@ -16053,3 +16053,53 @@ The previous full handoff was archived and should be opened only when old proven
   - Only bounded file paths, test counts, and architecture state are recorded.
     No secrets, cookies, launch tokens, private thread bodies, task-card bodies,
     uploads, screenshots, or long logs are included.
+
+## 2026-06-26 - Phase C composer target planning local slice
+
+- Latest local slice:
+  - Continued Phase C pane-state architecture after `6cb6c8a`
+    (`plan thread tile pane scroll`). This slice is local/private only and is
+    not deployed by design.
+- Root-cause boundary:
+  - Symptom/risk: tile mode uses one shared bottom Composer, but the decision
+    for target thread id, tile-only target placeholder, new-thread placeholder,
+    and selected/current-thread fallback was still inline in `public/app.js`.
+    That kept a high-risk "send to the wrong pane" rule in UI orchestration.
+  - Failing layer: frontend thread-tile shared Composer target ownership, not
+    DOM structure, draft persistence, server projection, task-card protocol,
+    network reads, or shell/cache.
+  - Violated invariant: `public/app.js` should collect real DOM/thread facts
+    and execute UI side effects; deterministic pane-state rules should live in
+    pure helpers with focused tests.
+- Changes:
+  - `public/thread-tile-state.js` now exposes `composerTargetPlan()` for
+    new-thread mode, tile-surface activation, selected-pane/current-thread
+    fallback, active ids, and target thread id.
+  - `public/thread-tile-state.js` now exposes
+    `composerTargetPlaceholderPlan()` for the new-thread placeholder,
+    tile-only `发送到：线程名` placeholder, and default `Message Codex`.
+  - `public/app.js` now supplies real tile DOM state and thread-title facts,
+    then reads helper output for `currentComposerThreadId()`,
+    `isThreadTileComposerContext()`, `composerPlaceholderText()`, and
+    `composerShowsTargetPlaceholder()`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md` with the Phase C boundary.
+- Validation:
+  - Focused:
+    `node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js test/composer-draft.test.js test/conversation-render.test.js`
+    passed (`141` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`1127` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Not deployed. No `CLIENT_BUILD_ID` / PWA shell cache bump. This remains a
+    small Phase C local slice to batch with the next pane-state/runtime module.
+- Next:
+  - Continue Phase C with pane-local draft/runtime ownership, pane-local
+    command detail state, split sizing, or browser/visual validation around
+    tile Composer target switching before one batch deploy.
+- Privacy:
+  - Only bounded file paths, test counts, and architecture state are recorded.
+    No secrets, cookies, launch tokens, private thread bodies, task-card bodies,
+    uploads, screenshots, or long logs are included.

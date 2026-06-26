@@ -430,20 +430,26 @@ test("thread tile composer targets the active pane without replacing the shared 
   assert.match(currentDraftKeyBody, /currentComposerThreadId\(\)/);
 
   const targetIdBody = functionBody(appJs, "currentComposerThreadId");
-  assert.match(targetIdBody, /effectiveThreadTileSelectedThreadId\(\) \|\| state\.currentThreadId/);
+  assert.match(targetIdBody, /composerTargetPlan\(\)\.targetThreadId/);
+
+  const targetPlanBody = functionBody(appJs, "composerTargetPlan");
+  assert.match(targetPlanBody, /threadTileStatePolicy\.composerTargetPlan/);
+  assert.match(targetPlanBody, /tileSurfaceActive: threadTileComposerSurfaceActive\(\)/);
+  assert.match(targetPlanBody, /selectedThreadId: state\.threadTileSelectedThreadId/);
+  assert.match(targetPlanBody, /currentThreadId: state\.currentThreadId/);
 
   const tileComposerContextBody = functionBody(appJs, "isThreadTileComposerContext");
-  assert.match(tileComposerContextBody, /state\.threadTileMode/);
-  assert.match(tileComposerContextBody, /conversation\.classList\.contains\("thread-tile-mode"\)/);
-  assert.match(tileComposerContextBody, /state\.threadTileActiveIds\.length/);
+  assert.match(tileComposerContextBody, /composerTargetPlan\(\)\.tileContext === true/);
+  assert.match(functionBody(appJs, "threadTileComposerSurfaceActive"), /conversation\.classList\.contains\("thread-tile-mode"\)/);
 
   const placeholderBody = functionBody(appJs, "composerPlaceholderText");
   assert.match(placeholderBody, /const targetThreadId = currentComposerThreadId\(\)/);
   assert.match(placeholderBody, /const targetThread = composerTargetThread\(\)/);
-  assert.match(placeholderBody, /Boolean\(isThreadTileComposerContext\(\) && targetThreadId && targetThread\)/);
-  assert.match(placeholderBody, /return `发送到：\$\{title\}`;/);
+  assert.match(placeholderBody, /threadTileStatePolicy\.composerTargetPlaceholderPlan/);
+  assert.match(placeholderBody, /targetTitle: targetThread \? threadDisplayName\(targetThread\) : ""/);
   assert.match(appJs, /function composerShowsTargetPlaceholder\(\)/);
-  assert.match(functionBody(appJs, "composerShowsTargetPlaceholder"), /Boolean\(isThreadTileComposerContext\(\) && targetThreadId && targetThread\)/);
+  assert.match(functionBody(appJs, "composerShowsTargetPlaceholder"), /threadTileStatePolicy\.composerTargetPlaceholderPlan/);
+  assert.match(functionBody(appJs, "composerShowsTargetPlaceholder"), /showTargetPlaceholder === true/);
 
   const updateControlsBody = functionBody(appJs, "updateComposerControls");
   assert.match(updateControlsBody, /const targetThreadId = currentComposerThreadId\(\)/);

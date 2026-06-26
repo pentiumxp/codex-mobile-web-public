@@ -58,6 +58,74 @@ test("thread tile state selects active pane without depending on app globals", (
   }), "a");
 });
 
+test("thread tile state owns shared composer target planning", () => {
+  assert.deepEqual(state.composerTargetPlan({
+    newThreadDraft: true,
+    threadTileMode: true,
+    tileSurfaceActive: true,
+    activeIds: ["a", "b"],
+    selectedThreadId: "b",
+    currentThreadId: "a",
+  }), {
+    action: "composer-target",
+    reason: "new-thread",
+    mode: "new-thread",
+    newThreadDraft: true,
+    tileContext: true,
+    activeIds: ["a", "b"],
+    selectedThreadId: "b",
+    currentThreadId: "a",
+    targetThreadId: "",
+  });
+
+  assert.equal(state.composerTargetPlan({
+    threadTileMode: true,
+    tileSurfaceActive: true,
+    activeIds: ["a", "b"],
+    selectedThreadId: "b",
+    currentThreadId: "a",
+  }).targetThreadId, "b");
+  assert.equal(state.composerTargetPlan({
+    threadTileMode: false,
+    tileSurfaceActive: false,
+    activeIds: ["a", "b"],
+    selectedThreadId: "b",
+    currentThreadId: "a",
+  }).targetThreadId, "a");
+  assert.equal(state.composerTargetPlan({
+    threadTileMode: true,
+    tileSurfaceActive: false,
+    activeIds: ["a", "b"],
+    selectedThreadId: "b",
+    currentThreadId: "a",
+  }).tileContext, false);
+
+  assert.deepEqual(state.composerTargetPlaceholderPlan({
+    newThreadDraft: true,
+  }), {
+    action: "composer-target-placeholder",
+    reason: "new-thread",
+    showTargetPlaceholder: false,
+    text: "输入第一条消息",
+  });
+  assert.deepEqual(state.composerTargetPlaceholderPlan({
+    tileContext: true,
+    targetThreadId: "b",
+    hasTargetThread: true,
+    targetTitle: "Music",
+  }), {
+    action: "composer-target-placeholder",
+    reason: "tile-target",
+    showTargetPlaceholder: true,
+    text: "发送到：Music",
+  });
+  assert.equal(state.composerTargetPlaceholderPlan({
+    tileContext: true,
+    targetThreadId: "b",
+    hasTargetThread: false,
+  }).text, "Message Codex");
+});
+
 test("thread tile state builds and applies display settings payloads", () => {
   const payload = state.displaySettingsPayload({
     threadTileMode: true,

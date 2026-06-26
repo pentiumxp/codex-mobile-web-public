@@ -76,6 +76,37 @@ node --test test/thread-tile-state.test.js test/thread-tile-layout.test.js test/
 该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为 Phase C
 本地模块累积。
 
+## 2026-06-26 Phase C Composer Target Planning Slice
+
+本地小切片继续推进 Phase C 的 pane-state ownership。此前平铺模式下共享
+Composer 到底发送给哪个线程、什么时候显示 `发送到：线程名` placeholder、以及
+单窗口/新线程如何回到默认 placeholder，都由 `public/app.js` 直接组合
+`newThreadDraft`、tile mode、当前 DOM 是否真在平铺、active pane ids、selected
+pane 和 current thread。这会让“误发到错误窗口”的关键规则继续散落在 UI 编排层。
+
+本次修复：
+
+- `public/thread-tile-state.js` 新增 `composerTargetPlan()`，统一规划共享
+  Composer 的 target thread、tile context、新线程模式和 selected/current fallback。
+- `public/thread-tile-state.js` 新增 `composerTargetPlaceholderPlan()`，统一规划
+  新线程 placeholder、平铺目标提示和默认 `Message Codex` 文案。
+- `public/app.js` 仍负责读取真实 DOM 是否处于 `.thread-tile-mode`、查找目标线程
+  标题和执行真实 Composer 控件更新；但 target/placeholder 策略不再内联。
+- focused tests 覆盖新线程、平铺 selected pane、非平铺 current thread fallback、
+  非平铺 surface、目标线程存在/缺失 placeholder，以及 app wiring。
+- 不改变 DOM 结构、发送协议、草稿存储、server projection、任务卡协议、
+  shell/cache 或部署状态。
+
+闭环验证：
+
+```bash
+node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js test/composer-draft.test.js test/conversation-render.test.js
+```
+
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为 Phase C
+本地模块累积，后续与 pane-local draft/runtime 或 command-detail ownership
+一起批量部署。
+
 ## 2026-06-26 Phase C Pane Scroll Runtime Planning Slice
 
 本地小切片继续推进 Phase C 的 pane-runtime ownership。此前每个平铺窗口的

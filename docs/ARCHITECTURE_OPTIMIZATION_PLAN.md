@@ -1012,7 +1012,11 @@ large thread detail read at once. Pane-local scroll runtime policy now also
 lives there: near-bottom metrics, hold clear/remember decisions, bottom-jump
 button visibility, and restore-distance versus bottom-follow choices are
 planned from bounded scroll facts while `public/app.js` keeps DOM reads/writes
-and ARIA/class side effects.
+and ARIA/class side effects. Shared Composer target planning now also lives
+there: new-thread mode, tile-surface activation, selected-pane/current-thread
+fallback, and the tile-only `发送到：线程名` placeholder are helper-owned while
+`public/app.js` keeps real DOM surface detection, thread-title lookup, draft
+storage, and control rendering.
 App code can no
 longer fall through from tile mode into the
 single-thread patch path without an explicit policy decision, fall through from
@@ -1327,7 +1331,10 @@ Target:
   current/running-thread sizing, explicit user-requested counts, min close
   bounds, and max add bounds share one helper-owned plan. Pane-local scroll
   planning also now lives there, so near-bottom, hold, bottom-jump visibility,
-  and patch restore-distance decisions are helper-owned. Continue moving pane
+  and patch restore-distance decisions are helper-owned. Shared Composer
+  target/placeholder planning also now lives there, so selected-pane send
+  target, current-thread fallback, new-thread placeholder, and tile-only
+  target placeholder no longer depend on scattered `app.js` branches. Continue moving pane
   widths, per-pane drafts, max concurrent detail reads, pane-local
   send/approval/interrupt ownership, command detail panels, and mobile collapse
   behavior into testable helpers without DOM side effects.

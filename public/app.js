@@ -4395,17 +4395,30 @@ function effectiveThreadTileSelectedThreadId(ids = state.threadTileActiveIds) {
   });
 }
 
+function threadTileComposerSurfaceActive() {
+  const conversation = $("conversation");
+  return Boolean(conversation && conversation.classList.contains("thread-tile-mode"));
+}
+
+function composerTargetPlan() {
+  return threadTileStatePolicy.composerTargetPlan({
+    newThreadDraft: state.newThreadDraft,
+    threadTileMode: state.threadTileMode,
+    tileSurfaceActive: threadTileComposerSurfaceActive(),
+    activeIds: state.threadTileActiveIds,
+    selectedThreadId: state.threadTileSelectedThreadId,
+    currentThreadId: state.currentThreadId,
+  }, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+  });
+}
+
 function currentComposerThreadId() {
-  if (state.newThreadDraft) return "";
-  return effectiveThreadTileSelectedThreadId() || state.currentThreadId || "";
+  return composerTargetPlan().targetThreadId || "";
 }
 
 function isThreadTileComposerContext() {
-  const conversation = $("conversation");
-  return Boolean(state.threadTileMode
-    && conversation
-    && conversation.classList.contains("thread-tile-mode")
-    && state.threadTileActiveIds.length);
+  return composerTargetPlan().tileContext === true;
 }
 
 function composerTargetThread() {
@@ -21600,20 +21613,28 @@ function toggleQuotaDetails(anchor) {
 }
 
 function composerPlaceholderText() {
-  if (state.newThreadDraft) return "输入第一条消息";
   const targetThreadId = currentComposerThreadId();
   const targetThread = composerTargetThread();
-  const shouldShow = Boolean(isThreadTileComposerContext() && targetThreadId && targetThread);
-  if (!shouldShow) return "Message Codex";
-  const title = threadDisplayName(targetThread) || targetThreadId;
-  return `发送到：${title}`;
+  return threadTileStatePolicy.composerTargetPlaceholderPlan({
+    newThreadDraft: state.newThreadDraft,
+    tileContext: isThreadTileComposerContext(),
+    targetThreadId,
+    hasTargetThread: Boolean(targetThread),
+    targetTitle: targetThread ? threadDisplayName(targetThread) : "",
+    newThreadPlaceholder: "输入第一条消息",
+    defaultPlaceholder: "Message Codex",
+  }).text;
 }
 
 function composerShowsTargetPlaceholder() {
-  if (state.newThreadDraft) return false;
   const targetThreadId = currentComposerThreadId();
   const targetThread = composerTargetThread();
-  return Boolean(isThreadTileComposerContext() && targetThreadId && targetThread);
+  return threadTileStatePolicy.composerTargetPlaceholderPlan({
+    newThreadDraft: state.newThreadDraft,
+    tileContext: isThreadTileComposerContext(),
+    targetThreadId,
+    hasTargetThread: Boolean(targetThread),
+  }).showTargetPlaceholder === true;
 }
 
 function renderComposerSettings() {
