@@ -95,11 +95,13 @@ Current acceleration targets:
    minimal slice is an injected active-overlay provider that defaults
    fail-closed, with tests for complete evidence using projection+overlay and
    incomplete evidence staying on full `thread/read`.
-2. Thread-list cold starts still rebuild the process-local fallback baseline in
-   the route path. The next minimal slice is a
-   `thread-list-fallback-baseline-service` that owns source collection, merge,
-   and per-source timings without changing behavior; a later slice can decide
-   whether to persist or prewarm the baseline.
+2. Thread-list cold starts no longer hide source collection inside the fallback
+   cache policy. The local `thread-list-fallback-baseline-service` slice now
+   owns state DB / rollout session / session-index source collection,
+   per-source timings/counts, source-order merge, and result limiting without
+   changing behavior. The next thread-list slice can use these fields to decide
+   whether a root-cause fix belongs to source internals, route aggregation,
+   cache freshness, or a future explicit prewarm/persist design.
 3. Large detail cold-path attribution now has a dedicated
    `thread-detail-cold-path-diagnosis-service` that emits bounded
    `coldPathOwner` / `coldPathReason` for projection-cache seeding,
@@ -163,9 +165,12 @@ non-partial projections.
   `mobileDiagnostics.threadListTimings`. The cache now reports
   `fallbackCacheDecision` (`hit`, `miss-rebuild`, `expired-rebuild`), bounded
   cache key hash, cache age/update age, build count/number, entry count, and
-  incremental-update count. These fields prove whether an observed slow list
-  load is a first baseline build, TTL expiry, cache miss, deferred fallback, or
-  warm in-process reuse.
+  incremental-update count. The local baseline-service slice also reports
+  `fallbackStateDbCount`, `fallbackRolloutCount`, `fallbackSessionIndexCount`,
+  `fallbackBaselineSourceCount`, and `fallbackBaselineResultCount` beside the
+  existing per-source timings. These fields prove whether an observed slow list
+  load is a first baseline build, TTL expiry, cache miss, deferred fallback,
+  warm in-process reuse, source-read volume, or post-merge result size.
 - Move deterministic completed-turn diagnostics out of `server.js` into a
   service module.
 - Preserve the rule that explicit empty final assistant messages produce

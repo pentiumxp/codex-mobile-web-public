@@ -13672,3 +13672,54 @@ The previous full handoff was archived and should be opened only when old proven
   - Use the new cold-path owner/reason evidence to decide whether the next
     root-cause fix belongs to projection input, projection cache, summary
     lookup, active-read policy, or app-server fallback.
+
+## 2026-06-26 - thread-list fallback baseline service local-only
+
+- Scope:
+  - Continued Phase B with a small thread-list cold-path architecture slice.
+  - This slice separates fallback baseline construction from process-lifetime
+    fallback cache policy without changing fallback behavior, source internals,
+    route aggregation, deferred fallback behavior, app-server list merge, static
+    client assets, or deployment state.
+- Root-cause boundary:
+  - Failing layer under investigation: thread-list cold/warm path attribution
+    and repeated baseline rebuild cost.
+  - Violated invariant being addressed: cache hit/miss/TTL policy and cold
+    baseline source collection must be independently testable so a slow
+    `thread_list_rendered` event can identify whether time went to state DB,
+    rollout session scanning, session-index fallback, merge/result volume, or
+    cache freshness.
+  - Closure classification: architecture boundary extraction and bounded
+    diagnostics. No prewarm, no persistence, no hidden fallback behavior, and no
+    automatic repair-card dispatch.
+- Changes:
+  - Added `adapters/thread-list-fallback-baseline-service.js` for state DB /
+    rollout session / session-index fallback source collection, per-source
+    timing/counts, source-order merge, and result limiting.
+  - `adapters/thread-list-fallback-cache-service.js` now delegates cold
+    miss/expired baseline construction to the baseline service while keeping
+    cache-key, TTL, hit/miss/expired diagnostics, remember, and incremental
+    updates.
+  - `/api/threads` `mobileDiagnostics.threadListTimings` now includes bounded
+    fallback source/result counts:
+    `fallbackStateDbCount`, `fallbackRolloutCount`,
+    `fallbackSessionIndexCount`, `fallbackBaselineSourceCount`, and
+    `fallbackBaselineResultCount`.
+  - `package.json` check coverage includes the new adapter.
+  - README, architecture optimization plan, module map, and troubleshooting
+    docs now describe the baseline/cache boundary and the new diagnostic fields.
+- Validation:
+  - Focused:
+    `node --test test/thread-list-fallback-baseline-service.test.js test/thread-list-fallback-cache-service.test.js test/thread-performance-metrics.test.js test/thread-visibility.test.js`
+    passed (`70` tests).
+  - Full source `npm test` passed (`1049` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment status:
+  - Not deployed by design. This is another local-only small slice under the
+    updated module-batch cadence.
+- Next Phase B candidates:
+  - Use the new thread-list source/count timings from production after the next
+    batched deploy to decide whether to optimize rollout source internals,
+    session-index fallback, route merge/decorate, or cache freshness.
+  - Continue with active large-thread overlay proof gating as the next detail
+    read-risk reduction slice.

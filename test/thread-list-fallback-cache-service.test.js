@@ -125,6 +125,98 @@ test("readFallback uses cached fallback list after the first complete pass", () 
     stateDbMs: 0,
     rolloutMs: 0,
     sessionIndexMs: 0,
+    stateDbCount: 1,
+    rolloutCount: 1,
+    sessionIndexCount: 1,
+    baselineSourceCount: 3,
+    baselineResultCount: 3,
+  });
+});
+
+test("readFallback can build cold baseline through injected baseline service", () => {
+  const calls = [];
+  const directService = createThreadListFallbackCacheService({
+    now: () => 1000,
+    readGlobalState: () => ({
+      roots: ["/workspace/default"],
+      projectless: [],
+    }),
+    normalizeFsPath: (value) => String(value || "").replace(/[\\/]+/g, "/").toLowerCase(),
+    normalizeThreadId: (value) => String(value || "").trim().toLowerCase(),
+    visibleWorkspaceRoots: (globalState) => new Set(globalState.roots || []),
+    visibleProjectlessThreadIds: () => new Set(),
+    filterFallbackThreads: (threads) => threads || [],
+    mergeThreadSummaryList: mergeByUpdatedAt,
+    baselineService: {
+      readBaseline(limit, filters) {
+        calls.push({
+          limit,
+          cwd: filters.cwd,
+          searchTerm: filters.searchTerm,
+          roots: filters.globalState && filters.globalState.roots,
+        });
+        return {
+          threads: [
+            { id: "baseline-1", name: "Baseline", updatedAt: 10 },
+            { id: "baseline-2", name: "Second", updatedAt: 9 },
+          ],
+          timings: {
+            stateDbMs: 3,
+            rolloutMs: 5,
+            sessionIndexMs: 7,
+            stateDbCount: 4,
+            rolloutCount: 5,
+            sessionIndexCount: 6,
+            baselineSourceCount: 15,
+            baselineResultCount: 2,
+          },
+        };
+      },
+    },
+  });
+
+  const diagnostics = {};
+  const threads = directService.readFallback(2, {
+    cwd: "/workspace/default",
+    searchTerm: "base",
+    globalState: { roots: ["/workspace/default"] },
+    diagnostics,
+  });
+
+  assert.deepEqual(threads.map((thread) => thread.id), ["baseline-1", "baseline-2"]);
+  assert.deepEqual(calls, [{
+    limit: 2,
+    cwd: "/workspace/default",
+    searchTerm: "base",
+    roots: ["/workspace/default"],
+  }]);
+  assert.equal(diagnostics.cacheDecision, "miss-rebuild");
+  assert.equal(diagnostics.stateDbMs, 3);
+  assert.equal(diagnostics.rolloutMs, 5);
+  assert.equal(diagnostics.sessionIndexMs, 7);
+  assert.equal(diagnostics.stateDbCount, 4);
+  assert.equal(diagnostics.rolloutCount, 5);
+  assert.equal(diagnostics.sessionIndexCount, 6);
+  assert.equal(diagnostics.baselineSourceCount, 15);
+  assert.equal(diagnostics.baselineResultCount, 2);
+
+  const hitDiagnostics = {};
+  directService.readFallback(2, {
+    cwd: "/workspace/default",
+    searchTerm: "base",
+    globalState: { roots: ["/workspace/default"] },
+    diagnostics: hitDiagnostics,
+  });
+  assert.equal(hitDiagnostics.cacheDecision, "hit");
+  assert.deepEqual(hitDiagnostics.cachedSourceTimings, {
+    stateDbMs: 3,
+    rolloutMs: 5,
+    sessionIndexMs: 7,
+    stateDbCount: 4,
+    rolloutCount: 5,
+    sessionIndexCount: 6,
+    baselineSourceCount: 15,
+    baselineResultCount: 2,
   });
 });
 

@@ -14642,6 +14642,11 @@ async function handleApi(req, res) {
         fallbackStateDbMs: Number(fallbackDiagnostics.stateDbMs || 0),
         fallbackRolloutMs: Number(fallbackDiagnostics.rolloutMs || 0),
         fallbackSessionIndexMs: Number(fallbackDiagnostics.sessionIndexMs || 0),
+        fallbackStateDbCount: Number(fallbackDiagnostics.stateDbCount || 0),
+        fallbackRolloutCount: Number(fallbackDiagnostics.rolloutCount || 0),
+        fallbackSessionIndexCount: Number(fallbackDiagnostics.sessionIndexCount || 0),
+        fallbackBaselineSourceCount: Number(fallbackDiagnostics.baselineSourceCount || 0),
+        fallbackBaselineResultCount: Number(fallbackDiagnostics.baselineResultCount || 0),
       });
       const mergeStartedAtMs = Date.now();
       const result = normalizeThreadListResultStatuses(mergeThreadListFallback(appServerResult, fallback, limit));
@@ -14679,6 +14684,11 @@ async function handleApi(req, res) {
         fallbackStateDbMs: Number(fallbackDiagnostics.stateDbMs || 0),
         fallbackRolloutMs: Number(fallbackDiagnostics.rolloutMs || 0),
         fallbackSessionIndexMs: Number(fallbackDiagnostics.sessionIndexMs || 0),
+        fallbackStateDbCount: Number(fallbackDiagnostics.stateDbCount || 0),
+        fallbackRolloutCount: Number(fallbackDiagnostics.rolloutCount || 0),
+        fallbackSessionIndexCount: Number(fallbackDiagnostics.sessionIndexCount || 0),
+        fallbackBaselineSourceCount: Number(fallbackDiagnostics.baselineSourceCount || 0),
+        fallbackBaselineResultCount: Number(fallbackDiagnostics.baselineResultCount || 0),
       });
       if (fallback.length) {
         const decorateStartedAtMs = Date.now();

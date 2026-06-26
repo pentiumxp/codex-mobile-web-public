@@ -764,6 +764,7 @@ test("rollout session fallback carries agent metadata so subagent rows stay hidd
 
 test("thread list route uses rollout-aware fallback aggregator", () => {
   const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+  const baselineServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-fallback-baseline-service.js"), "utf8");
   const cacheServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-fallback-cache-service.js"), "utf8");
   const routeIndex = serverJs.indexOf('if (url.pathname === "/api/threads" && req.method === "GET")');
   assert.ok(routeIndex >= 0, "missing thread list route");
@@ -774,6 +775,8 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(serverJs, /function logThreadList\(event, details = \{\}\)/);
   assert.match(serverJs, /const THREAD_LIST_FALLBACK_CACHE_TTL_MS[\s\S]*\|\| "0"/);
   assert.match(serverJs, /createThreadListFallbackCacheService/);
+  assert.match(baselineServiceJs, /createThreadListFallbackBaselineService/);
+  assert.match(cacheServiceJs, /createThreadListFallbackBaselineService/);
   assert.match(serverJs, /stripThreadListDetailFields/);
   assert.match(serverJs, /stripThreadListResultDetailFields/);
   assert.match(threadListSummaryServiceJs, /THREAD_DETAIL_ONLY_SUMMARY_FIELDS/);
@@ -809,6 +812,11 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeBody, /fallbackStateDbMs/);
   assert.match(routeBody, /fallbackRolloutMs/);
   assert.match(routeBody, /fallbackSessionIndexMs/);
+  assert.match(routeBody, /fallbackStateDbCount: Number\(fallbackDiagnostics\.stateDbCount \|\| 0\)/);
+  assert.match(routeBody, /fallbackRolloutCount: Number\(fallbackDiagnostics\.rolloutCount \|\| 0\)/);
+  assert.match(routeBody, /fallbackSessionIndexCount: Number\(fallbackDiagnostics\.sessionIndexCount \|\| 0\)/);
+  assert.match(routeBody, /fallbackBaselineSourceCount: Number\(fallbackDiagnostics\.baselineSourceCount \|\| 0\)/);
+  assert.match(routeBody, /fallbackBaselineResultCount: Number\(fallbackDiagnostics\.baselineResultCount \|\| 0\)/);
   assert.match(routeBody, /const fallbackMode = String\(url\.searchParams\.get\("fallback"\) \|\| ""\)/);
   assert.match(routeBody, /const deferFallback = fallbackMode === "defer" && !cursor && !archived && !searchTerm/);
   assert.match(routeBody, /const shouldDeferFallback = shouldDeferThreadListFallbackForActiveDetail\(\{[\s\S]*deferFallback,[\s\S]*cursor,[\s\S]*archived,[\s\S]*searchTerm,[\s\S]*cwd,[\s\S]*\}\);/);

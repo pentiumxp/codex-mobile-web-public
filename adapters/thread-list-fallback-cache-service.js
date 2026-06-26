@@ -1,5 +1,9 @@
 "use strict";
 
+const {
+  createThreadListFallbackBaselineService,
+} = require("./thread-list-fallback-baseline-service");
+
 function clonePlainJson(value) {
   if (value === undefined) return undefined;
   return JSON.parse(JSON.stringify(value));
@@ -53,6 +57,15 @@ function createThreadListFallbackCacheService(options = {}) {
   const readSessionIndexFallback = typeof options.readSessionIndexFallback === "function"
     ? options.readSessionIndexFallback
     : () => [];
+  const baselineService = options.baselineService && typeof options.baselineService.readBaseline === "function"
+    ? options.baselineService
+    : createThreadListFallbackBaselineService({
+      now,
+      readStateDbFallback,
+      readRolloutSessionFallback,
+      readSessionIndexFallback,
+      mergeThreadSummaryList,
+    });
 
   const cache = new Map();
   let buildCount = 0;
@@ -255,24 +268,30 @@ function createThreadListFallbackCacheService(options = {}) {
       diagnostics.cacheBuildReason = missDecision;
       diagnostics.cacheDecision = missDecision === "expired" ? "expired-rebuild" : "miss-rebuild";
     }
-    const stateDbStartedAtMs = now();
-    const stateDbFallback = readStateDbFallback(limit, filters);
-    if (diagnostics) diagnostics.stateDbMs = Math.max(0, now() - stateDbStartedAtMs);
-    const rolloutStartedAtMs = now();
-    const rolloutFallback = readRolloutSessionFallback(limit, filters);
-    if (diagnostics) diagnostics.rolloutMs = Math.max(0, now() - rolloutStartedAtMs);
-    const sessionIndexStartedAtMs = now();
-    const sessionIndexFallback = readSessionIndexFallback(limit, filters);
-    if (diagnostics) diagnostics.sessionIndexMs = Math.max(0, now() - sessionIndexStartedAtMs);
-    const threads = mergeThreadSummaryList([
-      ...stateDbFallback,
-      ...rolloutFallback,
-      ...sessionIndexFallback,
-    ]).slice(0, limit);
+    const baseline = baselineService.readBaseline(limit, filters);
+    const threads = Array.isArray(baseline && baseline.threads) ? baseline.threads : [];
+    const baselineTimings = baseline && baseline.timings && typeof baseline.timings === "object"
+      ? baseline.timings
+      : {};
+    if (diagnostics) {
+      diagnostics.stateDbMs = Number(baselineTimings.stateDbMs || 0);
+      diagnostics.rolloutMs = Number(baselineTimings.rolloutMs || 0);
+      diagnostics.sessionIndexMs = Number(baselineTimings.sessionIndexMs || 0);
+      diagnostics.stateDbCount = Number(baselineTimings.stateDbCount || 0);
+      diagnostics.rolloutCount = Number(baselineTimings.rolloutCount || 0);
+      diagnostics.sessionIndexCount = Number(baselineTimings.sessionIndexCount || 0);
+      diagnostics.baselineSourceCount = Number(baselineTimings.baselineSourceCount || 0);
+      diagnostics.baselineResultCount = Number(baselineTimings.baselineResultCount || threads.length);
+    }
     remember(key, threads, {
-      stateDbMs: diagnostics && diagnostics.stateDbMs || 0,
-      rolloutMs: diagnostics && diagnostics.rolloutMs || 0,
-      sessionIndexMs: diagnostics && diagnostics.sessionIndexMs || 0,
+      stateDbMs: Number(baselineTimings.stateDbMs || 0),
+      rolloutMs: Number(baselineTimings.rolloutMs || 0),
+      sessionIndexMs: Number(baselineTimings.sessionIndexMs || 0),
+      stateDbCount: Number(baselineTimings.stateDbCount || 0),
+      rolloutCount: Number(baselineTimings.rolloutCount || 0),
+      sessionIndexCount: Number(baselineTimings.sessionIndexCount || 0),
+      baselineSourceCount: Number(baselineTimings.baselineSourceCount || 0),
+      baselineResultCount: Number(baselineTimings.baselineResultCount || threads.length),
     }, {
       limit,
       filters,
