@@ -9466,7 +9466,6 @@ async function refreshCurrentThread(options = {}) {
   let conversationRenderMs = 0;
   let metadataUpdateMs = 0;
   let renderOutcome = null;
-  let patchRejectReason = "";
   const threadTileConversationSurface = isThreadTileConversationSurface();
   const patchSurfaceProbePlan = threadDetailRenderPlanApi.planThreadDetailRefreshPatchSurface({
     shouldRenderDetail,
@@ -9515,18 +9514,15 @@ async function refreshCurrentThread(options = {}) {
   });
   locallyPatchedDetail = patchAttemptResult.locallyPatchedDetail;
   tilePanePatchedDetail = patchAttemptResult.tilePanePatchedDetail;
-  patchRejectReason = patchAttemptResult.patchRejectReason;
-  if (patchAttemptResult.reportLocalPatchRejected) {
-    const previousVisibleShape = visibleConversationShape(previousThread);
-    const nextVisibleShape = visibleConversationShape(state.currentThread);
-    recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.detailPatchRejectedDiagnosticEvent({
-      readMode: result.thread && result.thread.mobileReadMode,
-      renderMode: renderPlan.detailRenderMode,
-      renderPlanReason: renderPlan.reason,
-      patchRejectReason,
-      previousVisibleItemCount: previousVisibleShape.visibleItemCount,
-      visibleItemCount: nextVisibleShape.visibleItemCount,
-    }));
+  const patchRejectedDiagnosticPlan = threadDetailRenderPlanApi.planThreadDetailRefreshPatchRejectedDiagnostic({
+    readMode: result.thread && result.thread.mobileReadMode,
+    renderPlan,
+    patchAttemptResult,
+    previousVisibleShape: patchAttemptResult.reportLocalPatchRejected ? visibleConversationShape(previousThread) : null,
+    nextVisibleShape: patchAttemptResult.reportLocalPatchRejected ? visibleConversationShape(state.currentThread) : null,
+  });
+  if (patchRejectedDiagnosticPlan.shouldReport) {
+    recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.detailPatchRejectedDiagnosticEvent(patchRejectedDiagnosticPlan.diagnosticInput));
   }
   renderOutcome = threadDetailRenderPlanApi.finalizeThreadDetailRenderPlan(renderPlan, patchAttemptResult.finalizeResult);
   locallyPatchedDetail = renderOutcome.locallyPatchedDetail;

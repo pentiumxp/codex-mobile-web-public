@@ -463,8 +463,9 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(functionBody("acceptThreadDetailPatch"), /threadDetailDomPatchApi\.threadDetailPatchResult\(true, reason \|\| "patched"\)/);
   assert.doesNotMatch(appJs, /threadDetailPatchRejectReason/);
   assert.doesNotMatch(functionBody("refreshCurrentThread"), /detailPatchMs = patchAttemptResult\.detailPatchMs;/);
-  assert.match(functionBody("refreshCurrentThread"), /patchRejectReason = patchAttemptResult\.patchRejectReason;/);
-  assert.match(functionBody("refreshCurrentThread"), /if \(patchAttemptResult\.reportLocalPatchRejected\) \{/);
+  assert.doesNotMatch(functionBody("refreshCurrentThread"), /patchRejectReason = patchAttemptResult\.patchRejectReason;/);
+  assert.match(functionBody("refreshCurrentThread"), /const patchRejectedDiagnosticPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchRejectedDiagnostic\(\{/);
+  assert.match(functionBody("refreshCurrentThread"), /if \(patchRejectedDiagnosticPlan\.shouldReport\) \{/);
   assert.match(functionBody("refreshCurrentThread"), /let renderOutcome = null;/);
   assert.match(functionBody("refreshCurrentThread"), /renderOutcome = threadDetailRenderPlanApi\.finalizeThreadDetailRenderPlan\(renderPlan, patchAttemptResult\.finalizeResult\);/);
   assert.doesNotMatch(functionBody("refreshCurrentThread"), /refreshRenderAction = renderOutcome\.renderAction;/);

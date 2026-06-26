@@ -16,6 +16,41 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 Phase A Patch Rejection Diagnostic Input Slice
+
+本地小切片继续推进 Phase A 的 `refreshCurrentThread()` 所有权收敛。此前
+local patch 被拒绝时，`public/app.js` 仍直接选择 `readMode`、`renderMode`、
+`renderPlanReason`、`patchRejectReason` 和前后 visible item count，再交给
+`threadDiagnosticEventsApi.detailPatchRejectedDiagnosticEvent()`。这让 patch
+失败后的诊断字段选择继续留在主 app 文件里，不利于判断“为什么 local patch
+退回 full render”。
+
+本次修复：
+
+- `public/thread-detail-render-plan.js` 新增
+  `planThreadDetailRefreshPatchRejectedDiagnostic()`，只在 local patch rejection
+  时输出 bounded diagnostic input。
+- `public/app.js` 改为执行该计划；真实 Home AI 诊断上报仍由 app.js 触发。
+- 旧的 `patchRejectReason` 临时变量和直接字段组装从 `refreshCurrentThread()`
+  移除。
+- 不改变 local patch eligibility、rejection 判定、full-render fallback、
+  Home AI diagnostic payload schema、server projection、任务卡协议或 shell/cache。
+
+闭环验证：
+
+```bash
+node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/thread-diagnostic-events.test.js test/mobile-viewport.test.js
+npm run check
+npm test
+npm run check:macos
+git diff --check
+```
+
+结果：focused `186` passed；full `npm test` `1112` passed；
+`npm run check`、`npm run check:macos`、`git diff --check` 均通过。
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，
+尚未部署；继续作为 Phase A 模块的一部分累积。
+
 ## 2026-06-26 Phase A Refresh Response Effects Slice
 
 本地小切片继续推进 Phase A 的 `refreshCurrentThread()` 所有权收敛。此前

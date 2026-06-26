@@ -655,6 +655,61 @@ test("thread detail refresh patch attempt result keeps metadata tile misses quie
   });
 });
 
+test("thread detail refresh patch rejected diagnostic plan owns bounded field selection", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchRejectedDiagnostic({
+    readMode: "projection-v4-dynamic",
+    renderPlan: {
+      detailRenderMode: "patch",
+      reason: "patch-shell-stable",
+    },
+    patchAttemptResult: {
+      reportLocalPatchRejected: true,
+      patchRejectReason: "rendered-dom-stale",
+    },
+    previousVisibleShape: {
+      visibleItemCount: 3,
+    },
+    nextVisibleShape: {
+      visibleItemCount: 5,
+    },
+  }), {
+    shouldReport: true,
+    diagnosticInput: {
+      readMode: "projection-v4-dynamic",
+      renderMode: "patch",
+      renderPlanReason: "patch-shell-stable",
+      patchRejectReason: "rendered-dom-stale",
+      previousVisibleItemCount: 3,
+      visibleItemCount: 5,
+    },
+    reason: "local-patch-rejected",
+  });
+});
+
+test("thread detail refresh patch rejected diagnostic plan stays quiet without rejection", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchRejectedDiagnostic({
+    readMode: "projection-v4-dynamic",
+    renderPlan: {
+      detailRenderMode: "patch",
+      reason: "signature-changed",
+    },
+    patchAttemptResult: {
+      reportLocalPatchRejected: false,
+      patchRejectReason: "ignored",
+    },
+    previousVisibleShape: {
+      visibleItemCount: 3,
+    },
+    nextVisibleShape: {
+      visibleItemCount: 5,
+    },
+  }), {
+    shouldReport: false,
+    diagnosticInput: null,
+    reason: "not-rejected",
+  });
+});
+
 test("thread detail refresh render outcome treats tile pane patch as terminal", () => {
   const plan = renderPlan.planThreadDetailRefreshRender({
     previousConversationSignature: "sig-a",

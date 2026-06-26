@@ -781,6 +781,14 @@ local-patch attempt order. App code still performs the real DOM patch calls and
 timing, but `refreshCurrentThread()` no longer inlines tile/local patch attempt
 loops, synchronizes those booleans directly, or reads patch failure reasons from
 global scratch state.
+Local patch rejection diagnostic input planning now also lives in this helper:
+`planThreadDetailRefreshPatchRejectedDiagnostic` takes the patch-attempt result,
+render plan, read mode, and bounded visible-shape counts, then decides whether a
+`detail_patch_rejected` diagnostic should be emitted and which bounded fields
+should be passed into `threadDiagnosticEventsApi.detailPatchRejectedDiagnosticEvent`.
+App code still triggers the real Home AI diagnostic side effect, but
+`refreshCurrentThread()` no longer owns patch-rejection diagnostic field
+selection directly.
 Refresh post-merge side-effect ordering now also lives in this helper:
 `planThreadDetailRefreshPostMergeEffects` declares the fixed
 thread-list-merge, composer/active-turn sync, and thread-list-render groups

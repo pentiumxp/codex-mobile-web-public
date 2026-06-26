@@ -3152,8 +3152,12 @@ test("current-thread refresh patches the current tile pane for metadata-only til
   assert.match(functionBody("acceptThreadDetailPatch"), /threadDetailDomPatchApi\.threadDetailPatchResult\(true, reason \|\| "patched"\)/);
   assert.doesNotMatch(appJs, /threadDetailPatchRejectReason/);
   assert.doesNotMatch(body, /detailPatchMs = patchAttemptResult\.detailPatchMs;/);
-  assert.match(body, /patchRejectReason = patchAttemptResult\.patchRejectReason;/);
-  assert.match(body, /if \(patchAttemptResult\.reportLocalPatchRejected\) \{/);
+  assert.doesNotMatch(body, /patchRejectReason = patchAttemptResult\.patchRejectReason;/);
+  assert.match(body, /const patchRejectedDiagnosticPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchRejectedDiagnostic\(\{/);
+  assert.match(body, /previousVisibleShape: patchAttemptResult\.reportLocalPatchRejected \? visibleConversationShape\(previousThread\) : null/);
+  assert.match(body, /nextVisibleShape: patchAttemptResult\.reportLocalPatchRejected \? visibleConversationShape\(state\.currentThread\) : null/);
+  assert.match(body, /if \(patchRejectedDiagnosticPlan\.shouldReport\) \{/);
+  assert.match(body, /threadDiagnosticEventsApi\.detailPatchRejectedDiagnosticEvent\(patchRejectedDiagnosticPlan\.diagnosticInput\)/);
   assert.match(body, /renderOutcome = threadDetailRenderPlanApi\.finalizeThreadDetailRenderPlan\(renderPlan, patchAttemptResult\.finalizeResult\);/);
   assert.doesNotMatch(body, /detailRenderMode = renderOutcome\.detailRenderMode;/);
   assert.doesNotMatch(body, /refreshRenderAction = renderOutcome\.renderAction;/);

@@ -466,6 +466,35 @@
     };
   }
 
+  function visibleItemCountFromShape(shape, fallback = 0) {
+    const value = objectOrEmpty(shape);
+    return normalizedCount(value.visibleItemCount ?? value.visible_count ?? fallback);
+  }
+
+  function planThreadDetailRefreshPatchRejectedDiagnostic(input = {}) {
+    const patchAttemptResult = objectOrEmpty(input.patchAttemptResult);
+    if (!patchAttemptResult.reportLocalPatchRejected) {
+      return {
+        shouldReport: false,
+        diagnosticInput: null,
+        reason: "not-rejected",
+      };
+    }
+    const renderPlan = objectOrEmpty(input.renderPlan);
+    return {
+      shouldReport: true,
+      diagnosticInput: {
+        readMode: compactReason(input.readMode || input.read_mode, ""),
+        renderMode: compactReason(renderPlan.detailRenderMode || input.renderMode, ""),
+        renderPlanReason: compactReason(renderPlan.reason || input.renderPlanReason, ""),
+        patchRejectReason: compactReason(patchAttemptResult.patchRejectReason || input.patchRejectReason, "unknown"),
+        previousVisibleItemCount: visibleItemCountFromShape(input.previousVisibleShape, input.previousVisibleItemCount),
+        visibleItemCount: visibleItemCountFromShape(input.nextVisibleShape, input.visibleItemCount),
+      },
+      reason: "local-patch-rejected",
+    };
+  }
+
   function finalizeThreadDetailRenderPlan(plan = {}, result = {}) {
     const tilePanePatchedDetail = Boolean(result.tilePanePatchedDetail);
     const locallyPatchedDetail = Boolean(result.locallyPatchedDetail);
@@ -843,6 +872,7 @@
     planThreadDetailRefreshResponseEffects,
     planThreadDetailRefreshPatchAttemptEffects,
     planThreadDetailRefreshPatchAttemptResult,
+    planThreadDetailRefreshPatchRejectedDiagnostic,
     planThreadDetailRefreshOutcomeExecution,
     planThreadDetailRefreshExecutionEffects,
     planThreadDetailRefreshPerformanceInput,

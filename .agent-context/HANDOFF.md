@@ -15358,6 +15358,56 @@ The previous full handoff was archived and should be opened only when old proven
 - Next:
   - Commit locally.
 
+## 2026-06-26 - Phase A patch rejection diagnostic input slice
+
+- Context:
+  - Follows local commit `7182cd9` (`plan refresh response effects`).
+  - This is the seventh local Phase A render/patch ownership slice and remains
+    intentionally undeployed until batched into a coherent module.
+- Root-cause boundary:
+  - Symptom/risk: after local patch rejection, `refreshCurrentThread()` still
+    directly selected diagnostic fields such as read mode, render mode,
+    render-plan reason, patch rejection reason, and before/after visible item
+    counts before calling the existing diagnostic event builder.
+  - Failing layer: frontend refresh patch-rejection diagnostic input ownership,
+    not server projection, local patch eligibility, full-render fallback,
+    Home AI diagnostic schema, task-card protocol, or shell/cache.
+  - Violated invariant: once patch-attempt results and render-plan outcomes are
+    planned by helper modules, the bounded diagnostic input for patch rejection
+    should also be planned by a testable helper. `public/app.js` should only
+    trigger the real diagnostic side effect when the helper requests it.
+  - Closure classification: architecture-boundary cleanup. It does not hide
+    duplicate/missing messages, force refresh, skip refresh, change patch
+    rejection semantics, change full-render fallback behavior, change diagnostic
+    payload schema, or change shell/cache.
+- Changes:
+  - `public/thread-detail-render-plan.js`
+    - Added `planThreadDetailRefreshPatchRejectedDiagnostic()`.
+  - `public/app.js`
+    - `refreshCurrentThread()` now uses the planned diagnostic input instead of
+      directly composing `detail_patch_rejected` input fields.
+    - Removed the local `patchRejectReason` staging variable.
+  - Tests/docs updated:
+    - `test/thread-detail-render-plan.test.js`
+    - `test/conversation-render.test.js`
+    - `test/mobile-viewport.test.js`
+    - `README.md`
+    - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`
+    - `docs/MODULES.md`
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/thread-diagnostic-events.test.js test/mobile-viewport.test.js`
+    passed (`186` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`1112` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Not deployed by design. This is a local Phase A slice for a future
+    module-level deploy.
+- Next:
+  - Commit locally.
+
 ## 2026-06-26 - Phase A refresh response effects slice
 
 - Context:
@@ -15512,3 +15562,29 @@ The previous full handoff was archived and should be opened only when old proven
     module-level deploy.
 - Next:
   - Commit locally.
+
+## 2026-06-26 - Latest tail marker: Phase A patch rejection diagnostic input slice
+
+- Latest local commit for this continuation slice:
+  - Message: `plan patch rejection diagnostics`.
+- Current state:
+  - Worktree was clean after commit.
+  - This is the seventh local Phase A render/patch ownership slice.
+  - Not deployed by design; no `CLIENT_BUILD_ID` / PWA shell cache bump.
+- Root-cause boundary:
+  - `refreshCurrentThread()` no longer owns `detail_patch_rejected` diagnostic
+    input field selection directly. `public/thread-detail-render-plan.js`
+    plans the bounded diagnostic input; `public/app.js` only triggers the real
+    Home AI diagnostic side effect when the plan requests it.
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/thread-diagnostic-events.test.js test/mobile-viewport.test.js`
+    passed (`186` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`1112` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Continue Phase A with one more local `refreshCurrentThread()` ownership
+    slice or batch the current Phase A module for a single deploy/readback when
+    requested.
