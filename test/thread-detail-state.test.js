@@ -318,6 +318,7 @@ test("thread detail summaries strip detail-only state before entering thread lis
     "turns",
     "runtimeSettings",
     "threadTaskCards",
+    "mobileDetailLoaded",
     "mobileLoading",
     "mobileLoadError",
     "mobileReadWarning",
@@ -336,16 +337,19 @@ test("thread detail summaries strip detail-only state before entering thread lis
 
 test("thread detail loaded-state policy distinguishes empty detail from summary shells", () => {
   assert.equal(threadHasLoadedDetailState({ id: "thread-1", turns: [] }), false);
-  assert.equal(threadHasLoadedDetailState({ id: "thread-1", turns: [], mobileReadMode: "recent" }), true);
-  assert.equal(threadHasLoadedDetailState({ id: "thread-1", turns: [], mobileDiagnostics: {} }), true);
-  assert.equal(threadHasLoadedDetailState({ id: "thread-1", turns: [], runtimeSettings: {} }), true);
-  assert.equal(threadHasLoadedDetailState({ id: "thread-1", turns: [], threadTaskCards: [] }), true);
+  assert.equal(threadHasLoadedDetailState({ id: "thread-1", turns: [], mobileReadMode: "recent" }), false);
+  assert.equal(threadHasLoadedDetailState({ id: "thread-1", turns: [], mobileDiagnostics: {} }), false);
+  assert.equal(threadHasLoadedDetailState({ id: "thread-1", turns: [], runtimeSettings: {} }), false);
+  assert.equal(threadHasLoadedDetailState({ id: "thread-1", turns: [], threadTaskCards: [] }), false);
+  assert.equal(threadHasLoadedDetailState({ id: "thread-1", turns: [], mobileDetailLoaded: true }), true);
   assert.equal(threadHasLoadedDetailState({ id: "thread-1", turns: [{ id: "turn-1", items: [] }] }), true);
   assert.equal(threadHasLoadedDetailState({ id: "thread-1", turns: [{ id: "turn-1" }], mobileLoading: true }), false);
   assert.equal(threadHasLoadedDetailState({ id: "thread-1", turns: [{ id: "turn-1" }], mobileLoadError: "failed" }), false);
 
   assert.equal(threadIsSummaryOnlyCurrentThread({ id: "thread-1", turns: [] }, "thread-1"), true);
-  assert.equal(threadIsSummaryOnlyCurrentThread({ id: "thread-1", turns: [], mobileReadMode: "recent" }, "thread-1"), false);
+  assert.equal(threadIsSummaryOnlyCurrentThread({ id: "thread-1", turns: [], mobileReadMode: "recent" }, "thread-1"), true);
+  assert.equal(threadIsSummaryOnlyCurrentThread({ id: "thread-1", turns: [], threadTaskCards: [] }, "thread-1"), true);
+  assert.equal(threadIsSummaryOnlyCurrentThread({ id: "thread-1", turns: [], mobileDetailLoaded: true }, "thread-1"), false);
   assert.equal(threadIsSummaryOnlyCurrentThread({ id: "other", turns: [] }, "thread-1"), false);
 });
 
@@ -367,6 +371,7 @@ test("thread detail summary merge cannot preserve stale detail fields", () => {
     turns: [{ id: "turn-1" }],
     runtimeSettings: { model: "private" },
     threadTaskCards: [{ id: "new" }],
+    mobileDetailLoaded: true,
     mobileReadMode: "recent",
   }, {
     visibleThreads(threads) {
@@ -380,6 +385,7 @@ test("thread detail summary merge cannot preserve stale detail fields", () => {
   assert.equal(Object.prototype.hasOwnProperty.call(result.threads[0], "turns"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(result.threads[0], "runtimeSettings"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(result.threads[0], "threadTaskCards"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(result.threads[0], "mobileDetailLoaded"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(result.threads[0], "mobileReadMode"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(result.threads[0], "mobileDiagnostics"), false);
 });
@@ -421,15 +427,31 @@ test("thread detail state plans summary-only current-thread recovery", () => {
 
 test("thread detail state does not schedule recovery when detail is loaded or refresh is active", () => {
   assert.deepEqual(planSummaryOnlyCurrentThreadRecovery({
-    thread: { id: "thread-1", turns: [], mobileReadMode: "recent" },
+    thread: { id: "thread-1", turns: [], mobileDetailLoaded: true, mobileReadMode: "recent" },
     currentThreadId: "thread-1",
   }), {
     shouldRecover: false,
     shouldScheduleRefresh: false,
-    nextThread: { id: "thread-1", turns: [], mobileReadMode: "recent" },
+    nextThread: { id: "thread-1", turns: [], mobileDetailLoaded: true, mobileReadMode: "recent" },
     event: null,
     reason: "not-summary-only-current-thread",
   });
+
+  const staleDetailFieldsPlan = planSummaryOnlyCurrentThreadRecovery({
+    thread: {
+      id: "thread-1",
+      turns: [],
+      mobileReadMode: "recent",
+      runtimeSettings: {},
+      threadTaskCards: [],
+    },
+    currentThreadId: "thread-1",
+    hasThreadLoadController: false,
+    hasRefreshThreadController: false,
+  });
+  assert.equal(staleDetailFieldsPlan.shouldRecover, true);
+  assert.equal(staleDetailFieldsPlan.shouldScheduleRefresh, true);
+  assert.equal(staleDetailFieldsPlan.reason, "summary-only-current-thread");
 
   const busyPlan = planSummaryOnlyCurrentThreadRecovery({
     thread: { id: "thread-1", turns: [] },

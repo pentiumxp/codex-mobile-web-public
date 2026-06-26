@@ -283,6 +283,82 @@
     };
   }
 
+  function primaryShellSelectionConflictContext(input = {}) {
+    const source = input && typeof input === "object" ? input : {};
+    const context = {
+      surface: "conversation-render",
+      action: compactToken(source.action, "primary-shell-selection", 80),
+      route_kind: compactToken(source.routeKind || source.route_kind, "embedded-primary", 80),
+    };
+    const readMode = compactToken(source.readMode || source.read_mode, "", 80);
+    const renderMode = compactToken(source.renderMode || source.render_mode, "", 80);
+    const sourceKind = compactToken(source.sourceKind || source.source_kind, "", 80);
+    const threadHash = compactToken(source.threadHash || source.thread_hash, "", 80);
+    if (readMode) context.read_mode = readMode;
+    if (renderMode) context.render_mode = renderMode;
+    if (sourceKind) context.source_kind = sourceKind;
+    if (threadHash) context.thread_hash = threadHash;
+    return context;
+  }
+
+  function primaryShellSelectionConflictCounts(input = {}) {
+    const source = input && typeof input === "object" ? input : {};
+    return {
+      visible_count: boundedCount(source.visibleItems || source.visible_count),
+      turn_count: boundedCount(source.turns || source.turn_count),
+      item_count: boundedCount(source.items || source.item_count),
+      dom_count: boundedCount(source.domCount || source.dom_count),
+      previous_count: boundedCount(source.previousCount || source.previous_count),
+      has_current_thread: source.hasCurrentThread || source.has_current_thread ? 1 : 0,
+      has_current_thread_id: source.hasCurrentThreadId || source.has_current_thread_id ? 1 : 0,
+      has_thread_load_controller: source.hasThreadLoadController || source.has_thread_load_controller ? 1 : 0,
+      startup_thread_open_pending: source.startupThreadOpenPending || source.startup_thread_open_pending ? 1 : 0,
+      mobile_loading: source.mobileLoading || source.mobile_loading ? 1 : 0,
+      recent_detail_age_ms: boundedCount(source.recentDetailAgeMs || source.recent_detail_age_ms),
+    };
+  }
+
+  function primaryShellSelectionConflictDiagnosticEvent(input = {}) {
+    const source = input && typeof input === "object" ? input : {};
+    const context = primaryShellSelectionConflictContext(source);
+    const counts = primaryShellSelectionConflictCounts(source);
+    const reason = compactToken(source.reason, "primary_shell_selection_conflict", 80);
+    return {
+      category: "conversation_projection_mismatch",
+      diagnostic_type: "primary_shell_selection_conflict",
+      severity_hint: "H2",
+      evidence_confidence: 0.82,
+      error_code: reason,
+      context,
+      counts,
+      breadcrumbs: [{
+        kind: "conversation-render",
+        code: "primary-shell-selection",
+        status: "failed",
+        fields: {
+          read_mode: context.read_mode || "",
+          render_mode: context.render_mode || "",
+          source_kind: context.source_kind || "",
+          thread_hash: context.thread_hash || "",
+          dom_count: counts.dom_count,
+          visible_count: counts.visible_count,
+          turn_count: counts.turn_count,
+          item_count: counts.item_count,
+          previous_count: counts.previous_count,
+        },
+      }],
+    };
+  }
+
+  function primaryShellSelectionConflictDiagnosticSuccess(input = {}) {
+    return {
+      category: "conversation_projection_mismatch",
+      diagnostic_type: "primary_shell_selection_conflict",
+      error_code: "primary_shell_selection_conflict",
+      context: primaryShellSelectionConflictContext(input),
+    };
+  }
+
   function detailPatchRejectedDiagnosticEvent(input = {}) {
     const readMode = compactToken(input.readMode, "", 80);
     const renderMode = compactToken(input.renderMode, "", 80);
@@ -527,6 +603,8 @@
     hasRenderSignatureMismatch,
     hasTurnOrderMismatch,
     conversationProjectionDiagnosticSnapshot,
+    primaryShellSelectionConflictDiagnosticEvent,
+    primaryShellSelectionConflictDiagnosticSuccess,
     projectionDiagnosticContext,
     projectionDiagnosticCounts,
     projectionDiagnosticSnapshot,

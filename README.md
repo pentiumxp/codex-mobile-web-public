@@ -16,6 +16,47 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v518 Detail Ownership And Primary Shell Diagnostics
+
+v518 延续 v517 的根因修复，把同一类事故纳入 Home AI 诊断闭环，并修正一个新的
+Music 空线程根因。v517 已经阻止 Hermes embedded/mobile 恢复路径在有线程打开意图时
+渲染 Primary 空壳；v518 额外记录最近一次成功 thread detail 渲染证据，并在重复出现
+“Primary shell 抢占线程 detail”或“成功 detail 后短时间内又渲染 `threadId=""` 空壳”时，
+通过现有 `homeai.diagnostic.report` 通道上报 bounded metadata。
+
+本次切片新增/调整：
+
+- `public/thread-detail-state.js` 收紧 loaded-detail 判定：空 `turns: []` 只有在真实
+  detail API 成功后带有 `mobileDetailLoaded` 客户端内部标记时，才允许作为已加载空线程；
+  `runtimeSettings`、`threadTaskCards`、`mobileReadMode` 等元数据不能再让列表摘要壳绕过
+  summary-only recovery。
+- `public/app.js` 在 `loadThread()`、`refreshCurrentThread()` 和
+  `backfillFullThreadDetail()` 的 detail API 成功路径设置 `mobileDetailLoaded`，并继续把该
+  标记从 thread-list summary 中剥离，防止列表刷新把空壳写回当前 detail。
+- `public/thread-diagnostic-events.js` 新增
+  `primary_shell_selection_conflict` 事件和 success clear 输入。
+- `public/app.js` 记录最近成功 thread detail 渲染证据：thread hash、read mode、
+  visible turn/item count、item count、source kind 和时间窗口。
+- `showHermesPluginPrimaryPage()` 的非强制抢占被抑制时，记录
+  `primary_shell_suppressed_thread_open` 诊断失败；强制的用户/路由 Primary 操作会清除
+  最近 detail 证据，避免误报。
+- `updateConversationHtml()` 在 embedded Primary 空壳实际渲染后检查最近 detail 证据，
+  若仍在 30 秒窗口内则记录 `primary_shell_render_after_detail`。
+- `test/thread-diagnostic-events.test.js`、`test/home-ai-diagnostic-reporting.test.js` 和
+  `test/conversation-render.test.js` 覆盖 payload、隐私边界和 app 触发点。
+
+修复边界：
+
+- 症状/风险：服务端 detail 已成功返回并渲染过，但前端后续仍可能被恢复路径切到
+  Primary 空壳；或者当前线程对象被列表摘要/任务卡元数据污染成 `turns: []`，用户看到
+  `No visible turns.`。
+- 失败层：frontend selection/render/detail-loaded ownership。
+- 不变量：只有 detail API 成功返回才拥有“已加载空线程”的语义；同类冲突必须被客户端
+  自动发现并通过 Home AI Owner-gated diagnostic channel
+  形成可追踪 case；插件只上报 bounded evidence，不自动发修复卡。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v518`。
+
 ## 2026-06-26 v517 Embedded Thread Selection Ownership
 
 v517 修复 Music/Home AI 嵌入场景里“服务端 detail 有 turns，但移动端进入后只看到

@@ -2961,6 +2961,7 @@ test("conversation projection diagnostic snapshot delegates planning to helper",
 
 test("conversation projection consistency delegates report payloads to diagnostic helpers", () => {
   const body = functionBody("checkConversationProjectionConsistency");
+  assert.match(body, /recordPrimaryShellSelectionHealthy\(source, state\.currentThread\)/);
   assert.match(body, /threadDiagnosticEventsApi\.hasRenderSignatureMismatch\(snapshot\)/);
   assert.match(body, /recordHomeAiDiagnosticFailure\(threadDiagnosticEventsApi\.renderSignatureMismatchDiagnosticEvent\(snapshot\)\)/);
   assert.match(body, /recordHomeAiDiagnosticSuccess\(threadDiagnosticEventsApi\.renderSignatureMismatchDiagnosticSuccess\(snapshot\)\)/);
@@ -2970,6 +2971,21 @@ test("conversation projection consistency delegates report payloads to diagnosti
   assert.doesNotMatch(body, /diagnostic_type: "render_signature_mismatch"/);
   assert.doesNotMatch(body, /diagnostic_type: "duplicate_render_keys"/);
   assert.match(appJs, /const threadDiagnosticEventsApi = window\.CodexThreadDiagnosticEvents;/);
+});
+
+test("primary shell selection conflicts are diagnosed instead of silently clearing thread detail", () => {
+  assert.match(appJs, /lastThreadDetailRenderEvidence: null/);
+  assert.match(appJs, /const PRIMARY_SHELL_CONFLICT_EVIDENCE_MS = 30000/);
+  assert.match(functionBody("rememberThreadDetailRenderEvidence"), /visibleConversationShape\(thread\)/);
+  assert.match(functionBody("rememberThreadDetailRenderEvidence"), /state\.lastThreadDetailRenderEvidence = evidence/);
+  assert.match(functionBody("recordPrimaryShellSelectionConflict"), /threadDiagnosticEventsApi\.primaryShellSelectionConflictDiagnosticEvent/);
+  assert.match(functionBody("recordPrimaryShellSelectionHealthy"), /threadDiagnosticEventsApi\.primaryShellSelectionConflictDiagnosticSuccess/);
+  assert.match(functionBody("showHermesPluginPrimaryPage"), /recordPrimaryShellSelectionConflict\("primary_shell_suppressed_thread_open"/);
+  assert.match(functionBody("showHermesPluginPrimaryPage"), /if \(force\) clearThreadDetailRenderEvidence/);
+  assert.match(functionBody("updateConversationHtml"), /checkPrimaryShellSelectionConflictAfterRender\(\{/);
+  assert.match(functionBody("checkPrimaryShellSelectionConflictAfterRender"), /isHermesPluginPrimaryPage\(\)/);
+  assert.match(functionBody("checkPrimaryShellSelectionConflictAfterRender"), /recentThreadDetailRenderEvidence\(\)/);
+  assert.match(functionBody("checkPrimaryShellSelectionConflictAfterRender"), /recordPrimaryShellSelectionConflict\("primary_shell_render_after_detail"/);
 });
 
 test("thread detail refresh failure delegates diagnostic payloads to helper", () => {
@@ -4214,10 +4230,11 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(restoreBody, /updateThreadStatusHints\(id, \{ type: "active" \}, restoredStatus/);
   assert.match(restoreBody, /state\.currentThread\.status = snapshot\.currentStatus/);
   assert.match(functionBody("loadThread"), /state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);\s*mergeThreadIntoThreadList\(state\.currentThread\);/);
+  assert.match(functionBody("loadThread"), /markThreadDetailLoaded\(result\.thread\);\s*syncThreadPendingServerRequests\(result\.thread\);\s*state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);/);
   assert.match(functionBody("loadThread"), /threadPerformanceMetrics\.threadDetailFirstPaintEventFields\(result\.thread, \{/);
-  assert.match(functionBody("refreshCurrentThread"), /state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);[\s\S]*const postMergePlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPostMergeEffects\(\);/);
+  assert.match(functionBody("refreshCurrentThread"), /markThreadDetailLoaded\(result\.thread\);\s*state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);[\s\S]*const postMergePlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPostMergeEffects\(\);/);
   assert.match(functionBody("refreshCurrentThread"), /applyThreadDetailRefreshPostMergeEffectsGroup\(postMergePlan, "merge"\);[\s\S]*const mergeMs = roundedDurationMs\(mergeStartedAt\);/);
-  assert.match(functionBody("backfillFullThreadDetail"), /state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);\s*mergeThreadIntoThreadList\(state\.currentThread\);/);
+  assert.match(functionBody("backfillFullThreadDetail"), /markThreadDetailLoaded\(result\.thread\);\s*syncThreadPendingServerRequests\(result\.thread\);\s*state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);\s*mergeThreadIntoThreadList\(state\.currentThread\);/);
   assert.match(functionBody("backfillFullThreadDetail"), /threadPerformanceMetrics\.threadDetailFullReadyEventFields\(result\.thread, \{/);
   const sendBody = functionBody("sendMessage");
   assert.match(sendBody, /const targetThreadId = currentComposerThreadId\(\);/);

@@ -190,6 +190,30 @@ merge policy is also extracted into `public/thread-detail-v4-merge-state.js`,
 with executable tests, so the remaining large `public/app.js` state boundary is
 smaller and the Music projection invariant is directly covered.
 
+`codex-mobile-shell-v518` closes the diagnostic gap for that same selection
+ownership class and tightens the loaded-detail boundary that produced the
+Music `No visible turns.` screen. Empty `turns: []` objects are no longer
+treated as loaded detail merely because list/runtime metadata such as
+`threadTaskCards`, `runtimeSettings`, or `mobileReadMode` is present. Only a
+successful detail API path in `loadThread()`, `refreshCurrentThread()`, or
+`backfillFullThreadDetail()` can set the internal `mobileDetailLoaded` marker;
+that marker is stripped before thread-list summaries are written back. Summary
+shells therefore recover into a loading shell and refresh instead of becoming a
+stable empty conversation.
+
+The client also records bounded evidence from recent successful thread-detail
+renders, including only thread hash, read mode, visible turn/item counts, item
+count, source kind, and age. If a non-forced Hermes Primary shell call is
+suppressed while a thread open is active, or if the client actually renders an
+embedded Primary shell shortly after a successful detail render, the frontend
+records a `primary_shell_selection_conflict` diagnostic. The event uses the
+existing Home AI diagnostic reporter threshold, dedupe, sanitizer, and
+`homeai.diagnostic.report` postMessage transport; it does not dispatch repair
+cards automatically and does not include message bodies, thread titles, URLs,
+local paths, cookies, tokens, prompts, uploads, or long logs. Forced user/route
+Primary navigation clears the recent detail evidence to avoid reporting
+intentional navigation as a projection mismatch.
+
 The first slices extract item visible-field merge policy,
 visible-text render identity / completed-receipt retention, local-only item
 retention/drop policy, and live-to-completed same-turn visible-item preservation

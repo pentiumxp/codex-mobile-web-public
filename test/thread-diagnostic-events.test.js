@@ -264,6 +264,85 @@ test("thread diagnostic events build turn-order mismatch payloads and success in
   assert.equal(JSON.stringify(event).includes("private"), false);
 });
 
+test("thread diagnostic events build primary shell selection conflict payloads", () => {
+  const event = diagnostics.primaryShellSelectionConflictDiagnosticEvent({
+    reason: "primary shell after detail",
+    sourceKind: "restore empty",
+    threadHash: "thread/hash with spaces",
+    readMode: "projection-v4-dynamic",
+    renderMode: "primary-shell",
+    turns: 10,
+    visibleItems: 34,
+    items: 39,
+    domCount: 1,
+    previousCount: 13,
+    recentDetailAgeMs: 1200,
+    hasCurrentThread: false,
+    hasCurrentThreadId: false,
+    hasThreadLoadController: true,
+    startupThreadOpenPending: true,
+    mobileLoading: true,
+    prompt: "private prompt ignored",
+    message: "private message ignored",
+  });
+
+  assert.equal(event.category, "conversation_projection_mismatch");
+  assert.equal(event.diagnostic_type, "primary_shell_selection_conflict");
+  assert.equal(event.severity_hint, "H2");
+  assert.equal(event.error_code, "primary_shell_after_detail");
+  assert.deepEqual(event.context, {
+    surface: "conversation-render",
+    action: "primary-shell-selection",
+    route_kind: "embedded-primary",
+    read_mode: "projection-v4-dynamic",
+    render_mode: "primary-shell",
+    source_kind: "restore_empty",
+    thread_hash: "thread_hash_with_spaces",
+  });
+  assert.deepEqual(event.counts, {
+    visible_count: 34,
+    turn_count: 10,
+    item_count: 39,
+    dom_count: 1,
+    previous_count: 13,
+    has_current_thread: 0,
+    has_current_thread_id: 0,
+    has_thread_load_controller: 1,
+    startup_thread_open_pending: 1,
+    mobile_loading: 1,
+    recent_detail_age_ms: 1200,
+  });
+  assert.deepEqual(event.breadcrumbs[0].fields, {
+    read_mode: "projection-v4-dynamic",
+    render_mode: "primary-shell",
+    source_kind: "restore_empty",
+    thread_hash: "thread_hash_with_spaces",
+    dom_count: 1,
+    visible_count: 34,
+    turn_count: 10,
+    item_count: 39,
+    previous_count: 13,
+  });
+  assert.deepEqual(diagnostics.primaryShellSelectionConflictDiagnosticSuccess({
+    sourceKind: "first-paint",
+    threadHash: "thread/hash with spaces",
+    readMode: "projection-v4-dynamic",
+  }), {
+    category: "conversation_projection_mismatch",
+    diagnostic_type: "primary_shell_selection_conflict",
+    error_code: "primary_shell_selection_conflict",
+    context: {
+      surface: "conversation-render",
+      action: "primary-shell-selection",
+      route_kind: "embedded-primary",
+      read_mode: "projection-v4-dynamic",
+      source_kind: "first-paint",
+      thread_hash: "thread_hash_with_spaces",
+    },
+  });
+  assert.equal(JSON.stringify(event).includes("private"), false);
+});
+
 test("thread diagnostic events plan tile conversation projection snapshots", () => {
   const calls = [];
   const snapshot = diagnostics.conversationProjectionDiagnosticSnapshot({

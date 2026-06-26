@@ -475,6 +475,7 @@ const state = {
     threshold: homeAiDiagnosticReportingApi.DEFAULT_THRESHOLD,
     throttleMs: homeAiDiagnosticReportingApi.DEFAULT_THROTTLE_MS,
   }),
+  lastThreadDetailRenderEvidence: null,
   shellLoadedReported: false,
 };
 
@@ -514,7 +515,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v517";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v518";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -543,6 +544,7 @@ const THREAD_LOAD_STALL_MS = 12000;
 const PERF_EVENT_THROTTLE_MS = 2000;
 const PERF_RENDER_REPORT_MIN_MS = 16;
 const PERF_SLOW_RENDER_REPORT_MS = 50;
+const PRIMARY_SHELL_CONFLICT_EVIDENCE_MS = 30000;
 const RUNNING_THREAD_HINT_STALE_MS = 20 * 60 * 1000;
 const SUBMITTED_PROCESSING_HINT_STALE_MS = threadStatusHintPolicy.DEFAULT_SUBMITTED_PROCESSING_HINT_STALE_MS;
 const STATUS_EVENT_FRESHNESS_TOLERANCE_MS = threadStatusHintPolicy.DEFAULT_STATUS_EVENT_FRESHNESS_TOLERANCE_MS;
@@ -6696,6 +6698,90 @@ function visibleConversationShape(thread) {
   };
 }
 
+function rememberThreadDetailRenderEvidence(thread, source = "unknown") {
+  if (!thread || thread.mobileLoading || thread.mobileLoadError) return null;
+  const threadId = String(thread.id || state.currentThreadId || "").trim();
+  if (!threadId) return null;
+  const shape = visibleConversationShape(thread);
+  if (!shape.visibleTurnCount && !shape.visibleItemCount) return null;
+  const turns = Array.isArray(thread.turns) ? thread.turns : [];
+  const itemCount = turns.reduce((total, turn) => total + (Array.isArray(turn && turn.items) ? turn.items.length : 0), 0);
+  const evidence = {
+    atMs: Date.now(),
+    threadId,
+    threadHash: diagnosticThreadHash(threadId),
+    readMode: String(thread.mobileReadMode || "").slice(0, 80),
+    sourceKind: homeAiDiagnosticReportingApi.boundedToken(source, "unknown", 80),
+    turnCount: shape.visibleTurnCount,
+    visibleItemCount: shape.visibleItemCount,
+    itemCount,
+  };
+  state.lastThreadDetailRenderEvidence = evidence;
+  return evidence;
+}
+
+function clearThreadDetailRenderEvidence(reason = "") {
+  if (!state.lastThreadDetailRenderEvidence) return;
+  state.lastThreadDetailRenderEvidence = null;
+  postClientEvent("thread_detail_render_evidence_cleared", {
+    reason: String(reason || "").slice(0, 80),
+  });
+}
+
+function recentThreadDetailRenderEvidence() {
+  const evidence = state.lastThreadDetailRenderEvidence;
+  if (!evidence || !evidence.atMs) return null;
+  const ageMs = Math.max(0, Date.now() - Number(evidence.atMs || 0));
+  if (ageMs > PRIMARY_SHELL_CONFLICT_EVIDENCE_MS) return null;
+  return Object.assign({}, evidence, { ageMs });
+}
+
+function primaryShellSelectionConflictInput(reason, details = {}) {
+  const evidence = recentThreadDetailRenderEvidence() || {};
+  const thread = state.currentThread || null;
+  const shape = thread ? visibleConversationShape(thread) : null;
+  return {
+    reason,
+    action: "primary-shell-selection",
+    routeKind: "embedded-primary",
+    sourceKind: details.source || evidence.sourceKind || "",
+    threadHash: evidence.threadHash || diagnosticThreadHash(state.currentThreadId || (thread && thread.id) || ""),
+    readMode: evidence.readMode || (thread && thread.mobileReadMode) || "",
+    renderMode: details.renderMode || "",
+    turns: evidence.turnCount || (shape && shape.visibleTurnCount) || 0,
+    visibleItems: evidence.visibleItemCount || (shape && shape.visibleItemCount) || 0,
+    items: evidence.itemCount || 0,
+    domCount: details.domCount,
+    previousCount: details.previousCount,
+    recentDetailAgeMs: evidence.ageMs || 0,
+    hasCurrentThread: Boolean(state.currentThread),
+    hasCurrentThreadId: Boolean(state.currentThreadId),
+    hasThreadLoadController: Boolean(state.threadLoadController),
+    startupThreadOpenPending: Boolean(state.startupThreadOpenPending),
+    mobileLoading: Boolean(state.currentThread && state.currentThread.mobileLoading),
+  };
+}
+
+function recordPrimaryShellSelectionConflict(reason, details = {}) {
+  return recordHomeAiDiagnosticFailure(
+    threadDiagnosticEventsApi.primaryShellSelectionConflictDiagnosticEvent(
+      primaryShellSelectionConflictInput(reason, details),
+    ),
+  );
+}
+
+function recordPrimaryShellSelectionHealthy(source, thread = state.currentThread) {
+  const evidence = rememberThreadDetailRenderEvidence(thread, source);
+  if (!evidence) return null;
+  return recordHomeAiDiagnosticSuccess(threadDiagnosticEventsApi.primaryShellSelectionConflictDiagnosticSuccess({
+    action: "primary-shell-selection",
+    routeKind: "embedded-primary",
+    sourceKind: source,
+    threadHash: evidence.threadHash,
+    readMode: evidence.readMode,
+  }));
+}
+
 function visibleRenderableTurnIds(thread) {
   return visibleTurnsForConversation(thread)
     .filter((turn) => turn && turn.id && visibleItemsForTurn(turn).length > 0)
@@ -6789,6 +6875,7 @@ function conversationProjectionDiagnosticSnapshot(source, extra = {}, deps = {})
 
 function checkConversationProjectionConsistency(source, extra = {}) {
   if (!state.currentThread || state.currentThread.mobileLoading || state.currentThread.mobileLoadError) return;
+  recordPrimaryShellSelectionHealthy(source, state.currentThread);
   const snapshot = conversationProjectionDiagnosticSnapshot(source, extra);
   if (!snapshot) return;
   if (threadDiagnosticEventsApi.hasRenderSignatureMismatch(snapshot)) {
@@ -8821,6 +8908,7 @@ async function loadThread(threadId, options = {}) {
   }
   const renderStartedAt = nowPerfMs();
   const mergeStartedAt = nowPerfMs();
+  markThreadDetailLoaded(result.thread);
   syncThreadPendingServerRequests(result.thread);
   state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
   mergeThreadIntoThreadList(state.currentThread);
@@ -9163,6 +9251,7 @@ async function refreshCurrentThread(options = {}) {
   const previousThread = state.currentThread;
   const previousConversationSignature = conversationRenderSignature(state.currentThread);
   const previousPatchShellSignature = conversationPatchShellSignature(previousThread);
+  markThreadDetailLoaded(result.thread);
   state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
   const nextConversationSignature = conversationRenderSignature(state.currentThread);
   const renderPlan = threadDetailRenderPlanApi.planThreadDetailRefreshRender({
@@ -9356,6 +9445,13 @@ function threadDetailApiPath(threadId, params = {}) {
   return `/api/threads/${encodeURIComponent(threadId)}${query ? `?${query}` : ""}`;
 }
 
+function markThreadDetailLoaded(thread) {
+  if (thread && typeof thread === "object") {
+    thread.mobileDetailLoaded = true;
+  }
+  return thread;
+}
+
 async function backfillFullThreadDetail(threadId, options = {}) {
   const id = String(threadId || "");
   const seq = Number(options.seq || 0);
@@ -9388,6 +9484,7 @@ async function backfillFullThreadDetail(threadId, options = {}) {
   const renderStartedAt = nowPerfMs();
   const wasNearBottom = isConversationNearBottom();
   const mergeStartedAt = nowPerfMs();
+  markThreadDetailLoaded(result.thread);
   syncThreadPendingServerRequests(result.thread);
   state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
   mergeThreadIntoThreadList(state.currentThread);
@@ -9655,8 +9752,13 @@ function showHermesPluginPrimaryPage(options = {}) {
       hasThreadLoadController: Boolean(state.threadLoadController),
       startupThreadOpenPending: Boolean(state.startupThreadOpenPending),
     });
+    recordPrimaryShellSelectionConflict("primary_shell_suppressed_thread_open", {
+      source: String(options.source || "").slice(0, 80),
+      renderMode: "primary-suppressed",
+    });
     return false;
   }
+  if (force) clearThreadDetailRenderEvidence(`primary-force:${String(options.source || "").slice(0, 48)}`);
   clearCurrentThreadSelection();
   state.newThreadDraft = false;
   const sidebar = $("sidebar");
@@ -11713,6 +11815,17 @@ function patchHtml(target, html) {
   return patchResult.target || target;
 }
 
+function checkPrimaryShellSelectionConflictAfterRender(metrics = {}) {
+  if (!isHermesEmbedMode() || !isHermesPluginPrimaryPage()) return;
+  if (!recentThreadDetailRenderEvidence()) return;
+  recordPrimaryShellSelectionConflict("primary_shell_render_after_detail", {
+    source: "conversation-render",
+    renderMode: "primary-shell",
+    domCount: metrics.childCount,
+    previousCount: metrics.previousChildCount,
+  });
+}
+
 function updateConversationHtml(html, signature, options = {}) {
   const conversation = $("conversation");
   const updatePlan = threadDetailDomPatchApi.planConversationHtmlUpdate({
@@ -11764,6 +11877,10 @@ function updateConversationHtml(html, signature, options = {}) {
     key: "conversation_render_ms",
     minIntervalMs: forceReport ? 0 : PERF_EVENT_THROTTLE_MS,
     force: forceReport,
+  });
+  checkPrimaryShellSelectionConflictAfterRender({
+    childCount: conversation ? conversation.childNodes.length : 0,
+    previousChildCount,
   });
   return true;
 }

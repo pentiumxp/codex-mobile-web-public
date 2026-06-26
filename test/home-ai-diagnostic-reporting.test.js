@@ -246,6 +246,67 @@ test("report payload preserves bounded thread detail contract fields", () => {
   assert.doesNotMatch(json, /private title|private body|upload\.jpg|thread-secret/);
 });
 
+test("report payload preserves primary shell conflict metadata without private content", () => {
+  const event = diagnostics.sanitizeInput({
+    category: "conversation_projection_mismatch",
+    diagnostic_type: "primary_shell_selection_conflict",
+    error_code: "primary_shell_render_after_detail",
+    context: {
+      surface: "conversation-render",
+      action: "primary-shell-selection",
+      route_kind: "embedded-primary",
+      read_mode: "projection-v4-dynamic",
+      render_mode: "primary-shell",
+      source_kind: "restore-empty",
+      thread_hash: diagnostics.hashIdentifier("thread-secret"),
+      title: "private title stripped",
+      path: "/Users/private/session.jsonl",
+      url: "https://example.invalid/private?token=secret",
+    },
+    counts: {
+      visible_count: 34,
+      turn_count: 10,
+      item_count: 39,
+      dom_count: 1,
+      previous_count: 13,
+      has_current_thread: 0,
+      has_current_thread_id: 0,
+      has_thread_load_controller: 1,
+      startup_thread_open_pending: 1,
+      mobile_loading: 1,
+      recent_detail_age_ms: 1200,
+      raw_message_chars: 9000,
+    },
+    breadcrumbs: [{
+      kind: "conversation-render",
+      code: "primary-shell-selection",
+      status: "failed",
+      fields: {
+        read_mode: "projection-v4-dynamic",
+        render_mode: "primary-shell",
+        source_kind: "restore-empty",
+        thread_hash: diagnostics.hashIdentifier("thread-secret"),
+        dom_count: 1,
+        visible_count: 34,
+        turn_count: 10,
+        item_count: 39,
+        previous_count: 13,
+        message: "private message stripped",
+      },
+    }],
+  });
+  const json = JSON.stringify(event);
+
+  assert.equal(event.context.route_kind, "embedded-primary");
+  assert.equal(event.context.source_kind, "restore-empty");
+  assert.equal(event.counts.has_thread_load_controller, 1);
+  assert.equal(event.counts.startup_thread_open_pending, 1);
+  assert.equal(event.counts.recent_detail_age_ms, 1200);
+  assert.equal(event.breadcrumbs[0].fields.source_kind, "restore-empty");
+  assert.equal(event.breadcrumbs[0].fields.previous_count, 13);
+  assert.doesNotMatch(json, /private title|private message|session\.jsonl|thread-secret|token=secret|raw_message_chars/);
+});
+
 test("postMessage delivery fails safely outside trusted embedded contexts", () => {
   const report = {
     type: "homeai.diagnostic.report",

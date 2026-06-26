@@ -12,6 +12,7 @@
     "turns",
     "runtimeSettings",
     "threadTaskCards",
+    "mobileDetailLoaded",
     "mobileLoading",
     "mobileLoadError",
     "mobileReadWarning",
@@ -43,16 +44,7 @@
     if (thread.mobileLoading || thread.mobileLoadError) return false;
     if (!Array.isArray(thread.turns)) return false;
     if (thread.turns.length > 0) return true;
-    return Boolean(
-      Object.prototype.hasOwnProperty.call(thread, "mobileReadMode")
-      || Object.prototype.hasOwnProperty.call(thread, "mobileDiagnostics")
-      || Object.prototype.hasOwnProperty.call(thread, "mobileProjectionVersion")
-      || Object.prototype.hasOwnProperty.call(thread, "mobileProjection")
-      || Object.prototype.hasOwnProperty.call(thread, "mobileOlderTurnsCursor")
-      || Object.prototype.hasOwnProperty.call(thread, "mobileNewerTurnsCursor")
-      || Object.prototype.hasOwnProperty.call(thread, "runtimeSettings")
-      || Object.prototype.hasOwnProperty.call(thread, "threadTaskCards")
-    );
+    return thread.mobileDetailLoaded === true;
   }
 
   function threadIsSummaryOnlyCurrentThread(thread, currentThreadId) {
