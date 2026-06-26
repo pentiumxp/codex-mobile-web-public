@@ -157,6 +157,35 @@ test("thread detail refresh render plan skips stable conversation signatures", (
   });
 });
 
+test("thread detail refresh render plan invalidates stale empty single-thread DOM", () => {
+  const plan = renderPlan.planThreadDetailRefreshRender({
+    previousConversationSignature: "sig-a",
+    nextConversationSignature: "sig-a",
+    renderedConversationSignature: "sig-a",
+    singleThreadSurfaceAvailable: true,
+    renderedDomTurnCount: 0,
+    nextVisibleTurnCount: 3,
+  });
+
+  assert.deepEqual(plan, {
+    shouldRenderDetail: true,
+    canPatch: false,
+    detailRenderMode: "full-render",
+    reason: "rendered-dom-empty",
+  });
+
+  const tileTransitionPlan = renderPlan.planThreadDetailRefreshRender({
+    previousConversationSignature: "sig-a",
+    nextConversationSignature: "sig-a",
+    renderedConversationSignature: "sig-a",
+    singleThreadSurfaceAvailable: false,
+    renderedDomTurnCount: 0,
+    nextVisibleTurnCount: 3,
+  });
+  assert.equal(tileTransitionPlan.shouldRenderDetail, false);
+  assert.equal(tileTransitionPlan.reason, "signature-stable");
+});
+
 test("thread detail refresh render plan allows patch only when current DOM matches previous detail", () => {
   const plan = renderPlan.planThreadDetailRefreshRender({
     previousConversationSignature: "sig-a",

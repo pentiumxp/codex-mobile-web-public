@@ -5,13 +5,17 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const {
+  buildThreadDetailRenderEvidence,
   createThreadDetailStatePolicy,
   emptyDetailHistoryEvidenceForThread,
+  hasNonemptyThreadDetailRenderEvidence,
   mergeThreadSummaryIntoList,
   planEmptyDetailHistoryRecovery,
   planThreadOpenCacheReuse,
   planSummaryOnlyCurrentThreadRecovery,
+  recentThreadDetailRenderEvidence,
   rolloutSizeBytesFromThread,
+  sameThreadDetailRenderEvidence,
   threadHasLoadedDetailState,
   threadHasReusableLoadedDetailState,
   threadIsSummaryOnlyCurrentThread,
@@ -520,6 +524,49 @@ test("thread detail empty-history recovery fails closed for weak or cooling evid
   });
   assert.equal(cooling.shouldRecover, false);
   assert.equal(cooling.reason, "cooldown");
+});
+
+test("thread detail render evidence policy bounds freshness and thread matching", () => {
+  const evidence = buildThreadDetailRenderEvidence({
+    atMs: 1000,
+    threadId: "thread-1",
+    threadHash: "hash-1",
+    readMode: "projection-v4-dynamic",
+    sourceKind: "single-thread-render",
+    turnCount: 3,
+    visibleItemCount: 9,
+    itemCount: 12,
+    rawText: "private text must not be copied",
+  });
+
+  assert.deepEqual(evidence, {
+    atMs: 1000,
+    threadId: "thread-1",
+    threadHash: "hash-1",
+    readMode: "projection-v4-dynamic",
+    sourceKind: "single-thread-render",
+    turnCount: 3,
+    visibleItemCount: 9,
+    itemCount: 12,
+  });
+  assert.equal(JSON.stringify(evidence).includes("private text"), false);
+  assert.equal(hasNonemptyThreadDetailRenderEvidence(evidence), true);
+  assert.equal(sameThreadDetailRenderEvidence({ evidence, threadId: "thread-1" }), evidence);
+  assert.equal(sameThreadDetailRenderEvidence({ evidence, threadId: "thread-2" }), null);
+
+  assert.deepEqual(recentThreadDetailRenderEvidence({
+    evidence,
+    nowMs: 1200,
+    maxAgeMs: 30000,
+  }), Object.assign({}, evidence, { ageMs: 200 }));
+  assert.equal(recentThreadDetailRenderEvidence({
+    evidence,
+    nowMs: 40000,
+    maxAgeMs: 30000,
+  }), null);
+  assert.equal(buildThreadDetailRenderEvidence({ threadId: "thread-1", turnCount: 0, visibleItemCount: 0 }), null);
+  assert.equal(buildThreadDetailRenderEvidence({ threadId: "", turnCount: 1, visibleItemCount: 1 }), null);
+  assert.equal(hasNonemptyThreadDetailRenderEvidence({ turnCount: -1, visibleItemCount: 0 }), false);
 });
 
 test("thread detail state plans summary-only current-thread recovery", () => {

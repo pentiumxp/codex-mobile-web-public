@@ -30,6 +30,16 @@
     return item ? JSON.stringify(item).length : 0;
   }
 
+  function boundedCount(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number < 0) return 0;
+    return Math.trunc(number);
+  }
+
+  function shortString(value, maxLength = 80) {
+    return String(value || "").slice(0, maxLength);
+  }
+
   function threadListSummaryFromDetailThread(thread) {
     if (!thread || typeof thread !== "object" || !thread.id) return null;
     const summary = Object.assign({}, thread);
@@ -59,14 +69,14 @@
 
   function emptyDetailHistoryEvidenceForThread(thread) {
     const rolloutSizeBytes = rolloutSizeBytesFromThread(thread);
-    const omittedTurns = Math.max(0, Math.trunc(Number(thread && thread.mobileOmittedTurnCount) || 0));
+    const omittedTurns = boundedCount(thread && thread.mobileOmittedTurnCount);
     const visibleItemKeyCount = Array.isArray(thread && thread.mobileVisibleItemKeys)
       ? thread.mobileVisibleItemKeys.length
       : 0;
     const taskCardCount = Array.isArray(thread && thread.threadTaskCards)
       ? thread.threadTaskCards.length
       : 0;
-    const pendingTaskCardCount = Math.max(0, Math.trunc(Number(thread && thread.pendingTaskCardCount) || 0));
+    const pendingTaskCardCount = boundedCount(thread && thread.pendingTaskCardCount);
     const hasActiveTurnEvidence = Boolean(thread && (thread.activeTurnId || thread.mobileRolloutActiveTurn));
     return {
       hasEvidence: rolloutSizeBytes > 0
@@ -135,6 +145,51 @@
         renderMode: String(details.renderMode || "").slice(0, 80),
       },
     };
+  }
+
+  function buildThreadDetailRenderEvidence(input = {}) {
+    const threadId = String(input.threadId || "").trim();
+    if (!threadId) return null;
+    const turnCount = boundedCount(input.turnCount);
+    const visibleItemCount = boundedCount(input.visibleItemCount);
+    if (!turnCount && !visibleItemCount) return null;
+    return {
+      atMs: Number.isFinite(Number(input.atMs)) ? Number(input.atMs) : Date.now(),
+      threadId,
+      threadHash: shortString(input.threadHash, 80),
+      readMode: shortString(input.readMode, 80),
+      sourceKind: shortString(input.sourceKind, 80),
+      turnCount,
+      visibleItemCount,
+      itemCount: boundedCount(input.itemCount),
+    };
+  }
+
+  function recentThreadDetailRenderEvidence(input = {}) {
+    const evidence = input.evidence && typeof input.evidence === "object" ? input.evidence : null;
+    if (!evidence || !evidence.atMs) return null;
+    const nowMs = Number.isFinite(Number(input.nowMs)) ? Number(input.nowMs) : Date.now();
+    const maxAgeMs = Math.max(0, Number(input.maxAgeMs || 0));
+    const ageMs = Math.max(0, nowMs - Number(evidence.atMs || 0));
+    if (maxAgeMs && ageMs > maxAgeMs) return null;
+    return Object.assign({}, evidence, {
+      ageMs,
+      turnCount: boundedCount(evidence.turnCount),
+      visibleItemCount: boundedCount(evidence.visibleItemCount),
+      itemCount: boundedCount(evidence.itemCount),
+    });
+  }
+
+  function sameThreadDetailRenderEvidence(input = {}) {
+    const evidence = input.evidence && typeof input.evidence === "object" ? input.evidence : null;
+    if (!evidence) return null;
+    const threadId = String(input.threadId || "").trim();
+    if (threadId && String(evidence.threadId || "") !== threadId) return null;
+    return evidence;
+  }
+
+  function hasNonemptyThreadDetailRenderEvidence(evidence) {
+    return Boolean(evidence && (boundedCount(evidence.turnCount) || boundedCount(evidence.visibleItemCount)));
   }
 
   function planThreadOpenCacheReuse(input = {}) {
@@ -394,13 +449,17 @@
   }
 
   return {
+    buildThreadDetailRenderEvidence,
     createThreadDetailStatePolicy,
     emptyDetailHistoryEvidenceForThread,
+    hasNonemptyThreadDetailRenderEvidence,
     mergeThreadSummaryIntoList,
     planEmptyDetailHistoryRecovery,
     planThreadOpenCacheReuse,
     planSummaryOnlyCurrentThreadRecovery,
+    recentThreadDetailRenderEvidence,
     rolloutSizeBytesFromThread,
+    sameThreadDetailRenderEvidence,
     threadHasLoadedDetailState,
     threadHasReusableLoadedDetailState,
     threadIsSummaryOnlyCurrentThread,

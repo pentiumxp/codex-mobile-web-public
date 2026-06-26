@@ -2990,7 +2990,9 @@ test("primary shell selection conflicts are diagnosed instead of silently cleari
   assert.match(appJs, /lastThreadDetailRenderEvidence: null/);
   assert.match(appJs, /const PRIMARY_SHELL_CONFLICT_EVIDENCE_MS = 30000/);
   assert.match(functionBody("rememberThreadDetailRenderEvidence"), /visibleConversationShape\(thread\)/);
+  assert.match(functionBody("rememberThreadDetailRenderEvidence"), /threadDetailStateApi\.buildThreadDetailRenderEvidence\(\{/);
   assert.match(functionBody("rememberThreadDetailRenderEvidence"), /state\.lastThreadDetailRenderEvidence = evidence/);
+  assert.match(functionBody("recentThreadDetailRenderEvidence"), /threadDetailStateApi\.recentThreadDetailRenderEvidence\(\{/);
   assert.match(functionBody("recordPrimaryShellSelectionConflict"), /threadDiagnosticEventsApi\.primaryShellSelectionConflictDiagnosticEvent/);
   assert.match(functionBody("recordPrimaryShellSelectionHealthy"), /threadDiagnosticEventsApi\.primaryShellSelectionConflictDiagnosticSuccess/);
   assert.match(functionBody("showHermesPluginPrimaryPage"), /recordPrimaryShellSelectionConflict\("primary_shell_suppressed_thread_open"/);
@@ -3007,11 +3009,21 @@ test("empty visible detail mismatches are diagnosed from recent detail evidence"
   assert.match(functionBody("checkConversationProjectionConsistency"), /recordEmptyVisibleDetailHealthy\(source, state\.currentThread\)/);
   assert.match(functionBody("checkEmptyVisibleDetailMismatchAfterRender"), /shellPlan\.emptyMessage !== "No visible turns\."/);
   assert.match(functionBody("checkEmptyVisibleDetailMismatchAfterRender"), /recentThreadDetailRenderEvidence\(\)/);
+  assert.match(functionBody("checkEmptyVisibleDetailMismatchAfterRender"), /threadDetailStateApi\.hasNonemptyThreadDetailRenderEvidence\(/);
+  assert.match(functionBody("checkEmptyVisibleDetailMismatchAfterRender"), /threadDetailStateApi\.sameThreadDetailRenderEvidence\(\{ evidence, threadId \}\)/);
   assert.match(functionBody("checkEmptyVisibleDetailMismatchAfterRender"), /recordEmptyVisibleDetailMismatch\("empty_render_after_nonempty_detail"/);
   assert.match(functionBody("renderCurrentThread"), /checkEmptyVisibleDetailMismatchAfterRender\(thread, shellPlan, \{/);
   assert.match(functionBody("loadThread"), /markThreadDetailLoaded\(result\.thread\);\s*rememberThreadDetailRenderEvidence\(result\.thread, `\$\{source\}-detail-api`\);/);
   assert.match(functionBody("refreshCurrentThread"), /markThreadDetailLoaded\(result\.thread\);\s*rememberThreadDetailRenderEvidence\(result\.thread, `\$\{source\}-detail-api`\);/);
   assert.match(functionBody("backfillFullThreadDetail"), /markThreadDetailLoaded\(result\.thread\);\s*rememberThreadDetailRenderEvidence\(result\.thread, `\$\{String\(options\.source \|\| "unknown"\)\.slice\(0, 40\)\}-detail-api`\);/);
+});
+
+test("thread refresh render planning invalidates empty DOM for nonempty single-thread detail", () => {
+  const body = functionBody("refreshCurrentThread");
+  assert.match(body, /const nextVisibleShape = visibleConversationShape\(state\.currentThread\);/);
+  assert.match(body, /singleThreadSurfaceAvailable: canPatchSingleThreadConversationDom\(\{ threadId \}\)/);
+  assert.match(body, /renderedDomTurnCount: conversationDomTurnIds\(\)\.length/);
+  assert.match(body, /nextVisibleTurnCount: nextVisibleShape\.visibleTurnCount/);
 });
 
 test("thread detail refresh failure delegates diagnostic payloads to helper", () => {

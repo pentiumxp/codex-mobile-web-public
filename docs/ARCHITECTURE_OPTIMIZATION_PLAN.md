@@ -301,6 +301,27 @@ and client event emission. This continues Phase 2's ownership direction: state
 authority decisions live in testable helpers; the app shell remains the
 orchestrator.
 
+`codex-mobile-shell-v525` applies the same ownership rule to recent successful
+thread-detail render evidence. `buildThreadDetailRenderEvidence()`,
+`recentThreadDetailRenderEvidence()`, `sameThreadDetailRenderEvidence()`, and
+`hasNonemptyThreadDetailRenderEvidence()` now live in
+`public/thread-detail-state.js`. These helpers own evidence construction,
+freshness, current-thread matching, and nonempty proof; `public/app.js` keeps
+shape/hash calculation plus the concrete diagnostic/reporting effects. This
+keeps primary-shell conflict and empty-visible-detail mismatch reporting tied to
+one tested state boundary.
+
+`codex-mobile-shell-v526` closes the matching DOM authority gap for the same
+Music empty-detail failure class. A refresh can no longer treat
+`renderedConversationSignature === nextConversationSignature` as sufficient
+proof that the currently mounted single-thread DOM is authoritative. The refresh
+plan also receives the current DOM turn count, next visible turn count, and
+single-thread surface availability. If the next detail is visibly nonempty but
+the mounted single-thread DOM has zero turn articles, the plan invalidates the
+stable signature with `rendered-dom-empty` and forces a full render. This fixes
+the root state-ownership mismatch instead of adding an extra retry or synthetic
+content fallback.
+
 The first slices extract item visible-field merge policy,
 visible-text render identity / completed-receipt retention, local-only item
 retention/drop policy, and live-to-completed same-turn visible-item preservation

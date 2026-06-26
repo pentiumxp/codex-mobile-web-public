@@ -16,6 +16,52 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v526 Empty DOM / Stable Signature Authority Fix
+
+v526 修复 Music 线程在服务端 detail 正常返回 `10` 个 turn 的情况下，手机端仍稳定显示
+`No visible turns.` 的事故。生产读回确认 `/api/threads/:id?mode=recent` 和
+`/api/threads?search=Music` 都是正常的：detail 非空，list row 也没有泄漏 `turns` 等
+detail-only 字段。因此失败层收敛到前端刷新计划：`renderedConversationSignature` 仍记着
+旧的非空 detail 签名，但真实 DOM 已经被其它路径替换成空状态；后续服务端再返回同一个
+非空签名时，刷新计划误判为 `signature-stable`，只做 metadata update，导致空 DOM 没有被
+重画。
+
+本次修复：
+
+- `public/thread-detail-render-plan.js` 的 `planThreadDetailRefreshRender()` 新增
+  `rendered-dom-empty` 分支：在单线程 surface 可用、下一状态有 visible turn、当前 DOM
+  的 `article.turn[data-turn]` 为 0 时，签名不能作为稳定证据，必须强制 full render。
+- `public/app.js` 在 refresh 合并服务端 detail 后，把当前 DOM turn 数、下一状态 visible
+  turn 数、单线程 surface 可用性传入刷新计划。
+- 这不是前端兜底刷新；它修正的是“签名状态不能脱离 DOM authority 单独决定是否跳过
+  render”的根因边界。
+- 同一发布继续包含 v525 的 recent detail render evidence 策略抽取。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v526`。
+
+## 2026-06-26 v525 Recent Detail Evidence Policy Extraction
+
+v525 继续 Phase 2 的前端状态所有权收敛，把 `public/app.js` 里最近一次成功
+thread-detail render evidence 的构造、freshness、同线程匹配和非空判定抽到
+`public/thread-detail-state.js`。这条 evidence 同时支撑 primary shell selection
+conflict、empty visible detail mismatch 和后续 Home AI bounded diagnostic，因此它
+必须是可测试的状态策略，而不是散落在 app shell 编排代码里。
+
+本次切片新增/调整：
+
+- `public/thread-detail-state.js` 新增
+  `buildThreadDetailRenderEvidence()`、`recentThreadDetailRenderEvidence()`、
+  `sameThreadDetailRenderEvidence()` 和
+  `hasNonemptyThreadDetailRenderEvidence()`。
+- `public/app.js` 保留 shape 计算、hash 计算、诊断上报和 refresh 调度；证据是否有效、
+  是否过期、是否属于当前线程、是否足以证明非空，都由 helper 决定。
+- `test/thread-detail-state.test.js` 覆盖证据构造、过期、跨线程拒绝、零 visible
+  证据拒绝和隐私边界。
+- `test/conversation-render.test.js` 确认 `app.js` 已消费 helper，不再内联 freshness
+  / matching 判定。
+
+这条切片最终随 v526 shell 一并发布。
+
 ## 2026-06-26 v524 Empty Detail Recovery Policy Extraction
 
 v524 延续 v523 的 Music 空详情根因链路，但这次不改变投影、列表、DOM 或诊断

@@ -13237,6 +13237,58 @@ The previous full handoff was archived and should be opened only when old proven
     diagnostic reporter to catch cached-current empty authority attempts if they
     recur in production.
 
+## 2026-06-26 - v526 Music empty DOM / stable signature authority fix
+
+- Incident/evidence:
+  - User reported `Music 06-23` showed the single-thread header, task-card
+    toolbar, and stable `No visible turns.` on mobile.
+  - Screenshot confirmed this was the ordinary single-thread detail surface,
+    not tile mode and not a long receipt covering newer content.
+  - Authenticated production detail API for
+    `019ef42b-2cb8-7332-ab17-033ec5b48947` returned HTTP `200`, `10` turns,
+    item counts `[3,5,3,5,5,4,3,4,3,4]`, `39` visible item keys,
+    `79` omitted turns, read mode `projection-v4-dynamic`, projection state
+    `hit`, and shape hash `c347733fe098db40`.
+  - Authenticated production list search for Music returned one row with no
+    forbidden detail-only fields and no `turns` field. This separated the
+    failure from server projection and list-summary authority.
+- Root-cause boundary:
+  - Failing layer: frontend thread-detail refresh render planning.
+  - Violated invariant: `renderedConversationSignature` is valid only while the
+    mounted DOM still represents the same single-thread detail surface. It must
+    not by itself allow `metadata-only` refreshes when the DOM has already been
+    replaced by an empty shell.
+  - Strongest root cause: a stale `renderedConversationSignature` could still
+    match the next nonempty detail signature while the real DOM contained zero
+    `article.turn[data-turn]` nodes. The refresh plan then returned
+    `signature-stable`, skipped full render, and left the empty DOM visible even
+    though the detail API was nonempty.
+- Changes:
+  - `public/thread-detail-render-plan.js` adds a `rendered-dom-empty` branch to
+    `planThreadDetailRefreshRender()`: when a single-thread surface is
+    available, next detail has visible turns, and the mounted DOM has zero turn
+    articles, the stable signature is invalidated and the plan requires a full
+    render.
+  - `public/app.js` passes `singleThreadSurfaceAvailable`,
+    `renderedDomTurnCount`, and `nextVisibleTurnCount` into the refresh render
+    plan after merging the latest detail API response.
+  - The same release includes the v525 state-ownership slice:
+    `public/thread-detail-state.js` now owns recent detail render evidence
+    construction, freshness, same-thread matching, and nonempty proof for
+    primary-shell and empty-visible-detail diagnostics.
+  - Static shell/cache bumped to `codex-mobile-shell-v526`.
+  - README, architecture optimization plan, and module map document the v526
+    DOM/signature authority rule and the v525 evidence-policy extraction.
+- Validation before deploy:
+  - Focused:
+    `node --test test/thread-detail-render-plan.test.js test/thread-detail-state.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    passed (`198` tests).
+  - Full source `npm test` passed (`1035` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment status:
+  - Pending at handoff-write time. Deploy through the central Home AI macOS
+    plugin deploy path before asking the user to retest Music.
+
 ## 2026-06-26 - v523 thread-list summary authority boundary fix
 
 - Incident/evidence:

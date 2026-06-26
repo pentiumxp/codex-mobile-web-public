@@ -17,6 +17,11 @@
     return Number.isFinite(numberValue) && numberValue >= 0 ? numberValue : 0;
   }
 
+  function normalizedCount(value) {
+    const numberValue = Number(value);
+    return Number.isFinite(numberValue) && numberValue > 0 ? Math.trunc(numberValue) : 0;
+  }
+
   function compactReason(value, fallback = "") {
     const reason = String(value || "").trim();
     return (reason || fallback).slice(0, 80);
@@ -190,7 +195,16 @@
     const previousPatchShellSignature = normalizeSignature(input.previousPatchShellSignature);
     const renderedPatchShellSignature = normalizeSignature(input.renderedPatchShellSignature);
     const allowPatch = input.allowPatch !== false;
-    const shouldRenderDetail = previousConversationSignature !== nextConversationSignature
+    const singleThreadSurfaceAvailable = input.singleThreadSurfaceAvailable === true;
+    const renderedDomTurnCount = normalizedCount(input.renderedDomTurnCount);
+    const nextVisibleTurnCount = normalizedCount(input.nextVisibleTurnCount);
+    const renderedDomEmptyForNonemptyDetail = Boolean(
+      singleThreadSurfaceAvailable
+      && nextVisibleTurnCount > 0
+      && renderedDomTurnCount <= 0
+    );
+    const shouldRenderDetail = renderedDomEmptyForNonemptyDetail
+      || previousConversationSignature !== nextConversationSignature
       || renderedConversationSignature !== nextConversationSignature;
 
     if (!shouldRenderDetail) {
@@ -199,6 +213,14 @@
         canPatch: false,
         detailRenderMode: "metadata-only",
         reason: "signature-stable",
+      };
+    }
+    if (renderedDomEmptyForNonemptyDetail) {
+      return {
+        shouldRenderDetail: true,
+        canPatch: false,
+        detailRenderMode: "full-render",
+        reason: "rendered-dom-empty",
       };
     }
 

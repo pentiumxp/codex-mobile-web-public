@@ -516,7 +516,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v524";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v526";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -6708,16 +6708,17 @@ function rememberThreadDetailRenderEvidence(thread, source = "unknown") {
   if (!shape.visibleTurnCount && !shape.visibleItemCount) return null;
   const turns = Array.isArray(thread.turns) ? thread.turns : [];
   const itemCount = turns.reduce((total, turn) => total + (Array.isArray(turn && turn.items) ? turn.items.length : 0), 0);
-  const evidence = {
+  const evidence = threadDetailStateApi.buildThreadDetailRenderEvidence({
     atMs: Date.now(),
     threadId,
     threadHash: diagnosticThreadHash(threadId),
-    readMode: String(thread.mobileReadMode || "").slice(0, 80),
+    readMode: thread.mobileReadMode || "",
     sourceKind: homeAiDiagnosticReportingApi.boundedToken(source, "unknown", 80),
     turnCount: shape.visibleTurnCount,
     visibleItemCount: shape.visibleItemCount,
     itemCount,
-  };
+  });
+  if (!evidence) return null;
   state.lastThreadDetailRenderEvidence = evidence;
   return evidence;
 }
@@ -6731,11 +6732,11 @@ function clearThreadDetailRenderEvidence(reason = "") {
 }
 
 function recentThreadDetailRenderEvidence() {
-  const evidence = state.lastThreadDetailRenderEvidence;
-  if (!evidence || !evidence.atMs) return null;
-  const ageMs = Math.max(0, Date.now() - Number(evidence.atMs || 0));
-  if (ageMs > PRIMARY_SHELL_CONFLICT_EVIDENCE_MS) return null;
-  return Object.assign({}, evidence, { ageMs });
+  return threadDetailStateApi.recentThreadDetailRenderEvidence({
+    evidence: state.lastThreadDetailRenderEvidence,
+    nowMs: Date.now(),
+    maxAgeMs: PRIMARY_SHELL_CONFLICT_EVIDENCE_MS,
+  });
 }
 
 function primaryShellSelectionConflictInput(reason, details = {}) {
@@ -6787,7 +6788,7 @@ function recordPrimaryShellSelectionHealthy(source, thread = state.currentThread
 function emptyVisibleDetailMismatchInput(reason, thread = state.currentThread, details = {}) {
   const threadId = String((thread && thread.id) || state.currentThreadId || "").trim();
   const evidence = recentThreadDetailRenderEvidence();
-  const sameThreadEvidence = evidence && (!threadId || String(evidence.threadId || "") === threadId) ? evidence : null;
+  const sameThreadEvidence = threadDetailStateApi.sameThreadDetailRenderEvidence({ evidence, threadId });
   const shape = thread ? visibleConversationShape(thread) : { visibleTurnCount: 0, visibleItemCount: 0 };
   return {
     reason,
@@ -6914,7 +6915,9 @@ function checkEmptyVisibleDetailMismatchAfterRender(thread, shellPlan = {}, metr
     domCount: metrics.domCount,
     previousCount: metrics.previousCount,
   };
-  if (evidence && String(evidence.threadId || "") === threadId && (evidence.turnCount || evidence.visibleItemCount)) {
+  if (threadDetailStateApi.hasNonemptyThreadDetailRenderEvidence(
+    threadDetailStateApi.sameThreadDetailRenderEvidence({ evidence, threadId }),
+  )) {
     recordEmptyVisibleDetailMismatch("empty_render_after_nonempty_detail", thread, details);
     return;
   }
@@ -9400,6 +9403,7 @@ async function refreshCurrentThread(options = {}) {
   markThreadDetailLoaded(result.thread);
   rememberThreadDetailRenderEvidence(result.thread, `${source}-detail-api`);
   state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
+  const nextVisibleShape = visibleConversationShape(state.currentThread);
   const nextConversationSignature = conversationRenderSignature(state.currentThread);
   const renderPlan = threadDetailRenderPlanApi.planThreadDetailRefreshRender({
     previousConversationSignature,
@@ -9407,6 +9411,9 @@ async function refreshCurrentThread(options = {}) {
     renderedConversationSignature: state.renderedConversationSignature,
     previousPatchShellSignature,
     renderedPatchShellSignature: state.renderedConversationPatchShellSignature,
+    singleThreadSurfaceAvailable: canPatchSingleThreadConversationDom({ threadId }),
+    renderedDomTurnCount: conversationDomTurnIds().length,
+    nextVisibleTurnCount: nextVisibleShape.visibleTurnCount,
   });
   const shouldRenderDetail = renderPlan.shouldRenderDetail;
   const postMergePlan = threadDetailRenderPlanApi.planThreadDetailRefreshPostMergeEffects();
