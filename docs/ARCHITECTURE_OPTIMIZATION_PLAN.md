@@ -202,6 +202,11 @@ Refresh completion side-effect planning now also lives in this helper:
 `planThreadDetailRefreshCompletionEffects` decides the success diagnostic clear,
 usage-backfill refresh scheduling, and live-poll scheduling effects, while app
 code only executes those effect names.
+Thread refresh failure diagnostic payload planning now lives in
+`public/thread-diagnostic-events.js`: `threadDetailRefreshFailedDiagnosticEvent`
+builds the bounded `thread_detail_refresh_failed` failure report, so
+`refreshCurrentThread()` no longer owns category/type/context/count/breadcrumb
+selection for refresh API failures.
 Refresh performance event field planning now lives in
 `public/thread-performance-metrics.js`: `threadDetailRefreshEventFields`
 builds the bounded `thread_refresh_ms` payload, including server timings,

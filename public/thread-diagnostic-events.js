@@ -266,6 +266,39 @@
     };
   }
 
+  function threadDetailRefreshFailedDiagnosticEvent(input = {}) {
+    const threadHash = compactToken(input.threadHash, "", 80);
+    const errorCode = compactToken(input.errorCode, "thread_detail_refresh_failed", 80);
+    const durationBucket = compactToken(input.durationBucket, "", 80);
+    const statusCode = boundedCount(input.statusCode);
+    return {
+      category: "thread_session_load_failed",
+      diagnostic_type: "thread_detail_refresh_failed",
+      severity_hint: "H2",
+      evidence_confidence: 0.74,
+      error_code: errorCode,
+      duration_bucket: durationBucket,
+      context: {
+        surface: "thread-session",
+        action: "thread-detail-refresh",
+        thread_hash: threadHash,
+      },
+      counts: {
+        status_code: statusCode,
+      },
+      breadcrumbs: [{
+        kind: "thread-session",
+        code: "thread-detail-refresh",
+        status: "failed",
+        duration_bucket: durationBucket,
+        fields: {
+          status_code: statusCode,
+          thread_hash: threadHash,
+        },
+      }],
+    };
+  }
+
   return {
     boundedCount,
     compactToken,
@@ -280,5 +313,6 @@
     projectionDiagnosticSnapshot,
     renderSignatureMismatchDiagnosticEvent,
     renderSignatureMismatchDiagnosticSuccess,
+    threadDetailRefreshFailedDiagnosticEvent,
   };
 }));

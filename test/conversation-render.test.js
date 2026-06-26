@@ -2950,6 +2950,16 @@ test("conversation projection consistency delegates report payloads to diagnosti
   assert.match(appJs, /const threadDiagnosticEventsApi = window\.CodexThreadDiagnosticEvents;/);
 });
 
+test("thread detail refresh failure delegates diagnostic payloads to helper", () => {
+  const body = functionBody("refreshCurrentThread");
+  assert.match(body, /recordHomeAiDiagnosticFailure\(threadDiagnosticEventsApi\.threadDetailRefreshFailedDiagnosticEvent\(\{/);
+  assert.match(body, /errorCode: diagnosticErrorCode\(err, "thread_detail_refresh_failed"\)/);
+  assert.match(body, /durationBucket: diagnosticDurationBucket\(roundedDurationMs\(refreshStartedAt\)\)/);
+  assert.match(body, /statusCode: diagnosticErrorStatus\(err\)/);
+  assert.match(body, /threadHash: diagnosticThreadHash\(threadId\)/);
+  assert.doesNotMatch(body, /recordHomeAiDiagnosticFailure\(\{[\s\S]*diagnostic_type: "thread_detail_refresh_failed"/);
+});
+
 test("thread tile local patch paths refresh the pane instead of writing a single-thread signature", () => {
   assert.match(appJs, /function threadDetailDomPatchSurface\(/);
   assert.match(functionBody("threadDetailDomPatchSurface"), /threadDetailPatchPlanApi\.planThreadDetailDomPatchSurface\(/);

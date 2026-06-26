@@ -72,6 +72,46 @@ test("thread diagnostic events bound invalid counts and labels", () => {
   assert.equal(event.counts.visible_count, 100000);
 });
 
+test("thread diagnostic events build bounded thread refresh failure payloads", () => {
+  const event = diagnostics.threadDetailRefreshFailedDiagnosticEvent({
+    errorCode: "network timeout private text",
+    durationBucket: "1-3s",
+    statusCode: 503.9,
+    threadHash: "thread/hash with spaces",
+    prompt: "private prompt ignored",
+    token: "secret ignored",
+    body: "private message ignored",
+  });
+
+  assert.deepEqual(event, {
+    category: "thread_session_load_failed",
+    diagnostic_type: "thread_detail_refresh_failed",
+    severity_hint: "H2",
+    evidence_confidence: 0.74,
+    error_code: "network_timeout_private_text",
+    duration_bucket: "1-3s",
+    context: {
+      surface: "thread-session",
+      action: "thread-detail-refresh",
+      thread_hash: "thread_hash_with_spaces",
+    },
+    counts: {
+      status_code: 503,
+    },
+    breadcrumbs: [{
+      kind: "thread-session",
+      code: "thread-detail-refresh",
+      status: "failed",
+      duration_bucket: "1-3s",
+      fields: {
+        status_code: 503,
+        thread_hash: "thread_hash_with_spaces",
+      },
+    }],
+  });
+  assert.equal(JSON.stringify(event).includes("secret"), false);
+});
+
 test("thread diagnostic events build render signature mismatch payloads", () => {
   const snapshot = {
     renderedSignature: "old",

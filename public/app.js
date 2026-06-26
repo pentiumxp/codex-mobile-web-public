@@ -508,7 +508,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v502";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v503";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -9035,32 +9035,12 @@ async function refreshCurrentThread(options = {}) {
     });
   } catch (err) {
     if (controller.signal.aborted || err.name === "AbortError") return;
-    recordHomeAiDiagnosticFailure({
-      category: "thread_session_load_failed",
-      diagnostic_type: "thread_detail_refresh_failed",
-      severity_hint: "H2",
-      evidence_confidence: 0.74,
-      error_code: diagnosticErrorCode(err, "thread_detail_refresh_failed"),
-      duration_bucket: diagnosticDurationBucket(roundedDurationMs(refreshStartedAt)),
-      context: {
-        surface: "thread-session",
-        action: "thread-detail-refresh",
-        thread_hash: diagnosticThreadHash(threadId),
-      },
-      counts: {
-        status_code: diagnosticErrorStatus(err),
-      },
-      breadcrumbs: [{
-        kind: "thread-session",
-        code: "thread-detail-refresh",
-        status: "failed",
-        duration_bucket: diagnosticDurationBucket(roundedDurationMs(refreshStartedAt)),
-        fields: {
-          status_code: diagnosticErrorStatus(err),
-          thread_hash: diagnosticThreadHash(threadId),
-        },
-      }],
-    });
+    recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.threadDetailRefreshFailedDiagnosticEvent({
+      errorCode: diagnosticErrorCode(err, "thread_detail_refresh_failed"),
+      durationBucket: diagnosticDurationBucket(roundedDurationMs(refreshStartedAt)),
+      statusCode: diagnosticErrorStatus(err),
+      threadHash: diagnosticThreadHash(threadId),
+    }));
     throw err;
   } finally {
     if (state.refreshThreadController === controller) state.refreshThreadController = null;

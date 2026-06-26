@@ -16,6 +16,36 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v503 Thread Refresh Failure Diagnostic Event
+
+v503 继续 Phase A 的前端 thread detail ownership 收敛。v502 已经把
+refresh 成功后的 completion effects 从 `refreshCurrentThread()` 尾部移出；
+本次继续把 refresh 失败时的 Home AI diagnostic payload 移到
+`public/thread-diagnostic-events.js`。
+
+本次切片新增：
+
+- `threadDetailRefreshFailedDiagnosticEvent()` 统一生成
+  `thread_detail_refresh_failed` 失败 payload。
+- `refreshCurrentThread()` catch 分支只负责读取真实错误、duration bucket、
+  status code 和 thread hash，然后调用 helper。
+- 诊断 payload 的 category、diagnostic type、severity、context、counts 和
+  breadcrumbs 不再内联在 app 状态机里。
+
+修复边界：
+
+- 症状/风险：v502 已经把成功收尾副作用计划化，但失败诊断 payload 仍在
+  `refreshCurrentThread()` catch 分支硬编码，和其它 projection/render 诊断
+  payload ownership 不一致。
+- 失败层：前端 thread detail refresh failure diagnostic ownership。
+- 不变量：本次不改变 refresh 请求、abort 逻辑、错误重新抛出、诊断类别、
+  上报 transport、server projection、DOM patch、task-card 协议或视觉布局。
+- 闭环验证：`test/thread-diagnostic-events.test.js` 覆盖失败 payload 和隐私边界；
+  `test/mobile-viewport.test.js` / `test/conversation-render.test.js` 验证 app
+  catch 分支委托给 helper，且不再内联 `thread_detail_refresh_failed` payload。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v503`。
+
 ## 2026-06-26 v502 Thread Refresh Completion Effects Plan
 
 v502 继续 Phase A 的前端 render/patch ownership 收敛。v501 已经把

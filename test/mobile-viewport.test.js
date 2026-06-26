@@ -148,8 +148,8 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v502/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v502"/);
+  assert.match(swJs, /codex-mobile-shell-v503/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v503"/);
   assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(swJs, /"\/thread-diagnostic-events\.js"/);
@@ -319,6 +319,8 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /async function refreshCurrentThread\(options = \{\}\)/);
   assert.match(appJs, /const requestedMode = options\.full === true \|\| String\(options\.mode \|\| ""\)\.toLowerCase\(\) === "full"[\s\S]*\? "full"[\s\S]*: "recent";/);
   assert.match(appJs, /api\(threadDetailApiPath\(threadId, requestedMode === "recent" \? \{ mode: "recent" \} : \{\}\)/);
+  assert.match(functionBody("refreshCurrentThread"), /recordHomeAiDiagnosticFailure\(threadDiagnosticEventsApi\.threadDetailRefreshFailedDiagnosticEvent\(\{[\s\S]*errorCode: diagnosticErrorCode\(err, "thread_detail_refresh_failed"\),[\s\S]*durationBucket: diagnosticDurationBucket\(roundedDurationMs\(refreshStartedAt\)\),[\s\S]*statusCode: diagnosticErrorStatus\(err\),[\s\S]*threadHash: diagnosticThreadHash\(threadId\),[\s\S]*\}\)\);/);
+  assert.doesNotMatch(functionBody("refreshCurrentThread"), /recordHomeAiDiagnosticFailure\(\{[\s\S]*diagnostic_type: "thread_detail_refresh_failed"/);
   assert.match(appJs, /const previousConversationSignature = conversationRenderSignature\(state\.currentThread\);/);
   assert.match(appJs, /const threadDetailRenderPlanApi = window\.CodexThreadDetailRenderPlan;/);
   assert.match(appJs, /const previousPatchShellSignature = conversationPatchShellSignature\(previousThread\);/);
