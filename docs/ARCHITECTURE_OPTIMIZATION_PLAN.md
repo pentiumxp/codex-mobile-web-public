@@ -129,7 +129,14 @@ Current acceleration targets:
    entry as a bounded projection window when the summary is still active and
    the caller explicitly requests `{ allowPartial: true, activeOverlay: true }`.
    The live overlay proof gate still owns the final decision; stale windows are
-   not exposed as ordinary detail projections.
+   not exposed as ordinary detail projections. The readback gate slice then
+   makes this batch observable: the Phase B smoke summarizes active overlay as
+   `activeOverlayGate`, `activeOverlayGateReason`, and
+   `activeOverlayNextAction`, plus operation/upload/assistant/receipt counts.
+   Post-deploy readback can now identify whether the next blocker is active
+   turn ownership, stale window lookup, missing snapshot, assistant freshness,
+   receipt coverage, item-kind normalization, or source authority without
+   reading private message text or logs.
 2. Thread-list cold starts no longer hide source collection inside the fallback
    cache policy. The local `thread-list-fallback-baseline-service` slice now
    owns state DB / rollout session / session-index source collection,

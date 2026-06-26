@@ -58,6 +58,12 @@ Phase B 的活跃大线程读取风险已经从 proof gate 推进到真实 provi
   `allowPartial=true` 和 `activeOverlay=true`、且 summary 仍是 active/running 时，
   才能把这个动态 entry 当作 bounded projection window。最终是否返回仍由
   active overlay proof gate 决定，不把 stale window 暴露成普通 detail cache。
+- 第三个本地切片增强 Phase B readback gate。`codex-mobile-phase-b-readback-smoke.js`
+  现在把 active overlay 结果归类为 bounded `activeOverlayGate` /
+  `activeOverlayGateReason` / `activeOverlayNextAction`，并带出 operation/upload/
+  assistant/receipt count。下一次批量部署后，如果仍没有进入
+  `projection-active-overlay`，readback 可以直接指出下一层是 active turn、stale
+  window、snapshot、assistant freshness、receipt coverage 还是 source authority。
 
 这个 follow-up 仍是本地小切片，按新的节奏等待 active-detail 模块凑齐后统一部署和生产读回。
 它不是 UI 去重、不是强制刷新，也不是新的 fallback cache。

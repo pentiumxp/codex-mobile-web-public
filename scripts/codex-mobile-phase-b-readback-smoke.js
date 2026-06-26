@@ -156,6 +156,10 @@ function boundedCount(value) {
   return Math.min(100000, Math.trunc(number));
 }
 
+function lowerLabel(value, maxLength = 100) {
+  return compactLabel(value, maxLength).toLowerCase();
+}
+
 function threadRows(result) {
   if (Array.isArray(result && result.data)) return result.data;
   if (Array.isArray(result && result.threads)) return result.threads;
@@ -202,10 +206,88 @@ function detailTurns(thread) {
   return Array.isArray(thread && thread.turns) ? thread.turns : [];
 }
 
+function activeOverlayNextAction(reason) {
+  const normalized = lowerLabel(reason, 100);
+  if (!normalized) return "observe-active-overlay-readback";
+  if (normalized === "overlay-evidence-complete") return "observe-active-overlay-readback";
+  if (normalized === "missing-active-turn-id") return "retain-active-turn-id";
+  if (normalized === "dynamic-summary-stale" || normalized === "projection-dynamic-summary-stale") {
+    return "allow-active-overlay-stale-window";
+  }
+  if (
+    normalized === "missing-projection-window"
+    || normalized === "empty-projection-window"
+    || normalized === "not-projection-window"
+  ) {
+    return "repair-active-overlay-projection-window";
+  }
+  if (
+    normalized === "overlay-provider-unavailable"
+    || normalized === "snapshot-api-unavailable"
+    || normalized === "projection-input-unavailable"
+  ) {
+    return "wire-active-overlay-provider";
+  }
+  if (
+    normalized === "entry-missing"
+    || normalized === "snapshot-missing"
+    || normalized === "active-turn-missing"
+    || normalized === "missing-active-overlay-turn"
+    || normalized === "empty-active-overlay-turn"
+  ) {
+    return "repair-live-overlay-snapshot";
+  }
+  if (normalized === "assistant-delta-unknown" || normalized === "assistant-delta-stale") {
+    return "repair-assistant-delta-freshness";
+  }
+  if (normalized === "receipt-evidence-unknown") return "repair-overlay-receipt-coverage";
+  if (normalized === "operation-evidence-unknown") return "repair-overlay-operation-coverage";
+  if (normalized === "upload-evidence-unknown") return "repair-overlay-upload-coverage";
+  if (normalized === "unknown-overlay-item-kind") return "normalize-overlay-item-kind";
+  if (normalized === "non-authoritative-overlay-source") return "repair-overlay-source-authority";
+  return "complete-active-window-overlay-coverage";
+}
+
+function classifyActiveOverlayGate(detail = {}) {
+  const readMode = lowerLabel(detail.readMode, 100);
+  const readDecision = lowerLabel(detail.readDecision, 100);
+  const action = lowerLabel(detail.activeOverlayAction, 80);
+  const reason = compactLabel(detail.activeOverlayReason, 80);
+  const projectionMissReason = compactLabel(detail.projectionMissReason, 80);
+  if (
+    readMode === "projection-active-overlay"
+    || readDecision === "projection-active-overlay"
+    || action === "use-projection-overlay"
+  ) {
+    const readyReason = reason || "overlay-evidence-complete";
+    return {
+      status: "ready",
+      reason: readyReason,
+      nextAction: activeOverlayNextAction(readyReason),
+    };
+  }
+  if (detail.activeFullReadRequired !== true && !action && !reason) {
+    return {
+      status: "not-active",
+      reason: "active-full-read-not-required",
+      nextAction: "observe-active-overlay-readback",
+    };
+  }
+  let gateReason = reason;
+  if (!gateReason && projectionMissReason) gateReason = `projection-${projectionMissReason}`.slice(0, 80);
+  if (!gateReason && action === "require-full-read") gateReason = "active-overlay-require-full-read";
+  if (!gateReason) gateReason = "missing-active-overlay-diagnostics";
+  return {
+    status: "needs_repair",
+    reason: gateReason,
+    nextAction: activeOverlayNextAction(gateReason),
+  };
+}
+
 function summarizeThreadDetail(result = {}, requestedThreadId = "") {
   const thread = objectOrNull(result.thread) || {};
   const timings = objectOrNull(thread.mobileDiagnostics && thread.mobileDiagnostics.threadDetailTimings);
-  return {
+  const detail = {
     requestedThreadHash: shortHash(requestedThreadId),
     responseThreadHash: shortHash(thread.id),
     timingsPresent: Boolean(timings),
@@ -221,9 +303,19 @@ function summarizeThreadDetail(result = {}, requestedThreadId = "") {
     activeOverlayReason: compactLabel(timings && timings.activeOverlayReason, 80),
     activeOverlaySource: compactLabel(timings && timings.activeOverlaySource, 80),
     activeOverlayItems: boundedCount(timings && timings.activeOverlayItems),
+    activeOverlayOperationItems: boundedCount(timings && timings.activeOverlayOperationItems),
+    activeOverlayUploadItems: boundedCount(timings && timings.activeOverlayUploadItems),
+    activeOverlayAssistantItems: boundedCount(timings && timings.activeOverlayAssistantItems),
+    activeOverlayReceiptItems: boundedCount(timings && timings.activeOverlayReceiptItems),
     turnCount: boundedCount(detailTurns(thread).length),
     omittedTurns: boundedCount(thread.mobileOmittedTurnCount),
   };
+  const gate = classifyActiveOverlayGate(detail);
+  return Object.assign(detail, {
+    activeOverlayGate: gate.status,
+    activeOverlayGateReason: gate.reason,
+    activeOverlayNextAction: gate.nextAction,
+  });
 }
 
 function evaluateChecks(report, options = {}) {
@@ -313,6 +405,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  classifyActiveOverlayGate,
   evaluateChecks,
   parseArgs,
   run,

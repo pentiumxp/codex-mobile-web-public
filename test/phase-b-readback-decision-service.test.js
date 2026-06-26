@@ -32,13 +32,17 @@ test("phase B readback decision prioritizes active overlay gaps", () => {
       coldPathOwner: "active-read-policy",
       coldPathReason: "active-turn-id",
       activeFullReadRequired: true,
+      activeOverlayGateReason: "missing-active-turn-id",
+      activeOverlayNextAction: "retain-active-turn-id",
     },
   });
 
   assert.equal(decision.status, "needs_repair");
   assert.equal(decision.priority, "H1");
   assert.equal(decision.owner, "active-overlay");
-  assert.equal(decision.nextAction, "complete-active-window-overlay-coverage");
+  assert.equal(decision.reason, "missing-active-turn-id");
+  assert.equal(decision.nextAction, "retain-active-turn-id");
+  assert.equal(decision.evidence.detailActiveOverlayGateReason, "missing-active-turn-id");
 });
 
 test("phase B readback decision classifies projection cache lifecycle work", () => {

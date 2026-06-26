@@ -5,6 +5,7 @@ const http = require("node:http");
 const { test } = require("node:test");
 
 const {
+  classifyActiveOverlayGate,
   parseArgs,
   run,
   summarizeThreadDetail,
@@ -93,6 +94,10 @@ test("phase B readback smoke collects bounded diagnostics without private fields
               activeOverlayReason: "overlay-evidence-complete",
               activeOverlaySource: "projection-live",
               activeOverlayItems: 3,
+              activeOverlayOperationItems: 1,
+              activeOverlayUploadItems: 0,
+              activeOverlayAssistantItems: 1,
+              activeOverlayReceiptItems: 1,
             },
           },
         },
@@ -113,6 +118,9 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.threadList.fallbackSourceSnapshotRawCount, 12);
   assert.equal(report.detail.readMode, "projection-active-overlay");
   assert.equal(report.detail.activeOverlayReason, "overlay-evidence-complete");
+  assert.equal(report.detail.activeOverlayGate, "ready");
+  assert.equal(report.detail.activeOverlayNextAction, "observe-active-overlay-readback");
+  assert.equal(report.detail.activeOverlayAssistantItems, 1);
   assert.match(report.threadList.firstThreadHash, /^[a-f0-9]{16}$/);
   assert.match(report.detail.requestedThreadHash, /^[a-f0-9]{16}$/);
   assert.deepEqual(seen.map((item) => item.path), [
@@ -197,11 +205,53 @@ test("phase B readback summary helpers keep only bounded metadata", () => {
         threadDetailTimings: {
           activeOverlayReason: "overlay-evidence-complete",
           activeOverlayItems: 5,
+          activeOverlayAssistantItems: 1,
         },
       },
     },
   }, "thread-secret");
   assert.equal(detail.readMode, "projection-active-overlay");
   assert.equal(detail.turnCount, 1);
+  assert.equal(detail.activeOverlayGate, "ready");
+  assert.equal(detail.activeOverlayAssistantItems, 1);
   assert.doesNotMatch(JSON.stringify(detail), /private title|private message|thread-secret/);
+});
+
+test("phase B readback classifies active overlay gate reasons", () => {
+  assert.deepEqual(classifyActiveOverlayGate({
+    readMode: "projection-active-overlay",
+    activeOverlayReason: "overlay-evidence-complete",
+  }), {
+    status: "ready",
+    reason: "overlay-evidence-complete",
+    nextAction: "observe-active-overlay-readback",
+  });
+
+  assert.deepEqual(classifyActiveOverlayGate({
+    activeFullReadRequired: true,
+    activeOverlayAction: "require-full-read",
+    activeOverlayReason: "missing-active-turn-id",
+  }), {
+    status: "needs_repair",
+    reason: "missing-active-turn-id",
+    nextAction: "retain-active-turn-id",
+  });
+
+  assert.deepEqual(classifyActiveOverlayGate({
+    activeFullReadRequired: true,
+    activeOverlayAction: "require-full-read",
+    projectionMissReason: "dynamic-summary-stale",
+  }), {
+    status: "needs_repair",
+    reason: "projection-dynamic-summary-stale",
+    nextAction: "allow-active-overlay-stale-window",
+  });
+
+  assert.deepEqual(classifyActiveOverlayGate({
+    activeFullReadRequired: false,
+  }), {
+    status: "not-active",
+    reason: "active-full-read-not-required",
+    nextAction: "observe-active-overlay-readback",
+  });
 });

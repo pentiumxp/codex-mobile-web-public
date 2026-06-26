@@ -14343,3 +14343,57 @@ The previous full handoff was archived and should be opened only when old proven
     `git diff --check`.
   - Commit locally if full validation passes. Do not deploy this single slice
     unless the active-detail module is ready or the user explicitly requests it.
+
+## 2026-06-26 - active overlay readback gate local slice
+
+- Scope:
+  - Added a third active-detail local slice so the next module deploy/readback
+    can classify the active-overlay proof gate instead of only exposing raw
+    timing fields.
+  - This is readback/decision tooling and documentation only. It does not
+    change runtime read behavior, UI, PWA shell/cache, or task-card protocol.
+  - Not deployed or pushed Public. Batch with the active-detail module before
+    production readback.
+- Root-cause boundary:
+  - Symptom: after fixing `missing-active-turn-id` and
+    `dynamic-summary-stale` locally, the next production smoke would still need
+    manual interpretation to decide whether any remaining failure is missing
+    snapshot, assistant freshness, receipt/operation/upload coverage, item kind,
+    or source authority.
+  - Failing layer: post-deploy evidence classification, not the live read path.
+  - Violated invariant: active-detail module deployment must produce bounded
+    next-action evidence from `/api/threads/:id?mode=recent` without private
+    logs or message text.
+  - Root cause: `scripts/codex-mobile-phase-b-readback-smoke.js` summarized
+    only raw `activeOverlayAction` / `activeOverlayReason` / item count, and
+    `phase-b-readback-decision-service` reduced active full reads to generic
+    `status-active` / `complete-active-window-overlay-coverage`.
+  - Closure classification: diagnostic/readback gate only. No fallback, no
+    forced refresh, no client dedupe, no runtime proof-gate relaxation.
+- Changes:
+  - `scripts/codex-mobile-phase-b-readback-smoke.js`
+    - Adds `classifyActiveOverlayGate()`.
+    - Detail summary now includes `activeOverlayGate`,
+      `activeOverlayGateReason`, `activeOverlayNextAction`, and
+      operation/upload/assistant/receipt counts.
+    - Gate next actions include active turn ownership, stale window lookup,
+      provider wiring, live snapshot, assistant freshness, receipt coverage,
+      operation/upload coverage, item-kind normalization, and source authority.
+  - `adapters/phase-b-readback-decision-service.js`
+    - Carries gate fields in bounded evidence.
+    - Uses gate reason/nextAction for H1 active-overlay readback decisions.
+  - Tests:
+    - Gate classification for ready, missing active turn, stale window, and
+      non-active reads.
+    - Readback privacy bounds still exclude private titles/messages.
+    - Decision service uses gate reason/action instead of generic active status.
+  - README, architecture optimization plan, and module map were updated.
+- Validation so far:
+  - Focused:
+    `node --test test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js test/thread-detail-active-overlay-integration.test.js test/thread-detail-projection-service.test.js`
+    passed (`41` tests).
+- Next validation:
+  - Run full `npm test`, `npm run check`, `npm run check:macos`, and
+    `git diff --check`.
+  - Commit locally if full validation passes. Do not deploy this single slice
+    unless the active-detail module is ready or the user explicitly requests it.

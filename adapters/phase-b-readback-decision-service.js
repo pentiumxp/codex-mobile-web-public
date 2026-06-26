@@ -28,6 +28,10 @@ function buildEvidence(report = {}) {
     detailReadDecision: compactLabel(detail.readDecision, 100),
     detailProjectionState: compactLabel(detail.projectionState, 80),
     detailActiveOverlayAction: compactLabel(detail.activeOverlayAction, 80),
+    detailActiveOverlayReason: compactLabel(detail.activeOverlayReason, 80),
+    detailActiveOverlayGate: compactLabel(detail.activeOverlayGate, 80),
+    detailActiveOverlayGateReason: compactLabel(detail.activeOverlayGateReason, 80),
+    detailActiveOverlayNextAction: compactLabel(detail.activeOverlayNextAction, 100),
     detailTurnCount: Number.isFinite(Number(detail.turnCount)) ? Math.max(0, Math.min(100000, Math.trunc(Number(detail.turnCount)))) : 0,
   };
 }
@@ -66,12 +70,14 @@ function detailDecision(detail = {}) {
     return null;
   }
   if (activeFullReadRequired || owner === "active-read-policy") {
+    const overlayReason = compactLabel(detail.activeOverlayGateReason || detail.activeOverlayReason || detail.projectionMissReason, 80);
+    const overlayNextAction = compactLabel(detail.activeOverlayNextAction, 100);
     return {
       status: "needs_repair",
       priority: "H1",
       owner: "active-overlay",
-      reason: reason || "active-full-read-required",
-      nextAction: "complete-active-window-overlay-coverage",
+      reason: overlayReason || reason || "active-full-read-required",
+      nextAction: overlayNextAction || "complete-active-window-overlay-coverage",
     };
   }
   if (owner === "projection-cache") {
