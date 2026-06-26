@@ -8914,7 +8914,7 @@ async function loadThread(threadId, options = {}) {
     updateSubagentPanelUi();
   }
   const listAgeMs = state.threadListLoadedAtMs ? Date.now() - state.threadListLoadedAtMs : null;
-  postClientEvent("thread_switch_start", {
+  const startEventPlan = threadDetailRenderPlanApi.planThreadDetailSwitchStartClientEvent({
     source,
     fromThreadId,
     toThreadId: threadId || "",
@@ -8922,6 +8922,7 @@ async function loadThread(threadId, options = {}) {
     currentHadThread: Boolean(state.currentThread),
     eventOpen: Boolean(state.events && state.events.readyState === EventSource.OPEN),
   });
+  applyThreadDetailSwitchClientEventPlan(startEventPlan);
   if (threadId && threadId !== state.continuationSourceThreadId) {
     state.continuationSourceThreadId = "";
   }

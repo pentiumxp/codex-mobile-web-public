@@ -17,6 +17,11 @@
     return Number.isFinite(numberValue) && numberValue >= 0 ? numberValue : 0;
   }
 
+  function normalizedOptionalDurationMs(value) {
+    if (value == null) return null;
+    return normalizedDurationMs(value);
+  }
+
   function normalizedCount(value) {
     const numberValue = Number(value);
     return Number.isFinite(numberValue) && numberValue > 0 ? Math.trunc(numberValue) : 0;
@@ -952,6 +957,24 @@
     };
   }
 
+  function planThreadDetailSwitchStartClientEvent(input = {}) {
+    return {
+      effects: [{
+        type: "post-client-event",
+        eventName: "thread_switch_start",
+        payload: {
+          source: compactReason(input.source, "").slice(0, 40),
+          fromThreadId: compactReason(input.fromThreadId, ""),
+          toThreadId: compactReason(input.toThreadId, ""),
+          listAgeMs: normalizedOptionalDurationMs(input.listAgeMs),
+          currentHadThread: Boolean(input.currentHadThread),
+          eventOpen: Boolean(input.eventOpen),
+        },
+      }],
+      reason: "thread-switch-start",
+    };
+  }
+
   function planThreadDetailSwitchErrorClientEvent(input = {}) {
     return {
       effects: [{
@@ -1126,6 +1149,7 @@
     planThreadDetailFirstPaintPostRenderEffects,
     planThreadDetailFirstPaintTelemetryEffects,
     planThreadDetailSwitchCancelledClientEvent,
+    planThreadDetailSwitchStartClientEvent,
     planThreadDetailSwitchErrorClientEvent,
     planThreadDetailRefreshCompletionEffects,
     planThreadDetailRefreshConsistencyCheck,

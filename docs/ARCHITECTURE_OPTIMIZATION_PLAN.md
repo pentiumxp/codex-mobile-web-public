@@ -909,13 +909,16 @@ diagnostics, `thread_switch_complete`, and load-success Home AI diagnostic
 clear. App code still supplies the runtime thread object and performs the real
 reporting side effects, but `loadThread()` no longer owns this first-paint
 telemetry ordering inline.
-Thread switch cancel/error client-event payload planning now also lives in
+Thread switch start/cancel/error client-event payload planning now also lives in
 `public/thread-detail-render-plan.js`:
-`planThreadDetailSwitchCancelledClientEvent` and
+`planThreadDetailSwitchStartClientEvent`,
+`planThreadDetailSwitchCancelledClientEvent`, and
 `planThreadDetailSwitchErrorClientEvent` declare bounded
-`thread_switch_cancelled` / `thread_switch_error` payloads for stale/aborted
-thread-detail loads and API errors. App code still owns abort/stale branching,
-UI state, and the real `postClientEvent` side effect.
+`thread_switch_start`, `thread_switch_cancelled`, and `thread_switch_error`
+payloads for thread-detail opens, stale/aborted thread-detail loads, and API
+errors. The start plan preserves the previous `listAgeMs` semantics by keeping
+missing values as `null`. App code still owns abort/stale branching, UI state,
+and the real `postClientEvent` side effect.
 Thread refresh failure diagnostic payload planning now lives in
 `public/thread-diagnostic-events.js`: `threadDetailRefreshFailedDiagnosticEvent`
 builds the bounded `thread_detail_refresh_failed` failure report, so

@@ -521,22 +521,28 @@ node --check public/thread-diagnostic-events.js && node --check public/app.js
 
 本地小切片继续收敛 `loadThread()` 的事件 ownership。此前首屏 telemetry、
 cached-current telemetry 和 load-failure diagnostic payload 已经从 `public/app.js`
-拆出，但 `thread_switch_cancelled` / `thread_switch_error` client event payload
-仍由 `loadThread()` 直接拼接。这让线程切换取消、错误和首屏成功的事件字段归属不一致。
+拆出，但 `thread_switch_start`、`thread_switch_cancelled`、`thread_switch_error`
+client event payload 仍由 `loadThread()` 直接拼接。这让线程切换开始、取消、
+错误和首屏成功的事件字段归属不一致。
 
 本次修复：
 
 - `public/thread-detail-render-plan.js` 新增
+  `planThreadDetailSwitchStartClientEvent()`、
   `planThreadDetailSwitchCancelledClientEvent()` 和
   `planThreadDetailSwitchErrorClientEvent()`。
+- `planThreadDetailSwitchStartClientEvent()` 保留旧语义：
+  `listAgeMs` 缺失时仍为 `null`，已有数值则按 bounded duration 归一。
 - `public/app.js` 新增 `applyThreadDetailSwitchClientEventPlan()`，只执行真实
   `postClientEvent()` side effect。
-- `loadThread()` 的 API abort/stale cancel、API error、API response stale cancel
-  都改为通过 plan 生成 bounded client event payload。
-- `test/thread-detail-render-plan.test.js` 覆盖 cancel/error event payload 归一。
+- `loadThread()` 的 start、API abort/stale cancel、API error、API response stale
+  cancel 都改为通过 plan 生成 bounded client event payload。
+- `test/thread-detail-render-plan.test.js` 覆盖 start/cancel/error event payload
+  归一。
 - `test/conversation-render.test.js`、`test/mobile-viewport.test.js` 防止
-  `loadThread()` 重新内联 `thread_switch_cancelled` / `thread_switch_error`。
-- 不改变 thread switch start/stall/watchdog、错误 UI、abort/cancel 判断、throw
+  `loadThread()` 重新内联 `thread_switch_start` / `thread_switch_cancelled` /
+  `thread_switch_error`。
+- 不改变 thread switch stall/watchdog、错误 UI、abort/cancel 判断、throw
   语义、Home AI diagnostic payload、projection/merge/render、任务卡协议、
   shell/cache 或部署状态。
 

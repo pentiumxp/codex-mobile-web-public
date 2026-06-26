@@ -3112,12 +3112,14 @@ test("thread detail load failure delegates diagnostic payloads to helper", () =>
   assert.doesNotMatch(body, /recordHomeAiDiagnosticFailure\(\{[\s\S]*diagnostic_type: "thread_detail_load_failed"/);
 });
 
-test("thread detail switch cancel and error events delegate payloads to render plan", () => {
+test("thread detail switch start, cancel, and error events delegate payloads to render plan", () => {
   const body = functionBody("loadThread");
+  assert.match(body, /const startEventPlan = threadDetailRenderPlanApi\.planThreadDetailSwitchStartClientEvent\(\{[\s\S]*source,[\s\S]*fromThreadId,[\s\S]*toThreadId: threadId \|\| "",[\s\S]*listAgeMs,[\s\S]*currentHadThread: Boolean\(state\.currentThread\),[\s\S]*eventOpen: Boolean\(state\.events && state\.events\.readyState === EventSource\.OPEN\),[\s\S]*\}\);[\s\S]*applyThreadDetailSwitchClientEventPlan\(startEventPlan\);/);
   assert.match(body, /const cancelledEventPlan = threadDetailRenderPlanApi\.planThreadDetailSwitchCancelledClientEvent\(\{[\s\S]*source,[\s\S]*threadId,[\s\S]*elapsedMs: roundedDurationMs\(switchStartedAt\),[\s\S]*apiElapsedMs: roundedDurationMs\(apiStartedAt\),[\s\S]*\}\);[\s\S]*applyThreadDetailSwitchClientEventPlan\(cancelledEventPlan\);/);
   assert.match(body, /const errorEventPlan = threadDetailRenderPlanApi\.planThreadDetailSwitchErrorClientEvent\(\{[\s\S]*source,[\s\S]*threadId,[\s\S]*elapsedMs: roundedDurationMs\(switchStartedAt\),[\s\S]*apiElapsedMs: roundedDurationMs\(apiStartedAt\),[\s\S]*error: err\.message \|\| String\(err\),[\s\S]*\}\);[\s\S]*applyThreadDetailSwitchClientEventPlan\(errorEventPlan\);/);
   assert.match(body, /const cancelledEventPlan = threadDetailRenderPlanApi\.planThreadDetailSwitchCancelledClientEvent\(\{[\s\S]*apiElapsedMs,[\s\S]*\}\);[\s\S]*applyThreadDetailSwitchClientEventPlan\(cancelledEventPlan\);[\s\S]*return;/);
   assert.match(functionBody("applyThreadDetailSwitchClientEventEffect"), /postClientEvent\(String\(item\.eventName \|\| ""\), item\.payload \|\| \{\}\);/);
+  assert.doesNotMatch(body, /postClientEvent\("thread_switch_start"/);
   assert.doesNotMatch(body, /postClientEvent\("thread_switch_cancelled"/);
   assert.doesNotMatch(body, /postClientEvent\("thread_switch_error"/);
 });

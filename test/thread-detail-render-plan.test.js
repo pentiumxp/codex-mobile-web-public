@@ -1293,7 +1293,33 @@ test("thread detail cached-current telemetry effects plan preserves legacy event
   });
 });
 
-test("thread detail switch client event plans bound cancel and error payloads", () => {
+test("thread detail switch client event plans bound start, cancel, and error payloads", () => {
+  assert.deepEqual(renderPlan.planThreadDetailSwitchStartClientEvent({
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA",
+    fromThreadId: "from-1",
+    toThreadId: "to-1",
+    listAgeMs: 33.7,
+    currentHadThread: 1,
+    eventOpen: true,
+  }), {
+    effects: [{
+      type: "post-client-event",
+      eventName: "thread_switch_start",
+      payload: {
+        source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR",
+        fromThreadId: "from-1",
+        toThreadId: "to-1",
+        listAgeMs: 33.7,
+        currentHadThread: true,
+        eventOpen: true,
+      },
+    }],
+    reason: "thread-switch-start",
+  });
+  assert.equal(renderPlan.planThreadDetailSwitchStartClientEvent({
+    listAgeMs: null,
+  }).effects[0].payload.listAgeMs, null);
+
   assert.deepEqual(renderPlan.planThreadDetailSwitchCancelledClientEvent({
     source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA",
     threadId: "thread-1",
