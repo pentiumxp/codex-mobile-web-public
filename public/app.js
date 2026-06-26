@@ -508,7 +508,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v508";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v509";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -5992,14 +5992,22 @@ function mergeThreadPreservingVisibleItems(existingThread, incomingThread) {
 
 function turnOrderMs(turn) {
   if (!turn) return 0;
-  return numericTimestampMs(turn.completedAtMs)
-    || numericTimestampMs(turn.completedAt)
-    || numericTimestampMs(turn.completed_at_ms)
-    || numericTimestampMs(turn.completed_at)
-    || numericTimestampMs(turn.startedAtMs)
+  return numericTimestampMs(turn.startedAtMs)
     || numericTimestampMs(turn.startedAt)
     || numericTimestampMs(turn.started_at_ms)
     || numericTimestampMs(turn.started_at)
+    || numericTimestampMs(turn.createdAtMs)
+    || numericTimestampMs(turn.createdAt)
+    || numericTimestampMs(turn.created_at_ms)
+    || numericTimestampMs(turn.created_at)
+    || numericTimestampMs(turn.completedAtMs)
+    || numericTimestampMs(turn.completedAt)
+    || numericTimestampMs(turn.completed_at_ms)
+    || numericTimestampMs(turn.completed_at)
+    || numericTimestampMs(turn.updatedAtMs)
+    || numericTimestampMs(turn.updatedAt)
+    || numericTimestampMs(turn.updated_at_ms)
+    || numericTimestampMs(turn.updated_at)
     || 0;
 }
 
@@ -6797,6 +6805,60 @@ function visibleConversationShape(thread) {
   };
 }
 
+function visibleRenderableTurnIds(thread) {
+  return visibleTurnsForConversation(thread)
+    .filter((turn) => turn && turn.id && visibleItemsForTurn(turn).length > 0)
+    .map((turn) => String(turn.id));
+}
+
+function conversationDomTurnIds(conversation = $("conversation")) {
+  if (!conversation) return [];
+  return Array.from(conversation.querySelectorAll("article.turn[data-turn]"))
+    .map((node) => String(node && node.getAttribute && node.getAttribute("data-turn") || ""))
+    .filter(Boolean);
+}
+
+function conversationTurnOrderDiagnosticSnapshot(source, extra = {}, deps = {}) {
+  const conversation = deps.conversation || $("conversation");
+  const thread = deps.thread || state.currentThread;
+  if (!conversation || !thread) return null;
+  const tileMode = Object.prototype.hasOwnProperty.call(deps, "threadTileMode")
+    ? deps.threadTileMode === true
+    : state.threadTileMode === true;
+  const tileDomActive = Object.prototype.hasOwnProperty.call(deps, "tileDomActive")
+    ? deps.tileDomActive === true
+    : Boolean(conversation.classList && conversation.classList.contains("thread-tile-mode"));
+  if (tileMode || tileDomActive) return null;
+  const expectedIds = Array.isArray(deps.expectedTurnIds) ? deps.expectedTurnIds.map(String).filter(Boolean) : visibleRenderableTurnIds(thread);
+  const domIds = Array.isArray(deps.domTurnIds) ? deps.domTurnIds.map(String).filter(Boolean) : conversationDomTurnIds(conversation);
+  if (!expectedIds.length || !domIds.length) return null;
+  const comparableCount = Math.min(expectedIds.length, domIds.length);
+  let orderMismatchCount = Math.abs(expectedIds.length - domIds.length);
+  for (let index = 0; index < comparableCount; index += 1) {
+    if (expectedIds[index] !== domIds[index]) orderMismatchCount += 1;
+  }
+  const expectedLatestId = expectedIds[expectedIds.length - 1] || "";
+  const domLatestId = domIds[domIds.length - 1] || "";
+  const latestMismatch = Boolean(expectedLatestId && domLatestId && expectedLatestId !== domLatestId);
+  return {
+    context: {
+      surface: "conversation-render",
+      action: source,
+      read_mode: thread.mobileReadMode || "",
+      render_mode: extra.renderMode || "",
+      thread_hash: diagnosticThreadHash(thread.id || state.currentThreadId),
+      turn_hash: diagnosticTurnHash(expectedLatestId),
+    },
+    counts: {
+      dom_count: domIds.length,
+      visible_count: expectedIds.length,
+      turn_count: expectedIds.length,
+      order_mismatch_count: orderMismatchCount,
+      latest_mismatch_count: latestMismatch ? 1 : 0,
+    },
+  };
+}
+
 function conversationProjectionDiagnosticSnapshot(source, extra = {}, deps = {}) {
   const conversation = deps.conversation || $("conversation");
   if (!conversation) return null;
@@ -6847,6 +6909,12 @@ function checkConversationProjectionConsistency(source, extra = {}) {
     recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.duplicateRenderKeysDiagnosticEvent(snapshot));
   } else {
     recordHomeAiDiagnosticSuccess(threadDiagnosticEventsApi.duplicateRenderKeysDiagnosticSuccess(snapshot));
+  }
+  const orderSnapshot = conversationTurnOrderDiagnosticSnapshot(source, extra);
+  if (orderSnapshot && threadDiagnosticEventsApi.hasTurnOrderMismatch(orderSnapshot)) {
+    recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.turnOrderMismatchDiagnosticEvent(orderSnapshot));
+  } else if (orderSnapshot) {
+    recordHomeAiDiagnosticSuccess(threadDiagnosticEventsApi.turnOrderMismatchDiagnosticSuccess(orderSnapshot));
   }
 }
 

@@ -34,9 +34,13 @@
     const routeKind = compactToken(source.route_kind || source.routeKind, "", 80);
     const readMode = compactToken(source.read_mode || source.readMode, "", 80);
     const renderMode = compactToken(source.render_mode || source.renderMode, "", 80);
+    const threadHash = compactToken(source.thread_hash || source.threadHash, "", 80);
+    const turnHash = compactToken(source.turn_hash || source.turnHash, "", 80);
     if (routeKind) out.route_kind = routeKind;
     if (readMode) out.read_mode = readMode;
     if (renderMode) out.render_mode = renderMode;
+    if (threadHash) out.thread_hash = threadHash;
+    if (turnHash) out.turn_hash = turnHash;
     return out;
   }
 
@@ -50,6 +54,10 @@
     };
     const paneCount = boundedCount(source.pane_count || source.paneCount);
     if (paneCount) out.pane_count = paneCount;
+    const orderMismatchCount = boundedCount(source.order_mismatch_count || source.orderMismatchCount);
+    if (orderMismatchCount) out.order_mismatch_count = orderMismatchCount;
+    const latestMismatchCount = boundedCount(source.latest_mismatch_count || source.latestMismatchCount);
+    if (latestMismatchCount) out.latest_mismatch_count = latestMismatchCount;
     return out;
   }
 
@@ -158,6 +166,11 @@
     return projectionDiagnosticSnapshot(snapshot).counts.duplicate_count > 0;
   }
 
+  function hasTurnOrderMismatch(snapshot) {
+    const counts = projectionDiagnosticSnapshot(snapshot).counts;
+    return counts.order_mismatch_count > 0 || counts.latest_mismatch_count > 0;
+  }
+
   function renderSignatureMismatchDiagnosticEvent(snapshot = {}) {
     const normalized = projectionDiagnosticSnapshot(snapshot);
     const context = normalized.context;
@@ -222,6 +235,44 @@
       category: "conversation_projection_mismatch",
       diagnostic_type: "duplicate_render_keys",
       error_code: "duplicate_render_keys",
+      context: projectionDiagnosticSnapshot(snapshot).context,
+    };
+  }
+
+  function turnOrderMismatchDiagnosticEvent(snapshot = {}) {
+    const normalized = projectionDiagnosticSnapshot(snapshot);
+    const counts = normalized.counts;
+    const context = normalized.context;
+    return {
+      category: "conversation_projection_mismatch",
+      diagnostic_type: "turn_order_mismatch",
+      severity_hint: "H2",
+      evidence_confidence: 0.82,
+      error_code: "turn_order_mismatch",
+      context,
+      counts,
+      breadcrumbs: [{
+        kind: "conversation-render",
+        code: "turn-order-check",
+        status: "failed",
+        fields: {
+          read_mode: context.read_mode || "",
+          render_mode: context.render_mode || "",
+          dom_count: counts.dom_count,
+          visible_count: counts.visible_count,
+          turn_hash: context.turn_hash || "",
+          order_mismatch_count: counts.order_mismatch_count || 0,
+          latest_mismatch_count: counts.latest_mismatch_count || 0,
+        },
+      }],
+    };
+  }
+
+  function turnOrderMismatchDiagnosticSuccess(snapshot = {}) {
+    return {
+      category: "conversation_projection_mismatch",
+      diagnostic_type: "turn_order_mismatch",
+      error_code: "turn_order_mismatch",
       context: projectionDiagnosticSnapshot(snapshot).context,
     };
   }
@@ -307,6 +358,7 @@
     duplicateRenderKeysDiagnosticSuccess,
     hasDuplicateRenderKeys,
     hasRenderSignatureMismatch,
+    hasTurnOrderMismatch,
     conversationProjectionDiagnosticSnapshot,
     projectionDiagnosticContext,
     projectionDiagnosticCounts,
@@ -314,5 +366,7 @@
     renderSignatureMismatchDiagnosticEvent,
     renderSignatureMismatchDiagnosticSuccess,
     threadDetailRefreshFailedDiagnosticEvent,
+    turnOrderMismatchDiagnosticEvent,
+    turnOrderMismatchDiagnosticSuccess,
   };
 }));

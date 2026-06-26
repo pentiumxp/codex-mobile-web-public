@@ -204,6 +204,66 @@ test("thread diagnostic events build duplicate render-key payloads and success i
   });
 });
 
+test("thread diagnostic events build turn-order mismatch payloads and success inputs", () => {
+  const snapshot = {
+    context: {
+      surface: "conversation-render",
+      action: "first-paint",
+      read_mode: "turns-list-initial",
+      render_mode: "first-paint",
+      thread_hash: "thread hash with spaces",
+      turn_hash: "turn/hash with spaces",
+      unsafe_prompt: "private prompt ignored",
+    },
+    counts: {
+      dom_count: 10,
+      visible_count: 10,
+      turn_count: 10,
+      order_mismatch_count: 2,
+      latest_mismatch_count: 1,
+    },
+  };
+  const event = diagnostics.turnOrderMismatchDiagnosticEvent(snapshot);
+
+  assert.equal(diagnostics.hasTurnOrderMismatch(snapshot), true);
+  assert.equal(event.category, "conversation_projection_mismatch");
+  assert.equal(event.diagnostic_type, "turn_order_mismatch");
+  assert.equal(event.severity_hint, "H2");
+  assert.equal(event.evidence_confidence, 0.82);
+  assert.deepEqual(event.context, {
+    surface: "conversation-render",
+    action: "first-paint",
+    read_mode: "turns-list-initial",
+    render_mode: "first-paint",
+    thread_hash: "thread_hash_with_spaces",
+    turn_hash: "turn_hash_with_spaces",
+  });
+  assert.deepEqual(event.counts, {
+    dom_count: 10,
+    duplicate_count: 0,
+    visible_count: 10,
+    turn_count: 10,
+    order_mismatch_count: 2,
+    latest_mismatch_count: 1,
+  });
+  assert.deepEqual(event.breadcrumbs[0].fields, {
+    read_mode: "turns-list-initial",
+    render_mode: "first-paint",
+    dom_count: 10,
+    visible_count: 10,
+    turn_hash: "turn_hash_with_spaces",
+    order_mismatch_count: 2,
+    latest_mismatch_count: 1,
+  });
+  assert.deepEqual(diagnostics.turnOrderMismatchDiagnosticSuccess(snapshot), {
+    category: "conversation_projection_mismatch",
+    diagnostic_type: "turn_order_mismatch",
+    error_code: "turn_order_mismatch",
+    context: event.context,
+  });
+  assert.equal(JSON.stringify(event).includes("private"), false);
+});
+
 test("thread diagnostic events plan tile conversation projection snapshots", () => {
   const calls = [];
   const snapshot = diagnostics.conversationProjectionDiagnosticSnapshot({

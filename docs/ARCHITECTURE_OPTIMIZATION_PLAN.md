@@ -92,7 +92,7 @@ non-partial projections.
 
 ### Phase 2: Frontend State Ownership
 
-Status: Phase A module deploy candidate as of `codex-mobile-shell-v508`.
+Status: Phase A module deploy candidate as of `codex-mobile-shell-v509`.
 The local Phase A refresh/patch ownership work now has the helper extraction,
 transaction ordering, completion snapshots, attempt aggregation, and
 behavior-level DOM harness needed to deploy as one module instead of many
@@ -103,6 +103,14 @@ visual layout. Post-deploy observation should use bounded
 `thread_refresh_ms` and Home AI `conversation_projection_mismatch` diagnostics
 before deciding whether the next repair belongs to DOM patching, server
 projection, SSE/live merge, or pane state.
+
+`codex-mobile-shell-v509` also closes a diagnostic blind spot found during
+mobile validation: render signatures and duplicate render keys can both look
+healthy while the client has sorted visible turns differently from the server.
+The client turn-order function now follows the server started-at-first order,
+and the Home AI diagnostic channel can emit bounded `turn_order_mismatch`
+reports when DOM turn ids do not match the expected visible turn order or when
+the latest visible turn is not the latest DOM turn.
 
 The first slices extract item visible-field merge policy,
 visible-text render identity / completed-receipt retention, local-only item

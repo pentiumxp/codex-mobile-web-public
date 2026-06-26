@@ -28,6 +28,22 @@ function functionBody(name) {
   throw new Error(`could not parse function ${name}`);
 }
 
+test("client turn ordering follows server started-at-first semantics", () => {
+  const body = functionBody("turnOrderMs");
+  const startedAtIndex = body.indexOf("numericTimestampMs(turn.startedAtMs)");
+  const completedAtIndex = body.indexOf("numericTimestampMs(turn.completedAtMs)");
+  assert.notEqual(startedAtIndex, -1);
+  assert.notEqual(completedAtIndex, -1);
+  assert.ok(startedAtIndex < completedAtIndex, "startedAt must sort before completedAt");
+  assert.match(body, /numericTimestampMs\(turn\.startedAt\)[\s\S]*numericTimestampMs\(turn\.createdAtMs\)[\s\S]*numericTimestampMs\(turn\.completedAtMs\)/);
+
+  const consistencyBody = functionBody("checkConversationProjectionConsistency");
+  assert.match(consistencyBody, /const orderSnapshot = conversationTurnOrderDiagnosticSnapshot\(source, extra\);/);
+  assert.match(consistencyBody, /hasTurnOrderMismatch\(orderSnapshot\)/);
+  assert.match(consistencyBody, /turnOrderMismatchDiagnosticEvent\(orderSnapshot\)/);
+  assert.match(consistencyBody, /turnOrderMismatchDiagnosticSuccess\(orderSnapshot\)/);
+});
+
 test("mobile viewport and early guards disable page zoom", () => {
   assert.match(indexHtml, /name="viewport" content="[^"]*maximum-scale=1/);
   assert.match(indexHtml, /name="viewport" content="[^"]*minimum-scale=1/);
@@ -148,8 +164,8 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v508/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v508"/);
+  assert.match(swJs, /codex-mobile-shell-v509/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v509"/);
   assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(swJs, /"\/thread-diagnostic-events\.js"/);

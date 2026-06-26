@@ -12128,7 +12128,7 @@ The previous full handoff was archived and should be opened only when old proven
     needed around `refreshCurrentThread()` network/merge/full-render execution
     rather than helper-level DOM behavior.
 
-## 2026-06-26 - urgent workflow-dominated first-paint history auto-backfill, deploy pending
+## 2026-06-26 - urgent workflow-dominated first-paint history auto-backfill deployed
 
 - Trigger:
   - User reported that the Home AI thread sometimes opened on mobile with only
@@ -12167,5 +12167,65 @@ The previous full handoff was archived and should be opened only when old proven
   - Full source `npm test` passed (`969` tests).
   - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
 - Deployment:
-  - Source changes are ready for commit and Mac production deployment via the
-    central Home AI plugin deploy path.
+  - Code commit: `c159e76 fix workflow dominated thread first paint history`.
+  - Deployed through the central Home AI plugin deploy path with reason
+    `codex-mobile-history-auto-backfill-v508`.
+  - Production readback returned `clientBuildId=0.1.11|codex-mobile-shell-v508`
+    and `shellCacheName=codex-mobile-shell-v508`.
+  - Source/production SHA-256 prefixes matched for `public/app.js`,
+    `public/sw.js`, and `public/thread-detail-render-plan.js`.
+  - Bounded production API shape check on the reported Home AI thread returned
+    HTTP `200`, `readMode=turns-list-initial`, projection `v4`, `10` recent
+    turns, both older/newer cursors present, and no current auto-backfill trigger
+    because the current window is not workflow dominated.
+
+## 2026-06-26 - v509 client turn-order diagnostic gap fix validated
+
+- Trigger:
+  - User reported that after v508, the Codex Mobile thread on phone still opened
+    with an old long receipt visually stuck at the bottom while newer replies
+    appeared above it, and asked why the automatic Home AI repair diagnostic did
+    not trigger.
+- Root-cause boundary:
+  - Failing layer: frontend single-thread visible turn ordering and diagnostic
+    coverage.
+  - Server turn ordering already uses `startedAt` before `completedAt`.
+    The client `turnOrderMs()` still preferred `completedAt`, so when a
+    completed turn's completion timestamp tied the next active turn's start
+    timestamp at second precision, the client could fall back to id ordering
+    and place the newer active turn above the older completed receipt.
+  - Existing `conversation_projection_mismatch` diagnostics checked render
+    signatures and duplicate render keys. Those can remain internally
+    consistent even when the client has sorted the DOM in the wrong order, so
+    no automatic repair event was emitted for the semantic latest-turn-last
+    invariant violation.
+- Changes:
+  - `public/app.js` now matches server started-at-first turn ordering.
+  - `public/app.js` also compares expected visible turn id order against DOM
+    turn id order after projection consistency checks.
+  - `public/thread-diagnostic-events.js` now plans bounded
+    `turn_order_mismatch` failure/success events with thread/turn hashes and
+    order/latest mismatch counts only.
+  - `public/home-ai-diagnostic-reporting.js` allows the new safe breadcrumb
+    field names through the Home AI diagnostic sanitizer.
+  - Static shell/cache bumped to `codex-mobile-shell-v509`.
+  - Docs/tests updated in `docs/MODULES.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`,
+    `test/thread-diagnostic-events.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-goal-service.test.js`, and
+    `test/thread-task-card-route.test.js`.
+- Validation:
+  - Focused: `node --test test/thread-diagnostic-events.test.js
+    test/mobile-viewport.test.js test/thread-detail-render-plan.test.js
+    test/conversation-render.test.js test/thread-goal-service.test.js
+    test/thread-task-card-route.test.js` passed (`177` tests).
+  - Sanitizer/focused: `node --test test/home-ai-diagnostic-reporting.test.js
+    test/thread-diagnostic-events.test.js test/mobile-viewport.test.js` passed
+    (`24` tests).
+  - Full source `npm test` passed (`971` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Pending at handoff write time. Use the central Home AI macOS plugin deploy
+    path with reason `codex-mobile-turn-order-v509`, then read back
+    `/api/public-config` and source/production SHA parity for the changed
+    runtime files.
