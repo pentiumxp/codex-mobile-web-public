@@ -9377,6 +9377,21 @@ function applyThreadDetailRefreshTelemetryEffectsPlan(plan, context = {}) {
   for (const effect of effects) applyThreadDetailRefreshTelemetryEffect(effect, context);
 }
 
+function applyThreadDetailRefreshPatchRejectedDiagnosticEffect(effect) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  if (type === "detail-patch-rejected-diagnostic-failure") {
+    recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.detailPatchRejectedDiagnosticEvent(item.diagnosticInput || {}));
+    return true;
+  }
+  throw new Error(`Unknown thread detail refresh patch rejected diagnostic effect: ${type || "empty"}`);
+}
+
+function applyThreadDetailRefreshPatchRejectedDiagnosticEffectsPlan(plan) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applyThreadDetailRefreshPatchRejectedDiagnosticEffect(effect);
+}
+
 function applyThreadDetailRefreshPatchAttemptEffect(effect, context) {
   const item = effect && typeof effect === "object" ? effect : {};
   const type = String(item.type || "");
@@ -9560,9 +9575,10 @@ async function refreshCurrentThread(options = {}) {
     previousVisibleShape: patchAttemptResult.reportLocalPatchRejected ? visibleConversationShape(previousThread) : null,
     nextVisibleShape: patchAttemptResult.reportLocalPatchRejected ? visibleConversationShape(state.currentThread) : null,
   });
-  if (patchRejectedDiagnosticPlan.shouldReport) {
-    recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.detailPatchRejectedDiagnosticEvent(patchRejectedDiagnosticPlan.diagnosticInput));
-  }
+  const patchRejectedDiagnosticEffectsPlan = threadDetailRenderPlanApi.planThreadDetailRefreshPatchRejectedDiagnosticEffects({
+    diagnosticPlan: patchRejectedDiagnosticPlan,
+  });
+  applyThreadDetailRefreshPatchRejectedDiagnosticEffectsPlan(patchRejectedDiagnosticEffectsPlan);
   renderOutcome = threadDetailRenderPlanApi.finalizeThreadDetailRenderPlan(renderPlan, patchAttemptResult.finalizeResult);
   locallyPatchedDetail = renderOutcome.locallyPatchedDetail;
   tilePanePatchedDetail = renderOutcome.tilePanePatchedDetail;

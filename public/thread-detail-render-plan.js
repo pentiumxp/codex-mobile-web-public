@@ -517,6 +517,25 @@
     };
   }
 
+  function planThreadDetailRefreshPatchRejectedDiagnosticEffects(input = {}) {
+    const diagnosticPlan = objectOrEmpty(input.diagnosticPlan || input.plan);
+    if (!diagnosticPlan.shouldReport) {
+      return {
+        effects: [],
+        reason: compactReason(diagnosticPlan.reason, "not-rejected"),
+      };
+    }
+    return {
+      effects: [
+        {
+          type: "detail-patch-rejected-diagnostic-failure",
+          diagnosticInput: objectOrEmpty(diagnosticPlan.diagnosticInput),
+        },
+      ],
+      reason: "local-patch-rejected-diagnostic",
+    };
+  }
+
   function finalizeThreadDetailRenderPlan(plan = {}, result = {}) {
     const tilePanePatchedDetail = Boolean(result.tilePanePatchedDetail);
     const locallyPatchedDetail = Boolean(result.locallyPatchedDetail);
@@ -927,6 +946,7 @@
     planThreadDetailRefreshPatchAttemptEffects,
     planThreadDetailRefreshPatchAttemptResult,
     planThreadDetailRefreshPatchRejectedDiagnostic,
+    planThreadDetailRefreshPatchRejectedDiagnosticEffects,
     planThreadDetailRefreshOutcomeExecution,
     planThreadDetailRefreshExecutionEffects,
     planThreadDetailRefreshPerformanceInput,

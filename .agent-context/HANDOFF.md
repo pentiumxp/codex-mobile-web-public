@@ -15641,3 +15641,29 @@ The previous full handoff was archived and should be opened only when old proven
 - Next:
   - Continue Phase A with the next `refreshCurrentThread()` ownership slice, or
     batch the current Phase A module for one deploy/readback when requested.
+
+## 2026-06-26 - Latest tail marker: Phase A patch rejection diagnostic effects slice
+
+- Latest local commit for this continuation slice:
+  - Message: `plan patch rejection diagnostic effects`.
+- Current state:
+  - This is the tenth local Phase A render/patch ownership slice.
+  - Not deployed by design; no `CLIENT_BUILD_ID` / PWA shell cache bump.
+- Root-cause boundary:
+  - `planThreadDetailRefreshPatchRejectedDiagnostic()` already planned bounded
+    local patch rejection diagnostic input fields, but `refreshCurrentThread()`
+    still directly branched on `patchRejectedDiagnosticPlan.shouldReport`.
+  - `public/thread-detail-render-plan.js` now plans ordered patch rejection
+    diagnostic effects; `public/app.js` only executes the real Home AI
+    diagnostic failure side effect.
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js`
+    passed (`174` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`1115` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Continue Phase A or batch the current module for one deploy/readback when
+    requested.

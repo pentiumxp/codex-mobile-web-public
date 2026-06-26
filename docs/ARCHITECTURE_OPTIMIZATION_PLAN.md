@@ -789,6 +789,11 @@ should be passed into `threadDiagnosticEventsApi.detailPatchRejectedDiagnosticEv
 App code still triggers the real Home AI diagnostic side effect, but
 `refreshCurrentThread()` no longer owns patch-rejection diagnostic field
 selection directly.
+Patch rejection diagnostic effect planning now also lives in this helper:
+`planThreadDetailRefreshPatchRejectedDiagnosticEffects` converts that diagnostic
+plan into a bounded effect list. App code still performs the real
+`recordHomeAiDiagnosticFailure` call, but `refreshCurrentThread()` no longer
+branches directly on `patchRejectedDiagnosticPlan.shouldReport`.
 Projection consistency-check effect planning now also lives in this helper:
 `planThreadDetailRefreshConsistencyCheckEffects` converts an already-decided
 consistency-check plan into an ordered effect for

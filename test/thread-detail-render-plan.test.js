@@ -710,6 +710,40 @@ test("thread detail refresh patch rejected diagnostic plan stays quiet without r
   });
 });
 
+test("thread detail refresh patch rejected diagnostic effects plan owns reporting intent", () => {
+  const diagnosticInput = {
+    readMode: "projection-v4-dynamic",
+    renderMode: "patch",
+    patchRejectReason: "rendered-dom-stale",
+  };
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchRejectedDiagnosticEffects({
+    diagnosticPlan: {
+      shouldReport: true,
+      diagnosticInput,
+      reason: "local-patch-rejected",
+    },
+  }), {
+    effects: [
+      {
+        type: "detail-patch-rejected-diagnostic-failure",
+        diagnosticInput,
+      },
+    ],
+    reason: "local-patch-rejected-diagnostic",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchRejectedDiagnosticEffects({
+    diagnosticPlan: {
+      shouldReport: false,
+      diagnosticInput,
+      reason: "not-rejected",
+    },
+  }), {
+    effects: [],
+    reason: "not-rejected",
+  });
+});
+
 test("thread detail refresh render outcome treats tile pane patch as terminal", () => {
   const plan = renderPlan.planThreadDetailRefreshRender({
     previousConversationSignature: "sig-a",
