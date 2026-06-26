@@ -938,6 +938,43 @@ test("thread detail refresh performance input combines render and patch plans", 
   });
 });
 
+test("thread detail refresh telemetry effects plan preserves event and diagnostics order", () => {
+  const performanceEvent = {
+    elapsedMs: 42,
+    readMode: "projection-v4-dynamic",
+    detailShape: { turns: 3 },
+  };
+  assert.deepEqual(renderPlan.planThreadDetailRefreshTelemetryEffects({
+    performanceEvent,
+    threadId: "thread-1",
+    action: "thread-detail-refresh",
+    eventName: "thread_refresh_ms",
+    throttleKey: "thread_refresh_ms",
+    minIntervalMs: 1000.4,
+  }), {
+    effects: [
+      {
+        type: "post-performance-event",
+        eventName: "thread_refresh_ms",
+        payload: performanceEvent,
+        options: {
+          key: "thread_refresh_ms",
+          minIntervalMs: 1000.4,
+        },
+      },
+      {
+        type: "record-thread-detail-response-diagnostics",
+        performanceEvent,
+        context: {
+          action: "thread-detail-refresh",
+          threadId: "thread-1",
+        },
+      },
+    ],
+    reason: "refresh-telemetry",
+  });
+});
+
 test("thread detail refresh execution effects plan maps metadata, full render, none, and unknown actions", () => {
   assert.deepEqual(renderPlan.planThreadDetailRefreshExecutionEffects({
     executionAction: "metadata-effects",

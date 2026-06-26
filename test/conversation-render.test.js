@@ -3186,7 +3186,13 @@ test("current-thread refresh patches the current tile pane for metadata-only til
   assert.match(body, /const refreshPerformanceInput = threadDetailRenderPlanApi\.planThreadDetailRefreshPerformanceInput\(\{/);
   assert.match(body, /shouldRenderDetail,[\s\S]*renderPlan,[\s\S]*renderOutcome,[\s\S]*patchAttemptResult,[\s\S]*timings: \{/);
   assert.match(body, /const refreshPerformance = threadPerformanceMetrics\.threadDetailRefreshEventFields\(result\.thread, refreshPerformanceInput\);/);
-  assert.match(body, /postPerformanceEvent\("thread_refresh_ms", refreshPerformance, \{/);
+  assert.match(body, /const telemetryEffectsPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshTelemetryEffects\(\{/);
+  assert.match(body, /performanceEvent: refreshPerformance,[\s\S]*eventName: "thread_refresh_ms",[\s\S]*throttleKey: "thread_refresh_ms",[\s\S]*minIntervalMs: PERF_EVENT_THROTTLE_MS,[\s\S]*action: "thread-detail-refresh",[\s\S]*threadId,/);
+  assert.match(body, /applyThreadDetailRefreshTelemetryEffectsPlan\(telemetryEffectsPlan, \{ thread: result\.thread \}\);/);
+  assert.match(appJs, /function applyThreadDetailRefreshTelemetryEffectsPlan\(plan, context = \{\}\)/);
+  assert.match(functionBody("applyThreadDetailRefreshTelemetryEffect"), /postPerformanceEvent\(String\(item\.eventName \|\| ""\), item\.payload \|\| \{\}, item\.options \|\| \{\}\);/);
+  assert.match(functionBody("applyThreadDetailRefreshTelemetryEffect"), /recordThreadDetailResponseDiagnostics\(item\.performanceEvent \|\| \{\}, \{/);
+  assert.match(functionBody("applyThreadDetailRefreshTelemetryEffect"), /thread: context\.thread/);
   assert.match(body, /const completionPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshCompletionEffects\(\{/);
   assert.match(body, /for \(const effect of completionPlan\.effects\) applyThreadDetailRefreshCompletionEffect\(effect\);/);
   assert.doesNotMatch(body, /recordHomeAiDiagnosticSuccess\(\{[\s\S]*thread_detail_refresh_failed/);

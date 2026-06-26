@@ -9353,6 +9353,30 @@ function applyThreadDetailRefreshConsistencyCheckEffectsPlan(plan) {
   for (const effect of effects) applyThreadDetailRefreshConsistencyCheckEffect(effect);
 }
 
+function applyThreadDetailRefreshTelemetryEffect(effect, context = {}) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  if (type === "post-performance-event") {
+    postPerformanceEvent(String(item.eventName || ""), item.payload || {}, item.options || {});
+    return true;
+  }
+  if (type === "record-thread-detail-response-diagnostics") {
+    const eventContext = item.context && typeof item.context === "object" ? item.context : {};
+    recordThreadDetailResponseDiagnostics(item.performanceEvent || {}, {
+      action: String(eventContext.action || ""),
+      threadId: String(eventContext.threadId || ""),
+      thread: context.thread,
+    });
+    return true;
+  }
+  throw new Error(`Unknown thread detail refresh telemetry effect: ${type || "empty"}`);
+}
+
+function applyThreadDetailRefreshTelemetryEffectsPlan(plan, context = {}) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applyThreadDetailRefreshTelemetryEffect(effect, context);
+}
+
 function applyThreadDetailRefreshPatchAttemptEffect(effect, context) {
   const item = effect && typeof effect === "object" ? effect : {};
   const type = String(item.type || "");
@@ -9570,15 +9594,15 @@ async function refreshCurrentThread(options = {}) {
     },
   });
   const refreshPerformance = threadPerformanceMetrics.threadDetailRefreshEventFields(result.thread, refreshPerformanceInput);
-  postPerformanceEvent("thread_refresh_ms", refreshPerformance, {
-    key: "thread_refresh_ms",
+  const telemetryEffectsPlan = threadDetailRenderPlanApi.planThreadDetailRefreshTelemetryEffects({
+    performanceEvent: refreshPerformance,
+    eventName: "thread_refresh_ms",
+    throttleKey: "thread_refresh_ms",
     minIntervalMs: PERF_EVENT_THROTTLE_MS,
-  });
-  recordThreadDetailResponseDiagnostics(refreshPerformance, {
     action: "thread-detail-refresh",
     threadId,
-    thread: result.thread,
   });
+  applyThreadDetailRefreshTelemetryEffectsPlan(telemetryEffectsPlan, { thread: result.thread });
   const completionPlan = threadDetailRenderPlanApi.planThreadDetailRefreshCompletionEffects({
     threadHash: diagnosticThreadHash(threadId),
   });

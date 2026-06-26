@@ -296,7 +296,7 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /postPerformanceEvent\("conversation_render_ms"/);
   assert.match(appJs, /postPerformanceEvent\("github_cards_hydrate_ms"/);
   assert.match(appJs, /postPerformanceEvent\("mermaid_hydrate_ms"/);
-  assert.match(appJs, /postPerformanceEvent\("thread_refresh_ms"/);
+  assert.match(appJs, /eventName: "thread_refresh_ms"/);
   assert.match(appJs, /state\.startupThreadOpenPending = hasStartupThreadOpenIntent\(\);[\s\S]*early_opening_rendered/);
   assert.match(appJs, /async function fetchPublicConfigWithRetry\(startedAt\)/);
   assert.match(appJs, /PUBLIC_CONFIG_RETRY_DELAYS_MS = \[0, 300, 1200\]/);
@@ -496,8 +496,12 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(functionBody("refreshCurrentThread"), /const refreshPerformanceInput = threadDetailRenderPlanApi\.planThreadDetailRefreshPerformanceInput\(\{/);
   assert.match(functionBody("refreshCurrentThread"), /shouldRenderDetail,[\s\S]*renderPlan,[\s\S]*renderOutcome,[\s\S]*patchAttemptResult,[\s\S]*timings: \{/);
   assert.match(functionBody("refreshCurrentThread"), /const refreshPerformance = threadPerformanceMetrics\.threadDetailRefreshEventFields\(result\.thread, refreshPerformanceInput\);/);
-  assert.match(functionBody("refreshCurrentThread"), /postPerformanceEvent\("thread_refresh_ms", refreshPerformance, \{/);
-  assert.match(functionBody("refreshCurrentThread"), /recordThreadDetailResponseDiagnostics\(refreshPerformance, \{[\s\S]*action: "thread-detail-refresh",[\s\S]*threadId,[\s\S]*thread: result\.thread,[\s\S]*\}\);/);
+  assert.match(functionBody("refreshCurrentThread"), /const telemetryEffectsPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshTelemetryEffects\(\{/);
+  assert.match(functionBody("refreshCurrentThread"), /performanceEvent: refreshPerformance,[\s\S]*eventName: "thread_refresh_ms",[\s\S]*throttleKey: "thread_refresh_ms",[\s\S]*minIntervalMs: PERF_EVENT_THROTTLE_MS,[\s\S]*action: "thread-detail-refresh",[\s\S]*threadId,/);
+  assert.match(functionBody("refreshCurrentThread"), /applyThreadDetailRefreshTelemetryEffectsPlan\(telemetryEffectsPlan, \{ thread: result\.thread \}\);/);
+  assert.match(appJs, /function applyThreadDetailRefreshTelemetryEffectsPlan\(plan, context = \{\}\)/);
+  assert.match(functionBody("applyThreadDetailRefreshTelemetryEffect"), /postPerformanceEvent\(String\(item\.eventName \|\| ""\), item\.payload \|\| \{\}, item\.options \|\| \{\}\);/);
+  assert.match(functionBody("applyThreadDetailRefreshTelemetryEffect"), /recordThreadDetailResponseDiagnostics\(item\.performanceEvent \|\| \{\}, \{[\s\S]*action: String\(eventContext\.action \|\| ""\),[\s\S]*threadId: String\(eventContext\.threadId \|\| ""\),[\s\S]*thread: context\.thread,[\s\S]*\}\);/);
   assert.match(functionBody("refreshCurrentThread"), /const completionPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshCompletionEffects\(\{[\s\S]*threadHash: diagnosticThreadHash\(threadId\),[\s\S]*\}\);/);
   assert.match(functionBody("refreshCurrentThread"), /for \(const effect of completionPlan\.effects\) applyThreadDetailRefreshCompletionEffect\(effect\);/);
   assert.match(appJs, /function applyThreadDetailRefreshCompletionEffect\(effect\)/);

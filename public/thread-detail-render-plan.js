@@ -664,6 +664,37 @@
     };
   }
 
+  function planThreadDetailRefreshTelemetryEffects(input = {}) {
+    const performanceEvent = objectOrEmpty(input.performanceEvent);
+    const eventName = compactReason(input.eventName, "thread_refresh_ms");
+    const throttleKey = compactReason(input.throttleKey, eventName);
+    const minIntervalMs = normalizedDurationMs(input.minIntervalMs);
+    const action = compactReason(input.action, "thread-detail-refresh");
+    const threadId = compactReason(input.threadId, "");
+    return {
+      effects: [
+        {
+          type: "post-performance-event",
+          eventName,
+          payload: performanceEvent,
+          options: {
+            key: throttleKey,
+            minIntervalMs,
+          },
+        },
+        {
+          type: "record-thread-detail-response-diagnostics",
+          performanceEvent,
+          context: {
+            action,
+            threadId,
+          },
+        },
+      ],
+      reason: "refresh-telemetry",
+    };
+  }
+
   function planThreadDetailRefreshExecutionEffects(input = {}) {
     const executionAction = compactReason(input.executionAction, "");
     const metadataEffects = Array.isArray(input.metadataEffects) ? input.metadataEffects.slice() : [];
@@ -899,6 +930,7 @@
     planThreadDetailRefreshOutcomeExecution,
     planThreadDetailRefreshExecutionEffects,
     planThreadDetailRefreshPerformanceInput,
+    planThreadDetailRefreshTelemetryEffects,
     planThreadDetailRefreshRequest,
     planThreadDetailRefreshPatchSurface,
     planThreadDetailRefreshPostMergeEffects,

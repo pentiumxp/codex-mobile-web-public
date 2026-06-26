@@ -795,6 +795,13 @@ consistency-check plan into an ordered effect for
 `checkConversationProjectionConsistency`. App code still performs the real
 projection consistency check, but `refreshCurrentThread()` no longer branches
 directly on `consistencyCheck.shouldCheck`.
+Refresh telemetry effect planning now also lives in this helper:
+`planThreadDetailRefreshTelemetryEffects` converts the already-built bounded
+`thread_refresh_ms` performance payload into ordered telemetry effects:
+`postPerformanceEvent` first, then `recordThreadDetailResponseDiagnostics`.
+App code still executes the real reporting side effects and supplies the runtime
+thread object for diagnostics, but `refreshCurrentThread()` no longer owns
+refresh telemetry side-effect ordering.
 Refresh post-merge side-effect ordering now also lives in this helper:
 `planThreadDetailRefreshPostMergeEffects` declares the fixed
 thread-list-merge, composer/active-turn sync, and thread-list-render groups

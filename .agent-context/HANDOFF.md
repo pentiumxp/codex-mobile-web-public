@@ -15614,3 +15614,30 @@ The previous full handoff was archived and should be opened only when old proven
 - Next:
   - Either batch the current Phase A module for one deploy/readback, or continue
     with one more local `refreshCurrentThread()` ownership slice.
+
+## 2026-06-26 - Latest tail marker: Phase A refresh telemetry effects slice
+
+- Latest local commit for this continuation slice:
+  - Message: `plan refresh telemetry effects`.
+- Current state:
+  - This is the ninth local Phase A render/patch ownership slice.
+  - Not deployed by design; no `CLIENT_BUILD_ID` / PWA shell cache bump.
+- Root-cause boundary:
+  - `thread-performance-metrics` already builds the bounded `thread_refresh_ms`
+    payload, but `refreshCurrentThread()` still directly owned the telemetry
+    side-effect order for `postPerformanceEvent()` followed by
+    `recordThreadDetailResponseDiagnostics()`.
+  - `public/thread-detail-render-plan.js` now plans ordered refresh telemetry
+    effects; `public/app.js` only executes the real reporting side effects and
+    supplies the runtime thread object for diagnostics.
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js`
+    passed (`173` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`1114` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Continue Phase A with the next `refreshCurrentThread()` ownership slice, or
+    batch the current Phase A module for one deploy/readback when requested.

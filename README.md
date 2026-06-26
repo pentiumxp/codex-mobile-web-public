@@ -16,6 +16,43 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 Phase A Refresh Telemetry Effects Slice
+
+本地小切片继续推进 Phase A 的 `refreshCurrentThread()` 所有权收敛。此前
+`thread-performance-metrics` 已经负责生成 bounded `thread_refresh_ms`
+payload，但 `public/app.js` 仍直接决定 telemetry 副作用顺序：先调用
+`postPerformanceEvent()`，再调用 `recordThreadDetailResponseDiagnostics()`。
+这让 refresh 后的性能事件和 Home AI detail-response 诊断上报顺序继续留在
+主 app 文件里。
+
+本次修复：
+
+- `public/thread-detail-render-plan.js` 新增
+  `planThreadDetailRefreshTelemetryEffects()`，把 refresh telemetry 转成有序
+  effects。
+- `public/app.js` 新增
+  `applyThreadDetailRefreshTelemetryEffect()` /
+  `applyThreadDetailRefreshTelemetryEffectsPlan()`，只执行真实性能事件和
+  detail-response 诊断上报。
+- `refreshCurrentThread()` 不再直接调用 refresh telemetry 副作用。
+- 不改变 `thread_refresh_ms` payload、diagnostic payload、节流 key、上报顺序、
+  server projection、任务卡协议或 shell/cache。
+
+闭环验证：
+
+```bash
+node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js
+npm run check
+npm test
+npm run check:macos
+git diff --check
+```
+
+结果：focused `173` passed；full `npm test` `1114` passed；
+`npm run check`、`npm run check:macos`、`git diff --check` 均通过。
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，
+尚未部署；继续作为 Phase A 模块的一部分累积。
+
 ## 2026-06-26 Phase A Consistency Check Effects Slice
 
 本地小切片继续推进 Phase A 的 `refreshCurrentThread()` 所有权收敛。此前
