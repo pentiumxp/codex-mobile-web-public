@@ -684,6 +684,56 @@
     };
   }
 
+  function hasOwnPropertyValue(object, key) {
+    return Object.prototype.hasOwnProperty.call(objectOrEmpty(object), key);
+  }
+
+  function planThreadDetailRefreshPatchAttemptResultStage(input = {}) {
+    const patchAttempt = objectOrEmpty(input.patchAttempt);
+    const patchAttemptResult = planThreadDetailRefreshPatchAttemptResult({
+      shouldRenderDetail: input.shouldRenderDetail,
+      tilePanePatchAttempted: patchAttempt.tilePanePatchAttempted,
+      tilePanePatchedDetail: patchAttempt.tilePanePatchedDetail,
+      localPatchAttempted: patchAttempt.localPatchAttempted,
+      locallyPatchedDetail: patchAttempt.locallyPatchedDetail,
+      tilePanePatchMs: patchAttempt.tilePanePatchMs,
+      localPatchMs: patchAttempt.localPatchMs,
+      patchRejectReason: patchAttempt.patchRejectReason,
+    });
+    const needsPatchRejectedVisibleShapes = Boolean(patchAttemptResult.reportLocalPatchRejected
+      && (!hasOwnPropertyValue(input, "previousVisibleShape")
+        || !hasOwnPropertyValue(input, "nextVisibleShape")));
+    if (needsPatchRejectedVisibleShapes) {
+      return {
+        patchAttemptResult,
+        needsPatchRejectedVisibleShapes: true,
+        patchRejectedDiagnosticPlan: null,
+        patchRejectedDiagnosticEffectsPlan: {
+          effects: [],
+          reason: "visible-shapes-required",
+        },
+        reason: "visible-shapes-required",
+      };
+    }
+    const patchRejectedDiagnosticPlan = planThreadDetailRefreshPatchRejectedDiagnostic({
+      readMode: input.readMode,
+      renderPlan: input.renderPlan,
+      patchAttemptResult,
+      previousVisibleShape: input.previousVisibleShape,
+      nextVisibleShape: input.nextVisibleShape,
+    });
+    const patchRejectedDiagnosticEffectsPlan = planThreadDetailRefreshPatchRejectedDiagnosticEffects({
+      diagnosticPlan: patchRejectedDiagnosticPlan,
+    });
+    return {
+      patchAttemptResult,
+      needsPatchRejectedVisibleShapes: false,
+      patchRejectedDiagnosticPlan,
+      patchRejectedDiagnosticEffectsPlan,
+      reason: patchRejectedDiagnosticPlan.reason,
+    };
+  }
+
   function finalizeThreadDetailRenderPlan(plan = {}, result = {}) {
     const tilePanePatchedDetail = Boolean(result.tilePanePatchedDetail);
     const locallyPatchedDetail = Boolean(result.locallyPatchedDetail);
@@ -1498,6 +1548,7 @@
     planThreadDetailRefreshResponseEffects,
     planThreadDetailRefreshPatchAttemptEffects,
     planThreadDetailRefreshPatchAttemptResult,
+    planThreadDetailRefreshPatchAttemptResultStage,
     planThreadDetailRefreshPatchRejectedDiagnostic,
     planThreadDetailRefreshPatchRejectedDiagnosticEffects,
     planThreadDetailRefreshOutcomeExecution,

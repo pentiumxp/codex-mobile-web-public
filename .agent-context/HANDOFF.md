@@ -16757,7 +16757,8 @@ The previous full handoff was archived and should be opened only when old proven
     for API abort/stale cancellation, API error, and post-response stale
     cancellation in `loadThread()`.
   - Updated `test/thread-detail-render-plan.test.js`,
-    `test/conversation-render.test.js`, and `test/mobile-viewport.test.js`.
+    `test/conversation-render.test.js`, `test/mobile-viewport.test.js`, and
+    `test/thread-tile-layout-ui.test.js`.
   - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
     `docs/MODULES.md`.
 - Validation:
@@ -18224,3 +18225,57 @@ The previous full handoff was archived and should be opened only when old proven
     `refreshCurrentThread()` patch-attempt result / diagnostic input
     composition seam, or batch the accumulated Phase A local slices for one
     deploy/readback when requested.
+
+## 2026-06-27 - Latest tail marker: Phase A refresh patch result diagnostic stage local slice
+
+- Current local state:
+  - Continued Phase A `refreshCurrentThread()` patch orchestration cleanup after
+    `f831d63`.
+  - Patch attempt aggregation, attempt result planning, and local rejection
+    diagnostic planning already lived in `public/thread-detail-render-plan.js`,
+    but `refreshCurrentThread()` still directly decomposed `patchAttempt` into
+    attempt-result input, decided when to collect visible shapes, and composed
+    rejected-diagnostic effects.
+- Root-cause boundary:
+  - Symptom/risk: result planning and diagnostic effect selection were pure,
+    but their stage composition still lived in `public/app.js`. Future app
+    orchestration edits could make rejection evidence shape collection,
+    diagnostic fields, and effect ordering drift from the tested plan layer.
+  - Failing layer: frontend refresh patch result/diagnostic stage composition
+    ownership, not DOM patch execution, merge behavior, server projection,
+    scroll behavior, task-card protocol, Home AI diagnostic intake, or
+    shell/cache.
+  - Violated invariant: app code should execute real DOM probe/patch/render and
+    diagnostic transport side effects; pure planning helpers should own the
+    fixed composition from executed patch attempt to result, bounded evidence
+    request, diagnostic plan, and diagnostic effect plan.
+- Changes:
+  - `public/thread-detail-render-plan.js` now exports
+    `planThreadDetailRefreshPatchAttemptResultStage()`.
+  - `public/app.js` uses that helper in `refreshCurrentThread()` and no longer
+    directly calls patch-attempt result / rejected-diagnostic subhelpers.
+  - The helper explicitly requests previous/current visible-shape evidence only
+    for local patch rejection; ordinary refresh paths do not do extra shape
+    collection.
+  - Updated `test/thread-detail-render-plan.test.js`,
+    `test/conversation-render.test.js`, and `test/mobile-viewport.test.js`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation:
+  - Syntax and focused:
+    `node --check public/thread-detail-render-plan.js && node --check public/app.js && node --check test/thread-detail-render-plan.test.js && node --check test/conversation-render.test.js && node --check test/mobile-viewport.test.js && node --check test/thread-tile-layout-ui.test.js && node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-tile-layout-ui.test.js`
+    passed (`203` focused tests).
+  - Full:
+    `npm test` passed (`1168` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache
+    bump. This remains a local Phase A ownership slice to batch with the next
+    module validation/deploy.
+- Progress:
+  - Overall architecture optimization is about `83%`.
+  - Phase A frontend render/projection ownership is about `93%`.
+- Next:
+  - Commit locally, then continue Phase A by extracting the next refresh outcome
+    / execution / consistency seam, or batch the accumulated Phase A local
+    slices for one deploy/readback when requested.

@@ -951,6 +951,110 @@ test("thread detail refresh patch rejected diagnostic effects plan owns reportin
   });
 });
 
+test("thread detail refresh patch attempt result stage requests shapes only for local rejection", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchAttemptResultStage({
+    shouldRenderDetail: true,
+    renderPlan: {
+      detailRenderMode: "patch",
+      reason: "patch-shell-stable",
+    },
+    readMode: "projection-v4-dynamic",
+    patchAttempt: {
+      tilePanePatchAttempted: true,
+      tilePanePatchedDetail: false,
+      localPatchAttempted: true,
+      locallyPatchedDetail: false,
+      tilePanePatchMs: 2,
+      localPatchMs: 7,
+      patchRejectReason: "rendered-dom-stale",
+    },
+  }), {
+    patchAttemptResult: {
+      patchResult: "local-patch-rejected",
+      locallyPatchedDetail: false,
+      tilePanePatchedDetail: false,
+      detailPatchMs: 7,
+      patchTimingSource: "local-patch-rejected",
+      patchRejectReason: "rendered-dom-stale",
+      reportLocalPatchRejected: true,
+      finalizeResult: {
+        locallyPatchedDetail: false,
+        tilePanePatchedDetail: false,
+      },
+    },
+    needsPatchRejectedVisibleShapes: true,
+    patchRejectedDiagnosticPlan: null,
+    patchRejectedDiagnosticEffectsPlan: {
+      effects: [],
+      reason: "visible-shapes-required",
+    },
+    reason: "visible-shapes-required",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchAttemptResultStage({
+    shouldRenderDetail: true,
+    renderPlan: {
+      detailRenderMode: "patch",
+      reason: "patch-shell-stable",
+    },
+    readMode: "projection-v4-dynamic",
+    patchAttempt: {
+      tilePanePatchAttempted: true,
+      tilePanePatchedDetail: false,
+      localPatchAttempted: true,
+      locallyPatchedDetail: false,
+      localPatchMs: 7,
+      patchRejectReason: "rendered-dom-stale",
+    },
+    previousVisibleShape: { visibleItemCount: 3 },
+    nextVisibleShape: { visibleItemCount: 5 },
+  }), {
+    patchAttemptResult: {
+      patchResult: "local-patch-rejected",
+      locallyPatchedDetail: false,
+      tilePanePatchedDetail: false,
+      detailPatchMs: 7,
+      patchTimingSource: "local-patch-rejected",
+      patchRejectReason: "rendered-dom-stale",
+      reportLocalPatchRejected: true,
+      finalizeResult: {
+        locallyPatchedDetail: false,
+        tilePanePatchedDetail: false,
+      },
+    },
+    needsPatchRejectedVisibleShapes: false,
+    patchRejectedDiagnosticPlan: {
+      shouldReport: true,
+      diagnosticInput: {
+        readMode: "projection-v4-dynamic",
+        renderMode: "patch",
+        renderPlanReason: "patch-shell-stable",
+        patchRejectReason: "rendered-dom-stale",
+        previousVisibleItemCount: 3,
+        visibleItemCount: 5,
+      },
+      reason: "local-patch-rejected",
+    },
+    patchRejectedDiagnosticEffectsPlan: {
+      effects: [
+        {
+          type: "detail-patch-rejected-diagnostic-failure",
+          diagnosticInput: {
+            readMode: "projection-v4-dynamic",
+            renderMode: "patch",
+            renderPlanReason: "patch-shell-stable",
+            patchRejectReason: "rendered-dom-stale",
+            previousVisibleItemCount: 3,
+            visibleItemCount: 5,
+          },
+        },
+      ],
+      reason: "local-patch-rejected-diagnostic",
+    },
+    reason: "local-patch-rejected",
+  });
+});
+
 test("thread detail refresh render outcome treats tile pane patch as terminal", () => {
   const plan = renderPlan.planThreadDetailRefreshRender({
     previousConversationSignature: "sig-a",

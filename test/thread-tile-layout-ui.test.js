@@ -461,7 +461,10 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.doesNotMatch(refreshBody, /canPatch: renderPlan\.canPatch/);
   assert.doesNotMatch(refreshBody, /tileSurfaceRefresh: patchSurfacePlan\.tileSurfaceRefresh/);
   assert.match(refreshBody, /const patchAttempt = applyThreadDetailRefreshPatchAttemptEffectsPlan\(patchAttemptEffectsPlan, \{/);
-  assert.match(refreshBody, /threadDetailRenderPlanApi\.planThreadDetailRefreshPatchAttemptResult\(\{/);
+  assert.match(refreshBody, /let patchAttemptResultStage = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchAttemptResultStage\(\{/);
+  assert.match(refreshBody, /if \(patchAttemptResultStage\.needsPatchRejectedVisibleShapes\) \{/);
+  assert.match(refreshBody, /applyThreadDetailRefreshPatchRejectedDiagnosticEffectsPlan\(patchAttemptResultStage\.patchRejectedDiagnosticEffectsPlan\);/);
+  assert.doesNotMatch(refreshBody, /threadDetailRenderPlanApi\.planThreadDetailRefreshPatchAttemptResult\(\{/);
   assert.doesNotMatch(refreshBody, /if \(shouldRenderDetail && !tilePanePatchedDetail && patchExecutionPlan\.tryLocalPatch\)/);
   assert.doesNotMatch(refreshBody, /renderPlan\.canPatch && !tileSurfaceRefresh/);
   assert.doesNotMatch(refreshBody, /tilePatchPlan && tilePatchPlan\.surface === "thread-tile-pane"/);

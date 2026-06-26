@@ -9782,35 +9782,28 @@ async function refreshCurrentThread(options = {}) {
     previousThread,
     previousConversationSignature,
   });
-  const tilePanePatchAttempted = patchAttempt.tilePanePatchAttempted;
-  const localPatchAttempted = patchAttempt.localPatchAttempted;
-  const tilePanePatchMs = patchAttempt.tilePanePatchMs;
-  const localPatchMs = patchAttempt.localPatchMs;
   tilePanePatchedDetail = patchAttempt.tilePanePatchedDetail;
   locallyPatchedDetail = patchAttempt.locallyPatchedDetail;
-  const patchAttemptResult = threadDetailRenderPlanApi.planThreadDetailRefreshPatchAttemptResult({
+  let patchAttemptResultStage = threadDetailRenderPlanApi.planThreadDetailRefreshPatchAttemptResultStage({
     shouldRenderDetail,
-    tilePanePatchAttempted,
-    tilePanePatchedDetail,
-    localPatchAttempted,
-    locallyPatchedDetail,
-    tilePanePatchMs,
-    localPatchMs,
-    patchRejectReason: patchAttempt.patchRejectReason,
+    patchAttempt,
+    renderPlan,
+    readMode: result.thread && result.thread.mobileReadMode,
   });
+  if (patchAttemptResultStage.needsPatchRejectedVisibleShapes) {
+    patchAttemptResultStage = threadDetailRenderPlanApi.planThreadDetailRefreshPatchAttemptResultStage({
+      shouldRenderDetail,
+      patchAttempt,
+      renderPlan,
+      readMode: result.thread && result.thread.mobileReadMode,
+      previousVisibleShape: visibleConversationShape(previousThread),
+      nextVisibleShape: visibleConversationShape(state.currentThread),
+    });
+  }
+  const patchAttemptResult = patchAttemptResultStage.patchAttemptResult;
   locallyPatchedDetail = patchAttemptResult.locallyPatchedDetail;
   tilePanePatchedDetail = patchAttemptResult.tilePanePatchedDetail;
-  const patchRejectedDiagnosticPlan = threadDetailRenderPlanApi.planThreadDetailRefreshPatchRejectedDiagnostic({
-    readMode: result.thread && result.thread.mobileReadMode,
-    renderPlan,
-    patchAttemptResult,
-    previousVisibleShape: patchAttemptResult.reportLocalPatchRejected ? visibleConversationShape(previousThread) : null,
-    nextVisibleShape: patchAttemptResult.reportLocalPatchRejected ? visibleConversationShape(state.currentThread) : null,
-  });
-  const patchRejectedDiagnosticEffectsPlan = threadDetailRenderPlanApi.planThreadDetailRefreshPatchRejectedDiagnosticEffects({
-    diagnosticPlan: patchRejectedDiagnosticPlan,
-  });
-  applyThreadDetailRefreshPatchRejectedDiagnosticEffectsPlan(patchRejectedDiagnosticEffectsPlan);
+  applyThreadDetailRefreshPatchRejectedDiagnosticEffectsPlan(patchAttemptResultStage.patchRejectedDiagnosticEffectsPlan);
   renderOutcome = threadDetailRenderPlanApi.finalizeThreadDetailRenderPlan(renderPlan, patchAttemptResult.finalizeResult);
   locallyPatchedDetail = renderOutcome.locallyPatchedDetail;
   tilePanePatchedDetail = renderOutcome.tilePanePatchedDetail;

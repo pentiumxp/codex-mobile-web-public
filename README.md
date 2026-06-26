@@ -2268,6 +2268,40 @@ attempt 的 effect 顺序。但 `public/app.js` 仍直接把 `renderPlan.canPatc
 - 闭环验证：focused tests 证明 stage helper 和 app wiring；完整检查通过后再随
   Phase A 模块批量部署。
 
+## 2026-06-27 Local Phase A Refresh Patch Result Diagnostic Stage Slice
+
+这个本地小切片继续收敛 `refreshCurrentThread()` 的 patch attempt 结果和
+diagnostic 组合边界。此前 patch attempt 的聚合、result 规划和 local rejection
+diagnostic 规划分别已经在 `public/thread-detail-render-plan.js` 中，但
+`public/app.js` 仍直接把 `patchAttempt` 拆成 result input、判断是否需要
+`visibleConversationShape()`、再拼 diagnostic effects。
+
+本次切片新增/调整：
+
+- `public/thread-detail-render-plan.js` 新增
+  `planThreadDetailRefreshPatchAttemptResultStage()`，负责从 `patchAttempt` 生成
+  `patchAttemptResult`、判断是否需要 local-rejection visible-shape evidence，并在
+  evidence 可用后生成 diagnostic plan/effects。
+- `public/app.js` 的 `refreshCurrentThread()` 改为调用 result-stage helper；只有
+  helper 明确要求时才采集 previous/current visible shape，避免给普通 refresh 热路径
+  增加额外 shape 遍历。
+- `test/thread-detail-render-plan.test.js` 覆盖 result-stage 的 shape request 和
+  diagnostic effects；`test/mobile-viewport.test.js` 与
+  `test/conversation-render.test.js` 确认 `refreshCurrentThread()` 不再直接调用
+  patch result / rejected diagnostic subhelpers。
+- 不改变 patch attempt executor、render outcome、DOM patch、scroll、Home AI
+  diagnostic intake、任务卡协议或 shell/cache。
+
+修复边界：
+
+- 症状/风险：patch attempt result 与 local rejection diagnostic 都已经计划化，但
+  中间组合仍在 `app.js`，未来容易让 rejection 证据字段、shape 采集条件和 effect
+  顺序漂移。
+- 失败层：前端 refresh patch result/diagnostic stage composition ownership，不是
+  DOM patch executor、server projection、merge 算法或最终 render outcome。
+- 闭环验证：focused tests 证明 result-stage helper 和 app wiring；完整检查通过后再随
+  Phase A 模块批量部署。
+
 ## 2026-06-26 Local Phase B Server Timing Classifier
 
 这个本地切片继续 Phase B 的大 session / thread-detail cold path 收敛，但只处理

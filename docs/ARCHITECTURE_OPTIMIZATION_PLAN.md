@@ -719,10 +719,13 @@ Refresh patch attempt result planning now also lives there:
 `planThreadDetailRefreshPatchAttemptResult` normalizes tile-pane success,
 local-patch success, local-patch rejection, metadata-only tile misses, and
 finalize-input shape. It also owns the patch telemetry selection for
-`detailPatchMs`, `patchTimingSource`, and normalized `patchRejectReason`, plus
-whether a failed local patch attempt should emit the projection-mismatch
-diagnostic, while app code keeps real DOM calls, visible shape collection, and
-the diagnostic transport.
+`detailPatchMs`, `patchTimingSource`, and normalized `patchRejectReason`.
+`planThreadDetailRefreshPatchAttemptResultStage` owns the composition from the
+executed patch-attempt aggregate to result, local-rejection visible-shape
+request, diagnostic plan, and diagnostic effect plan, including whether a
+failed local patch attempt should emit the projection-mismatch diagnostic. App
+code keeps real DOM calls, bounded visible-shape measurement only when the
+stage asks for it, and diagnostic transport execution.
 The local DOM patch executor now returns a structured `{ ok, reason }` result
 directly to the patch-attempt executor, so refresh rejection reasons no longer
 move through transient global app state before telemetry and diagnostics read
