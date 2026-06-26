@@ -208,6 +208,11 @@ run, snapshots the thread id and load sequence, normalizes recent/full mode,
 selects the bounded API query and timeout, and records whether an active
 refresh controller should be aborted. App code still performs the real abort
 and network request.
+Refresh patch surface planning now also lives in this helper:
+`planThreadDetailRefreshPatchSurface` decides whether the refresh should probe
+tile-pane DOM state and whether the current patch path is a tile surface based
+on tile mode, tile conversation surface state, and the probed DOM patch surface.
+App code still reads the UI state and performs the real DOM probe.
 Thread refresh failure diagnostic payload planning now lives in
 `public/thread-diagnostic-events.js`: `threadDetailRefreshFailedDiagnosticEvent`
 builds the bounded `thread_detail_refresh_failed` failure report, so

@@ -211,6 +211,67 @@ test("thread detail refresh patch execution keeps metadata-only refreshes out of
   });
 });
 
+test("thread detail refresh patch surface plan classifies tile and single-thread surfaces", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchSurface({
+    shouldRenderDetail: true,
+    threadTileMode: true,
+    threadTileConversationSurface: false,
+  }), {
+    shouldProbeTilePatchSurface: true,
+    tileSurfaceRefresh: true,
+    tilePatchSurface: "",
+    reason: "tile-mode",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchSurface({
+    shouldRenderDetail: true,
+    threadTileMode: false,
+    threadTileConversationSurface: true,
+  }), {
+    shouldProbeTilePatchSurface: true,
+    tileSurfaceRefresh: true,
+    tilePatchSurface: "",
+    reason: "tile-conversation-surface",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchSurface({
+    shouldRenderDetail: true,
+    threadTileMode: false,
+    threadTileConversationSurface: false,
+    tilePatchSurface: "thread-tile-pane",
+  }), {
+    shouldProbeTilePatchSurface: true,
+    tileSurfaceRefresh: true,
+    tilePatchSurface: "thread-tile-pane",
+    reason: "tile-patch-surface",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchSurface({
+    shouldRenderDetail: true,
+    threadTileMode: false,
+    threadTileConversationSurface: false,
+    tilePatchSurface: "single-thread",
+  }), {
+    shouldProbeTilePatchSurface: true,
+    tileSurfaceRefresh: false,
+    tilePatchSurface: "single-thread",
+    reason: "single-thread-surface",
+  });
+});
+
+test("thread detail refresh patch surface plan keeps metadata-only probes quiet", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchSurface({
+    shouldRenderDetail: false,
+    threadTileMode: false,
+    threadTileConversationSurface: false,
+  }), {
+    shouldProbeTilePatchSurface: false,
+    tileSurfaceRefresh: false,
+    tilePatchSurface: "",
+    reason: "metadata-only-single-thread-surface",
+  });
+});
+
 test("thread detail refresh patch attempt result makes tile pane patch terminal", () => {
   assert.deepEqual(renderPlan.planThreadDetailRefreshPatchAttemptResult({
     shouldRenderDetail: true,

@@ -16,6 +16,36 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v505 Thread Refresh Patch Surface Plan
+
+v505 继续 Phase A 的 `refreshCurrentThread()` surface selection 收敛。v504
+已经把 refresh 请求规划移到 `public/thread-detail-render-plan.js`；本次继续把
+tile/single patch surface 判定从 app 主状态机移到同一个 planning helper。
+
+本次切片新增：
+
+- `planThreadDetailRefreshPatchSurface()` 统一判断是否需要 probe tile pane
+  surface，以及当前 refresh 是否属于 tile surface。
+- `refreshCurrentThread()` 只读取当前 UI 状态、执行真实 DOM surface probe，然后把
+  `tileSurfaceRefresh` 从 helper plan 传入 patch execution plan。
+- `state.threadTileMode`、`isThreadTileConversationSurface()`、`tilePatchPlan.surface`
+  的组合判断不再内联在 app 状态机里。
+
+修复边界：
+
+- 症状/风险：v504 后 request、render、patch execution、patch result、
+  outcome execution 都已 helper-owned，但 tile/single surface selection 仍在
+  `refreshCurrentThread()` 内联，继续扩大主状态机的分支面。
+- 失败层：前端 thread detail refresh patch surface ownership。
+- 不变量：本次不改变 DOM probe、tile pane patch、single-thread patch、full-render
+  fallback、server projection、诊断 transport、任务卡协议或视觉布局。
+- 闭环验证：`test/thread-detail-render-plan.test.js` 覆盖 tile mode、
+  tile pane surface、single-thread surface 和 metadata-only 情况；
+  `test/mobile-viewport.test.js` 验证 app 委托给 helper，且不再内联
+  `tilePatchPlan.surface === "thread-tile-pane"`。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v505`。
+
 ## 2026-06-26 v504 Thread Refresh Request Plan
 
 v504 继续 Phase A 的 `refreshCurrentThread()` 编排收敛。v503 已经把

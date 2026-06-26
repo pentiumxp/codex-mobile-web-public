@@ -148,8 +148,8 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v504/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v504"/);
+  assert.match(swJs, /codex-mobile-shell-v505/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v505"/);
   assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(swJs, /"\/thread-diagnostic-events\.js"/);
@@ -332,9 +332,12 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /threadDetailRenderPlanApi\.planThreadDetailRefreshRender\(\{[\s\S]*previousConversationSignature,[\s\S]*nextConversationSignature,[\s\S]*renderedConversationSignature: state\.renderedConversationSignature,[\s\S]*previousPatchShellSignature,[\s\S]*renderedPatchShellSignature: state\.renderedConversationPatchShellSignature,[\s\S]*\}\);/);
   assert.match(functionBody("refreshCurrentThread"), /const shouldRenderDetail = renderPlan\.shouldRenderDetail;/);
   assert.doesNotMatch(functionBody("refreshCurrentThread"), /let detailRenderMode = renderPlan\.detailRenderMode;/);
-  assert.match(functionBody("refreshCurrentThread"), /const tilePatchPlan = shouldRenderDetail \? threadDetailDomPatchSurface\(\{ threadId \}\) : null;/);
-  assert.match(functionBody("refreshCurrentThread"), /const tileSurfaceRefresh = Boolean\([\s\S]*state\.threadTileMode[\s\S]*isThreadTileConversationSurface\(\)[\s\S]*tilePatchPlan && tilePatchPlan\.surface === "thread-tile-pane"[\s\S]*\);/);
+  assert.match(functionBody("refreshCurrentThread"), /const patchSurfaceProbePlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchSurface\(\{/);
+  assert.match(functionBody("refreshCurrentThread"), /const tilePatchPlan = patchSurfaceProbePlan\.shouldProbeTilePatchSurface[\s\S]*\? threadDetailDomPatchSurface\(\{ threadId \}\)[\s\S]*: null;/);
+  assert.match(functionBody("refreshCurrentThread"), /const patchSurfacePlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchSurface\(\{[\s\S]*tilePatchSurface: tilePatchPlan && tilePatchPlan\.surface,[\s\S]*\}\);/);
   assert.match(functionBody("refreshCurrentThread"), /threadDetailRenderPlanApi\.planThreadDetailRefreshPatchExecution\(\{[\s\S]*shouldRenderDetail,[\s\S]*canPatch: renderPlan\.canPatch,[\s\S]*tileSurfaceRefresh,[\s\S]*\}\);/);
+  assert.match(functionBody("refreshCurrentThread"), /tileSurfaceRefresh: patchSurfacePlan\.tileSurfaceRefresh/);
+  assert.doesNotMatch(functionBody("refreshCurrentThread"), /tilePatchPlan && tilePatchPlan\.surface === "thread-tile-pane"/);
   assert.match(functionBody("refreshCurrentThread"), /let tilePanePatchAttempted = false;/);
   assert.match(functionBody("refreshCurrentThread"), /let localPatchAttempted = false;/);
   assert.match(functionBody("refreshCurrentThread"), /let tilePanePatchMs = 0;/);

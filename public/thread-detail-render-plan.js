@@ -157,6 +157,26 @@
     };
   }
 
+  function planThreadDetailRefreshPatchSurface(input = {}) {
+    const shouldRenderDetail = Boolean(input.shouldRenderDetail);
+    const threadTileMode = Boolean(input.threadTileMode);
+    const threadTileConversationSurface = Boolean(input.threadTileConversationSurface);
+    const tilePatchSurface = compactReason(input.tilePatchSurface || input.surface, "");
+    const tilePatchSurfaceMatch = tilePatchSurface === "thread-tile-pane";
+    const tileSurfaceRefresh = Boolean(threadTileMode || threadTileConversationSurface || tilePatchSurfaceMatch);
+    let reason = "single-thread-surface";
+    if (threadTileMode) reason = "tile-mode";
+    else if (threadTileConversationSurface) reason = "tile-conversation-surface";
+    else if (tilePatchSurfaceMatch) reason = "tile-patch-surface";
+    else if (!shouldRenderDetail) reason = "metadata-only-single-thread-surface";
+    return {
+      shouldProbeTilePatchSurface: shouldRenderDetail,
+      tileSurfaceRefresh,
+      tilePatchSurface,
+      reason,
+    };
+  }
+
   function planThreadDetailRefreshPatchAttemptResult(input = {}) {
     const shouldRenderDetail = Boolean(input.shouldRenderDetail);
     const tilePanePatchAttempted = Boolean(input.tilePanePatchAttempted);
@@ -449,6 +469,7 @@
     planThreadDetailRefreshOutcomeExecution,
     planThreadDetailRefreshPerformanceInput,
     planThreadDetailRefreshRequest,
+    planThreadDetailRefreshPatchSurface,
     planSingleThreadFullRenderShell,
     planThreadDetailRefreshPatchExecution,
     planThreadDetailRefreshRender,
