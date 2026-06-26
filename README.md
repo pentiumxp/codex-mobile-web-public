@@ -45,6 +45,39 @@ completion、scroll/bottom-follow 和 single-thread shell update 的所有权边
 `status=ready`，detail 走 `projection-active-overlay` warm path，active overlay
 gate 为 `ready`；抽样文件 source/prod SHA-256 短 hash 一致。
 
+## 2026-06-27 Phase A/B Full Backfill Post-Merge Plan Slice
+
+本地小切片继续收敛 thread detail 状态所有权。v506 已经让
+`refreshCurrentThread()` 的 post-merge 三段副作用复用
+`planThreadDetailRefreshPostMergeEffects()`，但 full backfill 路径
+`backfillFullThreadDetail()` 仍在 `public/app.js` 中手写
+`mergeThreadIntoThreadList()`、`renderComposerSettings()`、
+`syncActiveTurnFromThread()` 和 `renderThreads()` 的顺序。这样普通 refresh 和
+full-backfill 会继续保留两套 post-merge 编排，增加后续“刷新后重复/少消息/状态
+不同步”的回归面。
+
+本次修复：
+
+- `backfillFullThreadDetail()` 保留原有 detail-loaded 标记、render evidence、
+  pending server request sync 和 `mergeThreadPreservingVisibleItems()` 顺序。
+- 合并后的 thread-list merge、Composer/active-turn sync、thread-list render 改为
+  复用 `threadDetailRenderPlanApi.planThreadDetailRefreshPostMergeEffects()`。
+- `mergeMs`、`composerRenderMs`、`threadListRenderMs` 的 timing 边界保持原语义。
+- focused tests 验证 refresh 和 full-backfill 都走同一套 post-merge plan，并且
+  full-backfill 不再内联旧的 post-merge 顺序。
+- 不改变 thread detail API、full-backfill 读策略、server projection、DOM patch、
+  scroll、Home AI 诊断协议、任务卡协议、shell/cache 或部署状态。
+
+闭环验证：
+
+```bash
+node --test test/conversation-render.test.js test/mobile-viewport.test.js test/thread-detail-render-plan.test.js test/thread-detail-refresh-dom-harness.test.js
+node --check public/app.js
+```
+
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为 Phase A/B
+本地/private commit 累积。
+
 ## 2026-06-26 Phase C Pane Count State Planning Slice
 
 本地小切片开始推进 Phase C 的 pane-state 架构化。此前平铺模式的自动窗口数、

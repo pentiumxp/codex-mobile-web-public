@@ -16835,6 +16835,62 @@ The previous full handoff was archived and should be opened only when old proven
     private thread bodies, task-card bodies, upload bytes, private paths,
     provider payloads, prompts, or long logs are included.
 
+## 2026-06-27 - Phase A/B full-backfill post-merge plan local slice
+
+- Latest local slice:
+  - Continued Phase A/B render/patch ownership after `2f434e5`
+    (`carry phase b readback evidence counters`).
+  - The previous Phase B readback evidence slice was fully validated and
+    committed as `2f434e5`; it was not deployed by design.
+  - This slice is local/private only and is not deployed by design.
+- Root-cause boundary:
+  - Symptom/risk: `refreshCurrentThread()` already used
+    `planThreadDetailRefreshPostMergeEffects()` for thread-list merge,
+    Composer/active-turn sync, and thread-list render ordering, but
+    `backfillFullThreadDetail()` still hand-wrote the same post-merge sequence.
+    Keeping two detail paths with separate side-effect ordering increases the
+    chance of future refresh/backfill drift, duplicate rows, missing rows, or
+    stale running state.
+  - Failing layer: frontend thread-detail post-merge side-effect ownership at
+    the Phase A/B boundary, not full-backfill API reads, server projection,
+    current-thread merge policy, DOM patching, scroll behavior, Home AI
+    diagnostic transport, task-card routing, or shell/cache.
+  - Violated invariant: detail refresh and full-backfill should share the same
+    declarative post-merge plan for fixed side-effect ordering while `app.js`
+    only executes real DOM/state/timer side effects.
+- Changes:
+  - `public/app.js` `backfillFullThreadDetail()` now keeps the existing
+    detail-loaded marker, render-evidence write, pending-server-request sync,
+    and `mergeThreadPreservingVisibleItems()` order.
+  - The post-merge thread-list merge, Composer/active-turn sync, and thread-list
+    render now execute through `planThreadDetailRefreshPostMergeEffects()`.
+  - Existing timing boundaries for `mergeMs`, `composerRenderMs`, and
+    `threadListRenderMs` are preserved.
+  - `test/conversation-render.test.js` and `test/mobile-viewport.test.js`
+    assert that full backfill uses the same post-merge plan and does not
+    re-inline the old order.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation:
+  - Focused:
+    `node --test test/conversation-render.test.js test/mobile-viewport.test.js test/thread-detail-render-plan.test.js test/thread-detail-refresh-dom-harness.test.js`
+    passed (`180` tests).
+  - Syntax:
+    `node --check public/app.js` passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache bump.
+    This is a local Phase A/B ownership slice to batch with the next module
+    validation/deploy.
+- Next:
+  - Run full validation, commit locally, then continue Phase A with remaining
+    full-backfill/first-paint effect planning or return to Phase B runtime
+    readback evidence.
+- Privacy:
+  - Only bounded file paths, helper names, effect names, and test counts are
+    recorded. No secrets, cookies, launch tokens, private thread bodies,
+    task-card bodies, upload bytes, private paths, provider payloads, prompts,
+    or long logs are included.
+
 ## 2026-06-27 - Phase B thread-list baseline work attribution local slice
 
 - Latest local slice:

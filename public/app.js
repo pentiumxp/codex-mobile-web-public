@@ -9805,14 +9805,14 @@ async function backfillFullThreadDetail(threadId, options = {}) {
   rememberThreadDetailRenderEvidence(result.thread, `${String(options.source || "unknown").slice(0, 40)}-detail-api`);
   syncThreadPendingServerRequests(result.thread);
   state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
-  mergeThreadIntoThreadList(state.currentThread);
+  const postMergePlan = threadDetailRenderPlanApi.planThreadDetailRefreshPostMergeEffects();
+  applyThreadDetailRefreshPostMergeEffectsGroup(postMergePlan, "merge");
   const mergeMs = roundedDurationMs(mergeStartedAt);
   const composerRenderStartedAt = nowPerfMs();
-  renderComposerSettings();
-  syncActiveTurnFromThread();
+  applyThreadDetailRefreshPostMergeEffectsGroup(postMergePlan, "composer-render");
   const composerRenderMs = roundedDurationMs(composerRenderStartedAt);
   const threadListRenderStartedAt = nowPerfMs();
-  renderThreads();
+  applyThreadDetailRefreshPostMergeEffectsGroup(postMergePlan, "thread-list-render");
   const threadListRenderMs = roundedDurationMs(threadListRenderStartedAt);
   const conversationRenderStartedAt = nowPerfMs();
   renderCurrentThread({ stickToBottom: wasNearBottom });

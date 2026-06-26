@@ -444,6 +444,10 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(functionBody("refreshCurrentThread"), /applyThreadDetailRefreshPostMergeEffectsGroup\(postMergePlan, "merge"\);[\s\S]*const mergeMs = roundedDurationMs\(mergeStartedAt\);/);
   assert.match(functionBody("refreshCurrentThread"), /applyThreadDetailRefreshPostMergeEffectsGroup\(postMergePlan, "composer-render"\);[\s\S]*const composerRenderMs = roundedDurationMs\(composerRenderStartedAt\);/);
   assert.match(functionBody("refreshCurrentThread"), /applyThreadDetailRefreshPostMergeEffectsGroup\(postMergePlan, "thread-list-render"\);[\s\S]*const threadListRenderMs = roundedDurationMs\(threadListRenderStartedAt\);/);
+  assert.match(functionBody("backfillFullThreadDetail"), /const postMergePlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPostMergeEffects\(\);/);
+  assert.match(functionBody("backfillFullThreadDetail"), /applyThreadDetailRefreshPostMergeEffectsGroup\(postMergePlan, "merge"\);[\s\S]*const mergeMs = roundedDurationMs\(mergeStartedAt\);/);
+  assert.match(functionBody("backfillFullThreadDetail"), /applyThreadDetailRefreshPostMergeEffectsGroup\(postMergePlan, "composer-render"\);[\s\S]*const composerRenderMs = roundedDurationMs\(composerRenderStartedAt\);/);
+  assert.match(functionBody("backfillFullThreadDetail"), /applyThreadDetailRefreshPostMergeEffectsGroup\(postMergePlan, "thread-list-render"\);[\s\S]*const threadListRenderMs = roundedDurationMs\(threadListRenderStartedAt\);/);
   assert.doesNotMatch(functionBody("refreshCurrentThread"), /let detailRenderMode = renderPlan\.detailRenderMode;/);
   assert.doesNotMatch(functionBody("refreshCurrentThread"), /mergeThreadIntoThreadList\(state\.currentThread\);\s*const mergeMs/);
   assert.doesNotMatch(functionBody("refreshCurrentThread"), /renderComposerSettings\(\);\s*syncActiveTurnFromThread\(\);/);
