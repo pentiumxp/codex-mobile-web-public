@@ -202,6 +202,12 @@ Refresh completion side-effect planning now also lives in this helper:
 `planThreadDetailRefreshCompletionEffects` decides the success diagnostic clear,
 usage-backfill refresh scheduling, and live-poll scheduling effects, while app
 code only executes those effect names.
+Refresh request planning now also lives in this helper:
+`planThreadDetailRefreshRequest` decides whether a current-thread refresh should
+run, snapshots the thread id and load sequence, normalizes recent/full mode,
+selects the bounded API query and timeout, and records whether an active
+refresh controller should be aborted. App code still performs the real abort
+and network request.
 Thread refresh failure diagnostic payload planning now lives in
 `public/thread-diagnostic-events.js`: `threadDetailRefreshFailedDiagnosticEvent`
 builds the bounded `thread_detail_refresh_failed` failure report, so

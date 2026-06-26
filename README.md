@@ -16,6 +16,34 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v504 Thread Refresh Request Plan
+
+v504 继续 Phase A 的 `refreshCurrentThread()` 编排收敛。v503 已经把
+refresh 失败诊断 payload 从 catch 分支移出；本次继续把 refresh 请求模式、
+query、timeout 和旧 controller abort 决策移到
+`public/thread-detail-render-plan.js`。
+
+本次切片新增：
+
+- `planThreadDetailRefreshRequest()` 统一生成 refresh 请求计划。
+- app 主状态机只执行计划：缺少当前线程则返回，有旧 refresh controller 则按计划
+  abort，API 请求使用计划里的 `requestedMode`、`query` 和 `timeoutMs`。
+- recent/full 模式选择、`mode=recent` query、source 截断、threadLoadSeq 快照和
+  active refresh abort 意图都有 focused tests。
+
+修复边界：
+
+- 症状/风险：v503 后 `refreshCurrentThread()` 仍直接承载请求模式选择和 abort
+  条件，和后续 render/patch/diagnostic planning 边界不一致。
+- 失败层：前端 thread detail refresh request/abort planning ownership。
+- 不变量：本次不改变请求 URL 语义、timeout 值、AbortController 实际执行、错误处理、
+  server projection、DOM patch、任务卡协议、诊断 transport 或视觉布局。
+- 闭环验证：`test/thread-detail-render-plan.test.js` 覆盖 request plan；
+  `test/mobile-viewport.test.js` 验证 app 委托给 helper 且不再内联 requestedMode
+  三元判断。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v504`。
+
 ## 2026-06-26 v503 Thread Refresh Failure Diagnostic Event
 
 v503 继续 Phase A 的前端 thread detail ownership 收敛。v502 已经把

@@ -26,6 +26,38 @@
     return value && typeof value === "object" && !Array.isArray(value) ? value : {};
   }
 
+  function planThreadDetailRefreshRequest(input = {}) {
+    const options = objectOrEmpty(input.options);
+    const threadId = input.threadId || input.currentThreadId || "";
+    if (!threadId) {
+      return {
+        shouldRefresh: false,
+        threadId: "",
+        seq: input.threadLoadSeq,
+        source: "",
+        requestedMode: "",
+        query: {},
+        timeoutMs: 20000,
+        abortActiveRefresh: false,
+        reason: "missing-thread-id",
+      };
+    }
+    const requestedMode = options.full === true || String(options.mode || "").toLowerCase() === "full"
+      ? "full"
+      : "recent";
+    return {
+      shouldRefresh: true,
+      threadId,
+      seq: input.threadLoadSeq,
+      source: String(options.source || "refresh").slice(0, 40),
+      requestedMode,
+      query: requestedMode === "recent" ? { mode: "recent" } : {},
+      timeoutMs: 20000,
+      abortActiveRefresh: Boolean(input.hasActiveRefreshController),
+      reason: requestedMode === "full" ? "full-requested" : "recent-default",
+    };
+  }
+
   function planThreadDetailRefreshConsistencyCheck(input = {}) {
     const phase = compactReason(input.projectionConsistencyPhase || input.phase, "");
     const renderMode = compactReason(input.renderMode || input.detailRenderMode, "");
@@ -416,6 +448,7 @@
     planThreadDetailRefreshPatchAttemptResult,
     planThreadDetailRefreshOutcomeExecution,
     planThreadDetailRefreshPerformanceInput,
+    planThreadDetailRefreshRequest,
     planSingleThreadFullRenderShell,
     planThreadDetailRefreshPatchExecution,
     planThreadDetailRefreshRender,

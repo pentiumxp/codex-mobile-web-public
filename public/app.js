@@ -508,7 +508,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v503";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v504";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -9014,23 +9014,27 @@ function applyThreadDetailRefreshCompletionEffect(effect) {
 }
 
 async function refreshCurrentThread(options = {}) {
-  if (!state.currentThreadId) return;
+  const requestPlan = threadDetailRenderPlanApi.planThreadDetailRefreshRequest({
+    threadId: state.currentThreadId,
+    threadLoadSeq: state.threadLoadSeq,
+    options,
+    hasActiveRefreshController: Boolean(state.refreshThreadController),
+  });
+  if (!requestPlan.shouldRefresh) return;
   markIdleActivity("同步");
-  const threadId = state.currentThreadId;
-  const seq = state.threadLoadSeq;
-  const source = String(options.source || "refresh").slice(0, 40);
-  const requestedMode = options.full === true || String(options.mode || "").toLowerCase() === "full"
-    ? "full"
-    : "recent";
-  if (state.refreshThreadController) state.refreshThreadController.abort();
+  const threadId = requestPlan.threadId;
+  const seq = requestPlan.seq;
+  const source = requestPlan.source;
+  const requestedMode = requestPlan.requestedMode;
+  if (requestPlan.abortActiveRefresh && state.refreshThreadController) state.refreshThreadController.abort();
   const controller = new AbortController();
   state.refreshThreadController = controller;
   let result;
   const refreshStartedAt = nowPerfMs();
   const apiStartedAt = nowPerfMs();
   try {
-    result = await api(threadDetailApiPath(threadId, requestedMode === "recent" ? { mode: "recent" } : {}), {
-      timeoutMs: 20000,
+    result = await api(threadDetailApiPath(threadId, requestPlan.query), {
+      timeoutMs: requestPlan.timeoutMs,
       signal: controller.signal,
     });
   } catch (err) {

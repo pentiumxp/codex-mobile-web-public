@@ -6,6 +6,60 @@ const { test } = require("node:test");
 
 const renderPlan = require(path.resolve(__dirname, "..", "public", "thread-detail-render-plan.js"));
 
+test("thread detail refresh request plan defaults to recent mode", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshRequest({
+    threadId: "thread-1",
+    threadLoadSeq: 7,
+    options: { source: "resume" },
+    hasActiveRefreshController: true,
+  }), {
+    shouldRefresh: true,
+    threadId: "thread-1",
+    seq: 7,
+    source: "resume",
+    requestedMode: "recent",
+    query: { mode: "recent" },
+    timeoutMs: 20000,
+    abortActiveRefresh: true,
+    reason: "recent-default",
+  });
+});
+
+test("thread detail refresh request plan handles full mode and missing thread", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshRequest({
+    currentThreadId: "thread-2",
+    threadLoadSeq: 3,
+    options: { mode: "FULL", source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA" },
+    hasActiveRefreshController: false,
+  }), {
+    shouldRefresh: true,
+    threadId: "thread-2",
+    seq: 3,
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR",
+    requestedMode: "full",
+    query: {},
+    timeoutMs: 20000,
+    abortActiveRefresh: false,
+    reason: "full-requested",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshRequest({
+    threadLoadSeq: 4,
+    options: { source: "ignored" },
+    hasActiveRefreshController: true,
+  }), {
+    shouldRefresh: false,
+    threadId: "",
+    seq: 4,
+    source: "",
+    requestedMode: "",
+    query: {},
+    timeoutMs: 20000,
+    abortActiveRefresh: false,
+    reason: "missing-thread-id",
+  });
+});
+
 test("thread detail refresh render plan skips stable conversation signatures", () => {
   const plan = renderPlan.planThreadDetailRefreshRender({
     previousConversationSignature: "sig-a",
