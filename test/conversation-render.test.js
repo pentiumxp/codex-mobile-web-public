@@ -3058,11 +3058,12 @@ test("empty visible detail mismatches are diagnosed from recent detail evidence"
   assert.match(functionBody("renderCurrentThread"), /threadDetailRenderPlanApi\.planSingleThreadShellPostUpdateEffects\(\{[\s\S]*checkEmptyVisibleDetailMismatch: true,/);
   assert.match(functionBody("renderCurrentThread"), /applySingleThreadShellPostUpdateEffectsPlan\(postUpdateEffectsPlan,/);
   assert.match(functionBody("applySingleThreadShellPostUpdateEffect"), /checkEmptyVisibleDetailMismatchAfterRender\(context\.thread, context\.shellPlan, \{/);
-  assert.match(functionBody("loadThread"), /markThreadDetailLoaded\(result\.thread\);\s*rememberThreadDetailRenderEvidence\(result\.thread, `\$\{source\}-detail-api`\);/);
+  assert.match(functionBody("loadThread"), /const firstPaintResponsePlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintResponseEffects\(\{[\s\S]*source,[\s\S]*\}\);[\s\S]*applyThreadDetailRefreshResponseEffectsPlan\(firstPaintResponsePlan, \{ thread: result\.thread \}\);/);
   assert.match(functionBody("refreshCurrentThread"), /threadDetailRenderPlanApi\.planThreadDetailRefreshResponseEffects\(\{/);
   assert.match(functionBody("refreshCurrentThread"), /applyThreadDetailRefreshResponseEffectsPlan\(responseEffectsPlan, \{ thread: result\.thread \}\);/);
   assert.match(functionBody("applyThreadDetailRefreshResponseEffect"), /markThreadDetailLoaded\(thread\);/);
   assert.match(functionBody("applyThreadDetailRefreshResponseEffect"), /rememberThreadDetailRenderEvidence\(thread, String\(item\.source \|\| "refresh-detail-api"\)\);/);
+  assert.match(functionBody("applyThreadDetailRefreshResponseEffect"), /syncThreadPendingServerRequests\(thread\);/);
   assert.match(functionBody("backfillFullThreadDetail"), /markThreadDetailLoaded\(result\.thread\);\s*rememberThreadDetailRenderEvidence\(result\.thread, `\$\{String\(options\.source \|\| "unknown"\)\.slice\(0, 40\)\}-detail-api`\);/);
 });
 
@@ -4408,7 +4409,7 @@ test("thread running hints survive notLoaded list refreshes", () => {
   const restoreBody = functionBody("restoreThreadStatusSnapshot");
   assert.match(restoreBody, /updateThreadStatusHints\(id, \{ type: "active" \}, restoredStatus/);
   assert.match(restoreBody, /state\.currentThread\.status = snapshot\.currentStatus/);
-  assert.match(functionBody("loadThread"), /markThreadDetailLoaded\(result\.thread\);\s*rememberThreadDetailRenderEvidence\(result\.thread, `\$\{source\}-detail-api`\);\s*syncThreadPendingServerRequests\(result\.thread\);\s*state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);\s*const postMergePlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPostMergeEffects\(\);/);
+  assert.match(functionBody("loadThread"), /const firstPaintResponsePlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintResponseEffects\(\{[\s\S]*source,[\s\S]*\}\);[\s\S]*applyThreadDetailRefreshResponseEffectsPlan\(firstPaintResponsePlan, \{ thread: result\.thread \}\);[\s\S]*const postMergePlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPostMergeEffects\(\);/);
   assert.match(functionBody("loadThread"), /applyThreadDetailRefreshPostMergeEffectsGroup\(postMergePlan, "merge"\);[\s\S]*const mergeMs = roundedDurationMs\(mergeStartedAt\);/);
   assert.match(functionBody("loadThread"), /applyThreadDetailRefreshPostMergeEffectsGroup\(postMergePlan, "composer-render"\);[\s\S]*const composerRenderMs = roundedDurationMs\(composerRenderStartedAt\);/);
   assert.match(functionBody("loadThread"), /applyThreadDetailRefreshPostMergeEffectsGroup\(postMergePlan, "thread-list-render"\);[\s\S]*const threadListRenderMs = roundedDurationMs\(threadListRenderStartedAt\);/);

@@ -9067,10 +9067,10 @@ async function loadThread(threadId, options = {}) {
   }
   const renderStartedAt = nowPerfMs();
   const mergeStartedAt = nowPerfMs();
-  markThreadDetailLoaded(result.thread);
-  rememberThreadDetailRenderEvidence(result.thread, `${source}-detail-api`);
-  syncThreadPendingServerRequests(result.thread);
-  state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
+  const firstPaintResponsePlan = threadDetailRenderPlanApi.planThreadDetailFirstPaintResponseEffects({
+    source,
+  });
+  applyThreadDetailRefreshResponseEffectsPlan(firstPaintResponsePlan, { thread: result.thread });
   const postMergePlan = threadDetailRenderPlanApi.planThreadDetailRefreshPostMergeEffects();
   applyThreadDetailRefreshPostMergeEffectsGroup(postMergePlan, "merge");
   const firstPaintPreRenderPlan = threadDetailRenderPlanApi.planThreadDetailFirstPaintPreRenderEffects({
@@ -9473,6 +9473,10 @@ function applyThreadDetailRefreshResponseEffect(effect, context = {}) {
   }
   if (type === "remember-render-evidence") {
     rememberThreadDetailRenderEvidence(thread, String(item.source || "refresh-detail-api"));
+    return true;
+  }
+  if (type === "sync-pending-server-requests") {
+    syncThreadPendingServerRequests(thread);
     return true;
   }
   if (type === "merge-current-thread") {

@@ -17956,3 +17956,55 @@ The previous full handoff was archived and should be opened only when old proven
   - Run full validation, commit locally, then continue Phase A current-thread
     render authority or batch the accumulated module for one deploy/readback
     when requested.
+
+## 2026-06-27 - Latest tail marker: Phase A first-paint response effects local slice
+
+- Current local state:
+  - Continued Phase A `loadThread()` ownership cleanup after `3c9f352`.
+  - Loading-shell, load-error, first-paint side effects, telemetry, and
+    performance input are planned, but the successful detail API response still
+    directly owned detail-loaded marking, render-evidence recording,
+    pending-server-request synchronization, and current-thread merge.
+  - This slice moves that successful first-paint response sequence into
+    `public/thread-detail-render-plan.js`.
+- Root-cause boundary:
+  - Symptom/risk: successful first-paint response state/evidence ownership was
+    still inline in `loadThread()`, while refresh response ownership already had
+    a plan boundary. Future edits could change first-paint merge/evidence order
+    without changing a focused helper or test.
+  - Failing layer: frontend first-paint response state/evidence effect ownership,
+    not server projection, app-server detail reads, merge algorithm behavior,
+    DOM patch selection, task-card protocol, Home AI diagnostic intake, or
+    shell/cache.
+  - Violated invariant: `loadThread()` should validate/stale-check the response,
+    measure timing, and execute planned response effects; fixed successful
+    response effect order belongs in a helper with tests.
+- Changes:
+  - `public/thread-detail-render-plan.js` now exports
+    `planThreadDetailFirstPaintResponseEffects()`.
+  - `public/app.js` applies that plan after the stale response check and before
+    post-merge timing groups.
+  - The shared response-effect executor now supports
+    `sync-pending-server-requests`.
+  - Updated `test/thread-detail-render-plan.test.js`,
+    `test/mobile-viewport.test.js`, and `test/conversation-render.test.js`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation so far:
+  - Syntax:
+    `node --check public/thread-detail-render-plan.js && node --check public/app.js && node --check test/thread-detail-render-plan.test.js && node --check test/mobile-viewport.test.js && node --check test/conversation-render.test.js`
+    passed.
+  - Focused:
+    `node --test test/thread-detail-render-plan.test.js test/mobile-viewport.test.js test/conversation-render.test.js`
+    passed (`194` tests).
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache
+    bump. This remains a local Phase A ownership slice to batch with the next
+    module validation/deploy.
+- Progress:
+  - Overall architecture optimization is about `78%`.
+  - Phase A frontend render/projection ownership is about `88%`.
+- Next:
+  - Run full validation, commit locally, then continue Phase A current-thread
+    render authority or batch the accumulated module for one deploy/readback
+    when requested.

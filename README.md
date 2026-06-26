@@ -2107,6 +2107,35 @@ first-paint performance input 的字段选择从 `public/app.js` 移到可测试
 - 闭环验证：focused tests 覆盖 plan 顺序和 app wiring；完整检查通过后再随 Phase A
   模块批量部署。
 
+## 2026-06-27 Local Phase A First-Paint Response Effects Slice
+
+这个本地小切片继续 Phase A 的 `loadThread()` 成功路径收敛，不改变 detail API
+读取策略、不改变 `mergeThreadPreservingVisibleItems()`、不改变 projection 语义，也不
+bump PWA shell/cache。它只把 API first-paint 响应到达后的固定 state/evidence/merge
+顺序移到可测试 plan helper。
+
+本次切片新增/调整：
+
+- `public/thread-detail-render-plan.js` 新增
+  `planThreadDetailFirstPaintResponseEffects()`，声明 detail-loaded 标记、render
+  evidence 记录、pending server requests 同步和 current-thread merge 顺序。
+- `public/app.js` 的 `loadThread()` 成功路径改为执行这个 response effects plan；
+  app 层仍负责真实状态写入、pending request 同步和 merge 执行。
+- 复用现有 `applyThreadDetailRefreshResponseEffectsPlan()`，并给 response executor
+  增加 `sync-pending-server-requests` effect。
+- `test/thread-detail-render-plan.test.js` 覆盖 first-paint response effect shape；
+  `test/mobile-viewport.test.js` 和 `test/conversation-render.test.js` 确认
+  `loadThread()` 不再内联这串状态写入。
+
+修复边界：
+
+- 症状/风险：成功 first-paint response 的 detail-loaded/evidence/pending/merge 顺序仍
+  留在 `loadThread()`，和 refresh response 已有 plan 边界不一致。
+- 失败层：前端 first-paint response state/evidence effect ownership，不是 merge
+  算法、DOM patch、server projection、任务卡协议或 Home AI diagnostic intake。
+- 闭环验证：focused tests 证明 plan 顺序与 app wiring；完整检查通过后再随 Phase A
+  模块批量部署。
+
 ## 2026-06-26 Local Phase B Server Timing Classifier
 
 这个本地切片继续 Phase B 的大 session / thread-detail cold path 收敛，但只处理

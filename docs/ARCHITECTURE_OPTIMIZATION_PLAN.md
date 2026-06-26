@@ -897,11 +897,17 @@ real state/DOM/network side effects, but `loadThread()` no longer owns this
 fixed cached-current post-render sequence inline.
 Ordinary refresh, cached-current first
 paint, API first paint, and full detail backfill no longer maintain separate
-hand-written thread-list post-merge ordering in `public/app.js`; first paint and
-full backfill still own their existing detail-loaded marker, render-evidence
-write, pending-server-request sync, current-thread merge, local
-draft/follow/connect behavior, full render, and bounded first-paint/full-ready
-telemetry behavior.
+hand-written thread-list post-merge ordering in `public/app.js`; full backfill
+still owns its existing detail-loaded marker, render-evidence write,
+pending-server-request sync, current-thread merge, full render, and bounded
+full-ready telemetry behavior.
+API first-paint response state/evidence effects now also live in
+`public/thread-detail-render-plan.js`:
+`planThreadDetailFirstPaintResponseEffects` declares detail-loaded marking,
+render-evidence recording, pending server-request synchronization, and
+current-thread merge ordering. App code still executes the real state writes and
+merge algorithm, but `loadThread()` no longer owns this successful detail
+response sequence inline.
 First-paint post-render side-effect ordering now also lives in
 `public/thread-detail-render-plan.js`:
 `planThreadDetailFirstPaintPostRenderEffects` declares the fixed sequence for

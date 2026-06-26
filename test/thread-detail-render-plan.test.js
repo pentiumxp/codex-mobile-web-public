@@ -244,6 +244,24 @@ test("thread detail history auto-backfill effects plan owns event and load sched
   });
 });
 
+test("thread detail first-paint response effects preserve loadThread success order", () => {
+  assert.deepEqual(renderPlan.planThreadDetailFirstPaintResponseEffects({
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA",
+  }), {
+    shouldApply: true,
+    effects: [
+      { type: "mark-thread-detail-loaded" },
+      {
+        type: "remember-render-evidence",
+        source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR-detail-api",
+      },
+      { type: "sync-pending-server-requests" },
+      { type: "merge-current-thread" },
+    ],
+    reason: "first-paint-response",
+  });
+});
+
 test("thread detail refresh render plan skips stable conversation signatures", () => {
   const plan = renderPlan.planThreadDetailRefreshRender({
     previousConversationSignature: "sig-a",
