@@ -11747,3 +11747,49 @@ The previous full handoff was archived and should be opened only when old proven
   - Move `updateLiveOperationDockHtml()` and follow-up bind/complete operations
     into a successful local DOM patch transaction stage so failed turn patches
     cannot partially update live-operation dock state before rejecting.
+
+## 2026-06-26 - local Phase A local patch transaction effects validated, not deployed
+
+- Latest code commit:
+  - `39479b7 gate local patch success effects in transaction`
+- Change:
+  - `public/thread-detail-dom-patch.js` now exposes
+    `applyThreadDetailPatchTransaction()`.
+  - The transaction runner executes the core turn DOM patch first. It only runs
+    success effects after the core patch returns `ok`.
+  - `patchCurrentThreadDetailFromRefresh()` now passes the turn patch as
+    `applyPatch` and moves operation-dock refresh, action rebinding, and local
+    DOM completion into `afterSuccess`.
+  - This specifically prevents failed turn patches from first updating the live
+    operation dock and then rejecting, which could briefly leave operation dock
+    state ahead of the conversation DOM/signature.
+- Root-cause boundary:
+  - Symptom/risk: the live operation dock was updated before the core local
+    turn DOM patch. If the core patch failed, the dock could represent the new
+    thread state while the conversation DOM stayed old.
+  - Failing layer: frontend thread-detail local DOM patch transaction ordering.
+  - Classification: root-cause architecture boundary cleanup. No server
+    projection change, core DOM patch algorithm change, visual layout change,
+    scroll policy change, diagnostic transport change, task-card protocol
+    change, fallback, shell/cache bump, deployment, or public push was added.
+- Validation:
+  - Focused source suite passed:
+    `test/thread-detail-dom-patch.test.js`,
+    `test/thread-detail-patch-plan.test.js`, `test/conversation-render.test.js`,
+    `test/mobile-viewport.test.js`, `test/thread-detail-render-plan.test.js`,
+    and `test/thread-tile-layout-ui.test.js` (`193` tests).
+  - Full source `npm test` passed (`948` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Not deployed by design under the updated cadence. This slice is part of the
+    next larger Phase A refresh orchestration module.
+  - Production remains at `0.1.11|codex-mobile-shell-v506` until the module-level
+    deploy.
+- Progress:
+  - Overall system-level architecture optimization is now estimated at about
+    `70%`, still in Phase A module assembly.
+- Next suggested slice:
+  - Continue with scroll snapshot/follow ownership: make local patch completion
+    consume captured surface and scroll policy inputs more explicitly so
+    post-patch surface probes cannot change single-thread versus tile completion
+    semantics.
