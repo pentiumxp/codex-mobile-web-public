@@ -2981,11 +2981,15 @@ test("current-thread refresh patches the current tile pane for metadata-only til
   const body = functionBody("refreshCurrentThread");
   assert.match(body, /let tilePanePatchedDetail = false;/);
   assert.match(body, /threadDetailRenderPlanApi\.planThreadDetailRefreshPatchExecution\(\{/);
-  assert.match(body, /if \(patchExecutionPlan\.tryTilePanePatch && patchCurrentThreadTilePaneFromState\(\{ threadId, preserveScroll: true \}\)\)/);
-  assert.match(body, /else if \(patchExecutionPlan\.tryLocalPatch\)/);
+  assert.match(body, /let tilePanePatchAttempted = false;/);
+  assert.match(body, /let localPatchAttempted = false;/);
+  assert.match(body, /if \(patchExecutionPlan\.tryTilePanePatch\) \{[\s\S]*tilePanePatchAttempted = true;[\s\S]*tilePanePatchedDetail = patchCurrentThreadTilePaneFromState\(\{ threadId, preserveScroll: true \}\);/);
+  assert.match(body, /if \(shouldRenderDetail && !tilePanePatchedDetail && patchExecutionPlan\.tryLocalPatch\)/);
   assert.doesNotMatch(body, /renderPlan\.canPatch && !tileSurfaceRefresh/);
   assert.match(body, /patchCurrentThreadTilePaneFromState\(\{ threadId, preserveScroll: true \}\)/);
-  assert.match(body, /renderOutcome = threadDetailRenderPlanApi\.finalizeThreadDetailRenderPlan\(renderPlan, \{ locallyPatchedDetail, tilePanePatchedDetail \}\);/);
+  assert.match(body, /const patchAttemptResult = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchAttemptResult\(\{/);
+  assert.match(body, /if \(patchAttemptResult\.reportLocalPatchRejected\) \{/);
+  assert.match(body, /renderOutcome = threadDetailRenderPlanApi\.finalizeThreadDetailRenderPlan\(renderPlan, patchAttemptResult\.finalizeResult\);/);
   assert.match(body, /detailRenderMode = renderOutcome\.detailRenderMode;/);
   assert.match(body, /refreshRenderAction = renderOutcome\.renderAction;/);
   assert.match(body, /let renderOutcome = null;/);

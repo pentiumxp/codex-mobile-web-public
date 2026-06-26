@@ -400,10 +400,11 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(notificationBody, /loadThreadTileDetail\(params\.threadId, \{ force: true, background: true/);
 
   const refreshBody = functionBody(appJs, "refreshCurrentThread");
-  assert.match(refreshBody, /const tilePatchPlan = threadDetailDomPatchSurface\(\{ threadId \}\)/);
+  assert.match(refreshBody, /const tilePatchPlan = shouldRenderDetail \? threadDetailDomPatchSurface\(\{ threadId \}\) : null;/);
   assert.match(refreshBody, /state\.threadTileMode[\s\S]*isThreadTileConversationSurface\(\)[\s\S]*tilePatchPlan && tilePatchPlan\.surface === "thread-tile-pane"/);
   assert.match(refreshBody, /threadDetailRenderPlanApi\.planThreadDetailRefreshPatchExecution\(\{[\s\S]*canPatch: renderPlan\.canPatch,[\s\S]*tileSurfaceRefresh,[\s\S]*\}\);/);
-  assert.match(refreshBody, /else if \(patchExecutionPlan\.tryLocalPatch\)/);
+  assert.match(refreshBody, /threadDetailRenderPlanApi\.planThreadDetailRefreshPatchAttemptResult\(\{/);
+  assert.match(refreshBody, /if \(shouldRenderDetail && !tilePanePatchedDetail && patchExecutionPlan\.tryLocalPatch\)/);
   assert.doesNotMatch(refreshBody, /renderPlan\.canPatch && !tileSurfaceRefresh/);
 });
 

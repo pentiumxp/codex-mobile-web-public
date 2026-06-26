@@ -16,6 +16,41 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v497 Thread Refresh Patch Attempt Result Plan
+
+v497 继续 Phase A 的前端 render/patch ownership 收敛。v496 已经把
+refresh outcome 后的 metadata 副作用组合推进到
+`public/thread-detail-render-plan.js`；本次继续缩小 `refreshCurrentThread()`
+里对 tile-pane patch、single-thread local patch 和 rejected patch diagnostic
+的解释逻辑。
+
+本次切片新增：
+
+- `planThreadDetailRefreshPatchAttemptResult()` 统一解释 tile/local patch
+  尝试结果。
+- tile pane patch 成功被归一为终态，且优先于 local patch 结果。
+- local patch 被尝试但失败时，由 helper 明确输出
+  `reportLocalPatchRejected`，app 层只负责采集 visible shape 并发送既有
+  bounded diagnostic。
+- metadata-only 的 tile miss 不会被误判为 local patch rejection。
+
+修复边界：
+
+- 症状/风险：`refreshCurrentThread()` 仍然在真实 DOM 调用旁边直接解释
+  tile 命中、local 命中、local rejected、metadata-only tile miss 等结果，
+  这些分支会影响 full-render fallback、projection-consistency phase 和
+  Home AI projection-mismatch 诊断，属于高复发状态机边界。
+- 失败层：前端 thread detail refresh patch attempt result ownership。
+- 不变量：本次不改变真实 DOM patch 调用、server projection、task-card 协议、
+  诊断传输或视觉布局；只是把 patch attempt 的结果形状和 rejected 诊断触发
+  条件交给纯 helper。
+- 闭环验证：`test/thread-detail-render-plan.test.js` 覆盖 tile 终态、
+  local rejected 和 metadata tile miss；`test/mobile-viewport.test.js` /
+  `test/conversation-render.test.js` 验证 app 层消费
+  `planThreadDetailRefreshPatchAttemptResult()`。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v497`。
+
 ## 2026-06-26 v496 Thread Refresh Metadata Effect Plan
 
 v496 回到 Phase A 的前端 render/patch ownership 收敛。v495 已经让

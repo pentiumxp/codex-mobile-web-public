@@ -157,6 +157,63 @@ test("thread detail refresh patch execution keeps metadata-only refreshes out of
   });
 });
 
+test("thread detail refresh patch attempt result makes tile pane patch terminal", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchAttemptResult({
+    shouldRenderDetail: true,
+    tilePanePatchAttempted: true,
+    tilePanePatchedDetail: true,
+    localPatchAttempted: true,
+    locallyPatchedDetail: true,
+  }), {
+    patchResult: "tile-pane-patched",
+    locallyPatchedDetail: false,
+    tilePanePatchedDetail: true,
+    reportLocalPatchRejected: false,
+    finalizeResult: {
+      locallyPatchedDetail: false,
+      tilePanePatchedDetail: true,
+    },
+  });
+});
+
+test("thread detail refresh patch attempt result reports local patch rejection", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchAttemptResult({
+    shouldRenderDetail: true,
+    tilePanePatchAttempted: true,
+    tilePanePatchedDetail: false,
+    localPatchAttempted: true,
+    locallyPatchedDetail: false,
+  }), {
+    patchResult: "local-patch-rejected",
+    locallyPatchedDetail: false,
+    tilePanePatchedDetail: false,
+    reportLocalPatchRejected: true,
+    finalizeResult: {
+      locallyPatchedDetail: false,
+      tilePanePatchedDetail: false,
+    },
+  });
+});
+
+test("thread detail refresh patch attempt result keeps metadata tile misses quiet", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchAttemptResult({
+    shouldRenderDetail: false,
+    tilePanePatchAttempted: true,
+    tilePanePatchedDetail: false,
+    localPatchAttempted: false,
+    locallyPatchedDetail: false,
+  }), {
+    patchResult: "tile-pane-miss",
+    locallyPatchedDetail: false,
+    tilePanePatchedDetail: false,
+    reportLocalPatchRejected: false,
+    finalizeResult: {
+      locallyPatchedDetail: false,
+      tilePanePatchedDetail: false,
+    },
+  });
+});
+
 test("thread detail refresh render outcome treats tile pane patch as terminal", () => {
   const plan = renderPlan.planThreadDetailRefreshRender({
     previousConversationSignature: "sig-a",

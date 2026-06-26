@@ -170,6 +170,12 @@ single-thread local patch is eligible, whether a metadata-only tile miss should
 update metadata without full render, and which fallback action applies. App code
 keeps real DOM patch attempts, metadata writes, full render execution, and
 diagnostic/performance reporting.
+Refresh patch attempt result planning now also lives there:
+`planThreadDetailRefreshPatchAttemptResult` normalizes tile-pane success,
+local-patch success, local-patch rejection, metadata-only tile misses, and
+finalize-input shape. It also owns whether a failed local patch attempt should
+emit the projection-mismatch diagnostic, while app code keeps real DOM calls and
+the diagnostic transport.
 Refresh outcome execution planning now also lives in the same helper module:
 `planThreadDetailRefreshOutcomeExecution` maps render outcomes to metadata
 update mode, full-render execution, and projection-consistency phase. This

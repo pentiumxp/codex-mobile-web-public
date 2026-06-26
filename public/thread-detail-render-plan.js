@@ -92,6 +92,37 @@
     };
   }
 
+  function planThreadDetailRefreshPatchAttemptResult(input = {}) {
+    const shouldRenderDetail = Boolean(input.shouldRenderDetail);
+    const tilePanePatchAttempted = Boolean(input.tilePanePatchAttempted);
+    const localPatchAttempted = Boolean(input.localPatchAttempted);
+    const tilePanePatchedDetail = Boolean(input.tilePanePatchedDetail);
+    const locallyPatchedDetail = !tilePanePatchedDetail && Boolean(input.locallyPatchedDetail);
+    let patchResult = "not-attempted";
+    if (tilePanePatchedDetail) {
+      patchResult = shouldRenderDetail ? "tile-pane-patched" : "tile-pane-metadata-patched";
+    } else if (locallyPatchedDetail) {
+      patchResult = "local-patched";
+    } else if (localPatchAttempted) {
+      patchResult = "local-patch-rejected";
+    } else if (tilePanePatchAttempted) {
+      patchResult = "tile-pane-miss";
+    }
+    return {
+      patchResult,
+      locallyPatchedDetail,
+      tilePanePatchedDetail,
+      reportLocalPatchRejected: Boolean(shouldRenderDetail
+        && localPatchAttempted
+        && !locallyPatchedDetail
+        && !tilePanePatchedDetail),
+      finalizeResult: {
+        locallyPatchedDetail,
+        tilePanePatchedDetail,
+      },
+    };
+  }
+
   function finalizeThreadDetailRenderPlan(plan = {}, result = {}) {
     const tilePanePatchedDetail = Boolean(result.tilePanePatchedDetail);
     const locallyPatchedDetail = Boolean(result.locallyPatchedDetail);
@@ -260,6 +291,7 @@
   return {
     finalizeThreadDetailRenderPlan,
     normalizeSignature,
+    planThreadDetailRefreshPatchAttemptResult,
     planThreadDetailRefreshOutcomeExecution,
     planSingleThreadFullRenderShell,
     planThreadDetailRefreshPatchExecution,
