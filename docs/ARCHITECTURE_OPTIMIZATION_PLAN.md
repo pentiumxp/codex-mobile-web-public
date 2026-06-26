@@ -199,6 +199,12 @@ conversation DOM completion is the commit gate, and operation-dock refresh /
 action rebinding run only after that gate succeeds. This prevents a completion
 failure from leaving dock/action state ahead of committed conversation
 signatures.
+Phase A now has a behavior-level refresh DOM harness in
+`test/thread-detail-refresh-dom-harness.test.js`. The harness combines the real
+render-plan, patch-plan, and DOM-patch helpers with a lightweight fake DOM to
+prove tile terminal success, single-thread local patch success with commit
+before dock update, and local patch rejection routing to full render without
+depending only on source-shape assertions.
 Local DOM patch completion can now consume an explicit completion snapshot from
 the refresh path. The snapshot captures single-thread completion, render
 signature, patch-shell signature, and scroll-follow policy before the turn DOM
