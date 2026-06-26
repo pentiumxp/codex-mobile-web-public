@@ -11650,3 +11650,52 @@ The previous full handoff was archived and should be opened only when old proven
     DOM patch helper return a structured `{ ok, reason }` result and passing
     that through the patch-attempt executor. Keep this local and undeployed
     until the Phase A module is ready for one deployment.
+
+## 2026-06-26 - local Phase A patch reject scratch removal validated, not deployed
+
+- Latest code commit:
+  - `9a934fe remove thread detail patch reject scratch state`
+- Change:
+  - Removed `state.threadDetailPatchRejectReason` from the app state shape and
+    refresh path.
+  - `public/thread-detail-dom-patch.js` now exposes
+    `threadDetailPatchResult()`, returning structured bounded `{ ok, reason }`
+    patch status.
+  - `patchCurrentThreadDetailFromRefresh()` now returns the structured patch
+    result directly. The patch-attempt executor reads `ok` and `reason` from
+    that result, and `refreshCurrentThread()` passes
+    `patchAttempt.patchRejectReason` into
+    `planThreadDetailRefreshPatchAttemptResult()`.
+  - Source-string tests now assert the old global scratch key is absent from
+    `public/app.js`.
+- Root-cause boundary:
+  - Symptom/risk: local DOM patch rejection reasons were written to transient
+    global app state, then read back later by the refresh orchestration path.
+    That made a single patch attempt's result depend on cross-function mutable
+    state instead of an explicit return value.
+  - Failing layer: frontend thread-detail DOM patch result ownership.
+  - Classification: root-cause architecture boundary cleanup. No server
+    projection change, DOM patch algorithm change, visual layout change, scroll
+    policy change, diagnostic transport change, task-card protocol change,
+    fallback, shell/cache bump, deployment, or public push was added.
+- Validation:
+  - Focused source suite passed:
+    `test/thread-detail-dom-patch.test.js`,
+    `test/thread-detail-render-plan.test.js`, `test/conversation-render.test.js`,
+    `test/mobile-viewport.test.js`, and `test/thread-tile-layout-ui.test.js`
+    (`182` tests).
+  - Full source `npm test` passed (`944` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Not deployed by design under the updated cadence. This slice is part of the
+    next larger Phase A refresh orchestration module.
+  - Production remains at `0.1.11|codex-mobile-shell-v506` until the module-level
+    deploy.
+- Progress:
+  - Overall system-level architecture optimization is now estimated at about
+    `68%`, still in Phase A module assembly.
+- Next suggested slice:
+  - Extract local patch preflight decisions out of `public/app.js` into a
+    focused planner, then move live-operation dock updates into the successful
+    DOM patch transaction stage. Keep both local until the Phase A module-level
+    deploy boundary.
