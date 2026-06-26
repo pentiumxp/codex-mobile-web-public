@@ -359,9 +359,14 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /function applyThreadDetailRefreshPatchAttemptEffectsPlan\(plan, context = \{\}\)/);
   assert.match(functionBody("applyThreadDetailRefreshPatchAttemptEffect"), /patchCurrentThreadTilePaneFromState\(\{[\s\S]*threadId: context\.threadId,[\s\S]*preserveScroll: item\.preserveScroll !== false,/);
   assert.match(functionBody("applyThreadDetailRefreshPatchAttemptEffect"), /patchCurrentThreadDetailFromRefresh\([\s\S]*context\.previousThread,[\s\S]*state\.currentThread,[\s\S]*context\.previousConversationSignature,/);
+  assert.match(functionBody("applyThreadDetailRefreshPatchAttemptEffect"), /const patchResult = patchCurrentThreadDetailFromRefresh\(/);
+  assert.match(functionBody("applyThreadDetailRefreshPatchAttemptEffect"), /patchRejectReason: patched \? "" : String\(\(patchResult && patchResult\.reason\) \|\| "unknown"\)/);
   assert.match(functionBody("applyThreadDetailRefreshPatchAttemptEffect"), /item\.skipWhenTilePanePatched && context\.tilePanePatchedDetail/);
   assert.match(functionBody("refreshCurrentThread"), /const patchAttemptResult = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchAttemptResult\(\{/);
-  assert.match(functionBody("refreshCurrentThread"), /tilePanePatchMs,[\s\S]*localPatchMs,[\s\S]*patchRejectReason: state\.threadDetailPatchRejectReason/);
+  assert.match(functionBody("refreshCurrentThread"), /tilePanePatchMs,[\s\S]*localPatchMs,[\s\S]*patchRejectReason: patchAttempt\.patchRejectReason/);
+  assert.match(functionBody("rejectThreadDetailPatch"), /threadDetailDomPatchApi\.threadDetailPatchResult\(false, reason \|\| "unknown"\)/);
+  assert.match(functionBody("acceptThreadDetailPatch"), /threadDetailDomPatchApi\.threadDetailPatchResult\(true, reason \|\| "patched"\)/);
+  assert.doesNotMatch(appJs, /threadDetailPatchRejectReason/);
   assert.doesNotMatch(functionBody("refreshCurrentThread"), /detailPatchMs = patchAttemptResult\.detailPatchMs;/);
   assert.match(functionBody("refreshCurrentThread"), /patchRejectReason = patchAttemptResult\.patchRejectReason;/);
   assert.match(functionBody("refreshCurrentThread"), /if \(patchAttemptResult\.reportLocalPatchRejected\) \{/);

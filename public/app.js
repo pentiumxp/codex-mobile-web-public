@@ -267,7 +267,6 @@ const state = {
   lastThreadSignature: "",
   renderedConversationSignature: "",
   renderedConversationPatchShellSignature: "",
-  threadDetailPatchRejectReason: "",
   renderedThreadListSignature: "",
   tickTimer: null,
   relativeTimeTimer: null,
@@ -9108,13 +9107,16 @@ function applyThreadDetailRefreshPatchAttemptEffect(effect, context) {
       };
     }
     const startedAt = nowPerfMs();
+    const patchResult = patchCurrentThreadDetailFromRefresh(
+      context.previousThread,
+      state.currentThread,
+      context.previousConversationSignature,
+    );
+    const patched = Boolean(patchResult && patchResult.ok);
     return {
       localPatchAttempted: true,
-      locallyPatchedDetail: patchCurrentThreadDetailFromRefresh(
-        context.previousThread,
-        state.currentThread,
-        context.previousConversationSignature,
-      ),
+      locallyPatchedDetail: patched,
+      patchRejectReason: patched ? "" : String((patchResult && patchResult.reason) || "unknown"),
       localPatchMs: roundedDurationMs(startedAt),
     };
   }
@@ -9130,6 +9132,7 @@ function applyThreadDetailRefreshPatchAttemptEffectsPlan(plan, context = {}) {
     locallyPatchedDetail: false,
     tilePanePatchMs: 0,
     localPatchMs: 0,
+    patchRejectReason: "",
   };
   for (const effect of effects) {
     const attempt = applyThreadDetailRefreshPatchAttemptEffect(effect, {
@@ -9145,6 +9148,7 @@ function applyThreadDetailRefreshPatchAttemptEffectsPlan(plan, context = {}) {
       result.localPatchAttempted = true;
       result.locallyPatchedDetail = Boolean(attempt.locallyPatchedDetail);
       result.localPatchMs += Number(attempt.localPatchMs || 0);
+      result.patchRejectReason = attempt.patchRejectReason || "";
     }
   }
   return result;
@@ -9218,7 +9222,6 @@ async function refreshCurrentThread(options = {}) {
   let metadataUpdateMs = 0;
   let renderOutcome = null;
   let patchRejectReason = "";
-  state.threadDetailPatchRejectReason = "";
   const threadTileConversationSurface = isThreadTileConversationSurface();
   const patchSurfaceProbePlan = threadDetailRenderPlanApi.planThreadDetailRefreshPatchSurface({
     shouldRenderDetail,
@@ -9263,7 +9266,7 @@ async function refreshCurrentThread(options = {}) {
     locallyPatchedDetail,
     tilePanePatchMs,
     localPatchMs,
-    patchRejectReason: state.threadDetailPatchRejectReason,
+    patchRejectReason: patchAttempt.patchRejectReason,
   });
   locallyPatchedDetail = patchAttemptResult.locallyPatchedDetail;
   tilePanePatchedDetail = patchAttemptResult.tilePanePatchedDetail;
@@ -13756,18 +13759,19 @@ function patchLiveTextItemDom(turn, item) {
 }
 
 function rejectThreadDetailPatch(reason) {
-  state.threadDetailPatchRejectReason = String(reason || "unknown").slice(0, 80);
-  return false;
+  return threadDetailDomPatchApi.threadDetailPatchResult(false, reason || "unknown");
+}
+
+function acceptThreadDetailPatch(reason) {
+  return threadDetailDomPatchApi.threadDetailPatchResult(true, reason || "patched");
 }
 
 function patchCurrentThreadDetailFromRefresh(previousThread, nextThread, previousConversationSignature) {
-  state.threadDetailPatchRejectReason = "";
   const conversation = $("conversation");
   if (!conversation) return rejectThreadDetailPatch("missing-conversation-root");
   if (!previousThread || !nextThread) return rejectThreadDetailPatch("missing-thread");
   if (patchCurrentThreadTilePaneFromState({ threadId: nextThread.id || state.currentThreadId, preserveScroll: true })) {
-    state.threadDetailPatchRejectReason = "";
-    return true;
+    return acceptThreadDetailPatch("tile-pane-patched");
   }
   if (!canPatchSingleThreadConversationDom({ threadId: nextThread.id || state.currentThreadId })) return rejectThreadDetailPatch("single-thread-surface-unavailable");
   if (previousThread.mobileLoading || previousThread.mobileLoadError || nextThread.mobileLoading || nextThread.mobileLoadError) return rejectThreadDetailPatch("loading-or-error-state");
@@ -13829,8 +13833,7 @@ function patchCurrentThreadDetailFromRefresh(previousThread, nextThread, previou
   if (!applyResult.ok) return rejectThreadDetailPatch(applyResult.reason || "turn-patch-apply-failed");
   bindCurrentThreadActions();
   if (!completeLocalConversationDomUpdate(conversation, wasNearBottom, userReadingCurrentTurn)) return rejectThreadDetailPatch("complete-dom-update-failed");
-  state.threadDetailPatchRejectReason = "";
-  return true;
+  return acceptThreadDetailPatch("patched");
 }
 
 function renderHome() {

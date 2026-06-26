@@ -6,6 +6,23 @@ const { test } = require("node:test");
 
 const domPatch = require(path.resolve(__dirname, "..", "public", "thread-detail-dom-patch.js"));
 
+test("thread detail patch result returns bounded structured status", () => {
+  assert.deepEqual(domPatch.threadDetailPatchResult(true, "patched"), {
+    ok: true,
+    reason: "patched",
+    reused: 0,
+    patched: 0,
+    inserted: 0,
+  });
+
+  const rejected = domPatch.threadDetailPatchResult(false, "x".repeat(120));
+  assert.equal(rejected.ok, false);
+  assert.equal(rejected.reason.length, 80);
+  assert.equal(rejected.reused, 0);
+  assert.equal(rejected.patched, 0);
+  assert.equal(rejected.inserted, 0);
+});
+
 function createNode(key) {
   return { key: String(key || ""), nextSibling: null };
 }

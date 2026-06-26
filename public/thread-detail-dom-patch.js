@@ -22,6 +22,12 @@
     }, counts);
   }
 
+  function threadDetailPatchResult(ok, reason, counts = {}) {
+    const fallback = ok ? "patched" : "unknown";
+    const boundedReason = String(reason || fallback).slice(0, 80) || fallback;
+    return result(ok, boundedReason, counts);
+  }
+
   function renderKeyForNode(node) {
     return node && node.nodeType === ELEMENT_NODE && typeof node.getAttribute === "function"
       ? node.getAttribute("data-render-key") || ""
@@ -552,5 +558,6 @@
     renderKeyForNode,
     resolveTurnInsertAnchor,
     syncAttributes,
+    threadDetailPatchResult,
   };
 }));

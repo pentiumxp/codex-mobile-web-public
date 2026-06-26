@@ -178,6 +178,10 @@ finalize-input shape. It also owns the patch telemetry selection for
 whether a failed local patch attempt should emit the projection-mismatch
 diagnostic, while app code keeps real DOM calls, visible shape collection, and
 the diagnostic transport.
+The local DOM patch executor now returns a structured `{ ok, reason }` result
+directly to the patch-attempt executor, so refresh rejection reasons no longer
+move through transient global app state before telemetry and diagnostics read
+them.
 Refresh outcome execution planning now also lives in the same helper module:
 `planThreadDetailRefreshOutcomeExecution` maps render outcomes to metadata
 update mode, full-render execution, and projection-consistency phase. This
@@ -223,7 +227,8 @@ Refresh patch-attempt effect planning now also lives in this helper:
 `planThreadDetailRefreshPatchAttemptEffects` declares the tile-pane patch and
 local-patch attempt order. App code still performs the real DOM patch calls and
 timing, but `refreshCurrentThread()` no longer inlines tile/local patch attempt
-loops or synchronizes those booleans directly.
+loops, synchronizes those booleans directly, or reads patch failure reasons from
+global scratch state.
 Refresh post-merge side-effect ordering now also lives in this helper:
 `planThreadDetailRefreshPostMergeEffects` declares the fixed
 thread-list-merge, composer/active-turn sync, and thread-list-render groups
