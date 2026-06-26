@@ -64,6 +64,8 @@ function buildEvidence(report = {}) {
     threadListAppServerVisibleFilterMs: boundedCount(list.appServerVisibleFilterMs),
     threadListAppServerWorkspaceFilterMs: boundedCount(list.appServerWorkspaceFilterMs),
     threadListAppServerPostProcessMs: boundedCount(list.appServerPostProcessMs),
+    threadListAppServerMeasuredMs: boundedCount(list.appServerMeasuredMs),
+    threadListAppServerUnattributedMs: boundedCount(list.appServerUnattributedMs),
     threadListAppServerRawCount: boundedCount(list.appServerRawCount),
     threadListAppServerVisibleCount: boundedCount(list.appServerVisibleCount),
     threadListAppServerFilteredCount: boundedCount(list.appServerFilteredCount),
@@ -242,7 +244,8 @@ function appServerThreadListLatencyDecision(list = {}) {
   const visibleFilterMs = boundedCount(list.appServerVisibleFilterMs);
   const workspaceFilterMs = boundedCount(list.appServerWorkspaceFilterMs);
   const postProcessMs = boundedCount(list.appServerPostProcessMs);
-  const splitKnown = rpcMs > 0 || visibleFilterMs > 0 || workspaceFilterMs > 0 || postProcessMs > 0;
+  const unattributedMs = boundedCount(list.appServerUnattributedMs);
+  const splitKnown = rpcMs > 0 || visibleFilterMs > 0 || workspaceFilterMs > 0 || postProcessMs > 0 || unattributedMs > 0;
   const dominantFloorMs = Math.max(500, Math.trunc(totalMs * 0.6));
 
   if (rpcMs >= dominantFloorMs) {
@@ -282,6 +285,16 @@ function appServerThreadListLatencyDecision(list = {}) {
       owner: "mobile-thread-list-postprocess",
       reason: "mobile-postprocess-latency",
       nextAction: "optimize-mobile-thread-list-postprocess",
+    };
+  }
+
+  if (unattributedMs >= dominantFloorMs) {
+    return {
+      status: "needs_repair",
+      priority: "H2",
+      owner: "thread-list-app-server-attribution",
+      reason: "app-server-unattributed-latency",
+      nextAction: "split-thread-list-app-server-residual-timing",
     };
   }
 

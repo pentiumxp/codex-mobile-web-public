@@ -133,14 +133,18 @@ function threadListAppServerFetchTimingFields(plan = {}) {
 
 function threadListAppServerLatencyTimingFields(input = {}) {
   const source = input && typeof input === "object" ? input : {};
+  const totalMs = boundedMs(source.totalMs);
   const rpcMs = boundedMs(source.rpcMs);
   const visibleFilterMs = boundedMs(source.visibleFilterMs);
   const workspaceFilterMs = boundedMs(source.workspaceFilterMs);
+  const measuredMs = boundedMs(rpcMs + visibleFilterMs + workspaceFilterMs);
   return {
     appServerRpcMs: rpcMs,
     appServerVisibleFilterMs: visibleFilterMs,
     appServerWorkspaceFilterMs: workspaceFilterMs,
     appServerPostProcessMs: boundedMs(visibleFilterMs + workspaceFilterMs),
+    appServerMeasuredMs: measuredMs,
+    appServerUnattributedMs: totalMs > measuredMs ? boundedMs(totalMs - measuredMs) : 0,
     appServerRawCount: boundedCount(
       source.rawCount !== undefined ? source.rawCount : countThreadListRows(source.rawResult),
     ),

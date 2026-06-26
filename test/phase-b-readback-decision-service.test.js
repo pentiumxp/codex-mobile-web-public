@@ -221,6 +221,8 @@ test("phase B readback decision routes high warm list latency to app-server RPC 
       appServerVisibleFilterMs: 20,
       appServerWorkspaceFilterMs: 15,
       appServerPostProcessMs: 35,
+      appServerMeasuredMs: 2015,
+      appServerUnattributedMs: 35,
       appServerRequestLimit: 80,
     },
     detail: {
@@ -252,6 +254,8 @@ test("phase B readback decision routes high warm list latency to local filter ow
       appServerVisibleFilterMs: 840,
       appServerWorkspaceFilterMs: 20,
       appServerPostProcessMs: 860,
+      appServerMeasuredMs: 1060,
+      appServerUnattributedMs: 240,
     },
     detail: {
       readMode: "projection-v4-cache",
@@ -280,6 +284,8 @@ test("phase B readback decision observes inconclusive warm list latency split", 
       appServerVisibleFilterMs: 300,
       appServerWorkspaceFilterMs: 250,
       appServerPostProcessMs: 550,
+      appServerMeasuredMs: 1050,
+      appServerUnattributedMs: 350,
     },
     detail: {
       readMode: "projection-active-overlay",
@@ -294,6 +300,37 @@ test("phase B readback decision observes inconclusive warm list latency split", 
   assert.equal(decision.owner, "app-server-thread-list");
   assert.equal(decision.reason, "app-server-latency-split-inconclusive");
   assert.equal(decision.nextAction, "capture-next-app-server-list-latency-sample");
+});
+
+test("phase B readback decision routes dominant unattributed app-server latency to attribution owner", () => {
+  const decision = classifyPhaseBReadback({
+    ok: true,
+    threadList: {
+      coldPathOwner: "warm-fallback-cache",
+      coldPathReason: "cache-hit",
+      appServerMs: 1600,
+      appServerRpcMs: 120,
+      appServerVisibleFilterMs: 90,
+      appServerWorkspaceFilterMs: 40,
+      appServerPostProcessMs: 130,
+      appServerMeasuredMs: 250,
+      appServerUnattributedMs: 1350,
+    },
+    detail: {
+      readMode: "projection-active-overlay",
+      readDecision: "projection-active-overlay",
+      coldPathOwner: "warm-path",
+      coldPathReason: "warm-projection-active-overlay",
+    },
+  });
+
+  assert.equal(decision.status, "needs_repair");
+  assert.equal(decision.priority, "H2");
+  assert.equal(decision.owner, "thread-list-app-server-attribution");
+  assert.equal(decision.reason, "app-server-unattributed-latency");
+  assert.equal(decision.nextAction, "split-thread-list-app-server-residual-timing");
+  assert.equal(decision.evidence.threadListAppServerMeasuredMs, 250);
+  assert.equal(decision.evidence.threadListAppServerUnattributedMs, 1350);
 });
 
 test("phase B readback decision treats warmed deferred fallback as observed not broken", () => {
@@ -348,6 +385,8 @@ test("phase B readback decision treats one-time cold rebuild plus warm check as 
       appServerVisibleFilterMs: 4,
       appServerWorkspaceFilterMs: 6,
       appServerPostProcessMs: 10,
+      appServerMeasuredMs: 130,
+      appServerUnattributedMs: 0,
       appServerRawCount: 20,
       appServerVisibleCount: 18,
       appServerFilteredCount: 16,
@@ -380,6 +419,8 @@ test("phase B readback decision treats one-time cold rebuild plus warm check as 
   assert.equal(decision.evidence.threadListAppServerVisibleFilterMs, 4);
   assert.equal(decision.evidence.threadListAppServerWorkspaceFilterMs, 6);
   assert.equal(decision.evidence.threadListAppServerPostProcessMs, 10);
+  assert.equal(decision.evidence.threadListAppServerMeasuredMs, 130);
+  assert.equal(decision.evidence.threadListAppServerUnattributedMs, 0);
   assert.equal(decision.evidence.threadListAppServerRawCount, 20);
   assert.equal(decision.evidence.threadListAppServerVisibleCount, 18);
   assert.equal(decision.evidence.threadListAppServerFilteredCount, 16);

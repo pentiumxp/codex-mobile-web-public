@@ -1025,10 +1025,11 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeBody, /const appServerRawResult = await codex\.request\("thread\/list", params, \{ timeoutMs: READ_RPC_TIMEOUT_MS \}\)/);
   assert.match(routeBody, /const appServerVisibleResult = filterVisibleThreads\(appServerRawResult, globalState\)/);
   assert.match(routeBody, /const appServerResult = filterThreadListByCwd\(appServerVisibleResult, cwd\)/);
-  assert.match(routeBody, /Object\.assign\(timings, threadListAppServerLatencyTimingFields\(\{[\s\S]*rawResult: appServerRawResult,[\s\S]*visibleResult: appServerVisibleResult,[\s\S]*filteredResult: appServerResult,[\s\S]*\}\)\)/);
+  assert.match(routeBody, /Object\.assign\(timings, threadListAppServerLatencyTimingFields\(\{[\s\S]*rawResult: appServerRawResult,[\s\S]*visibleResult: appServerVisibleResult,[\s\S]*filteredResult: appServerResult,[\s\S]*totalMs: appServerElapsedMs,[\s\S]*\}\)\)/);
   assert.match(appServerFetchPolicyJs, /appServerRequestLimit/);
   assert.match(appServerFetchPolicyJs, /appServerRequestReason/);
   assert.match(appServerFetchPolicyJs, /appServerRpcMs/);
+  assert.match(appServerFetchPolicyJs, /appServerUnattributedMs/);
   assert.match(appServerFetchPolicyJs, /appServerRawCount/);
   assert.match(routeBody, /readThreadListCachedFallback\(limit, \{ cwd, searchTerm, globalState, diagnostics: fallbackDiagnostics \}\)/);
   assert.match(routeBody, /decorated\.mobileDeferredAppServer = true/);

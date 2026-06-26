@@ -98,6 +98,8 @@ test("phase B readback smoke collects bounded diagnostics without private fields
             appServerVisibleFilterMs: 1,
             appServerWorkspaceFilterMs: 1,
             appServerPostProcessMs: 2,
+            appServerMeasuredMs: 12,
+            appServerUnattributedMs: 0,
             appServerRawCount: 3,
             appServerVisibleCount: 2,
             appServerFilteredCount: 1,
@@ -164,6 +166,8 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.threadList.appServerVisibleFilterMs, 1);
   assert.equal(report.threadList.appServerWorkspaceFilterMs, 1);
   assert.equal(report.threadList.appServerPostProcessMs, 2);
+  assert.equal(report.threadList.appServerMeasuredMs, 12);
+  assert.equal(report.threadList.appServerUnattributedMs, 0);
   assert.equal(report.threadList.appServerRawCount, 3);
   assert.equal(report.threadList.appServerVisibleCount, 2);
   assert.equal(report.threadList.appServerFilteredCount, 1);
@@ -561,6 +565,8 @@ test("phase B readback summary helpers keep only bounded metadata", () => {
         appServerVisibleFilterMs: 5,
         appServerWorkspaceFilterMs: 7,
         appServerPostProcessMs: 12,
+        appServerMeasuredMs: 132,
+        appServerUnattributedMs: 8,
         appServerRawCount: 20,
         appServerVisibleCount: 18,
         appServerFilteredCount: 16,
@@ -578,6 +584,8 @@ test("phase B readback summary helpers keep only bounded metadata", () => {
   assert.equal(list.appServerVisibleFilterMs, 5);
   assert.equal(list.appServerWorkspaceFilterMs, 7);
   assert.equal(list.appServerPostProcessMs, 12);
+  assert.equal(list.appServerMeasuredMs, 132);
+  assert.equal(list.appServerUnattributedMs, 8);
   assert.equal(list.appServerRawCount, 20);
   assert.equal(list.appServerVisibleCount, 18);
   assert.equal(list.appServerFilteredCount, 16);

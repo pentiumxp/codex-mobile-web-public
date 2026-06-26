@@ -264,14 +264,19 @@ Current acceleration targets:
    window, `appServerMs` was still around 1.8-2.1s. The follow-up local
    attribution slice now splits that coarse field into `appServerRpcMs`,
    `appServerVisibleFilterMs`, `appServerWorkspaceFilterMs`,
-   `appServerPostProcessMs`, and raw/visible/filtered row counts, so the next
-   production readback can distinguish mux/RPC/app-server latency from Mobile
-   server post-processing without reading private thread content. The decision
+   `appServerPostProcessMs`, measured/unattributed elapsed time, and
+   raw/visible/filtered row counts, so the next production readback can
+   distinguish mux/RPC/app-server latency from Mobile server post-processing
+   without reading private thread content. The decision
    follow-up consumes the same split fields: high warm-list latency now routes
    to `app-server-thread-list-rpc`, `thread-list-visible-filter`,
    `thread-list-workspace-filter`, `mobile-thread-list-postprocess`, or an H3
    inconclusive-split observation instead of treating all warm/source-snapshot
-   list reads as ready. Earlier local
+   list reads as ready. The residual attribution follow-up adds
+   `appServerMeasuredMs` and `appServerUnattributedMs`; if the unmeasured
+   remainder dominates, readback now routes to
+   `thread-list-app-server-attribution` / `split-thread-list-app-server-residual-timing`
+   rather than guessing a runtime owner. Earlier local
    fallback attribution slices also made baseline source work explicit:
    fallback baseline source reads now
    carry bounded counters for rollout directory reads, JSONL stat/collect/sort

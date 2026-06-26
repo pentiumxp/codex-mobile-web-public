@@ -16,6 +16,36 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-27 Phase B App-Server List Residual Attribution Slice
+
+本地小切片继续 app-server list latency attribution。上一片 decision 已经能用
+`appServerRpcMs`、filter 和 post-process 字段选择 owner，但还缺少一个关键证据：
+`appServerMs` 减去已测 RPC/filter 后还剩多少未归因时间。
+
+本切片不改变线程列表行为，只补 metadata-only 字段：
+
+- `appServerMeasuredMs`：`appServerRpcMs + appServerVisibleFilterMs +
+  appServerWorkspaceFilterMs`。
+- `appServerUnattributedMs`：`appServerMs - appServerMeasuredMs` 的 bounded 余量。
+
+如果高延迟样本里 `appServerUnattributedMs` 主导，Phase B decision 会路由到
+owner=`thread-list-app-server-attribution`，nextAction=
+`split-thread-list-app-server-residual-timing`。这避免把未测量余量误归因为 RPC 或
+filter，也给下一片是否继续拆 server 内部计时提供证据。
+
+验证：
+
+```bash
+node --test test/thread-list-app-server-fetch-policy-service.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js
+npm run check
+npm run check:macos
+npm test
+git diff --check
+```
+
+结果：focused `84` passed；`npm test` `1199` passed；`check`、`check:macos`、
+`git diff --check` passed。
+
 ## 2026-06-27 Phase B App-Server List Latency Decision Slice
 
 本地小切片继续上一片 app-server latency attribution。上一片已经把
@@ -67,6 +97,8 @@ metadata-only 诊断字段：
 - `appServerVisibleFilterMs`
 - `appServerWorkspaceFilterMs`
 - `appServerPostProcessMs`
+- `appServerMeasuredMs`
+- `appServerUnattributedMs`
 - `appServerRawCount`
 - `appServerVisibleCount`
 - `appServerFilteredCount`

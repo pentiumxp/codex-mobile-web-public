@@ -358,6 +358,8 @@ function summarizeThreadList(result = {}) {
     appServerVisibleFilterMs: boundedNumber(timings && timings.appServerVisibleFilterMs),
     appServerWorkspaceFilterMs: boundedNumber(timings && timings.appServerWorkspaceFilterMs),
     appServerPostProcessMs: boundedNumber(timings && timings.appServerPostProcessMs),
+    appServerMeasuredMs: boundedNumber(timings && timings.appServerMeasuredMs),
+    appServerUnattributedMs: boundedNumber(timings && timings.appServerUnattributedMs),
     appServerRawCount: boundedCount(timings && timings.appServerRawCount),
     appServerVisibleCount: boundedCount(timings && timings.appServerVisibleCount),
     appServerFilteredCount: boundedCount(timings && timings.appServerFilteredCount),

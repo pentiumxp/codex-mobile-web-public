@@ -114,6 +114,7 @@ test("thread-list app-server latency fields split rpc and local post-processing"
     rpcMs: 1234,
     visibleFilterMs: 5,
     workspaceFilterMs: 7,
+    totalMs: 1300,
     privatePrompt: "do not copy",
   });
 
@@ -122,6 +123,8 @@ test("thread-list app-server latency fields split rpc and local post-processing"
     appServerVisibleFilterMs: 5,
     appServerWorkspaceFilterMs: 7,
     appServerPostProcessMs: 12,
+    appServerMeasuredMs: 1246,
+    appServerUnattributedMs: 54,
     appServerRawCount: 3,
     appServerVisibleCount: 2,
     appServerFilteredCount: 1,
@@ -141,11 +144,14 @@ test("thread-list app-server latency fields are bounded and count data or thread
     rpcMs: 999999999,
     visibleFilterMs: -5,
     workspaceFilterMs: "bad",
+    totalMs: 999999999,
   }), {
     appServerRpcMs: 600000,
     appServerVisibleFilterMs: 0,
     appServerWorkspaceFilterMs: 0,
     appServerPostProcessMs: 0,
+    appServerMeasuredMs: 600000,
+    appServerUnattributedMs: 0,
     appServerRawCount: 100000,
     appServerVisibleCount: 0,
     appServerFilteredCount: 0,

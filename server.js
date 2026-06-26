@@ -14903,15 +14903,17 @@ async function handleApi(req, res) {
       const appServerWorkspaceFilterStartedAtMs = Date.now();
       const appServerResult = filterThreadListByCwd(appServerVisibleResult, cwd);
       markTiming("appServerWorkspaceFilterMs", appServerWorkspaceFilterStartedAtMs);
+      const appServerElapsedMs = Math.max(0, Date.now() - appServerStartedAtMs);
+      timings.appServerMs = appServerElapsedMs;
       Object.assign(timings, threadListAppServerLatencyTimingFields({
         rawResult: appServerRawResult,
         visibleResult: appServerVisibleResult,
         filteredResult: appServerResult,
+        totalMs: appServerElapsedMs,
         rpcMs: timings.appServerRpcMs,
         visibleFilterMs: timings.appServerVisibleFilterMs,
         workspaceFilterMs: timings.appServerWorkspaceFilterMs,
       }));
-      markTiming("appServerMs", appServerStartedAtMs);
       const shouldDeferFallback = shouldDeferThreadListFallbackForActiveDetail({
         deferFallback,
         cursor,

@@ -19192,3 +19192,52 @@ The previous full handoff was archived and should be opened only when old proven
     a merge/decorate timing split if production shows residual
     `appServerMs - rpc - filter` time, or the concrete owner returned by the
     next deployed readback.
+
+## 2026-06-27 - Phase B app-server residual attribution local slice
+
+- Current local state:
+  - Continued after local commit `da7a4e2`, which routed high warm-list latency
+    to RPC/filter/post-process owners but did not expose the unmeasured
+    remainder inside `appServerMs`.
+- Root-cause boundary:
+  - Symptom/risk: a high `appServerMs` sample could have a large remainder
+    after subtracting measured RPC and filter stages, but the decision layer
+    would only see an inconclusive split.
+  - Failing layer: `/api/threads` app-server list diagnostics/readback
+    attribution and Phase B decision evidence, not list data semantics,
+    fallback/prewarm, projection detail reads, frontend rendering, or task-card
+    protocol.
+  - Violated invariant: high-latency samples must distinguish measured
+    app-server list work from unmeasured residual timing before assigning a
+    concrete runtime owner.
+- Changes:
+  - `threadListAppServerLatencyTimingFields()` now emits
+    `appServerMeasuredMs` and `appServerUnattributedMs`.
+  - `/api/threads` passes `totalMs: appServerElapsedMs` into the latency helper
+    and keeps `appServerMs` behavior unchanged.
+  - Phase B readback smoke and decision evidence preserve the new fields.
+  - Dominant `appServerUnattributedMs` routes to
+    `thread-list-app-server-attribution` with nextAction
+    `split-thread-list-app-server-residual-timing`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`,
+    `docs/MODULES.md`, and focused tests.
+- Validation:
+  - Focused syntax/tests:
+    `node --check adapters/thread-list-app-server-fetch-policy-service.js && node --check adapters/phase-b-readback-decision-service.js && node --check scripts/codex-mobile-phase-b-readback-smoke.js && node --check server.js && node --test test/thread-list-app-server-fetch-policy-service.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js`
+    passed (`35` tests).
+  - Focused route/wiring follow-up:
+    `node --check adapters/thread-list-app-server-fetch-policy-service.js && node --check adapters/phase-b-readback-decision-service.js && node --check scripts/codex-mobile-phase-b-readback-smoke.js && node --check server.js && node --test test/thread-list-app-server-fetch-policy-service.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js test/thread-visibility.test.js`
+    passed (`84` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `npm test` passed (`1199` tests).
+  - `git diff --check` passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache
+    bump. This remains a local Phase B attribution slice for the next batched
+    module deploy.
+- Next:
+  - Run focused/full checks and commit locally. On the next module deploy,
+    readback should show whether remaining large-session list latency belongs
+    to RPC/filter, an unmeasured server phase that needs another timing split,
+    or an H3 inconclusive sample that needs more evidence.
