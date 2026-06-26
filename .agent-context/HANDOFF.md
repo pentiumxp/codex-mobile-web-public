@@ -16954,6 +16954,67 @@ The previous full handoff was archived and should be opened only when old proven
     task-card bodies, upload bytes, private paths, provider payloads, prompts,
     or long logs are included.
 
+## 2026-06-27 - Phase A first-paint telemetry plan reuse local slice
+
+- Latest local slice:
+  - Continued Phase A render/telemetry ownership after `f6b8ff8`
+    (`plan first paint post render effects`).
+  - This slice is local/private only and is not deployed by design.
+- Root-cause boundary:
+  - Symptom/risk: `loadThread()` successful first-paint still hand-wrote the
+    fixed telemetry/reporting sequence after first render:
+    `thread_detail_first_paint`, thread-detail response diagnostics,
+    `thread_switch_complete`, and Home AI load-success diagnostic clear.
+    Keeping this sequence inline leaves first-paint evidence ordering separate
+    from refresh/backfill planning and makes future projection/render
+    regression diagnosis harder to reason about.
+  - Failing layer: frontend first-paint telemetry side-effect ownership, not
+    API reads, projection cache, merge policy, DOM patch choice, scroll policy,
+    task-card routing, Home AI diagnostic intake, or shell/cache.
+  - Violated invariant: first-paint telemetry ordering should be declared by a
+    pure plan while `public/app.js` only executes real runtime reporting side
+    effects and supplies runtime-only thread context.
+- Changes:
+  - `public/thread-detail-render-plan.js` now exports
+    `planThreadDetailFirstPaintTelemetryEffects()`.
+  - The plan declares ordered effects for `thread_detail_first_paint`,
+    thread-detail response diagnostics, `thread_switch_complete`, and
+    load-success diagnostic clearing.
+  - `public/app.js` now applies that plan through
+    `applyThreadDetailFirstPaintTelemetryEffectsPlan()` while preserving the
+    existing performance payload and bounded diagnostic fields.
+  - Updated `test/thread-detail-render-plan.test.js`,
+    `test/conversation-render.test.js`, `test/mobile-viewport.test.js`, and
+    `test/turn-scroll-controls.test.js`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/turn-scroll-controls.test.js test/thread-detail-refresh-dom-harness.test.js`
+    passed (`188` tests).
+  - Syntax:
+    `node --check public/thread-detail-render-plan.js && node --check public/app.js`
+    passed.
+  - Full:
+    `npm run check`, `npm test` (`1147` tests), `npm run check:macos`, and
+    `git diff --check` passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache
+    bump. This remains a local Phase A ownership slice to batch with the next
+    module validation/deploy.
+- Next:
+  - Overall architecture optimization is about 63% after commit. Phase A is
+    about 73%, Phase B about 49%, Phase C about 81%, Phase D about 55%, and
+    Phase E about 15%.
+  - Continue Phase A by extracting the remaining cached-current telemetry /
+    diagnostic success cluster, or switch to Phase B cold-path readback if
+    large-session load time becomes the immediate priority.
+- Privacy:
+  - Only bounded file paths, helper names, effect names, and test counts are
+    recorded. No secrets, cookies, launch tokens, private thread bodies,
+    task-card bodies, upload bytes, private paths, provider payloads, prompts,
+    or long logs are included.
+
 ## 2026-06-27 - Phase B thread-list baseline work attribution local slice
 
 - Latest local slice:

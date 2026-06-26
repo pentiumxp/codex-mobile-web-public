@@ -896,6 +896,14 @@ Composer control refresh, conditional overlay-menu close, conditional full
 detail backfill, and Usage backfill. App code still evaluates runtime
 conditions and performs the actual DOM/timer/network side effects, but
 `loadThread()` no longer owns this fixed post-render ordering inline.
+First-paint telemetry/reporting side-effect ordering now also lives in
+`public/thread-detail-render-plan.js`:
+`planThreadDetailFirstPaintTelemetryEffects` declares the fixed sequence for
+the `thread_detail_first_paint` performance event, thread-detail response
+diagnostics, `thread_switch_complete`, and load-success Home AI diagnostic
+clear. App code still supplies the runtime thread object and performs the real
+reporting side effects, but `loadThread()` no longer owns this first-paint
+telemetry ordering inline.
 Thread refresh failure diagnostic payload planning now lives in
 `public/thread-diagnostic-events.js`: `threadDetailRefreshFailedDiagnosticEvent`
 builds the bounded `thread_detail_refresh_failed` failure report, so

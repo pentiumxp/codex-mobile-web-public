@@ -298,8 +298,11 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /performancePhase: listPerformance\.performancePhase/);
   assert.match(functionBody("loadThread"), /threadPerformanceMetrics\.threadDetailFirstPaintEventFields\(state\.currentThread, \{/);
   assert.match(functionBody("loadThread"), /threadPerformanceMetrics\.threadDetailFirstPaintEventFields\(result\.thread, \{/);
-  assert.match(functionBody("loadThread"), /recordThreadDetailResponseDiagnostics\(firstPaintPerformance, \{[\s\S]*action: "thread-detail-load",[\s\S]*threadId,[\s\S]*thread: result\.thread,[\s\S]*\}\);/);
-  assert.match(appJs, /postPerformanceEvent\("thread_detail_first_paint"/);
+  assert.match(functionBody("loadThread"), /const firstPaintTelemetryPlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintTelemetryEffects\(\{[\s\S]*performanceEvent: firstPaintPerformance,[\s\S]*threadHash: diagnosticThreadHash\(threadId\),[\s\S]*\}\);/);
+  assert.match(functionBody("loadThread"), /applyThreadDetailFirstPaintTelemetryEffectsPlan\(firstPaintTelemetryPlan, \{ thread: result\.thread \}\);/);
+  assert.match(functionBody("applyThreadDetailFirstPaintTelemetryEffect"), /postPerformanceEvent\(String\(item\.eventName \|\| ""\), item\.payload \|\| \{\}, item\.options \|\| \{\}\);/);
+  assert.match(functionBody("applyThreadDetailFirstPaintTelemetryEffect"), /recordThreadDetailResponseDiagnostics\(item\.performanceEvent \|\| \{\}, \{/);
+  assert.match(functionBody("applyThreadDetailFirstPaintTelemetryEffect"), /postClientEvent\(String\(item\.eventName \|\| ""\), item\.payload \|\| \{\}\);/);
   assert.match(appJs, /postPerformanceEvent\("conversation_render_ms"/);
   assert.match(appJs, /postPerformanceEvent\("github_cards_hydrate_ms"/);
   assert.match(appJs, /postPerformanceEvent\("mermaid_hydrate_ms"/);

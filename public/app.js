@@ -9147,13 +9147,8 @@ async function loadThread(threadId, options = {}) {
     detailRenderMode: "first-paint",
     cached: false,
   });
-  postPerformanceEvent("thread_detail_first_paint", firstPaintPerformance);
-  recordThreadDetailResponseDiagnostics(firstPaintPerformance, {
-    action: "thread-detail-load",
-    threadId,
-    thread: result.thread,
-  });
-  postClientEvent("thread_switch_complete", {
+  const firstPaintTelemetryPlan = threadDetailRenderPlanApi.planThreadDetailFirstPaintTelemetryEffects({
+    performanceEvent: firstPaintPerformance,
     source,
     threadId,
     elapsedMs: roundedDurationMs(switchStartedAt),
@@ -9164,17 +9159,9 @@ async function loadThread(threadId, options = {}) {
     turns: Array.isArray(result.thread && result.thread.turns) ? result.thread.turns.length : 0,
     omittedTurns: Number(result.thread && result.thread.mobileOmittedTurnCount || 0),
     rolloutSizeBytes: rolloutSizeBytes(result.thread),
+    threadHash: diagnosticThreadHash(threadId),
   });
-  recordHomeAiDiagnosticSuccess({
-    category: "thread_session_load_failed",
-    diagnostic_type: "thread_detail_load_failed",
-    error_code: "thread_detail_load_failed",
-    context: {
-      surface: "thread-session",
-      action: "thread-detail-load",
-      thread_hash: diagnosticThreadHash(threadId),
-    },
-  });
+  applyThreadDetailFirstPaintTelemetryEffectsPlan(firstPaintTelemetryPlan, { thread: result.thread });
 }
 
 function isSuccessfulCompletedTurn(turn) {
@@ -9322,6 +9309,38 @@ function applyThreadDetailFirstPaintPostRenderEffect(effect, context = {}) {
 function applyThreadDetailFirstPaintPostRenderEffectsPlan(plan, context = {}) {
   const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
   for (const effect of effects) applyThreadDetailFirstPaintPostRenderEffect(effect, context);
+}
+
+function applyThreadDetailFirstPaintTelemetryEffect(effect, context = {}) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  if (type === "post-performance-event") {
+    postPerformanceEvent(String(item.eventName || ""), item.payload || {}, item.options || {});
+    return true;
+  }
+  if (type === "record-thread-detail-response-diagnostics") {
+    const eventContext = item.context && typeof item.context === "object" ? item.context : {};
+    recordThreadDetailResponseDiagnostics(item.performanceEvent || {}, {
+      action: String(eventContext.action || ""),
+      threadId: String(eventContext.threadId || ""),
+      thread: context.thread,
+    });
+    return true;
+  }
+  if (type === "post-client-event") {
+    postClientEvent(String(item.eventName || ""), item.payload || {});
+    return true;
+  }
+  if (type === "diagnostic-success") {
+    recordHomeAiDiagnosticSuccess(item.payload || {});
+    return true;
+  }
+  throw new Error(`Unknown thread detail first-paint telemetry effect: ${type || "empty"}`);
+}
+
+function applyThreadDetailFirstPaintTelemetryEffectsPlan(plan, context = {}) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applyThreadDetailFirstPaintTelemetryEffect(effect, context);
 }
 
 function applyThreadDetailRefreshPostMergeEffect(effect) {

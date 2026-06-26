@@ -1187,6 +1187,70 @@ test("thread detail first-paint post-render effects plan preserves order and bou
   });
 });
 
+test("thread detail first-paint telemetry effects plan preserves bounded event order", () => {
+  const performanceEvent = { detailRenderMode: "first-paint", cached: false, renderElapsedMs: 12 };
+  assert.deepEqual(renderPlan.planThreadDetailFirstPaintTelemetryEffects({
+    performanceEvent,
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA",
+    threadId: "thread-1",
+    elapsedMs: 101.8,
+    apiElapsedMs: 55.2,
+    renderElapsedMs: 33.9,
+    readMode: "projection-active-overlay",
+    status: "completed",
+    turns: 10.8,
+    omittedTurns: 2,
+    rolloutSizeBytes: 12345.9,
+    threadHash: "hash-1",
+  }), {
+    effects: [
+      {
+        type: "post-performance-event",
+        eventName: "thread_detail_first_paint",
+        payload: performanceEvent,
+      },
+      {
+        type: "record-thread-detail-response-diagnostics",
+        performanceEvent,
+        context: {
+          action: "thread-detail-load",
+          threadId: "thread-1",
+        },
+      },
+      {
+        type: "post-client-event",
+        eventName: "thread_switch_complete",
+        payload: {
+          source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR",
+          threadId: "thread-1",
+          elapsedMs: 101.8,
+          apiElapsedMs: 55.2,
+          renderElapsedMs: 33.9,
+          readMode: "projection-active-overlay",
+          status: "completed",
+          turns: 10,
+          omittedTurns: 2,
+          rolloutSizeBytes: 12345,
+        },
+      },
+      {
+        type: "diagnostic-success",
+        payload: {
+          category: "thread_session_load_failed",
+          diagnostic_type: "thread_detail_load_failed",
+          error_code: "thread_detail_load_failed",
+          context: {
+            surface: "thread-session",
+            action: "thread-detail-load",
+            thread_hash: "hash-1",
+          },
+        },
+      },
+    ],
+    reason: "first-paint-telemetry",
+  });
+});
+
 test("single-thread full render shell plans loading state", () => {
   assert.deepEqual(renderPlan.planSingleThreadFullRenderShell({
     threadId: "thread-1",

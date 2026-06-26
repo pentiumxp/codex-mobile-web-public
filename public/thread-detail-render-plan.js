@@ -843,6 +843,60 @@
     };
   }
 
+  function planThreadDetailFirstPaintTelemetryEffects(input = {}) {
+    const source = compactReason(input.source, "").slice(0, 40);
+    const threadId = compactReason(input.threadId, "");
+    const threadHash = compactReason(input.threadHash, "");
+    const performanceEvent = objectOrEmpty(input.performanceEvent);
+    return {
+      effects: [
+        {
+          type: "post-performance-event",
+          eventName: "thread_detail_first_paint",
+          payload: performanceEvent,
+        },
+        {
+          type: "record-thread-detail-response-diagnostics",
+          performanceEvent,
+          context: {
+            action: "thread-detail-load",
+            threadId,
+          },
+        },
+        {
+          type: "post-client-event",
+          eventName: "thread_switch_complete",
+          payload: {
+            source,
+            threadId,
+            elapsedMs: normalizedDurationMs(input.elapsedMs),
+            apiElapsedMs: normalizedDurationMs(input.apiElapsedMs),
+            renderElapsedMs: normalizedDurationMs(input.renderElapsedMs),
+            readMode: compactReason(input.readMode, ""),
+            status: compactReason(input.status, ""),
+            turns: normalizedCount(input.turns),
+            omittedTurns: normalizedCount(input.omittedTurns),
+            rolloutSizeBytes: normalizedCount(input.rolloutSizeBytes),
+          },
+        },
+        {
+          type: "diagnostic-success",
+          payload: {
+            category: "thread_session_load_failed",
+            diagnostic_type: "thread_detail_load_failed",
+            error_code: "thread_detail_load_failed",
+            context: {
+              surface: "thread-session",
+              action: "thread-detail-load",
+              thread_hash: threadHash,
+            },
+          },
+        },
+      ],
+      reason: "first-paint-telemetry",
+    };
+  }
+
   function text(value) {
     return String(value ?? "");
   }
@@ -997,6 +1051,7 @@
     finalizeThreadDetailRenderPlan,
     normalizeSignature,
     planThreadDetailFirstPaintPostRenderEffects,
+    planThreadDetailFirstPaintTelemetryEffects,
     planThreadDetailRefreshCompletionEffects,
     planThreadDetailRefreshConsistencyCheck,
     planThreadDetailRefreshConsistencyCheckEffects,
