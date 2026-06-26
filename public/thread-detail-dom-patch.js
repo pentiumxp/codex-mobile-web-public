@@ -279,8 +279,22 @@
     };
   }
 
+  function planLocalConversationDomUpdateCompletionSnapshot(input = {}) {
+    const tilePanePatched = Boolean(input.tilePanePatched);
+    const scrollAction = input.scrollAction === "scroll-to-bottom" ? "scroll-to-bottom" : "update-bottom-button";
+    return {
+      tilePanePatched,
+      canPatchSingleThread: tilePanePatched ? false : Boolean(input.canPatchSingleThread),
+      hasRoot: Boolean(input.hasRoot),
+      conversationSignature: tilePanePatched ? "" : String(input.conversationSignature || ""),
+      patchShellSignature: tilePanePatched ? "" : String(input.patchShellSignature || ""),
+      scrollAction: tilePanePatched ? "none" : scrollAction,
+    };
+  }
+
   function planLocalConversationDomUpdateCompletion(input = {}) {
-    if (input.tilePanePatched) {
+    const snapshot = planLocalConversationDomUpdateCompletionSnapshot(input);
+    if (snapshot.tilePanePatched) {
       return {
         action: "tile-pane-complete",
         complete: true,
@@ -293,7 +307,7 @@
         scrollAction: "none",
       };
     }
-    if (!input.canPatchSingleThread) {
+    if (!snapshot.canPatchSingleThread) {
       return {
         action: "blocked",
         complete: false,
@@ -306,7 +320,6 @@
         scrollAction: "none",
       };
     }
-    const scrollAction = input.scrollAction === "scroll-to-bottom" ? "scroll-to-bottom" : "update-bottom-button";
     return {
       action: "single-thread-complete",
       complete: true,
@@ -315,9 +328,9 @@
       hydrateOptions: {},
       updateRenderedConversationSignature: true,
       updatePatchShellSignature: true,
-      nextRenderedConversationSignature: String(input.conversationSignature || ""),
-      nextRenderedConversationPatchShellSignature: String(input.patchShellSignature || ""),
-      scrollAction,
+      nextRenderedConversationSignature: snapshot.conversationSignature,
+      nextRenderedConversationPatchShellSignature: snapshot.patchShellSignature,
+      scrollAction: snapshot.scrollAction,
     };
   }
 
@@ -734,6 +747,7 @@
     patchNode,
     planConversationHtmlUpdate,
     planConversationHtmlUpdateEffects,
+    planLocalConversationDomUpdateCompletionSnapshot,
     planLocalConversationDomUpdateCompletion,
     planLocalConversationDomUpdateCompletionEffects,
     renderKeyForNode,

@@ -15878,3 +15878,34 @@ The previous full handoff was archived and should be opened only when old proven
 - Next:
   - Commit locally, then continue Phase A or batch the current module for one
     deploy/readback when requested.
+
+## 2026-06-26 - Latest tail marker: Phase A local patch completion snapshot slice
+
+- Latest local commit for this continuation slice:
+  - Message: `plan local patch completion snapshot`.
+- Current state:
+  - This is the nineteenth local Phase A render/patch/scroll ownership slice.
+  - Not deployed by design; no `CLIENT_BUILD_ID` / PWA shell cache bump.
+- Root-cause boundary:
+  - `completeLocalConversationDomUpdate()` already delegated completion effects
+    to `public/thread-detail-dom-patch.js`, but app code still normalized the
+    completion input semantics for tile-pane terminal state, single-thread
+    patch facts, conversation/patch-shell signatures, and scroll action.
+  - `public/thread-detail-dom-patch.js` now owns
+    `planLocalConversationDomUpdateCompletionSnapshot()`, and
+    `planLocalConversationDomUpdateCompletion()` consumes that normalized
+    snapshot before producing tile/single/blocked completion plans.
+  - `public/app.js` still collects real DOM/scroll/signature facts and executes
+    real hydrate/signature/scroll effects, but no longer owns completion
+    snapshot normalization.
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-dom-patch.test.js test/turn-scroll-controls.test.js test/conversation-scroll.test.js test/conversation-render.test.js`
+    passed (`172` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`1124` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Either batch the current Phase A module for one deploy/readback or continue
+    the next small ownership slice if deployment is intentionally deferred.

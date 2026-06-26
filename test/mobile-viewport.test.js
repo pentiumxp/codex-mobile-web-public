@@ -599,7 +599,8 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(functionBody("applyThreadDetailDomUpdateEffect"), /hydrateThreadDetailSurface\(context\.root, item\.hydrateOptions \|\| \{\}\)/);
   assert.match(functionBody("patchThreadTilePane"), /hydrateThreadDetailSurface\(patchedPane, \{ imageScanDelays: \[0, 180\] \}\)/);
   assert.match(appJs, /function completeLocalConversationDomUpdate\(root, wasNearBottom, userReadingCurrentTurn, options = \{\}\)/);
-  assert.match(functionBody("completeLocalConversationDomUpdate"), /threadDetailDomPatchApi\.planLocalConversationDomUpdateCompletion\(\{/);
+  assert.match(functionBody("completeLocalConversationDomUpdate"), /threadDetailDomPatchApi\.planLocalConversationDomUpdateCompletionSnapshot\(\{/);
+  assert.match(functionBody("completeLocalConversationDomUpdate"), /threadDetailDomPatchApi\.planLocalConversationDomUpdateCompletion\(completionSnapshot\)/);
   assert.match(functionBody("completeLocalConversationDomUpdate"), /const scrollPlan = options && options\.scrollPlan/);
   assert.match(functionBody("completeLocalConversationDomUpdate"), /const effectsPlan = threadDetailDomPatchApi\.planLocalConversationDomUpdateCompletionEffects\(completionPlan\);/);
   assert.match(functionBody("applyThreadDetailDomUpdateEffect"), /hydrateThreadDetailSurface\(context\.root, item\.hydrateOptions \|\| \{\}\);/);

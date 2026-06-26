@@ -759,6 +759,13 @@ or `completionPlan.scrollAction`. This is a local Phase A slice only; it does
 not change server projection semantics, local patch eligibility,
 scroll-follow policy, diagnostic dispatch, task-card protocol, shell/cache
 version, or production deployment state.
+The next local Phase A slice moves the completion input authority into the same
+module: `planLocalConversationDomUpdateCompletionSnapshot` normalizes tile-pane
+terminal state, single-thread completion facts, conversation/patch-shell
+signatures, and scroll action before the completion plan is built. App code now
+collects real DOM/scroll/signature facts and executes effects, while the
+tile-versus-single completion snapshot semantics stay covered by the DOM-patch
+helper tests.
 Conversation HTML update effects are now planned in the same DOM-patch helper:
 `planConversationHtmlUpdateEffects` turns the result of
 `planConversationHtmlUpdate` into ordered effects for hydrate-existing and

@@ -16,6 +16,44 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 Phase A Local Patch Completion Snapshot Slice
+
+本地小切片继续推进 Phase A 的 thread-detail render/patch ownership 收敛。
+此前 local DOM patch 完成路径已经把 commit effects 拆到
+`public/thread-detail-dom-patch.js`，但 `completeLocalConversationDomUpdate()`
+仍在 `public/app.js` 里直接归一化 tile-pane 完成、single-thread patch 可用性、
+conversation signature、patch-shell signature 和 scroll action。这些是 completion
+snapshot 规则，不应该由主 app 编排函数长期持有。
+
+本次修复：
+
+- `public/thread-detail-dom-patch.js` 新增
+  `planLocalConversationDomUpdateCompletionSnapshot()`，统一归一化 tile-pane
+  terminal 状态、single-thread completion 事实、签名字符串和 scroll action。
+- `planLocalConversationDomUpdateCompletion()` 现在先消费 snapshot，再产出
+  complete/blocked/tile-pane-complete/single-thread-complete 计划。
+- `public/app.js` 的 `completeLocalConversationDomUpdate()` 改为只采集真实 DOM、
+  scroll 和签名事实，然后交给 helper 归一化；app 仍只执行真实 hydrate、signature
+  writeback、scroll scheduling side effect。
+- focused tests 覆盖 tile-pane snapshot 不带入 single-thread 签名/scroll 状态、
+  single-thread snapshot 归一化，以及 app wiring 使用 snapshot helper。
+- 不改变服务端 projection、local patch eligibility、DOM mutation 顺序、scroll 行为、
+  任务卡协议或 shell/cache。
+
+闭环验证：
+
+```bash
+node --test test/thread-detail-dom-patch.test.js test/turn-scroll-controls.test.js test/conversation-scroll.test.js test/conversation-render.test.js
+npm run check
+npm test
+npm run check:macos
+git diff --check
+```
+
+focused 组通过 172 个测试；全量 `npm test` 通过 1124 个测试。
+
+尚未部署；继续作为 Phase A 模块的一部分累积。
+
 ## 2026-06-26 Phase A Bottom-Follow Schedule Planning Slice
 
 本地小切片继续推进 Phase A 的 scroll ownership 收敛。此前

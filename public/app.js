@@ -14155,20 +14155,19 @@ function completeLocalConversationDomUpdate(root, wasNearBottom, userReadingCurr
       submittedMessageFollow: shouldFollowSubmittedMessageToBottom(),
       viewportFollow: shouldFollowViewportChangeToBottom(),
     });
-  const conversationSignature = hasOption("conversationSignature")
-    ? String(options.conversationSignature || "")
-    : (tilePanePatched ? "" : conversationRenderSignature(state.currentThread));
-  const patchShellSignature = hasOption("patchShellSignature")
-    ? String(options.patchShellSignature || "")
-    : (tilePanePatched ? "" : conversationPatchShellSignature(state.currentThread));
-  const completionPlan = threadDetailDomPatchApi.planLocalConversationDomUpdateCompletion({
+  const completionSnapshot = threadDetailDomPatchApi.planLocalConversationDomUpdateCompletionSnapshot({
     tilePanePatched,
     canPatchSingleThread,
     hasRoot: Boolean(root),
-    conversationSignature,
-    patchShellSignature,
+    conversationSignature: hasOption("conversationSignature")
+      ? options.conversationSignature
+      : (tilePanePatched ? "" : conversationRenderSignature(state.currentThread)),
+    patchShellSignature: hasOption("patchShellSignature")
+      ? options.patchShellSignature
+      : (tilePanePatched ? "" : conversationPatchShellSignature(state.currentThread)),
     scrollAction: scrollPlan.action,
   });
+  const completionPlan = threadDetailDomPatchApi.planLocalConversationDomUpdateCompletion(completionSnapshot);
   if (!completionPlan.complete) return false;
   const effectsPlan = threadDetailDomPatchApi.planLocalConversationDomUpdateCompletionEffects(completionPlan);
   applyLocalConversationDomUpdateCompletionEffectsPlan(effectsPlan, { root });

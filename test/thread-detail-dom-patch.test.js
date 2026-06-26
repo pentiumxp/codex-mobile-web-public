@@ -438,6 +438,47 @@ test("conversation HTML update effects ignore missing or unknown actions", () =>
   });
 });
 
+test("local conversation DOM update completion snapshot normalizes tile-pane terminal state", () => {
+  assert.deepEqual(domPatch.planLocalConversationDomUpdateCompletionSnapshot({
+    tilePanePatched: true,
+    canPatchSingleThread: true,
+    hasRoot: true,
+    conversationSignature: "sig-next",
+    patchShellSignature: "shell-next",
+    scrollAction: "scroll-to-bottom",
+  }), {
+    tilePanePatched: true,
+    canPatchSingleThread: false,
+    hasRoot: true,
+    conversationSignature: "",
+    patchShellSignature: "",
+    scrollAction: "none",
+  });
+});
+
+test("local conversation DOM update completion snapshot normalizes single-thread facts", () => {
+  assert.deepEqual(domPatch.planLocalConversationDomUpdateCompletionSnapshot({
+    tilePanePatched: false,
+    canPatchSingleThread: 1,
+    hasRoot: "",
+    conversationSignature: 123,
+    patchShellSignature: null,
+    scrollAction: "unknown",
+  }), {
+    tilePanePatched: false,
+    canPatchSingleThread: true,
+    hasRoot: false,
+    conversationSignature: "123",
+    patchShellSignature: "",
+    scrollAction: "update-bottom-button",
+  });
+
+  assert.equal(domPatch.planLocalConversationDomUpdateCompletionSnapshot({
+    tilePanePatched: false,
+    scrollAction: "scroll-to-bottom",
+  }).scrollAction, "scroll-to-bottom");
+});
+
 test("local conversation DOM update completion plan preserves tile pane terminal state", () => {
   assert.deepEqual(domPatch.planLocalConversationDomUpdateCompletion({
     tilePanePatched: true,
