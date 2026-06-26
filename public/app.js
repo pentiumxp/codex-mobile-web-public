@@ -510,7 +510,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v513";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v514";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -14266,21 +14266,18 @@ function renderCurrentThread(options = {}) {
   }
   updateCurrentThreadHeader(thread);
   setThreadTileConversationMode(false);
-  if (threadDetailStateApi.threadIsSummaryOnlyCurrentThread(thread, state.currentThreadId)) {
-    const hadTurnsField = Object.prototype.hasOwnProperty.call(thread, "turns");
-    state.currentThread = Object.assign({}, threadListSummaryFromDetailThread(thread) || thread, {
-      turns: [],
-      mobileLoading: true,
-      mobileLoadError: "",
-    });
+  const summaryRecoveryPlan = threadDetailStateApi.planSummaryOnlyCurrentThreadRecovery({
+    thread,
+    currentThreadId: state.currentThreadId,
+    clientBuildId: CLIENT_BUILD_ID,
+    hasThreadLoadController: Boolean(state.threadLoadController),
+    hasRefreshThreadController: Boolean(state.refreshThreadController),
+  });
+  if (summaryRecoveryPlan.shouldRecover) {
+    state.currentThread = summaryRecoveryPlan.nextThread;
     thread = state.currentThread;
-    postClientEvent("thread_summary_detail_recovery", {
-      threadId: state.currentThreadId || thread.id || "",
-      reason: "summary-only-current-thread",
-      hasListTurnsField: hadTurnsField,
-      buildId: CLIENT_BUILD_ID,
-    });
-    if (!state.threadLoadController && !state.refreshThreadController) {
+    postClientEvent("thread_summary_detail_recovery", summaryRecoveryPlan.event);
+    if (summaryRecoveryPlan.shouldScheduleRefresh) {
       scheduleCurrentThreadRefresh(0, "summary-detail-recovery");
     }
   }

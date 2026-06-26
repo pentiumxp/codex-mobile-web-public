@@ -16,6 +16,33 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v514 Summary-Only Current Thread Recovery Plan
+
+v514 继续 Phase A 前端状态所有权收敛。v513 已经把 thread-list summary 与
+loaded detail 的边界移到 `public/thread-detail-state.js`；本轮继续把
+`renderCurrentThread()` 中“summary-only current thread 恢复成 loading shell 并触发
+detail refresh”的策略也移入同一个 helper。
+
+本次切片新增：
+
+- `planSummaryOnlyCurrentThreadRecovery()` 判断当前线程是否只是列表摘要壳。
+- helper 生成净化后的 loading-shell thread state，而不是由 `public/app.js` 内联拼装。
+- helper 生成 bounded `thread_summary_detail_recovery` 事件字段和是否需要立即
+  `summary-detail-recovery` 刷新的意图。
+- `public/app.js` 只执行计划：写入 state、发送 bounded client event、调度刷新。
+
+修复边界：
+
+- 症状/风险：同一条 summary-only recovery 规则如果拆散在检测、状态拼装、事件上报和
+  刷新调度多个位置，后续修改容易再次让列表摘要进入详情渲染。
+- 失败层：前端 thread detail state ownership / render orchestration boundary。
+- 不变量：summary-only recovery 是状态所有权策略，不是 UI 空白兜底；它只能把摘要壳
+  转成 loading shell 并要求真实详情刷新。
+- 闭环验证：`test/thread-detail-state.test.js` 覆盖恢复计划；
+  `test/conversation-render.test.js` 覆盖 app 只执行 helper 计划。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v514`。
+
 ## 2026-06-26 v513 Thread Summary/Detail State Boundary
 
 v513 是 Phase A 前端状态所有权收敛的继续推进，直接吸收 v511/v512 Music

@@ -147,6 +147,16 @@ it no longer owns this policy. This directly follows the v511/v512 Music
 incident: a list row with `turns: []` must not masquerade as a thread-detail
 conversation.
 
+`codex-mobile-shell-v514` continues that boundary extraction by moving
+summary-only current-thread recovery planning into `public/thread-detail-state.js`.
+The helper now decides whether a current thread is a summary shell, produces
+the sanitized loading-shell thread state, emits bounded diagnostic fields, and
+declares whether an immediate detail refresh should be scheduled. `public/app.js`
+executes those planned effects but no longer owns the policy branches. This
+keeps the v511/v512 root-cause repair in one focused state-ownership module
+instead of splitting detection, sanitization, and recovery across the main app
+render function.
+
 The first slices extract item visible-field merge policy,
 visible-text render identity / completed-receipt retention, local-only item
 retention/drop policy, and live-to-completed same-turn visible-item preservation

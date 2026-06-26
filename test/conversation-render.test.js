@@ -1859,7 +1859,8 @@ test("loading and thread-list state preserve locally visible live turns", () => 
   assert.match(functionBody("loadThread"), /threadHasLoadedDetailState\(state\.currentThread\)/);
   assert.match(functionBody("loadThreads"), /threadListSummaryFromDetailThread\(thread\) \|\| thread/);
   assert.match(functionSourceFrom(appJs, "renderCurrentThread"), /let thread = state\.currentThread;/);
-  assert.match(functionBody("renderCurrentThread"), /threadDetailStateApi\.threadIsSummaryOnlyCurrentThread\(thread, state\.currentThreadId\)/);
+  assert.match(functionBody("renderCurrentThread"), /threadDetailStateApi\.planSummaryOnlyCurrentThreadRecovery\(\{/);
+  assert.match(functionBody("renderCurrentThread"), /postClientEvent\("thread_summary_detail_recovery", summaryRecoveryPlan\.event\)/);
   assert.match(functionBody("renderCurrentThread"), /scheduleCurrentThreadRefresh\(0, "summary-detail-recovery"\)/);
   assert.match(functionBody("renderCurrentThread"), /threadDetailRenderPlanApi\.planSingleThreadFullRenderShell/);
   assert.doesNotMatch(functionBody("renderCurrentThread"), /Thread failed:/);

@@ -64,6 +64,38 @@
       && !thread.mobileLoadError);
   }
 
+  function planSummaryOnlyCurrentThreadRecovery(input = {}) {
+    const thread = input.thread;
+    const currentThreadId = input.currentThreadId;
+    if (!threadIsSummaryOnlyCurrentThread(thread, currentThreadId)) {
+      return {
+        shouldRecover: false,
+        shouldScheduleRefresh: false,
+        nextThread: thread || null,
+        event: null,
+        reason: "not-summary-only-current-thread",
+      };
+    }
+    const summary = threadListSummaryFromDetailThread(thread) || Object.assign({}, thread || {});
+    const nextThread = Object.assign({}, summary, {
+      turns: [],
+      mobileLoading: true,
+      mobileLoadError: "",
+    });
+    return {
+      shouldRecover: true,
+      shouldScheduleRefresh: !input.hasThreadLoadController && !input.hasRefreshThreadController,
+      nextThread,
+      event: {
+        threadId: String(currentThreadId || nextThread.id || ""),
+        reason: "summary-only-current-thread",
+        hasListTurnsField: Object.prototype.hasOwnProperty.call(thread, "turns"),
+        buildId: String(input.clientBuildId || ""),
+      },
+      reason: "summary-only-current-thread",
+    };
+  }
+
   function mergeThreadSummaryIntoList(threads, thread, options = {}) {
     const summary = threadListSummaryFromDetailThread(thread);
     const currentThreads = Array.isArray(threads) ? threads : [];
@@ -214,6 +246,7 @@
   return {
     createThreadDetailStatePolicy,
     mergeThreadSummaryIntoList,
+    planSummaryOnlyCurrentThreadRecovery,
     threadHasLoadedDetailState,
     threadIsSummaryOnlyCurrentThread,
     threadListSummaryFromDetailThread,

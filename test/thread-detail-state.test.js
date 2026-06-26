@@ -7,6 +7,7 @@ const { test } = require("node:test");
 const {
   createThreadDetailStatePolicy,
   mergeThreadSummaryIntoList,
+  planSummaryOnlyCurrentThreadRecovery,
   threadHasLoadedDetailState,
   threadIsSummaryOnlyCurrentThread,
   threadListSummaryFromDetailThread,
@@ -381,4 +382,61 @@ test("thread detail summary merge cannot preserve stale detail fields", () => {
   assert.equal(Object.prototype.hasOwnProperty.call(result.threads[0], "threadTaskCards"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(result.threads[0], "mobileReadMode"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(result.threads[0], "mobileDiagnostics"), false);
+});
+
+test("thread detail state plans summary-only current-thread recovery", () => {
+  const plan = planSummaryOnlyCurrentThreadRecovery({
+    thread: {
+      id: "thread-1",
+      name: "Music",
+      turns: [],
+      mobileReadWarning: "stale-list-field",
+      mobileProjectionRevision: "stale-revision",
+      mobileVisibleItemKeys: ["stale-key"],
+    },
+    currentThreadId: "thread-1",
+    clientBuildId: "build-v1",
+    hasThreadLoadController: false,
+    hasRefreshThreadController: false,
+  });
+
+  assert.equal(plan.shouldRecover, true);
+  assert.equal(plan.shouldScheduleRefresh, true);
+  assert.equal(plan.reason, "summary-only-current-thread");
+  assert.equal(plan.nextThread.id, "thread-1");
+  assert.equal(plan.nextThread.name, "Music");
+  assert.deepEqual(plan.nextThread.turns, []);
+  assert.equal(plan.nextThread.mobileLoading, true);
+  assert.equal(plan.nextThread.mobileLoadError, "");
+  assert.equal(Object.prototype.hasOwnProperty.call(plan.nextThread, "mobileReadWarning"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(plan.nextThread, "mobileProjectionRevision"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(plan.nextThread, "mobileVisibleItemKeys"), false);
+  assert.deepEqual(plan.event, {
+    threadId: "thread-1",
+    reason: "summary-only-current-thread",
+    hasListTurnsField: true,
+    buildId: "build-v1",
+  });
+});
+
+test("thread detail state does not schedule recovery when detail is loaded or refresh is active", () => {
+  assert.deepEqual(planSummaryOnlyCurrentThreadRecovery({
+    thread: { id: "thread-1", turns: [], mobileReadMode: "recent" },
+    currentThreadId: "thread-1",
+  }), {
+    shouldRecover: false,
+    shouldScheduleRefresh: false,
+    nextThread: { id: "thread-1", turns: [], mobileReadMode: "recent" },
+    event: null,
+    reason: "not-summary-only-current-thread",
+  });
+
+  const busyPlan = planSummaryOnlyCurrentThreadRecovery({
+    thread: { id: "thread-1", turns: [] },
+    currentThreadId: "thread-1",
+    hasThreadLoadController: true,
+    hasRefreshThreadController: false,
+  });
+  assert.equal(busyPlan.shouldRecover, true);
+  assert.equal(busyPlan.shouldScheduleRefresh, false);
 });
