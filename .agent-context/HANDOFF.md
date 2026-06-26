@@ -11594,3 +11594,59 @@ The previous full handoff was archived and should be opened only when old proven
   - Continue locally with post-merge runner consolidation or patch-attempt
     executor planning. Deploy only after enough Phase A refresh orchestration
     cleanup is complete to form a coherent module.
+
+## 2026-06-26 - local Phase A patch-attempt effects slice validated, not deployed
+
+- Latest code commit:
+  - `466ee32 extract thread refresh patch attempt effects plan`
+- Change:
+  - Continued local Phase A `refreshCurrentThread()` orchestration cleanup as
+    part of the next larger module, without deploying this small slice.
+  - `public/thread-detail-render-plan.js` now owns
+    `planThreadDetailRefreshPatchAttemptEffects()`, which declares the ordered
+    tile-pane and local-patch attempt effects.
+  - `public/app.js` now executes that plan through
+    `applyThreadDetailRefreshPatchAttemptEffectsPlan()`, keeping real DOM patch
+    calls and timing in app code but removing direct tile/local patch attempt
+    branching from `refreshCurrentThread()`.
+  - Updated focused source-string tests so tile layout, conversation render, and
+    mobile viewport coverage assert the new helper boundary rather than the old
+    inline local-patch branch.
+- Root-cause boundary:
+  - Symptom/risk: after the execution-effects slice, `refreshCurrentThread()`
+    still directly decided and timed tile-pane/local patch attempt order, keeping
+    patch attempt ownership mixed into the app orchestration path.
+  - Failing layer: frontend thread-detail refresh patch-attempt effect
+    ownership.
+  - Classification: root-cause architecture boundary cleanup. No server
+    projection change, DOM patch algorithm change, full-render behavior change,
+    scroll policy change, diagnostic transport change, task-card protocol
+    change, visual layout change, duplicate hiding, fallback, shell/cache bump,
+    deployment, or public push was added.
+- Validation:
+  - Focused source suite passed:
+    `test/thread-detail-render-plan.test.js`, `test/conversation-render.test.js`,
+    `test/mobile-viewport.test.js`, `test/thread-goal-service.test.js`,
+    `test/thread-task-card-route.test.js`, and
+    `test/thread-tile-layout-ui.test.js` (`163` tests).
+  - Full source `npm test` passed (`943` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Not deployed by design under the updated cadence. This slice is part of the
+    next larger Phase A refresh orchestration module.
+  - Production remains at `0.1.11|codex-mobile-shell-v506` until the module-level
+    deploy.
+- Sub-agent note:
+  - The read-only sub-agent audit of the patch path completed without edits. It
+    recommended the next module-internal candidates in this order:
+    remove the global patch reject scratch state, extract local patch preflight
+    planning, then move live-operation dock updates into a successful DOM patch
+    transaction stage.
+- Progress:
+  - Overall system-level architecture optimization is now estimated at about
+    `67.5%`, still in Phase A module assembly.
+- Next suggested slice:
+  - Remove `state.threadDetailPatchRejectReason` as global scratch by making the
+    DOM patch helper return a structured `{ ok, reason }` result and passing
+    that through the patch-attempt executor. Keep this local and undeployed
+    until the Phase A module is ready for one deployment.
