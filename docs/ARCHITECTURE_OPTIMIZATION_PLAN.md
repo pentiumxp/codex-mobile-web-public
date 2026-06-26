@@ -107,7 +107,10 @@ Current acceleration targets:
    The route-boundary slice then extracts `/api/threads/:id` detail route
    coordination into a testable service so `mode=recent`, bounded request logs,
    response send, and `complete=false` semantics can be verified without
-   relying on `server.js` source-string assertions.
+   relying on `server.js` source-string assertions. The route-smoke slice now
+   proves that this route boundary can call the real read orchestration and
+   return `projection-active-overlay` for a recent active-window read without
+   invoking full `thread/read` or `turns-list`.
    The remaining work is production readback after the next Phase B batch
    deploy and any root-cause fixes indicated by `activeOverlayReason`.
 2. Thread-list cold starts no longer hide source collection inside the fallback

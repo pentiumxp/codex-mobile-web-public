@@ -18,6 +18,13 @@ const {
 const {
   createThreadDetailReadOrchestrationService,
 } = require("../adapters/thread-detail-read-orchestration-service");
+const {
+  handleThreadDetailReadRoute,
+} = require("../adapters/thread-detail-route-service");
+
+function routeUrl(pathname) {
+  return new URL(pathname, "http://127.0.0.1:8787");
+}
 
 function diagnosticsAttacher(result, input) {
   if (!result || !result.thread) return result;
@@ -45,7 +52,7 @@ function diagnosticsAttacher(result, input) {
   return result;
 }
 
-test("read orchestration uses live projection provider for active overlay without full thread/read", async () => {
+function createActiveOverlayHarness() {
   const calls = [];
   let nowMs = 10_000;
   const now = () => {
@@ -172,6 +179,11 @@ test("read orchestration uses live projection provider for active overlay withou
     maxFullThreadTurns: 3,
   });
 
+  return { calls, service };
+}
+
+test("read orchestration uses live projection provider for active overlay without full thread/read", async () => {
+  const { calls, service } = createActiveOverlayHarness();
   const response = await service.readThreadDetail({
     codex: { transportKind: "mux", ready: true },
     threadId: "thread-1",
@@ -199,4 +211,53 @@ test("read orchestration uses live projection provider for active overlay withou
   assert.equal(timings.activeOverlayUploadItems, 0);
   assert.equal(timings.activeOverlayAssistantItems, 1);
   assert.equal(timings.activeOverlayReceiptItems, 1);
+});
+
+test("thread detail route smoke returns active overlay from mode=recent without full thread/read", async () => {
+  const { calls, service } = createActiveOverlayHarness();
+  const sent = [];
+  const routeLogs = [];
+
+  const result = await handleThreadDetailReadRoute({
+    threadId: "thread-1",
+    codex: { transportKind: "mux", ready: true },
+    url: routeUrl("/api/threads/thread-1?mode=recent"),
+    requestStartedAtMs: 10_000,
+    now: () => 10_123,
+    readThreadDetail: (request) => {
+      calls.push(`route-read-prefer-recent:${request.preferRecentTurns === true}`);
+      return service.readThreadDetail(request);
+    },
+    sendJson: (status, body) => sent.push({ status, body }),
+    logThreadDetail: (event, details) => routeLogs.push({ event, details }),
+  });
+
+  assert.deepEqual(result, {
+    handled: true,
+    status: 200,
+    mode: "projection-active-overlay",
+    complete: true,
+  });
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].status, 200);
+  assert.equal(sent[0].body.thread.mobileReadMode, "projection-active-overlay");
+  assert.deepEqual(sent[0].body.thread.turns.map((turn) => turn.id), ["turn-window", "turn-live"]);
+  assert.equal(calls.includes("thread-read"), false);
+  assert.equal(calls.includes("turns-list"), false);
+  assert.ok(calls.includes("route-read-prefer-recent:true"));
+  assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), [
+    "projection-lookup:full:partial-not-allowed",
+    "projection-lookup:partial:hit",
+  ]);
+  assert.ok(routeLogs.some((log) => log.event === "start" && log.details.transport === "mux"));
+  assert.ok(routeLogs.some((log) => (
+    log.event === "active_overlay_plan"
+    && log.details.action === "use-projection-overlay"
+    && log.details.reason === "overlay-evidence-complete"
+  )));
+  assert.ok(routeLogs.some((log) => (
+    log.event === "complete"
+    && log.details.status === 200
+    && log.details.mode === "projection-active-overlay"
+  )));
 });

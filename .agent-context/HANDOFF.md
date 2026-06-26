@@ -13938,3 +13938,47 @@ The previous full handoff was archived and should be opened only when old proven
   - Continue decomposing `server.js` only where it creates direct evidence for
     large-session load correctness, projection consistency, or task-card
     runtime safety.
+
+## 2026-06-26 - active overlay route smoke local-only
+
+- Scope:
+  - Continued Phase B by adding route-level integration evidence for the active
+    overlay path without starting the production HTTP server or reading private
+    runtime session content.
+  - This is still local-only under the small-slice cadence. It does not deploy,
+    bump shell/cache, change runtime/static UI, or push Public.
+- Root-cause boundary:
+  - Failing layer addressed: route coordination and read orchestration were now
+    independently testable, but there was no single executable proof that
+    `/api/threads/:id?mode=recent` route wiring can drive the real read
+    orchestration to `projection-active-overlay`.
+  - Violated invariant: large active-thread first paint must be verified across
+    the route boundary and read orchestration boundary, not only through
+    separate unit tests or source-string assertions.
+  - Closure classification: executable integration coverage only. No fallback,
+    no client dedupe, no forced refresh, and no route behavior change.
+- Changes:
+  - `test/thread-detail-active-overlay-integration.test.js` now factors the
+    active-overlay fixture and adds a route smoke case. The new case calls
+    `handleThreadDetailReadRoute()` with `/api/threads/thread-1?mode=recent`,
+    routes into the real `thread-detail-read-orchestration-service`, captures
+    route logs/response, and proves the result is `projection-active-overlay`.
+  - The route smoke also proves the recent-mode request reaches orchestration,
+    no full `thread/read` or `turns-list` call is made, and bounded route logs
+    include active-overlay and completion events.
+  - README and the architecture optimization plan now record that the
+    route-level active-overlay smoke exists.
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-active-overlay-integration.test.js test/thread-detail-route-service.test.js`
+    passed (`5` tests).
+  - Full source `npm test` passed (`1066` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment status:
+  - Not deployed by design. This remains part of the Phase B local batch.
+- Next Phase B candidates:
+  - The active-overlay route path is now covered locally. Next useful slice is
+    either runtime readback harnessing for production deploy, or thread-list
+    cold-path evidence that identifies whether slow first opens are coming from
+    fallback baseline source collection, projection cache misses, or app-server
+    fallback.
