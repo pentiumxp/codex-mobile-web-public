@@ -10919,3 +10919,64 @@ The previous full handoff was archived and should be opened only when old proven
     patch attempt result shape and scroll/render side-effect execution. If
     live diagnostics instead show server cold-path misses, pivot back to Phase B
     with current `projectionMissReason` evidence.
+
+## 2026-06-26 - v497 thread refresh patch attempt result plan deployed
+
+- Latest code commit:
+  - `db4688c extract thread refresh patch attempt result plan`
+- v497 change:
+  - Continued Phase A frontend render/patch ownership convergence.
+  - `public/thread-detail-render-plan.js` now owns
+    `planThreadDetailRefreshPatchAttemptResult()`, which normalizes
+    tile-pane patch success, single-thread local-patch success, local-patch
+    rejection, metadata-only tile misses, and the final result shape passed to
+    `finalizeThreadDetailRenderPlan()`.
+  - `refreshCurrentThread()` now computes the tile/single patch execution plan
+    once, attempts tile-pane patch and local patch through a shared branch, and
+    delegates patch-result interpretation plus local-patch rejection diagnostic
+    intent to the helper.
+  - Static build/cache: `0.1.11|codex-mobile-shell-v497` /
+    `codex-mobile-shell-v497`.
+- Root-cause boundary:
+  - Symptom/risk: after v496, metadata side effects had been moved out of
+    `refreshCurrentThread()`, but the patch-attempt result interpretation still
+    lived inline in app code with separate render-detail and metadata-only
+    branches. That made tile-pane patch, local-patch rejection, and
+    metadata-only tile-miss behavior easier to diverge.
+  - Failing layer: frontend thread-detail refresh patch-attempt ownership.
+  - Classification: root-cause architecture boundary cleanup. No server
+    projection change, frontend duplicate hiding, forced refresh, skipped
+    refresh, task-card protocol change, or diagnostic-transport fallback was
+    added.
+- Validation:
+  - Focused source suite passed:
+    `test/thread-tile-layout-ui.test.js`,
+    `test/thread-detail-render-plan.test.js`,
+    `test/conversation-render.test.js`, and `test/mobile-viewport.test.js`
+    (`135` tests).
+  - Full source `npm test` passed (`929` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Production deploy:
+  - Deployed through Home AI central macOS plugin deploy path with reason
+    `codex-mobile-thread-refresh-patch-attempt-v497`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T001301Z-plugin-codex-mobile-web-codex-mobile-thread-refresh-patch-attempt-v497`
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v497`,
+    `shellCacheName=codex-mobile-shell-v497`, `version=0.1.11`,
+    `authRequired=true`.
+  - Production focused suite passed (`150` tests).
+  - Source/production SHA parity verified for README/docs, app/static shell,
+    render-plan helper, and focused tests touched by v497.
+- Privacy:
+  - Evidence recorded only statuses, build ids, test counts, bounded deploy
+    metadata, and short hashes. No message bodies, task-card bodies, uploads,
+    private paths, cookies, access keys, provider payloads, database rows,
+    screenshots, or long logs were copied into docs or handoff.
+- Release:
+  - Public was not pushed for v497.
+- Next suggested slice:
+  - Continue Phase A by extracting the remaining `refreshCurrentThread()`
+    scroll/render side-effect execution boundaries, or pivot to Phase B if live
+    diagnostics show server cold-path projection misses instead of client
+    patch/render ownership issues.
