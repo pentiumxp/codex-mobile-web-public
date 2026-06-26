@@ -84,6 +84,35 @@
     return nowMs <= numberOrZero(follow.untilMs);
   }
 
+  function planBottomFollowLeaseEvaluation(options = {}) {
+    if (options.userReadingCurrentTurn) {
+      return {
+        shouldFollow: false,
+        clearLease: true,
+        reason: "user-reading-current-turn",
+      };
+    }
+    if (options.leaseActive) {
+      return {
+        shouldFollow: true,
+        clearLease: false,
+        reason: "lease-active",
+      };
+    }
+    if (options.hasLease) {
+      return {
+        shouldFollow: false,
+        clearLease: true,
+        reason: "lease-inactive",
+      };
+    }
+    return {
+      shouldFollow: false,
+      clearLease: false,
+      reason: "no-lease",
+    };
+  }
+
   function planLocalPatchScrollCompletion(options = {}) {
     if (options.userReadingCurrentTurn) {
       return {
@@ -277,6 +306,7 @@
     extendSubmittedMessageFollow,
     createViewportFollow,
     isNearBottom,
+    planBottomFollowLeaseEvaluation,
     planConversationAutoScrollHoldFromScroll,
     planConversationJumpButtons,
     planFullRenderScroll,

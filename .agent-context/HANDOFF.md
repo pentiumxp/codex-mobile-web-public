@@ -15825,3 +15825,31 @@ The previous full handoff was archived and should be opened only when old proven
 - Next:
   - Commit locally, then continue Phase A or batch the current module for one
     deploy/readback when requested.
+
+## 2026-06-26 - Latest tail marker: Phase A bottom-follow lease planning slice
+
+- Latest local commit for this continuation slice:
+  - Message: `plan bottom follow lease evaluation`.
+- Current state:
+  - This is the seventeenth local Phase A render/patch/scroll ownership slice.
+  - Not deployed by design; no `CLIENT_BUILD_ID` / PWA shell cache bump.
+- Root-cause boundary:
+  - `shouldFollowSubmittedMessageToBottom()` and
+    `shouldFollowViewportChangeToBottom()` each owned similar policy for
+    clearing follow leases while the user is reading the current turn and
+    clearing inactive/expired leases.
+  - `public/conversation-scroll.js` now owns
+    `planBottomFollowLeaseEvaluation()`, while `public/app.js` supplies
+    reading/lease facts and executes only the real submitted/viewport clear
+    side effects.
+- Validation:
+  - Focused:
+    `node --test test/conversation-scroll.test.js test/turn-scroll-controls.test.js test/mobile-viewport.test.js test/conversation-render.test.js`
+    passed (`137` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`1121` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit locally, then continue Phase A or batch the current module for one
+    deploy/readback when requested.

@@ -16,6 +16,44 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 Phase A Bottom-Follow Lease Planning Slice
+
+本地小切片继续推进 Phase A 的 scroll ownership 收敛。此前
+`shouldFollowSubmittedMessageToBottom()` 和 `shouldFollowViewportChangeToBottom()`
+各自在 `public/app.js` 里判断用户是否正在读当前 turn、是否应该清理
+submitted-message / viewport follow lease、以及是否继续沉底。这是同一类
+bottom-follow lease 评估，却分散在两个 app 函数里。
+
+本次修复：
+
+- `public/conversation-scroll.js` 新增
+  `planBottomFollowLeaseEvaluation()`，根据 `userReadingCurrentTurn`、
+  `leaseActive`、`hasLease` 统一产出 `shouldFollow`、`clearLease` 和 bounded
+  reason。
+- `public/app.js` 的 submitted-message follow 和 viewport follow 改为先采集
+  当前 reading-hold 与 lease-active 事实，再调用同一个 helper，并只执行真实
+  clear side effect。
+- 保留原短路顺序：用户正在读当前 turn 时直接规划清理 lease，不再评估
+  threadId/expiry；只有不在 reading hold 时才读取 lease 是否仍有效。
+- focused tests 覆盖 reading-hold 清理、active lease 继续沉底、inactive lease
+  清理、无 lease noop，并验证 app wiring 不再内联旧清理策略。
+- 不改变 DOM、按钮位置、scroll 动作、projection、任务卡协议或 shell/cache。
+
+闭环验证：
+
+```bash
+node --test test/conversation-scroll.test.js test/turn-scroll-controls.test.js test/mobile-viewport.test.js test/conversation-render.test.js
+npm run check
+npm test
+npm run check:macos
+git diff --check
+```
+
+结果：focused `137` passed；full `npm test` `1121` passed；
+`npm run check`、`npm run check:macos`、`git diff --check` 均通过。
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，
+尚未部署；继续作为 Phase A 模块的一部分累积。
+
 ## 2026-06-26 Phase A Auto-Scroll Hold Planning Slice
 
 本地小切片继续推进 Phase A 的 scroll ownership 收敛。此前

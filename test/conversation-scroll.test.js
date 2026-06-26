@@ -117,6 +117,45 @@ test("viewport follow stays scoped to one thread and expires", () => {
   }), false);
 });
 
+test("bottom-follow lease planning owns user-reading and inactive cleanup", () => {
+  assert.deepEqual(conversationScroll.planBottomFollowLeaseEvaluation({
+    userReadingCurrentTurn: true,
+    leaseActive: true,
+    hasLease: true,
+  }), {
+    shouldFollow: false,
+    clearLease: true,
+    reason: "user-reading-current-turn",
+  });
+
+  assert.deepEqual(conversationScroll.planBottomFollowLeaseEvaluation({
+    leaseActive: true,
+    hasLease: true,
+  }), {
+    shouldFollow: true,
+    clearLease: false,
+    reason: "lease-active",
+  });
+
+  assert.deepEqual(conversationScroll.planBottomFollowLeaseEvaluation({
+    leaseActive: false,
+    hasLease: true,
+  }), {
+    shouldFollow: false,
+    clearLease: true,
+    reason: "lease-inactive",
+  });
+
+  assert.deepEqual(conversationScroll.planBottomFollowLeaseEvaluation({
+    leaseActive: false,
+    hasLease: false,
+  }), {
+    shouldFollow: false,
+    clearLease: false,
+    reason: "no-lease",
+  });
+});
+
 test("local patch scroll completion follows bottom only when policy allows", () => {
   assert.deepEqual(conversationScroll.planLocalPatchScrollCompletion({
     nearBottom: true,

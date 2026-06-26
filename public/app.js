@@ -19992,31 +19992,41 @@ function clearViewportBottomFollow() {
 }
 
 function shouldFollowSubmittedMessageToBottom() {
-  if (isUserReadingCurrentTurn()) {
-    clearSubmittedMessageBottomFollow();
-    return false;
+  const userReadingCurrentTurn = isUserReadingCurrentTurn();
+  let leaseActive = false;
+  if (!userReadingCurrentTurn) {
+    const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
+    leaseActive = conversationScroll.shouldFollowSubmittedMessage(state.submittedMessageBottomFollow, {
+      threadId,
+      nowMs: Date.now(),
+    });
   }
-  const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
-  const shouldFollow = conversationScroll.shouldFollowSubmittedMessage(state.submittedMessageBottomFollow, {
-    threadId,
-    nowMs: Date.now(),
+  const plan = conversationScroll.planBottomFollowLeaseEvaluation({
+    userReadingCurrentTurn,
+    leaseActive,
+    hasLease: Boolean(state.submittedMessageBottomFollow),
   });
-  if (!shouldFollow && state.submittedMessageBottomFollow) clearSubmittedMessageBottomFollow();
-  return shouldFollow;
+  if (plan.clearLease) clearSubmittedMessageBottomFollow();
+  return Boolean(plan.shouldFollow);
 }
 
 function shouldFollowViewportChangeToBottom() {
-  if (isUserReadingCurrentTurn()) {
-    clearViewportBottomFollow();
-    return false;
+  const userReadingCurrentTurn = isUserReadingCurrentTurn();
+  let leaseActive = false;
+  if (!userReadingCurrentTurn) {
+    const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
+    leaseActive = conversationScroll.shouldFollowViewport(state.viewportBottomFollow, {
+      threadId,
+      nowMs: Date.now(),
+    });
   }
-  const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
-  const shouldFollow = conversationScroll.shouldFollowViewport(state.viewportBottomFollow, {
-    threadId,
-    nowMs: Date.now(),
+  const plan = conversationScroll.planBottomFollowLeaseEvaluation({
+    userReadingCurrentTurn,
+    leaseActive,
+    hasLease: Boolean(state.viewportBottomFollow),
   });
-  if (!shouldFollow && state.viewportBottomFollow) clearViewportBottomFollow();
-  return shouldFollow;
+  if (plan.clearLease) clearViewportBottomFollow();
+  return Boolean(plan.shouldFollow);
 }
 
 function scheduleBottomFollowScroll(shouldFollow) {
