@@ -22,9 +22,9 @@
     return Number.isFinite(numberValue) && numberValue > 0 ? Math.trunc(numberValue) : 0;
   }
 
-  function compactReason(value, fallback = "") {
+  function compactReason(value, fallback = "", maxLength = 80) {
     const reason = String(value || "").trim();
-    return (reason || fallback).slice(0, 80);
+    return (reason || fallback).slice(0, maxLength);
   }
 
   function objectOrEmpty(value) {
@@ -936,6 +936,39 @@
     };
   }
 
+  function planThreadDetailSwitchCancelledClientEvent(input = {}) {
+    return {
+      effects: [{
+        type: "post-client-event",
+        eventName: "thread_switch_cancelled",
+        payload: {
+          source: compactReason(input.source, "").slice(0, 40),
+          threadId: compactReason(input.threadId, ""),
+          elapsedMs: normalizedDurationMs(input.elapsedMs),
+          apiElapsedMs: normalizedDurationMs(input.apiElapsedMs),
+        },
+      }],
+      reason: "thread-switch-cancelled",
+    };
+  }
+
+  function planThreadDetailSwitchErrorClientEvent(input = {}) {
+    return {
+      effects: [{
+        type: "post-client-event",
+        eventName: "thread_switch_error",
+        payload: {
+          source: compactReason(input.source, "").slice(0, 40),
+          threadId: compactReason(input.threadId, ""),
+          elapsedMs: normalizedDurationMs(input.elapsedMs),
+          apiElapsedMs: normalizedDurationMs(input.apiElapsedMs),
+          error: compactReason(input.error, "", 200),
+        },
+      }],
+      reason: "thread-switch-error",
+    };
+  }
+
   function text(value) {
     return String(value ?? "");
   }
@@ -1092,6 +1125,8 @@
     planThreadDetailCachedCurrentTelemetryEffects,
     planThreadDetailFirstPaintPostRenderEffects,
     planThreadDetailFirstPaintTelemetryEffects,
+    planThreadDetailSwitchCancelledClientEvent,
+    planThreadDetailSwitchErrorClientEvent,
     planThreadDetailRefreshCompletionEffects,
     planThreadDetailRefreshConsistencyCheck,
     planThreadDetailRefreshConsistencyCheckEffects,

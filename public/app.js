@@ -9024,12 +9024,13 @@ async function loadThread(threadId, options = {}) {
     });
   } catch (err) {
     if (seq !== state.threadLoadSeq || controller.signal.aborted) {
-      postClientEvent("thread_switch_cancelled", {
+      const cancelledEventPlan = threadDetailRenderPlanApi.planThreadDetailSwitchCancelledClientEvent({
         source,
         threadId,
         elapsedMs: roundedDurationMs(switchStartedAt),
         apiElapsedMs: roundedDurationMs(apiStartedAt),
       });
+      applyThreadDetailSwitchClientEventPlan(cancelledEventPlan);
       return;
     }
     state.currentThread = Object.assign({}, state.currentThread || { id: threadId, name: threadId, preview: threadId, turns: [] }, {
@@ -9040,13 +9041,14 @@ async function loadThread(threadId, options = {}) {
     renderThreads();
     renderCurrentThread();
     updateComposerControls();
-    postClientEvent("thread_switch_error", {
+    const errorEventPlan = threadDetailRenderPlanApi.planThreadDetailSwitchErrorClientEvent({
       source,
       threadId,
       elapsedMs: roundedDurationMs(switchStartedAt),
       apiElapsedMs: roundedDurationMs(apiStartedAt),
       error: err.message || String(err),
     });
+    applyThreadDetailSwitchClientEventPlan(errorEventPlan);
     recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.threadDetailLoadFailedDiagnosticEvent({
       errorCode: diagnosticErrorCode(err, "thread_detail_load_failed"),
       durationBucket: diagnosticDurationBucket(roundedDurationMs(switchStartedAt)),
@@ -9060,12 +9062,13 @@ async function loadThread(threadId, options = {}) {
   }
   const apiElapsedMs = roundedDurationMs(apiStartedAt);
   if (seq !== state.threadLoadSeq || state.currentThreadId !== threadId) {
-    postClientEvent("thread_switch_cancelled", {
+    const cancelledEventPlan = threadDetailRenderPlanApi.planThreadDetailSwitchCancelledClientEvent({
       source,
       threadId,
       elapsedMs: roundedDurationMs(switchStartedAt),
       apiElapsedMs,
     });
+    applyThreadDetailSwitchClientEventPlan(cancelledEventPlan);
     return;
   }
   const renderStartedAt = nowPerfMs();
@@ -9313,6 +9316,21 @@ function applyThreadDetailFirstPaintTelemetryEffect(effect, context = {}) {
 function applyThreadDetailFirstPaintTelemetryEffectsPlan(plan, context = {}) {
   const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
   for (const effect of effects) applyThreadDetailFirstPaintTelemetryEffect(effect, context);
+}
+
+function applyThreadDetailSwitchClientEventEffect(effect) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  if (type === "post-client-event") {
+    postClientEvent(String(item.eventName || ""), item.payload || {});
+    return true;
+  }
+  throw new Error(`Unknown thread detail switch client event effect: ${type || "empty"}`);
+}
+
+function applyThreadDetailSwitchClientEventPlan(plan) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applyThreadDetailSwitchClientEventEffect(effect);
 }
 
 function applyThreadDetailRefreshPostMergeEffect(effect) {

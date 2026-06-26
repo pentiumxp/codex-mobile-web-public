@@ -16731,6 +16731,57 @@ The previous full handoff was archived and should be opened only when old proven
     bodies, task-card bodies, upload bytes, private paths, provider payloads,
     prompts, or long logs are included.
 
+## 2026-06-27 - Phase A thread-detail switch client event plan local slice
+
+- Latest local slice:
+  - Continued Phase A `loadThread()` ownership reduction after `8af197f`
+    (`delegate load failure diagnostics`).
+  - This slice is local/private only and is not deployed by design.
+- Root-cause boundary:
+  - Symptom/risk: `loadThread()` still hand-wrote
+    `thread_switch_cancelled` and `thread_switch_error` client event payloads
+    while first-paint/cached-current telemetry and load-failure diagnostics had
+    already moved to helpers. This left thread-switch event field ownership
+    split across app orchestration and render-plan helpers.
+  - Failing layer: frontend thread-detail switch client-event payload
+    ownership, not API reads, projection cache, merge policy, DOM rendering,
+    scroll policy, task-card routing, Home AI intake, or shell/cache.
+  - Violated invariant: `public/app.js` should own abort/stale/error branch
+    decisions and execute the real `postClientEvent()` side effect, while pure
+    helpers own bounded client-event payload shape.
+- Changes:
+  - `public/thread-detail-render-plan.js` now exports
+    `planThreadDetailSwitchCancelledClientEvent()` and
+    `planThreadDetailSwitchErrorClientEvent()`.
+  - `public/app.js` adds `applyThreadDetailSwitchClientEventPlan()` and uses it
+    for API abort/stale cancellation, API error, and post-response stale
+    cancellation in `loadThread()`.
+  - Updated `test/thread-detail-render-plan.test.js`,
+    `test/conversation-render.test.js`, and `test/mobile-viewport.test.js`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-diagnostic-events.test.js`
+    passed (`201` tests).
+  - Syntax:
+    `node --check public/thread-detail-render-plan.js && node --check public/app.js && node --check test/thread-detail-render-plan.test.js && node --check test/conversation-render.test.js && node --check test/mobile-viewport.test.js`
+    passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache
+    bump. This remains a local Phase A ownership slice to batch with the next
+    module validation/deploy.
+- Next:
+  - Run full validation, commit locally, then continue Phase A with remaining
+    `loadThread()` loading-shell/start side-effect ownership or switch to
+    Phase B cold-path readback if large-session load time becomes immediate
+    priority.
+- Privacy:
+  - Only bounded file paths, helper names, event names, and test counts are
+    recorded. No secrets, cookies, launch tokens, private thread bodies,
+    task-card bodies, upload bytes, private paths, provider payloads, prompts,
+    or long logs are included.
+
 ## 2026-06-27 - Phase A cached-current post-merge plan reuse local slice
 
 - Latest local slice:

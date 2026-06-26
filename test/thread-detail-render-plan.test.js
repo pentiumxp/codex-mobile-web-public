@@ -1293,6 +1293,45 @@ test("thread detail cached-current telemetry effects plan preserves legacy event
   });
 });
 
+test("thread detail switch client event plans bound cancel and error payloads", () => {
+  assert.deepEqual(renderPlan.planThreadDetailSwitchCancelledClientEvent({
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA",
+    threadId: "thread-1",
+    elapsedMs: 12.5,
+    apiElapsedMs: 9.2,
+  }), {
+    effects: [{
+      type: "post-client-event",
+      eventName: "thread_switch_cancelled",
+      payload: {
+        source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR",
+        threadId: "thread-1",
+        elapsedMs: 12.5,
+        apiElapsedMs: 9.2,
+      },
+    }],
+    reason: "thread-switch-cancelled",
+  });
+
+  const longError = "x".repeat(240);
+  const errorPlan = renderPlan.planThreadDetailSwitchErrorClientEvent({
+    source: "thread-list",
+    threadId: "thread-2",
+    elapsedMs: -1,
+    apiElapsedMs: "bad",
+    error: longError,
+  });
+  assert.equal(errorPlan.effects[0].eventName, "thread_switch_error");
+  assert.deepEqual(errorPlan.effects[0].payload, {
+    source: "thread-list",
+    threadId: "thread-2",
+    elapsedMs: 0,
+    apiElapsedMs: 0,
+    error: "x".repeat(200),
+  });
+  assert.equal(errorPlan.reason, "thread-switch-error");
+});
+
 test("single-thread full render shell plans loading state", () => {
   assert.deepEqual(renderPlan.planSingleThreadFullRenderShell({
     threadId: "thread-1",
