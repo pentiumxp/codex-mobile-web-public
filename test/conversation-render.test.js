@@ -3102,6 +3102,16 @@ test("thread detail refresh failure delegates diagnostic payloads to helper", ()
   assert.doesNotMatch(body, /recordHomeAiDiagnosticFailure\(threadDiagnosticEventsApi\.threadDetailRefreshFailedDiagnosticEvent\(\{/);
 });
 
+test("thread detail load failure delegates diagnostic payloads to helper", () => {
+  const body = functionBody("loadThread");
+  assert.match(body, /recordHomeAiDiagnosticFailure\(threadDiagnosticEventsApi\.threadDetailLoadFailedDiagnosticEvent\(\{/);
+  assert.match(body, /errorCode: diagnosticErrorCode\(err, "thread_detail_load_failed"\)/);
+  assert.match(body, /durationBucket: diagnosticDurationBucket\(roundedDurationMs\(switchStartedAt\)\)/);
+  assert.match(body, /statusCode: diagnosticErrorStatus\(err\)/);
+  assert.match(body, /threadHash: diagnosticThreadHash\(threadId\)/);
+  assert.doesNotMatch(body, /recordHomeAiDiagnosticFailure\(\{[\s\S]*diagnostic_type: "thread_detail_load_failed"/);
+});
+
 test("thread tile local patch paths refresh the pane instead of writing a single-thread signature", () => {
   assert.match(appJs, /function threadDetailDomPatchSurface\(/);
   assert.match(functionBody("threadDetailDomPatchSurface"), /threadDetailPatchPlanApi\.planThreadDetailDomPatchSurface\(/);

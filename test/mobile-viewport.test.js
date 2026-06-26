@@ -302,6 +302,8 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(functionBody("loadThread"), /applyThreadDetailFirstPaintTelemetryEffectsPlan\(cachedTelemetryPlan, \{ thread: state\.currentThread \}\);/);
   assert.match(functionBody("loadThread"), /const firstPaintTelemetryPlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintTelemetryEffects\(\{[\s\S]*performanceEvent: firstPaintPerformance,[\s\S]*threadHash: diagnosticThreadHash\(threadId\),[\s\S]*\}\);/);
   assert.match(functionBody("loadThread"), /applyThreadDetailFirstPaintTelemetryEffectsPlan\(firstPaintTelemetryPlan, \{ thread: result\.thread \}\);/);
+  assert.match(functionBody("loadThread"), /threadDiagnosticEventsApi\.threadDetailLoadFailedDiagnosticEvent\(\{[\s\S]*errorCode: diagnosticErrorCode\(err, "thread_detail_load_failed"\),[\s\S]*durationBucket: diagnosticDurationBucket\(roundedDurationMs\(switchStartedAt\)\),[\s\S]*statusCode: diagnosticErrorStatus\(err\),[\s\S]*threadHash: diagnosticThreadHash\(threadId\),[\s\S]*\}\)/);
+  assert.doesNotMatch(functionBody("loadThread"), /recordHomeAiDiagnosticFailure\(\{[\s\S]*diagnostic_type: "thread_detail_load_failed"/);
   assert.match(functionBody("applyThreadDetailFirstPaintTelemetryEffect"), /postPerformanceEvent\(String\(item\.eventName \|\| ""\), item\.payload \|\| \{\}, item\.options \|\| \{\}\);/);
   assert.match(functionBody("applyThreadDetailFirstPaintTelemetryEffect"), /recordThreadDetailResponseDiagnostics\(item\.performanceEvent \|\| \{\}, \{/);
   assert.match(functionBody("applyThreadDetailFirstPaintTelemetryEffect"), /postClientEvent\(String\(item\.eventName \|\| ""\), item\.payload \|\| \{\}\);/);

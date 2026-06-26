@@ -670,6 +670,39 @@
     };
   }
 
+  function threadDetailLoadFailedDiagnosticEvent(input = {}) {
+    const threadHash = compactToken(input.threadHash, "", 80);
+    const errorCode = compactToken(input.errorCode, "thread_detail_load_failed", 80);
+    const durationBucket = compactToken(input.durationBucket, "", 80);
+    const statusCode = boundedCount(input.statusCode);
+    return {
+      category: "thread_session_load_failed",
+      diagnostic_type: "thread_detail_load_failed",
+      severity_hint: "H2",
+      evidence_confidence: 0.76,
+      error_code: errorCode,
+      duration_bucket: durationBucket,
+      context: {
+        surface: "thread-session",
+        action: "thread-detail-load",
+        thread_hash: threadHash,
+      },
+      counts: {
+        status_code: statusCode,
+      },
+      breadcrumbs: [{
+        kind: "thread-session",
+        code: "thread-detail-load",
+        status: "failed",
+        duration_bucket: durationBucket,
+        fields: {
+          status_code: statusCode,
+          thread_hash: threadHash,
+        },
+      }],
+    };
+  }
+
   function threadDetailSlowPathDiagnosticEvent(input = {}) {
     const source = input && typeof input === "object" ? input : {};
     const action = compactToken(source.action, "thread-detail", 80);
@@ -895,6 +928,7 @@
     threadDetailResponseContractDiagnosticEvent,
     threadDetailResponseDiagnosticEffects,
     threadDetailResponseContractDiagnosticSuccess,
+    threadDetailLoadFailedDiagnosticEvent,
     threadDetailSlowPathDiagnosticEvent,
     threadDetailSlowPathDiagnosticSuccess,
     turnOrderDiagnosticSnapshot,

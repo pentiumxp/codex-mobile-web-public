@@ -517,6 +517,38 @@ node --check public/thread-diagnostic-events.js && node --check public/app.js
 该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为 Phase A/B
 本地/private commit 累积。
 
+## 2026-06-27 Phase A Thread Detail Load Failure Diagnostic Payload Slice
+
+本地小切片继续收敛 thread session diagnostic ownership。此前
+`threadDetailRefreshFailedDiagnosticEvent()` 已经统一生成
+`thread_detail_refresh_failed` payload，但 `loadThread()` 的 API 失败路径仍在
+`public/app.js` 里直接拼 `thread_detail_load_failed` 的 category、context、counts
+和 breadcrumbs。这让首屏线程加载失败诊断的 payload contract 继续散在 app 编排层。
+
+本次修复：
+
+- `public/thread-diagnostic-events.js` 新增
+  `threadDetailLoadFailedDiagnosticEvent()`，统一生成 bounded
+  `thread_detail_load_failed` failure payload。
+- `public/app.js` 的 `loadThread()` catch 分支保留真实错误处理、UI 状态更新、
+  `thread_switch_error` client event 和 throw 语义，但不再内联 Home AI diagnostic
+  payload。
+- `test/thread-diagnostic-events.test.js` 覆盖 load failure payload 和隐私边界。
+- `test/conversation-render.test.js`、`test/mobile-viewport.test.js` 防止 app 重新
+  内联 `thread_detail_load_failed` payload。
+- 不改变 thread detail API、错误 UI、取消路径、重试路径、Home AI 上报协议、
+  projection/merge/render、任务卡协议、shell/cache 或部署状态。
+
+闭环验证：
+
+```bash
+node --test test/thread-diagnostic-events.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-detail-render-plan.test.js
+node --check public/thread-diagnostic-events.js && node --check public/app.js
+```
+
+该切片尚未 bump `CLIENT_BUILD_ID` / PWA shell cache，尚未部署；继续作为 Phase A/B
+本地/private commit 累积。
+
 ## 2026-06-27 Phase B Thread-List Baseline Work Attribution Slice
 
 本地小切片继续推进 Phase B 的线程列表冷路径证据化。此前

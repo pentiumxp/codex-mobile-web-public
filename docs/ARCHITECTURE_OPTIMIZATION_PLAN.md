@@ -914,6 +914,12 @@ Thread refresh failure diagnostic payload planning now lives in
 builds the bounded `thread_detail_refresh_failed` failure report, so
 `refreshCurrentThread()` no longer owns category/type/context/count/breadcrumb
 selection for refresh API failures.
+Thread detail load failure diagnostic payload planning now also lives in
+`public/thread-diagnostic-events.js`: `threadDetailLoadFailedDiagnosticEvent`
+builds the bounded `thread_detail_load_failed` failure report, so
+`loadThread()` no longer owns category/type/context/count/breadcrumb selection
+for initial thread-detail API load failures. App code still owns real UI state,
+client events, abort/cancel branching, and throwing the original error.
 Thread refresh failure diagnostic effect planning now also lives in
 `public/thread-detail-render-plan.js`:
 `planThreadDetailRefreshFailureDiagnosticEffects` converts bounded failure

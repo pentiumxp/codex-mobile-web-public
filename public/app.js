@@ -9047,32 +9047,12 @@ async function loadThread(threadId, options = {}) {
       apiElapsedMs: roundedDurationMs(apiStartedAt),
       error: err.message || String(err),
     });
-    recordHomeAiDiagnosticFailure({
-      category: "thread_session_load_failed",
-      diagnostic_type: "thread_detail_load_failed",
-      severity_hint: "H2",
-      evidence_confidence: 0.76,
-      error_code: diagnosticErrorCode(err, "thread_detail_load_failed"),
-      duration_bucket: diagnosticDurationBucket(roundedDurationMs(switchStartedAt)),
-      context: {
-        surface: "thread-session",
-        action: "thread-detail-load",
-        thread_hash: diagnosticThreadHash(threadId),
-      },
-      counts: {
-        status_code: diagnosticErrorStatus(err),
-      },
-      breadcrumbs: [{
-        kind: "thread-session",
-        code: "thread-detail-load",
-        status: "failed",
-        duration_bucket: diagnosticDurationBucket(roundedDurationMs(switchStartedAt)),
-        fields: {
-          status_code: diagnosticErrorStatus(err),
-          thread_hash: diagnosticThreadHash(threadId),
-        },
-      }],
-    });
+    recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.threadDetailLoadFailedDiagnosticEvent({
+      errorCode: diagnosticErrorCode(err, "thread_detail_load_failed"),
+      durationBucket: diagnosticDurationBucket(roundedDurationMs(switchStartedAt)),
+      statusCode: diagnosticErrorStatus(err),
+      threadHash: diagnosticThreadHash(threadId),
+    }));
     throw err;
   } finally {
     clearThreadLoadWatchdog();

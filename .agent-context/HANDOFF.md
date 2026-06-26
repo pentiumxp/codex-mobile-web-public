@@ -16954,6 +16954,56 @@ The previous full handoff was archived and should be opened only when old proven
     task-card bodies, upload bytes, private paths, provider payloads, prompts,
     or long logs are included.
 
+## 2026-06-27 - Phase A thread-detail load failure diagnostic payload local slice
+
+- Latest local slice:
+  - Continued Phase A/B diagnostic ownership after `b2b933f`
+    (`plan cached current telemetry effects`).
+  - This slice is local/private only and is not deployed by design.
+- Root-cause boundary:
+  - Symptom/risk: `loadThread()` initial API failure path still hand-wrote the
+    full Home AI `thread_detail_load_failed` diagnostic payload in
+    `public/app.js`, while refresh failure payloads already lived in
+    `public/thread-diagnostic-events.js`. This left session-load diagnostic
+    payload ownership split across app orchestration and diagnostic helpers.
+  - Failing layer: frontend thread-detail load failure diagnostic payload
+    ownership, not API reads, projection cache, merge policy, DOM rendering,
+    scroll policy, task-card routing, Home AI intake, or shell/cache.
+  - Violated invariant: `public/app.js` should collect runtime error facts and
+    execute side effects, while diagnostic helpers own bounded category/type/
+    context/count/breadcrumb payload selection.
+- Changes:
+  - `public/thread-diagnostic-events.js` now exports
+    `threadDetailLoadFailedDiagnosticEvent()`.
+  - `public/app.js` `loadThread()` catch branch now calls that helper with
+    bounded runtime facts and preserves the existing UI update, client event,
+    abort/cancel, and throw behavior.
+  - Updated `test/thread-diagnostic-events.test.js`,
+    `test/conversation-render.test.js`, and `test/mobile-viewport.test.js`.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and
+    `docs/MODULES.md`.
+- Validation:
+  - Focused:
+    `node --test test/thread-diagnostic-events.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-detail-render-plan.test.js`
+    passed (`199` tests).
+  - Syntax:
+    `node --check public/thread-diagnostic-events.js && node --check public/app.js && node --check test/thread-diagnostic-events.test.js && node --check test/conversation-render.test.js && node --check test/mobile-viewport.test.js`
+    passed.
+- Deployment:
+  - Not deployed. No runtime restart, `CLIENT_BUILD_ID`, or PWA shell cache
+    bump. This remains a local Phase A/B ownership slice to batch with the next
+    module validation/deploy.
+- Next:
+  - Run full validation, commit locally, then continue Phase A with remaining
+    `loadThread()` switch-cancel/error client event planning or switch to
+    Phase B cold-path readback if large-session load time becomes immediate
+    priority.
+- Privacy:
+  - Only bounded file paths, helper names, diagnostic type labels, and test
+    counts are recorded. No secrets, cookies, launch tokens, private thread
+    bodies, task-card bodies, upload bytes, private paths, provider payloads,
+    prompts, or long logs are included.
+
 ## 2026-06-27 - Phase A cached-current telemetry plan reuse local slice
 
 - Latest local slice:
