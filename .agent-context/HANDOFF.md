@@ -1,3 +1,52 @@
+# 2026-06-26 - local Phase B bounded-read policy service validated, not deployed
+
+- Latest code commit:
+  - `b57e060 refactor thread detail bounded read policy`
+- Scope:
+  - Continued Phase B large-session / cold-path architecture cleanup without
+    deploying a small slice.
+  - Extracted the large-session bounded-read gate from `server.js` into the
+    pure `adapters/thread-detail-bounded-read-policy-service.js`.
+  - `server.js` now only injects
+    `CODEX_MOBILE_THREAD_DETAIL_TURNS_LIST_FIRST_BYTES` and
+    `threadRolloutSizeBytes`; the pure service owns projection rollout-size
+    priority, summary fallback, `>=` threshold semantics, disabled/no-size
+    decisions, and source/reason metadata.
+  - Added direct policy tests for disabled threshold, projection `sizeBytes`,
+    projection legacy `size`, projection-below-threshold without summary
+    fallback, equality-to-threshold, invalid-threshold preservation, summary
+    fallback, no-size behavior, and configured service reuse.
+  - Updated `package.json` `check`, `docs/MODULES.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` so the new boundary is durable.
+- Root-cause boundary:
+  - Symptom/risk: the large-session first-paint protection decision was still
+    embedded in route assembly, making cold-path changes harder to test and
+    easier to regress while investigating large session load latency.
+  - Failing layer: server-side thread-detail read-path decision ownership.
+  - Classification: root-cause architecture cleanup. No fallback behavior,
+    runtime read strategy change, shell/cache bump, deployment, or public push
+    was added.
+- Validation:
+  - Focused suite passed:
+    `node --test test/thread-detail-bounded-read-policy-service.test.js test/thread-detail-read-orchestration-service.test.js test/thread-detail-performance-service.test.js`
+    (`24` tests).
+  - `node --check adapters/thread-detail-bounded-read-policy-service.js && node --check server.js` passed.
+  - Full source `npm test` passed (`965` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Not deployed by design. This is a local Phase B architecture slice and
+    should accumulate into a larger completed module before production deploy.
+  - Production remains at `0.1.11|codex-mobile-shell-v507`.
+- Progress:
+  - Overall system-level architecture optimization is now estimated at about
+    `77%`.
+- Next suggested slice:
+  - Continue Phase B by extracting the remaining thread-detail runtime
+    observation/readback boundary: compare production diagnostics for large
+    threads against the server read decision, then decide whether the next
+    fix belongs to summary rollout-size hydration, projection-cache lifecycle,
+    app-server `turns/list` timing, or client DOM patch cost.
+
 # 2026-06-26 - local Phase B thread-detail performance phase classifier validated, not deployed
 
 - Latest code commit:
