@@ -164,10 +164,16 @@ test("thread detail refresh patch attempt result makes tile pane patch terminal"
     tilePanePatchedDetail: true,
     localPatchAttempted: true,
     locallyPatchedDetail: true,
+    tilePanePatchMs: 4.5,
+    localPatchMs: 9.25,
+    patchRejectReason: "should-not-surface",
   }), {
     patchResult: "tile-pane-patched",
     locallyPatchedDetail: false,
     tilePanePatchedDetail: true,
+    detailPatchMs: 4.5,
+    patchTimingSource: "tile-pane",
+    patchRejectReason: "",
     reportLocalPatchRejected: false,
     finalizeResult: {
       locallyPatchedDetail: false,
@@ -183,13 +189,43 @@ test("thread detail refresh patch attempt result reports local patch rejection",
     tilePanePatchedDetail: false,
     localPatchAttempted: true,
     locallyPatchedDetail: false,
+    localPatchMs: 7.25,
+    patchRejectReason: "rendered-dom-stale",
   }), {
     patchResult: "local-patch-rejected",
     locallyPatchedDetail: false,
     tilePanePatchedDetail: false,
+    detailPatchMs: 7.25,
+    patchTimingSource: "local-patch-rejected",
+    patchRejectReason: "rendered-dom-stale",
     reportLocalPatchRejected: true,
     finalizeResult: {
       locallyPatchedDetail: false,
+      tilePanePatchedDetail: false,
+    },
+  });
+});
+
+test("thread detail refresh patch attempt result records local patch timing", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchAttemptResult({
+    shouldRenderDetail: true,
+    tilePanePatchAttempted: true,
+    tilePanePatchedDetail: false,
+    localPatchAttempted: true,
+    locallyPatchedDetail: true,
+    tilePanePatchMs: 3,
+    localPatchMs: 6.5,
+    patchRejectReason: "ignored",
+  }), {
+    patchResult: "local-patched",
+    locallyPatchedDetail: true,
+    tilePanePatchedDetail: false,
+    detailPatchMs: 6.5,
+    patchTimingSource: "local-patch",
+    patchRejectReason: "",
+    reportLocalPatchRejected: false,
+    finalizeResult: {
+      locallyPatchedDetail: true,
       tilePanePatchedDetail: false,
     },
   });
@@ -202,10 +238,15 @@ test("thread detail refresh patch attempt result keeps metadata tile misses quie
     tilePanePatchedDetail: false,
     localPatchAttempted: false,
     locallyPatchedDetail: false,
+    tilePanePatchMs: 5,
+    patchRejectReason: "ignored",
   }), {
     patchResult: "tile-pane-miss",
     locallyPatchedDetail: false,
     tilePanePatchedDetail: false,
+    detailPatchMs: 0,
+    patchTimingSource: "",
+    patchRejectReason: "",
     reportLocalPatchRejected: false,
     finalizeResult: {
       locallyPatchedDetail: false,

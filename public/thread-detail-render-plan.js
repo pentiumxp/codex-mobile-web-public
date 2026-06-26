@@ -12,6 +12,16 @@
     return String(value || "");
   }
 
+  function normalizedDurationMs(value) {
+    const numberValue = Number(value);
+    return Number.isFinite(numberValue) && numberValue >= 0 ? numberValue : 0;
+  }
+
+  function compactReason(value, fallback = "") {
+    const reason = String(value || "").trim();
+    return (reason || fallback).slice(0, 80);
+  }
+
   function planThreadDetailRefreshRender(input = {}) {
     const previousConversationSignature = normalizeSignature(input.previousConversationSignature);
     const nextConversationSignature = normalizeSignature(input.nextConversationSignature);
@@ -98,24 +108,40 @@
     const localPatchAttempted = Boolean(input.localPatchAttempted);
     const tilePanePatchedDetail = Boolean(input.tilePanePatchedDetail);
     const locallyPatchedDetail = !tilePanePatchedDetail && Boolean(input.locallyPatchedDetail);
+    const tilePanePatchMs = normalizedDurationMs(input.tilePanePatchMs);
+    const localPatchMs = normalizedDurationMs(input.localPatchMs);
     let patchResult = "not-attempted";
+    let detailPatchMs = 0;
+    let patchTimingSource = "";
     if (tilePanePatchedDetail) {
       patchResult = shouldRenderDetail ? "tile-pane-patched" : "tile-pane-metadata-patched";
+      detailPatchMs = tilePanePatchMs;
+      patchTimingSource = "tile-pane";
     } else if (locallyPatchedDetail) {
       patchResult = "local-patched";
+      detailPatchMs = localPatchMs;
+      patchTimingSource = "local-patch";
     } else if (localPatchAttempted) {
       patchResult = "local-patch-rejected";
+      detailPatchMs = localPatchMs;
+      patchTimingSource = "local-patch-rejected";
     } else if (tilePanePatchAttempted) {
       patchResult = "tile-pane-miss";
     }
+    const reportLocalPatchRejected = Boolean(shouldRenderDetail
+      && localPatchAttempted
+      && !locallyPatchedDetail
+      && !tilePanePatchedDetail);
     return {
       patchResult,
       locallyPatchedDetail,
       tilePanePatchedDetail,
-      reportLocalPatchRejected: Boolean(shouldRenderDetail
-        && localPatchAttempted
-        && !locallyPatchedDetail
-        && !tilePanePatchedDetail),
+      detailPatchMs,
+      patchTimingSource,
+      patchRejectReason: reportLocalPatchRejected
+        ? compactReason(input.patchRejectReason, "unknown")
+        : "",
+      reportLocalPatchRejected,
       finalizeResult: {
         locallyPatchedDetail,
         tilePanePatchedDetail,

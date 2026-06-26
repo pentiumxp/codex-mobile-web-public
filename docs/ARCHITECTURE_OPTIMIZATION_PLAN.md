@@ -173,8 +173,10 @@ diagnostic/performance reporting.
 Refresh patch attempt result planning now also lives there:
 `planThreadDetailRefreshPatchAttemptResult` normalizes tile-pane success,
 local-patch success, local-patch rejection, metadata-only tile misses, and
-finalize-input shape. It also owns whether a failed local patch attempt should
-emit the projection-mismatch diagnostic, while app code keeps real DOM calls and
+finalize-input shape. It also owns the patch telemetry selection for
+`detailPatchMs`, `patchTimingSource`, and normalized `patchRejectReason`, plus
+whether a failed local patch attempt should emit the projection-mismatch
+diagnostic, while app code keeps real DOM calls, visible shape collection, and
 the diagnostic transport.
 Refresh outcome execution planning now also lives in the same helper module:
 `planThreadDetailRefreshOutcomeExecution` maps render outcomes to metadata

@@ -148,8 +148,8 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v498/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v498"/);
+  assert.match(swJs, /codex-mobile-shell-v499/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v499"/);
   assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(swJs, /"\/thread-diagnostic-events\.js"/);
@@ -330,9 +330,14 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(functionBody("refreshCurrentThread"), /threadDetailRenderPlanApi\.planThreadDetailRefreshPatchExecution\(\{[\s\S]*shouldRenderDetail,[\s\S]*canPatch: renderPlan\.canPatch,[\s\S]*tileSurfaceRefresh,[\s\S]*\}\);/);
   assert.match(functionBody("refreshCurrentThread"), /let tilePanePatchAttempted = false;/);
   assert.match(functionBody("refreshCurrentThread"), /let localPatchAttempted = false;/);
+  assert.match(functionBody("refreshCurrentThread"), /let tilePanePatchMs = 0;/);
+  assert.match(functionBody("refreshCurrentThread"), /let localPatchMs = 0;/);
   assert.match(functionBody("refreshCurrentThread"), /if \(shouldRenderDetail && !tilePanePatchedDetail && patchExecutionPlan\.tryLocalPatch\) \{[\s\S]*localPatchAttempted = true;[\s\S]*locallyPatchedDetail = patchCurrentThreadDetailFromRefresh\(previousThread, state\.currentThread, previousConversationSignature\);/);
   assert.doesNotMatch(functionBody("refreshCurrentThread"), /renderPlan\.canPatch && !tileSurfaceRefresh/);
   assert.match(functionBody("refreshCurrentThread"), /const patchAttemptResult = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchAttemptResult\(\{/);
+  assert.match(functionBody("refreshCurrentThread"), /tilePanePatchMs,[\s\S]*localPatchMs,[\s\S]*patchRejectReason: state\.threadDetailPatchRejectReason/);
+  assert.match(functionBody("refreshCurrentThread"), /detailPatchMs = patchAttemptResult\.detailPatchMs;/);
+  assert.match(functionBody("refreshCurrentThread"), /patchRejectReason = patchAttemptResult\.patchRejectReason;/);
   assert.match(functionBody("refreshCurrentThread"), /if \(patchAttemptResult\.reportLocalPatchRejected\) \{/);
   assert.match(functionBody("refreshCurrentThread"), /let renderOutcome = null;/);
   assert.match(functionBody("refreshCurrentThread"), /renderOutcome = threadDetailRenderPlanApi\.finalizeThreadDetailRenderPlan\(renderPlan, patchAttemptResult\.finalizeResult\);/);
