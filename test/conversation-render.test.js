@@ -3531,6 +3531,47 @@ test("v4 projection merge preserves local pending message when server refresh ha
   assert.equal(merged.mobileProjectionVersion, "v4");
 });
 
+test("v4 projection merge refuses empty incoming detail over stronger visible detail", () => {
+  const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
+  const existingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 8,
+    turns: [
+      {
+        id: "turn-existing-1",
+        status: { type: "completed" },
+        items: [
+          { id: "user-existing-1", type: "userMessage", content: [{ type: "text", text: "request" }] },
+          { id: "agent-existing-1", type: "agentMessage", text: "visible reply" },
+        ],
+      },
+      {
+        id: "turn-existing-2",
+        status: { type: "completed" },
+        items: [
+          { id: "user-existing-2", type: "userMessage", content: [{ type: "text", text: "follow up" }] },
+          { id: "agent-existing-2", type: "agentMessage", text: "visible follow up" },
+        ],
+      },
+    ],
+  };
+  const incomingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 9,
+    mobileReadMode: "projection-v4-dynamic",
+    turns: [],
+  };
+
+  const merged = mergeThreadPreservingVisibleItems(existingThread, incomingThread);
+
+  assert.deepEqual(merged.turns.map((turn) => turn.id), ["turn-existing-1", "turn-existing-2"]);
+  assert.equal(merged.mobileProjectionVersion, "v4");
+  assert.equal(merged.mobileProjectionRevision, 9);
+  assert.equal(merged.mobileReadMode, "projection-v4-dynamic");
+});
+
 test("v4 projection merge removes local pending message after matching mux echo arrives", () => {
   const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
   const existingThread = {

@@ -510,7 +510,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v515";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v516";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -5787,6 +5787,12 @@ function mergeV4ProjectionThread(existingThread, incomingThread) {
   if (Array.isArray(incomingThread.turns)) {
     const existingTurns = Array.isArray(existingThread.turns) ? existingThread.turns : [];
     const incomingTurns = incomingThread.turns.slice();
+    const existingVisibleWeight = existingTurns.reduce((total, turn) => total + turnVisibleWeight(turn), 0);
+    const incomingVisibleWeight = incomingTurns.reduce((total, turn) => total + turnVisibleWeight(turn), 0);
+    if (!incomingTurns.length && existingTurns.length && existingVisibleWeight > 0 && incomingVisibleWeight === 0) {
+      merged.turns = existingTurns;
+      return normalizeThreadVisibleUserMessages(merged);
+    }
     const existingById = new Map(existingTurns.map((turn) => [String(turn && turn.id || ""), turn]));
     merged.turns = incomingTurns.map((incomingTurn) => {
       const existingTurn = existingById.get(String(incomingTurn && incomingTurn.id || ""));

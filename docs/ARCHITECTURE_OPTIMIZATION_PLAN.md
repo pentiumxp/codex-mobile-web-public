@@ -166,6 +166,14 @@ single-thread loading/load-error early-shell execution plan into
 `public/thread-detail-render-plan.js`, leaving `public/app.js` to execute DOM,
 retry, tick, and navigation effects only.
 
+`codex-mobile-shell-v516` applies the same empty-incoming authority rule to the
+v4 projection merge path. Production Music detail currently reads through
+`projection-v4-dynamic`, and that path uses a dedicated `mergeV4ProjectionThread`
+callback before the generic thread-detail merge policy runs. The v4 path now
+refuses to let an empty projection window erase existing visible turns while
+still accepting bounded incoming metadata such as read mode and projection
+revision.
+
 The first slices extract item visible-field merge policy,
 visible-text render identity / completed-receipt retention, local-only item
 retention/drop policy, and live-to-completed same-turn visible-item preservation

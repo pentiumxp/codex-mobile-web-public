@@ -16,6 +16,34 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v516 V4 Projection Empty-Merge Authority
+
+v516 修正 v515 后继续复核发现的真实路径缺口：Music 生产 detail read mode 是
+`projection-v4-dynamic`，而 v515 的空 incoming guard 只覆盖了通用
+`thread-detail-merge-state` path。v4 projection 在 `public/app.js` 中仍有专门
+merge path，因此同一个“不允许空 incoming detail 擦掉已有可见 detail”的不变量
+必须在 v4 path 中显式覆盖。
+
+本次切片新增/调整：
+
+- `mergeV4ProjectionThread()` 在处理 `incomingThread.turns` 时计算 existing 与
+  incoming 的 visible weight。
+- 当 incoming 是空 `turns: []`、existing 已有可见 turns 且 incoming 可见权重为
+  0 时，保留 existing turns，并继续接收 incoming 的 bounded metadata，例如
+  `mobileReadMode` 和 projection revision。
+- `test/conversation-render.test.js` 增加 v4 projection 空 incoming 回归测试，
+  覆盖 Music 这类真实 `projection-v4-dynamic` detail merge 路径。
+
+修复边界：
+
+- 症状/风险：真实生产路径使用 v4 projection merge 时，通用 merge guard 可能无法
+  阻止空 incoming projection window 擦掉已有可见 detail。
+- 失败层：前端 v4 projection merge authority。
+- 不变量：所有 detail merge path，包括 v4 projection path，都必须遵守同一条
+  visible detail 强度规则。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v516`。
+
 ## 2026-06-26 v515 Detail Merge Authority And Early Shell Plan
 
 v515 继续修复 Music `Music 06-23` 详情页空白问题。现场证据显示：
