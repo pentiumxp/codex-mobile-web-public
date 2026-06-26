@@ -1859,8 +1859,9 @@ test("loading and thread-list state preserve locally visible live turns", () => 
   assert.match(appJs, /function threadIsLoadingWithoutVisibleTurns\(/);
   assert.match(functionBody("conversationRenderSignature"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) return `loading\\|/);
   assert.match(functionBody("conversationRootSignature"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) return `loading\\|/);
-  assert.match(functionBody("loadThread"), /Object\.assign\(\{\}, summary, \{\s*turns: \[\],\s*mobileLoading: true,\s*mobileLoadError: "",\s*\}\)/);
-  assert.match(functionBody("loadThread"), /threadHasLoadedDetailState\(state\.currentThread\)/);
+  assert.match(functionBody("loadThread"), /Object\.assign\(\{\}, threadListSummaryFromDetailThread\(summary\) \|\| summary, \{\s*turns: \[\],\s*mobileLoading: true,\s*mobileLoadError: "",\s*\}\)/);
+  assert.match(functionBody("loadThread"), /threadHasReusableLoadedDetailState\(state\.currentThread\)/);
+  assert.doesNotMatch(functionBody("loadThread"), /threadHasLoadedDetailState\(state\.currentThread\)/);
   assert.match(functionBody("loadThreads"), /threadListSummaryFromDetailThread\(thread\) \|\| thread/);
   assert.match(functionSourceFrom(appJs, "renderCurrentThread"), /let thread = state\.currentThread;/);
   assert.match(functionBody("renderCurrentThread"), /threadDetailStateApi\.planSummaryOnlyCurrentThreadRecovery\(\{/);

@@ -9,6 +9,7 @@ const {
   mergeThreadSummaryIntoList,
   planSummaryOnlyCurrentThreadRecovery,
   threadHasLoadedDetailState,
+  threadHasReusableLoadedDetailState,
   threadIsSummaryOnlyCurrentThread,
   threadListSummaryFromDetailThread,
 } = require(path.resolve(__dirname, "..", "public", "thread-detail-state.js"));
@@ -345,6 +346,10 @@ test("thread detail loaded-state policy distinguishes empty detail from summary 
   assert.equal(threadHasLoadedDetailState({ id: "thread-1", turns: [{ id: "turn-1", items: [] }] }), true);
   assert.equal(threadHasLoadedDetailState({ id: "thread-1", turns: [{ id: "turn-1" }], mobileLoading: true }), false);
   assert.equal(threadHasLoadedDetailState({ id: "thread-1", turns: [{ id: "turn-1" }], mobileLoadError: "failed" }), false);
+
+  assert.equal(threadHasReusableLoadedDetailState({ id: "thread-1", turns: [], mobileDetailLoaded: true }), false);
+  assert.equal(threadHasReusableLoadedDetailState({ id: "thread-1", turns: [{ id: "turn-1", items: [] }] }), true);
+  assert.equal(threadHasReusableLoadedDetailState({ id: "thread-1", turns: [{ id: "turn-1" }], mobileLoading: true }), false);
 
   assert.equal(threadIsSummaryOnlyCurrentThread({ id: "thread-1", turns: [] }, "thread-1"), true);
   assert.equal(threadIsSummaryOnlyCurrentThread({ id: "thread-1", turns: [], mobileReadMode: "recent" }, "thread-1"), true);

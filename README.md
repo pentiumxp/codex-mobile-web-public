@@ -16,6 +16,37 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-26 v520 Empty Cached Detail Revalidation
+
+v520 修复 Music 线程在移动端进入后稳定显示 `No visible turns.` 的根因。现场证据显示
+服务端 `Music 06-23` detail/projection 仍返回 `10` 个 turns，但客户端已持有一个
+`turns: [] + mobileDetailLoaded:true` 的当前线程状态；再次打开同一线程时，
+`loadThread()` 走 `cached-current` 短路，直接复用这个空 detail，导致不再请求服务端
+权威投影。
+
+本次切片新增/调整：
+
+- `public/thread-detail-state.js` 新增 `threadHasReusableLoadedDetailState()`：只有已加载且
+  自身包含非空 turns 的 detail 才能作为打开线程时的可复用缓存。
+- `public/app.js` 的 `loadThread()` cached-current 短路改用这个策略；空 `mobileDetailLoaded`
+  detail 不能跳过 API，必须重新读取 `/api/threads/:id`。
+- 从 thread-list summary 初始化 `state.currentThread` 时先剥离 detail-only 字段，避免列表行
+  把 `mobileDetailLoaded`、`mobileReadMode`、`threadTaskCards` 等 detail 权威字段带回当前
+  详情状态。
+- `test/thread-detail-state.test.js` 和 `test/conversation-render.test.js` 覆盖空 loaded detail
+  不可复用、非空 detail 可复用、以及 `loadThread()` 必须消费可复用缓存策略。
+
+修复边界：
+
+- 失败层：frontend thread-detail loaded-state/cache reuse policy。
+- 不变量：`mobileDetailLoaded` 只说明某个 detail API 路径曾完成，不能单独证明当前空
+  `turns: []` 仍可作为打开线程的权威缓存；打开同一线程的缓存短路必须要求本地 detail
+  本身有可显示 turns。
+- 这不是刷新兜底。客户端不是发现空态后再补救刷新，而是在缓存复用决策点阻止错误空
+  detail 成为权威。
+
+`CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v520`。
+
 ## 2026-06-26 v519 Empty Detail Mismatch Diagnostics
 
 v519 在 v518 的 detail ownership 修复之后，继续补齐自动发现能力：如果客户端刚从

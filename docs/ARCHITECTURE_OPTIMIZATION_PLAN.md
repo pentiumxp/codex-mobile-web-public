@@ -227,6 +227,19 @@ message bodies, task-card bodies, upload bytes, private paths, URLs, cookies,
 tokens, prompts, and long logs are excluded by construction and sanitizer
 tests.
 
+`codex-mobile-shell-v520` closes the remaining cached-current ownership gap
+seen on `Music 06-23`: the server projection returned nonzero turns, but the
+client could still reuse an older current-thread object with
+`turns: [] + mobileDetailLoaded:true` when the user opened the same thread
+again. The cached-current short path now requires
+`threadHasReusableLoadedDetailState()`, which only returns true for loaded
+detail that already contains visible turns. Empty loaded detail may still be a
+valid API result for a genuinely empty thread, but it is not reusable as an
+open-thread cache authority; opening the same thread must re-read the detail
+API. `loadThread()` also strips detail-only fields from thread-list summaries
+before constructing a loading current-thread shell, so list rows cannot restore
+`mobileDetailLoaded` into the detail owner.
+
 The first slices extract item visible-field merge policy,
 visible-text render identity / completed-receipt retention, local-only item
 retention/drop policy, and live-to-completed same-turn visible-item preservation

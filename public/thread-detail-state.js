@@ -47,6 +47,11 @@
     return thread.mobileDetailLoaded === true;
   }
 
+  function threadHasReusableLoadedDetailState(thread) {
+    if (!threadHasLoadedDetailState(thread)) return false;
+    return Array.isArray(thread.turns) && thread.turns.length > 0;
+  }
+
   function threadIsSummaryOnlyCurrentThread(thread, currentThreadId) {
     return Boolean(thread
       && currentThreadId
@@ -240,6 +245,7 @@
     mergeThreadSummaryIntoList,
     planSummaryOnlyCurrentThreadRecovery,
     threadHasLoadedDetailState,
+    threadHasReusableLoadedDetailState,
     threadIsSummaryOnlyCurrentThread,
     threadListSummaryFromDetailThread,
   };

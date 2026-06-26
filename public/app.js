@@ -492,7 +492,7 @@ const threadDetailStatePolicy = threadDetailStateApi.createThreadDetailStatePoli
   completedReceiptItemsLikelySame,
 });
 const threadListSummaryFromDetailThread = threadDetailStateApi.threadListSummaryFromDetailThread;
-const threadHasLoadedDetailState = threadDetailStateApi.threadHasLoadedDetailState;
+const threadHasReusableLoadedDetailState = threadDetailStateApi.threadHasReusableLoadedDetailState;
 
 function setAuthKey(value) {
   const next = String(value || "");
@@ -515,7 +515,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v519";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v520";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -8807,7 +8807,7 @@ async function loadThread(threadId, options = {}) {
   const replacedTilePaneForThreadListOpen = replaceLastThreadTilePaneForThreadListOpen(threadId, { source });
   if (threadId === state.currentThreadId
     && state.currentThread
-    && threadHasLoadedDetailState(state.currentThread)
+    && threadHasReusableLoadedDetailState(state.currentThread)
     && !state.currentThread.mobileLoading
     && !state.currentThread.mobileLoadError) {
     const renderStartedAt = nowPerfMs();
@@ -8874,7 +8874,7 @@ async function loadThread(threadId, options = {}) {
   const summary = state.threads.find((thread) => thread.id === threadId);
   state.currentThreadId = threadId;
   state.startupThreadOpenPending = false;
-  state.currentThread = summary ? Object.assign({}, summary, {
+  state.currentThread = summary ? Object.assign({}, threadListSummaryFromDetailThread(summary) || summary, {
     turns: [],
     mobileLoading: true,
     mobileLoadError: "",
