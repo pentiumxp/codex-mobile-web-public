@@ -11699,3 +11699,51 @@ The previous full handoff was archived and should be opened only when old proven
     focused planner, then move live-operation dock updates into the successful
     DOM patch transaction stage. Keep both local until the Phase A module-level
     deploy boundary.
+
+## 2026-06-26 - local Phase A local patch preflight planner validated, not deployed
+
+- Latest code commit:
+  - `a7d9f42 extract local patch preflight planning`
+- Change:
+  - `public/thread-detail-patch-plan.js` now owns
+    `planThreadDetailRefreshLocalPatchPreflight()`.
+  - The helper classifies missing conversation root, missing thread,
+    root-ready, tile-pane terminal success, single-thread surface unavailable,
+    loading/error state, rendered DOM stale, patch-shell changed, and
+    preflight-passed outcomes.
+  - `patchCurrentThreadDetailFromRefresh()` now delegates deterministic
+    preflight decisions to the helper while still performing real root lookup,
+    tile-pane patch attempt, signature calculation, and DOM mutation in app
+    code.
+  - The implementation preserves the previous tile-pane priority: root/thread
+    validity is checked first, then the real tile-pane patch attempt can
+    terminate before single-thread local patch checks run.
+- Root-cause boundary:
+  - Symptom/risk: deterministic local patch rejection rules were still embedded
+    in `public/app.js`, making patch policy, telemetry reasons, and tests more
+    likely to drift from helper-owned render planning.
+  - Failing layer: frontend thread-detail local patch preflight ownership.
+  - Classification: root-cause architecture boundary cleanup. No server
+    projection change, DOM mutation algorithm change, visual layout change,
+    scroll policy change, diagnostic transport change, task-card protocol
+    change, fallback, shell/cache bump, deployment, or public push was added.
+- Validation:
+  - Focused source suite passed:
+    `test/thread-detail-patch-plan.test.js`,
+    `test/thread-detail-dom-patch.test.js`, `test/conversation-render.test.js`,
+    `test/mobile-viewport.test.js`, `test/thread-detail-render-plan.test.js`,
+    and `test/thread-tile-layout-ui.test.js` (`191` tests).
+  - Full source `npm test` passed (`946` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Not deployed by design under the updated cadence. This slice is part of the
+    next larger Phase A refresh orchestration module.
+  - Production remains at `0.1.11|codex-mobile-shell-v506` until the module-level
+    deploy.
+- Progress:
+  - Overall system-level architecture optimization is now estimated at about
+    `69%`, still in Phase A module assembly.
+- Next suggested slice:
+  - Move `updateLiveOperationDockHtml()` and follow-up bind/complete operations
+    into a successful local DOM patch transaction stage so failed turn patches
+    cannot partially update live-operation dock state before rejecting.
