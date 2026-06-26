@@ -128,7 +128,9 @@ Current acceleration targets:
    follow-up carries `task_started.turn_id` from rollout tail status into the
    fallback summary as `activeTurnId`, so active-read policy can enter the same
    proof gate after cold start or deploy restart. Terminal rollout entries
-   still win, so completed turns are not promoted to active. The next local slice
+   still win, so completed turns are not promoted to active. Production readback
+   after deploying `f6818d7` confirmed this advanced the active detail path to
+   `projection-active-overlay` with `activeOverlayGate=ready`. The next local slice
    separates ordinary projection staleness from active-overlay window
    eligibility: `dynamic-summary-stale` still invalidates normal projection
    hits, but a proof-gated active overlay lookup may reuse that same dynamic

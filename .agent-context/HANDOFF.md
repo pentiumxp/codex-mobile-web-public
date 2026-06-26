@@ -15135,3 +15135,55 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit the active turn-id follow-up.
   - Deploy and rerun Phase B readback smoke to confirm whether the active
     overlay gate advances past `missing-active-turn-id`.
+
+## 2026-06-26 - active turn-id follow-up deployed and verified
+
+- Commit:
+  - Runtime fix committed as `f6818d7` (`retain rollout active turn ids`).
+- Validation:
+  - Focused active/rollout/readback set passed (`85` tests):
+    `node --test test/thread-visibility.test.js test/thread-detail-active-read-policy-service.test.js test/thread-detail-active-overlay-provider-service.test.js test/thread-detail-active-overlay-integration.test.js test/thread-detail-read-orchestration-service.test.js test/phase-b-readback-smoke.test.js`
+  - Full `npm test` passed (`1101` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Deployed through Home AI central macOS plugin deploy path.
+  - Deploy reason: `codex-mobile-active-turn-id`.
+  - Source ref: `f6818d784d68`, dirty: `false`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260626T124033Z-plugin-codex-mobile-web-codex-mobile-active-turn-id`.
+  - Production health returned `clientBuildId=0.1.11|codex-mobile-shell-v531`
+    and `shellCacheName=codex-mobile-shell-v531`; unchanged shell is expected.
+- Production readback:
+  - `scripts/codex-mobile-phase-b-readback-smoke.js --server http://127.0.0.1:8787 --json`
+    passed with metadata-only output.
+  - Thread list first read:
+    `coldPathOwner=fallback-baseline`,
+    `coldPathReason=miss-rebuild:rollout`,
+    `fallbackCacheDecision=miss-rebuild`,
+    `fallbackMs=1503`,
+    `mergeMs=119`.
+  - Thread list warm check:
+    `coldPathOwner=warm-fallback-cache`,
+    `fallbackCacheDecision=hit`,
+    `fallbackMs=1`.
+  - Detail read:
+    `readMode=projection-active-overlay`,
+    `readDecision=projection-active-overlay`,
+    `coldPathOwner=warm-path`,
+    `coldPathReason=warm-projection-active-overlay`,
+    `activeOverlayGate=ready`,
+    `activeOverlayReason=overlay-evidence-complete`.
+  - Decision: `status=observe`, `priority=H3`, `reason=cold-start-rebuild-warmed`.
+- Interpretation:
+  - The `missing-active-turn-id` H1 from the previous readback is closed for
+    this production sample.
+  - Remaining Phase B evidence points to one expected cold fallback rebuild
+    after restart/deploy, followed by warm fallback cache reuse.
+- Next:
+  - Observe production usage for repeated thread-list cold rebuild or
+    conversation projection mismatch diagnostics.
+  - If no new incident appears, move the architecture work to the next
+    objective slice: Phase A render/patch ownership or Phase C pane-state,
+    depending on user priority.
