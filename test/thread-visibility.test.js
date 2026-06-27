@@ -1113,6 +1113,7 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeBody, /const initialFallbackCacheHit = fallbackDiagnostics\.cacheHit === true/);
   assert.match(routeBody, /if \(!initialFallback\.length && initialFallbackPlan\.allowBaseline\) \{[\s\S]*const initialMergeOptions = getMergeThreadSummaryListOptions\(\);[\s\S]*initialFallback = readThreadListFallback\(limit, \{[\s\S]*archivedIds: initialMergeOptions\.archivedIds,[\s\S]*mergeThreadSummaryListOptions: initialMergeOptions,[\s\S]*\}\);[\s\S]*\}/);
   assert.match(routeBody, /if \(initialFallback\.length && \(!initialFallbackPlan\.requireCacheHit \|\| initialFallbackCacheHit\)\) \{/);
+  assert.match(routeBody, /const fallbackSourceTimings = initialFallbackCacheHit[\s\S]*\? fallbackDiagnostics[\s\S]*: \(Object\.keys\(cachedSourceTimings\)\.length \? cachedSourceTimings : fallbackDiagnostics\)/);
   assert.match(routeBody, /decorated\.mobileDeferredAppServer = true/);
   assert.match(routeBody, /const initialFallbackMeta = threadListInitialFallbackMetadata\(\{/);
   assert.match(routeBody, /reason: initialFallbackPlan\.reason/);

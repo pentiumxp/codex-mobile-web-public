@@ -15316,7 +15316,9 @@ async function handleApi(req, res) {
           const cachedSourceTimings = fallbackDiagnostics.cachedSourceTimings && typeof fallbackDiagnostics.cachedSourceTimings === "object"
             ? fallbackDiagnostics.cachedSourceTimings
             : {};
-          const fallbackSourceTimings = Object.keys(cachedSourceTimings).length ? cachedSourceTimings : fallbackDiagnostics;
+          const fallbackSourceTimings = initialFallbackCacheHit
+            ? fallbackDiagnostics
+            : (Object.keys(cachedSourceTimings).length ? cachedSourceTimings : fallbackDiagnostics);
           Object.assign(timings, {
             appServerMs: 0,
             appServerDeferred: true,
