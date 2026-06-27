@@ -22768,3 +22768,26 @@ The previous full handoff was archived and should be opened only when old proven
 - Next:
   - Continue small local Phase C slices and do not deploy until a coherent
     deployable module is ready.
+
+## 2026-06-27 - Active overlay detail-load stability slice
+
+- Current local state:
+  - Investigated intermittent slow opens on the current Codex Mobile thread after v547.
+  - Bounded runtime sampling showed warm list reads were stable, while `/api/threads/:id?mode=recent` stayed on `projection-active-overlay` but had intermittent `activeOverlayMs` spikes around the active turn. The active turn contained many command/tool items, so repeated active-overlay snapshot normalization was the hot path rather than a full 355MB rollout read.
+- Root-cause boundary:
+  - Symptom/risk: a large active turn can make otherwise warm thread-detail reads alternate between fast and slow because v4 normalized the same active overlay turn on every detail refresh.
+  - Failing layer: `adapters/thread-detail-projection-v4-service.js` active-overlay snapshot assembly, not the Home AI host/proxy, PWA shell, or full rollout cold path.
+  - Violated invariant: unchanged active-overlay projection evidence for the same active turn/revision/timestamp should be reusable; repeated refreshes must not re-run expensive visible-item normalization when notifications have not changed the projection revision.
+- Changes:
+  - `adapters/thread-detail-projection-service.js` keeps the public/default snapshot clone behavior but allows the v4 wrapper to request an internal non-cloned snapshot for immediate read-only normalization.
+  - `adapters/thread-detail-projection-v4-service.js` caches normalized active-overlay turns by thread, active turn id, v4 revision, and projection timestamps; notification/seed/forget changes clear the per-thread cache.
+  - `test/thread-detail-projection-v4-service.test.js` proves first snapshot misses, repeated unchanged snapshots hit, caller mutation does not poison the cache, and a new notification invalidates the cache.
+  - `docs/MODULES.md` records the active-overlay cache ownership.
+- Validation:
+  - `node --test test/thread-detail-projection-service.test.js test/thread-detail-projection-v4-service.test.js test/thread-detail-active-overlay-provider-service.test.js test/thread-detail-active-overlay-integration.test.js test/thread-detail-read-orchestration-service.test.js` passed (`59` tests).
+  - `npm test` passed (`1298` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit and deploy through the central Home AI macOS plugin deploy path, then read back `/api/public-config` and Phase-B detail timings for the current large active thread.

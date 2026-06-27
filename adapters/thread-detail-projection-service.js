@@ -831,12 +831,13 @@ function createThreadDetailProjectionService(options = {}) {
     if (!activeTurnId) return { found: false, reason: "missing-active-turn-id" };
     const overlayTurn = findTurn(thread, activeTurnId);
     if (!overlayTurn) return { found: false, reason: "active-turn-missing" };
+    const cloneOverlayTurn = input.cloneOverlayTurn !== false;
     return {
       found: true,
       threadId,
       activeTurnId,
       overlaySource: "projection-live",
-      overlayTurn: cloneJson(overlayTurn),
+      overlayTurn: cloneOverlayTurn ? cloneJson(overlayTurn) : overlayTurn,
       cachedAtMs: safeNumber(entry.cachedAtMs),
       updatedAtMs: safeNumber(entry.updatedAtMs),
       dynamic: Boolean(entry.dynamic),

@@ -293,6 +293,22 @@ test("v4 projection service exposes active overlay snapshot with monotonic revis
   assert.equal(first.found, true);
   assert.equal(first.version, "v4");
   assert.equal(first.overlayRevision, 1);
+  assert.equal(first.overlayCacheHit, false);
+
+  const warm = service.activeOverlaySnapshot({
+    threadId: "thread-1",
+    activeTurnId: "turn-1",
+  });
+  assert.equal(warm.overlayRevision, 1);
+  assert.equal(warm.overlayCacheHit, true);
+  warm.overlayTurn.items.push({ id: "mutated", type: "agentMessage" });
+
+  const warmAfterMutation = service.activeOverlaySnapshot({
+    threadId: "thread-1",
+    activeTurnId: "turn-1",
+  });
+  assert.equal(warmAfterMutation.overlayCacheHit, true);
+  assert.deepEqual(warmAfterMutation.overlayTurn.items.map((item) => item.id), []);
 
   service.applyNotification("item/agentMessage/delta", {
     threadId: "thread-1",
@@ -305,7 +321,16 @@ test("v4 projection service exposes active overlay snapshot with monotonic revis
     activeTurnId: "turn-1",
   });
   assert.equal(second.overlayRevision, 2);
+  assert.equal(second.overlayCacheHit, false);
   assert.equal(second.overlayTurn.items[0].mobileProjectionVersion, "v4");
+
+  const secondWarm = service.activeOverlaySnapshot({
+    threadId: "thread-1",
+    activeTurnId: "turn-1",
+  });
+  assert.equal(secondWarm.overlayRevision, 2);
+  assert.equal(secondWarm.overlayCacheHit, true);
+  assert.equal(secondWarm.overlayTurn.items[0].mobileProjectionVersion, "v4");
 });
 
 test("v4 projection service treats turn completion as an item-preserving patch", () => {

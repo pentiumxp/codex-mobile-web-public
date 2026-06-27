@@ -15,6 +15,11 @@ function safeNumber(value) {
   return Number.isFinite(number) ? Math.trunc(number) : 0;
 }
 
+function cloneJson(value) {
+  if (value === undefined) return undefined;
+  return JSON.parse(JSON.stringify(value));
+}
+
 function notificationThreadId(params = {}) {
   if (!params || typeof params !== "object") return "";
   return String(params.threadId
@@ -34,6 +39,7 @@ function createThreadDetailProjectionV4Service(options = {}) {
     policyVersion,
   }));
   const revisions = new Map();
+  const activeOverlayCache = new Map();
 
   function revisionForThread(threadId) {
     const id = String(threadId || "").trim();
@@ -57,6 +63,19 @@ function createThreadDetailProjectionV4Service(options = {}) {
     });
   }
 
+  function activeOverlayCacheEntryMatches(entry, details = {}) {
+    return entry
+      && entry.activeTurnId === String(details.activeTurnId || "")
+      && entry.revision === safeNumber(details.revision)
+      && entry.updatedAtMs === safeNumber(details.updatedAtMs)
+      && entry.cachedAtMs === safeNumber(details.cachedAtMs);
+  }
+
+  function clearActiveOverlayCache(threadId) {
+    const id = String(threadId || "").trim();
+    if (id) activeOverlayCache.delete(id);
+  }
+
   function seed(input = {}, result, optionsForSeed = {}) {
     const threadId = String(input.threadId || resultThreadId(result) || "").trim();
     const revision = revisionForThread(threadId) + 1;
@@ -72,7 +91,10 @@ function createThreadDetailProjectionV4Service(options = {}) {
         revision: revisionForThread(threadId),
       });
     }
-    if (meta) revisions.set(threadId, revision);
+    if (meta) {
+      revisions.set(threadId, revision);
+      clearActiveOverlayCache(threadId);
+    }
     return meta ? Object.assign({}, meta, {
       version: PROJECTION_VERSION,
       revision,
@@ -122,7 +144,7 @@ function createThreadDetailProjectionV4Service(options = {}) {
 
   function activeOverlaySnapshot(input = {}) {
     const snapshot = typeof base.activeOverlaySnapshot === "function"
-      ? base.activeOverlaySnapshot(input)
+      ? base.activeOverlaySnapshot(Object.assign({}, input, { cloneOverlayTurn: false }))
       : { found: false, reason: "snapshot-unavailable" };
     const threadId = String(input.threadId
       || snapshot && snapshot.threadId
@@ -132,6 +154,23 @@ function createThreadDetailProjectionV4Service(options = {}) {
       return Object.assign({}, snapshot || { found: false, reason: "snapshot-unavailable" }, {
         version: PROJECTION_VERSION,
         overlayRevision: revision,
+      });
+    }
+    const activeTurnId = String(snapshot.activeTurnId || input.activeTurnId || input.turnId || "").trim();
+    const updatedAtMs = safeNumber(snapshot.updatedAtMs);
+    const cachedAtMs = safeNumber(snapshot.cachedAtMs);
+    const cacheEntry = activeOverlayCache.get(threadId);
+    if (activeOverlayCacheEntryMatches(cacheEntry, {
+      activeTurnId,
+      revision,
+      updatedAtMs,
+      cachedAtMs,
+    })) {
+      return Object.assign({}, snapshot, {
+        version: PROJECTION_VERSION,
+        overlayRevision: revision,
+        overlayCacheHit: true,
+        overlayTurn: cloneJson(cacheEntry.overlayTurn),
       });
     }
     const normalizedOverlay = normalizeResult({
@@ -148,10 +187,18 @@ function createThreadDetailProjectionV4Service(options = {}) {
       && normalizedOverlay.thread
       && Array.isArray(normalizedOverlay.thread.turns)
       ? normalizedOverlay.thread.turns[0]
-      : snapshot.overlayTurn;
+      : cloneJson(snapshot.overlayTurn);
+    activeOverlayCache.set(threadId, {
+      activeTurnId,
+      revision,
+      updatedAtMs,
+      cachedAtMs,
+      overlayTurn: cloneJson(overlayTurn),
+    });
     return Object.assign({}, snapshot, {
       version: PROJECTION_VERSION,
       overlayRevision: revision,
+      overlayCacheHit: false,
       overlayTurn,
     });
   }
@@ -159,13 +206,20 @@ function createThreadDetailProjectionV4Service(options = {}) {
   function applyNotification(method, params = {}) {
     const normalizedParams = normalizeNotificationParamsForProjectionV4(method, params);
     const changed = base.applyNotification(method, normalizedParams);
-    if (changed) bumpRevision(notificationThreadId(normalizedParams));
+    if (changed) {
+      const threadId = notificationThreadId(normalizedParams);
+      bumpRevision(threadId);
+      clearActiveOverlayCache(threadId);
+    }
     return changed;
   }
 
   function forget(threadId) {
     const id = String(threadId || "").trim();
-    if (id) revisions.delete(id);
+    if (id) {
+      revisions.delete(id);
+      clearActiveOverlayCache(id);
+    }
     return base.forget(threadId);
   }
 
