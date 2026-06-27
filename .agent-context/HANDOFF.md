@@ -24190,3 +24190,73 @@ The previous full handoff was archived and should be opened only when old proven
     longer on the hot path. The next performance module should target
     app-server thread-list RPC peaks and projection lookup/assembly peaks, not
     active-window duplicate reads.
+
+## 2026-06-28 - Active Detail Byte-Pressure Response Budget Module
+
+- User-visible symptom:
+  - Large active/detail opens could wait a long time and then successfully
+    render, which differs from the older timeout failure mode. This indicates a
+    successful-but-heavy first-paint response rather than a broken network/RPC
+    path.
+- Root cause / invariant:
+  - `thread-detail-response-budget-service` only enabled progressive active
+    budgets from item-count pressure. A small number of large active items could
+    avoid progressive shaping.
+  - `collabAgentToolCall` rendered as an operational UI surface, but the
+    response-budget and v4 visible-key semantics did not classify it as an
+    operation, so those items could bypass operation budgets.
+  - Detail first paint should reduce server-owned visible item pressure before
+    the HTTP response and then rebuild projection keys. It should not rely on a
+    client refresh fallback, a shorter timeout, or truncation of retained
+    user/assistant/image/Usage text.
+- Implementation:
+  - Extended `adapters/thread-detail-response-budget-service.js` with active
+    turn byte and thread-window byte thresholds in addition to the existing
+    item-count threshold.
+  - Added bounded `mobileDetailResponseBudget` evidence:
+    `activeProgressiveByteThreshold`,
+    `activeProgressiveThreadByteThreshold`,
+    `progressiveActiveOriginalBytes`,
+    `progressiveActiveTurnOriginalBytes`, and byte-pressure trigger reasons.
+  - Classified `collabAgentToolCall` as an operation in
+    `thread-detail-response-budget-service`, `thread-visible-item-normalizer`,
+    server compaction, and browser activity labeling.
+  - Bumped the static shell to `codex-mobile-shell-v553` because `public/app.js`
+    and `public/sw.js` changed.
+  - Updated `docs/README.md`, `docs/MODULES.md`, `docs/ARCHITECTURE.md`,
+    `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Local validation:
+  - Focused response-budget / visible-normalizer / collab-agent / route /
+    render / version suite passed (`196` tests, then `70` static/version-focused
+    tests after shell bump sync).
+  - Full `npm test` passed (`1349` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Commit / deployment:
+  - Commit `b9c90b9` `fix active detail byte pressure budget` was deployed
+    through the Home AI central macOS plugin deploy path with reason
+    `codex-mobile-active-detail-byte-budget`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T204743Z-plugin-codex-mobile-web-codex-mobile-active-detail-byte-budget`.
+  - `/api/public-config` readback returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v553`,
+    `shellCacheName=codex-mobile-shell-v553`, build id
+    `8f5df1074a2bd651`.
+  - Source/prod SHA-256 prefixes matched for `server.js`, `public/app.js`,
+    `public/sw.js`, `adapters/thread-detail-response-budget-service.js`,
+    `adapters/thread-visible-item-normalizer.js`, and `docs/README.md`.
+  - Phase-B readback confirmed mux metrics support remained enabled and
+    detail stayed on `projection-active-overlay`; the remaining next-owner
+    classification is still `app-server-thread-list-rpc`.
+  - Bounded detail-shape sample for the current active Codex Mobile thread
+    returned `responseBytes=99577`, `mobileDetailResponseBudget.applied=true`,
+    `activeTurnCount=1`, `staleActiveTurnCount=1`,
+    `progressiveActiveBudgetApplied=true`,
+    `progressiveActiveBudgetReason=active-item-pressure`,
+    `activeProgressiveByteThreshold=49152`,
+    `activeProgressiveThreadByteThreshold=163840`,
+    `progressiveActiveOriginalBytes=6477404`,
+    `progressiveActiveTurnOriginalBytes=74566`,
+    and omitted operation/reasoning/assistant counts.

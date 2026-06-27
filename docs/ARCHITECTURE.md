@@ -531,10 +531,12 @@ client refresh fallback. If the thread exposes a current active turn id, only
 that matching turn receives active response budgets; older turns whose status
 still looks `inProgress` are counted as stale active-looking turns and receive
 completed-turn budgets for response shaping. When the returned detail window is
-under high item pressure, the same response-budget service enables progressive
-active limits for the current active turn's operation, reasoning, and
-assistant/plan tails, and records the threshold, trigger reason, configured
-limits, and effective limits in `mobileDetailResponseBudget`.
+under high item-count or byte pressure, the same response-budget service enables
+progressive active limits for the current active turn's operation, reasoning,
+and assistant/plan tails. The operation budget includes command, file, dynamic
+tool, MCP, and collab-agent tool-call items. The response records the item and
+byte thresholds, trigger reason, configured limits, effective limits, and
+original byte counts in `mobileDetailResponseBudget`.
 
 `HANDOFF.md` has a separate 200KB Usage prompt threshold so recently compacted handoffs near 100KB do not immediately ask for another continuation.
 

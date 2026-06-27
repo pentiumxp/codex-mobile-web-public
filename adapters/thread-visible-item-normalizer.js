@@ -81,7 +81,7 @@ function visibleKindForItem(item) {
   if (type === "turnUsageSummary") return "usage";
   if (type === "imageView" || type === "imageGeneration") return "image";
   if (isContextCompactionType(type)) return "contextCompaction";
-  if (type === "commandExecution" || type === "fileChange" || type === "dynamicToolCall" || type === "mcpToolCall") return "operation";
+  if (type === "commandExecution" || type === "collabAgentToolCall" || type === "fileChange" || type === "dynamicToolCall" || type === "mcpToolCall") return "operation";
   return type;
 }
 

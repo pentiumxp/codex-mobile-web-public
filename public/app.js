@@ -528,7 +528,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v552";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v553";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -773,7 +773,7 @@ const FILE_PREVIEW_SWIPE_CLOSE_MIN_PX = 62;
 const IMAGE_PREVIEW_ZOOM_STEP = 0.25;
 const IMAGE_PREVIEW_MIN_SCALE = 0.5;
 const IMAGE_PREVIEW_MAX_SCALE = 4;
-const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "fileChange", "dynamicToolCall", "mcpToolCall"]);
+const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "collabAgentToolCall", "fileChange", "dynamicToolCall", "mcpToolCall"]);
 const HIDDEN_SERVER_REQUEST_METHODS = new Set(["item/tool/call"]);
 const USER_INPUT_REQUEST_METHODS = new Set(["item/tool/requestUserInput", "mcpServer/elicitation/request"]);
 const CONTEXT_COMPACTION_PENDING_NOTICE = "\u5386\u53f2\u4e0a\u4e0b\u6587\u6b63\u5728\u538b\u7f29";
@@ -4888,6 +4888,7 @@ function activityLabelForItem(item) {
   const completed = isCompletedStatus(status);
   if (isWebSearchLikeItem(item)) return completed ? "搜索完成" : "搜索";
   if (item.type === "commandExecution") return completed ? "命令完成" : "命令";
+  if (item.type === "collabAgentToolCall") return completed ? "协作完成" : "协作 Agent";
   if (item.type === "fileChange") return completed ? "文件完成" : "文件";
   if (item.type === "dynamicToolCall" || item.type === "mcpToolCall") return completed ? "工具完成" : "工具";
   if (item.type === "agentMessage") return "输出";

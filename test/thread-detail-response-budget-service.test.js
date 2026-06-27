@@ -9,7 +9,7 @@ const {
 
 function compactTurn(turn, options = {}) {
   const out = JSON.parse(JSON.stringify(turn));
-  const operationTypes = new Set(["commandExecution", "fileChange", "dynamicToolCall", "mcpToolCall"]);
+  const operationTypes = new Set(["commandExecution", "collabAgentToolCall", "fileChange", "dynamicToolCall", "mcpToolCall"]);
   const maxOperations = Math.max(0, Number(options.maxOperationItems || 0));
   const keep = new Set();
   for (let index = out.items.length - 1; index >= 0; index -= 1) {
@@ -101,6 +101,39 @@ test("thread detail response budget keeps bounded active reasoning and operation
   assert.deepEqual(items.map((item) => item.id), ["u1", "r2", "r3", "c2", "a1"]);
   assert.equal(compacted.thread.mobileDetailResponseBudget.omittedOperationItems, 1);
   assert.equal(compacted.thread.mobileDetailResponseBudget.omittedReasoningItems, 1);
+});
+
+test("thread detail response budget trims collab agent tool calls as operation items", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      turns: [
+        {
+          id: "turn-active",
+          status: "inProgress",
+          items: [
+            { id: "u1", type: "userMessage", text: "Question" },
+            { id: "s1", type: "collabAgentToolCall", name: "agent-one" },
+            { id: "s2", type: "collabAgentToolCall", name: "agent-two" },
+            { id: "s3", type: "collabAgentToolCall", name: "agent-three" },
+            { id: "a1", type: "agentMessage", text: "Working" },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeOperationItems: 1,
+  });
+
+  const items = compacted.thread.turns[0].items;
+  assert.deepEqual(items.map((item) => item.id), ["u1", "s3", "a1"]);
+  assert.equal(items[1].mobileVisibleKind, "operation");
+  assert.equal(compacted.thread.mobileDetailResponseBudget.omittedOperationItems, 2);
 });
 
 test("thread detail response budget keeps bounded active assistant tail", () => {
@@ -198,6 +231,56 @@ test("thread detail response budget treats non-current active-looking turns as s
   assert.equal(compacted.thread.mobileDetailResponseBudget.omittedOperationItems, 2);
   assert.equal(compacted.thread.mobileDetailResponseBudget.omittedReasoningItems, 1);
   assert.equal(compacted.thread.mobileDetailResponseBudget.omittedAssistantItems, 1);
+});
+
+test("thread detail response budget applies progressive active limits under active byte pressure", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      turns: [
+        {
+          id: "turn-active",
+          status: "inProgress",
+          items: [
+            { id: "u1", type: "userMessage", text: "Question" },
+            { id: "a1", type: "agentMessage", text: "x".repeat(160) },
+            { id: "a2", type: "agentMessage", text: "y".repeat(160) },
+            { id: "a3", type: "agentMessage", text: "z".repeat(160) },
+            { id: "a4", type: "agentMessage", text: "latest" },
+            { id: "c1", type: "commandExecution", command: "cmd 1" },
+            { id: "c2", type: "commandExecution", command: "cmd 2" },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeOperationItems: 2,
+    activeAssistantItems: 4,
+    activeReasoningItems: 2,
+    activeProgressiveItemThreshold: 100,
+    activeProgressiveByteThreshold: 200,
+    activeProgressiveThreadByteThreshold: 0,
+    progressiveActiveOperationItems: 1,
+    progressiveActiveAssistantItems: 2,
+    progressiveActiveReasoningItems: 1,
+  });
+
+  const itemIds = compacted.thread.turns[0].items.map((item) => item.id);
+  assert.deepEqual(itemIds, ["u1", "a3", "a4", "c2"]);
+  const budget = compacted.thread.mobileDetailResponseBudget;
+  assert.equal(budget.progressiveActiveBudgetApplied, true);
+  assert.equal(budget.progressiveActiveBudgetReason, "active-byte-pressure");
+  assert.equal(budget.activeProgressiveByteThreshold, 200);
+  assert.equal(budget.activeProgressiveThreadByteThreshold, 0);
+  assert.ok(budget.progressiveActiveTurnOriginalBytes >= 200);
+  assert.ok(budget.progressiveActiveOriginalBytes >= budget.progressiveActiveTurnOriginalBytes);
+  assert.equal(budget.activeOperationItems, 1);
+  assert.equal(budget.activeAssistantItems, 2);
 });
 
 test("thread detail response budget applies progressive active limits under item pressure", () => {

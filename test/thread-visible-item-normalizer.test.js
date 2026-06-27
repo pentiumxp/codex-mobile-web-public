@@ -88,6 +88,23 @@ test("v4 normalizer emits stable visible item keys for mixed visible content", (
   assert.deepEqual(result.thread.turns[0].mobileVisibleItemKeys, result.thread.mobileVisibleItemKeys);
 });
 
+test("v4 normalizer classifies collab agent tool calls as operation items", () => {
+  const result = normalizeThreadVisibleProjection({
+    thread: {
+      id: "thread-1",
+      turns: [{
+        id: "turn-1",
+        items: [{ id: "collab-1", type: "collabAgentToolCall" }],
+      }],
+    },
+  }, { source: "test" });
+
+  const item = result.thread.turns[0].items[0];
+  assert.equal(item.mobileVisibleKind, "operation");
+  assert.equal(item.mobileVisibleKey, "turn-1:operation:collab-1");
+  assert.deepEqual(result.thread.mobileVisibleItemKeys, ["turn-1:operation:collab-1"]);
+});
+
 test("v4 normalizer makes duplicate visible keys unique within a turn", () => {
   const result = normalizeThreadVisibleProjection({
     thread: {

@@ -77,17 +77,16 @@ prewarm build a wider source snapshot so larger same-scope first-paint requests
 can rebuild their final window from warm source data instead of synchronously
 scanning rollout tails again.
 
-The latest detail-payload slice tightens the cross-thread task-card summary
-contract. Production sampling showed `thread.threadTaskCards` could account for
-roughly half of some thread-detail response bodies because the summary list
-removed `message.body` but still carried full audit, delivery, injection, and
-execution internals. The intended contract is now explicit: thread detail gets
-only a bounded task-card summary for first paint, while full card content and
-runtime internals remain available only through `GET /api/thread-task-cards/:id`
-when the user expands a card. This targets response-size peaks directly and
-does not add client-side hiding or refresh masking. The next performance slice
-should target the remaining cold/deferred app-server and active projection
-peaks: immediately after restart, a first list/detail request can still take
+The latest active-detail payload slice extends the response-budget service from
+item-count pressure to item-count plus byte-pressure decisions. Active turns now
+enter progressive operation/reasoning/assistant budgets when either the active
+turn body or returned detail window is too large, and collab-agent tool calls
+are classified as operation items across server budget, v4 visible keys, and the
+browser activity label. This targets the successful-but-heavy state where a
+thread does not time out but still waits too long before first paint. The next
+performance slice should target the remaining cold/deferred app-server and
+active projection peaks: immediately after restart, a first list/detail request
+can still take
 seconds and then settle back to hundreds of milliseconds.
 
 The active-window coalescing slice targets the "long spinner, then eventual

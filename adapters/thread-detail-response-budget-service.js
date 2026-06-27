@@ -9,12 +9,15 @@ const DEFAULT_COMPLETED_REASONING_ITEMS = 0;
 const DEFAULT_ACTIVE_ASSISTANT_ITEMS = 8;
 const DEFAULT_COMPLETED_ASSISTANT_ITEMS = 1;
 const DEFAULT_ACTIVE_PROGRESSIVE_ITEM_THRESHOLD = 50;
+const DEFAULT_ACTIVE_PROGRESSIVE_ACTIVE_BYTES = 48 * 1024;
+const DEFAULT_ACTIVE_PROGRESSIVE_THREAD_BYTES = 160 * 1024;
 const DEFAULT_PROGRESSIVE_ACTIVE_OPERATION_ITEMS = 6;
 const DEFAULT_PROGRESSIVE_ACTIVE_REASONING_ITEMS = 1;
 const DEFAULT_PROGRESSIVE_ACTIVE_ASSISTANT_ITEMS = 4;
 
 const OPERATION_ITEM_TYPES = new Set([
   "commandExecution",
+  "collabAgentToolCall",
   "fileChange",
   "dynamicToolCall",
   "mcpToolCall",
@@ -103,6 +106,24 @@ function itemCountForTurns(turns, predicate = null) {
   for (const turn of Array.isArray(turns) ? turns : []) {
     if (predicate && !predicate(turn)) continue;
     total += Array.isArray(turn && turn.items) ? turn.items.length : 0;
+  }
+  return total;
+}
+
+function jsonByteLength(value) {
+  if (value === undefined) return 0;
+  try {
+    return Buffer.byteLength(JSON.stringify(value), "utf8");
+  } catch (_) {
+    return 0;
+  }
+}
+
+function byteLengthForTurns(turns, predicate = null) {
+  let total = 0;
+  for (const turn of Array.isArray(turns) ? turns : []) {
+    if (predicate && !predicate(turn)) continue;
+    total += jsonByteLength(turn);
   }
   return total;
 }
@@ -196,10 +217,36 @@ function compactThreadDetailResponseResult(result, options = {}) {
   );
   const pressureOriginalItemCount = itemCountForTurns(thread.turns);
   const pressureActiveItemCount = itemCountForTurns(thread.turns, (turn) => isActiveTurn(turn, thread));
+  const activeProgressiveByteThreshold = boundedCount(
+    options.activeProgressiveByteThreshold,
+    DEFAULT_ACTIVE_PROGRESSIVE_ACTIVE_BYTES,
+    10 * 1024 * 1024,
+  );
+  const activeProgressiveThreadByteThreshold = boundedCount(
+    options.activeProgressiveThreadByteThreshold,
+    DEFAULT_ACTIVE_PROGRESSIVE_THREAD_BYTES,
+    50 * 1024 * 1024,
+  );
+  const pressureOriginalBytes = byteLengthForTurns(thread.turns);
+  const pressureActiveBytes = byteLengthForTurns(thread.turns, (turn) => isActiveTurn(turn, thread));
+  const activeItemPressure = activeProgressiveItemThreshold > 0
+    && pressureActiveItemCount >= activeProgressiveItemThreshold;
+  const threadItemPressure = activeProgressiveItemThreshold > 0
+    && pressureOriginalItemCount >= activeProgressiveItemThreshold;
+  const activeBytePressure = activeProgressiveByteThreshold > 0
+    && pressureActiveBytes >= activeProgressiveByteThreshold;
+  const threadBytePressure = activeProgressiveThreadByteThreshold > 0
+    && pressureOriginalBytes >= activeProgressiveThreadByteThreshold;
   const progressiveActiveBudgetApplied = pressureActiveItemCount > 0
-    && activeProgressiveItemThreshold > 0
-    && (pressureOriginalItemCount >= activeProgressiveItemThreshold
-      || pressureActiveItemCount >= activeProgressiveItemThreshold);
+    && (activeItemPressure || threadItemPressure || activeBytePressure || threadBytePressure);
+  const progressiveActiveBudgetReason = progressiveActiveBudgetApplied
+    ? (
+      activeItemPressure ? "active-item-pressure"
+        : threadItemPressure ? "thread-item-pressure"
+          : activeBytePressure ? "active-byte-pressure"
+            : "thread-byte-pressure"
+    )
+    : "";
   const progressiveActiveOperationItems = boundedCount(
     options.progressiveActiveOperationItems,
     DEFAULT_PROGRESSIVE_ACTIVE_OPERATION_ITEMS,
@@ -241,12 +288,14 @@ function compactThreadDetailResponseResult(result, options = {}) {
     completedAssistantItems: Math.max(1, boundedCount(options.completedAssistantItems, DEFAULT_COMPLETED_ASSISTANT_ITEMS, 100)),
     activeAssistantItems: effectiveActiveAssistantItems,
     activeProgressiveItemThreshold,
+    activeProgressiveByteThreshold,
+    activeProgressiveThreadByteThreshold,
     progressiveActiveBudgetApplied,
-    progressiveActiveBudgetReason: progressiveActiveBudgetApplied
-      ? (pressureActiveItemCount >= activeProgressiveItemThreshold ? "active-item-pressure" : "thread-item-pressure")
-      : "",
+    progressiveActiveBudgetReason,
     progressiveActiveOriginalItemCount: pressureOriginalItemCount,
     progressiveActiveTurnOriginalItemCount: pressureActiveItemCount,
+    progressiveActiveOriginalBytes: pressureOriginalBytes,
+    progressiveActiveTurnOriginalBytes: pressureActiveBytes,
   };
   if (progressiveActiveBudgetApplied) {
     stats.configuredActiveOperationItems = configuredActiveOperationItems;

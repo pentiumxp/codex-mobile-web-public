@@ -2376,10 +2376,14 @@ Deployable scope:
   `inProgress` rows are counted as `staleActiveTurnCount` and shaped by
   completed-turn budgets.
 - The same service applies pressure-triggered progressive active limits when
-  the detail window crosses `activeProgressiveItemThreshold`, lowering active
-  operation/reasoning/assistant tails while keeping retained text untruncated.
+  the detail window crosses the item-count threshold or active/thread byte
+  thresholds, lowering active operation/reasoning/assistant tails while keeping
+  retained text untruncated.
 - `server.js` wires the progressive thresholds and effective active limits from
   bounded environment variables.
+- Operation budgets now include `collabAgentToolCall`, and v4 visible-item
+  normalization classifies those calls as `operation` so response-budget and
+  browser status semantics stay aligned.
 - The module preserves projection/read authority, active-overlay proof gates,
   visible-key rebuilds, and browser render semantics. It is server response
   shaping, not client refresh masking.
@@ -2395,7 +2399,8 @@ Required validation:
 - central Home AI macOS plugin deployment;
 - production readback comparing active detail response bytes,
   `activeTurnCount`, `staleActiveTurnCount`,
-  `progressiveActiveBudgetApplied`, and omitted item counts.
+  `progressiveActiveBudgetApplied`, `progressiveActiveBudgetReason`,
+  active/thread byte counters, and omitted item counts.
 
 ### 2026-06-28 Thread List Cold Initial App-Server Deferral module
 
