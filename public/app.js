@@ -19963,20 +19963,36 @@ function syncThreadPendingServerRequests(thread) {
   }
 }
 
+function applyThreadGoalToThread(thread, normalizedGoal) {
+  if (!thread) return false;
+  if (normalizedGoal) thread.goal = normalizedGoal;
+  else delete thread.goal;
+  return true;
+}
+
+function scheduleThreadGoalDetailRender(threadId = "") {
+  const id = String(threadId || state.currentThreadId || "").trim();
+  if (!id) return false;
+  if (state.currentThread && String(state.currentThread.id || "") === id) {
+    scheduleRenderCurrentThread();
+    return true;
+  }
+  if (state.threadTileMode && threadTilePaneIsVisible(id)) {
+    if (!scheduleRenderThreadTilePane(id, { preserveScroll: true })) scheduleRenderCurrentThread();
+    return true;
+  }
+  return false;
+}
+
 function updateThreadGoalState(threadId, goal) {
   const id = String(threadId || goal && goal.threadId || "").trim();
   if (!id) return;
   const normalizedGoal = goal ? normalizeThreadGoal(goal, id) : null;
   const thread = state.threads.find((entry) => String(entry && entry.id || "") === id);
-  if (thread) {
-    if (normalizedGoal) thread.goal = normalizedGoal;
-    else delete thread.goal;
-  }
-  if (state.currentThread && String(state.currentThread.id || "") === id) {
-    if (normalizedGoal) state.currentThread.goal = normalizedGoal;
-    else delete state.currentThread.goal;
-    scheduleRenderCurrentThread();
-  }
+  applyThreadGoalToThread(thread, normalizedGoal);
+  applyThreadGoalToThread(state.currentThread && String(state.currentThread.id || "") === id ? state.currentThread : null, normalizedGoal);
+  applyThreadGoalToThread(state.threadTileDetails && state.threadTileDetails.get(String(id)) || null, normalizedGoal);
+  scheduleThreadGoalDetailRender(id);
   if (state.goalDialogThreadId && state.goalDialogThreadId === id) {
     updateThreadGoalDialogState(normalizedGoal);
   }

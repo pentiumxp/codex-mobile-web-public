@@ -21918,3 +21918,42 @@ The previous full handoff was archived and should be opened only when old proven
 - Next:
   - Commit this local slice and keep it undeployed until a coherent deployable
     module is ready.
+
+## 2026-06-27 - Phase C thread goal pane context local slice
+
+- Current local state:
+  - Continued after local commit `0344feb` (`refactor server request answers
+    keep pane context`).
+  - This is a local Phase C pane-state/thread-goal context slice only. It
+    changes `public/app.js`, focused tests, README, and the architecture plan.
+    It does not bump shell/cache, deploy production, or push Public.
+- Root-cause boundary:
+  - Symptom/risk: thread goal notifications updated the thread-list entry and
+    current thread, but a visible non-current tile pane could keep stale goal
+    detail because `state.threadTileDetails` was not updated and no pane-local
+    render was scheduled.
+  - Failing layer: frontend thread-goal state propagation to visible tile-pane
+    detail cache, not thread goal API, server goal persistence, Composer `/g`,
+    shell/cache, or Home AI host routing.
+  - Violated invariant: thread-scoped goal state must be applied to every
+    local representation of that thread, including visible pane detail cache,
+    and render scheduling must target the owning pane/current detail.
+- Changes:
+  - Added `applyThreadGoalToThread()` for centralized goal write/clear.
+  - Added `scheduleThreadGoalDetailRender()` for current-thread versus
+    pane-local render scheduling.
+  - `updateThreadGoalState()` now updates thread-list, current-thread, and
+    `state.threadTileDetails` entries for the affected thread.
+  - Added executable coverage proving a non-current visible pane receives goal
+    update/clear state and schedules pane render without current render.
+- Validation:
+  - `node --check public/app.js` passed.
+  - `node --test test/thread-goal-service.test.js test/thread-tile-state.test.js test/thread-task-card-route.test.js`
+    passed (`55` tests).
+  - `npm test` passed (`1271` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit this local slice and keep it undeployed until a coherent deployable
+    module is ready.

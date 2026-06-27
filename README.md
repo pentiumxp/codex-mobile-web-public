@@ -641,6 +641,37 @@ npm run check:macos  # passed
 git diff --check  # passed
 ```
 
+## 2026-06-27 Phase C Thread Goal Pane Context Slice
+
+这是 server request answer context 之后的相邻 Phase C 本地切片，不单独部署、
+不推 Public。它收敛 thread goal 通知/状态更新在平铺 pane 里的归属：当
+`thread/goal/updated` 或 `thread/goal/cleared` 指向一个可见但不是当前全局线程的
+pane 时，客户端会更新该 pane 的 detail cache，并调度 pane-local render，不再只更新
+线程列表或当前线程。
+
+改动边界：
+
+- 新增 `applyThreadGoalToThread(thread, normalizedGoal)`，集中处理 goal 写入/清除；
+- 新增 `scheduleThreadGoalDetailRender(threadId)`，按 current thread 或 visible tile pane
+  调度 detail render；
+- `updateThreadGoalState()` 同步更新 thread list entry、`state.currentThread` 和
+  `state.threadTileDetails` 中对应 thread；
+- 新增可执行测试，验证非当前 `thread-pane` 的 goal update/clear 会更新 list + pane
+  detail cache，只调度 pane render，不触发 current render；
+- 不改变 thread goal API、server goal persistence、Composer `/g` 行为、shell/cache 版本或
+  生产部署状态。
+
+验证：
+
+```bash
+node --check public/app.js
+node --test test/thread-goal-service.test.js test/thread-tile-state.test.js test/thread-task-card-route.test.js  # 55 passed
+npm test  # 1271 passed
+npm run check  # passed
+npm run check:macos  # passed
+git diff --check  # passed
+```
+
 ## 2026-06-27 Phase C Server Request Answer Context Slice
 
 这是 approval request thread context 之后的相邻 Phase C 本地切片，不单独部署、

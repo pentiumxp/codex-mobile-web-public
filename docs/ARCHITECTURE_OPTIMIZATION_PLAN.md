@@ -2072,6 +2072,9 @@ Server request answer handling follows the same rule: if an approval/user-input
 response comes back without thread metadata, the client must preserve the
 action's pane thread id before storing the returned request, so later
 resolved/removal renders cannot fall back to the wrong current thread.
+Thread goal notifications follow the same pane ownership boundary: updates and
+clears must write both list state and visible pane detail cache, then schedule
+the affected pane render instead of relying only on the global current thread.
 
 ### 2026-06-27 Phase E Visual Harness Module v542
 
