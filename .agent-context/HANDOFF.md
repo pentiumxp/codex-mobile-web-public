@@ -20616,3 +20616,44 @@ The previous full handoff was archived and should be opened only when old proven
   - Deploy through the Home AI central macOS plugin deploy path only after the
     full validation gate passes. Public remains gated by production/user
     validation.
+
+## 2026-06-27 - v542 Phase E visual harness module deployed
+
+- Current state:
+  - Local module commit `a1d98d8` (`bump shell for phase e visual harness
+    module`) was deployed to Mac production through the Home AI central macOS
+    plugin deploy path.
+  - Public has not been pushed from this step.
+- Deploy:
+  - Deploy reason: `codex-mobile-v542-phase-e-visual-harness`.
+  - Source commit: `a1d98d8b7f07`, source dirty false.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T064328Z-plugin-codex-mobile-web-codex-mobile-v542-phase-e-visual-harness`.
+  - Selected mux refresh skipped with `reason=no_mux_runtime_change`; no mux
+    runtime trigger files changed in this module.
+- Production readback:
+  - `/api/public-config` returned status `200`,
+    `clientBuildId=0.1.11|codex-mobile-shell-v542`,
+    `shellCacheName=codex-mobile-shell-v542`,
+    `activeProfileId=previous`, and production workspace path
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Source/prod SHA-256 prefixes matched:
+    `public/app.js=16d932cd58a07f34`,
+    `public/sw.js=1387b0207faae75b`,
+    `public/styles.css=5955acf78ca2471e`,
+    `scripts/codex-mobile-thread-tile-visual-fixture.js=373fd85d15caefa5`,
+    `scripts/codex-mobile-image-order-visual-smoke.js=d5e72750514d3b42`,
+    `test/thread-tile-layout-ui.test.js=ccb95c11209e6e88`,
+    `test/image-order-visual-smoke.test.js=156e6275120bd423`.
+- Visual fixture:
+  - `node scripts/codex-mobile-thread-tile-visual-fixture.js --width 1800 --height 920 --panes 3 --keyboard --typed-lines 4 --task-card expanded --json`
+    passed.
+  - Bounded evidence: `taskCardInsidePane=true`,
+    `taskCardBodyScrollBounded=true`, `taskCardNoComposerOverlap=true`,
+    `appTransformStable=true`, `inputInsideComposer=true`, and
+    `durationVisible=true`.
+- Next:
+  - Observe production/user behavior before Public push.
+  - Continue Phase E with live embedded/PWA coverage for long-turn streaming,
+    upload/generated image rendering, and PWA shell refresh; keep using local
+    slices and module-batched deployment.

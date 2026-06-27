@@ -39,7 +39,33 @@ npm run check:macos  # passed
 git diff --check  # passed
 ```
 
-后续走 Home AI central macOS plugin deploy 做生产部署/readback。Public push 仍然等生产和用户验证。
+生产部署/readback：
+
+- 部署方式：Home AI central macOS plugin deploy。
+- Deploy reason：`codex-mobile-v542-phase-e-visual-harness`。
+- Source commit：`a1d98d8b7f07`，source dirty false。
+- Backup：
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260627T064328Z-plugin-codex-mobile-web-codex-mobile-v542-phase-e-visual-harness`。
+- Selected mux refresh：skipped，`reason=no_mux_runtime_change`，因为本模块未改 mux
+  runtime trigger files。
+- `/api/public-config` readback：
+  `clientBuildId=0.1.11|codex-mobile-shell-v542`，
+  `shellCacheName=codex-mobile-shell-v542`，
+  `activeProfileId=previous`。
+- 关键 source/prod SHA-256 短 hash 一致：
+  `public/app.js=16d932cd58a07f34`，
+  `public/sw.js=1387b0207faae75b`，
+  `public/styles.css=5955acf78ca2471e`，
+  `scripts/codex-mobile-thread-tile-visual-fixture.js=373fd85d15caefa5`，
+  `scripts/codex-mobile-image-order-visual-smoke.js=d5e72750514d3b42`，
+  `test/thread-tile-layout-ui.test.js=ccb95c11209e6e88`，
+  `test/image-order-visual-smoke.test.js=156e6275120bd423`。
+- 代表性视觉 fixture：
+  `scripts/codex-mobile-thread-tile-visual-fixture.js --width 1800 --height 920 --panes 3 --keyboard --typed-lines 4 --task-card expanded --json`
+  passed，`taskCardInsidePane=true`，`taskCardBodyScrollBounded=true`，
+  `taskCardNoComposerOverlap=true`。
+
+Public push 仍然等生产和用户验证。
 
 ## 2026-06-27 Phase E Image-Order Visual Smoke Privacy Slice
 

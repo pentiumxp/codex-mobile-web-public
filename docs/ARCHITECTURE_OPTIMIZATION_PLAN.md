@@ -1918,9 +1918,21 @@ the module passed:
 - `npm run check:macos`;
 - `git diff --check`.
 
-The module still needs Home AI central macOS plugin deployment/readback before
-it is considered production-closed. Public publishing remains gated by
-production/user validation.
+Production deployment/readback:
+
+- commit `a1d98d8b7f07`;
+- deploy reason `codex-mobile-v542-phase-e-visual-harness`;
+- production `/api/public-config` returned
+  `clientBuildId=0.1.11|codex-mobile-shell-v542`,
+  `shellCacheName=codex-mobile-shell-v542`, and `activeProfileId=previous`;
+- selected mux refresh was skipped with `reason=no_mux_runtime_change`;
+- source/prod hashes matched for `public/app.js`, `public/sw.js`,
+  `public/styles.css`, the two Phase E visual scripts, and their focused tests;
+- the bounded 1800px / 3-pane keyboard-open expanded-task-card fixture passed
+  with `taskCardInsidePane=true`, `taskCardBodyScrollBounded=true`, and
+  `taskCardNoComposerOverlap=true`.
+
+Public publishing remains gated by production/user validation.
 
 ### 2026-06-27 Phase C Pane-State Module v541
 
