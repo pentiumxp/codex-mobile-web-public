@@ -164,8 +164,7 @@ function normalizeAssistantCoverage(value, evidence, input) {
   if (evidence.assistantItems <= 0) return "unknown";
   const projectionRevision = numberOrZero(input.projectionRevision);
   const overlayRevision = numberOrZero(input.overlayRevision);
-  if (projectionRevision || overlayRevision) {
-    if (!projectionRevision || !overlayRevision) return "unknown";
+  if (projectionRevision && overlayRevision) {
     if (overlayRevision < projectionRevision) return "stale";
     return "fresh";
   }

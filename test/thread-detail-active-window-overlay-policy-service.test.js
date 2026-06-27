@@ -208,6 +208,48 @@ test("active window overlay plan requires explicit assistant freshness evidence"
   assert.equal(plan.assistantDeltaCoverage, "unknown");
 });
 
+test("active window overlay plan falls back to timestamps when only one revision is visible", () => {
+  const plan = planActiveWindowOverlay({
+    summary: { activeTurnId: "active-turn" },
+    projectionThread: projectionThread(),
+    overlaySource: "projection-live",
+    overlayTurn: {
+      id: "active-turn",
+      items: [{ type: "agentMessage", updatedAtMs: 260 }],
+    },
+    operationCoverage: "none",
+    uploadCoverage: "none",
+    receiptCoverage: "none",
+    projectionRevision: 12,
+    projectionTimestampMs: 200,
+    overlayTimestampMs: 260,
+  });
+
+  assert.equal(plan.action, "use-projection-overlay");
+  assert.equal(plan.reason, "overlay-evidence-complete");
+  assert.equal(plan.assistantDeltaCoverage, "fresh");
+
+  const stale = planActiveWindowOverlay({
+    summary: { activeTurnId: "active-turn" },
+    projectionThread: projectionThread(),
+    overlaySource: "projection-live",
+    overlayTurn: {
+      id: "active-turn",
+      items: [{ type: "agentMessage", updatedAtMs: 180 }],
+    },
+    operationCoverage: "none",
+    uploadCoverage: "none",
+    receiptCoverage: "none",
+    overlayRevision: 12,
+    projectionTimestampMs: 200,
+    overlayTimestampMs: 180,
+  });
+
+  assert.equal(stale.action, "require-full-read");
+  assert.equal(stale.reason, "assistant-delta-stale");
+  assert.equal(stale.assistantDeltaCoverage, "stale");
+});
+
 test("active window overlay plan rejects stale assistant deltas", () => {
   const plan = planActiveWindowOverlay({
     summary: { activeTurnId: "active-turn" },
