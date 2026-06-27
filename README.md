@@ -51,6 +51,25 @@ git diff --check  # passed
 本次同步更新测试断言到 v539 和 request-context archived id 注入语义；没有因此改变
 运行时业务逻辑。
 
+生产部署与读回：
+
+- 本地提交：`424b45d` `bump shell for phase b thread list module`。
+- 中心部署 reason：`codex-mobile-v539-thread-list-module`。
+- 生产备份：
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260627T053214Z-plugin-codex-mobile-web-codex-mobile-v539-thread-list-module`。
+- `/api/public-config` 返回
+  `clientBuildId=0.1.11|codex-mobile-shell-v539`，
+  `shellCacheName=codex-mobile-shell-v539`。
+- Phase B readback smoke 返回 `status=ready`、`reason=warm-or-bounded-paths`。
+  生产证据包含：
+  `threadListRequestContextArchivedIdsReadCount=1`、
+  `threadListRequestContextSessionIndexReadCount=1`、
+  `threadListRequestContextRolloutStatReadCount=24`、
+  `threadListFallbackRolloutStatusStatReadCount=0`、
+  `threadListFallbackRolloutStatusStatReuseCount=0`。
+- 读回样本的 thread-list cold path 分别覆盖了 `source-snapshot-hit` 和
+  `warm-fallback-cache`；selected mux metrics 仍为 supported/ok。
+
 ## 2026-06-27 v538 Phase B Selected Mux Runtime / Phase A Conversation Patch Module
 
 v538 将 v537 后累积的本地切片收束为一个模块，而不是逐个小优化部署：

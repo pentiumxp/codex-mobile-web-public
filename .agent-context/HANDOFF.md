@@ -19965,9 +19965,41 @@ The previous full handoff was archived and should be opened only when old proven
     `mergeThreadDisplaySummary(base, display, options = {})` signature, v539
     shell id, and request-context `archivedIds` injection semantics. No runtime
     behavior was changed for these test updates.
+- Closure pointer:
+  - This prep was committed and deployed in the next section; use that section
+    for production readback evidence.
+
+## 2026-06-27 - v539 deployed; Phase B thread-list module readback closed
+
+- Commit:
+  - `424b45d` `bump shell for phase b thread list module`.
+- Deployment:
+  - Ran Home AI central macOS plugin deploy from
+    `/Users/hermes-dev/HermesMobileDev/app` with reason
+    `codex-mobile-v539-thread-list-module`.
+  - Deploy result `ok=true`, source ref clean, production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T053214Z-plugin-codex-mobile-web-codex-mobile-v539-thread-list-module`.
+  - `codex-mobile-selected-mux-refresh` was correctly skipped with
+    `reason=no_mux_runtime_change` because this module did not change mux
+    runtime trigger files.
+- Production readback:
+  - `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v539` and
+    `shellCacheName=codex-mobile-shell-v539`.
+  - `node scripts/codex-mobile-phase-b-readback-smoke.js --server http://127.0.0.1:8787 --json`
+    passed with `decision.status=ready`,
+    `decision.reason=warm-or-bounded-paths`.
+  - Thread-list readback covered both fallback source snapshot and warm cache
+    paths across the two samples. New bounded counters are present:
+    `threadListRequestContextArchivedIdsReadCount=1`,
+    `threadListRequestContextSessionIndexReadCount=1`,
+    `threadListRequestContextRolloutStatReadCount=24`,
+    `threadListFallbackRolloutStatusStatReadCount=0`, and
+    `threadListFallbackRolloutStatusStatReuseCount=0`.
+  - Mux runtime/readback remained healthy:
+    `threadListMuxRuntimeMuxMetricsRpc=true`,
+    `threadListMuxMetricsSupported=true`, `threadListMuxMetricsOk=true`.
 - Next:
-  - Commit the v539 bump/docs/test assertion updates.
-  - Deploy through the Home AI central macOS plugin deploy path.
-  - Post-deploy readback should confirm `clientBuildId` /
-    `shellCacheName=codex-mobile-shell-v539` and include the new Phase B
-    counters, especially request-context and fallback status stat counters.
+  - Continue the optimization plan from the next root-cause target. Current
+    production evidence says this v539 module is closed; do not keep extending
+    this same module without a new failing invariant.
