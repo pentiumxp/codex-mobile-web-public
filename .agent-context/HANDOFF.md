@@ -24476,3 +24476,78 @@ The previous full handoff was archived and should be opened only when old proven
     future app-server stalls outside the projection-hit path. Continue using
     Phase-B readback and diagnostics to target the next owner instead of adding
     client retry/fallback behavior.
+
+## 2026-06-28 - Active Detail Visible Item Budget Module
+
+- User-visible symptom:
+  - After retained-text and v4 projection-hit fixes, active-thread detail was
+    bounded but still returned many first-paint visible operation/reasoning
+    rows. On mobile, long active receipts and operation rows can still dominate
+    the first screen and make newer content feel delayed or hidden.
+  - The user also reported a newer state where a thread could keep loading for
+    a long time and still eventually render, unlike the older explicit timeout
+    state. That shape indicates a successful but slow server path, not a pure
+    network failure.
+- Root cause / invariant:
+  - The existing response budget applied per-turn/per-type compaction, but did
+    not have a global first-paint visible-item ceiling after active progressive
+    pressure. Cross-turn historical operation/reasoning rows could therefore
+    remain numerous even when the current active turn was already compacted.
+  - Invariant: under active progressive pressure, first paint should protect
+    user messages, uploaded images, Usage rows, diagnostics, and retained final
+    assistant receipts, while pruning older operation/reasoning rows before
+    current active operation/reasoning rows.
+- Implementation:
+  - `adapters/thread-detail-response-budget-service.js` adds
+    `progressiveVisibleItemCeiling` support, defaulting to `48` visible items.
+    It applies only after progressive active pressure and only after per-turn
+    compaction. `0` disables the ceiling for diagnostics.
+  - `server.js` exposes
+    `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_VISIBLE_ITEM_CEILING`.
+  - Per affected turn, the service records `mobileVisibleItemBudget` and
+    `mobileOmittedVisibleItemCount`. The thread-level budget now records
+    `omittedVisibleItems`, `progressiveVisibleItemBudgetApplied`,
+    `progressiveVisibleItemOriginalCount`, and
+    `progressiveVisibleItemRetainedCount`.
+  - Added focused tests proving the pruning order, protected rows, active-turn
+    fallback pruning, and no-ceiling behavior without progressive active
+    pressure.
+  - Updated `docs/README.md`, `docs/MODULES.md`, `docs/ARCHITECTURE.md`,
+    `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Local validation:
+  - `node --test test/thread-detail-response-budget-service.test.js` passed.
+  - Focused detail/projection/render/performance suite passed (`296` tests).
+  - Full `npm test` passed (`1360` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Commit / deployment:
+  - Runtime/docs commit `bf8e2da`
+    `fix: 增加 active detail 可见项首屏预算`.
+  - Deployed through the Home AI central macOS plugin deploy path with reason
+    `codex-mobile-active-visible-item-budget`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T213917Z-plugin-codex-mobile-web-codex-mobile-active-visible-item-budget`.
+  - The change is server/docs only; shell stayed
+    `0.1.11|codex-mobile-shell-v553`, build id `8f5df1074a2bd651`.
+  - Source/prod SHA-256 prefixes matched for the response budget service,
+    `server.js`, focused test, and updated docs.
+- Production readback:
+  - Phase-B readback after deploy returned thread-list `totalMs=103`,
+    `fallbackCacheDecision=compatible-hit`, mux metrics supported, and selected
+    active detail `projection-active-overlay` with `totalMs=249`,
+    `projectionMs=71`, `activeOverlayMergeMs=31`,
+    `prepareResponseMs=88`, `threadReadMs=0`.
+  - Six direct authenticated bounded reads of the selected active thread
+    returned about `179-268ms`, response size about `89KB`, `turnCount=10`, and
+    `totalItems=48`.
+  - The deployed budget fields showed `progressiveActiveBudgetApplied=true`,
+    `progressiveVisibleItemBudgetApplied=true`, `original=66`,
+    `retained=48`, and `omittedVisibleItems=18`.
+- Residual / next target:
+  - This closes the active first-paint visible-item ceiling. It does not close
+    intermittent multi-second or tens-of-seconds load reports; those require
+    the next module to capture and reduce cold/rebuild peak paths across thread
+    list prewarm, projection seed/rebuild, and app-server RPC, using server-side
+    timing evidence rather than client masking.
