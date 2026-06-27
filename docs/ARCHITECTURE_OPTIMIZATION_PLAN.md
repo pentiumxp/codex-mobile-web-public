@@ -356,7 +356,16 @@ Current acceleration targets:
    display merge, title hydration, final hidden/subagent/archive filtering, and
    sort. Dominant route-merge decisions can now name the likely internal stage,
    for example `route-merge-latency:cached_display`, before any optimization
-   changes row ownership or ordering.
+   changes row ownership or ordering. The follow-up request-context
+   optimization is the first direct cost reduction on this path: `/api/threads`
+   now shares archived ids, session-index entries, and cached display-summary
+   reads within one request. This removes repeated archived-session scans,
+   repeated title-hydration reads, and duplicate-id cached-summary reads while
+   preserving all row merge, ordering, hidden/subagent/archive, fallback cache,
+   and app-server query semantics. Phase B readback now carries only bounded
+   request-context read counts so production can prove whether the request used
+   one shared archive/session-index read and how many unique cached display
+   summaries were read, without exposing titles, paths, prompts, or logs.
    Earlier local
    fallback attribution slices also made baseline source work explicit:
    fallback baseline source reads now

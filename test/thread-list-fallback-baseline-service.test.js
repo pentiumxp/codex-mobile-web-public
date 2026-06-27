@@ -175,6 +175,48 @@ test("thread-list fallback baseline shares a source context only within one base
   assert.doesNotMatch(JSON.stringify(baseline.timings), /sessionIndexEntries/);
 });
 
+test("thread-list fallback baseline passes request archive and merge options through source snapshot", () => {
+  const archivedIds = new Set(["archived"]);
+  const mergeOptions = { archivedIds, request: true };
+  let mergeOptionsSeen = null;
+  const service = createThreadListFallbackBaselineService({
+    now: () => 100,
+    readStateDbFallback(limit, filters) {
+      assert.equal(filters.archivedIds, archivedIds);
+      return [
+        { id: "state", updatedAt: 100 },
+        { id: "archived", updatedAt: 200 },
+      ];
+    },
+    readRolloutSessionFallback(limit, filters) {
+      assert.equal(filters.archivedIds, archivedIds);
+      return [];
+    },
+    readSessionIndexFallback(limit, filters) {
+      assert.equal(filters.archivedIds, archivedIds);
+      return [];
+    },
+    filterFallbackThreads(threads, filters) {
+      assert.equal(filters.archivedIds, archivedIds);
+      return (threads || []).filter((thread) => !filters.archivedIds.has(thread.id));
+    },
+    mergeThreadSummaryList(threads, options) {
+      mergeOptionsSeen = options;
+      return threads;
+    },
+  });
+
+  const baseline = service.readBaseline(10, {
+    archivedIds,
+    mergeThreadSummaryListOptions: mergeOptions,
+    sourceSnapshotKey: "visible",
+    sourceSnapshotLimit: 20,
+  });
+
+  assert.deepEqual(baseline.threads.map((thread) => thread.id), ["state"]);
+  assert.equal(mergeOptionsSeen, mergeOptions);
+});
+
 test("thread-list fallback baseline reuses source snapshot across filter keys", () => {
   let nowMs = 1000;
   const calls = { stateDb: 0, rollout: 0, sessionIndex: 0 };

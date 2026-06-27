@@ -94,6 +94,57 @@ test("thread-list summary merge array wrapper returns only threads", () => {
   assert.deepEqual(service.mergeThreadSummaryList([{ id: "a" }]), [{ id: "a" }]);
 });
 
+test("thread-list summary merge supports request-scoped cached display and title readers", () => {
+  let archivedReaderCalls = 0;
+  let cachedDisplayReads = 0;
+  const cachedDisplayById = new Map([["dup", { id: "dup", name: "Cached", updatedAt: 30 }]]);
+  const requestCachedDisplay = new Map();
+  const service = createThreadListSummaryMergeService({
+    archivedSessionThreadIds() {
+      archivedReaderCalls += 1;
+      return new Set(["should-not-be-used"]);
+    },
+    mergeThreadWithCachedDisplaySummary() {
+      throw new Error("default cached display reader should not run");
+    },
+    stripThreadListDetailFields: (thread) => Object.assign({}, thread),
+    normalizeThreadSummaryLiveStatus: (thread) => Object.assign({}, thread),
+    mergeThreadDisplaySummary: (base, display) => Object.assign({}, base || {}, display || {}),
+    hydrateThreadListTitlesFromSessionIndex: (threads, indexEntries) => threads.map((thread) => {
+      const entry = indexEntries && indexEntries.get(thread.id);
+      return entry && entry.thread_name ? Object.assign({}, thread, { name: entry.thread_name }) : thread;
+    }),
+    sortThreadListSummaries: (threads) => threads.slice().sort((left, right) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0)),
+  });
+  const result = service.mergeThreadSummaryListWithDiagnostics([
+    { id: "dup", name: "Raw old", updatedAt: 10 },
+    { id: "dup", name: "Raw new", updatedAt: 20 },
+    { id: "archived", updatedAt: 40 },
+    { id: "titled", updatedAt: 15 },
+  ], {
+    archivedIds: new Set(["archived"]),
+    sessionIndexEntries: new Map([["titled", { id: "titled", thread_name: "Hydrated" }]]),
+    mergeThreadWithCachedDisplaySummary(thread) {
+      const id = String(thread && thread.id || "");
+      if (!requestCachedDisplay.has(id)) {
+        requestCachedDisplay.set(id, cachedDisplayById.get(id) || null);
+        cachedDisplayReads += 1;
+      }
+      const cached = requestCachedDisplay.get(id);
+      return cached ? Object.assign({}, thread, cached) : thread;
+    },
+  });
+
+  assert.equal(archivedReaderCalls, 0);
+  assert.equal(cachedDisplayReads, 2);
+  assert.deepEqual(result.threads.map((thread) => thread.id), ["dup", "titled"]);
+  assert.equal(result.threads[0].name, "Cached");
+  assert.equal(result.threads[0].updatedAt, 30);
+  assert.equal(result.threads[1].name, "Hydrated");
+  assert.equal(result.diagnostics.summaryMergeArchivedIdSkipCount, 1);
+  assert.equal(result.diagnostics.summaryMergeDuplicateIdCount, 1);
+});
+
 test("thread-list summary merge dominant stage is bounded", () => {
   assert.equal(dominantTimingStage({
     cached_display: 4,

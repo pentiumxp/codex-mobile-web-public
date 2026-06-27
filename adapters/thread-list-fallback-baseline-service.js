@@ -155,6 +155,9 @@ function createThreadListFallbackBaselineService(options = {}) {
     }
 
     const readFilters = sourceSnapshotFilters(filters);
+    if (filters.archivedIds && typeof filters.archivedIds.has === "function") {
+      readFilters.archivedIds = filters.archivedIds;
+    }
     const sourceContext = {};
     const stateDb = timedRead("stateDb", readStateDbFallback, requiredLimit, readFilters, sourceContext);
     const rollout = timedRead("rollout", readRolloutSessionFallback, requiredLimit, readFilters, sourceContext);
@@ -214,7 +217,7 @@ function createThreadListFallbackBaselineService(options = {}) {
       ...rolloutThreads,
       ...sessionIndexThreads,
     ];
-    const merged = safeThreadList(mergeThreadSummaryList(mergeInput));
+    const merged = safeThreadList(mergeThreadSummaryList(mergeInput, filters.mergeThreadSummaryListOptions || {}));
     const threads = merged.slice(0, bounded);
     return {
       threads,
@@ -250,7 +253,7 @@ function createThreadListFallbackBaselineService(options = {}) {
       ...rollout.threads,
       ...sessionIndex.threads,
     ];
-    const directMerged = baseline ? [] : safeThreadList(mergeThreadSummaryList(directMergeInput));
+    const directMerged = baseline ? [] : safeThreadList(mergeThreadSummaryList(directMergeInput, filters.mergeThreadSummaryListOptions || {}));
     const threads = baseline
       ? baseline.threads
       : directMerged.slice(0, bounded);

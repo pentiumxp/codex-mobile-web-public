@@ -105,6 +105,9 @@ const {
 const {
   createThreadListSummaryMergeService,
 } = require("./adapters/thread-list-summary-merge-service");
+const {
+  createThreadListRequestContext,
+} = require("./adapters/thread-list-request-context-service");
 const { diagnoseThreadListColdPath } = require("./adapters/thread-list-cold-path-diagnosis-service");
 const {
   stripThreadListDetailFields,
@@ -3086,10 +3089,10 @@ function isThreadIdArchivedLocally(threadId) {
   return Boolean(id && archivedSessionThreadIds().has(id));
 }
 
-function isHiddenThread(thread, visibility = null) {
+function isHiddenThread(thread, visibility = null, options = {}) {
   if (!thread || typeof thread !== "object") return true;
   const view = visibility || visibilityFromGlobalState();
-  if (shouldHideThreadListSummary(thread)) return true;
+  if (shouldHideThreadListSummary(thread, options.archivedIds)) return true;
   if (threadProjectlessVisible(thread, view)) return false;
   if (view.workspaceKeys && view.workspaceKeys.size > 0) {
     const cwd = String(thread.cwd || "").trim();
@@ -3224,28 +3227,31 @@ function sortThreadListSummaries(threads) {
     .map((entry) => entry.thread);
 }
 
-function filterVisibleThreads(result, globalState = readGlobalState()) {
+function filterVisibleThreads(result, globalState = readGlobalState(), options = {}) {
   const visibility = visibilityFromGlobalState(globalState);
+  const archivedIds = options.archivedIds && typeof options.archivedIds.has === "function"
+    ? options.archivedIds
+    : archivedSessionThreadIds();
   if (!result || typeof result !== "object") return result;
   const out = Object.assign({}, result);
   if (Array.isArray(out.data)) {
-    const merged = mergeThreadStateFromStateDb(out.data);
+    const merged = mergeThreadStateFromStateDb(out.data, { archivedIds });
     const shouldFilterByWorkspace = anyThreadMatchesVisibleWorkspace(merged, visibility);
     out.data = merged
-      .filter((thread) => !(shouldFilterByWorkspace ? isHiddenThread(thread, visibility) : shouldHideThreadListSummary(thread)))
+      .filter((thread) => !(shouldFilterByWorkspace ? isHiddenThread(thread, visibility, { archivedIds }) : shouldHideThreadListSummary(thread, archivedIds)))
       .map(annotateThreadRolloutStats);
   }
   if (Array.isArray(out.threads)) {
-    const merged = mergeThreadStateFromStateDb(out.threads);
+    const merged = mergeThreadStateFromStateDb(out.threads, { archivedIds });
     const shouldFilterByWorkspace = anyThreadMatchesVisibleWorkspace(merged, visibility);
     out.threads = merged
-      .filter((thread) => !(shouldFilterByWorkspace ? isHiddenThread(thread, visibility) : shouldHideThreadListSummary(thread)))
+      .filter((thread) => !(shouldFilterByWorkspace ? isHiddenThread(thread, visibility, { archivedIds }) : shouldHideThreadListSummary(thread, archivedIds)))
       .map(annotateThreadRolloutStats);
   }
   return out;
 }
 
-function mergeThreadStateFromStateDb(threads) {
+function mergeThreadStateFromStateDb(threads, options = {}) {
   if (!Array.isArray(threads) || !threads.length || !fs.existsSync(STATE_DB)) return threads;
   const ids = Array.from(new Set(threads.map((thread) => String(thread && thread.id || "").trim()).filter(Boolean)));
   if (!ids.length) return threads;
@@ -3262,7 +3268,9 @@ function mergeThreadStateFromStateDb(threads) {
     const rows = result.rows;
     if (!Array.isArray(rows) || !rows.length) return threads;
     const stateById = new Map();
-    const archivedIds = archivedSessionThreadIds();
+    const archivedIds = options.archivedIds && typeof options.archivedIds.has === "function"
+      ? options.archivedIds
+      : archivedSessionThreadIds();
     for (const row of rows) {
       const id = String(row && row.id || "").trim();
       if (!id) continue;
@@ -13546,7 +13554,9 @@ function readRolloutSessionFallback(limit = 80, filters = {}) {
     diagnostics,
     sourceContext: filters.sourceContext,
   });
-  const archivedIds = archivedSessionThreadIds();
+  const archivedIds = filters.archivedIds && typeof filters.archivedIds.has === "function"
+    ? filters.archivedIds
+    : archivedSessionThreadIds();
   const threads = [];
   const seen = new Set();
   for (const file of collectRecentRolloutFiles(SESSIONS_DIR, { maxFiles: rowLimit, maxDepth: 6, diagnostics })) {
@@ -13585,7 +13595,9 @@ function readSessionIndexFallback(limit = 80, filters = {}) {
     const globalState = filters.globalState || readGlobalState();
     const projectlessThreadIds = visibleProjectlessThreadIds(globalState);
     if (filters.cwd || projectlessThreadIds.size === 0) return [];
-    const archivedIds = archivedSessionThreadIds();
+    const archivedIds = filters.archivedIds && typeof filters.archivedIds.has === "function"
+      ? filters.archivedIds
+      : archivedSessionThreadIds();
     const byId = new Map();
     for (const entry of readSessionIndexEntriesForFallback(1000, {
       diagnostics,
@@ -14876,9 +14888,52 @@ async function handleApi(req, res) {
   if (url.pathname === "/api/threads" && req.method === "GET") {
     const routeStartedAtMs = Date.now();
     const timings = {};
+    let threadListRequestContext = null;
+    let requestArchivedIds = null;
+    let mergeThreadSummaryListOptions = null;
+    const requestCachedDisplaySummaries = new Map();
+    let requestCachedDisplayReadCount = 0;
     const markTiming = (name, startedAtMs) => {
       timings[name] = Math.max(0, Date.now() - Number(startedAtMs || Date.now()));
       return timings[name];
+    };
+    const boundedRequestCount = (value) => {
+      const number = Number(value);
+      if (!Number.isFinite(number) || number <= 0) return 0;
+      return Math.min(100000, Math.trunc(number));
+    };
+    const getThreadListRequestContext = () => {
+      if (!threadListRequestContext) {
+        threadListRequestContext = createThreadListRequestContext({
+          readArchivedIds: archivedSessionThreadIds,
+          readSessionIndexEntries,
+        });
+      }
+      return threadListRequestContext;
+    };
+    const getRequestArchivedIds = () => {
+      if (!requestArchivedIds) requestArchivedIds = getThreadListRequestContext().archivedIds();
+      return requestArchivedIds;
+    };
+    const mergeThreadWithCachedDisplaySummaryForRequest = (thread) => {
+      if (!thread || typeof thread !== "object" || !thread.id) return thread;
+      const id = String(thread.id);
+      if (!requestCachedDisplaySummaries.has(id)) {
+        requestCachedDisplaySummaries.set(id, threadDisplaySummaryCache.read(id) || null);
+        requestCachedDisplayReadCount += 1;
+      }
+      const cached = requestCachedDisplaySummaries.get(id);
+      return normalizeStaleContextOnlyActiveThread(cached ? (mergeThreadDisplaySummary(thread, cached) || thread) : thread);
+    };
+    const getMergeThreadSummaryListOptions = () => {
+      if (!mergeThreadSummaryListOptions) {
+        mergeThreadSummaryListOptions = {
+          archivedIds: getRequestArchivedIds(),
+          mergeThreadWithCachedDisplaySummary: mergeThreadWithCachedDisplaySummaryForRequest,
+          sessionIndexEntries: getThreadListRequestContext().sessionIndexEntries(),
+        };
+      }
+      return mergeThreadSummaryListOptions;
     };
     const attachDiagnostics = (result, details = {}) => {
       if (!result || typeof result !== "object") return result;
@@ -14891,7 +14946,11 @@ async function handleApi(req, res) {
         hasWorkspace: Boolean(cwd),
         hasSearch: Boolean(searchTerm),
         resultCount: Array.isArray(result.data) ? result.data.length : Array.isArray(result.threads) ? result.threads.length : 0,
-      }, timings, details || {});
+      }, timings, threadListRequestContext ? Object.assign(
+        {},
+        threadListRequestContext.diagnostics(),
+        { requestContextCachedDisplayReadCount: boundedRequestCount(requestCachedDisplayReadCount) },
+      ) : {}, details || {});
       const coldPathDiagnosis = diagnoseThreadListColdPath(threadListTimings);
       threadListTimings.coldPathOwner = coldPathDiagnosis.owner;
       threadListTimings.coldPathReason = coldPathDiagnosis.reason;
@@ -15005,7 +15064,7 @@ async function handleApi(req, res) {
       });
       markTiming("appServerRpcMs", appServerRpcStartedAtMs);
       const appServerVisibleFilterStartedAtMs = Date.now();
-      const appServerVisibleResult = filterVisibleThreads(appServerRawResult, globalState);
+      const appServerVisibleResult = filterVisibleThreads(appServerRawResult, globalState, { archivedIds: getRequestArchivedIds() });
       markTiming("appServerVisibleFilterMs", appServerVisibleFilterStartedAtMs);
       const appServerWorkspaceFilterStartedAtMs = Date.now();
       const appServerResult = filterThreadListByCwd(appServerVisibleResult, cwd);
@@ -15041,7 +15100,11 @@ async function handleApi(req, res) {
           mergeMs: 0,
         });
         const sessionIndexStartedAtMs = Date.now();
-        const indexedResult = normalizeThreadListResultStatuses(hydrateThreadListResultTitlesFromSessionIndex(appServerResult));
+        const deferredMergeOptions = getMergeThreadSummaryListOptions();
+        const indexedResult = normalizeThreadListResultStatuses(hydrateThreadListResultTitlesFromSessionIndex(
+          appServerResult,
+          deferredMergeOptions.sessionIndexEntries,
+        ));
         timings.fallbackSessionIndexMs = Math.max(0, Date.now() - sessionIndexStartedAtMs);
         threadDisplaySummaryCache.rememberList(indexedResult);
         if (Array.isArray(indexedResult.data)) indexedResult.data = indexedResult.data.slice(0, limit);
@@ -15060,7 +15123,15 @@ async function handleApi(req, res) {
       }
       const fallbackStartedAtMs = Date.now();
       const fallbackDiagnostics = {};
-      const fallback = readThreadListFallback(limit, { cwd, searchTerm, globalState, diagnostics: fallbackDiagnostics });
+      const fullMergeOptions = getMergeThreadSummaryListOptions();
+      const fallback = readThreadListFallback(limit, {
+        cwd,
+        searchTerm,
+        globalState,
+        diagnostics: fallbackDiagnostics,
+        archivedIds: fullMergeOptions.archivedIds,
+        mergeThreadSummaryListOptions: fullMergeOptions,
+      });
       markTiming("fallbackMs", fallbackStartedAtMs);
       Object.assign(timings, {
         fallbackCacheHit: Boolean(fallbackDiagnostics.cacheHit),
@@ -15098,6 +15169,7 @@ async function handleApi(req, res) {
         fallbackThreads: fallback,
         limit,
         mergeThreadSummaryList: mergeThreadSummaryListWithDiagnostics,
+        mergeThreadSummaryListOptions: fullMergeOptions,
       });
       Object.assign(timings, routeMerge.diagnostics);
       const result = normalizeThreadListResultStatuses(routeMerge.result);
@@ -15117,7 +15189,15 @@ async function handleApi(req, res) {
     } catch (err) {
       const fallbackStartedAtMs = Date.now();
       const fallbackDiagnostics = {};
-      const fallback = readThreadListFallback(limit, { cwd, searchTerm, globalState, diagnostics: fallbackDiagnostics });
+      const fallbackMergeOptions = getMergeThreadSummaryListOptions();
+      const fallback = readThreadListFallback(limit, {
+        cwd,
+        searchTerm,
+        globalState,
+        diagnostics: fallbackDiagnostics,
+        archivedIds: fallbackMergeOptions.archivedIds,
+        mergeThreadSummaryListOptions: fallbackMergeOptions,
+      });
       markTiming("fallbackMs", fallbackStartedAtMs);
       Object.assign(timings, {
         fallbackCacheHit: Boolean(fallbackDiagnostics.cacheHit),

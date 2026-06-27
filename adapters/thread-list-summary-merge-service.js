@@ -76,7 +76,7 @@ function createThreadListSummaryMergeService(options = {}) {
     return result;
   };
 
-  function mergeThreadSummaryListWithDiagnostics(threads) {
+  function mergeThreadSummaryListWithDiagnostics(threads, mergeOptions = {}) {
     const totalStartedAtMs = Number(nowMs()) || 0;
     const input = Array.isArray(threads) ? threads : [];
     const diagnostics = {
@@ -99,7 +99,14 @@ function createThreadListSummaryMergeService(options = {}) {
       summaryMergeTotalMs: 0,
       summaryMergeDominantStage: "",
     };
-    const archivedIds = safeArchivedIds(archivedSessionThreadIds());
+    const mergeCachedDisplay = mergeOptions && typeof mergeOptions.mergeThreadWithCachedDisplaySummary === "function"
+      ? mergeOptions.mergeThreadWithCachedDisplaySummary
+      : mergeThreadWithCachedDisplaySummary;
+    const archivedIds = safeArchivedIds(
+      mergeOptions && mergeOptions.archivedIds
+        ? mergeOptions.archivedIds
+        : archivedSessionThreadIds(),
+    );
     const byId = new Map();
 
     for (const thread of input) {
@@ -112,7 +119,7 @@ function createThreadListSummaryMergeService(options = {}) {
         diagnostics.summaryMergeArchivedIdSkipCount += 1;
         continue;
       }
-      const cachedThread = measure(diagnostics, "summaryMergeCachedDisplayMs", () => mergeThreadWithCachedDisplaySummary(thread));
+      const cachedThread = measure(diagnostics, "summaryMergeCachedDisplayMs", () => mergeCachedDisplay(thread));
       const displayThread = measure(diagnostics, "summaryMergeNormalizeMs", () => stripThreadListDetailFields(
         normalizeThreadSummaryLiveStatus(cachedThread),
       ));
@@ -134,7 +141,7 @@ function createThreadListSummaryMergeService(options = {}) {
 
     diagnostics.summaryMergeByIdCount = boundedCount(byId.size);
     const hydrated = measure(diagnostics, "summaryMergeHydrateTitleMs", () => safeThreadList(
-      hydrateThreadListTitlesFromSessionIndex([...byId.values()]),
+      hydrateThreadListTitlesFromSessionIndex([...byId.values()], mergeOptions && mergeOptions.sessionIndexEntries),
     ));
     diagnostics.summaryMergeHydratedCount = boundedCount(hydrated.length);
     const visible = measure(diagnostics, "summaryMergeFinalFilterMs", () => hydrated
@@ -155,8 +162,8 @@ function createThreadListSummaryMergeService(options = {}) {
     return { threads: output, diagnostics };
   }
 
-  function mergeThreadSummaryList(threads) {
-    return mergeThreadSummaryListWithDiagnostics(threads).threads;
+  function mergeThreadSummaryList(threads, mergeOptions = {}) {
+    return mergeThreadSummaryListWithDiagnostics(threads, mergeOptions).threads;
   }
 
   return {

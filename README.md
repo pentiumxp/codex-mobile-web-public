@@ -139,6 +139,41 @@ node --test test/thread-list-summary-merge-service.test.js test/thread-list-rout
 结果：focused tests `86` passed。该切片尚未部署；继续积累到下一个 Phase B
 模块后再 bump shell/cache 并部署。
 
+## 2026-06-27 Phase B Request Context Merge Optimization Local Slice
+
+在 summary merge 归因之后，下一步不再继续只加计时字段，而是直接减少一次
+`/api/threads` 请求内的重复同步读取。这个本地切片仍保持 thread list 的内容、
+排序、归档/隐藏规则、fallback cache 语义和 app-server 查询参数不变。
+
+改动：
+
+- 新增 `adapters/thread-list-request-context-service.js`，提供一次 request 内
+  懒加载共享的 archived thread id set 和 `session_index` entries，并输出
+  bounded 计数字段。
+- `/api/threads` route 现在把同一个 archived id set 传入 app-server visible
+  filter、state-db merge、rollout/session-index fallback 和 summary merge，避免同一请求
+  多次扫描 archived session 目录。
+- fallback baseline 的 source snapshot read 会保留 request `archivedIds`，并把
+  `mergeThreadSummaryListOptions` 传给 baseline merge，避免冷路径 source build 后又用
+  默认 reader 重读 session index / archive ids。
+- summary merge 支持 request-scoped cached display reader。route 内对
+  `threadDisplaySummaryCache.read(id)` 做同请求 memo：重复 id 仍按原来的
+  `mergeThreadDisplaySummary()` 语义参与合并，但同一 id 的 cached summary 只读一次。
+- Phase B readback smoke / decision evidence 新增
+  `requestContextArchivedIdsReadCount`、`requestContextSessionIndexReadCount`、
+  `requestContextCachedDisplayReadCount`，用于部署后证明优化是否生效。
+
+验证：
+
+```bash
+node --test test/thread-list-request-context-service.test.js test/thread-list-summary-merge-service.test.js test/thread-list-route-merge-service.test.js test/thread-list-fallback-baseline-service.test.js test/thread-list-fallback-cache-service.test.js test/thread-visibility.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js
+npm run check
+git diff --check
+```
+
+结果：focused tests `104` passed；`npm run check` passed；`git diff --check`
+passed。该切片尚未部署；继续按 v539 模块批量提交/部署节奏推进。
+
 ## 2026-06-27 v537 Phase B RPC/Mux Evidence Module
 
 v537 把两个本地 Phase B 切片作为一个模块部署：`6624f1b` 记录 Mobile 到

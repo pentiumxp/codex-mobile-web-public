@@ -114,7 +114,7 @@ function mergeThreadListRouteResult(options = {}) {
   const mergeThreadSummaryList = typeof options.mergeThreadSummaryList === "function"
     ? options.mergeThreadSummaryList
     : (threads) => safeThreadList(threads);
-  const mergeOutput = mergeThreadSummaryList(rawInput);
+  const mergeOutput = mergeThreadSummaryList(rawInput, options.mergeThreadSummaryListOptions || {});
   const mergeOutputObject = objectOrNull(mergeOutput);
   const mergedThreads = safeThreadList(mergeOutputObject ? mergeOutputObject.threads : mergeOutput);
   const outputThreads = mergedThreads.slice(0, boundedLimit(options.limit));

@@ -75,21 +75,30 @@ test("thread-list route merge supports threads-array results", () => {
 });
 
 test("thread-list route merge includes summary-merge diagnostics without private fields", () => {
+  let receivedOptions = null;
   const merged = mergeThreadListRouteResult({
     result: { data: [{ id: "a" }] },
     fallbackThreads: [{ id: "b" }],
     limit: 10,
-    mergeThreadSummaryList: (threads) => ({
+    mergeThreadSummaryListOptions: {
+      archivedIds: new Set(["x"]),
+      privatePrompt: "must not be copied",
+    },
+    mergeThreadSummaryList: (threads, options) => {
+      receivedOptions = options;
+      return {
       threads,
       diagnostics: {
         summaryMergeInputCount: threads.length,
         summaryMergeDominantStage: "cached_display",
         privatePrompt: "must not be copied if caller adds unsafe fields",
       },
-    }),
+      };
+    },
   });
 
   assert.equal(merged.diagnostics.routeMergeInputCount, 2);
+  assert.ok(receivedOptions.archivedIds.has("x"));
   assert.equal(merged.diagnostics.summaryMergeInputCount, 2);
   assert.equal(merged.diagnostics.summaryMergeDominantStage, "cached_display");
   assert.equal(Object.prototype.hasOwnProperty.call(merged.diagnostics, "privatePrompt"), false);

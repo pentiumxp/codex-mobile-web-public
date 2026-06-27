@@ -19837,3 +19837,28 @@ The previous full handoff was archived and should be opened only when old proven
     annotation, but do not change behavior before readback names the owner.
   - Do not deploy until this and adjacent local slices are batched into the next
     complete Phase B module.
+
+## 2026-06-27 - Phase B request-context merge optimization local slice
+
+- Current local state:
+  - Continued immediately after local commit `2dc5caa` (`refactor: attribute thread summary merge`).
+  - This is the first direct optimization after the route/summary merge attribution slices. It is local only: no `CLIENT_BUILD_ID` / shell cache bump and no production deploy yet.
+- Root-cause boundary:
+  - Symptom/risk: Phase B evidence can now identify summary merge internals, and the next dominant candidate is duplicated synchronous work inside a single `/api/threads` request: archived session id scans, session-index title hydration reads, and repeated cached display-summary reads for duplicate ids.
+  - Failing layer: Mobile thread-list request/merge ownership inside `/api/threads`, not app-server query semantics, mux RPC transport, frontend refresh, or fallback hiding.
+  - Violated invariant: a single authoritative list request should share immutable request-scope evidence while preserving public row visibility, ordering, duplicate merge, hidden/subagent/archive rules, fallback cache behavior, and app-server request parameters.
+- Changes:
+  - Added `adapters/thread-list-request-context-service.js` for lazy per-request archived-id and session-index sharing with bounded diagnostics.
+  - `/api/threads` now shares the same archived id set across app-server visible filtering, state-db merge, fallback sources, and summary merge.
+  - Fallback baseline source snapshots receive request `archivedIds`, and baseline merge receives the same `mergeThreadSummaryListOptions` as route merge.
+  - Summary merge accepts request-scoped merge options, including explicit archived ids, session-index entries, and a cached-display merge function.
+  - Route-level cached display summary reads are memoized by thread id for the request; duplicate raw rows still merge through the existing `mergeThreadDisplaySummary()` semantics.
+  - Phase B readback/decision evidence now carries bounded request-context counters: `requestContextArchivedIdsReadCount`, `requestContextSessionIndexReadCount`, and `requestContextCachedDisplayReadCount`.
+- Validation:
+  - `node --test test/thread-list-request-context-service.test.js test/thread-list-summary-merge-service.test.js test/thread-list-route-merge-service.test.js test/thread-list-fallback-baseline-service.test.js test/thread-list-fallback-cache-service.test.js test/thread-visibility.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js` passed (`104` tests).
+  - `npm run check` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit this local slice.
+  - Continue the v539 module with the next actual Phase B optimization candidate, likely request-scope rollout stat reuse or route post-merge duplicate normalize/strip removal.
+  - Do not deploy until the v539 module is batched and shell/cache is bumped.
