@@ -23775,3 +23775,47 @@ The previous full handoff was archived and should be opened only when old proven
   - If first paint still takes seconds with `appServerDeferredReason` set, the
     remaining owner is local fallback baseline / frontend render, not app-server
     list RPC.
+
+## 2026-06-28 - Thread-list cold initial app-server deferral deployed
+
+- Commits deployed:
+  - `eeddb3d` (`fix thread list cold initial fallback`).
+  - `bdf9935` (`fix thread list cold path attribution`).
+- Deployment:
+  - Final deploy used Home AI central macOS plugin deploy reason
+    `codex-mobile-thread-list-cold-initial-attribution`.
+  - Source ref in deploy output: `bdf9935e76d3`, dirty false.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T191803Z-plugin-codex-mobile-web-codex-mobile-thread-list-cold-initial-attribution`.
+  - Static shell remained `0.1.11|codex-mobile-shell-v552`, expected because
+    this module changed server runtime/policy code and docs/tests only.
+  - Health URL, launchd print, auth-profile audit, log-permission repair, and
+    production proof-file hash checks passed.
+- Production readback:
+  - Forced cold initial sample
+    `/api/threads?limit=137&initial=warm-fallback` returned in about `1743ms`
+    with `mobileInitialSource=fallback-baseline`,
+    `mobileDeferredAppServer=true`, `appServerMs=0`,
+    `appServerDeferredReason=cold-fallback-initial`,
+    `fallbackMs=1638`, `fallbackCacheDecision=miss-rebuild`,
+    `coldPathOwner=fallback-baseline`, and
+    `coldPathReason=cold-fallback-initial:rollout`.
+  - Immediate warm repeat returned in about `94ms` with
+    `mobileInitialSource=warm-fallback-cache`, `appServerMs=0`, and
+    `appServerDeferredReason=warm-fallback-initial`.
+  - Full authoritative `/api/threads?limit=137` returned in about `2023ms`;
+    its app-server stage reported `appServerMs=1767`, `appServerRpcMs=1743`,
+    `appServerResponsePayloadBytes=241036`, and fallback cache hit. This remains
+    deferred/full-refresh cost, no longer first-paint cost for
+    `initial=warm-fallback`.
+  - Default `limit=40&initial=warm-fallback` returned in about `112ms` as a
+    warm fallback-cache initial paint.
+  - `scripts/codex-mobile-phase-b-readback-smoke.js --server
+    http://127.0.0.1:8787 --json` passed with status `ready`; prewarm was
+    completed (`lastElapsedMs=1689`), default list total was about `200ms`, and
+    active detail used `projection-active-overlay`.
+- Residual:
+  - User-visible long first-entry waits that still complete normally are now
+    explainable as local fallback baseline/prewarm cost when the process has no
+    warm baseline, not as app-server/network timeout. Next performance slice
+    should reduce or move the `fallback-baseline`/rollout prewarm cost itself.
