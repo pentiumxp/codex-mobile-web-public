@@ -22791,3 +22791,28 @@ The previous full handoff was archived and should be opened only when old proven
   - `git diff --check` passed.
 - Next:
   - Commit and deploy through the central Home AI macOS plugin deploy path, then read back `/api/public-config` and Phase-B detail timings for the current large active thread.
+
+## 2026-06-27 - Thread-list prewarm compatible-limit cache slice
+
+- Current local state:
+  - Continued after commit `0db7ec9` and production deploy for active-overlay detail stability.
+  - Phase-B readback after that deploy showed detail timing stable, but still classified thread-list as `thread-list-fallback-prewarm` / `prewarm-completed-but-list-cold`.
+- Root-cause boundary:
+  - Symptom/risk: startup prewarm completed with default `limit=40`, but a later narrower list request such as `limit=20` missed the fallback cache because the exact cache key included `limit`.
+  - Failing layer: process-lifetime thread-list fallback cache key reuse, not the Home AI host, app-server RPC, source snapshot baseline, or frontend list policy.
+  - Violated invariant: a wider same-scope prewarmed fallback cache can safely serve a narrower request by truncating the returned rows; a narrower cache must not serve a wider request.
+- Changes:
+  - `adapters/thread-list-fallback-cache-service.js` now stores a filter-scope key separately from the exact limit key and uses compatible wider-limit entries for narrower same-scope reads.
+  - Compatible hits remain observable as `cacheDecision=compatible-hit`, `cacheHit=true`, and bounded `compatibleCacheLimit`.
+  - `test/thread-list-fallback-cache-service.test.js` covers 40-to-2 compatible reuse and rejects 2-to-40 widening.
+  - `test/thread-visibility.test.js` architecture guard accepts the explicit `compatible-hit` protocol.
+  - `docs/MODULES.md` records compatible wider-limit cache ownership.
+- Validation:
+  - `node --test test/thread-list-fallback-cache-service.test.js test/thread-list-fallback-baseline-service.test.js test/thread-list-fallback-prewarm-service.test.js test/thread-list-load-policy.test.js test/thread-list-cold-path-diagnosis-service.test.js test/phase-b-readback-decision-service.test.js test/phase-b-readback-smoke.test.js` passed (`62` tests).
+  - `node --test test/thread-visibility.test.js test/thread-list-fallback-cache-service.test.js` passed (`60` tests).
+  - `npm test` passed (`1300` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit and deploy this second slice, then run Phase-B readback again to confirm the prewarm/list decision no longer reports `prewarm-completed-but-list-cold`.

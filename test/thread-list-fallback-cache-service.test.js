@@ -170,6 +170,73 @@ test("readCachedFallback returns only warm cache and never builds cold baseline"
   assert.deepEqual(calls, { stateDb: 1, rollout: 1, sessionIndex: 1 });
 });
 
+test("fallback cache reuses wider warm entries for narrower same-scope requests", () => {
+  const { calls, service, setNow } = createService({
+    readStateDbFallback() {
+      return [
+        { id: "state-1", name: "State 1", updatedAt: 100 },
+        { id: "state-2", name: "State 2", updatedAt: 90 },
+      ];
+    },
+    readRolloutSessionFallback() {
+      return [
+        { id: "rollout-1", name: "Rollout 1", updatedAt: 300 },
+        { id: "rollout-2", name: "Rollout 2", updatedAt: 80 },
+      ];
+    },
+    readSessionIndexFallback() {
+      return [
+        { id: "session-1", name: "Session 1", updatedAt: 500 },
+      ];
+    },
+  });
+
+  const wideDiagnostics = {};
+  const wide = service.readFallback(40, { diagnostics: wideDiagnostics });
+  assert.equal(wideDiagnostics.cacheDecision, "miss-rebuild");
+  assert.deepEqual(wide.map((thread) => thread.id), [
+    "session-1",
+    "rollout-1",
+    "state-1",
+    "state-2",
+    "rollout-2",
+  ]);
+  assert.deepEqual(calls, { stateDb: 1, rollout: 1, sessionIndex: 1 });
+
+  setNow(1750);
+  const narrowDiagnostics = {};
+  const narrow = service.readFallback(2, { diagnostics: narrowDiagnostics });
+  assert.deepEqual(narrow.map((thread) => thread.id), ["session-1", "rollout-1"]);
+  assert.deepEqual(calls, { stateDb: 1, rollout: 1, sessionIndex: 1 });
+  assert.equal(narrowDiagnostics.cacheHit, true);
+  assert.equal(narrowDiagnostics.cacheDecision, "compatible-hit");
+  assert.equal(narrowDiagnostics.compatibleCacheHit, true);
+  assert.equal(narrowDiagnostics.compatibleCacheLimit, 40);
+  assert.equal(narrowDiagnostics.cacheBuildCount, 1);
+
+  const warmDiagnostics = {};
+  const warm = service.readCachedFallback(2, { diagnostics: warmDiagnostics });
+  assert.deepEqual(warm.map((thread) => thread.id), ["session-1", "rollout-1"]);
+  assert.equal(warmDiagnostics.cacheHit, true);
+  assert.equal(warmDiagnostics.cacheDecision, "compatible-hit");
+  assert.equal(warmDiagnostics.compatibleCacheLimit, 40);
+});
+
+test("fallback cache does not reuse narrower warm entries for wider requests", () => {
+  const { calls, service } = createService();
+
+  const narrowDiagnostics = {};
+  service.readFallback(2, { diagnostics: narrowDiagnostics });
+  assert.equal(narrowDiagnostics.cacheDecision, "miss-rebuild");
+  assert.deepEqual(calls, { stateDb: 1, rollout: 1, sessionIndex: 1 });
+
+  const widerDiagnostics = {};
+  service.readFallback(40, { diagnostics: widerDiagnostics });
+  assert.equal(widerDiagnostics.cacheHit, false);
+  assert.equal(widerDiagnostics.cacheDecision, "miss-rebuild");
+  assert.deepEqual(calls, { stateDb: 2, rollout: 2, sessionIndex: 2 });
+});
+
 test("readFallback reuses source snapshot across final-list filter cache misses", () => {
   const { calls, service } = createService({
     readStateDbFallback(limit, filters) {

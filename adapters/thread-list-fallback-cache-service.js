@@ -226,6 +226,18 @@ function createThreadListFallbackCacheService(options = {}) {
     });
   }
 
+  function filterScopeKey(filters = {}) {
+    const globalState = filters.globalState || readGlobalState();
+    const roots = [...visibleWorkspaceRoots(globalState)].map(normalizeFsPath).filter(Boolean).sort();
+    const projectlessIds = [...visibleProjectlessThreadIds(globalState)].map(normalizeThreadId).filter(Boolean).sort();
+    return JSON.stringify({
+      cwd: normalizeFsPath(filters.cwd || ""),
+      search: String(filters.searchTerm || "").trim().toLowerCase(),
+      roots,
+      projectlessIds,
+    });
+  }
+
   function sourceSnapshotKey(limit, filters = {}) {
     const globalState = filters.globalState || readGlobalState();
     const roots = [...visibleWorkspaceRoots(globalState)].map(normalizeFsPath).filter(Boolean).sort();
@@ -251,6 +263,7 @@ function createThreadListFallbackCacheService(options = {}) {
       buildNumber: buildCount,
       limit: Math.max(1, Math.min(200, Number(rememberOptions.limit || 80))),
       filters: cloneFilters(rememberOptions.filters || {}),
+      filterScopeKey: filterScopeKey(rememberOptions.filters || {}),
       threads: clonePlainJson(Array.isArray(threads) ? threads : []),
       timings: Object.assign({}, timings || {}),
       incrementalUpdates: 0,
@@ -319,14 +332,47 @@ function createThreadListFallbackCacheService(options = {}) {
     };
   }
 
+  function readCompatible(limit = 80, filters = {}, diagnostics = null) {
+    const requestedLimit = Math.max(1, Math.min(200, Number(limit || 80)));
+    const requestedScopeKey = filterScopeKey(filters);
+    let bestKey = "";
+    let bestLimit = Number.MAX_SAFE_INTEGER;
+    let bestUpdatedAt = 0;
+    for (const [entryKey, entry] of cache.entries()) {
+      if (!entry || entry.filterScopeKey !== requestedScopeKey) continue;
+      const entryLimit = Math.max(1, Math.min(200, Number(entry.limit || 80)));
+      if (entryLimit < requestedLimit) continue;
+      const updatedAt = Number(entry.updatedAt || entry.cachedAt || 0);
+      if (entryLimit < bestLimit || (entryLimit === bestLimit && updatedAt > bestUpdatedAt)) {
+        bestKey = entryKey;
+        bestLimit = entryLimit;
+        bestUpdatedAt = updatedAt;
+      }
+    }
+    if (!bestKey) return null;
+    const cached = read(bestKey, diagnostics);
+    if (!cached) return null;
+    if (diagnostics) {
+      diagnostics.cacheHit = true;
+      diagnostics.cacheDecision = "compatible-hit";
+      diagnostics.compatibleCacheHit = true;
+      diagnostics.compatibleCacheLimit = bestLimit;
+    }
+    return Object.assign({}, cached, {
+      threads: cached.threads.slice(0, requestedLimit),
+      compatible: true,
+      compatibleLimit: bestLimit,
+    });
+  }
+
   function readFallback(limit = 80, filters = {}) {
     const diagnostics = filters.diagnostics && typeof filters.diagnostics === "object" ? filters.diagnostics : null;
     const key = cacheKey(limit, filters);
-    const cached = read(key, diagnostics);
+    const cached = read(key, diagnostics) || readCompatible(limit, filters, diagnostics);
     if (cached) {
       if (diagnostics) {
         diagnostics.cacheHit = true;
-        diagnostics.cacheDecision = "hit";
+        diagnostics.cacheDecision = cached.compatible ? "compatible-hit" : "hit";
         diagnostics.stateDbMs = 0;
         diagnostics.rolloutMs = 0;
         diagnostics.sessionIndexMs = 0;
@@ -335,6 +381,10 @@ function createThreadListFallbackCacheService(options = {}) {
         diagnostics.cacheBaselineAgeMs = cached.cachedAt ? Math.max(0, now() - cached.cachedAt) : 0;
         diagnostics.cacheBuildNumber = cached.buildNumber || 0;
         diagnostics.cacheIncrementalUpdates = cached.incrementalUpdates || 0;
+        if (cached.compatible) {
+          diagnostics.compatibleCacheHit = true;
+          diagnostics.compatibleCacheLimit = cached.compatibleLimit || 0;
+        }
       }
       return cached.threads;
     }
@@ -409,7 +459,7 @@ function createThreadListFallbackCacheService(options = {}) {
   function readCachedFallback(limit = 80, filters = {}) {
     const diagnostics = filters.diagnostics && typeof filters.diagnostics === "object" ? filters.diagnostics : null;
     const key = cacheKey(limit, filters);
-    const cached = read(key, diagnostics);
+    const cached = read(key, diagnostics) || readCompatible(limit, filters, diagnostics);
     if (!cached) {
       if (diagnostics) {
         diagnostics.cacheHit = false;
@@ -421,7 +471,7 @@ function createThreadListFallbackCacheService(options = {}) {
     }
     if (diagnostics) {
       diagnostics.cacheHit = true;
-      diagnostics.cacheDecision = "hit";
+      diagnostics.cacheDecision = cached.compatible ? "compatible-hit" : "hit";
       diagnostics.stateDbMs = 0;
       diagnostics.rolloutMs = 0;
       diagnostics.sessionIndexMs = 0;
@@ -430,6 +480,10 @@ function createThreadListFallbackCacheService(options = {}) {
       diagnostics.cacheBaselineAgeMs = cached.cachedAt ? Math.max(0, now() - cached.cachedAt) : 0;
       diagnostics.cacheBuildNumber = cached.buildNumber || 0;
       diagnostics.cacheIncrementalUpdates = cached.incrementalUpdates || 0;
+      if (cached.compatible) {
+        diagnostics.compatibleCacheHit = true;
+        diagnostics.compatibleCacheLimit = cached.compatibleLimit || 0;
+      }
     }
     return cached.threads;
   }
