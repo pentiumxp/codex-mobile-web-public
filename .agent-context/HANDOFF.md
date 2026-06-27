@@ -21087,3 +21087,47 @@ The previous full handoff was archived and should be opened only when old proven
 - Next:
   - Commit this local slice and keep it undeployed until a coherent deployable
     module is ready.
+
+## 2026-06-27 - Phase B full-backfill reporting stage local slice
+
+- Current local state:
+  - Continued after local commit `977608a` (`refactor first paint reporting
+    stage`).
+  - This is a local Phase B evidence-ownership slice only. It changes
+    `public/thread-detail-render-plan.js`, `public/app.js`, focused tests,
+    README, and the architecture plan. It does not bump shell/cache, deploy
+    production, or push Public.
+- Root-cause boundary:
+  - Symptom/risk: `backfillFullThreadDetail()` still hand-wrote the
+    full-backfill full-ready performance input and telemetry input shape after
+    measuring API/render/merge/post-render timings. That made large-session
+    evidence shape drift possible even after first-paint reporting was moved
+    into a helper-owned stage.
+  - Failing layer: frontend full-backfill reporting/evidence planning at the
+    `backfillFullThreadDetail()` boundary, not the server read path,
+    projection cache, DOM mutation, scroll policy, task-card protocol, or Home
+    AI diagnostic transport.
+  - Violated invariant: full-backfill reporting shape should be helper-owned
+    and testable, while `public/app.js` only supplies measured timings and
+    executes real performance/telemetry side effects.
+- Changes:
+  - Added `planThreadDetailFullBackfillReportingStage()` to
+    `public/thread-detail-render-plan.js`.
+  - The helper returns both `performanceInput` and bounded `telemetryInput` for
+    full detail backfill.
+  - `backfillFullThreadDetail()` now uses that stage while still calling
+    `threadPerformanceMetrics.threadDetailFullReadyEventFields()` with real
+    thread and timing data.
+  - Focused tests assert the helper-owned reporting-stage output and
+    source-level wiring in `backfillFullThreadDetail()`.
+- Validation:
+  - `node --check public/thread-detail-render-plan.js && node --check public/app.js`
+    passed.
+  - `node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js`
+    passed (`210` tests).
+  - `npm test` passed (`1251` tests).
+  - `npm run check` passed.
+  - `git diff --check` passed after docs/context updates.
+- Next:
+  - Commit this local slice and keep it undeployed until a coherent deployable
+    module is ready.

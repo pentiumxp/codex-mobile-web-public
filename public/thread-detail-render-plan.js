@@ -1211,6 +1211,21 @@
     };
   }
 
+  function planThreadDetailFullBackfillReportingStage(input = {}) {
+    const performanceInput = planThreadDetailFullBackfillPerformanceInput({
+      source: input.source,
+      threadId: input.threadId,
+      timings: objectOrEmpty(input.timings),
+    });
+    return {
+      performanceInput,
+      telemetryInput: {
+        threadId: performanceInput.threadId,
+      },
+      reason: "full-backfill-reporting",
+    };
+  }
+
   function planThreadDetailRefreshTelemetryEffects(input = {}) {
     const performanceEvent = objectOrEmpty(input.performanceEvent);
     const eventName = compactReason(input.eventName, "thread_refresh_ms");
@@ -1840,6 +1855,7 @@
     planThreadDetailFirstPaintResponseEffects,
     planThreadDetailFullBackfillResponseEffects,
     planThreadDetailFullBackfillPerformanceInput,
+    planThreadDetailFullBackfillReportingStage,
     planThreadDetailLoadErrorEffects,
     planThreadDetailLoadingShellPostStateEffects,
     planThreadDetailFullBackfillPostRenderEffects,

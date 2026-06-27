@@ -155,6 +155,36 @@ node --test test/thread-detail-render-plan.test.js test/conversation-render.test
 `test/mobile-viewport.test.js` 后为 `215 passed`。完整本地验证：
 `npm test` 为 `1250 passed`，`npm run check` 与 `git diff --check` 均通过。
 
+## 2026-06-27 Phase B Full-Backfill Reporting Stage Slice
+
+这是 v543 后的第四个本地小切片，继续把大 session 详情回填证据从
+`backfillFullThreadDetail()` 收敛到可测试 helper。它不改变 full-read、
+merge、render、scroll、diagnostic dispatch 或 task-card 逻辑，不单独部署、
+不推 Public。
+
+改动边界：
+
+- `threadDetailRenderPlanApi.planThreadDetailFullBackfillReportingStage()`
+  现在统一规划 full-backfill full-ready performance input 与 telemetry input；
+- `backfillFullThreadDetail()` 仍然采集真实 API/render/merge/post-render 耗时，
+  并继续通过 `threadPerformanceMetrics.threadDetailFullReadyEventFields()` 生成
+  性能事件；
+- full-backfill 的 reporting stage 与 first-paint reporting stage 采用同一类
+  helper-owned 字段所有权，减少 `elapsed/api/render/merge/postRender/threadId`
+  等证据字段漂移；
+- 不改变大 session read mode、projection cache、thread list fallback cache、
+  shell/cache 版本或生产部署状态。
+
+验证：
+
+```bash
+node --check public/thread-detail-render-plan.js && node --check public/app.js
+node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/mobile-viewport.test.js  # 210 passed
+npm test  # 1251 passed
+npm run check  # passed
+git diff --check  # passed
+```
+
 ## 2026-06-27 Phase A Conversation DOM Authority Invalidation Local Slice
 
 这是 v542 后继续按“小切片本地提交、模块化再部署”节奏推进的 Phase A 切片。

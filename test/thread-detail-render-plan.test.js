@@ -1980,6 +1980,41 @@ test("thread detail full-backfill performance input preserves timing shape", () 
   });
 });
 
+test("thread detail full-backfill reporting stage owns telemetry input shape", () => {
+  assert.deepEqual(renderPlan.planThreadDetailFullBackfillReportingStage({
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA",
+    threadId: "thread-1",
+    timings: {
+      elapsedMs: 50,
+      apiElapsedMs: 11,
+      renderElapsedMs: 30,
+      mergeMs: 1,
+      composerRenderMs: 2,
+      threadListRenderMs: 3,
+      conversationRenderMs: 4,
+      postRenderMs: 5,
+    },
+  }), {
+    performanceInput: {
+      source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR",
+      threadId: "thread-1",
+      elapsedMs: 50,
+      apiElapsedMs: 11,
+      renderElapsedMs: 30,
+      mergeMs: 1,
+      composerRenderMs: 2,
+      threadListRenderMs: 3,
+      conversationRenderMs: 4,
+      postRenderMs: 5,
+      detailRenderMode: "full-backfill",
+    },
+    telemetryInput: {
+      threadId: "thread-1",
+    },
+    reason: "full-backfill-reporting",
+  });
+});
+
 test("thread detail refresh telemetry effects plan preserves event and diagnostics order", () => {
   const performanceEvent = {
     elapsedMs: 42,

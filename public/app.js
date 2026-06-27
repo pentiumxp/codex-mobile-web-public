@@ -10053,7 +10053,7 @@ async function backfillFullThreadDetail(threadId, options = {}) {
   const postRenderMs = roundedDurationMs(postRenderStartedAt);
   const renderElapsedMs = roundedDurationMs(renderStartedAt);
   const source = String(options.source || "unknown").slice(0, 40);
-  const fullBackfillPerformanceInput = threadDetailRenderPlanApi.planThreadDetailFullBackfillPerformanceInput({
+  const fullBackfillReportingStage = threadDetailRenderPlanApi.planThreadDetailFullBackfillReportingStage({
     source,
     threadId: id,
     timings: {
@@ -10069,12 +10069,11 @@ async function backfillFullThreadDetail(threadId, options = {}) {
   });
   const fullReadyPerformance = threadPerformanceMetrics.threadDetailFullReadyEventFields(
     result.thread,
-    fullBackfillPerformanceInput,
+    fullBackfillReportingStage.performanceInput,
   );
-  const fullBackfillTelemetryPlan = threadDetailRenderPlanApi.planThreadDetailFullBackfillTelemetryEffects({
+  const fullBackfillTelemetryPlan = threadDetailRenderPlanApi.planThreadDetailFullBackfillTelemetryEffects(Object.assign({
     performanceEvent: fullReadyPerformance,
-    threadId: id,
-  });
+  }, fullBackfillReportingStage.telemetryInput));
   applyThreadDetailRefreshTelemetryEffectsPlan(fullBackfillTelemetryPlan, { thread: result.thread });
 }
 

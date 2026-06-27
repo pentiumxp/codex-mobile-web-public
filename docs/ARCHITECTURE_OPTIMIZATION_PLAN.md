@@ -1130,6 +1130,13 @@ cached-current/API-first-paint performance input and telemetry input field
 shape. App code still measures real timings, reads thread status/count facts,
 and builds the performance event through `threadPerformanceMetrics`, but it no
 longer hand-writes the reporting payload shape for the two first-paint paths.
+The follow-up Phase B slice applies the same evidence-ownership boundary to
+full detail backfill: `planThreadDetailFullBackfillReportingStage()` now owns
+the full-ready performance input and bounded telemetry input for
+`backfillFullThreadDetail()`. App code still measures real API/render/merge/
+post-render timings and still emits the performance event through
+`threadPerformanceMetrics`, but the field shape is no longer assembled inline
+in the full-backfill route.
 Refresh patch surface planning now also lives in this helper:
 `planThreadDetailRefreshPatchSurface` decides whether the refresh should probe
 tile-pane DOM state and whether the current patch path is a tile surface based
