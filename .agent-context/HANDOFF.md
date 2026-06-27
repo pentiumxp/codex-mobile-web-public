@@ -24551,3 +24551,74 @@ The previous full handoff was archived and should be opened only when old proven
     the next module to capture and reduce cold/rebuild peak paths across thread
     list prewarm, projection seed/rebuild, and app-server RPC, using server-side
     timing evidence rather than client masking.
+
+## 2026-06-28 - Active Overlay Stale History Window Module
+
+- User-visible symptom:
+  - The user reported a newer shape that felt different from old timeout/network
+    failures: a thread can keep showing the running/loading state for a long
+    time, but eventually load normally.
+  - Production evidence before this slice showed successful foreground active
+    detail requests could still be dragged into `turns-list-active-overlay-window`
+    app-server work. This is a slow successful path, not a request timeout.
+- Root cause / invariant:
+  - After process restart or while an active turn keeps growing, a previously
+    full projection can still contain the valid historical window needed by the
+    active-overlay proof gate, but its full signature is stale because rollout
+    size/mtime changed with the current active turn.
+  - Ordinary detail lookup must still reject that stale full signature. The
+    narrower invariant is that an explicit active-overlay partial lookup may
+    reuse the old full projection only as history input, with the current active
+    turn omitted and still supplied by the live overlay provider/proof gate.
+- Implementation:
+  - `adapters/thread-detail-projection-service.js` adds stable active-overlay
+    history identity matching and can downgrade a matching stale full cache into
+    a partial `turns-list-active-overlay-window` only when lookup options include
+    `allowPartial=true`, `activeOverlay=true`, active summary status, and
+    `omitActiveTurnId`.
+  - Ordinary lookups and resting-thread lookups still return the original miss
+    reasons such as `static-signature-mismatch`,
+    `dynamic-resting-signature-mismatch`, or
+    `dynamic-age-signature-mismatch`.
+  - The downgraded response marks
+    `mobileProjection.staleFullWindow=true` and keeps the live active turn out
+    of the cached history window.
+  - Updated `docs/README.md`, `docs/ARCHITECTURE.md`, `docs/MODULES.md`,
+    `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Local validation:
+  - Focused projection/detail/render/readback suite passed (`337` tests).
+  - Full `npm test` passed (`1362` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Commit / deployment:
+  - Runtime/docs commit `84d3ed2`
+    `fix: 复用 stale 投影作为 active history window`.
+  - Deployed through the Home AI central macOS plugin deploy path with reason
+    `codex-mobile-active-window-stale-history`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T215404Z-plugin-codex-mobile-web-codex-mobile-active-window-stale-history`.
+  - The change is server/docs only; shell stayed
+    `0.1.11|codex-mobile-shell-v553`, build id `8f5df1074a2bd651`.
+  - Source/prod SHA-256 prefixes matched for the changed service, focused tests,
+    and updated docs.
+- Production readback:
+  - Phase-B readback after deploy returned thread-list `totalMs=105`,
+    `fallbackCacheDecision=compatible-hit`, mux metrics supported, and selected
+    active detail `projection-active-overlay` with `totalMs=256`,
+    `projectionMs=75`, `activeOverlayWindowMs=0`,
+    `activeOverlayMergeMs=31`, `prepareResponseMs=91`, and `threadReadMs=0`.
+  - Five follow-up production Phase-B samples returned list `88-106ms` and
+    active detail `233-239ms`, with `activeOverlayWindowMs=0`,
+    `threadReadMs=0`, and `activeOverlayWindowFirst=true`.
+  - Recent logs still show occasional background active-window prewarm
+    `turns-list-active-overlay-window` work. That is not the same as foreground
+    detail blocking; current readback shows the foreground detail requests are
+    returning from warm active-overlay projection.
+- Residual / next target:
+  - This closes the stale-full history reuse gap for active-overlay detail. It
+    does not eliminate every possible post-restart cold case when no projection
+    cache exists at all, the stable projection identity changed, or background
+    prewarm itself still needs to build a large window. Continue measuring with
+    Phase-B readback and bounded logs before changing client loading behavior.
