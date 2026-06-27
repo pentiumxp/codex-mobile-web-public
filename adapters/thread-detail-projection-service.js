@@ -914,7 +914,16 @@ function createThreadDetailProjectionService(options = {}) {
       return { cached: null, missReason: "partial-not-seeded" };
     }
     if (entry.partial && optionsForGet.allowPartial !== true) return { cached: null, missReason: "partial-not-allowed" };
-    if (entry.dynamic) {
+    if (entry.partial && !entry.dynamic) {
+      if (!signature || !entry.signature) return { cached: null, missReason: "signature-unavailable" };
+      if (dynamicBackingSignatureChanged(entry.signature, signature)) {
+        const staleWindow = activeOverlayStaleWindowAllowed ? staleFullActiveOverlayWindow(entry, optionsForGet) : null;
+        if (staleWindow) return staleWindow;
+        const historyWindow = activeOverlayFullHistoryWindow();
+        if (historyWindow) return historyWindow;
+        return { cached: null, missReason: "static-signature-mismatch" };
+      }
+    } else if (entry.dynamic) {
       const allowActiveOverlaySummaryStaleWindow = optionsForGet.activeOverlay === true
         && optionsForGet.allowPartial === true
         && isActiveLikeStatus(input.summaryStatus);

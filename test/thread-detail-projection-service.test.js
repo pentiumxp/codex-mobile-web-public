@@ -1020,6 +1020,63 @@ test("thread detail projection persists signed partial recent windows", () => {
   }
 });
 
+test("thread detail projection reuses partial recent windows when only summary metadata changes", () => {
+  const dir = tempDir();
+  try {
+    const service = createThreadDetailProjectionService({
+      cacheDir: dir,
+      policyVersion: "test-v1",
+      maxTurns: 2,
+      now: () => 1000,
+    });
+    service.seed(signatureInput({
+      summaryStatus: "active",
+      summaryUpdatedAtMs: 1000,
+    }), {
+      thread: {
+        id: "thread-1",
+        turns: [{ id: "turn-1", items: [] }],
+        mobileReadMode: "turns-list-initial",
+      },
+    }, {
+      partial: true,
+      partialKind: "recent-window",
+    });
+
+    const metadataOnlyChange = signatureInput({
+      summaryStatus: "completed",
+      summaryUpdatedAtMs: 9000,
+    });
+    const warmLookup = service.lookup(metadataOnlyChange, { allowPartial: true });
+    assert.equal(warmLookup.missReason, "");
+    assert.ok(warmLookup.cached);
+    assert.equal(warmLookup.cached.partial, true);
+    assert.equal(warmLookup.cached.partialKind, "recent-window");
+
+    const restoredService = createThreadDetailProjectionService({
+      cacheDir: dir,
+      policyVersion: "test-v1",
+      maxTurns: 2,
+      now: () => 2000,
+    });
+    const restoredLookup = restoredService.lookup(metadataOnlyChange, { allowPartial: true });
+    assert.equal(restoredLookup.missReason, "");
+    assert.ok(restoredLookup.cached);
+    assert.equal(restoredLookup.cached.partial, true);
+
+    const backingChange = signatureInput({
+      summaryStatus: "completed",
+      summaryUpdatedAtMs: 9000,
+      rolloutStats: { sizeBytes: 4096, mtimeMs: 9000 },
+    });
+    const staleLookup = restoredService.lookup(backingChange, { allowPartial: true });
+    assert.equal(staleLookup.cached, null);
+    assert.equal(staleLookup.missReason, "static-signature-mismatch");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("thread detail projection treats cursor-backed turns-list seed as partial", () => {
   const dir = tempDir();
   try {
