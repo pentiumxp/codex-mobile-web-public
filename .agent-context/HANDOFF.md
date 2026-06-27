@@ -21041,6 +21041,48 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit this local slice and keep it undeployed until a coherent deployable
     module is ready.
 
+## 2026-06-27 - Phase C pane toolbar action context local slice
+
+- Current local state:
+  - Continued after local commit `22cc399` (`refactor task card counts keep
+    pane context`).
+  - This is a local Phase C pane toolbar action-context slice only. It changes
+    `public/app.js`, focused tests, README, the architecture plan, and this
+    handoff. It does not bump shell/cache, deploy production, or push Public.
+- Root-cause boundary:
+  - Symptom/risk: `renderRolloutWarning()` and `renderThreadTaskToolbar()`
+    rendered per-thread controls inside each pane, but `bindCurrentThreadActions()`
+    invoked compression continuation, manual task-card creation, and rollout
+    warning dismissal through global `state.currentThread`. In split-screen
+    mode, a button inside a non-current pane could operate on the wrong thread.
+  - Failing layer: frontend pane toolbar action context propagation, not
+    task-card persistence, continuation creation, rollout parsing, shell/cache,
+    or Home AI host routing.
+  - Violated invariant: a control rendered inside a pane must carry and resolve
+    that pane's owning thread before invoking thread-specific behavior.
+- Changes:
+  - Rollout warning and thread-task toolbar buttons now carry
+    `data-thread-action-thread-id`.
+  - Added shared action-context helpers that resolve the direct button thread
+    id, nearest tile pane id, visible tile detail, thread list row, or current
+    thread as a last resort.
+  - Manual task-card creation now has a pane-source implementation path while
+    preserving the current-thread wrapper for existing callers.
+  - Added executable coverage proving pane toolbar buttons invoke continuation,
+    task-card creation, and rollout-warning dismissal against the pane thread
+    rather than the unrelated global current thread.
+- Validation:
+  - `node --check public/app.js` passed.
+  - `node --test test/thread-task-card-route.test.js test/thread-detail-actions.test.js test/conversation-render.test.js`
+    passed (`146` tests).
+  - `npm test` passed (`1280` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit this local slice and keep it undeployed until a coherent deployable
+    module is ready.
+
 ## 2026-06-27 - Phase C stable render-key pane context local slice
 
 - Current local state:

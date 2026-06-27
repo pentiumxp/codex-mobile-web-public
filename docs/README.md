@@ -72,5 +72,6 @@ The current local module candidate is focused on pane-local context ownership:
 thread metadata, metadata notifications, pending actions, pending-action
 request/update notifications, pending-action resolution notifications,
 task-card draft state, task-card pending counts, optimistic thread status,
-failed-send status restore, and thread status notifications must all update the
-target pane instead of falling back to the global current thread.
+failed-send status restore, thread status notifications, and pane toolbar
+actions must all update the target pane instead of falling back to the global
+current thread.

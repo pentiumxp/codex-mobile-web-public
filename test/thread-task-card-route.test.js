@@ -353,6 +353,8 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /thread-card-task-badge/);
   assert.match(appJs, /function renderThreadTaskToolbar\(/);
   assert.match(appJs, /data-create-thread-task-card/);
+  assert.match(functionBody(appJs, "renderThreadTaskToolbar"), /data-thread-action-thread-id/);
+  assert.match(functionBody(appJs, "renderRolloutWarning"), /data-thread-action-thread-id/);
   assert.match(appJs, /function openContinuationDialog\(/);
   assert.match(appJs, /function closeContinuationDialog\(/);
   assert.match(appJs, /if \(\$\("continuationDialog"\)\) \$\("continuationDialog"\)\.addEventListener\("click"/);
@@ -366,6 +368,7 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /const threadDetailActionsApi = window\.CodexThreadDetailActions/);
   assert.match(appJs, /threadDetailActionsApi\.resolveThreadDetailClickAction/);
   assert.match(appJs, /function createThreadTaskCardFromCurrent\(/);
+  assert.match(appJs, /function createThreadTaskCardFromThread\(/);
   assert.match(appJs, /function mutateThreadTaskCard\(/);
   assert.match(appJs, /function replyTaskCard\(/);
   assert.match(functionBody(appJs, "mutateThreadTaskCard"), /const threadId = String\(options\.threadId \|\| body\.threadId \|\| state\.currentThreadId \|\| ""\)\.trim\(\)/);
@@ -374,6 +377,7 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(functionBody(appJs, "replyTaskCard"), /findThreadTaskCard\(cardId, threadId\)/);
   assert.match(appJs, /replyTaskCard\(actionPlan\.cardId, \{ threadId: actionPlan\.threadId \}\)/);
   assert.match(appJs, /mutateThreadTaskCard\(actionPlan\.cardId, actionPlan\.taskCardAction, \{\}, \{ threadId: actionPlan\.threadId \}\)/);
+  assert.match(functionBody(appJs, "bindCurrentThreadActions"), /threadActionContextFromElement\(button\)/);
   assert.match(appJs, /function isThreadTaskCardCommandText\(/);
   assert.match(appJs, /function sendThreadTaskCardCommand\(/);
   assert.match(functionBody(appJs, "sendMessage"), /await sendThreadTaskCardCommand\(text\)/);
@@ -499,6 +503,89 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.doesNotMatch(appJs, /function maybeDelegateCrossWorkspaceMessage\(/);
   assert.doesNotMatch(functionBody(appJs, "sendMessage"), /maybeDelegateCrossWorkspaceMessage/);
   assert.doesNotMatch(functionBody(appJs, "sendMessage"), /workspaceDelegation/);
+});
+
+test("client pane toolbar actions use the owning pane thread", () => {
+  const sources = [
+    "findThreadById",
+    "threadActionElementThreadId",
+    "threadActionContextFromElement",
+    "bindCurrentThreadActions",
+  ].map((name) => functionSource(appJs, name));
+  const harness = Function(`
+const calls = { start: [], task: [], dismiss: [], errors: [] };
+function button(dataset = {}) {
+  return {
+    dataset,
+    listeners: {},
+    addEventListener(type, listener) {
+      this.listeners[type] = listener;
+    },
+    closest() {
+      return null;
+    },
+  };
+}
+const newThreadButton = button({ threadActionThreadId: "thread-pane" });
+const taskButton = button({ threadActionThreadId: "thread-pane" });
+const dismissButton = button({ threadActionThreadId: "thread-pane" });
+const olderButton = button();
+const paneThread = { id: "thread-pane", name: "Pane" };
+const currentThread = { id: "thread-current", name: "Current" };
+const state = {
+  currentThreadId: "thread-current",
+  currentThread,
+  threads: [{ id: "thread-list", name: "List" }],
+  threadTileDetails: new Map([["thread-pane", paneThread]]),
+};
+const conversation = {
+  querySelectorAll(selector) {
+    if (selector === "[data-new-thread-from-current]") return [newThreadButton];
+    if (selector === "[data-create-thread-task-card]") return [taskButton];
+    if (selector === "[data-dismiss-rollout-warning]") return [dismissButton];
+    return [];
+  },
+  querySelector(selector) {
+    if (selector === "[data-load-older-turns]") return olderButton;
+    return null;
+  },
+};
+function $(id) {
+  if (id === "conversation") return conversation;
+  return null;
+}
+function startNewThreadFromThread(thread) {
+  calls.start.push(thread && thread.id || "");
+  return Promise.resolve();
+}
+function createThreadTaskCardFromThread(thread) {
+  calls.task.push(thread && thread.id || "");
+  return Promise.resolve();
+}
+function dismissRolloutWarning(thread) {
+  calls.dismiss.push(thread && thread.id || "");
+}
+function loadOlderThreadTurns() { return Promise.resolve(); }
+function showError(err) { calls.errors.push(String(err && err.message || err)); }
+${sources.join("\n")}
+return {
+  bind: bindCurrentThreadActions,
+  clickAll() {
+    newThreadButton.listeners.click({});
+    taskButton.listeners.click({});
+    dismissButton.listeners.click({});
+  },
+  calls,
+};
+`)();
+
+  harness.bind();
+  harness.clickAll();
+
+  assert.deepEqual(harness.calls.start, ["thread-pane"]);
+  assert.deepEqual(harness.calls.task, ["thread-pane"]);
+  assert.deepEqual(harness.calls.dismiss, ["thread-pane"]);
+  assert.deepEqual(harness.calls.errors, []);
 });
 
 test("client task-card draft matching uses the explicit render context thread", () => {

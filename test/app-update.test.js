@@ -245,7 +245,7 @@ test("mobile shell action dialogs do not depend on native browser modals", () =>
   assert.doesNotMatch(appJs, /\bprompt\(/);
   assert.match(functionBody(appJs, "handleAppUpdateClick"), /await requestAppConfirmation\(/);
   assert.match(functionBody(appJs, "clearSideChat"), /await requestAppConfirmation\(/);
-  assert.match(functionBody(appJs, "createThreadTaskCardFromCurrent"), /await requestAppTextInput\(/);
+  assert.match(functionBody(appJs, "createThreadTaskCardFromThread"), /await requestAppTextInput\(/);
   assert.match(functionBody(appJs, "replyTaskCard"), /await requestAppTextInput\(/);
   assert.doesNotMatch(functionBody(appJs, "requestCodexProfileSwitchConfirmation"), /window\.confirm/);
   assert.doesNotMatch(functionBody(appJs, "requestThreadArchiveConfirmation"), /window\.confirm/);

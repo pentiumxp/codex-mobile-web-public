@@ -178,6 +178,10 @@ Current acceleration targets:
    detail, current detail, and thread-list mirrors from one count helper so the
    badge total and incoming/outgoing subcounts cannot drift across split-screen
    surfaces.
+   Pane toolbar actions are also in scope: rollout-warning dismiss, compression
+   continuation, and manual task-card creation must carry the owning pane
+   thread id from rendered DOM into the action handler before invoking
+   thread-specific behavior.
 2. Thread-list cold starts no longer hide source collection inside the fallback
    cache policy. The local `thread-list-fallback-baseline-service` slice now
    owns state DB / rollout session / session-index source collection,
@@ -1997,6 +2001,10 @@ Target:
   their owning thread id, the shared click resolver returns that id, and
   mutation/reply calls send and settle against that action thread instead of
   unconditionally using global `state.currentThreadId`.
+  Pane toolbar action context is now pane-aware as well: rollout warning,
+  continuation, and manual task-card buttons carry their owning thread id, and
+  the shared resolver reads that id or nearest pane id before falling back to
+  the global current thread.
   Approval/server-request action context is now pane-aware as well: rendered
   approval and user-input controls carry their owning thread id, the shared
   click resolver returns it, and pending/resolved/request-response refreshes

@@ -15199,23 +15199,26 @@ function renderRolloutWarning(thread, previousKeys = new Set()) {
   if (isRolloutWarningDismissed(thread)) return "";
   const size = rolloutSizeText(thread);
   const threshold = formatFileSize(rolloutThresholdBytes(thread));
-  const key = `rollout-warning|${thread.id || state.currentThreadId}`;
+  const threadId = String(thread && thread.id || state.currentThreadId || "").trim();
+  const ownerAttribute = threadId ? ` data-thread-action-thread-id="${escapeHtml(threadId)}"` : "";
+  const key = `rollout-warning|${threadId}`;
   return `<div class="rollout-warning${entryAnimationClass(key, previousKeys)}" data-render-key="${escapeHtml(key)}">
     <div class="rollout-warning-text">
       <strong>上下文文件 ${escapeHtml(size)}</strong>
       <span>已达到 ${escapeHtml(threshold)} 阈值。建议压缩续接：创建带详细上下文的新线程后归档旧线程。</span>
     </div>
     <div class="rollout-warning-actions">
-      <button class="rollout-skip" type="button" data-dismiss-rollout-warning>跳过</button>
-      <button class="rollout-new-thread" type="button" data-new-thread-from-current>压缩续接</button>
+      <button class="rollout-skip" type="button" data-dismiss-rollout-warning${ownerAttribute}>跳过</button>
+      <button class="rollout-new-thread" type="button" data-new-thread-from-current${ownerAttribute}>压缩续接</button>
     </div>
   </div>`;
 }
 
 function renderThreadTaskToolbar(thread) {
   if (!thread || !thread.id) return "";
+  const ownerAttribute = ` data-thread-action-thread-id="${escapeHtml(thread.id)}"`;
   return `<div class="rollout-warning-actions thread-task-toolbar">
-    <button class="approval-button allow" type="button" data-create-thread-task-card>Send task card</button>
+    <button class="approval-button allow" type="button" data-create-thread-task-card${ownerAttribute}>Send task card</button>
   </div>`;
 }
 
@@ -15628,14 +15631,38 @@ function enterNewThreadDraft() {
   }, 80);
 }
 
+function threadActionElementThreadId(element) {
+  if (!element) return "";
+  const direct = String(element.dataset && element.dataset.threadActionThreadId || "").trim();
+  if (direct) return direct;
+  const pane = typeof element.closest === "function" ? element.closest("[data-thread-tile-pane]") : null;
+  return String(pane && pane.dataset && pane.dataset.threadTilePane || "").trim();
+}
+
+function threadActionContextFromElement(element) {
+  const id = threadActionElementThreadId(element);
+  if (id && state.currentThread && String(state.currentThread.id || "") === id) return state.currentThread;
+  if (id && state.threadTileDetails && state.threadTileDetails.has(id)) return state.threadTileDetails.get(id);
+  if (id) return findThreadById(id);
+  return state.currentThread || null;
+}
+
 function bindCurrentThreadActions() {
   $("conversation").querySelectorAll("[data-new-thread-from-current]").forEach((button) => {
-    button.addEventListener("click", startNewThreadFromCurrent);
+    button.addEventListener("click", (event) => {
+      const thread = threadActionContextFromElement(button);
+      if (thread) startNewThreadFromThread(thread, event).catch(showError);
+    });
   });
-  const taskButton = $("conversation").querySelector("[data-create-thread-task-card]");
-  if (taskButton) taskButton.addEventListener("click", createThreadTaskCardFromCurrent);
-  const dismiss = $("conversation").querySelector("[data-dismiss-rollout-warning]");
-  if (dismiss) dismiss.addEventListener("click", () => dismissRolloutWarning(state.currentThread));
+  $("conversation").querySelectorAll("[data-create-thread-task-card]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      const thread = threadActionContextFromElement(button);
+      createThreadTaskCardFromThread(thread, event).catch(showError);
+    });
+  });
+  $("conversation").querySelectorAll("[data-dismiss-rollout-warning]").forEach((button) => {
+    button.addEventListener("click", () => dismissRolloutWarning(threadActionContextFromElement(button)));
+  });
   const olderTurns = $("conversation").querySelector("[data-load-older-turns]");
   if (olderTurns) olderTurns.addEventListener("click", () => loadOlderThreadTurns({ preserveScroll: true, source: "button" }).catch(showError));
 }
@@ -16216,12 +16243,12 @@ async function waitForCurrentThreadTurn(turnId, options = {}) {
   return currentThreadHasTurn(targetTurnId);
 }
 
-async function createThreadTaskCardFromCurrent(event) {
+async function createThreadTaskCardFromThread(sourceThread, event) {
   if (event) {
     event.preventDefault();
     event.stopPropagation();
   }
-  const thread = state.currentThread;
+  const thread = sourceThread || state.currentThread;
   if (!thread || !thread.id) return;
   const targetInput = await requestAppTextInput("输入目标 thread id 或精确标题；多个目标用英文逗号分隔。", "", {
     title: "任务卡片目标",
@@ -16311,6 +16338,10 @@ async function createThreadTaskCardFromCurrent(event) {
     });
     showError(err);
   }
+}
+
+async function createThreadTaskCardFromCurrent(event) {
+  await createThreadTaskCardFromThread(state.currentThread, event);
 }
 
 function startThreadRequestBody(sourceThread = null, options = {}) {
