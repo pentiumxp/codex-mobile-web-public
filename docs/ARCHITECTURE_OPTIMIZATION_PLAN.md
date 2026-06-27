@@ -923,6 +923,10 @@ post-merge timing entries into `beforeDraftRestore` and `afterDraftRestore`,
 while app code only executes those entries and keeps the draft restore insertion
 point. This prevents `loadThread()` first paint from diverging from
 refresh/full-backfill when post-merge timing metadata changes.
+These v539-follow-up Phase A slices are batched as `codex-mobile-shell-v540`
+so the thread-detail render/post-merge ownership cleanup can be deployed and
+read back as one coherent frontend module rather than as several isolated
+micro-deploys.
 Refresh patch attempt result planning now also lives there:
 `planThreadDetailRefreshPatchAttemptResult` normalizes tile-pane success,
 local-patch success, local-patch rejection, metadata-only tile misses, and

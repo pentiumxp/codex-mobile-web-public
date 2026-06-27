@@ -16,6 +16,42 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-27 v540 Phase A Thread-Detail Post-Merge Planning Module
+
+v540 将 v539 生产部署后累积的 4 个 Phase A 本地切片收束为一个前端
+thread-detail ownership 模块，而不是继续逐个小优化部署。本模块仍不改变
+server projection、detail API、SSE merge、DOM patch 执行、scroll 策略、
+task-card 协议或大 session 后端读路径；目标是让 refresh/backfill/first-paint
+的 post-merge timing 和 render-decision policy 继续从 `public/app.js`
+收敛到可测试的 `public/thread-detail-render-plan.js` 边界。
+
+本模块包含：
+
+- `972e5e4`：新增 `planThreadDetailRefreshRenderStage()`，让
+  `refreshCurrentThread()` 消费统一的 render stage，而不是分别调用 input
+  normalization 和 render decision。
+- `fd69585`：让 refresh/backfill 的 post-merge timing execution 按
+  `planThreadDetailRefreshPostMergeEffects()` group 顺序执行。
+- `bd90f73`：新增 `planThreadDetailRefreshPostMergeTimingFields()`，把 timing
+  field 初始化、缺失 metadata 拒绝和重复字段拒绝放到 render-plan。
+- `4da3ebc`：新增 `planThreadDetailFirstPaintPostMergeTimingEffects()`，明确
+  首屏路径中 draft restore 前后的 post-merge timing split。
+
+本次 bump：`CLIENT_BUILD_ID` 和 PWA shell cache 从
+`codex-mobile-shell-v539` 升到 `codex-mobile-shell-v540`。
+
+验证：
+
+```bash
+node --test test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js test/thread-detail-render-plan.test.js test/conversation-render.test.js test/composer-draft.test.js  # 227 passed
+npm test  # 1221 passed
+npm run check  # passed
+npm run check:macos  # passed
+git diff --check  # passed
+```
+
+部署状态：本节记录的是 v540 模块准备和本地验证。生产部署/readback 在后续记录中闭环。
+
 ## 2026-06-27 Phase A First-Paint Post-Merge Timing Sequence Local Slice
 
 这是 v539 生产部署后的第四个 Phase A 本地小切片，尚未 bump shell/cache，尚未部署。

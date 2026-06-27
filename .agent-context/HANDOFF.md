@@ -20155,3 +20155,36 @@ The previous full handoff was archived and should be opened only when old proven
     aligned. Next step should be either module-level shell/cache bump and
     central deploy for the accumulated Phase A local slices, or a different
     Phase target with a fresh root-cause boundary.
+
+## 2026-06-27 - v540 Phase A thread-detail post-merge planning module prep
+
+- Current local state:
+  - Batched the v539-follow-up Phase A local commits `972e5e4`, `fd69585`,
+    `bd90f73`, and `4da3ebc` as a module.
+  - Bumped `public/app.js` `CLIENT_BUILD_ID` and `public/sw.js` `CACHE_NAME`
+    from `codex-mobile-shell-v539` to `codex-mobile-shell-v540`.
+  - Updated version assertions in `test/mobile-viewport.test.js`,
+    `test/thread-goal-service.test.js`, and
+    `test/thread-task-card-route.test.js`.
+- Module boundary:
+  - Frontend thread-detail render/post-merge ownership only.
+  - Includes refresh render stage planning, generic post-merge timing
+    execution, timing metadata validation, and first-paint before/after
+    draft-restore post-merge sequencing.
+  - Does not change server projection, detail API, thread-list fallback,
+    active-overlay read policy, DOM patch implementation, scroll policy,
+    task-card protocol, mux runtime, or Home AI diagnostic transport.
+- Validation:
+  - Focused module suite passed (`227` tests):
+    `node --test test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js test/thread-detail-render-plan.test.js test/conversation-render.test.js test/composer-draft.test.js`.
+  - Full `npm test` passed (`1221` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit this v540 module prep.
+  - Deploy through Home AI central macOS plugin deploy with reason
+    `codex-mobile-v540-thread-detail-post-merge-planning`.
+  - Read back `/api/public-config` and run the bounded Phase B smoke script to
+    confirm production is on `clientBuildId=0.1.11|codex-mobile-shell-v540` and
+    no unrelated thread-list/mux regression appears.
