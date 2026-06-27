@@ -628,8 +628,51 @@ test("rollout session list fallback can defer status until final candidates", ()
   assert.equal(finalCandidate.status.turnId, "turn-active");
   assert.equal(finalCandidate.activeTurnId, "turn-active");
   assert.equal(diagnostics.rolloutStatusAttachCount, 1);
+  assert.equal(diagnostics.rolloutStatusStatReadCount, undefined);
+  assert.equal(diagnostics.rolloutStatusStatReuseCount, 1);
   assert.equal(diagnostics.rolloutStatusTailReadCount, 1);
   assert.ok(diagnostics.rolloutStatusTailBytes > 0);
+});
+
+test("rollout status attach still stats threads without summary metadata", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-rollout-status-stat-"));
+  const threadId = "019e9000-0000-7000-8000-000000000099";
+  const rolloutPath = path.join(dir, `rollout-2026-06-04T10-00-00-${threadId}.jsonl`);
+  const now = new Date("2026-06-04T10:00:00.000Z");
+  fs.writeFileSync(rolloutPath, [
+    JSON.stringify({
+      timestamp: now.toISOString(),
+      type: "event_msg",
+      payload: {
+        type: "task_started",
+        turn_id: "turn-manual",
+      },
+    }),
+    JSON.stringify({
+      timestamp: now.toISOString(),
+      type: "response_item",
+      payload: {
+        type: "function_call",
+      },
+    }),
+  ].join("\n"), "utf8");
+  fs.utimesSync(rolloutPath, now, now);
+
+  const diagnostics = {};
+  const result = attachRolloutFallbackStatus({
+    id: threadId,
+    path: rolloutPath,
+    status: { type: "notLoaded" },
+  }, {
+    nowMs: now.getTime(),
+    diagnostics,
+  });
+
+  assert.equal(result.status.type, "active");
+  assert.equal(result.activeTurnId, "turn-manual");
+  assert.equal(diagnostics.rolloutStatusStatReadCount, 1);
+  assert.equal(diagnostics.rolloutStatusStatReuseCount, undefined);
+  assert.equal(diagnostics.rolloutStatusTailReadCount, 1);
 });
 
 test("context-only stale active rollout turn is normalized to idle", () => {
@@ -1030,7 +1073,12 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeBody, /threadListFallbackSourceDiagnosticTimingFields\(fallbackDiagnostics\)/);
   assert.match(serverJs, /function threadListFallbackSourceDiagnosticTimingFields\(diagnostics = \{\}\)/);
   assert.match(serverJs, /fallbackRolloutFileStatCount: Number\(diagnostics\.rolloutFileStatCount \|\| 0\)/);
+  assert.match(serverJs, /fallbackRolloutStatusStatReadCount: Number\(diagnostics\.rolloutStatusStatReadCount \|\| 0\)/);
+  assert.match(serverJs, /fallbackRolloutStatusStatReuseCount: Number\(diagnostics\.rolloutStatusStatReuseCount \|\| 0\)/);
   assert.match(serverJs, /fallbackRolloutStatusTailBytes: Number\(diagnostics\.rolloutStatusTailBytes \|\| 0\)/);
+  assert.match(serverJs, /const ROLLOUT_STAT_METADATA = Symbol\("codexMobileRolloutStat"\)/);
+  assert.match(serverJs, /return attachRolloutStatMetadata\(rowToFallbackThread\(\{/);
+  assert.match(serverJs, /rolloutStatMetadataForThread\(thread\)/);
   assert.match(serverJs, /fallbackSessionIndexReadCount: Number\(diagnostics\.sessionIndexReadCount \|\| 0\)/);
   assert.match(serverJs, /fallbackSessionIndexReuseCount: Number\(diagnostics\.sessionIndexReuseCount \|\| 0\)/);
   assert.match(routeBody, /const fallbackMode = String\(url\.searchParams\.get\("fallback"\) \|\| ""\)/);

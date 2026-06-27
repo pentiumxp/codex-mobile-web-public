@@ -13470,6 +13470,34 @@ function rolloutEntryTimestampMs(entry) {
   return timestampToMs(entry.timestamp || payload.timestamp || payload.created_at || payload.updated_at);
 }
 
+const ROLLOUT_STAT_METADATA = Symbol("codexMobileRolloutStat");
+
+function isUsableRolloutStat(stat) {
+  return Boolean(stat && typeof stat === "object"
+    && Number.isFinite(Number(stat.size))
+    && Number.isFinite(Number(stat.mtimeMs)));
+}
+
+function attachRolloutStatMetadata(thread, stat) {
+  if (!thread || typeof thread !== "object" || !isUsableRolloutStat(stat)) return thread;
+  try {
+    Object.defineProperty(thread, ROLLOUT_STAT_METADATA, {
+      value: stat,
+      enumerable: false,
+      configurable: true,
+    });
+  } catch (_) {
+    // Keep the public thread row unchanged if metadata cannot be attached.
+  }
+  return thread;
+}
+
+function rolloutStatMetadataForThread(thread) {
+  if (!thread || typeof thread !== "object") return null;
+  const stat = thread[ROLLOUT_STAT_METADATA];
+  return isUsableRolloutStat(stat) ? stat : null;
+}
+
 function readRolloutSessionFallbackThreadFromFile(file, indexEntry = {}, options = {}) {
   const rolloutPath = typeof file === "string" ? file : file && file.path;
   const id = threadIdFromRolloutPath(rolloutPath) || String(indexEntry.id || "").trim();
@@ -13516,7 +13544,7 @@ function readRolloutSessionFallbackThreadFromFile(file, indexEntry = {}, options
     Number(stat.mtimeMs || 0),
   );
   if (diagnostics) incrementBoundedDiagnosticCounter(diagnostics, "rolloutSummaryReadCount");
-  return rowToFallbackThread({
+  return attachRolloutStatMetadata(rowToFallbackThread({
     id,
     thread_name: fallbackDisplayText(indexEntry.thread_name || indexEntry.name || indexEntry.title),
     cwd,
@@ -13528,22 +13556,24 @@ function readRolloutSessionFallbackThreadFromFile(file, indexEntry = {}, options
     agent_nickname: agentNickname,
     agent_role: agentRole,
     status: options.includeStatus === false ? undefined : inferRolloutFallbackStatus(rolloutPath, stat, Date.now(), { diagnostics }) || undefined,
-  });
+  }), stat);
 }
 
 function attachRolloutFallbackStatus(thread, options = {}) {
   if (!thread || typeof thread !== "object") return thread;
   const rolloutPath = rolloutPathForThread(thread);
   if (!rolloutPath) return thread;
-  let stat = options.stat || null;
+  const diagnostics = options.diagnostics && typeof options.diagnostics === "object" ? options.diagnostics : null;
+  let stat = isUsableRolloutStat(options.stat) ? options.stat : rolloutStatMetadataForThread(thread);
+  if (stat) incrementBoundedDiagnosticCounter(diagnostics, "rolloutStatusStatReuseCount");
   if (!stat) {
+    incrementBoundedDiagnosticCounter(diagnostics, "rolloutStatusStatReadCount");
     try {
       stat = fs.statSync(rolloutPath);
     } catch (_) {
       return thread;
     }
   }
-  const diagnostics = options.diagnostics && typeof options.diagnostics === "object" ? options.diagnostics : null;
   incrementBoundedDiagnosticCounter(diagnostics, "rolloutStatusAttachCount");
   const status = inferRolloutFallbackStatus(rolloutPath, stat, options.nowMs || Date.now(), { diagnostics });
   if (!status) return thread;
@@ -13757,6 +13787,8 @@ function threadListFallbackSourceDiagnosticTimingFields(diagnostics = {}) {
     fallbackRolloutHeadBytes: Number(diagnostics.rolloutHeadBytes || 0),
     fallbackRolloutSummaryReadCount: Number(diagnostics.rolloutSummaryReadCount || 0),
     fallbackRolloutStatusAttachCount: Number(diagnostics.rolloutStatusAttachCount || 0),
+    fallbackRolloutStatusStatReadCount: Number(diagnostics.rolloutStatusStatReadCount || 0),
+    fallbackRolloutStatusStatReuseCount: Number(diagnostics.rolloutStatusStatReuseCount || 0),
     fallbackRolloutStatusTailReadCount: Number(diagnostics.rolloutStatusTailReadCount || 0),
     fallbackRolloutStatusTailBytes: Number(diagnostics.rolloutStatusTailBytes || 0),
     fallbackSessionIndexReadCount: Number(diagnostics.sessionIndexReadCount || 0),

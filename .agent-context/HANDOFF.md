@@ -19901,3 +19901,39 @@ The previous full handoff was archived and should be opened only when old proven
   - Run `npm run check` and `git diff --check`, then commit this local slice.
   - Continue v539 only if another small root-cause slice is clearly separable;
     otherwise batch/bump/deploy the v539 module after validation.
+
+## 2026-06-27 - Phase B rollout fallback status stat reuse local slice
+
+- Current local state:
+  - Continued after local commit `1373160` (`refactor: share thread list
+    rollout stats`).
+  - This slice is local only. It does not bump `CLIENT_BUILD_ID` / PWA shell
+    cache and is not deployed by itself.
+- Root-cause boundary:
+  - Symptom/risk: during rollout fallback source reads, a candidate file is
+    already statted while building its summary, then final status attach statted
+    the same rollout path again before reading tail status.
+  - Failing layer: Mobile thread-list rollout fallback source/status attach
+    boundary, specifically repeated file metadata reads after summary
+    materialization.
+  - Violated invariant: immutable file metadata confirmed during summary read
+    can be reused within the same in-memory row, but active/completed status
+    must remain rollout-tail-authoritative.
+- Changes:
+  - `readRolloutSessionFallbackThreadFromFile()` now stores the verified
+    `fs.Stats` on the returned thread row as non-enumerable Symbol metadata.
+  - `attachRolloutFallbackStatus()` reuses that metadata when present and still
+    performs a normal stat for manually constructed rows without metadata.
+  - `inferRolloutFallbackStatus()` remains unchanged and still reads rollout
+    tail for status evidence.
+  - Phase B readback/decision evidence now carries
+    `fallbackRolloutStatusStatReadCount` and
+    `fallbackRolloutStatusStatReuseCount`.
+- Validation:
+  - `node --test test/thread-visibility.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js`
+    passed (`80` tests).
+- Next:
+  - Run `npm run check` and `git diff --check`, then commit this local slice.
+  - Consider batching the current v539 Phase B local commits for shell/cache
+    bump and deployment unless another equally small root-cause backend slice is
+    clearly separable.

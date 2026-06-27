@@ -372,7 +372,15 @@ Current acceleration targets:
    carries only bounded request-context read counts so production can prove
    whether the request used one shared archive/session-index read, how many
    unique cached display summaries were read, and how many unique rollout stat
-   paths were read, without exposing titles, paths, prompts, or logs.
+   paths were read, without exposing titles, paths, prompts, or logs. The next
+   rollout fallback status slice keeps the same authority boundary: the
+   fallback summary reader stores the already verified `fs.Stats` on the
+   in-memory thread row as non-enumerable metadata, and final status attach
+   reuses that metadata instead of running another `statSync`. The status attach
+   path still reads rollout tail through `inferRolloutFallbackStatus`, so
+   active/completed evidence remains tail-authoritative. Readback exposes only
+   numeric `fallbackRolloutStatusStatReadCount` and
+   `fallbackRolloutStatusStatReuseCount`.
    Earlier local
    fallback attribution slices also made baseline source work explicit:
    fallback baseline source reads now

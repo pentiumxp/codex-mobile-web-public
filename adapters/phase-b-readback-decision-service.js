@@ -65,6 +65,8 @@ function buildEvidence(report = {}) {
     threadListMergeOutputCount: boundedCount(list.fallbackBaselineMergeOutputCount),
     threadListMergeDuplicateCount: boundedCount(list.fallbackBaselineMergeDuplicateCount),
     threadListLimitDropCount: boundedCount(list.fallbackBaselineLimitDropCount),
+    threadListFallbackRolloutStatusStatReadCount: boundedCount(list.fallbackRolloutStatusStatReadCount),
+    threadListFallbackRolloutStatusStatReuseCount: boundedCount(list.fallbackRolloutStatusStatReuseCount),
     threadListRouteMergeAppServerInputCount: boundedCount(list.routeMergeAppServerInputCount),
     threadListRouteMergeFallbackInputCount: boundedCount(list.routeMergeFallbackInputCount),
     threadListRouteMergeInputCount: boundedCount(list.routeMergeInputCount),

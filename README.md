@@ -206,6 +206,35 @@ node --test test/thread-list-request-context-service.test.js test/thread-list-su
 结果：focused tests `106` passed。该切片尚未部署；继续按 v539 模块批量提交/部署
 节奏推进。
 
+## 2026-06-27 Phase B Rollout Fallback Status Stat Reuse Local Slice
+
+继续 v539 的 thread-list fallback 冷/热路径优化。本切片只消除 rollout fallback
+summary read 到 final status attach 之间的重复 `fs.statSync`，不改变 rollout tail
+读取、active/completed 推断、过滤、排序、cache 或 app-server 查询语义。
+
+改动：
+
+- `readRolloutSessionFallbackThreadFromFile()` 在读取 summary 时把已验证的
+  `fs.Stats` 作为非枚举 `Symbol` metadata 挂到 thread row 上。该 metadata 不会进入
+  JSON/API 响应。
+- `attachRolloutFallbackStatus()` 优先复用这个 metadata；没有 metadata 的普通 thread
+  仍按旧路径重新 stat。
+- `inferRolloutFallbackStatus()` 仍然实时读取 rollout tail；本切片没有缓存 tail，也
+  没有把状态判断改成 stat-only。
+- Phase B readback smoke / decision evidence 新增
+  `fallbackRolloutStatusStatReadCount` 和
+  `fallbackRolloutStatusStatReuseCount`，用于部署后证明状态 attach 是否复用了 summary
+  read 的 stat。
+
+验证：
+
+```bash
+node --test test/thread-visibility.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js
+```
+
+结果：focused tests `80` passed。该切片尚未部署；继续按 v539 模块批量提交/部署
+节奏推进。
+
 ## 2026-06-27 v537 Phase B RPC/Mux Evidence Module
 
 v537 把两个本地 Phase B 切片作为一个模块部署：`6624f1b` 记录 Mobile 到
