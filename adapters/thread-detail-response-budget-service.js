@@ -16,7 +16,10 @@ const DEFAULT_PROGRESSIVE_ACTIVE_REASONING_ITEMS = 1;
 const DEFAULT_PROGRESSIVE_ACTIVE_ASSISTANT_ITEMS = 4;
 const DEFAULT_PROGRESSIVE_ACTIVE_TEXT_CHARS = 12 * 1024;
 const DEFAULT_PROGRESSIVE_VISIBLE_ITEM_CEILING = 48;
+const DEFAULT_PROGRESSIVE_FIRST_PAINT_THREAD_BYTES = 160 * 1024;
+const DEFAULT_PROGRESSIVE_COMPLETED_TEXT_CHARS = 8 * 1024;
 const ACTIVE_TEXT_BUDGET_MARKER = "\n\n[active item preview truncated]\n\n";
+const FIRST_PAINT_TEXT_BUDGET_MARKER = "\n\n[first-paint preview truncated]\n\n";
 
 const OPERATION_ITEM_TYPES = new Set([
   "commandExecution",
@@ -154,18 +157,19 @@ function textCharLength(value) {
   return typeof value === "string" ? value.length : 0;
 }
 
-function truncateMiddleText(value, maxChars) {
+function truncateMiddleText(value, maxChars, marker = ACTIVE_TEXT_BUDGET_MARKER) {
   const text = String(value || "");
   const max = Math.max(0, Math.trunc(Number(maxChars) || 0));
   if (!max || text.length <= max) return text;
-  if (max <= ACTIVE_TEXT_BUDGET_MARKER.length + 2) return text.slice(0, max);
-  const available = max - ACTIVE_TEXT_BUDGET_MARKER.length;
+  const budgetMarker = String(marker || ACTIVE_TEXT_BUDGET_MARKER);
+  if (max <= budgetMarker.length + 2) return text.slice(0, max);
+  const available = max - budgetMarker.length;
   const head = Math.ceil(available * 0.55);
   const tail = Math.max(0, available - head);
-  return `${text.slice(0, head)}${ACTIVE_TEXT_BUDGET_MARKER}${tail ? text.slice(-tail) : ""}`;
+  return `${text.slice(0, head)}${budgetMarker}${tail ? text.slice(-tail) : ""}`;
 }
 
-function compactStringForActiveTextBudget(value, budget) {
+function compactStringForTextBudget(value, budget, marker = ACTIVE_TEXT_BUDGET_MARKER) {
   if (typeof value !== "string") return value;
   const originalChars = textCharLength(value);
   budget.originalChars += originalChars;
@@ -175,7 +179,7 @@ function compactStringForActiveTextBudget(value, budget) {
     budget.retainedChars += originalChars;
     return value;
   }
-  const compacted = truncateMiddleText(value, remaining);
+  const compacted = truncateMiddleText(value, remaining, marker);
   const retainedChars = textCharLength(compacted);
   budget.retainedChars += retainedChars;
   budget.omittedChars += Math.max(0, originalChars - retainedChars);
@@ -183,11 +187,11 @@ function compactStringForActiveTextBudget(value, budget) {
   return compacted;
 }
 
-function compactValueForActiveTextBudget(value, budget) {
-  if (typeof value === "string") return compactStringForActiveTextBudget(value, budget);
+function compactValueForTextBudget(value, budget, marker = ACTIVE_TEXT_BUDGET_MARKER) {
+  if (typeof value === "string") return compactStringForTextBudget(value, budget, marker);
   if (Array.isArray(value)) {
     return value.map((entry) => {
-      if (typeof entry === "string") return compactStringForActiveTextBudget(entry, budget);
+      if (typeof entry === "string") return compactStringForTextBudget(entry, budget, marker);
       return entry;
     });
   }
@@ -211,7 +215,7 @@ function compactActiveTextItem(item, options, stats) {
   for (const field of ["text", "message", "content", "summary"]) {
     if (!(field in out)) continue;
     const beforeOriginal = budget.originalChars;
-    out[field] = compactValueForActiveTextBudget(out[field], budget);
+    out[field] = compactValueForTextBudget(out[field], budget, ACTIVE_TEXT_BUDGET_MARKER);
     if (budget.originalChars > beforeOriginal) budget.fields.push(field);
   }
   if (!budget.truncated) return item;
@@ -229,6 +233,44 @@ function compactActiveTextItem(item, options, stats) {
   stats.activeTextOriginalChars += budget.originalChars;
   stats.activeTextRetainedChars += budget.retainedChars;
   stats.omittedActiveTextChars += budget.omittedChars;
+  return out;
+}
+
+function compactCompletedTextItemForFirstPaint(item, options, stats) {
+  if (!item || typeof item !== "object") return item;
+  if (!isAssistantItem(item) && !isReasoningItem(item)) return item;
+  const maxChars = Math.max(0, Math.trunc(Number(options.progressiveCompletedTextChars || 0)));
+  if (!maxChars) return item;
+  const out = cloneJson(item);
+  const budget = {
+    maxChars,
+    originalChars: 0,
+    retainedChars: 0,
+    omittedChars: 0,
+    truncated: false,
+    fields: [],
+  };
+  for (const field of ["text", "message", "content", "summary"]) {
+    if (!(field in out)) continue;
+    const beforeOriginal = budget.originalChars;
+    out[field] = compactValueForTextBudget(out[field], budget, FIRST_PAINT_TEXT_BUDGET_MARKER);
+    if (budget.originalChars > beforeOriginal) budget.fields.push(field);
+  }
+  if (!budget.truncated) return item;
+  out.mobileFirstPaintTextBudget = {
+    version: "thread-detail-first-paint-text-budget-v1",
+    scope: "completed",
+    maxChars,
+    originalChars: budget.originalChars,
+    retainedChars: budget.retainedChars,
+    omittedChars: budget.omittedChars,
+    fields: budget.fields,
+  };
+  out.mobileTextTruncated = true;
+  stats.truncatedCompletedTextItems += 1;
+  stats.completedTextOriginalChars += budget.originalChars;
+  stats.completedTextRetainedChars += budget.retainedChars;
+  stats.omittedCompletedTextChars += budget.omittedChars;
   return out;
 }
 
@@ -308,6 +350,37 @@ function applyProgressiveVisibleItemCeiling(thread, options, stats) {
   stats.progressiveVisibleItemBudgetReason = removeCount > 0
     ? "protected-visible-items"
     : "progressive-visible-item-ceiling";
+}
+
+function applyProgressiveCompletedTextBudget(thread, options, stats) {
+  const ceiling = Math.max(0, Math.trunc(Number(options.progressiveFirstPaintThreadByteCeiling || 0)));
+  const beforeBytes = jsonByteLength(thread);
+  stats.progressiveFirstPaintThreadByteCeiling = ceiling;
+  stats.progressiveFirstPaintBytesBeforeTextBudget = beforeBytes;
+  stats.progressiveFirstPaintBytesAfterTextBudget = beforeBytes;
+  if (!stats.progressiveActiveBudgetApplied || !ceiling || beforeBytes <= ceiling) return;
+  const maxChars = Math.max(0, Math.trunc(Number(options.progressiveCompletedTextChars || 0)));
+  stats.progressiveCompletedTextChars = maxChars;
+  if (!maxChars) {
+    stats.progressiveCompletedTextBudgetReason = "disabled";
+    return;
+  }
+  let changed = false;
+  for (const turn of thread.turns) {
+    if (!turn || !Array.isArray(turn.items) || isActiveTurn(turn, thread)) continue;
+    turn.items = turn.items.map((item) => {
+      const compacted = compactCompletedTextItemForFirstPaint(item, options, stats);
+      if (compacted !== item) changed = true;
+      return compacted;
+    });
+  }
+  if (!changed) return;
+  const afterBytes = jsonByteLength(thread);
+  stats.progressiveCompletedTextBudgetApplied = true;
+  stats.progressiveCompletedTextBudgetReason = afterBytes > ceiling
+    ? "first-paint-byte-pressure"
+    : "first-paint-byte-ceiling";
+  stats.progressiveFirstPaintBytesAfterTextBudget = afterBytes;
 }
 
 function compactTurnWithBudget(turn, thread, options, stats) {
@@ -440,6 +513,16 @@ function compactThreadDetailResponseResult(result, options = {}) {
     DEFAULT_PROGRESSIVE_ACTIVE_TEXT_CHARS,
     200 * 1024,
   );
+  const progressiveFirstPaintThreadByteCeiling = boundedCount(
+    options.progressiveFirstPaintThreadByteCeiling,
+    DEFAULT_PROGRESSIVE_FIRST_PAINT_THREAD_BYTES,
+    50 * 1024 * 1024,
+  );
+  const progressiveCompletedTextChars = boundedCount(
+    options.progressiveCompletedTextChars,
+    DEFAULT_PROGRESSIVE_COMPLETED_TEXT_CHARS,
+    200 * 1024,
+  );
   const effectiveActiveOperationItems = progressiveActiveBudgetApplied
     ? Math.min(configuredActiveOperationItems, progressiveActiveOperationItems)
     : configuredActiveOperationItems;
@@ -459,9 +542,13 @@ function compactThreadDetailResponseResult(result, options = {}) {
     omittedAssistantItems: 0,
     omittedVisibleItems: 0,
     omittedActiveTextChars: 0,
+    omittedCompletedTextChars: 0,
     truncatedActiveTextItems: 0,
+    truncatedCompletedTextItems: 0,
     activeTextOriginalChars: 0,
     activeTextRetainedChars: 0,
+    completedTextOriginalChars: 0,
+    completedTextRetainedChars: 0,
     activeTurnCount: 0,
     staleActiveTurnCount: 0,
     completedOperationItems: boundedCount(options.completedOperationItems, DEFAULT_COMPLETED_OPERATION_ITEMS, 100),
@@ -474,6 +561,12 @@ function compactThreadDetailResponseResult(result, options = {}) {
     activeProgressiveByteThreshold,
     activeProgressiveThreadByteThreshold,
     progressiveActiveTextChars,
+    progressiveFirstPaintThreadByteCeiling,
+    progressiveCompletedTextChars,
+    progressiveCompletedTextBudgetApplied: false,
+    progressiveCompletedTextBudgetReason: "",
+    progressiveFirstPaintBytesBeforeTextBudget: 0,
+    progressiveFirstPaintBytesAfterTextBudget: 0,
     progressiveVisibleItemCeiling: boundedCount(
       options.progressiveVisibleItemCeiling,
       DEFAULT_PROGRESSIVE_VISIBLE_ITEM_CEILING,
@@ -498,11 +591,13 @@ function compactThreadDetailResponseResult(result, options = {}) {
   const budgetOptions = Object.assign({}, options, stats);
   thread.turns = thread.turns.map((turn) => compactTurnWithBudget(turn, thread, budgetOptions, stats));
   applyProgressiveVisibleItemCeiling(thread, budgetOptions, stats);
+  applyProgressiveCompletedTextBudget(thread, budgetOptions, stats);
   stats.applied = stats.omittedOperationItems > 0
     || stats.omittedReasoningItems > 0
     || stats.omittedAssistantItems > 0
     || stats.omittedVisibleItems > 0
     || stats.truncatedActiveTextItems > 0;
+  stats.applied = stats.applied || stats.truncatedCompletedTextItems > 0;
   if (!stats.applied && !stats.progressiveActiveBudgetApplied) return out;
   const revision = thread.mobileProjectionRevision;
   const normalized = normalizeThreadVisibleProjection(out, {

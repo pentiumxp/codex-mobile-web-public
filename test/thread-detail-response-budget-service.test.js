@@ -334,6 +334,112 @@ test("thread detail response budget truncates oversized retained active assistan
   assert.deepEqual(compacted.thread.mobileVisibleItemKeys, compacted.thread.turns[0].items.map((item) => item.mobileVisibleKey));
 });
 
+test("thread detail response budget applies completed receipt previews when first paint remains too large", () => {
+  const longReceipt = (letter) => `${letter}`.repeat(2400);
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      mobileProjectionRevision: 12,
+      turns: [
+        {
+          id: "turn-1",
+          status: "completed",
+          items: [
+            { id: "u1", type: "userMessage", text: "Older question" },
+            { id: "a1", type: "agentMessage", text: longReceipt("A") },
+            { id: "usage1", type: "turnUsageSummary" },
+          ],
+        },
+        {
+          id: "turn-2",
+          status: "completed",
+          items: [
+            { id: "u2", type: "userMessage", text: "Recent question" },
+            { id: "a2", type: "agentMessage", text: longReceipt("B") },
+            { id: "usage2", type: "turnUsageSummary" },
+          ],
+        },
+        {
+          id: "turn-active",
+          status: "inProgress",
+          items: [
+            { id: "live-a1", type: "agentMessage", text: "Working" },
+          ],
+        },
+      ],
+    },
+  };
+  const originalThreadBytes = Buffer.byteLength(JSON.stringify(result.thread), "utf8");
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeProgressiveItemThreshold: 100,
+    activeProgressiveByteThreshold: 0,
+    activeProgressiveThreadByteThreshold: 1000,
+    progressiveActiveAssistantItems: 1,
+    progressiveFirstPaintThreadByteCeiling: 1600,
+    progressiveCompletedTextChars: 300,
+  });
+
+  const firstReceipt = compacted.thread.turns[0].items[1];
+  const secondReceipt = compacted.thread.turns[1].items[1];
+  assert.equal(firstReceipt.mobileTextTruncated, true);
+  assert.equal(secondReceipt.mobileTextTruncated, true);
+  assert.match(firstReceipt.text, /first-paint preview truncated/);
+  assert.match(secondReceipt.text, /first-paint preview truncated/);
+  assert.ok(firstReceipt.text.length <= 300);
+  assert.ok(secondReceipt.text.length <= 300);
+  assert.equal(firstReceipt.mobileFirstPaintTextBudget.scope, "completed");
+  assert.equal(secondReceipt.mobileFirstPaintTextBudget.scope, "completed");
+  const budget = compacted.thread.mobileDetailResponseBudget;
+  assert.equal(budget.progressiveActiveBudgetApplied, true);
+  assert.equal(budget.progressiveActiveBudgetReason, "thread-byte-pressure");
+  assert.equal(budget.progressiveCompletedTextBudgetApplied, true);
+  assert.equal(budget.progressiveFirstPaintThreadByteCeiling, 1600);
+  assert.equal(budget.progressiveCompletedTextChars, 300);
+  assert.equal(budget.truncatedCompletedTextItems, 2);
+  assert.ok(budget.omittedCompletedTextChars > 0);
+  assert.ok(budget.progressiveFirstPaintBytesBeforeTextBudget >= originalThreadBytes - 1000);
+  assert.ok(budget.progressiveFirstPaintBytesAfterTextBudget < budget.progressiveFirstPaintBytesBeforeTextBudget);
+  assert.equal(compacted.thread.mobileProjectionRevision, 12);
+  assert.deepEqual(compacted.thread.mobileVisibleItemKeys, compacted.thread.turns.flatMap((turn) => turn.items.map((item) => item.mobileVisibleKey)));
+});
+
+test("thread detail response budget does not apply completed receipt previews without progressive active pressure", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      mobileReadMode: "projection-v4-dynamic",
+      turns: [
+        {
+          id: "turn-1",
+          status: "completed",
+          items: [
+            { id: "u1", type: "userMessage", text: "Question" },
+            { id: "a1", type: "agentMessage", text: "A".repeat(2400) },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeProgressiveItemThreshold: 1,
+    activeProgressiveThreadByteThreshold: 100,
+    progressiveFirstPaintThreadByteCeiling: 200,
+    progressiveCompletedTextChars: 120,
+  });
+
+  const receipt = compacted.thread.turns[0].items[1];
+  assert.equal(receipt.mobileFirstPaintTextBudget, undefined);
+  assert.equal(receipt.text.length, 2400);
+  assert.equal(compacted.thread.mobileDetailResponseBudget, undefined);
+  assert.deepEqual(compacted, result);
+});
+
 test("thread detail response budget does not truncate large active text without progressive pressure", () => {
   const result = {
     thread: {

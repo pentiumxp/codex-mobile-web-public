@@ -2418,6 +2418,17 @@ Deployable scope:
   `progressiveVisibleItemBudgetApplied`, `omittedVisibleItems`, and per-turn
   `mobileVisibleItemBudget`; user messages, images, Usage rows, diagnostics,
   and retained final assistant/plan receipts remain protected.
+- A follow-up first-paint byte ceiling now handles the residual case where the
+  visible item count is bounded but retained completed receipts still make the
+  active detail body heavy. Under the same active progressive pressure, when the
+  post-item-budget thread JSON remains above
+  `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_FIRST_PAINT_THREAD_BYTES` (default
+  `160KB`), non-current completed assistant/reasoning receipts are reduced to
+  bounded previews using
+  `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_COMPLETED_TEXT_CHARS` (default `8KB`
+  per item). Items carry `mobileFirstPaintTextBudget`; the response records
+  before/after first-paint byte counts and completed-text counters in
+  `mobileDetailResponseBudget`.
 - `server.js` wires the progressive thresholds and effective active limits from
   bounded environment variables.
 - Operation budgets now include `collabAgentToolCall`, and v4 visible-item

@@ -437,6 +437,18 @@ compaction. That ceiling should remove older operation/reasoning rows first;
 user messages, images, Usage rows, diagnostics, and retained final receipts
 should stay visible. Reasons ending in `-byte-pressure` mean the request was
 successful but too large, not that the network or app-server RPC timed out.
+If item counts are already bounded but the payload remains heavy, inspect the
+second-stage first-paint byte fields:
+`progressiveFirstPaintThreadByteCeiling`,
+`progressiveFirstPaintBytesBeforeTextBudget`,
+`progressiveFirstPaintBytesAfterTextBudget`,
+`progressiveCompletedTextBudgetApplied`,
+`progressiveCompletedTextBudgetReason`,
+`progressiveCompletedTextChars`, `truncatedCompletedTextItems`, and
+`omittedCompletedTextChars`. Those fields mean non-current completed
+assistant/reasoning receipts were reduced to first-paint previews marked with
+`mobileFirstPaintTextBudget`; the current active turn still uses
+`mobileActiveTextBudget`.
 On-demand expansion of omitted historical assistant progress is a separate
 route/API feature, not part of the default first paint.
 
