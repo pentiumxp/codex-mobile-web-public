@@ -894,6 +894,27 @@ function createThreadDetailProjectionService(options = {}) {
     return entry;
   }
 
+  function stalePartialWindowForLookup(entry, optionsForGet = {}) {
+    if (!entry || entry.partial !== true || optionsForGet.allowStalePartial !== true) return null;
+    const result = cloneProjectionResultForLookup(entry.result, optionsForGet);
+    normalizeProjectionThreadUserMessages(result.thread);
+    normalizeProjectionSupersededLiveTurns(result.thread);
+    trimTurns(result.thread, maxTurns);
+    return {
+      cached: {
+        cachedAtMs: entry.cachedAtMs,
+        updatedAtMs: entry.updatedAtMs,
+        dynamic: entry.dynamic,
+        partial: true,
+        partialKind: entry.partialKind || "",
+        stalePartial: true,
+        staleReason: "backing-signature-mismatch",
+        result,
+      },
+      missReason: "",
+    };
+  }
+
   function lookup(input = {}, optionsForGet = {}) {
     const threadId = String(input.threadId || "").trim();
     if (!threadId) return { cached: null, missReason: "missing-thread-id" };
@@ -921,25 +942,8 @@ function createThreadDetailProjectionService(options = {}) {
         if (staleWindow) return staleWindow;
         const historyWindow = activeOverlayFullHistoryWindow();
         if (historyWindow) return historyWindow;
-        if (optionsForGet.allowStalePartial === true) {
-          const result = cloneProjectionResultForLookup(entry.result, optionsForGet);
-          normalizeProjectionThreadUserMessages(result.thread);
-          normalizeProjectionSupersededLiveTurns(result.thread);
-          trimTurns(result.thread, maxTurns);
-          return {
-            cached: {
-              cachedAtMs: entry.cachedAtMs,
-              updatedAtMs: entry.updatedAtMs,
-              dynamic: entry.dynamic,
-              partial: true,
-              partialKind: entry.partialKind || "",
-              stalePartial: true,
-              staleReason: "backing-signature-mismatch",
-              result,
-            },
-            missReason: "",
-          };
-        }
+        const stalePartial = stalePartialWindowForLookup(entry, optionsForGet);
+        if (stalePartial) return stalePartial;
         return { cached: null, missReason: "static-signature-mismatch" };
       }
     } else if (entry.dynamic) {
@@ -956,6 +960,8 @@ function createThreadDetailProjectionService(options = {}) {
         if (staleWindow) return staleWindow;
         const historyWindow = activeOverlayFullHistoryWindow();
         if (historyWindow) return historyWindow;
+        const stalePartial = stalePartialWindowForLookup(entry, optionsForGet);
+        if (stalePartial) return stalePartial;
         return { cached: null, missReason: "dynamic-summary-stale" };
       }
       if (backingSignatureChanged) {
@@ -965,6 +971,8 @@ function createThreadDetailProjectionService(options = {}) {
           if (staleWindow) return staleWindow;
           const historyWindow = activeOverlayFullHistoryWindow();
           if (historyWindow) return historyWindow;
+          const stalePartial = stalePartialWindowForLookup(entry, optionsForGet);
+          if (stalePartial) return stalePartial;
           return { cached: null, missReason: "dynamic-resting-signature-mismatch" };
         }
         if (dynamicAgeMs > dynamicSignatureMismatchMaxAgeMs) {
@@ -972,6 +980,8 @@ function createThreadDetailProjectionService(options = {}) {
           if (staleWindow) return staleWindow;
           const historyWindow = activeOverlayFullHistoryWindow();
           if (historyWindow) return historyWindow;
+          const stalePartial = stalePartialWindowForLookup(entry, optionsForGet);
+          if (stalePartial) return stalePartial;
           return { cached: null, missReason: "dynamic-age-signature-mismatch" };
         }
       }

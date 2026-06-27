@@ -1087,6 +1087,77 @@ test("thread detail projection reuses partial recent windows when only summary m
   }
 });
 
+test("thread detail projection can first-paint stale dynamic partial windows", () => {
+  const service = createThreadDetailProjectionService({
+    cacheDir: "",
+    policyVersion: "test-v1",
+    maxTurns: 2,
+    now: (() => {
+      let current = 1000;
+      return () => {
+        current += 100;
+        return current;
+      };
+    })(),
+  });
+  service.seed(signatureInput({
+    summaryStatus: "active",
+    summaryUpdatedAtMs: 1000,
+    rolloutStats: { sizeBytes: 1024, mtimeMs: 1000 },
+  }), {
+    thread: {
+      id: "thread-1",
+      turns: [{ id: "turn-1", status: { type: "active" }, items: [] }],
+      mobileReadMode: "turns-list-initial",
+    },
+  }, {
+    partial: true,
+    partialKind: "recent-window",
+  });
+  service.applyNotification("item/agentMessage/delta", {
+    threadId: "thread-1",
+    turnId: "turn-1",
+    itemId: "agent-1",
+    delta: "streamed",
+  });
+
+  const backingChange = signatureInput({
+    summaryStatus: "completed",
+    summaryUpdatedAtMs: 9000,
+    rolloutStats: { sizeBytes: 4096, mtimeMs: 9000 },
+  });
+  const normalLookup = service.lookup(backingChange, { allowPartial: true });
+  assert.equal(normalLookup.cached, null);
+  assert.equal(normalLookup.missReason, "dynamic-summary-stale");
+
+  const staleFirstPaint = service.lookup(backingChange, {
+    allowPartial: true,
+    allowStalePartial: true,
+  });
+  assert.equal(staleFirstPaint.missReason, "");
+  assert.ok(staleFirstPaint.cached);
+  assert.equal(staleFirstPaint.cached.dynamic, true);
+  assert.equal(staleFirstPaint.cached.partial, true);
+  assert.equal(staleFirstPaint.cached.stalePartial, true);
+  assert.equal(staleFirstPaint.cached.staleReason, "backing-signature-mismatch");
+  assert.equal(staleFirstPaint.cached.result.thread.turns[0].items.some((item) => item.id === "agent-1"), true);
+
+  const restingBackingChange = signatureInput({
+    summaryStatus: "completed",
+    summaryUpdatedAtMs: 1000,
+    rolloutStats: { sizeBytes: 4096, mtimeMs: 9000 },
+  });
+  const restingLookup = service.lookup(restingBackingChange, { allowPartial: true });
+  assert.equal(restingLookup.cached, null);
+  assert.equal(restingLookup.missReason, "dynamic-resting-signature-mismatch");
+  const restingStaleFirstPaint = service.lookup(restingBackingChange, {
+    allowPartial: true,
+    allowStalePartial: true,
+  });
+  assert.equal(restingStaleFirstPaint.missReason, "");
+  assert.equal(restingStaleFirstPaint.cached.stalePartial, true);
+});
+
 test("thread detail projection refreshes partial backing signature after notifications", () => {
   const dir = tempDir();
   try {
