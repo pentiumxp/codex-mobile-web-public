@@ -477,6 +477,9 @@ test("active overlay complete evidence can use projection plus overlay without f
 
   assert.equal(response.status, 200);
   assert.equal(response.mode, "projection-active-overlay");
+  assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), [
+    "projection-lookup:partial",
+  ]);
   assert.equal(calls.includes("thread-read"), false);
   assert.equal(calls.includes("turns-list:turns-list-initial"), false);
   assert.equal(calls.includes("turns-list:turns-list-large"), false);
@@ -557,8 +560,8 @@ test("active ordinary projection hits still pass through active overlay proof ga
   assert.equal(response.status, 200);
   assert.equal(response.mode, "projection-active-overlay");
   assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), [
-    "projection-lookup:ordinary",
     "projection-lookup:active-overlay",
+    "projection-lookup:ordinary",
   ]);
   assert.ok(calls.includes("overlay-provider:projection-v4-dynamic"));
   assert.equal(calls.includes("thread-read"), false);
@@ -634,8 +637,8 @@ test("active overlay can build a bounded projection window before full thread/re
   assert.equal(calls.includes("thread-read"), false);
   assert.ok(calls.includes("turns-list:turns-list-active-overlay-window"));
   assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), [
-    "projection-lookup:ordinary",
     "projection-lookup:active-overlay",
+    "projection-lookup:ordinary",
   ]);
   const timings = response.body.thread.mobileDiagnostics.threadDetailTimings;
   assert.equal(timings.readDecision, "projection-active-overlay");
