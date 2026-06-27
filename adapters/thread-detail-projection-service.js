@@ -161,6 +161,21 @@ function turnId(turn) {
   return String(turn && (turn.id || turn.turnId || turn.turn_id) || "").trim();
 }
 
+function cloneProjectionResultForLookup(result, options = {}) {
+  const omittedTurnId = String(options.omitActiveTurnId || "").trim();
+  if (!omittedTurnId || !result || !result.thread || !Array.isArray(result.thread.turns)) {
+    return cloneJson(result);
+  }
+  const thread = result.thread;
+  const cloned = cloneJson(Object.assign({}, result, {
+    thread: Object.assign({}, thread, { turns: [] }),
+  }));
+  cloned.thread.turns = thread.turns
+    .filter((turn) => turnId(turn) !== omittedTurnId)
+    .map((turn) => cloneJson(turn));
+  return cloned;
+}
+
 function inferredActiveTurnId(thread) {
   if (!thread || typeof thread !== "object") return "";
   const explicit = String(thread.activeTurnId || thread.active_turn_id || "").trim();
@@ -797,7 +812,7 @@ function createThreadDetailProjectionService(options = {}) {
       return { cached: null, missReason: "static-signature-mismatch" };
     }
 
-    const result = cloneJson(entry.result);
+    const result = cloneProjectionResultForLookup(entry.result, optionsForGet);
     normalizeProjectionThreadUserMessages(result.thread);
     normalizeProjectionSupersededLiveTurns(result.thread);
     trimTurns(result.thread, maxTurns);

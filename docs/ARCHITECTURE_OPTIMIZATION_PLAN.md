@@ -176,6 +176,15 @@ Current acceleration targets:
    observed 500KB-900KB active-overlay responses; if latency remains high after
    deployment, the next owner is earlier active-overlay snapshot normalization
    or projection work, not client de-duplication.
+   The follow-up active-detail hot-path slice keeps that same proof gate but
+   changes the common active window source. A naive reuse of the active dynamic
+   projection regressed production because the lookup still cloned/normalized
+   the currently growing live turn; that attempt was reverted. The corrected
+   path lets active-overlay projection lookup pass `omitActiveTurnId`, so the
+   cached partial projection window is cloned without the live active turn and
+   the provider's clone-free active-overlay snapshot is merged separately after
+   proof. `turns-list-active-overlay-window` remains a fail-closed fallback only
+   when no usable projection window exists.
    Post-v542 local pane-context work is intentionally smaller than these
    deployable Phase B modules: each slice fixes one frontend state writer,
    adds executable pane-local coverage, commits locally, and does not deploy

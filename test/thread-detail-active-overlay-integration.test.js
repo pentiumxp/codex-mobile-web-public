@@ -220,9 +220,10 @@ test("read orchestration uses live projection provider for active overlay withou
   assert.equal(response.mode, "projection-active-overlay");
   assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["turn-window", "turn-live"]);
   assert.equal(calls.includes("thread-read"), false);
-  assert.equal(calls.includes("turns-list"), true);
+  assert.equal(calls.includes("turns-list"), false);
   assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), [
     "projection-lookup:full:partial-not-allowed",
+    "projection-lookup:partial:hit",
   ]);
   const timings = response.body.thread.mobileDiagnostics.threadDetailTimings;
   assert.equal(timings.readDecision, "projection-active-overlay");
@@ -272,7 +273,7 @@ test("read orchestration uses projection-inferred active turn when summary lacks
   assert.equal(response.mode, "projection-active-overlay");
   assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["turn-window", "turn-live"]);
   assert.equal(calls.includes("thread-read"), false);
-  assert.equal(calls.includes("turns-list"), true);
+  assert.equal(calls.includes("turns-list"), false);
   const timings = response.body.thread.mobileDiagnostics.threadDetailTimings;
   assert.equal(timings.activeFullReadRequired, true);
   assert.equal(timings.activeFullReadReason, "status-active");
@@ -299,6 +300,7 @@ test("read orchestration uses active overlay window despite active summary stale
   assert.equal(response.mode, "projection-active-overlay");
   assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), [
     "projection-lookup:full:partial-not-allowed",
+    "projection-lookup:partial:hit",
   ]);
   assert.equal(calls.includes("thread-read"), false);
   assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["turn-window", "turn-live"]);
@@ -339,10 +341,11 @@ test("thread detail route smoke returns active overlay from mode=recent without 
   assert.equal(sent[0].body.thread.mobileReadMode, "projection-active-overlay");
   assert.deepEqual(sent[0].body.thread.turns.map((turn) => turn.id), ["turn-window", "turn-live"]);
   assert.equal(calls.includes("thread-read"), false);
-  assert.equal(calls.includes("turns-list"), true);
+  assert.equal(calls.includes("turns-list"), false);
   assert.ok(calls.includes("route-read-prefer-recent:true"));
   assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), [
     "projection-lookup:full:partial-not-allowed",
+    "projection-lookup:partial:hit",
   ]);
   assert.ok(routeLogs.some((log) => log.event === "start" && log.details.transport === "mux"));
   assert.ok(routeLogs.some((log) => (

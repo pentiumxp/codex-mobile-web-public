@@ -82,6 +82,31 @@ function projectionDiagnosticsFromThread(thread) {
   };
 }
 
+function activeOverlayProjectionFieldsFromThread(thread) {
+  const projection = thread && thread.mobileProjection && typeof thread.mobileProjection === "object"
+    ? thread.mobileProjection
+    : {};
+  return {
+    projectionRevision: safeNonNegativeNumber(projection.revision || thread && thread.mobileProjectionRevision),
+    projectionTimestampMs: safeNonNegativeNumber(
+      projection.updatedAtMs
+        || projection.cachedAtMs
+        || thread && thread.mobileProjectionUpdatedAtMs
+        || thread && thread.updatedAtMs,
+    ),
+  };
+}
+
+function mergeActiveOverlayProjectionFields(overlayInput, thread) {
+  const fields = activeOverlayProjectionFieldsFromThread(thread);
+  return Object.assign({}, overlayInput || {}, {
+    projectionRevision: safeNonNegativeNumber(overlayInput && overlayInput.projectionRevision)
+      || fields.projectionRevision,
+    projectionTimestampMs: safeNonNegativeNumber(overlayInput && overlayInput.projectionTimestampMs)
+      || fields.projectionTimestampMs,
+  });
+}
+
 function asActiveOverlayProjectionWindow(result, overlayInput = {}) {
   const thread = result && result.thread && typeof result.thread === "object" ? result.thread : null;
   if (!thread) return null;
@@ -349,14 +374,9 @@ function createThreadDetailReadOrchestrationService(options = {}) {
 
     if (activeReadPolicy.activeFullReadRequired && projection && resolveActiveWindowOverlay) {
       const activeOverlayStartedAtMs = now();
-      const overlayProjectionLookup = projectionLookup;
-      const overlayProjected = projected && projected.thread ? projected : null;
-      const activeOverlayProjected = overlayProjected && overlayProjected.thread
-        ? overlayProjected
-        : projected && projected.thread
-          ? projected
-          : null;
-      const projectionThread = activeOverlayProjected && activeOverlayProjected.thread || null;
+      let overlayProjectionLookup = projectionLookup;
+      let overlayProjected = projected && projected.thread ? projected : null;
+      let projectionThread = overlayProjected && overlayProjected.thread || null;
       let overlayInput = null;
       try {
         overlayInput = await resolveActiveWindowOverlay({
@@ -371,12 +391,26 @@ function createThreadDetailReadOrchestrationService(options = {}) {
         overlayInput = { reason: "resolver-error", error: safeErrorMessage(err) };
         threadLog("active_overlay_resolve_error", { error: safeErrorMessage(err) });
       }
+      if (!projectionThread && overlayInput && overlayInput.overlayTurn && projectedThreadLookup) {
+        const activeOverlayTurnId = nonEmptyText(overlayInput.activeTurnId)
+          || nonEmptyText(overlayInput.overlayTurn && (overlayInput.overlayTurn.id || overlayInput.overlayTurn.turnId || overlayInput.overlayTurn.turn_id));
+        overlayProjectionLookup = projectedThreadLookup(projection, summary, runtimeSettings, {
+          allowPartial: true,
+          activeOverlay: true,
+          omitActiveTurnId: activeOverlayTurnId,
+        });
+        overlayProjected = overlayProjectionLookup ? overlayProjectionLookup.result : null;
+        projectionThread = overlayProjected && overlayProjected.thread || null;
+        if (projectionThread) {
+          overlayInput = mergeActiveOverlayProjectionFields(overlayInput, projectionThread);
+        }
+      }
       let activeOverlayPlan = planActiveWindowOverlay(Object.assign({}, overlayInput || {}, {
         summary,
         projectionThread,
       }));
       let activeOverlayProjectionThread = projectionThread;
-      let activeOverlayProjectionResult = activeOverlayProjected;
+      let activeOverlayProjectionResult = overlayProjected;
       if (activeOverlayPlan.reason === "missing-projection-window"
         && overlayInput
         && overlayInput.overlayTurn

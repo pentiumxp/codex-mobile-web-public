@@ -372,7 +372,7 @@ test("active overlay incomplete evidence still falls through to full thread/read
       rolloutPath: "/tmp/rollout.jsonl",
     },
     projectedThreadLookup: (input, summary, runtimeSettings, options = {}) => {
-      calls.push(`projection-lookup:${options.allowPartial === true ? "partial" : "full"}`);
+      calls.push(`projection-lookup:${options.allowPartial === true ? "partial" : "full"}:${options.omitActiveTurnId || ""}`);
       if (!options.allowPartial) return { result: null, missReason: "partial-not-allowed" };
       return {
         result: {
@@ -421,7 +421,7 @@ test("active overlay incomplete evidence still falls through to full thread/read
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayAssistantItems, 1);
 });
 
-test("active overlay complete evidence can use a bounded turns-list window plus overlay without full read", async () => {
+test("active overlay complete evidence can use a cached partial projection window plus overlay without app-server reads", async () => {
   const { service, calls } = createHarness({
     summary: {
       id: "thread-1",
@@ -430,7 +430,7 @@ test("active overlay complete evidence can use a bounded turns-list window plus 
       rolloutPath: "/tmp/rollout.jsonl",
     },
     projectedThreadLookup: (input, summary, runtimeSettings, options = {}) => {
-      calls.push(`projection-lookup:${options.allowPartial === true ? "partial" : "full"}`);
+      calls.push(`projection-lookup:${options.allowPartial === true ? "partial" : "full"}:${options.omitActiveTurnId || ""}`);
       if (!options.allowPartial) return { result: null, missReason: "partial-not-allowed" };
       return {
         result: {
@@ -480,11 +480,12 @@ test("active overlay complete evidence can use a bounded turns-list window plus 
   assert.equal(calls.includes("thread-read"), false);
   assert.equal(calls.includes("turns-list:turns-list-initial"), false);
   assert.equal(calls.includes("turns-list:turns-list-large"), false);
-  assert.ok(calls.includes("turns-list:turns-list-active-overlay-window"));
+  assert.equal(calls.includes("turns-list:turns-list-active-overlay-window"), false);
   assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), [
-    "projection-lookup:full",
+    "projection-lookup:full:",
+    "projection-lookup:partial:active-turn",
   ]);
-  assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["turn-from-list", "active-turn"]);
+  assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["older-turn", "active-turn"]);
   assert.equal(response.body.thread.mobileProjection.activeOverlay, true);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "projection-active-overlay");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeFullReadRequired, true);
@@ -638,6 +639,7 @@ test("active overlay can build a bounded projection window before full thread/re
   assert.ok(calls.includes("turns-list:turns-list-active-overlay-window"));
   assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), [
     "projection-lookup:ordinary",
+    "projection-lookup:active-overlay",
   ]);
   const timings = response.body.thread.mobileDiagnostics.threadDetailTimings;
   assert.equal(timings.readDecision, "projection-active-overlay");
