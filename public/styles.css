@@ -3913,6 +3913,10 @@ html.keyboard-open .side-chat-form textarea {
   line-height: 1.5;
 }
 
+.thread-tile-pane .thread-task-card-message-body {
+  max-height: min(34vh, 300px);
+}
+
 .thread-tile-empty {
   padding: 18px 8px;
   color: var(--muted);

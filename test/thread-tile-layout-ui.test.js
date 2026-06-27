@@ -533,6 +533,9 @@ test("thread tile visual fixture validates wide-screen panes without private con
   assert.equal(threadTileVisualFixture.parseArgs(["--width", "2600", "--panes", "6", "--font-size", "xxlarge"]).panes, 6);
   assert.equal(threadTileVisualFixture.parseArgs(["--keyboard", "--typed-lines", "4"]).keyboard, true);
   assert.equal(threadTileVisualFixture.parseArgs(["--keyboard", "--typed-lines", "4"]).typedLines, 4);
+  assert.equal(threadTileVisualFixture.parseArgs(["--task-card", "collapsed"]).taskCard, "collapsed");
+  assert.equal(threadTileVisualFixture.parseArgs(["--task-card", "expanded"]).taskCard, "expanded");
+  assert.equal(threadTileVisualFixture.parseArgs(["--task-card", "unknown"]).taskCard, "none");
   assert.deepEqual(threadTileVisualFixture.parseArgs(["--split", "pane-b:pane-e"]).splits, [{ anchorId: "pane-b", childId: "pane-e" }]);
   assert.equal(threadTileVisualFixture.composerInputHeightPx(4), 110);
   assert.equal(threadTileVisualFixture.composerHeightPx(4), 158);
@@ -550,6 +553,33 @@ test("thread tile visual fixture validates wide-screen panes without private con
   assert.match(html, /durationVisible/);
   assert.match(html, /hiddenBottomButtons/);
   assert.doesNotMatch(html, /accessKey|cookie|launchToken|taskBody|rawPrompt|providerPayload|uploadBytes/);
+  assert.match(stylesCss, /\.thread-tile-pane \.thread-task-card-message-body\s*{[\s\S]*max-height:\s*min\(34vh,\s*300px\);/);
+
+  const collapsedTaskCardHtml = threadTileVisualFixture.fixtureHtml(stylesCss, {
+    width: 2200,
+    height: 1200,
+    panes: 4,
+    taskCard: "collapsed",
+  });
+  assert.match(collapsedTaskCardHtml, /data-thread-task-card-message/);
+  assert.match(collapsedTaskCardHtml, /thread-task-card-injected/);
+  assert.match(collapsedTaskCardHtml, /Fixture Source Thread/);
+  assert.match(collapsedTaskCardHtml, /taskCardInsidePane/);
+  assert.match(collapsedTaskCardHtml, /taskCardSummaryVisible/);
+  assert.match(collapsedTaskCardHtml, /taskCardNoComposerOverlap/);
+  assert.doesNotMatch(collapsedTaskCardHtml, /data-thread-task-card-message open/);
+  assert.doesNotMatch(collapsedTaskCardHtml, /accessKey|cookie|launchToken|taskBody|rawPrompt|providerPayload|uploadBytes/);
+
+  const expandedTaskCardHtml = threadTileVisualFixture.fixtureHtml(stylesCss, {
+    width: 2200,
+    height: 1200,
+    panes: 4,
+    taskCard: "expanded",
+  });
+  assert.match(expandedTaskCardHtml, /data-thread-task-card-message open/);
+  assert.match(expandedTaskCardHtml, /taskCardBodyScrollBounded/);
+  assert.match(expandedTaskCardHtml, /bounded fixture line 36/);
+  assert.doesNotMatch(threadTileVisualFixture.taskCardFixtureText(), /accessKey|cookie|launchToken|taskBody|rawPrompt|providerPayload|uploadBytes/);
 
   const keyboardHtml = threadTileVisualFixture.fixtureHtml(stylesCss, {
     width: 1800,

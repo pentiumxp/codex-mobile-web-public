@@ -28,6 +28,7 @@ function usage() {
     "  --split <a:b>            Explicit split pair using fixture ids pane-a:pane-b.",
     "  --keyboard               Render the fixture in embedded keyboard-open mode.",
     "  --typed-lines <count>    Simulate typed composer content, default 0.",
+    "  --task-card <state>      Render a fake injected task card: none, collapsed, or expanded.",
     "  --json                   Print JSON only.",
   ].join("\n");
 }
@@ -43,6 +44,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     splits: [],
     keyboard: false,
     typedLines: 0,
+    taskCard: "none",
     json: false,
     help: false,
   };
@@ -58,6 +60,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     else if (arg === "--split") out.splits.push(readSplitPair(next()));
     else if (arg === "--keyboard") out.keyboard = true;
     else if (arg === "--typed-lines") out.typedLines = readNonNegativeInt(next(), out.typedLines);
+    else if (arg === "--task-card") out.taskCard = normalizeTaskCardMode(next());
     else if (arg === "--json") out.json = true;
     else if (arg === "--help" || arg === "-h") out.help = true;
     else throw new Error(`Unknown argument: ${arg}`);
@@ -81,6 +84,11 @@ function readNonNegativeInt(value, fallback) {
 function normalizeFontSize(value) {
   const text = String(value || "").trim().toLowerCase();
   return ["small", "default", "large", "xlarge", "xxlarge"].includes(text) ? text : "default";
+}
+
+function normalizeTaskCardMode(value) {
+  const text = String(value || "").trim().toLowerCase();
+  return ["collapsed", "expanded"].includes(text) ? text : "none";
 }
 
 function readSplitPair(value) {
@@ -143,6 +151,7 @@ function htmlEscape(value) {
 function renderPane(id, index, options = {}) {
   const activeClass = index === 0 ? " active" : "";
   const operation = index === 2 ? renderOperationDock(id) : "";
+  const taskCard = index === 0 ? renderTaskCardFixture(options.taskCard) : "";
   const timer = index === 1 ? `<div class="thread-tile-pane-state turn-timer visible active">
     <span class="turn-timer-time">本轮 00:01:23</span><span class="turn-timer-detail">运行</span>
   </div>` : "";
@@ -162,11 +171,55 @@ function renderPane(id, index, options = {}) {
             <div class="item-head"><span>Assistant</span><time class="item-timestamp" datetime="2026-06-27T00:00:00.000Z">00:00</time></div>
             <div class="item-body"><p>Pane ${htmlEscape(String(index + 1))} bounded visual smoke content.</p></div>
           </div>
+          ${taskCard}
         </article>
       </div>
     </div>
     ${operation}
     <button class="thread-tile-bottom-button hidden" type="button" data-thread-tile-bottom="${htmlEscape(id)}" aria-label="跳到此线程底部" title="跳到底部" aria-hidden="true" tabindex="-1">↓</button>
+  </section>`;
+}
+
+function taskCardFixtureText() {
+  const lines = [
+    "[Cross-thread task card sent by source thread]",
+    "",
+    "Source workspace: /bounded/fixture/source",
+    "Source thread: Fixture Source Thread",
+    "Title: Verify split-screen task card presentation",
+    "Approval: target approval bypassed by the thread-callable interface.",
+    "",
+    "## Task",
+    "",
+    "Validate that a long injected cross-thread card remains folded by default,",
+    "shows source and purpose in the visible overview, and keeps expanded content",
+    "inside a bounded scroll region without moving the shared composer.",
+  ];
+  for (let index = 1; index <= 36; index += 1) {
+    lines.push(`- bounded fixture line ${index}: synthetic card evidence only.`);
+  }
+  return lines.join("\n");
+}
+
+function renderTaskCardFixture(mode = "none") {
+  const normalized = normalizeTaskCardMode(mode);
+  if (normalized === "none") return "";
+  const text = taskCardFixtureText();
+  const openAttr = normalized === "expanded" ? " open" : "";
+  return `<section class="item thread-task-card-injected" data-item="fixture-task-card" data-render-key="tile-item|fixture-task-card" data-thread-task-card-item>
+    <div class="item-head thread-task-card-message-head">
+      <span class="thread-task-card-message-heading">
+        <span class="thread-task-card-message-source">来源：Fixture Source Thread</span>
+        <span class="thread-task-card-message-purpose">目的：Verify split-screen task card presentation</span>
+      </span>
+      <span class="item-head-actions"><time class="item-timestamp" datetime="2026-06-27T00:00:00.000Z">00:00</time></span>
+    </div>
+    <div class="item-body">
+      <details class="thread-task-card-message" data-thread-task-card-message${openAttr}>
+        <summary><span>完整任务卡</span><small>${text.length.toLocaleString()} chars</small></summary>
+        <pre class="thread-task-card-message-body">${htmlEscape(text)}</pre>
+      </details>
+    </div>
   </section>`;
 }
 
@@ -236,6 +289,7 @@ function fixtureHtml(css, options = {}) {
   const fontSize = normalizeFontSize(options.fontSize);
   const keyboardClass = options.keyboard ? " keyboard-open" : "";
   const typedLines = readNonNegativeInt(options.typedLines, 0);
+  const taskCardMode = normalizeTaskCardMode(options.taskCard);
   const expectedComposerHeight = composerHeightPx(typedLines);
   return `<!doctype html>
 <html class="embed-hermes thread-tile-open${keyboardClass}" data-theme="dark" data-font-size="${htmlEscape(fontSize)}" style="--app-height:${height}px;--app-top:0px;--host-top-safe-area:0px;--host-bottom-safe-area:0px;--composer-height:${expectedComposerHeight}px;">
@@ -294,6 +348,14 @@ function fixtureHtml(css, options = {}) {
       const bubble = rect(".mobile-operation-bubble");
       const durationNode = document.querySelector(".mobile-operation-bubble-duration");
       const duration = rect(durationNode);
+      const taskCard = document.querySelector("[data-thread-task-card-message]");
+      const taskCardPane = taskCard ? taskCard.closest(".thread-tile-pane") : null;
+      const taskCardSummary = taskCard ? taskCard.querySelector("summary") : null;
+      const taskCardBody = taskCard ? taskCard.querySelector(".thread-task-card-message-body") : null;
+      const taskCardRect = rect(taskCard);
+      const taskCardPaneRect = rect(taskCardPane);
+      const taskCardSummaryRect = rect(taskCardSummary);
+      const taskCardBodyRect = rect(taskCardBody);
       const appTransform = app ? getComputedStyle(app).transform : "";
       const appTransformStable = !app || appTransform === "none" || appTransform === "matrix(1, 0, 0, 1, 0, 0)";
       const inputText = input ? (input.textContent || "") : "";
@@ -312,6 +374,18 @@ function fixtureHtml(css, options = {}) {
       const operationDockOverlay = !dock || (conversation && bubble && dock.bottom <= conversation.bottom + 1 && bubble.bottom <= conversation.bottom + 1);
       const inputInsideComposer = Boolean(inputRect && composer && inputRect.left >= composer.left - 1 && inputRect.right <= composer.right + 1 && inputRect.top >= composer.top - 1 && inputRect.bottom <= composer.bottom + 1);
       const typedInputStable = !typedLines || (inputText.includes("fixture composer input line 1") && inputRect && inputRect.height >= 44 && inputInsideComposer);
+      const taskCardMode = ${JSON.stringify(taskCardMode)};
+      const taskCardPresent = taskCardMode !== "none";
+      const taskCardInsidePane = !taskCardPresent || Boolean(taskCardRect && taskCardPaneRect
+        && taskCardRect.left >= taskCardPaneRect.left - 1
+        && taskCardRect.right <= taskCardPaneRect.right + 1
+        && taskCardRect.top >= taskCardPaneRect.top - 1
+        && taskCardRect.bottom <= taskCardPaneRect.bottom + 1);
+      const taskCardSummaryVisible = !taskCardPresent || Boolean(taskCardSummaryRect && taskCardSummaryRect.height >= 36 && taskCardSummaryRect.width >= 160);
+      const taskCardBodyScrollBounded = taskCardMode !== "expanded" || Boolean(taskCardBody && taskCardBodyRect
+        && taskCardBodyRect.height <= 422
+        && taskCardBody.scrollHeight > taskCardBody.clientHeight);
+      const taskCardNoComposerOverlap = !taskCardPresent || !overlaps(taskCardRect, composer);
       const result = {
         viewport: { width: ${width}, height: ${height} },
         model: ${JSON.stringify({
@@ -326,9 +400,10 @@ function fixtureHtml(css, options = {}) {
           expectedOverflowSplit: model.expectedOverflowSplit,
           keyboard: Boolean(options.keyboard),
           typedLines,
+          taskCardMode,
           expectedComposerHeight,
         })},
-        rects: { app: appRect, conversation, board, composer, input: inputRect, dock, bubble, duration },
+        rects: { app: appRect, conversation, board, composer, input: inputRect, dock, bubble, duration, taskCard: taskCardRect, taskCardSummary: taskCardSummaryRect, taskCardBody: taskCardBodyRect },
         paneCount: panes.length,
         columnCount: columns.length,
         splitColumnCount: columns.filter((column) => column.paneCount > 1).length,
@@ -346,6 +421,11 @@ function fixtureHtml(css, options = {}) {
         appTransformStable,
         inputInsideComposer,
         typedInputStable,
+        taskCardPresent,
+        taskCardInsidePane,
+        taskCardSummaryVisible,
+        taskCardBodyScrollBounded,
+        taskCardNoComposerOverlap,
       };
       result.ok = Boolean(result.paneCount === ${model.ids.length}
         && result.columnCount === result.model.displayLayout.columns
@@ -360,6 +440,10 @@ function fixtureHtml(css, options = {}) {
         && result.appTransformStable
         && result.inputInsideComposer
         && result.typedInputStable
+        && result.taskCardInsidePane
+        && result.taskCardSummaryVisible
+        && result.taskCardBodyScrollBounded
+        && result.taskCardNoComposerOverlap
         && (!result.model.expectedSingleRow || result.splitColumnCount === 0)
         && (!result.model.expectedOverflowSplit || result.splitColumnCount >= 1));
       document.getElementById("fixtureResult").textContent = JSON.stringify(result);
@@ -447,4 +531,5 @@ module.exports = {
   parseArgs,
   run,
   typedComposerText,
+  taskCardFixtureText,
 };

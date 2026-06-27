@@ -16,6 +16,44 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-27 Phase E Task-Card Visual Fixture Local Slice
+
+这是 v541 生产部署后的第一个 Phase E 本地切片，目标是补浏览器级视觉验证，
+并修正 fixture 暴露出的一个 pane-local task-card expanded 高度边界。它扩展现有
+`scripts/codex-mobile-thread-tile-visual-fixture.js`，新增
+`--task-card collapsed|expanded`，在 fake split-screen pane 中渲染一张
+synthetic injected cross-thread task card，并用真实 `public/styles.css` 和
+headless Chrome 检查：
+
+- 折叠态 summary 保持可见；
+- 展开态正文被限制在 bounded scroll region；
+- task card 保持在 pane 内；
+- 不与共享 Composer 重叠；
+- 不破坏 pane non-overlap、Composer 底部定位、operation duration 可见性。
+
+实证中，`--keyboard --typed-lines 4 --task-card expanded` 首次暴露 expanded
+task-card 在短视口 pane 中仍沿用单线程 `420px` 上限，底部会越出 pane 并与
+Composer 重叠。修正方式是在
+`public/styles.css` 为 `.thread-tile-pane .thread-task-card-message-body`
+设置 pane-local `max-height: min(34vh, 300px)`，让展开内容在缩小窗口内自带滚动。
+
+隐私边界：fixture 只使用 synthetic text 和 bounded DOM rect 指标，不读取真实线程、
+任务卡正文、上传内容、私有路径、cookies、tokens、provider payload 或长日志。
+
+验证：
+
+```bash
+node --check scripts/codex-mobile-thread-tile-visual-fixture.js
+node --test test/thread-tile-layout-ui.test.js  # 4 passed
+node scripts/codex-mobile-thread-tile-visual-fixture.js --width 2200 --height 1200 --panes 4 --task-card collapsed --json
+node scripts/codex-mobile-thread-tile-visual-fixture.js --width 2200 --height 1200 --panes 4 --task-card expanded --json
+node scripts/codex-mobile-thread-tile-visual-fixture.js --width 1800 --height 920 --panes 3 --keyboard --typed-lines 4 --task-card expanded --json
+```
+
+本切片包含 `public/styles.css` 运行时样式变化，但没有单独 bump shell/cache，
+也没有部署。它是下一批 Phase E visual harness 模块的一部分；模块收束时需要
+统一 bump shell/cache、完整验证并按中央部署流程部署。
+
 ## 2026-06-27 v541 Phase C Pane-State Module
 
 v541 将 5 个 Phase C 平铺/分屏 pane-state 本地切片收束为一个可部署模块，

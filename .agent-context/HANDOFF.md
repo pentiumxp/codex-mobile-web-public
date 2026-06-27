@@ -20487,3 +20487,59 @@ The previous full handoff was archived and should be opened only when old proven
   - Observe production/user behavior before Public push.
   - Continue with the next architecture module rather than mixing additional
     small pane tweaks into the deployed v541 closure.
+
+## 2026-06-27 - Phase E task-card visual fixture local slice
+
+- Current local state:
+  - Continued after v541 production deployment and docs commit `3d4209c`.
+  - This is the first new Phase E local slice after the module-cadence change.
+  - It includes a small `public/styles.css` runtime style fix, but no
+    shell/cache bump, no deployment, and no Public push in this slice.
+- Root-cause boundary:
+  - Symptom/risk: task-card injected messages are long, product-critical
+    content blocks; previous unit/source tests covered folding behavior and
+    style markers, but there was no browser/rect evidence that collapsed and
+    expanded task cards remain bounded inside split-screen panes without
+    overlapping the shared Composer.
+  - Failing layer: browser/visual regression coverage, not task-card protocol
+    or runtime rendering logic.
+  - Violated invariant: high-risk mobile/embedded UI surfaces need bounded
+    browser evidence so unit-green changes do not regress pane layout or
+    Composer stability.
+- Changes:
+  - Extended `scripts/codex-mobile-thread-tile-visual-fixture.js` with
+    `--task-card collapsed|expanded`.
+  - The fixture renders synthetic injected task-card content in the first pane
+    using the real `thread-task-card-injected` /
+    `thread-task-card-message` CSS path.
+  - Added bounded metrics for task-card pane containment, summary visibility,
+    expanded-body scroll bounds, and Composer non-overlap.
+  - Added pane-specific CSS:
+    `.thread-tile-pane .thread-task-card-message-body { max-height: min(34vh, 300px); }`.
+    This fixes the keyboard-open expanded-card visual failure by keeping the
+    expanded content scroll-bounded inside the pane instead of overlapping the
+    shared Composer.
+  - Updated `test/thread-tile-layout-ui.test.js`, README, `docs/MODULES.md`,
+    and `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Validation:
+  - `node --check scripts/codex-mobile-thread-tile-visual-fixture.js` passed.
+  - `node --test test/thread-tile-layout-ui.test.js` passed (`4` tests).
+  - Full source `npm test` passed (`1222` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - `node scripts/codex-mobile-thread-tile-visual-fixture.js --width 2200 --height 1200 --panes 4 --task-card collapsed --json`
+    passed with `taskCardInsidePane=true`, `taskCardSummaryVisible=true`,
+    `taskCardNoComposerOverlap=true`.
+  - `node scripts/codex-mobile-thread-tile-visual-fixture.js --width 2200 --height 1200 --panes 4 --task-card expanded --json`
+    passed with `taskCardBodyScrollBounded=true` plus existing pane/Composer
+    layout invariants.
+  - `node scripts/codex-mobile-thread-tile-visual-fixture.js --width 1800 --height 920 --panes 3 --keyboard --typed-lines 4 --task-card expanded --json`
+    initially failed before the CSS fix with `taskCardInsidePane=false` and
+    `taskCardNoComposerOverlap=false`; after the fix it passed with both true.
+- Privacy:
+  - Fixture content is synthetic and bounded. It does not read private thread
+    messages, task-card bodies, uploads, paths, cookies, tokens, provider
+    payloads, or logs.
+- Next:
+  - Commit this local Phase E slice.
+  - Continue Phase E with upload/generated image or PWA shell refresh browser
+    smoke as the next independent slice.

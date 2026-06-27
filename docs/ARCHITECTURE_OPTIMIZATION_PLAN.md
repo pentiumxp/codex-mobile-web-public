@@ -1746,10 +1746,21 @@ Current local coverage:
   below the tile conversation, and panes/board do not overlap after input growth.
   This is a Phase E evidence hook for the intermittent Composer input/full-screen
   repaint complaint, not a runtime fallback or masking layer.
+- The fixture now also covers injected cross-thread task-card presentation with
+  `--task-card collapsed|expanded`. It renders synthetic task-card content
+  through the same CSS classes used by real injected task cards and verifies
+  summary visibility, pane containment, bounded expanded-body scrolling,
+  Composer non-overlap, and the existing pane/operation-bubble layout
+  invariants. The new keyboard-open expanded-card fixture exposed that tile
+  panes still inherited the single-thread `420px` task-card body height cap,
+  which could push the expanded card outside the pane and into the shared
+  Composer. The local slice adds a pane-specific body cap so expanded task-card
+  content scrolls inside the scaled pane. It does not read private task-card
+  bodies. Because this touches `public/styles.css`, it remains local until the
+  next Phase E module shell/cache bump and deploy.
 - This does not replace Home AI embedded/PWA live-debug coverage. The next
   Phase E slices still need real browser smoke around long-turn streaming,
-  task-card expand/collapse, upload/generated image rendering, and PWA shell
-  refresh.
+  upload/generated image rendering, and PWA shell refresh.
 
 Current diagnostic intake bridge:
 
