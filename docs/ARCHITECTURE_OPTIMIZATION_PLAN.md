@@ -234,6 +234,17 @@ Current acceleration targets:
    history-only evidence: its projection revision cannot mark the separately
    supplied live active-turn overlay stale, while ordinary projection windows
    still keep the stale assistant-delta fail-closed rule.
+   A later runtime sample showed a remaining cold-path gap: background prewarm
+   and the foreground first detail open could race and both start the same
+   `turns-list-active-overlay-window` app-server read for one active thread.
+   The coalescing slice adds
+   `thread-detail-active-window-read-coalescer-service`, injected into both the
+   prewarm coordinator and the detail orchestrator. It shares only in-flight
+   reads for the same thread/mode, logs `turns_list_coalesced` for joiners, and
+   clears failures so retries are normal. This removes duplicate cold work
+   without changing active-overlay proof gates, projection cache semantics, or
+   cross-thread concurrency. Residual latency after this slice is the single
+   authoritative app-server active-window read or a prewarm-readiness issue.
    The next measured detail-shape problem was not timeout or window proof: after
    `threadReadMs=0`, `turnsListMs=0`, and `activeOverlayWindowMs=0`, active and
    recently completed detail responses could still carry dozens of intermediate

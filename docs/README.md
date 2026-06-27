@@ -89,3 +89,13 @@ does not add client-side hiding or refresh masking. The next performance slice
 should target the remaining cold/deferred app-server and active projection
 peaks: immediately after restart, a first list/detail request can still take
 seconds and then settle back to hundreds of milliseconds.
+
+The active-window coalescing slice targets the "long spinner, then eventual
+success" shape seen on active large sessions. That shape is not a network/RPC
+timeout: the request completes after synchronously building
+`turns-list-active-overlay-window`. The current server now shares an in-flight
+active-window read between background prewarm and the foreground
+`/api/threads/:id` detail route for the same thread/mode, so a cold first open
+does not duplicate the same app-server turns-list work. Residual latency after
+this slice belongs to the single authoritative app-server active-window read or
+earlier prewarm readiness, not duplicate frontend refreshes.

@@ -88,6 +88,7 @@ const { createThreadDetailSummaryService } = require("./adapters/thread-detail-s
 const { createThreadDetailBoundedReadPolicyService } = require("./adapters/thread-detail-bounded-read-policy-service");
 const { createThreadDetailActiveOverlayProviderService } = require("./adapters/thread-detail-active-overlay-provider-service");
 const { createThreadDetailActiveWindowPrewarmService } = require("./adapters/thread-detail-active-window-prewarm-service");
+const { createThreadDetailActiveWindowReadCoalescer } = require("./adapters/thread-detail-active-window-read-coalescer-service");
 const { attachThreadDetailDiagnostics } = require("./adapters/thread-detail-performance-service");
 const { createThreadDetailReadOrchestrationService } = require("./adapters/thread-detail-read-orchestration-service");
 const { handleThreadDetailReadRoute } = require("./adapters/thread-detail-route-service");
@@ -5277,6 +5278,7 @@ const threadDetailBoundedReadPolicyService = createThreadDetailBoundedReadPolicy
 const threadDetailActiveOverlayProviderService = createThreadDetailActiveOverlayProviderService({
   projectionService: threadDetailProjectionService,
 });
+const threadDetailActiveWindowReadCoalescer = createThreadDetailActiveWindowReadCoalescer();
 const threadDetailActiveWindowPrewarmService = createThreadDetailActiveWindowPrewarmService({
   resolveSummary: (requestCodex, threadId, options) => threadDetailSummaryService.resolveSummary(requestCodex, threadId, options),
   threadRuntimeSettings,
@@ -5292,14 +5294,21 @@ const threadDetailActiveWindowPrewarmService = createThreadDetailActiveWindowPre
     };
   },
   resolveActiveWindowOverlay: (input) => threadDetailActiveOverlayProviderService.resolveActiveWindowOverlay(input),
-  turnsListThreadReadResult: ({ threadId, summary, runtimeSettings, warning, mode, threadLog }) => turnsListThreadReadResult(
+  turnsListThreadReadResult: (input) => threadDetailActiveWindowReadCoalescer.read(input, ({
     threadId,
     summary,
     runtimeSettings,
     warning,
     mode,
     threadLog,
-  ),
+  }) => turnsListThreadReadResult(
+    threadId,
+    summary,
+    runtimeSettings,
+    warning,
+    mode,
+    threadLog,
+  )),
   seedProjection: (input, result, optionsForSeed = {}) => threadDetailProjectionService.seed(input, result, optionsForSeed),
   log: (event, details) => logThreadDetail(event, details),
 });
@@ -5364,14 +5373,21 @@ const threadDetailReadOrchestrationService = createThreadDetailReadOrchestration
   ),
   resolveActiveWindowOverlay: (input) => threadDetailActiveOverlayProviderService.resolveActiveWindowOverlay(input),
   rememberThreadSummary: (thread) => threadDisplaySummaryCache.remember(thread),
-  turnsListThreadReadResult: ({ threadId, summary, runtimeSettings, warning, mode, threadLog }) => turnsListThreadReadResult(
+  turnsListThreadReadResult: (input) => threadDetailActiveWindowReadCoalescer.read(input, ({
     threadId,
     summary,
     runtimeSettings,
     warning,
     mode,
     threadLog,
-  ),
+  }) => turnsListThreadReadResult(
+    threadId,
+    summary,
+    runtimeSettings,
+    warning,
+    mode,
+    threadLog,
+  )),
   readFullThread: readFullThreadDetailForOrchestrator,
   seedProjection: (input, result, optionsForSeed = {}) => threadDetailProjectionService.seed(input, result, optionsForSeed),
   preferBoundedReadBeforeFullRead: (input) => threadDetailBoundedReadPolicyService.preferBoundedReadBeforeFullRead(input),

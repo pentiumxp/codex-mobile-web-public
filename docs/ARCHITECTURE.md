@@ -461,6 +461,17 @@ browser loads older turns in 10-turn pages when the user scrolls to the top of
 the current detail window and preserves the reading position after prepending
 those turns.
 
+Active-window history construction has a separate in-flight coalescing
+boundary. `adapters/thread-detail-active-window-prewarm-service.js` and the
+foreground thread-detail orchestrator can both build the same
+`turns-list-active-overlay-window` history window when a large active thread
+has live overlay evidence but no usable projection window yet. They share
+`adapters/thread-detail-active-window-read-coalescer-service.js`, so only one
+app-server turns-list read runs at a time for the same thread and mode; later
+callers join the existing promise and log bounded `turns_list_coalesced`
+metadata. This is process-local duplicate suppression, not a persistent cache
+or an alternate projection authority.
+
 Active-overlay detail responses preserve the same compaction boundary as normal
 thread-detail responses. The proof gate may merge a live overlay turn into a
 bounded projection window only after the injected server-owned compactor has

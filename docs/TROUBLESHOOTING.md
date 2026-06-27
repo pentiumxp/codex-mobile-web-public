@@ -369,7 +369,12 @@ The server schedules the same window build in the background after active
 turn/status notifications and thread-list refreshes through
 `thread-detail-active-window-prewarm-service`, so the preferred closure is to
 verify prewarm scheduling and cache reuse rather than increasing the detail
-timeout or adding a client loading fallback.
+timeout or adding a client loading fallback. Current servers also coalesce
+foreground detail and background prewarm reads for the same thread/mode through
+`thread-detail-active-window-read-coalescer-service`. If logs show
+`turns_list_coalesced`, duplicate app-server work has been suppressed and the
+remaining wait belongs to the single authoritative
+`turns-list-active-overlay-window` read or earlier prewarm readiness.
 Current builds also expose
 `mobileDiagnostics.threadDetailTimings.activeOverlayWindowFirst`. When this is
 `true`, the active detail orchestrator used the dedicated active-overlay
