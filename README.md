@@ -39,7 +39,42 @@ v543 将 v542 之后累积的本地切片收束为一个可部署模块。模块
 本次 bump：`CLIENT_BUILD_ID` 和 PWA shell cache 从
 `codex-mobile-shell-v542` 升到 `codex-mobile-shell-v543`。
 
-验证和部署读回待本模块完成后记录；Public push 仍然等生产和用户验证。
+本地模块验证：
+
+```bash
+node --test test/thread-detail-dom-patch.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/long-turn-viewport-fixture.test.js test/projection-replay-visual-smoke.test.js test/media-render-visual-smoke.test.js test/pwa-shell-refresh-smoke.test.js test/image-order-visual-smoke.test.js test/app-update.test.js test/build-refresh-policy.test.js  # 210 passed
+npm test  # 1248 passed
+npm run check  # passed
+npm run check:macos  # passed
+git diff --check  # passed
+```
+
+生产部署/readback：
+
+- 部署方式：Home AI central macOS plugin deploy。
+- Deploy reason：`codex-mobile-v543-phase-a-e-stability-evidence`。
+- Source commit：`d79a8727561f`，source dirty false。
+- Backup：
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260627T073019Z-plugin-codex-mobile-web-codex-mobile-v543-phase-a-e-stability-evidence`。
+- Selected mux refresh：skipped，`reason=no_mux_runtime_change`，因为本模块未改 mux
+  runtime trigger files。
+- `/api/public-config` readback：
+  `clientBuildId=0.1.11|codex-mobile-shell-v543`，
+  `shellCacheName=codex-mobile-shell-v543`，
+  `activeProfileId=previous`。
+- Thread-list fallback prewarm readback：
+  `lastStatus=completed`，`lastElapsedMs=1734`，`lastResultCount=11`，
+  `lastCacheDecision=miss-rebuild`。
+- 关键 source/prod SHA-256 短 hash 一致：
+  `public/app.js=401a20fc7254020b`，
+  `public/sw.js=4d63c5a54cbe4926`，
+  `public/thread-detail-dom-patch.js=21594bef8947327c`，
+  `scripts/codex-mobile-long-turn-viewport-fixture.js=1bfaf69082e8a634`，
+  `scripts/codex-mobile-media-render-visual-smoke.js=115f68142e3e9302`，
+  `scripts/codex-mobile-projection-replay-visual-smoke.js=7be1a71169e6c1cd`，
+  `scripts/codex-mobile-pwa-shell-refresh-smoke.js=1a5cb7487cab6283`。
+
+Public push 仍然等生产和用户验证。
 
 ## 2026-06-27 Phase A Conversation DOM Authority Invalidation Local Slice
 

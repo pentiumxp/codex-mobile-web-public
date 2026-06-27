@@ -20913,3 +20913,48 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit the v543 bump after validation, deploy through Home AI central
     macOS plugin deploy, read back `/api/public-config`, and record production
     evidence without pushing Public yet.
+
+## 2026-06-27 - v543 Phase A/E stability evidence module deployed
+
+- Current state:
+  - Committed `d79a872` (`bump shell for v543 stability module`) after
+    full local validation.
+  - Deployed through the Home AI central macOS plugin deploy path.
+  - No Public push has been made for this module; keep waiting for
+    production/user validation before publishing.
+- Module boundary:
+  - Batched local commits `eff591a`, `e232c4c`, `5479887`, `252c2e1`,
+    `b45afb3`, plus v543 shell/cache bump.
+  - Phase E evidence now covers PWA refresh readiness, media render DOM
+    surfaces, API-vs-DOM projection replay, and long-turn viewport behavior.
+  - Phase A ownership moved stable-signature DOM-empty mismatch/client-event
+    planning into `thread-detail-dom-patch`.
+  - No fallback or client-side masking was added.
+- Local validation:
+  - Focused v543 suite passed (`210` tests).
+  - `npm test` passed (`1248` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Deploy reason: `codex-mobile-v543-phase-a-e-stability-evidence`.
+  - Source commit: `d79a8727561f`, dirty false.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T073019Z-plugin-codex-mobile-web-codex-mobile-v543-phase-a-e-stability-evidence`.
+  - Selected mux refresh was skipped with `reason=no_mux_runtime_change`
+    because this module did not change mux runtime trigger files.
+- Production readback:
+  - `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v543`,
+    `shellCacheName=codex-mobile-shell-v543`,
+    `activeProfileId=previous`.
+  - Thread-list fallback prewarm was completed:
+    `lastStatus=completed`, `lastElapsedMs=1734`, `lastResultCount=11`,
+    `lastCacheDecision=miss-rebuild`.
+  - Source/prod SHA-256 short hashes matched for `public/app.js`,
+    `public/sw.js`, `public/thread-detail-dom-patch.js`, the Phase E smoke
+    scripts, and related tests/docs sampled in the readback.
+- Next:
+  - Continue optimization under the new cadence:
+    small bounded local slices, local commits, then deploy only after a
+    coherent module validates.
