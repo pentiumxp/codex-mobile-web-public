@@ -234,6 +234,20 @@ Current acceleration targets:
    history-only evidence: its projection revision cannot mark the separately
    supplied live active-turn overlay stale, while ordinary projection windows
    still keep the stale assistant-delta fail-closed rule.
+   The next measured detail-shape problem was not timeout or window proof: after
+   `threadReadMs=0`, `turnsListMs=0`, and `activeOverlayWindowMs=0`, active and
+   recently completed detail responses could still carry dozens of intermediate
+   `agentMessage`/`plan` items. That makes the successful response large enough
+   to look like a long stall on mobile and increases DOM merge pressure. The
+   response-budget v2 slice keeps retained text intact but removes intermediate
+   assistant/plan items by server-side item budget: completed turns default to
+   the latest assistant/plan receipt, active turns keep a bounded recent tail,
+   and `mobileDetailResponseBudget.omittedAssistantItems` records the bounded
+   evidence. This is a payload-owner fix, not a client-side refresh fallback.
+   Full item-level expansion remains a separate future route/API slice if the
+   product needs on-demand historical assistant progress, because the default
+   detail route does not yet expose per-item expansion for omitted assistant
+   progress rows.
    Post-v542 local pane-context work is intentionally smaller than these
    deployable Phase B modules: each slice fixes one frontend state writer,
    adds executable pane-local coverage, commits locally, and does not deploy

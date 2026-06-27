@@ -6,12 +6,19 @@ const DEFAULT_COMPLETED_OPERATION_ITEMS = 4;
 const DEFAULT_ACTIVE_OPERATION_ITEMS = 12;
 const DEFAULT_ACTIVE_REASONING_ITEMS = 2;
 const DEFAULT_COMPLETED_REASONING_ITEMS = 0;
+const DEFAULT_ACTIVE_ASSISTANT_ITEMS = 8;
+const DEFAULT_COMPLETED_ASSISTANT_ITEMS = 1;
 
 const OPERATION_ITEM_TYPES = new Set([
   "commandExecution",
   "fileChange",
   "dynamicToolCall",
   "mcpToolCall",
+]);
+
+const ASSISTANT_ITEM_TYPES = new Set([
+  "agentMessage",
+  "plan",
 ]);
 
 function cloneJson(value) {
@@ -58,6 +65,10 @@ function isReasoningItem(item) {
   return String(item && item.type || "") === "reasoning";
 }
 
+function isAssistantItem(item) {
+  return ASSISTANT_ITEM_TYPES.has(String(item && item.type || ""));
+}
+
 function textValue(value) {
   if (typeof value === "string") return value;
   if (Array.isArray(value)) return value.map(textValue).join("");
@@ -96,6 +107,7 @@ function compactTurnWithBudget(turn, thread, options, stats) {
   const beforeItems = turn.items;
   const beforeOperationCount = countBy(beforeItems, isOperationItem);
   const beforeReasoningCount = countBy(beforeItems, isReasoningItem);
+  const beforeAssistantCount = countBy(beforeItems, isAssistantItem);
   const compacted = compactTurn
     ? compactTurn(turn, {
       allowOperations: true,
@@ -114,12 +126,37 @@ function compactTurnWithBudget(turn, thread, options, stats) {
     if (!isReasoningItem(item)) return true;
     return keepReasoningIndexes.has(index);
   });
+  const assistantLimit = active ? options.activeAssistantItems : options.completedAssistantItems;
+  const keepAssistantIndexes = trailingIndexes(
+    compacted.items,
+    assistantLimit,
+    isAssistantItem,
+  );
+  compacted.items = compacted.items.filter((item, index) => {
+    if (!isAssistantItem(item)) return true;
+    return keepAssistantIndexes.has(index);
+  });
   const afterOperationCount = countBy(compacted.items, isOperationItem);
   const afterReasoningCount = countBy(compacted.items, isReasoningItem);
+  const afterAssistantCount = countBy(compacted.items, isAssistantItem);
+  const omittedAssistantItems = Math.max(0, beforeAssistantCount - afterAssistantCount);
+  if (omittedAssistantItems > 0) {
+    compacted.mobileOmittedAssistantItemCount = omittedAssistantItems;
+    compacted.mobileAssistantItemBudget = {
+      version: "thread-detail-assistant-item-budget-v1",
+      omitted: omittedAssistantItems,
+      retained: afterAssistantCount,
+      original: beforeAssistantCount,
+    };
+  } else {
+    delete compacted.mobileOmittedAssistantItemCount;
+    delete compacted.mobileAssistantItemBudget;
+  }
   stats.originalItemCount += beforeItems.length;
   stats.retainedItemCount += compacted.items.length;
   stats.omittedOperationItems += Math.max(0, beforeOperationCount - afterOperationCount);
   stats.omittedReasoningItems += Math.max(0, beforeReasoningCount - afterReasoningCount);
+  stats.omittedAssistantItems += omittedAssistantItems;
   stats.activeTurnCount += active ? 1 : 0;
   return compacted;
 }
@@ -129,21 +166,26 @@ function compactThreadDetailResponseResult(result, options = {}) {
   const out = cloneJson(result);
   const thread = out.thread;
   const stats = {
-    version: "thread-detail-response-budget-v1",
+    version: "thread-detail-response-budget-v2",
     applied: false,
     originalItemCount: 0,
     retainedItemCount: 0,
     omittedOperationItems: 0,
     omittedReasoningItems: 0,
+    omittedAssistantItems: 0,
     activeTurnCount: 0,
     completedOperationItems: boundedCount(options.completedOperationItems, DEFAULT_COMPLETED_OPERATION_ITEMS, 100),
     activeOperationItems: boundedCount(options.activeOperationItems, DEFAULT_ACTIVE_OPERATION_ITEMS, 100),
     completedReasoningItems: boundedCount(options.completedReasoningItems, DEFAULT_COMPLETED_REASONING_ITEMS, 100),
     activeReasoningItems: boundedCount(options.activeReasoningItems, DEFAULT_ACTIVE_REASONING_ITEMS, 100),
+    completedAssistantItems: Math.max(1, boundedCount(options.completedAssistantItems, DEFAULT_COMPLETED_ASSISTANT_ITEMS, 100)),
+    activeAssistantItems: Math.max(1, boundedCount(options.activeAssistantItems, DEFAULT_ACTIVE_ASSISTANT_ITEMS, 100)),
   };
   const budgetOptions = Object.assign({}, options, stats);
   thread.turns = thread.turns.map((turn) => compactTurnWithBudget(turn, thread, budgetOptions, stats));
-  stats.applied = stats.omittedOperationItems > 0 || stats.omittedReasoningItems > 0;
+  stats.applied = stats.omittedOperationItems > 0
+    || stats.omittedReasoningItems > 0
+    || stats.omittedAssistantItems > 0;
   if (!stats.applied) return out;
   const revision = thread.mobileProjectionRevision;
   const normalized = normalizeThreadVisibleProjection(out, {
@@ -156,6 +198,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
 
 module.exports = {
   compactThreadDetailResponseResult,
+  isAssistantItem,
   isOperationItem,
   isReasoningItem,
 };

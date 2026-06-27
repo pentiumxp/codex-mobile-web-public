@@ -23631,3 +23631,52 @@ The previous full handoff was archived and should be opened only when old proven
 - Residual:
   - If users still see slow entry before opening detail, prioritize thread-list
     cold path / app-server list latency next.
+
+## 2026-06-28 - Active assistant detail response budget
+
+- Problem shape:
+  - After the active-window prewarm/freshness deploy, active detail readback could
+    return with `threadReadMs=0`, `turnsListMs=0`, and
+    `activeOverlayWindowMs=0`, but the HTTP response still carried many
+    `agentMessage` / `plan` progress rows.
+  - This matches the "long spinner but eventual success" symptom better than an
+    RPC/network timeout: the server succeeds, but the default detail payload and
+    browser merge/render work can still be heavy.
+- Implementation:
+  - `adapters/thread-detail-response-budget-service.js` now has response-budget
+    v2. It trims intermediate assistant/plan items by item count after
+    projection/read orchestration while preserving retained text without
+    truncation.
+  - Completed turns default to the latest assistant/plan receipt; active turns
+    default to a bounded recent assistant/plan tail.
+  - The result records per-turn `mobileOmittedAssistantItemCount` and
+    thread-level `mobileDetailResponseBudget.omittedAssistantItems`, then rebuilds
+    visible keys through `thread-visible-item-normalizer`.
+  - `server.js` wires `CODEX_MOBILE_THREAD_DETAIL_ACTIVE_ASSISTANT_ITEMS`
+    (default `8`) and `CODEX_MOBILE_THREAD_DETAIL_COMPLETED_ASSISTANT_ITEMS`
+    (default `1`) into the detail response budget.
+- Documentation:
+  - Updated `docs/ARCHITECTURE.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`,
+    `docs/MODULES.md`, and `docs/TROUBLESHOOTING.md`.
+  - The docs explicitly state this is not a complete item-level expansion API;
+    omitted historical assistant progress expansion remains a future route/API
+    slice if needed.
+- Validation so far:
+  - Focused checks passed:
+    `node --check adapters/thread-detail-response-budget-service.js`,
+    `node --check server.js`, and
+    `node --test test/thread-detail-response-budget-service.test.js test/thread-visible-item-normalizer.test.js test/conversation-render.test.js test/thread-detail-read-orchestration-service.test.js test/thread-detail-route-service.test.js`
+    (`163` tests).
+  - Full `npm test` passed (`1334` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - `codegraph sync && codegraph status` reported the index is up to date.
+- Next:
+  - Commit this module, deploy through the Home AI central macOS plugin deploy
+    path, then read back production details for active Codex Mobile / Movie /
+    Home AI threads.
+  - Readback should report `thread-detail-response-budget-v2` when assistant
+    rows were omitted, lower `agentMessage`/`plan` visible counts/bytes, and
+    unchanged active-overlay timing (`threadReadMs=0`,
+    `activeOverlayWindowMs=0`) on warm active details.

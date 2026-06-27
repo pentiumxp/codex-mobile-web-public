@@ -930,6 +930,8 @@ const MAX_LIVE_OPERATION_ITEMS = Math.max(1, Math.min(30, Number(process.env.COD
 const THREAD_DETAIL_COMPLETED_OPERATION_ITEMS = Math.max(0, Math.min(30, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_COMPLETED_OPERATION_ITEMS || "4")));
 const THREAD_DETAIL_ACTIVE_REASONING_ITEMS = Math.max(0, Math.min(20, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_ACTIVE_REASONING_ITEMS || "2")));
 const THREAD_DETAIL_COMPLETED_REASONING_ITEMS = Math.max(0, Math.min(20, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_COMPLETED_REASONING_ITEMS || "0")));
+const THREAD_DETAIL_ACTIVE_ASSISTANT_ITEMS = Math.max(1, Math.min(50, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_ACTIVE_ASSISTANT_ITEMS || "8")));
+const THREAD_DETAIL_COMPLETED_ASSISTANT_ITEMS = Math.max(1, Math.min(20, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_COMPLETED_ASSISTANT_ITEMS || "1")));
 const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "fileChange", "dynamicToolCall", "mcpToolCall"]);
 const THREAD_LIST_FALLBACK_CACHE_TTL_MS = Math.max(0, Number(process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_TTL_MS || "0"));
 const THREAD_LIST_FALLBACK_PREWARM_ENABLED = !/^(0|false|no|off)$/i.test(process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM || "1");
@@ -13056,6 +13058,8 @@ async function prepareThreadDetailResponseResult(result, details = {}) {
       activeOperationItems: MAX_LIVE_OPERATION_ITEMS,
       activeReasoningItems: THREAD_DETAIL_ACTIVE_REASONING_ITEMS,
       completedReasoningItems: THREAD_DETAIL_COMPLETED_REASONING_ITEMS,
+      activeAssistantItems: THREAD_DETAIL_ACTIVE_ASSISTANT_ITEMS,
+      completedAssistantItems: THREAD_DETAIL_COMPLETED_ASSISTANT_ITEMS,
     }),
     details,
   );

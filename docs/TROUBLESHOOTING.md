@@ -371,6 +371,18 @@ turn/status notifications and thread-list refreshes through
 verify prewarm scheduling and cache reuse rather than increasing the detail
 timeout or adding a client loading fallback.
 
+If `activeOverlayWindowMs`, `threadReadMs`, and `turnsListMs` are already zero
+or near-zero but the user still sees a long wait before content appears, inspect
+the response shape rather than the network timeout. `mobileDetailResponseBudget`
+version `thread-detail-response-budget-v2` should report whether
+`agentMessage`/`plan` progress rows were removed through
+`omittedAssistantItems`. A high assistant-progress count with a large response
+body points at server detail payload size or browser DOM merge pressure; do not
+fix that by repeated client refreshes or by loosening the timeout. The default
+detail response keeps completed turns receipt-only and active turns on a bounded
+recent assistant tail. On-demand expansion of omitted historical assistant
+progress is a separate route/API feature, not part of the default first paint.
+
 If a newly submitted message briefly shows local input feedback and then the
 right-side turn timer changes to `已结束` while `/api/threads/:id?mode=recent`
 still returns thread-level `status=active`, check for a stale latest turn row in
@@ -514,6 +526,11 @@ Cause to check:
   state-relevant set, should be receipt-only: user question items plus the last
   assistant/plan receipt and any `turnUsageSummary` metadata, without old
   assistant progress updates, operation, reasoning, or other diagnostic cards.
+  The HTTP detail response applies the same assistant/plan budget after
+  projection/read orchestration: active turns keep a bounded recent assistant
+  tail, completed turns keep the latest assistant/plan receipt, and
+  `mobileOmittedAssistantItemCount` / `mobileDetailResponseBudget` record the
+  omitted progress-row count.
 - Current clients still enter thread detail at the bottom. Do not fix missing
   large-thread history by changing the open position; first check whether the
   server returned full `thread-read` or a fallback `turns-list` window.

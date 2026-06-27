@@ -103,6 +103,81 @@ test("thread detail response budget keeps bounded active reasoning and operation
   assert.equal(compacted.thread.mobileDetailResponseBudget.omittedReasoningItems, 1);
 });
 
+test("thread detail response budget keeps bounded active assistant tail", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      turns: [
+        {
+          id: "turn-active",
+          status: "inProgress",
+          items: [
+            { id: "u1", type: "userMessage", text: "Question" },
+            { id: "a1", type: "agentMessage", text: "first progress" },
+            { id: "a2", type: "agentMessage", text: "second progress" },
+            { id: "a3", type: "agentMessage", text: "third progress" },
+            { id: "a4", type: "agentMessage", text: "latest progress" },
+            { id: "usage", type: "turnUsageSummary" },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeAssistantItems: 2,
+  });
+
+  const turn = compacted.thread.turns[0];
+  assert.deepEqual(turn.items.map((item) => item.id), ["u1", "a3", "a4", "usage"]);
+  assert.equal(turn.mobileOmittedAssistantItemCount, 2);
+  assert.deepEqual(turn.mobileAssistantItemBudget, {
+    version: "thread-detail-assistant-item-budget-v1",
+    omitted: 2,
+    retained: 2,
+    original: 4,
+  });
+  assert.equal(compacted.thread.mobileDetailResponseBudget.omittedAssistantItems, 2);
+  assert.equal(compacted.thread.mobileDetailResponseBudget.activeAssistantItems, 2);
+  assert.deepEqual(compacted.thread.mobileVisibleItemKeys, turn.items.map((item) => item.mobileVisibleKey));
+});
+
+test("thread detail response budget keeps the latest completed assistant receipt", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      mobileReadMode: "projection-v4-dynamic",
+      turns: [
+        {
+          id: "turn-1",
+          status: "completed",
+          items: [
+            { id: "u1", type: "userMessage", text: "Question" },
+            { id: "a1", type: "agentMessage", text: "old progress" },
+            { id: "plan1", type: "plan", text: "plan progress" },
+            { id: "a2", type: "agentMessage", text: "final receipt" },
+            { id: "usage", type: "turnUsageSummary" },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    completedAssistantItems: 1,
+  });
+
+  const turn = compacted.thread.turns[0];
+  assert.deepEqual(turn.items.map((item) => item.id), ["u1", "a2", "usage"]);
+  assert.equal(turn.mobileOmittedAssistantItemCount, 2);
+  assert.equal(compacted.thread.mobileDetailResponseBudget.omittedAssistantItems, 2);
+  assert.equal(compacted.thread.mobileDetailResponseBudget.completedAssistantItems, 1);
+});
+
 test("thread detail response budget leaves already small details unchanged", () => {
   const result = {
     thread: {
