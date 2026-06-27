@@ -23969,3 +23969,76 @@ The previous full handoff was archived and should be opened only when old proven
     still a deploy/cold-start peak after restart. The next performance slice
     should target cold-start/prewarm and app-server/thread-list readiness so
     first entry after deploy or cache rebuild does not feel like a hang.
+
+## 2026-06-28 - Thread-List Prewarm Source-Snapshot Coverage Module
+
+- User-visible symptom:
+  - Thread entry could alternate between fast and slow even after prewarm had
+    completed. Production sampling showed `limit=40&initial=warm-fallback`
+    using the warm fallback cache quickly, while
+    `limit=137&initial=warm-fallback` still rebuilt the fallback baseline and
+    scanned rollout tails.
+- Root cause / invariant:
+  - Final fallback cache entries are intentionally limit-scoped, so a narrow
+    cached final list must not be treated as a wider final list.
+  - The existing source-snapshot mechanism can safely rebuild wider final
+    windows from warm same-scope source data, but the default prewarm only
+    warmed the 40-row final list and did not guarantee a source snapshot wide
+    enough for large desktop/tablet first-paint limits.
+  - The correct invariant is: final fallback cache remains limit-scoped, while
+    process-local prewarm may build a wider bounded source snapshot for later
+    same-scope final-window misses. Fallback remains process-local support data,
+    not persistent authority.
+- Implementation:
+  - `adapters/thread-list-fallback-cache-service.js` now honors
+    `filters.sourceSnapshotLimit` when requesting a baseline source snapshot.
+  - `adapters/thread-list-fallback-prewarm-service.js` now normalizes and
+    passes `sourceSnapshotLimit` (default `1000`) into `readFallback`, exposes it
+    in prewarm results/status, and keeps all fields bounded metadata only.
+  - `server.js` wires
+    `CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_SOURCE_SNAPSHOT_LIMIT` with a
+    bounded default of `1000`.
+  - Phase-B readback and decision evidence now include
+    `sourceSnapshotLimit` / `lastSourceSnapshotLimit`.
+  - Tests prove a narrow final fallback cache is not reused as a wider final
+    list, but a prewarmed wider source snapshot prevents rereading state DB,
+    rollout tails, and `session_index.jsonl` for a wider same-scope request.
+- Documentation:
+  - Updated `docs/README.md`, `docs/MODULES.md`, `docs/ARCHITECTURE.md`,
+    `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Validation before deploy:
+  - Focused thread-list/prewarm/readback suite passed (`163` tests).
+  - Full `npm test` passed (`1339` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - `codegraph sync && codegraph status` reported the index is up to date.
+- Commit/deploy:
+  - Runtime/docs commit `3278e15` (`fix thread list prewarm source coverage`).
+  - Deployed through the Home AI central macOS plugin deploy path with reason
+    `codex-mobile-thread-list-prewarm-source-coverage`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T195809Z-plugin-codex-mobile-web-codex-mobile-thread-list-prewarm-source-coverage`.
+  - Production source ref `3278e153816a`, dirty false. Shell remained
+    `0.1.11|codex-mobile-shell-v552` because this was server/readback/docs
+    only and did not change static browser assets.
+- Production readback:
+  - Phase-B readback confirmed prewarm completed with
+    `sourceSnapshotLimit=1000`, `lastSourceSnapshotLimit=1000`,
+    `lastElapsedMs=1735`, and `lastSourceSnapshotRawCount=29`.
+  - Direct production sample after deploy:
+    `/api/threads?limit=137&initial=warm-fallback` returned in about `215ms`,
+    `mobileInitialSource=fallback-baseline`, `mobileDeferredAppServer=true`,
+    `fallbackDecision=miss-rebuild`, `sourceSnapshotHit=true`,
+    `sourceSnapshotLimit=1000`, `fallbackMs=30`, and rollout source rereads were
+    zero (`rolloutCandidateScannedCount=0`,
+    `rolloutStatusTailReadCount=0`, `rolloutStatusTailBytes=0`).
+  - The immediate repeat was a final cache hit in about `148ms`.
+  - This closes the previous ~`1.8s` second cold source scan for wider
+    same-scope first-paint requests after prewarm.
+- Residual:
+  - Phase-B still observed occasional deferred/full app-server
+    `thread/list` RPC peaks around `2s`. That path is now separated from
+    first-paint fallback work and should be the next performance module if
+    background/full list refresh still feels slow.
