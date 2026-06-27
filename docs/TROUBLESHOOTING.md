@@ -427,6 +427,9 @@ active-looking turns were deliberately downgraded for response shaping. When
 `activeProgressiveThreadByteThreshold`,
 `progressiveActiveTextChars`, `truncatedActiveTextItems`,
 `omittedActiveTextChars`,
+`progressiveActiveOperationPayloadChars`,
+`truncatedActiveOperationPayloadItems`,
+`omittedActiveOperationPayloadChars`,
 `progressiveActiveTurnOriginalBytes`, `progressiveActiveOriginalBytes`,
 `configuredActive*Items`, and the effective `active*Items` fields before
 changing visible-item policy. Current servers also expose
@@ -449,7 +452,11 @@ second-stage first-paint byte fields:
 `omittedCompletedTextChars`. Those fields mean non-current completed
 assistant/reasoning receipts were reduced to first-paint previews marked with
 `mobileFirstPaintTextBudget`; the current active turn still uses
-`mobileActiveTextBudget`.
+`mobileActiveTextBudget`. If those completed receipts are not the cause, inspect
+retained active operation items for `mobileOperationPayloadBudget` /
+`mobilePayloadTruncated`; command output previews should show
+`outputTruncated=true` and `outputTotalChars` while keeping only the latest
+output tail in the default first paint.
 On-demand expansion of omitted historical assistant progress is a separate
 route/API feature, not part of the default first paint.
 

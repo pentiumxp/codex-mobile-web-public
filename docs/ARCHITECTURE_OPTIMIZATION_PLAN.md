@@ -2410,6 +2410,15 @@ Deployable scope:
   and marked with `mobileActiveTextBudget` / `mobileTextTruncated`. The text
   preview budget can be disabled for diagnostics with
   `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_ACTIVE_TEXT_CHARS=0`.
+- Retained active operation items now get the same pressure-gated payload
+  treatment. Large command output, tool arguments/results, and content item
+  arrays are reduced to bounded previews through
+  `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_ACTIVE_OPERATION_PAYLOAD_CHARS`
+  (default `6KB`, `0` disables). Affected operation items carry
+  `mobileOperationPayloadBudget` / `mobilePayloadTruncated`; command output
+  uses the existing `outputTruncated` / `outputTotalChars` UI path so the
+  default first paint keeps the latest output tail without shipping the full
+  payload.
 - After those per-type budgets, the same pressure condition can apply a
   first-paint visible item ceiling
   (`CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_VISIBLE_ITEM_CEILING`, default `48`,

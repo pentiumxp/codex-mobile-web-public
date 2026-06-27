@@ -574,7 +574,16 @@ text fields may be reduced to a bounded first-paint preview with
 `mobileActiveTextBudget` metadata and `mobileTextTruncated=true`; ordinary
 small active turns and completed-turn receipts keep their existing text
 behavior. `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_ACTIVE_TEXT_CHARS=0`
-disables only that retained-text preview budget for diagnostics. When the same
+disables only that retained-text preview budget for diagnostics. Retained
+active operation items can also carry large output, arguments, result, or
+content payloads even after the item-count tail is bounded. Under the
+same progressive active pressure, the service reduces those operation payload
+fields to bounded previews using
+`CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_ACTIVE_OPERATION_PAYLOAD_CHARS`
+(default `6KB`, `0` disables) and marks affected items with
+`mobileOperationPayloadBudget` / `mobilePayloadTruncated`; command output keeps
+the latest visible tail through the existing `outputTruncated` /
+`outputTotalChars` UI contract. When the same
 progressive pressure still leaves too many visible first-paint items after
 per-type compaction, the service applies
 `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_VISIBLE_ITEM_CEILING` (default `48`,
@@ -592,8 +601,9 @@ per item). Affected items carry `mobileFirstPaintTextBudget` and
 text budget described above. The operation budget includes command, file,
 dynamic tool, MCP, and collab-agent tool-call items. The response records the
 item and byte thresholds, trigger reason, configured limits, effective limits,
-active/completed text-budget counters, visible-item ceiling counters, and
-original/final first-paint byte counts in `mobileDetailResponseBudget`.
+active/completed text-budget counters, active operation-payload counters,
+visible-item ceiling counters, and original/final first-paint byte counts in
+`mobileDetailResponseBudget`.
 
 `HANDOFF.md` has a separate 200KB Usage prompt threshold so recently compacted handoffs near 100KB do not immediately ask for another continuation.
 

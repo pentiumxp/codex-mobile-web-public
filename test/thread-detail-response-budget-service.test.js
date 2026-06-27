@@ -334,6 +334,147 @@ test("thread detail response budget truncates oversized retained active assistan
   assert.deepEqual(compacted.thread.mobileVisibleItemKeys, compacted.thread.turns[0].items.map((item) => item.mobileVisibleKey));
 });
 
+test("thread detail response budget truncates retained active command output payload under progressive pressure", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      mobileProjectionRevision: 13,
+      turns: [
+        {
+          id: "turn-active",
+          status: "inProgress",
+          items: [
+            { id: "u1", type: "userMessage", text: "Question" },
+            {
+              id: "cmd-1",
+              type: "commandExecution",
+              command: "npm test",
+              aggregatedOutput: `${"A".repeat(1800)}\nLATEST`,
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeOperationItems: 2,
+    activeProgressiveItemThreshold: 100,
+    activeProgressiveByteThreshold: 1000,
+    activeProgressiveThreadByteThreshold: 0,
+    progressiveActiveOperationPayloadChars: 420,
+  });
+
+  const command = compacted.thread.turns[0].items[1];
+  assert.equal(command.id, "cmd-1");
+  assert.equal(command.outputTruncated, true);
+  assert.equal(command.outputTotalChars, 1807);
+  assert.equal(command.aggregatedOutput.endsWith("LATEST"), true);
+  assert.ok(command.aggregatedOutput.length <= 420);
+  assert.equal(command.mobilePayloadTruncated, true);
+  assert.deepEqual(command.mobileOperationPayloadBudget.fields, ["aggregatedOutput"]);
+  assert.equal(command.mobileOperationPayloadBudget.maxChars, 420);
+  assert.equal(command.mobileOperationPayloadBudget.originalChars, 1807);
+  assert.ok(command.mobileOperationPayloadBudget.omittedChars > 0);
+  const budget = compacted.thread.mobileDetailResponseBudget;
+  assert.equal(budget.progressiveActiveBudgetApplied, true);
+  assert.equal(budget.progressiveActiveBudgetReason, "active-byte-pressure");
+  assert.equal(budget.progressiveActiveOperationPayloadChars, 420);
+  assert.equal(budget.truncatedActiveOperationPayloadItems, 1);
+  assert.equal(budget.activeOperationPayloadOriginalChars, 1807);
+  assert.ok(budget.activeOperationPayloadRetainedChars <= 420);
+  assert.ok(budget.omittedActiveOperationPayloadChars > 0);
+  assert.equal(compacted.thread.mobileProjectionRevision, 13);
+  assert.deepEqual(compacted.thread.mobileVisibleItemKeys, compacted.thread.turns[0].items.map((item) => item.mobileVisibleKey));
+});
+
+test("thread detail response budget previews retained active structured tool payloads under progressive pressure", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      turns: [
+        {
+          id: "turn-active",
+          status: "inProgress",
+          items: [
+            {
+              id: "tool-1",
+              type: "mcpToolCall",
+              server: "codegraph",
+              tool: "explore",
+              arguments: { query: "x".repeat(1600), includePrivate: false },
+              result: { body: "y".repeat(1800), status: "ok" },
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeOperationItems: 2,
+    activeProgressiveItemThreshold: 100,
+    activeProgressiveByteThreshold: 1000,
+    activeProgressiveThreadByteThreshold: 0,
+    progressiveActiveOperationPayloadChars: 360,
+  });
+
+  const tool = compacted.thread.turns[0].items[0];
+  assert.equal(tool.mobilePayloadTruncated, true);
+  assert.deepEqual(tool.mobileOperationPayloadBudget.fields, ["arguments", "result"]);
+  assert.equal(tool.arguments.truncated, true);
+  assert.equal(tool.result.truncated, true);
+  assert.match(tool.arguments.preview, /operation payload preview truncated/);
+  assert.match(tool.result.preview, /operation payload preview truncated/);
+  assert.ok(tool.arguments.preview.length <= 360);
+  assert.ok(tool.result.preview.length <= 360);
+  const budget = compacted.thread.mobileDetailResponseBudget;
+  assert.equal(budget.truncatedActiveOperationPayloadItems, 1);
+  assert.ok(budget.activeOperationPayloadOriginalChars > budget.activeOperationPayloadRetainedChars);
+});
+
+test("thread detail response budget does not truncate operation payloads without progressive pressure", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      turns: [
+        {
+          id: "turn-active",
+          status: "inProgress",
+          items: [
+            {
+              id: "cmd-1",
+              type: "commandExecution",
+              command: "npm test",
+              aggregatedOutput: "A".repeat(1800),
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeOperationItems: 1,
+    activeProgressiveItemThreshold: 100,
+    activeProgressiveByteThreshold: 10_000,
+    activeProgressiveThreadByteThreshold: 0,
+    progressiveActiveOperationPayloadChars: 360,
+  });
+
+  assert.equal(compacted.thread.mobileDetailResponseBudget, undefined);
+  assert.deepEqual(compacted, result);
+});
+
 test("thread detail response budget applies completed receipt previews when first paint remains too large", () => {
   const longReceipt = (letter) => `${letter}`.repeat(2400);
   const result = {

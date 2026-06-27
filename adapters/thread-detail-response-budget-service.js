@@ -15,10 +15,12 @@ const DEFAULT_PROGRESSIVE_ACTIVE_OPERATION_ITEMS = 6;
 const DEFAULT_PROGRESSIVE_ACTIVE_REASONING_ITEMS = 1;
 const DEFAULT_PROGRESSIVE_ACTIVE_ASSISTANT_ITEMS = 4;
 const DEFAULT_PROGRESSIVE_ACTIVE_TEXT_CHARS = 12 * 1024;
+const DEFAULT_PROGRESSIVE_ACTIVE_OPERATION_PAYLOAD_CHARS = 6 * 1024;
 const DEFAULT_PROGRESSIVE_VISIBLE_ITEM_CEILING = 48;
 const DEFAULT_PROGRESSIVE_FIRST_PAINT_THREAD_BYTES = 160 * 1024;
 const DEFAULT_PROGRESSIVE_COMPLETED_TEXT_CHARS = 8 * 1024;
 const ACTIVE_TEXT_BUDGET_MARKER = "\n\n[active item preview truncated]\n\n";
+const OPERATION_PAYLOAD_BUDGET_MARKER = "\n\n[operation payload preview truncated]\n\n";
 const FIRST_PAINT_TEXT_BUDGET_MARKER = "\n\n[first-paint preview truncated]\n\n";
 
 const OPERATION_ITEM_TYPES = new Set([
@@ -236,6 +238,113 @@ function compactActiveTextItem(item, options, stats) {
   return out;
 }
 
+function compactStructuredValueForOperationPayload(value, maxChars) {
+  const raw = JSON.stringify(value, null, 2);
+  const original = textCharLength(raw);
+  if (!original || original <= maxChars) {
+    return {
+      value,
+      originalChars: original,
+      retainedChars: original,
+      omittedChars: 0,
+      truncated: false,
+    };
+  }
+  const preview = truncateMiddleText(raw, maxChars, OPERATION_PAYLOAD_BUDGET_MARKER);
+  const retainedChars = textCharLength(preview);
+  return {
+    value: {
+      truncated: true,
+      preview,
+      totalChars: original,
+      retainedChars,
+      omittedChars: Math.max(0, original - retainedChars),
+    },
+    originalChars: original,
+    retainedChars,
+    omittedChars: Math.max(0, original - retainedChars),
+    truncated: true,
+  };
+}
+
+function compactStringFieldForOperationPayload(value, maxChars, keepTail = false) {
+  const text = String(value || "");
+  const originalChars = textCharLength(text);
+  if (!originalChars || originalChars <= maxChars) {
+    return {
+      value,
+      originalChars,
+      retainedChars: originalChars,
+      omittedChars: 0,
+      truncated: false,
+    };
+  }
+  const compacted = keepTail
+    ? text.slice(-maxChars)
+    : truncateMiddleText(text, maxChars, OPERATION_PAYLOAD_BUDGET_MARKER);
+  const retainedChars = textCharLength(compacted);
+  return {
+    value: compacted,
+    originalChars,
+    retainedChars,
+    omittedChars: Math.max(0, originalChars - retainedChars),
+    truncated: true,
+  };
+}
+
+function compactActiveOperationPayloadItem(item, options, stats) {
+  if (!item || typeof item !== "object" || !isOperationItem(item)) return item;
+  const maxChars = Math.max(0, Math.trunc(Number(options.progressiveActiveOperationPayloadChars || 0)));
+  if (!maxChars) return item;
+  const out = cloneJson(item);
+  const budget = {
+    maxChars,
+    originalChars: 0,
+    retainedChars: 0,
+    omittedChars: 0,
+    truncated: false,
+    fields: [],
+  };
+  const record = (field, result) => {
+    if (!result || !result.originalChars) return;
+    budget.originalChars += result.originalChars;
+    budget.retainedChars += result.retainedChars;
+    budget.omittedChars += result.omittedChars;
+    if (result.truncated) {
+      budget.truncated = true;
+      budget.fields.push(field);
+    }
+    out[field] = result.value;
+    if (field === "aggregatedOutput") {
+      out.outputTotalChars = Math.max(Number(out.outputTotalChars || 0), result.originalChars);
+    }
+  };
+  for (const field of ["aggregatedOutput", "output", "stdout", "stderr"]) {
+    if (!(field in out) || typeof out[field] !== "string") continue;
+    record(field, compactStringFieldForOperationPayload(out[field], maxChars, field === "aggregatedOutput"));
+  }
+  for (const field of ["arguments", "result", "contentItems"]) {
+    if (!(field in out) || out[field] === undefined || out[field] === null) continue;
+    record(field, compactStructuredValueForOperationPayload(out[field], maxChars));
+  }
+  if (!budget.truncated) return item;
+  if (budget.fields.includes("aggregatedOutput")) out.outputTruncated = true;
+  out.mobileOperationPayloadBudget = {
+    version: "thread-detail-active-operation-payload-budget-v1",
+    maxChars,
+    originalChars: budget.originalChars,
+    retainedChars: budget.retainedChars,
+    omittedChars: budget.omittedChars,
+    fields: budget.fields,
+  };
+  out.mobilePayloadTruncated = true;
+  stats.truncatedActiveOperationPayloadItems += 1;
+  stats.activeOperationPayloadOriginalChars += budget.originalChars;
+  stats.activeOperationPayloadRetainedChars += budget.retainedChars;
+  stats.omittedActiveOperationPayloadChars += budget.omittedChars;
+  return out;
+}
+
 function compactCompletedTextItemForFirstPaint(item, options, stats) {
   if (!item || typeof item !== "object") return item;
   if (!isAssistantItem(item) && !isReasoningItem(item)) return item;
@@ -421,7 +530,7 @@ function compactTurnWithBudget(turn, thread, options, stats) {
     return keepAssistantIndexes.has(index);
   });
   if (active && options.progressiveActiveBudgetApplied) {
-    compacted.items = compacted.items.map((item) => compactActiveTextItem(item, options, stats));
+    compacted.items = compacted.items.map((item) => compactActiveOperationPayloadItem(compactActiveTextItem(item, options, stats), options, stats));
   }
   const afterOperationCount = countBy(compacted.items, isOperationItem);
   const afterReasoningCount = countBy(compacted.items, isReasoningItem);
@@ -513,6 +622,11 @@ function compactThreadDetailResponseResult(result, options = {}) {
     DEFAULT_PROGRESSIVE_ACTIVE_TEXT_CHARS,
     200 * 1024,
   );
+  const progressiveActiveOperationPayloadChars = boundedCount(
+    options.progressiveActiveOperationPayloadChars,
+    DEFAULT_PROGRESSIVE_ACTIVE_OPERATION_PAYLOAD_CHARS,
+    200 * 1024,
+  );
   const progressiveFirstPaintThreadByteCeiling = boundedCount(
     options.progressiveFirstPaintThreadByteCeiling,
     DEFAULT_PROGRESSIVE_FIRST_PAINT_THREAD_BYTES,
@@ -542,11 +656,15 @@ function compactThreadDetailResponseResult(result, options = {}) {
     omittedAssistantItems: 0,
     omittedVisibleItems: 0,
     omittedActiveTextChars: 0,
+    omittedActiveOperationPayloadChars: 0,
     omittedCompletedTextChars: 0,
     truncatedActiveTextItems: 0,
+    truncatedActiveOperationPayloadItems: 0,
     truncatedCompletedTextItems: 0,
     activeTextOriginalChars: 0,
     activeTextRetainedChars: 0,
+    activeOperationPayloadOriginalChars: 0,
+    activeOperationPayloadRetainedChars: 0,
     completedTextOriginalChars: 0,
     completedTextRetainedChars: 0,
     activeTurnCount: 0,
@@ -561,6 +679,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
     activeProgressiveByteThreshold,
     activeProgressiveThreadByteThreshold,
     progressiveActiveTextChars,
+    progressiveActiveOperationPayloadChars,
     progressiveFirstPaintThreadByteCeiling,
     progressiveCompletedTextChars,
     progressiveCompletedTextBudgetApplied: false,
@@ -596,7 +715,8 @@ function compactThreadDetailResponseResult(result, options = {}) {
     || stats.omittedReasoningItems > 0
     || stats.omittedAssistantItems > 0
     || stats.omittedVisibleItems > 0
-    || stats.truncatedActiveTextItems > 0;
+    || stats.truncatedActiveTextItems > 0
+    || stats.truncatedActiveOperationPayloadItems > 0;
   stats.applied = stats.applied || stats.truncatedCompletedTextItems > 0;
   if (!stats.applied && !stats.progressiveActiveBudgetApplied) return out;
   const revision = thread.mobileProjectionRevision;

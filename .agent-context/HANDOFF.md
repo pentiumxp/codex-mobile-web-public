@@ -24846,3 +24846,53 @@ The previous full handoff was archived and should be opened only when old proven
   - It does not eliminate the one-time bootstrap cost when no persisted cache
     file exists yet, nor does it close unrelated detail summary/projection
     spikes for a specific thread. Those remain separate performance modules.
+
+## 2026-06-28 - Active Operation Payload Progressive Budget Module
+
+- User-visible symptom:
+  - Some thread opens no longer fail with the older timeout/error behavior; they
+    can spin for a long time and then eventually render. This points at a slow
+    synchronous detail path that eventually returns, not a hard server/network
+    failure.
+  - Active turns with a bounded item tail can still ship very large command
+    output or tool payload fields inside the retained operation items, causing
+    large JSON responses and delaying first paint.
+- Root cause / invariant:
+  - The existing detail response budget capped operation/reasoning item counts
+    and active assistant/reasoning text, but did not cap retained active
+    operation payload fields such as command output, tool arguments/results, or
+    content item arrays under progressive pressure.
+  - The server must reduce the first-paint payload before the HTTP detail
+    response is sent while preserving v4 visible-item metadata and the
+    frontend's existing `outputTruncated` / `outputTotalChars` rendering
+    contract.
+- Implementation:
+  - `adapters/thread-detail-response-budget-service.js` now applies a
+    pressure-gated active operation payload preview budget when the detail
+    response is already under progressive active item/byte pressure.
+  - New environment knob:
+    `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_ACTIVE_OPERATION_PAYLOAD_CHARS`
+    with default `6KB`; `0` disables the operation payload budget for
+    diagnostics.
+  - Affected operation items carry `mobileOperationPayloadBudget` and
+    `mobilePayloadTruncated`. Command output keeps the latest visible tail and
+    sets `outputTruncated=true` / `outputTotalChars`.
+  - `server.js` wires the budget into the detail compaction path.
+  - Updated docs: `docs/ARCHITECTURE.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, `docs/MODULES.md`, and
+    `docs/TROUBLESHOOTING.md`.
+- Local validation:
+  - Focused detail/projection/render/performance suite passed (`218` tests).
+  - Full `npm test` passed (`1372` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Pending at the time this local handoff section was written. Deploy through
+    the Home AI central macOS plugin path with reason
+    `codex-mobile-active-operation-payload-budget`.
+- Residual / next target:
+  - This reduces active-turn first-paint response weight for large operation
+    payloads. It does not by itself eliminate all slow detail opens; remaining
+    spikes should be attributed with server timing evidence across projection
+    lookup/seed, summary lookup, active overlay proof, and app-server/mux RPC.
