@@ -1413,6 +1413,7 @@
         busyIds: [],
         maxConcurrentLoads: 0,
         availableSlots: 0,
+        scheduleDrainAfterLoad: false,
       };
     }
 
@@ -1433,6 +1434,7 @@
     const candidates = activeIds.filter((id) => !controllerSet.has(id) && !loadingSet.has(id) && !readySet.has(id));
     const loadIds = candidates.slice(0, availableSlots);
     const deferredIds = candidates.slice(availableSlots);
+    const scheduleDrainAfterLoad = deferredIds.length > 0 && loadIds.length > 0;
     return {
       action: "detail-load-queue",
       reason: !activeIds.length ? "no-active-panes" : (deferredIds.length ? "max-concurrency" : "queue"),
@@ -1446,6 +1448,7 @@
       busyIds,
       maxConcurrentLoads,
       availableSlots,
+      scheduleDrainAfterLoad,
     };
   }
 

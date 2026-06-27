@@ -1621,6 +1621,7 @@ test("thread tile state plans detail-load queue and stale controller aborts", ()
     busyIds: [],
     maxConcurrentLoads: 0,
     availableSlots: 0,
+    scheduleDrainAfterLoad: false,
   });
 
   assert.deepEqual(state.detailLoadQueuePlan({
@@ -1642,6 +1643,7 @@ test("thread tile state plans detail-load queue and stale controller aborts", ()
     busyIds: ["a", "b"],
     maxConcurrentLoads: 3,
     availableSlots: 1,
+    scheduleDrainAfterLoad: true,
   });
 
   assert.deepEqual(state.detailLoadQueuePlan({
@@ -1662,6 +1664,7 @@ test("thread tile state plans detail-load queue and stale controller aborts", ()
     busyIds: [],
     maxConcurrentLoads: 2,
     availableSlots: 2,
+    scheduleDrainAfterLoad: false,
   });
 
   assert.deepEqual(state.detailLoadQueuePlan({
@@ -1682,6 +1685,7 @@ test("thread tile state plans detail-load queue and stale controller aborts", ()
     busyIds: [],
     maxConcurrentLoads: 2,
     availableSlots: 2,
+    scheduleDrainAfterLoad: false,
   });
 });
 

@@ -20271,3 +20271,37 @@ The previous full handoff was archived and should be opened only when old proven
     analysis recommended moving the detail-load queue drain decision out of
     `applyThreadTileDetailLoadQueuePlan()` into `detailLoadQueuePlan()` as the
     next low-risk pane-state policy slice.
+
+## 2026-06-27 - Phase C detail-load queue drain local slice
+
+- Current local state:
+  - Continued after local commit `c00e05c` (`refactor: plan thread tile
+    viewport baseline`).
+  - This is a second local-only Phase C pane-state slice. It does not bump
+    `CLIENT_BUILD_ID` / PWA shell cache and is not deployed by itself.
+- Root-cause boundary:
+  - Symptom/risk: `detailLoadQueuePlan()` computed `loadIds` and
+    `deferredIds`, but `applyThreadTileDetailLoadQueuePlan()` in `public/app.js`
+    still owned the policy condition for when to schedule another queue drain
+    after starting loads. That kept queue-progress policy split between helper
+    and app execution code.
+  - Failing layer: frontend thread-tile pane detail-load queue policy.
+  - Violated invariant: `public/thread-tile-state.js` should own bounded
+    queue/drain decisions; `public/app.js` should abort controllers, start real
+    network loads, and schedule timers only when the plan asks it to.
+- Changes:
+  - Added `scheduleDrainAfterLoad` to `detailLoadQueuePlan()`.
+  - `applyThreadTileDetailLoadQueuePlan()` now checks
+    `plan.scheduleDrainAfterLoad` instead of inspecting `loadIds` /
+    `deferredIds`.
+  - Updated focused state and source-wiring tests.
+- Validation:
+  - `node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js`
+    passed (`39` tests).
+  - `node --check public/thread-tile-state.js && node --check public/app.js`
+    passed.
+- Next:
+  - Run `npm run check` and `git diff --check`, then commit this local slice.
+  - Continue Phase C with another low-risk policy extraction, or batch these
+    local Phase C slices into a shell/cache module only when a coherent module
+    boundary is ready.

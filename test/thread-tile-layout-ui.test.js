@@ -182,7 +182,8 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(queuePlanBody, /state\.threadTileLoadingIds\.delete\(id\)/);
   assert.match(queuePlanBody, /plan\.loadIds/);
   assert.match(queuePlanBody, /loadThreadTileDetail\(id\)\.catch\(showError\)/);
-  assert.match(queuePlanBody, /plan\.deferredIds/);
+  assert.match(queuePlanBody, /plan\.scheduleDrainAfterLoad/);
+  assert.doesNotMatch(queuePlanBody, /plan\.deferredIds/);
   assert.match(queuePlanBody, /scheduleThreadTileDetailLoadQueueDrain\(\{ pending: true \}\)/);
 
   const candidateBody = functionBody(appJs, "threadTileCandidateIds");

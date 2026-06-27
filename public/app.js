@@ -13556,7 +13556,7 @@ function applyThreadTileDetailLoadQueuePlan(plan) {
   for (const id of Array.isArray(plan.loadIds) ? plan.loadIds : []) {
     loadThreadTileDetail(id).catch(showError);
   }
-  if ((Array.isArray(plan.deferredIds) && plan.deferredIds.length) && (Array.isArray(plan.loadIds) && plan.loadIds.length)) {
+  if (plan.scheduleDrainAfterLoad) {
     scheduleThreadTileDetailLoadQueueDrain({ pending: true });
   }
   return true;
