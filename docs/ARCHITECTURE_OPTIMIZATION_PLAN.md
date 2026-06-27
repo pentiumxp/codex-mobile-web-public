@@ -2086,6 +2086,10 @@ The send-failure restore path is part of that invariant: thread status
 snapshots must capture visible pane detail status, and restore must reset list,
 current detail, and pane detail state before scheduling the owning detail
 surface. A failed send must not leave a non-current pane looking active.
+Thread status notifications follow the same helper path: `thread/status/changed`
+must derive hint context from the local target thread, update list/current/pane
+detail status through `updateThreadListStatus()`, and schedule pane-local
+render before any background tile-detail reload.
 
 ### 2026-06-27 Phase E Visual Harness Module v542
 

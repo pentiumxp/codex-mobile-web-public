@@ -22079,3 +22079,46 @@ The previous full handoff was archived and should be opened only when old proven
 - Next:
   - Commit this local slice and keep it undeployed until a coherent deployable
     module is ready.
+
+## 2026-06-27 - Phase C thread status notification pane context local slice
+
+- Current local state:
+  - Continued after local commit `b9a8608` (`refactor thread status restore
+    keeps pane context`).
+  - This is a local Phase C pane-state/thread-status notification slice only.
+    It changes `public/app.js`, focused tests, README, and the architecture
+    plan. It does not bump shell/cache, deploy production, or push Public.
+- Root-cause boundary:
+  - Symptom/risk: `thread/status/changed` notifications still had a separate
+    hand-written status update path. It read previous status from the list row
+    only, manually wrote list/current/tile detail status, and rendered/reloaded
+    tile panes outside the status helper used by optimistic send and failed
+    send restore.
+  - Failing layer: frontend notification status propagation and pane-local
+    render scheduling, not notification delivery, app-server state, server
+    projection, shell/cache, or Home AI host routing.
+  - Violated invariant: every local thread-status writer must use the same
+    local target-thread context and update list/current/pane detail state
+    through one helper boundary.
+- Changes:
+  - Added `localThreadForStatusContext()` to select current detail, thread-list
+    row, or visible pane detail as the status-hint context.
+  - `markThreadOptimisticallyActive()` and `restoreThreadStatusSnapshot()` now
+    use that helper for target thread context.
+  - `thread/status/changed` now uses `localThreadForStatusContext()` and
+    `updateThreadListStatus()` instead of manual status writes.
+  - Visible non-current tile panes now schedule pane-local status render before
+    the existing background tile-detail reload.
+  - Added executable coverage for a `thread/status/changed` notification
+    targeting a visible non-current tile pane.
+- Validation:
+  - `node --check public/app.js` passed.
+  - `node --test test/conversation-render.test.js test/thread-tile-state.test.js`
+    passed (`161` tests).
+  - `npm test` passed (`1275` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit this local slice and keep it undeployed until a coherent deployable
+    module is ready.

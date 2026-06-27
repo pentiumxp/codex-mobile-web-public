@@ -4747,6 +4747,15 @@ function updateThreadListStatus(threadId, status, options = {}) {
   if (options.render === true) scheduleThreadStatusDetailRender(id);
 }
 
+function localThreadForStatusContext(threadId) {
+  const id = String(threadId || "").trim();
+  if (!id) return null;
+  if (state.currentThread && String(state.currentThread.id || "") === id) return state.currentThread;
+  return state.threads.find((entry) => String(entry && entry.id || "") === id)
+    || state.threadTileDetails && state.threadTileDetails.get(String(id))
+    || null;
+}
+
 function snapshotThreadStatus(threadId) {
   const id = String(threadId || "");
   if (!id) return null;
@@ -4775,7 +4784,7 @@ function restoreThreadStatusSnapshot(snapshot) {
     : snapshot.hadListThread
       ? snapshot.listStatus
       : snapshot.tileStatus;
-  const targetThread = currentThread || listThread || tileThread;
+  const targetThread = localThreadForStatusContext(id) || currentThread || listThread || tileThread;
   updateThreadStatusHints(id, { type: "active" }, restoredStatus, {
     thread: targetThread,
     notify: false,
@@ -4804,7 +4813,7 @@ function markThreadOptimisticallyActive(threadId) {
   const listThread = state.threads.find((entry) => String(entry && entry.id || "") === id) || null;
   const currentMatches = Boolean(state.currentThread && String(state.currentThread.id || "") === id);
   const tileThread = state.threadTileDetails && state.threadTileDetails.get(String(id)) || null;
-  const targetThread = currentMatches ? state.currentThread : listThread || tileThread;
+  const targetThread = localThreadForStatusContext(id) || (currentMatches ? state.currentThread : listThread || tileThread);
   const previousStatus = targetThread && targetThread.status;
   updateThreadStatusHints(id, previousStatus, runningStatus, {
     thread: targetThread,
@@ -20092,7 +20101,7 @@ function applyNotification(method, params) {
     const eventAtMs = threadStatusNotificationEventAtMs(params, runningNotification ? Date.now() : 0, {
       allowReplayReceivedAt: !replayed || runningNotification,
     });
-    const thread = state.threads.find((x) => x.id === params.threadId);
+    const thread = localThreadForStatusContext(params.threadId);
     const previousStatus = thread ? thread.status : null;
     updateThreadStatusHints(params.threadId, previousStatus, params.status, {
       thread,
@@ -20101,16 +20110,14 @@ function applyNotification(method, params) {
       eventAtMs,
       mobileReplay: replayed,
     });
-    if (thread) thread.status = params.status;
+    updateThreadListStatus(params.threadId, params.status);
     pruneHiddenThreads();
     if (state.currentThread && state.currentThread.id === params.threadId) {
-      state.currentThread.status = params.status;
       markThreadViewed(params.threadId, state.currentThread, eventAtMs);
       renderCurrentThread();
       scheduleLivePollIfNeeded(1400);
     } else if (state.threadTileMode && threadTilePaneIsVisible(params.threadId)) {
-      const cached = state.threadTileDetails.get(String(params.threadId || ""));
-      if (cached) cached.status = params.status;
+      scheduleThreadStatusDetailRender(params.threadId);
       loadThreadTileDetail(params.threadId, { force: true, background: true, source: "tile-status" }).catch(showError);
     }
     scheduleRenderThreads();

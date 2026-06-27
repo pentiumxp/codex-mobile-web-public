@@ -1237,6 +1237,7 @@ function evaluatedThreadStatusPaneContext() {
     "applyThreadStatusToThread",
     "scheduleThreadStatusDetailRender",
     "updateThreadListStatus",
+    "localThreadForStatusContext",
     "snapshotThreadStatus",
     "restoreThreadStatusSnapshot",
     "markThreadOptimisticallyActive",
@@ -1291,6 +1292,79 @@ return {
   restoreThreadStatusSnapshot,
   markThreadOptimisticallyActive,
   updateThreadListStatus,
+};
+`)();
+}
+
+function evaluatedThreadStatusNotificationContext() {
+  const sources = [
+    "applyThreadStatusToThread",
+    "scheduleThreadStatusDetailRender",
+    "updateThreadListStatus",
+    "localThreadForStatusContext",
+    "applyNotification",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`
+const calls = {
+  statusHints: [],
+  currentRenders: 0,
+  tileRenders: [],
+  tileLoads: [],
+  renderThreads: 0,
+  livePolls: [],
+  viewed: [],
+  clearedBubbles: [],
+};
+const listThread = { id: "thread-pane", name: "Pane", status: { type: "idle" } };
+const tileThread = { id: "thread-pane", name: "Pane detail", status: { type: "idle" } };
+const currentThread = { id: "thread-current", name: "Current", status: { type: "idle" } };
+const state = {
+  currentThreadId: "thread-current",
+  currentThread,
+  threads: [listThread],
+  threadTileMode: true,
+  threadTileActiveIds: ["thread-pane"],
+  threadTileDetails: new Map([["thread-pane", tileThread]]),
+};
+function shouldThrottleThreadNotification() { return false; }
+function clearThreadTileOperationBubble(threadId) { calls.clearedBubbles.push(threadId); }
+function isRunningStatus(status) { return status && status.type === "active"; }
+function threadStatusNotificationEventAtMs(params, fallback) { return params && params.eventAtMs || fallback || 0; }
+function updateThreadStatusHints(id, previousStatus, nextStatus, options) {
+  calls.statusHints.push({
+    id,
+    previousType: previousStatus && previousStatus.type,
+    nextType: nextStatus && nextStatus.type,
+    threadId: options && options.thread && options.thread.id,
+    threadName: options && options.threadName,
+    notify: options && options.notify,
+  });
+}
+function threadDisplayName(thread) { return thread && (thread.name || thread.id) || ""; }
+function pruneHiddenThreads() { calls.pruned = true; }
+function markThreadViewed(id, thread, eventAtMs) { calls.viewed.push({ id, threadId: thread && thread.id, eventAtMs }); }
+function renderCurrentThread() { calls.currentRenders += 1; }
+function scheduleLivePollIfNeeded(delayMs) { calls.livePolls.push(delayMs); }
+function threadTilePaneIsVisible(id) { return state.threadTileActiveIds.includes(id); }
+function scheduleRenderThreadTilePane(threadId, options = {}) {
+  calls.tileRenders.push({ threadId, preserveScroll: options.preserveScroll });
+  return true;
+}
+function scheduleRenderCurrentThread() { calls.currentRenders += 1; }
+function loadThreadTileDetail(threadId, options = {}) {
+  calls.tileLoads.push({ threadId, source: options.source, force: options.force, background: options.background });
+  return Promise.resolve();
+}
+function showError(err) { calls.error = err && err.message || String(err); }
+function scheduleRenderThreads() { calls.renderThreads += 1; }
+${sources.join("\n")}
+return {
+  state,
+  calls,
+  listThread,
+  tileThread,
+  currentThread,
+  applyNotification,
 };
 `)();
 }
@@ -5024,6 +5098,7 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(appJs, /function updateThreadListStatus\(/);
   assert.match(appJs, /function applyThreadStatusToThread\(/);
   assert.match(appJs, /function scheduleThreadStatusDetailRender\(/);
+  assert.match(appJs, /function localThreadForStatusContext\(/);
   assert.match(appJs, /function snapshotThreadStatus\(/);
   assert.match(appJs, /function restoreThreadStatusSnapshot\(/);
   assert.match(appJs, /function markThreadOptimisticallyActive\(/);
@@ -5059,7 +5134,7 @@ test("thread running hints survive notLoaded list refreshes", () => {
   const optimisticBody = functionBody("markThreadOptimisticallyActive");
   assert.match(optimisticBody, /const runningStatus = \{ type: "active" \};/);
   assert.match(optimisticBody, /noteSubmittedProcessingThreadHint\(id\)/);
-  assert.match(optimisticBody, /const targetThread = currentMatches \? state\.currentThread : listThread \|\| tileThread/);
+  assert.match(optimisticBody, /const targetThread = localThreadForStatusContext\(id\) \|\| \(currentMatches \? state\.currentThread : listThread \|\| tileThread\)/);
   assert.match(optimisticBody, /updateThreadStatusHints\(id, previousStatus, runningStatus/);
   assert.match(optimisticBody, /updateThreadListStatus\(id, runningStatus, \{ render: true \}\)/);
   assert.match(optimisticBody, /if \(currentMatches\) \{[\s\S]*mergeThreadIntoThreadList\(state\.currentThread\)/);
@@ -5067,6 +5142,8 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(functionBody("updateThreadListStatus"), /if \(options\.render === true\) scheduleThreadStatusDetailRender\(id\)/);
   assert.match(functionBody("scheduleThreadStatusDetailRender"), /threadTilePaneIsVisible\(id\)/);
   assert.match(functionBody("scheduleThreadStatusDetailRender"), /scheduleRenderThreadTilePane\(id, \{ preserveScroll: true \}\)/);
+  assert.match(functionBody("localThreadForStatusContext"), /state\.currentThread && String\(state\.currentThread\.id \|\| ""\) === id/);
+  assert.match(functionBody("localThreadForStatusContext"), /state\.threadTileDetails && state\.threadTileDetails\.get\(String\(id\)\)/);
   assert.match(functionBody("snapshotThreadStatus"), /state\.threadTileDetails && state\.threadTileDetails\.get\(String\(id\)\)/);
   const restoreBody = functionBody("restoreThreadStatusSnapshot");
   assert.match(restoreBody, /snapshot\.hadTileThread/);
@@ -5152,11 +5229,13 @@ test("thread running hints survive notLoaded list refreshes", () => {
 
   const notificationBody = functionBody("applyNotification");
   assert.match(notificationBody, /const runningStatus = \{ type: "active" \};/);
-  assert.match(notificationBody, /updateThreadStatusHints\(params\.threadId, state\.currentThread\.status, runningStatus/);
-  assert.match(notificationBody, /updateThreadListStatus\(params\.threadId, runningStatus\)/);
+  assert.match(notificationBody, /const thread = localThreadForStatusContext\(params\.threadId\)/);
+  assert.match(notificationBody, /const previousStatus = thread \? thread\.status : null/);
+  assert.match(notificationBody, /updateThreadListStatus\(params\.threadId, params\.status\)/);
   assert.match(notificationBody, /const completedStatus = \(params\.turn && params\.turn\.status\) \|\| \{ type: "completed" \};/);
   assert.match(notificationBody, /updateThreadStatusHints\(params\.threadId, state\.currentThread\.status, completedStatus/);
   assert.match(notificationBody, /updateThreadListStatus\(params\.threadId, completedStatus\)/);
+  assert.match(notificationBody, /scheduleThreadStatusDetailRender\(params\.threadId\)/);
   assert.match(notificationBody, /scheduleRenderThreads\(\);[\s\S]*scheduleCurrentThreadRefresh\(500\)/);
   assert.match(notificationBody, /scheduleRenderThreads\(\);[\s\S]*schedulePostCompletionThreadRefreshes\(params\.threadId, \[700, 2400\]\)/);
 });
@@ -5208,6 +5287,39 @@ test("thread status snapshot restore resets visible tile pane detail context", (
     threadName: undefined,
     notify: false,
   });
+});
+
+test("thread status notifications update visible tile pane through status helper", () => {
+  const harness = evaluatedThreadStatusNotificationContext();
+
+  harness.applyNotification("thread/status/changed", {
+    threadId: "thread-pane",
+    status: { type: "active" },
+    eventAtMs: 1234,
+  });
+
+  assert.equal(harness.listThread.status.type, "active");
+  assert.equal(harness.tileThread.status.type, "active");
+  assert.equal(harness.currentThread.status.type, "idle");
+  assert.deepEqual(harness.calls.statusHints, [{
+    id: "thread-pane",
+    previousType: "idle",
+    nextType: "active",
+    threadId: "thread-pane",
+    threadName: "Pane",
+    notify: true,
+  }]);
+  assert.deepEqual(harness.calls.tileRenders, [{ threadId: "thread-pane", preserveScroll: true }]);
+  assert.deepEqual(harness.calls.tileLoads, [{
+    threadId: "thread-pane",
+    source: "tile-status",
+    force: true,
+    background: true,
+  }]);
+  assert.equal(harness.calls.currentRenders, 0);
+  assert.equal(harness.calls.renderThreads, 1);
+  assert.equal(harness.calls.pruned, true);
+  assert.deepEqual(harness.calls.livePolls, []);
 });
 
 test("thread merge drops superseded stale active turns", () => {
