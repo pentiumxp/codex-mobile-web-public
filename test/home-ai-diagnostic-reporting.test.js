@@ -118,7 +118,7 @@ test("repeated projection mismatch reports at threshold and success clears", () 
       read_mode: "projection-active-overlay",
       render_mode: "set-inner-html",
       thread_hash: diagnostics.hashIdentifier("thread-secret"),
-      build_id: "0.1.11|codex-mobile-shell-v550",
+      build_id: "0.1.11|codex-mobile-shell-v551",
       title: "private title stripped",
     },
     counts: {

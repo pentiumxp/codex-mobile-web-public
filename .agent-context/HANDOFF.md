@@ -23372,3 +23372,39 @@ The previous full handoff was archived and should be opened only when old proven
     hundreds of visible assistant/operation summary items. Further improvement
     should be a separate visible-item compaction / progressive-active-detail
     slice, not another full-read fallback change.
+
+## 2026-06-28 - Long receipt upward jump expiry removed
+
+- User request:
+  - Before public publishing, remove the time limit on the long receipt upward
+    jump button. The button should not disappear simply because the completed
+    turn is older than a fixed window.
+- Fix:
+  - Removed `TURN_REPLY_JUMP_WINDOW_MS` from `public/app.js`.
+  - `isRecentReplyJumpTurn()` now accepts the current latest completed turn
+    without an elapsed-time cutoff.
+  - `currentRecentCompletedReplyAnchor()` no longer clears an activated anchor
+    by comparing `Date.now()` to `anchor.completedAtMs`; it remains governed by
+    current thread id, latest turn id, live/completed state, activation state,
+    and target visibility.
+  - Existing explicit cleanup paths remain: thread changes, new bottom-follow
+    contexts, clicking the down button, and jump-to-reply click handling.
+  - Static shell/cache advanced to `codex-mobile-shell-v551`.
+- Docs:
+  - `README.md` now has a Chinese v551 release section covering the removed
+    expiry and the preceding active-overlay cold-path closure.
+  - `docs/COMPLEX_FEATURE_PATHS.md` now records that the current-turn upward
+    jump must not expire by elapsed time.
+- Validation:
+  - Focused tests passed:
+    `node --test test/conversation-scroll.test.js test/turn-scroll-controls.test.js test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js test/home-ai-diagnostic-reporting.test.js`
+    (`64` tests).
+  - Full `npm test` passed (`1321` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed before this handoff update.
+- Next:
+  - Commit this v551 package.
+  - Deploy through the Home AI central macOS plugin deploy path because this
+    changes `public/app.js` and `public/sw.js`.
+  - Public sync must still exclude `.agent-context` and runtime/private paths.

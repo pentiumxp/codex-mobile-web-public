@@ -16,6 +16,57 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-28 长回执向上箭头取消时间窗口
+
+本次 public 发布在 active overlay 冷路径修复之外，补一个移动端阅读体验修正：
+长回执完成后，右下角“回到本轮总结”的向上箭头不再有 10 分钟时间窗口。
+以前锚点会在 `currentRecentCompletedReplyAnchor()` 中按完成时间过期，超过窗口后
+即使用户仍在当前线程、最终回执开头仍在视口上方，也无法再通过向上箭头跳回长回执
+开头。现在显示资格只由当前线程、最新 turn、锚点是否已经由完成或用户上滑激活、
+以及目标回执位置是否在视口上方决定；线程切换、点击向下箭头回到底部、发送新消息
+等既有清理路径保持不变。
+
+本次是前端静态行为变化，`CLIENT_BUILD_ID` 和 PWA service worker cache 从
+`codex-mobile-shell-v550` 升级到 `codex-mobile-shell-v551`。已经打开的浏览器或
+PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新控件逻辑。
+
+## 2026-06-28 Active Overlay 冷路径 full-read 循环关闭
+
+这次发布继续处理大 session 进入线程时的服务端详情慢路径。上一轮已经把
+active overlay 详情里的 raw 工具/命令 payload 压缩掉，但生产采样仍显示：
+部署或重启后，运行中的大线程详情可能先走一次 bounded overlay-window 读取，
+随后连续多次退回 app-server full `thread/read`，单次约 `2.7-3.3s`。
+诊断字段显示失败层在 active detail proof gate：
+`activeOverlayReason=assistant-delta-unknown`，而不是线程列表 fallback、
+前端 DOM patch 或普通 app-server 列表 RPC。
+
+本轮修复没有放松 freshness 证明，也没有增加前端兜底。服务端现在把
+active overlay window 作为独立 sidecar partial window 缓存，不再覆盖 live
+dynamic overlay snapshot；active-thread 的 full `thread/read` fallback 也不再
+反向 seed v4 projection cache，避免慢 fallback 污染后续快路径。窗口 sidecar
+会保留来自 live overlay proof input 的 revision/timestamp 元数据；proof policy
+也明确使用双证明域：完整 revision 证据优先，若只有一侧 revision 可见但双方
+timestamp 完整，则使用 timestamp 判断 fresh/stale，只有两个证明域都不完整时才
+返回 `assistant-delta-unknown` 并要求 full read。
+
+生产读回显示当前 active Codex Mobile 大线程连续 12 次
+`GET /api/threads/:id?mode=recent` 全部返回 `projection-active-overlay`，
+`threadReadMs=0`，`activeOverlayReason=overlay-evidence-complete`，
+`coldPathOwner=warm-path`。12 次采样平均耗时约 `181ms`，最小 `139ms`，
+最大 `491ms`。这说明 repeated full-read loop 已关闭。当前极长 active turn
+响应仍约数百 KB，因为其中确实包含大量可见 assistant/operation summary item；
+后续如果继续优化，应进入“可见 item 渐进加载/进一步压缩”模块，而不是再改
+full-read fallback。
+
+验证边界：
+
+- focused active-overlay tests：`52 passed`；
+- full `npm test`：`1321 passed`；
+- `npm run check`、`npm run check:macos`、`git diff --check` 均通过；
+- 通过 Home AI central macOS plugin deploy 路径部署到生产；
+- 本次是 server-only 修复，未改 `public/app.js` 或 service worker，因此
+  app shell/cache 仍保持 `codex-mobile-shell-v550`。
+
 ## 2026-06-27 Active Overlay 详情响应体压缩
 
 这次修复的是运行中大线程详情打开仍然不稳定的第二段服务端路径。部署前采样显示，
