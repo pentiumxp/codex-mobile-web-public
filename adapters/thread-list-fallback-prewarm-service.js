@@ -24,18 +24,32 @@ function boundedCount(value) {
 }
 
 function normalizePrewarmConfig(config = {}) {
+  const limit = boundedNumber(config.limit, 40, 1, 200);
   return {
     enabled: normalizeEnabled(config.enabled, true),
     delayMs: boundedNumber(config.delayMs, 1500, 0, 10 * 60 * 1000),
     retryDelayMs: boundedNumber(config.retryDelayMs, 2500, 100, 10 * 60 * 1000),
     maxDeferrals: boundedNumber(config.maxDeferrals, 5, 0, 100),
-    limit: boundedNumber(config.limit, 40, 1, 200),
+    limit,
+    sourceSnapshotLimit: boundedNumber(config.sourceSnapshotLimit, 1000, Math.max(200, limit), 1000),
   };
 }
 
-function summarizePrewarmResult({ status, limit, startedAtMs, finishedAtMs, threads, diagnostics, errorCode }) {
+function summarizePrewarmResult({
+  status,
+  limit,
+  sourceSnapshotLimit,
+  startedAtMs,
+  finishedAtMs,
+  threads,
+  diagnostics,
+  errorCode,
+}) {
   const elapsedMs = Math.max(0, Number(finishedAtMs || 0) - Number(startedAtMs || 0));
   const safeDiagnostics = diagnostics && typeof diagnostics === "object" ? diagnostics : {};
+  const normalizedSourceSnapshotLimit = boundedCount(
+    safeDiagnostics.sourceSnapshotLimit || sourceSnapshotLimit || configSourceSnapshotLimit({ limit }),
+  );
   return {
     status: compactLabel(status, "unknown", 40),
     limit: boundedCount(limit),
@@ -44,12 +58,17 @@ function summarizePrewarmResult({ status, limit, startedAtMs, finishedAtMs, thre
     cacheDecision: compactLabel(safeDiagnostics.cacheDecision, "", 80),
     cacheHit: safeDiagnostics.cacheHit === true,
     sourceSnapshotHit: safeDiagnostics.sourceSnapshotHit === true,
+    sourceSnapshotLimit: normalizedSourceSnapshotLimit,
     sourceSnapshotBuildCount: boundedCount(safeDiagnostics.sourceSnapshotBuildCount),
     sourceSnapshotRawCount: boundedCount(safeDiagnostics.sourceSnapshotRawCount),
     baselineSourceCount: boundedCount(safeDiagnostics.baselineSourceCount),
     baselineResultCount: boundedCount(safeDiagnostics.baselineResultCount),
     errorCode: compactLabel(errorCode, "", 80),
   };
+}
+
+function configSourceSnapshotLimit(config = {}) {
+  return normalizePrewarmConfig(config).sourceSnapshotLimit;
 }
 
 function summarizePrewarmStatus(status = {}, config = {}) {
@@ -68,11 +87,13 @@ function summarizePrewarmStatus(status = {}, config = {}) {
     retryDelayMs: normalized.retryDelayMs,
     maxDeferrals: normalized.maxDeferrals,
     limit: normalized.limit,
+    sourceSnapshotLimit: normalized.sourceSnapshotLimit,
     lastStatus: compactLabel(lastResult.status, "", 40),
     lastErrorCode: compactLabel(lastResult.errorCode, "", 80),
     lastCacheDecision: compactLabel(lastResult.cacheDecision, "", 80),
     lastCacheHit: lastResult.cacheHit === true,
     lastSourceSnapshotHit: lastResult.sourceSnapshotHit === true,
+    lastSourceSnapshotLimit: boundedCount(lastResult.sourceSnapshotLimit),
     lastResultCount: boundedCount(lastResult.resultCount),
     lastElapsedMs: boundedCount(lastResult.elapsedMs),
     lastSourceSnapshotBuildCount: boundedCount(lastResult.sourceSnapshotBuildCount),
@@ -114,6 +135,7 @@ function createThreadListFallbackPrewarmService(options = {}) {
       lastResult = summarizePrewarmResult({
         status: "disabled",
         limit: normalized.limit,
+        sourceSnapshotLimit: normalized.sourceSnapshotLimit,
         startedAtMs: now(),
         finishedAtMs: now(),
       });
@@ -123,6 +145,7 @@ function createThreadListFallbackPrewarmService(options = {}) {
       lastResult = summarizePrewarmResult({
         status: "failed",
         limit: normalized.limit,
+        sourceSnapshotLimit: normalized.sourceSnapshotLimit,
         startedAtMs: now(),
         finishedAtMs: now(),
         errorCode: "missing-read-fallback",
@@ -139,6 +162,7 @@ function createThreadListFallbackPrewarmService(options = {}) {
       lastResult = summarizePrewarmResult({
         status: "deferred",
         limit: normalized.limit,
+        sourceSnapshotLimit: normalized.sourceSnapshotLimit,
         startedAtMs: now(),
         finishedAtMs: now(),
         errorCode: runGate && typeof runGate === "object" ? runGate.reason : "not-ready",
@@ -153,10 +177,12 @@ function createThreadListFallbackPrewarmService(options = {}) {
       const threads = readFallback(normalized.limit, {
         globalState,
         diagnostics,
+        sourceSnapshotLimit: normalized.sourceSnapshotLimit,
       });
       const result = summarizePrewarmResult({
         status: "completed",
         limit: normalized.limit,
+        sourceSnapshotLimit: normalized.sourceSnapshotLimit,
         startedAtMs,
         finishedAtMs: Number(now()),
         threads,
@@ -170,6 +196,7 @@ function createThreadListFallbackPrewarmService(options = {}) {
       const result = summarizePrewarmResult({
         status: "failed",
         limit: normalized.limit,
+        sourceSnapshotLimit: normalized.sourceSnapshotLimit,
         startedAtMs,
         finishedAtMs: Number(now()),
         diagnostics,
@@ -191,6 +218,7 @@ function createThreadListFallbackPrewarmService(options = {}) {
         reason: "disabled",
         delayMs: normalized.delayMs,
         limit: normalized.limit,
+        sourceSnapshotLimit: normalized.sourceSnapshotLimit,
       };
     }
     if (scheduled) {
@@ -199,6 +227,7 @@ function createThreadListFallbackPrewarmService(options = {}) {
         reason: "already-scheduled",
         delayMs: normalized.delayMs,
         limit: normalized.limit,
+        sourceSnapshotLimit: normalized.sourceSnapshotLimit,
       };
     }
     if (running) {
@@ -207,6 +236,7 @@ function createThreadListFallbackPrewarmService(options = {}) {
         reason: "already-running",
         delayMs: normalized.delayMs,
         limit: normalized.limit,
+        sourceSnapshotLimit: normalized.sourceSnapshotLimit,
       };
     }
     if (completed) {
@@ -215,6 +245,7 @@ function createThreadListFallbackPrewarmService(options = {}) {
         reason: "already-completed",
         delayMs: normalized.delayMs,
         limit: normalized.limit,
+        sourceSnapshotLimit: normalized.sourceSnapshotLimit,
       };
     }
     scheduled = true;
@@ -227,6 +258,7 @@ function createThreadListFallbackPrewarmService(options = {}) {
         lastResult = summarizePrewarmResult({
           status: "deferred",
           limit: normalized.limit,
+          sourceSnapshotLimit: normalized.sourceSnapshotLimit,
           startedAtMs: now(),
           finishedAtMs: now(),
           errorCode: runGate && typeof runGate === "object" ? runGate.reason : "not-ready",
@@ -238,11 +270,12 @@ function createThreadListFallbackPrewarmService(options = {}) {
     }, normalized.delayMs);
     if (timer && typeof timer.unref === "function") timer.unref();
     return {
-      scheduled: true,
-      reason: "scheduled",
-      delayMs: normalized.delayMs,
-      limit: normalized.limit,
-    };
+    scheduled: true,
+    reason: "scheduled",
+    delayMs: normalized.delayMs,
+    limit: normalized.limit,
+    sourceSnapshotLimit: normalized.sourceSnapshotLimit,
+  };
   }
 
   function status() {

@@ -42,6 +42,8 @@ function buildEvidence(report = {}) {
     threadListPrewarmLastCacheDecision: compactLabel(prewarm.lastCacheDecision, 80),
     threadListPrewarmLastCacheHit: prewarm.lastCacheHit === true,
     threadListPrewarmLastSourceSnapshotHit: prewarm.lastSourceSnapshotHit === true,
+    threadListPrewarmSourceSnapshotLimit: boundedCount(prewarm.sourceSnapshotLimit),
+    threadListPrewarmLastSourceSnapshotLimit: boundedCount(prewarm.lastSourceSnapshotLimit),
     threadListPrewarmLastResultCount: boundedCount(prewarm.lastResultCount),
     threadListPrewarmLastElapsedMs: boundedCount(prewarm.lastElapsedMs),
     threadListPrewarmLastSourceSnapshotRawCount: boundedCount(prewarm.lastSourceSnapshotRawCount),

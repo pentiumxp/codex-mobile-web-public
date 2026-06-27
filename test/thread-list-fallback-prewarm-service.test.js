@@ -17,17 +17,20 @@ test("thread-list fallback prewarm normalizes bounded default config", () => {
     retryDelayMs: 2500,
     maxDeferrals: 5,
     limit: 40,
+    sourceSnapshotLimit: 1000,
   });
   assert.deepEqual(normalizePrewarmConfig({
     enabled: "off",
     delayMs: -1,
     limit: 999,
+    sourceSnapshotLimit: 50,
   }), {
     enabled: false,
     delayMs: 0,
     retryDelayMs: 2500,
     maxDeferrals: 5,
     limit: 200,
+    sourceSnapshotLimit: 200,
   });
 });
 
@@ -54,6 +57,7 @@ test("thread-list fallback prewarm schedules once and warms the default cache", 
       calls.push({
         limit,
         globalState: filters.globalState,
+        sourceSnapshotLimit: filters.sourceSnapshotLimit,
       });
       filters.diagnostics.cacheDecision = "miss-rebuild";
       filters.diagnostics.cacheHit = false;
@@ -77,6 +81,7 @@ test("thread-list fallback prewarm schedules once and warms the default cache", 
     reason: "scheduled",
     delayMs: 25,
     limit: 40,
+    sourceSnapshotLimit: 1000,
   });
   assert.equal(scheduledDelay, 25);
   assert.equal(service.schedule({ delayMs: 25, limit: 40 }).reason, "already-scheduled");
@@ -85,12 +90,14 @@ test("thread-list fallback prewarm schedules once and warms the default cache", 
   assert.deepEqual(calls, [{
     limit: 40,
     globalState: { roots: ["/workspace/default"] },
+    sourceSnapshotLimit: 1000,
   }]);
   assert.equal(service.status().completed, true);
   assert.equal(service.schedule({ delayMs: 25, limit: 40 }).reason, "already-completed");
   assert.deepEqual(service.status().lastResult, {
     status: "completed",
     limit: 40,
+    sourceSnapshotLimit: 1000,
     elapsedMs: 10,
     resultCount: 2,
     cacheDecision: "miss-rebuild",
@@ -153,6 +160,7 @@ test("thread-list fallback prewarm disabled config does not schedule or read", (
     reason: "disabled",
     delayMs: 1500,
     limit: 40,
+    sourceSnapshotLimit: 1000,
   });
   assert.equal(service.run({ enabled: false }).status, "disabled");
   assert.equal(called, false);
@@ -180,6 +188,7 @@ test("thread-list fallback prewarm result summary is metadata-only", () => {
   const summary = summarizePrewarmResult({
     status: "completed",
     limit: 40,
+    sourceSnapshotLimit: 1000,
     startedAtMs: 100,
     finishedAtMs: 150,
     threads: [{ id: "private-thread-id", title: "private title" }],
@@ -197,6 +206,7 @@ test("thread-list fallback prewarm result summary is metadata-only", () => {
   assert.deepEqual(summary, {
     status: "completed",
     limit: 40,
+    sourceSnapshotLimit: 1000,
     elapsedMs: 50,
     resultCount: 1,
     cacheDecision: "hit",
@@ -225,6 +235,7 @@ test("thread-list fallback prewarm public status is metadata-only", () => {
       cacheDecision: "miss-rebuild",
       cacheHit: false,
       sourceSnapshotHit: true,
+      sourceSnapshotLimit: 1000,
       sourceSnapshotRawCount: 12,
       baselineSourceCount: 12,
       baselineResultCount: 4,
@@ -236,6 +247,7 @@ test("thread-list fallback prewarm public status is metadata-only", () => {
     retryDelayMs: 2500,
     maxDeferrals: 5,
     limit: 40,
+    sourceSnapshotLimit: 1000,
   });
 
   assert.deepEqual(status, {
@@ -248,11 +260,13 @@ test("thread-list fallback prewarm public status is metadata-only", () => {
     retryDelayMs: 2500,
     maxDeferrals: 5,
     limit: 40,
+    sourceSnapshotLimit: 1000,
     lastStatus: "completed",
     lastErrorCode: "",
     lastCacheDecision: "miss-rebuild",
     lastCacheHit: false,
     lastSourceSnapshotHit: true,
+    lastSourceSnapshotLimit: 1000,
     lastResultCount: 4,
     lastElapsedMs: 123,
     lastSourceSnapshotBuildCount: 0,

@@ -248,7 +248,11 @@ function createThreadListFallbackCacheService(options = {}) {
     });
   }
 
-  function sourceSnapshotLimit(limit) {
+  function sourceSnapshotLimit(limit, filters = {}) {
+    const explicit = Number(filters.sourceSnapshotLimit);
+    if (Number.isFinite(explicit) && explicit > 0) {
+      return Math.max(1, Math.min(1000, Math.trunc(explicit)));
+    }
     const bounded = Math.max(1, Math.min(200, Number(limit || 80)));
     return Math.max(200, Math.min(1000, bounded * 8));
   }
@@ -396,7 +400,7 @@ function createThreadListFallbackCacheService(options = {}) {
     }
     const baseline = baselineService.readBaseline(limit, Object.assign({}, filters, {
       sourceSnapshotKey: sourceSnapshotKey(limit, filters),
-      sourceSnapshotLimit: sourceSnapshotLimit(limit),
+      sourceSnapshotLimit: sourceSnapshotLimit(limit, filters),
     }));
     const threads = Array.isArray(baseline && baseline.threads) ? baseline.threads : [];
     const baselineTimings = baseline && baseline.timings && typeof baseline.timings === "object"

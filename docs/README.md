@@ -68,13 +68,13 @@ checks, and stay undeployed until several compatible slices form a coherent
 runtime module. Do not bump shell/cache, deploy production, or push Public for
 each micro-slice unless the user explicitly asks.
 
-The current deployable module candidate is focused on active detail peak
-latency after the active-turn response budget work. Production readback showed
-steady-state active detail around hundreds of milliseconds, but repeated reads
-still spent measurable time in ordinary projection lookup before the active
-overlay proof gate. The current module makes the orchestrator use the dedicated
-active-overlay projection-window lookup first when that server-owned hot path
-is available, so active detail no longer pays for a normal projection
-normalize/assemble pass before proving and merging the live overlay turn. This
-targets server-side peak latency without changing projection authority,
-visible-item policy, or adding client refresh masking.
+The current deployable module candidate is focused on thread-list cold-start
+and first-entry peak latency after the active-detail hot path work. Production
+readback showed steady-state list/detail reads around hundreds of milliseconds,
+but larger first-paint list requests such as `limit=137&initial=warm-fallback`
+could still miss the process cache even after the default 40-row prewarm had
+completed. The current module makes prewarm build a wider source snapshot so
+larger same-scope first-paint requests can rebuild their final window from warm
+source data instead of synchronously scanning rollout tails again. This targets
+server-side cold peaks without making fallback persistent authority or adding
+client refresh masking.

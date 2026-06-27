@@ -237,6 +237,58 @@ test("fallback cache does not reuse narrower warm entries for wider requests", (
   assert.deepEqual(calls, { stateDb: 2, rollout: 2, sessionIndex: 2 });
 });
 
+test("fallback cache reuses prewarmed source snapshot for wider final-list requests", () => {
+  const { calls, service } = createService({
+    readStateDbFallback(limit, filters) {
+      assert.equal(limit, 1000);
+      assert.equal(filters.searchTerm, undefined);
+      return [
+        { id: "state-1", name: "State 1", updatedAt: 100 },
+        { id: "state-2", name: "State 2", updatedAt: 90 },
+      ];
+    },
+    readRolloutSessionFallback(limit) {
+      assert.equal(limit, 1000);
+      return [
+        { id: "rollout-1", name: "Rollout 1", updatedAt: 400 },
+        { id: "rollout-2", name: "Rollout 2", updatedAt: 80 },
+      ];
+    },
+    readSessionIndexFallback(limit) {
+      assert.equal(limit, 1000);
+      return [
+        { id: "session-1", name: "Session 1", updatedAt: 500 },
+      ];
+    },
+  });
+
+  const prewarmDiagnostics = {};
+  const prewarm = service.readFallback(2, {
+    diagnostics: prewarmDiagnostics,
+    sourceSnapshotLimit: 1000,
+  });
+  assert.deepEqual(prewarm.map((thread) => thread.id), ["session-1", "rollout-1"]);
+  assert.equal(prewarmDiagnostics.cacheDecision, "miss-rebuild");
+  assert.equal(prewarmDiagnostics.sourceSnapshotHit, false);
+  assert.equal(prewarmDiagnostics.sourceSnapshotLimit, 1000);
+  assert.deepEqual(calls, { stateDb: 1, rollout: 1, sessionIndex: 1 });
+
+  const widerDiagnostics = {};
+  const wider = service.readFallback(4, { diagnostics: widerDiagnostics });
+  assert.deepEqual(wider.map((thread) => thread.id), [
+    "session-1",
+    "rollout-1",
+    "state-1",
+    "state-2",
+  ]);
+  assert.equal(widerDiagnostics.cacheHit, false);
+  assert.equal(widerDiagnostics.cacheDecision, "miss-rebuild");
+  assert.equal(widerDiagnostics.sourceSnapshotHit, true);
+  assert.equal(widerDiagnostics.sourceSnapshotLimit, 1000);
+  assert.equal(widerDiagnostics.baselineResultCount, 4);
+  assert.deepEqual(calls, { stateDb: 1, rollout: 1, sessionIndex: 1 });
+});
+
 test("readFallback reuses source snapshot across final-list filter cache misses", () => {
   const { calls, service } = createService({
     readStateDbFallback(limit, filters) {

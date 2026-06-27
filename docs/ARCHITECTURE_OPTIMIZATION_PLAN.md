@@ -2568,6 +2568,49 @@ Production deployment/readback:
 
 Public publishing remains gated by production/user validation.
 
+### 2026-06-28 Thread-List Prewarm Source-Snapshot Coverage Module
+
+This module targets the remaining first-entry peak after active-detail hot path
+work. Production sampling showed default `limit=40&initial=warm-fallback`
+requests using the warm process fallback cache in about hundreds of
+milliseconds, while larger same-scope first-paint requests such as
+`limit=137&initial=warm-fallback` could still rebuild the fallback baseline and
+scan rollout tails even after prewarm had completed.
+
+Root cause: final fallback cache entries are intentionally limit-scoped, and
+the prewarm service warmed only the default final list. The underlying
+source-snapshot mechanism could serve later filter/final-window misses, but the
+prewarmed source snapshot did not have a guaranteed width covering larger
+desktop/tablet first-paint limits. The result was a second cold source scan
+for wider requests.
+
+Scope:
+
+- Keep final fallback cache limit-scoped so narrow cache entries are not used as
+  wider authoritative lists.
+- Let prewarm request a wider bounded `sourceSnapshotLimit` for the current
+  process.
+- Let wider same-scope final-list misses rebuild from that source snapshot
+  without re-reading state DB, rollout tails, or `session_index.jsonl`.
+- Expose `threadListFallbackPrewarm.sourceSnapshotLimit` and
+  `lastSourceSnapshotLimit` through public-config/readback diagnostics.
+
+Non-goals:
+
+- Do not make fallback persistent authority.
+- Do not change search/workspace/archive/cursor semantics.
+- Do not add client refresh masking or UI dedupe.
+
+Required validation:
+
+- Focused tests for fallback cache, baseline, prewarm, Phase-B readback, and
+  thread-list route visibility.
+- Full `npm test`, `npm run check`, `npm run check:macos`, and
+  `git diff --check`.
+- Production readback should prove that prewarm reports
+  `sourceSnapshotLimit=1000`, and a larger same-scope
+  `initial=warm-fallback` request avoids rollout/source rereads after prewarm.
+
 ## Release Rule
 
 Follow the current release order:
