@@ -2143,6 +2143,46 @@ must derive hint context from the local target thread, update list/current/pane
 detail status through `updateThreadListStatus()`, and schedule pane-local
 render before any background tile-detail reload.
 
+### 2026-06-27 Phase C pane-context v544 deployable candidate
+
+The post-v542 pane/context slices are now bundled as a deployable candidate
+instead of continuing as open-ended micro-slices. Static shell/cache is advanced
+to `codex-mobile-shell-v544`.
+
+Deployable scope:
+
+- pane toolbar actions, continuation confirmation, older-history pagination,
+  and manual task-card creation resolve their owning pane/source thread before
+  mutating state;
+- pending approval/server-request writers, answer/resolution paths, and
+  in-turn approval controls preserve pane thread id when server payloads omit
+  `threadId`;
+- task-card pending counts, draft state, draft creation, and visible draft
+  matching update current detail, tile detail, and thread-list mirrors through
+  pane-aware state paths;
+- tile panes mirror the single-thread approval split: visible-turn approvals
+  render inline in the turn, while active non-visible-turn approvals render in
+  the pane body;
+- thread metadata/status/title/goal notifications update visible non-current
+  pane detail caches instead of relying on global current-thread render.
+
+Pre-deploy validation for this candidate includes full local tests/checks plus
+bounded fixture smoke:
+
+- `node --test test/conversation-render.test.js test/thread-tile-state.test.js test/thread-tile-actions.test.js`
+- `npm test`
+- `npm run check`
+- `npm run check:macos`
+- `git diff --check`
+- `node scripts/codex-mobile-thread-tile-visual-fixture.js --width 3000 --height 1800 --panes 5 --json`
+- `node scripts/codex-mobile-thread-tile-visual-fixture.js --width 1366 --height 1024 --panes 3 --menu-overlay --json`
+- `node scripts/codex-mobile-thread-tile-visual-fixture.js --width 1600 --height 1100 --panes 4 --task-card expanded --json`
+- `node scripts/codex-mobile-long-turn-viewport-fixture.js --width 430 --height 932 --json`
+
+This candidate is not deployed and not pushed Public at this point. Next action
+should be either deploy/readback of v544 or an explicit decision to pause Phase
+C and move to another phase.
+
 ### 2026-06-27 Phase E Visual Harness Module v542
 
 Phase E now has its first batched visual-harness module after the cadence

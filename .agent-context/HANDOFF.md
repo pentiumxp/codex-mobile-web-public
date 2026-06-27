@@ -22471,24 +22471,67 @@ The previous full handoff was archived and should be opened only when old proven
   - `028c1ec` `refactor continuation confirm keeps pane context`
   - `fd3735f` `refactor manual task cards keep pane source context`
   - `9483f06` `refactor in-turn approvals keep pane context`
-  - current local slice: tile-pane approval rendering mirrors
-    single-thread inline/out-of-turn approval split.
-- Latest validation for the tile-pane approval render slice:
-  - `node --check public/app.js` passed.
-  - `node --test test/conversation-render.test.js test/thread-tile-state.test.js test/thread-tile-actions.test.js`
-    passed (`171` tests).
+  - `9e1043b` `refactor tile pane approvals match thread surface`
+  - current local deployable candidate: static shell/cache bumped to
+    `codex-mobile-shell-v544` for the batched pane-context module.
+- Latest validation for the v544 deployable-candidate closure:
+  - thread-tile visual fixture 3000x1800, 5 panes passed.
+  - thread-tile visual fixture 1366x1024, 3 panes, overlay mode passed.
+  - thread-tile visual fixture 1600x1100, 4 panes, expanded task-card passed.
+  - long-turn mobile viewport fixture 430x932 passed.
   - `npm test` passed (`1286` tests).
   - `npm run check` passed.
   - `npm run check:macos` passed.
   - `git diff --check` passed.
-- Still not deployed and not pushed Public. Continue small local commits until
-  a coherent deployable Phase C module is ready.
+- Still not deployed and not pushed Public. Candidate should either be deployed
+  and read back through the central Home AI macOS plugin path, or paused for
+  reassessment before starting another optimization phase.
+
+## 2026-06-27 - Phase C pane-context v544 deployable candidate closure
+
+- Current local state:
+  - Continued after local commit `9e1043b` (`refactor tile pane approvals match
+    thread surface`).
+  - Static runtime markers are advanced from `codex-mobile-shell-v543` to
+    `codex-mobile-shell-v544` in `public/app.js` and `public/sw.js`.
+  - This is a closure slice for the batched Phase C pane-context module. It
+    does not add new product behavior beyond making the already validated
+    runtime/static changes deployable as one module.
+- Root-cause boundary:
+  - Symptom/risk: the Phase C pane-context fixes touched static/runtime
+    frontend code but were intentionally kept as local micro-slices without a
+    shell/cache bump. Deploying them without a coherent build marker would
+    make PWA/WebView refresh and production readback ambiguous.
+  - Failing layer: deployability and shell/cache identity for the batched
+    frontend module, not pane behavior, task-card protocol, Home AI host
+    routing, or service-worker lifecycle policy.
+  - Violated invariant: a deployable runtime/static module must have an
+    unambiguous client build id and service-worker cache name.
+- Changes:
+  - `CLIENT_BUILD_ID` is now `0.1.11|codex-mobile-shell-v544`.
+  - `public/sw.js` `CACHE_NAME` is now `codex-mobile-shell-v544`.
+  - README and architecture plan mark the Phase C pane-context batch as a
+    v544 deployable candidate and list the validation gate.
+- Validation:
+  - `node scripts/codex-mobile-thread-tile-visual-fixture.js --width 3000 --height 1800 --panes 5 --json` passed.
+  - `node scripts/codex-mobile-thread-tile-visual-fixture.js --width 1366 --height 1024 --panes 3 --menu-overlay --json` passed.
+  - `node scripts/codex-mobile-thread-tile-visual-fixture.js --width 1600 --height 1100 --panes 4 --task-card expanded --json` passed.
+  - `node scripts/codex-mobile-long-turn-viewport-fixture.js --width 430 --height 932 --json` passed.
+  - `npm test` passed (`1286` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit this closure slice. Do not deploy until the Owner chooses
+    deployment.
 
 ## 2026-06-27 - Phase C tile-pane approval render parity local slice
 
 - Current local state:
   - Continued after local commit `9483f06` (`refactor in-turn approvals keep
     pane context`).
+  - Committed in local commit `9e1043b` (`refactor tile pane approvals match
+    thread surface`).
   - This is a local Phase C pane-context/render parity slice only. It changes
     `public/app.js`, focused tests, README, the architecture plan, and this
     handoff. It does not bump shell/cache, deploy production, or push Public.

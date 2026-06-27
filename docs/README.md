@@ -82,3 +82,9 @@ context when the server request itself omits a thread id. Tile panes must also
 render visible-turn approvals inline and non-visible-turn pending approvals in
 the pane body, matching the single-thread surface instead of dropping pane-local
 requests.
+
+The current pane/context batch is prepared as deployable shell
+`codex-mobile-shell-v544`. It remains local until the Owner explicitly chooses
+deployment. Deployment should use the central Home AI macOS plugin deploy path
+and should be followed by `/api/public-config` readback plus pane/thread-tile
+smoke observation.
