@@ -21878,3 +21878,43 @@ The previous full handoff was archived and should be opened only when old proven
 - Next:
   - Commit this local slice and keep it undeployed until a coherent deployable
     module is ready.
+
+## 2026-06-27 - Phase C server request answer context local slice
+
+- Current local state:
+  - Continued after local commit `bea277b` (`refactor task card draft state
+    uses pane context`).
+  - This is a local Phase C pane-state/server-request answer-context slice
+    only. It changes `public/app.js`, focused tests, README, and the
+    architecture plan. It does not bump shell/cache, deploy production, or push
+    Public.
+- Root-cause boundary:
+  - Symptom/risk: pending server request render and action controls already
+    carried pane thread context, but `answerServerRequest()` stored
+    `result.request` from `/api/approvals/:id` directly. If the server response
+    omitted `params.threadId`, later resolved/removal state could fall back to
+    global `state.currentThreadId` and repaint the wrong thread/pane.
+  - Failing layer: frontend server-request answer state preservation after API
+    response, not approval API semantics, MCP protocol, server projection,
+    shell/cache, or Home AI host routing.
+  - Violated invariant: a user-input/approval response initiated from a pane
+    must keep that pane thread id through all local pending-approval states,
+    even when the server response is missing thread metadata.
+- Changes:
+  - `answerServerRequest()` now stores
+    `serverRequestWithThreadContext(result.request, threadId)` when the server
+    returns a request object.
+  - Added executable coverage for a pane-local user-input request whose server
+    response lacks `params.threadId`, proving the stored request retains the
+    pane id and only schedules pane renders.
+- Validation:
+  - `node --check public/app.js` passed.
+  - `node --test test/conversation-render.test.js test/thread-detail-actions.test.js`
+    passed (`128` tests).
+  - `npm test` passed (`1270` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit this local slice and keep it undeployed until a coherent deployable
+    module is ready.

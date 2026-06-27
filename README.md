@@ -641,6 +641,35 @@ npm run check:macos  # passed
 git diff --check  # passed
 ```
 
+## 2026-06-27 Phase C Server Request Answer Context Slice
+
+这是 approval request thread context 之后的相邻 Phase C 本地切片，不单独部署、
+不推 Public。上一片已经让 pending server request 卡片和按钮携带 pane thread
+context；这一片继续收敛“答复提交后”的状态回写：如果 `/api/approvals/:id`
+返回的 `request` 缺少 `params.threadId`，客户端会保留原 action 的 thread context，
+避免后续 resolved/removal 刷新退回全局 `state.currentThreadId`。
+
+改动边界：
+
+- `answerServerRequest()` 成功收到 `result.request` 后，通过
+  `serverRequestWithThreadContext(result.request, threadId)` 写回本地
+  `pendingApprovals`；
+- 新增可执行测试，模拟平铺 pane 中提交 user-input request，服务端返回不带 thread id
+  的 resolved request，验证本地仍保存 `thread-tile`，且只调度 pane render；
+- 不改变 approval API、MCP 授权/输入协议、server projection、shell/cache 版本或生产
+  部署状态。
+
+验证：
+
+```bash
+node --check public/app.js
+node --test test/conversation-render.test.js test/thread-detail-actions.test.js  # 128 passed
+npm test  # 1270 passed
+npm run check  # passed
+npm run check:macos  # passed
+git diff --check  # passed
+```
+
 ## 2026-06-27 Phase C Task-card Draft Render Context Slice
 
 这是 approval request thread context 之后的相邻 Phase C 本地切片，不单独部署、

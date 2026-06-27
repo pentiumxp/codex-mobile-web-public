@@ -22946,7 +22946,7 @@ async function answerServerRequest(requestId, payload, options = {}) {
       body: JSON.stringify(payload || {}),
       timeoutMs: 20000,
     });
-    if (result && result.request) state.pendingApprovals.set(key, result.request);
+    if (result && result.request) state.pendingApprovals.set(key, serverRequestWithThreadContext(result.request, threadId));
     $("connectionState").classList.remove("error");
     $("connectionState").textContent = isUserInputRequest(request) ? "Response sent" : "Approval sent";
     markActivity(isUserInputRequest(request) ? "输入已发送" : "批准发送");

@@ -2068,6 +2068,10 @@ materialization, and draft state transitions. The draft state slice requires
 `Dismiss` and materialization status changes to carry source thread id and
 schedule either current-thread render or pane-local render, not global
 `renderCurrentThread()` by default.
+Server request answer handling follows the same rule: if an approval/user-input
+response comes back without thread metadata, the client must preserve the
+action's pane thread id before storing the returned request, so later
+resolved/removal renders cannot fall back to the wrong current thread.
 
 ### 2026-06-27 Phase E Visual Harness Module v542
 

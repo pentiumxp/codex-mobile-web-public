@@ -1257,6 +1257,7 @@ function evaluatedThreadPendingApprovalProjection() {
     "upsertServerRequest",
     "syncThreadPendingServerRequests",
     "serverRequestWithThreadContext",
+    "answerServerRequest",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
 const HIDDEN_SERVER_REQUEST_METHODS = new Set();
@@ -1271,6 +1272,8 @@ const state = {
 let activity = "";
 let renderCount = 0;
 let tileRenderCalls = [];
+let apiResult = {};
+const apiCalls = [];
 function escapeHtml(value) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -1286,8 +1289,25 @@ function scheduleRenderThreadTilePane(threadId) {
   tileRenderCalls.push(String(threadId || ""));
   return true;
 }
+async function api(url, options) {
+  apiCalls.push({ url, options });
+  return apiResult;
+}
+function setApiResult(value) { apiResult = value; }
+function $(id) { return { classList: { remove() {}, add() {} }, textContent: "" }; }
+function showError(err) { throw err; }
 ${sources.join("\n")}
-return { state, syncThreadPendingServerRequests, renderPendingApprovals, activity: () => activity, renderCount: () => renderCount, tileRenderCalls: () => tileRenderCalls.slice() };
+return {
+  state,
+  syncThreadPendingServerRequests,
+  renderPendingApprovals,
+  answerServerRequest,
+  setApiResult,
+  apiCalls: () => apiCalls.slice(),
+  activity: () => activity,
+  renderCount: () => renderCount,
+  tileRenderCalls: () => tileRenderCalls.slice(),
+};
 `)();
 }
 
@@ -4877,6 +4897,45 @@ test("thread detail pending server requests attach pane thread context when requ
   assert.match(html, /data-approval-id="approval-no-thread"/);
   assert.match(html, /data-approval-thread-id="thread-tile"/);
   assert.doesNotMatch(html, /data-approval-thread-id="thread-current"/);
+});
+
+test("thread detail server request answers preserve pane thread context from server responses", async () => {
+  const harness = evaluatedThreadPendingApprovalProjection();
+  harness.state.currentThreadId = "thread-current";
+  harness.state.currentThread = { id: "thread-current" };
+  harness.state.threadTileMode = true;
+  harness.syncThreadPendingServerRequests({
+    id: "thread-tile",
+    pendingServerRequests: [
+      {
+        id: "input-answer",
+        method: "item/tool/requestUserInput",
+        status: "waiting",
+        actionable: true,
+        params: {
+          threadId: "thread-tile",
+          questions: [{ id: "answer" }],
+        },
+      },
+    ],
+  });
+  harness.setApiResult({
+    request: {
+      id: "input-answer",
+      method: "item/tool/requestUserInput",
+      status: "resolved",
+      actionable: false,
+      params: { questions: [{ id: "answer" }] },
+    },
+  });
+
+  await harness.answerServerRequest("input-answer", { responseText: "ok", questionId: "answer" }, { threadId: "thread-tile" });
+  const stored = harness.state.pendingApprovals.get("input-answer");
+
+  assert.equal(stored.params.threadId, "thread-tile");
+  assert.equal(harness.renderCount(), 0);
+  assert.deepEqual(harness.tileRenderCalls(), ["thread-tile", "thread-tile", "thread-tile"]);
+  assert.equal(harness.apiCalls()[0].url, "/api/approvals/input-answer");
 });
 
 test("active turn state follows only the latest durable turn", () => {
