@@ -568,6 +568,50 @@
     };
   }
 
+  function planThreadDetailRefreshPostMergeTimingFields(plan = {}) {
+    const groups = Array.isArray(plan && plan.groups) ? plan.groups : [];
+    if (!groups.length) {
+      return {
+        ok: false,
+        entries: [],
+        timings: {},
+        reason: "missing-post-merge-groups",
+      };
+    }
+    const seenFields = new Set();
+    const entries = [];
+    const timings = {};
+    for (const group of groups) {
+      const timing = compactReason(group && group.timing, "");
+      const field = compactReason(group && group.timingField, "");
+      if (!timing || !field) {
+        return {
+          ok: false,
+          entries: [],
+          timings: {},
+          reason: "missing-post-merge-timing-metadata",
+        };
+      }
+      if (seenFields.has(field)) {
+        return {
+          ok: false,
+          entries: [],
+          timings: {},
+          reason: "duplicate-post-merge-timing-field",
+        };
+      }
+      seenFields.add(field);
+      entries.push({ timing, field });
+      timings[field] = 0;
+    }
+    return {
+      ok: true,
+      entries,
+      timings,
+      reason: "post-merge-timing-fields",
+    };
+  }
+
   function planThreadDetailRefreshPatchAttemptEffects(input = {}) {
     const shouldRenderDetail = Boolean(input.shouldRenderDetail);
     const tryTilePanePatch = Boolean(input.tryTilePanePatch);
@@ -1769,6 +1813,7 @@
     planThreadDetailRefreshPatchSurfaceExecutionStage,
     planThreadDetailRefreshPatchSurfaceResultStage,
     planThreadDetailRefreshPostMergeEffects,
+    planThreadDetailRefreshPostMergeTimingFields,
     planThreadDetailRefreshPatchExecutionStage,
     planSingleThreadEarlyShellExecution,
     planSingleThreadFullRenderShell,

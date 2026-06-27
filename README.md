@@ -16,6 +16,40 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-27 Phase A Post-Merge Timing Fields Local Slice
+
+这是 v539 生产部署后的第三个 Phase A 本地小切片，尚未 bump shell/cache，尚未部署。
+
+根因边界：
+
+- 症状/风险：上一切片已经让 post-merge 执行按 plan group 运行，但
+  `public/app.js` 仍硬编码 `mergeMs`、`composerRenderMs`、`threadListRenderMs`
+  的 timing 初始化和 `timingField` 校验。后续如果 plan 增删 timing group，
+  app 编排层仍会持有策略细节。
+- 失败层：前端 thread-detail post-merge timing metadata ownership，不是
+  server projection、read API、DOM patch 或 scroll 策略。
+- 不变式：post-merge timing 字段归一、重复字段拒绝和初始 timing shape
+  应由 `public/thread-detail-render-plan.js` 统一声明；app 层只执行 effect
+  并写入返回的字段。
+
+改动：
+
+- 新增 `planThreadDetailRefreshPostMergeTimingFields()`，从 post-merge plan
+  生成有序 `{ timing, field }` entries 和初始化 timings，并拒绝缺失或重复
+  timing metadata。
+- `applyThreadDetailRefreshTimedPostMergeEffectsPlan()` 改为消费该 helper，
+  不再在 `public/app.js` 内硬编码 timing 字段集合。
+- 补充 focused tests，覆盖正常字段顺序、空 group、缺失 metadata、重复字段，
+  并用 source-level regression 防止 app 层重新读取 `group.timingField` 或硬编码
+  timing 对象。
+
+验证：
+
+```bash
+node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/composer-draft.test.js  # 201 passed
+node --check public/thread-detail-render-plan.js && node --check public/app.js
+```
+
 ## 2026-06-27 Phase A Refresh Render Stage Local Slice
 
 这是 v539 生产部署后的下一个本地小切片，尚未 bump shell/cache，尚未部署。

@@ -910,6 +910,12 @@ each group, and `refreshCurrentThread` / full-backfill consume a generic
 post-merge execution helper instead of hardcoding `merge`, `composer-render`,
 and `thread-list-render` timing calls. First-paint keeps its explicit split
 because draft restore intentionally runs between merge and composer render.
+The next local slice moves post-merge timing metadata ownership into the same
+planning boundary: `planThreadDetailRefreshPostMergeTimingFields` now validates
+the ordered timing/field pairs, rejects missing or duplicate timing fields, and
+returns the initial timing result shape. App code no longer hardcodes
+`mergeMs`, `composerRenderMs`, and `threadListRenderMs`; it only executes the
+planned groups and writes durations into the planned fields.
 Refresh patch attempt result planning now also lives there:
 `planThreadDetailRefreshPatchAttemptResult` normalizes tile-pane success,
 local-patch success, local-patch rejection, metadata-only tile misses, and

@@ -9467,17 +9467,14 @@ function applyThreadDetailRefreshTimedPostMergeEffectsGroup(plan, timing, option
 }
 
 function applyThreadDetailRefreshTimedPostMergeEffectsPlan(plan, options = {}) {
-  const groups = Array.isArray(plan && plan.groups) ? plan.groups : [];
-  if (!groups.length) throw new Error("Thread detail refresh post-merge effects missing");
-  const timings = {
-    mergeMs: 0,
-    composerRenderMs: 0,
-    threadListRenderMs: 0,
-  };
-  for (const group of groups) {
-    const timing = String(group && group.timing || "");
-    const field = String(group && group.timingField || "");
-    if (!timing || !field) throw new Error("Thread detail refresh post-merge timing metadata missing");
+  const timingFieldsPlan = threadDetailRenderPlanApi.planThreadDetailRefreshPostMergeTimingFields(plan);
+  if (!timingFieldsPlan.ok) {
+    throw new Error(`Thread detail refresh post-merge timing metadata invalid: ${timingFieldsPlan.reason || "unknown"}`);
+  }
+  const timings = Object.assign({}, timingFieldsPlan.timings);
+  for (const entry of timingFieldsPlan.entries) {
+    const timing = entry.timing;
+    const field = entry.field;
     const startedAt = timing === "merge" && Number.isFinite(options.mergeStartedAt)
       ? options.mergeStartedAt
       : nowPerfMs();

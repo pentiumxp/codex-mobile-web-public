@@ -4451,8 +4451,12 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(functionBody("applyThreadDetailRefreshResponseEffect"), /state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, thread\);/);
   assert.match(appJs, /function applyThreadDetailRefreshTimedPostMergeEffectsGroup\(plan, timing, options = \{\}\)/);
   assert.match(appJs, /function applyThreadDetailRefreshTimedPostMergeEffectsPlan\(plan, options = \{\}\)/);
-  assert.match(functionBody("applyThreadDetailRefreshTimedPostMergeEffectsPlan"), /const field = String\(group && group\.timingField \|\| ""\);/);
+  assert.match(functionBody("applyThreadDetailRefreshTimedPostMergeEffectsPlan"), /const timingFieldsPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPostMergeTimingFields\(plan\);/);
+  assert.match(functionBody("applyThreadDetailRefreshTimedPostMergeEffectsPlan"), /const timings = Object\.assign\(\{\}, timingFieldsPlan\.timings\);/);
+  assert.match(functionBody("applyThreadDetailRefreshTimedPostMergeEffectsPlan"), /for \(const entry of timingFieldsPlan\.entries\) \{/);
   assert.match(functionBody("applyThreadDetailRefreshTimedPostMergeEffectsPlan"), /timings\[field\] = applyThreadDetailRefreshTimedPostMergeEffectsGroup\(plan, timing, \{ startedAt \}\);/);
+  assert.doesNotMatch(functionBody("applyThreadDetailRefreshTimedPostMergeEffectsPlan"), /mergeMs: 0,\s*composerRenderMs: 0,\s*threadListRenderMs: 0/);
+  assert.doesNotMatch(functionBody("applyThreadDetailRefreshTimedPostMergeEffectsPlan"), /group && group\.timingField/);
   assert.match(functionBody("refreshCurrentThread"), /const postMergeTimings = applyThreadDetailRefreshTimedPostMergeEffectsPlan\(postMergePlan, \{[\s\S]*mergeStartedAt,[\s\S]*\}\);/);
   assert.match(functionBody("refreshCurrentThread"), /const mergeMs = postMergeTimings\.mergeMs;/);
   assert.match(functionBody("refreshCurrentThread"), /const composerRenderMs = postMergeTimings\.composerRenderMs;/);

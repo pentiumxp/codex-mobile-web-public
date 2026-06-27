@@ -779,7 +779,8 @@ test("thread detail refresh patch surface execution stage composes probe result 
 });
 
 test("thread detail refresh post-merge effects plan preserves timing groups and order", () => {
-  assert.deepEqual(renderPlan.planThreadDetailRefreshPostMergeEffects(), {
+  const postMergePlan = renderPlan.planThreadDetailRefreshPostMergeEffects();
+  assert.deepEqual(postMergePlan, {
     groups: [
       {
         timing: "merge",
@@ -798,6 +799,48 @@ test("thread detail refresh post-merge effects plan preserves timing groups and 
       },
     ],
     reason: "default-post-merge-effects",
+  });
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPostMergeTimingFields(postMergePlan), {
+    ok: true,
+    entries: [
+      { timing: "merge", field: "mergeMs" },
+      { timing: "composer-render", field: "composerRenderMs" },
+      { timing: "thread-list-render", field: "threadListRenderMs" },
+    ],
+    timings: {
+      mergeMs: 0,
+      composerRenderMs: 0,
+      threadListRenderMs: 0,
+    },
+    reason: "post-merge-timing-fields",
+  });
+});
+
+test("thread detail refresh post-merge timing field plan rejects invalid metadata", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPostMergeTimingFields({ groups: [] }), {
+    ok: false,
+    entries: [],
+    timings: {},
+    reason: "missing-post-merge-groups",
+  });
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPostMergeTimingFields({
+    groups: [{ timing: "merge", effects: ["merge-thread-list"] }],
+  }), {
+    ok: false,
+    entries: [],
+    timings: {},
+    reason: "missing-post-merge-timing-metadata",
+  });
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPostMergeTimingFields({
+    groups: [
+      { timing: "merge", timingField: "mergeMs", effects: [] },
+      { timing: "composer-render", timingField: "mergeMs", effects: [] },
+    ],
+  }), {
+    ok: false,
+    entries: [],
+    timings: {},
+    reason: "duplicate-post-merge-timing-field",
   });
 });
 

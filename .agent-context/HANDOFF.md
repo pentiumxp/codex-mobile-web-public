@@ -20071,3 +20071,43 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit this local slice.
   - Continue Phase A with one more adjacent refresh ownership slice, then decide
     whether the local Phase A batch is ready for shell/cache bump and deploy.
+
+## 2026-06-27 - Phase A post-merge timing fields local slice
+
+- Current local state:
+  - Continued after local commit `fd69585` (`refactor: plan thread detail
+    post merge timings`).
+  - This is a local Phase A slice. It does not bump `CLIENT_BUILD_ID` / PWA
+    shell cache and is not deployed by itself.
+- Root-cause boundary:
+  - Symptom/risk: post-merge effect groups were plan-driven, but
+    `public/app.js` still owned timing field initialization and validation for
+    `mergeMs`, `composerRenderMs`, and `threadListRenderMs`. Future group or
+    timing-field changes could still require app orchestration edits.
+  - Failing layer: frontend thread-detail post-merge timing metadata ownership.
+  - Violated invariant: post-merge timing/field pairs, duplicate-field
+    rejection, and initial timing result shape should be declared by
+    `public/thread-detail-render-plan.js`; app code should only execute effects
+    and record durations into planned fields.
+- Changes:
+  - Added `planThreadDetailRefreshPostMergeTimingFields()` in
+    `public/thread-detail-render-plan.js`.
+  - `applyThreadDetailRefreshTimedPostMergeEffectsPlan()` now consumes the
+    timing-fields plan and no longer hardcodes timing result keys or reads
+    `group.timingField` directly.
+  - Added focused tests for normal timing field order, missing groups, missing
+    metadata, duplicate fields, and app wiring regressions.
+  - Updated `README.md` and `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` with the
+    local-slice boundary.
+- Validation:
+  - `node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/composer-draft.test.js`
+    passed (`201` tests).
+  - `node --check public/thread-detail-render-plan.js && node --check public/app.js`
+    passed.
+  - `npm run check` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit this local slice.
+  - Continue Phase A only if there is another adjacent ownership seam with
+    clear root-cause value; otherwise prepare the accumulated local Phase A
+    slices for one shell/cache bump and central deploy when requested.
