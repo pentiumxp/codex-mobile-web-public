@@ -155,6 +155,7 @@
     }
     if (input.currentThreadId && threadId === String(input.currentThreadId) && input.currentThreadSettled) return false;
     if (input.currentThreadHasLiveTurn) return true;
+    if (!input.mobileReplay && (isTerminalStatus(status) || latestTerminalTurn(input.thread) || input.eventIsTerminal)) return false;
     return !settledStatusFreshEnoughForRunningHint(input);
   }
 

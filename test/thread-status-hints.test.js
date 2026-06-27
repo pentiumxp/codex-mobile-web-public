@@ -60,6 +60,45 @@ test("thread status hints clear running state for fresh completed events", () =>
   }), false);
 });
 
+test("thread status hints clear non-replay terminal rows even when local hint is newer", () => {
+  const thread = {
+    id: "thread-a",
+    status: { type: "completed" },
+    updatedAtMs: 1000,
+    turns: [
+      { id: "turn-a", status: { type: "completed" }, completedAtMs: 1000 },
+    ],
+  };
+
+  assert.equal(policy.shouldKeepRunningHintForSettledStatus({
+    threadId: "thread-a",
+    thread,
+    status: thread.status,
+    isRunningHinted: true,
+    runningHintedAtMs: 2000,
+    eventAtMs: 1000,
+    eventIsTerminal: true,
+    mobileReplay: false,
+  }), false);
+});
+
+test("thread status hints clear terminal list rows without turn details", () => {
+  const thread = {
+    id: "thread-a",
+    status: "completed",
+    updatedAtMs: 1000,
+    turns: [],
+  };
+
+  assert.equal(policy.shouldKeepRunningHintForSettledStatus({
+    threadId: "thread-a",
+    thread,
+    status: thread.status,
+    isRunningHinted: true,
+    runningHintedAtMs: 2000,
+  }), false);
+});
+
 test("thread status hints mark unread only when terminal activity is newer than the view", () => {
   const thread = {
     id: "thread-a",
