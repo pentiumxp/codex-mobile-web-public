@@ -341,6 +341,15 @@ Current acceleration targets:
    `ttc_6bd6684e3319218f84`. Phase B can now use the mux evidence to compare
    Mobile-side visible filtering/post-process cost and thread-list merge cost
    before changing app-server query semantics.
+   The next local Phase B slice therefore extracts route-level thread-list
+   merge attribution without changing behavior: `thread-list-route-merge-service`
+   wraps the existing `mergeThreadSummaryList` path and records bounded
+   app-server/fallback/input/unique/duplicate/merged/output/limit-drop counts.
+   Phase B readback and decision evidence now route dominant warm-list
+   `mergeMs` to `thread-list-route-merge` / `route-merge-latency`, so future
+   optimization can target duplicate pressure, limit-window behavior, or cached
+   display-summary cost with evidence instead of changing app-server query
+   semantics prematurely.
    Earlier local
    fallback attribution slices also made baseline source work explicit:
    fallback baseline source reads now

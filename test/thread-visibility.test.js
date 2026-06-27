@@ -916,6 +916,7 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   const prewarmServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-fallback-prewarm-service.js"), "utf8");
   const appServerFetchPolicyJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-app-server-fetch-policy-service.js"), "utf8");
   const coldPathDiagnosisServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-cold-path-diagnosis-service.js"), "utf8");
+  const routeMergeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-route-merge-service.js"), "utf8");
   const routeIndex = serverJs.indexOf('if (url.pathname === "/api/threads" && req.method === "GET")');
   assert.ok(routeIndex >= 0, "missing thread list route");
   const routeBody = serverJs.slice(routeIndex, serverJs.indexOf('const threadRename = url.pathname.match', routeIndex));
@@ -945,9 +946,13 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(appServerFetchPolicyJs, /threadListAppServerFetchTimingFields/);
   assert.match(appServerFetchPolicyJs, /threadListAppServerLatencyTimingFields/);
   assert.match(coldPathDiagnosisServiceJs, /diagnoseThreadListColdPath/);
+  assert.match(routeMergeServiceJs, /mergeThreadListRouteResult/);
+  assert.match(routeMergeServiceJs, /routeMergeDuplicateCount/);
+  assert.match(routeMergeServiceJs, /routeMergeLimitDropCount/);
   assert.match(serverJs, /planThreadListAppServerFetch/);
   assert.match(serverJs, /threadListAppServerFetchTimingFields/);
   assert.match(serverJs, /threadListAppServerLatencyTimingFields/);
+  assert.match(serverJs, /mergeThreadListRouteResult/);
   assert.match(serverJs, /diagnoseThreadListColdPath/);
   assert.match(serverJs, /stripThreadListDetailFields/);
   assert.match(serverJs, /stripThreadListResultDetailFields/);
@@ -1046,7 +1051,9 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeBody, /logThreadList\("deferred_complete"/);
   assert.match(routeBody, /logThreadList\("complete"/);
   assert.match(routeBody, /const fallback = readThreadListFallback\(limit, \{ cwd, searchTerm, globalState, diagnostics: fallbackDiagnostics \}\);/);
-  assert.match(routeBody, /normalizeThreadListResultStatuses\(mergeThreadListFallback\(appServerResult, fallback, limit\)\)/);
+  assert.match(routeBody, /const routeMerge = mergeThreadListRouteResult\(\{[\s\S]*result: appServerResult,[\s\S]*fallbackThreads: fallback,[\s\S]*limit,[\s\S]*mergeThreadSummaryList,[\s\S]*\}\);/);
+  assert.match(routeBody, /Object\.assign\(timings, routeMerge\.diagnostics\)/);
+  assert.match(routeBody, /normalizeThreadListResultStatuses\(routeMerge\.result\)/);
   assert.match(routeBody, /normalizeThreadSummaryLiveStatus\(attachThreadTaskCardCountsToSummary\(thread\)\)/);
   const threadReadIndex = serverJs.indexOf('const threadRead = url.pathname.match(/^\\/api\\/threads\\/([^/]+)$/);');
   const threadReadBody = serverJs.slice(threadReadIndex, serverJs.indexOf('const threadTurns = url.pathname.match', threadReadIndex));

@@ -74,6 +74,42 @@ npm test
 git diff --check
 ```
 
+## 2026-06-27 Phase B Route Merge Attribution Local Slice
+
+本地继续 Phase B 时，v538 生产证据显示 mux RPC 已不是当前样本瓶颈：
+`threadListMuxRpcLastMs=7`，Mobile 侧 `appServerRpcMs=9`，但同一类读回里
+`appServerVisibleFilterMs` 和最终 `mergeMs` 可能成为主要耗时。这个切片只做
+归因和可测试边界，不改变 `/api/threads` 返回内容、排序、可见性、fallback
+cache 语义或 app-server 查询参数。
+
+改动：
+
+- 新增 `adapters/thread-list-route-merge-service.js`，把 app-server rows 与
+  fallback rows 的最终 route-level merge 包成纯 helper，返回原有合并结果和
+  bounded diagnostics：app-server/fallback/input/unique/duplicate/merged/output
+  counts 以及 limit drop。
+- `/api/threads` 继续使用同一 `mergeThreadSummaryList` 行为，但把
+  `routeMerge*` diagnostics 写入 `mobileDiagnostics.threadListTimings`。
+- Phase B readback 和 decision service 新增 route merge evidence；当 warm
+  list 的最终 merge 成为主要耗时时，decision 归到
+  `thread-list-route-merge` / `route-merge-latency`，而不是误归到 app-server
+  RPC 或泛化的 warm cache。
+
+验证：
+
+```bash
+node --check adapters/thread-list-route-merge-service.js && node --check server.js && node --check scripts/codex-mobile-phase-b-readback-smoke.js && node --check adapters/phase-b-readback-decision-service.js
+node --test test/thread-list-route-merge-service.test.js test/phase-b-readback-decision-service.test.js test/phase-b-readback-smoke.test.js test/thread-list-app-server-fetch-policy-service.test.js test/thread-visibility.test.js test/thread-list-fallback-cache-service.test.js test/thread-list-fallback-baseline-service.test.js test/thread-list-cold-path-diagnosis-service.test.js
+```
+
+结果：focused/route tests `108` passed。该切片尚未部署；等凑成下一组
+Phase B 模块后再 bump shell/cache 并走 Home AI central macOS plugin deploy。
+
+相关平台状态：Home AI 已在 `471b25bd` 修复 selected mux deploy retry refresh
+contract。之后使用 explicit mux runtime reason 的 Codex Mobile 部署，即使
+source/prod 文件 diff 为零，也会因 deploy reason 或未完成 repair state 强制刷新
+selected mux。
+
 ## 2026-06-27 v537 Phase B RPC/Mux Evidence Module
 
 v537 把两个本地 Phase B 切片作为一个模块部署：`6624f1b` 记录 Mobile 到

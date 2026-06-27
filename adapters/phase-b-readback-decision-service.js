@@ -56,12 +56,23 @@ function buildEvidence(report = {}) {
     threadListSourceSnapshotHit: list.fallbackSourceSnapshotHit === true,
     threadListSourceSnapshotRawCount: boundedCount(list.fallbackSourceSnapshotRawCount),
     threadListResultCount: boundedCount(list.resultCount),
+    threadListFallbackMs: boundedCount(list.fallbackMs),
+    threadListMergeMs: boundedCount(list.mergeMs),
+    threadListDecorateMs: boundedCount(list.decorateMs),
     threadListFinalFilterInputCount: boundedCount(list.fallbackBaselineFinalFilterInputCount),
     threadListFinalFilterOutputCount: boundedCount(list.fallbackBaselineFinalFilterOutputCount),
     threadListMergeInputCount: boundedCount(list.fallbackBaselineMergeInputCount),
     threadListMergeOutputCount: boundedCount(list.fallbackBaselineMergeOutputCount),
     threadListMergeDuplicateCount: boundedCount(list.fallbackBaselineMergeDuplicateCount),
     threadListLimitDropCount: boundedCount(list.fallbackBaselineLimitDropCount),
+    threadListRouteMergeAppServerInputCount: boundedCount(list.routeMergeAppServerInputCount),
+    threadListRouteMergeFallbackInputCount: boundedCount(list.routeMergeFallbackInputCount),
+    threadListRouteMergeInputCount: boundedCount(list.routeMergeInputCount),
+    threadListRouteMergeUniqueInputCount: boundedCount(list.routeMergeUniqueInputCount),
+    threadListRouteMergeDuplicateCount: boundedCount(list.routeMergeDuplicateCount),
+    threadListRouteMergeMergedCount: boundedCount(list.routeMergeMergedCount),
+    threadListRouteMergeOutputCount: boundedCount(list.routeMergeOutputCount),
+    threadListRouteMergeLimitDropCount: boundedCount(list.routeMergeLimitDropCount),
     threadListAppServerRequestedLimit: boundedCount(list.appServerRequestedLimit),
     threadListAppServerRequestLimit: boundedCount(list.appServerRequestLimit),
     threadListAppServerRequestReason: compactLabel(list.appServerRequestReason, 80),
@@ -371,6 +382,22 @@ function appServerThreadListLatencyDecision(list = {}, report = {}) {
   };
 }
 
+function routeMergeLatencyDecision(list = {}) {
+  const totalMs = boundedCount(list.totalMs);
+  const mergeMs = boundedCount(list.mergeMs);
+  if (!mergeMs) return null;
+  const appServerMs = boundedCount(list.appServerMs);
+  const dominantFloorMs = Math.max(500, Math.trunc(totalMs * 0.5));
+  if (mergeMs < dominantFloorMs || mergeMs < appServerMs) return null;
+  return {
+    status: "needs_repair",
+    priority: "H2",
+    owner: "thread-list-route-merge",
+    reason: "route-merge-latency",
+    nextAction: "optimize-thread-list-route-merge",
+  };
+}
+
 function threadListPrewarmDecision(list = {}, report = {}) {
   const publicConfig = objectOrNull(report.publicConfig) || {};
   const prewarm = objectOrNull(publicConfig.threadListFallbackPrewarm);
@@ -426,7 +453,7 @@ function threadListDecision(list = {}, report = {}) {
   const owner = lowerLabel(list.coldPathOwner, 80);
   const reason = compactLabel(list.coldPathReason, 80);
   if (!owner || owner === "warm-fallback-cache" || owner === "fallback-source-snapshot") {
-    return appServerThreadListLatencyDecision(list, report);
+    return routeMergeLatencyDecision(list) || appServerThreadListLatencyDecision(list, report);
   }
   const prewarmDecision = threadListPrewarmDecision(list, report);
   if (prewarmDecision && prewarmDecision.status === "needs_repair") return prewarmDecision;

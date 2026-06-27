@@ -19738,3 +19738,61 @@ The previous full handoff was archived and should be opened only when old proven
     metrics evidence. Prioritize app-server visible filtering/post-process cost
     and thread-list merge/fallback attribution before changing query semantics.
   - Keep small refactor slices local; only deploy the next complete module.
+
+## 2026-06-27 - Phase B route merge attribution local slice
+
+- Current local state:
+  - Continued after v538 production readback closed the selected mux runtime
+    gate. Current evidence shows mux RPC is low-latency while Mobile-side
+    visible filtering/post-process and final route merge can dominate a warm
+    thread-list sample.
+  - This is a local slice only. It does not bump `CLIENT_BUILD_ID` / PWA shell
+    cache and is not deployed by itself.
+- Root-cause boundary:
+  - Symptom/risk: Phase B readback can show high `mergeMs` after warm fallback
+    cache hit, but the route-level merge currently has no structured input /
+    duplicate / limit-drop attribution. Without that boundary, future
+    optimization could incorrectly change app-server query semantics or hide
+    rows instead of fixing merge ownership.
+  - Failing layer under investigation: Mobile `/api/threads` route-level merge
+    between app-server rows and fallback cache rows, not mux RPC transport or
+    selected mux runtime.
+  - Violated invariant: warm-list merge cost must be explainable with bounded
+    metadata before changing data returned by `/api/threads`.
+- Changes:
+  - Added `adapters/thread-list-route-merge-service.js`.
+  - `/api/threads` now calls `mergeThreadListRouteResult` for the existing
+    `mergeThreadSummaryList` behavior and records bounded `routeMerge*`
+    diagnostics in `mobileDiagnostics.threadListTimings`.
+  - Phase B readback summarizes the new route merge counters.
+  - `phase-b-readback-decision-service` now routes dominant warm-list
+    `mergeMs` to `thread-list-route-merge` / `route-merge-latency`.
+  - Updated README, architecture plan, and thread visibility/source guard tests.
+- Validation:
+  - `node --check adapters/thread-list-route-merge-service.js && node --check server.js && node --check scripts/codex-mobile-phase-b-readback-smoke.js && node --check adapters/phase-b-readback-decision-service.js`
+    passed.
+  - `node --test test/thread-list-route-merge-service.test.js test/phase-b-readback-decision-service.test.js test/phase-b-readback-smoke.test.js test/thread-list-app-server-fetch-policy-service.test.js test/thread-visibility.test.js test/thread-list-fallback-cache-service.test.js test/thread-list-fallback-baseline-service.test.js test/thread-list-cold-path-diagnosis-service.test.js`
+    passed (`108` tests).
+- Next:
+  - Commit this local slice.
+  - Continue Phase B with either route merge cost decomposition inside
+    `mergeThreadSummaryList` / cached display-summary reads, or split
+    `filterVisibleThreads` state-db/archive/rollout annotation timings.
+  - Do not deploy until the next complete Phase B module is batched and shell
+    cache is bumped.
+
+## 2026-06-27 - Home AI selected mux deploy retry contract repaired
+
+- Home AI returned task card `ttc_d370031ec4c45fdfb3` as terminal/completed.
+- Home AI production commit: `471b25bd` (`fix: refresh selected mux on deploy retry`).
+- Central deploy contract now forces selected mux refresh when:
+  - mux/runtime trigger files changed;
+  - previous selected-mux refresh state is pending/invalid;
+  - deploy reason explicitly references selected-mux, mux-runtime, mux-metrics,
+    or shared-mux.
+- Routine no-change deploys still skip selected mux refresh, and refresh remains
+  selected-endpoint scoped.
+- Implication for Codex Mobile: next plugin-owned deploy with reason
+  `codex-mobile-v538-selected-mux-runtime` or another explicit mux runtime
+  reason should force selected mux refresh even if source/prod file diff is
+  already clean after a previous partial deploy.

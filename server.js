@@ -99,6 +99,9 @@ const {
   threadListAppServerLatencyTimingFields,
   threadListAppServerFetchTimingFields,
 } = require("./adapters/thread-list-app-server-fetch-policy-service");
+const {
+  mergeThreadListRouteResult,
+} = require("./adapters/thread-list-route-merge-service");
 const { diagnoseThreadListColdPath } = require("./adapters/thread-list-cold-path-diagnosis-service");
 const {
   stripThreadListDetailFields,
@@ -3181,14 +3184,12 @@ function mergeThreadSummaryList(threads) {
 }
 
 function mergeThreadListFallback(result, fallbackThreads = [], limit = 80) {
-  const out = result && typeof result === "object" ? Object.assign({}, result) : {};
-  const existing = Array.isArray(out.data)
-    ? out.data
-    : (Array.isArray(out.threads) ? out.threads : []);
-  const capped = mergeThreadSummaryList([...existing, ...fallbackThreads]).slice(0, Math.max(1, limit));
-  if (Array.isArray(out.data) || !Array.isArray(out.threads)) out.data = capped;
-  if (Array.isArray(out.threads)) out.threads = capped;
-  return out;
+  return mergeThreadListRouteResult({
+    result,
+    fallbackThreads,
+    limit,
+    mergeThreadSummaryList,
+  }).result;
 }
 
 function normalizeThreadListResultStatuses(result) {
@@ -15084,7 +15085,14 @@ async function handleApi(req, res) {
         ...threadListFallbackSourceDiagnosticTimingFields(fallbackDiagnostics),
       });
       const mergeStartedAtMs = Date.now();
-      const result = normalizeThreadListResultStatuses(mergeThreadListFallback(appServerResult, fallback, limit));
+      const routeMerge = mergeThreadListRouteResult({
+        result: appServerResult,
+        fallbackThreads: fallback,
+        limit,
+        mergeThreadSummaryList,
+      });
+      Object.assign(timings, routeMerge.diagnostics);
+      const result = normalizeThreadListResultStatuses(routeMerge.result);
       threadDisplaySummaryCache.rememberList(result);
       if (Array.isArray(result.data)) result.data = result.data.slice(0, limit);
       if (Array.isArray(result.threads)) result.threads = result.threads.slice(0, limit);

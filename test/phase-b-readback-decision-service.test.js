@@ -405,6 +405,60 @@ test("phase B readback decision routes high warm list latency to local filter ow
   assert.equal(decision.evidence.threadListAppServerVisibleFilterMs, 840);
 });
 
+test("phase B readback decision routes dominant route-merge latency to merge owner", () => {
+  const decision = classifyPhaseBReadback({
+    ok: true,
+    threadList: {
+      coldPathOwner: "warm-fallback-cache",
+      coldPathReason: "cache-hit-incremental",
+      totalMs: 827,
+      appServerMs: 116,
+      appServerRpcMs: 9,
+      appServerVisibleFilterMs: 107,
+      appServerWorkspaceFilterMs: 0,
+      appServerPostProcessMs: 107,
+      mergeMs: 567,
+      routeMergeAppServerInputCount: 24,
+      routeMergeFallbackInputCount: 20,
+      routeMergeInputCount: 44,
+      routeMergeUniqueInputCount: 27,
+      routeMergeDuplicateCount: 17,
+      routeMergeMergedCount: 23,
+      routeMergeOutputCount: 20,
+      routeMergeLimitDropCount: 3,
+    },
+    muxRuntime: {
+      muxMetricsRpc: true,
+    },
+    muxMetrics: {
+      supported: true,
+      ok: true,
+      threadList: {
+        count: 2384,
+        lastMs: 7,
+      },
+    },
+    detail: {
+      readMode: "projection-active-overlay",
+      readDecision: "projection-active-overlay",
+      coldPathOwner: "warm-path",
+      coldPathReason: "warm-projection-active-overlay",
+    },
+  });
+
+  assert.equal(decision.status, "needs_repair");
+  assert.equal(decision.priority, "H2");
+  assert.equal(decision.owner, "thread-list-route-merge");
+  assert.equal(decision.reason, "route-merge-latency");
+  assert.equal(decision.nextAction, "optimize-thread-list-route-merge");
+  assert.equal(decision.evidence.threadListMergeMs, 567);
+  assert.equal(decision.evidence.threadListRouteMergeInputCount, 44);
+  assert.equal(decision.evidence.threadListRouteMergeDuplicateCount, 17);
+  assert.equal(decision.evidence.threadListRouteMergeLimitDropCount, 3);
+  assert.equal(decision.evidence.threadListMuxRuntimeMuxMetricsRpc, true);
+  assert.equal(decision.evidence.threadListMuxMetricsSupported, true);
+});
+
 test("phase B readback decision observes inconclusive warm list latency split", () => {
   const decision = classifyPhaseBReadback({
     ok: true,
