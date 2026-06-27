@@ -23144,7 +23144,17 @@ The previous full handoff was archived and should be opened only when old proven
     evidence for remaining list/summary merge, response-size, host CPU, or
     browser render cost than for mux/app-server RPC latency.
 - Next:
-  - Commit and deploy v550 through the central Home AI macOS plugin deploy path.
-  - After deployment, read back `/api/public-config` and Phase-B smoke.
+  - Private commit: `0516b22` (`fix projection consistency diagnostic loop`).
+  - Deployed through the Home AI central macOS plugin deploy path with reason
+    `codex-mobile-projection-diagnostic-loop-v550`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T153159Z-plugin-codex-mobile-web-codex-mobile-projection-diagnostic-loop-v550`.
+  - Production readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v550`,
+    `shellCacheName=codex-mobile-shell-v550`, `buildId=2a99cfff35235a1d`.
+  - Production Phase-B smoke after deploy passed with thread-list
+    `totalMs=324`, `appServerRpcMs=9`, `appServerMs=29`, `mergeMs=133`,
+    `summaryMergeTotalMs=111`; detail remained
+    `projection-active-overlay`, `activeOverlayGate=ready`.
   - Treat the captured list/detail latency evidence as the input for the next
     large-session entry-speed module.
