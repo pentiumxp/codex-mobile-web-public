@@ -22923,3 +22923,44 @@ The previous full handoff was archived and should be opened only when old proven
   - Push the private merge/handoff record to `origin/main` and verify
     `git merge-base --is-ancestor public/main main` plus
     `git diff --stat public/main..main -- ':!.agent-context'`.
+
+## 2026-06-27 - PR #79 absorb plan / v549 terminal running hint fix
+
+- PR reviewed:
+  - Public PR #79: `[codex] 修复完成线程残留 running spinner`.
+  - PR was based on `codex-mobile-shell-v434` and proposed a v435 patch.
+  - CI on the PR was green, but the branch was stale relative to current
+    `public/main` v548.
+- Value assessment:
+  - Valuable: front-end `thread-status-hints` rule for ordinary non-replay
+    terminal list/detail rows. Current v548 still reproduced the bug:
+    completed terminal rows with a newer local running hint returned
+    `keep=true`.
+  - Already covered in current main: the server raw operation fallback boundary.
+    Current `mergeRecentRawOperationsIntoTurn()` already allows new raw
+    operations only for live turns and only merges fields into existing
+    operation items on terminal turns.
+  - Not adopted directly: old v435 shell bump and old README text from the PR.
+- Absorbed changes:
+  - Added the terminal precedence rule to
+    `public/thread-status-hints.js`: non-replay terminal status, terminal turn,
+    or terminal event clears a local running hint even when the hint timestamp is
+    newer.
+  - Added regression tests for terminal rows with newer local hints and
+    terminal list rows without turn details.
+  - Bumped static shell/cache to `codex-mobile-shell-v549`.
+  - Added a public README v549 note explaining the absorb boundary.
+- Validation before commit/deploy:
+  - Manual reproduction changed from `keep=true` to `keep=false` for both
+    terminal-turn and no-turn terminal-list-row cases.
+  - Focused tests passed:
+    `node --test test/thread-status-hints.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js test/app-update.test.js test/plugin-voice-input.test.js`
+    (`56` tests).
+  - `npm test` passed (`1307` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit v549, deploy through the central Home AI macOS plugin deploy path,
+    read back `/api/public-config`, then public-sync and close PR #79 as
+    absorbed.

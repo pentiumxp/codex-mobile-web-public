@@ -16,6 +16,23 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-27 v549 吸收 PR #79 的 terminal running hint 修复
+
+v549 吸收 public PR #79 中有价值的一部分：已完成线程如果通过普通
+线程列表或详情返回了 terminal 状态（例如 `completed`），浏览器本地
+`runningThreadIds` / `runningThreadHintedAtById` 不能再因为本地 hint 时间
+较新而继续显示 running spinner。
+
+保留的边界是 replay 保护：如果是 mux replay 的旧完成通知，仍然不能轻易
+清掉可能真实运行中的线程。换句话说，普通列表/详情里的 terminal 状态优先
+清理 spinner；replay 场景继续使用 freshness 判断。
+
+PR #79 的 server 端 raw operation fallback 约束在当前主线里已经有等价实现：
+只允许 live turn 从 raw rollout 新增缺失 operation，terminal turn 只补充已有
+operation 字段，不重新插入 completed operation。因此 v549 没有直接 merge
+PR #79 的旧 v435 patch，而是在当前 v548 架构上吸收 terminal hint 规则和回归
+测试，并将 PWA shell cache 升级到 `codex-mobile-shell-v549`。
+
 ## 2026-06-27 v543 Phase A/E Stability Evidence Module
 
 v543 将 v542 之后累积的本地切片收束为一个可部署模块。模块边界不是新增
