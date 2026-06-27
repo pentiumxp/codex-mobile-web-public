@@ -21040,3 +21040,50 @@ The previous full handoff was archived and should be opened only when old proven
 - Next:
   - Commit this local slice and keep it undeployed until a coherent deployable
     module is ready.
+
+## 2026-06-27 - Phase B first-paint reporting stage local slice
+
+- Current local state:
+  - Continued after local commit `f6a9910` (`refactor local patch transaction
+    effects`).
+  - This is a local Phase B evidence-ownership slice only. It changes
+    `public/thread-detail-render-plan.js`, `public/app.js`, focused tests,
+    README, and the architecture plan. It does not bump shell/cache, deploy
+    production, or push Public.
+- Root-cause boundary:
+  - Symptom/risk: cached-current and API first-paint paths both emit
+    `thread_detail_first_paint` style reporting, but `loadThread()` still
+    hand-wrote the performance-input and telemetry-input field shape in two
+    places. That made first-paint evidence drift possible while diagnosing
+    large-session and cache-read behavior.
+  - Failing layer: frontend first-paint reporting/evidence planning at the
+    `loadThread()` boundary, not the server read path, projection cache,
+    thread-list fallback cache, DOM mutation, scroll policy, or Home AI
+    diagnostic transport.
+  - Violated invariant: first-paint reporting shape for cached-current and API
+    first-paint should be helper-owned and testable, while `public/app.js`
+    only supplies measured timings and real thread facts.
+- Changes:
+  - Added `planThreadDetailFirstPaintReportingStage()` to
+    `public/thread-detail-render-plan.js`.
+  - The helper returns both `performanceInput` and bounded `telemetryInput` for
+    cached-current and API first-paint.
+  - `loadThread()` now uses that stage for cached-current and API first-paint,
+    while still calling `threadPerformanceMetrics.threadDetailFirstPaintEventFields()`
+    with real thread data.
+  - Focused tests assert the shared reporting-stage output and source-level
+    wiring in `loadThread()`.
+- Validation:
+  - `node --check public/thread-detail-render-plan.js && node --check public/app.js`
+    passed.
+  - `node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js`
+    passed (`198` tests).
+  - Extended focused suite
+    `node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/turn-scroll-controls.test.js test/mobile-viewport.test.js`
+    passed (`215` tests).
+  - `npm test` passed (`1250` tests).
+  - `npm run check` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit this local slice and keep it undeployed until a coherent deployable
+    module is ready.

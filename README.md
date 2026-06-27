@@ -125,6 +125,36 @@ node --check public/thread-detail-dom-patch.js && node --check public/app.js
 node --test test/thread-detail-dom-patch.test.js test/conversation-render.test.js test/mobile-viewport.test.js  # 173 passed
 ```
 
+## 2026-06-27 Phase B First-Paint Reporting Stage Slice
+
+这是 v543 后的第三个本地小切片，开始把首屏性能/telemetry 证据从
+`loadThread()` 继续收敛到可测试 helper。它不改变线程读取、merge、render、
+scroll 或 task-card 逻辑，不单独部署、不推 Public。
+
+改动边界：
+
+- `threadDetailRenderPlanApi.planThreadDetailFirstPaintReportingStage()`
+  现在统一规划 cached-current 和 API first-paint 的 performance input 与
+  telemetry input；
+- `loadThread()` 仍然采集真实耗时、线程状态和调用
+  `threadPerformanceMetrics.threadDetailFirstPaintEventFields()`，但不再手写
+  first-paint telemetry 的字段形状；
+- cached-current 与 API first-paint 共用同一个 reporting stage，减少
+  `elapsed/api/render/readMode/status/turns/rolloutSize/threadHash` 等字段漂移；
+- 不改变大 session read mode、projection cache、thread list fallback cache、
+  shell/cache 版本或生产部署状态。
+
+验证：
+
+```bash
+node --check public/thread-detail-render-plan.js && node --check public/app.js
+node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js  # 198 passed
+```
+
+扩展 focused 验证覆盖 `test/turn-scroll-controls.test.js` 与
+`test/mobile-viewport.test.js` 后为 `215 passed`。完整本地验证：
+`npm test` 为 `1250 passed`，`npm run check` 与 `git diff --check` 均通过。
+
 ## 2026-06-27 Phase A Conversation DOM Authority Invalidation Local Slice
 
 这是 v542 后继续按“小切片本地提交、模块化再部署”节奏推进的 Phase A 切片。

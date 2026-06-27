@@ -1166,6 +1166,34 @@
     return out;
   }
 
+  function planThreadDetailFirstPaintReportingStage(input = {}) {
+    const cached = input.cached === true;
+    const performanceInput = planThreadDetailFirstPaintPerformanceInput({
+      source: input.source,
+      threadId: input.threadId,
+      detailRenderMode: input.detailRenderMode || (cached ? "cached-current" : "first-paint"),
+      cached,
+      timings: objectOrEmpty(input.timings),
+    });
+    return {
+      performanceInput,
+      telemetryInput: {
+        source: performanceInput.source,
+        threadId: performanceInput.threadId,
+        elapsedMs: performanceInput.elapsedMs,
+        apiElapsedMs: performanceInput.apiElapsedMs,
+        renderElapsedMs: performanceInput.renderElapsedMs,
+        readMode: compactReason(input.readMode, ""),
+        status: compactReason(input.status, ""),
+        turns: normalizedCount(input.turns),
+        omittedTurns: normalizedCount(input.omittedTurns),
+        rolloutSizeBytes: normalizedCount(input.rolloutSizeBytes),
+        threadHash: compactReason(input.threadHash, ""),
+      },
+      reason: cached ? "cached-current-reporting" : "first-paint-reporting",
+    };
+  }
+
   function planThreadDetailFullBackfillPerformanceInput(input = {}) {
     const timings = objectOrEmpty(input.timings);
     return {
@@ -1806,6 +1834,7 @@
     planThreadDetailFirstPaintAfterRenderEffects,
     planThreadDetailFirstPaintDraftRestoreEffects,
     planThreadDetailFirstPaintPerformanceInput,
+    planThreadDetailFirstPaintReportingStage,
     planThreadDetailFirstPaintPostTimingEffects,
     planThreadDetailFirstPaintPreRenderEffects,
     planThreadDetailFirstPaintResponseEffects,

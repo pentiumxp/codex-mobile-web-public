@@ -1856,6 +1856,101 @@ test("thread detail first-paint performance input preserves cached and API timin
   });
 });
 
+test("thread detail first-paint reporting stage owns telemetry input shape", () => {
+  assert.deepEqual(renderPlan.planThreadDetailFirstPaintReportingStage({
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA",
+    threadId: "thread-1",
+    cached: true,
+    timings: {
+      elapsedMs: 12.5,
+      apiElapsedMs: 0,
+      renderElapsedMs: 4.4,
+      threadListRenderMs: 1.2,
+      conversationRenderMs: 2.3,
+    },
+    threadHash: "hash-1",
+  }), {
+    performanceInput: {
+      source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR",
+      threadId: "thread-1",
+      elapsedMs: 12.5,
+      apiElapsedMs: 0,
+      renderElapsedMs: 4.4,
+      detailRenderMode: "cached-current",
+      cached: true,
+      threadListRenderMs: 1.2,
+      conversationRenderMs: 2.3,
+    },
+    telemetryInput: {
+      source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR",
+      threadId: "thread-1",
+      elapsedMs: 12.5,
+      apiElapsedMs: 0,
+      renderElapsedMs: 4.4,
+      readMode: "",
+      status: "",
+      turns: 0,
+      omittedTurns: 0,
+      rolloutSizeBytes: 0,
+      threadHash: "hash-1",
+    },
+    reason: "cached-current-reporting",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailFirstPaintReportingStage({
+    source: "thread-list",
+    threadId: "thread-2",
+    cached: false,
+    timings: {
+      elapsedMs: 40,
+      apiElapsedMs: 13,
+      renderElapsedMs: 20,
+      mergeMs: 1,
+      draftRestoreMs: 2,
+      composerRenderMs: 3,
+      threadListRenderMs: 4,
+      conversationRenderMs: 5,
+      postRenderMs: 6,
+    },
+    readMode: "projection-active-overlay",
+    status: "completed",
+    turns: 10.8,
+    omittedTurns: 2.2,
+    rolloutSizeBytes: 12345.9,
+    threadHash: "hash-2",
+  }), {
+    performanceInput: {
+      source: "thread-list",
+      threadId: "thread-2",
+      elapsedMs: 40,
+      apiElapsedMs: 13,
+      renderElapsedMs: 20,
+      detailRenderMode: "first-paint",
+      cached: false,
+      mergeMs: 1,
+      draftRestoreMs: 2,
+      composerRenderMs: 3,
+      threadListRenderMs: 4,
+      conversationRenderMs: 5,
+      postRenderMs: 6,
+    },
+    telemetryInput: {
+      source: "thread-list",
+      threadId: "thread-2",
+      elapsedMs: 40,
+      apiElapsedMs: 13,
+      renderElapsedMs: 20,
+      readMode: "projection-active-overlay",
+      status: "completed",
+      turns: 10,
+      omittedTurns: 2,
+      rolloutSizeBytes: 12345,
+      threadHash: "hash-2",
+    },
+    reason: "first-paint-reporting",
+  });
+});
+
 test("thread detail full-backfill performance input preserves timing shape", () => {
   assert.deepEqual(renderPlan.planThreadDetailFullBackfillPerformanceInput({
     source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA",

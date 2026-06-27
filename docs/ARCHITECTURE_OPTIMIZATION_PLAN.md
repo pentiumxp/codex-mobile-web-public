@@ -1124,6 +1124,12 @@ now owns the ordered commit effect and after-success effect list, while
 callbacks. This keeps the local transaction boundary testable without changing
 the runtime order: turn DOM patch, completion commit, then operation-dock
 refresh and action rebinding.
+The next local Phase B slice starts moving first-paint evidence composition out
+of `loadThread()`: `planThreadDetailFirstPaintReportingStage()` now owns the
+cached-current/API-first-paint performance input and telemetry input field
+shape. App code still measures real timings, reads thread status/count facts,
+and builds the performance event through `threadPerformanceMetrics`, but it no
+longer hand-writes the reporting payload shape for the two first-paint paths.
 Refresh patch surface planning now also lives in this helper:
 `planThreadDetailRefreshPatchSurface` decides whether the refresh should probe
 tile-pane DOM state and whether the current patch path is a tile surface based

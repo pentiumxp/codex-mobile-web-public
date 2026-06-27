@@ -8956,7 +8956,7 @@ async function loadThread(threadId, options = {}) {
     });
     applyThreadDetailPostRenderEffectsPlan(cachedCurrentPostRenderPlan, { thread: state.currentThread });
     const renderElapsedMs = roundedDurationMs(renderStartedAt);
-    const cachedFirstPaintPerformanceInput = threadDetailRenderPlanApi.planThreadDetailFirstPaintPerformanceInput({
+    const cachedFirstPaintReportingStage = threadDetailRenderPlanApi.planThreadDetailFirstPaintReportingStage({
       source,
       threadId,
       detailRenderMode: "cached-current",
@@ -8968,18 +8968,15 @@ async function loadThread(threadId, options = {}) {
         threadListRenderMs,
         conversationRenderMs,
       },
+      threadHash: diagnosticThreadHash(threadId),
     });
     const firstPaintPerformance = threadPerformanceMetrics.threadDetailFirstPaintEventFields(
       state.currentThread,
-      cachedFirstPaintPerformanceInput,
+      cachedFirstPaintReportingStage.performanceInput,
     );
-    const cachedTelemetryPlan = threadDetailRenderPlanApi.planThreadDetailCachedCurrentTelemetryEffects({
+    const cachedTelemetryPlan = threadDetailRenderPlanApi.planThreadDetailCachedCurrentTelemetryEffects(Object.assign({
       performanceEvent: firstPaintPerformance,
-      source,
-      threadId,
-      elapsedMs: cachedFirstPaintPerformanceInput.elapsedMs,
-      threadHash: diagnosticThreadHash(threadId),
-    });
+    }, cachedFirstPaintReportingStage.telemetryInput));
     applyThreadDetailFirstPaintTelemetryEffectsPlan(cachedTelemetryPlan, { thread: state.currentThread });
     return;
   }
@@ -9119,7 +9116,7 @@ async function loadThread(threadId, options = {}) {
   const firstPaintPostTimingPlan = threadDetailRenderPlanApi.planThreadDetailFirstPaintPostTimingEffects();
   applyThreadDetailPostRenderEffectsPlan(firstPaintPostTimingPlan, { thread: result.thread });
   const renderElapsedMs = roundedDurationMs(renderStartedAt);
-  const firstPaintPerformanceInput = threadDetailRenderPlanApi.planThreadDetailFirstPaintPerformanceInput({
+  const firstPaintReportingStage = threadDetailRenderPlanApi.planThreadDetailFirstPaintReportingStage({
     source,
     threadId,
     detailRenderMode: "first-paint",
@@ -9135,18 +9132,6 @@ async function loadThread(threadId, options = {}) {
       conversationRenderMs,
       postRenderMs,
     },
-  });
-  const firstPaintPerformance = threadPerformanceMetrics.threadDetailFirstPaintEventFields(
-    result.thread,
-    firstPaintPerformanceInput,
-  );
-  const firstPaintTelemetryPlan = threadDetailRenderPlanApi.planThreadDetailFirstPaintTelemetryEffects({
-    performanceEvent: firstPaintPerformance,
-    source,
-    threadId,
-    elapsedMs: firstPaintPerformanceInput.elapsedMs,
-    apiElapsedMs: firstPaintPerformanceInput.apiElapsedMs,
-    renderElapsedMs: firstPaintPerformanceInput.renderElapsedMs,
     readMode: result.thread && result.thread.mobileReadMode || "",
     status: statusText(result.thread && result.thread.status),
     turns: Array.isArray(result.thread && result.thread.turns) ? result.thread.turns.length : 0,
@@ -9154,6 +9139,13 @@ async function loadThread(threadId, options = {}) {
     rolloutSizeBytes: rolloutSizeBytes(result.thread),
     threadHash: diagnosticThreadHash(threadId),
   });
+  const firstPaintPerformance = threadPerformanceMetrics.threadDetailFirstPaintEventFields(
+    result.thread,
+    firstPaintReportingStage.performanceInput,
+  );
+  const firstPaintTelemetryPlan = threadDetailRenderPlanApi.planThreadDetailFirstPaintTelemetryEffects(Object.assign({
+    performanceEvent: firstPaintPerformance,
+  }, firstPaintReportingStage.telemetryInput));
   applyThreadDetailFirstPaintTelemetryEffectsPlan(firstPaintTelemetryPlan, { thread: result.thread });
 }
 
