@@ -24235,11 +24235,11 @@ The previous full handoff was archived and should be opened only when old proven
   - `npm run check:macos` passed.
   - `git diff --check` passed.
 - Commit / deployment:
-  - Commit `b9c90b9` `fix active detail byte pressure budget` was deployed
+  - Runtime commit `845ea87` `fix active detail byte pressure budget` was deployed
     through the Home AI central macOS plugin deploy path with reason
     `codex-mobile-active-detail-byte-budget`.
   - Production backup:
-    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T204743Z-plugin-codex-mobile-web-codex-mobile-active-detail-byte-budget`.
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T204919Z-plugin-codex-mobile-web-codex-mobile-active-detail-byte-budget`.
   - `/api/public-config` readback returned
     `clientBuildId=0.1.11|codex-mobile-shell-v553`,
     `shellCacheName=codex-mobile-shell-v553`, build id
