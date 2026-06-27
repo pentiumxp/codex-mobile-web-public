@@ -254,8 +254,10 @@ test("thread tile rendering is read-only and separate from full conversation ren
   const selectedEffectsBody = functionBody(appJs, "applyThreadTileSelectedPaneEffects");
   assert.match(selectedEffectsBody, /effect\.action !== "selected-pane-effects"/);
   assert.match(selectedEffectsBody, /state\.threadTileSelectedThreadId = effect\.selectedThreadId/);
-  assert.match(selectedEffectsBody, /effect\.patchThreadIds/);
+  assert.match(selectedEffectsBody, /Array\.isArray\(effect\.patchThreadIds\) \? effect\.patchThreadIds : \[\]/);
+  assert.doesNotMatch(selectedEffectsBody, /\[effect\.selectedThreadId\]/);
   assert.match(selectedEffectsBody, /patchThreadTilePane\(id, \{ preserveScroll: effect\.patchPreserveScroll !== false \}\)/);
+  assert.match(selectedEffectsBody, /effect\.scheduleFullRenderOnPatchMiss/);
 
   const tileActionsBody = functionBody(appJs, "bindThreadTileActions");
   assert.match(tileActionsBody, /threadTileActionsApi\.resolveThreadTilePointerAction/);
@@ -314,6 +316,8 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(paneSlotEffectsBody, /loadThreadTileDetail\(effect\.loadThreadId, \{ force: true, source: effect\.loadSource \|\| "tile-switch" \}\)/);
   assert.match(paneSlotEffectsBody, /effect\.renderMode === "schedule-full"/);
   assert.match(paneSlotEffectsBody, /patchThreadTilePane\(effect\.patchThreadId/);
+  assert.match(paneSlotEffectsBody, /effect\.scheduleFullRenderOnPatchMiss/);
+  assert.doesNotMatch(paneSlotEffectsBody, /if \(!patched\) scheduleRenderCurrentThread\(\)/);
 
   const switchBody = functionBody(appJs, "replaceThreadTilePaneThread");
   assert.match(switchBody, /threadTileStatePolicy\.replacePaneThreadPlan/);

@@ -12928,7 +12928,7 @@ function applyThreadTileSelectedPaneEffects(effect) {
   }
   if (effect.renderMode === "patch-panes") {
     let patchedAll = true;
-    (effect.patchThreadIds || [effect.selectedThreadId]).filter(Boolean).forEach((id) => {
+    (Array.isArray(effect.patchThreadIds) ? effect.patchThreadIds : []).filter(Boolean).forEach((id) => {
       patchedAll = patchThreadTilePane(id, { preserveScroll: effect.patchPreserveScroll !== false }) && patchedAll;
     });
     if (!patchedAll && effect.scheduleFullRenderOnPatchMiss) scheduleRenderCurrentThread();
@@ -13024,7 +13024,7 @@ function applyThreadTilePaneSlotEffects(effect, layout = threadTileLayout()) {
       paneElement: sourcePane,
       stickToBottom: Boolean(effect.patchStickToBottom),
     });
-    if (!patched) scheduleRenderCurrentThread();
+    if (!patched && effect.scheduleFullRenderOnPatchMiss) scheduleRenderCurrentThread();
   }
   return true;
 }

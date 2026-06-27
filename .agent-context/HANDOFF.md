@@ -20337,3 +20337,39 @@ The previous full handoff was archived and should be opened only when old proven
   - The three local Phase C slices now form a small pane-state module candidate;
     before deployment, run a broader module validation and bump shell/cache only
     if the user asks to deploy or if another coherent Phase C slice is added.
+
+## 2026-06-27 - Phase C pane patch-miss policy local slice
+
+- Current local state:
+  - Continued after local commit `52093d0` (`refactor: plan thread tile detail
+    load settle`).
+  - This is a fourth local-only Phase C pane-state slice. It does not bump
+    `CLIENT_BUILD_ID` / PWA shell cache and is not deployed by itself.
+- Root-cause boundary:
+  - Symptom/risk: selected-pane and pane-slot effect execution still contained
+    small patch fallback policy in `public/app.js`: selected-pane patch targets
+    fell back to `selectedThreadId`, and pane-slot `patch-pane` misses always
+    scheduled full render from app code.
+  - Failing layer: frontend thread-tile pane patch-miss policy.
+  - Violated invariant: `public/thread-tile-state.js` should own patch target
+    lists and whether a pane-level patch miss escalates to full render;
+    `public/app.js` should only execute patch attempts and the planned fallback.
+- Changes:
+  - `paneSlotMutationEffectsPlan()` now emits
+    `scheduleFullRenderOnPatchMiss`.
+  - `applyThreadTilePaneSlotEffects()` schedules full render on patch miss only
+    when that planned field is true.
+  - `applyThreadTileSelectedPaneEffects()` now trusts the planned
+    `patchThreadIds` list instead of appending an app-owned selected-thread
+    fallback.
+  - Updated focused state and source-wiring tests plus Phase C docs.
+- Validation:
+  - `node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js`
+    passed (`39` tests).
+  - `node --check public/thread-tile-state.js && node --check public/app.js`
+    passed.
+- Next:
+  - Run `npm run check` and `git diff --check`, then commit this local slice.
+  - After this commit, run the Phase C local module test set before deciding
+    whether to continue extracting or prepare a shell/cache bump for deployment
+    when requested.

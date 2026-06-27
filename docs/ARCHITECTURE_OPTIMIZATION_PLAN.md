@@ -1859,7 +1859,9 @@ Target:
   and Composer chrome-height planning also now live there, so keyboard-active
   split-screen layouts use a helper-owned stable viewport/composer baseline
   while `app.js` only reads DOM viewport facts and writes the planned baseline.
-  Continue moving pane
+  Pane slot patch-miss full-render escalation intent also now lives there, so
+  failed pane-level patch attempts no longer unconditionally schedule a full
+  render from `app.js` without a helper-owned policy bit. Continue moving pane
   widths, per-pane drafts, max concurrent detail reads, pane-local
   send/approval/interrupt ownership, command detail panels, and mobile collapse
   behavior into testable helpers without DOM side effects.

@@ -685,6 +685,7 @@
       patchThreadId: "",
       patchSourceThreadId: "",
       patchStickToBottom: false,
+      scheduleFullRenderOnPatchMiss: false,
     };
     if (sourceAction === "select" || sourceAction === "replace") {
       return Object.assign(base, {
@@ -696,6 +697,7 @@
         patchThreadId: text(plan.to || plan.threadId).trim(),
         patchSourceThreadId: text(plan.from || plan.threadId).trim(),
         patchStickToBottom: true,
+        scheduleFullRenderOnPatchMiss: true,
       });
     }
     if (sourceAction === "move" || sourceAction === "split") {

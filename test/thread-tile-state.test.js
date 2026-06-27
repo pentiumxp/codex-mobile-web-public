@@ -949,6 +949,7 @@ test("thread tile state plans pane slot mutation side effects", () => {
     patchThreadId: "b",
     patchSourceThreadId: "a",
     patchStickToBottom: true,
+    scheduleFullRenderOnPatchMiss: true,
   });
 
   assert.equal(state.paneSlotMutationEffectsPlan({
@@ -986,6 +987,7 @@ test("thread tile state plans pane slot mutation side effects", () => {
     patchThreadId: "",
     patchSourceThreadId: "",
     patchStickToBottom: false,
+    scheduleFullRenderOnPatchMiss: false,
   });
 
   const replaceLast = state.paneSlotMutationEffectsPlan({
