@@ -22862,3 +22862,36 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit and deploy this v548 slice through the central Home AI macOS plugin
     deploy path, then read back `/api/public-config` and Phase-B smoke to
     confirm v548 plus compatible-cache readback fields in production.
+
+## 2026-06-27 - v548 production deploy/readback
+
+- Commit/deploy:
+  - Code commit `646ef63` (`fix thread list order stability`) was deployed
+    through the central Home AI macOS plugin deploy path with reason
+    `codex-mobile-thread-list-stable-order`.
+  - Deploy backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T141104Z-plugin-codex-mobile-web-codex-mobile-thread-list-stable-order`.
+- Production readback:
+  - `/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v548`,
+    `shellCacheName=codex-mobile-shell-v548`, and
+    `buildId=63bfedbe0e2870c2`.
+  - Phase-B smoke reports thread-list fallback compatible cache reuse:
+    `fallbackCacheDecision=compatible-hit`,
+    `fallbackCompatibleCacheHit=true`,
+    `fallbackCompatibleCacheLimit=40`.
+  - Thread detail for current large active thread still uses
+    `readMode=projection-active-overlay`,
+    `readDecision=projection-active-overlay`,
+    `coldPathOwner=warm-path`, and
+    `coldPathReason=warm-projection-active-overlay`.
+  - Phase-B decision now points to the next instability layer:
+    `owner=app-server-thread-list-rpc`, `reason=app-server-rpc-latency`.
+    One sampled Phase-B list read had app-server RPC around 2s, while six
+    immediate follow-up ordinary list reads were around 295-331ms. This matches
+    intermittent rather than steady slowness.
+- Next:
+  - If list entry speed still fluctuates, investigate the app-server
+    `thread/list` RPC jitter path with mux metrics/readback evidence. Do not
+    reopen fallback-cache or rollout-rebuild work unless readback again points
+    there.
