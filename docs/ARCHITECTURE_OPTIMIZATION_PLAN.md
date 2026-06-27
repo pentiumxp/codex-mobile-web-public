@@ -183,8 +183,16 @@ Current acceleration targets:
    path lets active-overlay projection lookup pass `omitActiveTurnId`, so the
    cached partial projection window is cloned without the live active turn and
    the provider's clone-free active-overlay snapshot is merged separately after
-   proof. `turns-list-active-overlay-window` remains a fail-closed fallback only
-   when no usable projection window exists.
+   proof. Production readback then showed `threadReadMs=0`,
+   `turnsListMs=0`, and `activeOverlayWindowMs=0`, but still kept
+   `activeOverlayMs` around the one-second range because the active-overlay
+   retry was still routed through full projected-detail response assembly. The
+   next correction splits a dedicated lightweight
+   `activeOverlayProjectionWindowLookup`: it uses the same proof-gated cache
+   semantics, passes `skipNormalizeResult` through v4 projection lookup, and
+   returns only the projection window needed for the overlay proof/merge.
+   `turns-list-active-overlay-window` remains a fail-closed fallback only when
+   no usable projection window exists.
    Post-v542 local pane-context work is intentionally smaller than these
    deployable Phase B modules: each slice fixes one frontend state writer,
    adds executable pane-local coverage, commits locally, and does not deploy

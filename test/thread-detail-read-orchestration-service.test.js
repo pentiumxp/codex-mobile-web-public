@@ -386,6 +386,26 @@ test("active overlay incomplete evidence still falls through to full thread/read
         missReason: "",
       };
     },
+    activeOverlayProjectionWindowLookup: (input, summary, runtimeSettings, options = {}) => {
+      calls.push(`active-overlay-window-lookup:${options.omitActiveTurnId || ""}`);
+      return {
+        result: {
+          thread: {
+            id: "thread-1",
+            turns: [{ id: "older-turn", items: [{ type: "agentMessage" }] }],
+            mobileReadMode: "projection-v4-partial",
+            mobileProjection: {
+              source: "partial",
+              version: "v4",
+              partial: true,
+              revision: 4,
+              ageMs: 12,
+            },
+          },
+        },
+        missReason: "",
+      };
+    },
     resolveActiveWindowOverlay: async () => {
       calls.push("overlay-provider");
       return {
@@ -449,6 +469,26 @@ test("active overlay complete evidence can use a cached partial projection windo
         missReason: "",
       };
     },
+    activeOverlayProjectionWindowLookup: (input, summary, runtimeSettings, options = {}) => {
+      calls.push(`active-overlay-window-lookup:${options.omitActiveTurnId || ""}`);
+      return {
+        result: {
+          thread: {
+            id: "thread-1",
+            turns: [{ id: "older-turn", items: [{ type: "agentMessage" }] }],
+            mobileReadMode: "projection-v4-partial",
+            mobileProjection: {
+              source: "partial",
+              version: "v4",
+              partial: true,
+              revision: 4,
+              ageMs: 12,
+            },
+          },
+        },
+        missReason: "",
+      };
+    },
     resolveActiveWindowOverlay: async ({ projectionThread }) => {
       calls.push(`overlay-provider:${projectionThread && projectionThread.mobileReadMode}`);
       return {
@@ -483,7 +523,9 @@ test("active overlay complete evidence can use a cached partial projection windo
   assert.equal(calls.includes("turns-list:turns-list-active-overlay-window"), false);
   assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), [
     "projection-lookup:full:",
-    "projection-lookup:partial:active-turn",
+  ]);
+  assert.deepEqual(calls.filter((call) => call.startsWith("active-overlay-window-lookup:")), [
+    "active-overlay-window-lookup:active-turn",
   ]);
   assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["older-turn", "active-turn"]);
   assert.equal(response.body.thread.mobileProjection.activeOverlay, true);

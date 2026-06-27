@@ -155,6 +155,9 @@ function createThreadDetailReadOrchestrationService(options = {}) {
   const projectionInput = typeof options.projectionInput === "function" ? options.projectionInput : () => null;
   const projectedThreadResult = typeof options.projectedThreadResult === "function" ? options.projectedThreadResult : () => null;
   const projectedThreadLookup = typeof options.projectedThreadLookup === "function" ? options.projectedThreadLookup : null;
+  const activeOverlayProjectionWindowLookup = typeof options.activeOverlayProjectionWindowLookup === "function"
+    ? options.activeOverlayProjectionWindowLookup
+    : null;
   const resolveActiveWindowOverlay = typeof options.resolveActiveWindowOverlay === "function"
     ? options.resolveActiveWindowOverlay
     : null;
@@ -391,14 +394,17 @@ function createThreadDetailReadOrchestrationService(options = {}) {
         overlayInput = { reason: "resolver-error", error: safeErrorMessage(err) };
         threadLog("active_overlay_resolve_error", { error: safeErrorMessage(err) });
       }
-      if (!projectionThread && overlayInput && overlayInput.overlayTurn && projectedThreadLookup) {
+      const overlayWindowLookup = activeOverlayProjectionWindowLookup || projectedThreadLookup;
+      if (!projectionThread && overlayInput && overlayInput.overlayTurn && overlayWindowLookup) {
         const activeOverlayTurnId = nonEmptyText(overlayInput.activeTurnId)
           || nonEmptyText(overlayInput.overlayTurn && (overlayInput.overlayTurn.id || overlayInput.overlayTurn.turnId || overlayInput.overlayTurn.turn_id));
-        overlayProjectionLookup = projectedThreadLookup(projection, summary, runtimeSettings, {
+        const activeOverlayProjectionLookupStartedAtMs = now();
+        overlayProjectionLookup = overlayWindowLookup(projection, summary, runtimeSettings, {
           allowPartial: true,
           activeOverlay: true,
           omitActiveTurnId: activeOverlayTurnId,
         });
+        timer.mark("activeOverlayProjectionLookupMs", activeOverlayProjectionLookupStartedAtMs);
         overlayProjected = overlayProjectionLookup ? overlayProjectionLookup.result : null;
         projectionThread = overlayProjected && overlayProjected.thread || null;
         if (projectionThread) {

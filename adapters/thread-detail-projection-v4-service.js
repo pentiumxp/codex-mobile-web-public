@@ -63,6 +63,25 @@ function createThreadDetailProjectionV4Service(options = {}) {
     });
   }
 
+  function projectionReadMode(cached) {
+    if (cached && cached.partial) return "projection-v4-partial";
+    return cached && cached.dynamic ? "projection-v4-dynamic" : "projection-v4-cache";
+  }
+
+  function attachProjectionMetadata(result, cached, details = {}) {
+    if (!result || !result.thread) return result;
+    const thread = Object.assign({}, result.thread);
+    thread.mobileReadMode = projectionReadMode(cached);
+    thread.mobileProjection = Object.assign({}, thread.mobileProjection || {}, {
+      source: cached && cached.partial ? "partial" : cached && cached.dynamic ? "dynamic" : "cache",
+      version: PROJECTION_VERSION,
+      partial: cached && cached.partial === true,
+      partialKind: cached && cached.partialKind || "",
+      revision: details.revision,
+    });
+    return Object.assign({}, result, { thread });
+  }
+
   function activeOverlayCacheEntryMatches(entry, details = {}) {
     return entry
       && entry.activeTurnId === String(details.activeTurnId || "")
@@ -129,6 +148,15 @@ function createThreadDetailProjectionV4Service(options = {}) {
     }
     const threadId = String(input.threadId || resultThreadId(cached.result) || "").trim();
     const revision = revisionForThread(threadId);
+    if (optionsForGet.skipNormalizeResult === true) {
+      return {
+        cached: Object.assign({}, cached, {
+          version: PROJECTION_VERSION,
+          result: attachProjectionMetadata(cached.result, cached, { revision }),
+        }),
+        missReason: "",
+      };
+    }
     return {
       cached: Object.assign({}, cached, {
         version: PROJECTION_VERSION,

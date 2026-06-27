@@ -5279,6 +5279,36 @@ const threadDetailReadOrchestrationService = createThreadDetailReadOrchestration
       missReason: lookedUp && lookedUp.missReason || "",
     };
   },
+  activeOverlayProjectionWindowLookup: (input, summary, runtimeSettings, optionsForProjection = {}) => {
+    const lookedUp = typeof threadDetailProjectionService.lookup === "function"
+      ? threadDetailProjectionService.lookup(input, Object.assign({}, optionsForProjection, { skipNormalizeResult: true }))
+      : { cached: threadDetailProjectionService.get(input, optionsForProjection), missReason: "" };
+    const cached = lookedUp && lookedUp.cached || null;
+    let result = cached && cached.result || null;
+    if (result && result.thread) {
+      const projectionVersion = String(cached.version || result.thread.mobileProjectionVersion || "");
+      const thread = Object.assign({}, result.thread);
+      thread.mobileReadMode = cached.partial
+        ? (projectionVersion === "v4" ? "projection-v4-partial" : "projection-partial")
+        : cached.dynamic
+          ? (projectionVersion === "v4" ? "projection-v4-dynamic" : "projection-dynamic")
+          : (projectionVersion === "v4" ? "projection-v4-cache" : "projection-cache");
+      thread.mobileProjection = Object.assign({}, thread.mobileProjection || {}, {
+        source: cached.partial ? "partial" : cached.dynamic ? "dynamic" : "cache",
+        version: projectionVersion || result.thread.mobileProjectionVersion || "",
+        partial: cached.partial === true,
+        partialKind: cached.partialKind || "",
+        cachedAtMs: cached.cachedAtMs || null,
+        updatedAtMs: cached.updatedAtMs || cached.cachedAtMs || null,
+        ageMs: cached.updatedAtMs ? Math.max(0, Date.now() - cached.updatedAtMs) : null,
+      });
+      result = Object.assign({}, result, { thread });
+    }
+    return {
+      result,
+      missReason: lookedUp && lookedUp.missReason || "",
+    };
+  },
   projectedThreadResult: (input, summary, runtimeSettings, optionsForProjection = {}) => prepareProjectedThreadReadResult(
     threadDetailProjectionService.get(input, optionsForProjection),
     summary,

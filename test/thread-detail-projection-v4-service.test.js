@@ -100,6 +100,19 @@ test("v4 projection service preserves partial recent-window opt-in semantics", (
     assert.equal(cached.result.thread.mobileProjectionRevision, 1);
     assert.deepEqual(cached.result.thread.mobileVisibleItemKeys, ["turn-recent:user:user-1"]);
 
+    const lightweight = service.lookup(signatureInput(), {
+      allowPartial: true,
+      activeOverlay: true,
+      skipNormalizeResult: true,
+    });
+    assert.ok(lightweight.cached);
+    assert.equal(lightweight.cached.version, "v4");
+    assert.equal(lightweight.cached.result.thread.mobileReadMode, "projection-v4-partial");
+    assert.equal(lightweight.cached.result.thread.mobileProjection.version, "v4");
+    assert.equal(lightweight.cached.result.thread.mobileProjection.source, "partial");
+    assert.equal(lightweight.cached.result.thread.mobileProjection.revision, 1);
+    assert.deepEqual(lightweight.cached.result.thread.mobileVisibleItemKeys, ["turn-recent:user:user-1"]);
+
     const restoredService = createThreadDetailProjectionV4Service({
       cacheDir: dir,
       policyVersion: "test-v4",

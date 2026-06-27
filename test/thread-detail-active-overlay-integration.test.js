@@ -157,6 +157,14 @@ function createActiveOverlayHarness(options = {}) {
         missReason: lookedUp.missReason || "",
       };
     },
+    activeOverlayProjectionWindowLookup: (input, resolvedSummary, runtimeSettings, options = {}) => {
+      const lookedUp = projectionService.lookup(input, Object.assign({}, options, { skipNormalizeResult: true }));
+      calls.push(`active-overlay-window-lookup:${lookedUp.missReason || "hit"}`);
+      return {
+        result: lookedUp.cached && lookedUp.cached.result || null,
+        missReason: lookedUp.missReason || "",
+      };
+    },
     projectedThreadResult: () => null,
     resolveActiveWindowOverlay: (input) => {
       calls.push("active-overlay-provider");
@@ -223,7 +231,9 @@ test("read orchestration uses live projection provider for active overlay withou
   assert.equal(calls.includes("turns-list"), false);
   assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), [
     "projection-lookup:full:partial-not-allowed",
-    "projection-lookup:partial:hit",
+  ]);
+  assert.deepEqual(calls.filter((call) => call.startsWith("active-overlay-window-lookup:")), [
+    "active-overlay-window-lookup:hit",
   ]);
   const timings = response.body.thread.mobileDiagnostics.threadDetailTimings;
   assert.equal(timings.readDecision, "projection-active-overlay");
@@ -300,7 +310,9 @@ test("read orchestration uses active overlay window despite active summary stale
   assert.equal(response.mode, "projection-active-overlay");
   assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), [
     "projection-lookup:full:partial-not-allowed",
-    "projection-lookup:partial:hit",
+  ]);
+  assert.deepEqual(calls.filter((call) => call.startsWith("active-overlay-window-lookup:")), [
+    "active-overlay-window-lookup:hit",
   ]);
   assert.equal(calls.includes("thread-read"), false);
   assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["turn-window", "turn-live"]);
@@ -345,7 +357,9 @@ test("thread detail route smoke returns active overlay from mode=recent without 
   assert.ok(calls.includes("route-read-prefer-recent:true"));
   assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), [
     "projection-lookup:full:partial-not-allowed",
-    "projection-lookup:partial:hit",
+  ]);
+  assert.deepEqual(calls.filter((call) => call.startsWith("active-overlay-window-lookup:")), [
+    "active-overlay-window-lookup:hit",
   ]);
   assert.ok(routeLogs.some((log) => log.event === "start" && log.details.transport === "mux"));
   assert.ok(routeLogs.some((log) => (
