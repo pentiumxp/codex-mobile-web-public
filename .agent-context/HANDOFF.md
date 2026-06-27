@@ -24770,3 +24770,79 @@ The previous full handoff was archived and should be opened only when old proven
   - Next performance module should target true cold/restart first-entry peaks
     with timing evidence across thread-list prewarm, summary lookup, projection
     seed/read, and app-server/mux RPC.
+
+## 2026-06-28 - Thread-List Persistent Warm Baseline Module
+
+- User-visible symptom:
+  - After a deploy/restart, entering thread list or a large thread could feel
+    inconsistent: one entry was slow for seconds, later entries became fast.
+    Unlike older failures, the request could eventually return instead of
+    timing out, which made it look like a long-running spinner rather than a
+    server/network failure.
+- Root cause / invariant:
+  - Thread-list fallback cache and its wide source snapshot were process-local.
+    A restart/deploy discarded them, so the first prewarm rebuilt from state DB,
+    session index, and rollout/session files before the ordinary warm path
+    existed.
+  - The thread-list first-paint fallback baseline should survive process
+    restart as a bounded metadata cache. It is not authoritative history, and
+    it must not persist private task bodies, prompts, rollout paths, cookies,
+    access keys, provider payloads, upload bytes, or long logs.
+- Implementation:
+  - Added `adapters/thread-list-fallback-persistent-cache-store.js`.
+  - `adapters/thread-list-fallback-cache-service.js` now seeds warm entries from
+    the persisted cache and writes bounded sanitized entries after rebuilds and
+    incremental summary updates.
+  - `server.js` wires the store through
+    `CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_FILE` and
+    `CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_PERSIST_MAX_AGE_MS`, with runtime
+    default under the Codex Mobile runtime directory.
+  - Cache-hit diagnostics now distinguish current request work from cached
+    build provenance. On a restored cache hit, top-level rollout/session/read
+    counters represent this request and stay `0`; historical build timings
+    remain only in `cachedSourceTimings`.
+  - Updated docs: `docs/ARCHITECTURE.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and `docs/TROUBLESHOOTING.md`.
+- Local validation:
+  - Focused thread-list fallback/prewarm/merge/stable-order/coalescer suite
+    passed (`70` tests).
+  - Focused route/cache diagnostic suite passed (`73` tests).
+  - Full `npm test` passed (`1369` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Commit / deployment:
+  - Commit `b9475e5` `fix: persist thread-list fallback warm cache`.
+  - Commit `f10401b` `fix: separate cache-hit diagnostics from build provenance`.
+  - Deployed final source ref `f10401b42400` through the Home AI central macOS
+    plugin deploy path with reason
+    `codex-mobile-thread-list-persistent-warm-baseline-final`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T223852Z-plugin-codex-mobile-web-codex-mobile-thread-list-persistent-warm-baseline-final`.
+  - Server/docs-only change; static shell stayed
+    `0.1.11|codex-mobile-shell-v553`, build id `8f5df1074a2bd651`.
+  - Source/prod SHA-256 prefixes matched for `server.js`, both thread-list
+    cache services, focused tests, docs, and `package.json`.
+- Production readback:
+  - First deployment bootstrap correctly did one cold prewarm:
+    `lastCacheDecision=miss-rebuild`, `lastElapsedMs=1713`.
+  - The runtime cache file was then present with `version=1`, one entry, and
+    no structured forbidden keys/values such as rollout `.jsonl` paths,
+    `path`, cookie/access-key/authorization fields, or secret-like values.
+  - After restart, public config prewarm readback showed
+    `lastCacheDecision=hit`, `lastCacheHit=true`, `lastElapsedMs=16`,
+    `lastSourceSnapshotRawCount=0`, `lastBaselineSourceCount=0`.
+  - Direct `/api/threads?limit=20` readback showed
+    `fallbackCachePersistentRestored=true`, `fallbackCacheDecision=compatible-hit`,
+    `fallbackMs=1`, `totalMs=117`, `appServerMs=0`, and current request
+    `fallbackStateDbCount=0`, `fallbackRolloutCount=0`,
+    `fallbackSessionIndexCount=0`, `fallbackRolloutFileStatCount=0`,
+    `fallbackRolloutHeadReadCount=0`, `fallbackRolloutStatusTailReadCount=0`,
+    `fallbackSessionIndexReadCount=0`.
+- Residual / next target:
+  - This closes the repeated post-restart thread-list fallback rebuild for the
+    default warm list path after the first bootstrap has written the persisted
+    cache.
+  - It does not eliminate the one-time bootstrap cost when no persisted cache
+    file exists yet, nor does it close unrelated detail summary/projection
+    spikes for a specific thread. Those remain separate performance modules.
