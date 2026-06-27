@@ -19796,3 +19796,44 @@ The previous full handoff was archived and should be opened only when old proven
   `codex-mobile-v538-selected-mux-runtime` or another explicit mux runtime
   reason should force selected mux refresh even if source/prod file diff is
   already clean after a previous partial deploy.
+
+## 2026-06-27 - Phase B summary merge attribution local slice
+
+- Current local state:
+  - Continued after local commit `4b96222` added route-level merge attribution.
+  - This is another local slice only. It does not bump `CLIENT_BUILD_ID` / PWA
+    shell cache and is not deployed by itself.
+- Root-cause boundary:
+  - Symptom/risk: route-level `mergeMs` can dominate a warm list read, but
+    route diagnostics only showed aggregate duplicate/limit pressure. The
+    internal `mergeThreadSummaryList()` stages were still opaque.
+  - Failing layer under investigation: summary merge internals, especially
+    cached display-summary reads, normalize/detail stripping, duplicate display
+    merge, title hydration, final visibility filtering, and sort.
+  - Violated invariant: Phase B must identify the internal merge owner before
+    changing row ordering, hidden/subagent/archive rules, fallback cache shape,
+    or app-server query semantics.
+- Changes:
+  - Added `adapters/thread-list-summary-merge-service.js`.
+  - `server.js` now delegates `mergeThreadSummaryList()` to the service. Normal
+    callers still receive only a thread array; `/api/threads` route merge uses
+    `mergeThreadSummaryListWithDiagnostics()`.
+  - `thread-list-route-merge-service` now accepts a `{ threads, diagnostics }`
+    summary-merge result and whitelists only bounded `summaryMerge*` fields.
+  - Phase B readback and decision evidence now include internal summary-merge
+    counts/timings and dominant stage. Dominant route merge latency can now be
+    reported as `route-merge-latency:<stage>`.
+  - `package.json` check list includes the new adapter.
+- Validation:
+  - `node --check adapters/thread-list-summary-merge-service.js && node --check adapters/thread-list-route-merge-service.js && node --check server.js && node --check scripts/codex-mobile-phase-b-readback-smoke.js && node --check adapters/phase-b-readback-decision-service.js`
+    passed.
+  - `node --test test/thread-list-summary-merge-service.test.js test/thread-list-route-merge-service.test.js test/phase-b-readback-decision-service.test.js test/phase-b-readback-smoke.test.js test/thread-visibility.test.js`
+    passed (`86` tests).
+- Next:
+  - Commit this local slice.
+  - Continue Phase B by optimizing or further splitting the dominant internal
+    stage shown by production readback after the next module deploy. Likely
+    candidates are cached display-summary reads and visible filter/state-db
+    annotation, but do not change behavior before readback names the owner.
+  - Do not deploy until this and adjacent local slices are batched into the next
+    complete Phase B module.

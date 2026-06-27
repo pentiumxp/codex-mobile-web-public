@@ -349,7 +349,14 @@ Current acceleration targets:
    `mergeMs` to `thread-list-route-merge` / `route-merge-latency`, so future
    optimization can target duplicate pressure, limit-window behavior, or cached
    display-summary cost with evidence instead of changing app-server query
-   semantics prematurely.
+   semantics prematurely. The follow-up summary-merge attribution slice moves
+   the existing `mergeThreadSummaryList` behavior behind
+   `thread-list-summary-merge-service` and records bounded internal stage
+   counters/timings: cached display summary, normalize/detail strip, duplicate
+   display merge, title hydration, final hidden/subagent/archive filtering, and
+   sort. Dominant route-merge decisions can now name the likely internal stage,
+   for example `route-merge-latency:cached_display`, before any optimization
+   changes row ownership or ordering.
    Earlier local
    fallback attribution slices also made baseline source work explicit:
    fallback baseline source reads now

@@ -426,6 +426,13 @@ test("phase B readback decision routes dominant route-merge latency to merge own
       routeMergeMergedCount: 23,
       routeMergeOutputCount: 20,
       routeMergeLimitDropCount: 3,
+      summaryMergeInputCount: 44,
+      summaryMergeDuplicateIdCount: 17,
+      summaryMergeCachedDisplayMs: 420,
+      summaryMergeNormalizeMs: 80,
+      summaryMergeDisplayMergeMs: 40,
+      summaryMergeTotalMs: 550,
+      summaryMergeDominantStage: "cached_display",
     },
     muxRuntime: {
       muxMetricsRpc: true,
@@ -449,12 +456,16 @@ test("phase B readback decision routes dominant route-merge latency to merge own
   assert.equal(decision.status, "needs_repair");
   assert.equal(decision.priority, "H2");
   assert.equal(decision.owner, "thread-list-route-merge");
-  assert.equal(decision.reason, "route-merge-latency");
+  assert.equal(decision.reason, "route-merge-latency:cached_display");
   assert.equal(decision.nextAction, "optimize-thread-list-route-merge");
   assert.equal(decision.evidence.threadListMergeMs, 567);
   assert.equal(decision.evidence.threadListRouteMergeInputCount, 44);
   assert.equal(decision.evidence.threadListRouteMergeDuplicateCount, 17);
   assert.equal(decision.evidence.threadListRouteMergeLimitDropCount, 3);
+  assert.equal(decision.evidence.threadListSummaryMergeInputCount, 44);
+  assert.equal(decision.evidence.threadListSummaryMergeDuplicateIdCount, 17);
+  assert.equal(decision.evidence.threadListSummaryMergeCachedDisplayMs, 420);
+  assert.equal(decision.evidence.threadListSummaryMergeDominantStage, "cached_display");
   assert.equal(decision.evidence.threadListMuxRuntimeMuxMetricsRpc, true);
   assert.equal(decision.evidence.threadListMuxMetricsSupported, true);
 });

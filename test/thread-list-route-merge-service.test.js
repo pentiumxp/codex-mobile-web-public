@@ -74,6 +74,28 @@ test("thread-list route merge supports threads-array results", () => {
   assert.equal(merged.diagnostics.routeMergeOutputCount, 2);
 });
 
+test("thread-list route merge includes summary-merge diagnostics without private fields", () => {
+  const merged = mergeThreadListRouteResult({
+    result: { data: [{ id: "a" }] },
+    fallbackThreads: [{ id: "b" }],
+    limit: 10,
+    mergeThreadSummaryList: (threads) => ({
+      threads,
+      diagnostics: {
+        summaryMergeInputCount: threads.length,
+        summaryMergeDominantStage: "cached_display",
+        privatePrompt: "must not be copied if caller adds unsafe fields",
+      },
+    }),
+  });
+
+  assert.equal(merged.diagnostics.routeMergeInputCount, 2);
+  assert.equal(merged.diagnostics.summaryMergeInputCount, 2);
+  assert.equal(merged.diagnostics.summaryMergeDominantStage, "cached_display");
+  assert.equal(Object.prototype.hasOwnProperty.call(merged.diagnostics, "privatePrompt"), false);
+  assert.doesNotMatch(JSON.stringify(merged.diagnostics), /must not be copied|privatePrompt/);
+});
+
 test("thread-list route merge bounds invalid limits and duplicate counters", () => {
   assert.equal(countUniqueIds([{ id: "a" }, { id: "a" }, { id: "" }, null]), 1);
   assert.equal(countDuplicateIds([{ id: "a" }, { id: "a" }, { id: "b" }, { id: "a" }]), 2);

@@ -102,6 +102,9 @@ const {
 const {
   mergeThreadListRouteResult,
 } = require("./adapters/thread-list-route-merge-service");
+const {
+  createThreadListSummaryMergeService,
+} = require("./adapters/thread-list-summary-merge-service");
 const { diagnoseThreadListColdPath } = require("./adapters/thread-list-cold-path-diagnosis-service");
 const {
   stripThreadListDetailFields,
@@ -3160,27 +3163,32 @@ function hydrateThreadListResultTitlesFromSessionIndex(result, indexEntries = re
   return out;
 }
 
-function mergeThreadSummaryList(threads) {
-  const archivedIds = archivedSessionThreadIds();
-  const byId = new Map();
-  for (const thread of Array.isArray(threads) ? threads : []) {
-    if (!thread || !thread.id) continue;
-    const id = String(thread.id);
-    if (archivedIds.has(id)) continue;
-    const displayThread = stripThreadListDetailFields(
-      normalizeThreadSummaryLiveStatus(mergeThreadWithCachedDisplaySummary(thread)),
-    );
-    const merged = normalizeThreadSummaryLiveStatus(byId.has(id) ? mergeThreadDisplaySummary(byId.get(id), displayThread) : displayThread);
-    if (threadHasArchiveSignal(merged, archivedIds) || isSubagentThreadSummary(merged)) {
-      byId.delete(id);
-      continue;
-    }
-    byId.set(id, stripThreadListDetailFields(merged));
+let threadListSummaryMergeService = null;
+
+function getThreadListSummaryMergeService() {
+  if (!threadListSummaryMergeService) {
+    threadListSummaryMergeService = createThreadListSummaryMergeService({
+      archivedSessionThreadIds,
+      mergeThreadWithCachedDisplaySummary,
+      stripThreadListDetailFields,
+      normalizeThreadSummaryLiveStatus,
+      mergeThreadDisplaySummary,
+      threadHasArchiveSignal,
+      isSubagentThreadSummary,
+      hydrateThreadListTitlesFromSessionIndex,
+      shouldHideThreadListSummary,
+      sortThreadListSummaries,
+    });
   }
-  return sortThreadListSummaries(
-    hydrateThreadListTitlesFromSessionIndex([...byId.values()])
-      .filter((thread) => !shouldHideThreadListSummary(thread, archivedIds)),
-  );
+  return threadListSummaryMergeService;
+}
+
+function mergeThreadSummaryListWithDiagnostics(threads) {
+  return getThreadListSummaryMergeService().mergeThreadSummaryListWithDiagnostics(threads);
+}
+
+function mergeThreadSummaryList(threads) {
+  return getThreadListSummaryMergeService().mergeThreadSummaryList(threads);
 }
 
 function mergeThreadListFallback(result, fallbackThreads = [], limit = 80) {
@@ -15089,7 +15097,7 @@ async function handleApi(req, res) {
         result: appServerResult,
         fallbackThreads: fallback,
         limit,
-        mergeThreadSummaryList,
+        mergeThreadSummaryList: mergeThreadSummaryListWithDiagnostics,
       });
       Object.assign(timings, routeMerge.diagnostics);
       const result = normalizeThreadListResultStatuses(routeMerge.result);

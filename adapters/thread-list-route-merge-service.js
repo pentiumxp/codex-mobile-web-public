@@ -12,6 +12,16 @@ function boundedCount(value) {
   return Math.min(100000, Math.trunc(number));
 }
 
+function boundedMs(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return 0;
+  return Math.min(10 * 60 * 1000, Math.trunc(number));
+}
+
+function compactLabel(value, fallback = "", maxLength = 80) {
+  return String(value || fallback || "").trim().slice(0, maxLength);
+}
+
 function threadRowsFromResult(result) {
   if (!result || typeof result !== "object") return [];
   if (Array.isArray(result.data)) return result.data;
@@ -21,6 +31,10 @@ function threadRowsFromResult(result) {
 
 function safeThreadList(value) {
   return Array.isArray(value) ? value.filter((thread) => thread && typeof thread === "object") : [];
+}
+
+function objectOrNull(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
 }
 
 function threadId(value) {
@@ -66,6 +80,31 @@ function routeMergeDiagnostics(input = {}) {
   };
 }
 
+function summaryMergeDiagnostics(value) {
+  const source = objectOrNull(value);
+  if (!source) return {};
+  return {
+    summaryMergeInputCount: boundedCount(source.summaryMergeInputCount),
+    summaryMergeInvalidCount: boundedCount(source.summaryMergeInvalidCount),
+    summaryMergeArchivedIdSkipCount: boundedCount(source.summaryMergeArchivedIdSkipCount),
+    summaryMergeDuplicateIdCount: boundedCount(source.summaryMergeDuplicateIdCount),
+    summaryMergeArchivedSignalDropCount: boundedCount(source.summaryMergeArchivedSignalDropCount),
+    summaryMergeSubagentDropCount: boundedCount(source.summaryMergeSubagentDropCount),
+    summaryMergeByIdCount: boundedCount(source.summaryMergeByIdCount),
+    summaryMergeHydratedCount: boundedCount(source.summaryMergeHydratedCount),
+    summaryMergeVisibleCount: boundedCount(source.summaryMergeVisibleCount),
+    summaryMergeOutputCount: boundedCount(source.summaryMergeOutputCount),
+    summaryMergeCachedDisplayMs: boundedMs(source.summaryMergeCachedDisplayMs),
+    summaryMergeNormalizeMs: boundedMs(source.summaryMergeNormalizeMs),
+    summaryMergeDisplayMergeMs: boundedMs(source.summaryMergeDisplayMergeMs),
+    summaryMergeHydrateTitleMs: boundedMs(source.summaryMergeHydrateTitleMs),
+    summaryMergeFinalFilterMs: boundedMs(source.summaryMergeFinalFilterMs),
+    summaryMergeSortMs: boundedMs(source.summaryMergeSortMs),
+    summaryMergeTotalMs: boundedMs(source.summaryMergeTotalMs),
+    summaryMergeDominantStage: compactLabel(source.summaryMergeDominantStage, "", 80),
+  };
+}
+
 function mergeThreadListRouteResult(options = {}) {
   const sourceResult = options.result && typeof options.result === "object" ? options.result : {};
   const out = Object.assign({}, sourceResult);
@@ -75,7 +114,9 @@ function mergeThreadListRouteResult(options = {}) {
   const mergeThreadSummaryList = typeof options.mergeThreadSummaryList === "function"
     ? options.mergeThreadSummaryList
     : (threads) => safeThreadList(threads);
-  const mergedThreads = safeThreadList(mergeThreadSummaryList(rawInput));
+  const mergeOutput = mergeThreadSummaryList(rawInput);
+  const mergeOutputObject = objectOrNull(mergeOutput);
+  const mergedThreads = safeThreadList(mergeOutputObject ? mergeOutputObject.threads : mergeOutput);
   const outputThreads = mergedThreads.slice(0, boundedLimit(options.limit));
 
   if (Array.isArray(out.data) || !Array.isArray(out.threads)) out.data = outputThreads;
@@ -83,13 +124,17 @@ function mergeThreadListRouteResult(options = {}) {
 
   return {
     result: out,
-    diagnostics: routeMergeDiagnostics({
-      appServerThreads,
-      fallbackThreads,
-      rawInput,
-      mergedThreads,
-      outputThreads,
-    }),
+    diagnostics: Object.assign(
+      {},
+      routeMergeDiagnostics({
+        appServerThreads,
+        fallbackThreads,
+        rawInput,
+        mergedThreads,
+        outputThreads,
+      }),
+      summaryMergeDiagnostics(mergeOutputObject && mergeOutputObject.diagnostics),
+    ),
   };
 }
 
@@ -98,5 +143,6 @@ module.exports = {
   countUniqueIds,
   mergeThreadListRouteResult,
   routeMergeDiagnostics,
+  summaryMergeDiagnostics,
   threadRowsFromResult,
 };
