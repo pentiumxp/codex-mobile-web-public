@@ -218,6 +218,7 @@ const state = {
   threadTilePaneScrollHoldById: new Map(),
   threadTileOperationModesById: new Map(),
   threadTileOperationBubblesById: new Map(),
+  threadTaskCardBodyLoads: new Set(),
   threadTileOperationRefreshTimer: null,
   threadTileViewportBaseline: null,
   threadTileComposerHeightBaselinePx: 0,
@@ -527,7 +528,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v551";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v552";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -16299,6 +16300,63 @@ function upsertThreadTaskCardOnThread(thread, card) {
   thread.threadTaskCards = [card, ...existing.filter((entry) => String(entry && entry.id || "") !== String(card.id || ""))];
 }
 
+function replaceTaskCardBodyPlaceholder(details, card) {
+  if (!details || !card || !card.message || typeof card.message.body !== "string") return false;
+  const placeholder = details.querySelector("[data-task-card-body-placeholder]");
+  if (!placeholder) return false;
+  const pre = document.createElement("pre");
+  pre.className = "approval-detail";
+  pre.textContent = card.message.body;
+  placeholder.replaceWith(pre);
+  return true;
+}
+
+async function loadThreadTaskCardBody(cardId, threadId = "", details = null) {
+  const id = String(cardId || "").trim();
+  const ownerThreadId = String(threadId || state.currentThreadId || "").trim();
+  if (!id || !ownerThreadId) return null;
+  const loadKey = `${ownerThreadId}:${id}`;
+  if (state.threadTaskCardBodyLoads.has(loadKey)) return null;
+  const currentCard = findThreadTaskCard(id, ownerThreadId);
+  if (currentCard && currentCard.message && typeof currentCard.message.body === "string") {
+    replaceTaskCardBodyPlaceholder(details, currentCard);
+    return currentCard;
+  }
+  state.threadTaskCardBodyLoads.add(loadKey);
+  const placeholder = details && details.querySelector("[data-task-card-body-placeholder]");
+  if (placeholder) placeholder.textContent = "Loading task card body...";
+  try {
+    const result = await api(`/api/thread-task-cards/${encodeURIComponent(id)}?threadId=${encodeURIComponent(ownerThreadId)}`, {
+      timeoutMs: 15000,
+    });
+    const card = result && result.card;
+    if (!card) throw new Error("task_card_body_missing");
+    const thread = taskCardActionThread(ownerThreadId);
+    if (thread) upsertThreadTaskCardOnThread(thread, card);
+    if (!replaceTaskCardBodyPlaceholder(details, card) && thread) {
+      if (ownerThreadId === String(state.currentThreadId || "")) renderCurrentThread();
+      else if (!scheduleRenderThreadTilePane(ownerThreadId, { preserveScroll: true })) renderCurrentThread();
+    }
+    return card;
+  } catch (err) {
+    if (placeholder) placeholder.textContent = "Failed to load task card body.";
+    throw err;
+  } finally {
+    state.threadTaskCardBodyLoads.delete(loadKey);
+  }
+}
+
+function handleThreadTaskCardDetailsToggle(event) {
+  const details = event && event.target && event.target.closest
+    ? event.target.closest("[data-task-card-details]")
+    : null;
+  if (!details || !details.open) return;
+  const cardId = details.dataset.taskCardId || "";
+  const threadId = details.dataset.taskCardThreadId || "";
+  if (!details.querySelector("[data-task-card-body-placeholder]")) return;
+  loadThreadTaskCardBody(cardId, threadId, details).catch(showError);
+}
+
 function taskCardCountThreadsForId(threadId) {
   const id = String(threadId || "").trim();
   if (!id) return [];
@@ -16844,10 +16902,11 @@ function threadTaskCardSummaryLine(text) {
   return truncateSingleLine(String(text || "").trim(), 220);
 }
 
-function renderThreadTaskCardExpandable(preview, sections) {
+function renderThreadTaskCardExpandable(preview, sections, attributes = "") {
   const blocks = (Array.isArray(sections) ? sections : []).filter(Boolean);
   if (!blocks.length) return "";
-  return `<details class="approval-details">
+  const attr = String(attributes || "").trim();
+  return `<details class="approval-details"${attr ? ` ${attr}` : ""}>
     <summary><span>${escapeHtml(threadTaskCardSummaryLine(preview) || "Show details")}</span></summary>
     ${blocks.join("")}
   </details>`;
@@ -16874,7 +16933,11 @@ function renderThreadTaskCard(card, previousKeys = new Set(), threadId = "") {
   const status = String(card.status || "pending");
   const detail = taskCardDetailLines(card).join("\n");
   const summary = threadTaskCardSummaryLine(card.message && card.message.summary ? card.message.summary : "");
-  const body = card.message && card.message.body ? `<pre class="approval-detail">${escapeHtml(card.message.body)}</pre>` : "";
+  const body = card.message && card.message.body
+    ? `<pre class="approval-detail">${escapeHtml(card.message.body)}</pre>`
+    : card.message && card.message.bodyOmitted
+      ? `<div class="approval-detail" data-task-card-body-placeholder data-task-card-id="${escapeHtml(card.id)}" data-task-card-thread-id="${escapeHtml(threadId)}">Task card body loads when opened.</div>`
+      : "";
   const compact = status !== "pending" ? " compact" : "";
   const detailBlocks = [
     detail ? `<pre class="approval-detail">${escapeHtml(detail)}</pre>` : "",
@@ -16889,7 +16952,7 @@ function renderThreadTaskCard(card, previousKeys = new Set(), threadId = "") {
       <span class="approval-status">${escapeHtml(taskCardStatusLabel(status))}</span>
     </div>
     ${summary ? `<div class="approval-summary-line">${escapeHtml(summary)}</div>` : ""}
-    ${renderThreadTaskCardExpandable(summary || detail || (card.message && card.message.title) || "Task card details", detailBlocks)}
+    ${renderThreadTaskCardExpandable(summary || detail || (card.message && card.message.title) || "Task card details", detailBlocks, `data-task-card-details data-task-card-id="${escapeHtml(card.id)}" data-task-card-thread-id="${escapeHtml(threadId)}"`)}
     ${renderThreadTaskCardActions(card, threadId)}
   </section>`;
 }
@@ -23868,6 +23931,7 @@ function wireUi() {
   $("conversation").addEventListener("wheel", rememberConversationScrollIntent, { passive: true });
   $("conversation").addEventListener("wheel", handleSubagentWheelSwipe, { passive: true });
   $("conversation").addEventListener("toggle", handleUsageSummaryToggle, true);
+  $("conversation").addEventListener("toggle", handleThreadTaskCardDetailsToggle, true);
   $("conversation").addEventListener("scroll", () => {
     updateRecentCompletedReplyAnchorFromScroll();
     updateConversationAutoScrollHoldFromScroll();

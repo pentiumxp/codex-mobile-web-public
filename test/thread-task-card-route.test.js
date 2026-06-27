@@ -342,7 +342,7 @@ test("server materializes structured task-card drafts from thread detail", () =>
 });
 
 test("conversation render includes task card signature, toolbar, and action handlers", () => {
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v551"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v552"/);
   assert.match(appJs, /function threadTaskCardsForThread\(/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.status \|\| ""\) === "pending"\)/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.threadRole \|\| ""\) === "target"\)/);
@@ -367,6 +367,10 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /data-task-card-action="delete"/);
   assert.match(appJs, /data-task-card-action="revoke"/);
   assert.match(appJs, /data-task-card-thread-id/);
+  assert.match(appJs, /data-task-card-body-placeholder/);
+  assert.match(appJs, /function loadThreadTaskCardBody\(/);
+  assert.match(functionBody(appJs, "loadThreadTaskCardBody"), /\/api\/thread-task-cards\/\$\{encodeURIComponent\(id\)\}\?threadId=\$\{encodeURIComponent\(ownerThreadId\)\}/);
+  assert.match(appJs, /handleThreadTaskCardDetailsToggle/);
   assert.match(appJs, /const threadDetailActionsApi = window\.CodexThreadDetailActions/);
   assert.match(appJs, /threadDetailActionsApi\.resolveThreadDetailClickAction/);
   assert.match(appJs, /function createThreadTaskCardFromCurrent\(/);

@@ -1,0 +1,161 @@
+"use strict";
+
+const { normalizeThreadVisibleProjection } = require("./thread-visible-item-normalizer");
+
+const DEFAULT_COMPLETED_OPERATION_ITEMS = 4;
+const DEFAULT_ACTIVE_OPERATION_ITEMS = 12;
+const DEFAULT_ACTIVE_REASONING_ITEMS = 2;
+const DEFAULT_COMPLETED_REASONING_ITEMS = 0;
+
+const OPERATION_ITEM_TYPES = new Set([
+  "commandExecution",
+  "fileChange",
+  "dynamicToolCall",
+  "mcpToolCall",
+]);
+
+function cloneJson(value) {
+  if (value === undefined) return undefined;
+  return JSON.parse(JSON.stringify(value));
+}
+
+function boundedCount(value, fallback, max = 1000) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) return fallback;
+  return Math.min(max, Math.trunc(number));
+}
+
+function statusText(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object" && value.type) return String(value.type || "");
+  return String(value || "");
+}
+
+function isActiveStatus(value) {
+  return /active|running|started|pending|queued|processing|inprogress|in_progress|in-progress/i.test(statusText(value));
+}
+
+function turnId(turn) {
+  return String(turn && (turn.id || turn.turnId || turn.turn_id) || "").trim();
+}
+
+function activeTurnId(thread) {
+  return String(thread && (thread.activeTurnId || thread.mobileRolloutActiveTurn || thread.mobileActiveTurnId) || "").trim();
+}
+
+function isActiveTurn(turn, thread) {
+  const id = turnId(turn);
+  const activeId = activeTurnId(thread);
+  return Boolean((id && activeId && id === activeId) || isActiveStatus(turn && turn.status));
+}
+
+function isOperationItem(item) {
+  return OPERATION_ITEM_TYPES.has(String(item && item.type || ""));
+}
+
+function isReasoningItem(item) {
+  return String(item && item.type || "") === "reasoning";
+}
+
+function textValue(value) {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(textValue).join("");
+  return "";
+}
+
+function reasoningHasVisibleText(item) {
+  return Boolean(
+    textValue(item && item.text).trim()
+    || textValue(item && item.content).trim()
+    || textValue(item && item.summary).trim()
+  );
+}
+
+function countBy(items, predicate) {
+  return (Array.isArray(items) ? items : []).filter(predicate).length;
+}
+
+function trailingIndexes(items, limit, predicate) {
+  const max = Math.max(0, Math.trunc(Number(limit) || 0));
+  const out = new Set();
+  if (max <= 0) return out;
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (!predicate(items[index], index)) continue;
+    out.add(index);
+    if (out.size >= max) break;
+  }
+  return out;
+}
+
+function compactTurnWithBudget(turn, thread, options, stats) {
+  if (!turn || typeof turn !== "object" || !Array.isArray(turn.items)) return turn;
+  const active = isActiveTurn(turn, thread);
+  const maxOperationItems = active ? options.activeOperationItems : options.completedOperationItems;
+  const compactTurn = typeof options.compactTurn === "function" ? options.compactTurn : null;
+  const beforeItems = turn.items;
+  const beforeOperationCount = countBy(beforeItems, isOperationItem);
+  const beforeReasoningCount = countBy(beforeItems, isReasoningItem);
+  const compacted = compactTurn
+    ? compactTurn(turn, {
+      allowOperations: true,
+      maxOperationItems,
+      threadId: thread && thread.id || "",
+    })
+    : cloneJson(turn);
+  if (!compacted || !Array.isArray(compacted.items)) return compacted;
+  const reasoningLimit = active ? options.activeReasoningItems : options.completedReasoningItems;
+  const keepReasoningIndexes = trailingIndexes(
+    compacted.items,
+    reasoningLimit,
+    (item) => isReasoningItem(item) && (active || reasoningHasVisibleText(item)),
+  );
+  compacted.items = compacted.items.filter((item, index) => {
+    if (!isReasoningItem(item)) return true;
+    return keepReasoningIndexes.has(index);
+  });
+  const afterOperationCount = countBy(compacted.items, isOperationItem);
+  const afterReasoningCount = countBy(compacted.items, isReasoningItem);
+  stats.originalItemCount += beforeItems.length;
+  stats.retainedItemCount += compacted.items.length;
+  stats.omittedOperationItems += Math.max(0, beforeOperationCount - afterOperationCount);
+  stats.omittedReasoningItems += Math.max(0, beforeReasoningCount - afterReasoningCount);
+  stats.activeTurnCount += active ? 1 : 0;
+  return compacted;
+}
+
+function compactThreadDetailResponseResult(result, options = {}) {
+  if (!result || typeof result !== "object" || !result.thread || !Array.isArray(result.thread.turns)) return result;
+  const out = cloneJson(result);
+  const thread = out.thread;
+  const stats = {
+    version: "thread-detail-response-budget-v1",
+    applied: false,
+    originalItemCount: 0,
+    retainedItemCount: 0,
+    omittedOperationItems: 0,
+    omittedReasoningItems: 0,
+    activeTurnCount: 0,
+    completedOperationItems: boundedCount(options.completedOperationItems, DEFAULT_COMPLETED_OPERATION_ITEMS, 100),
+    activeOperationItems: boundedCount(options.activeOperationItems, DEFAULT_ACTIVE_OPERATION_ITEMS, 100),
+    completedReasoningItems: boundedCount(options.completedReasoningItems, DEFAULT_COMPLETED_REASONING_ITEMS, 100),
+    activeReasoningItems: boundedCount(options.activeReasoningItems, DEFAULT_ACTIVE_REASONING_ITEMS, 100),
+  };
+  const budgetOptions = Object.assign({}, options, stats);
+  thread.turns = thread.turns.map((turn) => compactTurnWithBudget(turn, thread, budgetOptions, stats));
+  stats.applied = stats.omittedOperationItems > 0 || stats.omittedReasoningItems > 0;
+  if (!stats.applied) return out;
+  const revision = thread.mobileProjectionRevision;
+  const normalized = normalizeThreadVisibleProjection(out, {
+    source: thread.mobileReadMode || "thread-detail-response-budget",
+    revision,
+  });
+  if (normalized && normalized.thread) normalized.thread.mobileDetailResponseBudget = stats;
+  return normalized;
+}
+
+module.exports = {
+  compactThreadDetailResponseResult,
+  isOperationItem,
+  isReasoningItem,
+};

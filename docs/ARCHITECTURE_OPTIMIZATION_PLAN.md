@@ -176,6 +176,16 @@ Current acceleration targets:
    observed 500KB-900KB active-overlay responses; if latency remains high after
    deployment, the next owner is earlier active-overlay snapshot normalization
    or projection work, not client de-duplication.
+   The follow-up response-budget slice handles the next measured shape: Home AI
+   and Movie detail requests could return quickly at the HTTP layer but still
+   deliver 340KB-380KB responses, because ordinary projection detail responses
+   carried many completed-turn operation/reasoning items and every detail
+   response attached full historical task-card bodies. The root-cause fix is
+   server-side response budgeting, not client refresh masking:
+   `thread-detail-response-budget-service` trims operation/reasoning tails and
+   rebuilds v4 visible keys, while task-card lists now carry summary metadata
+   only and load full card bodies through `GET /api/thread-task-cards/:id` when
+   the user expands a card.
    The follow-up active-detail hot-path slice keeps that same proof gate but
    changes the common active window source. A naive reuse of the active dynamic
    projection regressed production because the lookup still cloned/normalized

@@ -85,10 +85,17 @@ test("create persists a pending task card and lists it for source and target thr
   });
 
   assert.equal(card.status, "pending");
+  assert.equal(card.message.body, "Detailed request.");
   assert.equal(service.listForThread("thread-src").length, 1);
   assert.equal(service.listForThread("thread-dst").length, 1);
-  assert.equal(service.listForThread("thread-src")[0].threadRole, "source");
-  assert.equal(service.listForThread("thread-dst")[0].threadRole, "target");
+  const sourceListCard = service.listForThread("thread-src")[0];
+  const targetListCard = service.listForThread("thread-dst")[0];
+  assert.equal(sourceListCard.threadRole, "source");
+  assert.equal(targetListCard.threadRole, "target");
+  assert.equal(sourceListCard.message.body, undefined);
+  assert.equal(sourceListCard.message.bodyOmitted, true);
+  assert.equal(sourceListCard.message.bodyChars, "Detailed request.".length);
+  assert.equal(service.get(card.id, "thread-src").message.body, "Detailed request.");
   assert.deepEqual(service.pendingCountsForThread("thread-src"), {
     pendingTotal: 1,
     pendingIncoming: 0,

@@ -83,6 +83,7 @@ const { createThreadDetailProjectionInputService } = require("./adapters/thread-
 const { createThreadDetailProjectionResultService } = require("./adapters/thread-detail-projection-result-service");
 const { createThreadDetailProjectionService } = require("./adapters/thread-detail-projection-service");
 const { createThreadDetailProjectionV4Service } = require("./adapters/thread-detail-projection-v4-service");
+const { compactThreadDetailResponseResult } = require("./adapters/thread-detail-response-budget-service");
 const { createThreadDetailSummaryService } = require("./adapters/thread-detail-summary-service");
 const { createThreadDetailBoundedReadPolicyService } = require("./adapters/thread-detail-bounded-read-policy-service");
 const { createThreadDetailActiveOverlayProviderService } = require("./adapters/thread-detail-active-overlay-provider-service");
@@ -925,6 +926,9 @@ const THREAD_DETAIL_TURNS_LIST_FIRST_BYTES = Math.max(
   Number(process.env.CODEX_MOBILE_THREAD_DETAIL_TURNS_LIST_FIRST_BYTES || String(8 * 1024 * 1024)),
 );
 const MAX_LIVE_OPERATION_ITEMS = Math.max(1, Math.min(30, Number(process.env.CODEX_MOBILE_LIVE_OPERATION_ITEMS || "12")));
+const THREAD_DETAIL_COMPLETED_OPERATION_ITEMS = Math.max(0, Math.min(30, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_COMPLETED_OPERATION_ITEMS || "4")));
+const THREAD_DETAIL_ACTIVE_REASONING_ITEMS = Math.max(0, Math.min(20, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_ACTIVE_REASONING_ITEMS || "2")));
+const THREAD_DETAIL_COMPLETED_REASONING_ITEMS = Math.max(0, Math.min(20, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_COMPLETED_REASONING_ITEMS || "0")));
 const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "fileChange", "dynamicToolCall", "mcpToolCall"]);
 const THREAD_LIST_FALLBACK_CACHE_TTL_MS = Math.max(0, Number(process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_TTL_MS || "0"));
 const THREAD_LIST_FALLBACK_PREWARM_ENABLED = !/^(0|false|no|off)$/i.test(process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM || "1");
@@ -12964,8 +12968,18 @@ async function prepareThreadDetailResponseResult(result, details = {}) {
     await prepareThreadTaskCardsToResult(applyLocalActiveThreadStatusToResult(result, details)),
     details,
   );
-  return applyLocalActiveThreadStatusToResult(
+  const finalized = applyLocalActiveThreadStatusToResult(
     finalizeThreadDetailProjectionResult(prepared, details),
+    details,
+  );
+  return applyLocalActiveThreadStatusToResult(
+    compactThreadDetailResponseResult(finalized, {
+      compactTurn,
+      completedOperationItems: THREAD_DETAIL_COMPLETED_OPERATION_ITEMS,
+      activeOperationItems: MAX_LIVE_OPERATION_ITEMS,
+      activeReasoningItems: THREAD_DETAIL_ACTIVE_REASONING_ITEMS,
+      completedReasoningItems: THREAD_DETAIL_COMPLETED_REASONING_ITEMS,
+    }),
     details,
   );
 }

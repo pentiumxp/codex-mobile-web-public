@@ -16,6 +16,32 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-28 线程详情响应体预算和任务卡按需正文
+
+这次模块处理“线程最终能加载出来，但进入 Home AI / Movie 等线程时明显卡很久”的
+新形态。生产本地 API 采样显示，Home AI 和 Movie 的 detail 请求本身没有 HTTP
+超时：服务端常见返回在数十到数百毫秒。但每次 detail 响应仍有约 340-380KB，
+其中一部分来自最近窗口里的大量 operation/reasoning item，另一部分来自
+`thread.threadTaskCards` 一次性附带 24 张历史任务卡的完整 `message.body`。
+这些内容即使在 UI 中折叠，也会随 JSON 解析和隐藏 DOM 一起进入客户端主线程，
+造成“长时间加载，最后又能正常出来”的体验。
+
+本轮修复不做前端去重或刷新兜底，而是在服务端响应边界收敛数据形态：
+
+- 新增 `adapters/thread-detail-response-budget-service.js`，在 detail response
+  出口统一限制 completed turn 的 operation item、active turn 的 operation item
+  和 reasoning item；删减后调用 v4 visible normalizer 重建
+  `mobileVisibleItemKeys`，避免响应变小后产生投影签名错配。
+- `threadTaskCardService.listForThread()` 现在返回任务卡摘要；完整
+  `message.body` 保留在 `GET /api/thread-task-cards/:id`，不会随每次线程详情首屏
+  下发。
+- `public/app.js` 在用户展开任务卡详情时按需读取完整卡体，并优先原地替换占位，
+  避免展开动作触发整屏重绘。
+
+这次是前端静态和服务端行为共同变化，`CLIENT_BUILD_ID` 和 PWA service worker
+cache 从 `codex-mobile-shell-v551` 升级到 `codex-mobile-shell-v552`。已经打开的
+浏览器或 PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到按需任务卡正文逻辑。
+
 ## 2026-06-28 长回执向上箭头取消时间窗口
 
 本次 public 发布在 active overlay 冷路径修复之外，补一个移动端阅读体验修正：

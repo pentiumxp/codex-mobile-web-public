@@ -406,6 +406,16 @@ function publicCard(card, threadId) {
   return out;
 }
 
+function summarizePublicCard(card) {
+  const out = clone(card);
+  const message = out.message && typeof out.message === "object" ? out.message : null;
+  if (!message || typeof message.body !== "string" || !message.body) return out;
+  message.bodyOmitted = true;
+  message.bodyChars = message.body.length;
+  delete message.body;
+  return out;
+}
+
 function countsForThreadFromStore(store, threadId) {
   const id = stringValue(threadId);
   const counts = {
@@ -1017,7 +1027,7 @@ function createThreadTaskCardService(options = {}) {
     return sortCards(store.cards)
       .filter((card) => Boolean(cardForThread(card, id)))
       .slice(0, recentLimit)
-      .map((card) => publicCard(card, id));
+      .map((card) => summarizePublicCard(publicCard(card, id)));
   }
 
   function get(cardId, threadId = "") {

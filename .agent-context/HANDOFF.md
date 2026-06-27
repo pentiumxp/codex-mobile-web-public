@@ -23408,3 +23408,54 @@ The previous full handoff was archived and should be opened only when old proven
   - Deploy through the Home AI central macOS plugin deploy path because this
     changes `public/app.js` and `public/sw.js`.
   - Public sync must still exclude `.agent-context` and runtime/private paths.
+
+## 2026-06-28 - Thread detail response budget ready for deploy
+
+- User report:
+  - Entering Movie and Home AI sometimes stayed loading for seconds to tens of
+    seconds but eventually rendered, unlike older failures that timed out. This
+    pointed to a completed request with oversized parse/render work rather than
+    a hard server/network failure.
+- Bounded evidence before deploy:
+  - Current production detail responses for Home AI and Movie returned HTTP 200
+    and did not time out, but included large JSON payloads.
+  - Offline application of the new response-budget policy to production samples
+    reduced Home AI detail JSON from about `340KB` to `172KB` (`49.5%` saved)
+    and Movie from about `199KB` to `119KB` (`40.3%` saved).
+  - The savings came from task-card body omission in the first-paint detail
+    response and completed-turn operation/reasoning budget; user messages,
+    assistant messages, usage summaries, and image-visible surfaces were not
+    trimmed.
+- Fixes:
+  - Added `adapters/thread-detail-response-budget-service.js` to compact
+    completed-turn operation/reasoning items and active-turn operation/reasoning
+    tails after detail orchestration, then rebuild v4 visible keys through
+    `thread-visible-item-normalizer`.
+  - `threadTaskCardService.listForThread()` now returns summary cards with
+    `message.bodyOmitted/bodyChars`; `get()` still returns the full card body.
+  - `public/app.js` loads full task-card bodies on `<details>` expand through
+    `GET /api/thread-task-cards/:id?threadId=...` and replaces the placeholder
+    in place.
+  - `server.js` now applies the response budget in
+    `prepareThreadDetailResponseResult()` before sending detail JSON.
+  - Static shell/cache advanced to `codex-mobile-shell-v552`.
+- Docs/tests:
+  - Updated README, architecture, complex feature path, module map, and
+    optimization-plan docs for the response-budget and on-demand task-card body
+    contract.
+  - Added `test/thread-detail-response-budget-service.test.js`.
+  - Updated task-card service/route and static-shell tests.
+- Validation before this handoff update:
+  - Focused projection/task-card/render tests passed (`229` tests).
+  - Full `npm test` passed (`1324` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - `codegraph sync && codegraph status` reported an up-to-date graph, with the
+    known earlier-engine reindex suggestion.
+- Next:
+  - Commit this v552 package.
+  - Deploy through the Home AI central macOS plugin deploy path with reason
+    `codex-mobile-thread-detail-response-budget`.
+  - Read back `/api/public-config` and sample Home AI/Movie detail sizes from
+    production after deploy.
