@@ -916,6 +916,13 @@ the ordered timing/field pairs, rejects missing or duplicate timing fields, and
 returns the initial timing result shape. App code no longer hardcodes
 `mergeMs`, `composerRenderMs`, and `threadListRenderMs`; it only executes the
 planned groups and writes durations into the planned fields.
+The first-paint path now uses a dedicated sequence plan for its one special
+ordering rule: draft restore must happen after merge and before composer
+render. `planThreadDetailFirstPaintPostMergeTimingEffects` splits the same
+post-merge timing entries into `beforeDraftRestore` and `afterDraftRestore`,
+while app code only executes those entries and keeps the draft restore insertion
+point. This prevents `loadThread()` first paint from diverging from
+refresh/full-backfill when post-merge timing metadata changes.
 Refresh patch attempt result planning now also lives there:
 `planThreadDetailRefreshPatchAttemptResult` normalizes tile-pane success,
 local-patch success, local-patch rejection, metadata-only tile misses, and

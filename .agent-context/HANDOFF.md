@@ -20111,3 +20111,47 @@ The previous full handoff was archived and should be opened only when old proven
   - Continue Phase A only if there is another adjacent ownership seam with
     clear root-cause value; otherwise prepare the accumulated local Phase A
     slices for one shell/cache bump and central deploy when requested.
+
+## 2026-06-27 - Phase A first-paint post-merge timing sequence local slice
+
+- Current local state:
+  - Continued after local commit `bd90f73` (`refactor: validate thread detail
+    post merge timings`).
+  - This is a local Phase A slice. It does not bump `CLIENT_BUILD_ID` / PWA
+    shell cache and is not deployed by itself.
+- Root-cause boundary:
+  - Symptom/risk: refresh/backfill consumed post-merge timing metadata through
+    a plan, but `loadThread()` first-paint still directly selected
+    `merge`, `composer-render`, and `thread-list-render` timing groups. Its
+    special draft-restore insertion point could diverge from the shared
+    post-merge metadata boundary.
+  - Failing layer: frontend thread-detail first-paint post-merge sequencing
+    ownership.
+  - Violated invariant: first-paint's before/after draft-restore post-merge
+    timing split should be declared by `public/thread-detail-render-plan.js`;
+    app code should execute planned entries and preserve the draft restore
+    insertion point.
+- Changes:
+  - Added `planThreadDetailFirstPaintPostMergeTimingEffects()` in
+    `public/thread-detail-render-plan.js`.
+  - Added `applyThreadDetailRefreshTimedPostMergeEntries()` in `public/app.js`
+    and reused it from the existing full post-merge timing executor.
+  - `loadThread()` first-paint now executes `beforeDraftRestore` entries,
+    restores the draft, then executes `afterDraftRestore` entries.
+  - Updated focused source-level tests, including the composer runtime restore
+    assertion, so they validate the new planned sequence instead of direct
+    hard-coded group calls.
+  - Updated `README.md` and `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Validation:
+  - `node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/composer-draft.test.js`
+    passed (`201` tests).
+  - `node --check public/thread-detail-render-plan.js && node --check public/app.js`
+    passed.
+  - `npm run check` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit this local slice.
+  - The post-merge timing metadata and first-paint sequencing seams are now
+    aligned. Next step should be either module-level shell/cache bump and
+    central deploy for the accumulated Phase A local slices, or a different
+    Phase target with a fresh root-cause boundary.

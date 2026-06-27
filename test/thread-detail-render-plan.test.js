@@ -814,6 +814,22 @@ test("thread detail refresh post-merge effects plan preserves timing groups and 
     },
     reason: "post-merge-timing-fields",
   });
+  assert.deepEqual(renderPlan.planThreadDetailFirstPaintPostMergeTimingEffects(postMergePlan), {
+    ok: true,
+    beforeDraftRestore: [
+      { timing: "merge", field: "mergeMs" },
+    ],
+    afterDraftRestore: [
+      { timing: "composer-render", field: "composerRenderMs" },
+      { timing: "thread-list-render", field: "threadListRenderMs" },
+    ],
+    timings: {
+      mergeMs: 0,
+      composerRenderMs: 0,
+      threadListRenderMs: 0,
+    },
+    reason: "first-paint-post-merge-timing-effects",
+  });
 });
 
 test("thread detail refresh post-merge timing field plan rejects invalid metadata", () => {
@@ -841,6 +857,18 @@ test("thread detail refresh post-merge timing field plan rejects invalid metadat
     entries: [],
     timings: {},
     reason: "duplicate-post-merge-timing-field",
+  });
+  assert.deepEqual(renderPlan.planThreadDetailFirstPaintPostMergeTimingEffects({
+    groups: [
+      { timing: "composer-render", timingField: "composerRenderMs", effects: [] },
+      { timing: "thread-list-render", timingField: "threadListRenderMs", effects: [] },
+    ],
+  }), {
+    ok: false,
+    beforeDraftRestore: [],
+    afterDraftRestore: [],
+    timings: {},
+    reason: "missing-first-paint-merge-timing",
   });
 });
 

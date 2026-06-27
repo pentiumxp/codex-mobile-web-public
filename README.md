@@ -16,6 +16,42 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-27 Phase A First-Paint Post-Merge Timing Sequence Local Slice
+
+这是 v539 生产部署后的第四个 Phase A 本地小切片，尚未 bump shell/cache，尚未部署。
+
+根因边界：
+
+- 症状/风险：refresh/backfill 已经通过 post-merge timing plan 执行，但
+  `loadThread()` 首屏成功路径仍直接手写 `merge`、`composer-render`、
+  `thread-list-render` 三段 timing group。这个路径有一个特殊要求：
+  draft restore 必须位于 merge 之后、composer render 之前；如果该特殊顺序继续散落在
+  `public/app.js`，后续 post-merge group 调整仍容易让首屏路径和 refresh/backfill
+  分叉。
+- 失败层：前端 thread-detail first-paint post-merge sequencing ownership，不是
+  detail API、projection cache、DOM patch 或 draft 存储。
+- 不变式：首屏路径的“draft restore 前后”post-merge timing 分组应由
+  `public/thread-detail-render-plan.js` 声明；app 层只执行 before/after entries，
+  并保持 draft restore 插入点。
+
+改动：
+
+- 新增 `planThreadDetailFirstPaintPostMergeTimingEffects()`，把 post-merge timing
+  entries 拆成 `beforeDraftRestore` 和 `afterDraftRestore`。
+- 新增 `applyThreadDetailRefreshTimedPostMergeEntries()`，让 refresh/backfill 和
+  first-paint 都消费相同的 `{ timing, field }` entry 执行形状。
+- `loadThread()` 首屏成功路径不再直接调用 `"composer-render"` /
+  `"thread-list-render"` timing group，而是执行 render-plan 返回的 after-draft entries。
+
+验证：
+
+```bash
+node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/composer-draft.test.js  # 201 passed
+node --check public/thread-detail-render-plan.js && node --check public/app.js
+npm run check
+git diff --check
+```
+
 ## 2026-06-27 Phase A Post-Merge Timing Fields Local Slice
 
 这是 v539 生产部署后的第三个 Phase A 本地小切片，尚未 bump shell/cache，尚未部署。

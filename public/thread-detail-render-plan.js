@@ -612,6 +612,41 @@
     };
   }
 
+  function planThreadDetailFirstPaintPostMergeTimingEffects(plan = {}) {
+    const timingFieldsPlan = planThreadDetailRefreshPostMergeTimingFields(plan);
+    if (!timingFieldsPlan.ok) {
+      return {
+        ok: false,
+        beforeDraftRestore: [],
+        afterDraftRestore: [],
+        timings: {},
+        reason: timingFieldsPlan.reason,
+      };
+    }
+    const beforeDraftRestore = [];
+    const afterDraftRestore = [];
+    for (const entry of timingFieldsPlan.entries) {
+      if (entry.timing === "merge") beforeDraftRestore.push(entry);
+      else afterDraftRestore.push(entry);
+    }
+    if (!beforeDraftRestore.length) {
+      return {
+        ok: false,
+        beforeDraftRestore: [],
+        afterDraftRestore: [],
+        timings: {},
+        reason: "missing-first-paint-merge-timing",
+      };
+    }
+    return {
+      ok: true,
+      beforeDraftRestore,
+      afterDraftRestore,
+      timings: Object.assign({}, timingFieldsPlan.timings),
+      reason: "first-paint-post-merge-timing-effects",
+    };
+  }
+
   function planThreadDetailRefreshPatchAttemptEffects(input = {}) {
     const shouldRenderDetail = Boolean(input.shouldRenderDetail);
     const tryTilePanePatch = Boolean(input.tryTilePanePatch);
@@ -1814,6 +1849,7 @@
     planThreadDetailRefreshPatchSurfaceResultStage,
     planThreadDetailRefreshPostMergeEffects,
     planThreadDetailRefreshPostMergeTimingFields,
+    planThreadDetailFirstPaintPostMergeTimingEffects,
     planThreadDetailRefreshPatchExecutionStage,
     planSingleThreadEarlyShellExecution,
     planSingleThreadFullRenderShell,

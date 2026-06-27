@@ -9073,19 +9073,33 @@ async function loadThread(threadId, options = {}) {
   });
   applyThreadDetailRefreshResponseEffectsPlan(firstPaintResponsePlan, { thread: result.thread });
   const postMergePlan = threadDetailRenderPlanApi.planThreadDetailRefreshPostMergeEffects();
-  applyThreadDetailRefreshPostMergeEffectsGroup(postMergePlan, "merge");
+  const firstPaintPostMergeTimingPlan = threadDetailRenderPlanApi.planThreadDetailFirstPaintPostMergeTimingEffects(postMergePlan);
+  if (!firstPaintPostMergeTimingPlan.ok) {
+    throw new Error(`Thread detail first-paint post-merge timing metadata invalid: ${firstPaintPostMergeTimingPlan.reason || "unknown"}`);
+  }
+  const firstPaintPostMergeTimings = applyThreadDetailRefreshTimedPostMergeEntries(
+    postMergePlan,
+    firstPaintPostMergeTimingPlan.beforeDraftRestore,
+    Object.assign({}, firstPaintPostMergeTimingPlan.timings),
+    { mergeStartedAt },
+  );
   const firstPaintPreRenderPlan = threadDetailRenderPlanApi.planThreadDetailFirstPaintPreRenderEffects({
     threadId,
     hasEvents: Boolean(state.events),
   });
   applyThreadDetailPostRenderEffectsPlan(firstPaintPreRenderPlan, { thread: state.currentThread });
-  const mergeMs = roundedDurationMs(mergeStartedAt);
+  const mergeMs = firstPaintPostMergeTimings.mergeMs;
   const draftRestoreStartedAt = nowPerfMs();
   const firstPaintDraftRestorePlan = threadDetailRenderPlanApi.planThreadDetailFirstPaintDraftRestoreEffects();
   applyThreadDetailPostRenderEffectsPlan(firstPaintDraftRestorePlan, { thread: state.currentThread });
   const draftRestoreMs = roundedDurationMs(draftRestoreStartedAt);
-  const composerRenderMs = applyThreadDetailRefreshTimedPostMergeEffectsGroup(postMergePlan, "composer-render");
-  const threadListRenderMs = applyThreadDetailRefreshTimedPostMergeEffectsGroup(postMergePlan, "thread-list-render");
+  applyThreadDetailRefreshTimedPostMergeEntries(
+    postMergePlan,
+    firstPaintPostMergeTimingPlan.afterDraftRestore,
+    firstPaintPostMergeTimings,
+  );
+  const composerRenderMs = firstPaintPostMergeTimings.composerRenderMs;
+  const threadListRenderMs = firstPaintPostMergeTimings.threadListRenderMs;
   const conversationRenderStartedAt = nowPerfMs();
   renderCurrentThread({ stickToBottom: true });
   const conversationRenderMs = roundedDurationMs(conversationRenderStartedAt);
@@ -9466,21 +9480,32 @@ function applyThreadDetailRefreshTimedPostMergeEffectsGroup(plan, timing, option
   return roundedDurationMs(startedAt);
 }
 
+function applyThreadDetailRefreshTimedPostMergeEntries(plan, entries, timings, options = {}) {
+  const result = timings && typeof timings === "object" ? timings : {};
+  const list = Array.isArray(entries) ? entries : [];
+  for (const entry of list) {
+    const timing = String(entry && entry.timing || "");
+    const field = String(entry && entry.field || "");
+    if (!timing || !field) throw new Error("Thread detail refresh post-merge timing entry missing");
+    const startedAt = timing === "merge" && Number.isFinite(options.mergeStartedAt)
+      ? options.mergeStartedAt
+      : nowPerfMs();
+    result[field] = applyThreadDetailRefreshTimedPostMergeEffectsGroup(plan, timing, { startedAt });
+  }
+  return result;
+}
+
 function applyThreadDetailRefreshTimedPostMergeEffectsPlan(plan, options = {}) {
   const timingFieldsPlan = threadDetailRenderPlanApi.planThreadDetailRefreshPostMergeTimingFields(plan);
   if (!timingFieldsPlan.ok) {
     throw new Error(`Thread detail refresh post-merge timing metadata invalid: ${timingFieldsPlan.reason || "unknown"}`);
   }
-  const timings = Object.assign({}, timingFieldsPlan.timings);
-  for (const entry of timingFieldsPlan.entries) {
-    const timing = entry.timing;
-    const field = entry.field;
-    const startedAt = timing === "merge" && Number.isFinite(options.mergeStartedAt)
-      ? options.mergeStartedAt
-      : nowPerfMs();
-    timings[field] = applyThreadDetailRefreshTimedPostMergeEffectsGroup(plan, timing, { startedAt });
-  }
-  return timings;
+  return applyThreadDetailRefreshTimedPostMergeEntries(
+    plan,
+    timingFieldsPlan.entries,
+    Object.assign({}, timingFieldsPlan.timings),
+    options,
+  );
 }
 
 function applyThreadDetailRefreshResponseEffect(effect, context = {}) {
