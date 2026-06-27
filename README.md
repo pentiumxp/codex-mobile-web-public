@@ -16,6 +16,32 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-27 Phase B App-Server RPC Transport Diagnostics Slice
+
+本地小切片继续 v536 后的 Phase B。v536 生产读回已经证明普通线程列表慢样本主要
+落在 `appServerRpcMs`，不是 fallback/prewarm、本地 visible filter、workspace
+filter 或未归因 Mobile server 时间。本切片不改变列表数据、排序、请求窗口、fallback
+策略或 UI，只把 `codex.request("thread/list")` 的 RPC 边界补成 metadata-only 证据：
+
+- `CodexAppServerClient` 在 RPC promise 上记录 bounded attempt count、timeout、
+  retry/timeout 状态、request payload bytes、request params bytes、response payload
+  bytes。
+- endpoint 只公开分类：`profile-mux-file`、`env-ws`、`env-tcp`、`managed-child` 或
+  `external-*`，不公开 endpoint 文件路径、host 私有路径、线程标题、消息正文或任务卡正文。
+- `/api/threads` 只给 app-server `thread/list` 调用传入 diagnostics 对象；其它 RPC
+  行为不变。
+- Phase B readback 和 decision evidence 现在携带 transport/endpoint/payload 字节字段，
+  后续模块部署读回可以判断慢点是否与响应体规模、retry/timeout、传输类型相关。
+
+验证：
+
+```bash
+node --check server.js && node --check adapters/thread-list-app-server-fetch-policy-service.js && node --check adapters/phase-b-readback-decision-service.js && node --check scripts/codex-mobile-phase-b-readback-smoke.js && node --test test/thread-list-app-server-fetch-policy-service.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js test/thread-visibility.test.js test/protocol.test.js
+```
+
+结果：focused `101` passed。未 bump `CLIENT_BUILD_ID` / PWA shell cache，未部署；继续按
+“小切片本地提交，模块批量部署”的节奏等待下一次 Phase B 模块。
+
 ## 2026-06-27 v536 Phase B App-Server List Attribution Module
 
 v536 把 v535 后的 3 个本地 Phase B app-server list 归因切片收束成一个模块：

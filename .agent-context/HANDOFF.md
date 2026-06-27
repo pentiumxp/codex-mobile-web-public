@@ -19331,3 +19331,50 @@ The previous full handoff was archived and should be opened only when old proven
   - Next Phase B work should investigate Codex app-server `thread/list` /
     mux/RPC latency and decide whether the fix belongs in request cadence,
     mux transport, app-server list payload size, or app-server-side filtering.
+
+## 2026-06-27 - Phase B app-server RPC transport diagnostics local slice
+
+- Current local state:
+  - Continued Phase B after v536 production readback proved ordinary thread-list
+    latency was dominated by `appServerRpcMs` (`1853/1939ms`) while local filter
+    timing was small and `appServerUnattributedMs=0`.
+  - This slice is local-only and does not bump `CLIENT_BUILD_ID` / PWA shell
+    cache or deploy production.
+- Root-cause boundary:
+  - Symptom/risk: high app-server `thread/list` RPC latency remained a broad
+    owner after v536; without transport/payload evidence, the next repair could
+    guess between mux transport, app-server response size, retry/timeout, or
+    app-server-side filtering.
+  - Failing layer: bounded Phase B RPC boundary evidence for `/api/threads`
+    app-server `thread/list`, not fallback/prewarm, thread detail projection,
+    list data semantics, frontend patching, or task-card workflow.
+  - Violated invariant: high-latency Phase B readback must carry enough
+    metadata-only evidence to choose the next runtime owner without private
+    logs, message text, raw task bodies, endpoint paths, or response contents.
+- Changes:
+  - `CodexAppServerClient` now accepts an optional diagnostics object on RPC
+    requests and records bounded attempt count, timeout, retry/timeout status,
+    request payload bytes, request params bytes, response payload bytes,
+    transport kind, endpoint protocol, and endpoint kind.
+  - Endpoint kind is classified as `profile-mux-file`, `env-ws`, `env-tcp`,
+    `managed-child`, or `external-*`; raw endpoint source paths are not exposed.
+  - `/api/threads` passes diagnostics only to the app-server `thread/list` call
+    and folds the sanitized fields into `threadListAppServerLatencyTimingFields`.
+  - Phase B readback smoke and decision evidence now preserve the transport,
+    retry, timeout, and payload-size fields.
+  - Updated `README.md` and `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Validation:
+  - `node --check server.js && node --check adapters/thread-list-app-server-fetch-policy-service.js && node --check adapters/phase-b-readback-decision-service.js && node --check scripts/codex-mobile-phase-b-readback-smoke.js && node --test test/thread-list-app-server-fetch-policy-service.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js test/thread-visibility.test.js test/protocol.test.js` passed (`101` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `npm test` passed (`1199` tests).
+  - `git diff --check` passed.
+- Deployment:
+  - Not deployed. This remains a local Phase B transport-diagnostics slice for
+    the next batched module.
+- Next:
+  - Commit locally, then continue with either a second small app-server/mux RPC
+    evidence slice or a batched module deploy/readback.
+    The next production readback should inspect `appServerResponsePayloadBytes`,
+    `appServerRpcAttemptCount`, `appServerRpcTimedOut`, and endpoint kind before
+    changing request cadence, mux transport, or app-server-side filtering.

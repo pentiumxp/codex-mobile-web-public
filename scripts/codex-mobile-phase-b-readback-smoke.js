@@ -168,6 +168,12 @@ function boundedNumber(value) {
   return Math.min(10 * 60 * 1000, Math.round(number));
 }
 
+function boundedBytes(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) return 0;
+  return Math.min(100 * 1024 * 1024, Math.round(number));
+}
+
 function boundedCount(value) {
   const number = Number(value);
   if (!Number.isFinite(number) || number < 0) return 0;
@@ -363,6 +369,17 @@ function summarizeThreadList(result = {}) {
     appServerRawCount: boundedCount(timings && timings.appServerRawCount),
     appServerVisibleCount: boundedCount(timings && timings.appServerVisibleCount),
     appServerFilteredCount: boundedCount(timings && timings.appServerFilteredCount),
+    appServerTransportKind: compactLabel(timings && timings.appServerTransportKind, 80),
+    appServerEndpointKind: compactLabel(timings && timings.appServerEndpointKind, 80),
+    appServerEndpointProtocol: compactLabel(timings && timings.appServerEndpointProtocol, 40),
+    appServerRpcAttemptCount: boundedCount(timings && timings.appServerRpcAttemptCount),
+    appServerRpcTimeoutMs: boundedNumber(timings && timings.appServerRpcTimeoutMs),
+    appServerRpcRetryEnabled: timings && timings.appServerRpcRetryEnabled === true,
+    appServerRpcTimedOut: timings && timings.appServerRpcTimedOut === true,
+    appServerRpcErrorCode: compactLabel(timings && timings.appServerRpcErrorCode, 80),
+    appServerRequestPayloadBytes: boundedBytes(timings && timings.appServerRequestPayloadBytes),
+    appServerRequestParamBytes: boundedBytes(timings && timings.appServerRequestParamBytes),
+    appServerResponsePayloadBytes: boundedBytes(timings && timings.appServerResponsePayloadBytes),
     fallbackMs: boundedNumber(timings && timings.fallbackMs),
     mergeMs: boundedNumber(timings && timings.mergeMs),
   };

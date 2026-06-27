@@ -22,6 +22,12 @@ function compactLabel(value, fallback = "", maxLength = 80) {
   return String(value || fallback || "").trim().slice(0, maxLength);
 }
 
+function boundedBytes(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return 0;
+  return Math.min(100 * 1024 * 1024, Math.trunc(number));
+}
+
 function booleanFlag(value) {
   if (value === true) return true;
   if (value === false || value === null || value === undefined) return false;
@@ -133,6 +139,9 @@ function threadListAppServerFetchTimingFields(plan = {}) {
 
 function threadListAppServerLatencyTimingFields(input = {}) {
   const source = input && typeof input === "object" ? input : {};
+  const rpcDiagnostics = source.rpcDiagnostics && typeof source.rpcDiagnostics === "object"
+    ? source.rpcDiagnostics
+    : {};
   const totalMs = boundedMs(source.totalMs);
   const rpcMs = boundedMs(source.rpcMs);
   const visibleFilterMs = boundedMs(source.visibleFilterMs);
@@ -154,6 +163,17 @@ function threadListAppServerLatencyTimingFields(input = {}) {
     appServerFilteredCount: boundedCount(
       source.filteredCount !== undefined ? source.filteredCount : countThreadListRows(source.filteredResult),
     ),
+    appServerTransportKind: compactLabel(rpcDiagnostics.transportKind, "unknown", 80),
+    appServerEndpointKind: compactLabel(rpcDiagnostics.endpointKind, "unknown", 80),
+    appServerEndpointProtocol: compactLabel(rpcDiagnostics.endpointProtocol, "unknown", 40),
+    appServerRpcAttemptCount: boundedCount(rpcDiagnostics.attemptCount),
+    appServerRpcTimeoutMs: boundedMs(rpcDiagnostics.timeoutMs),
+    appServerRpcRetryEnabled: rpcDiagnostics.retryEnabled === true,
+    appServerRpcTimedOut: rpcDiagnostics.timedOut === true,
+    appServerRpcErrorCode: compactLabel(rpcDiagnostics.errorCode, "", 80),
+    appServerRequestPayloadBytes: boundedBytes(rpcDiagnostics.requestPayloadBytes),
+    appServerRequestParamBytes: boundedBytes(rpcDiagnostics.requestParamBytes),
+    appServerResponsePayloadBytes: boundedBytes(rpcDiagnostics.responsePayloadBytes),
   };
 }
 

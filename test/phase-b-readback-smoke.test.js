@@ -103,6 +103,17 @@ test("phase B readback smoke collects bounded diagnostics without private fields
             appServerRawCount: 3,
             appServerVisibleCount: 2,
             appServerFilteredCount: 1,
+            appServerTransportKind: "external-jsonl-tcp",
+            appServerEndpointKind: "profile-mux-file",
+            appServerEndpointProtocol: "jsonl-tcp",
+            appServerRpcAttemptCount: 1,
+            appServerRpcTimeoutMs: 12000,
+            appServerRpcRetryEnabled: true,
+            appServerRpcTimedOut: false,
+            appServerRpcErrorCode: "",
+            appServerRequestPayloadBytes: 188,
+            appServerRequestParamBytes: 96,
+            appServerResponsePayloadBytes: 45678,
             fallbackMs: 8,
             mergeMs: 2,
             fallbackCacheDecision: "miss-rebuild",
@@ -171,6 +182,17 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.threadList.appServerRawCount, 3);
   assert.equal(report.threadList.appServerVisibleCount, 2);
   assert.equal(report.threadList.appServerFilteredCount, 1);
+  assert.equal(report.threadList.appServerTransportKind, "external-jsonl-tcp");
+  assert.equal(report.threadList.appServerEndpointKind, "profile-mux-file");
+  assert.equal(report.threadList.appServerEndpointProtocol, "jsonl-tcp");
+  assert.equal(report.threadList.appServerRpcAttemptCount, 1);
+  assert.equal(report.threadList.appServerRpcTimeoutMs, 12000);
+  assert.equal(report.threadList.appServerRpcRetryEnabled, true);
+  assert.equal(report.threadList.appServerRpcTimedOut, false);
+  assert.equal(report.threadList.appServerRpcErrorCode, "");
+  assert.equal(report.threadList.appServerRequestPayloadBytes, 188);
+  assert.equal(report.threadList.appServerRequestParamBytes, 96);
+  assert.equal(report.threadList.appServerResponsePayloadBytes, 45678);
   assert.equal(report.threadList.fallbackSourceSnapshotHit, true);
   assert.equal(report.threadList.fallbackSourceSnapshotRawCount, 12);
   assert.equal(report.publicConfig.threadListFallbackPrewarm.completed, true);
@@ -570,6 +592,17 @@ test("phase B readback summary helpers keep only bounded metadata", () => {
         appServerRawCount: 20,
         appServerVisibleCount: 18,
         appServerFilteredCount: 16,
+        appServerTransportKind: "external-jsonl-tcp",
+        appServerEndpointKind: "profile-mux-file",
+        appServerEndpointProtocol: "jsonl-tcp",
+        appServerRpcAttemptCount: 1,
+        appServerRpcTimeoutMs: 12000,
+        appServerRpcRetryEnabled: true,
+        appServerRpcTimedOut: false,
+        appServerRpcErrorCode: "",
+        appServerRequestPayloadBytes: 188,
+        appServerRequestParamBytes: 96,
+        appServerResponsePayloadBytes: 45678,
         totalMs: 999999999,
       },
     },
@@ -589,6 +622,17 @@ test("phase B readback summary helpers keep only bounded metadata", () => {
   assert.equal(list.appServerRawCount, 20);
   assert.equal(list.appServerVisibleCount, 18);
   assert.equal(list.appServerFilteredCount, 16);
+  assert.equal(list.appServerTransportKind, "external-jsonl-tcp");
+  assert.equal(list.appServerEndpointKind, "profile-mux-file");
+  assert.equal(list.appServerEndpointProtocol, "jsonl-tcp");
+  assert.equal(list.appServerRpcAttemptCount, 1);
+  assert.equal(list.appServerRpcTimeoutMs, 12000);
+  assert.equal(list.appServerRpcRetryEnabled, true);
+  assert.equal(list.appServerRpcTimedOut, false);
+  assert.equal(list.appServerRpcErrorCode, "");
+  assert.equal(list.appServerRequestPayloadBytes, 188);
+  assert.equal(list.appServerRequestParamBytes, 96);
+  assert.equal(list.appServerResponsePayloadBytes, 45678);
   assert.equal(list.fallbackBaselineFinalFilterInputCount, 100000);
   assert.equal(list.fallbackBaselineFinalFilterOutputCount, 100000);
   assert.equal(list.fallbackBaselineMergeInputCount, 100000);

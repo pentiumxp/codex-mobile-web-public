@@ -281,6 +281,18 @@ Current acceleration targets:
    `appServerMs=1939` with `appServerRpcMs=1853`, local filter timing at 86ms,
    and `appServerUnattributedMs=0`, so the next Phase B owner is
    `app-server-thread-list-rpc`, not fallback/prewarm or local filtering.
+   The next local transport-diagnostics slice starts that owner path without
+   changing runtime behavior: `CodexAppServerClient` now records bounded
+   per-RPC metadata for the `/api/threads` app-server `thread/list` call,
+   including transport kind, endpoint kind, endpoint protocol, attempt count,
+   timeout/retry/timeout status, request payload bytes, request params bytes,
+   and response payload bytes. Endpoint values are classified as
+   `profile-mux-file`, `env-ws`, `env-tcp`, `managed-child`, or `external-*`;
+   raw endpoint files, private paths, thread titles, prompts, task-card bodies,
+   and response contents are not exposed. Phase B readback and decision
+   evidence carry these fields so the next module deploy can determine whether
+   high `appServerRpcMs` correlates with response size, retry/timeout behavior,
+   or transport class before changing mux/app-server behavior.
    Earlier local
    fallback attribution slices also made baseline source work explicit:
    fallback baseline source reads now

@@ -9192,6 +9192,15 @@ function parseTcpEndpoint(value, source) {
   return { protocol: "jsonl-tcp", host, port, source, required: true };
 }
 
+function safeJsonByteLength(value) {
+  try {
+    const json = JSON.stringify(value);
+    return Buffer.byteLength(json || "", "utf8");
+  } catch (_) {
+    return 0;
+  }
+}
+
 function resolveExternalEndpoint() {
   if (EXTERNAL_APP_SERVER_WS) {
     return { protocol: "ws", url: EXTERNAL_APP_SERVER_WS, source: "CODEX_MOBILE_APP_SERVER_WS", required: true };
@@ -9564,9 +9573,12 @@ class CodexAppServerClient {
       return;
     }
     if (Object.prototype.hasOwnProperty.call(msg, "id") && this.pending.has(msg.id)) {
-      const { resolve, reject, timer } = this.pending.get(msg.id);
+      const { resolve, reject, timer, diagnostics } = this.pending.get(msg.id);
       clearTimeout(timer);
       this.pending.delete(msg.id);
+      this.recordRpcDiagnostics(diagnostics, {
+        responsePayloadBytes: Buffer.byteLength(String(raw || ""), "utf8"),
+      });
       if (msg.error) reject(new Error(msg.error.message || JSON.stringify(msg.error)));
       else resolve(msg.result);
       return;
@@ -9673,6 +9685,36 @@ class CodexAppServerClient {
     broadcast({ type: "serverRequestResolved", requestId: key, status });
   }
 
+  rpcEndpointKind() {
+    const endpoint = this.endpoint || {};
+    const source = String(endpoint.source || "");
+    if (this.transportKind === "managed-ws-child") return "managed-child";
+    if (source === "CODEX_MOBILE_APP_SERVER_WS") return "env-ws";
+    if (source === "CODEX_MOBILE_APP_SERVER_TCP") return "env-tcp";
+    if (source && normalizeFsPath(source) === normalizeFsPath(MUX_ENDPOINT_FILE)) return "profile-mux-file";
+    if (this.transportKind === "external-jsonl-tcp") return "external-jsonl-tcp";
+    if (this.transportKind === "external-ws") return "external-ws";
+    return this.transportKind || "unknown";
+  }
+
+  recordRpcDiagnostics(diagnostics, fields = {}) {
+    if (!diagnostics || typeof diagnostics !== "object") return;
+    diagnostics.transportKind = this.transportKind || "unknown";
+    diagnostics.endpointKind = this.rpcEndpointKind();
+    diagnostics.endpointProtocol = this.endpoint && this.endpoint.protocol
+      ? String(this.endpoint.protocol)
+      : "unknown";
+    if (fields.attempt) diagnostics.attemptCount = Math.max(1, Number(diagnostics.attemptCount || 0) + 1);
+    if (fields.method) diagnostics.method = String(fields.method);
+    if (fields.timeoutMs !== undefined) diagnostics.timeoutMs = Number(fields.timeoutMs || 0);
+    if (fields.retryEnabled !== undefined) diagnostics.retryEnabled = fields.retryEnabled === true;
+    if (fields.requestPayloadBytes !== undefined) diagnostics.requestPayloadBytes = Number(fields.requestPayloadBytes || 0);
+    if (fields.requestParamBytes !== undefined) diagnostics.requestParamBytes = Number(fields.requestParamBytes || 0);
+    if (fields.responsePayloadBytes !== undefined) diagnostics.responsePayloadBytes = Number(fields.responsePayloadBytes || 0);
+    if (fields.timedOut !== undefined) diagnostics.timedOut = fields.timedOut === true;
+    if (fields.errorCode) diagnostics.errorCode = String(fields.errorCode).slice(0, 80);
+  }
+
   pendingServerRequests() {
     return [...this.serverRequests.values()]
       .filter((request) => SERVER_REQUEST_METHODS.has(request.method))
@@ -9771,17 +9813,30 @@ class CodexAppServerClient {
     if (!this.isTransportOpen()) {
       return Promise.reject(new Error("codex app-server connection is not open"));
     }
+    const serializedPayload = JSON.stringify(payload);
+    this.recordRpcDiagnostics(options.diagnostics, {
+      attempt: true,
+      method,
+      timeoutMs,
+      requestPayloadBytes: Buffer.byteLength(serializedPayload, "utf8"),
+      requestParamBytes: safeJsonByteLength(params),
+      retryEnabled: options.retryEnabled === true,
+    });
     logWorkspaceDelegationRpc(method, params);
-    this.ws.send(JSON.stringify(payload));
+    this.ws.send(serializedPayload);
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         const err = new Error(`Codex request timed out: ${method}`);
         err.code = "RPC_TIMEOUT";
+        this.recordRpcDiagnostics(options.diagnostics, {
+          timedOut: true,
+          errorCode: err.code,
+        });
         reject(err);
         if (options.resetOnTimeout !== false) this.resetConnection(err.message);
       }, timeoutMs);
-      this.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, { resolve, reject, timer, diagnostics: options.diagnostics || null });
     });
   }
 
@@ -9811,14 +9866,17 @@ class CodexAppServerClient {
   async request(method, params, options = {}) {
     const timeoutMs = options.timeoutMs || (SAFE_RETRY_METHODS.has(method) ? READ_RPC_TIMEOUT_MS : DEFAULT_RPC_TIMEOUT_MS);
     const retry = options.retry !== false && SAFE_RETRY_METHODS.has(method);
+    if (options.diagnostics && typeof options.diagnostics === "object") {
+      options.diagnostics.retryEnabled = retry;
+    }
     await this.ensure();
     try {
-      return await this.sendRpc(method, params, timeoutMs, options);
+      return await this.sendRpc(method, params, timeoutMs, Object.assign({}, options, { retryEnabled: retry }));
     } catch (err) {
       const recoverable = /timed out|connection is not open|connection closed/i.test(err.message || "");
       if (!retry || !recoverable) throw err;
       await this.ensure();
-      return this.sendRpc(method, params, timeoutMs, options);
+      return this.sendRpc(method, params, timeoutMs, Object.assign({}, options, { retryEnabled: retry }));
     }
   }
 
@@ -14895,7 +14953,11 @@ async function handleApi(req, res) {
       }
       const appServerStartedAtMs = Date.now();
       const appServerRpcStartedAtMs = Date.now();
-      const appServerRawResult = await codex.request("thread/list", params, { timeoutMs: READ_RPC_TIMEOUT_MS });
+      const appServerRpcDiagnostics = {};
+      const appServerRawResult = await codex.request("thread/list", params, {
+        timeoutMs: READ_RPC_TIMEOUT_MS,
+        diagnostics: appServerRpcDiagnostics,
+      });
       markTiming("appServerRpcMs", appServerRpcStartedAtMs);
       const appServerVisibleFilterStartedAtMs = Date.now();
       const appServerVisibleResult = filterVisibleThreads(appServerRawResult, globalState);
@@ -14911,6 +14973,7 @@ async function handleApi(req, res) {
         filteredResult: appServerResult,
         totalMs: appServerElapsedMs,
         rpcMs: timings.appServerRpcMs,
+        rpcDiagnostics: appServerRpcDiagnostics,
         visibleFilterMs: timings.appServerVisibleFilterMs,
         workspaceFilterMs: timings.appServerWorkspaceFilterMs,
       }));

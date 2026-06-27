@@ -115,6 +115,20 @@ test("thread-list app-server latency fields split rpc and local post-processing"
     visibleFilterMs: 5,
     workspaceFilterMs: 7,
     totalMs: 1300,
+    rpcDiagnostics: {
+      transportKind: "external-jsonl-tcp",
+      endpointKind: "profile-mux-file",
+      endpointProtocol: "jsonl-tcp",
+      attemptCount: 1,
+      timeoutMs: 12000,
+      retryEnabled: true,
+      timedOut: false,
+      errorCode: "",
+      requestPayloadBytes: 188,
+      requestParamBytes: 96,
+      responsePayloadBytes: 45678,
+      source: "/Users/private/.codex/app-server-mux/endpoint.json",
+    },
     privatePrompt: "do not copy",
   });
 
@@ -128,8 +142,19 @@ test("thread-list app-server latency fields split rpc and local post-processing"
     appServerRawCount: 3,
     appServerVisibleCount: 2,
     appServerFilteredCount: 1,
+    appServerTransportKind: "external-jsonl-tcp",
+    appServerEndpointKind: "profile-mux-file",
+    appServerEndpointProtocol: "jsonl-tcp",
+    appServerRpcAttemptCount: 1,
+    appServerRpcTimeoutMs: 12000,
+    appServerRpcRetryEnabled: true,
+    appServerRpcTimedOut: false,
+    appServerRpcErrorCode: "",
+    appServerRequestPayloadBytes: 188,
+    appServerRequestParamBytes: 96,
+    appServerResponsePayloadBytes: 45678,
   });
-  assert.doesNotMatch(JSON.stringify(fields), /private|prompt/);
+  assert.doesNotMatch(JSON.stringify(fields), /private|prompt|endpoint\.json|Users/);
 });
 
 test("thread-list app-server latency fields are bounded and count data or threads arrays", () => {
@@ -145,6 +170,19 @@ test("thread-list app-server latency fields are bounded and count data or thread
     visibleFilterMs: -5,
     workspaceFilterMs: "bad",
     totalMs: 999999999,
+    rpcDiagnostics: {
+      transportKind: "x".repeat(120),
+      endpointKind: "y".repeat(120),
+      endpointProtocol: "z".repeat(80),
+      attemptCount: 9999999,
+      timeoutMs: 999999999,
+      retryEnabled: "yes",
+      timedOut: true,
+      errorCode: `long-${"e".repeat(100)}`,
+      requestPayloadBytes: 999999999,
+      requestParamBytes: -1,
+      responsePayloadBytes: 999999999,
+    },
   }), {
     appServerRpcMs: 600000,
     appServerVisibleFilterMs: 0,
@@ -155,5 +193,16 @@ test("thread-list app-server latency fields are bounded and count data or thread
     appServerRawCount: 100000,
     appServerVisibleCount: 0,
     appServerFilteredCount: 0,
+    appServerTransportKind: "x".repeat(80),
+    appServerEndpointKind: "y".repeat(80),
+    appServerEndpointProtocol: "z".repeat(40),
+    appServerRpcAttemptCount: 100000,
+    appServerRpcTimeoutMs: 600000,
+    appServerRpcRetryEnabled: false,
+    appServerRpcTimedOut: true,
+    appServerRpcErrorCode: `long-${"e".repeat(75)}`,
+    appServerRequestPayloadBytes: 104857600,
+    appServerRequestParamBytes: 0,
+    appServerResponsePayloadBytes: 104857600,
   });
 });

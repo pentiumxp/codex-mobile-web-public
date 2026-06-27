@@ -224,6 +224,17 @@ test("phase B readback decision routes high warm list latency to app-server RPC 
       appServerMeasuredMs: 2015,
       appServerUnattributedMs: 35,
       appServerRequestLimit: 80,
+      appServerTransportKind: "external-jsonl-tcp",
+      appServerEndpointKind: "profile-mux-file",
+      appServerEndpointProtocol: "jsonl-tcp",
+      appServerRpcAttemptCount: 1,
+      appServerRpcTimeoutMs: 12000,
+      appServerRpcRetryEnabled: true,
+      appServerRpcTimedOut: false,
+      appServerRpcErrorCode: "",
+      appServerRequestPayloadBytes: 188,
+      appServerRequestParamBytes: 96,
+      appServerResponsePayloadBytes: 45678,
     },
     detail: {
       readMode: "projection-active-overlay",
@@ -240,6 +251,17 @@ test("phase B readback decision routes high warm list latency to app-server RPC 
   assert.equal(decision.nextAction, "investigate-app-server-thread-list-rpc");
   assert.equal(decision.evidence.threadListAppServerMs, 2050);
   assert.equal(decision.evidence.threadListAppServerRpcMs, 1980);
+  assert.equal(decision.evidence.threadListAppServerTransportKind, "external-jsonl-tcp");
+  assert.equal(decision.evidence.threadListAppServerEndpointKind, "profile-mux-file");
+  assert.equal(decision.evidence.threadListAppServerEndpointProtocol, "jsonl-tcp");
+  assert.equal(decision.evidence.threadListAppServerRpcAttemptCount, 1);
+  assert.equal(decision.evidence.threadListAppServerRpcTimeoutMs, 12000);
+  assert.equal(decision.evidence.threadListAppServerRpcRetryEnabled, true);
+  assert.equal(decision.evidence.threadListAppServerRpcTimedOut, false);
+  assert.equal(decision.evidence.threadListAppServerRpcErrorCode, "");
+  assert.equal(decision.evidence.threadListAppServerRequestPayloadBytes, 188);
+  assert.equal(decision.evidence.threadListAppServerRequestParamBytes, 96);
+  assert.equal(decision.evidence.threadListAppServerResponsePayloadBytes, 45678);
 });
 
 test("phase B readback decision routes high warm list latency to local filter owner", () => {

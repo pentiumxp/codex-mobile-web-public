@@ -16,6 +16,10 @@ function boundedCount(value) {
   return Number.isFinite(Number(value)) ? Math.max(0, Math.min(100000, Math.trunc(Number(value)))) : 0;
 }
 
+function boundedBytes(value) {
+  return Number.isFinite(Number(value)) ? Math.max(0, Math.min(100 * 1024 * 1024, Math.trunc(Number(value)))) : 0;
+}
+
 function buildEvidence(report = {}) {
   const publicConfig = objectOrNull(report.publicConfig) || {};
   const prewarm = objectOrNull(publicConfig.threadListFallbackPrewarm) || {};
@@ -69,6 +73,17 @@ function buildEvidence(report = {}) {
     threadListAppServerRawCount: boundedCount(list.appServerRawCount),
     threadListAppServerVisibleCount: boundedCount(list.appServerVisibleCount),
     threadListAppServerFilteredCount: boundedCount(list.appServerFilteredCount),
+    threadListAppServerTransportKind: compactLabel(list.appServerTransportKind, 80),
+    threadListAppServerEndpointKind: compactLabel(list.appServerEndpointKind, 80),
+    threadListAppServerEndpointProtocol: compactLabel(list.appServerEndpointProtocol, 40),
+    threadListAppServerRpcAttemptCount: boundedCount(list.appServerRpcAttemptCount),
+    threadListAppServerRpcTimeoutMs: boundedCount(list.appServerRpcTimeoutMs),
+    threadListAppServerRpcRetryEnabled: list.appServerRpcRetryEnabled === true,
+    threadListAppServerRpcTimedOut: list.appServerRpcTimedOut === true,
+    threadListAppServerRpcErrorCode: compactLabel(list.appServerRpcErrorCode, 80),
+    threadListAppServerRequestPayloadBytes: boundedBytes(list.appServerRequestPayloadBytes),
+    threadListAppServerRequestParamBytes: boundedBytes(list.appServerRequestParamBytes),
+    threadListAppServerResponsePayloadBytes: boundedBytes(list.appServerResponsePayloadBytes),
     threadListAfterDeferredOwner: compactLabel(afterDeferred.coldPathOwner, 80),
     threadListAfterDeferredReason: compactLabel(afterDeferred.coldPathReason, 80),
     threadListAfterDeferredCacheDecision: compactLabel(afterDeferred.fallbackCacheDecision, 80),
