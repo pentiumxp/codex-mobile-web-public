@@ -168,11 +168,11 @@ Current acceleration targets:
    deployable Phase B modules: each slice fixes one frontend state writer,
    adds executable pane-local coverage, commits locally, and does not deploy
    until the compatible slices form a coherent runtime module. Pending server
-   request completion is part of that boundary: a resolved request notification
-   from the server may omit thread metadata, but it must preserve the existing
-   pane thread context already attached when the request was rendered or
-   answered, and it must schedule the owning pane instead of falling back to the
-   global current thread.
+   request arrival/update/completion is part of that boundary: a request or
+   resolved-request notification from the server may omit thread metadata, but
+   it must preserve the existing pane thread context already attached when the
+   request was rendered or answered, and it must schedule the owning pane
+   instead of falling back to the global current thread.
 2. Thread-list cold starts no longer hide source collection inside the fallback
    cache policy. The local `thread-list-fallback-baseline-service` slice now
    owns state DB / rollout session / session-index source collection,

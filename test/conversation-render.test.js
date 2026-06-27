@@ -1443,6 +1443,7 @@ return {
   state,
   syncThreadPendingServerRequests,
   renderPendingApprovals,
+  upsertServerRequest,
   resolveServerRequest,
   answerServerRequest,
   setApiResult,
@@ -5080,6 +5081,42 @@ test("thread detail server request answers preserve pane thread context from ser
   assert.equal(harness.renderCount(), 0);
   assert.deepEqual(harness.tileRenderCalls(), ["thread-tile", "thread-tile", "thread-tile"]);
   assert.equal(harness.apiCalls()[0].url, "/api/approvals/input-answer");
+});
+
+test("pending server request updates preserve existing pane thread context", () => {
+  const harness = evaluatedThreadPendingApprovalProjection();
+  harness.state.currentThreadId = "thread-current";
+  harness.state.currentThread = { id: "thread-current" };
+  harness.state.threadTileMode = true;
+  harness.syncThreadPendingServerRequests({
+    id: "thread-tile",
+    pendingServerRequests: [
+      {
+        id: "input-update",
+        method: "item/tool/requestUserInput",
+        status: "waiting",
+        actionable: true,
+        params: {
+          threadId: "thread-tile",
+          questions: [{ id: "answer" }],
+        },
+      },
+    ],
+  });
+
+  harness.upsertServerRequest({
+    id: "input-update",
+    method: "item/tool/requestUserInput",
+    status: "waiting",
+    actionable: true,
+    params: { questions: [{ id: "answer" }] },
+  });
+  const stored = harness.state.pendingApprovals.get("input-update");
+
+  assert.equal(stored.params.threadId, "thread-tile");
+  assert.equal(stored.status, "waiting");
+  assert.equal(harness.renderCount(), 0);
+  assert.deepEqual(harness.tileRenderCalls(), ["thread-tile", "thread-tile"]);
 });
 
 test("resolved server request notifications preserve existing pane thread context", () => {

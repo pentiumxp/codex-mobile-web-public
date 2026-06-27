@@ -70,6 +70,7 @@ each micro-slice unless the user explicitly asks.
 
 The current local module candidate is focused on pane-local context ownership:
 thread metadata, metadata notifications, pending actions, pending-action
-resolution notifications, task-card draft state, optimistic thread status,
-failed-send status restore, and thread status notifications must all update the
-target pane instead of falling back to the global current thread.
+request/update notifications, pending-action resolution notifications,
+task-card draft state, optimistic thread status, failed-send status restore,
+and thread status notifications must all update the target pane instead of
+falling back to the global current thread.

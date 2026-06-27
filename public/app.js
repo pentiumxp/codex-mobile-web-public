@@ -19970,16 +19970,20 @@ function scheduleRenderThreads() {
   }
 }
 
-function upsertServerRequest(request) {
+function upsertServerRequest(request, fallbackThreadId = "") {
   if (!request || request.id === null || request.id === undefined) return;
+  const key = String(request.id);
+  const existing = state.pendingApprovals.get(key);
+  const threadId = approvalActionThreadId(existing, fallbackThreadId);
   if (!shouldShowApprovalRequest(request)) {
-    state.pendingApprovals.delete(String(request.id));
-    scheduleApprovalThreadRender(approvalActionThreadId(request));
+    state.pendingApprovals.delete(key);
+    scheduleApprovalThreadRender(approvalActionThreadId(request, threadId));
     return;
   }
   markActivity(isUserInputRequest(request) ? "等待输入" : "等待批准");
-  state.pendingApprovals.set(String(request.id), Object.assign({}, state.pendingApprovals.get(String(request.id)) || {}, request));
-  scheduleApprovalThreadRender(approvalActionThreadId(request));
+  const next = serverRequestWithThreadContext(Object.assign({}, existing || {}, request), threadId);
+  state.pendingApprovals.set(key, next);
+  scheduleApprovalThreadRender(approvalActionThreadId(next));
 }
 
 function scheduleApprovalRemoval(requestId, delayMs = 6000) {
@@ -20029,7 +20033,7 @@ function syncThreadPendingServerRequests(thread) {
   for (const request of requests) {
     if (!request || request.id === null || request.id === undefined) continue;
     if (!requestBelongsToThread(request, threadId)) continue;
-    upsertServerRequest(serverRequestWithThreadContext(request, threadId));
+    upsertServerRequest(request, threadId);
   }
 }
 

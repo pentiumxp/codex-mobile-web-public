@@ -22200,3 +22200,44 @@ The previous full handoff was archived and should be opened only when old proven
 - Next:
   - Commit this local slice and keep it undeployed until a coherent deployable
     module is ready.
+
+## 2026-06-27 - Phase C server request update pane context local slice
+
+- Current local state:
+  - Continued after local commit `11d9367` (`refactor server request
+    resolution keeps pane context`).
+  - This is a local Phase C pending-action request/update slice only. It
+    changes `public/app.js`, focused tests, README, the architecture plan, and
+    this handoff. It does not bump shell/cache, deploy production, or push
+    Public.
+- Root-cause boundary:
+  - Symptom/risk: `upsertServerRequest()` was still a separate state writer
+    that merged incoming request payloads directly and scheduled rendering from
+    the incoming request. If an incoming SSE/pending replay update omitted
+    `params.threadId`, it could overwrite the existing request params, lose the
+    pane owner, and render against the global current thread.
+  - Failing layer: frontend pending server request arrival/update state
+    propagation, not app-server request creation, server broadcast, approval
+    response handling, shell/cache, or Home AI host routing.
+  - Violated invariant: every pending-action request writer must preserve the
+    target pane thread context once it has been attached locally.
+- Changes:
+  - `upsertServerRequest()` now accepts a fallback thread id, reads any
+    existing request owner first, merges the incoming request, and then reuses
+    `serverRequestWithThreadContext()` before storing and scheduling render.
+  - `syncThreadPendingServerRequests()` now passes the source thread id into
+    the unified upsert path instead of pre-wrapping the request.
+  - Added executable coverage for a pending user-input request update whose
+    incoming payload omits `threadId`; it preserves `thread-tile`, avoids
+    current-thread rendering, and schedules the pane-local render.
+- Validation:
+  - `node --check public/app.js` passed.
+  - `node --test test/conversation-render.test.js test/thread-tile-state.test.js`
+    passed (`163` tests).
+  - `npm test` passed (`1278` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit this local slice and keep it undeployed until a coherent deployable
+    module is ready.
