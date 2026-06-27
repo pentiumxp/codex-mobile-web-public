@@ -111,12 +111,15 @@ and retained final assistant/plan receipts remain protected, and the response
 records the omitted visible-item counts in `mobileDetailResponseBudget`.
 The follow-up first-paint byte slice closes the remaining case where the item
 count is already small but retained completed assistant/plan receipts still
-make the active detail body heavy. When active progressive pressure is present
-and the post-item-budget thread JSON still exceeds
+make the detail body heavy. When active progressive pressure is present, or
+when a resting recent detail is still oversized because of historical completed
+receipts, and the post-item-budget thread JSON still exceeds
 `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_FIRST_PAINT_THREAD_BYTES` (default
-`160KB`), non-current completed assistant/reasoning text is reduced to a
-bounded preview (`CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_COMPLETED_TEXT_CHARS`,
-default `8KB` per item) with `mobileFirstPaintTextBudget` evidence.
+`160KB`), non-current/historical completed assistant/reasoning text is reduced
+to a bounded preview (`CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_COMPLETED_TEXT_CHARS`,
+default `8KB` per item) with `mobileFirstPaintTextBudget` evidence. Resting
+details protect the latest completed turn so the current final answer remains
+visible by default.
 
 The latest thread-list slice targets the ordinary default list read after a
 process warm cache already exists. A no-search, no-workspace, no-cursor,

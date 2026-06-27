@@ -231,8 +231,8 @@ test("visual harness can replay empty cached detail openings without exposing th
 });
 
 test("public app shell cache advances with static frontend changes", () => {
-  assert.match(swJs, /codex-mobile-shell-v554/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v554"/);
+  assert.match(swJs, /codex-mobile-shell-v555/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v555"/);
   assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(swJs, /"\/thread-diagnostic-events\.js"/);
@@ -417,6 +417,10 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(functionBody("applyThreadDetailPostRenderEffect"), /connectEvents\(\);/);
   assert.match(functionBody("applyThreadDetailPostRenderEffect"), /renderCurrentThread\(\{ stickToBottom: Boolean\(options\.stickToBottom\) \}\);/);
   assert.match(functionBody("applyThreadDetailPostRenderEffect"), /startThreadLoadWatchdog\(String\(item\.threadId \|\| ""\), \{ source: String\(item\.source \|\| ""\)\.slice\(0, 40\) \}\);/);
+  assert.match(functionBody("startThreadLoadWatchdog"), /recordHomeAiDiagnosticFailure\(threadDiagnosticEventsApi\.threadDetailSlowPathDiagnosticEvent\(\{/);
+  assert.match(functionBody("startThreadLoadWatchdog"), /reason: "api-pending"/);
+  assert.match(functionBody("startThreadLoadWatchdog"), /thresholdMs: THREAD_LOAD_STALL_MS/);
+  assert.match(functionBody("startThreadLoadWatchdog"), /threadHash: diagnosticThreadHash\(threadId\)/);
   assert.match(functionBody("loadThread"), /const firstPaintPreRenderPlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintPreRenderEffects\(\{[\s\S]*threadId,[\s\S]*hasEvents: Boolean\(state\.events\),[\s\S]*\}\);/);
   assert.match(functionBody("loadThread"), /const firstPaintPostMergeTimings = applyThreadDetailRefreshTimedPostMergeEntries\([\s\S]*firstPaintPostMergeTimingPlan\.beforeDraftRestore,[\s\S]*\{ mergeStartedAt \},[\s\S]*\);[\s\S]*applyThreadDetailPostRenderEffectsPlan\(firstPaintPreRenderPlan, \{ thread: state\.currentThread \}\);[\s\S]*const mergeMs = firstPaintPostMergeTimings\.mergeMs;/);
   assert.match(functionBody("loadThread"), /const draftRestoreStartedAt = nowPerfMs\(\);\s*\n\s*const firstPaintDraftRestorePlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintDraftRestoreEffects\(\);\s*\n\s*applyThreadDetailPostRenderEffectsPlan\(firstPaintDraftRestorePlan, \{ thread: state\.currentThread \}\);\s*\n\s*const draftRestoreMs = roundedDurationMs\(draftRestoreStartedAt\);/);

@@ -596,15 +596,17 @@ per-type compaction, the service applies
 `0` disables) by pruning older operation/reasoning rows before touching current
 active operation/reasoning rows. User messages, images, Usage rows, diagnostics,
 and the retained final assistant/plan receipt are protected by this ceiling.
-If that item-budgeted active first paint is still too large, the service applies
-a byte-ceiling text preview to non-current completed assistant/reasoning
-receipts only. This second-stage budget is gated by
+If that item-budgeted first paint is still too large, the service applies a
+byte-ceiling text preview to completed assistant/reasoning receipts that are not
+the current reading focus. This second-stage budget is gated by
 `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_FIRST_PAINT_THREAD_BYTES` (default
 `160KB`) and uses
 `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_COMPLETED_TEXT_CHARS` (default `8KB`
-per item). Affected items carry `mobileFirstPaintTextBudget` and
-`mobileTextTruncated=true`; the current active turn keeps the separate active
-text budget described above. The operation budget includes command, file,
+per item). In active detail responses, it targets non-current completed turns;
+in resting recent detail responses, it can target historical completed turns
+while protecting the latest completed turn. Affected items carry
+`mobileFirstPaintTextBudget` and `mobileTextTruncated=true`; the current active
+turn keeps the separate active text budget described above. The operation budget includes command, file,
 dynamic tool, MCP, and collab-agent tool-call items. The response records the
 item and byte thresholds, trigger reason, configured limits, effective limits,
 active/completed text-budget counters, active operation-payload counters,

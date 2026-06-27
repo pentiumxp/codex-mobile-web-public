@@ -448,11 +448,17 @@ second-stage first-paint byte fields:
 `progressiveFirstPaintBytesAfterTextBudget`,
 `progressiveCompletedTextBudgetApplied`,
 `progressiveCompletedTextBudgetReason`,
+`progressiveCompletedTextBudgetScope`,
+`progressiveCompletedTextBudgetProtectedLatestTurn`,
+`progressiveCompletedTextBudgetSkippedLatestTurnCount`,
 `progressiveCompletedTextChars`, `truncatedCompletedTextItems`, and
 `omittedCompletedTextChars`. Those fields mean non-current completed
 assistant/reasoning receipts were reduced to first-paint previews marked with
 `mobileFirstPaintTextBudget`; the current active turn still uses
-`mobileActiveTextBudget`. If those completed receipts are not the cause, inspect
+`mobileActiveTextBudget`. In resting recent detail, scope
+`resting-history-first-paint` means historical completed receipts were previewed
+while the latest completed turn stayed protected. If those completed receipts
+are not the cause, inspect
 retained active operation items for `mobileOperationPayloadBudget` /
 `mobilePayloadTruncated`; command output previews should show
 `outputTruncated=true` and `outputTotalChars` while keeping only the latest
@@ -471,6 +477,14 @@ server-side evidence is `summary_display_cache_merge` followed by
 `CODEX_MOBILE_THREAD_DETAIL_SUMMARY_APP_SERVER_REFRESH_TTL_MS` (default `30s`).
 Missing local and display-cache summaries still require the app-server lookup;
 that is a different cold/deep-link path.
+
+If the user reports the newer shape "it keeps loading for a long time and then
+eventually appears", distinguish it from the old timeout/failure path. The
+client thread-open watchdog fires after `THREAD_LOAD_STALL_MS` and reports a
+bounded Home AI diagnostic as `thread_detail_slow_path` with reason
+`api-pending`, the thread hash, the stall threshold, and elapsed duration. A
+single stall remains local/retry behavior; repeated matching stalls cross the
+diagnostic-report threshold and can enter the Owner repair-card loop.
 
 If a newly submitted message briefly shows local input feedback and then the
 right-side turn timer changes to `已结束` while `/api/threads/:id?mode=recent`
@@ -631,8 +645,10 @@ Cause to check:
   `mobileOmittedAssistantItemCount` / `mobileDetailResponseBudget` record the
   omitted progress-row count. If `progressiveActiveBudgetApplied=true`, retained
   active assistant/reasoning text fields may also carry
-  `mobileActiveTextBudget`; that is a pressure-triggered first-paint preview,
-  not a generic completed-turn truncation rule.
+  `mobileActiveTextBudget`; that is a pressure-triggered first-paint preview.
+  If `progressiveCompletedTextBudgetScope=resting-history-first-paint`, the
+  server previewed older completed receipts because the resting recent detail
+  body was too large, but the latest completed turn should remain untruncated.
 - Current clients still enter thread detail at the bottom. Do not fix missing
   large-thread history by changing the open position; first check whether the
   server returned full `thread-read` or a fallback `turns-list` window.

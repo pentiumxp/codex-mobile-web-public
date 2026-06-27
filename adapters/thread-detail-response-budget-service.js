@@ -467,16 +467,33 @@ function applyProgressiveCompletedTextBudget(thread, options, stats) {
   stats.progressiveFirstPaintThreadByteCeiling = ceiling;
   stats.progressiveFirstPaintBytesBeforeTextBudget = beforeBytes;
   stats.progressiveFirstPaintBytesAfterTextBudget = beforeBytes;
-  if (!stats.progressiveActiveBudgetApplied || !ceiling || beforeBytes <= ceiling) return;
+  if (!ceiling || beforeBytes <= ceiling) return;
+  const activeFirstPaintBudget = Boolean(stats.progressiveActiveBudgetApplied);
+  const restingHistoryFirstPaintBudget = !activeFirstPaintBudget && stats.activeTurnCount <= 0;
+  if (!activeFirstPaintBudget && !restingHistoryFirstPaintBudget) return;
   const maxChars = Math.max(0, Math.trunc(Number(options.progressiveCompletedTextChars || 0)));
   stats.progressiveCompletedTextChars = maxChars;
+  stats.progressiveCompletedTextBudgetScope = activeFirstPaintBudget
+    ? "active-first-paint"
+    : "resting-history-first-paint";
   if (!maxChars) {
     stats.progressiveCompletedTextBudgetReason = "disabled";
     return;
   }
+  const protectedLatestTurnIndex = restingHistoryFirstPaintBudget && Array.isArray(thread.turns) && thread.turns.length > 0
+    ? thread.turns.length - 1
+    : -1;
+  if (protectedLatestTurnIndex >= 0) {
+    stats.progressiveCompletedTextBudgetProtectedLatestTurn = true;
+  }
   let changed = false;
-  for (const turn of thread.turns) {
+  for (let turnIndex = 0; turnIndex < thread.turns.length; turnIndex += 1) {
+    const turn = thread.turns[turnIndex];
     if (!turn || !Array.isArray(turn.items) || isActiveTurn(turn, thread)) continue;
+    if (turnIndex === protectedLatestTurnIndex) {
+      stats.progressiveCompletedTextBudgetSkippedLatestTurnCount += 1;
+      continue;
+    }
     turn.items = turn.items.map((item) => {
       const compacted = compactCompletedTextItemForFirstPaint(item, options, stats);
       if (compacted !== item) changed = true;
@@ -684,6 +701,9 @@ function compactThreadDetailResponseResult(result, options = {}) {
     progressiveCompletedTextChars,
     progressiveCompletedTextBudgetApplied: false,
     progressiveCompletedTextBudgetReason: "",
+    progressiveCompletedTextBudgetScope: "",
+    progressiveCompletedTextBudgetProtectedLatestTurn: false,
+    progressiveCompletedTextBudgetSkippedLatestTurnCount: 0,
     progressiveFirstPaintBytesBeforeTextBudget: 0,
     progressiveFirstPaintBytesAfterTextBudget: 0,
     progressiveVisibleItemCeiling: boundedCount(

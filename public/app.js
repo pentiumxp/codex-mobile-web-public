@@ -528,7 +528,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v554";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v555";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -9043,6 +9043,18 @@ function startThreadLoadWatchdog(threadId, details = {}) {
       connectionText: $("connectionState") ? $("connectionState").textContent : "",
       eventOpen: Boolean(state.events && state.events.readyState === EventSource.OPEN),
     }, details || {}));
+    recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.threadDetailSlowPathDiagnosticEvent({
+      action: "thread-detail-load",
+      reason: "api-pending",
+      severityHint: "H2",
+      thresholdMs: THREAD_LOAD_STALL_MS,
+      elapsedMs: roundedDurationMs(startedAt),
+      apiElapsedMs: roundedDurationMs(startedAt),
+      renderElapsedMs: 0,
+      source: String(details && details.source || "thread-load-watchdog").slice(0, 40),
+      threadHash: diagnosticThreadHash(threadId),
+      durationBucket: diagnosticDurationBucket(roundedDurationMs(startedAt)),
+    }));
     $("connectionState").textContent = "Loading thread is slow, retrying...";
     refreshCurrentThread({ source: "thread-switch-stall" }).catch((err) => {
       postClientEvent("thread_switch_stall_retry_failed", {

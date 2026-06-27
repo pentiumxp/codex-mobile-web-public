@@ -25088,3 +25088,52 @@ The previous full handoff was archived and should be opened only when old proven
     authenticated `/api/threads?limit=300` request returned an empty current
     default scope. If the Movie thread id is available, run the same
     `codex-mobile-phase-b-readback-smoke.js --thread-id <id>` probe.
+
+## 2026-06-28 - Resting Detail First-Paint Budget And Slow-Path Diagnostics
+
+- User symptom:
+  - Some thread entries no longer fail with the old timeout behavior. Instead,
+    the UI can remain pending for an unusually long time and then eventually
+    render, which makes the failure hard to distinguish from a transient
+    server/network issue.
+  - This is unacceptable for large/recent thread entry because the client must
+    collect bounded evidence even when the request eventually succeeds.
+- Decision:
+  - Treat "long pending but eventual success" as a first-paint slow path, not as
+    a normal success. It should report through the Home AI diagnostic channel
+    after the client watchdog threshold so repeated cases can become repair
+    evidence.
+  - In resting threads, first-paint byte pressure may preview historical
+    completed receipts, but must protect the latest completed receipt so the
+    current answer is not silently truncated without an expansion path.
+- Implementation:
+  - `thread-detail-response-budget-service` now supports completed-text
+    preview scopes:
+    - `active-first-paint`: existing active/progressive pressure behavior.
+    - `resting-history-first-paint`: no active turn, response over byte ceiling,
+      historical completed receipts may be previewed.
+  - Resting mode skips/protects the latest returned turn and records bounded
+    metadata:
+    `progressiveCompletedTextBudgetScope`,
+    `progressiveCompletedTextBudgetProtectedLatestTurn`, and
+    `progressiveCompletedTextBudgetSkippedLatestTurnCount`.
+  - `public/app.js` thread-load watchdog now reports repeated slow detail
+    pending through `home-ai-diagnostic-reporting` as
+    `thread_detail_slow_path` / `api-pending` with bounded thread hash,
+    threshold, elapsed, and build metadata.
+  - Static shell bumped to `0.1.11|codex-mobile-shell-v555`.
+  - Updated docs: `docs/README.md`, `docs/ARCHITECTURE.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, `docs/MODULES.md`, and
+    `docs/TROUBLESHOOTING.md`.
+- Local validation:
+  - Focused response-budget test passed (`22` tests).
+  - Focused detail/performance/diagnostic suite passed (`106` tests).
+  - Full `npm test` passed (`1381` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - `codegraph sync && codegraph status` reported the index up to date.
+- Deployment status:
+  - Not deployed yet at the time of this note. Next step is commit, central
+    macOS plugin deploy, and production readback for public config plus
+    Codex Mobile/Home AI thread detail probes.

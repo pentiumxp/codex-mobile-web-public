@@ -548,7 +548,66 @@ test("thread detail response budget applies completed receipt previews when firs
   assert.deepEqual(compacted.thread.mobileVisibleItemKeys, compacted.thread.turns.flatMap((turn) => turn.items.map((item) => item.mobileVisibleKey)));
 });
 
-test("thread detail response budget does not apply completed receipt previews without progressive active pressure", () => {
+test("thread detail response budget previews historical completed receipts on resting first paint byte pressure", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      mobileReadMode: "projection-v4-dynamic",
+      mobileProjectionRevision: 22,
+      turns: [
+        {
+          id: "turn-1",
+          status: "completed",
+          items: [
+            { id: "u1", type: "userMessage", text: "Older question" },
+            { id: "a1", type: "agentMessage", text: "A".repeat(2400) },
+            { id: "usage1", type: "turnUsageSummary" },
+          ],
+        },
+        {
+          id: "turn-2",
+          status: "completed",
+          items: [
+            { id: "u2", type: "userMessage", text: "Latest question" },
+            { id: "a2", type: "agentMessage", text: "B".repeat(2400) },
+            { id: "usage2", type: "turnUsageSummary" },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeProgressiveItemThreshold: 1,
+    activeProgressiveThreadByteThreshold: 100,
+    progressiveFirstPaintThreadByteCeiling: 1000,
+    progressiveCompletedTextChars: 240,
+  });
+
+  const historicalReceipt = compacted.thread.turns[0].items[1];
+  const latestReceipt = compacted.thread.turns[1].items[1];
+  assert.equal(historicalReceipt.mobileTextTruncated, true);
+  assert.match(historicalReceipt.text, /first-paint preview truncated/);
+  assert.ok(historicalReceipt.text.length <= 240);
+  assert.equal(historicalReceipt.mobileFirstPaintTextBudget.scope, "completed");
+  assert.equal(latestReceipt.mobileTextTruncated, undefined);
+  assert.equal(latestReceipt.mobileFirstPaintTextBudget, undefined);
+  assert.equal(latestReceipt.text.length, 2400);
+  const budget = compacted.thread.mobileDetailResponseBudget;
+  assert.equal(budget.applied, true);
+  assert.equal(budget.progressiveActiveBudgetApplied, false);
+  assert.equal(budget.progressiveCompletedTextBudgetApplied, true);
+  assert.equal(budget.progressiveCompletedTextBudgetScope, "resting-history-first-paint");
+  assert.equal(budget.progressiveCompletedTextBudgetProtectedLatestTurn, true);
+  assert.equal(budget.progressiveCompletedTextBudgetSkippedLatestTurnCount, 1);
+  assert.equal(budget.truncatedCompletedTextItems, 1);
+  assert.ok(budget.omittedCompletedTextChars > 0);
+  assert.equal(compacted.thread.mobileProjectionRevision, 22);
+  assert.deepEqual(compacted.thread.mobileVisibleItemKeys, compacted.thread.turns.flatMap((turn) => turn.items.map((item) => item.mobileVisibleKey)));
+});
+
+test("thread detail response budget does not preview the latest completed receipt without active pressure", () => {
   const result = {
     thread: {
       id: "thread-1",
