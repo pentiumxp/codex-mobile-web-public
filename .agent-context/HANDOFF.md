@@ -23680,3 +23680,43 @@ The previous full handoff was archived and should be opened only when old proven
     rows were omitted, lower `agentMessage`/`plan` visible counts/bytes, and
     unchanged active-overlay timing (`threadReadMs=0`,
     `activeOverlayWindowMs=0`) on warm active details.
+
+## 2026-06-28 - Active assistant detail response budget deployed
+
+- Code commit deployed:
+  - `b530359` (`fix active assistant detail budget`).
+- Deployment:
+  - Deployed through the Home AI central macOS plugin deploy path with reason
+    `codex-mobile-active-assistant-budget`.
+  - Source ref in deploy output: `b530359406bb`, dirty false.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T190247Z-plugin-codex-mobile-web-codex-mobile-active-assistant-budget`.
+  - Static shell remained `0.1.11|codex-mobile-shell-v552`, expected because
+    this was server-side runtime code only.
+  - Health URL, launchd print, auth-profile audit, and production proof-file
+    hash checks passed.
+- Production readback:
+  - Codex Mobile active detail returned `projection-active-overlay` with
+    `threadReadMs=0`, `turnsListMs=0`, `activeOverlayWindowMs=0`,
+    `prepareResponseMs=19`, response size about `131627` bytes, and
+    `mobileDetailResponseBudget.version=thread-detail-response-budget-v2`.
+    Budget evidence: original `277` items, retained `53`, omitted assistant
+    `67`, operation `75`, reasoning `82`.
+  - Movie detail returned `projection-v4-dynamic`, response size about
+    `117641` bytes, original `136` items, retained `40`, omitted assistant
+    `43`.
+  - Home AI detail returned `projection-v4-dynamic`, response size about
+    `144272` bytes, original `200` items, retained `45`, omitted assistant
+    `33`.
+  - Direct samples are metadata-only: no raw thread text, task bodies, upload
+    contents, cookies, keys, or logs were printed.
+- Residual:
+  - Thread-list startup / foreground slowness remains a separate owner. After
+    deploy, one cold list sample took about `1.9s` with
+    `coldPathOwner=fallback-baseline`, then warm samples stabilized around
+    `218-281ms`.
+  - A previous Phase B readback in the same deploy window showed a different
+    list bottleneck sample: `coldPathOwner=warm-fallback-cache` but
+    `thread/list` app-server RPC around `2.2s` and app-server response payload
+    about `241KB`. Next performance work should target app-server thread-list
+    peak latency / list payload size, not active detail overlay timing.
