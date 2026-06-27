@@ -177,6 +177,7 @@ function evaluatedInputContentRendererWithKey(key = "", options = {}) {
     "authenticatedApiContentUrl",
     "protectedGeneratedImageSrc",
     "isHermesEmbedMode",
+    "renderContextThreadId",
     "imageDiagnosticSourceKind",
     "shouldRenderProtectedImageDirectly",
     "protectedImageDisplaySrc",
@@ -206,7 +207,7 @@ function evaluatedInputContentRendererWithKey(key = "", options = {}) {
   const pathname = options.pathname || "/";
   return Function(
     "URLSearchParams",
-    `const state = { key: ${JSON.stringify(String(key || ""))}, pluginEmbed: ${JSON.stringify(pluginEmbed)} };\nconst window = { location: { origin: "http://127.0.0.1:8787", pathname: ${JSON.stringify(pathname)} } };\nconst THREAD_TASK_CARD_REQUEST_TAG = "codex-mobile-thread-task-card-request";\nconst PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";\n${sources.join("\n")}\nreturn renderInputContent;`,
+    `const state = { key: ${JSON.stringify(String(key || ""))}, currentThreadId: "thread-id", renderContextThreadId: "", pluginEmbed: ${JSON.stringify(pluginEmbed)} };\nconst window = { location: { origin: "http://127.0.0.1:8787", pathname: ${JSON.stringify(pathname)} } };\nconst THREAD_TASK_CARD_REQUEST_TAG = "codex-mobile-thread-task-card-request";\nconst PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";\n${sources.join("\n")}\nreturn renderInputContent;`,
   )(URLSearchParams);
 }
 
@@ -368,6 +369,7 @@ function evaluatedImageViewRenderer(options = {}) {
     "browserApiContentUrl",
     "protectedGeneratedImageSrc",
     "isHermesEmbedMode",
+    "renderContextThreadId",
     "imageDiagnosticSourceKind",
     "shouldRenderProtectedImageDirectly",
     "protectedImageDisplaySrc",
@@ -388,7 +390,7 @@ function evaluatedImageViewRenderer(options = {}) {
   const pathname = options.pathname || "/";
   return Function(
     "URLSearchParams",
-    `const state = { key: "test-key", currentThreadId: "thread-id", pluginEmbed: ${JSON.stringify(pluginEmbed)} };\nconst window = { location: { origin: "http://127.0.0.1:8787", pathname: ${JSON.stringify(pathname)} } };\nconst PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";\n${sources.join("\n")}\nreturn renderImageView;`,
+    `const state = { key: "test-key", currentThreadId: "thread-id", renderContextThreadId: "", pluginEmbed: ${JSON.stringify(pluginEmbed)} };\nconst window = { location: { origin: "http://127.0.0.1:8787", pathname: ${JSON.stringify(pathname)} } };\nconst PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";\n${sources.join("\n")}\nreturn ${options.harness ? "{ state, renderImageView }" : "renderImageView"};`,
   )(URLSearchParams);
 }
 
@@ -2190,6 +2192,19 @@ test("imageView upload screenshots use opaque uploads route instead of file prev
   assert.match(html, /data-protected-image-src="\/api\/uploads\/file\?id=2026-06-08%2Fthread-id%2F1780893354486-IMG_1618\.jpg&amp;key=test-key"/);
   assert.doesNotMatch(html, /data-protected-image-src="[^"]*(?:\/Users|%2FUsers|\.codex-mobile-web|path=)/);
   assert.doesNotMatch(html, /\/api\/files\/preview\/content/);
+});
+
+test("imageView local file paths use render context thread for preview content urls", () => {
+  const harness = evaluatedImageViewRenderer({ harness: true });
+  harness.state.renderContextThreadId = "thread-pane";
+  const html = harness.renderImageView({
+    type: "imageView",
+    path: "/Users/example/project/output.png",
+  });
+
+  assert.match(html, /class="image-view"/);
+  assert.match(html, /data-protected-image-src="\/api\/files\/preview\/content\?threadId=thread-pane&amp;path=%2FUsers%2Fexample%2Fproject%2Foutput\.png&amp;key=test-key"/);
+  assert.doesNotMatch(html, /threadId=thread-id/);
 });
 
 test("protected image auth recovery covers uploaded images", () => {

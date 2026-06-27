@@ -21094,6 +21094,55 @@ The previous full handoff was archived and should be opened only when old proven
     `state.currentThreadId` from tile panes. Prefer that as the next small
     slice before batching a deployable module.
 
+## 2026-06-27 - Phase C local file preview pane context local slice
+
+- Current local state:
+  - Continued after local commit `d1a5bac` (`refactor approval pane action
+    context`).
+  - This is a local Phase C pane-state/file-preview action-context slice only.
+    It changes `public/app.js`, `public/thread-detail-actions.js`, focused
+    tests, README, and the architecture plan. It does not bump shell/cache,
+    deploy production, or push Public.
+- Root-cause boundary:
+  - Symptom/risk: local file preview content URLs and explicit
+    `/api/files/preview` opens still used global `state.currentThreadId`.
+    In tile mode, a non-current pane's local file/image preview could resolve
+    authorization/cwd context against the selected global current thread,
+    causing wrong-context 403/404 or accidental same-path preview.
+  - Failing layer: frontend local-file-preview thread-context propagation
+    across render-time URL generation, click resolution, preview API request,
+    and preview-dialog nested links. This is not a server file-preview API
+    change, upload route change, auth/proxy change, markdown renderer change,
+    or image-render fallback.
+  - Violated invariant: pane-local file preview and local image content URLs
+    must resolve against their owning render/action/file-preview thread
+    context. Global current-thread fallback is acceptable only when no pane or
+    preview context exists.
+- Changes:
+  - `localFilePreviewContentUrl()`, `imageContentUrlForPath()`,
+    `filePreviewContentUrl()`, and `renderFilePreviewContent()` now accept and
+    pass explicit thread context.
+  - `renderImageView()` passes `renderContextThreadId()` for local file paths.
+  - `openLocalFilePreview()` resolves the owning thread from action context,
+    link dataset, nearest tile pane, or current preview/render context, then
+    uses it for `/api/files/preview`.
+  - File preview dialog state stores `filePreviewThreadId` while open and
+    clears it on close so nested local links keep the same thread context.
+  - `public/thread-detail-actions.js` returns `threadId` for
+    local-file-preview actions.
+- Validation:
+  - `node --check public/thread-detail-actions.js` passed.
+  - `node --check public/app.js` passed.
+  - `node --test test/thread-detail-actions.test.js test/conversation-render.test.js test/file-preview-ui.test.js test/thread-tile-layout-ui.test.js`
+    passed (`126` tests).
+  - `npm test` passed (`1256` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed after docs/context updates.
+- Next:
+  - Commit this local slice and keep it undeployed until a coherent deployable
+    Phase C module is ready.
+
 ## 2026-06-27 - Phase B first-paint reporting stage local slice
 
 - Current local state:

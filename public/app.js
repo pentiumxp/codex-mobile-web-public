@@ -463,6 +463,7 @@ const state = {
   composerFastHintTimer: null,
   attachmentProcessingCount: 0,
   filePreviewSwipe: null,
+  filePreviewThreadId: "",
   mermaidPinch: null,
   imagePreviewPinch: null,
   imagePreviewScale: 1,
@@ -17291,9 +17292,9 @@ function isCodexMobileUploadPath(filePath) {
   return normalized.includes("\\.codex-mobile-web\\uploads\\");
 }
 
-function imageContentUrlForPath(filePath) {
+function imageContentUrlForPath(filePath, options = {}) {
   if (!filePath) return "";
-  return isCodexMobileUploadPath(filePath) ? uploadFileUrl(filePath) : localFilePreviewContentUrl(filePath);
+  return isCodexMobileUploadPath(filePath) ? uploadFileUrl(filePath) : localFilePreviewContentUrl(filePath, options);
 }
 
 function localAttachmentPreviewUrl(attachment) {
@@ -18431,6 +18432,7 @@ function closeFilePreview() {
   const dialog = $("filePreviewDialog");
   if (!dialog) return;
   state.filePreviewSwipe = null;
+  state.filePreviewThreadId = "";
   dialog.classList.add("hidden");
   $("filePreviewBody").innerHTML = "";
   $("filePreviewMeta").textContent = "";
@@ -18504,10 +18506,10 @@ function filePreviewMetaText(file) {
   return parts.join(" · ");
 }
 
-function filePreviewContentUrl(file) {
+function filePreviewContentUrl(file, options = {}) {
   if (file && file.contentUrl) return authenticatedApiContentUrl(file.contentUrl);
   if (!file || !file.path) return "";
-  return localFilePreviewContentUrl(file.path);
+  return localFilePreviewContentUrl(file.path, options);
 }
 
 function hermesPluginProxyPrefixFromPathname(pathname) {
@@ -18578,10 +18580,11 @@ function authenticatedApiContentUrl(value) {
   return raw;
 }
 
-function localFilePreviewContentUrl(filePath) {
+function localFilePreviewContentUrl(filePath, options = {}) {
   if (!filePath) return "";
+  const threadId = String(options.threadId || renderContextThreadId() || "").trim();
   const params = new URLSearchParams({
-    threadId: state.currentThreadId || "",
+    threadId,
     path: String(filePath),
   });
   if (state.key) params.set("key", state.key);
@@ -18641,15 +18644,15 @@ function renderCsvPreview(content) {
   return `<div class="file-preview-table-wrap"><table class="file-preview-table"><thead><tr>${headHtml}</tr></thead><tbody>${bodyHtml}</tbody></table></div>`;
 }
 
-function renderFilePreviewContent(file) {
+function renderFilePreviewContent(file, options = {}) {
   const content = String((file && file.content) || "");
   if (file && file.kind === "markdown") return renderMarkdown(content, { orderedListMode: "source" });
   if (file && file.kind === "image") {
-    const src = filePreviewContentUrl(file);
+    const src = filePreviewContentUrl(file, options);
     return `<div class="file-preview-media"><img class="file-preview-image" src="${escapeHtml(src)}" alt="${escapeHtml(file.fileName || "image preview")}"></div>`;
   }
   if (file && file.kind === "pdf") {
-    const src = filePreviewContentUrl(file);
+    const src = filePreviewContentUrl(file, options);
     return `<div class="file-preview-pdf"><iframe src="${escapeHtml(src)}" title="${escapeHtml(file.fileName || "PDF preview")}"></iframe><a href="${escapeHtml(src)}" target="_blank" rel="noreferrer">打开 PDF 预览</a></div>`;
   }
   if (file && file.kind === "json") return renderJsonPreview(content);
@@ -18705,7 +18708,7 @@ function renderImageView(item) {
   const filePath = imageViewPath(item);
   const contentUrl = imageViewContentUrl(item);
   const url = imageViewUrl(item);
-  const src = contentUrl ? authenticatedApiContentUrl(contentUrl) : (filePath ? imageContentUrlForPath(filePath) : url);
+  const src = contentUrl ? authenticatedApiContentUrl(contentUrl) : (filePath ? imageContentUrlForPath(filePath, { threadId: renderContextThreadId() }) : url);
   const label = shortPath(filePath || item.label || item.fileName || item.file_name || item.caption || url || item.id || "image");
   if (isImageViewUnavailable(item)) {
     return `<figure class="image-view image-load-failed">${label ? `<figcaption>${escapeHtml(label)}</figcaption>` : ""}</figure>`;
@@ -19270,19 +19273,30 @@ function showFilePreviewLoading(label, filePath) {
   publishPluginNavigationState({ force: true });
 }
 
-async function openLocalFilePreview(link) {
+function localFilePreviewThreadIdFromLink(link, options = {}) {
+  const explicit = String(options.threadId || link && link.dataset && link.dataset.localFileThreadId || "").trim();
+  if (explicit) return explicit;
+  const pane = link && typeof link.closest === "function" ? link.closest("[data-thread-tile-pane]") : null;
+  const paneThreadId = String(pane && pane.getAttribute && pane.getAttribute("data-thread-tile-pane") || "").trim();
+  if (paneThreadId) return paneThreadId;
+  return String(state.filePreviewThreadId || renderContextThreadId() || "").trim();
+}
+
+async function openLocalFilePreview(link, options = {}) {
   const filePath = link && link.dataset ? link.dataset.localFilePath || "" : "";
   if (!filePath) return;
+  const threadId = localFilePreviewThreadIdFromLink(link, options);
+  state.filePreviewThreadId = threadId;
   const label = (link && link.dataset && link.dataset.localFileLabel) || (link && link.textContent ? link.textContent.replace(/预览文件\s*$/, "").trim() : "") || "文件预览";
   showFilePreviewLoading(label, filePath);
   try {
-    const file = await api(`/api/files/preview?threadId=${encodeURIComponent(state.currentThreadId || "")}&path=${encodeURIComponent(filePath)}`, {
+    const file = await api(`/api/files/preview?threadId=${encodeURIComponent(threadId)}&path=${encodeURIComponent(filePath)}`, {
       timeoutMs: 15000,
     });
     $("filePreviewTitle").textContent = file.fileName || label;
     $("filePreviewPath").textContent = file.relativePath || file.path || filePath;
     $("filePreviewMeta").textContent = filePreviewMetaText(file);
-    $("filePreviewBody").innerHTML = renderFilePreviewContent(file);
+    $("filePreviewBody").innerHTML = renderFilePreviewContent(file, { threadId });
     hydrateGitHubLinkCards($("filePreviewBody"));
     hydrateMermaidDiagrams($("filePreviewBody"));
     const copyButton = $("filePreviewCopyPath");
@@ -23498,7 +23512,7 @@ function wireUi() {
     if (actionPlan.action === "local-file-preview") {
       event.preventDefault();
       event.stopPropagation();
-      openLocalFilePreview(actionPlan.link || actionPlan.target).catch(showError);
+      openLocalFilePreview(actionPlan.link || actionPlan.target, { threadId: actionPlan.threadId }).catch(showError);
       return;
     }
     if (actionPlan.action === "mermaid") {
@@ -23635,7 +23649,7 @@ function wireUi() {
       const localFileLink = event.target.closest("[data-local-file-path]");
       if (localFileLink) {
         event.preventDefault();
-        openLocalFilePreview(localFileLink).catch(showError);
+        openLocalFilePreview(localFileLink, { threadId: state.filePreviewThreadId }).catch(showError);
         return;
       }
       const mermaidButton = event.target.closest("[data-mermaid-action]");

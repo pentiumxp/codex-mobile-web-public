@@ -62,6 +62,18 @@ test("rich content click action preserves selector priority and event modifiers"
   assert.equal(plan.stopPropagation, true);
 });
 
+test("rich content click action resolves local file preview thread context", () => {
+  const pane = node("pane", { threadTilePane: "thread-pane" });
+  const local = node("file", { localFilePath: "/tmp/a.md" });
+  local.closest = (selector) => selector === "[data-thread-tile-pane]" ? pane : null;
+  const plan = actions.resolveRichContentClickAction({
+    target: targetWith({ "[data-local-file-path]": local }),
+  });
+
+  assert.equal(plan.action, "local-file-preview");
+  assert.equal(plan.threadId, "thread-pane");
+});
+
 test("click action rejects nodes outside the supplied root", () => {
   const copy = node("copy", { copyKey: "copy-1" });
   const plan = actions.resolveRichContentClickAction({

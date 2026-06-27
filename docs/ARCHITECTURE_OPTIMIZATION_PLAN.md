@@ -1990,6 +1990,10 @@ Target:
   Conversation signatures and in-turn approval rendering now use the active
   render context thread id, so tile-pane approval state is no longer keyed to
   the global current thread.
+  Local file preview context is now pane-aware: local image/file preview
+  content URLs, imageView file paths, explicit preview opens, and nested file
+  preview links resolve against the render/action/file-preview thread context
+  rather than global `state.currentThreadId`.
 - Treat each pane as a scaled mobile single-thread runtime instance. Shared
   global Composer chrome is only an interim input surface; global command dock
   or shared operation bubble are no longer acceptable in tile mode and must not

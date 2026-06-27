@@ -33,6 +33,15 @@
     return String(node && node.dataset && node.dataset[key] || "");
   }
 
+  function contextThreadIdFromNode(node, explicitDatasetKey = "") {
+    if (!node) return "";
+    const explicit = explicitDatasetKey ? dataValue(node, explicitDatasetKey) : "";
+    if (explicit) return explicit;
+    if (typeof node.closest !== "function") return "";
+    const pane = node.closest("[data-thread-tile-pane]");
+    return dataValue(pane, "threadTilePane");
+  }
+
   function previewableImageFromTarget(target, root = null) {
     const image = closestWithin(
       target,
@@ -50,7 +59,12 @@
     let node = closestWithin(target, "[data-copy-key]", root);
     if (node) return action("copy", node, { button: node, preventDefault: true, stopPropagation: true });
     node = closestWithin(target, "[data-local-file-path]", root);
-    if (node) return action("local-file-preview", node, { link: node, preventDefault: true, stopPropagation: true });
+    if (node) return action("local-file-preview", node, {
+      link: node,
+      threadId: contextThreadIdFromNode(node, "localFileThreadId"),
+      preventDefault: true,
+      stopPropagation: true,
+    });
     node = closestWithin(target, "[data-mermaid-action]", root);
     if (node) return action("mermaid", node, { button: node, preventDefault: true, stopPropagation: true });
     node = closestWithin(target, "[data-github-link-preview-expand]", root);
@@ -119,5 +133,6 @@
     previewableImageFromTarget,
     resolveRichContentClickAction,
     resolveThreadDetailClickAction,
+    contextThreadIdFromNode,
   };
 }));

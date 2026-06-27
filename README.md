@@ -274,6 +274,40 @@ npm run check:macos  # passed
 git diff --check  # passed
 ```
 
+## 2026-06-27 Phase C Local File Preview Pane Context Slice
+
+这是 approval pane action context 后的同类 Phase C 本地小切片，不单独部署、不推
+Public。它修正平铺 pane 内本地文件预览和本地 imageView content URL 仍可能使用
+全局 `state.currentThreadId` 的问题。
+
+改动边界：
+
+- `localFilePreviewContentUrl(filePath, options)` 使用 `options.threadId` 或
+  `renderContextThreadId()` 生成 `/api/files/preview/content` URL；
+- `imageContentUrlForPath()`、`filePreviewContentUrl()`、`renderFilePreviewContent()`
+  继续传递该 thread context，用于 imageView/imageGeneration 以及文件预览弹窗内
+  image/pdf 内容；
+- `openLocalFilePreview(link, options)` 通过 action context、链接显式 dataset、
+  最近的 `[data-thread-tile-pane]` 或当前 file-preview context 解析 owning thread，
+  预览 API 请求不再直接使用全局 current thread；
+- 文件预览弹窗保存 `filePreviewThreadId`，供弹窗内二级本地文件链接沿用同一 thread
+  context，关闭弹窗时清空；
+- `thread-detail-actions` 对 local-file-preview action 返回 `threadId`；
+- 不改变文件预览 server API、auth/proxy 包装、upload image route、markdown 本地文件
+  链接格式、shell/cache 版本或生产部署状态。
+
+验证：
+
+```bash
+node --check public/thread-detail-actions.js
+node --check public/app.js
+node --test test/thread-detail-actions.test.js test/conversation-render.test.js test/file-preview-ui.test.js test/thread-tile-layout-ui.test.js  # 126 passed
+npm test  # 1256 passed
+npm run check  # passed
+npm run check:macos  # passed
+git diff --check  # passed
+```
+
 ## 2026-06-27 Phase A Conversation DOM Authority Invalidation Local Slice
 
 这是 v542 后继续按“小切片本地提交、模块化再部署”节奏推进的 Phase A 切片。
