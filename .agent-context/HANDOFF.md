@@ -23158,3 +23158,66 @@ The previous full handoff was archived and should be opened only when old proven
     `projection-active-overlay`, `activeOverlayGate=ready`.
   - Treat the captured list/detail latency evidence as the input for the next
     large-session entry-speed module.
+
+## 2026-06-27 - Thread-list local merge latency deployed
+
+- Problem:
+  - After v550, thread entry still felt unstable. Fresh production sampling of
+    `/api/threads?limit=25` showed `397-473ms` total even though mux/app-server
+    RPC stayed around `7-9ms`.
+  - The hot path was local Mobile Node list merge work: warm fallback-cache rows
+    duplicated app-server ids, non-duplicate rows still passed through a
+    display-merge timing stage, and rollout stat decoration could be repeated
+    inside the same request.
+- Fix:
+  - `adapters/thread-list-route-merge-service.js` now supports
+    `dropDuplicateFallbackThreads`. The normal `/api/threads` route drops
+    fallback rows whose thread id is already present in the authoritative
+    app-server result before summary merge, while preserving fallback-only rows.
+  - `adapters/thread-list-summary-merge-service.js` now runs duplicate display
+    merge only for actual duplicate ids; unique ids go directly through the
+    existing filter/strip/sort path.
+  - `server.js` reuses existing rollout size/stat metadata during same-request
+    display-summary merge with `preferExistingRolloutStats`.
+  - Root-cause boundary: this is server-side local list merge cost, not
+    app-server RPC latency, frontend de-dupe, fallback-cache lifecycle, thread
+    detail projection, or shell/cache behavior.
+- Commit/deploy:
+  - Private commit: `46b9499` (`fix thread list local merge latency`).
+  - Deployed through Home AI central macOS plugin deploy path with reason
+    `codex-mobile-thread-list-local-merge-latency`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T154242Z-plugin-codex-mobile-web-codex-mobile-thread-list-local-merge-latency`.
+  - Static readback stayed on `clientBuildId=0.1.11|codex-mobile-shell-v550`,
+    `shellCacheName=codex-mobile-shell-v550`, as expected for a server-only
+    change.
+- Validation:
+  - Focused tests passed:
+    `node --test test/thread-list-route-merge-service.test.js test/thread-list-summary-merge-service.test.js test/thread-visibility.test.js test/thread-list-response-coalescer-service.test.js test/thread-list-app-server-fetch-policy-service.test.js`
+    (`71` tests).
+  - `npm test` passed (`1314` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Production readback:
+  - Phase-B smoke after deploy: thread list `summaryMergeTotalMs=39`,
+    `summaryMergeDisplayMergeMs=0`, `mergeMs=59`, `routeMergeDuplicateCount=0`,
+    `routeMergeInputCount=25` with fallback input `13`; detail stayed
+    `projection-active-overlay`, `activeOverlayGate=ready`.
+  - Eight direct `/api/threads?limit=25` samples after deploy averaged roughly
+    `totalMs=251`, `elapsedMs=264`, `appServerRpcMs=12`, `mergeMs=68`,
+    `summaryMergeTotalMs=45`, `summaryMergeDisplayMergeMs=0`. Seven warm-cache
+    samples dropped `13` duplicate fallback rows each and had
+    `routeMergeDuplicateCount=0`; one sample correctly deferred fallback while
+    an active thread detail was in flight.
+  - This compares to the pre-fix direct-list samples of roughly `397-473ms`
+    total, `mergeMs=228-243`, `summaryMergeTotalMs=184-199`, and
+    `summaryMergeDisplayMergeMs=70-74` with `routeMergeDuplicateCount=13`.
+- Residual evidence:
+  - Thread detail is now the remaining entry-speed target for active threads,
+    not ordinary list merge. Post-deploy samples showed non-active warm
+    projection details at `43-55ms`, while active-overlay details for currently
+    running threads were `280-460ms` with `868-896KB` responses, dominated by
+    `projectionMs` / `activeOverlayMs` and large active operation payloads.
+  - Next optimization should be a separate active-detail response-size /
+    active-overlay projection module, not another thread-list fallback change.
