@@ -292,37 +292,17 @@ function createThreadDetailReadOrchestrationService(options = {}) {
     const projection = projectionInput(threadId, summary);
     context.projectionInputAvailable = Boolean(projection);
     context.projectionState = projection ? "input-ready" : "unavailable";
-    const allowPartialProjection = activeReadPolicy.allowPartialProjection;
-    const preferActiveOverlayProjection = activeReadPolicy.activeFullReadRequired && Boolean(resolveActiveWindowOverlay);
     const projectionStartedAtMs = now();
-    const projectionOptions = preferActiveOverlayProjection
-      ? { allowPartial: true, activeOverlay: true }
-      : { allowPartial: allowPartialProjection };
+    const allowPartialProjection = activeReadPolicy.allowPartialProjection;
     const projectionLookup = projection && projectedThreadLookup
-      ? projectedThreadLookup(projection, summary, runtimeSettings, projectionOptions)
+      ? projectedThreadLookup(projection, summary, runtimeSettings, { allowPartial: allowPartialProjection })
       : null;
-    let projected = projection
+    const projected = projection
       ? projectionLookup
         ? projectionLookup.result
-        : projectedThreadResult(projection, summary, runtimeSettings, projectionOptions)
+        : projectedThreadResult(projection, summary, runtimeSettings, { allowPartial: allowPartialProjection })
       : null;
-    let projectionMissReason = projectionLookup && projectionLookup.missReason || "";
-    let fallbackProjectionLookup = null;
-    if (preferActiveOverlayProjection && projection && !(projected && projected.thread)) {
-      fallbackProjectionLookup = projectedThreadLookup
-        ? projectedThreadLookup(projection, summary, runtimeSettings, { allowPartial: allowPartialProjection })
-        : null;
-      const fallbackProjected = fallbackProjectionLookup
-        ? fallbackProjectionLookup.result
-        : projectedThreadResult(projection, summary, runtimeSettings, { allowPartial: allowPartialProjection });
-      if (fallbackProjected && fallbackProjected.thread) {
-        projected = fallbackProjected;
-        projectionMissReason = "";
-      } else if (fallbackProjectionLookup && fallbackProjectionLookup.missReason) {
-        projectionMissReason = fallbackProjectionLookup.missReason;
-      }
-    }
-    context.projectionMissReason = projectionMissReason;
+    context.projectionMissReason = projectionLookup && projectionLookup.missReason || "";
     timer.mark("projectionMs", projectionStartedAtMs);
     const projectedThread = projected && projected.thread || null;
     if (projectedThread) {
@@ -369,8 +349,12 @@ function createThreadDetailReadOrchestrationService(options = {}) {
 
     if (activeReadPolicy.activeFullReadRequired && projection && resolveActiveWindowOverlay) {
       const activeOverlayStartedAtMs = now();
-      const overlayProjected = projected;
-      const overlayProjectionLookup = fallbackProjectionLookup || projectionLookup;
+      const overlayProjectionLookup = projectedThreadLookup
+        ? projectedThreadLookup(projection, summary, runtimeSettings, { allowPartial: true, activeOverlay: true })
+        : null;
+      const overlayProjected = overlayProjectionLookup
+        ? overlayProjectionLookup.result
+        : projectedThreadResult(projection, summary, runtimeSettings, { allowPartial: true, activeOverlay: true });
       const activeOverlayProjected = overlayProjected && overlayProjected.thread
         ? overlayProjected
         : projected && projected.thread
