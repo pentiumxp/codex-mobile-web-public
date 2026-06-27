@@ -2022,6 +2022,9 @@ Target:
   now also pass the render context thread into visible-item filtering, so
   pane-local DOM keys and insertion anchors derive from the same filtered item
   list as the renderer.
+  Submitted-message bottom-follow sustain now also evaluates visible progress
+  with `visibleItemsForTurn(liveTurn, thread)`, so scroll-follow leases do not
+  read global current-thread progress while rendering another pane/thread.
 - Treat each pane as a scaled mobile single-thread runtime instance. Shared
   global Composer chrome is only an interim input surface; global command dock
   or shared operation bubble are no longer acceptable in tile mode and must not

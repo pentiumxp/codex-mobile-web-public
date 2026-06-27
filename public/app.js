@@ -20629,7 +20629,7 @@ function sustainSubmittedMessageBottomFollowFromThread(thread) {
   if (!conversationScroll.shouldFollowSubmittedMessage(follow, { threadId, nowMs: Date.now() })) return false;
   const liveTurn = latestLiveTurnForThread(thread);
   if (!liveTurn) return false;
-  const hasVisibleProgress = visibleItemsForTurn(liveTurn)
+  const hasVisibleProgress = visibleItemsForTurn(liveTurn, thread)
     .some((entry) => entry && entry.item && entry.item.type !== "userMessage");
   if (!hasVisibleProgress) return false;
   state.submittedMessageBottomFollow = conversationScroll.extendSubmittedMessageFollow(follow, {

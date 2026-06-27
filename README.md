@@ -515,6 +515,34 @@ npm run check:macos  # passed
 git diff --check  # passed
 ```
 
+## 2026-06-27 Phase C Submitted Follow Visible Progress Thread Context Slice
+
+这是 visible item source index thread context 之后的相邻 Phase C 本地切片，不单独
+部署、不推 Public。它把提交消息后的 bottom-follow sustain 判断也改成使用传入 thread
+的 visible item 过滤，避免滚动跟随在 pane/local render 场景下读取全局 current
+thread 的可见进度。
+
+改动边界：
+
+- `sustainSubmittedMessageBottomFollowFromThread(thread)` 调用
+  `visibleItemsForTurn(liveTurn, thread)`；
+- 新增可执行测试，证明该函数在判断 visible progress 时把目标 thread 传给
+  `visibleItemsForTurn()`，并只在目标 thread 有非用户 visible progress 时延长
+  submitted-message follow lease；
+- 不改变 scroll policy、DOM patch 算法、server projection、任务卡协议、shell/cache
+  版本或生产部署状态。
+
+验证：
+
+```bash
+node --check public/app.js
+node --test test/turn-scroll-controls.test.js test/conversation-render.test.js test/mobile-viewport.test.js  # 138 passed
+npm test  # 1264 passed
+npm run check  # passed
+npm run check:macos  # passed
+git diff --check  # passed
+```
+
 ## 2026-06-27 Phase A Conversation DOM Authority Invalidation Local Slice
 
 这是 v542 后继续按“小切片本地提交、模块化再部署”节奏推进的 Phase A 切片。

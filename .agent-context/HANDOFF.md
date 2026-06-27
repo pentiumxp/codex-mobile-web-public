@@ -21525,6 +21525,46 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit this local slice and keep it undeployed until a coherent deployable
     module is ready.
 
+## 2026-06-27 - Phase C submitted follow visible progress thread context local slice
+
+- Current local state:
+  - Continued after local commit `a3cdd30` (`refactor visible item source index
+    uses pane context`).
+  - This is a local Phase C scroll-follow/context slice only. It changes
+    `public/app.js`, `test/turn-scroll-controls.test.js`, README, the
+    architecture plan, and this handoff. It does not bump shell/cache, deploy
+    production, or push Public.
+- Root-cause boundary:
+  - Symptom/risk: `sustainSubmittedMessageBottomFollowFromThread(thread)`
+    already received a target thread but checked visible progress with
+    `visibleItemsForTurn(liveTurn)` without passing that thread. In pane or
+    local render contexts, submitted-message bottom-follow could therefore use
+    global current-thread visible progress instead of the target thread that is
+    being rendered.
+  - Failing layer: frontend submitted-message bottom-follow visible-progress
+    context propagation, not the scroll policy helper itself, DOM patching,
+    server projection, task-card protocol, or Home AI diagnostic transport.
+  - Violated invariant: scroll-follow sustain decisions that receive a target
+    thread must evaluate live visible progress against that same thread.
+- Changes:
+  - `sustainSubmittedMessageBottomFollowFromThread(thread)` now calls
+    `visibleItemsForTurn(liveTurn, thread)`.
+  - Added executable coverage proving the target thread is passed into visible
+    progress filtering and the follow lease is extended only from that target
+    context.
+- Validation:
+  - `node --check public/app.js` passed.
+  - `node --test test/turn-scroll-controls.test.js test/conversation-render.test.js test/mobile-viewport.test.js`
+    passed (`138` tests).
+  - `npm test` passed (`1264` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed before docs/context updates; rerun after this
+    handoff update before committing.
+- Next:
+  - Commit this local slice and keep it undeployed until a coherent deployable
+    module is ready.
+
 ## 2026-06-27 - Phase C Composer action control planning local slice
 
 - Current local state:

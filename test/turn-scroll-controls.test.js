@@ -24,6 +24,21 @@ function functionBody(name) {
   throw new Error(`could not parse function ${name}`);
 }
 
+function functionSourceFrom(source, name) {
+  const start = source.indexOf(`function ${name}(`);
+  assert.notEqual(start, -1, `missing function ${name}`);
+  const bodyStart = source.indexOf(") {", start) + 2;
+  assert.notEqual(bodyStart, 1, `missing function body ${name}`);
+  let depth = 0;
+  for (let index = bodyStart; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "{") depth += 1;
+    if (char === "}") depth -= 1;
+    if (depth === 0) return source.slice(start, index + 1);
+  }
+  throw new Error(`could not parse function ${name}`);
+}
+
 function assertInOrder(text, patterns) {
   let offset = 0;
   for (const pattern of patterns) {
@@ -177,7 +192,7 @@ test("successful message submit follows the new turn to the bottom", () => {
   assert.match(appJs, /conversationScroll\.extendSubmittedMessageFollow\(follow, \{/);
   assert.match(appJs, /function sustainSubmittedMessageBottomFollowFromThread\(thread\)/);
   assert.match(appJs, /latestLiveTurnForThread\(thread\)/);
-  assert.match(appJs, /visibleItemsForTurn\(liveTurn\)[\s\S]*item\.type !== "userMessage"/);
+  assert.match(appJs, /visibleItemsForTurn\(liveTurn, thread\)[\s\S]*item\.type !== "userMessage"/);
   assert.match(appJs, /const sustainedSubmittedFollow = !explicitNoStickToBottom[\s\S]*sustainSubmittedMessageBottomFollowFromThread\(thread\)/);
   assert.match(appJs, /sustainedSubmittedFollow,/);
   assert.match(appJs, /submittedMessageFollow: shouldFollowSubmittedMessageToBottom\(\),/);
@@ -263,6 +278,48 @@ test("live and final message renders stay anchored when the user is at bottom", 
   assert.match(notificationBody, /method === "item\/agentMessage\/delta"[\s\S]*appendToItem\(params\.turnId, params\.itemId, "agentMessage", "text", params\.delta \|\| "", 0\)/);
   assert.doesNotMatch(notificationBody, /defer-final-receipt/);
   assert.match(notificationBody, /method === "turn\/completed"[\s\S]*renderCurrentThread\(\{ stickToBottom: true \}\);/);
+});
+
+test("submitted message bottom follow sustain uses target thread for visible progress", () => {
+  const source = functionSourceFrom(appJs, "sustainSubmittedMessageBottomFollowFromThread");
+  const result = Function(`
+const targetThread = { id: "target-thread" };
+const liveTurn = { id: "live-turn" };
+const state = {
+  currentThreadId: "target-thread",
+  submittedMessageBottomFollow: { threadId: "target-thread" },
+};
+let visibleThreadId = "";
+const conversationScroll = {
+  shouldFollowSubmittedMessage(follow, context) {
+    return Boolean(follow && context && context.threadId === "target-thread");
+  },
+  extendSubmittedMessageFollow(follow, context) {
+    return Object.assign({}, follow, { extendedAt: context.nowMs });
+  },
+};
+function latestLiveTurnForThread(thread) {
+  return thread === targetThread ? liveTurn : null;
+}
+function visibleItemsForTurn(turn, thread) {
+  visibleThreadId = String(thread && thread.id || "");
+  if (turn === liveTurn && visibleThreadId === "target-thread") return [{ item: { type: "agentMessage" } }];
+  return [];
+}
+${source}
+const sustained = sustainSubmittedMessageBottomFollowFromThread(targetThread);
+return {
+  sustained,
+  visibleThreadId,
+  extended: Boolean(state.submittedMessageBottomFollow.extendedAt),
+};
+`)();
+
+  assert.deepEqual(result, {
+    sustained: true,
+    visibleThreadId: "target-thread",
+    extended: true,
+  });
 });
 
 test("thread opens and same-signature renders still land on the latest message", () => {
