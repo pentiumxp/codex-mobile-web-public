@@ -23901,3 +23901,71 @@ The previous full handoff was archived and should be opened only when old proven
     The response is smaller and ownership is correct, but the next optimization
     slice should target the remaining active detail peak latency rather than
     adding UI/client fallback masking.
+
+## 2026-06-28 - Active Overlay Window-First Detail Module
+
+- User-visible symptom:
+  - Some thread opens could wait unusually long and then eventually render,
+    unlike older hard failures that showed timeout. This points to a successful
+    but expensive cold/warm server path rather than a broken network transport.
+- Root cause / invariant:
+  - Active/running detail requests already had a dedicated active-overlay
+    projection-window lookup available from `server.js`, but
+    `thread-detail-read-orchestration-service` still ran the ordinary full
+    projection lookup first.
+  - The active overlay proof gate should use the narrow active-overlay window
+    path first when available. Full ordinary projection should not be paid just
+    to prove/render the active overlay window.
+- Implementation:
+  - `adapters/thread-detail-read-orchestration-service.js` now records
+    `activeOverlayWindowFirst` and skips the initial ordinary
+    `projectedThreadLookup` when `activeFullReadRequired`,
+    `resolveActiveWindowOverlay`, and
+    `activeOverlayProjectionWindowLookup` are all available.
+  - Active overlay then resolves through the dedicated window lookup with
+    bounded `allowPartial` / `activeOverlay` context before falling back to
+    existing active-window construction if needed.
+  - `adapters/thread-detail-performance-service.js`,
+    `adapters/phase-b-readback-decision-service.js`, and
+    `scripts/codex-mobile-phase-b-readback-smoke.js` now expose bounded
+    readback fields for `activeOverlayWindowFirst` and the detail timing
+    sub-stages.
+  - Focused tests cover the new window-first path and the compatibility path
+    without a dedicated active-overlay lookup.
+- Documentation:
+  - Updated `docs/README.md`, `docs/MODULES.md`, `docs/ARCHITECTURE.md`,
+    `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Validation before deploy:
+  - Focused active detail/readback tests passed (`103` tests).
+  - Full `npm test` passed (`1338` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - `codegraph sync && codegraph status` reported the index is up to date.
+- Commit/deploy:
+  - Commit `ab7a3f1` (`fix active overlay window-first detail path`).
+  - Deployed through the Home AI central macOS plugin deploy path with reason
+    `codex-mobile-active-overlay-window-first`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T194544Z-plugin-codex-mobile-web-codex-mobile-active-overlay-window-first`.
+  - Production shell readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v552`,
+    `shellCacheName=codex-mobile-shell-v552`.
+- Production readback:
+  - Phase-B smoke against thread
+    `019eee6c-a6f5-7b20-bfb4-f96ccb6431b3` passed active-overlay checks and
+    confirmed `detail.activeOverlayWindowFirst=true`.
+  - The first post-deploy Phase-B sample still showed cold peaks:
+    `detailTotalMs=2398`, `detailActiveOverlayWindowMs=2310`, and thread-list
+    app-server RPC about `1679ms`.
+  - Immediate repeated direct detail samples then stabilized at about
+    `195-200ms` with `activeOverlayWindowFirst=true`, `threadReadMs=0`, and no
+    stable multi-second detail peak. One sample was `434ms`.
+  - Immediate repeated thread-list samples stabilized at about `175-213ms`,
+    with app-server RPC about `7-9ms`.
+- Residual:
+  - The old stable active-detail projection tax has been reduced, but there is
+    still a deploy/cold-start peak after restart. The next performance slice
+    should target cold-start/prewarm and app-server/thread-list readiness so
+    first entry after deploy or cache rebuild does not feel like a hang.
