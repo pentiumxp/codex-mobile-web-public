@@ -21041,6 +21041,47 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit this local slice and keep it undeployed until a coherent deployable
     module is ready.
 
+## 2026-06-27 - Phase C continuation confirm pane context local slice
+
+- Current local state:
+  - Continued after local commit `f10d19d` (`refactor older history loads keep
+    pane context`).
+  - This is a local Phase C continuation dialog source-context slice only. It
+    changes `public/app.js`, focused tests, README, the architecture plan, and
+    this handoff. It does not bump shell/cache, deploy production, or push
+    Public.
+- Root-cause boundary:
+  - Symptom/risk: the pane toolbar click could open a compression-continuation
+    dialog from the owning pane thread, but the later confirm handler re-read
+    `state.continuationDialogThreadId` through `threadById()`, which only
+    checked list/current state. If the source was visible only in
+    `state.threadTileDetails`, confirm could resolve `null` and
+    `startNewThreadFromThread(null)` would fall back to the unrelated global
+    current thread.
+  - Failing layer: frontend continuation dialog source-thread resolution, not
+    continuation job creation, handoff generation, archive behavior, shell/cache,
+    or Home AI host routing.
+  - Violated invariant: once a pane action records a concrete source thread id,
+    the confirmation path must resolve that exact source or fail closed; it must
+    not silently reinterpret the action as current-thread continuation.
+- Changes:
+  - Added `continuationDialogSourceThread()` to resolve dialog sources from
+    current detail, thread list, or visible tile detail cache.
+  - Added `confirmContinuationDialog()` and wired the confirm button to it.
+  - Missing concrete continuation source ids now show a bounded error and do
+    not call `startNewThreadFromThread()` with a null source.
+- Validation:
+  - `node --check public/app.js` passed.
+  - `node --test test/new-thread-route.test.js test/thread-task-card-route.test.js test/mobile-viewport.test.js`
+    passed (`47` tests).
+  - `npm test` passed (`1282` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit this local slice and keep it undeployed until a coherent deployable
+    module is ready.
+
 ## 2026-06-27 - Phase C older-history pane context local slice
 
 - Current local state:

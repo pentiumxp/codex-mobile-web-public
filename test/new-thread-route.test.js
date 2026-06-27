@@ -24,6 +24,22 @@ function functionBody(source, name) {
   throw new Error(`could not parse function ${name}`);
 }
 
+function functionSource(source, name) {
+  let start = source.indexOf(`function ${name}(`);
+  if (start < 0) start = source.indexOf(`async function ${name}(`);
+  assert.notEqual(start, -1, `missing function ${name}`);
+  const bodyStart = source.indexOf(") {", start) + 2;
+  assert.notEqual(bodyStart, 1, `missing function body ${name}`);
+  let depth = 0;
+  for (let index = bodyStart; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "{") depth += 1;
+    if (char === "}") depth -= 1;
+    if (depth === 0) return source.slice(start, index + 1);
+  }
+  throw new Error(`could not parse function ${name}`);
+}
+
 test("new-message route creates a thread before starting the first turn", () => {
   const routeIndex = serverJs.indexOf("/api/threads/new-message");
   const fallbackIndex = serverJs.indexOf('sendJson(res, 404, { error: "Not found" })');
@@ -35,6 +51,45 @@ test("new-message route creates a thread before starting the first turn", () => 
   const turnStartIndex = routeBody.indexOf('codex.request("turn/start"');
   assert.ok(threadStartIndex > 0, "new-message route must call thread/start");
   assert.ok(turnStartIndex > threadStartIndex, "new-message route must start the first turn after thread/start");
+});
+
+test("continuation confirm resolves tile-pane detail sources without current fallback", () => {
+  const sources = [
+    "threadById",
+    "continuationDialogSourceThread",
+    "confirmContinuationDialog",
+  ].map((name) => functionSource(appJs, name));
+  const harness = Function(`
+const calls = { start: [], errors: [] };
+const state = {
+  continuationDialogThreadId: "thread-pane",
+  currentThread: { id: "thread-current", name: "Current" },
+  threads: [],
+  threadTileDetails: new Map([["thread-pane", { id: "thread-pane", name: "Pane", cwd: "/tmp/pane" }]]),
+};
+function startNewThreadFromThread(thread) {
+  calls.start.push(thread && thread.id || "");
+  return Promise.resolve();
+}
+function showError(err) {
+  calls.errors.push(String(err && err.message || err));
+}
+${sources.join("\n")}
+return {
+  confirm: confirmContinuationDialog,
+  setThreadId(id) { state.continuationDialogThreadId = id; },
+  calls,
+};
+`)();
+
+  harness.confirm();
+  assert.deepEqual(harness.calls.start, ["thread-pane"]);
+  assert.deepEqual(harness.calls.errors, []);
+
+  harness.setThreadId("missing-thread");
+  harness.confirm();
+  assert.deepEqual(harness.calls.start, ["thread-pane"]);
+  assert.deepEqual(harness.calls.errors, ["Continuation source thread is no longer available"]);
 });
 
 test("new-message route allows Codex App style projectless threads", () => {

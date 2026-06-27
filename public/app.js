@@ -12214,6 +12214,22 @@ function closeContinuationDialog() {
   publishPluginNavigationState({ force: true });
 }
 
+function continuationDialogSourceThread() {
+  const threadId = String(state.continuationDialogThreadId || "").trim();
+  if (!threadId || threadId === "__current__") return state.currentThread || null;
+  return threadById(threadId)
+    || (state.threadTileDetails && state.threadTileDetails.has(threadId) ? state.threadTileDetails.get(threadId) : null);
+}
+
+function confirmContinuationDialog() {
+  const thread = continuationDialogSourceThread();
+  if (!thread) {
+    showError(new Error("Continuation source thread is no longer available"));
+    return;
+  }
+  startNewThreadFromThread(thread).catch(showError);
+}
+
 function pluginNavigationUiState() {
   return {
     imagePreviewOpen: imagePreviewOpen(),
@@ -23667,11 +23683,7 @@ function wireUi() {
   $("threadList").addEventListener("touchcancel", cancelThreadLongPress, { passive: true });
   $("threadList").addEventListener("contextmenu", handleThreadListContextMenu);
   if ($("threadActionSheet")) $("threadActionSheet").addEventListener("click", handleThreadAction);
-  if ($("continuationConfirm")) $("continuationConfirm").addEventListener("click", () => {
-    const threadId = state.continuationDialogThreadId;
-    const thread = threadId === "__current__" ? (state.currentThread || null) : threadById(threadId);
-    startNewThreadFromThread(thread).catch(showError);
-  });
+  if ($("continuationConfirm")) $("continuationConfirm").addEventListener("click", confirmContinuationDialog);
   if ($("continuationCancel")) $("continuationCancel").addEventListener("click", closeContinuationDialog);
   if ($("continuationDialog")) $("continuationDialog").addEventListener("click", (event) => {
     if (event.target === $("continuationDialog")) closeContinuationDialog();

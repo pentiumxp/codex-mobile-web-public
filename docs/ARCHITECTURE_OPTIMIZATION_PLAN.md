@@ -186,6 +186,10 @@ Current acceleration targets:
    history button or scheduled backfill must resolve the pane thread, fetch that
    thread's cursor, update that pane detail cache, and schedule pane-local
    render instead of mutating global `state.currentThread`.
+   Continuation confirmation is fail-closed: once a compression-continuation
+   dialog records a concrete source thread id, confirmation must resolve that
+   thread from current detail, thread list, or visible tile details, and must
+   not silently fall back to global current thread if the source disappears.
 2. Thread-list cold starts no longer hide source collection inside the fallback
    cache policy. The local `thread-list-fallback-baseline-service` slice now
    owns state DB / rollout session / session-index source collection,
@@ -2013,6 +2017,9 @@ Target:
   owning thread id, tile panes render the same history loader affordance as the
   single-thread surface, and `loadOlderThreadTurns()` updates the target pane
   detail cache before scheduling pane-local render.
+  Continuation confirmation is also pane-aware: the dialog confirm path resolves
+  tile-detail-only source threads and fails closed if a concrete source id can
+  no longer be found, instead of compressing the unrelated current thread.
   Approval/server-request action context is now pane-aware as well: rendered
   approval and user-input controls carry their owning thread id, the shared
   click resolver returns it, and pending/resolved/request-response refreshes

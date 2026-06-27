@@ -73,5 +73,6 @@ thread metadata, metadata notifications, pending actions, pending-action
 request/update notifications, pending-action resolution notifications,
 task-card draft state, task-card pending counts, optimistic thread status,
 failed-send status restore, thread status notifications, and pane toolbar
-actions, plus older-history pagination, must all update the target pane instead
-of falling back to the global current thread.
+actions, older-history pagination, and continuation confirmation dialogs must
+all update or operate on the target pane instead of falling back to the global
+current thread.
