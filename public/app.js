@@ -14546,35 +14546,40 @@ function applyConversationHtmlUpdateEffectsPlan(plan, context = {}) {
 
 function completeLocalConversationDomUpdate(root, wasNearBottom, userReadingCurrentTurn, options = {}) {
   const hasOption = (key) => Object.prototype.hasOwnProperty.call(options || {}, key);
-  const tilePanePatched = hasOption("tilePanePatched")
-    ? Boolean(options.tilePanePatched)
-    : patchCurrentThreadTilePaneFromState({ preserveScroll: true });
-  const canPatchSingleThread = tilePanePatched
-    ? false
-    : (hasOption("canPatchSingleThread") ? Boolean(options.canPatchSingleThread) : canPatchSingleThreadConversationDom());
-  const scrollPlan = options && options.scrollPlan && typeof options.scrollPlan === "object"
-    ? options.scrollPlan
-    : tilePanePatched
-    ? { action: "none" }
-    : conversationScroll.planLocalPatchScrollCompletion({
-      userReadingCurrentTurn,
-      autoScrollHold: shouldHoldAutoScrollForCurrentTurn(),
-      nearBottom: wasNearBottom,
-      submittedMessageFollow: shouldFollowSubmittedMessageToBottom(),
-      viewportFollow: shouldFollowViewportChangeToBottom(),
+  const providedSnapshot = options && options.completionSnapshot && typeof options.completionSnapshot === "object"
+    ? options.completionSnapshot
+    : null;
+  const completionSnapshot = providedSnapshot || (() => {
+    const tilePanePatched = hasOption("tilePanePatched")
+      ? Boolean(options.tilePanePatched)
+      : patchCurrentThreadTilePaneFromState({ preserveScroll: true });
+    const canPatchSingleThread = tilePanePatched
+      ? false
+      : (hasOption("canPatchSingleThread") ? Boolean(options.canPatchSingleThread) : canPatchSingleThreadConversationDom());
+    const scrollPlan = options && options.scrollPlan && typeof options.scrollPlan === "object"
+      ? options.scrollPlan
+      : tilePanePatched
+      ? { action: "none" }
+      : conversationScroll.planLocalPatchScrollCompletion({
+        userReadingCurrentTurn,
+        autoScrollHold: shouldHoldAutoScrollForCurrentTurn(),
+        nearBottom: wasNearBottom,
+        submittedMessageFollow: shouldFollowSubmittedMessageToBottom(),
+        viewportFollow: shouldFollowViewportChangeToBottom(),
+      });
+    return threadDetailDomPatchApi.planLocalConversationDomUpdateCompletionSnapshot({
+      tilePanePatched,
+      canPatchSingleThread,
+      hasRoot: Boolean(root),
+      conversationSignature: hasOption("conversationSignature")
+        ? options.conversationSignature
+        : (tilePanePatched ? "" : conversationRenderSignature(state.currentThread)),
+      patchShellSignature: hasOption("patchShellSignature")
+        ? options.patchShellSignature
+        : (tilePanePatched ? "" : conversationPatchShellSignature(state.currentThread)),
+      scrollAction: scrollPlan.action,
     });
-  const completionSnapshot = threadDetailDomPatchApi.planLocalConversationDomUpdateCompletionSnapshot({
-    tilePanePatched,
-    canPatchSingleThread,
-    hasRoot: Boolean(root),
-    conversationSignature: hasOption("conversationSignature")
-      ? options.conversationSignature
-      : (tilePanePatched ? "" : conversationRenderSignature(state.currentThread)),
-    patchShellSignature: hasOption("patchShellSignature")
-      ? options.patchShellSignature
-      : (tilePanePatched ? "" : conversationPatchShellSignature(state.currentThread)),
-    scrollAction: scrollPlan.action,
-  });
+  })();
   const completionPlan = threadDetailDomPatchApi.planLocalConversationDomUpdateCompletion(completionSnapshot);
   if (!completionPlan.complete) return false;
   const effectsPlan = threadDetailDomPatchApi.planLocalConversationDomUpdateCompletionEffects(completionPlan);
@@ -14825,19 +14830,21 @@ function patchCurrentThreadDetailFromRefresh(previousThread, nextThread, previou
   const wasNearBottom = isConversationNearBottom();
   const userReadingCurrentTurn = isUserReadingCurrentTurn({ nearBottom: wasNearBottom });
   const previousKeys = existingConversationRenderKeys();
-  const completionSnapshot = {
+  const scrollPlan = conversationScroll.planLocalPatchScrollCompletion({
+    userReadingCurrentTurn,
+    autoScrollHold: shouldHoldAutoScrollForCurrentTurn(),
+    nearBottom: wasNearBottom,
+    submittedMessageFollow: shouldFollowSubmittedMessageToBottom(),
+    viewportFollow: shouldFollowViewportChangeToBottom(),
+  });
+  const completionSnapshot = threadDetailDomPatchApi.planLocalConversationDomUpdateCompletionSnapshot({
     tilePanePatched: false,
     canPatchSingleThread: true,
+    hasRoot: Boolean(conversation),
     conversationSignature: conversationRenderSignature(nextThread),
     patchShellSignature: conversationPatchShellSignature(nextThread),
-    scrollPlan: conversationScroll.planLocalPatchScrollCompletion({
-      userReadingCurrentTurn,
-      autoScrollHold: shouldHoldAutoScrollForCurrentTurn(),
-      nearBottom: wasNearBottom,
-      submittedMessageFollow: shouldFollowSubmittedMessageToBottom(),
-      viewportFollow: shouldFollowViewportChangeToBottom(),
-    }),
-  };
+    scrollAction: scrollPlan.action,
+  });
   const previousTurnById = new Map(visibleTurnsForConversation(previousThread)
     .map((turn) => [String(turn && turn.id || ""), turn])
     .filter(([id]) => id));
@@ -14892,7 +14899,7 @@ function patchCurrentThreadDetailFromRefresh(previousThread, nextThread, previou
           conversation,
           wasNearBottom,
           userReadingCurrentTurn,
-          completionSnapshot,
+          { completionSnapshot },
         )
           ? { ok: true }
           : { ok: false, reason: "complete-dom-update-failed" },

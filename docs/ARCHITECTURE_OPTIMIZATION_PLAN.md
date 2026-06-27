@@ -1107,6 +1107,16 @@ event, including the expected/rendered turn counts and render action.
 payloads inline. This is a local Phase A ownership slice only; it does not
 change DOM mutation order, scroll policy, projection semantics, shell/cache
 version, or deployment state.
+The v543 follow-up local slice also removes the last hand-written completion
+snapshot object from `patchCurrentThreadDetailFromRefresh()`: the refresh local
+patch path now asks `planLocalConversationDomUpdateCompletionSnapshot()` to
+normalize root availability, single-thread eligibility, conversation
+signature, patch-shell signature, and scroll action before the transaction
+commit effect calls `completeLocalConversationDomUpdate()`. The completion
+executor can still collect live DOM/scroll facts for other patch callers, but
+it can also consume a preplanned helper snapshot. This keeps local refresh
+patch completion input authority in `thread-detail-dom-patch` instead of
+duplicating a similar object shape in `public/app.js`.
 Refresh patch surface planning now also lives in this helper:
 `planThreadDetailRefreshPatchSurface` decides whether the refresh should probe
 tile-pane DOM state and whether the current patch path is a tile surface based

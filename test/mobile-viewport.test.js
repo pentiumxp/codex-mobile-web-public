@@ -679,9 +679,11 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /name: "update-live-operation-dock"/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /updateLiveOperationDockHtml\(renderLiveOperationDock\(nextThread, previousKeys\)\)/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /name: "bind-current-thread-actions"[\s\S]*bindCurrentThreadActions\(\);/);
-  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /const completionSnapshot = \{/);
-  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /scrollPlan: conversationScroll\.planLocalPatchScrollCompletion\(\{/);
-  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /name: "complete-local-conversation-dom-update"[\s\S]*completeLocalConversationDomUpdate\([\s\S]*conversation,[\s\S]*wasNearBottom,[\s\S]*userReadingCurrentTurn,[\s\S]*completionSnapshot,/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /const scrollPlan = conversationScroll\.planLocalPatchScrollCompletion\(\{/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /const completionSnapshot = threadDetailDomPatchApi\.planLocalConversationDomUpdateCompletionSnapshot\(\{/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /scrollAction: scrollPlan\.action/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /name: "complete-local-conversation-dom-update"[\s\S]*completeLocalConversationDomUpdate\([\s\S]*conversation,[\s\S]*wasNearBottom,[\s\S]*userReadingCurrentTurn,[\s\S]*\{ completionSnapshot \},/);
+  assert.doesNotMatch(functionBody("patchCurrentThreadDetailFromRefresh"), /const completionSnapshot = \{/);
   assert.doesNotMatch(functionBody("patchCurrentThreadDetailFromRefresh"), /updateLiveOperationDockHtml\(renderLiveOperationDock\(nextThread, previousKeys\)\);\s*const applyResult = threadDetailDomPatchApi\.applyThreadTurnRefreshDomPatch/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /patchNode\(article, source\);/);
   assert.match(functionBody("insertVisibleItemDom"), /if \(isOperationalItem\(item\)\) return updateLiveOperationDockForLocalPatch\(\);/);

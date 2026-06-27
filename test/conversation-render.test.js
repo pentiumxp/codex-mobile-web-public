@@ -3166,7 +3166,12 @@ test("thread tile local patch paths refresh the pane instead of writing a single
   assert.doesNotMatch(functionBody("completeLocalConversationDomUpdate"), /const conversationSignature =/);
   assert.doesNotMatch(functionBody("completeLocalConversationDomUpdate"), /const patchShellSignature =/);
   assert.doesNotMatch(functionBody("completeLocalConversationDomUpdate"), /state\.renderedConversationSignature = completionPlan\.nextRenderedConversationSignature/);
-  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /const completionSnapshot = \{/);
+  assert.match(functionBody("completeLocalConversationDomUpdate"), /const providedSnapshot = options && options\.completionSnapshot/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /const completionSnapshot = threadDetailDomPatchApi\.planLocalConversationDomUpdateCompletionSnapshot\(\{/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /hasRoot: Boolean\(conversation\)/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /scrollAction: scrollPlan\.action/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /\{ completionSnapshot \}/);
+  assert.doesNotMatch(functionBody("patchCurrentThreadDetailFromRefresh"), /const completionSnapshot = \{/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /conversationSignature: conversationRenderSignature\(nextThread\)/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /patchShellSignature: conversationPatchShellSignature\(nextThread\)/);
   assert.match(functionBody("updateLiveOperationDockForLocalPatch"), /patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);

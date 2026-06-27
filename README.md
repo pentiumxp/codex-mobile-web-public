@@ -76,6 +76,30 @@ git diff --check  # passed
 
 Public push 仍然等生产和用户验证。
 
+## 2026-06-27 Phase A Local Patch Completion Snapshot Slice
+
+这是 v543 生产部署后的第一个新本地切片，不单独部署、不推 Public。它继续收敛
+线程详情 local patch 完成阶段的状态所有权。
+
+改动边界：
+
+- `patchCurrentThreadDetailFromRefresh()` 不再手写 local completion snapshot object；
+- refresh local patch 路径改为调用
+  `threadDetailDomPatchApi.planLocalConversationDomUpdateCompletionSnapshot()`，
+  由 DOM-patch helper 统一归一化 root、single-thread patch eligibility、
+  conversation signature、patch-shell signature 和 scroll action；
+- `completeLocalConversationDomUpdate()` 可以接受预先规划好的
+  `completionSnapshot`，其他调用路径仍然保留实时 DOM/scroll fact 收集；
+- 不改变 server projection、merge、DOM mutation 顺序、scroll-follow policy、
+  shell/cache 版本或生产部署状态。
+
+验证：
+
+```bash
+node --check public/app.js
+node --test test/conversation-render.test.js test/thread-detail-dom-patch.test.js  # 161 passed
+```
+
 ## 2026-06-27 Phase A Conversation DOM Authority Invalidation Local Slice
 
 这是 v542 后继续按“小切片本地提交、模块化再部署”节奏推进的 Phase A 切片。

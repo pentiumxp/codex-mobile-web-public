@@ -20958,3 +20958,40 @@ The previous full handoff was archived and should be opened only when old proven
   - Continue optimization under the new cadence:
     small bounded local slices, local commits, then deploy only after a
     coherent module validates.
+
+## 2026-06-27 - Phase A local patch completion snapshot local slice
+
+- Current local state:
+  - Continued after v543 production deployment and docs commit `0dd9d57`.
+  - This is a local Phase A ownership slice only. It changes `public/app.js`,
+    tests, README, and the architecture plan; it does not bump shell/cache,
+    deploy production, or push Public.
+- Root-cause boundary:
+  - Symptom/risk: `patchCurrentThreadDetailFromRefresh()` still carried a
+    hand-written completion snapshot object before committing a local DOM patch.
+    That duplicated the snapshot normalization already owned by
+    `thread-detail-dom-patch` and left one more place where root availability,
+    single-thread patch eligibility, signatures, and scroll action could drift.
+  - Failing layer: frontend local conversation DOM patch completion input
+    authority, not server projection, merge semantics, task-card protocol, or
+    Home AI diagnostic transport.
+  - Violated invariant: local refresh patch completion facts should be
+    normalized by `thread-detail-dom-patch`, while `public/app.js` only
+    collects runtime facts and executes the planned DOM/state effects.
+- Changes:
+  - `completeLocalConversationDomUpdate()` now accepts a preplanned
+    `completionSnapshot` from the DOM-patch helper and otherwise preserves its
+    existing live fact collection path for other callers.
+  - `patchCurrentThreadDetailFromRefresh()` now calls
+    `threadDetailDomPatchApi.planLocalConversationDomUpdateCompletionSnapshot()`
+    instead of creating a local object with a similar shape.
+  - Source-level tests now assert the refresh local patch path uses the helper
+    snapshot and no longer creates `const completionSnapshot = { ... }` inline.
+- Validation:
+  - `node --check public/app.js` passed.
+  - `node --test test/conversation-render.test.js test/thread-detail-dom-patch.test.js`
+    passed (`161` tests).
+- Next:
+  - Run broader local checks, commit this local slice, and continue with the
+    next bounded Phase A/B candidate. Do not deploy until a coherent module is
+    ready.
