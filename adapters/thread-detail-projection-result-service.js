@@ -59,13 +59,49 @@ function createThreadDetailProjectionResultService(options = {}) {
     return projectedThreadHasTurn(cached && cached.result && cached.result.thread, localActiveTurnId);
   }
 
+  function isResponseReadyV4Projection(cached, result) {
+    if (!cached || String(cached.version || "") !== "v4") return false;
+    const thread = result && result.thread;
+    if (!thread || thread.mobileProjectionVersion !== "v4") return false;
+    const turns = Array.isArray(thread.turns) ? thread.turns : [];
+    if (turns.length > maxTurns) return false;
+    const threadVisibleItemKeys = [];
+    for (const turn of turns) {
+      if (!turn || turn.mobileProjectionVersion !== "v4" || !turn.mobileVisibleKey) return false;
+      const items = Array.isArray(turn.items) ? turn.items : [];
+      const turnVisibleItemKeys = [];
+      const seenKeys = new Set();
+      for (const item of items) {
+        if (!item || item.mobileProjectionVersion !== "v4") return false;
+        const key = String(item.mobileVisibleKey || "");
+        if (!key || seenKeys.has(key)) return false;
+        seenKeys.add(key);
+        turnVisibleItemKeys.push(key);
+        threadVisibleItemKeys.push(key);
+      }
+      const existingTurnKeys = Array.isArray(turn.mobileVisibleItemKeys) ? turn.mobileVisibleItemKeys : [];
+      if (existingTurnKeys.length !== turnVisibleItemKeys.length) return false;
+      for (let index = 0; index < turnVisibleItemKeys.length; index += 1) {
+        if (existingTurnKeys[index] !== turnVisibleItemKeys[index]) return false;
+      }
+    }
+    const existingThreadKeys = Array.isArray(thread.mobileVisibleItemKeys) ? thread.mobileVisibleItemKeys : [];
+    if (existingThreadKeys.length !== threadVisibleItemKeys.length) return false;
+    for (let index = 0; index < threadVisibleItemKeys.length; index += 1) {
+      if (existingThreadKeys[index] !== threadVisibleItemKeys[index]) return false;
+    }
+    return true;
+  }
+
   function prepareProjectedThreadReadResult(cached, summary, runtimeSettings, options = {}) {
     if (!cached || !cached.result || !cached.result.thread) return null;
     if (options.activeOverlay !== true && !projectedThreadSatisfiesLocalActiveSummary(cached, summary)) return null;
     const mergedResult = Object.assign({}, cached.result, {
       thread: mergeThreadDisplaySummary(cached.result.thread, summary) || cached.result.thread,
     });
-    const result = compactThreadReadResult(mergedResult, { maxTurns });
+    const result = isResponseReadyV4Projection(cached, mergedResult)
+      ? mergedResult
+      : compactThreadReadResult(mergedResult, { maxTurns });
     if (!result || !result.thread) return null;
     result.thread = applySessionIndexTitleToThread(result.thread, sessionIndexEntry(result.thread.id));
     result.thread = mergeThreadRuntimeFromStateDb(result.thread, summary);

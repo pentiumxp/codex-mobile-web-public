@@ -147,6 +147,92 @@ test("projection result read mode follows cache source and v4 version", () => {
   assert.equal(cache.thread.mobileProjection.ageMs, 50);
 });
 
+test("projection result skips compaction for response-ready v4 projection hits", () => {
+  let compactCalls = 0;
+  const service = createThreadDetailProjectionResultService({
+    maxTurns: 5,
+    now: () => 1000,
+    compactThreadReadResult() {
+      compactCalls += 1;
+      throw new Error("response-ready v4 projection should not compact");
+    },
+  });
+
+  const result = service.prepareProjectedThreadReadResult({
+    version: "v4",
+    cachedAtMs: 800,
+    updatedAtMs: 900,
+    result: {
+      thread: {
+        id: "thread-1",
+        mobileProjectionVersion: "v4",
+        mobileVisibleItemKeys: ["turn-1:user:user-1"],
+        turns: [{
+          id: "turn-1",
+          mobileProjectionVersion: "v4",
+          mobileVisibleKey: "turn:turn-1",
+          mobileVisibleItemKeys: ["turn-1:user:user-1"],
+          items: [{
+            id: "user-1",
+            type: "userMessage",
+            mobileProjectionVersion: "v4",
+            mobileVisibleKey: "turn-1:user:user-1",
+          }],
+        }],
+      },
+    },
+  }, {}, {});
+
+  assert.equal(compactCalls, 0);
+  assert.equal(result.thread.mobileReadMode, "projection-v4-cache");
+  assert.equal(result.thread.mobileProjection.version, "v4");
+  assert.deepEqual(result.thread.mobileVisibleItemKeys, ["turn-1:user:user-1"]);
+});
+
+test("projection result compacts v4 projections that are not response-ready", () => {
+  let compactCalls = 0;
+  const service = createThreadDetailProjectionResultService({
+    maxTurns: 5,
+    now: () => 1000,
+    compactThreadReadResult(result, options) {
+      compactCalls += 1;
+      assert.equal(options.maxTurns, 5);
+      return Object.assign({}, result, {
+        thread: Object.assign({}, result.thread, {
+          compacted: true,
+          mobileProjectionVersion: "v4",
+        }),
+      });
+    },
+  });
+
+  const result = service.prepareProjectedThreadReadResult({
+    version: "v4",
+    cachedAtMs: 800,
+    result: {
+      thread: {
+        id: "thread-1",
+        mobileProjectionVersion: "v4",
+        mobileVisibleItemKeys: [],
+        turns: [{
+          id: "turn-1",
+          mobileProjectionVersion: "v4",
+          mobileVisibleKey: "turn:turn-1",
+          mobileVisibleItemKeys: [],
+          items: [{
+            id: "agent-1",
+            type: "agentMessage",
+          }],
+        }],
+      },
+    },
+  }, {}, {});
+
+  assert.equal(compactCalls, 1);
+  assert.equal(result.thread.compacted, true);
+  assert.equal(result.thread.mobileReadMode, "projection-v4-cache");
+});
+
 test("projection result exposes partial recent window source and read mode", () => {
   const service = createThreadDetailProjectionResultService({
     maxTurns: 5,

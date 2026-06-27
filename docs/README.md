@@ -91,6 +91,16 @@ target the remaining cold/deferred app-server and active projection peaks:
 immediately after restart, a first list/detail request can still take seconds
 and then settle back to hundreds of milliseconds.
 
+The latest projection-hit slice targets the remaining warm `projection-v4-cache`
+and `projection-v4-dynamic` detail cost after payload budgeting. Cached v4
+results already carry stable visible keys, so ordinary hits now refresh only
+read-mode/source/revision metadata and aggregate visible-key lists when all
+retained items are already normalized. If a dynamic delta has produced an
+unnormalized item, the service still falls back to full v4 normalization before
+returning the response. The projection-result assembler also skips raw
+`thread/read` compaction for response-ready v4 hits with complete visible-key
+metadata, while keeping the compaction path for invalid or legacy cache shapes.
+
 The latest thread-list slice targets the ordinary default list read after a
 process warm cache already exists. A no-search, no-workspace, no-cursor,
 non-archived `/api/threads` request can now return the process warm fallback

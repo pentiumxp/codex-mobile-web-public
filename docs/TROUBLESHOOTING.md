@@ -480,6 +480,16 @@ Cause to check:
   changes after the projection seed, completed/idle/error-like threads should
   miss and reseed; active threads only keep the dynamic projection for a short
   stale window while notifications continue arriving.
+- On current servers, warm `projection-v4-cache` / `projection-v4-dynamic` hits
+  may report `mobileProjection.normalization=reused-visible-metadata` when the
+  cached v4 result already has complete visible keys. That is the expected fast
+  path for repeated opens. If `projectionMs` is still high and this marker is
+  absent, inspect whether recent delta-created items lack visible metadata and
+  force a full v4 normalization pass; do not treat this as a client refresh
+  problem. If the marker is present but `projectionMs` remains high, inspect
+  whether the projection-result assembler accepted the response-ready v4 shape
+  or had to run the raw `thread/read` compaction path because visible-key
+  metadata was incomplete or inconsistent.
 - The projection index is updated from raw app-server notifications before
   browser SSE compaction. It should observe `item/started`, `item/completed`,
   `item/agentMessage/delta`, `item/reasoning/*Delta`,

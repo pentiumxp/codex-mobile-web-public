@@ -63,6 +63,78 @@ test("v4 projection service returns versioned visible keys from warm cache", () 
   }
 });
 
+test("v4 projection service reuses normalized visible metadata on cache hits", () => {
+  const service = createThreadDetailProjectionV4Service({
+    cacheDir: "",
+    policyVersion: "test-v4",
+    maxTurns: 3,
+    now: () => 2000,
+  });
+  service.seed(signatureInput(), {
+    thread: {
+      id: "thread-1",
+      turns: [{
+        id: "turn-1",
+        items: [{ id: "user-1", type: "userMessage" }],
+      }],
+    },
+  });
+
+  const cached = service.lookup(signatureInput()).cached;
+
+  assert.ok(cached);
+  assert.equal(cached.version, "v4");
+  assert.equal(cached.result.thread.mobileReadMode, "projection-v4-cache");
+  assert.equal(cached.result.thread.mobileProjection.normalization, "reused-visible-metadata");
+  assert.equal(cached.result.thread.turns[0].items[0].mobileProjectionSource, "cache");
+  assert.deepEqual(cached.result.thread.mobileVisibleItemKeys, ["turn-1:user:user-1"]);
+});
+
+test("v4 projection service fully normalizes delta-created cache items", () => {
+  const service = createThreadDetailProjectionV4Service({
+    cacheDir: "",
+    policyVersion: "test-v4",
+    maxTurns: 3,
+    now: (() => {
+      let current = 2000;
+      return () => {
+        current += 100;
+        return current;
+      };
+    })(),
+  });
+  service.seed(signatureInput(), {
+    thread: {
+      id: "thread-1",
+      turns: [{ id: "turn-0", status: { type: "completed" }, items: [] }],
+    },
+  });
+  service.applyNotification("turn/started", {
+    threadId: "thread-1",
+    turn: { id: "turn-1", status: { type: "active" }, items: [] },
+  });
+  service.applyNotification("item/agentMessage/delta", {
+    threadId: "thread-1",
+    turnId: "turn-1",
+    itemId: "agent-1",
+    delta: "partial reply",
+  });
+
+  const cached = service.lookup(signatureInput({
+    rolloutStats: { sizeBytes: 4096, mtimeMs: 3000 },
+    summaryUpdatedAtMs: 2100,
+  })).cached;
+
+  assert.ok(cached);
+  assert.equal(cached.dynamic, true);
+  assert.equal(cached.result.thread.mobileReadMode, "projection-v4-dynamic");
+  assert.notEqual(cached.result.thread.mobileProjection.normalization, "reused-visible-metadata");
+  const turn = cached.result.thread.turns.find((entry) => entry.id === "turn-1");
+  assert.equal(turn.items[0].mobileProjectionVersion, "v4");
+  assert.equal(turn.items[0].mobileProjectionSource, "dynamic");
+  assert.deepEqual(cached.result.thread.mobileVisibleItemKeys, ["turn-1:receipt:agent-1"]);
+});
+
 test("v4 projection service preserves partial recent-window opt-in semantics", () => {
   const dir = tempDir();
   try {

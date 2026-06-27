@@ -141,6 +141,53 @@ function createThreadDetailProjectionV4Service(options = {}) {
     return Object.assign({}, result, { thread });
   }
 
+  function refreshReusableVisibleMetadata(result, cached, details = {}) {
+    if (!result || !result.thread || typeof result.thread !== "object") return null;
+    const source = cached && cached.partial ? "partial" : cached && cached.dynamic ? "dynamic" : "cache";
+    const thread = result.thread;
+    const turns = Array.isArray(thread.turns) ? thread.turns : [];
+    const threadVisibleItemKeys = [];
+    for (const turn of turns) {
+      if (!turn || typeof turn !== "object") return null;
+      if (turn.mobileProjectionVersion !== PROJECTION_VERSION) return null;
+      if (!turn.mobileVisibleKey) return null;
+      const items = Array.isArray(turn.items) ? turn.items : [];
+      const seenKeys = new Set();
+      const turnVisibleItemKeys = [];
+      for (const item of items) {
+        if (!item || typeof item !== "object") return null;
+        if (item.mobileProjectionVersion !== PROJECTION_VERSION) return null;
+        const key = String(item.mobileVisibleKey || "");
+        if (!key || seenKeys.has(key)) return null;
+        seenKeys.add(key);
+        item.mobileProjectionSource = source;
+        turnVisibleItemKeys.push(key);
+        threadVisibleItemKeys.push(key);
+      }
+      turn.mobileVisibleItemKeys = turnVisibleItemKeys;
+    }
+    thread.mobileProjectionVersion = PROJECTION_VERSION;
+    thread.mobileVisibleItemKeys = threadVisibleItemKeys;
+    thread.mobileProjectionRevision = details.revision;
+    thread.mobileProjection = Object.assign({}, thread.mobileProjection || {}, {
+      version: PROJECTION_VERSION,
+      revision: thread.mobileProjectionRevision,
+      normalization: "reused-visible-metadata",
+    });
+    return attachProjectionMetadata(result, cached, details);
+  }
+
+  function projectCachedResult(cached, threadId, revision, source) {
+    const reused = refreshReusableVisibleMetadata(cached && cached.result, cached, { revision });
+    if (reused) return reused;
+    const normalized = normalizeResult(cached.result, {
+      threadId,
+      source,
+      revision,
+    });
+    return attachProjectionMetadata(normalized, cached, { revision });
+  }
+
   function activeOverlayCacheEntryMatches(entry, details = {}) {
     return entry
       && entry.activeTurnId === String(details.activeTurnId || "")
@@ -263,11 +310,7 @@ function createThreadDetailProjectionV4Service(options = {}) {
     const revision = revisionForThread(threadId);
     return Object.assign({}, cached, {
       version: PROJECTION_VERSION,
-      result: normalizeResult(cached.result, {
-        threadId,
-        source: cached.partial ? "partial" : cached.dynamic ? "dynamic" : "cache",
-        revision,
-      }),
+      result: projectCachedResult(cached, threadId, revision, cached.partial ? "partial" : cached.dynamic ? "dynamic" : "cache"),
     });
   }
 
@@ -298,11 +341,7 @@ function createThreadDetailProjectionV4Service(options = {}) {
     return {
       cached: Object.assign({}, cached, {
         version: PROJECTION_VERSION,
-        result: normalizeResult(cached.result, {
-          threadId,
-          source: cached.partial ? "partial" : cached.dynamic ? "dynamic" : "cache",
-          revision,
-        }),
+        result: projectCachedResult(cached, threadId, revision, cached.partial ? "partial" : cached.dynamic ? "dynamic" : "cache"),
       }),
       missReason: "",
     };

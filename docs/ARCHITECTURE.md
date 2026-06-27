@@ -437,6 +437,17 @@ assembly before the route sends the detail response. That result assembly merges
 cached projection output with display summary data, session-index title
 hydration, state-db runtime fields, live-status normalization, public runtime
 settings, and projection read-mode metadata.
+The v4 projection wrapper stores normalized visible metadata at seed/notification
+time. Ordinary cache and dynamic hits therefore refresh only bounded projection
+metadata and aggregate visible-key lists when every retained item already has v4
+visible keys; if a delta-created or legacy item lacks that metadata, the wrapper
+falls back to the full normalizer before returning the hit. This keeps the
+visible-item contract authoritative while avoiding a repeated whole-result
+normalization pass on common warm projection hits. The projection-result
+assembly layer follows the same invariant: a response-ready v4 hit with
+complete visible-key metadata can skip raw `thread/read` compaction, while
+incomplete or legacy hits still pass through the existing compaction path before
+they can reach the browser.
 `adapters/thread-detail-read-orchestration-service.js` owns the detail read
 phase order and timing aggregation for `/api/threads/:id`; `server.js` supplies
 the concrete app-server read, compaction, projection seed, fallback, and JSON

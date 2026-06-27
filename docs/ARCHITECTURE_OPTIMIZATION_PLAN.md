@@ -261,6 +261,17 @@ Current acceleration targets:
    the latest assistant/plan receipt, active turns keep a bounded recent tail,
    and `mobileDetailResponseBudget.omittedAssistantItems` records the bounded
    evidence. This is a payload-owner fix, not a client-side refresh fallback.
+   The following projection-hit slice addresses a different warm-path cost:
+   repeated `projection-v4-cache` / `projection-v4-dynamic` opens were still
+   paying a whole-result v4 visible-item normalization pass even though cached
+   v4 entries already store stable visible keys. The v4 wrapper now reuses
+   normalized visible metadata when every retained item has complete v4 keys,
+   refreshing only source/revision/read-mode and aggregate visible-key lists.
+   The projection-result assembler also skips raw `thread/read` compaction for
+   response-ready v4 hits with complete visible-key metadata. Delta-created or
+   legacy items without visible metadata still fall back to full normalization
+   and the normal compaction path, so this is a root-cause hot-path reduction
+   rather than a display fallback.
    Full item-level expansion remains a separate future route/API slice if the
    product needs on-demand historical assistant progress, because the default
    detail route does not yet expose per-item expansion for omitted assistant
