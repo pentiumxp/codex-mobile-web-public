@@ -3365,6 +3365,33 @@ test("image view render keys include their image source", () => {
   assert.match(body, /stableTextHash\(imageSource\)/);
 });
 
+test("stable render keys use pane render context before global current thread", () => {
+  const sources = [
+    "renderContextThreadId",
+    "stableItemKey",
+    "stableOperationRenderKey",
+    "stableTurnKey",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const result = Function(`
+const state = {
+  currentThreadId: "current-thread",
+  currentThread: { id: "current-object-thread" },
+  renderContextThreadId: "pane-thread",
+};
+function operationGroupKey(item) { return item && item.groupKey || ""; }
+${sources.join("\n")}
+return {
+  itemKey: stableItemKey({ id: "turn-a" }, { id: "item-a", type: "text" }, 0),
+  operationKey: stableOperationRenderKey({ id: "turn-a" }, { id: "op-a", groupKey: "op-group" }, 0),
+  turnKey: stableTurnKey({ id: "turn-a" }),
+};
+`)();
+
+  assert.equal(result.itemKey, "item|pane-thread|turn-a|item-a");
+  assert.equal(result.operationKey, "live-operation|pane-thread|turn-a|op-group");
+  assert.equal(result.turnKey, "turn|pane-thread|turn-a");
+});
+
 test("item merge delegates visible-field preservation to thread detail state policy", () => {
   const body = functionBody("mergeItemPreservingVisibleFields");
   assert.match(appJs, /const threadDetailStateApi = window\.CodexThreadDetailState/);

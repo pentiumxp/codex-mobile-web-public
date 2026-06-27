@@ -21041,6 +21041,44 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit this local slice and keep it undeployed until a coherent deployable
     module is ready.
 
+## 2026-06-27 - Phase C stable render-key pane context local slice
+
+- Current local state:
+  - Continued after local commit `c77f3c0` (`refactor file preview pane
+    context`).
+  - This is a local Phase C pane-state/render-context slice only. It changes
+    `public/app.js`, `test/conversation-render.test.js`, README, and the
+    architecture plan. It does not bump shell/cache, deploy production, or push
+    Public.
+- Root-cause boundary:
+  - Symptom/risk: tile-pane rendering temporarily set `state.renderContextThreadId`,
+    but `stableItemKey()`, `stableOperationRenderKey()`, and `stableTurnKey()`
+    still minted DOM keys from global `state.currentThreadId`. In tile mode
+    that could let different pane/thread content share the same current-thread
+    render key space during local DOM patching.
+  - Failing layer: frontend stable render-key thread-context ownership, not
+    server projection, visible-item selection, merge, task-card protocol,
+    file-preview API, or Home AI diagnostic transport.
+  - Violated invariant: pane-local rendered item/operation/turn keys must be
+    owned by the active render context. Global current-thread fallback is only
+    valid when no explicit render context exists.
+- Changes:
+  - `stableItemKey()`, `stableOperationRenderKey()`, and `stableTurnKey()` now
+    use `renderContextThreadId() || "thread"`.
+  - Added executable coverage proving that when `renderContextThreadId` is a
+    pane id and `currentThreadId` is different, item/operation/turn keys use the
+    pane id.
+- Validation:
+  - `node --check public/app.js` passed.
+  - `node --test test/conversation-render.test.js test/thread-tile-layout-ui.test.js test/file-preview-ui.test.js`
+    passed (`121` tests).
+  - `npm test` passed (`1257` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+- Next:
+  - Run `git diff --check`, commit this local slice, and keep it undeployed
+    until a coherent Phase C/Phase A module is ready.
+
 ## 2026-06-27 - Phase C approval pane action context local slice
 
 - Current local state:

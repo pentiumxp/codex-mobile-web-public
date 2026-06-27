@@ -1994,6 +1994,10 @@ Target:
   content URLs, imageView file paths, explicit preview opens, and nested file
   preview links resolve against the render/action/file-preview thread context
   rather than global `state.currentThreadId`.
+  Stable render keys are now pane-context-aware as well:
+  `stableItemKey()`, `stableOperationRenderKey()`, and `stableTurnKey()` use
+  `renderContextThreadId()` so tile panes do not mint item/operation/turn keys
+  from the global current thread during pane-local DOM patching.
 - Treat each pane as a scaled mobile single-thread runtime instance. Shared
   global Composer chrome is only an interim input surface; global command dock
   or shared operation bubble are no longer acceptable in tile mode and must not

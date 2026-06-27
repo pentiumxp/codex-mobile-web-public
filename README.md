@@ -308,6 +308,33 @@ npm run check:macos  # passed
 git diff --check  # passed
 ```
 
+## 2026-06-27 Phase C Stable Render-Key Pane Context Slice
+
+这是 local file preview pane context 之后的同类 Phase C 本地小切片，不单独部署、
+不推 Public。它修正平铺 pane 渲染时稳定 DOM key 仍可能使用全局
+`state.currentThreadId` 的问题。
+
+改动边界：
+
+- `stableItemKey()`、`stableOperationRenderKey()`、`stableTurnKey()` 现在统一使用
+  `renderContextThreadId()`；
+- 平铺 pane 渲染中已设置的 `state.renderContextThreadId` 现在会真正进入 item、
+  operation、turn 的 `data-render-key`；
+- 这样可避免不同 pane/thread 在增量 DOM patch 时复用同一组全局 current-thread
+  key，从根上降低错位、复用旧回执、缺少中间内容等渲染上下文污染风险；
+- 不改变 server projection、merge、visible item 策略、DOM patch 算法、
+  shell/cache 版本或生产部署状态。
+
+验证：
+
+```bash
+node --check public/app.js
+node --test test/conversation-render.test.js test/thread-tile-layout-ui.test.js test/file-preview-ui.test.js  # 121 passed
+npm test  # 1257 passed
+npm run check  # passed
+npm run check:macos  # passed
+```
+
 ## 2026-06-27 Phase A Conversation DOM Authority Invalidation Local Slice
 
 这是 v542 后继续按“小切片本地提交、模块化再部署”节奏推进的 Phase A 切片。

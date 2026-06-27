@@ -4976,7 +4976,7 @@ function isLatestTurn(turn) {
 }
 
 function stableItemKey(turn, item, index = 0, prefix = "item") {
-  const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "thread";
+  const threadId = renderContextThreadId() || "thread";
   const turnId = turn && (turn.id || turn.startedAt || "turn");
   let itemId = item && (item.id || `${item.type || "item"}-${index}`);
   if (item && (item.type === "imageView" || item.type === "imageGeneration")) {
@@ -5001,14 +5001,14 @@ function stableTextHash(value) {
 }
 
 function stableOperationRenderKey(turn, item, index = 0) {
-  const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "thread";
+  const threadId = renderContextThreadId() || "thread";
   const turnId = turn && (turn.id || turn.startedAt || "turn");
   const groupKey = operationGroupKey(item) || `item:${item && (item.id || index)}`;
   return ["live-operation", threadId, turnId, groupKey].map((part) => String(part || "")).join("|");
 }
 
 function stableTurnKey(turn, suffix = "") {
-  const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "thread";
+  const threadId = renderContextThreadId() || "thread";
   return ["turn", threadId, turn && (turn.id || turn.startedAt || "turn"), suffix].filter(Boolean).join("|");
 }
 
