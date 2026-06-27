@@ -22470,25 +22470,71 @@ The previous full handoff was archived and should be opened only when old proven
   - `f10d19d` `refactor older history loads keep pane context`
   - `028c1ec` `refactor continuation confirm keeps pane context`
   - `fd3735f` `refactor manual task cards keep pane source context`
-  - current committed slice: `refactor in-turn approvals keep pane context`
-- Latest validation for the in-turn approval render-context slice:
+  - `9483f06` `refactor in-turn approvals keep pane context`
+  - current local slice: tile-pane approval rendering mirrors
+    single-thread inline/out-of-turn approval split.
+- Latest validation for the tile-pane approval render slice:
   - `node --check public/app.js` passed.
-  - `node --test test/conversation-render.test.js test/thread-tile-state.test.js`
-    passed (`164` tests).
-  - `npm test` passed (`1284` tests).
+  - `node --test test/conversation-render.test.js test/thread-tile-state.test.js test/thread-tile-actions.test.js`
+    passed (`171` tests).
+  - `npm test` passed (`1286` tests).
   - `npm run check` passed.
   - `npm run check:macos` passed.
   - `git diff --check` passed.
 - Still not deployed and not pushed Public. Continue small local commits until
   a coherent deployable Phase C module is ready.
 
+## 2026-06-27 - Phase C tile-pane approval render parity local slice
+
+- Current local state:
+  - Continued after local commit `9483f06` (`refactor in-turn approvals keep
+    pane context`).
+  - This is a local Phase C pane-context/render parity slice only. It changes
+    `public/app.js`, focused tests, README, the architecture plan, and this
+    handoff. It does not bump shell/cache, deploy production, or push Public.
+- Root-cause boundary:
+  - Symptom/risk: the single-thread surface rendered approvals attached to
+    visible turns inline through `renderTurn()` and rendered still-active
+    non-visible-turn approvals outside the turns. Tile panes had a separate
+    `renderThreadTileTurn()` path that only rendered visible items, and
+    `renderThreadTilePane()` did not render pending approvals outside the
+    visible turns. A pane could therefore omit pane-local approval/user-input
+    cards or fail to behave like a scaled single-thread window.
+  - Failing layer: frontend tile-pane conversation rendering parity, not the
+    approval API, MCP protocol, server pending-request state, shell/cache, or
+    Home AI host routing.
+  - Violated invariant: every tile pane should behave like a reduced
+    single-thread surface; visible-turn approvals render inline in that turn,
+    and still-active approvals not attached to a visible turn render inside the
+    same pane body with that pane's thread id.
+- Changes:
+  - `renderThreadTileTurn()` now renders approvals for the turn inline and
+    passes the pane thread id into `renderApprovalRequest()`.
+  - `renderThreadTilePane()` now renders still-active pending approvals whose
+    `turnId` is not part of the current visible turn set, matching the
+    single-thread full render split and avoiding duplicate visible-turn cards.
+  - Added executable coverage for tile turn inline approvals and for
+    non-visible-turn pending approvals in the pane body, including thread-id
+    assertions that reject global current-thread fallback.
+- Validation:
+  - `node --check public/app.js` passed.
+  - `node --test test/conversation-render.test.js test/thread-tile-state.test.js test/thread-tile-actions.test.js`
+    passed (`171` tests).
+  - `npm test` passed (`1286` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Continue small local Phase C slices and do not deploy until a coherent
+    deployable module is ready.
+
 ## 2026-06-27 - Phase C in-turn approval render context local slice
 
 - Current local state:
   - Continued after local commit `fd3735f` (`refactor manual task cards keep
     pane source context`).
-  - Committed in the current local slice as `refactor in-turn approvals keep
-    pane context`.
+  - Committed in local commit `9483f06` (`refactor in-turn approvals keep pane
+    context`).
   - This is a local Phase C pane-context/action-control slice only. It changes
     `public/app.js`, focused tests, README, the architecture plan, and this
     handoff. It does not bump shell/cache, deploy production, or push Public.
@@ -22520,5 +22566,5 @@ The previous full handoff was archived and should be opened only when old proven
   - `npm run check:macos` passed.
   - `git diff --check` passed.
 - Next:
-  - Commit this local slice and keep it undeployed until a coherent deployable
-    Phase C module is ready.
+  - Continue small local Phase C slices and do not deploy until a coherent
+    deployable module is ready.

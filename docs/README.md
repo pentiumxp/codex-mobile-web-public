@@ -78,4 +78,7 @@ all update or operate on the target pane instead of falling back to the global
 current thread. Manual task-card creation must also use the source pane's live
 turn id and refresh the source pane after card creation. In-turn approval and
 user-input controls must render action thread ids from the active pane/render
-context when the server request itself omits a thread id.
+context when the server request itself omits a thread id. Tile panes must also
+render visible-turn approvals inline and non-visible-turn pending approvals in
+the pane body, matching the single-thread surface instead of dropping pane-local
+requests.

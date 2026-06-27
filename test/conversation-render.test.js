@@ -1519,6 +1519,90 @@ return {
 `)();
 }
 
+function evaluatedThreadTileApprovalRenderer() {
+  const sources = [
+    "approvalThreadId",
+    "renderContextThreadId",
+    "renderContextThread",
+    "withRenderContextThread",
+    "approvalTurnId",
+    "isApprovalActive",
+    "isApprovalSettled",
+    "shouldShowApprovalRequest",
+    "requestBelongsToThread",
+    "approvalActionThreadId",
+    "pendingApprovalsForThread",
+    "approvalsForTurn",
+    "permissionSummary",
+    "approvalDetailLines",
+    "isUserInputRequest",
+    "renderUserInputOptions",
+    "renderUserInputActions",
+    "renderApprovalActions",
+    "approvalTitle",
+    "approvalStatusLabel",
+    "renderApprovalRequest",
+    "renderPendingApprovals",
+    "renderThreadTileTurn",
+    "renderThreadTilePane",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`
+const HIDDEN_SERVER_REQUEST_METHODS = new Set();
+const USER_INPUT_REQUEST_METHODS = new Set(["item/tool/requestUserInput", "mcpServer/elicitation/request"]);
+const state = {
+  pendingApprovals: new Map(),
+  currentThreadId: "thread-current",
+  currentThread: { id: "thread-current" },
+  renderContextThreadId: "",
+  renderContextThread: null,
+  threadTileLoadingIds: new Set(),
+  threadTileSwitchMenuPaneId: "",
+  threadById: new Map(),
+};
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+function entryAnimationClass() { return ""; }
+function visibleItemsForTurn(turn) {
+  return Array.isArray(turn && turn.items)
+    ? turn.items.map((item, index) => ({ item, sourceIndex: index }))
+    : [];
+}
+function renderVisibleItemPatchHtml(turn, item) {
+  return item ? '<div data-visible-item="' + escapeHtml(item.id || item.type || "item") + '">visible</div>' : "";
+}
+function threadTileDisplayThread(threadId) {
+  return state.threadById.get(String(threadId || "")) || null;
+}
+function threadTitleForDisplay(thread) { return thread && (thread.title || thread.id) || ""; }
+function threadTileSummary() { return null; }
+function turnTimerStateHtml() { return ""; }
+function threadTilePaneTimerState() { return {}; }
+function threadTileError() { return ""; }
+function threadHasVisibleConversationTurns(thread) {
+  return Array.isArray(thread && thread.turns) && thread.turns.length > 0;
+}
+function visibleTurnsForConversation(thread) {
+  return Array.isArray(thread && thread.turns) ? thread.turns : [];
+}
+function renderThreadHistoryNote() { return ""; }
+function threadReadWarningMessage() { return ""; }
+function renderThreadTileOperationDock() { return ""; }
+function renderThreadTileSwitchMenu() { return ""; }
+function effectiveThreadTileSelectedThreadId() { return "thread-pane"; }
+${sources.join("\n")}
+return {
+  state,
+  renderThreadTileTurn,
+  renderThreadTilePane,
+};
+`)();
+}
+
 function evaluatedTurnUsageSummaryRenderer() {
   const sources = [
     "escapeHtml",
@@ -5135,6 +5219,85 @@ test("in-turn approval controls keep render pane thread context when request omi
   assert.match(html, /data-approval-id="approval-pane"/);
   assert.match(html, /data-approval-thread-id="thread-pane"/);
   assert.doesNotMatch(html, /data-approval-thread-id="thread-current"/);
+});
+
+test("thread tile turns render in-turn approval controls with pane thread context", () => {
+  const harness = evaluatedThreadTileApprovalRenderer();
+  harness.state.currentThreadId = "thread-current";
+  harness.state.currentThread = { id: "thread-current" };
+  const thread = {
+    id: "thread-pane",
+    turns: [
+      {
+        id: "turn-pane",
+        items: [{ id: "visible-item", type: "agentMessage" }],
+      },
+    ],
+  };
+  harness.state.threadById.set("thread-pane", thread);
+  harness.state.pendingApprovals.set("approval-pane", {
+    id: "approval-pane",
+    method: "item/permissions/requestApproval",
+    status: "waiting",
+    actionable: true,
+    params: {
+      turnId: "turn-pane",
+      permissions: { filesystem: { read: true } },
+      reason: "Need file access",
+    },
+  });
+
+  const html = harness.renderThreadTileTurn(thread, thread.turns[0]);
+
+  assert.match(html, /class="approval-stack in-turn"/);
+  assert.match(html, /data-approval-id="approval-pane"/);
+  assert.match(html, /data-approval-thread-id="thread-pane"/);
+  assert.doesNotMatch(html, /data-approval-thread-id="thread-current"/);
+});
+
+test("thread tile panes render non-visible-turn pending approvals without duplicating visible turn approvals", () => {
+  const harness = evaluatedThreadTileApprovalRenderer();
+  harness.state.currentThreadId = "thread-current";
+  harness.state.currentThread = { id: "thread-current" };
+  const thread = {
+    id: "thread-pane",
+    title: "Pane",
+    turns: [
+      {
+        id: "turn-pane",
+        items: [{ id: "visible-item", type: "agentMessage" }],
+      },
+    ],
+  };
+  harness.state.threadById.set("thread-pane", thread);
+  harness.state.pendingApprovals.set("approval-visible", {
+    id: "approval-visible",
+    method: "item/permissions/requestApproval",
+    status: "waiting",
+    actionable: true,
+    params: {
+      turnId: "turn-pane",
+      permissions: { filesystem: { read: true } },
+      reason: "Visible turn approval",
+    },
+  });
+  harness.state.pendingApprovals.set("approval-outside", {
+    id: "approval-outside",
+    method: "item/tool/requestUserInput",
+    status: "waiting",
+    actionable: true,
+    params: {
+      questions: [{ id: "answer" }],
+    },
+  });
+
+  const html = harness.renderThreadTilePane("thread-pane", {}, new Set());
+
+  assert.equal((html.match(/data-approval-card="approval-visible"/g) || []).length, 1);
+  assert.match(html, /class="approval-stack in-turn"/);
+  assert.match(html, /data-server-request-id="approval-outside"/);
+  assert.match(html, /data-server-request-thread-id="thread-pane"/);
+  assert.doesNotMatch(html, /data-server-request-thread-id="thread-current"/);
 });
 
 test("thread detail server request answers preserve pane thread context from server responses", async () => {

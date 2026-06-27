@@ -2036,6 +2036,10 @@ Target:
   the global current thread. When an in-turn approval/user-input request lacks
   its own `threadId`, rendered action controls must receive the active
   render-context thread id rather than falling back to `state.currentThreadId`.
+  Tile-pane rendering now mirrors that single-thread approval split: approvals
+  attached to visible turns render inline in `renderThreadTileTurn()`, while
+  still-active approvals not attached to a visible turn render in the pane body
+  through `renderPendingApprovals(thread)`.
   Local file preview context is now pane-aware: local image/file preview
   content URLs, imageView file paths, explicit preview opens, and nested file
   preview links resolve against the render/action/file-preview thread context

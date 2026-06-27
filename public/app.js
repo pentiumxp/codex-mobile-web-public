@@ -13785,16 +13785,20 @@ function ensureThreadTileDetails(ids = []) {
 
 function renderThreadTileTurn(thread, turn, previousKeys = new Set()) {
   return withRenderContextThread(thread, () => {
+    const threadId = String(thread && thread.id || "");
     const renderedItems = visibleItemsForTurn(turn, thread).map((entry, index) => {
       const item = entry && entry.item;
       const sourceIndex = Number.isInteger(entry && entry.sourceIndex) && entry.sourceIndex >= 0 ? entry.sourceIndex : index;
       return renderVisibleItemPatchHtml(turn, item, previousKeys, sourceIndex, thread);
     }).filter(Boolean).join("");
-    if (!renderedItems.trim()) return "";
-    const threadId = String(thread && thread.id || "");
+    const turnApprovals = approvalsForTurn(threadId, turn && turn.id);
+    const approvalsHtml = turnApprovals.length
+      ? `<div class="approval-stack in-turn">${turnApprovals.map((request) => renderApprovalRequest(request, previousKeys, threadId)).join("")}</div>`
+      : "";
+    if (!renderedItems.trim() && !approvalsHtml.trim()) return "";
     const turnId = String(turn && (turn.id || turn.startedAt || "turn") || "turn");
     return `<article class="turn thread-tile-turn" data-thread-tile-turn="${escapeHtml(turnId)}" data-render-key="${escapeHtml(`tile-turn|${threadId}|${turnId}`)}">
-      ${renderedItems}
+      ${renderedItems}${approvalsHtml}
     </article>`;
   });
 }
@@ -13972,8 +13976,14 @@ function renderThreadTilePane(threadId, layout, previousKeys = new Set()) {
   const loading = state.threadTileLoadingIds.has(id) || (thread && thread.mobileLoading && !threadHasVisibleConversationTurns(thread));
   const readWarning = threadReadWarningMessage(thread);
   const turns = visibleTurnsForConversation(thread);
+  const visibleTurnIds = new Set(turns.map((turn) => turn && turn.id).filter(Boolean).map(String));
   const omitted = Number(thread && thread.mobileOmittedTurnCount || 0) + Math.max(0, ((thread && thread.turns) || []).length - turns.length);
   const historyNote = renderThreadHistoryNote(thread, omitted, previousKeys);
+  const approvalsHtml = renderPendingApprovals(thread, previousKeys, (request) => {
+    const turnId = approvalTurnId(request);
+    if (turnId && visibleTurnIds.has(turnId)) return false;
+    return isApprovalActive(request);
+  });
   const body = error
     ? `<div class="thread-tile-empty error">Thread failed: ${escapeHtml(error)}</div>`
     : loading
@@ -13982,6 +13992,7 @@ function renderThreadTilePane(threadId, layout, previousKeys = new Set()) {
         historyNote,
         readWarning ? `<div class="history-note">${escapeHtml(readWarning)}</div>` : "",
         turns.map((turn) => renderThreadTileTurn(thread, turn, previousKeys)).join("") || `<div class="thread-tile-empty">No visible turns.</div>`,
+        approvalsHtml,
       ].join("");
   const active = id && id === effectiveThreadTileSelectedThreadId() ? " active" : "";
   const operationDock = renderThreadTileOperationDock(thread, previousKeys);
