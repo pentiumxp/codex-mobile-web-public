@@ -24888,9 +24888,32 @@ The previous full handoff was archived and should be opened only when old proven
   - `npm run check:macos` passed.
   - `git diff --check` passed.
 - Deployment:
-  - Pending at the time this local handoff section was written. Deploy through
-    the Home AI central macOS plugin path with reason
+  - Commit `bd42308` `fix: 压缩 active operation 首屏负载`.
+  - Deployed through the Home AI central macOS plugin path with reason
     `codex-mobile-active-operation-payload-budget`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T224935Z-plugin-codex-mobile-web-codex-mobile-active-operation-payload-budget`.
+  - Source ref deployed: `bd42308c5a13`, dirty false.
+  - Server/docs-only change; static shell stayed
+    `0.1.11|codex-mobile-shell-v553`, build id `8f5df1074a2bd651`.
+  - Production source/prod SHA-256 prefixes matched for `server.js`,
+    `adapters/thread-detail-response-budget-service.js`, focused test, docs,
+    and `package.json`.
+- Production readback:
+  - Phase-B smoke passed. Thread list remained on warm persistent fallback cache:
+    `lastCacheDecision=hit`, `lastElapsedMs=11`,
+    `fallbackCacheDecision=compatible-hit`, `fallbackMs=1`, `totalMs=114`.
+  - Detail smoke used `projection-active-overlay` with `detailTotalMs=255`,
+    `summaryMs=55`, `projectionMs=61`, `activeOverlayMs=1`,
+    `activeOverlayMergeMs=25`, and `prepareResponseMs=82`.
+  - Mux metrics were supported: `muxRuntime.muxMetricsRpc=true`,
+    `muxMetrics.supported=true`, latest thread-list mux RPC `lastMs=6`,
+    average `9`, max `732`.
+  - Synthetic production service readback with a 16,020-character active
+    command output and a 512-character operation payload budget returned
+    `mobilePayloadTruncated=true`, `outputTruncated=true`,
+    `outputTotalChars=16020`, retained output length `512`, retained latest
+    tail, and `omittedActiveOperationPayloadChars=15508`.
 - Residual / next target:
   - This reduces active-turn first-paint response weight for large operation
     payloads. It does not by itself eliminate all slow detail opens; remaining
