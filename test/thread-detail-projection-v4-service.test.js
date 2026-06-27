@@ -411,6 +411,8 @@ test("v4 active overlay window seed does not replace live overlay snapshot", () 
   }, {
     partial: true,
     partialKind: "turns-list-active-overlay-window",
+    projectionRevision: 2,
+    projectionTimestampMs: 8000,
   });
   assert.equal(seeded.partial, true);
   assert.equal(seeded.partialKind, "turns-list-active-overlay-window");
@@ -435,6 +437,7 @@ test("v4 active overlay window seed does not replace live overlay snapshot", () 
   assert.equal(activeWindow.missReason, "");
   assert.equal(activeWindow.cached.partial, true);
   assert.equal(activeWindow.cached.partialKind, "turns-list-active-overlay-window");
+  assert.equal(activeWindow.cached.result.thread.mobileProjection.revision, 2);
   assert.deepEqual(activeWindow.cached.result.thread.turns.map((turn) => turn.id), ["older-turn"]);
 
   service.applyNotification("item/agentMessage/delta", {

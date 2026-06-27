@@ -454,6 +454,8 @@ function createThreadDetailReadOrchestrationService(options = {}) {
               const seeded = seedProjection(projection, activeWindowResult, {
                 partial: true,
                 partialKind: "turns-list-active-overlay-window",
+                projectionRevision: overlayInput.overlayRevision || overlayInput.projectionRevision,
+                projectionTimestampMs: overlayInput.overlayTimestampMs || overlayInput.projectionTimestampMs,
               });
               context.projectionSeedStatus = seeded && seeded.skipped
                 ? "skipped"

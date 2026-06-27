@@ -185,7 +185,7 @@ function createThreadDetailProjectionV4Service(options = {}) {
     const entry = activeOverlayWindowCacheEntry(input, optionsForGet);
     if (!entry) return null;
     const threadId = String(input.threadId || resultThreadId(entry.result) || "").trim();
-    const revision = revisionForThread(threadId);
+    const revision = safeNumber(entry.revision) || revisionForThread(threadId);
     const result = cloneResultForLookup(entry.result, optionsForGet);
     const cached = {
       cachedAtMs: entry.cachedAtMs,
@@ -224,7 +224,8 @@ function createThreadDetailProjectionV4Service(options = {}) {
         signature,
         signatureHash: signatureHash(signature),
         cachedAtMs,
-        updatedAtMs: cachedAtMs,
+        updatedAtMs: safeNumber(optionsForSeed.projectionTimestampMs) || cachedAtMs,
+        revision: safeNumber(optionsForSeed.projectionRevision) || revisionForThread(threadId),
         partialKind: "turns-list-active-overlay-window",
         result: cloneJson(normalized),
       });
