@@ -5299,6 +5299,11 @@ const threadDetailReadOrchestrationService = createThreadDetailReadOrchestration
   seedProjection: (input, result, optionsForSeed = {}) => threadDetailProjectionService.seed(input, result, optionsForSeed),
   preferBoundedReadBeforeFullRead: (input) => threadDetailBoundedReadPolicyService.preferBoundedReadBeforeFullRead(input),
   prepareResponse: prepareThreadDetailResponseResult,
+  compactActiveOverlayTurn: (turn, details = {}) => compactTurn(turn, {
+    allowOperations: true,
+    maxOperationItems: MAX_LIVE_OPERATION_ITEMS,
+    threadId: details.threadId || "",
+  }),
   fallbackThreadReadResult: fallbackThreadReadResultForOrchestrator,
   isReadTimeoutError,
   isUnmaterializedThreadError,

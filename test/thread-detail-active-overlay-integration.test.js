@@ -106,6 +106,17 @@ function createActiveOverlayHarness(options = {}) {
     turnId: "turn-live",
     item: { id: "cmd-1", type: "commandExecution", status: "running" },
   });
+  projectionService.applyNotification("item/started", {
+    threadId: "thread-1",
+    turnId: "turn-live",
+    item: {
+      id: "mcp-raw-1",
+      type: "mcpToolCall",
+      status: "completed",
+      arguments: { privatePayload: "raw arguments should not survive active overlay compaction" },
+      result: { body: "raw result should not survive active overlay compaction" },
+    },
+  });
   projectionService.applyNotification("item/agentMessage/delta", {
     threadId: "thread-1",
     turnId: "turn-live",
@@ -161,6 +172,11 @@ function createActiveOverlayHarness(options = {}) {
       return { thread: { id: "thread-1", turns: [], mobileReadMode: "thread-read" } };
     },
     seedProjection: () => {},
+    compactActiveOverlayTurn: (turn) => Object.assign({}, turn, {
+      items: (turn.items || []).map((item) => item.type === "mcpToolCall"
+        ? { id: item.id, type: item.type, mobileLiveOperation: true }
+        : item),
+    }),
     preferBoundedReadBeforeFullRead: () => ({
       prefer: true,
       rolloutSizeBytes: 24_000_000,
@@ -207,10 +223,32 @@ test("read orchestration uses live projection provider for active overlay withou
   assert.equal(timings.activeOverlayAction, "use-projection-overlay");
   assert.equal(timings.activeOverlayReason, "overlay-evidence-complete");
   assert.equal(timings.activeOverlaySource, "projection-live");
-  assert.equal(timings.activeOverlayOperationItems, 1);
+  assert.equal(timings.activeOverlayOperationItems, 2);
   assert.equal(timings.activeOverlayUploadItems, 0);
   assert.equal(timings.activeOverlayAssistantItems, 1);
   assert.equal(timings.activeOverlayReceiptItems, 1);
+});
+
+test("read orchestration compacts active overlay tool payload before returning detail", async () => {
+  const { service } = createActiveOverlayHarness();
+  const response = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: true,
+    threadLog: () => {},
+  });
+
+  const liveTurn = response.body.thread.turns.find((turn) => turn.id === "turn-live");
+  assert.ok(liveTurn);
+  const toolCall = liveTurn.items.find((item) => item.id === "mcp-raw-1");
+  assert.ok(toolCall);
+  assert.equal(toolCall.mobileLiveOperation, true);
+  assert.deepEqual(Object.keys(toolCall).sort(), ["id", "mobileLiveOperation", "type"]);
+  const serialized = JSON.stringify(liveTurn);
+  assert.equal(serialized.includes("arguments"), false);
+  assert.equal(serialized.includes("result"), false);
+  assert.equal(serialized.includes("raw arguments"), false);
+  assert.equal(serialized.includes("raw result"), false);
 });
 
 test("read orchestration uses projection-inferred active turn when summary lacks activeTurnId", async () => {

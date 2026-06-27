@@ -143,6 +143,9 @@ function createThreadDetailReadOrchestrationService(options = {}) {
     ? options.preferBoundedReadBeforeFullRead
     : () => false;
   const prepareResponse = typeof options.prepareResponse === "function" ? options.prepareResponse : async (result) => result;
+  const compactActiveOverlayTurn = typeof options.compactActiveOverlayTurn === "function"
+    ? options.compactActiveOverlayTurn
+    : null;
   const fallbackThreadReadResult = typeof options.fallbackThreadReadResult === "function"
     ? options.fallbackThreadReadResult
     : () => ({ thread: null });
@@ -446,6 +449,14 @@ function createThreadDetailReadOrchestrationService(options = {}) {
             overlaySource: activeOverlayPlan.overlaySource,
             reason: activeOverlayPlan.reason,
             counts: activeOverlayPlan.counts,
+            compactOverlayTurn: compactActiveOverlayTurn
+              ? (turn, compactDetails = {}) => compactActiveOverlayTurn(turn, Object.assign({}, compactDetails, {
+                threadId,
+                summary,
+                runtimeSettings,
+                projectionThread: activeOverlayProjectionThread,
+              }))
+              : null,
           },
         );
         const result = Object.assign({}, activeOverlayProjectionResult || {}, { thread: mergedThread });

@@ -164,6 +164,18 @@ Current acceleration targets:
    treats that projection hit only as a window candidate for active/running
    summaries; active detail still has to pass the server-owned live overlay
    provider and proof gate before returning without full `thread/read`.
+   The current active-detail response-size slice closes a later proof-gated
+   payload gap rather than changing the proof gate: live overlay turns were
+   merged into already compacted projection results after response compaction,
+   so raw MCP tool arguments/results and long operation payloads could survive
+   in `projection-active-overlay` responses. Read orchestration now injects the
+   existing server `compactTurn()` policy into the overlay merge seam, with
+   `MAX_LIVE_OPERATION_ITEMS` live-operation retention. MCP and dynamic tool
+   calls are counted as operation evidence, and the merged detail response
+   contains only compact operation metadata. This is the closure path for the
+   observed 500KB-900KB active-overlay responses; if latency remains high after
+   deployment, the next owner is earlier active-overlay snapshot normalization
+   or projection work, not client de-duplication.
    Post-v542 local pane-context work is intentionally smaller than these
    deployable Phase B modules: each slice fixes one frontend state writer,
    adds executable pane-local coverage, commits locally, and does not deploy

@@ -461,6 +461,17 @@ browser loads older turns in 10-turn pages when the user scrolls to the top of
 the current detail window and preserves the reading position after prepending
 those turns.
 
+Active-overlay detail responses preserve the same compaction boundary as normal
+thread-detail responses. The proof gate may merge a live overlay turn into a
+bounded projection window only after the injected server-owned compactor has
+processed that overlay turn with the live-operation retention policy. Raw MCP
+or dynamic tool payloads such as tool arguments/results, provider bodies, and
+long command output must not pass through `/api/threads/:id`; they are reduced
+to compact operation evidence before the overlay turn is cloned into the
+response. `mcpToolCall` and `dynamicToolCall` count as operation evidence for
+active-overlay coverage, so the proof gate and response payload use the same
+operation taxonomy.
+
 The current implementation above is the v3 projection path. The v4 replacement
 contract is documented in `docs/THREAD_DETAIL_PROJECTION_V4_DESIGN.md`: it keeps
 v3 in place while adding a canonical server-side visible-item projection, a

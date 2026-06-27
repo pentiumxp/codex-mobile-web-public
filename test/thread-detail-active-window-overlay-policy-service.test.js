@@ -70,6 +70,8 @@ test("active window overlay plan accepts complete bounded evidence", () => {
 
 test("active window overlay evidence summary classifies item kinds without body text", () => {
   assert.equal(classifyActiveOverlayItem({ type: "toolCall" }), "operation");
+  assert.equal(classifyActiveOverlayItem({ type: "mcpToolCall" }), "operation");
+  assert.equal(classifyActiveOverlayItem({ type: "dynamicToolCall" }), "operation");
   assert.equal(classifyActiveOverlayItem({ type: "input_image" }), "upload");
   assert.equal(classifyActiveOverlayItem({ type: "agentMessage", text: "private body" }), "assistant");
   assert.equal(classifyActiveOverlayItem({ type: "usage" }), "receipt");
@@ -268,4 +270,32 @@ test("active window overlay merge appends or replaces the active turn without mu
   });
   assert.equal(replaced.turns.length, 1);
   assert.equal(replaced.turns[0].items[0].text, "new");
+});
+
+test("active window overlay merge compacts overlay turn before response merge", () => {
+  const projected = projectionThread();
+  const overlay = overlayTurn({
+    items: [
+      { id: "tool-old", type: "mcpToolCall", arguments: { private: "old" }, result: { body: "old-result" } },
+      { id: "tool-new", type: "mcpToolCall", arguments: { private: "new" }, result: { body: "new-result" } },
+      { id: "agent-1", type: "agentMessage", text: "visible assistant" },
+    ],
+  });
+  const compactedOverlayIds = [];
+  const merged = mergeProjectionThreadWithActiveOverlay(projected, overlay, {
+    overlaySource: "projection-live",
+    compactOverlayTurn: (turn) => Object.assign({}, turn, {
+      items: turn.items
+        .filter((item) => item.type !== "mcpToolCall" || item.id === "tool-new")
+        .map((item) => item.type === "mcpToolCall"
+          ? { id: item.id, type: item.type, status: item.status, mobileLiveOperation: true }
+          : item),
+    }),
+  });
+
+  for (const item of merged.turns[1].items) compactedOverlayIds.push(item.id);
+  assert.deepEqual(compactedOverlayIds, ["tool-new", "agent-1"]);
+  assert.equal(JSON.stringify(merged).includes("old-result"), false);
+  assert.equal(JSON.stringify(merged).includes("new-result"), false);
+  assert.equal(JSON.stringify(merged).includes("private"), false);
 });

@@ -231,6 +231,9 @@ test("thread detail uses full thread/read before bounded turns/list fallback", (
   assert.ok(threadReadIndex > 0, "thread detail orchestration should call full thread/read");
   assert.ok(turnsListIndex > threadReadIndex, "bounded turns/list should stay a fallback after thread/read");
   assert.match(serverJs, /result\.thread\.mobileReadMode = "thread-read";/);
+  assert.match(serverJs, /compactActiveOverlayTurn: \(turn, details = \{\}\) => compactTurn\(turn, \{/);
+  assert.match(serverJs, /maxOperationItems: MAX_LIVE_OPERATION_ITEMS/);
+  assert.match(threadDetailReadOrchestrationServiceJs, /compactOverlayTurn: compactActiveOverlayTurn/);
 });
 
 test("thread detail defaults to ten turns and exposes an older cursor when compacted", () => {

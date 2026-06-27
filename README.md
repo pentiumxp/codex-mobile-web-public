@@ -16,6 +16,27 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-27 Active Overlay 详情响应体压缩
+
+这次修复的是运行中大线程详情打开仍然不稳定的第二段服务端路径。部署前采样显示，
+普通 warm projection 详情通常只有几十毫秒，但 `projection-active-overlay`
+运行中详情可到数百毫秒，并返回数百 KB 响应体。根因不是 app-server RPC，
+而是 active overlay proof gate 通过后，服务端把 live overlay turn 合并回
+已经压缩过的 projection 结果时，没有再次对 overlay turn 执行 thread-detail
+compaction。于是 raw `mcpToolCall.arguments` / `mcpToolCall.result` 和较长
+command payload 可以进入 `/api/threads/:id` 响应。
+
+修复方式是在 `thread-detail-read-orchestration-service` 和
+`thread-detail-active-window-overlay-policy-service` 的交界处注入
+`compactActiveOverlayTurn`：只有 proof gate 已经证明 live overlay 可用时，仍然先按
+既有 `compactTurn()` 和 `MAX_LIVE_OPERATION_ITEMS` 规则压缩 overlay turn，再合并到
+detail 响应。`mcpToolCall` 和 `dynamicToolCall` 现在也被归类为 operation evidence，
+既进入 active-overlay 覆盖率计数，也不会以 raw arguments/result 形态越过服务端
+响应边界。
+
+本次是 server-only 性能和隐私边界修复，不改变 projection 权威源、active-overlay
+proof gate、前端 DOM patch、PWA shell/cache 版本或 Home AI 诊断派卡流程。
+
 ## 2026-06-27 v550 投影一致性自动诊断闭环
 
 v550 强化线程详情投影与浏览器 DOM 的一致性检测。单线程 full render 和
