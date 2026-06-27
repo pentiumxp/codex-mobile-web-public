@@ -185,6 +185,34 @@ npm run check  # passed
 git diff --check  # passed
 ```
 
+## 2026-06-27 Phase C Composer Action Control Planning Slice
+
+这是 v543 后继续加速节奏下的第一个 Phase C 本地小切片，不单独部署、不推
+Public。它把平铺模式共享 Composer 的按钮状态规划从 `public/app.js` 继续收敛到
+`public/thread-tile-state.js`，让 selected pane / active turn / voice input /
+Goal / task-card command 的按钮 affordance 进入可测试策略层。
+
+改动边界：
+
+- `threadTileStatePolicy.composerActionControlPlan()` 现在统一规划共享 Composer
+  action button 的 label、title、disabled、aria label 和状态 class；
+- `updateComposerControls()` 仍然读取真实 DOM/thread/input facts，并只应用 helper
+  返回的计划；
+- Stop、引导、发送中、重试、Goal、Open、Task card、Send 和 Home AI embedded
+  voice long-press 语义保持不变；
+- 不改变消息发送 API、task-card API、Composer DOM 结构、平铺 layout、shell/cache
+  版本或生产部署状态。
+
+验证：
+
+```bash
+node --check public/thread-tile-state.js && node --check public/app.js
+node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js test/thread-goal-service.test.js test/new-thread-ui.test.js test/plugin-voice-input.test.js  # 61 passed
+npm test  # 1252 passed
+npm run check  # passed
+git diff --check  # passed
+```
+
 ## 2026-06-27 Phase A Conversation DOM Authority Invalidation Local Slice
 
 这是 v542 后继续按“小切片本地提交、模块化再部署”节奏推进的 Phase A 切片。

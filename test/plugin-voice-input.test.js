@@ -122,7 +122,9 @@ test("voice input bridge is limited to Hermes embed mode and uses plugin scripts
   assert.match(functionBody("handlePluginVoiceInputMessage"), /pluginVoiceInputParentOriginAllowed\(event\)/);
   assert.match(functionBody("handlePluginVoiceInputMessage"), /payload\.pluginId && String\(payload\.pluginId\) !== "codex-mobile"/);
   assert.match(functionBody("updateComposerControls"), /const voiceGestureAvailable = pluginVoiceInputGestureAvailable\(\)/);
-  assert.match(functionBody("updateComposerControls"), /!hasContent && !voiceGestureAvailable/);
+  assert.match(functionBody("updateComposerControls"), /voiceGestureAvailable,/);
+  assert.match(functionBody("updateComposerControls"), /applyComposerActionControlPlan\(sendButton, composerActionPlan\)/);
+  assert.match(functionBody("applyComposerActionControlPlan"), /plan\.sendButtonDisabled === true/);
   assert.match(functionBody("pluginVoiceInputCapabilityPayload"), /writable: pluginVoiceInputCanReceiveText\(\)/);
   assert.match(functionBody("pluginVoiceInputCapabilityPayload"), /"provisional_text"/);
   assert.match(functionBody("applyPluginVoiceInputTextMessage"), /const capability = pluginVoiceInputCapabilityPayload\(\)/);
@@ -156,7 +158,8 @@ test("send button long press delegates recording to Home AI only after threshold
 });
 
 test("embedded active-turn stop button is not rendered as selectable text", () => {
-  assert.match(functionBody("updateComposerControls"), /setComposerActionButtonLabel\(sendButton, "Stop", \{ proxy: isHermesEmbedMode\(\) \}\)/);
+  assert.match(functionBody("updateComposerControls"), /hermesEmbedMode: isHermesEmbedMode\(\)/);
+  assert.match(functionBody("applyComposerActionControlPlan"), /setComposerActionButtonLabel\(sendButton, plan\.label \|\| "Send", \{ proxy: plan\.labelProxy === true \}\)/);
   assert.match(functionBody("setComposerActionButtonLabel"), /button\.textContent = "";/);
   assert.match(functionBody("setComposerActionButtonLabel"), /button\.dataset\.visualLabel = text;/);
   assert.match(functionBody("setComposerActionButtonLabel"), /button\.classList\.toggle\("plugin-voice-input-label-proxy", useProxy\)/);

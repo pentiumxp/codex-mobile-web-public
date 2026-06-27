@@ -628,9 +628,12 @@ test("thread tile composer targets the active pane without replacing the shared 
   const updateControlsBody = functionBody(appJs, "updateComposerControls");
   assert.match(updateControlsBody, /const targetThreadId = currentComposerThreadId\(\)/);
   assert.match(updateControlsBody, /const targetActiveTurnId = composerTargetActiveTurnId\(\)/);
+  assert.match(updateControlsBody, /threadTileStatePolicy\.composerActionControlPlan\(\{/);
+  assert.match(updateControlsBody, /hasNewThreadDraft,/);
+  assert.match(updateControlsBody, /targetActiveTurnId,/);
+  assert.match(updateControlsBody, /applyComposerActionControlPlan\(sendButton, composerActionPlan\)/);
   assert.match(updateControlsBody, /messageInput\.dataset\.placeholder = composerPlaceholderText\(\);/);
   assert.match(updateControlsBody, /messageInput\.classList\.toggle\("has-target-placeholder", composerShowsTargetPlaceholder\(\)\);/);
-  assert.match(updateControlsBody, /Boolean\(!hasNewThreadDraft && targetActiveTurnId\) && hasContent/);
 
   const sendMessageBody = functionBody(appJs, "sendMessage");
   assert.match(sendMessageBody, /const targetThreadId = currentComposerThreadId\(\)/);

@@ -22030,6 +22030,24 @@ function composerShowsTargetPlaceholder() {
   }).showTargetPlaceholder === true;
 }
 
+function applyComposerActionControlPlan(sendButton, plan) {
+  if (!sendButton || !plan) return;
+  setComposerActionButtonLabel(sendButton, plan.label || "Send", { proxy: plan.labelProxy === true });
+  sendButton.title = plan.title || "";
+  const classState = plan.classState || {};
+  sendButton.classList.toggle("interrupt-mode", classState.interruptMode === true);
+  sendButton.classList.toggle("sending", classState.sending === true);
+  sendButton.classList.toggle("send-failed", classState.sendFailed === true);
+  sendButton.classList.toggle("steer-mode", classState.steerMode === true);
+  sendButton.classList.toggle("plugin-voice-input-gesture", classState.pluginVoiceInputGesture === true);
+  if (plan.ariaLabel) {
+    sendButton.setAttribute("aria-label", plan.ariaLabel);
+  } else {
+    sendButton.removeAttribute("aria-label");
+  }
+  sendButton.disabled = plan.sendButtonDisabled === true;
+}
+
 function renderComposerSettings() {
   const commandControl = $("composerCommandControl");
   const modelControl = $("composerModelControl");
@@ -22070,14 +22088,29 @@ function updateComposerControls() {
     && !targetThread.mobileLoading
     && !targetThread.mobileLoadError);
   const hasNewThreadDraft = Boolean(state.newThreadDraft);
-  const canComposeNewThread = Boolean(hasNewThreadDraft);
-  const disabled = !(hasThread || canComposeNewThread) || state.composerBusy || state.attachmentProcessingCount > 0;
   const hasContent = composerHasContent();
   const bareIntentKind = composerIntentBareTagKind(composerText());
   const goalCommandMode = Boolean(!hasNewThreadDraft && isThreadGoalCommandText(composerText()));
   const commandMode = Boolean(!hasNewThreadDraft && isThreadTaskCardCommandText(composerText()));
-  const interruptMode = Boolean(!hasNewThreadDraft && targetActiveTurnId) && !hasContent;
-  const steerMode = Boolean(!hasNewThreadDraft && targetActiveTurnId) && hasContent;
+  const voiceGestureAvailable = pluginVoiceInputGestureAvailable();
+  const bareIntentOption = bareIntentKind ? composerIntentOption(bareIntentKind) : null;
+  const composerActionPlan = threadTileStatePolicy.composerActionControlPlan({
+    hasThread,
+    hasNewThreadDraft,
+    composerBusy: state.composerBusy,
+    attachmentProcessingCount: state.attachmentProcessingCount,
+    hasContent,
+    targetActiveTurnId,
+    bareIntentKind,
+    bareIntentTitle: bareIntentOption ? `Open ${bareIntentOption.label}` : "Open composer action",
+    goalCommandMode,
+    commandMode,
+    sendButtonHint: state.sendButtonHint,
+    steeringBusy: Boolean(state.steerFeedback && state.steerFeedback.status === "sending"),
+    voiceGestureAvailable,
+    hermesEmbedMode: isHermesEmbedMode(),
+  });
+  const disabled = composerActionPlan.disabled === true;
   const sendButton = $("sendMessage");
   const attachButton = $("attachFiles");
   const messageInput = $("messageInput");
@@ -22099,58 +22132,7 @@ function updateComposerControls() {
     const button = $(id);
     if (button) button.disabled = disabled;
   }
-  const showRetryHint = Boolean(state.sendButtonHint);
-  if (interruptMode) {
-    setComposerActionButtonLabel(sendButton, "Stop", { proxy: isHermesEmbedMode() });
-    sendButton.title = "Interrupt current turn";
-    sendButton.classList.add("interrupt-mode");
-    sendButton.classList.remove("sending", "send-failed", "steer-mode");
-  } else if (state.composerBusy) {
-    const steering = state.steerFeedback && state.steerFeedback.status === "sending";
-    setComposerActionButtonLabel(sendButton, steering ? "引导中…" : "发送中…");
-    sendButton.title = steering ? "Steering current turn" : "Message is sending";
-    sendButton.classList.add("sending");
-    sendButton.classList.toggle("steer-mode", Boolean(steering));
-    sendButton.classList.remove("send-failed", "interrupt-mode");
-  } else if (showRetryHint) {
-    setComposerActionButtonLabel(sendButton, "重试");
-    sendButton.title = "Retry sending message";
-    sendButton.classList.add("send-failed");
-    sendButton.classList.remove("sending", "interrupt-mode", "steer-mode");
-  } else if (goalCommandMode) {
-    setComposerActionButtonLabel(sendButton, "Goal");
-    sendButton.title = "Open goal dialog";
-    sendButton.classList.remove("sending", "send-failed", "interrupt-mode", "steer-mode");
-  } else if (bareIntentKind) {
-    const option = composerIntentOption(bareIntentKind);
-    setComposerActionButtonLabel(sendButton, "Open");
-    sendButton.title = option ? `Open ${option.label}` : "Open composer action";
-    sendButton.classList.remove("sending", "send-failed", "interrupt-mode", "steer-mode");
-  } else if (commandMode) {
-    setComposerActionButtonLabel(sendButton, "Task card");
-    sendButton.title = "Ask Codex to draft a cross-thread task card";
-    sendButton.classList.remove("sending", "send-failed", "interrupt-mode", "steer-mode");
-  } else if (steerMode) {
-    setComposerActionButtonLabel(sendButton, "引导");
-    sendButton.title = "Guide the current running turn";
-    sendButton.classList.add("steer-mode");
-    sendButton.classList.remove("sending", "send-failed", "interrupt-mode");
-  } else {
-    setComposerActionButtonLabel(sendButton, "Send");
-    sendButton.title = hasNewThreadDraft ? "Create new chat" : "Send message";
-    sendButton.classList.remove("sending", "send-failed", "interrupt-mode", "steer-mode");
-  }
-  const voiceGestureAvailable = pluginVoiceInputGestureAvailable();
-  sendButton.classList.toggle("plugin-voice-input-gesture", voiceGestureAvailable);
-  if (voiceGestureAvailable && !state.composerBusy && !interruptMode) {
-    sendButton.title = `${sendButton.title || "Send"}；按住录音，松开转写`;
-    sendButton.setAttribute("aria-label", `${sendButton.textContent || "Send"}。按住可语音输入`);
-  } else if (interruptMode && isHermesEmbedMode()) {
-    sendButton.setAttribute("aria-label", "Stop。按住可语音输入，轻点可中断当前任务");
-  } else {
-    sendButton.removeAttribute("aria-label");
-  }
-  sendButton.disabled = disabled || (!interruptMode && !hasContent && !voiceGestureAvailable);
+  applyComposerActionControlPlan(sendButton, composerActionPlan);
   publishPluginVoiceInputCapability();
 }
 

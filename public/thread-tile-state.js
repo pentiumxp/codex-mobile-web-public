@@ -914,6 +914,96 @@
     };
   }
 
+  function composerActionControlPlan(input = {}) {
+    const newThreadDraft = input.newThreadDraft === true || input.hasNewThreadDraft === true;
+    const hasThread = input.hasThread === true;
+    const composerBusy = input.composerBusy === true;
+    const attachmentProcessingCount = Math.max(0, Math.floor(Number(input.attachmentProcessingCount || 0)) || 0);
+    const hasContent = input.hasContent === true;
+    const hasActiveTurn = Boolean(!newThreadDraft && text(input.targetActiveTurnId || input.activeTurnId).trim());
+    const disabled = !(hasThread || newThreadDraft) || composerBusy || attachmentProcessingCount > 0;
+    const interruptMode = hasActiveTurn && !hasContent;
+    const steerMode = hasActiveTurn && hasContent;
+    const retryMode = Boolean(text(input.sendButtonHint).trim() || input.showRetryHint === true);
+    const goalCommandMode = input.goalCommandMode === true;
+    const bareIntentKind = text(input.bareIntentKind).trim();
+    const commandMode = input.commandMode === true;
+    const steeringBusy = Boolean(input.steeringBusy === true || input.steering === true);
+    const voiceGestureAvailable = input.voiceGestureAvailable === true;
+    const hermesEmbedMode = input.hermesEmbedMode === true;
+    const bareIntentTitle = text(input.bareIntentTitle || input.intentTitle).trim();
+    let mode = "send";
+    let reason = "send";
+    let label = "Send";
+    let title = newThreadDraft ? "Create new chat" : "Send message";
+    let labelProxy = false;
+    if (interruptMode) {
+      mode = "interrupt";
+      reason = "active-turn-interrupt";
+      label = "Stop";
+      title = "Interrupt current turn";
+      labelProxy = hermesEmbedMode;
+    } else if (composerBusy) {
+      mode = "busy";
+      reason = steeringBusy ? "steering-sending" : "message-sending";
+      label = steeringBusy ? "引导中…" : "发送中…";
+      title = steeringBusy ? "Steering current turn" : "Message is sending";
+    } else if (retryMode) {
+      mode = "retry";
+      reason = "retry";
+      label = "重试";
+      title = "Retry sending message";
+    } else if (goalCommandMode) {
+      mode = "goal";
+      reason = "goal-command";
+      label = "Goal";
+      title = "Open goal dialog";
+    } else if (bareIntentKind) {
+      mode = "intent";
+      reason = "bare-intent";
+      label = "Open";
+      title = bareIntentTitle || "Open composer action";
+    } else if (commandMode) {
+      mode = "task-card";
+      reason = "task-card-command";
+      label = "Task card";
+      title = "Ask Codex to draft a cross-thread task card";
+    } else if (steerMode) {
+      mode = "steer";
+      reason = "active-turn-steer";
+      label = "引导";
+      title = "Guide the current running turn";
+    }
+    if (voiceGestureAvailable && !composerBusy && !interruptMode) {
+      title = `${title || "Send"}；按住录音，松开转写`;
+    }
+    const ariaLabel = voiceGestureAvailable && !composerBusy && !interruptMode
+      ? `${label || "Send"}。按住可语音输入`
+      : (interruptMode && hermesEmbedMode ? "Stop。按住可语音输入，轻点可中断当前任务" : "");
+    return {
+      action: "composer-action-control",
+      reason,
+      mode,
+      disabled,
+      sendButtonDisabled: disabled || (!interruptMode && !hasContent && !voiceGestureAvailable),
+      interruptMode,
+      steerMode,
+      hasContent,
+      voiceGestureAvailable,
+      label,
+      labelProxy,
+      title,
+      ariaLabel,
+      classState: {
+        interruptMode,
+        sending: mode === "busy",
+        sendFailed: mode === "retry",
+        steerMode: mode === "steer" || (mode === "busy" && steeringBusy),
+        pluginVoiceInputGesture: voiceGestureAvailable,
+      },
+    };
+  }
+
   function composerDraftRuntimeSelectionPlan(input = {}) {
     const draft = input.draft && typeof input.draft === "object" ? input.draft : null;
     const hasDraft = Boolean(draft);
@@ -1633,6 +1723,7 @@
     activePaneSyncPlan,
     candidatePaneIdsPlan,
     closePanePlan,
+    composerActionControlPlan,
     composerDraftRuntimeSelectionPlan,
     composerTargetPlaceholderPlan,
     composerTargetPlan,

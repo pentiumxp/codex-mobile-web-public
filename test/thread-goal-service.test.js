@@ -242,7 +242,8 @@ test("mobile client opens goal dialog from /g and sets goal through app-server r
   assert.doesNotMatch(appJs, /Please set the current goal for this Codex thread/);
   assert.doesNotMatch(appJs, /Use the CLI goal feature if it is available/);
   assert.match(functionBody(appJs, "updateComposerControls"), /isThreadGoalCommandText\(composerText\(\)\)/);
-  assert.match(functionBody(appJs, "updateComposerControls"), /setComposerActionButtonLabel\(sendButton, "Goal"\)/);
+  assert.match(functionBody(appJs, "updateComposerControls"), /goalCommandMode,/);
+  assert.match(appJs, /composerActionControlPlan/);
   assert.match(functionBody(appJs, "sendMessage"), /const threadGoalCommand = isThreadGoalCommandText\(text\)/);
   assert.match(functionBody(appJs, "sendMessage"), /openThreadGoalDialog\(targetThreadId\)/);
   assert.match(functionBody(appJs, "sendMessage"), /setComposerText\(""\)/);

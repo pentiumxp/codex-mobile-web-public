@@ -21131,3 +21131,46 @@ The previous full handoff was archived and should be opened only when old proven
 - Next:
   - Commit this local slice and keep it undeployed until a coherent deployable
     module is ready.
+
+## 2026-06-27 - Phase C Composer action control planning local slice
+
+- Current local state:
+  - Continued after local commit `877bb21` (`refactor full backfill reporting
+    stage`).
+  - This is a local Phase C pane-state ownership slice only. It changes
+    `public/thread-tile-state.js`, `public/app.js`, focused tests, README, and
+    the architecture plan. It does not bump shell/cache, deploy production, or
+    push Public.
+- Root-cause boundary:
+  - Symptom/risk: shared Composer target/placeholder planning had already moved
+    into `thread-tile-state`, but `updateComposerControls()` still directly
+    owned the Stop/steer/send/retry/Goal/Open/task-card/voice button priority,
+    disabled state, aria label, and CSS class decisions. In tile mode that made
+    pane-local send/interrupt affordance ownership split between helper-owned
+    target selection and app-owned action mode branching.
+  - Failing layer: frontend pane-local shared Composer action affordance
+    planning, not message submission API, task-card protocol, server
+    projection, layout calculation, or Home AI diagnostic transport.
+  - Violated invariant: pane-local send/interrupt affordance should be a pure
+    helper-owned policy; `public/app.js` should read runtime/DOM facts and
+    apply the planned label, title, classes, aria label, and disabled state.
+- Changes:
+  - Added `composerActionControlPlan()` to `public/thread-tile-state.js`.
+  - The helper owns action mode priority for interrupt, busy, retry, goal,
+    bare intent, task-card command, steer, send, and embedded voice affordance.
+  - `updateComposerControls()` now builds a bounded facts object and calls the
+    helper; `applyComposerActionControlPlan()` performs the real DOM side
+    effects.
+  - Focused tests assert helper behavior and update old source-level tests to
+    verify the new ownership boundary.
+- Validation:
+  - `node --check public/thread-tile-state.js && node --check public/app.js`
+    passed.
+  - `node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js test/thread-goal-service.test.js test/new-thread-ui.test.js test/plugin-voice-input.test.js`
+    passed (`61` tests).
+  - `npm test` passed (`1252` tests).
+  - `npm run check` passed.
+  - `git diff --check` passed after docs/context updates.
+- Next:
+  - Commit this local slice and keep it undeployed until a coherent deployable
+    module is ready.

@@ -40,7 +40,8 @@ test("new-thread draft renders model, reasoning, and permission controls", () =>
 test("new-thread draft can send without selecting a workspace", () => {
   const body = functionBody("updateComposerControls");
 
-  assert.match(body, /const canComposeNewThread = Boolean\(hasNewThreadDraft\);/);
+  assert.match(body, /hasNewThreadDraft,/);
+  assert.match(body, /threadTileStatePolicy\.composerActionControlPlan\(\{/);
   assert.doesNotMatch(body, /hasNewThreadDraft && state\.selectedCwd/);
 });
 

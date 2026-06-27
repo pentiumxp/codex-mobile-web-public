@@ -565,6 +565,100 @@ test("thread tile state owns shared composer target planning", () => {
   }).text, "Message Codex");
 });
 
+test("thread tile state owns shared composer action control planning", () => {
+  assert.deepEqual(state.composerActionControlPlan({
+    hasThread: true,
+    targetActiveTurnId: "turn-1",
+    hasContent: false,
+    hermesEmbedMode: true,
+  }), {
+    action: "composer-action-control",
+    reason: "active-turn-interrupt",
+    mode: "interrupt",
+    disabled: false,
+    sendButtonDisabled: false,
+    interruptMode: true,
+    steerMode: false,
+    hasContent: false,
+    voiceGestureAvailable: false,
+    label: "Stop",
+    labelProxy: true,
+    title: "Interrupt current turn",
+    ariaLabel: "Stop。按住可语音输入，轻点可中断当前任务",
+    classState: {
+      interruptMode: true,
+      sending: false,
+      sendFailed: false,
+      steerMode: false,
+      pluginVoiceInputGesture: false,
+    },
+  });
+
+  const steerPlan = state.composerActionControlPlan({
+    hasThread: true,
+    targetActiveTurnId: "turn-1",
+    hasContent: true,
+  });
+  assert.equal(steerPlan.reason, "active-turn-steer");
+  assert.equal(steerPlan.label, "引导");
+  assert.equal(steerPlan.classState.steerMode, true);
+
+  const busyPlan = state.composerActionControlPlan({
+    hasThread: true,
+    composerBusy: true,
+    steeringBusy: true,
+    hasContent: true,
+  });
+  assert.equal(busyPlan.reason, "steering-sending");
+  assert.equal(busyPlan.label, "引导中…");
+  assert.equal(busyPlan.disabled, true);
+  assert.equal(busyPlan.classState.sending, true);
+  assert.equal(busyPlan.classState.steerMode, true);
+
+  assert.equal(state.composerActionControlPlan({
+    hasThread: true,
+    sendButtonHint: "retry",
+    hasContent: true,
+  }).label, "重试");
+
+  assert.equal(state.composerActionControlPlan({
+    hasThread: true,
+    goalCommandMode: true,
+    hasContent: true,
+  }).label, "Goal");
+
+  assert.equal(state.composerActionControlPlan({
+    hasThread: true,
+    bareIntentKind: "review",
+    bareIntentTitle: "Open Review",
+    hasContent: true,
+  }).title, "Open Review");
+
+  assert.equal(state.composerActionControlPlan({
+    hasThread: true,
+    commandMode: true,
+    hasContent: true,
+  }).label, "Task card");
+
+  const voicePlan = state.composerActionControlPlan({
+    newThreadDraft: true,
+    hasContent: false,
+    voiceGestureAvailable: true,
+  });
+  assert.equal(voicePlan.reason, "send");
+  assert.equal(voicePlan.title, "Create new chat；按住录音，松开转写");
+  assert.equal(voicePlan.ariaLabel, "Send。按住可语音输入");
+  assert.equal(voicePlan.sendButtonDisabled, false);
+  assert.equal(voicePlan.classState.pluginVoiceInputGesture, true);
+
+  const emptyPlan = state.composerActionControlPlan({
+    hasThread: true,
+    hasContent: false,
+  });
+  assert.equal(emptyPlan.disabled, false);
+  assert.equal(emptyPlan.sendButtonDisabled, true);
+});
+
 test("thread tile state owns composer draft runtime restore planning", () => {
   assert.deepEqual(state.composerDraftRuntimeSelectionPlan({
     newThreadDraft: true,

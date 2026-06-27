@@ -1960,7 +1960,10 @@ Target:
   target placeholder no longer depend on scattered `app.js` branches. Composer
   draft runtime restore planning also now lives there, so Fast/model/effort/
   permission recovery across pane switches no longer depends on scattered
-  `app.js` branches. Operation minimum-refresh planning also now lives there,
+  `app.js` branches. Shared Composer action-control planning also now lives
+  there, so Stop/steer/send/retry/Goal/task-card/voice affordance state is
+  helper-owned while `app.js` only applies the planned label, disabled state,
+  aria label, and CSS classes. Operation minimum-refresh planning also now lives there,
   so remembered command bubbles can expire through pane-local patch targets
   without `app.js` owning that state decision. Thread-tile viewport baseline
   and Composer chrome-height planning also now live there, so keyboard-active
