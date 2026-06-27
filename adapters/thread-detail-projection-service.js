@@ -1112,6 +1112,7 @@ function createThreadDetailProjectionService(options = {}) {
     entry.dynamic = true;
     rememberFullHistoryEntry(entry);
     markWindowEntryPartial(entry);
+    refreshEntrySignatureFromRollout(entry);
     persistDynamicEntry(entry, method);
     return true;
   }

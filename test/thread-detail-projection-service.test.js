@@ -1077,6 +1077,72 @@ test("thread detail projection reuses partial recent windows when only summary m
   }
 });
 
+test("thread detail projection refreshes partial backing signature after notifications", () => {
+  const dir = tempDir();
+  try {
+    const rolloutPath = path.join(dir, "rollout-thread-1.jsonl");
+    fs.writeFileSync(rolloutPath, "a".repeat(1024));
+    fs.utimesSync(rolloutPath, new Date(1), new Date(1));
+    const initialStat = fs.statSync(rolloutPath);
+    let current = 2000;
+    const service = createThreadDetailProjectionService({
+      cacheDir: dir,
+      policyVersion: "test-v1",
+      maxTurns: 2,
+      now: () => current,
+    });
+    const initialInput = signatureInput({
+      rolloutPath,
+      rolloutStats: {
+        sizeBytes: initialStat.size,
+        mtimeMs: initialStat.mtimeMs,
+      },
+      summaryStatus: "active",
+      summaryUpdatedAtMs: 1000,
+    });
+    service.seed(initialInput, {
+      thread: {
+        id: "thread-1",
+        turns: [{ id: "turn-1", status: { type: "active" }, items: [] }],
+        mobileReadMode: "turns-list-initial",
+      },
+    }, {
+      partial: true,
+      partialKind: "recent-window",
+    });
+
+    fs.appendFileSync(rolloutPath, "completed");
+    fs.utimesSync(rolloutPath, new Date(5), new Date(5));
+    const completedStat = fs.statSync(rolloutPath);
+    current = 6000;
+    service.applyNotification("turn/completed", {
+      threadId: "thread-1",
+      turn: {
+        id: "turn-1",
+        status: { type: "completed" },
+        items: [{ id: "agent-1", type: "agentMessage", text: "done" }],
+      },
+    });
+
+    const lookup = service.lookup(signatureInput({
+      rolloutPath,
+      rolloutStats: {
+        sizeBytes: completedStat.size,
+        mtimeMs: completedStat.mtimeMs,
+      },
+      summaryStatus: "completed",
+      summaryUpdatedAtMs: 6000,
+    }), { allowPartial: true });
+    assert.equal(lookup.missReason, "");
+    assert.ok(lookup.cached);
+    assert.equal(lookup.cached.dynamic, true);
+    assert.equal(lookup.cached.partial, true);
+    assert.deepEqual(lookup.cached.result.thread.turns.map((turn) => turn.id), ["turn-1"]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("thread detail projection treats cursor-backed turns-list seed as partial", () => {
   const dir = tempDir();
   try {
