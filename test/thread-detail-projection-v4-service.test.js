@@ -191,7 +191,11 @@ test("v4 projection service preserves partial recent-window opt-in semantics", (
       maxTurns: 3,
       now: () => 3000,
     });
-    assert.equal(restoredService.get(signatureInput(), { allowPartial: true }), null);
+    const restored = restoredService.get(signatureInput(), { allowPartial: true });
+    assert.ok(restored);
+    assert.equal(restored.version, "v4");
+    assert.equal(restored.partial, true);
+    assert.equal(restored.partialKind, "recent-window");
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

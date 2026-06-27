@@ -605,11 +605,13 @@ Status: in progress. Earlier slices added bounded `detailShape` counts to
 thread-detail performance events, so large-session investigations can compare
 server phase timings with client render/merge timings and visible item shape
 without collecting message bodies or file contents. The latest Phase B slice
-uses that evidence to add a recent-only, memory-only partial projection warm
+uses that evidence to add a recent-only signed partial projection warm
 path: a first `mode=recent` `turns-list-initial` response can seed a
 `recent-window` projection that later recent opens may reuse, while full/detail
-reads still reject partial cache and disk persistence still stores only full
-non-partial projections.
+reads still reject partial cache as complete history. Signed partial windows may
+be persisted and restored after restart when their backing signature still
+matches, so the first post-restart recent open does not need to synchronously
+call app-server `thread/turns/list`.
 
 - Keep large-session timing evidence in `mobileDiagnostics.threadDetailTimings`
   and client `performancePhase` events. Client events now also carry
@@ -1833,10 +1835,11 @@ metadata.
   projection seeding from bounded turns-list/full read, below-threshold,
   disabled, and no-rollout-size decisions without logging message bodies or
   raw thread data.
-- `mode=recent` can seed and reuse a memory-only partial projection. Partial
+- `mode=recent` can seed and reuse a signed partial projection. Partial
   projections carry `partial:true` / `partialKind:recent-window`, are only
-  returned when the coordinator explicitly passes `allowPartial`, are never
-  persisted to disk, and cannot overwrite a reusable full projection cache.
+  returned when the coordinator explicitly passes `allowPartial`, may be
+  persisted/restored only with a matching projection signature, and cannot
+  overwrite a reusable full projection cache.
   A stale full cache whose signature no longer matches must not block the
   recent partial warm path.
   The v4 projection wrapper must pass those seed/get options through to the
@@ -1846,9 +1849,9 @@ metadata.
   authoritative complete history.
 - Cursor-backed `turns-list*` windows are now treated as partial projection
   state even if the seeding caller forgot to pass `partial:true`. The projection
-  cache also drops legacy disk entries that persisted such a window as a full
-  dynamic cache, so `mode=full` cannot reuse a recent/current turns-list window
-  as `projection-v4-dynamic`.
+  cache also normalizes legacy disk entries that persisted such a window as a
+  full dynamic cache, so `mode=full` cannot reuse a recent/current turns-list
+  window as `projection-v4-dynamic`.
 - Notification-only partial shells without a projection signature are not valid
   thread-detail hits, even when a `mode=recent` caller permits partial cache.
   They may carry transient status patches, but they must not render as an empty
@@ -1861,7 +1864,10 @@ metadata.
 - Projection cache lookup now reports bounded miss reasons and may delete a
   stale full disk entry only when the existing full cache is proven unusable by
   `dynamic-summary-stale` or a signature mismatch reason. It does not delete
-  healthy full cache and does not persist partial recent windows to disk.
+  healthy full cache. Summary timestamp-only changes no longer force
+  `dynamic-summary-stale` when rollout size/mtime, retained-window policy, and
+  thread identity still match; those summary-only changes are metadata
+  freshness, not content backing invalidation.
 - Client-side large-session performance events now classify thread-detail
   cold/warm phases from bounded server fields when the server phase is absent
   or `unknown`. `public/thread-performance-metrics.js` owns the client

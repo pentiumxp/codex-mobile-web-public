@@ -712,7 +712,7 @@ function createThreadDetailProjectionService(options = {}) {
   }
 
   function persistEntry(entry) {
-    if (!cacheDir || !entry || entry.partial || !entry.signatureHash) return false;
+    if (!cacheDir || !entry || !entry.signatureHash) return false;
     writeJsonFile(cacheFileForThread(cacheDir, entry.threadId), {
       version: 1,
       policyVersion,
@@ -723,6 +723,8 @@ function createThreadDetailProjectionService(options = {}) {
       cachedAtMs: entry.cachedAtMs,
       updatedAtMs: entry.updatedAtMs,
       dynamic: Boolean(entry.dynamic),
+      partial: Boolean(entry.partial),
+      partialKind: String(entry.partialKind || ""),
       result: entry.result,
     });
     return true;
@@ -797,10 +799,11 @@ function createThreadDetailProjectionService(options = {}) {
       partialKind: String(raw.partialKind || ""),
       result: raw.result,
     };
-    if (entry.partial || markWindowEntryPartial(entry)) {
+    if (entry.partial && !entry.signatureHash) {
       removePersistedEntry(threadId);
       return null;
     }
+    markWindowEntryPartial(entry);
     return entry;
   }
 
@@ -915,17 +918,19 @@ function createThreadDetailProjectionService(options = {}) {
       const allowActiveOverlaySummaryStaleWindow = optionsForGet.activeOverlay === true
         && optionsForGet.allowPartial === true
         && isActiveLikeStatus(input.summaryStatus);
+      const backingSignatureChanged = dynamicBackingSignatureChanged(entry.signature, signature);
       if (!allowActiveOverlaySummaryStaleWindow
         && summaryUpdatedAtMs
         && entry.updatedAtMs
-        && summaryUpdatedAtMs > entry.updatedAtMs + 2000) {
+        && summaryUpdatedAtMs > entry.updatedAtMs + 2000
+        && backingSignatureChanged) {
         const staleWindow = activeOverlayStaleWindowAllowed ? staleFullActiveOverlayWindow(entry, optionsForGet) : null;
         if (staleWindow) return staleWindow;
         const historyWindow = activeOverlayFullHistoryWindow();
         if (historyWindow) return historyWindow;
         return { cached: null, missReason: "dynamic-summary-stale" };
       }
-      if (dynamicBackingSignatureChanged(entry.signature, signature)) {
+      if (backingSignatureChanged) {
         const dynamicAgeMs = Math.max(0, now() - safeNumber(entry.updatedAtMs || entry.cachedAtMs));
         if (isRestingStatus(input.summaryStatus)) {
           const staleWindow = activeOverlayStaleWindowAllowed ? staleFullActiveOverlayWindow(entry, optionsForGet) : null;

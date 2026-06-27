@@ -437,9 +437,11 @@ streamed assistant receipts, and replacement assistant/plan receipts are merged
 by stable id or matching text. Synthetic `turnUsageSummary` items remain
 one-per-turn, with the newest summary replacing older summaries. Cache
 signatures include the rollout size/mtime, summary updated time/status, the
-retained turn window, and the projection policy version; stale signatures miss,
-while live in-memory projection entries are accepted only when their
-notification timestamp is not older than the current summary.
+retained turn window, and the projection policy version. Static signatures still
+miss on any signature mismatch. Dynamic entries separate metadata freshness from
+content backing freshness: summary timestamp-only movement does not force a
+`dynamic-summary-stale` miss when rollout size/mtime, retained turn window, and
+policy version still match.
 `adapters/thread-detail-projection-input-service.js` owns construction of the
 server-side signature input for detail reads; the projection cache service owns
 comparison, memory/disk storage, and miss/reseed behavior; and
@@ -468,15 +470,15 @@ a thread is actively changing, but only for a bounded window: if the backing
 rollout path/size/mtime, retained turn window, or policy version changes after
 the seed and the thread is now resting, or the dynamic entry ages past the soft
 threshold without a new notification, the projection read must miss and reseed
-from detail. If projection misses, the read coordinator still prefers
-full app-server `thread/read includeTurns:true` regardless of rollout file size
-because bounded `thread/turns/list` does not reliably preserve the
-command/tool/file/search operation items expected in the Mobile detail view.
-The server then compacts the mobile detail payload to the latest
-`CODEX_MOBILE_THREAD_TURNS` turns (default `10`) when older turns exist and
-seeds the projection index for future dynamic/warm reads. The compacted result
-exposes `mobileOlderTurnsCursor` for the oldest retained turn. If `thread/read`
-fails or times out, Mobile Web falls back to bounded `thread/turns/list`, then
+from detail. In `mode=recent`, a projection miss can seed a signed partial
+`recent-window` from bounded app-server `thread/turns/list`; later recent opens
+may reuse that partial projection only when the coordinator explicitly passes
+`allowPartial`. Full/detail reads still reject partial windows as complete
+history. Signed partial windows may be persisted and restored after restart when
+their backing signature still matches, but notification-only shells remain
+memory-only and are not valid detail authority. If the route needs complete
+history or a recent window cannot be used, the coordinator falls through to full
+app-server `thread/read includeTurns:true`, bounded `thread/turns/list`, then
 local summary fallback. A `thread/turns/list` response can also carry the
 app-server older-history cursor so the browser can page in earlier turns. The
 browser loads older turns in 10-turn pages when the user scrolls to the top of
@@ -511,7 +513,7 @@ live active notification reaches a restarted process before the full projection
 has been loaded into memory, the service restores the persisted full cache
 before applying the notification. This preserves the history side of the
 overlay proof gate without promoting notification-only shells to normal detail
-authority or persisting partial active-window state.
+authority.
 
 Active-overlay detail responses preserve the same compaction boundary as normal
 thread-detail responses. The proof gate may merge a live overlay turn into a
