@@ -67,3 +67,8 @@ one violated invariant, add focused executable coverage, pass full local
 checks, and stay undeployed until several compatible slices form a coherent
 runtime module. Do not bump shell/cache, deploy production, or push Public for
 each micro-slice unless the user explicitly asks.
+
+The current local module candidate is focused on pane-local context ownership:
+thread metadata, pending actions, task-card draft state, optimistic thread
+status, and failed-send status restore must all update the target pane instead
+of falling back to the global current thread.

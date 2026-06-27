@@ -2082,6 +2082,10 @@ Optimistic thread running status now follows the same rule: a send from the
 shared Composer must update the target thread's list row, current detail or
 visible pane detail cache, and thread-status hint context before scheduling
 only the owning detail surface.
+The send-failure restore path is part of that invariant: thread status
+snapshots must capture visible pane detail status, and restore must reset list,
+current detail, and pane detail state before scheduling the owning detail
+surface. A failed send must not leave a non-current pane looking active.
 
 ### 2026-06-27 Phase E Visual Harness Module v542
 

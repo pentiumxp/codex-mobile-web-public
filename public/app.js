@@ -4752,33 +4752,48 @@ function snapshotThreadStatus(threadId) {
   if (!id) return null;
   const listThread = state.threads.find((entry) => String(entry && entry.id || "") === id) || null;
   const currentMatches = Boolean(state.currentThread && String(state.currentThread.id || "") === id);
+  const tileThread = state.threadTileDetails && state.threadTileDetails.get(String(id)) || null;
   return {
     id,
     hadListThread: Boolean(listThread),
     listStatus: listThread ? listThread.status : undefined,
     hadCurrentThread: currentMatches,
     currentStatus: currentMatches ? state.currentThread.status : undefined,
+    hadTileThread: Boolean(tileThread),
+    tileStatus: tileThread ? tileThread.status : undefined,
   };
 }
 
 function restoreThreadStatusSnapshot(snapshot) {
   if (!snapshot || !snapshot.id) return;
   const id = String(snapshot.id);
-  const restoredStatus = snapshot.hadCurrentThread ? snapshot.currentStatus : snapshot.listStatus;
+  const listThread = state.threads.find((entry) => String(entry && entry.id || "") === id) || null;
+  const currentThread = state.currentThread && String(state.currentThread.id || "") === id ? state.currentThread : null;
+  const tileThread = state.threadTileDetails && state.threadTileDetails.get(String(id)) || null;
+  const restoredStatus = snapshot.hadCurrentThread
+    ? snapshot.currentStatus
+    : snapshot.hadListThread
+      ? snapshot.listStatus
+      : snapshot.tileStatus;
+  const targetThread = currentThread || listThread || tileThread;
   updateThreadStatusHints(id, { type: "active" }, restoredStatus, {
-    thread: state.currentThread || state.threads.find((entry) => String(entry && entry.id || "") === id),
+    thread: targetThread,
     notify: false,
   });
   const listIndex = state.threads.findIndex((entry) => String(entry && entry.id || "") === id);
   if (snapshot.hadListThread && listIndex >= 0) {
-    state.threads[listIndex] = Object.assign({}, state.threads[listIndex], { status: snapshot.listStatus });
+    applyThreadStatusToThread(state.threads[listIndex], snapshot.listStatus);
   } else if (!snapshot.hadListThread && listIndex >= 0) {
     state.threads = state.threads.filter((entry) => String(entry && entry.id || "") !== id);
   }
   if (snapshot.hadCurrentThread && state.currentThread && String(state.currentThread.id || "") === id) {
     state.currentThread.status = snapshot.currentStatus;
   }
+  if (snapshot.hadTileThread) {
+    applyThreadStatusToThread(state.threadTileDetails && state.threadTileDetails.get(String(id)) || null, snapshot.tileStatus);
+  }
   pruneHiddenThreads();
+  scheduleThreadStatusDetailRender(id);
 }
 
 function markThreadOptimisticallyActive(threadId) {

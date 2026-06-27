@@ -22040,3 +22040,42 @@ The previous full handoff was archived and should be opened only when old proven
 - Next:
   - Commit this local slice and keep it undeployed until a coherent deployable
     module is ready.
+
+## 2026-06-27 - Phase C thread status restore pane context local slice
+
+- Current local state:
+  - Continued after local commit `5f4b3e8` (`refactor optimistic thread status
+    keeps pane context`).
+  - This is a local Phase C pane-state/thread-status restore slice only. It
+    changes `public/app.js`, focused tests, README, and the architecture plan.
+    It does not bump shell/cache, deploy production, or push Public.
+- Root-cause boundary:
+  - Symptom/risk: the optimistic-active path now updates visible pane detail
+    state, but `snapshotThreadStatus()` / `restoreThreadStatusSnapshot()` still
+    only captured and restored list/current status. If a shared Composer send
+    to a non-current pane failed, the pane detail cache could remain `active`
+    until a later refresh.
+  - Failing layer: frontend failed-send status restore and local render
+    scheduling, not message POST API, server projection, shell/cache, or Home
+    AI host routing.
+  - Violated invariant: status snapshot/restore must cover every local
+    representation that optimistic status writes cover: thread list, current
+    detail, and visible pane detail cache.
+- Changes:
+  - `snapshotThreadStatus()` now records `hadTileThread` and `tileStatus`.
+  - `restoreThreadStatusSnapshot()` now restores list status in place, restores
+    pane detail status when a pane snapshot existed, uses the target thread as
+    status-hint context, and schedules the owning detail surface.
+  - Added executable coverage for snapshot -> optimistic active -> restore on
+    a visible non-current tile pane.
+- Validation:
+  - `node --check public/app.js` passed.
+  - `node --test test/conversation-render.test.js test/thread-tile-state.test.js`
+    passed (`160` tests).
+  - `npm test` passed (`1274` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit this local slice and keep it undeployed until a coherent deployable
+    module is ready.

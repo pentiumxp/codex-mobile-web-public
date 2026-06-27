@@ -1237,6 +1237,8 @@ function evaluatedThreadStatusPaneContext() {
     "applyThreadStatusToThread",
     "scheduleThreadStatusDetailRender",
     "updateThreadListStatus",
+    "snapshotThreadStatus",
+    "restoreThreadStatusSnapshot",
     "markThreadOptimisticallyActive",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
@@ -1277,6 +1279,7 @@ function scheduleRenderThreadTilePane(threadId, options = {}) {
 }
 function scheduleRenderCurrentThread() { calls.currentRenders += 1; }
 function mergeThreadIntoThreadList() { calls.merges += 1; }
+function pruneHiddenThreads() { calls.pruned = true; }
 ${sources.join("\n")}
 return {
   state,
@@ -1284,6 +1287,8 @@ return {
   listThread,
   tileThread,
   currentThread,
+  snapshotThreadStatus,
+  restoreThreadStatusSnapshot,
   markThreadOptimisticallyActive,
   updateThreadListStatus,
 };
@@ -5062,9 +5067,13 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(functionBody("updateThreadListStatus"), /if \(options\.render === true\) scheduleThreadStatusDetailRender\(id\)/);
   assert.match(functionBody("scheduleThreadStatusDetailRender"), /threadTilePaneIsVisible\(id\)/);
   assert.match(functionBody("scheduleThreadStatusDetailRender"), /scheduleRenderThreadTilePane\(id, \{ preserveScroll: true \}\)/);
+  assert.match(functionBody("snapshotThreadStatus"), /state\.threadTileDetails && state\.threadTileDetails\.get\(String\(id\)\)/);
   const restoreBody = functionBody("restoreThreadStatusSnapshot");
+  assert.match(restoreBody, /snapshot\.hadTileThread/);
   assert.match(restoreBody, /updateThreadStatusHints\(id, \{ type: "active" \}, restoredStatus/);
   assert.match(restoreBody, /state\.currentThread\.status = snapshot\.currentStatus/);
+  assert.match(restoreBody, /applyThreadStatusToThread\(state\.threadTileDetails && state\.threadTileDetails\.get\(String\(id\)\) \|\| null, snapshot\.tileStatus\)/);
+  assert.match(restoreBody, /scheduleThreadStatusDetailRender\(id\)/);
   assert.match(functionBody("loadThread"), /const firstPaintResponsePlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintResponseEffects\(\{[\s\S]*source,[\s\S]*\}\);[\s\S]*applyThreadDetailRefreshResponseEffectsPlan\(firstPaintResponsePlan, \{ thread: result\.thread \}\);[\s\S]*const postMergePlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPostMergeEffects\(\);/);
   assert.match(functionBody("loadThread"), /const firstPaintPostMergeTimingPlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintPostMergeTimingEffects\(postMergePlan\);/);
   assert.match(functionBody("loadThread"), /const firstPaintPostMergeTimings = applyThreadDetailRefreshTimedPostMergeEntries\([\s\S]*postMergePlan,[\s\S]*firstPaintPostMergeTimingPlan\.beforeDraftRestore,[\s\S]*\{ mergeStartedAt \},[\s\S]*\);/);
@@ -5172,6 +5181,33 @@ test("optimistic active status updates visible tile pane detail context", () => 
   assert.deepEqual(harness.calls.tileRenders, [{ threadId: "thread-pane", preserveScroll: true }]);
   assert.equal(harness.calls.currentRenders, 0);
   assert.equal(harness.calls.merges, 0);
+});
+
+test("thread status snapshot restore resets visible tile pane detail context", () => {
+  const harness = evaluatedThreadStatusPaneContext();
+  const snapshot = harness.snapshotThreadStatus("thread-pane");
+
+  harness.markThreadOptimisticallyActive("thread-pane");
+  harness.restoreThreadStatusSnapshot(snapshot);
+
+  assert.equal(harness.listThread.status.type, "idle");
+  assert.equal(harness.tileThread.status.type, "idle");
+  assert.equal(harness.currentThread.status.type, "idle");
+  assert.deepEqual(harness.calls.tileRenders, [
+    { threadId: "thread-pane", preserveScroll: true },
+    { threadId: "thread-pane", preserveScroll: true },
+  ]);
+  assert.equal(harness.calls.currentRenders, 0);
+  assert.equal(harness.calls.pruned, true);
+  assert.equal(harness.calls.statusHints.length, 2);
+  assert.deepEqual(harness.calls.statusHints[1], {
+    id: "thread-pane",
+    previousType: "active",
+    nextType: "idle",
+    threadId: "thread-pane",
+    threadName: undefined,
+    notify: false,
+  });
 });
 
 test("thread merge drops superseded stale active turns", () => {
