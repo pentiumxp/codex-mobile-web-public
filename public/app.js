@@ -14757,7 +14757,8 @@ function patchVisibleItemElement(target, turn, item, previousKeys, sourceIndex =
 }
 
 function visibleItemPatchEntries(turn) {
-  return visibleItemsForTurn(turn).map((entry, index) => {
+  const thread = renderContextThread();
+  return visibleItemsForTurn(turn, thread).map((entry, index) => {
     const item = entry && entry.item;
     const sourceIndex = Number.isInteger(entry && entry.sourceIndex) && entry.sourceIndex >= 0
       ? entry.sourceIndex
@@ -14766,7 +14767,7 @@ function visibleItemPatchEntries(turn) {
       item,
       sourceIndex,
       key: stableItemKey(turn, item, sourceIndex),
-      signature: visibleItemSignature(item, turn, renderContextThread()),
+      signature: visibleItemSignature(item, turn, thread),
     };
   }).filter((entry) => entry.item && entry.key && entry.signature);
 }
@@ -16820,7 +16821,8 @@ function renderLiveOperationDock(thread, previousKeys = new Set()) {
 }
 
 function renderTurn(turn, previousKeys = new Set()) {
-  const visibleEntries = visibleItemsForTurn(turn);
+  const thread = renderContextThread();
+  const visibleEntries = visibleItemsForTurn(turn, thread);
   const renderedItems = visibleEntries.map((entry, index) => {
     const item = entry.item;
     const sourceIndex = Number.isInteger(entry.sourceIndex) && entry.sourceIndex >= 0 ? entry.sourceIndex : index;

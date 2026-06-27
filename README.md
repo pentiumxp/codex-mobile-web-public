@@ -453,6 +453,37 @@ npm run check:macos  # passed
 git diff --check  # passed
 ```
 
+## 2026-06-27 Phase C Render/Patch Visible Items Thread Context Slice
+
+这是 visible conversation shape thread context 之后的相邻 Phase C 本地切片，不单独
+部署、不推 Public。它把真实 `renderTurn()` 和 local patch entry 生成路径也收束到
+显式 render context thread，避免证据 helper 已经 pane-aware 但实际渲染/patch 仍
+隐式读取全局 current thread。
+
+改动边界：
+
+- `renderTurn(turn)` 先读取 `renderContextThread()`，再调用
+  `visibleItemsForTurn(turn, thread)`；
+- `visibleItemPatchEntries(turn)` 同样读取一次 render context thread，并同时传给
+  `visibleItemsForTurn()` 和 `visibleItemSignature()`；
+- 新增可执行测试，证明 patch entries 在 context-compaction pending 场景下使用
+  pane/render context thread 过滤和生成签名，而不是全局 current thread；
+- 这样 visible shape evidence、tile pane rendering、local visible-item patch 三条
+  路径开始共享同一线程上下文边界；
+- 不改变 server projection、merge、DOM patch 算法、任务卡协议、shell/cache 版本或
+  生产部署状态。
+
+验证：
+
+```bash
+node --check public/app.js
+node --test test/conversation-render.test.js test/thread-tile-layout-ui.test.js test/thread-detail-dom-patch.test.js test/collab-agent-render.test.js  # 179 passed
+npm test  # 1262 passed
+npm run check  # passed
+npm run check:macos  # passed
+git diff --check  # passed
+```
+
 ## 2026-06-27 Phase A Conversation DOM Authority Invalidation Local Slice
 
 这是 v542 后继续按“小切片本地提交、模块化再部署”节奏推进的 Phase A 切片。

@@ -1366,7 +1366,8 @@ test("context compaction notices require explicit state and do not infer pending
 
 test("visible turn items keep source order after live operations move to the dock", () => {
   const body = functionBody("renderTurn");
-  assert.match(body, /const visibleEntries = visibleItemsForTurn\(turn\);/);
+  assert.match(body, /const thread = renderContextThread\(\);/);
+  assert.match(body, /const visibleEntries = visibleItemsForTurn\(turn, thread\);/);
   assert.doesNotMatch(body, /deferLiveFollowupUser/);
   assert.doesNotMatch(body, /candidate\.sourceIndex < sourceIndex/);
   assert.match(body, /return \{ html, sourceIndex, order: 1 \};/);
@@ -3227,6 +3228,9 @@ test("thread tile local patch paths refresh the pane instead of writing a single
   assert.match(functionBody("insertVisibleItemDom"), /threadDetailDomPatchApi\.insertVisibleItemElement\(\{/);
   assert.match(functionBody("patchVisibleItemDom"), /patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);
   assert.match(functionBody("patchVisibleItemDom"), /if \(!canPatchSingleThreadConversationDom\(\)\) return false;/);
+  assert.match(functionBody("visibleItemPatchEntries"), /const thread = renderContextThread\(\);/);
+  assert.match(functionBody("visibleItemPatchEntries"), /visibleItemsForTurn\(turn, thread\)\.map/);
+  assert.match(functionBody("visibleItemPatchEntries"), /visibleItemSignature\(item, turn, thread\)/);
   assert.match(functionBody("patchLiveTextItemDom"), /patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);
   assert.match(functionBody("patchLiveTextItemDom"), /if \(!canPatchSingleThreadConversationDom\(\)\) return false;/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /const targetThreadId = nextThread\.id \|\| state\.currentThreadId;/);
@@ -3632,6 +3636,77 @@ return visibleConversationShape(targetThread);
 `)();
 
   assert.deepEqual(result, { visibleTurnCount: 1, visibleItemCount: 1 });
+});
+
+test("visible item patch entries use render context thread for filtering and signatures", () => {
+  const sources = [
+    "statusText",
+    "contextCompactionStatusKind",
+    "renderContextThread",
+    "renderContextThreadId",
+    "turnHasDisplayItems",
+    "latestTurn",
+    "currentThreadHasActiveRuntimeStatus",
+    "isLatestTurn",
+    "isLiveTurn",
+    "canShowPendingContextCompaction",
+    "contextCompactionState",
+    "contextCompactionNotice",
+    "visibleItemsForTurn",
+    "stableItemKey",
+    "visibleItemSignature",
+    "visibleItemPatchEntries",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const result = Function(`
+const CONTEXT_COMPACTION_PENDING_NOTICE = "Context compaction pending";
+const CONTEXT_COMPACTION_COMPLETE_NOTICE = "Context compaction complete";
+const targetTurn = {
+  id: "target-turn",
+  status: { type: "idle" },
+  items: [{ id: "context-item", type: "contextCompaction", status: { type: "pending" } }],
+};
+const targetThread = { id: "target-thread", status: { type: "active" }, turns: [targetTurn] };
+const state = {
+  activeTurnId: "",
+  currentThreadId: "current-thread",
+  currentThread: {
+    id: "current-thread",
+    status: { type: "active" },
+    turns: [
+      { id: "current-latest", status: { type: "running" }, items: [{ id: "current-item" }] },
+    ],
+  },
+  renderContextThreadId: "",
+  renderContextThread: targetThread,
+};
+function isReasoningItem() { return false; }
+function shouldHideSupersededLiveUserMessage() { return false; }
+function shouldHideDurableLiveUserMessage() { return false; }
+function isContextCompactionItem(item) { return Boolean(item && item.type === "contextCompaction"); }
+function isOperationalItem() { return false; }
+function isTurnUsageSummaryItem() { return false; }
+function isSupersededLiveTurn() { return false; }
+function limitRawThreadVisibleEntries(entries) { return entries; }
+function isTurnComplete() { return false; }
+function isRunningStatus(status) { return Boolean(status && (status === "running" || status.type === "active" || status.type === "running")); }
+function isStaleActiveStatus() { return false; }
+function isIncompleteInterruptedTurn() { return false; }
+function turnHasActiveLiveItems() { return false; }
+function imageViewPath() { return ""; }
+function imageViewContentUrl() { return ""; }
+function imageViewUrl() { return ""; }
+function imageSourceSignature(value) { return String(value || ""); }
+function stableTextHash(value) { return String(value || "").length; }
+function inputContentSignature() { return []; }
+function operationCommandText() { return ""; }
+function operationDetailText() { return ""; }
+${sources.join("\n")}
+return visibleItemPatchEntries(targetTurn);
+`)();
+
+  assert.equal(result.length, 1);
+  assert.equal(result[0].key, "item|target-thread|target-turn|context-item");
+  assert.equal(result[0].signature.notice, "Context compaction pending");
 });
 
 test("item merge delegates visible-field preservation to thread detail state policy", () => {

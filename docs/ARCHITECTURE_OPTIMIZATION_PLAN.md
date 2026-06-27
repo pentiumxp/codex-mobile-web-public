@@ -2015,6 +2015,9 @@ Target:
   input thread into `visibleItemsForTurn()`, so render evidence, empty-detail
   mismatch checks, and patch-rejection shape evidence do not count items using
   global current-thread state.
+  The actual `renderTurn()` and `visibleItemPatchEntries()` paths now follow
+  the same rule: both call `visibleItemsForTurn(turn, thread)` with the active
+  render context thread, and patch-entry signatures reuse that same thread.
 - Treat each pane as a scaled mobile single-thread runtime instance. Shared
   global Composer chrome is only an interim input surface; global command dock
   or shared operation bubble are no longer acceptable in tile mode and must not

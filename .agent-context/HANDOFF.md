@@ -21439,6 +21439,46 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit this local slice and keep it undeployed until a coherent deployable
     module is ready.
 
+## 2026-06-27 - Phase C render/patch visible items thread context local slice
+
+- Current local state:
+  - Continued after local commit `064fe92` (`refactor visible conversation
+    shape uses thread context`).
+  - This is a local Phase C render/patch thread-context slice only. It changes
+    `public/app.js`, `test/conversation-render.test.js`, README, the
+    architecture plan, and this handoff. It does not bump shell/cache, deploy
+    production, or push Public.
+- Root-cause boundary:
+  - Symptom/risk: prior slices made visible-shape evidence pane-aware, but the
+    real `renderTurn()` path and `visibleItemPatchEntries()` still called
+    `visibleItemsForTurn(turn)` without a thread argument. In tile mode that
+    left actual render/patch filtering able to read global current-thread
+    state while evidence helpers used the pane thread.
+  - Failing layer: frontend visible item render/patch context propagation, not
+    server projection, merge policy, DOM reconciliation, task-card protocol, or
+    Home AI diagnostic transport.
+  - Violated invariant: evidence, render, and local patch paths must filter and
+    sign visible items against the same explicit render-context thread.
+- Changes:
+  - `renderTurn()` now reads `renderContextThread()` and passes it to
+    `visibleItemsForTurn(turn, thread)`.
+  - `visibleItemPatchEntries()` now reads the render context thread once and
+    passes it to both `visibleItemsForTurn()` and `visibleItemSignature()`.
+  - Added executable coverage proving visible item patch entries use the
+    render-context thread for context-compaction pending filtering/signatures.
+- Validation:
+  - `node --check public/app.js` passed.
+  - `node --test test/conversation-render.test.js test/thread-tile-layout-ui.test.js test/thread-detail-dom-patch.test.js test/collab-agent-render.test.js`
+    passed (`179` tests).
+  - `npm test` passed (`1262` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed before docs/context updates; rerun after this
+    handoff update before committing.
+- Next:
+  - Commit this local slice and keep it undeployed until a coherent deployable
+    module is ready.
+
 ## 2026-06-27 - Phase C Composer action control planning local slice
 
 - Current local state:
