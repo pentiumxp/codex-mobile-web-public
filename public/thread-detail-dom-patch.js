@@ -279,6 +279,60 @@
     };
   }
 
+  function planConversationHtmlUpdateApplication(input = {}) {
+    const updatePlan = objectOrEmpty(input.updatePlan || input.plan);
+    const action = String(updatePlan.action || "");
+    if (action === "hydrate-existing") {
+      return {
+        shouldMutateDom: false,
+        primaryAction: "hydrate-existing",
+        finalAction: "hydrate-existing",
+        patchAttempted: false,
+        patchApplied: false,
+        fallbackApplied: false,
+        patchRejectReason: "",
+        reason: "hydrate-existing",
+      };
+    }
+    if (action === "set-inner-html") {
+      return {
+        shouldMutateDom: true,
+        primaryAction: "set-inner-html",
+        finalAction: "set-inner-html",
+        patchAttempted: false,
+        patchApplied: false,
+        fallbackApplied: false,
+        patchRejectReason: "",
+        reason: "set-inner-html",
+      };
+    }
+    if (action === "patch-html") {
+      const patchResult = objectOrEmpty(input.patchResult);
+      const patchApplied = patchResult.ok === true;
+      const patchRejectReason = patchApplied ? "" : String(patchResult.reason || "patch-html-failed").slice(0, 80);
+      return {
+        shouldMutateDom: true,
+        primaryAction: "patch-html",
+        finalAction: patchApplied ? "patch-html" : "set-inner-html",
+        patchAttempted: true,
+        patchApplied,
+        fallbackApplied: !patchApplied,
+        patchRejectReason,
+        reason: patchApplied ? "patch-html" : "patch-html-failed",
+      };
+    }
+    return {
+      shouldMutateDom: false,
+      primaryAction: action,
+      finalAction: "",
+      patchAttempted: false,
+      patchApplied: false,
+      fallbackApplied: false,
+      patchRejectReason: "",
+      reason: action ? "unknown-action" : "missing-action",
+    };
+  }
+
   function planLocalConversationDomUpdateCompletionSnapshot(input = {}) {
     const tilePanePatched = Boolean(input.tilePanePatched);
     const scrollAction = input.scrollAction === "scroll-to-bottom" ? "scroll-to-bottom" : "update-bottom-button";
@@ -747,6 +801,7 @@
     patchNode,
     planConversationHtmlUpdate,
     planConversationHtmlUpdateEffects,
+    planConversationHtmlUpdateApplication,
     planLocalConversationDomUpdateCompletionSnapshot,
     planLocalConversationDomUpdateCompletion,
     planLocalConversationDomUpdateCompletionEffects,

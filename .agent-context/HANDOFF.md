@@ -19545,3 +19545,46 @@ The previous full handoff was archived and should be opened only when old proven
     restart is approved, deploy/read back and require `muxRuntime.muxMetricsRpc`
     plus `muxMetrics.supported=true` before app-server query semantics are
     changed.
+
+## 2026-06-27 - Phase A conversation DOM update outcome local slice
+
+- Current local state:
+  - Continued architecture optimization locally after committing the Phase B
+    selected mux runtime readiness slice and sending Home AI task card
+    `ttc_7bd3659728cb07a505` for the central selected-mux deploy refresh
+    contract.
+  - This Phase A slice is local-only. It does not bump `CLIENT_BUILD_ID` /
+    PWA shell cache and is not deployed by itself.
+- Root-cause boundary:
+  - Symptom/risk: conversation flicker, full repaint, or missing DOM turns can
+    currently pass through `updateConversationHtml()` as an implicit
+    patch-html failure followed by full `innerHTML` replacement.
+  - Failing layer: conversation DOM update application outcome on the frontend,
+    not server projection, thread-list fallback, Home AI diagnostic intake, or
+    task-card protocol.
+  - Violated invariant: local patch failure must be a bounded, typed outcome so
+    future projection/render diagnostics can distinguish normal full render from
+    patch-failure replacement without reading message text or private payloads.
+- Changes:
+  - `public/thread-detail-dom-patch.js` now owns
+    `planConversationHtmlUpdateApplication`, which classifies hydrate-only,
+    successful patch-html, direct set-inner-html, and patch-html-failed
+    replacement outcomes.
+  - `public/app.js` uses that outcome while applying conversation HTML. When a
+    patch attempt fails, the replacement remains the same user-visible recovery
+    path but now emits bounded client/performance metadata:
+    action/finalAction, visible-turn counts, update reason, and bounded reject
+    reason only.
+  - Updated `README.md` and `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Validation:
+  - `node --check public/thread-detail-dom-patch.js && node --check public/app.js && node --test test/thread-detail-dom-patch.test.js test/thread-detail-refresh-dom-harness.test.js test/thread-detail-render-plan.test.js test/conversation-render.test.js`
+    passed (`244` tests).
+- Deployment:
+  - Not deployed. Keep batching Phase A frontend ownership slices before the
+    next production deployment.
+- Next:
+  - Run full validation and commit this local slice.
+  - Continue Phase A by moving more `updateConversationHtml` execution/effects
+    and single-thread/tile patch branch ownership into helper-tested boundaries,
+    or resume Phase B deploy/readback once Home AI returns the selected mux
+    deploy-contract repair.

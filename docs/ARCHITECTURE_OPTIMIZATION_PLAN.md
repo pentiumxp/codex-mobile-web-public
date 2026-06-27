@@ -798,7 +798,16 @@ Conversation HTML update planning now also lives in
 versus changed signature branching, patch-shell signature update intent,
 patch-html versus `innerHTML` action choice, hydrate options, and scroll action
 while app code keeps the real DOM write/fallback, callback execution, state
-assignment, and performance event emission. Local DOM patch completion
+assignment, and performance event emission. The 2026-06-27 local follow-up
+adds `planConversationHtmlUpdateApplication` in the same helper. It owns the
+bounded outcome classification for hydrate-only, `patch-html`, direct
+`set-inner-html`, and `patch-html-failed` replacement paths. App code still
+executes the real DOM mutation, but a failed HTML patch now becomes observable
+through bounded client/performance metadata instead of being only a console
+warning. This does not change render strategy or hide projection mismatches; it
+separates normal full render from patch-failure replacement so future
+diagnostics can route flicker/repaint incidents to the DOM patch layer.
+Local DOM patch completion
 planning now also lives in that helper:
 `planLocalConversationDomUpdateCompletion` owns the tile-pane terminal state,
 single-thread blocked state, single-thread hydrate intent, signature update

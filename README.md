@@ -8602,6 +8602,40 @@ VAPID details:
 
 `start-codex-desktop-shared.ps1 -ForceRestartMux` is a launcher option, not an environment variable. It is intended for bridge updates where an existing keep-alive mux must be replaced.
 
+## 2026-06-27 Phase A Conversation DOM Update Outcome Slice
+
+This local/private slice continues the thread-detail render/patch ownership
+work without changing user-facing render strategy or bumping the shell cache.
+The symptom boundary is conversation flicker / missing DOM turns where the
+client can silently fall back from incremental HTML patching to full
+`innerHTML` replacement. The failing layer is the conversation DOM update
+application outcome in `updateConversationHtml`, not server projection,
+thread-list fallback, task-card protocol, or Home AI diagnostic intake.
+
+`public/thread-detail-dom-patch.js` now owns a bounded
+`planConversationHtmlUpdateApplication` outcome. It classifies hydrate-only,
+`patch-html`, direct `set-inner-html`, and `patch-html-failed` replacement
+paths. `public/app.js` uses that outcome when applying conversation HTML; if a
+patch attempt fails, the full replacement is now observable through bounded
+client/performance metadata instead of being only a console warning. The
+payload records action labels, visible-turn counts, and a bounded reject reason
+only. It must not include message text, task-card bodies, upload contents,
+paths, cookies, tokens, prompts, provider payloads, or long logs.
+
+Focused validation for the local slice:
+
+```bash
+node --check public/thread-detail-dom-patch.js && \
+node --check public/app.js && \
+node --test test/thread-detail-dom-patch.test.js \
+  test/thread-detail-refresh-dom-harness.test.js \
+  test/thread-detail-render-plan.test.js \
+  test/conversation-render.test.js
+```
+
+Result: `244` tests passed. This slice is not deployed by itself; keep batching
+Phase A frontend ownership work before the next production deployment.
+
 ## Troubleshooting
 
 ### Mobile Web Shows `Loading thread`

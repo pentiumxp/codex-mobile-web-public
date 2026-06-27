@@ -12492,12 +12492,29 @@ function updateConversationHtml(html, signature, options = {}) {
   }
   const startedAt = nowPerfMs();
   const previousChildCount = conversation ? conversation.childNodes.length : 0;
-  try {
-    if (updatePlan.action === "patch-html") patchHtml(conversation, html);
-    else conversation.innerHTML = html;
-  } catch (err) {
-    console.warn("Conversation patch failed; falling back to full render.", err);
+  let applicationPlan = threadDetailDomPatchApi.planConversationHtmlUpdateApplication({
+    updatePlan,
+  });
+  if (updatePlan.action === "patch-html") {
+    const patchResult = threadDetailDomPatchApi.patchHtml({ target: conversation, html, document });
+    applicationPlan = threadDetailDomPatchApi.planConversationHtmlUpdateApplication({
+      updatePlan,
+      patchResult,
+    });
+    if (applicationPlan.fallbackApplied) conversation.innerHTML = html;
+  } else if (updatePlan.action === "set-inner-html") {
     conversation.innerHTML = html;
+  }
+  if (applicationPlan.fallbackApplied) {
+    postClientEvent("conversation_patch_html_fallback", {
+      threadId: state.currentThreadId || "",
+      reason: applicationPlan.patchRejectReason || applicationPlan.reason || "patch-html-failed",
+      updateReason: updatePlan.reason || "",
+      expectedVisibleTurnCount,
+      renderedDomTurnCount,
+      action: applicationPlan.primaryAction || "",
+      finalAction: applicationPlan.finalAction || "",
+    });
   }
   applyConversationHtmlUpdateEffectsPlan(effectsPlan, { root: conversation });
   const renderElapsedMs = roundedDurationMs(startedAt);
@@ -12511,6 +12528,9 @@ function updateConversationHtml(html, signature, options = {}) {
     threadId: state.currentThreadId || "",
     currentThreadStatus: statusText(state.currentThread && state.currentThread.status),
     updateReason: updatePlan.reason || "",
+    domUpdateAction: applicationPlan.finalAction || "",
+    patchFallbackApplied: Boolean(applicationPlan.fallbackApplied),
+    patchRejectReason: applicationPlan.patchRejectReason || "",
   }, {
     key: "conversation_render_ms",
     minIntervalMs: forceReport ? 0 : PERF_EVENT_THROTTLE_MS,

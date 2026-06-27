@@ -438,6 +438,62 @@ test("conversation HTML update effects ignore missing or unknown actions", () =>
   });
 });
 
+test("conversation HTML update application exposes patch outcomes", () => {
+  assert.deepEqual(domPatch.planConversationHtmlUpdateApplication({
+    updatePlan: { action: "hydrate-existing" },
+  }), {
+    shouldMutateDom: false,
+    primaryAction: "hydrate-existing",
+    finalAction: "hydrate-existing",
+    patchAttempted: false,
+    patchApplied: false,
+    fallbackApplied: false,
+    patchRejectReason: "",
+    reason: "hydrate-existing",
+  });
+
+  assert.deepEqual(domPatch.planConversationHtmlUpdateApplication({
+    updatePlan: { action: "patch-html" },
+    patchResult: { ok: true, reason: "patched" },
+  }), {
+    shouldMutateDom: true,
+    primaryAction: "patch-html",
+    finalAction: "patch-html",
+    patchAttempted: true,
+    patchApplied: true,
+    fallbackApplied: false,
+    patchRejectReason: "",
+    reason: "patch-html",
+  });
+
+  assert.deepEqual(domPatch.planConversationHtmlUpdateApplication({
+    updatePlan: { action: "patch-html" },
+    patchResult: { ok: false, reason: "missing-document-private-detail-that-should-be-bounded" },
+  }), {
+    shouldMutateDom: true,
+    primaryAction: "patch-html",
+    finalAction: "set-inner-html",
+    patchAttempted: true,
+    patchApplied: false,
+    fallbackApplied: true,
+    patchRejectReason: "missing-document-private-detail-that-should-be-bounded",
+    reason: "patch-html-failed",
+  });
+
+  assert.deepEqual(domPatch.planConversationHtmlUpdateApplication({
+    updatePlan: { action: "set-inner-html" },
+  }), {
+    shouldMutateDom: true,
+    primaryAction: "set-inner-html",
+    finalAction: "set-inner-html",
+    patchAttempted: false,
+    patchApplied: false,
+    fallbackApplied: false,
+    patchRejectReason: "",
+    reason: "set-inner-html",
+  });
+});
+
 test("local conversation DOM update completion snapshot normalizes tile-pane terminal state", () => {
   assert.deepEqual(domPatch.planLocalConversationDomUpdateCompletionSnapshot({
     tilePanePatched: true,
