@@ -1983,6 +1983,13 @@ Target:
   their owning thread id, the shared click resolver returns that id, and
   mutation/reply calls send and settle against that action thread instead of
   unconditionally using global `state.currentThreadId`.
+  Approval/server-request action context is now pane-aware as well: rendered
+  approval and user-input controls carry their owning thread id, the shared
+  click resolver returns it, and pending/resolved/request-response refreshes
+  patch the current detail or the visible tile pane that owns the request.
+  Conversation signatures and in-turn approval rendering now use the active
+  render context thread id, so tile-pane approval state is no longer keyed to
+  the global current thread.
 - Treat each pane as a scaled mobile single-thread runtime instance. Shared
   global Composer chrome is only an interim input surface; global command dock
   or shared operation bubble are no longer acceptable in tile mode and must not

@@ -240,6 +240,40 @@ npm run check  # passed
 git diff --check  # passed
 ```
 
+## 2026-06-27 Phase C Approval Pane Action Context Slice
+
+这是 Task-Card pane action context 之后的同类 Phase C 本地小切片，不单独部署、
+不推 Public。它把 app-server approval / server request 前端操作从全局
+`state.currentThreadId` 继续收敛到 owning thread context，避免平铺 pane 内审批
+卡片刷新错误线程。
+
+改动边界：
+
+- approval / user-input 请求渲染时写入 `data-approval-thread-id` 或
+  `data-server-request-thread-id`；
+- `thread-detail-actions` 解析 approval answer、server response、server request
+  decline 时返回 owning `threadId`；
+- `answerServerRequest()`、`answerApproval()`、`declineServerRequest()` 接收 action
+  context thread id，并在等待、成功、失败状态更新后刷新该 thread；
+- SSE/replay 进入的 pending/resolved approval 更新也改为按 request thread id 刷新：
+  当前详情走原 current-thread render，可见 tile pane 走 pane patch；
+- conversation/root/patch/render signatures 和 turn 内 approval 渲染现在使用
+  `renderContextThreadId()`，tile pane 签名不再被全局 current thread 的 approval
+  状态污染；
+- 不改变 app-server approval 协议、审批 payload、权限决策、shell/cache 版本或生产部署状态。
+
+验证：
+
+```bash
+node --check public/thread-detail-actions.js
+node --check public/app.js
+node --test test/thread-detail-actions.test.js test/conversation-render.test.js test/thread-tile-layout-ui.test.js  # 121 passed
+npm test  # 1253 passed
+npm run check  # passed
+npm run check:macos  # passed
+git diff --check  # passed
+```
+
 ## 2026-06-27 Phase A Conversation DOM Authority Invalidation Local Slice
 
 这是 v542 后继续按“小切片本地提交、模块化再部署”节奏推进的 Phase A 切片。

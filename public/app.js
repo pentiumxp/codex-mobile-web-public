@@ -5897,6 +5897,14 @@ function approvalThreadId(request) {
   return request && request.params && (request.params.threadId || request.params.conversationId || "");
 }
 
+function renderContextThreadId(thread = null) {
+  return String(state.renderContextThreadId
+    || thread && thread.id
+    || state.currentThreadId
+    || state.currentThread && state.currentThread.id
+    || "");
+}
+
 function approvalTurnId(request) {
   return request && request.params && request.params.turnId ? String(request.params.turnId) : "";
 }
@@ -5919,6 +5927,24 @@ function requestBelongsToThread(request, threadId) {
   const requestThreadId = approvalThreadId(request);
   if (requestThreadId) return requestThreadId === threadId;
   return Boolean(threadId);
+}
+
+function approvalActionThreadId(request, fallbackThreadId = "") {
+  return String(approvalThreadId(request) || fallbackThreadId || state.currentThreadId || "").trim();
+}
+
+function scheduleApprovalThreadRender(threadId = "") {
+  const id = String(threadId || state.currentThreadId || "").trim();
+  if (!id) return false;
+  if (id === String(state.currentThreadId || "")) {
+    scheduleRenderCurrentThread();
+    return true;
+  }
+  if (state.threadTileMode && threadTilePaneIsVisible(id)) {
+    if (!scheduleRenderThreadTilePane(id, { preserveScroll: true })) scheduleRenderCurrentThread();
+    return true;
+  }
+  return false;
 }
 
 function pendingApprovalsForThread(threadId) {
@@ -5989,13 +6015,14 @@ function threadIsLoadingWithoutVisibleTurns(thread) {
 
 function conversationRootSignature(thread) {
   if (!thread) return "home";
-  if (thread.mobileLoadError) return `load-error|${state.currentThreadId || thread.id || ""}|${thread.mobileLoadError}`;
-  if (threadIsLoadingWithoutVisibleTurns(thread)) return `loading|${state.currentThreadId || thread.id || ""}`;
+  const threadId = renderContextThreadId(thread);
+  if (thread.mobileLoadError) return `load-error|${threadId}|${thread.mobileLoadError}`;
+  if (threadIsLoadingWithoutVisibleTurns(thread)) return `loading|${threadId}`;
   const turns = visibleTurnsForConversation(thread);
   const omitted = Number(thread.mobileOmittedTurnCount || 0) + Math.max(0, (thread.turns || []).length - turns.length);
   const readWarningMessage = threadReadWarningMessage(thread);
   const payload = {
-    threadId: state.currentThreadId || thread.id || "",
+    threadId,
     imageAuthVersion: Number(state.imageAuthVersion || 0),
     pluginRefreshPendingNotice: String(state.pluginRefreshPendingNotice || ""),
     rolloutWarning: rolloutWarningSignature(thread),
@@ -6005,7 +6032,7 @@ function conversationRootSignature(thread) {
     historyBusy: Boolean(state.threadHistoryBusy),
     historyError: String(state.threadHistoryError || ""),
     goal: threadGoalSignature(thread),
-    approvals: approvalRequestsSignature(state.currentThreadId || thread.id || ""),
+    approvals: approvalRequestsSignature(threadId),
     taskCards: threadTaskCardsSignature(thread),
     readMode: String(thread.mobileReadMode || ""),
     projectionVersion: String(thread.mobileProjectionVersion || ""),
@@ -6020,13 +6047,14 @@ function conversationRootSignature(thread) {
 
 function conversationPatchShellSignature(thread) {
   if (!thread) return "home";
-  if (thread.mobileLoadError) return `load-error|${state.currentThreadId || thread.id || ""}|${thread.mobileLoadError}`;
-  if (threadIsLoadingWithoutVisibleTurns(thread)) return `loading|${state.currentThreadId || thread.id || ""}`;
+  const threadId = renderContextThreadId(thread);
+  if (thread.mobileLoadError) return `load-error|${threadId}|${thread.mobileLoadError}`;
+  if (threadIsLoadingWithoutVisibleTurns(thread)) return `loading|${threadId}`;
   const turns = visibleTurnsForConversation(thread);
   const omitted = Number(thread.mobileOmittedTurnCount || 0) + Math.max(0, (thread.turns || []).length - turns.length);
   const readWarningMessage = threadReadWarningMessage(thread);
   const payload = {
-    threadId: state.currentThreadId || thread.id || "",
+    threadId,
     imageAuthVersion: Number(state.imageAuthVersion || 0),
     pluginRefreshPendingNotice: String(state.pluginRefreshPendingNotice || ""),
     rolloutWarning: rolloutWarningSignature(thread),
@@ -6036,7 +6064,7 @@ function conversationPatchShellSignature(thread) {
     historyBusy: Boolean(state.threadHistoryBusy),
     historyError: String(state.threadHistoryError || ""),
     goal: threadGoalSignature(thread),
-    approvals: approvalRequestsSignature(state.currentThreadId || thread.id || ""),
+    approvals: approvalRequestsSignature(threadId),
     taskCards: threadTaskCardsSignature(thread),
     readWarning: String(thread.mobileReadWarning || ""),
     readWarningMessage,
@@ -6047,12 +6075,13 @@ function conversationPatchShellSignature(thread) {
 
 function conversationRenderSignature(thread) {
   if (!thread) return "home";
-  if (thread.mobileLoadError) return `load-error|${state.currentThreadId || thread.id || ""}|${thread.mobileLoadError}`;
-  if (threadIsLoadingWithoutVisibleTurns(thread)) return `loading|${state.currentThreadId || thread.id || ""}`;
+  const threadId = renderContextThreadId(thread);
+  if (thread.mobileLoadError) return `load-error|${threadId}|${thread.mobileLoadError}`;
+  if (threadIsLoadingWithoutVisibleTurns(thread)) return `loading|${threadId}`;
   const turns = visibleTurnsForConversation(thread);
   const omitted = Number(thread.mobileOmittedTurnCount || 0) + Math.max(0, (thread.turns || []).length - turns.length);
   const payload = {
-    threadId: state.currentThreadId || thread.id || "",
+    threadId,
     imageAuthVersion: Number(state.imageAuthVersion || 0),
     pluginRefreshPendingNotice: String(state.pluginRefreshPendingNotice || ""),
     rolloutWarning: rolloutWarningSignature(thread),
@@ -6062,7 +6091,7 @@ function conversationRenderSignature(thread) {
     historyBusy: Boolean(state.threadHistoryBusy),
     historyError: String(state.threadHistoryError || ""),
     goal: threadGoalSignature(thread),
-    approvals: approvalRequestsSignature(state.currentThreadId || thread.id || ""),
+    approvals: approvalRequestsSignature(threadId),
     taskCards: threadTaskCardsSignature(thread),
     projectionVersion: String(thread.mobileProjectionVersion || ""),
     projectionRevision: String(thread.mobileProjectionRevision || ""),
@@ -16667,8 +16696,9 @@ function renderUserInputOptions(request) {
   const questions = Array.isArray(params.questions) ? params.questions : [];
   const question = questions.find((entry) => Array.isArray(entry.options) && entry.options.length) || questions[0] || null;
   if (!question || !Array.isArray(question.options) || !question.options.length) return "";
+  const threadId = approvalActionThreadId(request);
   return `<div class="approval-option-grid">
-    ${question.options.map((option) => `<button class="approval-option" type="button" data-server-request-id="${escapeHtml(request.id)}" data-server-question-id="${escapeHtml(question.id || "answer")}" data-server-response-text="${escapeHtml(option.label || "")}">
+    ${question.options.map((option) => `<button class="approval-option" type="button" data-server-request-id="${escapeHtml(request.id)}" data-server-request-thread-id="${escapeHtml(threadId)}" data-server-question-id="${escapeHtml(question.id || "answer")}" data-server-response-text="${escapeHtml(option.label || "")}">
       <span>${escapeHtml(option.label || "选项")}</span>
       ${option.description ? `<small>${escapeHtml(option.description)}</small>` : ""}
     </button>`).join("")}
@@ -16679,12 +16709,13 @@ function renderUserInputActions(request) {
   const params = request.params || {};
   const questions = Array.isArray(params.questions) ? params.questions : [];
   const question = questions[0] || {};
-  return `<form class="approval-response-form" data-server-request-form data-server-request-id="${escapeHtml(request.id)}" data-server-question-id="${escapeHtml(question.id || "answer")}">
+  const threadId = approvalActionThreadId(request);
+  return `<form class="approval-response-form" data-server-request-form data-server-request-id="${escapeHtml(request.id)}" data-server-request-thread-id="${escapeHtml(threadId)}" data-server-question-id="${escapeHtml(question.id || "answer")}">
     ${renderUserInputOptions(request)}
     <textarea class="approval-response-input" name="responseText" rows="3" placeholder="输入回复内容"></textarea>
     <div class="approval-actions request-actions">
       <button class="approval-button allow" type="submit">提交</button>
-      <button class="approval-button deny" type="button" data-server-request-id="${escapeHtml(request.id)}" data-server-request-decline>取消</button>
+      <button class="approval-button deny" type="button" data-server-request-id="${escapeHtml(request.id)}" data-server-request-thread-id="${escapeHtml(threadId)}" data-server-request-decline>取消</button>
     </div>
   </form>`;
 }
@@ -16695,10 +16726,11 @@ function renderApprovalActions(request) {
     return "";
   }
   if (isUserInputRequest(request)) return renderUserInputActions(request);
+  const threadId = approvalActionThreadId(request);
   return `<div class="approval-actions">
-    <button class="approval-button allow" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-action="allow_once">允许一次</button>
-    <button class="approval-button allow" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-action="allow_session">本会话允许</button>
-    <button class="approval-button deny" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-action="deny">拒绝</button>
+    <button class="approval-button allow" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-thread-id="${escapeHtml(threadId)}" data-approval-action="allow_once">允许一次</button>
+    <button class="approval-button allow" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-thread-id="${escapeHtml(threadId)}" data-approval-action="allow_session">本会话允许</button>
+    <button class="approval-button deny" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-thread-id="${escapeHtml(threadId)}" data-approval-action="deny">拒绝</button>
   </div>`;
 }
 
@@ -16769,7 +16801,7 @@ function renderTurn(turn, previousKeys = new Set()) {
     .sort((a, b) => (a.sourceIndex - b.sourceIndex) || (a.order - b.order))
     .map((entry) => entry.html)
     .join("");
-  const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
+  const threadId = renderContextThreadId();
   const turnApprovals = approvalsForTurn(threadId, turn.id);
   const approvalsHtml = turnApprovals.length
     ? `<div class="approval-stack in-turn">${turnApprovals.map((request) => renderApprovalRequest(request, previousKeys)).join("")}</div>`
@@ -19816,12 +19848,12 @@ function upsertServerRequest(request) {
   if (!request || request.id === null || request.id === undefined) return;
   if (!shouldShowApprovalRequest(request)) {
     state.pendingApprovals.delete(String(request.id));
-    if (state.currentThread && requestBelongsToThread(request, state.currentThread.id)) scheduleRenderCurrentThread();
+    scheduleApprovalThreadRender(approvalActionThreadId(request));
     return;
   }
   markActivity(isUserInputRequest(request) ? "等待输入" : "等待批准");
   state.pendingApprovals.set(String(request.id), Object.assign({}, state.pendingApprovals.get(String(request.id)) || {}, request));
-  if (state.currentThread && requestBelongsToThread(request, state.currentThread.id)) scheduleRenderCurrentThread();
+  scheduleApprovalThreadRender(approvalActionThreadId(request));
 }
 
 function scheduleApprovalRemoval(requestId, delayMs = 6000) {
@@ -19830,8 +19862,9 @@ function scheduleApprovalRemoval(requestId, delayMs = 6000) {
   setTimeout(() => {
     const existing = state.pendingApprovals.get(key);
     if (!existing || !isApprovalSettled(existing)) return;
+    const threadId = approvalActionThreadId(existing);
     state.pendingApprovals.delete(key);
-    if (state.currentThread) scheduleRenderCurrentThread();
+    scheduleApprovalThreadRender(threadId);
   }, delayMs);
 }
 
@@ -19847,7 +19880,7 @@ function resolveServerRequest(payload) {
     existing.status = payload.status || "resolved";
     next = existing;
   }
-  if (state.currentThread && next && requestBelongsToThread(next, state.currentThread.id)) scheduleRenderCurrentThread();
+  if (next) scheduleApprovalThreadRender(approvalActionThreadId(next));
   if (next) markActivity(isUserInputRequest(next) ? "输入完成" : "批准完成");
   scheduleApprovalRemoval(requestId);
 }
@@ -22831,14 +22864,15 @@ async function interruptActiveTurn(threadId = currentComposerThreadId(), activeT
     .catch(showError);
 }
 
-async function answerServerRequest(requestId, payload) {
+async function answerServerRequest(requestId, payload, options = {}) {
   const key = requestId !== null && requestId !== undefined ? String(requestId) : "";
   const request = state.pendingApprovals.get(key);
   if (!request || request.status !== "waiting") return;
+  const threadId = approvalActionThreadId(request, options.threadId);
   request.status = "responding";
   request.decision = payload && (payload.decision || payload.action) || "submitted";
   markActivity(isUserInputRequest(request) ? "输入发送中" : "批准中");
-  renderCurrentThread();
+  scheduleApprovalThreadRender(threadId);
   try {
     const result = await api(`/api/approvals/${encodeURIComponent(key)}`, {
       method: "POST",
@@ -22849,17 +22883,17 @@ async function answerServerRequest(requestId, payload) {
     $("connectionState").classList.remove("error");
     $("connectionState").textContent = isUserInputRequest(request) ? "Response sent" : "Approval sent";
     markActivity(isUserInputRequest(request) ? "输入已发送" : "批准发送");
-    renderCurrentThread();
+    scheduleApprovalThreadRender(threadId);
   } catch (err) {
     request.status = "waiting";
     request.decision = null;
     showError(err);
-    renderCurrentThread();
+    scheduleApprovalThreadRender(threadId);
   }
 }
 
-function answerApproval(requestId, decision) {
-  return answerServerRequest(requestId, { decision });
+function answerApproval(requestId, decision, options = {}) {
+  return answerServerRequest(requestId, { decision }, options);
 }
 
 function serverRequestPayload(request, responseText, questionId) {
@@ -22869,17 +22903,17 @@ function serverRequestPayload(request, responseText, questionId) {
   return { responseText, questionId };
 }
 
-function declineServerRequest(requestId) {
+function declineServerRequest(requestId, options = {}) {
   const key = requestId !== null && requestId !== undefined ? String(requestId) : "";
   const request = state.pendingApprovals.get(key);
   if (!request) return Promise.resolve();
   if (request.method === "mcpServer/elicitation/request") {
-    return answerServerRequest(key, { action: "decline" });
+    return answerServerRequest(key, { action: "decline" }, options);
   }
   if (request.method === "item/tool/requestUserInput") {
-    return answerServerRequest(key, { answers: {} });
+    return answerServerRequest(key, { answers: {} }, options);
   }
-  return answerApproval(key, "deny");
+  return answerApproval(key, "deny", options);
 }
 
 async function mutateThreadTaskCard(cardId, action, body = {}, options = {}) {
@@ -23480,7 +23514,7 @@ function wireUi() {
       return;
     }
     if (actionPlan.action === "approval-answer") {
-      answerApproval(actionPlan.approvalId, actionPlan.approvalAction).catch(showError);
+      answerApproval(actionPlan.approvalId, actionPlan.approvalAction, { threadId: actionPlan.threadId }).catch(showError);
       return;
     }
     if (actionPlan.action === "task-card-reply") {
@@ -23498,11 +23532,11 @@ function wireUi() {
     }
     if (actionPlan.action === "server-response") {
       const request = state.pendingApprovals.get(actionPlan.requestId !== null && actionPlan.requestId !== undefined ? String(actionPlan.requestId) : "");
-      answerServerRequest(actionPlan.requestId, serverRequestPayload(request, actionPlan.responseText || "", actionPlan.questionId || "answer")).catch(showError);
+      answerServerRequest(actionPlan.requestId, serverRequestPayload(request, actionPlan.responseText || "", actionPlan.questionId || "answer"), { threadId: actionPlan.threadId }).catch(showError);
       return;
     }
     if (actionPlan.action === "server-request-decline") {
-      declineServerRequest(actionPlan.requestId).catch(showError);
+      declineServerRequest(actionPlan.requestId, { threadId: actionPlan.threadId }).catch(showError);
     }
   });
   $("conversation").addEventListener("submit", (event) => {
@@ -23512,7 +23546,7 @@ function wireUi() {
     const requestId = form.dataset.serverRequestId;
     const request = state.pendingApprovals.get(requestId !== null && requestId !== undefined ? String(requestId) : "");
     const responseText = new FormData(form).get("responseText") || "";
-    answerServerRequest(requestId, serverRequestPayload(request, String(responseText), form.dataset.serverQuestionId || "answer")).catch(showError);
+    answerServerRequest(requestId, serverRequestPayload(request, String(responseText), form.dataset.serverQuestionId || "answer"), { threadId: form.dataset.serverRequestThreadId }).catch(showError);
   });
   $("conversation").addEventListener("error", handleConversationImageError, true);
   $("conversation").addEventListener("load", handleConversationImageLoad, true);

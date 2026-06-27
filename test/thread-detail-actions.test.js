@@ -74,7 +74,7 @@ test("click action rejects nodes outside the supplied root", () => {
 });
 
 test("thread detail click action resolves approval and task card controls", () => {
-  const approval = node("approval", { approvalId: "ap-1", approvalAction: "allow_once" });
+  const approval = node("approval", { approvalId: "ap-1", approvalThreadId: "thread-ap", approvalAction: "allow_once" });
   assert.deepEqual(actions.resolveThreadDetailClickAction({
     target: targetWith({ "[data-approval-action]": approval }),
   }), {
@@ -85,6 +85,7 @@ test("thread detail click action resolves approval and task card controls", () =
     button: approval,
     approvalId: "ap-1",
     approvalAction: "allow_once",
+    threadId: "thread-ap",
   });
 
   const reply = node("reply", { taskCardAction: "reply", taskCardId: "ttc_1", taskCardThreadId: "thread-a" });
@@ -115,6 +116,7 @@ test("thread detail click action resolves draft and server response controls", (
 
   const response = node("response", {
     serverRequestId: "req-1",
+    serverRequestThreadId: "thread-req",
     serverResponseText: "yes",
     serverQuestionId: "answer",
   });
@@ -123,12 +125,14 @@ test("thread detail click action resolves draft and server response controls", (
   });
   assert.equal(responsePlan.action, "server-response");
   assert.equal(responsePlan.requestId, "req-1");
+  assert.equal(responsePlan.threadId, "thread-req");
   assert.equal(responsePlan.responseText, "yes");
 
-  const decline = node("decline", { serverRequestId: "req-2" });
+  const decline = node("decline", { serverRequestId: "req-2", serverRequestThreadId: "thread-decline" });
   const declinePlan = actions.resolveThreadDetailClickAction({
     target: targetWith({ "[data-server-request-decline]": decline }),
   });
   assert.equal(declinePlan.action, "server-request-decline");
   assert.equal(declinePlan.requestId, "req-2");
+  assert.equal(declinePlan.threadId, "thread-decline");
 });

@@ -69,6 +69,7 @@
         button: node,
         approvalId: dataValue(node, "approvalId"),
         approvalAction: dataValue(node, "approvalAction"),
+        threadId: dataValue(node, "approvalThreadId"),
       });
     }
     node = closestWithin(target, "[data-task-card-action]", root);
@@ -97,6 +98,7 @@
       return action("server-response", node, {
         option: node,
         requestId: dataValue(node, "serverRequestId"),
+        threadId: dataValue(node, "serverRequestThreadId"),
         responseText: dataValue(node, "serverResponseText"),
         questionId: dataValue(node, "serverQuestionId") || "answer",
       });
@@ -106,6 +108,7 @@
       return action("server-request-decline", node, {
         button: node,
         requestId: dataValue(node, "serverRequestId"),
+        threadId: dataValue(node, "serverRequestThreadId"),
       });
     }
     return action("none", null, { reason: "no-match" });

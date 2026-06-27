@@ -21041,6 +21041,59 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit this local slice and keep it undeployed until a coherent deployable
     module is ready.
 
+## 2026-06-27 - Phase C approval pane action context local slice
+
+- Current local state:
+  - Continued after local commit `6690517` (`refactor task card pane action
+    context`).
+  - This is a local Phase C pane-state/approval action-context slice only. It
+    changes `public/app.js`, `public/thread-detail-actions.js`, focused tests,
+    README, and the architecture plan. It does not bump shell/cache, deploy
+    production, or push Public.
+- Root-cause boundary:
+  - Symptom/risk: approval/server-request cards were filtered by thread at
+    render time, but their buttons/forms carried only request id, and
+    submit/settle paths rendered `state.currentThread` after local status
+    changes or app-server responses. In tile mode, a pane-local approval could
+    update or re-signature the global current thread rather than the pane
+    owning the request.
+  - Failing layer: frontend approval/server-request action context and
+    pane-local refresh dispatch, not app-server approval protocol, permission
+    policy, task-card protocol, server projection, or Home AI diagnostic
+    transport.
+  - Violated invariant: pane-local approval and user-input actions must carry
+    their owning thread context explicitly. Global current-thread fallback is
+    acceptable only for legacy requests without a request thread id.
+- Changes:
+  - Approval and user-input controls now render `data-approval-thread-id` or
+    `data-server-request-thread-id`.
+  - `public/thread-detail-actions.js` returns `threadId` for approval answer,
+    server response, and server-request decline action plans.
+  - `answerServerRequest()`, `answerApproval()`, and `declineServerRequest()`
+    accept action-context thread ids and refresh the owning current detail or
+    visible tile pane after waiting/success/failure state changes.
+  - Pending/resolved server-request replay now schedules refresh by request
+    thread id instead of only checking `state.currentThread`.
+  - Conversation/root/patch/render signatures and in-turn approval rendering
+    use `renderContextThreadId()`, so tile-pane approval state is keyed to the
+    pane thread instead of global current thread.
+- Validation:
+  - `node --check public/thread-detail-actions.js` passed.
+  - `node --check public/app.js` passed.
+  - `node --test test/thread-detail-actions.test.js test/conversation-render.test.js test/thread-tile-layout-ui.test.js`
+    passed (`121` tests).
+  - `npm test` passed (`1253` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed after docs/context updates.
+- Next:
+  - Commit this local slice and keep it undeployed until a coherent deployable
+    module is ready.
+  - The read-only subagent found another Phase C pane-context risk:
+    local-file-preview/image content URLs still use global
+    `state.currentThreadId` from tile panes. Prefer that as the next small
+    slice before batching a deployable module.
+
 ## 2026-06-27 - Phase B first-paint reporting stage local slice
 
 - Current local state:
