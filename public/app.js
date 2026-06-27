@@ -14522,9 +14522,10 @@ function handleLiveOperationDockClick(event) {
   setLiveOperationDockMode(current === "expanded" ? "compact" : "expanded");
 }
 
-function sourceIndexForVisibleItem(turn, item) {
+function sourceIndexForVisibleItem(turn, item, thread = null) {
   if (!turn || !item) return 0;
-  const entry = visibleItemsForTurn(turn).find((candidate) => candidate && candidate.item === item);
+  const contextThread = renderContextThread(thread);
+  const entry = visibleItemsForTurn(turn, contextThread).find((candidate) => candidate && candidate.item === item);
   if (entry && Number.isInteger(entry.sourceIndex) && entry.sourceIndex >= 0) return entry.sourceIndex;
   const index = Array.isArray(turn.items) ? turn.items.indexOf(item) : -1;
   return index >= 0 ? index : 0;
@@ -14700,10 +14701,11 @@ function insertVisibleItemDom(turn, item) {
     bindCurrentThreadActions();
     return completeLocalConversationDomUpdate(article, wasNearBottom, userReadingCurrentTurn);
   }
-  const entries = visibleItemsForTurn(turn);
+  const thread = renderContextThread();
+  const entries = visibleItemsForTurn(turn, thread);
   const visibleIndex = entries.findIndex((entry) => entry && entry.item === item);
   if (visibleIndex < 0) return false;
-  const sourceIndex = Number.isInteger(entries[visibleIndex].sourceIndex) ? entries[visibleIndex].sourceIndex : sourceIndexForVisibleItem(turn, item);
+  const sourceIndex = Number.isInteger(entries[visibleIndex].sourceIndex) ? entries[visibleIndex].sourceIndex : sourceIndexForVisibleItem(turn, item, thread);
   const html = renderVisibleItemPatchHtml(turn, item, previousKeys, sourceIndex);
   const source = firstElementFromHtml(html);
   if (!source) return false;
@@ -14737,7 +14739,7 @@ function patchVisibleItemDomNode(turn, item, previousKeys, sourceIndex = null) {
   if (!conversation) return null;
   const index = Number.isInteger(sourceIndex) && sourceIndex >= 0
     ? sourceIndex
-    : sourceIndexForVisibleItem(turn, item);
+    : sourceIndexForVisibleItem(turn, item, renderContextThread());
   const key = stableItemKey(turn, item, index);
   const target = conversation.querySelector(`[data-render-key="${escapeSelectorAttr(key)}"]`);
   if (!target) return null;
@@ -14748,7 +14750,7 @@ function patchVisibleItemElement(target, turn, item, previousKeys, sourceIndex =
   if (!target || !turn || !item || !item.id || isReasoningItem(item)) return null;
   const index = Number.isInteger(sourceIndex) && sourceIndex >= 0
     ? sourceIndex
-    : sourceIndexForVisibleItem(turn, item);
+    : sourceIndexForVisibleItem(turn, item, renderContextThread());
   const html = renderVisibleItemPatchHtml(turn, item, previousKeys, index);
   const source = firstElementFromHtml(html);
   if (!source) return null;
@@ -14815,7 +14817,7 @@ function patchLiveTextItemDom(turn, item) {
   if (!canPatchSingleThreadConversationDom()) return false;
   const conversation = $("conversation");
   if (!conversation) return false;
-  const index = sourceIndexForVisibleItem(turn, item);
+  const index = sourceIndexForVisibleItem(turn, item, renderContextThread());
   const key = stableItemKey(turn, item, index);
   const wasNearBottom = isConversationNearBottom();
   const userReadingCurrentTurn = isUserReadingCurrentTurn({ nearBottom: wasNearBottom });

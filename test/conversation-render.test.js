@@ -3225,14 +3225,23 @@ test("thread tile local patch paths refresh the pane instead of writing a single
   assert.match(functionBody("updateLiveOperationDockForLocalPatch"), /if \(!canPatchSingleThreadConversationDom\(\)\) return false;/);
   assert.match(functionBody("insertVisibleItemDom"), /patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);
   assert.match(functionBody("insertVisibleItemDom"), /if \(!canPatchSingleThreadConversationDom\(\)\) return false;/);
+  assert.match(functionBody("insertVisibleItemDom"), /const thread = renderContextThread\(\);/);
+  assert.match(functionBody("insertVisibleItemDom"), /const entries = visibleItemsForTurn\(turn, thread\);/);
+  assert.match(functionBody("insertVisibleItemDom"), /sourceIndexForVisibleItem\(turn, item, thread\)/);
   assert.match(functionBody("insertVisibleItemDom"), /threadDetailDomPatchApi\.insertVisibleItemElement\(\{/);
   assert.match(functionBody("patchVisibleItemDom"), /patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);
   assert.match(functionBody("patchVisibleItemDom"), /if \(!canPatchSingleThreadConversationDom\(\)\) return false;/);
+  assert.match(appJs, /function sourceIndexForVisibleItem\(turn, item, thread = null\)/);
+  assert.match(functionBody("sourceIndexForVisibleItem"), /const contextThread = renderContextThread\(thread\);/);
+  assert.match(functionBody("sourceIndexForVisibleItem"), /visibleItemsForTurn\(turn, contextThread\)\.find/);
+  assert.match(functionBody("patchVisibleItemDomNode"), /sourceIndexForVisibleItem\(turn, item, renderContextThread\(\)\)/);
+  assert.match(functionBody("patchVisibleItemElement"), /sourceIndexForVisibleItem\(turn, item, renderContextThread\(\)\)/);
   assert.match(functionBody("visibleItemPatchEntries"), /const thread = renderContextThread\(\);/);
   assert.match(functionBody("visibleItemPatchEntries"), /visibleItemsForTurn\(turn, thread\)\.map/);
   assert.match(functionBody("visibleItemPatchEntries"), /visibleItemSignature\(item, turn, thread\)/);
   assert.match(functionBody("patchLiveTextItemDom"), /patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);
   assert.match(functionBody("patchLiveTextItemDom"), /if \(!canPatchSingleThreadConversationDom\(\)\) return false;/);
+  assert.match(functionBody("patchLiveTextItemDom"), /sourceIndexForVisibleItem\(turn, item, renderContextThread\(\)\)/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /const targetThreadId = nextThread\.id \|\| state\.currentThreadId;/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /patchCurrentThreadTilePaneFromState\(\{ threadId: targetThreadId, preserveScroll: true \}\)/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /canPatchSingleThreadConversationDom\(\{ threadId: targetThreadId \}\)/);
@@ -3707,6 +3716,36 @@ return visibleItemPatchEntries(targetTurn);
   assert.equal(result.length, 1);
   assert.equal(result[0].key, "item|target-thread|target-turn|context-item");
   assert.equal(result[0].signature.notice, "Context compaction pending");
+});
+
+test("visible item source index uses render context thread for filtering", () => {
+  const sources = [
+    "renderContextThread",
+    "sourceIndexForVisibleItem",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const result = Function(`
+const targetItem = { id: "target-item" };
+const turn = { id: "turn", items: [{ id: "hidden" }, targetItem] };
+const targetThread = { id: "target-thread" };
+const explicitThread = { id: "explicit-thread" };
+const state = {
+  currentThread: { id: "current-thread" },
+  renderContextThread: targetThread,
+};
+function visibleItemsForTurn(sourceTurn, thread) {
+  const threadId = String(thread && thread.id || "");
+  if (threadId === "target-thread") return [{ item: targetItem, sourceIndex: 7 }];
+  if (threadId === "explicit-thread") return [{ item: targetItem, sourceIndex: 11 }];
+  return [{ item: targetItem, sourceIndex: 3 }];
+}
+${sources.join("\n")}
+return {
+  renderContext: sourceIndexForVisibleItem(turn, targetItem),
+  explicit: sourceIndexForVisibleItem(turn, targetItem, explicitThread),
+};
+`)();
+
+  assert.deepEqual(result, { renderContext: 7, explicit: 11 });
 });
 
 test("item merge delegates visible-field preservation to thread detail state policy", () => {

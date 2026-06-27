@@ -484,6 +484,37 @@ npm run check:macos  # passed
 git diff --check  # passed
 ```
 
+## 2026-06-27 Phase C Visible Item Source Index Thread Context Slice
+
+这是 render/patch visible items thread context 之后的相邻 Phase C 本地切片，不单独
+部署、不推 Public。它把 visible item source index、insert visible item 和 live text
+patch 的索引计算也收束到显式 render context thread，避免实际 DOM 插入/patch 的
+sourceIndex 与 pane-local visible item 过滤不一致。
+
+改动边界：
+
+- `sourceIndexForVisibleItem(turn, item, thread)` 接收可选 thread，并用
+  `renderContextThread(thread)` 调用 `visibleItemsForTurn(turn, contextThread)`；
+- `insertVisibleItemDom()` 读取当前 render context thread，并传给
+  `visibleItemsForTurn()` 与 source index fallback；
+- `patchVisibleItemDomNode()`、`patchVisibleItemElement()` 和
+  `patchLiveTextItemDom()` 在需要 fallback source index 时传入当前 render context；
+- 新增可执行测试，证明 source index helper 会把 render context thread 和显式 thread
+  传给 visible item 过滤；
+- 不改变 server projection、merge、DOM patch 算法、任务卡协议、shell/cache 版本或
+  生产部署状态。
+
+验证：
+
+```bash
+node --check public/app.js
+node --test test/conversation-render.test.js test/thread-tile-layout-ui.test.js test/thread-detail-dom-patch.test.js test/collab-agent-render.test.js  # 180 passed
+npm test  # 1263 passed
+npm run check  # passed
+npm run check:macos  # passed
+git diff --check  # passed
+```
+
 ## 2026-06-27 Phase A Conversation DOM Authority Invalidation Local Slice
 
 这是 v542 后继续按“小切片本地提交、模块化再部署”节奏推进的 Phase A 切片。

@@ -21479,6 +21479,52 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit this local slice and keep it undeployed until a coherent deployable
     module is ready.
 
+## 2026-06-27 - Phase C visible item source index thread context local slice
+
+- Current local state:
+  - Continued after local commit `121c082` (`refactor render patch visible
+    items use pane context`).
+  - This is a local Phase C visible-item source-index/context slice only. It
+    changes `public/app.js`, `test/conversation-render.test.js`, README, the
+    architecture plan, and this handoff. It does not bump shell/cache, deploy
+    production, or push Public.
+- Root-cause boundary:
+  - Symptom/risk: after render and patch-entry filtering became pane-aware,
+    `sourceIndexForVisibleItem()` and the local insert/live-text patch callers
+    could still calculate source index from `visibleItemsForTurn(turn)` without
+    passing a thread. In tile mode that could make DOM keys, insertion anchors,
+    and live text patch targets derive from global current-thread visible-item
+    filtering.
+  - Failing layer: frontend visible-item source-index and local DOM patch
+    context propagation, not server projection, merge policy, DOM
+    reconciliation internals, task-card protocol, or Home AI diagnostic
+    transport.
+  - Violated invariant: renderer, patch-entry planner, source-index lookup,
+    insert anchoring, and live-text patching must all use the same explicit
+    render-context thread when deriving visible items.
+- Changes:
+  - `sourceIndexForVisibleItem(turn, item, thread)` now accepts an optional
+    thread and calls `visibleItemsForTurn(turn, renderContextThread(thread))`.
+  - `insertVisibleItemDom()` now passes the current render context thread into
+    visible item filtering and source-index fallback.
+  - `patchVisibleItemDomNode()`, `patchVisibleItemElement()`, and
+    `patchLiveTextItemDom()` now pass the current render context thread when
+    they need fallback source-index lookup.
+  - Added executable coverage proving source-index lookup uses render-context
+    and explicit thread arguments when filtering visible items.
+- Validation:
+  - `node --check public/app.js` passed.
+  - `node --test test/conversation-render.test.js test/thread-tile-layout-ui.test.js test/thread-detail-dom-patch.test.js test/collab-agent-render.test.js`
+    passed (`180` tests).
+  - `npm test` passed (`1263` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed before docs/context updates; rerun after this
+    handoff update before committing.
+- Next:
+  - Commit this local slice and keep it undeployed until a coherent deployable
+    module is ready.
+
 ## 2026-06-27 - Phase C Composer action control planning local slice
 
 - Current local state:

@@ -2018,6 +2018,10 @@ Target:
   The actual `renderTurn()` and `visibleItemPatchEntries()` paths now follow
   the same rule: both call `visibleItemsForTurn(turn, thread)` with the active
   render context thread, and patch-entry signatures reuse that same thread.
+  Visible item source-index lookup and local insertion/live-text patch paths
+  now also pass the render context thread into visible-item filtering, so
+  pane-local DOM keys and insertion anchors derive from the same filtered item
+  list as the renderer.
 - Treat each pane as a scaled mobile single-thread runtime instance. Shared
   global Composer chrome is only an interim input surface; global command dock
   or shared operation bubble are no longer acceptable in tile mode and must not
