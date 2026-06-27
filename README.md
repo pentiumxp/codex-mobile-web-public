@@ -335,6 +335,39 @@ npm run check  # passed
 npm run check:macos  # passed
 ```
 
+## 2026-06-27 Phase C Render Context Thread Object Slice
+
+这是 stable render-key pane context 后的相邻 Phase C 本地切片，不单独部署、不推
+Public。它把平铺 pane 渲染上下文从“只有 thread id”扩展为“thread id + thread
+对象”，避免 latest/live/raw-mode/visible-items 判断继续从全局 current thread 取
+状态。
+
+改动边界：
+
+- `state.renderContextThread` 保存当前渲染调用栈的 thread 对象；
+- 新增 `renderContextThread()` 和 `withRenderContextThread(thread, callback)`；
+- `latestTurn()`、`latestRawTurn()`、`isLatestTurn()`、`isLiveTurn()`、
+  `currentThreadHasActiveRuntimeStatus()`、context compaction pending 判断、raw
+  thread visible limit 和 `visibleItemsForTurn()` 都可以读取 render context thread；
+- `conversationRootSignature()`、`conversationPatchShellSignature()`、
+  `conversationRenderSignature()` 和 `renderThreadTileTurn()` 在显式 thread 上下文内
+  执行，tile pane 签名/渲染不再借用全局 current thread 的 latest/live 状态；
+- global `activeTurnId` 只在 render context thread 是当前线程时参与 active runtime
+  判断，避免当前单线程的 active 状态泄漏到其它 pane；
+- 不改变 server projection、merge、DOM patch 算法、任务卡协议、shell/cache 版本或
+  生产部署状态。
+
+验证：
+
+```bash
+node --check public/app.js
+node --test test/conversation-render.test.js test/thread-tile-layout-ui.test.js test/thread-detail-refresh-dom-harness.test.js test/thread-detail-dom-patch.test.js  # 173 passed
+npm test  # 1258 passed
+npm run check  # passed
+npm run check:macos  # passed
+git diff --check  # passed
+```
+
 ## 2026-06-27 Phase A Conversation DOM Authority Invalidation Local Slice
 
 这是 v542 后继续按“小切片本地提交、模块化再部署”节奏推进的 Phase A 切片。

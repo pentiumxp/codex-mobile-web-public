@@ -167,7 +167,7 @@ test("live operation cards dock on wide screens and become a mobile bubble", () 
   assert.match(functionBody("visibleItemsForTurn"), /const filtered = visible\.filter\(Boolean\)/);
   assert.match(functionBody("isSupersededLiveTurn"), /mobileSupersededLive/);
   assert.match(functionBody("visibleItemsForTurn"), /filtered\.every\(\(entry\) => isTurnUsageSummaryItem\(entry\.item\)\)/);
-  assert.match(functionBody("visibleItemsForTurn"), /return limitRawThreadVisibleEntries\(filtered\)/);
+  assert.match(functionBody("visibleItemsForTurn"), /return limitRawThreadVisibleEntries\(filtered, thread\)/);
   assert.doesNotMatch(functionBody("visibleItemsForTurn"), /const showOperations/);
   assert.doesNotMatch(functionBody("visibleItemsForTurn"), /latestOperationEntry/);
   assert.doesNotMatch(functionBody("visibleItemsForTurn"), /operationEntryByKey = new Map/);

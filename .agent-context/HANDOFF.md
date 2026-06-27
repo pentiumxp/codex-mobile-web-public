@@ -21079,6 +21079,52 @@ The previous full handoff was archived and should be opened only when old proven
   - Run `git diff --check`, commit this local slice, and keep it undeployed
     until a coherent Phase C/Phase A module is ready.
 
+## 2026-06-27 - Phase C render context thread object local slice
+
+- Current local state:
+  - Continued after local commit `1bea068` (`refactor render keys use pane
+    context`).
+  - This is a local Phase C render-context/pane-state slice only. It changes
+    `public/app.js`, focused frontend tests, README, and the architecture plan.
+    It does not bump shell/cache, deploy production, or push Public.
+- Root-cause boundary:
+  - Symptom/risk: the previous render-key slice made stable keys pane-id aware,
+    but the surrounding visible-item and signature decisions still had thread
+    object gaps. `visibleItemsForTurn()`, context-compaction pending state,
+    latest/live turn checks, and raw-thread visible limiting could still read
+    global `state.currentThread` while rendering or signing a tile pane.
+  - Failing layer: frontend render-context thread-object ownership for
+    conversation signatures and tile-pane turn rendering. This is not a server
+    projection, merge, task-card protocol, DOM-patch algorithm, or Home AI host
+    change.
+  - Violated invariant: when rendering/signing a pane for an explicit thread,
+    all latest/live/raw-mode/visible-item decisions must read that thread's
+    object. Global `activeTurnId` must only affect the current thread.
+- Changes:
+  - Added `state.renderContextThread`, `renderContextThread()`, and
+    `withRenderContextThread(thread, callback)`.
+  - `latestTurn()`, `latestRawTurn()`, `currentThreadHasActiveRuntimeStatus()`,
+    `isLatestTurn()`, `isLiveTurn()`, context compaction pending checks, raw
+    visible limiting, and `visibleItemsForTurn()` now accept/use render-context
+    thread ownership.
+  - `conversationRootSignature()`, `conversationPatchShellSignature()`,
+    `conversationRenderSignature()`, `threadHasVisibleConversationTurns()`, and
+    `renderThreadTileTurn()` run under the explicit thread context.
+  - Added executable coverage proving pane latest/live checks use the pane
+    thread and do not inherit current-thread `activeTurnId`.
+- Validation:
+  - `node --check public/app.js` passed.
+  - Focused frontend suite passed:
+    `node --test test/conversation-render.test.js test/thread-tile-layout-ui.test.js test/thread-detail-refresh-dom-harness.test.js test/thread-detail-dom-patch.test.js`
+    (`173` tests).
+  - `npm test` passed (`1258` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed after docs/context updates.
+- Next:
+  - Commit this local slice and keep it undeployed until a coherent Phase C/Phase
+    A module is ready.
+
 ## 2026-06-27 - Phase C approval pane action context local slice
 
 - Current local state:

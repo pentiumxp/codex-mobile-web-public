@@ -239,6 +239,7 @@ const state = {
   threadNotificationThrottle: new Map(),
   recentSubmittedUserMessages: new Map(),
   renderContextThreadId: "",
+  renderContextThread: null,
   submittedProcessingThreadHintedAtById: {},
   sendProgressWatchdog: null,
   sendProgressStartAt: 0,
@@ -4867,23 +4868,23 @@ function contextCompactionStatusKind(value) {
   return "";
 }
 
-function canShowPendingContextCompaction(turn = null) {
-  return !turn || (isLatestTurn(turn) && isLiveTurn(turn));
+function canShowPendingContextCompaction(turn = null, thread = null) {
+  return !turn || (isLatestTurn(turn, thread) && isLiveTurn(turn, thread));
 }
 
-function contextCompactionState(item, turn = null) {
+function contextCompactionState(item, turn = null, thread = null) {
   if (!item) return "";
   const itemKind = contextCompactionStatusKind(item.status);
   const mobileKind = contextCompactionStatusKind(item.mobileCompactionStatus);
   if (itemKind === "complete" || mobileKind === "complete" || item.mobileNotice === CONTEXT_COMPACTION_COMPLETE_NOTICE) return "complete";
   if (itemKind === "pending" || mobileKind === "pending" || item.mobileNotice === CONTEXT_COMPACTION_PENDING_NOTICE) {
-    return canShowPendingContextCompaction(turn) ? "pending" : "";
+    return canShowPendingContextCompaction(turn, thread) ? "pending" : "";
   }
   return "";
 }
 
-function contextCompactionNotice(item, turn = null) {
-  const stateText = contextCompactionState(item, turn);
+function contextCompactionNotice(item, turn = null, thread = null) {
+  const stateText = contextCompactionState(item, turn, thread);
   if (stateText === "pending") return CONTEXT_COMPACTION_PENDING_NOTICE;
   if (stateText === "complete") return CONTEXT_COMPACTION_COMPLETE_NOTICE;
   return "";
@@ -4893,9 +4894,10 @@ function turnHasDisplayItems(turn) {
   return Boolean(turn && Array.isArray(turn.items) && turn.items.some(Boolean));
 }
 
-function latestTurn() {
-  const turns = state.currentThread && Array.isArray(state.currentThread.turns)
-    ? state.currentThread.turns
+function latestTurn(thread = null) {
+  const sourceThread = renderContextThread(thread);
+  const turns = sourceThread && Array.isArray(sourceThread.turns)
+    ? sourceThread.turns
     : [];
   for (let index = turns.length - 1; index >= 0; index -= 1) {
     if (turnHasDisplayItems(turns[index])) return turns[index];
@@ -4903,17 +4905,20 @@ function latestTurn() {
   return turns.length ? turns[turns.length - 1] : null;
 }
 
-function latestRawTurn() {
-  const turns = state.currentThread && Array.isArray(state.currentThread.turns)
-    ? state.currentThread.turns
+function latestRawTurn(thread = null) {
+  const sourceThread = renderContextThread(thread);
+  const turns = sourceThread && Array.isArray(sourceThread.turns)
+    ? sourceThread.turns
     : [];
   return turns.length ? turns[turns.length - 1] : null;
 }
 
-function currentThreadHasActiveRuntimeStatus() {
-  const thread = state.currentThread;
-  if (!thread || isStaleActiveStatus(thread.status) || thread.mobileStaleActiveTurn) return false;
-  return Boolean(state.activeTurnId) || isRunningStatus(thread.status);
+function currentThreadHasActiveRuntimeStatus(thread = null) {
+  const sourceThread = renderContextThread(thread);
+  if (!sourceThread || isStaleActiveStatus(sourceThread.status) || sourceThread.mobileStaleActiveTurn) return false;
+  const threadId = String(sourceThread.id || "");
+  const isCurrentThread = Boolean(threadId && threadId === String(state.currentThreadId || ""));
+  return (isCurrentThread && Boolean(state.activeTurnId)) || isRunningStatus(sourceThread.status);
 }
 
 function latestLiveTurnCandidate() {
@@ -4963,16 +4968,16 @@ function currentThreadNeedsForegroundRefresh() {
   return shouldPollCurrentThread() || currentThreadListRowChanged();
 }
 
-function isLiveTurn(turn) {
+function isLiveTurn(turn, thread = null) {
   if (!turn || isTurnComplete(turn)) return false;
   return isRunningStatus(turn && turn.status)
     || isIncompleteInterruptedTurn(turn)
     || turnHasActiveLiveItems(turn)
-    || (isLatestTurn(turn) && currentThreadHasActiveRuntimeStatus());
+    || (isLatestTurn(turn, thread) && currentThreadHasActiveRuntimeStatus(thread));
 }
 
-function isLatestTurn(turn) {
-  return Boolean(turn && latestTurn() === turn);
+function isLatestTurn(turn, thread = null) {
+  return Boolean(turn && latestTurn(thread) === turn);
 }
 
 function stableItemKey(turn, item, index = 0, prefix = "item") {
@@ -5032,8 +5037,8 @@ function isNodeStartAboveConversationViewport(node) {
   return rect.top < viewport.top + 24;
 }
 
-function liveTurnHasNonUserProgress(turn) {
-  if (!turn || !isLiveTurn(turn)) return false;
+function liveTurnHasNonUserProgress(turn, thread = null) {
+  if (!turn || !isLiveTurn(turn, thread)) return false;
   return (turn.items || []).some((item) => item
     && item.type !== "userMessage"
     && (isReasoningItem(item)
@@ -5057,8 +5062,8 @@ function isVisibleNonUserProgressItem(item) {
       || item.type === "turnUsageSummary"));
 }
 
-function liveTurnHasNonUserProgressBefore(turn, index) {
-  if (!turn || !isLiveTurn(turn)) return false;
+function liveTurnHasNonUserProgressBefore(turn, index, thread = null) {
+  if (!turn || !isLiveTurn(turn, thread)) return false;
   const items = Array.isArray(turn.items) ? turn.items : [];
   for (let pos = 0; pos < Math.min(index, items.length); pos += 1) {
     if (isVisibleNonUserProgressItem(items[pos])) return true;
@@ -5066,8 +5071,8 @@ function liveTurnHasNonUserProgressBefore(turn, index) {
   return false;
 }
 
-function liveTurnHasNonUserProgressAfter(turn, index) {
-  if (!turn || !isLiveTurn(turn)) return false;
+function liveTurnHasNonUserProgressAfter(turn, index, thread = null) {
+  if (!turn || !isLiveTurn(turn, thread)) return false;
   const items = Array.isArray(turn.items) ? turn.items : [];
   for (let pos = Math.max(0, index + 1); pos < items.length; pos += 1) {
     if (isVisibleNonUserProgressItem(items[pos])) return true;
@@ -5083,8 +5088,8 @@ function isUserVisibleTextReplyItem(item) {
       || item.type === "turnUsageSummary"));
 }
 
-function liveTurnHasUserVisibleTextReplyAfter(turn, index) {
-  if (!turn || !isLiveTurn(turn)) return false;
+function liveTurnHasUserVisibleTextReplyAfter(turn, index, thread = null) {
+  if (!turn || !isLiveTurn(turn, thread)) return false;
   const items = Array.isArray(turn.items) ? turn.items : [];
   for (let pos = Math.max(0, index + 1); pos < items.length; pos += 1) {
     if (isUserVisibleTextReplyItem(items[pos])) return true;
@@ -5109,12 +5114,12 @@ function userMessageHasVisualAttachment(item) {
   return textValues.some((text) => splitAttachmentSummaryText(text).attachments.some((attachment) => attachment.isImage && canRenderImageAttachment(attachment)));
 }
 
-function shouldHideDurableLiveUserMessage(turn, item, index = 0) {
+function shouldHideDurableLiveUserMessage(turn, item, index = 0, thread = null) {
   return Boolean(item
     && item.type === "userMessage"
     && !userMessageHasVisualAttachment(item)
-    && liveTurnHasNonUserProgressBefore(turn, index)
-    && !liveTurnHasUserVisibleTextReplyAfter(turn, index)
+    && liveTurnHasNonUserProgressBefore(turn, index, thread)
+    && !liveTurnHasUserVisibleTextReplyAfter(turn, index, thread)
     && !isRecentlySubmittedUserMessage(item)
     && !isOptimisticUserMessage(item));
 }
@@ -5141,8 +5146,8 @@ function shouldPreserveRawThreadVisibleEntry(entry) {
     || isContextCompactionItem(item);
 }
 
-function limitRawThreadVisibleEntries(entries) {
-  if (!isRawThreadReadMode(state.currentThread)) return entries;
+function limitRawThreadVisibleEntries(entries, thread = null) {
+  if (!isRawThreadReadMode(renderContextThread(thread))) return entries;
   if (!Array.isArray(entries) || entries.length <= MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN) return entries;
   const keep = new Set();
   entries.forEach((entry, index) => {
@@ -5154,15 +5159,15 @@ function limitRawThreadVisibleEntries(entries) {
   return entries.filter((_, index) => keep.has(index));
 }
 
-function visibleItemsForTurn(turn) {
+function visibleItemsForTurn(turn, thread = null) {
   const visible = [];
   const contextEntryByKey = new Map();
   (turn.items || []).forEach((item, index) => {
     if (!item || isReasoningItem(item)) return;
     if (shouldHideSupersededLiveUserMessage(turn, item)) return;
-    if (shouldHideDurableLiveUserMessage(turn, item, index)) return;
+    if (shouldHideDurableLiveUserMessage(turn, item, index, thread)) return;
     if (isContextCompactionItem(item)) {
-      const notice = contextCompactionNotice(item, turn);
+      const notice = contextCompactionNotice(item, turn, thread);
       if (!notice) return;
       const groupKey = "context-compaction";
       const existing = contextEntryByKey.get(groupKey);
@@ -5179,7 +5184,7 @@ function visibleItemsForTurn(turn) {
   const filtered = visible.filter(Boolean);
   const supersededLive = isSupersededLiveTurn(turn);
   if (supersededLive && filtered.length && filtered.every((entry) => isTurnUsageSummaryItem(entry.item))) return [];
-  return limitRawThreadVisibleEntries(filtered);
+  return limitRawThreadVisibleEntries(filtered, thread);
 }
 
 function currentLiveOperationEntry(thread) {
@@ -5899,11 +5904,32 @@ function approvalThreadId(request) {
 }
 
 function renderContextThreadId(thread = null) {
-  return String(state.renderContextThreadId
-    || thread && thread.id
+  return String(thread && thread.id
+    || state.renderContextThreadId
+    || state.renderContextThread && state.renderContextThread.id
     || state.currentThreadId
     || state.currentThread && state.currentThread.id
     || "");
+}
+
+function renderContextThread(thread = null) {
+  return thread
+    || state.renderContextThread
+    || state.currentThread
+    || null;
+}
+
+function withRenderContextThread(thread, callback) {
+  const previousRenderThreadId = state.renderContextThreadId;
+  const previousRenderThread = state.renderContextThread;
+  state.renderContextThreadId = String(thread && thread.id || "");
+  state.renderContextThread = thread || null;
+  try {
+    return callback();
+  } finally {
+    state.renderContextThreadId = previousRenderThreadId;
+    state.renderContextThread = previousRenderThread;
+  }
 }
 
 function approvalTurnId(request) {
@@ -6007,7 +6033,9 @@ function visibleTurnsForConversation(thread) {
 }
 
 function threadHasVisibleConversationTurns(thread) {
-  return visibleTurnsForConversation(thread).some((turn) => visibleItemsForTurn(turn).length > 0);
+  return withRenderContextThread(thread, () => (
+    visibleTurnsForConversation(thread).some((turn) => visibleItemsForTurn(turn, thread).length > 0)
+  ));
 }
 
 function threadIsLoadingWithoutVisibleTurns(thread) {
@@ -6016,101 +6044,107 @@ function threadIsLoadingWithoutVisibleTurns(thread) {
 
 function conversationRootSignature(thread) {
   if (!thread) return "home";
-  const threadId = renderContextThreadId(thread);
-  if (thread.mobileLoadError) return `load-error|${threadId}|${thread.mobileLoadError}`;
-  if (threadIsLoadingWithoutVisibleTurns(thread)) return `loading|${threadId}`;
-  const turns = visibleTurnsForConversation(thread);
-  const omitted = Number(thread.mobileOmittedTurnCount || 0) + Math.max(0, (thread.turns || []).length - turns.length);
-  const readWarningMessage = threadReadWarningMessage(thread);
-  const payload = {
-    threadId,
-    imageAuthVersion: Number(state.imageAuthVersion || 0),
-    pluginRefreshPendingNotice: String(state.pluginRefreshPendingNotice || ""),
-    rolloutWarning: rolloutWarningSignature(thread),
-    omitted,
-    olderTurnsCursor: threadTurnsCursorSignature(thread.mobileOlderTurnsCursor),
-    historyExpanded: Boolean(thread.mobileHistoryExpanded),
-    historyBusy: Boolean(state.threadHistoryBusy),
-    historyError: String(state.threadHistoryError || ""),
-    goal: threadGoalSignature(thread),
-    approvals: approvalRequestsSignature(threadId),
-    taskCards: threadTaskCardsSignature(thread),
-    readMode: String(thread.mobileReadMode || ""),
-    projectionVersion: String(thread.mobileProjectionVersion || ""),
-    projectionRevision: String(thread.mobileProjectionRevision || ""),
-    readWarning: String(thread.mobileReadWarning || ""),
-    readWarningMessage,
-    visibleItemKeys: Array.isArray(thread.mobileVisibleItemKeys) ? thread.mobileVisibleItemKeys : [],
-    visibleTurns: turns.map((turn) => turn && (turn.id || turn.startedAt || "")),
-  };
-  return JSON.stringify(payload);
+  return withRenderContextThread(thread, () => {
+    const threadId = renderContextThreadId(thread);
+    if (thread.mobileLoadError) return `load-error|${threadId}|${thread.mobileLoadError}`;
+    if (threadIsLoadingWithoutVisibleTurns(thread)) return `loading|${threadId}`;
+    const turns = visibleTurnsForConversation(thread);
+    const omitted = Number(thread.mobileOmittedTurnCount || 0) + Math.max(0, (thread.turns || []).length - turns.length);
+    const readWarningMessage = threadReadWarningMessage(thread);
+    const payload = {
+      threadId,
+      imageAuthVersion: Number(state.imageAuthVersion || 0),
+      pluginRefreshPendingNotice: String(state.pluginRefreshPendingNotice || ""),
+      rolloutWarning: rolloutWarningSignature(thread),
+      omitted,
+      olderTurnsCursor: threadTurnsCursorSignature(thread.mobileOlderTurnsCursor),
+      historyExpanded: Boolean(thread.mobileHistoryExpanded),
+      historyBusy: Boolean(state.threadHistoryBusy),
+      historyError: String(state.threadHistoryError || ""),
+      goal: threadGoalSignature(thread),
+      approvals: approvalRequestsSignature(threadId),
+      taskCards: threadTaskCardsSignature(thread),
+      readMode: String(thread.mobileReadMode || ""),
+      projectionVersion: String(thread.mobileProjectionVersion || ""),
+      projectionRevision: String(thread.mobileProjectionRevision || ""),
+      readWarning: String(thread.mobileReadWarning || ""),
+      readWarningMessage,
+      visibleItemKeys: Array.isArray(thread.mobileVisibleItemKeys) ? thread.mobileVisibleItemKeys : [],
+      visibleTurns: turns.map((turn) => turn && (turn.id || turn.startedAt || "")),
+    };
+    return JSON.stringify(payload);
+  });
 }
 
 function conversationPatchShellSignature(thread) {
   if (!thread) return "home";
-  const threadId = renderContextThreadId(thread);
-  if (thread.mobileLoadError) return `load-error|${threadId}|${thread.mobileLoadError}`;
-  if (threadIsLoadingWithoutVisibleTurns(thread)) return `loading|${threadId}`;
-  const turns = visibleTurnsForConversation(thread);
-  const omitted = Number(thread.mobileOmittedTurnCount || 0) + Math.max(0, (thread.turns || []).length - turns.length);
-  const readWarningMessage = threadReadWarningMessage(thread);
-  const payload = {
-    threadId,
-    imageAuthVersion: Number(state.imageAuthVersion || 0),
-    pluginRefreshPendingNotice: String(state.pluginRefreshPendingNotice || ""),
-    rolloutWarning: rolloutWarningSignature(thread),
-    omitted,
-    olderTurnsCursor: threadTurnsCursorSignature(thread.mobileOlderTurnsCursor),
-    historyExpanded: Boolean(thread.mobileHistoryExpanded),
-    historyBusy: Boolean(state.threadHistoryBusy),
-    historyError: String(state.threadHistoryError || ""),
-    goal: threadGoalSignature(thread),
-    approvals: approvalRequestsSignature(threadId),
-    taskCards: threadTaskCardsSignature(thread),
-    readWarning: String(thread.mobileReadWarning || ""),
-    readWarningMessage,
-    visibleTurns: turns.map((turn) => turn && (turn.id || turn.startedAt || "")),
-  };
-  return JSON.stringify(payload);
+  return withRenderContextThread(thread, () => {
+    const threadId = renderContextThreadId(thread);
+    if (thread.mobileLoadError) return `load-error|${threadId}|${thread.mobileLoadError}`;
+    if (threadIsLoadingWithoutVisibleTurns(thread)) return `loading|${threadId}`;
+    const turns = visibleTurnsForConversation(thread);
+    const omitted = Number(thread.mobileOmittedTurnCount || 0) + Math.max(0, (thread.turns || []).length - turns.length);
+    const readWarningMessage = threadReadWarningMessage(thread);
+    const payload = {
+      threadId,
+      imageAuthVersion: Number(state.imageAuthVersion || 0),
+      pluginRefreshPendingNotice: String(state.pluginRefreshPendingNotice || ""),
+      rolloutWarning: rolloutWarningSignature(thread),
+      omitted,
+      olderTurnsCursor: threadTurnsCursorSignature(thread.mobileOlderTurnsCursor),
+      historyExpanded: Boolean(thread.mobileHistoryExpanded),
+      historyBusy: Boolean(state.threadHistoryBusy),
+      historyError: String(state.threadHistoryError || ""),
+      goal: threadGoalSignature(thread),
+      approvals: approvalRequestsSignature(threadId),
+      taskCards: threadTaskCardsSignature(thread),
+      readWarning: String(thread.mobileReadWarning || ""),
+      readWarningMessage,
+      visibleTurns: turns.map((turn) => turn && (turn.id || turn.startedAt || "")),
+    };
+    return JSON.stringify(payload);
+  });
 }
 
 function conversationRenderSignature(thread) {
   if (!thread) return "home";
-  const threadId = renderContextThreadId(thread);
-  if (thread.mobileLoadError) return `load-error|${threadId}|${thread.mobileLoadError}`;
-  if (threadIsLoadingWithoutVisibleTurns(thread)) return `loading|${threadId}`;
-  const turns = visibleTurnsForConversation(thread);
-  const omitted = Number(thread.mobileOmittedTurnCount || 0) + Math.max(0, (thread.turns || []).length - turns.length);
-  const payload = {
-    threadId,
-    imageAuthVersion: Number(state.imageAuthVersion || 0),
-    pluginRefreshPendingNotice: String(state.pluginRefreshPendingNotice || ""),
-    rolloutWarning: rolloutWarningSignature(thread),
-    omitted,
-    olderTurnsCursor: threadTurnsCursorSignature(thread.mobileOlderTurnsCursor),
-    historyExpanded: Boolean(thread.mobileHistoryExpanded),
-    historyBusy: Boolean(state.threadHistoryBusy),
-    historyError: String(state.threadHistoryError || ""),
-    goal: threadGoalSignature(thread),
-    approvals: approvalRequestsSignature(threadId),
-    taskCards: threadTaskCardsSignature(thread),
-    projectionVersion: String(thread.mobileProjectionVersion || ""),
-    projectionRevision: String(thread.mobileProjectionRevision || ""),
-    visibleItemKeys: Array.isArray(thread.mobileVisibleItemKeys) ? thread.mobileVisibleItemKeys : [],
-    turns: turns.map((turn) => {
-      const timerShowsStatus = isLatestTurn(turn) && (isLiveTurn(turn) || turnFinalSeconds(turn) != null);
-      return {
-        id: turn.id || "",
-        statusLine: timerShowsStatus ? "" : displayTurnStatus(turn),
-        durationMs: timerShowsStatus ? "" : (turn.durationMs || ""),
-        items: visibleItemsForTurn(turn).map((entry) => ({
-          sourceIndex: entry.sourceIndex,
-          item: visibleItemSignature(entry.item, turn),
-        })).filter((entry) => entry.item),
-      };
-    }),
-  };
-  return JSON.stringify(payload);
+  return withRenderContextThread(thread, () => {
+    const threadId = renderContextThreadId(thread);
+    if (thread.mobileLoadError) return `load-error|${threadId}|${thread.mobileLoadError}`;
+    if (threadIsLoadingWithoutVisibleTurns(thread)) return `loading|${threadId}`;
+    const turns = visibleTurnsForConversation(thread);
+    const omitted = Number(thread.mobileOmittedTurnCount || 0) + Math.max(0, (thread.turns || []).length - turns.length);
+    const payload = {
+      threadId,
+      imageAuthVersion: Number(state.imageAuthVersion || 0),
+      pluginRefreshPendingNotice: String(state.pluginRefreshPendingNotice || ""),
+      rolloutWarning: rolloutWarningSignature(thread),
+      omitted,
+      olderTurnsCursor: threadTurnsCursorSignature(thread.mobileOlderTurnsCursor),
+      historyExpanded: Boolean(thread.mobileHistoryExpanded),
+      historyBusy: Boolean(state.threadHistoryBusy),
+      historyError: String(state.threadHistoryError || ""),
+      goal: threadGoalSignature(thread),
+      approvals: approvalRequestsSignature(threadId),
+      taskCards: threadTaskCardsSignature(thread),
+      projectionVersion: String(thread.mobileProjectionVersion || ""),
+      projectionRevision: String(thread.mobileProjectionRevision || ""),
+      visibleItemKeys: Array.isArray(thread.mobileVisibleItemKeys) ? thread.mobileVisibleItemKeys : [],
+      turns: turns.map((turn) => {
+        const timerShowsStatus = isLatestTurn(turn, thread) && (isLiveTurn(turn, thread) || turnFinalSeconds(turn) != null);
+        return {
+          id: turn.id || "",
+          statusLine: timerShowsStatus ? "" : displayTurnStatus(turn),
+          durationMs: timerShowsStatus ? "" : (turn.durationMs || ""),
+          items: visibleItemsForTurn(turn, thread).map((entry) => ({
+            sourceIndex: entry.sourceIndex,
+            item: visibleItemSignature(entry.item, turn),
+          })).filter((entry) => entry.item),
+        };
+      }),
+    };
+    return JSON.stringify(payload);
+  });
 }
 
 function isPathLikeValue(value) {
@@ -13621,10 +13655,8 @@ function ensureThreadTileDetails(ids = []) {
 }
 
 function renderThreadTileTurn(thread, turn, previousKeys = new Set()) {
-  const previousRenderThreadId = state.renderContextThreadId;
-  state.renderContextThreadId = String(thread && thread.id || "");
-  try {
-    const renderedItems = visibleItemsForTurn(turn).map((entry, index) => {
+  return withRenderContextThread(thread, () => {
+    const renderedItems = visibleItemsForTurn(turn, thread).map((entry, index) => {
       const item = entry && entry.item;
       const sourceIndex = Number.isInteger(entry && entry.sourceIndex) && entry.sourceIndex >= 0 ? entry.sourceIndex : index;
       return renderVisibleItemPatchHtml(turn, item, previousKeys, sourceIndex);
@@ -13635,9 +13667,7 @@ function renderThreadTileTurn(thread, turn, previousKeys = new Set()) {
     return `<article class="turn thread-tile-turn" data-thread-tile-turn="${escapeHtml(turnId)}" data-render-key="${escapeHtml(`tile-turn|${threadId}|${turnId}`)}">
       ${renderedItems}
     </article>`;
-  } finally {
-    state.renderContextThreadId = previousRenderThreadId;
-  }
+  });
 }
 
 function scheduleThreadTileOperationMinimumRefresh(delayMs = LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS) {

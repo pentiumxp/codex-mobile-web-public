@@ -1998,6 +1998,10 @@ Target:
   `stableItemKey()`, `stableOperationRenderKey()`, and `stableTurnKey()` use
   `renderContextThreadId()` so tile panes do not mint item/operation/turn keys
   from the global current thread during pane-local DOM patching.
+  The render context now also carries the thread object, not only the id:
+  `withRenderContextThread()` scopes conversation signatures and tile-pane turn
+  rendering so latest/live/context-compaction/raw-mode visible-item decisions
+  read the pane thread instead of `state.currentThread`.
 - Treat each pane as a scaled mobile single-thread runtime instance. Shared
   global Composer chrome is only an interim input surface; global command dock
   or shared operation bubble are no longer acceptable in tile mode and must not

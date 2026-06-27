@@ -229,6 +229,7 @@ function evaluatedActiveRuntimeHarness() {
     "isRunningStatus",
     "isCompletedStatus",
     "isTurnComplete",
+    "renderContextThread",
     "turnHasDisplayItems",
     "latestTurn",
     "latestRawTurn",
@@ -1078,6 +1079,7 @@ function evaluatedVisibleItemsForTurn() {
     "shouldHideSupersededLiveUserMessage",
     "isRawThreadReadMode",
     "shouldPreserveRawThreadVisibleEntry",
+    "renderContextThread",
     "limitRawThreadVisibleEntries",
     "visibleItemsForTurn",
   ].map((name) => functionSourceFrom(appJs, name));
@@ -1101,6 +1103,7 @@ return { state, visibleItemsForTurn };
 
 function evaluatedLatestTurnHelpers() {
   const sources = [
+    "renderContextThread",
     "turnHasDisplayItems",
     "latestTurn",
     "latestRawTurn",
@@ -1313,14 +1316,14 @@ function evaluatedTurnUsageSummaryRenderer() {
 test("context compaction notices update status and collapse repeated turn notices", () => {
   assert.match(functionBody("visibleItemsForTurn"), /const contextEntryByKey = new Map\(\)/);
   assert.match(functionBody("visibleItemsForTurn"), /isContextCompactionItem\(item\)/);
-  assert.match(functionBody("visibleItemsForTurn"), /const notice = contextCompactionNotice\(item, turn\)/);
+  assert.match(functionBody("visibleItemsForTurn"), /const notice = contextCompactionNotice\(item, turn, thread\)/);
   assert.match(functionBody("visibleItemsForTurn"), /if \(!notice\) return/);
   assert.match(functionBody("visibleItemsForTurn"), /visible\[existing\.visibleIndex\] = null/);
   assert.match(functionBody("visibleItemsForTurn"), /const filtered = visible\.filter\(Boolean\)/);
   assert.match(functionBody("isSupersededLiveTurn"), /mobileSupersededLive/);
   assert.match(functionBody("visibleItemsForTurn"), /shouldHideSupersededLiveUserMessage\(turn, item\)/);
   assert.match(functionBody("visibleItemsForTurn"), /filtered\.every\(\(entry\) => isTurnUsageSummaryItem\(entry\.item\)\)/);
-  assert.match(functionBody("visibleItemsForTurn"), /return limitRawThreadVisibleEntries\(filtered\)/);
+  assert.match(functionBody("visibleItemsForTurn"), /return limitRawThreadVisibleEntries\(filtered, thread\)/);
   assert.match(functionBody("visibleItemSignature"), /isContextCompactionItem\(item\)/);
   assert.match(functionBody("visibleItemSignature"), /const notice = contextCompactionNotice\(item, turn\)/);
   assert.match(functionBody("visibleItemSignature"), /if \(!notice\) return null/);
@@ -1353,9 +1356,9 @@ test("context compaction notices require explicit state and do not infer pending
   assert.match(functionBody("contextCompactionState"), /itemKind === "complete"/);
   assert.match(functionBody("contextCompactionState"), /mobileKind === "complete"/);
   assert.match(functionBody("contextCompactionState"), /itemKind === "pending"/);
-  assert.match(functionBody("contextCompactionState"), /canShowPendingContextCompaction\(turn\)/);
+  assert.match(functionBody("contextCompactionState"), /canShowPendingContextCompaction\(turn, thread\)/);
   assert.match(functionBody("contextCompactionState"), /return ""/);
-  assert.match(functionBody("canShowPendingContextCompaction"), /isLatestTurn\(turn\) && isLiveTurn\(turn\)/);
+  assert.match(functionBody("canShowPendingContextCompaction"), /isLatestTurn\(turn, thread\) && isLiveTurn\(turn, thread\)/);
   assert.doesNotMatch(functionBody("contextCompactionState"), /isContextCompactionType\(item\.type\)/);
   assert.match(functionBody("renderContextCompaction"), /const notice = contextCompactionNotice\(item, turn\)/);
   assert.match(functionBody("renderContextCompaction"), /if \(!notice\) return ""/);
@@ -1843,7 +1846,7 @@ test("turn timer prefers live item activity over idle sync labels", () => {
   assert.match(appJs, /function turnHasActiveLiveItems\(/);
   assert.match(appJs, /function liveTurnStartedAtMs\(/);
   assert.match(functionBody("isLiveTurn"), /turnHasActiveLiveItems\(turn\)/);
-  assert.match(functionBody("isLiveTurn"), /isLatestTurn\(turn\) && currentThreadHasActiveRuntimeStatus\(\)/);
+  assert.match(functionBody("isLiveTurn"), /isLatestTurn\(turn, thread\) && currentThreadHasActiveRuntimeStatus\(thread\)/);
   assert.match(functionBody("turnElapsedSeconds"), /liveTurnStartedAtMs\(turn\) \|\| state\.nowMs/);
   assert.match(functionBody("turnHasActiveLiveItems"), /isActiveOperationalItem\(item\)/);
   assert.match(functionBody("liveTurnStartedAtMs"), /numericTimestampMs\(item\.startedAtMs\)/);
@@ -3367,6 +3370,7 @@ test("image view render keys include their image source", () => {
 
 test("stable render keys use pane render context before global current thread", () => {
   const sources = [
+    "renderContextThread",
     "renderContextThreadId",
     "stableItemKey",
     "stableOperationRenderKey",
@@ -3390,6 +3394,65 @@ return {
   assert.equal(result.itemKey, "item|pane-thread|turn-a|item-a");
   assert.equal(result.operationKey, "live-operation|pane-thread|turn-a|op-group");
   assert.equal(result.turnKey, "turn|pane-thread|turn-a");
+});
+
+test("live turn helpers use pane render context thread before global current thread", () => {
+  const sources = [
+    "renderContextThread",
+    "withRenderContextThread",
+    "turnHasDisplayItems",
+    "latestTurn",
+    "latestRawTurn",
+    "currentThreadHasActiveRuntimeStatus",
+    "isLatestTurn",
+    "isLiveTurn",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const result = Function(`
+const state = {
+  activeTurnId: "current-active",
+  currentThreadId: "current-thread",
+  currentThread: {
+    id: "current-thread",
+    status: { type: "active" },
+    turns: [
+      { id: "current-old", status: { type: "completed" }, items: [{ id: "current-old-item" }] },
+      { id: "current-latest", status: { type: "idle" }, items: [{ id: "current-latest-item" }] },
+    ],
+  },
+  renderContextThreadId: "",
+  renderContextThread: null,
+};
+function isTurnComplete(turn) { return Boolean(turn && turn.complete); }
+function isRunningStatus(status) { return Boolean(status && (status === "running" || status.type === "active" || status.type === "running")); }
+function isStaleActiveStatus() { return false; }
+function isIncompleteInterruptedTurn() { return false; }
+function turnHasActiveLiveItems() { return false; }
+${sources.join("\n")}
+const paneThread = {
+  id: "pane-thread",
+  status: { type: "idle" },
+  turns: [
+    { id: "pane-old", status: { type: "completed" }, items: [{ id: "pane-old-item" }] },
+    { id: "pane-latest", status: { type: "idle" }, items: [{ id: "pane-latest-item" }] },
+  ],
+};
+const activePaneThread = Object.assign({}, paneThread, { status: { type: "active" } });
+return {
+  outsidePaneLatest: isLatestTurn(paneThread.turns[1]),
+  insidePaneLatest: withRenderContextThread(paneThread, () => isLatestTurn(paneThread.turns[1])),
+  insideCurrentLatest: withRenderContextThread(paneThread, () => isLatestTurn(state.currentThread.turns[1])),
+  paneRuntimeDoesNotUseCurrentActiveTurn: withRenderContextThread(paneThread, () => currentThreadHasActiveRuntimeStatus()),
+  paneLiveUsesPaneStatus: withRenderContextThread(activePaneThread, () => isLiveTurn(activePaneThread.turns[1])),
+  restoredCurrentLatest: isLatestTurn(state.currentThread.turns[1]),
+};
+`)();
+
+  assert.equal(result.outsidePaneLatest, false);
+  assert.equal(result.insidePaneLatest, true);
+  assert.equal(result.insideCurrentLatest, false);
+  assert.equal(result.paneRuntimeDoesNotUseCurrentActiveTurn, false);
+  assert.equal(result.paneLiveUsesPaneStatus, true);
+  assert.equal(result.restoredCurrentLatest, true);
 });
 
 test("item merge delegates visible-field preservation to thread detail state policy", () => {

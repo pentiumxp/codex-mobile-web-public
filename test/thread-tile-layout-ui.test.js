@@ -304,7 +304,7 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(operationToggleEffectsBody, /patchThreadTilePane\(effect\.patchThreadId, \{ preserveScroll: effect\.patchPreserveScroll !== false \}\)/);
 
   const tileTurnBody = functionBody(appJs, "renderThreadTileTurn");
-  assert.match(tileTurnBody, /state\.renderContextThreadId/);
+  assert.match(tileTurnBody, /withRenderContextThread\(thread/);
   assert.match(tileTurnBody, /renderVisibleItemPatchHtml/);
   assert.doesNotMatch(tileTurnBody, /renderTurn\(/);
   assert.doesNotMatch(tileTurnBody, /turn-status/);
