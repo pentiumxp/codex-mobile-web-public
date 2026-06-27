@@ -20124,18 +20124,13 @@ function applyNotification(method, params) {
     return;
   }
   if (method === "thread/name/updated") {
-    const thread = state.threads.find((x) => x.id === params.threadId);
-    if (thread) thread.name = params.threadName;
+    updateThreadNameLocally(params.threadId, params.threadName);
     pruneHiddenThreads();
-    if (state.currentThread && state.currentThread.id === params.threadId) {
-      state.currentThread.name = params.threadName;
-      renderCurrentThread();
-    } else if (state.threadTileMode && threadTilePaneIsVisible(params.threadId)) {
-      const cached = state.threadTileDetails.get(String(params.threadId || ""));
-      if (cached) cached.name = params.threadName;
+    if (!(state.currentThread && state.currentThread.id === params.threadId)
+      && state.threadTileMode
+      && threadTilePaneIsVisible(params.threadId)) {
       loadThreadTileDetail(params.threadId, { force: true, background: true, source: "tile-name" }).catch(showError);
     }
-    scheduleRenderThreads();
     return;
   }
   if (method === "thread/goal/updated") {

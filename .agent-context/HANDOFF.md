@@ -22122,3 +22122,41 @@ The previous full handoff was archived and should be opened only when old proven
 - Next:
   - Commit this local slice and keep it undeployed until a coherent deployable
     module is ready.
+
+## 2026-06-27 - Phase C thread name notification pane context local slice
+
+- Current local state:
+  - Continued after local commit `33393cb` (`refactor thread status
+    notifications keep pane context`).
+  - This is a local Phase C pane-state/thread-name notification slice only. It
+    changes `public/app.js`, focused tests, README, and the architecture plan.
+    It does not bump shell/cache, deploy production, or push Public.
+- Root-cause boundary:
+  - Symptom/risk: `updateThreadNameLocally()` already owned thread-list,
+    current-detail, visible-pane detail-cache, and pane-local render behavior,
+    but `applyNotification("thread/name/updated")` still manually updated those
+    same state surfaces. That duplicated logic could drift from the helper
+    path and reintroduce stale non-current pane titles.
+  - Failing layer: frontend thread-name notification state propagation and
+    pane-local render scheduling, not server display summary merge, rename API,
+    shell/cache, or Home AI host routing.
+  - Violated invariant: thread metadata notifications must reuse the same
+    local update helper as direct/local metadata changes.
+- Changes:
+  - `thread/name/updated` now calls `updateThreadNameLocally()` for local
+    state and render ownership.
+  - The existing background tile-detail reload remains for visible non-current
+    tile panes after the local helper updates the pane immediately.
+  - Added executable coverage for a `thread/name/updated` notification
+    targeting a visible non-current tile pane.
+- Validation:
+  - `node --check public/app.js` passed.
+  - `node --test test/thread-title-source.test.js test/conversation-render.test.js test/thread-tile-state.test.js`
+    passed (`165` tests).
+  - `npm test` passed (`1276` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit this local slice and keep it undeployed until a coherent deployable
+    module is ready.

@@ -92,3 +92,71 @@ return {
   assert.deepEqual(result.currentRenders, []);
   assert.deepEqual(result.tileRenders, [{ threadId: "thread-pane", preserveScroll: true }]);
 });
+
+test("thread name notifications reuse pane detail cache helper", () => {
+  const sources = [
+    "applyThreadNameToThread",
+    "scheduleThreadNameDetailRender",
+    "updateThreadNameLocally",
+    "applyNotification",
+  ].map((name) => functionSource(appJs, name));
+  const harness = Function(`
+const paneListThread = { id: "thread-pane", name: "Old" };
+const paneDetailThread = { id: "thread-pane", name: "Old" };
+const state = {
+  threads: [paneListThread],
+  currentThreadId: "thread-current",
+  currentThread: { id: "thread-current", name: "Current" },
+  threadTileMode: true,
+  threadTileDetails: new Map([["thread-pane", paneDetailThread]]),
+  renderedThreadListSignature: "old-signature",
+};
+const currentRenders = [];
+const tileRenders = [];
+const tileLoads = [];
+let listRenderCount = 0;
+let pruned = false;
+function shouldThrottleThreadNotification() { return false; }
+function renderCurrentThread() { currentRenders.push("current"); }
+function threadTilePaneIsVisible(threadId) { return String(threadId || "") === "thread-pane"; }
+function scheduleRenderThreadTilePane(threadId, options) {
+  tileRenders.push({ threadId: String(threadId || ""), preserveScroll: Boolean(options && options.preserveScroll) });
+  return true;
+}
+function renderThreads() { listRenderCount += 1; }
+function pruneHiddenThreads() { pruned = true; }
+function loadThreadTileDetail(threadId, options) {
+  tileLoads.push({
+    threadId: String(threadId || ""),
+    force: Boolean(options && options.force),
+    background: Boolean(options && options.background),
+    source: options && options.source,
+  });
+  return Promise.resolve();
+}
+function showError(err) { throw err; }
+${sources.join("\n")}
+return {
+  apply: applyNotification,
+  result: () => ({ paneListThread, paneDetailThread, currentThread: state.currentThread, currentRenders, tileRenders, tileLoads, listRenderCount, signature: state.renderedThreadListSignature, pruned }),
+};
+`)();
+
+  harness.apply("thread/name/updated", { threadId: "thread-pane", threadName: "New Pane Title" });
+  const result = harness.result();
+
+  assert.equal(result.paneListThread.name, "New Pane Title");
+  assert.equal(result.paneDetailThread.name, "New Pane Title");
+  assert.equal(result.currentThread.name, "Current");
+  assert.equal(result.signature, "");
+  assert.equal(result.pruned, true);
+  assert.equal(result.listRenderCount, 1);
+  assert.deepEqual(result.currentRenders, []);
+  assert.deepEqual(result.tileRenders, [{ threadId: "thread-pane", preserveScroll: true }]);
+  assert.deepEqual(result.tileLoads, [{
+    threadId: "thread-pane",
+    force: true,
+    background: true,
+    source: "tile-name",
+  }]);
+});
