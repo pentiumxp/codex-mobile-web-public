@@ -269,6 +269,45 @@ test("thread detail response budget applies progressive active limits under item
   assert.equal(budget.progressiveActiveTurnOriginalItemCount, 24);
 });
 
+test("thread detail response budget does not mark progressive active budget without a current active turn", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      mobileReadMode: "projection-v4-dynamic",
+      turns: [
+        {
+          id: "turn-completed",
+          status: "completed",
+          items: [
+            { id: "u1", type: "userMessage", text: "Question" },
+            ...Array.from({ length: 40 }, (_, index) => ({
+              id: `a${index + 1}`,
+              type: "agentMessage",
+              text: `progress ${index + 1}`,
+            })),
+            { id: "usage", type: "turnUsageSummary" },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    completedAssistantItems: 1,
+    activeProgressiveItemThreshold: 10,
+    progressiveActiveAssistantItems: 2,
+  });
+
+  const budget = compacted.thread.mobileDetailResponseBudget;
+  assert.equal(budget.progressiveActiveBudgetApplied, false);
+  assert.equal(budget.progressiveActiveBudgetReason, "");
+  assert.equal(budget.progressiveActiveOriginalItemCount, 42);
+  assert.equal(budget.progressiveActiveTurnOriginalItemCount, 0);
+  assert.equal(budget.activeAssistantItems, 8);
+  assert.equal(budget.omittedAssistantItems, 39);
+});
+
 test("thread detail response budget keeps the latest completed assistant receipt", () => {
   const result = {
     thread: {

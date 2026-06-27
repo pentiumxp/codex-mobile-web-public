@@ -23837,7 +23837,8 @@ The previous full handoff was archived and should be opened only when old proven
     are counted as `staleActiveTurnCount` and shaped with completed-turn
     budgets.
   - The same service applies progressive active limits when the detail window
-    crosses `activeProgressiveItemThreshold` (default `120` items): active
+    has a current active turn and crosses `activeProgressiveItemThreshold`
+    (default `50` items): active
     operation tail defaults to `6`, reasoning tail to `1`, and assistant/plan
     tail to `4`, while retained item text remains untruncated.
   - `server.js` wires the bounded environment overrides:

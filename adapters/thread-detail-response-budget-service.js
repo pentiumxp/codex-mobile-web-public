@@ -8,7 +8,7 @@ const DEFAULT_ACTIVE_REASONING_ITEMS = 2;
 const DEFAULT_COMPLETED_REASONING_ITEMS = 0;
 const DEFAULT_ACTIVE_ASSISTANT_ITEMS = 8;
 const DEFAULT_COMPLETED_ASSISTANT_ITEMS = 1;
-const DEFAULT_ACTIVE_PROGRESSIVE_ITEM_THRESHOLD = 120;
+const DEFAULT_ACTIVE_PROGRESSIVE_ITEM_THRESHOLD = 50;
 const DEFAULT_PROGRESSIVE_ACTIVE_OPERATION_ITEMS = 6;
 const DEFAULT_PROGRESSIVE_ACTIVE_REASONING_ITEMS = 1;
 const DEFAULT_PROGRESSIVE_ACTIVE_ASSISTANT_ITEMS = 4;
@@ -196,7 +196,8 @@ function compactThreadDetailResponseResult(result, options = {}) {
   );
   const pressureOriginalItemCount = itemCountForTurns(thread.turns);
   const pressureActiveItemCount = itemCountForTurns(thread.turns, (turn) => isActiveTurn(turn, thread));
-  const progressiveActiveBudgetApplied = activeProgressiveItemThreshold > 0
+  const progressiveActiveBudgetApplied = pressureActiveItemCount > 0
+    && activeProgressiveItemThreshold > 0
     && (pressureOriginalItemCount >= activeProgressiveItemThreshold
       || pressureActiveItemCount >= activeProgressiveItemThreshold);
   const progressiveActiveOperationItems = boundedCount(
