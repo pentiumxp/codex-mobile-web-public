@@ -386,6 +386,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       let projectionThread = overlayProjected && overlayProjected.thread || null;
       let overlayInput = null;
       try {
+        const activeOverlayResolveStartedAtMs = now();
         const overlayResult = resolveActiveWindowOverlay({
           threadId,
           summary,
@@ -395,7 +396,9 @@ function createThreadDetailReadOrchestrationService(options = {}) {
           projectionLookup: overlayProjectionLookup,
         });
         overlayInput = isPromiseLike(overlayResult) ? await overlayResult : overlayResult;
+        timer.mark("activeOverlayResolveMs", activeOverlayResolveStartedAtMs);
       } catch (err) {
+        if (!timer.timings.activeOverlayResolveMs) timer.mark("activeOverlayResolveMs", activeOverlayStartedAtMs);
         overlayInput = { reason: "resolver-error", error: safeErrorMessage(err) };
         threadLog("active_overlay_resolve_error", { error: safeErrorMessage(err) });
       }
@@ -416,10 +419,12 @@ function createThreadDetailReadOrchestrationService(options = {}) {
           overlayInput = mergeActiveOverlayProjectionFields(overlayInput, projectionThread);
         }
       }
+      let activeOverlayPlanStartedAtMs = now();
       let activeOverlayPlan = planActiveWindowOverlay(Object.assign({}, overlayInput || {}, {
         summary,
         projectionThread,
       }));
+      timer.mark("activeOverlayPlanMs", activeOverlayPlanStartedAtMs);
       let activeOverlayProjectionThread = projectionThread;
       let activeOverlayProjectionResult = overlayProjected;
       if (activeOverlayPlan.reason === "missing-projection-window"
@@ -448,12 +453,14 @@ function createThreadDetailReadOrchestrationService(options = {}) {
           activeOverlayProjectionResult = activeOverlayProjectionThread
             ? Object.assign({}, activeWindowResult || {}, { thread: activeOverlayProjectionThread })
             : activeWindowResult;
+          activeOverlayPlanStartedAtMs = now();
           activeOverlayPlan = planActiveWindowOverlay(Object.assign({}, overlayInput || {}, {
             summary,
             projectionThread: activeOverlayProjectionThread,
             projectionRevision: overlayInput.overlayRevision || overlayInput.projectionRevision,
             projectionTimestampMs: overlayInput.overlayTimestampMs || overlayInput.projectionTimestampMs,
           }));
+          timer.mark("activeOverlayPlanMs", activeOverlayPlanStartedAtMs);
           threadLog("active_overlay_window", {
             durationMs: now() - activeWindowStartedAtMs,
             action: activeOverlayPlan.action || "require-full-read",
@@ -482,6 +489,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
         source: context.activeOverlaySource,
       });
       if (activeOverlayPlan.action === "use-projection-overlay" && activeOverlayProjectionThread) {
+        const activeOverlayMergeStartedAtMs = now();
         const mergedThread = mergeProjectionThreadWithActiveOverlay(
           activeOverlayProjectionThread,
           overlayInput && overlayInput.overlayTurn,
@@ -497,9 +505,10 @@ function createThreadDetailReadOrchestrationService(options = {}) {
                 runtimeSettings,
                 projectionThread: activeOverlayProjectionThread,
               }))
-              : null,
+            : null,
           },
         );
+        timer.mark("activeOverlayMergeMs", activeOverlayMergeStartedAtMs);
         const result = Object.assign({}, activeOverlayProjectionResult || {}, { thread: mergedThread });
         if (isHiddenThread(result && result.thread, visibility)) {
           threadLog("active_overlay_hidden", {

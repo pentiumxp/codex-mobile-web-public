@@ -121,6 +121,11 @@ function buildThreadDetailDiagnostics(input = {}) {
     "turnsListFallbackMs",
     "prepareResponseMs",
     "activeOverlayMs",
+    "activeOverlayResolveMs",
+    "activeOverlayProjectionLookupMs",
+    "activeOverlayPlanMs",
+    "activeOverlayWindowMs",
+    "activeOverlayMergeMs",
   ]) {
     output[key] = safeDurationMs(timings[key]);
   }
