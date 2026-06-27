@@ -71,6 +71,14 @@ function dynamicBackingSignatureChanged(left, right) {
     || safeNumber(left.maxTurns) !== safeNumber(right.maxTurns);
 }
 
+function activeOverlayHistorySignatureMatches(left, right) {
+  if (!left || !right) return false;
+  return String(left.policyVersion || "") === String(right.policyVersion || "")
+    && String(left.threadId || "") === String(right.threadId || "")
+    && String(left.rolloutPathHash || "") === String(right.rolloutPathHash || "")
+    && safeNumber(left.maxTurns) === safeNumber(right.maxTurns);
+}
+
 function readJsonFile(filePath) {
   try {
     const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
@@ -174,6 +182,49 @@ function cloneProjectionResultForLookup(result, options = {}) {
     .filter((turn) => turnId(turn) !== omittedTurnId)
     .map((turn) => cloneJson(turn));
   return cloned;
+}
+
+function shouldUseStaleFullAsActiveOverlayWindow(entry, signature, input = {}, optionsForGet = {}) {
+  const omittedTurnId = String(optionsForGet.omitActiveTurnId || "").trim();
+  return Boolean(
+    optionsForGet.activeOverlay === true
+      && optionsForGet.allowPartial === true
+      && omittedTurnId
+      && entry
+      && entry.partial !== true
+      && entry.result
+      && entry.result.thread
+      && isActiveLikeStatus(input.summaryStatus)
+      && activeOverlayHistorySignatureMatches(entry.signature, signature),
+  );
+}
+
+function staleFullActiveOverlayWindow(entry, optionsForGet = {}) {
+  const result = cloneProjectionResultForLookup(entry && entry.result, optionsForGet);
+  const thread = result && result.thread;
+  if (!thread || !Array.isArray(thread.turns) || !thread.turns.length) return null;
+  normalizeProjectionThreadUserMessages(thread);
+  normalizeProjectionSupersededLiveTurns(thread);
+  thread.mobileReadMode = "projection-active-window";
+  thread.mobileProjection = Object.assign({}, thread.mobileProjection || {}, {
+    source: entry.dynamic ? "dynamic" : "cache",
+    version: "active-window",
+    partial: true,
+    partialKind: "turns-list-active-overlay-window",
+    activeOverlayWindow: true,
+    staleFullWindow: true,
+  });
+  return {
+    cached: {
+      cachedAtMs: entry.cachedAtMs,
+      updatedAtMs: entry.updatedAtMs,
+      dynamic: entry.dynamic,
+      partial: true,
+      partialKind: "turns-list-active-overlay-window",
+      result,
+    },
+    missReason: "",
+  };
 }
 
 function inferredActiveTurnId(thread) {
@@ -791,6 +842,7 @@ function createThreadDetailProjectionService(options = {}) {
     if (entry.partial && optionsForGet.allowPartial !== true) return { cached: null, missReason: "partial-not-allowed" };
 
     const summaryUpdatedAtMs = safeNumber(input.summaryUpdatedAtMs);
+    const activeOverlayStaleWindowAllowed = shouldUseStaleFullAsActiveOverlayWindow(entry, signature, input, optionsForGet);
     if (entry.dynamic) {
       const allowActiveOverlaySummaryStaleWindow = optionsForGet.activeOverlay === true
         && optionsForGet.allowPartial === true
@@ -799,16 +851,28 @@ function createThreadDetailProjectionService(options = {}) {
         && summaryUpdatedAtMs
         && entry.updatedAtMs
         && summaryUpdatedAtMs > entry.updatedAtMs + 2000) {
+        const staleWindow = activeOverlayStaleWindowAllowed ? staleFullActiveOverlayWindow(entry, optionsForGet) : null;
+        if (staleWindow) return staleWindow;
         return { cached: null, missReason: "dynamic-summary-stale" };
       }
       if (dynamicBackingSignatureChanged(entry.signature, signature)) {
         const dynamicAgeMs = Math.max(0, now() - safeNumber(entry.updatedAtMs || entry.cachedAtMs));
-        if (isRestingStatus(input.summaryStatus)) return { cached: null, missReason: "dynamic-resting-signature-mismatch" };
-        if (dynamicAgeMs > dynamicSignatureMismatchMaxAgeMs) return { cached: null, missReason: "dynamic-age-signature-mismatch" };
+        if (isRestingStatus(input.summaryStatus)) {
+          const staleWindow = activeOverlayStaleWindowAllowed ? staleFullActiveOverlayWindow(entry, optionsForGet) : null;
+          if (staleWindow) return staleWindow;
+          return { cached: null, missReason: "dynamic-resting-signature-mismatch" };
+        }
+        if (dynamicAgeMs > dynamicSignatureMismatchMaxAgeMs) {
+          const staleWindow = activeOverlayStaleWindowAllowed ? staleFullActiveOverlayWindow(entry, optionsForGet) : null;
+          if (staleWindow) return staleWindow;
+          return { cached: null, missReason: "dynamic-age-signature-mismatch" };
+        }
       }
     } else if (!expectedHash) {
       return { cached: null, missReason: "signature-unavailable" };
     } else if (entry.signatureHash !== expectedHash) {
+      const staleWindow = activeOverlayStaleWindowAllowed ? staleFullActiveOverlayWindow(entry, optionsForGet) : null;
+      if (staleWindow) return staleWindow;
       return { cached: null, missReason: "static-signature-mismatch" };
     }
 

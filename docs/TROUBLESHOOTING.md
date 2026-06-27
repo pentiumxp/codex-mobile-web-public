@@ -380,6 +380,15 @@ prewarm for active rows when it completes; if the first active detail open is
 still cold after the fallback baseline has completed, inspect whether
 `thread-list-prewarm:completed` produced an active-window prewarm result before
 the detail request arrived.
+If the active thread has a stale full projection whose stable identity still
+matches, current servers can downgrade that full cache to a history-only
+`turns-list-active-overlay-window` by omitting the currently growing active
+turn. Ordinary detail lookups still reject the same signature mismatch. If a
+post-restart or active-growth sample still spends seconds in app-server
+`turns-list-active-overlay-window`, confirm whether the projection cache was
+missing entirely, the stable identity changed, or the lookup lacked
+`activeOverlay=true` plus `omitActiveTurnId`; those cases remain authoritative
+app-server reads rather than client timeouts.
 Current builds also expose
 `mobileDiagnostics.threadDetailTimings.activeOverlayWindowFirst`. When this is
 `true`, the active detail orchestrator used the dedicated active-overlay

@@ -258,6 +258,55 @@ test("v4 projection service exposes bounded lookup miss reasons", () => {
   assert.equal(lookedUp.missReason, "static-signature-mismatch");
 });
 
+test("v4 projection service reuses stale full cache as active overlay history window", () => {
+  const service = createThreadDetailProjectionV4Service({
+    cacheDir: "",
+    policyVersion: "test-v4",
+    maxTurns: 3,
+    now: () => 2000,
+  });
+  service.seed(signatureInput({
+    summaryStatus: "completed",
+    summaryUpdatedAtMs: 1000,
+  }), {
+    thread: {
+      id: "thread-1",
+      turns: [
+        {
+          id: "turn-old",
+          items: [{ id: "agent-old", type: "agentMessage" }],
+        },
+        {
+          id: "turn-active",
+          status: { type: "active" },
+          items: [{ id: "agent-active", type: "agentMessage" }],
+        },
+      ],
+    },
+  });
+
+  const changedSignature = signatureInput({
+    summaryStatus: "active",
+    summaryUpdatedAtMs: 9000,
+    rolloutStats: { sizeBytes: 8192, mtimeMs: 9000 },
+  });
+  const lookedUp = service.lookup(changedSignature, {
+    allowPartial: true,
+    activeOverlay: true,
+    omitActiveTurnId: "turn-active",
+  });
+
+  assert.ok(lookedUp.cached);
+  assert.equal(lookedUp.missReason, "");
+  assert.equal(lookedUp.cached.version, "v4");
+  assert.equal(lookedUp.cached.partial, true);
+  assert.equal(lookedUp.cached.partialKind, "turns-list-active-overlay-window");
+  assert.equal(lookedUp.cached.result.thread.mobileProjection.partialKind, "turns-list-active-overlay-window");
+  assert.equal(lookedUp.cached.result.thread.mobileProjection.activeOverlayWindow, true);
+  assert.deepEqual(lookedUp.cached.result.thread.turns.map((turn) => turn.id), ["turn-old"]);
+  assert.deepEqual(lookedUp.cached.result.thread.mobileVisibleItemKeys, ["turn-old:receipt:agent-old"]);
+});
+
 test("v4 projection service lets partial recent windows replace stale full cache", () => {
   const service = createThreadDetailProjectionV4Service({
     cacheDir: "",

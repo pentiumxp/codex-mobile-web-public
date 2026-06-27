@@ -138,3 +138,10 @@ active-window prewarm for those rows. This keeps list fallback authority and
 public diagnostics unchanged while increasing the chance that a restarted
 server has the active detail window ready before the user opens the large
 thread.
+
+The active-overlay lookup path can now also reuse a stale full projection as a
+history-only active-window input when the stable projection identity still
+matches but the rollout size/mtime moved because the current active turn kept
+growing. This is limited to explicit `activeOverlay` partial lookups with an
+`omitActiveTurnId`; ordinary detail lookups and resting threads still reject the
+same stale signature and reseed from the authoritative app-server path.

@@ -487,6 +487,14 @@ Startup fallback prewarm feeds the same path: after
 baseline, server glue can schedule active-window prewarm for active rows from
 that already-read result. The public fallback-prewarm status still exposes only
 counts/timings, not thread titles, message text, or row payloads.
+When an explicit active-overlay window lookup has a stale full projection whose
+stable identity still matches the requested thread, rollout path, policy, and
+turn window, `adapters/thread-detail-projection-service.js` may downgrade that
+full cache entry into a partial `turns-list-active-overlay-window` by omitting
+the currently growing active turn. Ordinary lookup paths still reject the same
+rollout size/mtime mismatch; the downgraded window is history-only input for
+the proof gate, while the live active turn continues to come from the
+server-owned active overlay provider.
 
 Active-overlay detail responses preserve the same compaction boundary as normal
 thread-detail responses. The proof gate may merge a live overlay turn into a

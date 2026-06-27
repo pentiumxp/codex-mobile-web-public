@@ -251,6 +251,14 @@ Current acceleration targets:
    active-window prewarm. The hook does not alter public fallback status or
    expose private row data; it only starts the existing bounded active-window
    prewarm earlier after restart.
+   The stale-full-history follow-up handles a remaining successful-but-slow
+   case after process restart or active-turn growth: a full projection may still
+   contain a valid history window, but the ordinary signature check rejects it
+   because rollout size/mtime moved with the current active turn. Only explicit
+   active-overlay partial lookups with `omitActiveTurnId` may downgrade that
+   full entry into a history-only `turns-list-active-overlay-window`; ordinary
+   lookups and resting threads keep rejecting the mismatch and reseed through
+   the authoritative app-server path.
    The next measured detail-shape problem was not timeout or window proof: after
    `threadReadMs=0`, `turnsListMs=0`, and `activeOverlayWindowMs=0`, active and
    recently completed detail responses could still carry dozens of intermediate
