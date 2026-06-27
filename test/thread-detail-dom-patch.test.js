@@ -438,6 +438,84 @@ test("conversation HTML update effects ignore missing or unknown actions", () =>
   });
 });
 
+test("conversation DOM authority invalidation is planned from stable empty DOM mismatches", () => {
+  const plan = domPatch.planConversationDomAuthorityInvalidation({
+    updatePlan: {
+      action: "patch-html",
+      reason: "stable-signature-dom-empty",
+    },
+    source: "conversation-update",
+    action: "refresh",
+    routeKind: "single-thread",
+    threadHash: "thread-hash",
+    currentTurns: 5,
+    currentVisibleItems: 9,
+    expectedVisibleTurnCount: 3,
+    renderedDomTurnCount: 0,
+    previousChildCount: 2,
+    threadId: "thread-123",
+  });
+
+  assert.equal(plan.shouldRecordMismatch, true);
+  assert.equal(plan.mismatchReason, "stable_signature_dom_empty");
+  assert.deepEqual(plan.mismatchPayload, {
+    source: "conversation-update",
+    action: "refresh",
+    routeKind: "single-thread",
+    threadHash: "thread-hash",
+    renderMode: "patch-html",
+    currentTurns: 5,
+    currentVisibleItems: 9,
+    domCount: 0,
+    previousCount: 2,
+  });
+  assert.equal(plan.shouldPostClientEvent, true);
+  assert.equal(plan.clientEventName, "conversation_dom_authority_invalidated");
+  assert.deepEqual(plan.clientEventPayload, {
+    threadId: "thread-123",
+    reason: "stable-signature-dom-empty",
+    expectedVisibleTurnCount: 3,
+    renderedDomTurnCount: 0,
+    action: "patch-html",
+  });
+});
+
+test("conversation DOM authority invalidation stays quiet for healthy updates", () => {
+  assert.deepEqual(domPatch.planConversationDomAuthorityInvalidation({
+    updatePlan: {
+      action: "hydrate-existing",
+      reason: "signature-stable",
+    },
+    expectedVisibleTurnCount: 3,
+    renderedDomTurnCount: 3,
+  }), {
+    shouldRecordMismatch: false,
+    mismatchReason: "",
+    mismatchPayload: null,
+    shouldPostClientEvent: false,
+    clientEventName: "",
+    clientEventPayload: null,
+    reason: "not-authority-invalidated",
+  });
+
+  assert.deepEqual(domPatch.planConversationDomAuthorityInvalidation({
+    updatePlan: {
+      action: "patch-html",
+      reason: "stable-signature-dom-empty",
+    },
+    expectedVisibleTurnCount: 0,
+    renderedDomTurnCount: 0,
+  }), {
+    shouldRecordMismatch: false,
+    mismatchReason: "",
+    mismatchPayload: null,
+    shouldPostClientEvent: false,
+    clientEventName: "",
+    clientEventPayload: null,
+    reason: "no-expected-visible-turns",
+  });
+});
+
 test("conversation HTML update application exposes patch outcomes", () => {
   assert.deepEqual(domPatch.planConversationHtmlUpdateApplication({
     updatePlan: { action: "hydrate-existing" },

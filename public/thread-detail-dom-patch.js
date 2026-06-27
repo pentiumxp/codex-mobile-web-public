@@ -370,6 +370,63 @@
     };
   }
 
+  function hasOwn(input, key) {
+    return Object.prototype.hasOwnProperty.call(input, key);
+  }
+
+  function optionalBoundedString(input, key, max = 120) {
+    if (!hasOwn(input, key) || input[key] === undefined || input[key] === null) return undefined;
+    const value = String(input[key] || "").slice(0, max);
+    return value || undefined;
+  }
+
+  function planConversationDomAuthorityInvalidation(input = {}) {
+    const updatePlan = objectOrEmpty(input.updatePlan || input.plan);
+    const expectedVisibleTurnCount = boundedCount(input.expectedVisibleTurnCount);
+    const renderedDomTurnCount = boundedCount(input.renderedDomTurnCount);
+    const shouldInvalidate = Boolean(
+      updatePlan.reason === "stable-signature-dom-empty"
+      && expectedVisibleTurnCount > 0
+    );
+    if (!shouldInvalidate) {
+      return {
+        shouldRecordMismatch: false,
+        mismatchReason: "",
+        mismatchPayload: null,
+        shouldPostClientEvent: false,
+        clientEventName: "",
+        clientEventPayload: null,
+        reason: updatePlan.reason === "stable-signature-dom-empty" ? "no-expected-visible-turns" : "not-authority-invalidated",
+      };
+    }
+    const mismatchPayload = {
+      source: String(input.source || "conversation-update").slice(0, 120),
+      action: optionalBoundedString(input, "action", 80),
+      routeKind: optionalBoundedString(input, "routeKind", 80),
+      threadHash: optionalBoundedString(input, "threadHash", 80),
+      renderMode: String(updatePlan.action || "full-render").slice(0, 40),
+      currentTurns: hasOwn(input, "currentTurns") ? input.currentTurns : undefined,
+      currentVisibleItems: hasOwn(input, "currentVisibleItems") ? input.currentVisibleItems : undefined,
+      domCount: renderedDomTurnCount,
+      previousCount: boundedCount(input.previousChildCount),
+    };
+    return {
+      shouldRecordMismatch: true,
+      mismatchReason: "stable_signature_dom_empty",
+      mismatchPayload,
+      shouldPostClientEvent: true,
+      clientEventName: "conversation_dom_authority_invalidated",
+      clientEventPayload: {
+        threadId: String(input.threadId || ""),
+        reason: String(updatePlan.reason || "").slice(0, 80),
+        expectedVisibleTurnCount,
+        renderedDomTurnCount,
+        action: String(updatePlan.action || "").slice(0, 40),
+      },
+      reason: "stable-signature-dom-empty",
+    };
+  }
+
   function planConversationHtmlPerformanceEvent(input = {}) {
     const updatePlan = objectOrEmpty(input.updatePlan);
     const applicationPlan = objectOrEmpty(input.applicationPlan);
@@ -870,6 +927,7 @@
     planConversationHtmlUpdate,
     planConversationHtmlUpdateEffects,
     planConversationHtmlUpdateApplication,
+    planConversationDomAuthorityInvalidation,
     planConversationHtmlPatchFallbackClientEvent,
     planConversationHtmlPerformanceEvent,
     planLocalConversationDomUpdateCompletionSnapshot,

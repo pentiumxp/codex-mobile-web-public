@@ -12514,28 +12514,31 @@ function updateConversationHtml(html, signature, options = {}) {
     applyConversationHtmlUpdateEffectsPlan(effectsPlan, { root: conversation });
     return false;
   }
-  if (updatePlan.reason === "stable-signature-dom-empty" && expectedVisibleTurnCount > 0) {
-    recordEmptyVisibleDetailMismatch("stable_signature_dom_empty", state.currentThread, {
-      source: options.source || "conversation-update",
-      action: options.action || undefined,
-      routeKind: options.routeKind || undefined,
-      threadHash: options.threadHash || undefined,
-      renderMode: updatePlan.action || "full-render",
-      currentTurns: Object.prototype.hasOwnProperty.call(options, "currentTurns") ? options.currentTurns : undefined,
-      currentVisibleItems: Object.prototype.hasOwnProperty.call(options, "currentVisibleItems") ? options.currentVisibleItems : undefined,
-      domCount: renderedDomTurnCount,
-      previousCount: conversation && conversation.childNodes ? conversation.childNodes.length : 0,
-    });
-    postClientEvent("conversation_dom_authority_invalidated", {
-      threadId: state.currentThreadId || "",
-      reason: updatePlan.reason,
-      expectedVisibleTurnCount,
-      renderedDomTurnCount,
-      action: updatePlan.action || "",
-    });
+  const previousChildCount = conversation ? conversation.childNodes.length : 0;
+  const authorityInvalidationPlan = threadDetailDomPatchApi.planConversationDomAuthorityInvalidation({
+    updatePlan,
+    source: options.source || "conversation-update",
+    action: options.action,
+    routeKind: options.routeKind,
+    threadHash: options.threadHash,
+    currentTurns: Object.prototype.hasOwnProperty.call(options, "currentTurns") ? options.currentTurns : undefined,
+    currentVisibleItems: Object.prototype.hasOwnProperty.call(options, "currentVisibleItems") ? options.currentVisibleItems : undefined,
+    expectedVisibleTurnCount,
+    renderedDomTurnCount,
+    previousChildCount,
+    threadId: state.currentThreadId || "",
+  });
+  if (authorityInvalidationPlan.shouldRecordMismatch) {
+    recordEmptyVisibleDetailMismatch(
+      authorityInvalidationPlan.mismatchReason,
+      state.currentThread,
+      authorityInvalidationPlan.mismatchPayload || {},
+    );
+  }
+  if (authorityInvalidationPlan.shouldPostClientEvent) {
+    postClientEvent(authorityInvalidationPlan.clientEventName, authorityInvalidationPlan.clientEventPayload);
   }
   const startedAt = nowPerfMs();
-  const previousChildCount = conversation ? conversation.childNodes.length : 0;
   let applicationPlan = threadDetailDomPatchApi.planConversationHtmlUpdateApplication({
     updatePlan,
   });

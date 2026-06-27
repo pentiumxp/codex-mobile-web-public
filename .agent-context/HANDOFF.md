@@ -20843,3 +20843,42 @@ The previous full handoff was archived and should be opened only when old proven
   - Continue with the next high-value optimization slice: either Phase A/B
     projection state ownership cleanup or bundle script-only Phase E slices
     once a runtime/static slice requires a shell/cache bump.
+
+## 2026-06-27 - Phase A conversation DOM authority invalidation local slice
+
+- Current local state:
+  - Continued after local Phase E long-turn fixture commit `252c2e1`.
+  - This is a Phase A script/runtime-helper ownership slice. It changes
+    `public/thread-detail-dom-patch.js` and `public/app.js`, but does not alter
+    the client shell/cache version yet, has no deployment, and has no Public
+    push.
+- Root-cause boundary:
+  - Symptom/risk: `updateConversationHtml()` still assembled the
+    `stable-signature-dom-empty` mismatch payload and
+    `conversation_dom_authority_invalidated` client event inline. That kept a
+    DOM authority invariant partly inside app orchestration instead of the
+    DOM-patch policy helper.
+  - Failing layer: frontend conversation DOM authority planning at the Phase A
+    render/patch boundary, not server projection, scroll behavior, or Home AI
+    diagnostic transport.
+  - Violated invariant: expected-visible-turn versus rendered-DOM-turn
+    authority decisions and bounded diagnostic payloads should be owned by the
+    thread-detail DOM patch helper and covered by focused tests.
+- Changes:
+  - Added `planConversationDomAuthorityInvalidation()` to
+    `public/thread-detail-dom-patch.js`.
+  - The helper decides whether `stable-signature-dom-empty` should record an
+    empty-visible-detail mismatch and post the bounded
+    `conversation_dom_authority_invalidated` client event.
+  - `public/app.js` now calls that plan and only performs the real
+    `recordEmptyVisibleDetailMismatch()` / `postClientEvent()` side effects.
+  - Added executable coverage in `test/thread-detail-dom-patch.test.js` and
+    updated `test/conversation-render.test.js` to assert delegation to the
+    helper.
+- Validation:
+  - `node --check public/thread-detail-dom-patch.js && node --check public/app.js` passed.
+  - `node --test test/thread-detail-dom-patch.test.js test/conversation-render.test.js` passed (`161` tests).
+- Next:
+  - Run broader check, commit locally, and continue Phase A/B only if the next
+    ownership cut is equally bounded; otherwise batch accumulated local slices
+    into the next deployable module with shell/cache bump and central deploy.

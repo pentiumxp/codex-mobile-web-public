@@ -16,6 +16,33 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-27 Phase A Conversation DOM Authority Invalidation Local Slice
+
+这是 v542 后继续按“小切片本地提交、模块化再部署”节奏推进的 Phase A 切片。
+目标是收敛 `updateConversationHtml()` 里最后一段和 DOM 权威失效相关的内联
+诊断组装逻辑。
+
+改动边界：
+
+- `public/thread-detail-dom-patch.js` 新增
+  `planConversationDomAuthorityInvalidation()`；
+- 该 helper 负责判断 `stable-signature-dom-empty` 是否需要记录
+  empty visible detail mismatch，以及组装 bounded `conversation_dom_authority_invalidated`
+  client event payload；
+- `public/app.js` 只保留真实 side effect：调用
+  `recordEmptyVisibleDetailMismatch()` 和 `postClientEvent()`；
+- 不改变 DOM patch、hydrate、scroll、performance timing 或 server projection 语义。
+
+验证：
+
+```bash
+node --check public/thread-detail-dom-patch.js && node --check public/app.js
+node --test test/thread-detail-dom-patch.test.js test/conversation-render.test.js
+```
+
+本切片没有 runtime/static 行为变化，不 bump shell/cache，不部署；它作为 Phase A
+ownership cleanup 的本地提交继续累积。
+
 ## 2026-06-27 v542 Phase E Visual Harness Module
 
 v542 把 v541 之后的两个 Phase E 本地切片收束为一个可部署模块，而不是逐个小优化部署。

@@ -1097,6 +1097,16 @@ performance timing, and primary-shell conflict check, but it no longer branches
 directly on update-plan signature flags or scroll action after the DOM update
 plan has been computed. This keeps full-render/hydrate-existing and local
 patch completion on the same post-effect planning model.
+The same helper now owns the stable-signature DOM authority invalidation
+payload contract. `planConversationDomAuthorityInvalidation` decides whether a
+`stable-signature-dom-empty` update should record an empty-visible-detail
+mismatch and post the bounded `conversation_dom_authority_invalidated` client
+event, including the expected/rendered turn counts and render action.
+`public/app.js` still performs the real `recordEmptyVisibleDetailMismatch` and
+`postClientEvent` side effects, but it no longer assembles those diagnostic
+payloads inline. This is a local Phase A ownership slice only; it does not
+change DOM mutation order, scroll policy, projection semantics, shell/cache
+version, or deployment state.
 Refresh patch surface planning now also lives in this helper:
 `planThreadDetailRefreshPatchSurface` decides whether the refresh should probe
 tile-pane DOM state and whether the current patch path is a tile surface based
