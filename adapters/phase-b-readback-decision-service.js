@@ -53,6 +53,8 @@ function buildEvidence(report = {}) {
     threadListOwner: compactLabel(list.coldPathOwner, 80),
     threadListReason: compactLabel(list.coldPathReason, 80),
     threadListCacheDecision: compactLabel(list.fallbackCacheDecision, 80),
+    threadListCompatibleCacheHit: list.fallbackCompatibleCacheHit === true,
+    threadListCompatibleCacheLimit: boundedCount(list.fallbackCompatibleCacheLimit),
     threadListSourceSnapshotHit: list.fallbackSourceSnapshotHit === true,
     threadListSourceSnapshotRawCount: boundedCount(list.fallbackSourceSnapshotRawCount),
     threadListResultCount: boundedCount(list.resultCount),

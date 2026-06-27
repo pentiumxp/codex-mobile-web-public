@@ -95,6 +95,10 @@ const threadListLoadPolicy = window.CodexThreadListLoadPolicy;
 if (!threadListLoadPolicy) {
   throw new Error("CodexThreadListLoadPolicy script failed to load");
 }
+const threadListStableOrderPolicy = window.CodexThreadListStableOrder;
+if (!threadListStableOrderPolicy) {
+  throw new Error("CodexThreadListStableOrder script failed to load");
+}
 const liveOperationDockPolicy = window.CodexLiveOperationDockState;
 if (!liveOperationDockPolicy) {
   throw new Error("CodexLiveOperationDockState script failed to load");
@@ -189,6 +193,7 @@ const state = {
   workspaceTokenUsageDetailsOpen: false,
   workspaceTokenStatsOpen: false,
   threads: [],
+  threadListStableOrder: null,
   currentThread: null,
   currentThreadId: "",
   threadTileMode: false,
@@ -522,7 +527,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v547";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v548";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -576,6 +581,7 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/thread-status-hints.js",
   "/thread-performance-metrics.js",
   "/thread-list-load-policy.js",
+  "/thread-list-stable-order.js",
   "/live-operation-dock-state.js",
   "/thread-detail-state.js",
   "/thread-detail-render-plan.js",
@@ -8930,8 +8936,18 @@ async function loadThreads(options = {}) {
     const apiElapsedMs = roundedDurationMs(apiStartedAt);
     if (seq !== state.threadListLoadSeq) return null;
     const renderStartedAt = nowPerfMs();
-    state.threads = visibleThreads(result.data || [])
+    const nextThreads = visibleThreads(result.data || [])
       .map((thread) => threadListSummaryFromDetailThread(thread) || thread);
+    const stableOrderPlan = threadListStableOrderPolicy.planThreadListStableOrder({
+      threads: nextThreads,
+      previousState: state.threadListStableOrder,
+      scopeKey: threadListStableOrderPolicy.threadListOrderScopeKey({ selectedCwd: state.selectedCwd, search }),
+      selectedCwd: state.selectedCwd,
+      search,
+      nowMs: Date.now(),
+    });
+    state.threads = stableOrderPlan.threads;
+    state.threadListStableOrder = stableOrderPlan.state;
     state.workspaceTokenUsage = result.mobileTokenUsage || null;
     state.threadListLoadedAtMs = Date.now();
     reconcileThreadStatusHints(state.threads);

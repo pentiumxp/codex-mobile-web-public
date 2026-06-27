@@ -22816,3 +22816,49 @@ The previous full handoff was archived and should be opened only when old proven
   - `git diff --check` passed.
 - Next:
   - Commit and deploy this second slice, then run Phase-B readback again to confirm the prewarm/list decision no longer reports `prewarm-completed-but-list-cold`.
+
+## 2026-06-27 - Thread-list order stability and readback visibility slice
+
+- Current local state:
+  - Continued after production deploys for commit `0db7ec9` (active-overlay
+    projection cache) and commit `82aad88` (thread-list compatible wider-limit
+    fallback cache).
+  - Bumped static shell/cache from `codex-mobile-shell-v547` to
+    `codex-mobile-shell-v548` because this slice changes browser behavior and
+    adds a new public helper.
+- Root-cause boundary:
+  - Symptom/risk: the thread list could update metadata correctly but reorder
+    rows too frequently from second-level activity time changes, so a user could
+    miss-tap a row while the list was refreshing.
+  - Failing layer: browser thread-list order application during ordinary
+    background refreshes, not server list authority, search/workspace filtering,
+    or fallback cache data freshness.
+  - Violated invariant: default-list rows that are already visible should keep a
+    bounded short stable order during background refreshes while status/time
+    metadata continues to update; explicit search/workspace scopes should still
+    adopt server order immediately.
+- Changes:
+  - Added `public/thread-list-stable-order.js`, a pure order-stability policy.
+    It holds existing default-list rows for a 45s window, inserts new rows by
+    server rank, adopts server order after the hold expires, and resets
+    immediately when search/workspace scope changes.
+  - `public/app.js` now applies that policy in `loadThreads()` after summary
+    normalization and before status reconciliation/rendering.
+  - `public/index.html`, `public/sw.js`, `server.js`, `package.json`, and shell
+    tests now load/serve/cache/check the new helper under v548.
+  - Phase-B readback now exposes `fallbackCompatibleCacheHit` and
+    `fallbackCompatibleCacheLimit` so compatible wider-limit cache reuse is
+    visible in production smoke results.
+  - `docs/MODULES.md` records the new helper boundary.
+- Validation:
+  - Focused tests passed:
+    `node --test test/thread-list-stable-order.test.js test/thread-list-load-policy.test.js test/mobile-viewport.test.js test/app-update.test.js test/plugin-voice-input.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js`
+    (`86` tests).
+  - `npm test` passed (`1305` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit and deploy this v548 slice through the central Home AI macOS plugin
+    deploy path, then read back `/api/public-config` and Phase-B smoke to
+    confirm v548 plus compatible-cache readback fields in production.

@@ -321,6 +321,8 @@ function summarizeThreadList(result = {}) {
     coldPathReason: compactLabel(timings && timings.coldPathReason, 80),
     fallbackCacheDecision: compactLabel(timings && timings.fallbackCacheDecision, 80),
     fallbackCacheHit: timings && timings.fallbackCacheHit === true,
+    fallbackCompatibleCacheHit: timings && timings.fallbackCompatibleCacheHit === true,
+    fallbackCompatibleCacheLimit: boundedCount(timings && timings.fallbackCompatibleCacheLimit),
     fallbackDeferred: timings && timings.fallbackDeferred === true,
     fallbackDeferredReason: compactLabel(timings && timings.fallbackDeferredReason, 80),
     fallbackBaselineSourceCount: boundedCount(timings && timings.fallbackBaselineSourceCount),
