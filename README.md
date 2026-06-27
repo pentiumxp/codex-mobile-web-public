@@ -607,6 +607,36 @@ npm run check:macos  # passed
 git diff --check  # passed
 ```
 
+## 2026-06-27 Phase C Task-card Draft Render Context Slice
+
+这是 approval request thread context 之后的相邻 Phase C 本地切片，不单独部署、
+不推 Public。它收敛 cross-thread task-card draft 的渲染匹配上下文：当某个 turn
+里出现 task-card draft，前端判断“这个 draft 是否已经对应创建出 card”时，使用当前
+render context thread 的 `threadTaskCards`，不再固定从全局 `state.currentThread`
+读取。
+
+改动边界：
+
+- `renderTurnThreadTaskCardDraft(turn, previousKeys, thread)` 接收显式 thread，并把
+  render context thread 传给 draft matching；
+- `matchingThreadTaskCardsForDraft(draft, turn, thread)` 使用显式 thread 的
+  `threadTaskCards` 和 thread id 做 source 匹配；
+- 新增可执行测试，构造 current thread 与 pane thread 都有同内容 card 的场景，验证
+  显式 pane thread 会匹配 pane 自己的 card；
+- 不改变 task-card draft 创建 API、return/ack 协议、server materialization、
+  shell/cache 版本或生产部署状态。
+
+验证：
+
+```bash
+node --check public/app.js
+node --test test/thread-task-card-route.test.js test/conversation-render.test.js test/thread-detail-actions.test.js  # 136 passed
+npm test  # 1267 passed
+npm run check  # passed
+npm run check:macos  # passed
+git diff --check  # passed
+```
+
 ## 2026-06-27 Phase A Conversation DOM Authority Invalidation Local Slice
 
 这是 v542 后继续按“小切片本地提交、模块化再部署”节奏推进的 Phase A 切片。

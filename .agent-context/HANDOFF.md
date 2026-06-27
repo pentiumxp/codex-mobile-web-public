@@ -21659,6 +21659,45 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit locally and keep undeployed until a coherent deployable module is
     ready.
 
+## 2026-06-27 - Phase C task-card draft render context local slice
+
+- Current local state:
+  - Continued after local commit `6b9143b` (`refactor approval requests use
+    pane context`).
+  - This is a local Phase C task-card draft render-context slice only. It
+    changes `public/app.js`, `test/thread-task-card-route.test.js`, README, the
+    architecture plan, and this handoff. It does not bump shell/cache, deploy
+    production, or push Public.
+- Root-cause boundary:
+  - Symptom/risk: task-card draft rendering could decide whether a generated
+    draft was already materialized by checking `state.currentThread.threadTaskCards`
+    even when the rendered turn belonged to another render/pane context.
+  - Failing layer: frontend task-card draft render/matching context
+    propagation, not task-card create API, return/ack protocol, server draft
+    materialization, or Home AI host routing.
+  - Violated invariant: pane-local task-card draft visibility must be decided
+    from the same render context thread that owns the turn being rendered.
+- Changes:
+  - `renderTurnThreadTaskCardDraft(turn, previousKeys, thread)` now receives
+    explicit thread context and passes it into matching.
+  - `matchingThreadTaskCardsForDraft(draft, turn, thread)` now reads
+    `thread.threadTaskCards` and thread id from the explicit render context
+    thread before falling back to current-thread state.
+  - Added executable coverage proving that when current thread and pane thread
+    both contain matching-looking cards, explicit pane context returns the pane
+    card.
+- Validation so far:
+  - `node --check public/app.js` passed.
+  - `node --test test/thread-task-card-route.test.js test/conversation-render.test.js test/thread-detail-actions.test.js`
+    passed (`136` tests).
+  - `npm test` passed (`1267` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit locally and keep undeployed until a coherent deployable module is
+    ready.
+
 ## 2026-06-27 - Phase C Composer action control planning local slice
 
 - Current local state:

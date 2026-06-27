@@ -2034,6 +2034,10 @@ Target:
   source thread before entering client state, and approval/user-input action
   HTML receives the pane thread id instead of falling back to global
   `state.currentThreadId`.
+  Task-card draft rendering now also uses the render context thread when it
+  checks whether a generated draft already has matching materialized task
+  cards, so pane-local draft visibility is not decided from global
+  `state.currentThread.threadTaskCards`.
 - Treat each pane as a scaled mobile single-thread runtime instance. Shared
   global Composer chrome is only an interim input surface; global command dock
   or shared operation bubble are no longer acceptable in tile mode and must not

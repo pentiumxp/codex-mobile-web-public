@@ -32,6 +32,22 @@ function functionBody(source, name) {
   throw new Error(`could not parse function ${name}`);
 }
 
+function functionSource(source, name) {
+  let start = source.indexOf(`function ${name}(`);
+  if (start < 0) start = source.indexOf(`async function ${name}(`);
+  assert.notEqual(start, -1, `missing function ${name}`);
+  const bodyStart = source.indexOf(") {", start) + 2;
+  assert.notEqual(bodyStart, 1, `missing function body ${name}`);
+  let depth = 0;
+  for (let index = bodyStart; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "{") depth += 1;
+    if (char === "}") depth -= 1;
+    if (depth === 0) return source.slice(start, index + 1);
+  }
+  throw new Error(`could not parse function ${name}`);
+}
+
 test("server exposes thread task card routes and enriches thread detail responses", () => {
   assert.match(serverJs, /createThreadTaskCardService/);
   assert.match(serverJs, /createHomeAiAutonomousDeliveryReturnService/);
@@ -424,7 +440,8 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /commonPrefixLength\(id, thread\.id\)/);
   assert.match(appJs, /entry\.prefix >= 14/);
   assert.match(appJs, /function matchingThreadTaskCardsForDraft\(/);
-  assert.match(appJs, /matchingThreadTaskCardsForDraft\(draft, turn\)/);
+  assert.match(appJs, /matchingThreadTaskCardsForDraft\(draft, turn, contextThread\)/);
+  assert.match(functionBody(appJs, "matchingThreadTaskCardsForDraft"), /const contextThread = renderContextThread\(thread\)/);
   assert.match(appJs, /function renderThreadTaskCardExpandable\(/);
   assert.match(appJs, /const STORAGE_TASK_CARD_DRAFT_STATES = "codexMobileThreadTaskCardDraftStates"/);
   assert.match(appJs, /THREAD_TASK_CARD_DRAFT_CREATE_STALE_MS/);
@@ -475,4 +492,54 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.doesNotMatch(appJs, /function maybeDelegateCrossWorkspaceMessage\(/);
   assert.doesNotMatch(functionBody(appJs, "sendMessage"), /maybeDelegateCrossWorkspaceMessage/);
   assert.doesNotMatch(functionBody(appJs, "sendMessage"), /workspaceDelegation/);
+});
+
+test("client task-card draft matching uses the explicit render context thread", () => {
+  const sources = [
+    "renderContextThreadId",
+    "renderContextThread",
+    "uniqueThreadTaskCardTargetIds",
+    "threadTaskCardDraftTargetIds",
+    "matchingThreadTaskCardsForDraft",
+  ].map((name) => functionSource(appJs, name));
+  const harness = Function(`
+const state = {
+  currentThreadId: "thread-current",
+  currentThread: {
+    id: "thread-current",
+    threadTaskCards: [
+      {
+        id: "card-current",
+        source: { threadId: "thread-current", turnId: "turn-draft" },
+        target: { threadId: "thread-target" },
+        message: { title: "Repair", body: "Do the work" },
+      },
+    ],
+  },
+  renderContextThreadId: "",
+  renderContextThread: null,
+};
+${sources.join("\n")}
+return { matchingThreadTaskCardsForDraft };
+`)();
+  const paneThread = {
+    id: "thread-pane",
+    threadTaskCards: [
+      {
+        id: "card-pane",
+        source: { threadId: "thread-pane", turnId: "turn-draft" },
+        target: { threadId: "thread-target" },
+        message: { title: "Repair", body: "Do the work" },
+      },
+    ],
+  };
+  const draft = {
+    targetThreadIds: ["thread-target"],
+    title: "Repair",
+    body: "Do the work",
+  };
+  const turn = { id: "turn-draft" };
+
+  assert.equal(harness.matchingThreadTaskCardsForDraft(draft, turn)[0].id, "card-current");
+  assert.equal(harness.matchingThreadTaskCardsForDraft(draft, turn, paneThread)[0].id, "card-pane");
 });

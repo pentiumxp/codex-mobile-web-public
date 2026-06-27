@@ -15824,7 +15824,8 @@ function turnHasThreadTaskCardDraftResponse(turn) {
   return items.some((item) => item && (item.type === "agentMessage" || item.type === "plan") && hasThreadTaskCardDraftTag(item.text || ""));
 }
 
-function renderTurnThreadTaskCardDraft(turn, previousKeys = new Set()) {
+function renderTurnThreadTaskCardDraft(turn, previousKeys = new Set(), thread = renderContextThread()) {
+  const contextThread = renderContextThread(thread);
   const items = Array.isArray(turn && turn.items) ? turn.items : [];
   for (const item of items) {
     if (!item || (item.type !== "agentMessage" && item.type !== "plan")) continue;
@@ -15834,7 +15835,7 @@ function renderTurnThreadTaskCardDraft(turn, previousKeys = new Set()) {
       const draftKey = threadTaskCardDraftKeyForDraft(turn, draft, item);
       let draftState = threadTaskCardDraftState(draftKey);
       if (draftState.status === "pending") {
-        const existing = matchingThreadTaskCardsForDraft(draft, turn);
+        const existing = matchingThreadTaskCardsForDraft(draft, turn, contextThread);
         if (existing.length) {
           setThreadTaskCardDraftState(draftKey, {
             status: "created",
@@ -15976,11 +15977,12 @@ function canRecoverFailedThreadTaskCardDraft(draft, draftState) {
   return threadTaskCardDraftTargetIds(draft).length > 0;
 }
 
-function matchingThreadTaskCardsForDraft(draft, turn) {
-  const thread = state.currentThread;
-  const cards = Array.isArray(thread && thread.threadTaskCards) ? thread.threadTaskCards : [];
+function matchingThreadTaskCardsForDraft(draft, turn, thread = renderContextThread()) {
+  const contextThread = renderContextThread(thread);
+  const sourceThread = contextThread || state.currentThread;
+  const cards = Array.isArray(sourceThread && sourceThread.threadTaskCards) ? sourceThread.threadTaskCards : [];
   const targetIds = new Set(threadTaskCardDraftTargetIds(draft));
-  const sourceThreadId = String(thread && thread.id || state.currentThreadId || "");
+  const sourceThreadId = String(sourceThread && sourceThread.id || renderContextThreadId(contextThread) || "");
   const sourceTurnId = String(turn && turn.id || "");
   const title = String(draft && draft.title || "").trim();
   const body = String(draft && draft.body || "").trim();
@@ -16845,7 +16847,7 @@ function renderTurn(turn, previousKeys = new Set()) {
   const approvalsHtml = turnApprovals.length
     ? `<div class="approval-stack in-turn">${turnApprovals.map((request) => renderApprovalRequest(request, previousKeys)).join("")}</div>`
     : "";
-  const draftHtml = renderTurnThreadTaskCardDraft(turn, previousKeys);
+  const draftHtml = renderTurnThreadTaskCardDraft(turn, previousKeys, thread);
   const pendingDraftHtml = !draftHtml && !turnHasThreadTaskCardDraftResponse(turn) && isLatestTurn(turn, thread) && isLiveTurn(turn, thread) && turnHasThreadTaskCardRequest(turn)
     ? renderPendingThreadTaskCardDraft("Generating cross-thread task card draft...", "Generating")
     : "";
