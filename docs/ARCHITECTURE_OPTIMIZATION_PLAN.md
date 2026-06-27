@@ -2308,6 +2308,42 @@ central macOS plugin deployment, and bounded post-deploy samples proving
 `summaryMergeDisplayMergeMs`, `summaryMergeTotalMs`, `mergeMs`, and total list
 latency move in the expected direction without leaking private thread content.
 
+### 2026-06-28 Active Overlay Window-First Detail module
+
+This module targets the residual active-detail latency after active overlay and
+response-budget work. Production readback showed active detail could be warm and
+already use `projection-active-overlay`, but the orchestrator still ran an
+ordinary projection lookup before the active-overlay proof gate even when the
+server had a dedicated lightweight active-overlay projection-window lookup.
+
+Deployable scope:
+
+- `adapters/thread-detail-read-orchestration-service.js` uses the dedicated
+  `activeOverlayProjectionWindowLookup` first for active/running summaries when
+  the active overlay provider is available. This avoids a duplicate normal
+  projection normalize/assemble pass before proof-gating the live active turn.
+- `adapters/thread-detail-performance-service.js` records
+  `activeOverlayWindowFirst` so production readback can distinguish the hot
+  path from the compatibility path that falls back to ordinary projection
+  lookup.
+- The module preserves fail-closed active overlay proof gates, projection-window
+  authority, active-overlay merge rules, visible-item policy, and response
+  budgeting. It is server orchestration cleanup, not client refresh masking.
+
+Required validation:
+
+- focused active-overlay integration, read-orchestration, performance, route,
+  overlay-provider, overlay-policy, and client performance-metrics tests;
+- full `npm test`;
+- `npm run check`;
+- `npm run check:macos`;
+- `git diff --check`;
+- central Home AI macOS plugin deployment;
+- production readback comparing `activeOverlayWindowFirst`,
+  `projectionMs`, `activeOverlayProjectionLookupMs`, `activeOverlayMergeMs`,
+  `prepareResponseMs`, active detail response bytes, and
+  `mobileDetailResponseBudget`.
+
 ### 2026-06-28 Active Turn Progressive Detail Budget module
 
 This module targets the remaining active-detail payload pressure after

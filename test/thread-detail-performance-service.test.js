@@ -59,6 +59,7 @@ test("thread detail diagnostics classify warm projection and bounded timings", (
     activeOverlayUploadItems: 0,
     activeOverlayAssistantItems: 0,
     activeOverlayReceiptItems: 0,
+    activeOverlayWindowFirst: false,
     returnedTurns: 2,
     omittedTurns: 128,
     rolloutSizeBytes: 2800000,

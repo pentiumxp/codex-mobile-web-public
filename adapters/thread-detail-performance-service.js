@@ -99,6 +99,7 @@ function buildThreadDetailDiagnostics(input = {}) {
     activeOverlayUploadItems: safeCount(input.activeOverlayUploadItems),
     activeOverlayAssistantItems: safeCount(input.activeOverlayAssistantItems),
     activeOverlayReceiptItems: safeCount(input.activeOverlayReceiptItems),
+    activeOverlayWindowFirst: input.activeOverlayWindowFirst === true,
     returnedTurns: safeCount(input.returnedTurns || counts.returnedTurns),
     omittedTurns: safeCount(input.omittedTurns || counts.omittedTurns),
     rolloutSizeBytes: safeCount(input.rolloutSizeBytes),

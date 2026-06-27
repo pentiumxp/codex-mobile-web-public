@@ -471,6 +471,12 @@ to compact operation evidence before the overlay turn is cloned into the
 response. `mcpToolCall` and `dynamicToolCall` count as operation evidence for
 active-overlay coverage, so the proof gate and response payload use the same
 operation taxonomy.
+When `server.js` injects the dedicated `activeOverlayProjectionWindowLookup`,
+the read orchestrator uses that lightweight window lookup before ordinary
+projection lookup for active/running summaries. This keeps the fail-closed proof
+gate but avoids a duplicate normal projection normalize/assemble pass before
+the live overlay turn is proven and merged. The bounded timing diagnostics
+record this as `activeOverlayWindowFirst=true`.
 
 The current implementation above is the v3 projection path. The v4 replacement
 contract is documented in `docs/THREAD_DETAIL_PROJECTION_V4_DESIGN.md`: it keeps

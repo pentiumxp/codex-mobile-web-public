@@ -216,6 +216,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       activeOverlayUploadItems: context.activeOverlayUploadItems || 0,
       activeOverlayAssistantItems: context.activeOverlayAssistantItems || 0,
       activeOverlayReceiptItems: context.activeOverlayReceiptItems || 0,
+      activeOverlayWindowFirst: context.activeOverlayWindowFirst === true,
       timings: context.timer.timings,
       totalMs: context.timer.elapsedMs(),
       rolloutSizeBytes: result && result.thread ? threadRolloutSizeBytes(result.thread) : 0,
@@ -260,6 +261,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       activeOverlayUploadItems: 0,
       activeOverlayAssistantItems: 0,
       activeOverlayReceiptItems: 0,
+      activeOverlayWindowFirst: false,
     };
     threadLog("start", {
       transport: codex && codex.transportKind,
@@ -326,7 +328,13 @@ function createThreadDetailReadOrchestrationService(options = {}) {
     context.projectionState = projection ? "input-ready" : "unavailable";
     const projectionStartedAtMs = now();
     const allowPartialProjection = activeReadPolicy.allowPartialProjection;
-    const projectionLookup = projection && projectedThreadLookup
+    const shouldUseActiveOverlayWindowFirst = Boolean(
+      activeReadPolicy.activeFullReadRequired
+        && resolveActiveWindowOverlay
+        && activeOverlayProjectionWindowLookup,
+    );
+    context.activeOverlayWindowFirst = shouldUseActiveOverlayWindowFirst;
+    const projectionLookup = projection && projectedThreadLookup && !shouldUseActiveOverlayWindowFirst
       ? projectedThreadLookup(projection, summary, runtimeSettings, { allowPartial: allowPartialProjection })
       : null;
     const projected = projection
@@ -412,6 +420,9 @@ function createThreadDetailReadOrchestrationService(options = {}) {
           activeOverlay: true,
           omitActiveTurnId: activeOverlayTurnId,
         });
+        if (overlayProjectionLookup && overlayProjectionLookup.missReason) {
+          context.projectionMissReason = overlayProjectionLookup.missReason;
+        }
         timer.mark("activeOverlayProjectionLookupMs", activeOverlayProjectionLookupStartedAtMs);
         overlayProjected = overlayProjectionLookup ? overlayProjectionLookup.result : null;
         projectionThread = overlayProjected && overlayProjected.thread || null;

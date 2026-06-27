@@ -47,6 +47,7 @@ function diagnosticsAttacher(result, input) {
       activeOverlayUploadItems: Number(input.activeOverlayUploadItems || 0),
       activeOverlayAssistantItems: Number(input.activeOverlayAssistantItems || 0),
       activeOverlayReceiptItems: Number(input.activeOverlayReceiptItems || 0),
+      activeOverlayWindowFirst: input.activeOverlayWindowFirst === true,
     },
   };
   return result;
@@ -229,9 +230,7 @@ test("read orchestration uses live projection provider for active overlay withou
   assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["turn-window", "turn-live"]);
   assert.equal(calls.includes("thread-read"), false);
   assert.equal(calls.includes("turns-list"), false);
-  assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), [
-    "projection-lookup:full:partial-not-allowed",
-  ]);
+  assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), []);
   assert.deepEqual(calls.filter((call) => call.startsWith("active-overlay-window-lookup:")), [
     "active-overlay-window-lookup:hit",
   ]);
@@ -246,6 +245,7 @@ test("read orchestration uses live projection provider for active overlay withou
   assert.equal(timings.activeOverlayUploadItems, 0);
   assert.equal(timings.activeOverlayAssistantItems, 1);
   assert.equal(timings.activeOverlayReceiptItems, 1);
+  assert.equal(timings.activeOverlayWindowFirst, true);
 });
 
 test("read orchestration compacts active overlay tool payload before returning detail", async () => {
@@ -308,9 +308,7 @@ test("read orchestration uses active overlay window despite active summary stale
 
   assert.equal(response.status, 200);
   assert.equal(response.mode, "projection-active-overlay");
-  assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), [
-    "projection-lookup:full:partial-not-allowed",
-  ]);
+  assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), []);
   assert.deepEqual(calls.filter((call) => call.startsWith("active-overlay-window-lookup:")), [
     "active-overlay-window-lookup:hit",
   ]);
@@ -321,6 +319,7 @@ test("read orchestration uses active overlay window despite active summary stale
   assert.equal(timings.activeFullReadReason, "status-active");
   assert.equal(timings.activeOverlayAction, "use-projection-overlay");
   assert.equal(timings.activeOverlayReason, "overlay-evidence-complete");
+  assert.equal(timings.activeOverlayWindowFirst, true);
 });
 
 test("thread detail route smoke returns active overlay from mode=recent without full thread/read", async () => {
@@ -355,9 +354,7 @@ test("thread detail route smoke returns active overlay from mode=recent without 
   assert.equal(calls.includes("thread-read"), false);
   assert.equal(calls.includes("turns-list"), false);
   assert.ok(calls.includes("route-read-prefer-recent:true"));
-  assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), [
-    "projection-lookup:full:partial-not-allowed",
-  ]);
+  assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), []);
   assert.deepEqual(calls.filter((call) => call.startsWith("active-overlay-window-lookup:")), [
     "active-overlay-window-lookup:hit",
   ]);

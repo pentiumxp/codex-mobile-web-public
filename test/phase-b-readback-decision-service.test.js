@@ -179,12 +179,28 @@ test("phase B readback decision returns ready for warm or bounded paths", () => 
       readDecision: "projection-active-overlay",
       coldPathOwner: "warm-path",
       coldPathReason: "warm-projection-active-overlay",
+      activeOverlayWindowFirst: true,
+      totalMs: 123,
+      summaryMs: 7,
+      projectionMs: 0,
+      activeOverlayProjectionLookupMs: 2,
+      activeOverlayMergeMs: 3,
+      prepareResponseMs: 11,
+      threadReadMs: 0,
     },
   });
 
   assert.equal(decision.status, "ready");
   assert.equal(decision.owner, "phase-b-readback");
   assert.equal(decision.nextAction, "proceed-to-next-phase-b-root-cause-target");
+  assert.equal(decision.evidence.detailActiveOverlayWindowFirst, true);
+  assert.equal(decision.evidence.detailTotalMs, 123);
+  assert.equal(decision.evidence.detailSummaryMs, 7);
+  assert.equal(decision.evidence.detailProjectionMs, 0);
+  assert.equal(decision.evidence.detailActiveOverlayProjectionLookupMs, 2);
+  assert.equal(decision.evidence.detailActiveOverlayMergeMs, 3);
+  assert.equal(decision.evidence.detailPrepareResponseMs, 11);
+  assert.equal(decision.evidence.detailThreadReadMs, 0);
 });
 
 test("phase B readback decision treats source snapshot hits as ready evidence", () => {

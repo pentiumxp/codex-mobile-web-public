@@ -173,6 +173,16 @@ function buildEvidence(report = {}) {
     detailActiveOverlayGate: compactLabel(detail.activeOverlayGate, 80),
     detailActiveOverlayGateReason: compactLabel(detail.activeOverlayGateReason, 80),
     detailActiveOverlayNextAction: compactLabel(detail.activeOverlayNextAction, 100),
+    detailActiveOverlayWindowFirst: detail.activeOverlayWindowFirst === true,
+    detailTotalMs: boundedCount(detail.totalMs),
+    detailSummaryMs: boundedCount(detail.summaryMs),
+    detailProjectionMs: boundedCount(detail.projectionMs),
+    detailActiveOverlayMs: boundedCount(detail.activeOverlayMs),
+    detailActiveOverlayProjectionLookupMs: boundedCount(detail.activeOverlayProjectionLookupMs),
+    detailActiveOverlayMergeMs: boundedCount(detail.activeOverlayMergeMs),
+    detailPrepareResponseMs: boundedCount(detail.prepareResponseMs),
+    detailThreadReadMs: boundedCount(detail.threadReadMs),
+    detailActiveOverlayWindowMs: boundedCount(detail.activeOverlayWindowMs),
     detailTurnCount: boundedCount(detail.turnCount),
   };
 }

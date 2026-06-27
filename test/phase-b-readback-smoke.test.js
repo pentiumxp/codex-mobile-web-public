@@ -203,6 +203,15 @@ test("phase B readback smoke collects bounded diagnostics without private fields
               activeOverlayUploadItems: 0,
               activeOverlayAssistantItems: 1,
               activeOverlayReceiptItems: 1,
+              activeOverlayWindowFirst: true,
+              totalMs: 42,
+              summaryMs: 3,
+              projectionMs: 4,
+              activeOverlayMs: 5,
+              activeOverlayProjectionLookupMs: 2,
+              activeOverlayMergeMs: 1,
+              prepareResponseMs: 6,
+              threadReadMs: 0,
             },
           },
         },
@@ -272,6 +281,11 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.detail.activeOverlayGate, "ready");
   assert.equal(report.detail.activeOverlayNextAction, "observe-active-overlay-readback");
   assert.equal(report.detail.activeOverlayAssistantItems, 1);
+  assert.equal(report.detail.activeOverlayWindowFirst, true);
+  assert.equal(report.detail.projectionMs, 4);
+  assert.equal(report.detail.activeOverlayProjectionLookupMs, 2);
+  assert.equal(report.detail.prepareResponseMs, 6);
+  assert.equal(report.detail.threadReadMs, 0);
   assert.match(report.threadList.firstThreadHash, /^[a-f0-9]{16}$/);
   assert.match(report.detail.requestedThreadHash, /^[a-f0-9]{16}$/);
   assert.deepEqual(seen.map((item) => item.path), [

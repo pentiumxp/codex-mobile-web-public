@@ -48,6 +48,7 @@ function createHarness(overrides = {}) {
             activeOverlayUploadItems: Number(input.activeOverlayUploadItems || 0),
             activeOverlayAssistantItems: Number(input.activeOverlayAssistantItems || 0),
             activeOverlayReceiptItems: Number(input.activeOverlayReceiptItems || 0),
+            activeOverlayWindowFirst: input.activeOverlayWindowFirst === true,
             timings: Object.assign({}, input.timings),
             totalMs: input.totalMs,
             largeReadProtected: Boolean(input.largeReadProtected),
@@ -433,7 +434,9 @@ test("active overlay incomplete evidence still falls through to full thread/read
 
   assert.equal(response.status, 200);
   assert.equal(response.mode, "thread-read");
-  assert.ok(calls.indexOf("overlay-provider") > calls.indexOf("projection-lookup:full"));
+  assert.equal(calls.includes("projection-lookup:full:"), false);
+  assert.ok(calls.includes("active-overlay-window-lookup:active-turn"));
+  assert.ok(calls.indexOf("overlay-provider") < calls.indexOf("active-overlay-window-lookup:active-turn"));
   assert.ok(calls.includes("thread-read"));
   assert.equal(calls.includes("seed"), false);
   assert.equal(calls.includes("turns-list:turns-list-initial"), false);
@@ -443,6 +446,7 @@ test("active overlay incomplete evidence still falls through to full thread/read
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayReason, "assistant-delta-unknown");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlaySource, "app-server-notification");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayAssistantItems, 1);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayWindowFirst, true);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedStatus, "skipped");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedSource, "active-thread-read");
 });
@@ -529,7 +533,6 @@ test("active overlay complete evidence can use a cached partial projection windo
   assert.equal(calls.includes("turns-list:turns-list-large"), false);
   assert.equal(calls.includes("turns-list:turns-list-active-overlay-window"), false);
   assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), [
-    "projection-lookup:full:",
   ]);
   assert.deepEqual(calls.filter((call) => call.startsWith("active-overlay-window-lookup:")), [
     "active-overlay-window-lookup:active-turn",
@@ -548,6 +551,7 @@ test("active overlay complete evidence can use a cached partial projection windo
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayUploadItems, 1);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayAssistantItems, 1);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayReceiptItems, 1);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayWindowFirst, true);
   assert.doesNotMatch(JSON.stringify(response.body.thread.mobileDiagnostics.threadDetailTimings), /private|upload\.png/);
 });
 
@@ -632,11 +636,13 @@ test("active overlay window projection revision does not force full read when li
   assert.equal(response.status, 200);
   assert.equal(response.mode, "projection-active-overlay");
   assert.equal(calls.includes("thread-read"), false);
+  assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), []);
   assert.deepEqual(calls.filter((call) => call.startsWith("active-overlay-window-lookup:")), [
     "active-overlay-window-lookup:active-turn",
   ]);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayAction, "use-projection-overlay");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayReason, "overlay-evidence-complete");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayWindowFirst, true);
 });
 
 test("active ordinary projection hits still pass through active overlay proof gate", async () => {
@@ -792,6 +798,7 @@ test("active overlay can build a bounded projection window before full thread/re
   assert.equal(timings.activeOverlayOperationItems, 1);
   assert.equal(timings.activeOverlayAssistantItems, 1);
   assert.equal(timings.activeOverlayReceiptItems, 1);
+  assert.equal(timings.activeOverlayWindowFirst, false);
   assert.ok(timings.timings.activeOverlayWindowMs >= 0);
 });
 
@@ -887,6 +894,7 @@ test("active overlay seeds bounded window so repeated reads avoid turns-list", a
   const timings = second.body.thread.mobileDiagnostics.threadDetailTimings;
   assert.equal(timings.readDecision, "projection-active-overlay");
   assert.equal(timings.activeOverlayAction, "use-projection-overlay");
+  assert.equal(timings.activeOverlayWindowFirst, false);
   assert.equal(timings.projectionSeedStatus, "");
   assert.equal(timings.projectionSeedSource, "");
 });

@@ -68,15 +68,13 @@ checks, and stay undeployed until several compatible slices form a coherent
 runtime module. Do not bump shell/cache, deploy production, or push Public for
 each micro-slice unless the user explicitly asks.
 
-The current deployable module candidate is focused on active-turn detail
-payload pressure. Production readback showed active detail already using
-`projection-active-overlay` and initial thread-list paint no longer waiting for
-app-server `thread/list`, while large active threads could still return heavy
-detail bodies because stale active-looking turns and current active progress
-items retained too many visible rows. The current module tightens the
-server-side detail response budget: when a thread has a known active turn id,
-only that turn receives active progress budgets; older active-looking turns are
-treated as stale for response budgeting, and high item pressure enables
-progressive active limits for operation/reasoning/assistant tails. This targets
-large active detail payload and DOM pressure without changing projection
-authority or adding client refresh masking.
+The current deployable module candidate is focused on active detail peak
+latency after the active-turn response budget work. Production readback showed
+steady-state active detail around hundreds of milliseconds, but repeated reads
+still spent measurable time in ordinary projection lookup before the active
+overlay proof gate. The current module makes the orchestrator use the dedicated
+active-overlay projection-window lookup first when that server-owned hot path
+is available, so active detail no longer pays for a normal projection
+normalize/assemble pass before proving and merging the live overlay turn. This
+targets server-side peak latency without changing projection authority,
+visible-item policy, or adding client refresh masking.

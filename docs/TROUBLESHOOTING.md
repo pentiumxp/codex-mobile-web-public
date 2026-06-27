@@ -370,6 +370,16 @@ turn/status notifications and thread-list refreshes through
 `thread-detail-active-window-prewarm-service`, so the preferred closure is to
 verify prewarm scheduling and cache reuse rather than increasing the detail
 timeout or adding a client loading fallback.
+Current builds also expose
+`mobileDiagnostics.threadDetailTimings.activeOverlayWindowFirst`. When this is
+`true`, the active detail orchestrator used the dedicated active-overlay
+projection-window lookup before ordinary projection lookup, avoiding a duplicate
+normal projection normalize/assemble pass. If active detail latency is high
+while `activeOverlayWindowFirst=true`, inspect `activeOverlayProjectionLookupMs`,
+`activeOverlayMergeMs`, and `prepareResponseMs`; if it is `false`, first verify
+whether the server route has injected the dedicated
+`activeOverlayProjectionWindowLookup` hot path before changing projection-cache
+policy.
 
 If `activeOverlayWindowMs`, `threadReadMs`, and `turnsListMs` are already zero
 or near-zero but the user still sees a long wait before content appears, inspect
