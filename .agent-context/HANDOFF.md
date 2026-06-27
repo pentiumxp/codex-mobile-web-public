@@ -24260,3 +24260,79 @@ The previous full handoff was archived and should be opened only when old proven
     `progressiveActiveOriginalBytes=6477404`,
     `progressiveActiveTurnOriginalBytes=74566`,
     and omitted operation/reasoning/assistant counts.
+
+## 2026-06-28 - Thread List Default Warm-Cache Early Return Module
+
+- User-visible symptom:
+  - After the active-detail payload module, production sampling still showed an
+    ordinary first `/api/threads?limit=20` read taking about `2.1s` after
+    deploy/restart, then settling to about `175-195ms` on repeated reads.
+  - The slow sample reported `coldPathOwner=warm-fallback-cache`,
+    `fallbackCacheDecision=compatible-hit`, and
+    `appServerResponsePayloadBytes=241036`, while selected mux metrics showed
+    the mux's own latest thread/list execution at single-digit milliseconds.
+  - This matched the user's "long spinner, then eventual success" observation:
+    not the old timeout/network failure, but a synchronous successful path that
+    waited too long before first paint.
+- Root cause / invariant:
+  - The ordinary default `/api/threads` route still waited for app-server
+    thread/list even when the process already had a compatible warm fallback
+    cache. Earlier first-paint optimizations mainly covered explicit
+    `initial=warm-fallback`.
+  - Invariant: a no-search/no-workspace/no-cursor/non-archived default list
+    read should not block first paint on app-server refresh when the same
+    process already has a compatible warm fallback cache. A cache miss should
+    still fall through to app-server so true cold-start cost remains visible.
+- Implementation:
+  - Added
+    `planThreadListInitialFallbackAttempt()` to
+    `adapters/thread-list-app-server-fetch-policy-service.js`.
+  - `server.js` now lets ordinary default `/api/threads` reads return the warm
+    fallback cache immediately when it is already present, with bounded
+    diagnostics:
+    `appServerDeferredReason=warm-fallback-default`,
+    `appServerDeferredInitialReason=default-warm-cache`, and
+    `mobileDeferredAppServer=true`.
+  - The ordinary default path does not build a cold local fallback baseline on
+    miss. Explicit `initial=warm-fallback` keeps the existing
+    warm-cache/cold-baseline first-paint behavior.
+  - Added environment gate
+    `CODEX_MOBILE_THREAD_LIST_DEFAULT_WARM_FALLBACK=0` for diagnostics.
+  - Updated `docs/README.md`, `docs/MODULES.md`, `docs/ARCHITECTURE.md`,
+    `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Local validation:
+  - Focused thread-list / Phase-B / performance suite passed (`113` tests).
+  - Full `npm test` passed (`1350` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Commit / deployment:
+  - Runtime/docs commit `83a38f3` `fix thread list default warm cache`.
+  - Deployed through the Home AI central macOS plugin deploy path with reason
+    `codex-mobile-thread-list-default-warm-cache`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T205830Z-plugin-codex-mobile-web-codex-mobile-thread-list-default-warm-cache`.
+  - The change is server/docs only; shell stayed
+    `0.1.11|codex-mobile-shell-v553`, build id `8f5df1074a2bd651`.
+  - Source/prod SHA-256 prefixes matched for `server.js`,
+    `adapters/thread-list-app-server-fetch-policy-service.js`, focused tests,
+    and updated docs.
+- Production readback:
+  - Five Phase-B skip-detail samples after deploy returned `totalMs=87-105`,
+    `appServerMs=0`, `appServerRpcMs=0`,
+    `fallbackCacheDecision=compatible-hit`, `fallbackCacheHit=true`,
+    `coldPathOwner=warm-fallback-cache`,
+    `coldPathReason=warm-fallback-default`, and decision
+    `proceed-to-next-phase-b-root-cause-target`.
+  - A direct authenticated `/api/threads?limit=20` production read returned in
+    about `127ms`, with `rowCount=13`, `mobileDeferredAppServer=true`, and
+    `mobileInitialSource=warm-fallback-cache`, without printing thread titles
+    or message content.
+- Residual / next target:
+  - This closes the ordinary default list read when the warm cache exists. It
+    does not claim to eliminate true cold startup after process restart before
+    prewarm finishes, filtered/search/cursor list reads, or remaining
+    thread-detail projection assembly peaks.
+  - Next optimization should use Phase-B readback to target the next reported
+    owner after this module, not add a client-side retry/fallback.
