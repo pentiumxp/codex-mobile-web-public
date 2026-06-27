@@ -327,15 +327,20 @@ Current acceleration targets:
    does not invoke this selected-mux refresh path. Home AI has since repaired
    that central deploy contract for `plugin:codex-mobile-web`: when mux bridge
    or runtime files change, the deploy plan refreshes only the currently
-   selected profile mux after source sync and plugin host restart. The next
-   Codex Mobile module is therefore `codex-mobile-shell-v538`, which batches
-   the selected mux runtime/readback slices with the local conversation DOM
-   patch outcome telemetry slices. Its closure gate is not a query-semantic
-   change; it is production readback that `muxRuntime.muxMetricsRpc=true` and
-   `/api/status?muxMetrics=1` returns supported bounded mux metrics. Only after
-   that evidence exists should Phase B compare Mobile-side `appServerRpcMs`
-   against mux-side `thread/list` elapsed time and choose the next app-server
-   or transport owner.
+   selected profile mux after source sync and plugin host restart. Codex Mobile
+   module `codex-mobile-shell-v538` batched the selected mux runtime/readback
+   slices with the local conversation DOM patch outcome telemetry slices. Its
+   closure gate was production readback, not a query-semantic change. The final
+   v538 readback now proves `muxRuntime.muxMetricsRpc=true` and
+   `/api/status?muxMetrics=1` returns supported bounded mux metrics; the same
+   sample reported `threadListMuxRpcCount=2384`,
+   `threadListMuxRpcLastMs=7`, and Mobile-side `appServerRpcMs=9`.
+   A deployment-contract gap remains in Home AI: after a prior post-sync repair
+   failure, retry can see no source file diff and skip selected mux refresh
+   while runtime is still stale. That has been routed to Home AI as task card
+   `ttc_6bd6684e3319218f84`. Phase B can now use the mux evidence to compare
+   Mobile-side visible filtering/post-process cost and thread-list merge cost
+   before changing app-server query semantics.
    Earlier local
    fallback attribution slices also made baseline source work explicit:
    fallback baseline source reads now

@@ -45,6 +45,25 @@ v538 部署目标不是修改 app-server 查询语义，而是先闭合 runtime/
 Home AI central deploy contract 已修复，plugin deploy 后应刷新 selected mux；读回应确认
 `muxRuntime.muxMetricsRpc=true` 且 `/api/status?muxMetrics=1` 支持 bounded mux metrics。
 
+生产部署与读回：
+
+- 首次部署在 Home AI `codex-mobile-selected-mux-refresh` post-sync repair
+  阶段暴露出 sudo/stdin 冲突，Home AI 已在中心部署脚本中修复。
+- 重试部署成功，生产 `/api/public-config` 返回
+  `clientBuildId=0.1.11|codex-mobile-shell-v538` 和
+  `shellCacheName=codex-mobile-shell-v538`。
+- 因首次失败已经完成 source sync，重试时中心脚本的 selected mux refresh
+  报告 `skipped=true`、`reason=no_mux_runtime_change`、`changedFileCount=0`；
+  当时 runtime readback 仍显示 `muxRuntime.muxMetricsRpc=false`。随后通过
+  已有 `POST /api/restart/shared-chain` 刷新 selected mux。
+- 最终 Phase B readback 成功：`muxRuntime.muxMetricsRpc=true`，
+  `muxMetrics.supported=true`，`threadListMuxRpcCount=2384`，
+  `threadListMuxRpcLastMs=7`，detail readback 走
+  `projection-active-overlay`。
+- 已向 Home AI 发出后续根因修复卡 `ttc_6bd6684e3319218f84`：部分部署在
+  post-sync repair 失败后，重试不能只靠文件 diff 判断是否跳过 selected
+  mux refresh；需要记录 repair completion 或做 runtime capability gate。
+
 预部署验证命令：
 
 ```bash

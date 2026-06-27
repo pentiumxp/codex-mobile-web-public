@@ -19697,3 +19697,44 @@ The previous full handoff was archived and should be opened only when old proven
     `clientBuildId=0.1.11|codex-mobile-shell-v538`,
     `shellCacheName=codex-mobile-shell-v538`,
     `muxRuntime.muxMetricsRpc=true`, and `muxMetrics.supported=true`.
+
+## 2026-06-27 - v538 deployed; selected mux runtime readback closed
+
+- Current local state:
+  - Home AI returned the selected-mux sudo/stdin repair as completed in commit
+    `2d95d7e8`.
+  - Retried Codex Mobile plugin-owned deploy through the Home AI central macOS
+    script with reason `codex-mobile-v538-selected-mux-runtime`.
+  - Deploy succeeded from clean source ref `82de108d6168`.
+- Deployment result:
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T012042Z-plugin-codex-mobile-web-codex-mobile-v538-selected-mux-runtime`.
+  - `/api/public-config` readback returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v538` and
+    `shellCacheName=codex-mobile-shell-v538`.
+  - The Home AI post-sync selected mux refresh reported
+    `skipped=true`, `reason=no_mux_runtime_change`, `changedFileCount=0`
+    because the prior failed deploy had already synced files before failing in
+    post-sync repair.
+- Runtime activation:
+  - Immediate Phase B readback after deploy still showed
+    `muxRuntime.muxMetricsRpc=false` and `muxMetrics.supported=false`.
+  - Called the existing Codex Mobile `POST /api/restart/shared-chain`; it
+    returned `202`, mode `macos-launchctl`, and the server recovered with v538
+    public config.
+  - Final Phase B readback closed the v538 gate:
+    `muxRuntime.muxMetricsRpc=true`, `muxMetrics.supported=true`,
+    `threadListMuxRpcCount=2384`, `threadListMuxRpcLastMs=7`, and detail
+    readback used `projection-active-overlay`.
+- Cross-thread follow-up:
+  - Sent Home AI task card `ttc_6bd6684e3319218f84`
+    (`Repair Codex Mobile deploy retry selected-mux refresh stale-runtime gap`).
+  - Root-cause issue: a retry after a failed post-sync repair can see no source
+    file diff and skip selected mux refresh even while runtime remains stale.
+    This belongs to the Home AI central deploy contract, not Codex Mobile
+    plugin source.
+- Next:
+  - Continue architecture optimization from Phase B using the now-available mux
+    metrics evidence. Prioritize app-server visible filtering/post-process cost
+    and thread-list merge/fallback attribution before changing query semantics.
+  - Keep small refactor slices local; only deploy the next complete module.
