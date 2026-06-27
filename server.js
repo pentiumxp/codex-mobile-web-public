@@ -98,6 +98,7 @@ const {
 } = require("./adapters/thread-list-fallback-prewarm-service");
 const {
   planThreadListAppServerFetch,
+  threadListInitialFallbackMetadata,
   threadListAppServerLatencyTimingFields,
   threadListAppServerFetchTimingFields,
 } = require("./adapters/thread-list-app-server-fetch-policy-service");
@@ -15221,18 +15222,34 @@ async function handleApi(req, res) {
       if (allowWarmFallbackInitial) {
         const fallbackStartedAtMs = Date.now();
         const fallbackDiagnostics = {};
-        const cachedFallback = readThreadListCachedFallback(limit, { cwd, searchTerm, globalState, diagnostics: fallbackDiagnostics });
+        let initialFallback = readThreadListCachedFallback(limit, { cwd, searchTerm, globalState, diagnostics: fallbackDiagnostics });
+        if (!initialFallback.length) {
+          const initialMergeOptions = getMergeThreadSummaryListOptions();
+          initialFallback = readThreadListFallback(limit, {
+            cwd,
+            searchTerm,
+            globalState,
+            diagnostics: fallbackDiagnostics,
+            archivedIds: initialMergeOptions.archivedIds,
+            mergeThreadSummaryListOptions: initialMergeOptions,
+          });
+        }
         markTiming("fallbackMs", fallbackStartedAtMs);
-        if (cachedFallback.length) {
+        if (initialFallback.length) {
+          const initialFallbackMeta = threadListInitialFallbackMetadata({
+            cacheHit: fallbackDiagnostics.cacheHit === true,
+          });
           const cachedSourceTimings = fallbackDiagnostics.cachedSourceTimings && typeof fallbackDiagnostics.cachedSourceTimings === "object"
             ? fallbackDiagnostics.cachedSourceTimings
             : {};
+          const fallbackSourceTimings = Object.keys(cachedSourceTimings).length ? cachedSourceTimings : fallbackDiagnostics;
           Object.assign(timings, {
             appServerMs: 0,
             appServerDeferred: true,
-            appServerDeferredReason: "warm-fallback-initial",
-            fallbackCacheHit: true,
+            appServerDeferredReason: initialFallbackMeta.appServerDeferredReason,
+            fallbackCacheHit: fallbackDiagnostics.cacheHit === true,
             fallbackCacheDecision: String(fallbackDiagnostics.cacheDecision || "hit"),
+            fallbackCacheBuildReason: String(fallbackDiagnostics.cacheBuildReason || ""),
             fallbackCacheKeyHash: String(fallbackDiagnostics.cacheKeyHash || ""),
             fallbackCacheAgeMs: Number(fallbackDiagnostics.cacheAgeMs || 0),
             fallbackCacheBaselineAgeMs: Number(fallbackDiagnostics.cacheBaselineAgeMs || 0),
@@ -15244,26 +15261,26 @@ async function handleApi(req, res) {
             fallbackCacheIncrementalUpdates: Number(fallbackDiagnostics.cacheIncrementalUpdates || 0),
             fallbackCompatibleCacheHit: fallbackDiagnostics.compatibleCacheHit === true,
             fallbackCompatibleCacheLimit: Number(fallbackDiagnostics.compatibleCacheLimit || 0),
-            fallbackStateDbMs: 0,
-            fallbackRolloutMs: 0,
-            fallbackSessionIndexMs: 0,
-            fallbackStateDbCount: Number(cachedSourceTimings.stateDbCount || 0),
-            fallbackRolloutCount: Number(cachedSourceTimings.rolloutCount || 0),
-            fallbackSessionIndexCount: Number(cachedSourceTimings.sessionIndexCount || 0),
-            fallbackBaselineSourceCount: Number(cachedSourceTimings.baselineSourceCount || 0),
-            fallbackBaselineResultCount: Number(cachedSourceTimings.baselineResultCount || cachedFallback.length),
-            fallbackSourceSnapshotHit: cachedSourceTimings.sourceSnapshotHit === true,
-            fallbackSourceSnapshotAgeMs: Number(cachedSourceTimings.sourceSnapshotAgeMs || 0),
-            fallbackSourceSnapshotLimit: Number(cachedSourceTimings.sourceSnapshotLimit || 0),
-            fallbackSourceSnapshotBuildCount: Number(cachedSourceTimings.sourceSnapshotBuildCount || 0),
-            fallbackSourceSnapshotBuildNumber: Number(cachedSourceTimings.sourceSnapshotBuildNumber || 0),
-            fallbackSourceSnapshotRawCount: Number(cachedSourceTimings.sourceSnapshotRawCount || 0),
-            ...threadListFallbackBaselineWorkTimingFields(cachedSourceTimings),
-            ...threadListFallbackSourceDiagnosticTimingFields(cachedSourceTimings),
+            fallbackStateDbMs: Number(fallbackDiagnostics.stateDbMs || 0),
+            fallbackRolloutMs: Number(fallbackDiagnostics.rolloutMs || 0),
+            fallbackSessionIndexMs: Number(fallbackDiagnostics.sessionIndexMs || 0),
+            fallbackStateDbCount: Number(fallbackSourceTimings.stateDbCount || 0),
+            fallbackRolloutCount: Number(fallbackSourceTimings.rolloutCount || 0),
+            fallbackSessionIndexCount: Number(fallbackSourceTimings.sessionIndexCount || 0),
+            fallbackBaselineSourceCount: Number(fallbackSourceTimings.baselineSourceCount || 0),
+            fallbackBaselineResultCount: Number(fallbackSourceTimings.baselineResultCount || initialFallback.length),
+            fallbackSourceSnapshotHit: fallbackSourceTimings.sourceSnapshotHit === true,
+            fallbackSourceSnapshotAgeMs: Number(fallbackSourceTimings.sourceSnapshotAgeMs || 0),
+            fallbackSourceSnapshotLimit: Number(fallbackSourceTimings.sourceSnapshotLimit || 0),
+            fallbackSourceSnapshotBuildCount: Number(fallbackSourceTimings.sourceSnapshotBuildCount || 0),
+            fallbackSourceSnapshotBuildNumber: Number(fallbackSourceTimings.sourceSnapshotBuildNumber || 0),
+            fallbackSourceSnapshotRawCount: Number(fallbackSourceTimings.sourceSnapshotRawCount || 0),
+            ...threadListFallbackBaselineWorkTimingFields(fallbackSourceTimings),
+            ...threadListFallbackSourceDiagnosticTimingFields(fallbackSourceTimings),
           });
           const mergeStartedAtMs = Date.now();
           const result = normalizeThreadListResultStatuses({
-            data: cachedFallback.slice(0, limit),
+            data: initialFallback.slice(0, limit),
           });
           threadDisplaySummaryCache.rememberList(result);
           markTiming("mergeMs", mergeStartedAtMs);
@@ -15274,9 +15291,9 @@ async function handleApi(req, res) {
           );
           markTiming("decorateMs", decorateStartedAtMs);
           decorated.mobileDeferredAppServer = true;
-          decorated.mobileInitialSource = "warm-fallback-cache";
+          decorated.mobileInitialSource = initialFallbackMeta.initialSource;
           attachDiagnostics(decorated);
-          sendThreadListResult("warm_fallback_initial", decorated);
+          sendThreadListResult(initialFallbackMeta.eventName, decorated);
           return;
         }
       }

@@ -2308,6 +2308,41 @@ central macOS plugin deployment, and bounded post-deploy samples proving
 `summaryMergeDisplayMergeMs`, `summaryMergeTotalMs`, `mergeMs`, and total list
 latency move in the expected direction without leaking private thread content.
 
+### 2026-06-28 Thread List Cold Initial App-Server Deferral module
+
+This module closes the remaining first-paint coupling where
+`/api/threads?initial=warm-fallback` still fell through to synchronous
+app-server `thread/list` when the process fallback cache was cold. The route now
+tries the warm fallback cache first, then builds the local fallback baseline on
+cache miss, returns that baseline as the initial list, and marks the
+authoritative app-server refresh as deferred.
+
+Deployable scope:
+
+- `server.js` handles cold initial fallback before app-server `thread/list`, so
+  first-paint diagnostics can show `mobileInitialSource=fallback-baseline`,
+  `mobileDeferredAppServer=true`, and
+  `appServerDeferredReason=cold-fallback-initial`.
+- `adapters/thread-list-app-server-fetch-policy-service.js` owns the bounded
+  metadata that separates warm-cache and cold-baseline initial first paint.
+- Existing deferred client refresh behavior in `public/app.js` remains the
+  authority follow-up; search, workspace-filtered, archived, cursor, and
+  explicitly full list reads are unchanged.
+- The module does not change fallback baseline contents, thread-list authority,
+  thread-detail projection, or UI ordering.
+
+Required validation:
+
+- focused thread-list app-server policy, fallback cache/baseline, visibility
+  route, viewport, and Phase-B readback tests;
+- full `npm test`;
+- `npm run check`;
+- `npm run check:macos`;
+- `git diff --check`;
+- central Home AI macOS plugin deployment;
+- bounded production readback proving initial first paint reports
+  `appServerMs=0` and deferred app-server refresh metadata.
+
 ### 2026-06-27 Large Session List First Paint v546 deployable module
 
 This batched module targets the remaining large-session startup/load cost after

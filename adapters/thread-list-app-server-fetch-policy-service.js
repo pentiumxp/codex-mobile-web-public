@@ -137,6 +137,15 @@ function threadListAppServerFetchTimingFields(plan = {}) {
   };
 }
 
+function threadListInitialFallbackMetadata(input = {}) {
+  const cacheHit = input && input.cacheHit === true;
+  return {
+    appServerDeferredReason: cacheHit ? "warm-fallback-initial" : "cold-fallback-initial",
+    initialSource: cacheHit ? "warm-fallback-cache" : "fallback-baseline",
+    eventName: cacheHit ? "warm_fallback_initial" : "fallback_baseline_initial",
+  };
+}
+
 function threadListAppServerLatencyTimingFields(input = {}) {
   const source = input && typeof input === "object" ? input : {};
   const rpcDiagnostics = source.rpcDiagnostics && typeof source.rpcDiagnostics === "object"
@@ -180,6 +189,7 @@ function threadListAppServerLatencyTimingFields(input = {}) {
 module.exports = {
   countThreadListRows,
   planThreadListAppServerFetch,
+  threadListInitialFallbackMetadata,
   threadListAppServerLatencyTimingFields,
   threadListAppServerFetchTimingFields,
 };

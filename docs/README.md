@@ -69,12 +69,11 @@ runtime module. Do not bump shell/cache, deploy production, or push Public for
 each micro-slice unless the user explicitly asks.
 
 The current deployable module candidate is focused on large-session list first
-paint. Production v545 readback showed thread detail already using
-`projection-active-overlay`, while the default thread-list open still spent most
-time in local summary merge and token-usage decoration even when fallback cache
-was warm. The v546 module moves the first default list paint to the existing
-`initial=warm-fallback` memory path, keeps the authoritative app-server refresh
-as a deferred follow-up, prevents display-summary cache reads from re-running
-rollout stat decoration, and caches token-usage query summaries with
-`recordTurnUsage()` invalidation. This targets list/session load latency without
-changing thread-detail projection authority or introducing UI-only masking.
+paint. Production readback showed thread detail already using
+`projection-active-overlay`, while the default thread-list open could still
+serialize fallback-baseline work with an app-server `thread/list` RPC. The
+current module lets `initial=warm-fallback` return the process cache when warm,
+or build and return a local fallback baseline on cache miss, while marking the
+authoritative app-server refresh as deferred. This targets list/session load
+latency without changing thread-detail projection authority, thread-list
+authority, or introducing UI-only masking.

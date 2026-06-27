@@ -6,6 +6,7 @@ const { test } = require("node:test");
 const {
   countThreadListRows,
   planThreadListAppServerFetch,
+  threadListInitialFallbackMetadata,
   threadListAppServerLatencyTimingFields,
   threadListAppServerFetchTimingFields,
 } = require("../adapters/thread-list-app-server-fetch-policy-service");
@@ -155,6 +156,20 @@ test("thread-list app-server latency fields split rpc and local post-processing"
     appServerResponsePayloadBytes: 45678,
   });
   assert.doesNotMatch(JSON.stringify(fields), /private|prompt|endpoint\.json|Users/);
+});
+
+test("thread-list initial fallback metadata separates warm cache and cold baseline first paint", () => {
+  assert.deepEqual(threadListInitialFallbackMetadata({ cacheHit: true }), {
+    appServerDeferredReason: "warm-fallback-initial",
+    initialSource: "warm-fallback-cache",
+    eventName: "warm_fallback_initial",
+  });
+
+  assert.deepEqual(threadListInitialFallbackMetadata({ cacheHit: false }), {
+    appServerDeferredReason: "cold-fallback-initial",
+    initialSource: "fallback-baseline",
+    eventName: "fallback_baseline_initial",
+  });
 });
 
 test("thread-list app-server latency fields are bounded and count data or threads arrays", () => {

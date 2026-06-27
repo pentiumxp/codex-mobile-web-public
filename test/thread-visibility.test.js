@@ -1108,10 +1108,16 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(appServerFetchPolicyJs, /appServerUnattributedMs/);
   assert.match(appServerFetchPolicyJs, /appServerRawCount/);
   assert.match(appServerFetchPolicyJs, /appServerResponsePayloadBytes/);
-  assert.match(routeBody, /readThreadListCachedFallback\(limit, \{ cwd, searchTerm, globalState, diagnostics: fallbackDiagnostics \}\)/);
+  assert.match(routeBody, /let initialFallback = readThreadListCachedFallback\(limit, \{ cwd, searchTerm, globalState, diagnostics: fallbackDiagnostics \}\)/);
+  assert.match(routeBody, /if \(!initialFallback\.length\) \{[\s\S]*const initialMergeOptions = getMergeThreadSummaryListOptions\(\);[\s\S]*initialFallback = readThreadListFallback\(limit, \{[\s\S]*archivedIds: initialMergeOptions\.archivedIds,[\s\S]*mergeThreadSummaryListOptions: initialMergeOptions,[\s\S]*\}\);[\s\S]*\}/);
   assert.match(routeBody, /decorated\.mobileDeferredAppServer = true/);
-  assert.match(routeBody, /decorated\.mobileInitialSource = "warm-fallback-cache"/);
-  assert.match(routeBody, /sendThreadListResult\("warm_fallback_initial"/);
+  assert.match(routeBody, /const initialFallbackMeta = threadListInitialFallbackMetadata\(\{/);
+  assert.match(routeBody, /decorated\.mobileInitialSource = initialFallbackMeta\.initialSource/);
+  assert.match(routeBody, /sendThreadListResult\(initialFallbackMeta\.eventName/);
+  assert.ok(
+    routeBody.indexOf("initialFallback = readThreadListFallback") < routeBody.indexOf('const appServerRawResult = await codex.request("thread/list"'),
+    "cold initial fallback baseline must be attempted before app-server thread/list",
+  );
   assert.match(routeBody, /const threadListCoalescing = threadListResponseCoalescer\.begin\(\{/);
   assert.match(routeBody, /await threadListCoalescing\.result\(\)/);
   assert.match(routeBody, /threadListCoalescing\.complete\(result\)/);

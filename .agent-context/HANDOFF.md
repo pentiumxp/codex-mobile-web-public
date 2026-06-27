@@ -23720,3 +23720,50 @@ The previous full handoff was archived and should be opened only when old proven
     `thread/list` app-server RPC around `2.2s` and app-server response payload
     about `241KB`. Next performance work should target app-server thread-list
     peak latency / list payload size, not active detail overlay timing.
+
+## 2026-06-28 - Thread-list cold initial app-server deferral ready for deploy
+
+- Root cause / invariant:
+  - `/api/threads?initial=warm-fallback` returned quickly only when the process
+    fallback cache was warm. On fallback-cache miss it still fell through to
+    synchronous app-server `thread/list`, so first paint could serialize local
+    fallback-baseline rebuild with app-server list RPC/payload latency.
+  - Large-session first list paint should not wait for app-server `thread/list`
+    when the request is explicitly an initial warm-fallback first paint; the
+    authoritative app-server refresh should remain a deferred follow-up.
+- Implementation:
+  - `server.js` now handles the cold initial branch before app-server
+    `thread/list`: it tries `readThreadListCachedFallback()`, then builds
+    `readThreadListFallback()` on cache miss, returns that initial list, and
+    marks `mobileDeferredAppServer=true`.
+  - `adapters/thread-list-app-server-fetch-policy-service.js` exports
+    `threadListInitialFallbackMetadata()` so diagnostics distinguish
+    `warm-fallback-initial` from `cold-fallback-initial` and
+    `warm-fallback-cache` from `fallback-baseline`.
+  - This does not change fallback baseline contents, thread-list authority,
+    search/workspace/archive/cursor/full reads, thread-detail projection, or
+    UI ordering.
+- Documentation:
+  - Updated `docs/README.md`, `docs/ARCHITECTURE.md`, `docs/MODULES.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and `docs/TROUBLESHOOTING.md`.
+- Validation completed before commit/deploy:
+  - Focused:
+    `node --check adapters/thread-list-app-server-fetch-policy-service.js`,
+    `node --check server.js`, and
+    `node --test test/thread-list-app-server-fetch-policy-service.test.js test/thread-list-fallback-cache-service.test.js test/thread-list-fallback-baseline-service.test.js test/thread-visibility.test.js test/mobile-viewport.test.js test/phase-b-readback-smoke.test.js`
+    passed (`94` tests).
+  - Full `npm test` passed (`1335` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - `codegraph sync && codegraph status` reported the index is up to date.
+- Next:
+  - Commit and deploy through the Home AI central macOS plugin deploy path with
+    reason `codex-mobile-thread-list-cold-initial`.
+  - Production readback should prove initial list first paint has
+    `appServerMs=0`, `mobileDeferredAppServer=true`, and
+    `appServerDeferredReason=cold-fallback-initial` on a cold fallback-baseline
+    sample or `warm-fallback-initial` on a warm-cache sample.
+  - If first paint still takes seconds with `appServerDeferredReason` set, the
+    remaining owner is local fallback baseline / frontend render, not app-server
+    list RPC.
