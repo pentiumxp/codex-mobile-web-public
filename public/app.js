@@ -64,6 +64,14 @@ const pluginVoiceInputApi = window.CodexPluginVoiceInput || {
   textFromMessage: (input = {}) => String(input.text || "").trim().slice(0, 12000),
   voiceSessionIdFrom: (input = {}) => String(input.voiceSessionId || input.voice_session_id || "").trim(),
 };
+const homeAiDiagnosticReportingApi = window.CodexHomeAiDiagnosticReporting;
+if (!homeAiDiagnosticReportingApi) {
+  throw new Error("CodexHomeAiDiagnosticReporting script failed to load");
+}
+const threadDiagnosticEventsApi = window.CodexThreadDiagnosticEvents;
+if (!threadDiagnosticEventsApi) {
+  throw new Error("CodexThreadDiagnosticEvents script failed to load");
+}
 const buildRefreshPolicy = window.CodexBuildRefreshPolicy || {
   shouldPromptForServerBuildChange(serverBuildId, clientBuildId) {
     const server = String(serverBuildId || "").trim();
@@ -83,6 +91,14 @@ const threadPerformanceMetrics = window.CodexThreadPerformanceMetrics;
 if (!threadPerformanceMetrics) {
   throw new Error("CodexThreadPerformanceMetrics script failed to load");
 }
+const threadListLoadPolicy = window.CodexThreadListLoadPolicy;
+if (!threadListLoadPolicy) {
+  throw new Error("CodexThreadListLoadPolicy script failed to load");
+}
+const threadListStableOrderPolicy = window.CodexThreadListStableOrder;
+if (!threadListStableOrderPolicy) {
+  throw new Error("CodexThreadListStableOrder script failed to load");
+}
 const liveOperationDockPolicy = window.CodexLiveOperationDockState;
 if (!liveOperationDockPolicy) {
   throw new Error("CodexLiveOperationDockState script failed to load");
@@ -94,6 +110,34 @@ if (!threadDetailStateApi) {
 const threadDetailRenderPlanApi = window.CodexThreadDetailRenderPlan;
 if (!threadDetailRenderPlanApi) {
   throw new Error("CodexThreadDetailRenderPlan script failed to load");
+}
+const threadDetailMergeStateApi = window.CodexThreadDetailMergeState;
+if (!threadDetailMergeStateApi) {
+  throw new Error("CodexThreadDetailMergeState script failed to load");
+}
+const threadDetailV4MergeStateApi = window.CodexThreadDetailV4MergeState;
+if (!threadDetailV4MergeStateApi) {
+  throw new Error("CodexThreadDetailV4MergeState script failed to load");
+}
+const threadDetailPatchPlanApi = window.CodexThreadDetailPatchPlan;
+if (!threadDetailPatchPlanApi) {
+  throw new Error("CodexThreadDetailPatchPlan script failed to load");
+}
+const threadDetailDomPatchApi = window.CodexThreadDetailDomPatch;
+if (!threadDetailDomPatchApi) {
+  throw new Error("CodexThreadDetailDomPatch script failed to load");
+}
+const threadDetailActionsApi = window.CodexThreadDetailActions;
+if (!threadDetailActionsApi) {
+  throw new Error("CodexThreadDetailActions script failed to load");
+}
+const threadTileActionsApi = window.CodexThreadTileActions;
+if (!threadTileActionsApi) {
+  throw new Error("CodexThreadTileActions script failed to load");
+}
+const threadTileStatePolicy = window.CodexThreadTileState;
+if (!threadTileStatePolicy) {
+  throw new Error("CodexThreadTileState script failed to load");
 }
 const threadTileLayoutPolicy = window.CodexThreadTileLayout;
 if (!threadTileLayoutPolicy) {
@@ -149,6 +193,7 @@ const state = {
   workspaceTokenUsageDetailsOpen: false,
   workspaceTokenStatsOpen: false,
   threads: [],
+  threadListStableOrder: null,
   currentThread: null,
   currentThreadId: "",
   threadTileMode: false,
@@ -168,6 +213,7 @@ const state = {
   threadTileSelectedThreadId: "",
   threadTileSwitchMenuPaneId: "",
   threadTileRefreshTimer: null,
+  threadTileDetailLoadQueueTimer: null,
   threadTilePaneRenderFramesById: new Map(),
   threadTilePaneScrollHoldById: new Map(),
   threadTileOperationModesById: new Map(),
@@ -202,6 +248,7 @@ const state = {
   threadNotificationThrottle: new Map(),
   recentSubmittedUserMessages: new Map(),
   renderContextThreadId: "",
+  renderContextThread: null,
   submittedProcessingThreadHintedAtById: {},
   sendProgressWatchdog: null,
   sendProgressStartAt: 0,
@@ -233,6 +280,7 @@ const state = {
   pollStableCount: 0,
   lastThreadSignature: "",
   renderedConversationSignature: "",
+  renderedConversationPatchShellSignature: "",
   renderedThreadListSignature: "",
   tickTimer: null,
   relativeTimeTimer: null,
@@ -425,13 +473,21 @@ const state = {
   composerFastHintTimer: null,
   attachmentProcessingCount: 0,
   filePreviewSwipe: null,
+  filePreviewThreadId: "",
   mermaidPinch: null,
   imagePreviewPinch: null,
   imagePreviewScale: 1,
   imageAuthRefreshRequested: false,
   threadHistoryBusy: false,
   threadHistoryError: "",
+  threadHistoryAutoBackfillKeys: new Set(),
+  emptyDetailHistoryRecoveryAtByKey: new Map(),
   perfEventLastReportedAt: {},
+  homeAiDiagnosticReporter: homeAiDiagnosticReportingApi.createDiagnosticReporter({
+    threshold: homeAiDiagnosticReportingApi.DEFAULT_THRESHOLD,
+    throttleMs: homeAiDiagnosticReportingApi.DEFAULT_THROTTLE_MS,
+  }),
+  lastThreadDetailRenderEvidence: null,
   shellLoadedReported: false,
 };
 
@@ -447,6 +503,8 @@ const threadDetailStatePolicy = threadDetailStateApi.createThreadDetailStatePoli
   visibleTextItemsLikelySame,
   completedReceiptItemsLikelySame,
 });
+const threadListSummaryFromDetailThread = threadDetailStateApi.threadListSummaryFromDetailThread;
+const planThreadOpenCacheReuse = threadDetailStateApi.planThreadOpenCacheReuse;
 
 function setAuthKey(value) {
   const next = String(value || "");
@@ -469,7 +527,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v434";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v548";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -498,6 +556,8 @@ const THREAD_LOAD_STALL_MS = 12000;
 const PERF_EVENT_THROTTLE_MS = 2000;
 const PERF_RENDER_REPORT_MIN_MS = 16;
 const PERF_SLOW_RENDER_REPORT_MS = 50;
+const PRIMARY_SHELL_CONFLICT_EVIDENCE_MS = 30000;
+const EMPTY_DETAIL_HISTORY_RECOVERY_COOLDOWN_MS = 30000;
 const RUNNING_THREAD_HINT_STALE_MS = 20 * 60 * 1000;
 const SUBMITTED_PROCESSING_HINT_STALE_MS = threadStatusHintPolicy.DEFAULT_SUBMITTED_PROCESSING_HINT_STALE_MS;
 const STATUS_EVENT_FRESHNESS_TOLERANCE_MS = threadStatusHintPolicy.DEFAULT_STATUS_EVENT_FRESHNESS_TOLERANCE_MS;
@@ -516,11 +576,22 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/image-compressor.js",
   "/plugin-embed.js",
   "/plugin-voice-input.js",
+  "/home-ai-diagnostic-reporting.js",
+  "/thread-diagnostic-events.js",
   "/thread-status-hints.js",
   "/thread-performance-metrics.js",
+  "/thread-list-load-policy.js",
+  "/thread-list-stable-order.js",
   "/live-operation-dock-state.js",
   "/thread-detail-state.js",
   "/thread-detail-render-plan.js",
+  "/thread-detail-merge-state.js",
+  "/thread-detail-v4-merge-state.js",
+  "/thread-detail-patch-plan.js",
+  "/thread-detail-dom-patch.js",
+  "/thread-detail-actions.js",
+  "/thread-tile-actions.js",
+  "/thread-tile-state.js",
   "/thread-tile-layout.js",
   "/build-refresh-policy.js",
   "/app.js",
@@ -531,8 +602,41 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/icons/icon-512.png",
   "/icons/apple-touch-icon.png",
 ]);
+const threadDetailV4MergePolicy = threadDetailV4MergeStateApi.createThreadDetailV4MergePolicy({
+  normalizeThreadVisibleUserMessages,
+  turnVisibleWeight,
+  isOptimisticUserMessage,
+  isRecentlySubmittedUserMessage,
+  isReasoningItem,
+  userMessageHasSubmissionId,
+  userMessagesCanShadow,
+  isTurnComplete,
+  isRunningStatus,
+  isIncompleteInterruptedTurn,
+  turnHasActiveLiveItems,
+  turnOrderMs,
+  mergeTurnPreservingVisibleItems,
+  sortTurnsForDisplay,
+  maxVisibleTurnsForThread,
+});
+const threadDetailMergePolicy = threadDetailMergeStateApi.createThreadDetailMergePolicy({
+  isV4ProjectionThread: threadDetailV4MergePolicy.isV4ProjectionThread,
+  mergeV4ProjectionThread: threadDetailV4MergePolicy.mergeV4ProjectionThread,
+  normalizeThreadVisibleUserMessages,
+  turnVisibleWeight,
+  shouldPreserveExistingTurnVisibleItems: (existingTurn, incomingTurn, existingWeight) => (
+    threadDetailStatePolicy.shouldPreserveExistingTurnVisibleItems(existingTurn, incomingTurn, existingWeight)
+  ),
+  mergeItemsPreservingLocalVisible,
+  shouldDropInitialSubmissionEchoTurn,
+  turnIsSupersededBy,
+  isTurnComplete,
+  sortTurnsForDisplay,
+  threadHasInitialSubmissionEcho,
+  maxExpandedVisibleTurns: MAX_EXPANDED_VISIBLE_TURNS,
+});
 const TURN_REPLY_JUMP_WINDOW_MS = 10 * 60 * 1000;
-const CONVERSATION_SCROLL_INTENT_MS = 1200;
+const CONVERSATION_SCROLL_INTENT_MS = 4000;
 const STORAGE_THREAD_ID = "codexMobileCurrentThreadId";
 const STORAGE_CONTINUATION_JOB = "codexMobileContinuationJobId";
 const STORAGE_RUNNING_THREAD_IDS = "codexMobileRunningThreadIds";
@@ -646,6 +750,7 @@ const THREAD_TILE_SETTINGS_SAVE_DEBOUNCE_MS = 500;
 const THREAD_TILE_USER_MAX_PANES = Math.max(1, Math.floor(Number(
   threadTileLayoutPolicy.DEFAULT_USER_MAX_PANES || threadTileLayoutPolicy.DEFAULT_MAX_PANES || 6,
 )) || 6);
+const THREAD_TILE_DETAIL_LOAD_QUEUE_DRAIN_MS = 120;
 const THEME_VALUES = new Set(["system", "dark", "light"]);
 const FONT_SIZE_VALUES = new Set(["small", "default", "large", "xlarge", "xxlarge"]);
 const MENU_OVERLAY_MEDIA = "(max-width: 1180px), (pointer: coarse) and (max-width: 1400px)";
@@ -4293,18 +4398,39 @@ function draftKeyForNewThread(cwd) {
 }
 
 function effectiveThreadTileSelectedThreadId(ids = state.threadTileActiveIds) {
-  const activeIds = (ids || []).map((id) => String(id || "")).filter(Boolean);
-  if (!state.threadTileMode || !activeIds.length) return "";
-  const selected = String(state.threadTileSelectedThreadId || "");
-  if (selected && activeIds.includes(selected)) return selected;
-  const current = String(state.currentThreadId || "");
-  if (current && activeIds.includes(current)) return current;
-  return activeIds[0] || "";
+  return threadTileStatePolicy.effectiveSelectedThreadId({
+    enabled: state.threadTileMode,
+    activeIds: ids,
+    selectedThreadId: state.threadTileSelectedThreadId,
+    currentThreadId: state.currentThreadId,
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+  });
+}
+
+function threadTileComposerSurfaceActive() {
+  const conversation = $("conversation");
+  return Boolean(conversation && conversation.classList.contains("thread-tile-mode"));
+}
+
+function composerTargetPlan() {
+  return threadTileStatePolicy.composerTargetPlan({
+    newThreadDraft: state.newThreadDraft,
+    threadTileMode: state.threadTileMode,
+    tileSurfaceActive: threadTileComposerSurfaceActive(),
+    activeIds: state.threadTileActiveIds,
+    selectedThreadId: state.threadTileSelectedThreadId,
+    currentThreadId: state.currentThreadId,
+  }, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+  });
 }
 
 function currentComposerThreadId() {
-  if (state.newThreadDraft) return "";
-  return effectiveThreadTileSelectedThreadId() || state.currentThreadId || "";
+  return composerTargetPlan().targetThreadId || "";
+}
+
+function isThreadTileComposerContext() {
+  return composerTargetPlan().tileContext === true;
 }
 
 function composerTargetThread() {
@@ -4456,30 +4582,33 @@ function defaultNewThreadPermissionMode() {
 }
 
 function applyDraftRuntimeSelection(draft, options = {}) {
-  const hasDraft = Boolean(draft && typeof draft === "object");
-  const model = String(draft && draft.model || "");
-  const effort = String(draft && draft.effort || "");
-  const permission = effectiveComposerPermissionMode(draft && draft.permissionMode);
-  state.codexFastMode = Boolean(draft && draft.fastMode === true);
-  if (state.newThreadDraft) {
-    state.newThreadTitle = String(draft && draft.threadTitle || "").trim();
-    state.newThreadModel = model && state.modelOptions.includes(model) ? model : defaultNewThreadModel();
-    state.newThreadEffort = effort && state.reasoningEffortOptions.includes(effort) ? effort : defaultNewThreadEffort();
-    state.newThreadPermissionMode = permission || defaultNewThreadPermissionMode();
+  const plan = threadTileStatePolicy.composerDraftRuntimeSelectionPlan({
+    draft,
+    newThreadDraft: state.newThreadDraft,
+    modelOptions: state.modelOptions,
+    reasoningEffortOptions: state.reasoningEffortOptions,
+    permissionModeOptions: state.permissionModeOptions,
+    effectivePermissionMode: effectiveComposerPermissionMode(draft && draft.permissionMode),
+    defaultNewThreadModel: defaultNewThreadModel(),
+    defaultNewThreadEffort: defaultNewThreadEffort(),
+    defaultNewThreadPermissionMode: defaultNewThreadPermissionMode(),
+    resetRuntimeWhenMissingDraft: options.resetRuntimeWhenMissingDraft === true,
+  });
+  state.codexFastMode = plan.fastMode === true;
+  if (plan.setNewThreadRuntime) {
+    state.newThreadTitle = plan.newThreadTitle || "";
+    state.newThreadModel = plan.newThreadModel || defaultNewThreadModel();
+    state.newThreadEffort = plan.newThreadEffort || defaultNewThreadEffort();
+    state.newThreadPermissionMode = plan.newThreadPermissionMode || defaultNewThreadPermissionMode();
     return;
   }
-  state.newThreadTitle = "";
-  if (!hasDraft) {
-    if (options.resetRuntimeWhenMissingDraft === true) {
-      state.composerModel = "";
-      state.composerEffort = "";
-      state.composerPermissionMode = "";
-    }
+  if (plan.clearNewThreadTitle) state.newThreadTitle = "";
+  if (!plan.setThreadRuntime) {
     return;
   }
-  state.composerModel = model && state.modelOptions.includes(model) ? model : "";
-  state.composerEffort = effort && state.reasoningEffortOptions.includes(effort) ? effort : "";
-  state.composerPermissionMode = permission && state.permissionModeOptions.includes(permission) ? permission : "";
+  state.composerModel = plan.composerModel || "";
+  state.composerEffort = plan.composerEffort || "";
+  state.composerPermissionMode = plan.composerPermissionMode || "";
 }
 
 function revokeAttachmentPreviewUrls(attachments) {
@@ -4599,12 +4728,43 @@ function pruneHiddenThreads() {
   state.threads = visibleThreads();
 }
 
-function updateThreadListStatus(threadId, status) {
+function applyThreadStatusToThread(thread, status) {
+  if (!thread) return false;
+  thread.status = status;
+  return true;
+}
+
+function scheduleThreadStatusDetailRender(threadId = "") {
+  const id = String(threadId || state.currentThreadId || "").trim();
+  if (!id) return false;
+  if (state.currentThread && String(state.currentThread.id || "") === id) {
+    scheduleRenderCurrentThread();
+    return true;
+  }
+  if (state.threadTileMode && threadTilePaneIsVisible(id)) {
+    if (!scheduleRenderThreadTilePane(id, { preserveScroll: true })) scheduleRenderCurrentThread();
+    return true;
+  }
+  return false;
+}
+
+function updateThreadListStatus(threadId, status, options = {}) {
   const id = String(threadId || "");
   if (!id) return;
   const thread = state.threads.find((entry) => String(entry && entry.id || "") === id);
-  if (thread) thread.status = status;
-  if (state.currentThread && String(state.currentThread.id || "") === id) state.currentThread.status = status;
+  applyThreadStatusToThread(thread, status);
+  applyThreadStatusToThread(state.currentThread && String(state.currentThread.id || "") === id ? state.currentThread : null, status);
+  applyThreadStatusToThread(state.threadTileDetails && state.threadTileDetails.get(String(id)) || null, status);
+  if (options.render === true) scheduleThreadStatusDetailRender(id);
+}
+
+function localThreadForStatusContext(threadId) {
+  const id = String(threadId || "").trim();
+  if (!id) return null;
+  if (state.currentThread && String(state.currentThread.id || "") === id) return state.currentThread;
+  return state.threads.find((entry) => String(entry && entry.id || "") === id)
+    || state.threadTileDetails && state.threadTileDetails.get(String(id))
+    || null;
 }
 
 function snapshotThreadStatus(threadId) {
@@ -4612,33 +4772,48 @@ function snapshotThreadStatus(threadId) {
   if (!id) return null;
   const listThread = state.threads.find((entry) => String(entry && entry.id || "") === id) || null;
   const currentMatches = Boolean(state.currentThread && String(state.currentThread.id || "") === id);
+  const tileThread = state.threadTileDetails && state.threadTileDetails.get(String(id)) || null;
   return {
     id,
     hadListThread: Boolean(listThread),
     listStatus: listThread ? listThread.status : undefined,
     hadCurrentThread: currentMatches,
     currentStatus: currentMatches ? state.currentThread.status : undefined,
+    hadTileThread: Boolean(tileThread),
+    tileStatus: tileThread ? tileThread.status : undefined,
   };
 }
 
 function restoreThreadStatusSnapshot(snapshot) {
   if (!snapshot || !snapshot.id) return;
   const id = String(snapshot.id);
-  const restoredStatus = snapshot.hadCurrentThread ? snapshot.currentStatus : snapshot.listStatus;
+  const listThread = state.threads.find((entry) => String(entry && entry.id || "") === id) || null;
+  const currentThread = state.currentThread && String(state.currentThread.id || "") === id ? state.currentThread : null;
+  const tileThread = state.threadTileDetails && state.threadTileDetails.get(String(id)) || null;
+  const restoredStatus = snapshot.hadCurrentThread
+    ? snapshot.currentStatus
+    : snapshot.hadListThread
+      ? snapshot.listStatus
+      : snapshot.tileStatus;
+  const targetThread = localThreadForStatusContext(id) || currentThread || listThread || tileThread;
   updateThreadStatusHints(id, { type: "active" }, restoredStatus, {
-    thread: state.currentThread || state.threads.find((entry) => String(entry && entry.id || "") === id),
+    thread: targetThread,
     notify: false,
   });
   const listIndex = state.threads.findIndex((entry) => String(entry && entry.id || "") === id);
   if (snapshot.hadListThread && listIndex >= 0) {
-    state.threads[listIndex] = Object.assign({}, state.threads[listIndex], { status: snapshot.listStatus });
+    applyThreadStatusToThread(state.threads[listIndex], snapshot.listStatus);
   } else if (!snapshot.hadListThread && listIndex >= 0) {
     state.threads = state.threads.filter((entry) => String(entry && entry.id || "") !== id);
   }
   if (snapshot.hadCurrentThread && state.currentThread && String(state.currentThread.id || "") === id) {
     state.currentThread.status = snapshot.currentStatus;
   }
+  if (snapshot.hadTileThread) {
+    applyThreadStatusToThread(state.threadTileDetails && state.threadTileDetails.get(String(id)) || null, snapshot.tileStatus);
+  }
   pruneHiddenThreads();
+  scheduleThreadStatusDetailRender(id);
 }
 
 function markThreadOptimisticallyActive(threadId) {
@@ -4648,45 +4823,26 @@ function markThreadOptimisticallyActive(threadId) {
   noteSubmittedProcessingThreadHint(id);
   const listThread = state.threads.find((entry) => String(entry && entry.id || "") === id) || null;
   const currentMatches = Boolean(state.currentThread && String(state.currentThread.id || "") === id);
-  const previousStatus = currentMatches ? state.currentThread.status : listThread && listThread.status;
+  const tileThread = state.threadTileDetails && state.threadTileDetails.get(String(id)) || null;
+  const targetThread = localThreadForStatusContext(id) || (currentMatches ? state.currentThread : listThread || tileThread);
+  const previousStatus = targetThread && targetThread.status;
   updateThreadStatusHints(id, previousStatus, runningStatus, {
-    thread: state.currentThread || listThread,
-    threadName: threadDisplayName(state.currentThread || listThread),
+    thread: targetThread,
+    threadName: threadDisplayName(targetThread),
     notify: false,
   });
-  updateThreadListStatus(id, runningStatus);
+  updateThreadListStatus(id, runningStatus, { render: true });
   if (currentMatches) {
     state.currentThread = Object.assign({}, state.currentThread, { status: runningStatus });
     mergeThreadIntoThreadList(state.currentThread);
   }
 }
 
-function threadListSummaryFromDetailThread(thread) {
-  if (!thread || typeof thread !== "object" || !thread.id) return null;
-  const summary = Object.assign({}, thread);
-  delete summary.turns;
-  delete summary.runtimeSettings;
-  delete summary.threadTaskCards;
-  delete summary.mobileLoading;
-  delete summary.mobileLoadError;
-  delete summary.mobileReadWarning;
-  return summary;
-}
-
 function mergeThreadIntoThreadList(thread) {
-  const summary = threadListSummaryFromDetailThread(thread);
-  if (!summary) return false;
-  const id = String(summary.id);
-  const index = state.threads.findIndex((entry) => String(entry && entry.id || "") === id);
-  if (index >= 0) {
-    state.threads = state.threads.map((entry, entryIndex) => (
-      entryIndex === index ? Object.assign({}, entry, summary) : entry
-    ));
-  } else {
-    state.threads = [summary, ...state.threads];
-  }
-  state.threads = visibleThreads(state.threads);
-  return true;
+  const result = threadDetailStateApi.mergeThreadSummaryIntoList(state.threads, thread, { visibleThreads });
+  if (!result.changed) return false;
+  state.threads = result.threads;
+  return result.changed;
 }
 
 function isRunningStatus(status) {
@@ -4771,23 +4927,23 @@ function contextCompactionStatusKind(value) {
   return "";
 }
 
-function canShowPendingContextCompaction(turn = null) {
-  return !turn || (isLatestTurn(turn) && isLiveTurn(turn));
+function canShowPendingContextCompaction(turn = null, thread = null) {
+  return !turn || (isLatestTurn(turn, thread) && isLiveTurn(turn, thread));
 }
 
-function contextCompactionState(item, turn = null) {
+function contextCompactionState(item, turn = null, thread = null) {
   if (!item) return "";
   const itemKind = contextCompactionStatusKind(item.status);
   const mobileKind = contextCompactionStatusKind(item.mobileCompactionStatus);
   if (itemKind === "complete" || mobileKind === "complete" || item.mobileNotice === CONTEXT_COMPACTION_COMPLETE_NOTICE) return "complete";
   if (itemKind === "pending" || mobileKind === "pending" || item.mobileNotice === CONTEXT_COMPACTION_PENDING_NOTICE) {
-    return canShowPendingContextCompaction(turn) ? "pending" : "";
+    return canShowPendingContextCompaction(turn, thread) ? "pending" : "";
   }
   return "";
 }
 
-function contextCompactionNotice(item, turn = null) {
-  const stateText = contextCompactionState(item, turn);
+function contextCompactionNotice(item, turn = null, thread = null) {
+  const stateText = contextCompactionState(item, turn, thread);
   if (stateText === "pending") return CONTEXT_COMPACTION_PENDING_NOTICE;
   if (stateText === "complete") return CONTEXT_COMPACTION_COMPLETE_NOTICE;
   return "";
@@ -4797,9 +4953,10 @@ function turnHasDisplayItems(turn) {
   return Boolean(turn && Array.isArray(turn.items) && turn.items.some(Boolean));
 }
 
-function latestTurn() {
-  const turns = state.currentThread && Array.isArray(state.currentThread.turns)
-    ? state.currentThread.turns
+function latestTurn(thread = null) {
+  const sourceThread = renderContextThread(thread);
+  const turns = sourceThread && Array.isArray(sourceThread.turns)
+    ? sourceThread.turns
     : [];
   for (let index = turns.length - 1; index >= 0; index -= 1) {
     if (turnHasDisplayItems(turns[index])) return turns[index];
@@ -4807,17 +4964,20 @@ function latestTurn() {
   return turns.length ? turns[turns.length - 1] : null;
 }
 
-function latestRawTurn() {
-  const turns = state.currentThread && Array.isArray(state.currentThread.turns)
-    ? state.currentThread.turns
+function latestRawTurn(thread = null) {
+  const sourceThread = renderContextThread(thread);
+  const turns = sourceThread && Array.isArray(sourceThread.turns)
+    ? sourceThread.turns
     : [];
   return turns.length ? turns[turns.length - 1] : null;
 }
 
-function currentThreadHasActiveRuntimeStatus() {
-  const thread = state.currentThread;
-  if (!thread || isStaleActiveStatus(thread.status) || thread.mobileStaleActiveTurn) return false;
-  return Boolean(state.activeTurnId) || isRunningStatus(thread.status);
+function currentThreadHasActiveRuntimeStatus(thread = null) {
+  const sourceThread = renderContextThread(thread);
+  if (!sourceThread || isStaleActiveStatus(sourceThread.status) || sourceThread.mobileStaleActiveTurn) return false;
+  const threadId = String(sourceThread.id || "");
+  const isCurrentThread = Boolean(threadId && threadId === String(state.currentThreadId || ""));
+  return (isCurrentThread && Boolean(state.activeTurnId)) || isRunningStatus(sourceThread.status);
 }
 
 function latestLiveTurnCandidate() {
@@ -4867,22 +5027,23 @@ function currentThreadNeedsForegroundRefresh() {
   return shouldPollCurrentThread() || currentThreadListRowChanged();
 }
 
-function isLiveTurn(turn) {
+function isLiveTurn(turn, thread = null) {
   if (!turn || isTurnComplete(turn)) return false;
   return isRunningStatus(turn && turn.status)
     || isIncompleteInterruptedTurn(turn)
     || turnHasActiveLiveItems(turn)
-    || (isLatestTurn(turn) && currentThreadHasActiveRuntimeStatus());
+    || (isLatestTurn(turn, thread) && currentThreadHasActiveRuntimeStatus(thread));
 }
 
-function isLatestTurn(turn) {
-  return Boolean(turn && latestTurn() === turn);
+function isLatestTurn(turn, thread = null) {
+  return Boolean(turn && latestTurn(thread) === turn);
 }
 
 function stableItemKey(turn, item, index = 0, prefix = "item") {
-  const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "thread";
+  const threadId = renderContextThreadId() || "thread";
   const turnId = turn && (turn.id || turn.startedAt || "turn");
-  let itemId = item && (item.id || `${item.type || "item"}-${index}`);
+  const visibleKey = item && item.mobileVisibleKey;
+  let itemId = visibleKey || (item && item.id || `${item && item.type || "item"}-${index}`);
   if (item && (item.type === "imageView" || item.type === "imageGeneration")) {
     const imageSource = [
       imageViewPath(item),
@@ -4905,14 +5066,14 @@ function stableTextHash(value) {
 }
 
 function stableOperationRenderKey(turn, item, index = 0) {
-  const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "thread";
+  const threadId = renderContextThreadId() || "thread";
   const turnId = turn && (turn.id || turn.startedAt || "turn");
   const groupKey = operationGroupKey(item) || `item:${item && (item.id || index)}`;
   return ["live-operation", threadId, turnId, groupKey].map((part) => String(part || "")).join("|");
 }
 
 function stableTurnKey(turn, suffix = "") {
-  const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "thread";
+  const threadId = renderContextThreadId() || "thread";
   return ["turn", threadId, turn && (turn.id || turn.startedAt || "turn"), suffix].filter(Boolean).join("|");
 }
 
@@ -4936,8 +5097,8 @@ function isNodeStartAboveConversationViewport(node) {
   return rect.top < viewport.top + 24;
 }
 
-function liveTurnHasNonUserProgress(turn) {
-  if (!turn || !isLiveTurn(turn)) return false;
+function liveTurnHasNonUserProgress(turn, thread = null) {
+  if (!turn || !isLiveTurn(turn, thread)) return false;
   return (turn.items || []).some((item) => item
     && item.type !== "userMessage"
     && (isReasoningItem(item)
@@ -4961,8 +5122,8 @@ function isVisibleNonUserProgressItem(item) {
       || item.type === "turnUsageSummary"));
 }
 
-function liveTurnHasNonUserProgressBefore(turn, index) {
-  if (!turn || !isLiveTurn(turn)) return false;
+function liveTurnHasNonUserProgressBefore(turn, index, thread = null) {
+  if (!turn || !isLiveTurn(turn, thread)) return false;
   const items = Array.isArray(turn.items) ? turn.items : [];
   for (let pos = 0; pos < Math.min(index, items.length); pos += 1) {
     if (isVisibleNonUserProgressItem(items[pos])) return true;
@@ -4970,8 +5131,8 @@ function liveTurnHasNonUserProgressBefore(turn, index) {
   return false;
 }
 
-function liveTurnHasNonUserProgressAfter(turn, index) {
-  if (!turn || !isLiveTurn(turn)) return false;
+function liveTurnHasNonUserProgressAfter(turn, index, thread = null) {
+  if (!turn || !isLiveTurn(turn, thread)) return false;
   const items = Array.isArray(turn.items) ? turn.items : [];
   for (let pos = Math.max(0, index + 1); pos < items.length; pos += 1) {
     if (isVisibleNonUserProgressItem(items[pos])) return true;
@@ -4987,8 +5148,8 @@ function isUserVisibleTextReplyItem(item) {
       || item.type === "turnUsageSummary"));
 }
 
-function liveTurnHasUserVisibleTextReplyAfter(turn, index) {
-  if (!turn || !isLiveTurn(turn)) return false;
+function liveTurnHasUserVisibleTextReplyAfter(turn, index, thread = null) {
+  if (!turn || !isLiveTurn(turn, thread)) return false;
   const items = Array.isArray(turn.items) ? turn.items : [];
   for (let pos = Math.max(0, index + 1); pos < items.length; pos += 1) {
     if (isUserVisibleTextReplyItem(items[pos])) return true;
@@ -5013,12 +5174,12 @@ function userMessageHasVisualAttachment(item) {
   return textValues.some((text) => splitAttachmentSummaryText(text).attachments.some((attachment) => attachment.isImage && canRenderImageAttachment(attachment)));
 }
 
-function shouldHideDurableLiveUserMessage(turn, item, index = 0) {
+function shouldHideDurableLiveUserMessage(turn, item, index = 0, thread = null) {
   return Boolean(item
     && item.type === "userMessage"
     && !userMessageHasVisualAttachment(item)
-    && liveTurnHasNonUserProgressBefore(turn, index)
-    && !liveTurnHasUserVisibleTextReplyAfter(turn, index)
+    && liveTurnHasNonUserProgressBefore(turn, index, thread)
+    && !liveTurnHasUserVisibleTextReplyAfter(turn, index, thread)
     && !isRecentlySubmittedUserMessage(item)
     && !isOptimisticUserMessage(item));
 }
@@ -5045,8 +5206,8 @@ function shouldPreserveRawThreadVisibleEntry(entry) {
     || isContextCompactionItem(item);
 }
 
-function limitRawThreadVisibleEntries(entries) {
-  if (!isRawThreadReadMode(state.currentThread)) return entries;
+function limitRawThreadVisibleEntries(entries, thread = null) {
+  if (!isRawThreadReadMode(renderContextThread(thread))) return entries;
   if (!Array.isArray(entries) || entries.length <= MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN) return entries;
   const keep = new Set();
   entries.forEach((entry, index) => {
@@ -5058,15 +5219,15 @@ function limitRawThreadVisibleEntries(entries) {
   return entries.filter((_, index) => keep.has(index));
 }
 
-function visibleItemsForTurn(turn) {
+function visibleItemsForTurn(turn, thread = null) {
   const visible = [];
   const contextEntryByKey = new Map();
   (turn.items || []).forEach((item, index) => {
     if (!item || isReasoningItem(item)) return;
     if (shouldHideSupersededLiveUserMessage(turn, item)) return;
-    if (shouldHideDurableLiveUserMessage(turn, item, index)) return;
+    if (shouldHideDurableLiveUserMessage(turn, item, index, thread)) return;
     if (isContextCompactionItem(item)) {
-      const notice = contextCompactionNotice(item, turn);
+      const notice = contextCompactionNotice(item, turn, thread);
       if (!notice) return;
       const groupKey = "context-compaction";
       const existing = contextEntryByKey.get(groupKey);
@@ -5083,7 +5244,7 @@ function visibleItemsForTurn(turn) {
   const filtered = visible.filter(Boolean);
   const supersededLive = isSupersededLiveTurn(turn);
   if (supersededLive && filtered.length && filtered.every((entry) => isTurnUsageSummaryItem(entry.item))) return [];
-  return limitRawThreadVisibleEntries(filtered);
+  return limitRawThreadVisibleEntries(filtered, thread);
 }
 
 function currentLiveOperationEntry(thread) {
@@ -5107,14 +5268,14 @@ function liveTurnStatusDockItem(turn) {
   };
 }
 
-function visibleItemSignature(item, turn = null) {
+function visibleItemSignature(item, turn = null, thread = null) {
   if (!item || isReasoningItem(item)) return null;
   const projection = {
     mobileVisibleKey: item.mobileVisibleKey || "",
     mobileVisibleKind: item.mobileVisibleKind || "",
   };
   if (isContextCompactionItem(item)) {
-    const notice = contextCompactionNotice(item, turn);
+    const notice = contextCompactionNotice(item, turn, thread);
     if (!notice) return null;
     return {
       ...projection,
@@ -5610,154 +5771,6 @@ function threadHasInitialSubmissionEcho(thread, initialSubmissionId) {
   });
 }
 
-function isV4ProjectionThread(thread) {
-  return Boolean(thread && (thread.mobileProjectionVersion === "v4"
-    || (thread.mobileProjection && thread.mobileProjection.version === "v4")));
-}
-
-function shouldPreserveV4PendingOverlayItem(item) {
-  return Boolean(item
-    && item.type === "userMessage"
-    && isOptimisticUserMessage(item)
-    && (isRecentlySubmittedUserMessage(item) || item.mobileSendError));
-}
-
-function v4ThreadHasPendingMatch(thread, pendingItem) {
-  if (!pendingItem || pendingItem.type !== "userMessage") return false;
-  const submissionId = String(pendingItem.clientSubmissionId || "").trim();
-  for (const turn of Array.isArray(thread && thread.turns) ? thread.turns : []) {
-    for (const item of Array.isArray(turn && turn.items) ? turn.items : []) {
-      if (!item || item.type !== "userMessage") continue;
-      if (submissionId && userMessageHasSubmissionId(item, submissionId)) return true;
-      if (!isOptimisticUserMessage(item) && userMessagesCanShadow(item, pendingItem)) return true;
-    }
-  }
-  return false;
-}
-
-function appendV4PendingOverlayItem(turn, item) {
-  if (!turn || !item) return;
-  turn.items = Array.isArray(turn.items) ? turn.items : [];
-  const submissionId = String(item.clientSubmissionId || "").trim();
-  const alreadyPresent = turn.items.some((existing) => existing && (
-    (submissionId && userMessageHasSubmissionId(existing, submissionId))
-    || existing.id === item.id
-    || userMessagesCanShadow(existing, item)
-  ));
-  if (!alreadyPresent) turn.items.push(item);
-}
-
-function copyTurnWithOnlyItems(turn, items) {
-  return Object.assign({}, turn || {}, {
-    items: (items || []).slice(),
-  });
-}
-
-function applyV4PendingOverlay(existingThread, mergedThread) {
-  if (!existingThread || !mergedThread || !Array.isArray(existingThread.turns)) return mergedThread;
-  mergedThread.turns = Array.isArray(mergedThread.turns) ? mergedThread.turns : [];
-  const turnsById = new Map(mergedThread.turns.map((turn) => [String(turn && turn.id || ""), turn]));
-  for (const existingTurn of existingThread.turns) {
-    const pendingItems = (Array.isArray(existingTurn && existingTurn.items) ? existingTurn.items : [])
-      .filter((item) => shouldPreserveV4PendingOverlayItem(item)
-        && !v4ThreadHasPendingMatch(mergedThread, item));
-    if (!pendingItems.length) continue;
-    const targetTurn = turnsById.get(String(existingTurn.id || ""));
-    if (targetTurn) {
-      pendingItems.forEach((item) => appendV4PendingOverlayItem(targetTurn, item));
-      continue;
-    }
-    const overlayTurn = copyTurnWithOnlyItems(existingTurn, pendingItems);
-    overlayTurn.mobilePendingOverlay = true;
-    mergedThread.turns.push(overlayTurn);
-    if (overlayTurn.id) turnsById.set(String(overlayTurn.id), overlayTurn);
-  }
-  return mergedThread;
-}
-
-function v4ProjectionRevisionValue(thread) {
-  const direct = Number(thread && thread.mobileProjectionRevision);
-  if (Number.isFinite(direct) && direct > 0) return Math.trunc(direct);
-  const nested = Number(thread && thread.mobileProjection && thread.mobileProjection.revision);
-  return Number.isFinite(nested) && nested > 0 ? Math.trunc(nested) : 0;
-}
-
-function isV4ProjectionRefreshRegressive(existingThread, incomingThread) {
-  const existingRevision = v4ProjectionRevisionValue(existingThread);
-  const incomingRevision = v4ProjectionRevisionValue(incomingThread);
-  return Boolean(existingRevision && incomingRevision && incomingRevision < existingRevision);
-}
-
-function isActiveLikeProjectionTurn(turn) {
-  return Boolean(turn
-    && !isTurnComplete(turn)
-    && (isRunningStatus(turn.status) || isIncompleteInterruptedTurn(turn) || turnHasActiveLiveItems(turn)));
-}
-
-function incomingTurnsClearlySupersedeExistingTurn(existingTurn, incomingTurns) {
-  const existingOrder = turnOrderMs(existingTurn);
-  if (!existingOrder) return false;
-  return (incomingTurns || []).some((incomingTurn) => {
-    if (!incomingTurn || String(incomingTurn.id || "") === String(existingTurn && existingTurn.id || "")) return false;
-    const incomingOrder = turnOrderMs(incomingTurn);
-    return Boolean(incomingOrder && incomingOrder > existingOrder);
-  });
-}
-
-function existingV4TurnHasOnlyMatchedPendingItems(existingTurn, incomingTurns) {
-  const visibleItems = (Array.isArray(existingTurn && existingTurn.items) ? existingTurn.items : [])
-    .filter((item) => item && itemVisibleWeight(item) > 0 && !isReasoningItem(item));
-  return Boolean(visibleItems.length && visibleItems.every((item) => shouldPreserveV4PendingOverlayItem(item)
-    && v4ThreadHasPendingMatch({ turns: incomingTurns || [] }, item)));
-}
-
-function shouldPreserveExistingV4ProjectionTurn(existingThread, incomingThread, existingTurn, incomingTurns) {
-  if (!existingTurn || turnVisibleWeight(existingTurn) <= 0) return false;
-  const id = String(existingTurn.id || "");
-  if (id && (incomingTurns || []).some((turn) => String(turn && turn.id || "") === id)) return false;
-  if (existingV4TurnHasOnlyMatchedPendingItems(existingTurn, incomingTurns)) return false;
-  const activeLike = isActiveLikeProjectionTurn(existingTurn);
-  const regressiveRefresh = isV4ProjectionRefreshRegressive(existingThread, incomingThread);
-  if (!activeLike && !regressiveRefresh) return false;
-  return !incomingTurnsClearlySupersedeExistingTurn(existingTurn, incomingTurns);
-}
-
-function mergeV4ProjectionThread(existingThread, incomingThread) {
-  if (!existingThread || !incomingThread || existingThread.id !== incomingThread.id) {
-    return normalizeThreadVisibleUserMessages(incomingThread);
-  }
-  const merged = Object.assign({}, existingThread, incomingThread);
-  if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoading")) delete merged.mobileLoading;
-  if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoadError")) delete merged.mobileLoadError;
-  if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileReadWarning")) delete merged.mobileReadWarning;
-  if (Array.isArray(incomingThread.turns)) {
-    const existingTurns = Array.isArray(existingThread.turns) ? existingThread.turns : [];
-    const incomingTurns = incomingThread.turns.slice();
-    const existingById = new Map(existingTurns.map((turn) => [String(turn && turn.id || ""), turn]));
-    merged.turns = incomingTurns.map((incomingTurn) => {
-      const existingTurn = existingById.get(String(incomingTurn && incomingTurn.id || ""));
-      return existingTurn ? mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) : incomingTurn;
-    });
-    for (const existingTurn of existingTurns) {
-      if (shouldPreserveExistingV4ProjectionTurn(existingThread, incomingThread, existingTurn, merged.turns)) {
-        merged.turns.push(existingTurn);
-      }
-    }
-    applyV4PendingOverlay(existingThread, merged);
-    merged.turns = sortTurnsForDisplay(merged.turns).slice(-maxVisibleTurnsForThread(merged));
-  }
-  if (isV4ProjectionRefreshRegressive(existingThread, incomingThread)) {
-    const existingRevision = v4ProjectionRevisionValue(existingThread);
-    if (existingRevision) {
-      merged.mobileProjectionRevision = existingRevision;
-      if (merged.mobileProjection && typeof merged.mobileProjection === "object") {
-        merged.mobileProjection = Object.assign({}, merged.mobileProjection, { revision: existingRevision });
-      }
-    }
-  }
-  return normalizeThreadVisibleUserMessages(merged);
-}
-
 function comparableVisibleTextItem(item) {
   return Boolean(item && (item.type === "agentMessage" || item.type === "plan"));
 }
@@ -5904,90 +5917,37 @@ function mergeItemsPreservingLocalVisible(existingItems, incomingItems, preserve
 }
 
 function mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) {
-  if (!existingTurn) return incomingTurn;
-  if (!incomingTurn) return existingTurn;
-  const existingItems = Array.isArray(existingTurn.items) ? existingTurn.items : [];
-  const incomingHasItems = Array.isArray(incomingTurn.items);
-  const merged = Object.assign({}, existingTurn, incomingTurn);
-  if (!incomingHasItems) merged.items = existingItems;
-  else {
-    const incomingWeight = turnVisibleWeight(Object.assign({}, incomingTurn, { items: incomingTurn.items || [] }));
-    const existingWeight = turnVisibleWeight(existingTurn);
-    const preserveLocalVisible = incomingWeight < existingWeight
-      || shouldPreserveLiveTurnLocalVisibleItems(existingTurn, incomingTurn, existingWeight);
-    merged.items = mergeItemsPreservingLocalVisible(existingItems, incomingTurn.items || [], preserveLocalVisible, incomingTurn);
-  }
-  return merged;
+  return threadDetailMergePolicy.mergeTurnPreservingVisibleItems(existingTurn, incomingTurn);
 }
 
 function shouldPreserveLiveTurnLocalVisibleItems(existingTurn, incomingTurn, existingWeight = null) {
-  return threadDetailStatePolicy.shouldPreserveExistingTurnVisibleItems(existingTurn, incomingTurn, existingWeight);
+  return threadDetailMergePolicy.shouldPreserveLiveTurnLocalVisibleItems(existingTurn, incomingTurn, existingWeight);
 }
 
 function mergeThreadPreservingVisibleItems(existingThread, incomingThread) {
-  if (isV4ProjectionThread(incomingThread)) return mergeV4ProjectionThread(existingThread, incomingThread);
-  if (!existingThread || !incomingThread || existingThread.id !== incomingThread.id) return normalizeThreadVisibleUserMessages(incomingThread);
-  const existingTurns = Array.isArray(existingThread.turns) ? existingThread.turns : [];
-  const incomingTurns = Array.isArray(incomingThread.turns) ? incomingThread.turns : null;
-  const existingById = new Map(existingTurns.map((turn) => [turn.id, turn]));
-  const initialSubmissionId = String(existingThread.mobileInitialSubmissionId || "");
-  const merged = Object.assign({}, existingThread, incomingThread);
-  if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoading")) {
-    delete merged.mobileLoading;
-  }
-  if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoadError")) {
-    delete merged.mobileLoadError;
-  }
-  if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileReadWarning")) {
-    delete merged.mobileReadWarning;
-  }
-  if (!incomingTurns) return normalizeThreadVisibleUserMessages(merged);
-  merged.turns = incomingTurns.map((incomingTurn) => {
-    const existingTurn = existingById.get(incomingTurn.id);
-    return existingTurn ? mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) : incomingTurn;
+  return threadDetailMergePolicy.mergeThreadPreservingVisibleItems(existingThread, incomingThread, {
+    activeTurnId: state.activeTurnId,
   });
-  const incomingIds = new Set(merged.turns.map((turn) => turn && turn.id).filter(Boolean));
-  const latestIncoming = merged.turns.length ? merged.turns[merged.turns.length - 1] : null;
-  const preserveExpandedHistory = Boolean(existingThread.mobileHistoryExpanded)
-    && (/turns-list/i.test(String(incomingThread.mobileReadMode || ""))
-      || Boolean(incomingThread.mobileOlderTurnsCursor)
-      || Number(incomingThread.mobileOmittedTurnCount || 0) > 0);
-  let preservedExpandedTurnCount = 0;
-  for (const existingTurn of existingTurns) {
-    if (!existingTurn || incomingIds.has(existingTurn.id)) continue;
-    if (shouldDropInitialSubmissionEchoTurn(existingTurn, merged.turns, initialSubmissionId)) continue;
-    if (preserveExpandedHistory) {
-      merged.turns.push(existingTurn);
-      preservedExpandedTurnCount += 1;
-      continue;
-    }
-    if (turnIsSupersededBy(existingTurn, latestIncoming)) continue;
-    if (existingTurn.id === state.activeTurnId || (!isTurnComplete(existingTurn) && turnVisibleWeight(existingTurn) > 0)) {
-      merged.turns.push(existingTurn);
-    }
-  }
-  if (preserveExpandedHistory) {
-    merged.mobileHistoryExpanded = true;
-    merged.turns = sortTurnsForDisplay(merged.turns).slice(-MAX_EXPANDED_VISIBLE_TURNS);
-    if (preservedExpandedTurnCount > 0) {
-      merged.mobileOmittedTurnCount = Math.max(0, Number(merged.mobileOmittedTurnCount || 0) - preservedExpandedTurnCount);
-    }
-  }
-  const normalized = normalizeThreadVisibleUserMessages(merged);
-  if (!threadHasInitialSubmissionEcho(normalized, initialSubmissionId)) delete normalized.mobileInitialSubmissionId;
-  return normalized;
 }
 
 function turnOrderMs(turn) {
   if (!turn) return 0;
-  return numericTimestampMs(turn.completedAtMs)
-    || numericTimestampMs(turn.completedAt)
-    || numericTimestampMs(turn.completed_at_ms)
-    || numericTimestampMs(turn.completed_at)
-    || numericTimestampMs(turn.startedAtMs)
+  return numericTimestampMs(turn.startedAtMs)
     || numericTimestampMs(turn.startedAt)
     || numericTimestampMs(turn.started_at_ms)
     || numericTimestampMs(turn.started_at)
+    || numericTimestampMs(turn.createdAtMs)
+    || numericTimestampMs(turn.createdAt)
+    || numericTimestampMs(turn.created_at_ms)
+    || numericTimestampMs(turn.created_at)
+    || numericTimestampMs(turn.completedAtMs)
+    || numericTimestampMs(turn.completedAt)
+    || numericTimestampMs(turn.completed_at_ms)
+    || numericTimestampMs(turn.completed_at)
+    || numericTimestampMs(turn.updatedAtMs)
+    || numericTimestampMs(turn.updatedAt)
+    || numericTimestampMs(turn.updated_at_ms)
+    || numericTimestampMs(turn.updated_at)
     || 0;
 }
 
@@ -6001,6 +5961,35 @@ function turnIsSupersededBy(turn, newerTurn) {
 
 function approvalThreadId(request) {
   return request && request.params && (request.params.threadId || request.params.conversationId || "");
+}
+
+function renderContextThreadId(thread = null) {
+  return String(thread && thread.id
+    || state.renderContextThreadId
+    || state.renderContextThread && state.renderContextThread.id
+    || state.currentThreadId
+    || state.currentThread && state.currentThread.id
+    || "");
+}
+
+function renderContextThread(thread = null) {
+  return thread
+    || state.renderContextThread
+    || state.currentThread
+    || null;
+}
+
+function withRenderContextThread(thread, callback) {
+  const previousRenderThreadId = state.renderContextThreadId;
+  const previousRenderThread = state.renderContextThread;
+  state.renderContextThreadId = String(thread && thread.id || "");
+  state.renderContextThread = thread || null;
+  try {
+    return callback();
+  } finally {
+    state.renderContextThreadId = previousRenderThreadId;
+    state.renderContextThread = previousRenderThread;
+  }
 }
 
 function approvalTurnId(request) {
@@ -6025,6 +6014,24 @@ function requestBelongsToThread(request, threadId) {
   const requestThreadId = approvalThreadId(request);
   if (requestThreadId) return requestThreadId === threadId;
   return Boolean(threadId);
+}
+
+function approvalActionThreadId(request, fallbackThreadId = "") {
+  return String(approvalThreadId(request) || fallbackThreadId || state.currentThreadId || "").trim();
+}
+
+function scheduleApprovalThreadRender(threadId = "") {
+  const id = String(threadId || state.currentThreadId || "").trim();
+  if (!id) return false;
+  if (id === String(state.currentThreadId || "")) {
+    scheduleRenderCurrentThread();
+    return true;
+  }
+  if (state.threadTileMode && threadTilePaneIsVisible(id)) {
+    if (!scheduleRenderThreadTilePane(id, { preserveScroll: true })) scheduleRenderCurrentThread();
+    return true;
+  }
+  return false;
 }
 
 function pendingApprovalsForThread(threadId) {
@@ -6086,7 +6093,9 @@ function visibleTurnsForConversation(thread) {
 }
 
 function threadHasVisibleConversationTurns(thread) {
-  return visibleTurnsForConversation(thread).some((turn) => visibleItemsForTurn(turn).length > 0);
+  return withRenderContextThread(thread, () => (
+    visibleTurnsForConversation(thread).some((turn) => visibleItemsForTurn(turn, thread).length > 0)
+  ));
 }
 
 function threadIsLoadingWithoutVisibleTurns(thread) {
@@ -6095,98 +6104,107 @@ function threadIsLoadingWithoutVisibleTurns(thread) {
 
 function conversationRootSignature(thread) {
   if (!thread) return "home";
-  if (thread.mobileLoadError) return `load-error|${state.currentThreadId || thread.id || ""}|${thread.mobileLoadError}`;
-  if (threadIsLoadingWithoutVisibleTurns(thread)) return `loading|${state.currentThreadId || thread.id || ""}`;
-  const turns = visibleTurnsForConversation(thread);
-  const omitted = Number(thread.mobileOmittedTurnCount || 0) + Math.max(0, (thread.turns || []).length - turns.length);
-  const readWarningMessage = threadReadWarningMessage(thread);
-  const payload = {
-    threadId: state.currentThreadId || thread.id || "",
-    imageAuthVersion: Number(state.imageAuthVersion || 0),
-    pluginRefreshPendingNotice: String(state.pluginRefreshPendingNotice || ""),
-    rolloutWarning: rolloutWarningSignature(thread),
-    omitted,
-    olderTurnsCursor: threadTurnsCursorSignature(thread.mobileOlderTurnsCursor),
-    historyExpanded: Boolean(thread.mobileHistoryExpanded),
-    historyBusy: Boolean(state.threadHistoryBusy),
-    historyError: String(state.threadHistoryError || ""),
-    goal: threadGoalSignature(thread),
-    approvals: approvalRequestsSignature(state.currentThreadId || thread.id || ""),
-    taskCards: threadTaskCardsSignature(thread),
-    readMode: String(thread.mobileReadMode || ""),
-    projectionVersion: String(thread.mobileProjectionVersion || ""),
-    projectionRevision: String(thread.mobileProjectionRevision || ""),
-    readWarning: String(thread.mobileReadWarning || ""),
-    readWarningMessage,
-    visibleItemKeys: Array.isArray(thread.mobileVisibleItemKeys) ? thread.mobileVisibleItemKeys : [],
-    visibleTurns: turns.map((turn) => turn && (turn.id || turn.startedAt || "")),
-  };
-  return JSON.stringify(payload);
+  return withRenderContextThread(thread, () => {
+    const threadId = renderContextThreadId(thread);
+    if (thread.mobileLoadError) return `load-error|${threadId}|${thread.mobileLoadError}`;
+    if (threadIsLoadingWithoutVisibleTurns(thread)) return `loading|${threadId}`;
+    const turns = visibleTurnsForConversation(thread);
+    const omitted = Number(thread.mobileOmittedTurnCount || 0) + Math.max(0, (thread.turns || []).length - turns.length);
+    const readWarningMessage = threadReadWarningMessage(thread);
+    const payload = {
+      threadId,
+      imageAuthVersion: Number(state.imageAuthVersion || 0),
+      pluginRefreshPendingNotice: String(state.pluginRefreshPendingNotice || ""),
+      rolloutWarning: rolloutWarningSignature(thread),
+      omitted,
+      olderTurnsCursor: threadTurnsCursorSignature(thread.mobileOlderTurnsCursor),
+      historyExpanded: Boolean(thread.mobileHistoryExpanded),
+      historyBusy: Boolean(state.threadHistoryBusy),
+      historyError: String(state.threadHistoryError || ""),
+      goal: threadGoalSignature(thread),
+      approvals: approvalRequestsSignature(threadId),
+      taskCards: threadTaskCardsSignature(thread),
+      readMode: String(thread.mobileReadMode || ""),
+      projectionVersion: String(thread.mobileProjectionVersion || ""),
+      projectionRevision: String(thread.mobileProjectionRevision || ""),
+      readWarning: String(thread.mobileReadWarning || ""),
+      readWarningMessage,
+      visibleItemKeys: Array.isArray(thread.mobileVisibleItemKeys) ? thread.mobileVisibleItemKeys : [],
+      visibleTurns: turns.map((turn) => turn && (turn.id || turn.startedAt || "")),
+    };
+    return JSON.stringify(payload);
+  });
 }
 
 function conversationPatchShellSignature(thread) {
   if (!thread) return "home";
-  if (thread.mobileLoadError) return `load-error|${state.currentThreadId || thread.id || ""}|${thread.mobileLoadError}`;
-  if (threadIsLoadingWithoutVisibleTurns(thread)) return `loading|${state.currentThreadId || thread.id || ""}`;
-  const turns = visibleTurnsForConversation(thread);
-  const omitted = Number(thread.mobileOmittedTurnCount || 0) + Math.max(0, (thread.turns || []).length - turns.length);
-  const readWarningMessage = threadReadWarningMessage(thread);
-  const payload = {
-    threadId: state.currentThreadId || thread.id || "",
-    imageAuthVersion: Number(state.imageAuthVersion || 0),
-    pluginRefreshPendingNotice: String(state.pluginRefreshPendingNotice || ""),
-    rolloutWarning: rolloutWarningSignature(thread),
-    omitted,
-    olderTurnsCursor: threadTurnsCursorSignature(thread.mobileOlderTurnsCursor),
-    historyExpanded: Boolean(thread.mobileHistoryExpanded),
-    historyBusy: Boolean(state.threadHistoryBusy),
-    historyError: String(state.threadHistoryError || ""),
-    goal: threadGoalSignature(thread),
-    approvals: approvalRequestsSignature(state.currentThreadId || thread.id || ""),
-    taskCards: threadTaskCardsSignature(thread),
-    readWarning: String(thread.mobileReadWarning || ""),
-    readWarningMessage,
-    visibleTurns: turns.map((turn) => turn && (turn.id || turn.startedAt || "")),
-  };
-  return JSON.stringify(payload);
+  return withRenderContextThread(thread, () => {
+    const threadId = renderContextThreadId(thread);
+    if (thread.mobileLoadError) return `load-error|${threadId}|${thread.mobileLoadError}`;
+    if (threadIsLoadingWithoutVisibleTurns(thread)) return `loading|${threadId}`;
+    const turns = visibleTurnsForConversation(thread);
+    const omitted = Number(thread.mobileOmittedTurnCount || 0) + Math.max(0, (thread.turns || []).length - turns.length);
+    const readWarningMessage = threadReadWarningMessage(thread);
+    const payload = {
+      threadId,
+      imageAuthVersion: Number(state.imageAuthVersion || 0),
+      pluginRefreshPendingNotice: String(state.pluginRefreshPendingNotice || ""),
+      rolloutWarning: rolloutWarningSignature(thread),
+      omitted,
+      olderTurnsCursor: threadTurnsCursorSignature(thread.mobileOlderTurnsCursor),
+      historyExpanded: Boolean(thread.mobileHistoryExpanded),
+      historyBusy: Boolean(state.threadHistoryBusy),
+      historyError: String(state.threadHistoryError || ""),
+      goal: threadGoalSignature(thread),
+      approvals: approvalRequestsSignature(threadId),
+      taskCards: threadTaskCardsSignature(thread),
+      readWarning: String(thread.mobileReadWarning || ""),
+      readWarningMessage,
+      visibleTurns: turns.map((turn) => turn && (turn.id || turn.startedAt || "")),
+    };
+    return JSON.stringify(payload);
+  });
 }
 
 function conversationRenderSignature(thread) {
   if (!thread) return "home";
-  if (thread.mobileLoadError) return `load-error|${state.currentThreadId || thread.id || ""}|${thread.mobileLoadError}`;
-  if (threadIsLoadingWithoutVisibleTurns(thread)) return `loading|${state.currentThreadId || thread.id || ""}`;
-  const turns = visibleTurnsForConversation(thread);
-  const omitted = Number(thread.mobileOmittedTurnCount || 0) + Math.max(0, (thread.turns || []).length - turns.length);
-  const payload = {
-    threadId: state.currentThreadId || thread.id || "",
-    imageAuthVersion: Number(state.imageAuthVersion || 0),
-    pluginRefreshPendingNotice: String(state.pluginRefreshPendingNotice || ""),
-    rolloutWarning: rolloutWarningSignature(thread),
-    omitted,
-    olderTurnsCursor: threadTurnsCursorSignature(thread.mobileOlderTurnsCursor),
-    historyExpanded: Boolean(thread.mobileHistoryExpanded),
-    historyBusy: Boolean(state.threadHistoryBusy),
-    historyError: String(state.threadHistoryError || ""),
-    goal: threadGoalSignature(thread),
-    approvals: approvalRequestsSignature(state.currentThreadId || thread.id || ""),
-    taskCards: threadTaskCardsSignature(thread),
-    projectionVersion: String(thread.mobileProjectionVersion || ""),
-    projectionRevision: String(thread.mobileProjectionRevision || ""),
-    visibleItemKeys: Array.isArray(thread.mobileVisibleItemKeys) ? thread.mobileVisibleItemKeys : [],
-    turns: turns.map((turn) => {
-      const timerShowsStatus = isLatestTurn(turn) && (isLiveTurn(turn) || turnFinalSeconds(turn) != null);
-      return {
-        id: turn.id || "",
-        statusLine: timerShowsStatus ? "" : displayTurnStatus(turn),
-        durationMs: timerShowsStatus ? "" : (turn.durationMs || ""),
-        items: visibleItemsForTurn(turn).map((entry) => ({
-          sourceIndex: entry.sourceIndex,
-          item: visibleItemSignature(entry.item, turn),
-        })).filter((entry) => entry.item),
-      };
-    }),
-  };
-  return JSON.stringify(payload);
+  return withRenderContextThread(thread, () => {
+    const threadId = renderContextThreadId(thread);
+    if (thread.mobileLoadError) return `load-error|${threadId}|${thread.mobileLoadError}`;
+    if (threadIsLoadingWithoutVisibleTurns(thread)) return `loading|${threadId}`;
+    const turns = visibleTurnsForConversation(thread);
+    const omitted = Number(thread.mobileOmittedTurnCount || 0) + Math.max(0, (thread.turns || []).length - turns.length);
+    const payload = {
+      threadId,
+      imageAuthVersion: Number(state.imageAuthVersion || 0),
+      pluginRefreshPendingNotice: String(state.pluginRefreshPendingNotice || ""),
+      rolloutWarning: rolloutWarningSignature(thread),
+      omitted,
+      olderTurnsCursor: threadTurnsCursorSignature(thread.mobileOlderTurnsCursor),
+      historyExpanded: Boolean(thread.mobileHistoryExpanded),
+      historyBusy: Boolean(state.threadHistoryBusy),
+      historyError: String(state.threadHistoryError || ""),
+      goal: threadGoalSignature(thread),
+      approvals: approvalRequestsSignature(threadId),
+      taskCards: threadTaskCardsSignature(thread),
+      projectionVersion: String(thread.mobileProjectionVersion || ""),
+      projectionRevision: String(thread.mobileProjectionRevision || ""),
+      visibleItemKeys: Array.isArray(thread.mobileVisibleItemKeys) ? thread.mobileVisibleItemKeys : [],
+      turns: turns.map((turn) => {
+        const timerShowsStatus = isLatestTurn(turn, thread) && (isLiveTurn(turn, thread) || turnFinalSeconds(turn) != null);
+        return {
+          id: turn.id || "",
+          statusLine: timerShowsStatus ? "" : displayTurnStatus(turn),
+          durationMs: timerShowsStatus ? "" : (turn.durationMs || ""),
+          items: visibleItemsForTurn(turn, thread).map((entry) => ({
+            sourceIndex: entry.sourceIndex,
+            item: visibleItemSignature(entry.item, turn, thread),
+          })).filter((entry) => entry.item),
+        };
+      }),
+    };
+    return JSON.stringify(payload);
+  });
 }
 
 function isPathLikeValue(value) {
@@ -6229,8 +6247,8 @@ function collectFileNames(value, out = [], keyHint = "") {
   return out;
 }
 
-function isLiveReasoning(item, turn) {
-  return item && item.type === "reasoning" && isLatestTurn(turn) && isLiveTurn(turn) && !isCompletedStatus(item.status);
+function isLiveReasoning(item, turn, thread = null) {
+  return item && item.type === "reasoning" && isLatestTurn(turn, thread) && isLiveTurn(turn, thread) && !isCompletedStatus(item.status);
 }
 
 function liveReasoningElapsed(item, turn) {
@@ -6634,8 +6652,566 @@ function postPerformanceEvent(event, details = {}, options = {}) {
     pwa: isPwaMode(),
     embedded: isHermesEmbedMode(),
     visibility: document.visibilityState || "",
+    clientBuildId: CLIENT_BUILD_ID,
   }, details || {}));
   return true;
+}
+
+function diagnosticHash(value) {
+  return homeAiDiagnosticReportingApi.hashIdentifier(String(value || ""), "h");
+}
+
+function diagnosticThreadHash(threadId = state.currentThreadId) {
+  const id = String(threadId || "").trim();
+  return id ? diagnosticHash(`thread:${id}`) : "";
+}
+
+function diagnosticTurnHash(turnId) {
+  const id = String(turnId || "").trim();
+  return id ? diagnosticHash(`turn:${id}`) : "";
+}
+
+function diagnosticTaskHash(taskId) {
+  const id = String(taskId || "").trim();
+  return id ? diagnosticHash(`task:${id}`) : "";
+}
+
+function diagnosticItemHash(itemId) {
+  const id = String(itemId || "").trim();
+  return id ? diagnosticHash(`item:${id}`) : "";
+}
+
+function diagnosticRouteKind() {
+  if (state.newThreadDraft) return "new-thread";
+  if (isHermesEmbedMode() && isHermesPluginPrimaryPage()) return "embedded-primary";
+  if (state.threadTileMode) return "thread-tile";
+  if (state.currentThreadId) return "thread-detail";
+  return isHermesEmbedMode() ? "embedded-root" : "standalone-root";
+}
+
+function diagnosticErrorStatus(err) {
+  let status = Number(err && (err.status || err.statusCode) || 0);
+  if ((!Number.isFinite(status) || status <= 0) && err && /^\d+$/.test(String(err.code || ""))) {
+    status = Number(err.code);
+  }
+  return Number.isFinite(status) && status > 0 ? status : 0;
+}
+
+function diagnosticErrorCode(err, fallback = "runtime_failed") {
+  const explicit = String(err && err.code || "").trim();
+  if (explicit && !/^\d+$/.test(explicit)) return homeAiDiagnosticReportingApi.boundedToken(explicit, fallback, 100);
+  const status = diagnosticErrorStatus(err);
+  if (status) return `http_${status}`;
+  const message = String(err && err.message || err || "").toLowerCase();
+  if (message.includes("request timed out")) return "request_timeout";
+  if (message.includes("request cancelled")) return "request_cancelled";
+  if (message.includes("failed to fetch")) return "network_fetch_failed";
+  if (message.includes("not visible")) return "target_thread_not_visible";
+  if (message.includes("terminal") && message.includes("return")) return "terminal_card_no_return_required";
+  return fallback;
+}
+
+function diagnosticDurationBucket(ms) {
+  return homeAiDiagnosticReportingApi.durationBucket(ms);
+}
+
+function currentHomeAiDiagnosticContext(extra = {}) {
+  const context = Object.assign({
+    surface: "runtime",
+    action: "unknown",
+    route_kind: diagnosticRouteKind(),
+    build_id: CLIENT_BUILD_ID,
+    shell_cache: CLIENT_BUILD_ID.split("|").pop() || "",
+    thread_hash: diagnosticThreadHash(),
+    embedded: isHermesEmbedMode(),
+    pwa: isPwaMode(),
+    client_visibility: document.visibilityState || "",
+  }, extra || {});
+  if (!context.thread_hash) delete context.thread_hash;
+  return context;
+}
+
+function postHomeAiDiagnosticReport(report, meta = {}) {
+  const targetOrigin = normalizePluginParentOrigin(state.pluginParentOrigin);
+  if (targetOrigin) state.pluginParentOrigin = targetOrigin;
+  const result = homeAiDiagnosticReportingApi.postReportToHomeAi({
+    report,
+    embedded: isHermesEmbedMode(),
+    parentWindow: window.parent,
+    selfWindow: window,
+    targetOrigin: targetOrigin || "*",
+  });
+  postClientEvent("home_ai_diagnostic_report_post", {
+    ok: Boolean(result.ok),
+    reason: result.reason || "",
+    category: report && report.category || "",
+    diagnostic_type: report && report.diagnostic_type || "",
+    error_code: report && report.error_code || "",
+    signature: meta.signature || "",
+    repeatedFailures: Number(meta.repeatedFailures || 0),
+  });
+  return result;
+}
+
+function recordHomeAiDiagnosticFailure(input = {}) {
+  const result = state.homeAiDiagnosticReporter.recordFailure(Object.assign({}, input, {
+    context: currentHomeAiDiagnosticContext(input.context || {}),
+  }));
+  postClientEvent("home_ai_diagnostic_failure_recorded", {
+    category: input.category || "",
+    diagnostic_type: input.diagnostic_type || input.diagnosticType || "",
+    error_code: input.error_code || input.errorCode || "",
+    eligible: Boolean(result.eligible),
+    repeatedFailures: Number(result.repeatedFailures || 0),
+    threshold: Number(result.threshold || 0),
+    signature: result.signature || "",
+  });
+  if (result.report) postHomeAiDiagnosticReport(result.report, result);
+  return result;
+}
+
+function recordHomeAiDiagnosticSuccess(input = {}) {
+  return state.homeAiDiagnosticReporter.recordSuccess(Object.assign({}, input, {
+    context: currentHomeAiDiagnosticContext(input.context || {}),
+  }));
+}
+
+function applyThreadDetailResponseDiagnosticEffect(effect) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  if (!item.type) return;
+  if (item.type === "diagnostic-failure") {
+    recordHomeAiDiagnosticFailure(item.diagnostic || {});
+    return;
+  }
+  if (item.type === "diagnostic-success") {
+    recordHomeAiDiagnosticSuccess(item.diagnostic || {});
+    return;
+  }
+  throw new Error(`Unknown thread detail response diagnostic effect: ${item.type}`);
+}
+
+function applyThreadDetailResponseDiagnosticEffectsPlan(plan) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applyThreadDetailResponseDiagnosticEffect(effect);
+}
+
+function recordThreadDetailResponseDiagnostics(performanceEvent = {}, input = {}) {
+  const source = input && typeof input === "object" ? input : {};
+  const threadId = String(source.threadId || state.currentThreadId || "");
+  const threadHash = diagnosticThreadHash(threadId);
+  const action = String(source.action || "thread-detail").slice(0, 80);
+  const durationBucket = source.durationBucket
+    || diagnosticDurationBucket(Number(performanceEvent && performanceEvent.elapsedMs || 0));
+  const slowPlan = threadPerformanceMetrics.planThreadDetailSlowPathDiagnostic(performanceEvent, {
+    action,
+    threadHash,
+    durationBucket,
+  });
+  const contractPlan = threadPerformanceMetrics.planThreadDetailResponseContractDiagnostic(performanceEvent, {
+    action,
+    threadHash,
+    durationBucket,
+    thread: source.thread,
+    expectedActiveFullRead: source.expectedActiveFullRead,
+  });
+  const effectsPlan = threadDiagnosticEventsApi.threadDetailResponseDiagnosticEffects({
+    slowPlan,
+    slowSuccessInput: {
+      action,
+      threadHash,
+      readMode: performanceEvent && performanceEvent.readMode || "",
+      renderMode: performanceEvent && performanceEvent.clientTimings && performanceEvent.clientTimings.detailRenderMode || "",
+    },
+    contractPlan,
+  });
+  applyThreadDetailResponseDiagnosticEffectsPlan(effectsPlan);
+}
+
+function conversationDomShape() {
+  const conversation = $("conversation");
+  if (!conversation) {
+    return {
+      renderKeyCount: 0,
+      duplicateRenderKeyCount: 0,
+      turnCount: 0,
+      itemCount: 0,
+    };
+  }
+  const seen = new Set();
+  let duplicateRenderKeyCount = 0;
+  for (const node of Array.from(conversation.querySelectorAll("[data-render-key]"))) {
+    const key = String(node && node.getAttribute && node.getAttribute("data-render-key") || "");
+    if (!key) continue;
+    if (seen.has(key)) duplicateRenderKeyCount += 1;
+    else seen.add(key);
+  }
+  return {
+    renderKeyCount: seen.size,
+    duplicateRenderKeyCount,
+    turnCount: conversation.querySelectorAll("article.turn[data-turn], article.thread-tile-turn[data-thread-tile-turn]").length,
+    itemCount: conversation.querySelectorAll("[data-item]").length,
+  };
+}
+
+function visibleConversationShape(thread) {
+  const turns = visibleTurnsForConversation(thread);
+  const visibleItemCount = turns.reduce((total, turn) => total + visibleItemsForTurn(turn, thread).length, 0);
+  return {
+    visibleTurnCount: turns.length,
+    visibleItemCount,
+  };
+}
+
+function rememberThreadDetailRenderEvidence(thread, source = "unknown") {
+  if (!thread || thread.mobileLoading || thread.mobileLoadError) return null;
+  const threadId = String(thread.id || state.currentThreadId || "").trim();
+  if (!threadId) return null;
+  const shape = visibleConversationShape(thread);
+  if (!shape.visibleTurnCount && !shape.visibleItemCount) return null;
+  const turns = Array.isArray(thread.turns) ? thread.turns : [];
+  const itemCount = turns.reduce((total, turn) => total + (Array.isArray(turn && turn.items) ? turn.items.length : 0), 0);
+  const evidence = threadDetailStateApi.buildThreadDetailRenderEvidence({
+    atMs: Date.now(),
+    threadId,
+    threadHash: diagnosticThreadHash(threadId),
+    readMode: thread.mobileReadMode || "",
+    sourceKind: homeAiDiagnosticReportingApi.boundedToken(source, "unknown", 80),
+    turnCount: shape.visibleTurnCount,
+    visibleItemCount: shape.visibleItemCount,
+    itemCount,
+  });
+  if (!evidence) return null;
+  state.lastThreadDetailRenderEvidence = evidence;
+  return evidence;
+}
+
+function clearThreadDetailRenderEvidence(reason = "") {
+  if (!state.lastThreadDetailRenderEvidence) return;
+  state.lastThreadDetailRenderEvidence = null;
+  postClientEvent("thread_detail_render_evidence_cleared", {
+    reason: String(reason || "").slice(0, 80),
+  });
+}
+
+function recentThreadDetailRenderEvidence() {
+  return threadDetailStateApi.recentThreadDetailRenderEvidence({
+    evidence: state.lastThreadDetailRenderEvidence,
+    nowMs: Date.now(),
+    maxAgeMs: PRIMARY_SHELL_CONFLICT_EVIDENCE_MS,
+  });
+}
+
+function primaryShellSelectionConflictInput(reason, details = {}) {
+  const evidence = recentThreadDetailRenderEvidence() || {};
+  const thread = state.currentThread || null;
+  const shape = thread ? visibleConversationShape(thread) : null;
+  return {
+    reason,
+    action: "primary-shell-selection",
+    routeKind: "embedded-primary",
+    sourceKind: details.source || evidence.sourceKind || "",
+    threadHash: evidence.threadHash || diagnosticThreadHash(state.currentThreadId || (thread && thread.id) || ""),
+    readMode: evidence.readMode || (thread && thread.mobileReadMode) || "",
+    renderMode: details.renderMode || "",
+    turns: evidence.turnCount || (shape && shape.visibleTurnCount) || 0,
+    visibleItems: evidence.visibleItemCount || (shape && shape.visibleItemCount) || 0,
+    items: evidence.itemCount || 0,
+    domCount: details.domCount,
+    previousCount: details.previousCount,
+    recentDetailAgeMs: evidence.ageMs || 0,
+    hasCurrentThread: Boolean(state.currentThread),
+    hasCurrentThreadId: Boolean(state.currentThreadId),
+    hasThreadLoadController: Boolean(state.threadLoadController),
+    startupThreadOpenPending: Boolean(state.startupThreadOpenPending),
+    mobileLoading: Boolean(state.currentThread && state.currentThread.mobileLoading),
+  };
+}
+
+function recordPrimaryShellSelectionConflict(reason, details = {}) {
+  return recordHomeAiDiagnosticFailure(
+    threadDiagnosticEventsApi.primaryShellSelectionConflictDiagnosticEvent(
+      primaryShellSelectionConflictInput(reason, details),
+    ),
+  );
+}
+
+function recordPrimaryShellSelectionHealthy(source, thread = state.currentThread) {
+  const evidence = rememberThreadDetailRenderEvidence(thread, source);
+  if (!evidence) return null;
+  return recordHomeAiDiagnosticSuccess(threadDiagnosticEventsApi.primaryShellSelectionConflictDiagnosticSuccess({
+    action: "primary-shell-selection",
+    routeKind: "embedded-primary",
+    sourceKind: source,
+    threadHash: evidence.threadHash,
+    readMode: evidence.readMode,
+  }));
+}
+
+function emptyVisibleDetailMismatchInput(reason, thread = state.currentThread, details = {}) {
+  const threadId = String((thread && thread.id) || state.currentThreadId || "").trim();
+  const evidence = recentThreadDetailRenderEvidence();
+  const sameThreadEvidence = threadDetailStateApi.sameThreadDetailRenderEvidence({ evidence, threadId });
+  const shape = thread ? visibleConversationShape(thread) : { visibleTurnCount: 0, visibleItemCount: 0 };
+  return {
+    reason,
+    action: details.action || "single-thread-empty-state",
+    routeKind: details.routeKind || "single-thread",
+    sourceKind: details.source || (sameThreadEvidence && sameThreadEvidence.sourceKind) || "",
+    threadHash: details.threadHash || (sameThreadEvidence && sameThreadEvidence.threadHash) || diagnosticThreadHash(threadId),
+    readMode: (sameThreadEvidence && sameThreadEvidence.readMode) || (thread && thread.mobileReadMode) || "",
+    renderMode: details.renderMode || "",
+    turns: Object.prototype.hasOwnProperty.call(details, "turns") ? details.turns : sameThreadEvidence && sameThreadEvidence.turnCount || 0,
+    visibleItems: Object.prototype.hasOwnProperty.call(details, "visibleItems") ? details.visibleItems : sameThreadEvidence && sameThreadEvidence.visibleItemCount || 0,
+    items: Object.prototype.hasOwnProperty.call(details, "items") ? details.items : sameThreadEvidence && sameThreadEvidence.itemCount || 0,
+    currentTurns: Object.prototype.hasOwnProperty.call(details, "currentTurns") ? details.currentTurns : shape.visibleTurnCount,
+    currentVisibleItems: Object.prototype.hasOwnProperty.call(details, "currentVisibleItems") ? details.currentVisibleItems : shape.visibleItemCount,
+    domCount: details.domCount,
+    previousCount: details.previousCount,
+    detailLoaded: Boolean(thread && thread.mobileDetailLoaded),
+    mobileLoading: Boolean(thread && thread.mobileLoading),
+    recentDetailAgeMs: sameThreadEvidence && sameThreadEvidence.ageMs || 0,
+  };
+}
+
+function recordEmptyVisibleDetailMismatch(reason, thread = state.currentThread, details = {}) {
+  return recordHomeAiDiagnosticFailure(
+    threadDiagnosticEventsApi.emptyVisibleDetailMismatchDiagnosticEvent(
+      emptyVisibleDetailMismatchInput(reason, thread, details),
+    ),
+  );
+}
+
+function recordEmptyVisibleDetailHealthy(source, thread = state.currentThread) {
+  if (!thread || thread.mobileLoading || thread.mobileLoadError) return null;
+  const threadId = String(thread.id || state.currentThreadId || "").trim();
+  if (!threadId) return null;
+  const shape = visibleConversationShape(thread);
+  if (!shape.visibleTurnCount && !shape.visibleItemCount) return null;
+  return recordHomeAiDiagnosticSuccess(threadDiagnosticEventsApi.emptyVisibleDetailMismatchDiagnosticSuccess({
+    action: "single-thread-empty-state",
+    routeKind: "single-thread",
+    sourceKind: source,
+    threadHash: diagnosticThreadHash(threadId),
+    readMode: thread.mobileReadMode || "",
+  }));
+}
+
+function maybeRecoverEmptyDetailWithHistoryEvidence(thread, details = {}) {
+  const now = Date.now();
+  const basePlan = threadDetailStateApi.planEmptyDetailHistoryRecovery({
+    thread,
+    currentThreadId: state.currentThreadId,
+    details,
+    nowMs: now,
+    cooldownMs: 0,
+  });
+  if (!basePlan.shouldRecover || !basePlan.recoveryKey) return false;
+  const plan = threadDetailStateApi.planEmptyDetailHistoryRecovery({
+    thread,
+    currentThreadId: state.currentThreadId,
+    details,
+    nowMs: now,
+    lastRecoveredAtMs: state.emptyDetailHistoryRecoveryAtByKey.get(basePlan.recoveryKey),
+    cooldownMs: EMPTY_DETAIL_HISTORY_RECOVERY_COOLDOWN_MS,
+  });
+  if (!plan.shouldRecover || !plan.recoveryKey) return false;
+  state.emptyDetailHistoryRecoveryAtByKey.set(plan.recoveryKey, plan.nowMs || now);
+  recordEmptyVisibleDetailMismatch(plan.diagnosticReason || "empty_render_with_history_evidence", thread, details);
+  if (!hasThreadDetailRequestInFlight()) {
+    scheduleCurrentThreadRefresh(0, "empty-detail-history-evidence");
+  }
+  postClientEvent("empty_detail_history_recovery", plan.event || {});
+  return true;
+}
+
+function emptyCachedDetailReuseInput(reason, thread = state.currentThread, details = {}) {
+  const threadId = String((thread && thread.id) || state.currentThreadId || "").trim();
+  const shape = thread ? visibleConversationShape(thread) : { visibleTurnCount: 0, visibleItemCount: 0 };
+  const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+  const itemCount = turns.reduce((total, turn) => total + (Array.isArray(turn && turn.items) ? turn.items.length : 0), 0);
+  return {
+    reason,
+    action: "thread-open-cache-reuse",
+    routeKind: "single-thread",
+    sourceKind: details.source || "",
+    threadHash: diagnosticThreadHash(threadId),
+    readMode: thread && thread.mobileReadMode || "",
+    currentTurns: shape.visibleTurnCount,
+    currentVisibleItems: shape.visibleItemCount,
+    items: itemCount,
+    detailLoaded: Boolean(thread && thread.mobileDetailLoaded),
+    reusableDetail: Boolean(details.reusableDetail),
+    mobileLoading: Boolean(thread && thread.mobileLoading),
+    threadTaskCardCount: Array.isArray(thread && thread.threadTaskCards) ? thread.threadTaskCards.length : 0,
+  };
+}
+
+function recordEmptyCachedDetailReuseBlocked(reason, thread = state.currentThread, details = {}) {
+  return recordHomeAiDiagnosticFailure(
+    threadDiagnosticEventsApi.emptyCachedDetailReuseBlockedDiagnosticEvent(
+      emptyCachedDetailReuseInput(reason, thread, details),
+    ),
+  );
+}
+
+function recordEmptyCachedDetailReuseHealthy(source, thread = state.currentThread) {
+  const threadId = String((thread && thread.id) || state.currentThreadId || "").trim();
+  if (!threadId) return null;
+  return recordHomeAiDiagnosticSuccess(threadDiagnosticEventsApi.emptyCachedDetailReuseDiagnosticSuccess({
+    action: "thread-open-cache-reuse",
+    routeKind: "single-thread",
+    sourceKind: source,
+    threadHash: diagnosticThreadHash(threadId),
+    readMode: thread && thread.mobileReadMode || "",
+  }));
+}
+
+function checkEmptyVisibleDetailMismatchAfterRender(thread, shellPlan = {}, metrics = {}) {
+  if (!thread || thread.mobileLoading || thread.mobileLoadError) return;
+  if (shellPlan.hasPrimaryContent || shellPlan.emptyMessage !== "No visible turns.") return;
+  const threadId = String(thread.id || state.currentThreadId || "").trim();
+  const evidence = recentThreadDetailRenderEvidence();
+  const details = {
+    source: metrics.source || "single-thread-render",
+    renderMode: metrics.renderMode || "full-render",
+    domCount: metrics.domCount,
+    previousCount: metrics.previousCount,
+  };
+  if (threadDetailStateApi.hasNonemptyThreadDetailRenderEvidence(
+    threadDetailStateApi.sameThreadDetailRenderEvidence({ evidence, threadId }),
+  )) {
+    recordEmptyVisibleDetailMismatch("empty_render_after_nonempty_detail", thread, details);
+    return;
+  }
+  maybeRecoverEmptyDetailWithHistoryEvidence(thread, details);
+}
+
+function visibleRenderableTurnIds(thread) {
+  return visibleTurnsForConversation(thread)
+    .filter((turn) => turn && turn.id && visibleItemsForTurn(turn, thread).length > 0)
+    .map((turn) => String(turn.id));
+}
+
+function conversationDomTurnIds(conversation = $("conversation")) {
+  if (!conversation) return [];
+  return Array.from(conversation.querySelectorAll("article.turn[data-turn]"))
+    .map((node) => String(node && node.getAttribute && node.getAttribute("data-turn") || ""))
+    .filter(Boolean);
+}
+
+function threadTileVisibleShape(ids = state.threadTileActiveIds) {
+  return (Array.isArray(ids) ? ids : []).reduce((shape, id) => {
+    const thread = threadTileDisplayThread(id);
+    visibleTurnsForConversation(thread).forEach((turn) => {
+      const itemCount = visibleItemsForTurn(turn, thread).length;
+      if (itemCount > 0) {
+        shape.turnCount += 1;
+        shape.visibleItemCount += itemCount;
+      }
+    });
+    return shape;
+  }, { turnCount: 0, visibleItemCount: 0 });
+}
+
+function threadTileVisibleTurnCount(ids = state.threadTileActiveIds) {
+  return threadTileVisibleShape(ids).turnCount;
+}
+
+function threadTileDomTurnCount(conversation = $("conversation")) {
+  if (!conversation) return 0;
+  return conversation.querySelectorAll("article.thread-tile-turn[data-thread-tile-turn]").length;
+}
+
+function conversationTurnOrderDiagnosticSnapshot(source, extra = {}, deps = {}) {
+  const conversation = deps.conversation || $("conversation");
+  const thread = deps.thread || state.currentThread;
+  if (!conversation || !thread) return null;
+  const tileMode = Object.prototype.hasOwnProperty.call(deps, "threadTileMode")
+    ? deps.threadTileMode === true
+    : state.threadTileMode === true;
+  const tileDomActive = Object.prototype.hasOwnProperty.call(deps, "tileDomActive")
+    ? deps.tileDomActive === true
+    : Boolean(conversation.classList && conversation.classList.contains("thread-tile-mode"));
+  if (tileMode || tileDomActive) return null;
+  const expectedIds = Array.isArray(deps.expectedTurnIds) ? deps.expectedTurnIds.map(String).filter(Boolean) : visibleRenderableTurnIds(thread);
+  const domIds = Array.isArray(deps.domTurnIds) ? deps.domTurnIds.map(String).filter(Boolean) : conversationDomTurnIds(conversation);
+  const expectedLatestId = expectedIds[expectedIds.length - 1] || "";
+  return threadDiagnosticEventsApi.turnOrderDiagnosticSnapshot({
+    source,
+    readMode: thread.mobileReadMode || "",
+    renderMode: extra.renderMode || "",
+    threadHash: diagnosticThreadHash(thread.id || state.currentThreadId),
+    turnHash: diagnosticTurnHash(expectedLatestId),
+    expectedTurnIds: expectedIds,
+    domTurnIds: domIds,
+  });
+}
+
+function conversationProjectionDiagnosticSnapshot(source, extra = {}, deps = {}) {
+  const conversation = deps.conversation || $("conversation");
+  if (!conversation) return null;
+  const renderedSignature = Object.prototype.hasOwnProperty.call(deps, "renderedConversationSignature")
+    ? String(deps.renderedConversationSignature || "")
+    : String(state.renderedConversationSignature || "");
+  const domShape = deps.domShape || conversationDomShape();
+  const tileMode = Object.prototype.hasOwnProperty.call(deps, "threadTileMode")
+    ? deps.threadTileMode === true
+    : state.threadTileMode === true;
+  const tileDomActive = Object.prototype.hasOwnProperty.call(deps, "tileDomActive")
+    ? deps.tileDomActive === true
+    : Boolean(conversation.classList && conversation.classList.contains("thread-tile-mode"));
+  return threadDiagnosticEventsApi.conversationProjectionDiagnosticSnapshot({
+    source,
+    renderMode: extra.renderMode,
+    renderedSignature,
+    domShape,
+    threadTileMode: tileMode,
+    tileDomActive,
+    tileLayout: deps.tileLayout,
+    tileIds: deps.tileIds,
+    tileDisplayLayout: deps.tileDisplayLayout,
+    tileSignature: deps.tileSignature,
+    currentSignature: deps.currentSignature,
+    thread: deps.thread || state.currentThread,
+  }, {
+    singleSignature: conversationRenderSignature,
+    tileLayout: threadTileLayout,
+    tileCandidateIds: threadTileCandidateIds,
+    tileDisplayLayout: threadTileDisplayLayout,
+    tileRenderSignature: threadTileRenderSignature,
+    tileThreadForId: typeof deps.tileThreadForId === "function" ? deps.tileThreadForId : threadTileDisplayThread,
+    visibleShape: visibleConversationShape,
+  });
+}
+
+function applyConversationProjectionConsistencyEffect(effect) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  if (!item.type) return;
+  if (item.type === "diagnostic-failure") {
+    recordHomeAiDiagnosticFailure(item.diagnostic || {});
+    return;
+  }
+  if (item.type === "diagnostic-success") {
+    recordHomeAiDiagnosticSuccess(item.diagnostic || {});
+    return;
+  }
+  throw new Error(`Unknown conversation projection consistency effect: ${item.type}`);
+}
+
+function applyConversationProjectionConsistencyEffectsPlan(plan) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applyConversationProjectionConsistencyEffect(effect);
+}
+
+function checkConversationProjectionConsistency(source, extra = {}) {
+  if (!state.currentThread || state.currentThread.mobileLoading || state.currentThread.mobileLoadError) return;
+  recordPrimaryShellSelectionHealthy(source, state.currentThread);
+  recordEmptyVisibleDetailHealthy(source, state.currentThread);
+  const snapshot = conversationProjectionDiagnosticSnapshot(source, extra);
+  if (!snapshot) return;
+  const orderSnapshot = conversationTurnOrderDiagnosticSnapshot(source, extra);
+  const effectsPlan = threadDiagnosticEventsApi.conversationProjectionConsistencyEffects({ snapshot, orderSnapshot });
+  applyConversationProjectionConsistencyEffectsPlan(effectsPlan);
 }
 
 function startUiWatchdog() {
@@ -7533,6 +8109,7 @@ function showPluginEmbedRecovering(message = "") {
   $("threadMeta").textContent = "Waiting for Hermes Mobile to relaunch Codex";
   $("conversation").innerHTML = `<div class="empty-state entry-animate">${escapeHtml(message || "Refreshing Codex Mobile plugin session...")}</div>`;
   state.renderedConversationSignature = `plugin-recovering|${String(message || "").slice(0, 120)}`;
+  state.renderedConversationPatchShellSignature = "";
   $("connectionState").classList.remove("error");
   $("connectionState").textContent = message || "Refreshing Codex Mobile plugin session...";
   publishPluginNavigationState({ force: true });
@@ -7842,11 +8419,53 @@ function applyPendingPluginRouteHintFocus() {
     focusPluginRouteTargetNode(hint);
     state.pendingPluginRouteHint = null;
     if (plan.diagnostic) setPluginRouteDiagnostic(plan.diagnostic.message, { error: plan.diagnostic.error });
+    recordHomeAiDiagnosticSuccess({
+      category: "thread_session_load_failed",
+      diagnostic_type: "route_hint_target_missing",
+      error_code: "route_hint_target_missing",
+      context: {
+        surface: "thread-session",
+        action: "route-hint-focus",
+        route_kind: "plugin-route",
+        thread_hash: diagnosticThreadHash(hint.threadId || hint.pluginThreadId || state.currentThreadId),
+        task_hash: diagnosticTaskHash(hint.taskId || hint.pluginTaskId || ""),
+        item_hash: diagnosticItemHash(hint.itemId || hint.pluginItemId || ""),
+      },
+    });
     return true;
   }
   state.pendingPluginRouteHint = null;
-  showHermesPluginPrimaryPage();
+  showHermesPluginPrimaryPage({ force: true, source: "route-hint-target-missing" });
   if (plan.diagnostic) setPluginRouteDiagnostic(plan.diagnostic.message, { error: plan.diagnostic.error });
+  recordHomeAiDiagnosticFailure({
+    category: "thread_session_load_failed",
+    diagnostic_type: "route_hint_target_missing",
+    severity_hint: "H2",
+    evidence_confidence: 0.78,
+    error_code: "route_hint_target_missing",
+    context: {
+      surface: "thread-session",
+      action: "route-hint-focus",
+      route_kind: "plugin-route",
+      thread_hash: diagnosticThreadHash(hint.threadId || hint.pluginThreadId || state.currentThreadId),
+      task_hash: diagnosticTaskHash(hint.taskId || hint.pluginTaskId || ""),
+      item_hash: diagnosticItemHash(hint.itemId || hint.pluginItemId || ""),
+    },
+    counts: {
+      missing_count: 1,
+    },
+    breadcrumbs: [{
+      kind: "thread-session",
+      code: "route-hint-focus",
+      status: "failed",
+      fields: {
+        route_kind: "plugin-route",
+        thread_hash: diagnosticThreadHash(hint.threadId || hint.pluginThreadId || state.currentThreadId),
+        task_hash: diagnosticTaskHash(hint.taskId || hint.pluginTaskId || ""),
+        item_hash: diagnosticItemHash(hint.itemId || hint.pluginItemId || ""),
+      },
+    }],
+  });
   return false;
 }
 
@@ -7875,7 +8494,7 @@ async function openHermesPluginRouteHint(hint) {
   clearThreadUrl();
   if (plan.action === "primary") {
     if (plan.diagnostic) setPluginRouteDiagnostic(plan.diagnostic.message, { error: plan.diagnostic.error });
-    showHermesPluginPrimaryPage();
+    showHermesPluginPrimaryPage({ force: true, source: "route-hint-primary" });
     return true;
   }
   try {
@@ -7888,12 +8507,51 @@ async function openHermesPluginRouteHint(hint) {
     } else {
       applyPendingPluginRouteHintFocus();
     }
+    recordHomeAiDiagnosticSuccess({
+      category: "thread_session_load_failed",
+      diagnostic_type: "route_hint_thread_unavailable",
+      error_code: "route_hint_thread_unavailable",
+      context: {
+        surface: "thread-session",
+        action: "route-hint-open",
+        route_kind: "plugin-route",
+        thread_hash: diagnosticThreadHash(plan.threadId || hint.threadId || hint.pluginThreadId || ""),
+      },
+    });
     return true;
   } catch (error) {
     state.pendingPluginRouteHint = null;
-    showHermesPluginPrimaryPage();
+    showHermesPluginPrimaryPage({ force: true, source: "route-hint-open-failed" });
     setPluginRouteDiagnostic(plan.targetId ? "Notification target is unavailable" : "Notification thread is unavailable", {
       error: true,
+    });
+    recordHomeAiDiagnosticFailure({
+      category: "thread_session_load_failed",
+      diagnostic_type: plan.targetId ? "route_hint_target_unavailable" : "route_hint_thread_unavailable",
+      severity_hint: "H2",
+      evidence_confidence: 0.78,
+      error_code: diagnosticErrorCode(error, plan.targetId ? "route_hint_target_unavailable" : "route_hint_thread_unavailable"),
+      context: {
+        surface: "thread-session",
+        action: "route-hint-open",
+        route_kind: "plugin-route",
+        thread_hash: diagnosticThreadHash(plan.threadId || hint.threadId || hint.pluginThreadId || ""),
+        task_hash: diagnosticTaskHash(hint.taskId || hint.pluginTaskId || ""),
+        item_hash: diagnosticItemHash(hint.itemId || hint.pluginItemId || ""),
+      },
+      counts: {
+        status_code: diagnosticErrorStatus(error),
+      },
+      breadcrumbs: [{
+        kind: "thread-session",
+        code: "route-hint-open",
+        status: "failed",
+        fields: {
+          status_code: diagnosticErrorStatus(error),
+          route_kind: "plugin-route",
+          thread_hash: diagnosticThreadHash(plan.threadId || hint.threadId || hint.pluginThreadId || ""),
+        },
+      }],
     });
     return true;
   }
@@ -7984,7 +8642,7 @@ async function loadWorkspaces() {
     menu.innerHTML = workspaceSidebarOptionsHtml();
   }
   updateWorkspacePath();
-  if (!state.currentThread) renderCurrentThread();
+  if (shouldRenderPrimaryConversationShell()) renderCurrentThread();
 }
 
 function workspaceSidebarOptionsHtml() {
@@ -8200,6 +8858,19 @@ function renderThreadListLoading() {
   state.renderedThreadListSignature = `loading|${state.selectedCwd}|${$("threadSearch").value.trim()}`;
 }
 
+function hasThreadDetailSelectionIntent() {
+  return Boolean(
+    state.currentThread
+    || state.currentThreadId
+    || state.threadLoadController
+    || state.startupThreadOpenPending,
+  );
+}
+
+function shouldRenderPrimaryConversationShell() {
+  return !hasThreadDetailSelectionIntent() && !state.newThreadDraft;
+}
+
 function clearThreadListDeferredFallbackTimer() {
   if (!state.threadListDeferredFallbackTimer) return;
   clearTimeout(state.threadListDeferredFallbackTimer);
@@ -8244,9 +8915,20 @@ async function loadThreads(options = {}) {
   const search = $("threadSearch").value.trim();
   if (search) params.set("search", search);
   const threadDetailOpening = hasThreadDetailRequestInFlight();
-  const shouldDeferFallback = options.deferFallback === true
-    || (silent && options.deferFallback !== false && threadDetailOpening && !state.selectedCwd && !search);
-  if (shouldDeferFallback && !search) params.set("fallback", "defer");
+  const loadPlan = threadListLoadPolicy.planThreadListLoadRequest({
+    deferFallback: options.deferFallback,
+    search,
+    selectedCwd: state.selectedCwd,
+    silent,
+    threadDetailOpening,
+    threadListLoadedAtMs: state.threadListLoadedAtMs,
+  });
+  if (loadPlan.params && loadPlan.params.fallback) {
+    params.set("fallback", "defer");
+  }
+  if (loadPlan.params && loadPlan.params.initial) {
+    params.set("initial", "warm-fallback");
+  }
   if (!silent) renderThreadListLoading();
   try {
     const apiStartedAt = nowPerfMs();
@@ -8254,7 +8936,18 @@ async function loadThreads(options = {}) {
     const apiElapsedMs = roundedDurationMs(apiStartedAt);
     if (seq !== state.threadListLoadSeq) return null;
     const renderStartedAt = nowPerfMs();
-    state.threads = visibleThreads(result.data || []);
+    const nextThreads = visibleThreads(result.data || [])
+      .map((thread) => threadListSummaryFromDetailThread(thread) || thread);
+    const stableOrderPlan = threadListStableOrderPolicy.planThreadListStableOrder({
+      threads: nextThreads,
+      previousState: state.threadListStableOrder,
+      scopeKey: threadListStableOrderPolicy.threadListOrderScopeKey({ selectedCwd: state.selectedCwd, search }),
+      selectedCwd: state.selectedCwd,
+      search,
+      nowMs: Date.now(),
+    });
+    state.threads = stableOrderPlan.threads;
+    state.threadListStableOrder = stableOrderPlan.state;
     state.workspaceTokenUsage = result.mobileTokenUsage || null;
     state.threadListLoadedAtMs = Date.now();
     reconcileThreadStatusHints(state.threads);
@@ -8269,10 +8962,10 @@ async function loadThreads(options = {}) {
     }
     restoreConnectionState(result.mobileFallback ? "Recovered from session index" : "Connected");
     scheduleVisiblePageRefreshCheck(500);
-    if (result && result.mobileDeferredFallback && !state.selectedCwd && !search) {
+    if (result && (result.mobileDeferredFallback || result.mobileDeferredAppServer) && !state.selectedCwd && !search) {
       scheduleThreadListDeferredFallback();
     }
-    if (!state.currentThread) renderCurrentThread();
+    if (shouldRenderPrimaryConversationShell()) renderCurrentThread();
     const listPerformance = threadPerformanceMetrics.threadListEventFields(result);
     postPerformanceEvent("thread_list_rendered", {
       elapsedMs: roundedDurationMs(loadStartedAt),
@@ -8286,10 +8979,43 @@ async function loadThreads(options = {}) {
       hasWorkspace: Boolean(state.selectedCwd),
       mobileFallback: Boolean(result.mobileFallback),
     });
+    recordHomeAiDiagnosticSuccess({
+      category: "thread_session_load_failed",
+      diagnostic_type: "thread_list_load_failed",
+      error_code: "thread_list_load_failed",
+      context: {
+        surface: "thread-session",
+        action: "thread-list-load",
+      },
+    });
     return result;
   } catch (err) {
     if (seq !== state.threadListLoadSeq || controller.signal.aborted) return null;
     if (!silent) renderThreadLoadError(err);
+    recordHomeAiDiagnosticFailure({
+      category: "thread_session_load_failed",
+      diagnostic_type: "thread_list_load_failed",
+      severity_hint: "H3",
+      evidence_confidence: 0.7,
+      error_code: diagnosticErrorCode(err, "thread_list_load_failed"),
+      duration_bucket: diagnosticDurationBucket(roundedDurationMs(loadStartedAt)),
+      context: {
+        surface: "thread-session",
+        action: "thread-list-load",
+      },
+      counts: {
+        status_code: diagnosticErrorStatus(err),
+      },
+      breadcrumbs: [{
+        kind: "thread-session",
+        code: "thread-list-load",
+        status: "failed",
+        duration_bucket: diagnosticDurationBucket(roundedDurationMs(loadStartedAt)),
+        fields: {
+          status_code: diagnosticErrorStatus(err),
+        },
+      }],
+    });
     throw err;
   } finally {
     if (state.threadListLoadController === controller) state.threadListLoadController = null;
@@ -8341,7 +9067,7 @@ async function loadThread(threadId, options = {}) {
     updateSubagentPanelUi();
   }
   const listAgeMs = state.threadListLoadedAtMs ? Date.now() - state.threadListLoadedAtMs : null;
-  postClientEvent("thread_switch_start", {
+  const startEventPlan = threadDetailRenderPlanApi.planThreadDetailSwitchStartClientEvent({
     source,
     fromThreadId,
     toThreadId: threadId || "",
@@ -8349,62 +9075,59 @@ async function loadThread(threadId, options = {}) {
     currentHadThread: Boolean(state.currentThread),
     eventOpen: Boolean(state.events && state.events.readyState === EventSource.OPEN),
   });
+  applyThreadDetailSwitchClientEventPlan(startEventPlan);
   if (threadId && threadId !== state.continuationSourceThreadId) {
     state.continuationSourceThreadId = "";
   }
   const replacedTilePaneForThreadListOpen = replaceLastThreadTilePaneForThreadListOpen(threadId, { source });
-  if (threadId === state.currentThreadId
-    && state.currentThread
-    && !state.currentThread.mobileLoading
-    && !state.currentThread.mobileLoadError) {
+  const cacheReusePlan = planThreadOpenCacheReuse({
+    requestedThreadId: threadId,
+    currentThreadId: state.currentThreadId,
+    currentThread: state.currentThread,
+  });
+  if (cacheReusePlan.shouldReportEmptyCachedDetail) {
+    recordEmptyCachedDetailReuseBlocked(cacheReusePlan.reason, state.currentThread, { source });
+  }
+  if (cacheReusePlan.shouldUseCachedCurrent) {
     const renderStartedAt = nowPerfMs();
+    const postMergePlan = threadDetailRenderPlanApi.planThreadDetailRefreshPostMergeEffects();
     followThreadOpenToBottom(threadId);
-    mergeThreadIntoThreadList(state.currentThread);
-    const threadListRenderStartedAt = nowPerfMs();
-    renderThreads();
-    const threadListRenderMs = roundedDurationMs(threadListRenderStartedAt);
+    applyThreadDetailRefreshPostMergeEffectsGroup(postMergePlan, "merge");
+    const threadListRenderMs = applyThreadDetailRefreshTimedPostMergeEffectsGroup(postMergePlan, "thread-list-render");
     const conversationRenderStartedAt = nowPerfMs();
     renderCurrentThread({ stickToBottom: true });
     const conversationRenderMs = roundedDurationMs(conversationRenderStartedAt);
-    if (replacedTilePaneForThreadListOpen) {
-      restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
-      renderComposerSettings();
-      updateComposerControls();
-    }
-    if (isMenuOverlayMode()) closeSidebarMenu();
-    if (!state.threadSideChats.has(threadId)) loadSideChat(threadId, { silent: true }).catch(showError);
+    const cachedCurrentPostRenderPlan = threadDetailRenderPlanApi.planThreadDetailCachedCurrentPostRenderEffects({
+      threadId,
+      seq: state.threadLoadSeq,
+      source: "cached-current",
+      replacedTilePane: replacedTilePaneForThreadListOpen,
+      hasSideChat: state.threadSideChats.has(threadId),
+    });
+    applyThreadDetailPostRenderEffectsPlan(cachedCurrentPostRenderPlan, { thread: state.currentThread });
     const renderElapsedMs = roundedDurationMs(renderStartedAt);
-    const detailPerformance = threadPerformanceMetrics.threadDetailEventFieldsWithClient(state.currentThread, {
+    const cachedFirstPaintReportingStage = threadDetailRenderPlanApi.planThreadDetailFirstPaintReportingStage({
       source,
-      elapsedMs: roundedDurationMs(switchStartedAt),
-      apiElapsedMs: 0,
-      renderElapsedMs,
-      threadListRenderMs,
-      conversationRenderMs,
+      threadId,
       detailRenderMode: "cached-current",
-    });
-    postPerformanceEvent("thread_detail_first_paint", {
-      source,
-      threadId,
-      elapsedMs: roundedDurationMs(switchStartedAt),
-      apiElapsedMs: 0,
-      renderElapsedMs,
-      serverTimings: detailPerformance.serverTimings,
-      performancePhase: detailPerformance.performancePhase === "unknown"
-        ? "warm-client-current"
-        : detailPerformance.performancePhase,
-      clientTimings: detailPerformance.clientTimings,
-      detailShape: detailPerformance.detailShape,
       cached: true,
-      readMode: state.currentThread && state.currentThread.mobileReadMode || "",
-      turns: Array.isArray(state.currentThread && state.currentThread.turns) ? state.currentThread.turns.length : 0,
-      rolloutSizeBytes: rolloutSizeBytes(state.currentThread),
+      timings: {
+        elapsedMs: roundedDurationMs(switchStartedAt),
+        apiElapsedMs: 0,
+        renderElapsedMs,
+        threadListRenderMs,
+        conversationRenderMs,
+      },
+      threadHash: diagnosticThreadHash(threadId),
     });
-    postClientEvent("thread_switch_cached", {
-      source,
-      threadId,
-      elapsedMs: roundedDurationMs(switchStartedAt),
-    });
+    const firstPaintPerformance = threadPerformanceMetrics.threadDetailFirstPaintEventFields(
+      state.currentThread,
+      cachedFirstPaintReportingStage.performanceInput,
+    );
+    const cachedTelemetryPlan = threadDetailRenderPlanApi.planThreadDetailCachedCurrentTelemetryEffects(Object.assign({
+      performanceEvent: firstPaintPerformance,
+    }, cachedFirstPaintReportingStage.telemetryInput));
+    applyThreadDetailFirstPaintTelemetryEffectsPlan(cachedTelemetryPlan, { thread: state.currentThread });
     return;
   }
   const seq = state.threadLoadSeq + 1;
@@ -8421,28 +9144,22 @@ async function loadThread(threadId, options = {}) {
   clearTimeout(state.pollTimer);
   markThreadViewed(threadId);
   const summary = state.threads.find((thread) => thread.id === threadId);
-  state.currentThreadId = threadId;
+  const loadingShellPlan = threadDetailStateApi.planThreadOpenLoadingShell({ threadId, summaryThread: summary });
+  state.currentThreadId = loadingShellPlan.currentThreadId || threadId;
   state.startupThreadOpenPending = false;
-  state.currentThread = summary ? Object.assign({ turns: [], mobileLoading: true }, summary) : {
+  state.currentThread = loadingShellPlan.thread || {
     id: threadId,
     name: threadId,
     preview: threadId,
     turns: [],
     mobileLoading: true,
+    mobileLoadError: "",
   };
-  followThreadOpenToBottom(threadId);
-  restoreDraftForCurrentTarget();
-  renderComposerSettings();
-  syncActiveTurnFromThread();
-  renderThreads();
-  renderCurrentThread({ stickToBottom: true });
-  publishPluginNavigationState({ force: true });
-  updateComposerControls();
-  loadSideChat(threadId, { silent: true }).catch(showError);
-  $("connectionState").classList.remove("error");
-  $("connectionState").textContent = "Loading thread";
-  markActivity("加载线程");
-  startThreadLoadWatchdog(threadId, { source });
+  const loadingShellPostStatePlan = threadDetailRenderPlanApi.planThreadDetailLoadingShellPostStateEffects({
+    threadId,
+    source,
+  });
+  applyThreadDetailPostRenderEffectsPlan(loadingShellPostStatePlan, { thread: state.currentThread });
   let result;
   const apiStartedAt = nowPerfMs();
   try {
@@ -8452,29 +9169,34 @@ async function loadThread(threadId, options = {}) {
     });
   } catch (err) {
     if (seq !== state.threadLoadSeq || controller.signal.aborted) {
-      postClientEvent("thread_switch_cancelled", {
+      const cancelledEventPlan = threadDetailRenderPlanApi.planThreadDetailSwitchCancelledClientEvent({
         source,
         threadId,
         elapsedMs: roundedDurationMs(switchStartedAt),
         apiElapsedMs: roundedDurationMs(apiStartedAt),
       });
+      applyThreadDetailSwitchClientEventPlan(cancelledEventPlan);
       return;
     }
-    state.currentThread = Object.assign({}, state.currentThread || { id: threadId, name: threadId, preview: threadId, turns: [] }, {
-      mobileLoading: false,
-      mobileLoadError: err.message || String(err),
+    const loadErrorPlan = threadDetailRenderPlanApi.planThreadDetailLoadErrorEffects({
+      threadId,
+      errorMessage: err.message || String(err),
     });
-    syncActiveTurnFromThread();
-    renderThreads();
-    renderCurrentThread();
-    updateComposerControls();
-    postClientEvent("thread_switch_error", {
+    applyThreadDetailPostRenderEffectsPlan(loadErrorPlan, { thread: state.currentThread });
+    const errorEventPlan = threadDetailRenderPlanApi.planThreadDetailSwitchErrorClientEvent({
       source,
       threadId,
       elapsedMs: roundedDurationMs(switchStartedAt),
       apiElapsedMs: roundedDurationMs(apiStartedAt),
       error: err.message || String(err),
     });
+    applyThreadDetailSwitchClientEventPlan(errorEventPlan);
+    recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.threadDetailLoadFailedDiagnosticEvent({
+      errorCode: diagnosticErrorCode(err, "thread_detail_load_failed"),
+      durationBucket: diagnosticDurationBucket(roundedDurationMs(switchStartedAt)),
+      statusCode: diagnosticErrorStatus(err),
+      threadHash: diagnosticThreadHash(threadId),
+    }));
     throw err;
   } finally {
     clearThreadLoadWatchdog();
@@ -8482,91 +9204,99 @@ async function loadThread(threadId, options = {}) {
   }
   const apiElapsedMs = roundedDurationMs(apiStartedAt);
   if (seq !== state.threadLoadSeq || state.currentThreadId !== threadId) {
-    postClientEvent("thread_switch_cancelled", {
+    const cancelledEventPlan = threadDetailRenderPlanApi.planThreadDetailSwitchCancelledClientEvent({
       source,
       threadId,
       elapsedMs: roundedDurationMs(switchStartedAt),
       apiElapsedMs,
     });
+    applyThreadDetailSwitchClientEventPlan(cancelledEventPlan);
     return;
   }
   const renderStartedAt = nowPerfMs();
   const mergeStartedAt = nowPerfMs();
-  syncThreadPendingServerRequests(result.thread);
-  state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
-  mergeThreadIntoThreadList(state.currentThread);
-  localStorage.setItem(STORAGE_THREAD_ID, threadId);
-  draftStore.setTargetKey("");
-  followThreadOpenToBottom(threadId);
-  if (state.events) connectEvents();
-  const mergeMs = roundedDurationMs(mergeStartedAt);
+  const firstPaintResponsePlan = threadDetailRenderPlanApi.planThreadDetailFirstPaintResponseEffects({
+    source,
+  });
+  applyThreadDetailRefreshResponseEffectsPlan(firstPaintResponsePlan, { thread: result.thread });
+  const postMergePlan = threadDetailRenderPlanApi.planThreadDetailRefreshPostMergeEffects();
+  const firstPaintPostMergeTimingPlan = threadDetailRenderPlanApi.planThreadDetailFirstPaintPostMergeTimingEffects(postMergePlan);
+  if (!firstPaintPostMergeTimingPlan.ok) {
+    throw new Error(`Thread detail first-paint post-merge timing metadata invalid: ${firstPaintPostMergeTimingPlan.reason || "unknown"}`);
+  }
+  const firstPaintPostMergeTimings = applyThreadDetailRefreshTimedPostMergeEntries(
+    postMergePlan,
+    firstPaintPostMergeTimingPlan.beforeDraftRestore,
+    Object.assign({}, firstPaintPostMergeTimingPlan.timings),
+    { mergeStartedAt },
+  );
+  const firstPaintPreRenderPlan = threadDetailRenderPlanApi.planThreadDetailFirstPaintPreRenderEffects({
+    threadId,
+    hasEvents: Boolean(state.events),
+  });
+  applyThreadDetailPostRenderEffectsPlan(firstPaintPreRenderPlan, { thread: state.currentThread });
+  const mergeMs = firstPaintPostMergeTimings.mergeMs;
   const draftRestoreStartedAt = nowPerfMs();
-  restoreDraftForCurrentTarget();
+  const firstPaintDraftRestorePlan = threadDetailRenderPlanApi.planThreadDetailFirstPaintDraftRestoreEffects();
+  applyThreadDetailPostRenderEffectsPlan(firstPaintDraftRestorePlan, { thread: state.currentThread });
   const draftRestoreMs = roundedDurationMs(draftRestoreStartedAt);
-  const composerRenderStartedAt = nowPerfMs();
-  renderComposerSettings();
-  syncActiveTurnFromThread();
-  const composerRenderMs = roundedDurationMs(composerRenderStartedAt);
-  const threadListRenderStartedAt = nowPerfMs();
-  renderThreads();
-  const threadListRenderMs = roundedDurationMs(threadListRenderStartedAt);
+  applyThreadDetailRefreshTimedPostMergeEntries(
+    postMergePlan,
+    firstPaintPostMergeTimingPlan.afterDraftRestore,
+    firstPaintPostMergeTimings,
+  );
+  const composerRenderMs = firstPaintPostMergeTimings.composerRenderMs;
+  const threadListRenderMs = firstPaintPostMergeTimings.threadListRenderMs;
   const conversationRenderStartedAt = nowPerfMs();
   renderCurrentThread({ stickToBottom: true });
   const conversationRenderMs = roundedDurationMs(conversationRenderStartedAt);
+  const firstPaintAfterRenderPlan = threadDetailRenderPlanApi.planThreadDetailFirstPaintAfterRenderEffects({
+    seq,
+    source: "first-paint",
+  });
+  applyThreadDetailPostRenderEffectsPlan(firstPaintAfterRenderPlan, { thread: state.currentThread });
   const postRenderStartedAt = nowPerfMs();
-  publishPluginNavigationState({ force: true });
-  restoreConnectionState();
-  scheduleLivePollIfNeeded(1200);
-  updateComposerControls();
-  if (isMenuOverlayMode()) closeSidebarMenu();
-  if (shouldBackfillFullThreadDetail(result.thread)) {
-    backfillFullThreadDetail(threadId, { seq, source }).catch(() => {});
-  }
-  scheduleUsageBackfillRefresh();
+  const firstPaintPostRenderPlan = threadDetailRenderPlanApi.planThreadDetailFirstPaintPostRenderEffects({
+    threadId,
+    seq,
+    source,
+  });
+  applyThreadDetailPostRenderEffectsPlan(firstPaintPostRenderPlan, { thread: result.thread });
   const postRenderMs = roundedDurationMs(postRenderStartedAt);
+  const firstPaintPostTimingPlan = threadDetailRenderPlanApi.planThreadDetailFirstPaintPostTimingEffects();
+  applyThreadDetailPostRenderEffectsPlan(firstPaintPostTimingPlan, { thread: result.thread });
   const renderElapsedMs = roundedDurationMs(renderStartedAt);
-  const detailPerformance = threadPerformanceMetrics.threadDetailEventFieldsWithClient(result.thread, {
+  const firstPaintReportingStage = threadDetailRenderPlanApi.planThreadDetailFirstPaintReportingStage({
     source,
-    elapsedMs: roundedDurationMs(switchStartedAt),
-    apiElapsedMs,
-    renderElapsedMs,
-    mergeMs,
-    draftRestoreMs,
-    composerRenderMs,
-    threadListRenderMs,
-    conversationRenderMs,
-    postRenderMs,
+    threadId,
     detailRenderMode: "first-paint",
-  });
-  postPerformanceEvent("thread_detail_first_paint", {
-    source,
-    threadId,
-    elapsedMs: roundedDurationMs(switchStartedAt),
-    apiElapsedMs,
-    renderElapsedMs,
-    serverTimings: detailPerformance.serverTimings,
-    performancePhase: detailPerformance.performancePhase,
-    clientTimings: detailPerformance.clientTimings,
-    detailShape: detailPerformance.detailShape,
     cached: false,
+    timings: {
+      elapsedMs: roundedDurationMs(switchStartedAt),
+      apiElapsedMs,
+      renderElapsedMs,
+      mergeMs,
+      draftRestoreMs,
+      composerRenderMs,
+      threadListRenderMs,
+      conversationRenderMs,
+      postRenderMs,
+    },
     readMode: result.thread && result.thread.mobileReadMode || "",
     status: statusText(result.thread && result.thread.status),
     turns: Array.isArray(result.thread && result.thread.turns) ? result.thread.turns.length : 0,
     omittedTurns: Number(result.thread && result.thread.mobileOmittedTurnCount || 0),
     rolloutSizeBytes: rolloutSizeBytes(result.thread),
+    threadHash: diagnosticThreadHash(threadId),
   });
-  postClientEvent("thread_switch_complete", {
-    source,
-    threadId,
-    elapsedMs: roundedDurationMs(switchStartedAt),
-    apiElapsedMs,
-    renderElapsedMs,
-    readMode: result.thread && result.thread.mobileReadMode || "",
-    status: statusText(result.thread && result.thread.status),
-    turns: Array.isArray(result.thread && result.thread.turns) ? result.thread.turns.length : 0,
-    omittedTurns: Number(result.thread && result.thread.mobileOmittedTurnCount || 0),
-    rolloutSizeBytes: rolloutSizeBytes(result.thread),
-  });
+  const firstPaintPerformance = threadPerformanceMetrics.threadDetailFirstPaintEventFields(
+    result.thread,
+    firstPaintReportingStage.performanceInput,
+  );
+  const firstPaintTelemetryPlan = threadDetailRenderPlanApi.planThreadDetailFirstPaintTelemetryEffects(Object.assign({
+    performanceEvent: firstPaintPerformance,
+  }, firstPaintReportingStage.telemetryInput));
+  applyThreadDetailFirstPaintTelemetryEffectsPlan(firstPaintTelemetryPlan, { thread: result.thread });
 }
 
 function isSuccessfulCompletedTurn(turn) {
@@ -8623,126 +9353,710 @@ function scheduleUsageBackfillRefresh(delay = 1200) {
   }, delay);
 }
 
+function applyThreadDetailRefreshMetadataEffect(effect) {
+  const key = String(effect || "");
+  if (key === "update-current-thread-header") {
+    updateCurrentThreadHeader(state.currentThread);
+    return true;
+  }
+  if (key === "update-live-operation-dock") {
+    updateLiveOperationDockHtml(renderLiveOperationDock(state.currentThread, existingConversationRenderKeys()));
+    return true;
+  }
+  if (key === "update-tick-timer") {
+    updateTickTimer();
+    return true;
+  }
+  if (key === "publish-plugin-navigation-state") {
+    publishPluginNavigationState();
+    return true;
+  }
+  if (key === "schedule-scroll-button-update") {
+    scheduleScrollToBottomButtonUpdate();
+    return true;
+  }
+  throw new Error(`Unknown thread detail refresh metadata effect: ${key || "empty"}`);
+}
+
+function applyThreadDetailRefreshCompletionEffect(effect) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  if (type === "diagnostic-success") {
+    recordHomeAiDiagnosticSuccess(item.payload || {});
+    return true;
+  }
+  if (type === "schedule-usage-backfill-refresh") {
+    scheduleUsageBackfillRefresh();
+    return true;
+  }
+  if (type === "schedule-live-poll") {
+    scheduleLivePollIfNeeded();
+    return true;
+  }
+  throw new Error(`Unknown thread detail refresh completion effect: ${type || "empty"}`);
+}
+
+function applyThreadDetailRefreshCompletionEffectsPlan(plan) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applyThreadDetailRefreshCompletionEffect(effect);
+}
+
+function applyThreadDetailPostRenderEffect(effect, context = {}) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  if (type === "persist-current-thread-id") {
+    const threadId = String(item.threadId || "");
+    if (threadId) localStorage.setItem(STORAGE_THREAD_ID, threadId);
+    return true;
+  }
+  if (type === "clear-draft-target-key") {
+    draftStore.setTargetKey("");
+    return true;
+  }
+  if (type === "follow-thread-open-to-bottom") {
+    followThreadOpenToBottom(String(item.threadId || ""));
+    return true;
+  }
+  if (type === "restore-draft-for-current-target") {
+    restoreDraftForCurrentTarget();
+    return true;
+  }
+  if (type === "render-composer-settings") {
+    renderComposerSettings();
+    return true;
+  }
+  if (type === "sync-active-turn-from-thread") {
+    syncActiveTurnFromThread();
+    return true;
+  }
+  if (type === "connect-events") {
+    connectEvents();
+    return true;
+  }
+  if (type === "render-thread-list") {
+    renderThreads();
+    return true;
+  }
+  if (type === "render-current-thread") {
+    const options = item.options && typeof item.options === "object" ? item.options : {};
+    renderCurrentThread({ stickToBottom: Boolean(options.stickToBottom) });
+    return true;
+  }
+  if (type === "set-current-thread-load-error") {
+    const threadId = String(item.threadId || state.currentThreadId || "");
+    state.currentThread = Object.assign({}, state.currentThread || {
+      id: threadId,
+      name: threadId,
+      preview: threadId,
+      turns: [],
+    }, {
+      mobileLoading: false,
+      mobileLoadError: String(item.errorMessage || ""),
+    });
+    return true;
+  }
+  if (type === "publish-plugin-navigation-state") {
+    publishPluginNavigationState({ force: Boolean(item.force) });
+    return true;
+  }
+  if (type === "restore-connection-state") {
+    restoreConnectionState();
+    return true;
+  }
+  if (type === "schedule-live-poll") {
+    const delayMs = Number(item.delayMs);
+    scheduleLivePollIfNeeded(Number.isFinite(delayMs) && delayMs >= 0 ? delayMs : undefined);
+    return true;
+  }
+  if (type === "update-composer-controls") {
+    updateComposerControls();
+    return true;
+  }
+  if (type === "history-auto-backfill") {
+    maybeAutoBackfillThreadHistory(context.thread, {
+      seq: Number(item.seq || 0),
+      source: String(item.source || "unknown").slice(0, 40),
+    });
+    return true;
+  }
+  if (type === "restore-composer-for-replaced-tile-pane") {
+    restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
+    renderComposerSettings();
+    updateComposerControls();
+    return true;
+  }
+  if (type === "close-sidebar-menu-if-overlay") {
+    if (isMenuOverlayMode()) closeSidebarMenu();
+    return true;
+  }
+  if (type === "check-conversation-projection-consistency") {
+    checkConversationProjectionConsistency(String(item.phase || ""), {
+      renderMode: String(item.renderMode || ""),
+    });
+    return true;
+  }
+  if (type === "record-empty-cached-detail-reuse-healthy") {
+    recordEmptyCachedDetailReuseHealthy(String(item.reason || ""), context.thread);
+    return true;
+  }
+  if (type === "load-side-chat") {
+    const sideChatThreadId = String(item.threadId || "");
+    if (sideChatThreadId) loadSideChat(sideChatThreadId, { silent: item.silent !== false }).catch(showError);
+    return true;
+  }
+  if (type === "set-connection-state") {
+    const element = $("connectionState");
+    const removeClass = String(item.removeClass || "");
+    if (removeClass) element.classList.remove(removeClass);
+    element.textContent = String(item.text || "");
+    return true;
+  }
+  if (type === "mark-activity") {
+    markActivity(String(item.label || ""));
+    return true;
+  }
+  if (type === "start-thread-load-watchdog") {
+    startThreadLoadWatchdog(String(item.threadId || ""), { source: String(item.source || "").slice(0, 40) });
+    return true;
+  }
+  if (type === "backfill-full-thread-detail-if-needed") {
+    if (shouldBackfillFullThreadDetail(context.thread)) {
+      backfillFullThreadDetail(String(item.threadId || ""), {
+        seq: Number(item.seq || 0),
+        source: String(item.source || "").slice(0, 40),
+      }).catch(() => {});
+    }
+    return true;
+  }
+  if (type === "schedule-usage-backfill-refresh") {
+    scheduleUsageBackfillRefresh();
+    return true;
+  }
+  throw new Error(`Unknown thread detail post-render effect: ${type || "empty"}`);
+}
+
+function applyThreadDetailPostRenderEffectsPlan(plan, context = {}) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applyThreadDetailPostRenderEffect(effect, context);
+}
+
+function applyThreadDetailFirstPaintTelemetryEffect(effect, context = {}) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  if (type === "post-performance-event") {
+    postPerformanceEvent(String(item.eventName || ""), item.payload || {}, item.options || {});
+    return true;
+  }
+  if (type === "record-thread-detail-response-diagnostics") {
+    const eventContext = item.context && typeof item.context === "object" ? item.context : {};
+    recordThreadDetailResponseDiagnostics(item.performanceEvent || {}, {
+      action: String(eventContext.action || ""),
+      threadId: String(eventContext.threadId || ""),
+      thread: context.thread,
+    });
+    return true;
+  }
+  if (type === "post-client-event") {
+    postClientEvent(String(item.eventName || ""), item.payload || {});
+    return true;
+  }
+  if (type === "diagnostic-success") {
+    recordHomeAiDiagnosticSuccess(item.payload || {});
+    return true;
+  }
+  throw new Error(`Unknown thread detail first-paint telemetry effect: ${type || "empty"}`);
+}
+
+function applyThreadDetailFirstPaintTelemetryEffectsPlan(plan, context = {}) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applyThreadDetailFirstPaintTelemetryEffect(effect, context);
+}
+
+function applyThreadDetailSwitchClientEventEffect(effect) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  if (type === "post-client-event") {
+    postClientEvent(String(item.eventName || ""), item.payload || {});
+    return true;
+  }
+  throw new Error(`Unknown thread detail switch client event effect: ${type || "empty"}`);
+}
+
+function applyThreadDetailSwitchClientEventPlan(plan) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applyThreadDetailSwitchClientEventEffect(effect);
+}
+
+function applyThreadDetailRefreshPostMergeEffect(effect) {
+  const key = String(effect || "");
+  if (key === "merge-thread-list") {
+    mergeThreadIntoThreadList(state.currentThread);
+    return true;
+  }
+  if (key === "render-composer-settings") {
+    renderComposerSettings();
+    return true;
+  }
+  if (key === "sync-active-turn") {
+    syncActiveTurnFromThread();
+    return true;
+  }
+  if (key === "render-threads") {
+    renderThreads();
+    return true;
+  }
+  throw new Error(`Unknown thread detail refresh post-merge effect: ${key || "empty"}`);
+}
+
+function applyThreadDetailRefreshPostMergeEffectsGroup(plan, timing) {
+  const groups = Array.isArray(plan && plan.groups) ? plan.groups : [];
+  const group = groups.find((item) => item && item.timing === timing);
+  const effects = group && Array.isArray(group.effects) ? group.effects : [];
+  if (!effects.length) throw new Error(`Thread detail refresh post-merge effects missing for ${timing}`);
+  for (const effect of effects) applyThreadDetailRefreshPostMergeEffect(effect);
+}
+
+function applyThreadDetailRefreshTimedPostMergeEffectsGroup(plan, timing, options = {}) {
+  const startedAt = Number.isFinite(options.startedAt) ? options.startedAt : nowPerfMs();
+  applyThreadDetailRefreshPostMergeEffectsGroup(plan, timing);
+  return roundedDurationMs(startedAt);
+}
+
+function applyThreadDetailRefreshTimedPostMergeEntries(plan, entries, timings, options = {}) {
+  const result = timings && typeof timings === "object" ? timings : {};
+  const list = Array.isArray(entries) ? entries : [];
+  for (const entry of list) {
+    const timing = String(entry && entry.timing || "");
+    const field = String(entry && entry.field || "");
+    if (!timing || !field) throw new Error("Thread detail refresh post-merge timing entry missing");
+    const startedAt = timing === "merge" && Number.isFinite(options.mergeStartedAt)
+      ? options.mergeStartedAt
+      : nowPerfMs();
+    result[field] = applyThreadDetailRefreshTimedPostMergeEffectsGroup(plan, timing, { startedAt });
+  }
+  return result;
+}
+
+function applyThreadDetailRefreshTimedPostMergeEffectsPlan(plan, options = {}) {
+  const timingFieldsPlan = threadDetailRenderPlanApi.planThreadDetailRefreshPostMergeTimingFields(plan);
+  if (!timingFieldsPlan.ok) {
+    throw new Error(`Thread detail refresh post-merge timing metadata invalid: ${timingFieldsPlan.reason || "unknown"}`);
+  }
+  return applyThreadDetailRefreshTimedPostMergeEntries(
+    plan,
+    timingFieldsPlan.entries,
+    Object.assign({}, timingFieldsPlan.timings),
+    options,
+  );
+}
+
+function applyThreadDetailRefreshResponseEffect(effect, context = {}) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  const thread = context.thread;
+  if (type === "mark-thread-detail-loaded") {
+    markThreadDetailLoaded(thread);
+    return true;
+  }
+  if (type === "remember-render-evidence") {
+    rememberThreadDetailRenderEvidence(thread, String(item.source || "refresh-detail-api"));
+    return true;
+  }
+  if (type === "sync-pending-server-requests") {
+    syncThreadPendingServerRequests(thread);
+    return true;
+  }
+  if (type === "merge-current-thread") {
+    state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, thread);
+    return true;
+  }
+  throw new Error(`Unknown thread detail refresh response effect: ${type || "empty"}`);
+}
+
+function applyThreadDetailRefreshResponseEffectsPlan(plan, context = {}) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applyThreadDetailRefreshResponseEffect(effect, context);
+}
+
+function applyThreadDetailRefreshExecutionEffect(effect) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  if (type === "metadata-effects") {
+    const metadataEffects = Array.isArray(item.metadataEffects) ? item.metadataEffects : [];
+    if (item.requireEffects && !metadataEffects.length) {
+      throw new Error("Thread detail refresh metadata effects are empty");
+    }
+    const metadataStartedAt = nowPerfMs();
+    for (const metadataEffect of metadataEffects) applyThreadDetailRefreshMetadataEffect(metadataEffect);
+    return {
+      timingTarget: "metadata-update",
+      elapsedMs: roundedDurationMs(metadataStartedAt),
+    };
+  }
+  if (type === "full-render") {
+    const conversationRenderStartedAt = nowPerfMs();
+    renderCurrentThread();
+    return {
+      timingTarget: "conversation-render",
+      elapsedMs: roundedDurationMs(conversationRenderStartedAt),
+    };
+  }
+  throw new Error(`Unknown thread detail refresh execution action: ${type || "empty"}`);
+}
+
+function applyThreadDetailRefreshExecutionEffectsPlan(plan) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  const timings = {
+    metadataUpdateMs: 0,
+    conversationRenderMs: 0,
+  };
+  for (const effect of effects) {
+    const executionResult = applyThreadDetailRefreshExecutionEffect(effect);
+    if (executionResult.timingTarget === "metadata-update") {
+      timings.metadataUpdateMs += executionResult.elapsedMs;
+    } else if (executionResult.timingTarget === "conversation-render") {
+      timings.conversationRenderMs += executionResult.elapsedMs;
+    }
+  }
+  return timings;
+}
+
+function applyThreadDetailRefreshConsistencyCheckEffect(effect) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  if (type === "conversation-projection-consistency-check") {
+    checkConversationProjectionConsistency(String(item.phase || ""), { renderMode: String(item.renderMode || "") });
+    return true;
+  }
+  throw new Error(`Unknown thread detail refresh consistency effect: ${type || "empty"}`);
+}
+
+function applyThreadDetailRefreshConsistencyCheckEffectsPlan(plan) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applyThreadDetailRefreshConsistencyCheckEffect(effect);
+}
+
+function applyThreadDetailRefreshTelemetryEffect(effect, context = {}) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  if (type === "post-performance-event") {
+    postPerformanceEvent(String(item.eventName || ""), item.payload || {}, item.options || {});
+    return true;
+  }
+  if (type === "record-thread-detail-response-diagnostics") {
+    const eventContext = item.context && typeof item.context === "object" ? item.context : {};
+    recordThreadDetailResponseDiagnostics(item.performanceEvent || {}, {
+      action: String(eventContext.action || ""),
+      threadId: String(eventContext.threadId || ""),
+      thread: context.thread,
+    });
+    return true;
+  }
+  throw new Error(`Unknown thread detail refresh telemetry effect: ${type || "empty"}`);
+}
+
+function applyThreadDetailRefreshTelemetryEffectsPlan(plan, context = {}) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applyThreadDetailRefreshTelemetryEffect(effect, context);
+}
+
+function applyThreadDetailRefreshFailureDiagnosticEffect(effect) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  if (type === "thread-detail-refresh-failed-diagnostic-failure") {
+    recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.threadDetailRefreshFailedDiagnosticEvent(item.diagnosticInput || {}));
+    return true;
+  }
+  throw new Error(`Unknown thread detail refresh failure diagnostic effect: ${type || "empty"}`);
+}
+
+function applyThreadDetailRefreshFailureDiagnosticEffectsPlan(plan) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applyThreadDetailRefreshFailureDiagnosticEffect(effect);
+}
+
+function applyThreadDetailRefreshPatchRejectedDiagnosticEffect(effect) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  if (type === "detail-patch-rejected-diagnostic-failure") {
+    recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.detailPatchRejectedDiagnosticEvent(item.diagnosticInput || {}));
+    return true;
+  }
+  throw new Error(`Unknown thread detail refresh patch rejected diagnostic effect: ${type || "empty"}`);
+}
+
+function applyThreadDetailRefreshPatchRejectedDiagnosticEffectsPlan(plan) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applyThreadDetailRefreshPatchRejectedDiagnosticEffect(effect);
+}
+
+function applyThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffect(effect, context = {}) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  if (type === "collect-patch-rejected-visible-shapes") {
+    return {
+      collected: true,
+      previousVisibleShape: visibleConversationShape(context.previousThread),
+      nextVisibleShape: visibleConversationShape(context.nextThread),
+    };
+  }
+  throw new Error(`Unknown thread detail refresh visible-shape evidence effect: ${type || "empty"}`);
+}
+
+function applyThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffectsPlan(plan, context = {}) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  let evidence = { collected: false };
+  for (const effect of effects) {
+    const nextEvidence = applyThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffect(effect, context);
+    if (nextEvidence && nextEvidence.collected) evidence = nextEvidence;
+  }
+  return evidence;
+}
+
+function applyThreadDetailRefreshPatchAttemptEffect(effect, context) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  if (type === "tile-pane-patch") {
+    const startedAt = nowPerfMs();
+    return {
+      tilePanePatchAttempted: true,
+      tilePanePatchedDetail: patchCurrentThreadTilePaneFromState({
+        threadId: context.threadId,
+        preserveScroll: item.preserveScroll !== false,
+      }),
+      tilePanePatchMs: roundedDurationMs(startedAt),
+    };
+  }
+  if (type === "local-patch") {
+    if (item.skipWhenTilePanePatched && context.tilePanePatchedDetail) {
+      return {
+        localPatchAttempted: false,
+        locallyPatchedDetail: false,
+        localPatchMs: 0,
+      };
+    }
+    const startedAt = nowPerfMs();
+    const patchResult = patchCurrentThreadDetailFromRefresh(
+      context.previousThread,
+      state.currentThread,
+      context.previousConversationSignature,
+    );
+    const patched = Boolean(patchResult && patchResult.ok);
+    return {
+      localPatchAttempted: true,
+      locallyPatchedDetail: patched,
+      patchRejectReason: patched ? "" : String((patchResult && patchResult.reason) || "unknown"),
+      localPatchMs: roundedDurationMs(startedAt),
+    };
+  }
+  throw new Error(`Unknown thread detail refresh patch attempt effect: ${type || "empty"}`);
+}
+
+function applyThreadDetailRefreshPatchAttemptEffectsPlan(plan, context = {}) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  let result = threadDetailRenderPlanApi.emptyThreadDetailRefreshPatchAttempt();
+  for (const effect of effects) {
+    const attemptContext = threadDetailRenderPlanApi.threadDetailRefreshPatchAttemptEffectContext(context, result);
+    const attempt = applyThreadDetailRefreshPatchAttemptEffect(effect, attemptContext);
+    result = threadDetailRenderPlanApi.reduceThreadDetailRefreshPatchAttempt(result, attempt);
+  }
+  return result;
+}
+
+function applyThreadDetailRefreshPatchSurfaceProbeEffect(effect, context = {}) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  if (type === "probe-thread-detail-dom-patch-surface") {
+    return threadDetailDomPatchSurface({
+      threadId: String(item.threadId || context.threadId || ""),
+    });
+  }
+  throw new Error(`Unknown thread detail refresh patch surface probe effect: ${type || "empty"}`);
+}
+
+function applyThreadDetailRefreshPatchSurfaceProbeEffectsPlan(plan, context = {}) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  let result = { surface: "" };
+  for (const effect of effects) {
+    const probe = applyThreadDetailRefreshPatchSurfaceProbeEffect(effect, context);
+    if (probe && typeof probe === "object") result = probe;
+  }
+  return result;
+}
+
 async function refreshCurrentThread(options = {}) {
-  if (!state.currentThreadId) return;
+  const requestPlan = threadDetailRenderPlanApi.planThreadDetailRefreshRequest({
+    threadId: state.currentThreadId,
+    threadLoadSeq: state.threadLoadSeq,
+    options,
+    hasActiveRefreshController: Boolean(state.refreshThreadController),
+  });
+  if (!requestPlan.shouldRefresh) return;
   markIdleActivity("同步");
-  const threadId = state.currentThreadId;
-  const seq = state.threadLoadSeq;
-  const source = String(options.source || "refresh").slice(0, 40);
-  const requestedMode = options.full === true || String(options.mode || "").toLowerCase() === "full"
-    ? "full"
-    : "recent";
-  if (state.refreshThreadController) state.refreshThreadController.abort();
+  const threadId = requestPlan.threadId;
+  const seq = requestPlan.seq;
+  const source = requestPlan.source;
+  const requestedMode = requestPlan.requestedMode;
+  if (requestPlan.abortActiveRefresh && state.refreshThreadController) state.refreshThreadController.abort();
   const controller = new AbortController();
   state.refreshThreadController = controller;
   let result;
   const refreshStartedAt = nowPerfMs();
   const apiStartedAt = nowPerfMs();
   try {
-    result = await api(threadDetailApiPath(threadId, requestedMode === "recent" ? { mode: "recent" } : {}), {
-      timeoutMs: 20000,
+    result = await api(threadDetailApiPath(threadId, requestPlan.query), {
+      timeoutMs: requestPlan.timeoutMs,
       signal: controller.signal,
     });
   } catch (err) {
     if (controller.signal.aborted || err.name === "AbortError") return;
+    const failureEffectsPlan = threadDetailRenderPlanApi.planThreadDetailRefreshFailureDiagnosticEffects({
+      errorCode: diagnosticErrorCode(err, "thread_detail_refresh_failed"),
+      durationBucket: diagnosticDurationBucket(roundedDurationMs(refreshStartedAt)),
+      statusCode: diagnosticErrorStatus(err),
+      threadHash: diagnosticThreadHash(threadId),
+    });
+    applyThreadDetailRefreshFailureDiagnosticEffectsPlan(failureEffectsPlan);
     throw err;
   } finally {
     if (state.refreshThreadController === controller) state.refreshThreadController = null;
   }
   const apiElapsedMs = roundedDurationMs(apiStartedAt);
-  if (state.currentThreadId !== threadId || seq !== state.threadLoadSeq) return;
+  const responseEffectsPlan = threadDetailRenderPlanApi.planThreadDetailRefreshResponseEffects({
+    threadId,
+    seq,
+    currentThreadId: state.currentThreadId,
+    currentThreadSeq: state.threadLoadSeq,
+    source,
+  });
+  if (!responseEffectsPlan.shouldApply) return;
   const renderStartedAt = nowPerfMs();
   const mergeStartedAt = nowPerfMs();
   const previousThread = state.currentThread;
   const previousConversationSignature = conversationRenderSignature(state.currentThread);
-  state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
+  const previousPatchShellSignature = conversationPatchShellSignature(previousThread);
+  applyThreadDetailRefreshResponseEffectsPlan(responseEffectsPlan, { thread: result.thread });
+  const nextVisibleShape = visibleConversationShape(state.currentThread);
   const nextConversationSignature = conversationRenderSignature(state.currentThread);
-  const renderPlan = threadDetailRenderPlanApi.planThreadDetailRefreshRender({
+  const currentDomShape = conversationDomShape();
+  const refreshRenderStage = threadDetailRenderPlanApi.planThreadDetailRefreshRenderStage({
     previousConversationSignature,
     nextConversationSignature,
     renderedConversationSignature: state.renderedConversationSignature,
+    previousPatchShellSignature,
+    renderedPatchShellSignature: state.renderedConversationPatchShellSignature,
+    singleThreadSurfaceAvailable: canPatchSingleThreadConversationDom({ threadId }),
+    renderedDomTurnCount: conversationDomTurnIds().length,
+    renderedDomItemCount: currentDomShape.itemCount,
+    duplicateRenderKeyCount: currentDomShape.duplicateRenderKeyCount,
+    nextVisibleShape,
+    expectedTurnIds: visibleRenderableTurnIds(state.currentThread),
+    renderedDomTurnIds: conversationDomTurnIds(),
   });
+  const renderPlan = refreshRenderStage.renderPlan;
   const shouldRenderDetail = renderPlan.shouldRenderDetail;
-  mergeThreadIntoThreadList(state.currentThread);
-  const mergeMs = roundedDurationMs(mergeStartedAt);
-  const composerRenderStartedAt = nowPerfMs();
-  renderComposerSettings();
-  syncActiveTurnFromThread();
-  const composerRenderMs = roundedDurationMs(composerRenderStartedAt);
-  const threadListRenderStartedAt = nowPerfMs();
-  renderThreads();
-  const threadListRenderMs = roundedDurationMs(threadListRenderStartedAt);
-  let locallyPatchedDetail = false;
-  let conversationRenderMs = 0;
-  let detailPatchMs = 0;
-  let metadataUpdateMs = 0;
-  let detailRenderMode = renderPlan.detailRenderMode;
-  if (shouldRenderDetail) {
-    if (renderPlan.canPatch) {
-      const patchStartedAt = nowPerfMs();
-      locallyPatchedDetail = patchCurrentThreadDetailFromRefresh(previousThread, state.currentThread, previousConversationSignature);
-      detailPatchMs = roundedDurationMs(patchStartedAt);
-    }
-    detailRenderMode = threadDetailRenderPlanApi.finalizeThreadDetailRenderPlan(renderPlan, { locallyPatchedDetail }).detailRenderMode;
-    if (locallyPatchedDetail) {
-      const metadataStartedAt = nowPerfMs();
-      updateCurrentThreadHeader(state.currentThread);
-      updateTickTimer();
-      publishPluginNavigationState();
-      metadataUpdateMs = roundedDurationMs(metadataStartedAt);
-    } else {
-      const conversationRenderStartedAt = nowPerfMs();
-      renderCurrentThread();
-      conversationRenderMs = roundedDurationMs(conversationRenderStartedAt);
-    }
-  } else {
-    const metadataStartedAt = nowPerfMs();
-    updateCurrentThreadHeader(state.currentThread);
-    updateLiveOperationDockHtml(renderLiveOperationDock(state.currentThread, existingConversationRenderKeys()));
-    updateTickTimer();
-    scheduleScrollToBottomButtonUpdate();
-    metadataUpdateMs = roundedDurationMs(metadataStartedAt);
-  }
-  const renderElapsedMs = roundedDurationMs(renderStartedAt);
-  const detailPerformance = threadPerformanceMetrics.threadDetailEventFieldsWithClient(result.thread, {
-    source,
-    elapsedMs: roundedDurationMs(refreshStartedAt),
-    apiElapsedMs,
-    renderElapsedMs,
-    mergeMs,
-    composerRenderMs,
-    threadListRenderMs,
-    conversationRenderMs,
-    detailPatchMs,
-    metadataUpdateMs,
-    detailRenderMode,
-    skippedDetailRender: !shouldRenderDetail,
-    locallyPatchedDetail,
+  const postMergePlan = threadDetailRenderPlanApi.planThreadDetailRefreshPostMergeEffects();
+  const postMergeTimings = applyThreadDetailRefreshTimedPostMergeEffectsPlan(postMergePlan, {
+    mergeStartedAt,
   });
-  postPerformanceEvent("thread_refresh_ms", {
+  const mergeMs = postMergeTimings.mergeMs;
+  const composerRenderMs = postMergeTimings.composerRenderMs;
+  const threadListRenderMs = postMergeTimings.threadListRenderMs;
+  let conversationRenderMs = 0;
+  let metadataUpdateMs = 0;
+  const threadTileConversationSurface = isThreadTileConversationSurface();
+  const patchSurfaceProbeStage = threadDetailRenderPlanApi.planThreadDetailRefreshPatchSurfaceProbeStage({
+    shouldRenderDetail,
+    threadTileMode: state.threadTileMode,
+    threadTileConversationSurface,
+    threadId,
+  });
+  const tilePatchPlan = applyThreadDetailRefreshPatchSurfaceProbeEffectsPlan(
+    patchSurfaceProbeStage.patchSurfaceProbeEffectsPlan,
+    { threadId },
+  );
+  const patchSurfaceExecutionStage = threadDetailRenderPlanApi.planThreadDetailRefreshPatchSurfaceExecutionStage({
+    shouldRenderDetail,
+    renderPlan,
+    threadTileMode: state.threadTileMode,
+    threadTileConversationSurface,
+    tilePatchPlan,
+  });
+  const patchAttemptEffectsPlan = patchSurfaceExecutionStage.patchAttemptEffectsPlan;
+  const patchAttempt = applyThreadDetailRefreshPatchAttemptEffectsPlan(patchAttemptEffectsPlan, {
+    threadId,
+    previousThread,
+    previousConversationSignature,
+  });
+  const patchAttemptResultEvidenceStage = threadDetailRenderPlanApi.planThreadDetailRefreshPatchAttemptResultEvidenceStage({
+    shouldRenderDetail,
+    patchAttempt,
+    renderPlan,
+    readMode: result.thread && result.thread.mobileReadMode,
+  });
+  const patchRejectedVisibleShapeEvidence = applyThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffectsPlan(
+    patchAttemptResultEvidenceStage.visibleShapeEvidenceEffectsPlan,
+    {
+      previousThread,
+      nextThread: state.currentThread,
+    },
+  );
+  const patchAttemptResultResolutionStage = threadDetailRenderPlanApi.planThreadDetailRefreshPatchAttemptResultEvidenceResolutionStage({
+    shouldRenderDetail,
+    patchAttempt,
+    renderPlan,
+    readMode: result.thread && result.thread.mobileReadMode,
+    patchAttemptResultStage: patchAttemptResultEvidenceStage.patchAttemptResultStage,
+    visibleShapeEvidence: patchRejectedVisibleShapeEvidence,
+  });
+  const patchAttemptResultStage = patchAttemptResultResolutionStage.patchAttemptResultStage;
+  const patchAttemptResult = patchAttemptResultStage.patchAttemptResult;
+  applyThreadDetailRefreshPatchRejectedDiagnosticEffectsPlan(patchAttemptResultStage.patchRejectedDiagnosticEffectsPlan);
+  const outcomeExecutionStage = threadDetailRenderPlanApi.planThreadDetailRefreshOutcomeExecutionStage({
+    renderPlan,
+    patchAttemptResult,
+  });
+  const renderOutcome = outcomeExecutionStage.renderOutcome;
+  const executionTimings = applyThreadDetailRefreshExecutionEffectsPlan(outcomeExecutionStage.executionEffectsPlan);
+  metadataUpdateMs += executionTimings.metadataUpdateMs;
+  conversationRenderMs += executionTimings.conversationRenderMs;
+  applyThreadDetailRefreshConsistencyCheckEffectsPlan(outcomeExecutionStage.consistencyCheckEffectsPlan);
+  const renderElapsedMs = roundedDurationMs(renderStartedAt);
+  const refreshReportingStage = threadDetailRenderPlanApi.planThreadDetailRefreshReportingStage({
     source,
     threadId,
     requestedMode,
-    readMode: result.thread && result.thread.mobileReadMode || "",
-    elapsedMs: roundedDurationMs(refreshStartedAt),
-    apiElapsedMs,
-    renderElapsedMs,
-    serverTimings: detailPerformance.serverTimings,
-    performancePhase: detailPerformance.performancePhase,
-    clientTimings: detailPerformance.clientTimings,
-    detailShape: detailPerformance.detailShape,
-    status: statusText(result.thread && result.thread.status),
-    turns: Array.isArray(result.thread && result.thread.turns) ? result.thread.turns.length : 0,
-    omittedTurns: Number(result.thread && result.thread.mobileOmittedTurnCount || 0),
-    rolloutSizeBytes: rolloutSizeBytes(result.thread),
-    skippedDetailRender: !shouldRenderDetail,
-    locallyPatchedDetail,
-  }, {
-    key: "thread_refresh_ms",
+    shouldRenderDetail,
+    renderPlan,
+    renderOutcome,
+    patchAttemptResult,
+    timings: {
+      elapsedMs: roundedDurationMs(refreshStartedAt),
+      apiElapsedMs,
+      renderElapsedMs,
+      mergeMs,
+      composerRenderMs,
+      threadListRenderMs,
+      conversationRenderMs,
+      metadataUpdateMs,
+    },
+    eventName: "thread_refresh_ms",
+    throttleKey: "thread_refresh_ms",
     minIntervalMs: PERF_EVENT_THROTTLE_MS,
+    action: "thread-detail-refresh",
+    threadHash: diagnosticThreadHash(threadId),
   });
-  scheduleUsageBackfillRefresh();
-  scheduleLivePollIfNeeded();
+  const refreshPerformance = threadPerformanceMetrics.threadDetailRefreshEventFields(
+    result.thread,
+    refreshReportingStage.performanceInput,
+  );
+  const refreshReportingEffectsStage = threadDetailRenderPlanApi.planThreadDetailRefreshReportingEffectsStage({
+    performanceEvent: refreshPerformance,
+    telemetryConfig: refreshReportingStage.telemetryConfig,
+    completionConfig: refreshReportingStage.completionConfig,
+  });
+  applyThreadDetailRefreshTelemetryEffectsPlan(refreshReportingEffectsStage.telemetryEffectsPlan, { thread: result.thread });
+  applyThreadDetailRefreshCompletionEffectsPlan(refreshReportingEffectsStage.completionEffectsPlan);
 }
 
 function threadTurnsCursorParam(cursor) {
@@ -8760,10 +10074,91 @@ function shouldBackfillFullThreadDetail(thread) {
   return /turns-list-initial/i.test(String(thread && thread.mobileReadMode || ""));
 }
 
+function threadHistoryAutoBackfillKey(thread) {
+  const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+  const firstTurn = turns[0] || {};
+  const lastTurn = turns[turns.length - 1] || {};
+  return [
+    state.currentThreadId || thread.id || "",
+    threadTurnsCursorSignature(thread && thread.mobileOlderTurnsCursor),
+    firstTurn.id || firstTurn.startedAt || "",
+    lastTurn.id || lastTurn.startedAt || "",
+  ].join("|");
+}
+
+function applyThreadDetailHistoryAutoBackfillEffect(effect) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  if (type === "remember-history-auto-backfill-key") {
+    const key = String(item.key || "");
+    if (key) state.threadHistoryAutoBackfillKeys.add(key);
+    return true;
+  }
+  if (type === "post-client-event") {
+    postClientEvent(String(item.eventName || ""), item.payload || {});
+    return true;
+  }
+  if (type === "schedule-load-older-thread-turns") {
+    const threadId = String(item.threadId || "");
+    const seq = Number(item.seq || 0);
+    const delayMs = Math.max(0, Number(item.delayMs || 0));
+    setTimeout(() => {
+      if (state.currentThreadId === threadId) {
+        if (seq !== state.threadLoadSeq) return;
+      } else if (!state.threadTileMode || !threadTilePaneIsVisible(threadId)) {
+        return;
+      }
+      loadOlderThreadTurns({
+        threadId,
+        preserveScroll: item.preserveScroll !== false,
+        source: String(item.source || "auto-context").slice(0, 40),
+      }).catch(showError);
+    }, delayMs);
+    return true;
+  }
+  throw new Error(`Unknown thread detail history auto-backfill effect: ${type || "empty"}`);
+}
+
+function applyThreadDetailHistoryAutoBackfillEffectsPlan(plan) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applyThreadDetailHistoryAutoBackfillEffect(effect);
+}
+
+function maybeAutoBackfillThreadHistory(thread, options = {}) {
+  if (!thread || !thread.id) return;
+  const key = threadHistoryAutoBackfillKey(thread);
+  const plan = threadDetailRenderPlanApi.planThreadDetailHistoryAutoBackfill({
+    thread,
+    alreadyRequested: state.threadHistoryAutoBackfillKeys.has(key),
+    historyBusy: state.threadHistoryBusy,
+  });
+  if (!plan.shouldLoad) return;
+  const threadId = String(thread.id || state.currentThreadId || "");
+  const seq = Number(options.seq || state.threadLoadSeq || 0);
+  const effectsPlan = threadDetailRenderPlanApi.planThreadDetailHistoryAutoBackfillEffects({
+    plan,
+    key,
+    threadId,
+    seq,
+    source: String(options.source || "unknown").slice(0, 40),
+    threadHash: diagnosticThreadHash(threadId),
+    readMode: String(thread.mobileReadMode || ""),
+    buildId: CLIENT_BUILD_ID,
+  });
+  applyThreadDetailHistoryAutoBackfillEffectsPlan(effectsPlan);
+}
+
 function threadDetailApiPath(threadId, params = {}) {
   const suffix = new URLSearchParams(params);
   const query = suffix.toString();
   return `/api/threads/${encodeURIComponent(threadId)}${query ? `?${query}` : ""}`;
+}
+
+function markThreadDetailLoaded(thread) {
+  if (thread && typeof thread === "object") {
+    thread.mobileDetailLoaded = true;
+  }
+  return thread;
 }
 
 async function backfillFullThreadDetail(threadId, options = {}) {
@@ -8798,53 +10193,48 @@ async function backfillFullThreadDetail(threadId, options = {}) {
   const renderStartedAt = nowPerfMs();
   const wasNearBottom = isConversationNearBottom();
   const mergeStartedAt = nowPerfMs();
-  syncThreadPendingServerRequests(result.thread);
-  state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
-  mergeThreadIntoThreadList(state.currentThread);
-  const mergeMs = roundedDurationMs(mergeStartedAt);
-  const composerRenderStartedAt = nowPerfMs();
-  renderComposerSettings();
-  syncActiveTurnFromThread();
-  const composerRenderMs = roundedDurationMs(composerRenderStartedAt);
-  const threadListRenderStartedAt = nowPerfMs();
-  renderThreads();
-  const threadListRenderMs = roundedDurationMs(threadListRenderStartedAt);
+  const fullBackfillResponsePlan = threadDetailRenderPlanApi.planThreadDetailFullBackfillResponseEffects({
+    source: options.source || "unknown",
+  });
+  applyThreadDetailRefreshResponseEffectsPlan(fullBackfillResponsePlan, { thread: result.thread });
+  const postMergePlan = threadDetailRenderPlanApi.planThreadDetailRefreshPostMergeEffects();
+  const postMergeTimings = applyThreadDetailRefreshTimedPostMergeEffectsPlan(postMergePlan, {
+    mergeStartedAt,
+  });
+  const mergeMs = postMergeTimings.mergeMs;
+  const composerRenderMs = postMergeTimings.composerRenderMs;
+  const threadListRenderMs = postMergeTimings.threadListRenderMs;
   const conversationRenderStartedAt = nowPerfMs();
   renderCurrentThread({ stickToBottom: wasNearBottom });
   const conversationRenderMs = roundedDurationMs(conversationRenderStartedAt);
   const postRenderStartedAt = nowPerfMs();
-  scheduleUsageBackfillRefresh();
-  scheduleLivePollIfNeeded();
-  updateComposerControls();
+  const fullBackfillPostRenderPlan = threadDetailRenderPlanApi.planThreadDetailFullBackfillPostRenderEffects();
+  applyThreadDetailPostRenderEffectsPlan(fullBackfillPostRenderPlan);
   const postRenderMs = roundedDurationMs(postRenderStartedAt);
   const renderElapsedMs = roundedDurationMs(renderStartedAt);
-  const detailPerformance = threadPerformanceMetrics.threadDetailEventFieldsWithClient(result.thread, {
-    source: String(options.source || "unknown").slice(0, 40),
-    elapsedMs: roundedDurationMs(apiStartedAt),
-    apiElapsedMs,
-    renderElapsedMs,
-    mergeMs,
-    composerRenderMs,
-    threadListRenderMs,
-    conversationRenderMs,
-    postRenderMs,
-    detailRenderMode: "full-backfill",
-  });
-  postPerformanceEvent("thread_detail_full_ready", {
-    source: String(options.source || "unknown").slice(0, 40),
+  const source = String(options.source || "unknown").slice(0, 40);
+  const fullBackfillReportingStage = threadDetailRenderPlanApi.planThreadDetailFullBackfillReportingStage({
+    source,
     threadId: id,
-    elapsedMs: roundedDurationMs(apiStartedAt),
-    apiElapsedMs,
-    renderElapsedMs,
-    serverTimings: detailPerformance.serverTimings,
-    performancePhase: detailPerformance.performancePhase,
-    clientTimings: detailPerformance.clientTimings,
-    detailShape: detailPerformance.detailShape,
-    readMode: result.thread && result.thread.mobileReadMode || "",
-    turns: Array.isArray(result.thread && result.thread.turns) ? result.thread.turns.length : 0,
-    omittedTurns: Number(result.thread && result.thread.mobileOmittedTurnCount || 0),
-    rolloutSizeBytes: rolloutSizeBytes(result.thread),
-  }, { force: true });
+    timings: {
+      elapsedMs: roundedDurationMs(apiStartedAt),
+      apiElapsedMs,
+      renderElapsedMs,
+      mergeMs,
+      composerRenderMs,
+      threadListRenderMs,
+      conversationRenderMs,
+      postRenderMs,
+    },
+  });
+  const fullReadyPerformance = threadPerformanceMetrics.threadDetailFullReadyEventFields(
+    result.thread,
+    fullBackfillReportingStage.performanceInput,
+  );
+  const fullBackfillTelemetryPlan = threadDetailRenderPlanApi.planThreadDetailFullBackfillTelemetryEffects(Object.assign({
+    performanceEvent: fullReadyPerformance,
+  }, fullBackfillReportingStage.telemetryInput));
+  applyThreadDetailRefreshTelemetryEffectsPlan(fullBackfillTelemetryPlan, { thread: result.thread });
 }
 
 function preserveConversationScrollAfterPrepend(previousScrollTop, previousScrollHeight) {
@@ -8859,9 +10249,46 @@ function preserveConversationScrollAfterPrepend(previousScrollTop, previousScrol
   scheduleScrollToBottomButtonUpdate();
 }
 
+function threadHistoryLoadTarget(options = {}) {
+  const explicitThread = options.thread && typeof options.thread === "object" ? options.thread : null;
+  const id = String(options.threadId || explicitThread && explicitThread.id || state.currentThreadId || state.currentThread && state.currentThread.id || "").trim();
+  if (!id) return { threadId: "", thread: null, current: false, tile: false };
+  if (state.currentThread && String(state.currentThread.id || "") === id) {
+    return { threadId: id, thread: state.currentThread, current: true, tile: false };
+  }
+  if (explicitThread && String(explicitThread.id || "") === id) {
+    return {
+      threadId: id,
+      thread: explicitThread,
+      current: id === String(state.currentThreadId || ""),
+      tile: Boolean(state.threadTileMode && threadTilePaneIsVisible(id)),
+    };
+  }
+  if (state.threadTileDetails && state.threadTileDetails.has(id)) {
+    return { threadId: id, thread: state.threadTileDetails.get(id), current: false, tile: Boolean(state.threadTileMode && threadTilePaneIsVisible(id)) };
+  }
+  const listThread = findThreadById(id);
+  return { threadId: id, thread: listThread || null, current: false, tile: Boolean(state.threadTileMode && threadTilePaneIsVisible(id)) };
+}
+
+function renderThreadHistoryLoadTarget(threadId, options = {}) {
+  const id = String(threadId || "").trim();
+  if (id && state.currentThreadId === id) {
+    renderCurrentThread({ stickToBottom: false });
+    return true;
+  }
+  if (id && state.threadTileMode && threadTilePaneIsVisible(id)) {
+    if (!scheduleRenderThreadTilePane(id, { preserveScroll: options.preserveScroll !== false })) renderCurrentThread({ stickToBottom: false });
+    return true;
+  }
+  renderCurrentThread({ stickToBottom: false });
+  return false;
+}
+
 async function loadOlderThreadTurns(options = {}) {
-  const thread = state.currentThread;
-  const threadId = state.currentThreadId || (thread && thread.id) || "";
+  const target = threadHistoryLoadTarget(options);
+  const thread = target.thread;
+  const threadId = target.threadId;
   const cursor = thread && thread.mobileOlderTurnsCursor;
   if (!thread || !threadId || !cursor || state.threadHistoryBusy) return;
   const preserveScroll = Boolean(options.preserveScroll);
@@ -8870,7 +10297,7 @@ async function loadOlderThreadTurns(options = {}) {
   const previousScrollHeight = preserveScroll && conversation ? conversation.scrollHeight : 0;
   state.threadHistoryBusy = true;
   state.threadHistoryError = "";
-  renderCurrentThread({ stickToBottom: false });
+  renderThreadHistoryLoadTarget(threadId, { preserveScroll });
   try {
     const params = new URLSearchParams({
       limit: String(MAX_VISIBLE_TURNS),
@@ -8880,9 +10307,11 @@ async function loadOlderThreadTurns(options = {}) {
     const result = await api(`/api/threads/${encodeURIComponent(threadId)}/turns?${params.toString()}`, {
       timeoutMs: 30000,
     });
-    if (state.currentThreadId !== threadId || !state.currentThread) return;
+    const latestTarget = threadHistoryLoadTarget({ threadId, thread });
+    const targetThread = latestTarget.thread;
+    if (!targetThread) return;
     const incomingTurns = sortTurnsForDisplay(turnsArrayFromListResult(result));
-    const existingTurns = Array.isArray(state.currentThread.turns) ? state.currentThread.turns : [];
+    const existingTurns = Array.isArray(targetThread.turns) ? targetThread.turns : [];
     const existingById = new Map(existingTurns.map((turn) => [String(turn && turn.id || ""), turn]));
     const mergedById = new Map();
     let newlyLoadedTurnCount = 0;
@@ -8896,20 +10325,22 @@ async function loadOlderThreadTurns(options = {}) {
       if (!existingTurn || !existingTurn.id) continue;
       if (!mergedById.has(String(existingTurn.id))) mergedById.set(String(existingTurn.id), existingTurn);
     }
-    state.currentThread.turns = sortTurnsForDisplay(Array.from(mergedById.values())).slice(-MAX_EXPANDED_VISIBLE_TURNS);
-    state.currentThread.mobileHistoryExpanded = true;
+    targetThread.turns = sortTurnsForDisplay(Array.from(mergedById.values())).slice(-MAX_EXPANDED_VISIBLE_TURNS);
+    targetThread.mobileHistoryExpanded = true;
     if (newlyLoadedTurnCount > 0) {
-      state.currentThread.mobileOmittedTurnCount = Math.max(0, Number(state.currentThread.mobileOmittedTurnCount || 0) - newlyLoadedTurnCount);
+      targetThread.mobileOmittedTurnCount = Math.max(0, Number(targetThread.mobileOmittedTurnCount || 0) - newlyLoadedTurnCount);
     }
-    state.currentThread.mobileOlderTurnsCursor = result && result.nextCursor ? result.nextCursor : null;
-    state.currentThread.mobileNewerTurnsCursor = result && result.backwardsCursor ? result.backwardsCursor : state.currentThread.mobileNewerTurnsCursor;
+    targetThread.mobileOlderTurnsCursor = result && result.nextCursor ? result.nextCursor : null;
+    targetThread.mobileNewerTurnsCursor = result && result.backwardsCursor ? result.backwardsCursor : targetThread.mobileNewerTurnsCursor;
+    if (threadId === state.currentThreadId) state.currentThread = targetThread;
+    if (state.threadTileMode && state.threadTileDetails && threadTilePaneIsVisible(threadId)) state.threadTileDetails.set(threadId, targetThread);
     markIdleActivity("History loaded");
   } catch (err) {
     state.threadHistoryError = `Older history failed: ${normalizeClientErrorMessage(err && err.message ? err.message : String(err)) || String(err && err.message || err)}`;
     showError(new Error(state.threadHistoryError));
   } finally {
     state.threadHistoryBusy = false;
-    renderCurrentThread({ stickToBottom: false });
+    renderThreadHistoryLoadTarget(threadId, { preserveScroll });
     if (preserveScroll && state.currentThreadId === threadId) {
       preserveConversationScrollAfterPrepend(previousScrollTop, previousScrollHeight);
     }
@@ -9058,8 +10489,27 @@ function syncHermesPluginPageLevel() {
   document.documentElement.classList.toggle("embed-hermes-primary", isHermesPluginPrimaryPage());
 }
 
-function showHermesPluginPrimaryPage() {
+function showHermesPluginPrimaryPage(options = {}) {
   if (!isHermesEmbedMode()) return false;
+  const force = options.force === true;
+  if (!force && (
+    state.threadLoadController
+    || state.startupThreadOpenPending
+    || (state.currentThread && state.currentThread.mobileLoading)
+  )) {
+    postClientEvent("plugin_primary_suppressed_thread_open", {
+      source: String(options.source || "").slice(0, 80),
+      currentThreadId: state.currentThreadId || "",
+      hasThreadLoadController: Boolean(state.threadLoadController),
+      startupThreadOpenPending: Boolean(state.startupThreadOpenPending),
+    });
+    recordPrimaryShellSelectionConflict("primary_shell_suppressed_thread_open", {
+      source: String(options.source || "").slice(0, 80),
+      renderMode: "primary-suppressed",
+    });
+    return false;
+  }
+  if (force) clearThreadDetailRenderEvidence(`primary-force:${String(options.source || "").slice(0, 48)}`);
   clearCurrentThreadSelection();
   state.newThreadDraft = false;
   const sidebar = $("sidebar");
@@ -9097,7 +10547,7 @@ function refreshSidebarListAfterOpen() {
 
 function openSidebarMenu() {
   if (isHermesEmbedMode()) {
-    showHermesPluginPrimaryPage();
+    showHermesPluginPrimaryPage({ force: true, source: "sidebar" });
     return;
   }
   const sidebar = $("sidebar");
@@ -9961,6 +11411,112 @@ function updateSubagentPanelUi(options = {}) {
   if (options.scrollSideChatToBottom) scheduleSideChatToBottom();
 }
 
+function visualHarnessThreadShape(thread) {
+  const shape = visibleConversationShape(thread);
+  const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+  const itemCount = turns.reduce((total, turn) => total + (Array.isArray(turn && turn.items) ? turn.items.length : 0), 0);
+  return {
+    visibleTurnCount: Number(shape.visibleTurnCount || 0),
+    visibleItemCount: Number(shape.visibleItemCount || 0),
+    itemCount,
+    detailLoaded: Boolean(thread && thread.mobileDetailLoaded),
+    loading: Boolean(thread && thread.mobileLoading),
+    loadError: Boolean(thread && thread.mobileLoadError),
+    readMode: homeAiDiagnosticReportingApi.boundedToken(thread && thread.mobileReadMode || "", "", 80),
+  };
+}
+
+async function simulateEmptyCachedDetailOpenForHarness(threadId) {
+  const id = String(threadId || state.currentThreadId || "").trim();
+  const threadHash = diagnosticThreadHash(id);
+  const before = {
+    visibleTurnCount: 0,
+    visibleItemCount: 0,
+    itemCount: 0,
+    detailLoaded: true,
+    loading: false,
+    loadError: false,
+    readMode: "visual-harness-empty-cache",
+  };
+  if (!id) {
+    return {
+      ok: false,
+      error: "missing_thread_id",
+      clientBuildId: CLIENT_BUILD_ID,
+      thread_hash: "",
+      before,
+      after: null,
+    };
+  }
+  state.currentThreadId = id;
+  state.currentThread = {
+    id,
+    turns: [],
+    mobileDetailLoaded: true,
+    mobileLoading: false,
+    mobileLoadError: "",
+    mobileReadMode: "visual-harness-empty-cache",
+  };
+  await loadThread(id, { source: "visual-harness-empty-cache" });
+  const after = visualHarnessThreadShape(state.currentThread);
+  return {
+    ok: Boolean(after.visibleTurnCount || after.visibleItemCount),
+    error: after.loadError ? "thread_detail_load_error" : "",
+    clientBuildId: CLIENT_BUILD_ID,
+    thread_hash: threadHash,
+    before,
+    after,
+  };
+}
+
+async function simulateStableSignatureEmptyDomForHarness(threadId) {
+  const id = String(threadId || state.currentThreadId || "").trim();
+  const threadHash = diagnosticThreadHash(id);
+  if (!id) {
+    return {
+      ok: false,
+      error: "missing_thread_id",
+      clientBuildId: CLIENT_BUILD_ID,
+      thread_hash: "",
+      before: null,
+      after: null,
+      domBefore: null,
+      domAfter: null,
+    };
+  }
+  await loadThread(id, { source: "visual-harness-stable-signature-seed" });
+  const before = visualHarnessThreadShape(state.currentThread);
+  const signature = conversationRenderSignature(state.currentThread);
+  const patchShellSignature = conversationPatchShellSignature(state.currentThread);
+  const conversation = $("conversation");
+  const domBefore = {
+    turnCount: conversationDomTurnIds(conversation).length,
+    itemCount: conversation ? conversation.querySelectorAll(".item[data-item]").length : 0,
+  };
+  state.renderedConversationSignature = signature;
+  state.renderedConversationPatchShellSignature = patchShellSignature;
+  if (conversation) conversation.innerHTML = '<div class="empty-state">No visible turns.</div>';
+  renderCurrentThread({ stickToBottom: true, source: "visual-harness-stable-signature-empty-dom" });
+  const afterConversation = $("conversation");
+  const hasEmptyState = afterConversation ? Boolean(afterConversation.querySelector(".empty-state")) : false;
+  const domAfter = {
+    turnCount: conversationDomTurnIds(afterConversation).length,
+    itemCount: afterConversation ? afterConversation.querySelectorAll(".item[data-item]").length : 0,
+    emptyState: hasEmptyState ? "empty-state" : "",
+  };
+  const after = visualHarnessThreadShape(state.currentThread);
+  return {
+    ok: Boolean(before.visibleTurnCount && after.visibleTurnCount && domAfter.turnCount > 0 && !hasEmptyState),
+    error: after.loadError ? "thread_detail_load_error" : "",
+    clientBuildId: CLIENT_BUILD_ID,
+    thread_hash: threadHash,
+    before,
+    after,
+    domBefore,
+    domAfter,
+  };
+}
+
 function refreshSideChatFormButtons() {
   const textarea = sideChatDraftTextarea();
   if (!textarea) return;
@@ -10021,6 +11577,8 @@ function installCodexMobileVisualHarnessFacade() {
         return Boolean(state.subagentPanelOpen);
       },
       openThread: (threadId) => loadThread(String(threadId || ""), { source: "visual-harness" }),
+      simulateEmptyCachedDetailOpen: (threadId) => simulateEmptyCachedDetailOpenForHarness(threadId),
+      simulateStableSignatureEmptyDom: (threadId) => simulateStableSignatureEmptyDomForHarness(threadId),
       loadSideChat: (threadId) => loadSideChat(String(threadId || sideChatThreadId()), { silent: true }),
       ensureSideChatDraftVisible,
       autoSizeSideChatDraftTextarea,
@@ -10372,16 +11930,35 @@ function threadTitleForDisplay(thread) {
   return preferredThreadDisplayTitle(thread);
 }
 
+function applyThreadNameToThread(thread, title) {
+  if (!thread || !title) return false;
+  thread.name = title;
+  return true;
+}
+
+function scheduleThreadNameDetailRender(threadId = "") {
+  const id = String(threadId || state.currentThreadId || "").trim();
+  if (!id) return false;
+  if (state.currentThread && String(state.currentThread.id || "") === id) {
+    renderCurrentThread();
+    return true;
+  }
+  if (state.threadTileMode && threadTilePaneIsVisible(id)) {
+    if (!scheduleRenderThreadTilePane(id, { preserveScroll: true })) renderCurrentThread();
+    return true;
+  }
+  return false;
+}
+
 function updateThreadNameLocally(threadId, name) {
   const id = String(threadId || "");
   const title = String(name || "").trim();
   if (!id || !title) return;
   const thread = state.threads.find((entry) => String(entry && entry.id || "") === id);
-  if (thread) thread.name = title;
-  if (state.currentThread && String(state.currentThread.id || "") === id) {
-    state.currentThread.name = title;
-    renderCurrentThread();
-  }
+  applyThreadNameToThread(thread, title);
+  applyThreadNameToThread(state.currentThread && String(state.currentThread.id || "") === id ? state.currentThread : null, title);
+  applyThreadNameToThread(state.threadTileDetails && state.threadTileDetails.get(String(id)) || null, title);
+  scheduleThreadNameDetailRender(id);
   state.renderedThreadListSignature = "";
   renderThreads();
 }
@@ -10680,6 +12257,22 @@ function closeContinuationDialog() {
   publishPluginNavigationState({ force: true });
 }
 
+function continuationDialogSourceThread() {
+  const threadId = String(state.continuationDialogThreadId || "").trim();
+  if (!threadId || threadId === "__current__") return state.currentThread || null;
+  return threadById(threadId)
+    || (state.threadTileDetails && state.threadTileDetails.has(threadId) ? state.threadTileDetails.get(threadId) : null);
+}
+
+function confirmContinuationDialog() {
+  const thread = continuationDialogSourceThread();
+  if (!thread) {
+    showError(new Error("Continuation source thread is no longer available"));
+    return;
+  }
+  startNewThreadFromThread(thread).catch(showError);
+}
+
 function pluginNavigationUiState() {
   return {
     imagePreviewOpen: imagePreviewOpen(),
@@ -10846,7 +12439,7 @@ function handlePluginBack(event) {
     renderCurrentThread();
     handled = true;
   } else if (state.currentThreadId || state.newThreadDraft || state.selectedCwd) {
-    handled = showHermesPluginPrimaryPage();
+    handled = showHermesPluginPrimaryPage({ force: true, source: "plugin-back" });
   } else if (isSidebarOpen()) {
     closeSidebarMenu();
     handled = true;
@@ -11041,10 +12634,10 @@ function renderThreads(result = null) {
 }
 
 async function restoreThreadSelection() {
-  if (state.currentThread) return;
+  if (hasThreadDetailSelectionIntent()) return;
   if (isHermesEmbedMode()) {
     state.startupThreadOpenPending = false;
-    showHermesPluginPrimaryPage();
+    showHermesPluginPrimaryPage({ source: "restore-empty" });
     return;
   }
   const savedThreadId = localStorage.getItem(STORAGE_THREAD_ID) || "";
@@ -11106,121 +12699,162 @@ async function selectWorkspaceShortcut(cwd) {
   await loadThreads();
 }
 
-function renderKeyForNode(node) {
-  return node && node.nodeType === Node.ELEMENT_NODE ? node.getAttribute("data-render-key") || "" : "";
-}
-
-function canPatchNode(target, source) {
-  if (!target || !source || target.nodeType !== source.nodeType) return false;
-  if (target.nodeType !== Node.ELEMENT_NODE) return true;
-  return target.tagName === source.tagName;
-}
-
-function syncAttributes(target, source) {
-  const sourceNames = new Set(Array.from(source.attributes).map((attr) => attr.name));
-  for (const attr of Array.from(target.attributes)) {
-    if (!sourceNames.has(attr.name)) target.removeAttribute(attr.name);
-  }
-  for (const attr of Array.from(source.attributes)) {
-    if (target.getAttribute(attr.name) !== attr.value) target.setAttribute(attr.name, attr.value);
-  }
-}
-
 function patchNode(target, source) {
-  if (!canPatchNode(target, source)) {
-    const replacement = source.cloneNode(true);
-    target.replaceWith(replacement);
-    return replacement;
-  }
-  if (target.nodeType === Node.TEXT_NODE || target.nodeType === Node.COMMENT_NODE) {
-    if (target.nodeValue !== source.nodeValue) target.nodeValue = source.nodeValue;
-    return target;
-  }
-  syncAttributes(target, source);
-  patchChildNodes(target, source);
-  return target;
-}
-
-function patchChildNodes(target, source) {
-  const sourceChildren = Array.from(source.childNodes);
-  const targetChildren = Array.from(target.childNodes);
-  const keyedTargets = new Map();
-  for (const child of targetChildren) {
-    const key = renderKeyForNode(child);
-    if (key && !keyedTargets.has(key)) keyedTargets.set(key, child);
-  }
-
-  const used = new Set();
-  let cursor = target.firstChild;
-  for (const sourceChild of sourceChildren) {
-    const key = renderKeyForNode(sourceChild);
-    let targetChild = key ? keyedTargets.get(key) : null;
-    if (targetChild && used.has(targetChild)) targetChild = null;
-    if (!targetChild && cursor && !renderKeyForNode(cursor) && canPatchNode(cursor, sourceChild)) {
-      targetChild = cursor;
-    }
-
-    if (targetChild) {
-      const patched = patchNode(targetChild, sourceChild);
-      used.add(patched);
-      if (patched !== cursor) target.insertBefore(patched, cursor);
-      cursor = patched.nextSibling;
-      continue;
-    }
-
-    const inserted = sourceChild.cloneNode(true);
-    target.insertBefore(inserted, cursor);
-    used.add(inserted);
-  }
-
-  for (const child of Array.from(target.childNodes)) {
-    if (!used.has(child)) child.remove();
-  }
+  return threadDetailDomPatchApi.patchNode(target, source);
 }
 
 function patchHtml(target, html) {
-  const template = document.createElement("template");
-  template.innerHTML = html;
-  patchChildNodes(target, template.content);
+  const patchResult = threadDetailDomPatchApi.patchHtml({ target, html, document });
+  if (!patchResult || !patchResult.ok) throw new Error(patchResult && patchResult.reason || "patch-html-failed");
+  return patchResult.target || target;
+}
+
+function checkPrimaryShellSelectionConflictAfterRender(metrics = {}) {
+  if (!isHermesEmbedMode() || !isHermesPluginPrimaryPage()) return;
+  if (!recentThreadDetailRenderEvidence()) return;
+  recordPrimaryShellSelectionConflict("primary_shell_render_after_detail", {
+    source: "conversation-render",
+    renderMode: "primary-shell",
+    domCount: metrics.childCount,
+    previousCount: metrics.previousChildCount,
+  });
 }
 
 function updateConversationHtml(html, signature, options = {}) {
   const conversation = $("conversation");
-  if (state.renderedConversationSignature === signature) {
-    scheduleFailedAppImageScan(conversation, [0, 180]);
-    if (options.stickToBottom) scheduleConversationToBottom();
-    else scheduleScrollToBottomButtonUpdate();
+  const preDomShape = conversationDomShape();
+  const expectedVisibleTurnCount = Math.max(0, Number(options.expectedVisibleTurnCount || 0));
+  const expectedVisibleItemCount = Math.max(0, Number(options.expectedVisibleItemCount || 0));
+  const renderedDomTurnCount = Object.prototype.hasOwnProperty.call(options, "renderedDomTurnCount")
+    ? Math.max(0, Number(options.renderedDomTurnCount || 0))
+    : preDomShape.turnCount;
+  const renderedDomItemCount = Object.prototype.hasOwnProperty.call(options, "renderedDomItemCount")
+    ? Math.max(0, Number(options.renderedDomItemCount || 0))
+    : preDomShape.itemCount;
+  const duplicateRenderKeyCount = Object.prototype.hasOwnProperty.call(options, "duplicateRenderKeyCount")
+    ? Math.max(0, Number(options.duplicateRenderKeyCount || 0))
+    : preDomShape.duplicateRenderKeyCount;
+  const renderedDomTurnIds = Array.isArray(options.renderedDomTurnIds)
+    ? options.renderedDomTurnIds.map(String).filter(Boolean)
+    : conversationDomTurnIds(conversation);
+  const expectedTurnIds = Array.isArray(options.expectedTurnIds)
+    ? options.expectedTurnIds.map(String).filter(Boolean)
+    : [];
+  const updatePlan = threadDetailDomPatchApi.planConversationHtmlUpdate({
+    signature,
+    renderedConversationSignature: state.renderedConversationSignature,
+    renderedConversationPatchShellSignature: state.renderedConversationPatchShellSignature,
+    patchShellSignature: options.patchShellSignature,
+    stickToBottom: options.stickToBottom,
+    hasExistingChildren: Boolean(conversation && conversation.childNodes && conversation.childNodes.length),
+    expectedVisibleTurnCount,
+    renderedDomTurnCount,
+    expectedVisibleItemCount,
+    renderedDomItemCount,
+    duplicateRenderKeyCount,
+    expectedTurnIds,
+    renderedDomTurnIds,
+  });
+  const effectsPlan = threadDetailDomPatchApi.planConversationHtmlUpdateEffects(updatePlan);
+  if (updatePlan.action === "hydrate-existing") {
+    applyConversationHtmlUpdateEffectsPlan(effectsPlan, { root: conversation });
     return false;
   }
-  const startedAt = nowPerfMs();
   const previousChildCount = conversation ? conversation.childNodes.length : 0;
-  try {
-    if (conversation.childNodes.length) patchHtml(conversation, html);
-    else conversation.innerHTML = html;
-  } catch (err) {
-    console.warn("Conversation patch failed; falling back to full render.", err);
+  const authorityInvalidationPlan = threadDetailDomPatchApi.planConversationDomAuthorityInvalidation({
+    updatePlan,
+    source: options.source || "conversation-update",
+    action: options.action,
+    routeKind: options.routeKind,
+    threadHash: options.threadHash,
+    currentTurns: Object.prototype.hasOwnProperty.call(options, "currentTurns") ? options.currentTurns : undefined,
+    currentVisibleItems: Object.prototype.hasOwnProperty.call(options, "currentVisibleItems") ? options.currentVisibleItems : undefined,
+    expectedVisibleTurnCount,
+    renderedDomTurnCount,
+    expectedVisibleItemCount,
+    renderedDomItemCount,
+    duplicateRenderKeyCount,
+    previousChildCount,
+    threadId: state.currentThreadId || "",
+  });
+  if (authorityInvalidationPlan.shouldRecordMismatch) {
+    recordEmptyVisibleDetailMismatch(
+      authorityInvalidationPlan.mismatchReason,
+      state.currentThread,
+      authorityInvalidationPlan.mismatchPayload || {},
+    );
+  }
+  if (authorityInvalidationPlan.shouldPostClientEvent) {
+    postClientEvent(authorityInvalidationPlan.clientEventName, authorityInvalidationPlan.clientEventPayload);
+  }
+  const startedAt = nowPerfMs();
+  let applicationPlan = threadDetailDomPatchApi.planConversationHtmlUpdateApplication({
+    updatePlan,
+  });
+  if (updatePlan.action === "patch-html") {
+    const patchResult = threadDetailDomPatchApi.patchHtml({ target: conversation, html, document });
+    applicationPlan = threadDetailDomPatchApi.planConversationHtmlUpdateApplication({
+      updatePlan,
+      patchResult,
+    });
+    if (applicationPlan.fallbackApplied) conversation.innerHTML = html;
+  } else if (updatePlan.action === "set-inner-html") {
     conversation.innerHTML = html;
   }
-  hydrateGitHubLinkCards(conversation);
-  hydrateMermaidDiagrams(conversation);
-  scheduleFailedAppImageScan(conversation);
-  state.renderedConversationSignature = signature;
-  if (options.stickToBottom) scheduleConversationToBottom();
-  else scheduleScrollToBottomButtonUpdate();
+  const postDomShape = conversationDomShape();
+  const postApplyConsistencyPlan = threadDetailDomPatchApi.planConversationPostApplyDomConsistency({
+    updatePlan,
+    applicationPlan,
+    expectedVisibleTurnCount,
+    renderedDomTurnCount: postDomShape.turnCount,
+    expectedVisibleItemCount,
+    renderedDomItemCount: postDomShape.itemCount,
+    duplicateRenderKeyCount: postDomShape.duplicateRenderKeyCount,
+    expectedTurnIds,
+    renderedDomTurnIds: conversationDomTurnIds(conversation),
+    readMode: state.currentThread && state.currentThread.mobileReadMode || "",
+  });
+  if (postApplyConsistencyPlan.shouldFallbackToInnerHtml && conversation) {
+    conversation.innerHTML = html;
+    applicationPlan = Object.assign({}, applicationPlan, {
+      finalAction: "set-inner-html",
+      fallbackApplied: true,
+      patchRejectReason: postApplyConsistencyPlan.reason,
+      reason: "post-apply-dom-inconsistent",
+    });
+  }
+  if (postApplyConsistencyPlan.shouldReport) {
+    recordHomeAiDiagnosticFailure(
+      threadDiagnosticEventsApi.detailPatchRejectedDiagnosticEvent(postApplyConsistencyPlan.diagnosticInput || {}),
+    );
+  }
+  const fallbackEventPlan = threadDetailDomPatchApi.planConversationHtmlPatchFallbackClientEvent({
+    applicationPlan,
+    updatePlan,
+    threadId: state.currentThreadId || "",
+    expectedVisibleTurnCount,
+    renderedDomTurnCount,
+  });
+  if (fallbackEventPlan.shouldPost) postClientEvent(fallbackEventPlan.eventName, fallbackEventPlan.payload);
+  applyConversationHtmlUpdateEffectsPlan(effectsPlan, { root: conversation });
   const renderElapsedMs = roundedDurationMs(startedAt);
-  const forceReport = renderElapsedMs >= PERF_SLOW_RENDER_REPORT_MS;
-  postPerformanceEvent("conversation_render_ms", {
+  const performancePlan = threadDetailDomPatchApi.planConversationHtmlPerformanceEvent({
+    updatePlan,
+    applicationPlan,
     renderElapsedMs,
-    htmlChars: String(html || "").length,
     previousChildCount,
     childCount: conversation ? conversation.childNodes.length : 0,
     stickToBottom: Boolean(options.stickToBottom),
     threadId: state.currentThreadId || "",
     currentThreadStatus: statusText(state.currentThread && state.currentThread.status),
-  }, {
-    key: "conversation_render_ms",
-    minIntervalMs: forceReport ? 0 : PERF_EVENT_THROTTLE_MS,
-    force: forceReport,
+    html,
+    slowThresholdMs: PERF_SLOW_RENDER_REPORT_MS,
+    minIntervalMs: PERF_EVENT_THROTTLE_MS,
+  });
+  postPerformanceEvent(performancePlan.eventName, performancePlan.payload, performancePlan.options);
+  checkPrimaryShellSelectionConflictAfterRender({
+    childCount: conversation ? conversation.childNodes.length : 0,
+    previousChildCount,
   });
   return true;
 }
@@ -11266,25 +12900,24 @@ function isThreadTileKeyboardFocusActive() {
 }
 
 function threadTileViewportSize() {
-  const keyboardActive = isThreadTileKeyboardFocusActive();
   const layoutViewport = viewportPixelSize({ preferLayoutViewport: true });
-  if (!keyboardActive) {
-    state.threadTileViewportBaseline = layoutViewport;
-    return layoutViewport;
-  }
-  const baseline = state.threadTileViewportBaseline;
-  return baseline && baseline.width && baseline.height ? baseline : layoutViewport;
+  const plan = threadTileStatePolicy.threadTileViewportBaselinePlan({
+    keyboardActive: isThreadTileKeyboardFocusActive(),
+    layoutViewport,
+    baseline: state.threadTileViewportBaseline,
+  });
+  if (plan.updateBaseline) state.threadTileViewportBaseline = plan.nextBaseline;
+  return plan.viewport;
 }
 
 function threadTileVerticalChromePx() {
-  const keyboardActive = isThreadTileKeyboardFocusActive();
-  if (!keyboardActive) {
-    state.threadTileComposerHeightBaselinePx = Number(state.composerHeightPx || 0) || state.threadTileComposerHeightBaselinePx || 0;
-  }
-  const composerHeight = keyboardActive && state.threadTileComposerHeightBaselinePx
-    ? state.threadTileComposerHeightBaselinePx
-    : Number(state.composerHeightPx || 0);
-  return Math.max(120, composerHeight + 64);
+  const plan = threadTileStatePolicy.threadTileVerticalChromePlan({
+    keyboardActive: isThreadTileKeyboardFocusActive(),
+    composerHeightPx: state.composerHeightPx,
+    baselineComposerHeightPx: state.threadTileComposerHeightBaselinePx,
+  });
+  if (plan.updateBaseline) state.threadTileComposerHeightBaselinePx = plan.nextComposerHeightBaselinePx;
+  return plan.verticalChromePx;
 }
 
 function threadTileLayout(options = {}) {
@@ -11310,16 +12943,17 @@ function threadTileLayout(options = {}) {
 }
 
 function normalizeThreadTilePaneCount(value, fallback = 0) {
-  const parsed = Math.floor(Number(value));
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.max(0, Math.min(THREAD_TILE_USER_MAX_PANES, parsed));
+  return threadTileStatePolicy.normalizePaneCount(value, {
+    fallback,
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+  });
 }
 
 function threadTileLayoutCapacity(layout = threadTileLayout()) {
-  return Math.max(1, Math.min(
-    threadTileLayoutPolicy.DEFAULT_MAX_PANES,
-    Math.floor(Number(layout && (layout.recommendedMaxPanes || layout.maxPanes) || 1)) || 1,
-  ));
+  return threadTileStatePolicy.layoutCapacity(layout, {
+    capacityMaxPanes: threadTileLayoutPolicy.DEFAULT_MAX_PANES,
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+  });
 }
 
 function defaultThreadTileCandidateIds(layout = threadTileLayout(), options = {}) {
@@ -11335,101 +12969,66 @@ function defaultThreadTileCandidateIds(layout = threadTileLayout(), options = {}
   });
 }
 
-function autoThreadTilePaneCount(layout = threadTileLayout()) {
-  const capacity = threadTileLayoutCapacity(layout);
-  const candidates = defaultThreadTileCandidateIds(layout, { maxPanes: capacity });
-  const candidateCount = candidates.length;
-  if (!candidateCount) return 1;
-  const runningIds = new Set();
+function threadTileRunningPaneIds() {
+  const runningIds = [];
   visibleThreads(state.threads).forEach((thread) => {
     const id = String(thread && thread.id || "");
-    if (id && isRunningStatus(thread && thread.status)) runningIds.add(id);
+    if (id && isRunningStatus(thread && thread.status)) runningIds.push(id);
   });
-  if (state.currentThreadId) runningIds.add(String(state.currentThreadId));
-  const baseline = capacity > 1 ? Math.min(2, candidateCount, capacity) : 1;
-  return Math.max(1, Math.min(capacity, candidateCount, Math.max(baseline, runningIds.size)));
+  if (state.currentThreadId) runningIds.push(String(state.currentThreadId));
+  return threadTileStatePolicy.uniqueIds(runningIds);
+}
+
+function threadTilePaneCountState(layout = threadTileLayout()) {
+  const capacity = threadTileLayoutCapacity(layout);
+  return threadTileStatePolicy.paneCountStatePlan({
+    capacity,
+    candidateIds: defaultThreadTileCandidateIds(layout, { maxPanes: capacity }),
+    maxCandidateIds: defaultThreadTileCandidateIds(layout, { maxPanes: THREAD_TILE_USER_MAX_PANES }),
+    runningIds: threadTileRunningPaneIds(),
+    currentThreadId: state.currentThreadId,
+    explicitPaneCount: state.threadTilePaneCount,
+  }, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+  });
+}
+
+function autoThreadTilePaneCount(layout = threadTileLayout()) {
+  return threadTilePaneCountState(layout).autoPaneCount;
 }
 
 function effectiveThreadTilePaneCount(layout = threadTileLayout()) {
-  const capacity = threadTileLayoutCapacity(layout);
-  const explicit = normalizeThreadTilePaneCount(state.threadTilePaneCount, 0);
-  if (explicit > 0) {
-    return Math.max(1, Math.min(threadTileMaximumPaneCount(layout), explicit));
-  }
-  const desired = autoThreadTilePaneCount(layout);
-  const candidateCount = defaultThreadTileCandidateIds(layout, { maxPanes: capacity }).length || 1;
-  return Math.max(1, Math.min(capacity, candidateCount, desired));
+  return threadTilePaneCountState(layout).effectivePaneCount;
 }
 
 function threadTileDisplayLayout(layout = threadTileLayout(), ids = []) {
-  const count = Math.max(1, Array.isArray(ids) && ids.length ? ids.length : effectiveThreadTilePaneCount(layout));
-  const capacityColumns = Math.max(1, Math.floor(Number(layout && layout.columns || 1)) || 1);
-  const columns = Math.max(1, Math.min(capacityColumns, count));
-  const columnGroups = threadTileLayoutPolicy.threadTileColumnGroups
-    ? threadTileLayoutPolicy.threadTileColumnGroups({
-      ids,
-      columns,
-      splitPairs: threadTilePrunedSplitPairs(ids),
-    })
-    : (ids || []).slice(0, count).map((id) => [id]);
-  return Object.assign({}, layout, {
-    capacityPanes: threadTileLayoutCapacity(layout),
-    visiblePanes: count,
-    columns: Math.max(1, columnGroups.length || columns),
-    rows: Math.max(1, ...columnGroups.map((group) => group.length || 1)),
-    columnGroups,
-  });
+  return threadTileStatePolicy.paneDisplayLayoutPlan({
+    layout,
+    ids,
+    effectivePaneCount: effectiveThreadTilePaneCount(layout),
+    splitPairs: threadTilePrunedSplitPairs(ids),
+  }, {
+    capacityMaxPanes: threadTileLayoutPolicy.DEFAULT_MAX_PANES,
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+    threadTileColumnGroups: threadTileLayoutPolicy.threadTileColumnGroups,
+  }).displayLayout;
 }
 
 function normalizeThreadTilePinnedIds(values = []) {
-  const seen = new Set();
-  const ids = [];
-  for (const value of Array.isArray(values) ? values : []) {
-    const id = String(value || "").trim();
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    ids.push(id);
-    if (ids.length >= THREAD_TILE_USER_MAX_PANES * 2) break;
-  }
-  return ids;
+  return threadTileStatePolicy.normalizePinnedIds(values, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+  });
 }
 
 function normalizeThreadTileSplitPairs(values = [], ids = []) {
-  const visibleSet = new Set((ids || []).map((id) => String(id || "").trim()).filter(Boolean));
-  const normalized = threadTileLayoutPolicy.normalizeSplitPairs
-    ? threadTileLayoutPolicy.normalizeSplitPairs(values, Array.from(visibleSet))
-    : [];
-  return normalized.map((pair) => ({
-    anchorId: String(pair.anchorId || ""),
-    childId: String(pair.childId || ""),
-  })).filter((pair) => pair.anchorId && pair.childId);
+  return threadTileStatePolicy.normalizeSplitPairs(values, ids, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+    normalizeSplitPairs: threadTileLayoutPolicy.normalizeSplitPairs,
+  });
 }
 
 function threadTilePrunedSplitPairs(ids = threadTileCandidateIds()) {
   return normalizeThreadTileSplitPairs(state.threadTileSplitPairs, ids);
-}
-
-function removeThreadTileSplitPairsForIds(ids = []) {
-  const remove = new Set((ids || []).map((id) => String(id || "")).filter(Boolean));
-  if (!remove.size) return false;
-  const next = (state.threadTileSplitPairs || []).filter((pair) => (
-    pair && !remove.has(String(pair.anchorId || "")) && !remove.has(String(pair.childId || ""))
-  ));
-  const changed = JSON.stringify(next) !== JSON.stringify(state.threadTileSplitPairs || []);
-  if (changed) state.threadTileSplitPairs = next;
-  return changed;
-}
-
-function setThreadTileSplitPair(anchorId, childId) {
-  const anchor = String(anchorId || "").trim();
-  const child = String(childId || "").trim();
-  if (!anchor || !child || anchor === child) return false;
-  const next = (state.threadTileSplitPairs || []).filter((pair) => (
-    pair && ![anchor, child].includes(String(pair.anchorId || "")) && ![anchor, child].includes(String(pair.childId || ""))
-  ));
-  next.unshift({ anchorId: anchor, childId: child });
-  state.threadTileSplitPairs = normalizeThreadTileSplitPairs(next, threadTileCandidateIds());
-  return true;
 }
 
 function threadTileVisibleIdSet() {
@@ -11439,30 +13038,35 @@ function threadTileVisibleIdSet() {
 }
 
 function threadTileIdsEqual(a = [], b = []) {
-  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
-  return a.every((id, index) => String(id || "") === String(b[index] || ""));
+  return threadTileStatePolicy.idsEqual(a, b);
 }
 
 function threadTileCandidateIds(layout = threadTileLayout()) {
   const maxPanes = effectiveThreadTilePaneCount(layout);
-  const defaults = defaultThreadTileCandidateIds(layout, { maxPanes });
-  const visibleIds = threadTileVisibleIdSet();
-  const pinned = (state.threadTilePinnedIds || [])
-    .map((id) => String(id || ""))
-    .filter((id) => id && visibleIds.has(id));
-  if (!pinned.length) return defaults;
-  return Array.from(new Set([...pinned, ...defaults])).slice(0, maxPanes);
+  const plan = threadTileStatePolicy.candidatePaneIdsPlan({
+    pinnedIds: state.threadTilePinnedIds,
+    defaultIds: defaultThreadTileCandidateIds(layout, { maxPanes }),
+    visibleIds: Array.from(threadTileVisibleIdSet()),
+    currentThreadId: state.currentThreadId,
+    maxPanes,
+  }, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+    selectPinnedThreadTileIds: threadTileLayoutPolicy.selectPinnedThreadTileIds,
+  });
+  return plan.ids;
 }
 
 function threadDisplaySettingsPayload() {
-  const paneThreadIds = normalizeThreadTilePinnedIds(state.threadTilePinnedIds);
-  return {
-    displayMode: state.threadTileMode ? "tile" : "single",
-    paneThreadIds,
-    paneCount: normalizeThreadTilePaneCount(state.threadTilePaneCount, 0),
-    paneSplitPairs: normalizeThreadTileSplitPairs(state.threadTileSplitPairs, paneThreadIds),
-    selectedThreadId: String(state.threadTileSelectedThreadId || ""),
-  };
+  return threadTileStatePolicy.displaySettingsPayload({
+    threadTileMode: state.threadTileMode,
+    threadTilePinnedIds: state.threadTilePinnedIds,
+    threadTilePaneCount: state.threadTilePaneCount,
+    threadTileSplitPairs: state.threadTileSplitPairs,
+    threadTileSelectedThreadId: state.threadTileSelectedThreadId,
+  }, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+    normalizeSplitPairs: threadTileLayoutPolicy.normalizeSplitPairs,
+  });
 }
 
 function localThreadDisplayMode() {
@@ -11485,20 +13089,15 @@ function mirrorThreadDisplayModeToLocalStorage() {
 }
 
 function applyThreadDisplaySettings(settings = {}, options = {}) {
-  const displayMode = String(settings.displayMode || (settings.threadTileMode ? "tile" : "single")).toLowerCase() === "tile"
-    ? "tile"
-    : "single";
-  state.threadTileMode = displayMode === "tile";
-  state.threadTilePinnedIds = normalizeThreadTilePinnedIds(settings.paneThreadIds || settings.threadTilePinnedIds || []);
-  state.threadTileSplitPairs = normalizeThreadTileSplitPairs(settings.paneSplitPairs || settings.threadTileSplitPairs || settings.splitPairs || [], state.threadTilePinnedIds);
-  const paneCountInput = Object.prototype.hasOwnProperty.call(settings, "paneCount")
-    ? settings.paneCount
-    : Object.prototype.hasOwnProperty.call(settings, "threadTilePaneCount")
-      ? settings.threadTilePaneCount
-      : settings.tilePaneCount;
-  state.threadTilePaneCount = normalizeThreadTilePaneCount(paneCountInput, 0);
-  const selected = String(settings.selectedThreadId || "").trim();
-  state.threadTileSelectedThreadId = selected && state.threadTilePinnedIds.includes(selected) ? selected : "";
+  const normalized = threadTileStatePolicy.normalizeDisplaySettings(settings, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+    normalizeSplitPairs: threadTileLayoutPolicy.normalizeSplitPairs,
+  });
+  state.threadTileMode = normalized.threadTileMode;
+  state.threadTilePinnedIds = normalized.paneThreadIds;
+  state.threadTileSplitPairs = normalized.paneSplitPairs;
+  state.threadTilePaneCount = normalized.paneCount;
+  state.threadTileSelectedThreadId = normalized.selectedThreadId;
   mirrorThreadDisplayModeToLocalStorage();
   syncThreadTileToggle();
   if (options.render === true) renderCurrentThread({ stickToBottom: true });
@@ -11509,16 +13108,26 @@ async function loadThreadDisplaySettings(options = {}) {
     const result = await api("/api/settings/thread-display");
     const settings = result && result.threadDisplay && typeof result.threadDisplay === "object" ? result.threadDisplay : {};
     state.threadDisplaySettingsLoaded = true;
-    if (settings.source !== "runtime" && localThreadDisplayMode() === "tile") {
-      applyThreadDisplaySettings({ displayMode: "tile", paneThreadIds: [], selectedThreadId: "" }, { render: options.render === true });
-      await saveThreadDisplaySettingsNow();
-      return;
+    const plan = threadTileStatePolicy.displaySettingsLoadPlan({
+      settings,
+      localDisplayMode: localThreadDisplayMode(),
+    });
+    if (plan.action === "apply-display-settings") {
+      applyThreadDisplaySettings(plan.settings || {}, { render: options.render === true });
     }
-    applyThreadDisplaySettings(settings, { render: options.render === true });
+    if (plan.saveAfterApply) {
+      await saveThreadDisplaySettingsNow();
+    }
   } catch (err) {
     state.threadDisplaySettingsLoaded = true;
-    if (localThreadDisplayMode() === "tile") applyThreadDisplaySettings({ displayMode: "tile" }, { render: options.render === true });
-    throw err;
+    const plan = threadTileStatePolicy.displaySettingsLoadPlan({
+      loadFailed: true,
+      localDisplayMode: localThreadDisplayMode(),
+    });
+    if (plan.action === "apply-display-settings") {
+      applyThreadDisplaySettings(plan.settings || {}, { render: options.render === true });
+    }
+    if (plan.rethrow) throw err;
   }
 }
 
@@ -11551,19 +13160,27 @@ function scheduleThreadDisplaySettingsSave() {
   }, THREAD_TILE_SETTINGS_SAVE_DEBOUNCE_MS);
 }
 
-function syncThreadTilePinnedIdsFromActiveIds(activeIds = []) {
-  const ids = normalizeThreadTilePinnedIds(activeIds);
-  if (!state.threadTileMode || !ids.length) return false;
-  const visibleIds = threadTileVisibleIdSet();
-  const existingVisible = normalizeThreadTilePinnedIds(state.threadTilePinnedIds)
-    .filter((id) => visibleIds.has(id));
-  if (threadTileIdsEqual(existingVisible.slice(0, ids.length), ids)) return false;
-  const remaining = normalizeThreadTilePinnedIds(state.threadTilePinnedIds)
-    .filter((id) => !ids.includes(id));
-  state.threadTilePinnedIds = normalizeThreadTilePinnedIds([...ids, ...remaining]);
-  state.threadTileSplitPairs = normalizeThreadTileSplitPairs(state.threadTileSplitPairs, state.threadTilePinnedIds);
-  scheduleThreadDisplaySettingsSave();
-  return true;
+function syncThreadTileActivePaneState(activeIds = []) {
+  const plan = threadTileStatePolicy.activePaneSyncPlan({
+    enabled: state.threadTileMode,
+    activeIds,
+    pinnedIds: state.threadTilePinnedIds,
+    visibleIds: Array.from(threadTileVisibleIdSet()),
+    splitPairs: state.threadTileSplitPairs,
+    selectedThreadId: state.threadTileSelectedThreadId,
+    currentThreadId: state.currentThreadId,
+  }, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+    normalizeSplitPairs: threadTileLayoutPolicy.normalizeSplitPairs,
+  });
+  state.threadTileActiveIds = plan.activeIds;
+  if (plan.pinnedChanged) {
+    state.threadTilePinnedIds = normalizeThreadTilePinnedIds(plan.paneThreadIds);
+    state.threadTileSplitPairs = normalizeThreadTileSplitPairs(plan.paneSplitPairs, state.threadTilePinnedIds);
+  }
+  if (plan.selectedChanged) state.threadTileSelectedThreadId = plan.selectedThreadId;
+  if (plan.settingsChanged) scheduleThreadDisplaySettingsSave();
+  return Boolean(plan.changed);
 }
 
 function threadTileSummary(threadId) {
@@ -11576,74 +13193,84 @@ function threadTileDisplayThread(threadId) {
   return state.threadTileDetails.get(id) || threadTileSummary(id) || { id, name: id, preview: id, turns: [] };
 }
 
-function syncThreadTileSelectedThread(ids = state.threadTileActiveIds) {
-  const next = effectiveThreadTileSelectedThreadId(ids);
-  if (state.threadTileSelectedThreadId === next) return false;
-  state.threadTileSelectedThreadId = next;
-  return true;
+function setThreadTileSelectedThread(threadId, options = {}) {
+  const plan = threadTileStatePolicy.selectPanePlan({
+    enabled: state.threadTileMode,
+    threadId,
+    activeIds: state.threadTileActiveIds,
+    selectedThreadId: state.threadTileSelectedThreadId,
+  });
+  if (plan.action !== "select-pane") return false;
+  return applyThreadTileSelectedPaneEffects(threadTileStatePolicy.selectedPaneEffectsPlan(plan, {
+    render: options.render !== false,
+  }));
 }
 
-function setThreadTileSelectedThread(threadId, options = {}) {
-  const id = String(threadId || "").trim();
-  if (!id || !state.threadTileMode || !state.threadTileActiveIds.includes(id)) return false;
-  if (state.threadTileSelectedThreadId === id) return false;
-  const previousId = state.threadTileSelectedThreadId || "";
-  saveCurrentDraftNow();
-  state.threadTileSelectedThreadId = id;
-  restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
-  renderComposerSettings();
-  updateComposerControls();
-  if (options.render !== false) {
-    const patchedNext = patchThreadTilePane(id, { preserveScroll: true });
-    const patchedPrevious = previousId && previousId !== id
-      ? patchThreadTilePane(previousId, { preserveScroll: true })
-      : true;
-    if (!patchedNext || !patchedPrevious) scheduleRenderCurrentThread();
+function applyThreadTileSelectedPaneEffects(effect) {
+  if (!effect || effect.action !== "selected-pane-effects") return false;
+  if (effect.saveDraft) saveCurrentDraftNow();
+  state.threadTileSelectedThreadId = effect.selectedThreadId;
+  if (effect.restoreDraft) restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
+  if (effect.updateComposer) {
+    renderComposerSettings();
+    updateComposerControls();
+  }
+  if (effect.renderMode === "patch-panes") {
+    let patchedAll = true;
+    (Array.isArray(effect.patchThreadIds) ? effect.patchThreadIds : []).filter(Boolean).forEach((id) => {
+      patchedAll = patchThreadTilePane(id, { preserveScroll: effect.patchPreserveScroll !== false }) && patchedAll;
+    });
+    if (!patchedAll && effect.scheduleFullRenderOnPatchMiss) scheduleRenderCurrentThread();
   }
   return true;
 }
 
 function threadTileVisibleThreadOptions(currentId = "") {
-  const current = String(currentId || "");
   const visible = visibleThreads(state.threads);
-  const running = visible
+  const runningIds = visible
     .filter((thread) => thread && isRunningStatus(thread.status))
     .map((thread) => String(thread.id || ""))
     .filter(Boolean);
-  return Array.from(new Set([
-    current,
-    ...state.threadTileActiveIds,
-    ...running,
-    ...visible.map((thread) => String(thread && thread.id || "")).filter(Boolean),
-  ])).filter(Boolean);
+  return threadTileStatePolicy.switchMenuOptionsPlan({
+    currentId,
+    activeIds: state.threadTileActiveIds,
+    runningIds,
+    visibleIds: visible.map((thread) => String(thread && thread.id || "")).filter(Boolean),
+  });
 }
 
 function renderThreadTileSwitchMenu(currentId) {
   const current = String(currentId || "");
-  if (!current || state.threadTileSwitchMenuPaneId !== current) return "";
   const options = threadTileVisibleThreadOptions(current);
-  if (!options.length) return "";
   const layout = threadTileLayout({ enabled: true });
   const activeIds = threadTileCandidateIds(layout);
   const count = activeIds.length || effectiveThreadTilePaneCount(layout);
   const minCount = threadTileMinimumPaneCount(layout);
   const maxCount = threadTileMaximumPaneCount(layout);
-  const canClose = activeIds.includes(current) && count > minCount;
-  const canAdd = count < maxCount;
+  const plan = threadTileStatePolicy.switchMenuPlan({
+    currentId: current,
+    switchMenuPaneId: state.threadTileSwitchMenuPaneId,
+    options,
+    activeIds,
+    count,
+    minCount,
+    maxCount,
+  });
+  if (plan.action !== "render-switch-menu") return "";
   return `<div class="thread-tile-switch-menu" role="listbox" aria-label="切换此窗口线程">
     <div class="thread-tile-switch-actions">
-      <button class="thread-tile-switch-action" type="button" data-thread-tile-close-pane="${escapeHtml(current)}"${canClose ? "" : " disabled"}>关闭窗口</button>
-      <span class="thread-tile-switch-count">${escapeHtml(String(count))}/${escapeHtml(String(maxCount))}</span>
-      <button class="thread-tile-switch-action" type="button" data-thread-tile-pane-count="1"${canAdd ? "" : " disabled"}>新增窗口</button>
+      <button class="thread-tile-switch-action" type="button" data-thread-tile-close-pane="${escapeHtml(plan.currentId)}"${plan.canClose ? "" : " disabled"}>关闭窗口</button>
+      <span class="thread-tile-switch-count">${escapeHtml(String(plan.count))}/${escapeHtml(String(plan.maxCount))}</span>
+      <button class="thread-tile-switch-action" type="button" data-thread-tile-pane-count="1"${plan.canAdd ? "" : " disabled"}>新增窗口</button>
     </div>
-    ${options.map((threadId) => {
+    ${plan.options.map((threadId) => {
       const thread = threadTileDisplayThread(threadId);
       const title = threadDisplayName(thread) || threadId;
       const summary = threadTileSummary(threadId) || thread;
       const pathText = shortPath((thread && thread.cwd) || (summary && summary.cwd) || "") || "聊天";
       const timeText = formatTime((thread && thread.updatedAt) || (summary && summary.updatedAt), state.nowMs);
       const status = statusIconHtml(thread && thread.status, "thread-tile-switch-status", threadId);
-      const selected = threadId === current;
+      const selected = threadId === plan.currentId;
       return `<button class="thread-tile-switch-option${selected ? " selected" : ""}" type="button" role="option" aria-selected="${selected ? "true" : "false"}" data-thread-tile-switch-target="${escapeHtml(threadId)}">
         <span class="thread-tile-switch-main"><span class="thread-tile-switch-title">${escapeHtml(title)}</span><span class="thread-tile-switch-meta">${escapeHtml([pathText, timeText].filter(Boolean).join(" | "))}</span></span>
         ${status}
@@ -11652,37 +13279,64 @@ function renderThreadTileSwitchMenu(currentId) {
   </div>`;
 }
 
+function applyThreadTilePaneSlotEffects(effect, layout = threadTileLayout()) {
+  if (!effect || effect.action !== "pane-slot-effects") return false;
+  const sourcePane = effect.patchSourceThreadId ? threadTilePaneElement(effect.patchSourceThreadId) : null;
+  if (effect.saveDraft) saveCurrentDraftNow();
+  if (Array.isArray(effect.paneThreadIds)) state.threadTilePinnedIds = normalizeThreadTilePinnedIds(effect.paneThreadIds);
+  if (Array.isArray(effect.paneSplitPairs)) {
+    state.threadTileSplitPairs = normalizeThreadTileSplitPairs(effect.paneSplitPairs, state.threadTilePinnedIds);
+  }
+  if (effect.paneCount !== null && effect.paneCount !== undefined) state.threadTilePaneCount = effect.paneCount;
+  if (effect.refreshActiveIds) state.threadTileActiveIds = threadTileCandidateIds(layout);
+  if (effect.selectedThreadId) state.threadTileSelectedThreadId = effect.selectedThreadId;
+  if (effect.selectionPolicy === "pane-selection") {
+    state.threadTileSelectedThreadId = threadTileStatePolicy.paneSelectionPlan({
+      selectedThreadId: state.threadTileSelectedThreadId,
+      ids: threadTileCandidateIds(layout),
+      emptyFallback: effect.selectionEmptyFallback === true,
+    }).selectedThreadId;
+  }
+  state.threadTileSwitchMenuPaneId = effect.switchMenuPaneId || "";
+  (effect.scrollResetIds || []).forEach((id) => state.threadTilePaneScrollHoldById.delete(id));
+  if (effect.scheduleSettingsSave) scheduleThreadDisplaySettingsSave();
+  if (effect.restoreDraft) restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
+  if (effect.updateComposer) {
+    renderComposerSettings();
+    updateComposerControls();
+  }
+  if (effect.loadThreadId) loadThreadTileDetail(effect.loadThreadId, { force: true, source: effect.loadSource || "tile-switch" }).catch(showError);
+  if (effect.renderMode === "schedule-full") scheduleRenderCurrentThread();
+  else if (effect.renderMode === "full") renderCurrentThread({ stickToBottom: Boolean(effect.renderStickToBottom) });
+  else if (effect.renderMode === "patch-pane" && effect.patchThreadId) {
+    const patched = patchThreadTilePane(effect.patchThreadId, {
+      paneElement: sourcePane,
+      stickToBottom: Boolean(effect.patchStickToBottom),
+    });
+    if (!patched && effect.scheduleFullRenderOnPatchMiss) scheduleRenderCurrentThread();
+  }
+  return true;
+}
+
 function replaceThreadTilePaneThread(fromThreadId, toThreadId) {
   const from = String(fromThreadId || "").trim();
   const to = String(toThreadId || "").trim();
   if (!from || !to || !state.threadTileMode) return false;
   const layout = threadTileLayout();
   const ids = threadTileCandidateIds(layout);
-  const index = ids.indexOf(from);
-  if (index < 0) return false;
-  const sourcePane = threadTilePaneElement(from);
-  saveCurrentDraftNow();
-  const nextIds = normalizeThreadTilePinnedIds(state.threadTilePinnedIds).length
-    ? normalizeThreadTilePinnedIds(state.threadTilePinnedIds)
-    : ids.slice();
-  while (nextIds.length < ids.length) nextIds.push(ids[nextIds.length]);
-  const duplicateIndex = nextIds.indexOf(to);
-  if (duplicateIndex >= 0 && duplicateIndex !== index) nextIds[duplicateIndex] = from;
-  nextIds[index] = to;
-  state.threadTilePinnedIds = normalizeThreadTilePinnedIds(nextIds);
-  state.threadTileActiveIds = threadTileCandidateIds(layout);
-  state.threadTileSelectedThreadId = to;
-  state.threadTileSwitchMenuPaneId = "";
-  state.threadTilePaneScrollHoldById.delete(from);
-  state.threadTilePaneScrollHoldById.delete(to);
-  scheduleThreadDisplaySettingsSave();
-  restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
-  renderComposerSettings();
-  updateComposerControls();
-  loadThreadTileDetail(to, { force: true, source: "tile-switch" }).catch(showError);
-  if (duplicateIndex >= 0 && duplicateIndex !== index) scheduleRenderCurrentThread();
-  else if (!patchThreadTilePane(to, { paneElement: sourcePane, stickToBottom: true })) scheduleRenderCurrentThread();
-  return true;
+  const plan = threadTileStatePolicy.replacePaneThreadPlan({
+    enabled: state.threadTileMode,
+    fromThreadId: from,
+    toThreadId: to,
+    ids,
+    pinnedIds: state.threadTilePinnedIds,
+  }, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+  });
+  if (plan.action === "skip") return false;
+  return applyThreadTilePaneSlotEffects(threadTileStatePolicy.paneSlotMutationEffectsPlan(plan, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+  }), layout);
 }
 
 function moveThreadTilePaneRelative(fromThreadId, toThreadId, placement = "after") {
@@ -11691,24 +13345,21 @@ function moveThreadTilePaneRelative(fromThreadId, toThreadId, placement = "after
   if (!from || !to || from === to || !state.threadTileMode) return false;
   const layout = threadTileLayout();
   const ids = threadTileCandidateIds(layout);
-  if (!ids.includes(from) || !ids.includes(to)) return false;
-  const withoutFrom = ids.filter((id) => id !== from);
-  const targetIndex = withoutFrom.indexOf(to);
-  if (targetIndex < 0) return false;
-  const insertAt = placement === "before" ? targetIndex : targetIndex + 1;
-  withoutFrom.splice(insertAt, 0, from);
-  saveCurrentDraftNow();
-  removeThreadTileSplitPairsForIds([from]);
-  state.threadTilePinnedIds = normalizeThreadTilePinnedIds(withoutFrom);
-  state.threadTileSplitPairs = normalizeThreadTileSplitPairs(state.threadTileSplitPairs, state.threadTilePinnedIds);
-  state.threadTileSelectedThreadId = from;
-  state.threadTileSwitchMenuPaneId = "";
-  scheduleThreadDisplaySettingsSave();
-  restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
-  renderComposerSettings();
-  updateComposerControls();
-  renderCurrentThread({ stickToBottom: true });
-  return true;
+  const plan = threadTileStatePolicy.movePaneRelativePlan({
+    enabled: state.threadTileMode,
+    fromThreadId: from,
+    toThreadId: to,
+    placement,
+    ids,
+    splitPairs: state.threadTileSplitPairs,
+  }, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+    normalizeSplitPairs: threadTileLayoutPolicy.normalizeSplitPairs,
+  });
+  if (plan.action !== "move") return false;
+  return applyThreadTilePaneSlotEffects(threadTileStatePolicy.paneSlotMutationEffectsPlan(plan, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+  }), layout);
 }
 
 function splitThreadTilePaneWithTarget(fromThreadId, toThreadId, placement = "below") {
@@ -11717,22 +13368,21 @@ function splitThreadTilePaneWithTarget(fromThreadId, toThreadId, placement = "be
   if (!from || !to || from === to || !state.threadTileMode) return false;
   const layout = threadTileLayout();
   const ids = threadTileCandidateIds(layout);
-  if (!ids.includes(from) || !ids.includes(to)) return false;
-  saveCurrentDraftNow();
-  const targetIndex = ids.indexOf(to);
-  const nextIds = ids.filter((id) => id !== from && id !== to);
-  nextIds.splice(Math.max(0, targetIndex), 0, ...(placement === "above" ? [from, to] : [to, from]));
-  state.threadTilePinnedIds = normalizeThreadTilePinnedIds(nextIds);
-  if (placement === "above") setThreadTileSplitPair(from, to);
-  else setThreadTileSplitPair(to, from);
-  state.threadTileSelectedThreadId = from;
-  state.threadTileSwitchMenuPaneId = "";
-  scheduleThreadDisplaySettingsSave();
-  restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
-  renderComposerSettings();
-  updateComposerControls();
-  renderCurrentThread({ stickToBottom: true });
-  return true;
+  const plan = threadTileStatePolicy.splitPaneWithTargetPlan({
+    enabled: state.threadTileMode,
+    fromThreadId: from,
+    toThreadId: to,
+    placement,
+    ids,
+    splitPairs: state.threadTileSplitPairs,
+  }, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+    normalizeSplitPairs: threadTileLayoutPolicy.normalizeSplitPairs,
+  });
+  if (plan.action !== "split") return false;
+  return applyThreadTilePaneSlotEffects(threadTileStatePolicy.paneSlotMutationEffectsPlan(plan, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+  }), layout);
 }
 
 function dropThreadTilePane(fromThreadId, toThreadId, event) {
@@ -11741,13 +13391,19 @@ function dropThreadTilePane(fromThreadId, toThreadId, event) {
   const pane = event && event.target && event.target.closest ? event.target.closest("[data-thread-tile-pane]") : null;
   if (!from || !to || from === to || !pane) return false;
   const rect = pane.getBoundingClientRect();
-  const width = Math.max(1, rect.width || 1);
-  const height = Math.max(1, rect.height || 1);
-  const x = (Number(event.clientX || 0) - rect.left) / width;
-  const y = (Number(event.clientY || 0) - rect.top) / height;
-  if (x < 0.24) return moveThreadTilePaneRelative(from, to, "before");
-  if (x > 0.76) return moveThreadTilePaneRelative(from, to, "after");
-  return splitThreadTilePaneWithTarget(from, to, y < 0.5 ? "above" : "below");
+  const plan = threadTileStatePolicy.dropPaneIntent({
+    fromThreadId: from,
+    toThreadId: to,
+    left: rect.left,
+    top: rect.top,
+    width: rect.width,
+    height: rect.height,
+    clientX: event.clientX,
+    clientY: event.clientY,
+  });
+  if (plan.action === "move-relative") return moveThreadTilePaneRelative(from, to, plan.placement);
+  if (plan.action === "split-with-target") return splitThreadTilePaneWithTarget(from, to, plan.placement);
+  return false;
 }
 
 function replaceLastThreadTilePaneForThreadListOpen(threadId, options = {}) {
@@ -11757,27 +13413,19 @@ function replaceLastThreadTilePaneForThreadListOpen(threadId, options = {}) {
   const layout = threadTileLayout({ enabled: true });
   if (!layout || !layout.enabled) return false;
   const ids = threadTileCandidateIds(layout);
-  if (!ids.length || ids.includes(id)) return false;
-  const index = ids.length - 1;
-  const from = ids[index] || "";
-  if (!from || from === id) return false;
-  const nextIds = normalizeThreadTilePinnedIds(state.threadTilePinnedIds).length
-    ? normalizeThreadTilePinnedIds(state.threadTilePinnedIds)
-    : ids.slice();
-  while (nextIds.length < ids.length) nextIds.push(ids[nextIds.length]);
-  const duplicateIndex = nextIds.indexOf(id);
-  if (duplicateIndex >= 0 && duplicateIndex !== index) nextIds[duplicateIndex] = from;
-  nextIds[index] = id;
-  const normalized = normalizeThreadTilePinnedIds(nextIds);
-  if (threadTileIdsEqual(normalizeThreadTilePinnedIds(state.threadTilePinnedIds), normalized)) return false;
-  state.threadTilePinnedIds = normalized;
-  state.threadTileActiveIds = threadTileCandidateIds(layout);
-  state.threadTileSelectedThreadId = id;
-  state.threadTileSwitchMenuPaneId = "";
-  state.threadTilePaneScrollHoldById.delete(from);
-  state.threadTilePaneScrollHoldById.delete(id);
-  scheduleThreadDisplaySettingsSave();
-  return true;
+  const plan = threadTileStatePolicy.replaceLastPaneForThreadListOpenPlan({
+    enabled: state.threadTileMode,
+    source,
+    threadId: id,
+    ids,
+    pinnedIds: state.threadTilePinnedIds,
+  }, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+  });
+  if (plan.action !== "replace-last") return false;
+  return applyThreadTilePaneSlotEffects(threadTileStatePolicy.paneSlotMutationEffectsPlan(plan, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+  }), layout);
 }
 
 function toggleThreadTileSwitchMenu(threadId) {
@@ -11844,6 +13492,7 @@ function setThreadTileConversationMode(active, layout = null) {
       state.threadTileOperationRefreshTimer = null;
     }
   }
+  updateComposerControls();
 }
 
 function captureThreadTilePaneScrollState() {
@@ -11854,12 +13503,12 @@ function captureThreadTilePaneScrollState() {
     const id = pane.getAttribute("data-thread-tile-pane") || "";
     const body = pane.querySelector(".thread-tile-pane-body");
     if (!id || !body) return;
-    const distanceFromBottom = Math.max(0, Number(body.scrollHeight || 0) - Number(body.clientHeight || 0) - Number(body.scrollTop || 0));
-    states.set(id, {
-      distanceFromBottom,
-      nearBottom: distanceFromBottom <= 48,
+    states.set(id, threadTileStatePolicy.paneScrollMetrics({
+      scrollHeight: body.scrollHeight,
+      clientHeight: body.clientHeight,
+      scrollTop: body.scrollTop,
       hold: state.threadTilePaneScrollHoldById.get(id) === true,
-    });
+    }));
   });
   return states;
 }
@@ -11868,12 +13517,12 @@ function captureThreadTilePaneElementScrollState(pane) {
   const id = String(pane && pane.getAttribute && pane.getAttribute("data-thread-tile-pane") || "");
   const body = pane && pane.querySelector(".thread-tile-pane-body");
   if (!body) return null;
-  const distanceFromBottom = Math.max(0, Number(body.scrollHeight || 0) - Number(body.clientHeight || 0) - Number(body.scrollTop || 0));
-  return {
-    distanceFromBottom,
-    nearBottom: distanceFromBottom <= 48,
+  return threadTileStatePolicy.paneScrollMetrics({
+    scrollHeight: body.scrollHeight,
+    clientHeight: body.clientHeight,
+    scrollTop: body.scrollTop,
     hold: id ? state.threadTilePaneScrollHoldById.get(id) === true : false,
-  };
+  });
 }
 
 function scrollThreadTilePaneBodyToBottom(body, options = {}) {
@@ -11890,24 +13539,43 @@ function scrollThreadTilePaneBodyToBottom(body, options = {}) {
 
 function isThreadTilePaneNearBottom(body) {
   if (!body) return true;
-  return Math.max(0, Number(body.scrollHeight || 0) - Number(body.clientHeight || 0) - Number(body.scrollTop || 0)) <= 48;
+  return threadTileStatePolicy.paneScrollMetrics({
+    scrollHeight: body.scrollHeight,
+    clientHeight: body.clientHeight,
+    scrollTop: body.scrollTop,
+  }).nearBottom;
+}
+
+function applyThreadTilePaneScrollHoldPlan(id, plan) {
+  const threadId = String(id || "");
+  if (!threadId || !plan || plan.action !== "pane-scroll-hold") return;
+  if (plan.clearHold) state.threadTilePaneScrollHoldById.delete(threadId);
+  else if (plan.rememberHold) state.threadTilePaneScrollHoldById.set(threadId, true);
 }
 
 function rememberThreadTilePaneScrollPosition(body) {
   const pane = body && body.closest && body.closest("[data-thread-tile-pane]");
   const id = String(pane && pane.getAttribute("data-thread-tile-pane") || "");
   if (!id || !body) return;
-  if (isThreadTilePaneNearBottom(body)) state.threadTilePaneScrollHoldById.delete(id);
-  else state.threadTilePaneScrollHoldById.set(id, true);
+  applyThreadTilePaneScrollHoldPlan(id, threadTileStatePolicy.paneScrollHoldPlan({
+    scrollHeight: body.scrollHeight,
+    clientHeight: body.clientHeight,
+    scrollTop: body.scrollTop,
+  }));
 }
 
 function updateThreadTileBottomButtonForBody(body) {
   const pane = body && body.closest && body.closest("[data-thread-tile-pane]");
   const button = pane && pane.querySelector("[data-thread-tile-bottom]");
   if (!button || !body) return;
-  rememberThreadTilePaneScrollPosition(body);
-  const isScrollable = Number(body.scrollHeight || 0) - Number(body.clientHeight || 0) > 96;
-  const shouldShow = Boolean(isScrollable && !isThreadTilePaneNearBottom(body));
+  const metrics = threadTileStatePolicy.paneScrollMetrics({
+    scrollHeight: body.scrollHeight,
+    clientHeight: body.clientHeight,
+    scrollTop: body.scrollTop,
+  });
+  applyThreadTilePaneScrollHoldPlan(pane.getAttribute("data-thread-tile-pane") || "", threadTileStatePolicy.paneScrollHoldPlan(metrics));
+  const plan = threadTileStatePolicy.paneBottomButtonPlan({ metrics });
+  const shouldShow = Boolean(plan.shouldShow);
   button.classList.toggle("hidden", !shouldShow);
   button.setAttribute("aria-hidden", shouldShow ? "false" : "true");
   button.tabIndex = shouldShow ? 0 : -1;
@@ -11927,9 +13595,13 @@ function restoreThreadTilePaneScrollState(scrollState = new Map()) {
     const body = pane.querySelector(".thread-tile-pane-body");
     if (!id || !body) return;
     const previous = scrollState.get(id);
-    const hold = previous && previous.hold === true;
-    if (hold && !previous.nearBottom) {
-      body.scrollTop = Math.max(0, Number(body.scrollHeight || 0) - Number(body.clientHeight || 0) - Number(previous.distanceFromBottom || 0));
+    const plan = threadTileStatePolicy.paneScrollRestorePlan({
+      previous,
+      scrollHeight: body.scrollHeight,
+      clientHeight: body.clientHeight,
+    });
+    if (plan.mode === "restore-distance") {
+      body.scrollTop = plan.top;
       updateThreadTileBottomButtonForBody(body);
       return;
     }
@@ -11941,12 +13613,18 @@ function restoreThreadTilePaneElementScrollState(pane, previous, options = {}) {
   const body = pane && pane.querySelector(".thread-tile-pane-body");
   if (!body) return;
   const id = String(pane && pane.getAttribute && pane.getAttribute("data-thread-tile-pane") || "");
-  const hold = Boolean(previous && previous.hold === true) || (id && state.threadTilePaneScrollHoldById.get(id) === true);
-  if (options.stickToBottom || !previous || !hold || previous.nearBottom) {
+  const plan = threadTileStatePolicy.paneScrollRestorePlan({
+    previous,
+    rememberedHold: Boolean(id && state.threadTilePaneScrollHoldById.get(id) === true),
+    stickToBottom: options.stickToBottom === true,
+    scrollHeight: body.scrollHeight,
+    clientHeight: body.clientHeight,
+  });
+  if (plan.mode !== "restore-distance") {
     scrollThreadTilePaneBodyToBottom(body);
     return;
   }
-  body.scrollTop = Math.max(0, Number(body.scrollHeight || 0) - Number(body.clientHeight || 0) - Number(previous.distanceFromBottom || 0));
+  body.scrollTop = plan.top;
   updateThreadTileBottomButtonForBody(body);
 }
 
@@ -11964,26 +13642,70 @@ function clearThreadTileRefreshTimer() {
   state.threadTileRefreshTimer = null;
 }
 
+function clearThreadTileDetailLoadQueueTimer() {
+  clearTimeout(state.threadTileDetailLoadQueueTimer);
+  state.threadTileDetailLoadQueueTimer = null;
+}
+
+function scheduleThreadTileDetailLoadQueueDrain(options = {}) {
+  const plan = threadTileStatePolicy.detailLoadQueueDrainPlan({
+    enabled: state.threadTileMode,
+    activeIds: state.threadTileActiveIds,
+    hasTimer: Boolean(state.threadTileDetailLoadQueueTimer),
+    pending: options.pending === true,
+    force: options.force === true,
+    delayMs: options.delayMs,
+  }, {
+    defaultDelayMs: THREAD_TILE_DETAIL_LOAD_QUEUE_DRAIN_MS,
+  });
+  if (plan.clearTimer) {
+    clearThreadTileDetailLoadQueueTimer();
+    return false;
+  }
+  if (!plan.schedule) return false;
+  state.threadTileDetailLoadQueueTimer = setTimeout(() => {
+    state.threadTileDetailLoadQueueTimer = null;
+    if (!state.threadTileMode) return;
+    ensureThreadTileDetails(state.threadTileActiveIds);
+  }, plan.delayMs);
+  return true;
+}
+
 function scheduleThreadTileRefresh(delayMs = THREAD_TILE_REFRESH_INTERVAL_MS) {
-  if (!state.threadTileMode || document.visibilityState === "hidden") {
+  const plan = threadTileStatePolicy.refreshSchedulePlan({
+    enabled: state.threadTileMode,
+    visibilityState: document.visibilityState,
+    activeIds: state.threadTileActiveIds,
+    hasTimer: Boolean(state.threadTileRefreshTimer),
+    delayMs,
+  }, {
+    defaultDelayMs: THREAD_TILE_REFRESH_INTERVAL_MS,
+    minDelayMs: 500,
+  });
+  if (plan.clearTimer) {
     clearThreadTileRefreshTimer();
     return;
   }
-  if (!state.threadTileActiveIds.length || state.threadTileRefreshTimer) return;
+  if (!plan.schedule) return;
   state.threadTileRefreshTimer = setTimeout(() => {
     state.threadTileRefreshTimer = null;
     if (!state.threadTileMode || document.visibilityState === "hidden") return;
     refreshThreadTileDetails(state.threadTileActiveIds, { source: "tile-refresh" }).catch(showError);
     scheduleThreadTileRefresh();
-  }, Math.max(500, Number(delayMs) || THREAD_TILE_REFRESH_INTERVAL_MS));
+  }, plan.delayMs);
 }
 
 async function refreshThreadTileDetails(ids = [], options = {}) {
-  const uniqueIds = Array.from(new Set((ids || []).map((id) => String(id || "")).filter(Boolean)));
-  if (!state.threadTileMode || !uniqueIds.length) return;
-  await Promise.all(uniqueIds.map((id) => {
-    if (!threadTilePaneIsVisible(id)) return Promise.resolve();
-    if (state.currentThread && String(state.currentThread.id || "") === id) return Promise.resolve();
+  const uniqueIds = threadTileStatePolicy.uniqueIds(ids);
+  const visibleIds = uniqueIds.filter((id) => threadTilePaneIsVisible(id));
+  const targetIds = threadTileStatePolicy.refreshTargetIds({
+    enabled: state.threadTileMode,
+    ids: uniqueIds,
+    visibleIds,
+    currentThreadId: state.currentThread && state.currentThread.id,
+  });
+  if (!targetIds.length) return;
+  await Promise.all(targetIds.map((id) => {
     return loadThreadTileDetail(id, {
       force: true,
       background: true,
@@ -11994,6 +13716,7 @@ async function refreshThreadTileDetails(ids = [], options = {}) {
 
 function abortThreadTileLoads() {
   clearThreadTileRefreshTimer();
+  clearThreadTileDetailLoadQueueTimer();
   state.threadTileActiveIds = [];
   for (const frame of state.threadTilePaneRenderFramesById.values()) {
     if (window.cancelAnimationFrame) window.cancelAnimationFrame(frame);
@@ -12012,23 +13735,25 @@ function abortThreadTileLoads() {
 
 async function loadThreadTileDetail(threadId, options = {}) {
   const id = String(threadId || "");
-  if (!id) return;
-  if (state.currentThread && String(state.currentThread.id || "") === id && !state.currentThread.mobileLoading) return;
-  if (state.threadTileControllers.has(id)) return;
-  if (state.threadTileLoadingIds.has(id)) return;
   const cached = state.threadTileDetails.get(id);
-  const force = options.force === true;
-  const background = options.background === true && cached && !cached.mobileLoading && !cached.mobileLoadError;
-  const lastLoadedAt = Number(state.threadTileLoadedAtById.get(id) || 0);
-  if (!force && cached && !cached.mobileLoading && !cached.mobileLoadError) return;
-  if (force && Date.now() - lastLoadedAt < THREAD_TILE_REFRESH_MIN_INTERVAL_MS) return;
+  const currentThreadId = state.currentThread && String(state.currentThread.id || "");
+  const plan = threadTileStatePolicy.detailLoadPlan({
+    threadId: id,
+    currentThreadId,
+    currentThreadLoaded: Boolean(currentThreadId === id && state.currentThread && !state.currentThread.mobileLoading),
+    controllerActive: state.threadTileControllers.has(id),
+    loadingActive: state.threadTileLoadingIds.has(id),
+    cachedReady: Boolean(cached && !cached.mobileLoading && !cached.mobileLoadError),
+    force: options.force === true,
+    backgroundRequested: options.background === true,
+    lastLoadedAt: Number(state.threadTileLoadedAtById.get(id) || 0),
+    nowMs: Date.now(),
+    minIntervalMs: THREAD_TILE_REFRESH_MIN_INTERVAL_MS,
+  });
+  if (plan.action !== "load") return;
+  const background = plan.background;
   const controller = new AbortController();
-  state.threadTileControllers.set(id, controller);
-  if (!background) {
-    state.threadTileLoadingIds.add(id);
-    if (!scheduleRenderThreadTilePane(id, { preserveScroll: true })) scheduleRenderCurrentThread();
-  }
-  if (!background) state.threadTileErrors.delete(id);
+  applyThreadTileDetailLoadStartEffects(threadTileStatePolicy.detailLoadStartEffectsPlan(plan), controller);
   try {
     const result = await api(threadDetailApiPath(id, { mode: "recent" }), {
       timeoutMs: 20000,
@@ -12036,90 +13761,168 @@ async function loadThreadTileDetail(threadId, options = {}) {
     });
     if (controller.signal.aborted) return;
     if (result && result.thread) {
-      state.threadTileDetails.set(id, result.thread);
-      state.threadTileLoadedAtById.set(id, Date.now());
-      state.threadTileErrors.delete(id);
-      mergeThreadIntoThreadList(result.thread);
+      applyThreadTileDetailLoadSuccessEffects(threadTileStatePolicy.detailLoadSuccessEffectsPlan({
+        id,
+        hasThread: true,
+        nowMs: Date.now(),
+      }), result.thread);
     }
   } catch (err) {
-    if (!controller.signal.aborted && !background) state.threadTileErrors.set(id, err && err.message ? err.message : String(err));
+    applyThreadTileDetailLoadErrorEffects(threadTileStatePolicy.detailLoadErrorEffectsPlan({
+      id,
+      aborted: controller.signal.aborted,
+      background,
+      errorMessage: err && err.message ? err.message : String(err),
+    }));
   } finally {
-    if (state.threadTileControllers.get(id) === controller) state.threadTileControllers.delete(id);
-    state.threadTileLoadingIds.delete(id);
-    if (threadTilePaneIsVisible(id) && !scheduleRenderThreadTilePane(id, { preserveScroll: true })) scheduleRenderCurrentThread();
+    applyThreadTileDetailLoadFinallyEffects(threadTileStatePolicy.detailLoadFinallyEffectsPlan({
+      id,
+      controllerMatches: state.threadTileControllers.get(id) === controller,
+      visible: threadTilePaneIsVisible(id),
+    }));
   }
+}
+
+function applyThreadTileDetailLoadStartEffects(effect, controller) {
+  if (!effect || effect.action !== "detail-load-start-effects") return false;
+  const id = String(effect.id || "");
+  if (!id) return false;
+  if (effect.setController) state.threadTileControllers.set(id, controller);
+  if (effect.markLoading) {
+    state.threadTileLoadingIds.add(id);
+    if (effect.renderPane && !scheduleRenderThreadTilePane(id, { preserveScroll: effect.preserveScroll !== false })) {
+      scheduleRenderCurrentThread();
+    }
+  }
+  if (effect.clearError) state.threadTileErrors.delete(id);
+  return true;
+}
+
+function applyThreadTileDetailLoadSuccessEffects(effect, thread) {
+  if (!effect || effect.action !== "detail-load-success-effects" || !thread) return false;
+  const id = String(effect.id || "");
+  if (!id) return false;
+  if (effect.setDetail) state.threadTileDetails.set(id, thread);
+  if (effect.setLoadedAt) state.threadTileLoadedAtById.set(id, Number(effect.loadedAtMs || Date.now()));
+  if (effect.clearError) state.threadTileErrors.delete(id);
+  if (effect.mergeThread) mergeThreadIntoThreadList(thread);
+  return true;
+}
+
+function applyThreadTileDetailLoadErrorEffects(effect) {
+  if (!effect || effect.action !== "detail-load-error-effects") return false;
+  const id = String(effect.id || "");
+  if (!id) return false;
+  state.threadTileErrors.set(id, effect.errorMessage || "Thread load failed");
+  return true;
+}
+
+function applyThreadTileDetailLoadFinallyEffects(effect) {
+  if (!effect || effect.action !== "detail-load-finally-effects") return false;
+  const id = String(effect.id || "");
+  if (!id) return false;
+  if (effect.clearController) state.threadTileControllers.delete(id);
+  if (effect.clearLoading) state.threadTileLoadingIds.delete(id);
+  if (effect.renderPane && !scheduleRenderThreadTilePane(id, { preserveScroll: effect.preserveScroll !== false })) {
+    scheduleRenderCurrentThread();
+  }
+  if (effect.scheduleQueueDrain) scheduleThreadTileDetailLoadQueueDrain({ force: true });
+  return true;
+}
+
+function applyThreadTileDetailLoadQueuePlan(plan) {
+  if (!plan || plan.action !== "detail-load-queue") return false;
+  for (const id of Array.isArray(plan.abortIds) ? plan.abortIds : []) {
+    const controller = state.threadTileControllers.get(id);
+    if (controller && typeof controller.abort === "function") {
+      try {
+        controller.abort();
+      } catch (_) {}
+    }
+    state.threadTileControllers.delete(id);
+    state.threadTileLoadingIds.delete(id);
+  }
+  for (const id of Array.isArray(plan.loadIds) ? plan.loadIds : []) {
+    loadThreadTileDetail(id).catch(showError);
+  }
+  if (plan.scheduleDrainAfterLoad) {
+    scheduleThreadTileDetailLoadQueueDrain({ pending: true });
+  }
+  return true;
 }
 
 function ensureThreadTileDetails(ids = []) {
   if (!state.threadTileMode) return;
-  const activeIds = new Set(ids.map((id) => String(id || "")).filter(Boolean));
-  state.threadTileActiveIds = Array.from(activeIds);
-  syncThreadTilePinnedIdsFromActiveIds(state.threadTileActiveIds);
-  syncThreadTileSelectedThread(state.threadTileActiveIds);
-  for (const [id, controller] of Array.from(state.threadTileControllers.entries())) {
-    if (activeIds.has(id)) continue;
-    controller.abort();
-    state.threadTileControllers.delete(id);
-    state.threadTileLoadingIds.delete(id);
-  }
-  for (const id of activeIds) loadThreadTileDetail(id).catch(showError);
+  syncThreadTileActivePaneState(ids);
+  const currentThreadId = state.currentThread && String(state.currentThread.id || "");
+  const readyIds = state.threadTileActiveIds.filter((id) => {
+    if (currentThreadId && currentThreadId === id && state.currentThread && !state.currentThread.mobileLoading) return true;
+    const cached = state.threadTileDetails.get(id);
+    return Boolean(cached && !cached.mobileLoading && !cached.mobileLoadError);
+  });
+  const concurrency = threadTileStatePolicy.detailLoadConcurrencyPlan({
+    activeIds: state.threadTileActiveIds,
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+  });
+  applyThreadTileDetailLoadQueuePlan(threadTileStatePolicy.detailLoadQueuePlan({
+    enabled: state.threadTileMode,
+    activeIds: state.threadTileActiveIds,
+    controllerIds: Array.from(state.threadTileControllers.keys()),
+    loadingIds: Array.from(state.threadTileLoadingIds),
+    readyIds,
+    maxConcurrentLoads: concurrency.maxConcurrentLoads,
+  }));
   scheduleThreadTileRefresh();
 }
 
 function renderThreadTileTurn(thread, turn, previousKeys = new Set()) {
-  const previousRenderThreadId = state.renderContextThreadId;
-  state.renderContextThreadId = String(thread && thread.id || "");
-  try {
-    const renderedItems = visibleItemsForTurn(turn).map((entry, index) => {
+  return withRenderContextThread(thread, () => {
+    const threadId = String(thread && thread.id || "");
+    const renderedItems = visibleItemsForTurn(turn, thread).map((entry, index) => {
       const item = entry && entry.item;
       const sourceIndex = Number.isInteger(entry && entry.sourceIndex) && entry.sourceIndex >= 0 ? entry.sourceIndex : index;
-      return renderVisibleItemPatchHtml(turn, item, previousKeys, sourceIndex);
+      return renderVisibleItemPatchHtml(turn, item, previousKeys, sourceIndex, thread);
     }).filter(Boolean).join("");
-    if (!renderedItems.trim()) return "";
-    const threadId = String(thread && thread.id || "");
+    const turnApprovals = approvalsForTurn(threadId, turn && turn.id);
+    const approvalsHtml = turnApprovals.length
+      ? `<div class="approval-stack in-turn">${turnApprovals.map((request) => renderApprovalRequest(request, previousKeys, threadId)).join("")}</div>`
+      : "";
+    if (!renderedItems.trim() && !approvalsHtml.trim()) return "";
     const turnId = String(turn && (turn.id || turn.startedAt || "turn") || "turn");
     return `<article class="turn thread-tile-turn" data-thread-tile-turn="${escapeHtml(turnId)}" data-render-key="${escapeHtml(`tile-turn|${threadId}|${turnId}`)}">
-      ${renderedItems}
+      ${renderedItems}${approvalsHtml}
     </article>`;
-  } finally {
-    state.renderContextThreadId = previousRenderThreadId;
-  }
+  });
 }
 
 function scheduleThreadTileOperationMinimumRefresh(delayMs = LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS) {
   if (state.threadTileOperationRefreshTimer) clearTimeout(state.threadTileOperationRefreshTimer);
   state.threadTileOperationRefreshTimer = setTimeout(() => {
     state.threadTileOperationRefreshTimer = null;
-    if (state.threadTileMode) {
+    const plan = threadTileStatePolicy.operationMinimumRefreshPlan({
+      enabled: state.threadTileMode,
+      activeIds: state.threadTileActiveIds,
+    });
+    if (plan.action === "operation-minimum-refresh") {
       let patchedAny = false;
-      for (const id of state.threadTileActiveIds) {
+      for (const id of plan.patchThreadIds || []) {
         patchedAny = scheduleRenderThreadTilePane(id, { preserveScroll: true }) || patchedAny;
       }
-      if (!patchedAny) scheduleRenderCurrentThread();
+      if (plan.fullRenderOnPatchMiss && !patchedAny) scheduleRenderCurrentThread();
     }
   }, Math.max(0, Number(delayMs) || 0) + 16);
 }
 
 function rememberThreadTileOperationBubble(threadId, html = "") {
   const id = String(threadId || "");
-  if (!id || !html || !html.includes("mobile-operation-bubble")) return;
-  state.threadTileOperationBubblesById.set(id, {
+  const record = threadTileStatePolicy.operationBubbleRecord({
+    threadId: id,
     html,
-    visibleUntilMs: Date.now() + LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS,
+    minVisibleMs: LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS,
+    nowMs: Date.now(),
   });
-}
-
-function recentThreadTileOperationBubble(threadId) {
-  const id = String(threadId || "");
-  const record = state.threadTileOperationBubblesById.get(id);
-  if (!record) return "";
-  const remainingMs = Number(record.visibleUntilMs || 0) - Date.now();
-  if (remainingMs <= 0) {
-    state.threadTileOperationBubblesById.delete(id);
-    return "";
-  }
-  scheduleThreadTileOperationMinimumRefresh(remainingMs);
-  return String(record.html || "");
+  if (!record) return;
+  state.threadTileOperationBubblesById.set(id, record);
 }
 
 function clearThreadTileOperationBubble(threadId) {
@@ -12132,14 +13935,30 @@ function renderThreadTileOperationDock(thread, previousKeys = new Set()) {
   const id = String(thread && thread.id || "");
   if (!id) return "";
   const entry = currentLiveOperationEntry(thread);
-  const mode = normalizeLiveOperationDockMode(state.threadTileOperationModesById.get(id) || "compact");
-  const expanded = mode === "expanded";
-  if (!entry || !entry.item || entry.item.type === "liveTurnStatus") {
-    return latestLiveTurnForThread(thread) ? recentThreadTileOperationBubble(id) : "";
+  const mode = threadTileStatePolicy.normalizeOperationMode(state.threadTileOperationModesById.get(id) || "compact");
+  const plan = threadTileStatePolicy.operationDockPlan({
+    threadId: id,
+    mode,
+    entryType: entry && entry.item && entry.item.type,
+    hasOperation: Boolean(entry && entry.item && entry.item.type !== "liveTurnStatus"),
+    hasLiveTurn: Boolean(latestLiveTurnForThread(thread)),
+    remembered: state.threadTileOperationBubblesById.get(id),
+    nowMs: Date.now(),
+  });
+  if (plan.action === "render-remembered-operation") {
+    if (plan.scheduleMinimumRefresh) scheduleThreadTileOperationMinimumRefresh(plan.remainingMs);
+    return plan.html || "";
+  }
+  if (plan.action === "clear-remembered-operation") {
+    if (plan.clearRemembered) state.threadTileOperationBubblesById.delete(id);
+    return "";
+  }
+  if (plan.action !== "render-live-operation" || !entry || !entry.item) {
+    return "";
   }
   const html = `<div class="thread-tile-operation-dock" data-thread-tile-operation-dock="${escapeHtml(id)}" data-mode="${escapeHtml(mode)}">
     <div class="live-operation-dock-inner">
-      ${renderMobileOperationStack(entry.item, entry.turn, previousKeys, entry.sourceIndex, expanded, {
+      ${renderMobileOperationStack(entry.item, entry.turn, previousKeys, entry.sourceIndex, plan.expanded, {
         toggleAttribute: "data-thread-tile-operation-toggle",
         toggleValue: id,
       })}
@@ -12153,26 +13972,34 @@ function threadTileOperationSignature(threadId) {
   const id = String(threadId || "");
   const thread = threadTileDisplayThread(id);
   const entry = currentLiveOperationEntry(thread);
-  const remembered = state.threadTileOperationBubblesById.get(id);
-  const rememberedVisible = Boolean(remembered && remembered.html && Number(remembered.visibleUntilMs || 0) > Date.now());
-  return {
+  return threadTileStatePolicy.operationSignature({
     mode: state.threadTileOperationModesById.get(id) || "compact",
-    rememberedVisible,
-    entry: entry && entry.item && entry.item.type !== "liveTurnStatus"
-      ? visibleItemSignature(entry.item, entry.turn)
+    remembered: state.threadTileOperationBubblesById.get(id),
+    nowMs: Date.now(),
+    entrySignature: entry && entry.item && entry.item.type !== "liveTurnStatus"
+      ? visibleItemSignature(entry.item, entry.turn, thread)
       : null,
-  };
+  });
+}
+
+function applyThreadTileOperationModeTogglePlan(effect) {
+  if (!effect || effect.action !== "operation-mode-toggle-effects") return false;
+  const id = String(effect.id || "");
+  if (!id) return false;
+  state.threadTileOperationModesById.set(id, threadTileStatePolicy.normalizeOperationMode(effect.mode));
+  if (effect.selectPane) setThreadTileSelectedThread(id, { render: effect.selectPaneRender !== false });
+  if (effect.patchThreadId && !patchThreadTilePane(effect.patchThreadId, { preserveScroll: effect.patchPreserveScroll !== false })) {
+    if (effect.scheduleFullRenderOnPatchMiss) scheduleRenderCurrentThread();
+  }
+  return true;
 }
 
 function threadTileMinimumPaneCount(layout = threadTileLayout()) {
-  const capacity = threadTileLayoutCapacity(layout);
-  const candidateCount = defaultThreadTileCandidateIds(layout, { maxPanes: capacity }).length || 1;
-  return Math.min(capacity, candidateCount) >= 2 ? 2 : 1;
+  return threadTilePaneCountState(layout).minPaneCount;
 }
 
 function threadTileMaximumPaneCount(layout = threadTileLayout()) {
-  const candidateCount = defaultThreadTileCandidateIds(layout, { maxPanes: THREAD_TILE_USER_MAX_PANES }).length || 1;
-  return Math.max(1, Math.min(THREAD_TILE_USER_MAX_PANES, candidateCount));
+  return threadTilePaneCountState(layout).maxPaneCount;
 }
 
 function setThreadTilePaneCount(nextCount, options = {}) {
@@ -12182,17 +14009,22 @@ function setThreadTilePaneCount(nextCount, options = {}) {
   const minCount = threadTileMinimumPaneCount(layout);
   const maxCount = threadTileMaximumPaneCount(layout);
   const current = effectiveThreadTilePaneCount(layout);
-  const next = Math.max(minCount, Math.min(maxCount, normalizeThreadTilePaneCount(nextCount, current)));
-  if (next === current && state.threadTilePaneCount === next) return false;
-  state.threadTilePaneCount = next;
-  state.threadTileSwitchMenuPaneId = "";
-  const ids = threadTileCandidateIds(layout);
-  if (state.threadTileSelectedThreadId && !ids.includes(state.threadTileSelectedThreadId)) {
-    state.threadTileSelectedThreadId = ids[0] || "";
-  }
-  scheduleThreadDisplaySettingsSave();
-  if (options.render !== false) renderCurrentThread({ stickToBottom: true });
-  return true;
+  const plan = threadTileStatePolicy.paneCountChangePlan({
+    enabled: state.threadTileMode,
+    layoutEnabled: layout.enabled,
+    nextCount,
+    currentCount: current,
+    storedPaneCount: state.threadTilePaneCount,
+    minCount,
+    maxCount,
+  }, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+  });
+  if (plan.action !== "set-pane-count") return false;
+  return applyThreadTilePaneSlotEffects(threadTileStatePolicy.paneSlotMutationEffectsPlan(plan, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+    render: options.render !== false,
+  }), layout);
 }
 
 function changeThreadTilePaneCount(delta) {
@@ -12208,30 +14040,22 @@ function closeThreadTilePane(threadId) {
   const layout = threadTileLayout({ enabled: true });
   if (!layout || !layout.enabled) return false;
   const ids = threadTileCandidateIds(layout);
-  if (!ids.includes(id)) return false;
   const minCount = threadTileMinimumPaneCount(layout);
-  if (ids.length <= minCount) return false;
-  const nextCount = Math.max(minCount, ids.length - 1);
-  const existing = normalizeThreadTilePinnedIds(state.threadTilePinnedIds);
-  const sourceIds = existing.length ? existing : ids;
-  const remaining = sourceIds.filter((candidateId) => candidateId !== id);
-  const fillIds = defaultThreadTileCandidateIds(layout, { maxPanes: threadTileMaximumPaneCount(layout) })
-    .filter((candidateId) => candidateId !== id);
-  saveCurrentDraftNow();
-  state.threadTilePinnedIds = normalizeThreadTilePinnedIds([...remaining, ...fillIds]);
-  state.threadTilePaneCount = nextCount;
-  state.threadTileSwitchMenuPaneId = "";
-  state.threadTilePaneScrollHoldById.delete(id);
-  const nextIds = threadTileCandidateIds(layout);
-  state.threadTileSelectedThreadId = nextIds.includes(state.threadTileSelectedThreadId)
-    ? state.threadTileSelectedThreadId
-    : nextIds[0] || "";
-  scheduleThreadDisplaySettingsSave();
-  restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
-  renderComposerSettings();
-  updateComposerControls();
-  renderCurrentThread({ stickToBottom: true });
-  return true;
+  const plan = threadTileStatePolicy.closePanePlan({
+    enabled: state.threadTileMode,
+    layoutEnabled: layout.enabled,
+    threadId: id,
+    ids,
+    pinnedIds: state.threadTilePinnedIds,
+    defaultIds: defaultThreadTileCandidateIds(layout, { maxPanes: threadTileMaximumPaneCount(layout) }),
+    minCount,
+  }, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+  });
+  if (plan.action !== "close-pane") return false;
+  return applyThreadTilePaneSlotEffects(threadTileStatePolicy.paneSlotMutationEffectsPlan(plan, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+  }), layout);
 }
 
 function renderThreadTilePane(threadId, layout, previousKeys = new Set()) {
@@ -12244,15 +14068,23 @@ function renderThreadTilePane(threadId, layout, previousKeys = new Set()) {
   const loading = state.threadTileLoadingIds.has(id) || (thread && thread.mobileLoading && !threadHasVisibleConversationTurns(thread));
   const readWarning = threadReadWarningMessage(thread);
   const turns = visibleTurnsForConversation(thread);
+  const visibleTurnIds = new Set(turns.map((turn) => turn && turn.id).filter(Boolean).map(String));
   const omitted = Number(thread && thread.mobileOmittedTurnCount || 0) + Math.max(0, ((thread && thread.turns) || []).length - turns.length);
+  const historyNote = renderThreadHistoryNote(thread, omitted, previousKeys);
+  const approvalsHtml = renderPendingApprovals(thread, previousKeys, (request) => {
+    const turnId = approvalTurnId(request);
+    if (turnId && visibleTurnIds.has(turnId)) return false;
+    return isApprovalActive(request);
+  });
   const body = error
     ? `<div class="thread-tile-empty error">Thread failed: ${escapeHtml(error)}</div>`
     : loading
       ? `<div class="thread-tile-empty">Loading thread...</div>`
       : [
-        omitted > 0 ? `<div class="history-note">Older history hidden: ${escapeHtml(omitted.toLocaleString())} turn(s).</div>` : "",
+        historyNote,
         readWarning ? `<div class="history-note">${escapeHtml(readWarning)}</div>` : "",
         turns.map((turn) => renderThreadTileTurn(thread, turn, previousKeys)).join("") || `<div class="thread-tile-empty">No visible turns.</div>`,
+        approvalsHtml,
       ].join("");
   const active = id && id === effectiveThreadTileSelectedThreadId() ? " active" : "";
   const operationDock = renderThreadTileOperationDock(thread, previousKeys);
@@ -12281,67 +14113,172 @@ function threadTilePaneElement(threadId) {
 }
 
 function threadTileRenderSignature(layout, ids) {
-  return JSON.stringify({
-    view: "thread-tiles",
-    columns: layout.columns,
-    rows: layout.rows,
-    visiblePanes: layout.visiblePanes || ids.length,
-    capacityPanes: layout.capacityPanes || layout.maxPanes,
-    desiredPaneCount: normalizeThreadTilePaneCount(state.threadTilePaneCount, 0),
-    columnGroups: layout.columnGroups || [],
-    splitPairs: threadTilePrunedSplitPairs(ids),
+  return threadTileStatePolicy.paneRenderSignaturePlan({
+    layout,
     ids,
-    selected: effectiveThreadTileSelectedThreadId(ids),
-    loading: ids.filter((id) => state.threadTileLoadingIds.has(id)),
+    desiredPaneCount: normalizeThreadTilePaneCount(state.threadTilePaneCount, 0),
+    splitPairs: threadTilePrunedSplitPairs(ids),
+    selectedThreadId: effectiveThreadTileSelectedThreadId(ids),
+    loadingIds: ids.filter((id) => state.threadTileLoadingIds.has(id)),
     switchMenuPaneId: state.threadTileSwitchMenuPaneId || "",
     errors: ids.map((id) => [id, threadTileError(id)]),
     operations: ids.map((id) => [id, threadTileOperationSignature(id)]),
-    threads: ids.map((id) => conversationRenderSignature(threadTileDisplayThread(id))),
-  });
+    threadSignatures: ids.map((id) => conversationRenderSignature(threadTileDisplayThread(id))),
+  }, {
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+  }).signature;
 }
 
 function patchThreadTilePane(threadId, options = {}) {
   const id = String(threadId || "").trim();
-  if (!id || !state.threadTileMode || !threadTilePaneIsVisible(id)) return false;
+  let preflight = threadTileStatePolicy.panePatchPreflightPlan({
+    threadId: id,
+    enabled: state.threadTileMode,
+    visible: id ? threadTilePaneIsVisible(id) : false,
+  });
+  if (!preflight.shouldContinue) return false;
   const conversation = $("conversation");
-  if (!conversation || !conversation.classList.contains("thread-tile-mode")) return false;
+  preflight = threadTileStatePolicy.panePatchPreflightPlan({
+    threadId: id,
+    enabled: state.threadTileMode,
+    visible: true,
+    conversationPresent: Boolean(conversation),
+    tileSurface: Boolean(conversation && conversation.classList.contains("thread-tile-mode")),
+  });
+  if (!preflight.shouldContinue) return false;
   const board = conversation.querySelector("[data-thread-tile-board]");
-  if (!board) return false;
+  preflight = threadTileStatePolicy.panePatchPreflightPlan({
+    threadId: id,
+    enabled: state.threadTileMode,
+    visible: true,
+    conversationPresent: true,
+    tileSurface: true,
+    boardPresent: Boolean(board),
+  });
+  if (!preflight.shouldContinue) return false;
   const layout = threadTileLayout();
-  if (!layout.enabled) return false;
+  preflight = threadTileStatePolicy.panePatchPreflightPlan({
+    threadId: id,
+    enabled: state.threadTileMode,
+    visible: true,
+    conversationPresent: true,
+    tileSurface: true,
+    boardPresent: true,
+    layoutEnabled: Boolean(layout && layout.enabled),
+  });
+  if (!preflight.shouldContinue) return false;
   const ids = threadTileCandidateIds(layout);
-  if (!ids.includes(id)) return false;
+  preflight = threadTileStatePolicy.panePatchPreflightPlan({
+    threadId: id,
+    enabled: state.threadTileMode,
+    visible: true,
+    conversationPresent: true,
+    tileSurface: true,
+    boardPresent: true,
+    layoutEnabled: true,
+    ids,
+  });
+  if (!preflight.shouldContinue) return false;
   const displayLayout = threadTileDisplayLayout(layout, ids);
   const pane = options.paneElement || threadTilePaneElement(id);
-  if (!pane) return false;
+  preflight = threadTileStatePolicy.panePatchPreflightPlan({
+    threadId: id,
+    enabled: state.threadTileMode,
+    visible: true,
+    conversationPresent: true,
+    tileSurface: true,
+    boardPresent: true,
+    layoutEnabled: true,
+    ids,
+    panePresent: Boolean(pane),
+  });
+  if (!preflight.canPatch) return false;
   const previousScroll = captureThreadTilePaneElementScrollState(pane);
   const previousKeys = existingConversationRenderKeys();
   const template = document.createElement("template");
   template.innerHTML = renderThreadTilePane(id, displayLayout, previousKeys);
   const sourcePane = template.content.firstElementChild;
-  if (!sourcePane) return false;
+  let completion = threadTileStatePolicy.panePatchCompletionPlan({
+    threadId: id,
+    sourcePanePresent: Boolean(sourcePane),
+  });
+  if (!completion.returnValue) return false;
   const patchedPane = patchNode(pane, sourcePane);
-  hydrateGitHubLinkCards(patchedPane);
-  hydrateMermaidDiagrams(patchedPane);
-  scheduleFailedAppImageScan(patchedPane, [0, 180]);
-  restoreThreadTilePaneElementScrollState(patchedPane, previousScroll, options);
-  if (typeof window.requestAnimationFrame === "function") {
-    window.requestAnimationFrame(() => updateThreadTileBottomButtonForBody(patchedPane.querySelector(".thread-tile-pane-body")));
-  } else {
-    updateThreadTileBottomButtonForBody(patchedPane.querySelector(".thread-tile-pane-body"));
+  completion = threadTileStatePolicy.panePatchCompletionPlan({
+    threadId: id,
+    sourcePanePresent: true,
+    patchedPanePresent: Boolean(patchedPane),
+    requestAnimationFrameAvailable: typeof window.requestAnimationFrame === "function",
+  });
+  if (!completion.returnValue) return false;
+  if (completion.hydrate) hydrateThreadDetailSurface(patchedPane, { imageScanDelays: [0, 180] });
+  if (completion.restoreScroll) restoreThreadTilePaneElementScrollState(patchedPane, previousScroll, options);
+  if (completion.updateBottomButton) {
+    const updateBottomButton = () => updateThreadTileBottomButtonForBody(patchedPane.querySelector(".thread-tile-pane-body"));
+    if (completion.updateBottomButtonMode === "animation-frame" && typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(updateBottomButton);
+    } else {
+      updateBottomButton();
+    }
   }
-  state.renderedConversationSignature = threadTileRenderSignature(displayLayout, ids);
-  bindThreadTileActions();
-  return true;
+  if (completion.writeRenderSignature) {
+    state.renderedConversationSignature = threadTileRenderSignature(displayLayout, ids);
+  }
+  if (completion.clearPatchShellSignature) {
+    state.renderedConversationPatchShellSignature = "";
+  }
+  if (completion.bindActions) {
+    bindThreadTileActions();
+  } else {
+    return false;
+  }
+  return completion.returnValue;
+}
+
+function isThreadTileConversationSurface() {
+  const conversation = $("conversation");
+  return Boolean(state.threadTileMode
+    && conversation
+    && conversation.classList
+    && conversation.classList.contains("thread-tile-mode"));
+}
+
+function threadDetailDomPatchSurface(options = {}) {
+  const id = String(options.threadId || state.currentThreadId || state.currentThread && state.currentThread.id || "").trim();
+  return threadDetailPatchPlanApi.planThreadDetailDomPatchSurface({
+    threadId: id,
+    threadTileMode: state.threadTileMode,
+    threadTileSurface: isThreadTileConversationSurface(),
+    tilePaneVisible: id ? threadTilePaneIsVisible(id) : false,
+    conversationPresent: Boolean($("conversation")),
+  });
+}
+
+function canPatchSingleThreadConversationDom(options = {}) {
+  const plan = threadDetailDomPatchSurface(options);
+  return Boolean(plan && plan.canPatch && plan.surface === "single-thread");
+}
+
+function patchCurrentThreadTilePaneFromState(options = {}) {
+  const plan = threadDetailDomPatchSurface(options);
+  if (!plan || !plan.canPatch || plan.surface !== "thread-tile-pane") return false;
+  clearGlobalLiveOperationDockForThreadTiles();
+  return patchThreadTilePane(plan.threadId, Object.assign({ preserveScroll: true }, options));
 }
 
 function scheduleRenderThreadTilePane(threadId, options = {}) {
   const id = String(threadId || "").trim();
-  if (!id || !state.threadTileMode || !threadTilePaneIsVisible(id)) return false;
-  if (state.threadTilePaneRenderFramesById.has(id)) return true;
+  const plan = threadTileStatePolicy.paneRenderFramePlan({
+    threadId: id,
+    enabled: state.threadTileMode,
+    visible: id ? threadTilePaneIsVisible(id) : false,
+    hasFrame: id ? state.threadTilePaneRenderFramesById.has(id) : false,
+  });
+  if (plan.action === "skip" || !plan.returnValue) return false;
+  if (!plan.scheduleFrame) return true;
   const render = () => {
     state.threadTilePaneRenderFramesById.delete(id);
-    if (!patchThreadTilePane(id, options)) scheduleRenderCurrentThread();
+    if (!patchThreadTilePane(id, options) && plan.fullRenderOnPatchMiss) scheduleRenderCurrentThread();
   };
   const frame = window.requestAnimationFrame
     ? window.requestAnimationFrame(render)
@@ -12368,8 +14305,26 @@ function renderThreadTileLayout(layout, options = {}) {
     </div>`).join("")}
   </div>`;
   const signature = threadTileRenderSignature(displayLayout, ids);
+  const visibleShape = threadTileVisibleShape(ids);
+  const expectedVisibleTurnCount = visibleShape.turnCount;
+  const renderedDomTurnCount = threadTileDomTurnCount();
+  const renderedDomShape = conversationDomShape();
   setThreadTileConversationMode(true, displayLayout);
-  updateConversationHtml(html, signature, { stickToBottom: options.stickToBottom === true });
+  updateConversationHtml(html, signature, {
+    stickToBottom: options.stickToBottom === true,
+    patchShellSignature: "",
+    expectedVisibleTurnCount,
+    renderedDomTurnCount,
+    expectedVisibleItemCount: visibleShape.visibleItemCount,
+    renderedDomItemCount: renderedDomShape.itemCount,
+    duplicateRenderKeyCount: renderedDomShape.duplicateRenderKeyCount,
+    action: "thread-tile-empty-state",
+    routeKind: "thread-tile",
+    threadHash: diagnosticHash(`thread-tile:${ids.join("|")}`),
+    currentTurns: expectedVisibleTurnCount,
+    currentVisibleItems: visibleShape.visibleItemCount,
+    source: "thread-tile-render",
+  });
   bindThreadTileActions();
   restoreThreadTilePaneScrollState(scrollState);
   if (typeof window.requestAnimationFrame === "function") {
@@ -12386,84 +14341,77 @@ function bindThreadTileActions() {
   if (!conversation) return;
   if (conversation.dataset.threadTileActionsBound === "true") return;
   conversation.dataset.threadTileActionsBound = "true";
-  const closestTileTarget = (target, selector) => (
-    target && target.closest ? target.closest(selector) : null
-  );
   conversation.addEventListener("pointerdown", (event) => {
-    const titleButton = closestTileTarget(event.target, "[data-thread-tile-title]");
-    if (titleButton && conversation.contains(titleButton)) {
-      const pane = titleButton.closest("[data-thread-tile-pane]");
-      if (pane && conversation.contains(pane)) setThreadTileSelectedThread(pane.getAttribute("data-thread-tile-pane") || "");
+    const plan = threadTileActionsApi.resolveThreadTilePointerAction({
+      target: event.target,
+      root: conversation,
+    });
+    if (plan.action === "select-pane") {
+      setThreadTileSelectedThread(plan.paneId || "");
       return;
     }
-    if (closestTileTarget(event.target, "[data-thread-tile-switch-target], .thread-tile-switch-menu, [data-thread-tile-bottom], [data-thread-tile-operation-toggle], [data-thread-tile-pane-count], [data-thread-tile-close-pane]")) {
+    if (plan.stopPropagation) {
       event.stopPropagation();
       return;
     }
-    const pane = closestTileTarget(event.target, "[data-thread-tile-pane]");
-    if (pane && conversation.contains(pane)) setThreadTileSelectedThread(pane.getAttribute("data-thread-tile-pane") || "");
   });
   conversation.addEventListener("focusin", (event) => {
-    if (closestTileTarget(event.target, "[data-thread-tile-title], [data-thread-tile-switch-target], .thread-tile-switch-menu")) return;
-    const pane = closestTileTarget(event.target, "[data-thread-tile-pane]");
-    if (pane && conversation.contains(pane)) setThreadTileSelectedThread(pane.getAttribute("data-thread-tile-pane") || "");
+    const plan = threadTileActionsApi.resolveThreadTileFocusAction({
+      target: event.target,
+      root: conversation,
+    });
+    if (plan.action === "select-pane") setThreadTileSelectedThread(plan.paneId || "");
   });
   conversation.addEventListener("click", (event) => {
-    const titleButton = closestTileTarget(event.target, "[data-thread-tile-title]");
-    if (titleButton && conversation.contains(titleButton)) {
-      event.preventDefault();
-      event.stopPropagation();
-      if (!event.detail) toggleThreadTileSwitchMenu(titleButton.getAttribute("data-thread-tile-title") || "");
+    const plan = threadTileActionsApi.resolveThreadTileClickAction({
+      target: event.target,
+      root: conversation,
+    });
+    if (plan.preventDefault) event.preventDefault();
+    if (plan.stopPropagation) event.stopPropagation();
+    if (plan.action === "toggle-switch-menu") {
+      toggleThreadTileSwitchMenu(plan.paneId || "");
       return;
     }
-    const switchButton = closestTileTarget(event.target, "[data-thread-tile-switch-target]");
-    if (switchButton && conversation.contains(switchButton)) {
-      event.preventDefault();
-      event.stopPropagation();
-      const pane = switchButton.closest("[data-thread-tile-pane]");
-      const fromId = pane && pane.getAttribute("data-thread-tile-pane") || "";
-      replaceThreadTilePaneThread(fromId, switchButton.getAttribute("data-thread-tile-switch-target") || "");
+    if (plan.action === "switch-pane-thread") {
+      replaceThreadTilePaneThread(plan.fromId || "", plan.toId || "");
       return;
     }
-    const paneCountButton = closestTileTarget(event.target, "[data-thread-tile-pane-count]");
-    if (paneCountButton && conversation.contains(paneCountButton)) {
-      event.preventDefault();
-      event.stopPropagation();
-      if (!paneCountButton.disabled) changeThreadTilePaneCount(Number(paneCountButton.getAttribute("data-thread-tile-pane-count") || 0));
+    if (plan.action === "change-pane-count") {
+      if (!plan.disabled) changeThreadTilePaneCount(Number(plan.delta || 0));
       return;
     }
-    const closePaneButton = closestTileTarget(event.target, "[data-thread-tile-close-pane]");
-    if (closePaneButton && conversation.contains(closePaneButton)) {
-      event.preventDefault();
-      event.stopPropagation();
-      if (!closePaneButton.disabled) closeThreadTilePane(closePaneButton.getAttribute("data-thread-tile-close-pane") || "");
+    if (plan.action === "close-pane") {
+      if (!plan.disabled) closeThreadTilePane(plan.paneId || "");
       return;
     }
-    const bottomButton = closestTileTarget(event.target, "[data-thread-tile-bottom]");
-    if (bottomButton && conversation.contains(bottomButton)) {
-      event.preventDefault();
-      scrollThreadTilePaneToBottom(bottomButton.getAttribute("data-thread-tile-bottom") || "", { smooth: true });
+    if (plan.action === "scroll-pane-bottom") {
+      scrollThreadTilePaneToBottom(plan.paneId || "", { smooth: true });
       return;
     }
-    const operationButton = closestTileTarget(event.target, "[data-thread-tile-operation-toggle]");
-    if (operationButton && conversation.contains(operationButton)) {
-      event.preventDefault();
-      event.stopPropagation();
-      const id = operationButton.getAttribute("data-thread-tile-operation-toggle") || "";
-      const current = normalizeLiveOperationDockMode(state.threadTileOperationModesById.get(id) || "compact");
-      state.threadTileOperationModesById.set(id, current === "expanded" ? "compact" : "expanded");
-      setThreadTileSelectedThread(id, { render: false });
-      if (!patchThreadTilePane(id, { preserveScroll: true })) scheduleRenderCurrentThread();
+    if (plan.action === "toggle-operation") {
+      const id = plan.paneId || "";
+      applyThreadTileOperationModeTogglePlan(threadTileStatePolicy.operationModeTogglePlan({
+        enabled: state.threadTileMode,
+        threadId: id,
+        mode: state.threadTileOperationModesById.get(id) || "compact",
+      }));
     }
   });
   conversation.addEventListener("scroll", (event) => {
-    const body = closestTileTarget(event.target, ".thread-tile-pane-body");
-    if (body && conversation.contains(body)) updateThreadTileBottomButtonForBody(body);
+    const plan = threadTileActionsApi.resolveThreadTileScrollAction({
+      target: event.target,
+      root: conversation,
+    });
+    if (plan.action === "pane-scroll") updateThreadTileBottomButtonForBody(plan.body);
   }, { passive: true, capture: true });
   conversation.addEventListener("dragstart", (event) => {
-    const handle = closestTileTarget(event.target, "[data-thread-tile-drag-handle]");
-    if (!handle || !conversation.contains(handle)) return;
-    const id = handle.getAttribute("data-thread-tile-drag-handle") || "";
+    const plan = threadTileActionsApi.resolveThreadTileDragStartAction({
+      target: event.target,
+      root: conversation,
+    });
+    if (plan.action !== "drag-start") return;
+    const id = plan.paneId || "";
     if (!id) return;
     state.threadTileDraggingThreadId = id;
     state.threadTileSwitchMenuPaneId = "";
@@ -12471,32 +14419,40 @@ function bindThreadTileActions() {
       event.dataTransfer.effectAllowed = "move";
       event.dataTransfer.setData("text/plain", id);
     }
-    const pane = handle.closest("[data-thread-tile-pane]");
+    const pane = plan.pane;
     if (pane) pane.classList.add("dragging");
   });
   conversation.addEventListener("dragover", (event) => {
-    const pane = closestTileTarget(event.target, "[data-thread-tile-pane]");
-    const dragging = state.threadTileDraggingThreadId || "";
-    const targetId = pane && pane.getAttribute("data-thread-tile-pane") || "";
-    if (!dragging || !targetId || dragging === targetId || !conversation.contains(pane)) return;
-    event.preventDefault();
+    const plan = threadTileActionsApi.resolveThreadTileDragOverAction({
+      target: event.target,
+      root: conversation,
+      draggingId: state.threadTileDraggingThreadId || "",
+    });
+    if (plan.action !== "drag-over") return;
+    if (plan.preventDefault) event.preventDefault();
     if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-    pane.classList.add("drag-over");
+    plan.pane.classList.add("drag-over");
   });
   conversation.addEventListener("dragleave", (event) => {
-    const pane = closestTileTarget(event.target, "[data-thread-tile-pane]");
-    if (pane && conversation.contains(pane)) pane.classList.remove("drag-over");
+    const plan = threadTileActionsApi.resolveThreadTileDragLeaveAction({
+      target: event.target,
+      root: conversation,
+    });
+    if (plan.action === "drag-leave") plan.pane.classList.remove("drag-over");
   });
   conversation.addEventListener("drop", (event) => {
-    const pane = closestTileTarget(event.target, "[data-thread-tile-pane]");
-    const dragging = state.threadTileDraggingThreadId || event.dataTransfer && event.dataTransfer.getData("text/plain") || "";
-    const targetId = pane && pane.getAttribute("data-thread-tile-pane") || "";
-    if (!dragging || !targetId || dragging === targetId || !conversation.contains(pane)) return;
-    event.preventDefault();
-    event.stopPropagation();
+    const plan = threadTileActionsApi.resolveThreadTileDropAction({
+      target: event.target,
+      root: conversation,
+      draggingId: state.threadTileDraggingThreadId || "",
+      transferId: event.dataTransfer && event.dataTransfer.getData("text/plain") || "",
+    });
+    if (plan.action !== "drop-pane") return;
+    if (plan.preventDefault) event.preventDefault();
+    if (plan.stopPropagation) event.stopPropagation();
     document.querySelectorAll(".thread-tile-pane.drag-over, .thread-tile-pane.dragging").forEach((entry) => entry.classList.remove("drag-over", "dragging"));
     state.threadTileDraggingThreadId = "";
-    dropThreadTilePane(dragging, targetId, event);
+    dropThreadTilePane(plan.draggingId, plan.targetId, event);
   });
   conversation.addEventListener("dragend", () => {
     state.threadTileDraggingThreadId = "";
@@ -12803,44 +14759,129 @@ function handleLiveOperationDockClick(event) {
   setLiveOperationDockMode(current === "expanded" ? "compact" : "expanded");
 }
 
-function sourceIndexForVisibleItem(turn, item) {
+function sourceIndexForVisibleItem(turn, item, thread = null) {
   if (!turn || !item) return 0;
-  const entry = visibleItemsForTurn(turn).find((candidate) => candidate && candidate.item === item);
+  const contextThread = renderContextThread(thread);
+  const entry = visibleItemsForTurn(turn, contextThread).find((candidate) => candidate && candidate.item === item);
   if (entry && Number.isInteger(entry.sourceIndex) && entry.sourceIndex >= 0) return entry.sourceIndex;
   const index = Array.isArray(turn.items) ? turn.items.indexOf(item) : -1;
   return index >= 0 ? index : 0;
 }
 
-function renderVisibleItemPatchHtml(turn, item, previousKeys = new Set(), index = 0) {
-  if (!item) return "";
-  if (isContextCompactionItem(item)) return renderContextCompaction(item, turn, previousKeys, index);
-  if (isOperationalItem(item)) return renderLiveOperation(item, turn, previousKeys, index);
-  if (item.type === "reasoning" && isLiveTurn(turn)) return "";
-  return renderItem(item, turn, previousKeys, index);
+function renderVisibleItemPatchHtml(turn, item, previousKeys = new Set(), index = 0, thread = null) {
+  const contextThread = renderContextThread(thread);
+  return withRenderContextThread(contextThread, () => {
+    if (!item) return "";
+    if (isContextCompactionItem(item)) return renderContextCompaction(item, turn, previousKeys, index, contextThread);
+    if (isOperationalItem(item)) return renderLiveOperation(item, turn, previousKeys, index);
+    if (item.type === "reasoning" && isLiveTurn(turn, contextThread)) return "";
+    return renderItem(item, turn, previousKeys, index, contextThread);
+  });
 }
 
 function firstElementFromHtml(html) {
-  const template = document.createElement("template");
-  template.innerHTML = html;
-  return template.content.firstElementChild || null;
+  return threadDetailDomPatchApi.createElementFromHtml({ document, html });
 }
 
-function completeLocalConversationDomUpdate(root, wasNearBottom, userReadingCurrentTurn) {
-  if (root) {
-    hydrateGitHubLinkCards(root);
-    hydrateMermaidDiagrams(root);
-    scheduleFailedAppImageScan(root);
+function hydrateThreadDetailSurface(root, options = {}) {
+  return threadDetailDomPatchApi.hydrateRenderedSurface({
+    root,
+    hydrateGitHubLinks: options.skipRichHydration ? null : hydrateGitHubLinkCards,
+    hydrateMermaid: options.skipRichHydration ? null : hydrateMermaidDiagrams,
+    scheduleImageScan: scheduleFailedAppImageScan,
+    ...(Object.prototype.hasOwnProperty.call(options, "imageScanDelays") ? { imageScanDelays: options.imageScanDelays } : {}),
+  });
+}
+
+function applyThreadDetailDomUpdateEffect(effect, context = {}) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  if (type === "hydrate-root") {
+    hydrateThreadDetailSurface(context.root, item.hydrateOptions || {});
+    return;
   }
-  state.renderedConversationSignature = conversationRenderSignature(state.currentThread);
-  if (!userReadingCurrentTurn && !shouldHoldAutoScrollForCurrentTurn() && (wasNearBottom || shouldFollowSubmittedMessageToBottom() || shouldFollowViewportChangeToBottom())) {
+  if (type === "set-rendered-conversation-signature") {
+    state.renderedConversationSignature = String(item.value || "");
+    return;
+  }
+  if (type === "set-rendered-conversation-patch-shell-signature") {
+    state.renderedConversationPatchShellSignature = String(item.value || "");
+    return;
+  }
+  if (type === "schedule-conversation-to-bottom") {
     scheduleConversationToBottom();
-  } else {
-    scheduleScrollToBottomButtonUpdate();
+    return;
   }
+  if (type === "schedule-scroll-button-update") {
+    scheduleScrollToBottomButtonUpdate();
+    return;
+  }
+  throw new Error(`Unknown thread detail DOM update effect: ${type || "empty"}`);
+}
+
+function applyThreadDetailDomUpdateEffectsPlan(plan, context = {}) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applyThreadDetailDomUpdateEffect(effect, context);
+}
+
+function applyLocalConversationDomUpdateCompletionEffect(effect, context = {}) {
+  applyThreadDetailDomUpdateEffect(effect, context);
+}
+
+function applyLocalConversationDomUpdateCompletionEffectsPlan(plan, context = {}) {
+  applyThreadDetailDomUpdateEffectsPlan(plan, context);
+}
+
+function applyConversationHtmlUpdateEffectsPlan(plan, context = {}) {
+  applyThreadDetailDomUpdateEffectsPlan(plan, context);
+}
+
+function completeLocalConversationDomUpdate(root, wasNearBottom, userReadingCurrentTurn, options = {}) {
+  const hasOption = (key) => Object.prototype.hasOwnProperty.call(options || {}, key);
+  const providedSnapshot = options && options.completionSnapshot && typeof options.completionSnapshot === "object"
+    ? options.completionSnapshot
+    : null;
+  const completionSnapshot = providedSnapshot || (() => {
+    const tilePanePatched = hasOption("tilePanePatched")
+      ? Boolean(options.tilePanePatched)
+      : patchCurrentThreadTilePaneFromState({ preserveScroll: true });
+    const canPatchSingleThread = tilePanePatched
+      ? false
+      : (hasOption("canPatchSingleThread") ? Boolean(options.canPatchSingleThread) : canPatchSingleThreadConversationDom());
+    const scrollPlan = options && options.scrollPlan && typeof options.scrollPlan === "object"
+      ? options.scrollPlan
+      : tilePanePatched
+      ? { action: "none" }
+      : conversationScroll.planLocalPatchScrollCompletion({
+        userReadingCurrentTurn,
+        autoScrollHold: shouldHoldAutoScrollForCurrentTurn(),
+        nearBottom: wasNearBottom,
+        submittedMessageFollow: shouldFollowSubmittedMessageToBottom(),
+        viewportFollow: shouldFollowViewportChangeToBottom(),
+      });
+    return threadDetailDomPatchApi.planLocalConversationDomUpdateCompletionSnapshot({
+      tilePanePatched,
+      canPatchSingleThread,
+      hasRoot: Boolean(root),
+      conversationSignature: hasOption("conversationSignature")
+        ? options.conversationSignature
+        : (tilePanePatched ? "" : conversationRenderSignature(state.currentThread)),
+      patchShellSignature: hasOption("patchShellSignature")
+        ? options.patchShellSignature
+        : (tilePanePatched ? "" : conversationPatchShellSignature(state.currentThread)),
+      scrollAction: scrollPlan.action,
+    });
+  })();
+  const completionPlan = threadDetailDomPatchApi.planLocalConversationDomUpdateCompletion(completionSnapshot);
+  if (!completionPlan.complete) return false;
+  const effectsPlan = threadDetailDomPatchApi.planLocalConversationDomUpdateCompletionEffects(completionPlan);
+  applyLocalConversationDomUpdateCompletionEffectsPlan(effectsPlan, { root });
   return true;
 }
 
 function updateLiveOperationDockForLocalPatch(previousKeys = existingConversationRenderKeys()) {
+  if (patchCurrentThreadTilePaneFromState({ preserveScroll: true })) return true;
+  if (!canPatchSingleThreadConversationDom()) return false;
   const wasNearBottom = isConversationNearBottom();
   const userReadingCurrentTurn = isUserReadingCurrentTurn({ nearBottom: wasNearBottom });
   updateLiveOperationDockHtml(renderLiveOperationDock(state.currentThread, previousKeys));
@@ -12849,37 +14890,44 @@ function updateLiveOperationDockForLocalPatch(previousKeys = existingConversatio
 
 function turnArticleNode(turn) {
   const conversation = $("conversation");
-  if (!conversation || !turn) return null;
+  if (!turn) return null;
   const key = stableTurnKey(turn);
-  return conversation.querySelector(`[data-render-key="${escapeSelectorAttr(key)}"]`);
+  return threadDetailDomPatchApi.findTurnArticleElement({
+    conversation,
+    turnKey: key,
+    escapeSelectorAttr,
+  });
 }
 
 function insertTurnArticleDom(turn, previousKeys = existingConversationRenderKeys()) {
-  const conversation = $("conversation");
-  if (!conversation || !turn) return null;
-  const html = renderTurn(turn, previousKeys);
-  const source = firstElementFromHtml(html);
+  const source = threadDetailDomPatchApi.createTurnArticleElement({
+    document,
+    turn,
+    previousKeys,
+    renderTurnHtml: (candidate, keys) => renderTurn(candidate, keys),
+  });
   if (!source) return null;
-  const turns = visibleTurnsForConversation(state.currentThread);
-  const turnIndex = turns.indexOf(turn);
-  let anchor = null;
-  for (let index = turnIndex - 1; index >= 0; index -= 1) {
-    const previous = turnArticleNode(turns[index]);
-    if (previous) {
-      anchor = previous.nextSibling;
-      break;
-    }
-  }
-  if (!anchor) {
-    const firstTurn = conversation.querySelector(".turn");
-    if (firstTurn) anchor = firstTurn;
-  }
-  conversation.insertBefore(source, anchor);
-  return source;
+  return insertTurnArticleElementDom(turn, source);
+}
+
+function insertTurnArticleElementDom(turn, source) {
+  const conversation = $("conversation");
+  if (!conversation || !turn || !source) return null;
+  const result = threadDetailDomPatchApi.insertTurnArticleElement({
+    conversation,
+    turn,
+    source,
+    visibleTurns: visibleTurnsForConversation(state.currentThread),
+    findTurnElement: (candidate) => turnArticleNode(candidate),
+    firstTurnElement: () => conversation.querySelector(".turn"),
+  });
+  return result.ok ? source : null;
 }
 
 function insertVisibleItemDom(turn, item) {
   if (!turn || !item || !item.id || isReasoningItem(item)) return false;
+  if (patchCurrentThreadTilePaneFromState({ preserveScroll: true })) return true;
+  if (!canPatchSingleThreadConversationDom()) return false;
   if (isOperationalItem(item)) return updateLiveOperationDockForLocalPatch();
   const conversation = $("conversation");
   if (!conversation) return false;
@@ -12893,29 +14941,29 @@ function insertVisibleItemDom(turn, item) {
     bindCurrentThreadActions();
     return completeLocalConversationDomUpdate(article, wasNearBottom, userReadingCurrentTurn);
   }
-  const entries = visibleItemsForTurn(turn);
+  const thread = renderContextThread();
+  const entries = visibleItemsForTurn(turn, thread);
   const visibleIndex = entries.findIndex((entry) => entry && entry.item === item);
   if (visibleIndex < 0) return false;
-  const sourceIndex = Number.isInteger(entries[visibleIndex].sourceIndex) ? entries[visibleIndex].sourceIndex : sourceIndexForVisibleItem(turn, item);
-  const html = renderVisibleItemPatchHtml(turn, item, previousKeys, sourceIndex);
+  const sourceIndex = Number.isInteger(entries[visibleIndex].sourceIndex) ? entries[visibleIndex].sourceIndex : sourceIndexForVisibleItem(turn, item, thread);
+  const html = renderVisibleItemPatchHtml(turn, item, previousKeys, sourceIndex, thread);
   const source = firstElementFromHtml(html);
   if (!source) return false;
-  let anchor = null;
-  for (let index = visibleIndex - 1; index >= 0; index -= 1) {
-    const entry = entries[index];
-    const previousKey = stableItemKey(turn, entry.item, entry.sourceIndex);
-    const previousNode = article.querySelector(`[data-render-key="${escapeSelectorAttr(previousKey)}"]`);
-    if (previousNode) {
-      anchor = previousNode.nextSibling;
-      break;
-    }
-  }
-  if (!anchor) anchor = article.firstChild;
-  article.insertBefore(source, anchor);
-  return completeLocalConversationDomUpdate(source, wasNearBottom, userReadingCurrentTurn);
+  const insertResult = threadDetailDomPatchApi.insertVisibleItemElement({
+    article,
+    source,
+    entries,
+    visibleIndex,
+    keyForEntry: (entry) => entry && entry.item ? stableItemKey(turn, entry.item, entry.sourceIndex) : "",
+    findElementByKey: (key) => article.querySelector(`[data-render-key="${escapeSelectorAttr(key)}"]`),
+  });
+  if (!insertResult || !insertResult.ok) return false;
+  return completeLocalConversationDomUpdate(insertResult.target || source, wasNearBottom, userReadingCurrentTurn);
 }
 
 function patchVisibleItemDom(turn, item) {
+  if (patchCurrentThreadTilePaneFromState({ preserveScroll: true })) return true;
+  if (!canPatchSingleThreadConversationDom()) return false;
   if (isOperationalItem(item)) return updateLiveOperationDockForLocalPatch();
   const target = patchVisibleItemDomNode(turn, item, existingConversationRenderKeys());
   if (!target) return false;
@@ -12926,15 +14974,24 @@ function patchVisibleItemDom(turn, item) {
 
 function patchVisibleItemDomNode(turn, item, previousKeys, sourceIndex = null) {
   if (!turn || !item || !item.id || isReasoningItem(item)) return null;
+  if (!canPatchSingleThreadConversationDom()) return null;
   const conversation = $("conversation");
   if (!conversation) return null;
   const index = Number.isInteger(sourceIndex) && sourceIndex >= 0
     ? sourceIndex
-    : sourceIndexForVisibleItem(turn, item);
+    : sourceIndexForVisibleItem(turn, item, renderContextThread());
   const key = stableItemKey(turn, item, index);
   const target = conversation.querySelector(`[data-render-key="${escapeSelectorAttr(key)}"]`);
   if (!target) return null;
-  const html = renderVisibleItemPatchHtml(turn, item, previousKeys, index);
+  return patchVisibleItemElement(target, turn, item, previousKeys, index);
+}
+
+function patchVisibleItemElement(target, turn, item, previousKeys, sourceIndex = null) {
+  if (!target || !turn || !item || !item.id || isReasoningItem(item)) return null;
+  const index = Number.isInteger(sourceIndex) && sourceIndex >= 0
+    ? sourceIndex
+    : sourceIndexForVisibleItem(turn, item, renderContextThread());
+  const html = renderVisibleItemPatchHtml(turn, item, previousKeys, index, renderContextThread());
   const source = firstElementFromHtml(html);
   if (!source) return null;
   patchNode(target, source);
@@ -12942,7 +14999,8 @@ function patchVisibleItemDomNode(turn, item, previousKeys, sourceIndex = null) {
 }
 
 function visibleItemPatchEntries(turn) {
-  return visibleItemsForTurn(turn).map((entry, index) => {
+  const thread = renderContextThread();
+  return visibleItemsForTurn(turn, thread).map((entry, index) => {
     const item = entry && entry.item;
     const sourceIndex = Number.isInteger(entry && entry.sourceIndex) && entry.sourceIndex >= 0
       ? entry.sourceIndex
@@ -12951,103 +15009,248 @@ function visibleItemPatchEntries(turn) {
       item,
       sourceIndex,
       key: stableItemKey(turn, item, sourceIndex),
-      signature: visibleItemSignature(item, turn),
+      signature: visibleItemSignature(item, turn, thread),
     };
   }).filter((entry) => entry.item && entry.key && entry.signature);
 }
 
 function visibleItemPatchShapePreservesExisting(previousEntries, nextEntries) {
-  if (!Array.isArray(previousEntries) || !Array.isArray(nextEntries)) return false;
-  if (previousEntries.length > nextEntries.length) return false;
-  let previousIndex = 0;
-  for (const nextEntry of nextEntries) {
-    const previousEntry = previousEntries[previousIndex];
-    if (previousEntry && previousEntry.key === nextEntry.key) previousIndex += 1;
-  }
-  return previousIndex === previousEntries.length;
+  return threadDetailPatchPlanApi.visibleItemPatchShapePreservesExisting(previousEntries, nextEntries);
 }
 
-function patchVisibleItemsOnlyFromRefresh(previousTurn, nextTurn, previousKeys) {
+function planVisibleItemsOnlyFromRefresh(previousTurn, nextTurn) {
   if (!previousTurn || !nextTurn || !isLatestTurn(nextTurn)) return false;
   const previousEntries = visibleItemPatchEntries(previousTurn);
   const nextEntries = visibleItemPatchEntries(nextTurn);
-  if (!visibleItemPatchShapePreservesExisting(previousEntries, nextEntries)) return false;
+  return threadDetailPatchPlanApi.planVisibleItemRefreshPatch(previousEntries, nextEntries);
+}
+
+function applyVisibleItemsOnlyRefreshPatch(nextTurn, patchPlan, previousKeys) {
   const article = turnArticleNode(nextTurn);
-  if (!article) return false;
-  const previousByKey = new Map(previousEntries.map((entry) => [entry.key, entry]));
-  let lastPatchedNode = null;
-  for (let index = 0; index < nextEntries.length; index += 1) {
-    const nextEntry = nextEntries[index];
-    const previousEntry = previousByKey.get(nextEntry.key);
-    if (previousEntry) {
-      const existingNode = article.querySelector(`[data-render-key="${escapeSelectorAttr(nextEntry.key)}"]`);
-      if (!existingNode) return false;
-      const previousSignature = JSON.stringify(previousEntry.signature);
-      const nextSignature = JSON.stringify(nextEntry.signature);
-      lastPatchedNode = previousSignature === nextSignature
-        ? existingNode
-        : patchVisibleItemDomNode(nextTurn, nextEntry.item, previousKeys, nextEntry.sourceIndex);
-      if (!lastPatchedNode) return false;
-      continue;
-    }
-    const html = renderVisibleItemPatchHtml(nextTurn, nextEntry.item, previousKeys, nextEntry.sourceIndex);
-    const source = firstElementFromHtml(html);
-    if (!source) return false;
-    article.insertBefore(source, lastPatchedNode ? lastPatchedNode.nextSibling : article.firstChild);
-    lastPatchedNode = source;
-  }
-  return true;
+  const result = threadDetailDomPatchApi.applyVisibleItemRefreshDomPatch({
+    article,
+    patchPlan,
+    findElementByKey: (key) => article
+      ? article.querySelector(`[data-render-key="${escapeSelectorAttr(key)}"]`)
+      : null,
+    renderElement: (nextEntry) => firstElementFromHtml(renderVisibleItemPatchHtml(
+      nextTurn,
+      nextEntry.item,
+      previousKeys,
+      nextEntry.sourceIndex,
+      renderContextThread(),
+    )),
+    patchElement: (target, nextEntry) => patchVisibleItemElement(
+      target,
+      nextTurn,
+      nextEntry.item,
+      previousKeys,
+      nextEntry.sourceIndex,
+    ),
+  });
+  return Boolean(result && result.ok);
 }
 
 function patchLiveTextItemDom(turn, item) {
   if (!turn || !item || !item.id) return false;
   if (item.type !== "agentMessage" && item.type !== "plan") return false;
+  if (patchCurrentThreadTilePaneFromState({ preserveScroll: true })) return true;
+  if (!canPatchSingleThreadConversationDom()) return false;
   const conversation = $("conversation");
   if (!conversation) return false;
-  const index = sourceIndexForVisibleItem(turn, item);
+  const index = sourceIndexForVisibleItem(turn, item, renderContextThread());
   const key = stableItemKey(turn, item, index);
-  const target = conversation.querySelector(`[data-render-key="${escapeSelectorAttr(key)}"]`);
-  if (!target) return false;
   const wasNearBottom = isConversationNearBottom();
   const userReadingCurrentTurn = isUserReadingCurrentTurn({ nearBottom: wasNearBottom });
-  const html = renderItem(item, turn, existingConversationRenderKeys(), index);
-  const source = firstElementFromHtml(html);
-  if (!source) return false;
-  patchNode(target, source);
-  return completeLocalConversationDomUpdate(target, wasNearBottom, userReadingCurrentTurn);
+  const previousKeys = existingConversationRenderKeys();
+  const patchResult = threadDetailDomPatchApi.applyLiveTextItemDomPatch({
+    conversation,
+    key,
+    document,
+    escapeSelectorAttr,
+    renderHtml: () => renderItem(item, turn, previousKeys, index, renderContextThread()),
+    patchElement: (target, source) => {
+      patchNode(target, source);
+      return target;
+    },
+  });
+  if (!patchResult || !patchResult.ok || !patchResult.target) return false;
+  return completeLocalConversationDomUpdate(patchResult.target, wasNearBottom, userReadingCurrentTurn);
+}
+
+function threadDetailRefreshLocalPatchTransactionCallback(effect, context = {}) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || item.name || "");
+  if (type === "complete-local-conversation-dom-update") {
+    return {
+      name: "complete-local-conversation-dom-update",
+      apply: () => completeLocalConversationDomUpdate(
+        context.conversation,
+        context.wasNearBottom,
+        context.userReadingCurrentTurn,
+        { completionSnapshot: item.completionSnapshot || {} },
+      )
+        ? { ok: true }
+        : { ok: false, reason: "complete-dom-update-failed" },
+    };
+  }
+  if (type === "update-live-operation-dock") {
+    return {
+      name: "update-live-operation-dock",
+      apply: () => {
+        updateLiveOperationDockHtml(renderLiveOperationDock(context.nextThread, context.previousKeys));
+        return { ok: true };
+      },
+    };
+  }
+  if (type === "bind-current-thread-actions") {
+    return {
+      name: "bind-current-thread-actions",
+      apply: () => {
+        bindCurrentThreadActions();
+        return { ok: true };
+      },
+    };
+  }
+  return {
+    name: type || "unknown-local-patch-transaction-effect",
+    apply: () => ({ ok: false, reason: `unknown-effect:${type || "empty"}`.slice(0, 80) }),
+  };
+}
+
+function threadDetailRefreshLocalPatchTransactionCallbacks(plan = {}, context = {}) {
+  const commitEffects = Array.isArray(plan.commitEffects) ? plan.commitEffects : [];
+  const afterSuccess = Array.isArray(plan.afterSuccess) ? plan.afterSuccess : [];
+  return {
+    commitEffects: commitEffects.map((effect) => threadDetailRefreshLocalPatchTransactionCallback(effect, context)),
+    afterSuccess: afterSuccess.map((effect) => threadDetailRefreshLocalPatchTransactionCallback(effect, context)),
+  };
+}
+
+function rejectThreadDetailPatch(reason) {
+  return threadDetailDomPatchApi.threadDetailPatchResult(false, reason || "unknown");
+}
+
+function acceptThreadDetailPatch(reason) {
+  return threadDetailDomPatchApi.threadDetailPatchResult(true, reason || "patched");
 }
 
 function patchCurrentThreadDetailFromRefresh(previousThread, nextThread, previousConversationSignature) {
   const conversation = $("conversation");
-  if (!conversation || !previousThread || !nextThread) return false;
-  if (previousThread.mobileLoading || previousThread.mobileLoadError || nextThread.mobileLoading || nextThread.mobileLoadError) return false;
-  if (state.renderedConversationSignature !== previousConversationSignature) return false;
-  if (conversationPatchShellSignature(previousThread) !== conversationPatchShellSignature(nextThread)) return false;
+  const rootPreflight = threadDetailPatchPlanApi.planThreadDetailRefreshLocalPatchPreflight({
+    stage: "root",
+    conversationPresent: Boolean(conversation),
+    previousThreadPresent: Boolean(previousThread),
+    nextThreadPresent: Boolean(nextThread),
+  });
+  if (!rootPreflight.canPatch) return rejectThreadDetailPatch(rootPreflight.reason);
+  const targetThreadId = nextThread.id || state.currentThreadId;
+  const tilePanePatched = patchCurrentThreadTilePaneFromState({ threadId: targetThreadId, preserveScroll: true });
+  if (tilePanePatched) {
+    const tilePreflight = threadDetailPatchPlanApi.planThreadDetailRefreshLocalPatchPreflight({
+      conversationPresent: true,
+      previousThreadPresent: true,
+      nextThreadPresent: true,
+      tilePanePatched: true,
+    });
+    return acceptThreadDetailPatch(tilePreflight.reason);
+  }
+  const previousPatchShellSignature = conversationPatchShellSignature(previousThread);
+  const renderedPatchShellSignature = String(state.renderedConversationPatchShellSignature || "");
+  const preflightPlan = threadDetailPatchPlanApi.planThreadDetailRefreshLocalPatchPreflight({
+    conversationPresent: true,
+    previousThreadPresent: true,
+    nextThreadPresent: true,
+    singleThreadSurfaceAvailable: canPatchSingleThreadConversationDom({ threadId: targetThreadId }),
+    previousLoadingOrError: Boolean(previousThread.mobileLoading || previousThread.mobileLoadError),
+    nextLoadingOrError: Boolean(nextThread.mobileLoading || nextThread.mobileLoadError),
+    renderedConversationSignature: state.renderedConversationSignature,
+    previousConversationSignature,
+    renderedPatchShellSignature,
+    previousPatchShellSignature,
+    nextPatchShellSignature: conversationPatchShellSignature(nextThread),
+  });
+  if (!preflightPlan.canPatch) return rejectThreadDetailPatch(preflightPlan.reason);
   const wasNearBottom = isConversationNearBottom();
   const userReadingCurrentTurn = isUserReadingCurrentTurn({ nearBottom: wasNearBottom });
   const previousKeys = existingConversationRenderKeys();
+  const scrollPlan = conversationScroll.planLocalPatchScrollCompletion({
+    userReadingCurrentTurn,
+    autoScrollHold: shouldHoldAutoScrollForCurrentTurn(),
+    nearBottom: wasNearBottom,
+    submittedMessageFollow: shouldFollowSubmittedMessageToBottom(),
+    viewportFollow: shouldFollowViewportChangeToBottom(),
+  });
+  const completionSnapshot = threadDetailDomPatchApi.planLocalConversationDomUpdateCompletionSnapshot({
+    tilePanePatched: false,
+    canPatchSingleThread: true,
+    hasRoot: Boolean(conversation),
+    conversationSignature: conversationRenderSignature(nextThread),
+    patchShellSignature: conversationPatchShellSignature(nextThread),
+    scrollAction: scrollPlan.action,
+  });
   const previousTurnById = new Map(visibleTurnsForConversation(previousThread)
     .map((turn) => [String(turn && turn.id || ""), turn])
     .filter(([id]) => id));
-  updateLiveOperationDockHtml(renderLiveOperationDock(nextThread, previousKeys));
-  for (const turn of visibleTurnsForConversation(nextThread)) {
+  const nextTurns = visibleTurnsForConversation(nextThread);
+  const turnByKey = new Map();
+  const itemPatchPlanByTurnKey = new Map();
+  const turnPatchEntries = nextTurns.map((turn) => {
+    const key = stableTurnKey(turn);
     const previousTurn = previousTurnById.get(String(turn && turn.id || ""));
-    if (previousTurn && patchVisibleItemsOnlyFromRefresh(previousTurn, turn, previousKeys)) continue;
-    const html = renderTurn(turn, previousKeys);
-    const source = firstElementFromHtml(html);
-    const article = turnArticleNode(turn);
-    if (!source) {
-      if (article) article.remove();
-      continue;
-    }
-    if (!article) {
-      if (!insertTurnArticleDom(turn, previousKeys)) return false;
-      continue;
-    }
-    patchNode(article, source);
-  }
-  bindCurrentThreadActions();
-  return completeLocalConversationDomUpdate(conversation, wasNearBottom, userReadingCurrentTurn);
+    const itemPatchPlan = planVisibleItemsOnlyFromRefresh(previousTurn, turn);
+    turnByKey.set(key, turn);
+    itemPatchPlanByTurnKey.set(key, itemPatchPlan);
+    return {
+      key,
+      hasPreviousTurn: Boolean(previousTurn),
+      itemPatchable: Boolean(itemPatchPlan && itemPatchPlan.canPatch),
+      articlePresent: Boolean(turnArticleNode(turn)),
+    };
+  });
+  const turnPatchPlan = threadDetailPatchPlanApi.planThreadDetailRefreshDomPatch(turnPatchEntries);
+  if (!turnPatchPlan.canPatch) return rejectThreadDetailPatch(turnPatchPlan.reason || "turn-patch-plan-rejected");
+  const transactionEffectsPlan = threadDetailDomPatchApi.planThreadDetailRefreshLocalPatchTransactionEffects({
+    completionSnapshot,
+  });
+  const transactionCallbacks = threadDetailRefreshLocalPatchTransactionCallbacks(transactionEffectsPlan, {
+    conversation,
+    wasNearBottom,
+    userReadingCurrentTurn,
+    nextThread,
+    previousKeys,
+  });
+  const applyResult = threadDetailDomPatchApi.applyThreadDetailPatchTransaction({
+    applyPatch: () => threadDetailDomPatchApi.applyThreadTurnRefreshDomPatch({
+      patchPlan: turnPatchPlan,
+      findTurnByKey: (key) => turnByKey.get(String(key || "")),
+      applyItemPatch: (turn, operation) => {
+        const patchPlan = itemPatchPlanByTurnKey.get(operation.key);
+        return applyVisibleItemsOnlyRefreshPatch(turn, patchPlan, previousKeys)
+          ? { ok: true }
+          : { ok: false, reason: "item-patch-failed" };
+      },
+      renderTurnElement: (turn) => threadDetailDomPatchApi.createTurnArticleElement({
+        document,
+        turn,
+        previousKeys,
+        renderTurnHtml: (candidate, keys) => renderTurn(candidate, keys),
+      }),
+      insertTurnElement: (source, turn) => insertTurnArticleElementDom(turn, source)
+        ? { ok: true }
+        : { ok: false, reason: "insert-turn-failed" },
+      replaceTurnElement: (source, turn) => {
+        const article = turnArticleNode(turn);
+        if (!article) return { ok: false, reason: "replace-turn-missing-article" };
+        patchNode(article, source);
+        return { ok: true };
+      },
+    }),
+    commitEffects: transactionCallbacks.commitEffects,
+    afterSuccess: transactionCallbacks.afterSuccess,
+  });
+  if (!applyResult.ok) return rejectThreadDetailPatch(applyResult.reason || "turn-patch-apply-failed");
+  return acceptThreadDetailPatch("patched");
 }
 
 function renderHome() {
@@ -13122,7 +15325,7 @@ function renderHome() {
       isRolloutOverThreshold(thread),
     ]),
   });
-  if (!updateConversationHtml(html, signature)) {
+  if (!updateConversationHtml(html, signature, { patchShellSignature: "home" })) {
     publishPluginNavigationState();
     return;
   }
@@ -13146,6 +15349,7 @@ function renderStartupThreadOpening() {
   $("threadMeta").textContent = "Restoring your current conversation";
   $("conversation").innerHTML = `<div class="empty-state entry-animate">Opening thread...</div>`;
   state.renderedConversationSignature = "startup-thread-open-pending";
+  state.renderedConversationPatchShellSignature = "";
   publishPluginNavigationState();
 }
 
@@ -13165,23 +15369,26 @@ function renderRolloutWarning(thread, previousKeys = new Set()) {
   if (isRolloutWarningDismissed(thread)) return "";
   const size = rolloutSizeText(thread);
   const threshold = formatFileSize(rolloutThresholdBytes(thread));
-  const key = `rollout-warning|${thread.id || state.currentThreadId}`;
+  const threadId = String(thread && thread.id || state.currentThreadId || "").trim();
+  const ownerAttribute = threadId ? ` data-thread-action-thread-id="${escapeHtml(threadId)}"` : "";
+  const key = `rollout-warning|${threadId}`;
   return `<div class="rollout-warning${entryAnimationClass(key, previousKeys)}" data-render-key="${escapeHtml(key)}">
     <div class="rollout-warning-text">
       <strong>上下文文件 ${escapeHtml(size)}</strong>
       <span>已达到 ${escapeHtml(threshold)} 阈值。建议压缩续接：创建带详细上下文的新线程后归档旧线程。</span>
     </div>
     <div class="rollout-warning-actions">
-      <button class="rollout-skip" type="button" data-dismiss-rollout-warning>跳过</button>
-      <button class="rollout-new-thread" type="button" data-new-thread-from-current>压缩续接</button>
+      <button class="rollout-skip" type="button" data-dismiss-rollout-warning${ownerAttribute}>跳过</button>
+      <button class="rollout-new-thread" type="button" data-new-thread-from-current${ownerAttribute}>压缩续接</button>
     </div>
   </div>`;
 }
 
 function renderThreadTaskToolbar(thread) {
   if (!thread || !thread.id) return "";
+  const ownerAttribute = ` data-thread-action-thread-id="${escapeHtml(thread.id)}"`;
   return `<div class="rollout-warning-actions thread-task-toolbar">
-    <button class="approval-button allow" type="button" data-create-thread-task-card>Send task card</button>
+    <button class="approval-button allow" type="button" data-create-thread-task-card${ownerAttribute}>Send task card</button>
   </div>`;
 }
 
@@ -13208,7 +15415,9 @@ function renderThreadHistoryNote(thread, omitted, previousKeys = new Set()) {
   const error = String(state.threadHistoryError || "");
   if (!omitted && !hasOlder && !busy && !error) return "";
   const loaded = Array.isArray(thread && thread.turns) ? thread.turns.length : 0;
-  const key = `history|${state.currentThreadId || thread.id || ""}|${omitted}|${threadTurnsCursorSignature(olderCursor)}|${busy}|${error}`;
+  const threadId = String(thread && thread.id || state.currentThreadId || "").trim();
+  const ownerAttribute = threadId ? ` data-thread-action-thread-id="${escapeHtml(threadId)}"` : "";
+  const key = `history|${threadId}|${omitted}|${threadTurnsCursorSignature(olderCursor)}|${busy}|${error}`;
   const parts = [];
   if (omitted > 0) {
     parts.push(`Older history hidden on mobile: ${omitted.toLocaleString()} turn(s).`);
@@ -13219,12 +15428,83 @@ function renderThreadHistoryNote(thread, omitted, previousKeys = new Set()) {
   }
   if (error) parts.push(error);
   const button = hasOlder
-    ? `<button class="history-load-button" type="button" data-load-older-turns ${busy ? "disabled" : ""}>${busy ? "Loading..." : "Load older"}</button>`
+    ? `<button class="history-load-button" type="button" data-load-older-turns${ownerAttribute}${busy ? " disabled" : ""}>${busy ? "Loading..." : "Load older"}</button>`
     : "";
   return `<div class="history-note history-loader${entryAnimationClass(key, previousKeys)}" data-render-key="${escapeHtml(key)}">
     <span>${escapeHtml(parts.join(" "))}</span>
     ${button}
   </div>`;
+}
+
+function applySingleThreadShellPostUpdateEffect(effect, context = {}) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  if (type === "bind-retry-current-thread") {
+    const retry = $("retryCurrentThread");
+    if (retry) {
+      const retryThreadId = String(item.threadId || context.threadId || "");
+      retry.onclick = () => loadThread(retryThreadId, { source: "retry" }).catch(showError);
+    }
+    return;
+  }
+  if (type === "check-empty-visible-detail-mismatch") {
+    checkEmptyVisibleDetailMismatchAfterRender(context.thread, context.shellPlan, {
+      source: String(item.source || "single-thread-render"),
+      renderMode: String(item.renderMode || "full-render"),
+      domCount: Math.max(0, Number(item.domCount || 0)),
+      previousCount: Math.max(0, Number(item.previousCount || 0)),
+    });
+    return;
+  }
+  if (type === "bind-current-thread-actions") {
+    bindCurrentThreadActions();
+    return;
+  }
+  if (type === "scroll-turn-receipt-start") {
+    scrollConversationToTurnReceiptStart(item.turnId);
+    return;
+  }
+  if (type === "apply-pending-plugin-route-hint-focus") {
+    applyPendingPluginRouteHintFocus();
+    return;
+  }
+  if (type === "update-tick-timer") {
+    updateTickTimer();
+    return;
+  }
+  if (type === "publish-plugin-navigation-state") {
+    publishPluginNavigationState();
+    return;
+  }
+  throw new Error(`Unknown single-thread shell post-update effect: ${type || "empty"}`);
+}
+
+function applySingleThreadShellPostUpdateEffectsPlan(plan, context = {}) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applySingleThreadShellPostUpdateEffect(effect, context);
+}
+
+function applySummaryOnlyCurrentThreadRecoveryEffect(effect) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || "");
+  if (type === "set-current-thread") {
+    state.currentThread = item.thread || null;
+    return;
+  }
+  if (type === "post-client-event") {
+    postClientEvent(String(item.name || ""), item.payload || {});
+    return;
+  }
+  if (type === "schedule-current-thread-refresh") {
+    scheduleCurrentThreadRefresh(Math.max(0, Number(item.delayMs || 0)), String(item.reason || "refresh"));
+    return;
+  }
+  throw new Error(`Unknown summary-only current thread recovery effect: ${type || "empty"}`);
+}
+
+function applySummaryOnlyCurrentThreadRecoveryEffectsPlan(plan) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applySummaryOnlyCurrentThreadRecoveryEffect(effect);
 }
 
 function renderCurrentThread(options = {}) {
@@ -13236,7 +15516,7 @@ function renderCurrentThread(options = {}) {
     renderNewThreadDraft();
     return;
   }
-  const thread = state.currentThread;
+  let thread = state.currentThread;
   if (!thread) {
     if (state.startupThreadOpenPending) {
       renderStartupThreadOpening();
@@ -13249,13 +15529,20 @@ function renderCurrentThread(options = {}) {
   const nearBottom = isConversationNearBottom();
   const userReadingCurrentTurn = isUserReadingCurrentTurn({ nearBottom });
   const explicitNoStickToBottom = options.stickToBottom === false || Boolean(options.scrollToTurnReceiptStart);
-  const shouldFollowBottom = !explicitNoStickToBottom
-    && (shouldFollowSubmittedMessageToBottom() || shouldFollowViewportChangeToBottom());
-  const shouldStickToBottom = !explicitNoStickToBottom
-    && (shouldFollowBottom
-      || (!userReadingCurrentTurn
-        && !shouldHoldAutoScrollForCurrentTurn()
-        && (options.stickToBottom === true || nearBottom)));
+  const sustainedSubmittedFollow = !explicitNoStickToBottom
+    && !userReadingCurrentTurn
+    && sustainSubmittedMessageBottomFollowFromThread(thread);
+  const fullRenderScrollPlan = conversationScroll.planFullRenderScroll({
+    stickToBottom: options.stickToBottom,
+    scrollToTurnReceiptStart: options.scrollToTurnReceiptStart,
+    nearBottom,
+    userReadingCurrentTurn,
+    autoScrollHold: shouldHoldAutoScrollForCurrentTurn(),
+    sustainedSubmittedFollow,
+    submittedMessageFollow: shouldFollowSubmittedMessageToBottom(),
+    viewportFollow: shouldFollowViewportChangeToBottom(),
+  });
+  const shouldStickToBottom = Boolean(fullRenderScrollPlan.stickToBottom);
   const previousKeys = existingConversationRenderKeys();
   const tileLayout = threadTileLayout();
   if (tileLayout.enabled) {
@@ -13268,31 +15555,56 @@ function renderCurrentThread(options = {}) {
   }
   updateCurrentThreadHeader(thread);
   setThreadTileConversationMode(false);
-  if (threadIsLoadingWithoutVisibleTurns(thread)) {
-    updateLiveOperationDockHtml("");
-    updateConversationHtml(
-      `<div class="empty-state entry-animate">Loading thread...</div>`,
-      conversationRenderSignature(thread),
-      { stickToBottom: shouldStickToBottom },
-    );
-    updateTickTimer();
-    publishPluginNavigationState();
-    return;
+  const summaryRecoveryPlan = threadDetailStateApi.planSummaryOnlyCurrentThreadRecovery({
+    thread,
+    currentThreadId: state.currentThreadId,
+    clientBuildId: CLIENT_BUILD_ID,
+    hasThreadLoadController: Boolean(state.threadLoadController),
+    hasRefreshThreadController: Boolean(state.refreshThreadController),
+  });
+  if (summaryRecoveryPlan.shouldRecover) {
+    const summaryRecoveryEffectsPlan = threadDetailStateApi.planSummaryOnlyCurrentThreadRecoveryEffects(summaryRecoveryPlan);
+    applySummaryOnlyCurrentThreadRecoveryEffectsPlan(summaryRecoveryEffectsPlan);
+    thread = state.currentThread;
   }
-  if (thread.mobileLoadError) {
-    updateLiveOperationDockHtml("");
+  const earlyShellPlan = threadDetailRenderPlanApi.planSingleThreadEarlyShellExecution({
+    threadId: thread.id || state.currentThreadId || "",
+    currentThreadId: state.currentThreadId,
+    loadingWithoutVisibleTurns: threadIsLoadingWithoutVisibleTurns(thread),
+    loadError: thread.mobileLoadError,
+    conversationSignature: conversationRenderSignature(thread),
+    patchShellSignature: conversationPatchShellSignature(thread),
+    stickToBottom: shouldStickToBottom,
+    escapeHtml,
+  });
+  if (earlyShellPlan.shouldRender) {
+    if (earlyShellPlan.clearLiveOperationDock) updateLiveOperationDockHtml("");
+    const earlyUpdatePlan = threadDetailRenderPlanApi.planSingleThreadShellConversationUpdate({
+      shellPlan: earlyShellPlan,
+      conversationSignature: earlyShellPlan.conversationSignature,
+      patchShellSignature: earlyShellPlan.patchShellSignature,
+      stickToBottom: earlyShellPlan.stickToBottom,
+      expectedVisibleTurnCount: 0,
+      source: "single-thread-early-shell",
+    });
     updateConversationHtml(
-      `<div class="empty-state entry-animate">
-        <div>Thread failed: ${escapeHtml(thread.mobileLoadError)}</div>
-        <button id="retryCurrentThread" class="retry-button" type="button">Retry</button>
-      </div>`,
-      conversationRenderSignature(thread),
-      { stickToBottom: shouldStickToBottom },
+      earlyUpdatePlan.html,
+      earlyUpdatePlan.conversationSignature,
+      earlyUpdatePlan.options,
     );
-    const retry = $("retryCurrentThread");
-    if (retry) retry.onclick = () => loadThread(thread.id || state.currentThreadId, { source: "retry" }).catch(showError);
-    updateTickTimer();
-    publishPluginNavigationState();
+    const earlyPostUpdateEffectsPlan = threadDetailRenderPlanApi.planSingleThreadShellPostUpdateEffects({
+      shellPlan: earlyShellPlan,
+      bindRetry: earlyShellPlan.bindRetry,
+      retryThreadId: earlyShellPlan.retryThreadId || thread.id || state.currentThreadId,
+      updateTickTimer: true,
+      publishPluginNavigationState: true,
+      reason: "single-thread-early-shell",
+    });
+    applySingleThreadShellPostUpdateEffectsPlan(earlyPostUpdateEffectsPlan, {
+      thread,
+      shellPlan: earlyShellPlan,
+      threadId: thread.id || state.currentThreadId || "",
+    });
     return;
   }
   const turns = visibleTurnsForConversation(thread);
@@ -13320,17 +15632,58 @@ function renderCurrentThread(options = {}) {
     if (turnId && visibleTurnIds.has(turnId)) return false;
     return isApprovalActive(request);
   });
-  const emptyMessage = readWarningMessage
-    ? "暂时没有可显示的完整消息。共享模式恢复后刷新这个页面即可继续读取。"
-    : "No visible turns.";
-    const html = goalCard + rolloutWarning + loadingNote + taskToolbar + omittedBanner + readWarning + (turnsHtml || approvalsHtml || taskCardsHtml ? `${turnsHtml}${approvalsHtml}${taskCardsHtml}${pluginRefreshNotice}` : `${pluginRefreshNotice || ""}<div class="empty-state entry-animate">${escapeHtml(emptyMessage)}</div>`);
+  const shellPlan = threadDetailRenderPlanApi.planSingleThreadFullRenderShell({
+    threadId: state.currentThreadId || thread.id || "",
+    goalCard,
+    rolloutWarning,
+    loadingNote,
+    taskToolbar,
+    omittedBanner,
+    readWarning,
+    turnsHtml,
+    approvalsHtml,
+    taskCardsHtml,
+    pluginRefreshNotice,
+    readWarningMessage,
+    escapeHtml,
+  });
   updateLiveOperationDockHtml(liveOperationDock);
-  updateConversationHtml(html, conversationRenderSignature(thread), { stickToBottom: shouldStickToBottom });
-  bindCurrentThreadActions();
-  if (options.scrollToTurnReceiptStart) scrollConversationToTurnReceiptStart(options.scrollToTurnReceiptStart);
-  applyPendingPluginRouteHintFocus();
-  updateTickTimer();
-  publishPluginNavigationState();
+  const previousChildCount = $("conversation") ? $("conversation").childNodes.length : 0;
+  const renderVisibleShape = visibleConversationShape(thread);
+  const renderDomShape = conversationDomShape();
+  const shellUpdatePlan = threadDetailRenderPlanApi.planSingleThreadShellConversationUpdate({
+    shellPlan,
+    conversationSignature: conversationRenderSignature(thread),
+    patchShellSignature: conversationPatchShellSignature(thread),
+    stickToBottom: shouldStickToBottom,
+    expectedVisibleTurnCount: turns.length,
+    expectedVisibleItemCount: renderVisibleShape.visibleItemCount,
+    renderedDomTurnCount: conversationDomTurnIds().length,
+    renderedDomItemCount: renderDomShape.itemCount,
+    duplicateRenderKeyCount: renderDomShape.duplicateRenderKeyCount,
+    expectedTurnIds: visibleRenderableTurnIds(thread),
+    renderedDomTurnIds: conversationDomTurnIds(),
+    source: "single-thread-render",
+  });
+  updateConversationHtml(shellUpdatePlan.html, shellUpdatePlan.conversationSignature, shellUpdatePlan.options);
+  const postUpdateEffectsPlan = threadDetailRenderPlanApi.planSingleThreadShellPostUpdateEffects({
+    shellPlan,
+    source: "single-thread-render",
+    renderMode: "full-render",
+    checkEmptyVisibleDetailMismatch: true,
+    domCount: $("conversation") ? $("conversation").childNodes.length : 0,
+    previousCount: previousChildCount,
+    bindCurrentThreadActions: true,
+    scrollToTurnReceiptStart: options.scrollToTurnReceiptStart,
+    applyPendingPluginRouteHintFocus: true,
+    updateTickTimer: true,
+    publishPluginNavigationState: true,
+  });
+  applySingleThreadShellPostUpdateEffectsPlan(postUpdateEffectsPlan, {
+    thread,
+    shellPlan,
+    threadId: thread.id || state.currentThreadId || "",
+  });
 }
 
 function renderNewThreadDraft() {
@@ -13372,7 +15725,9 @@ function renderNewThreadDraft() {
       </div>
     </div>
   </div>`;
-  updateConversationHtml(html, `new-thread|${state.selectedCwd}|${state.workspaces.length}|${selectedModel}|${selectedEffort}|${selectedPermission}`);
+  updateConversationHtml(html, `new-thread|${state.selectedCwd}|${state.workspaces.length}|${selectedModel}|${selectedEffort}|${selectedPermission}`, {
+    patchShellSignature: "",
+  });
   const selectButton = $("newThreadWorkspaceSelect");
   const workspaceMenu = $("newThreadWorkspaceMenu");
   const shouldDisableWorkspaceSelect = !hasWorkspaceOptions;
@@ -13456,20 +15811,62 @@ function enterNewThreadDraft() {
   }, 80);
 }
 
-function bindCurrentThreadActions() {
-  $("conversation").querySelectorAll("[data-new-thread-from-current]").forEach((button) => {
-    button.addEventListener("click", startNewThreadFromCurrent);
-  });
-  const taskButton = $("conversation").querySelector("[data-create-thread-task-card]");
-  if (taskButton) taskButton.addEventListener("click", createThreadTaskCardFromCurrent);
-  const dismiss = $("conversation").querySelector("[data-dismiss-rollout-warning]");
-  if (dismiss) dismiss.addEventListener("click", () => dismissRolloutWarning(state.currentThread));
-  const olderTurns = $("conversation").querySelector("[data-load-older-turns]");
-  if (olderTurns) olderTurns.addEventListener("click", () => loadOlderThreadTurns({ preserveScroll: true, source: "button" }).catch(showError));
+function threadActionElementThreadId(element) {
+  if (!element) return "";
+  const direct = String(element.dataset && element.dataset.threadActionThreadId || "").trim();
+  if (direct) return direct;
+  const pane = typeof element.closest === "function" ? element.closest("[data-thread-tile-pane]") : null;
+  return String(pane && pane.dataset && pane.dataset.threadTilePane || "").trim();
 }
 
-function findThreadTaskCard(cardId) {
-  const cards = threadTaskCardsForThread(state.currentThread || {});
+function threadActionContextFromElement(element) {
+  const id = threadActionElementThreadId(element);
+  if (id && state.currentThread && String(state.currentThread.id || "") === id) return state.currentThread;
+  if (id && state.threadTileDetails && state.threadTileDetails.has(id)) return state.threadTileDetails.get(id);
+  if (id) return findThreadById(id);
+  return state.currentThread || null;
+}
+
+function bindCurrentThreadActions() {
+  $("conversation").querySelectorAll("[data-new-thread-from-current]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      const thread = threadActionContextFromElement(button);
+      if (thread) startNewThreadFromThread(thread, event).catch(showError);
+    });
+  });
+  $("conversation").querySelectorAll("[data-create-thread-task-card]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      const thread = threadActionContextFromElement(button);
+      createThreadTaskCardFromThread(thread, event).catch(showError);
+    });
+  });
+  $("conversation").querySelectorAll("[data-dismiss-rollout-warning]").forEach((button) => {
+    button.addEventListener("click", () => dismissRolloutWarning(threadActionContextFromElement(button)));
+  });
+  $("conversation").querySelectorAll("[data-load-older-turns]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const thread = threadActionContextFromElement(button);
+      loadOlderThreadTurns({
+        thread,
+        threadId: threadActionElementThreadId(button) || thread && thread.id || "",
+        preserveScroll: true,
+        source: "button",
+      }).catch(showError);
+    });
+  });
+}
+
+function taskCardActionThread(threadId) {
+  const id = String(threadId || "").trim();
+  if (id && state.currentThread && String(state.currentThread.id || "") === id) return state.currentThread;
+  if (id && state.threadTileDetails.has(id)) return state.threadTileDetails.get(id);
+  if (!id) return state.currentThread || null;
+  return null;
+}
+
+function findThreadTaskCard(cardId, threadId = "") {
+  const thread = taskCardActionThread(threadId);
+  const cards = threadTaskCardsForThread(thread || {});
   return cards.find((card) => card.id === String(cardId || "")) || null;
 }
 
@@ -13710,7 +16107,8 @@ function turnHasThreadTaskCardDraftResponse(turn) {
   return items.some((item) => item && (item.type === "agentMessage" || item.type === "plan") && hasThreadTaskCardDraftTag(item.text || ""));
 }
 
-function renderTurnThreadTaskCardDraft(turn, previousKeys = new Set()) {
+function renderTurnThreadTaskCardDraft(turn, previousKeys = new Set(), thread = renderContextThread()) {
+  const contextThread = renderContextThread(thread);
   const items = Array.isArray(turn && turn.items) ? turn.items : [];
   for (const item of items) {
     if (!item || (item.type !== "agentMessage" && item.type !== "plan")) continue;
@@ -13720,7 +16118,7 @@ function renderTurnThreadTaskCardDraft(turn, previousKeys = new Set()) {
       const draftKey = threadTaskCardDraftKeyForDraft(turn, draft, item);
       let draftState = threadTaskCardDraftState(draftKey);
       if (draftState.status === "pending") {
-        const existing = matchingThreadTaskCardsForDraft(draft, turn);
+        const existing = matchingThreadTaskCardsForDraft(draft, turn, contextThread);
         if (existing.length) {
           setThreadTaskCardDraftState(draftKey, {
             status: "created",
@@ -13733,7 +16131,7 @@ function renderTurnThreadTaskCardDraft(turn, previousKeys = new Set()) {
       }
       if (canRecoverFailedThreadTaskCardDraft(draft, draftState)) {
         setThreadTaskCardDraftState(draftKey, { status: "pending", error: "" }, { render: false });
-        queueThreadTaskCardDraftCreation(draftKey);
+        queueThreadTaskCardDraftCreation(draftKey, contextThread);
         draftState = Object.assign({}, draftState, { status: "creating" });
       }
       if (draftState.status === "created" || draftState.status === "dismissed") return "";
@@ -13741,7 +16139,7 @@ function renderTurnThreadTaskCardDraft(turn, previousKeys = new Set()) {
         const attempts = Math.max(1, Number(draftState.attempts || 1));
         if (attempts < THREAD_TASK_CARD_DRAFT_CREATE_MAX_ATTEMPTS) {
           setThreadTaskCardDraftState(draftKey, { status: "pending", error: "", attempts }, { render: false });
-          queueThreadTaskCardDraftCreation(draftKey);
+          queueThreadTaskCardDraftCreation(draftKey, contextThread);
           draftState = Object.assign({}, draftState, { status: "creating", attempts: attempts + 1 });
         } else {
           setThreadTaskCardDraftState(draftKey, {
@@ -13752,11 +16150,11 @@ function renderTurnThreadTaskCardDraft(turn, previousKeys = new Set()) {
         }
       }
       if (draftState.status === "pending") {
-        queueThreadTaskCardDraftCreation(draftKey);
+        queueThreadTaskCardDraftCreation(draftKey, contextThread);
         draftState = Object.assign({}, draftState, { status: "creating" });
       }
       if (draftState.status === "creating") return "";
-      return renderThreadTaskCardDraft(draft, item, turn, previousKeys, draftKey, draftState);
+      return renderThreadTaskCardDraft(draft, item, turn, previousKeys, draftKey, draftState, contextThread);
     }
     if (hasThreadTaskCardDraftTag(text)) {
       return renderPendingThreadTaskCardDraft("Generating cross-thread task card draft...", "Generating");
@@ -13862,11 +16260,12 @@ function canRecoverFailedThreadTaskCardDraft(draft, draftState) {
   return threadTaskCardDraftTargetIds(draft).length > 0;
 }
 
-function matchingThreadTaskCardsForDraft(draft, turn) {
-  const thread = state.currentThread;
-  const cards = Array.isArray(thread && thread.threadTaskCards) ? thread.threadTaskCards : [];
+function matchingThreadTaskCardsForDraft(draft, turn, thread = renderContextThread()) {
+  const contextThread = renderContextThread(thread);
+  const sourceThread = contextThread || state.currentThread;
+  const cards = Array.isArray(sourceThread && sourceThread.threadTaskCards) ? sourceThread.threadTaskCards : [];
   const targetIds = new Set(threadTaskCardDraftTargetIds(draft));
-  const sourceThreadId = String(thread && thread.id || state.currentThreadId || "");
+  const sourceThreadId = String(sourceThread && sourceThread.id || renderContextThreadId(contextThread) || "");
   const sourceTurnId = String(turn && turn.id || "");
   const title = String(draft && draft.title || "").trim();
   const body = String(draft && draft.body || "").trim();
@@ -13887,44 +16286,51 @@ function upsertThreadTaskCardOnThread(thread, card) {
   thread.threadTaskCards = [card, ...existing.filter((entry) => String(entry && entry.id || "") !== String(card.id || ""))];
 }
 
+function taskCardCountThreadsForId(threadId) {
+  const id = String(threadId || "").trim();
+  if (!id) return [];
+  const threads = [];
+  const add = (thread) => {
+    if (!thread || String(thread.id || "") !== id || threads.includes(thread)) return;
+    threads.push(thread);
+  };
+  add(state.currentThread);
+  add(state.threadTileDetails && state.threadTileDetails.get(id));
+  add(findThreadById(id));
+  return threads;
+}
+
 function incrementPendingIncomingTaskCardCount(threadId, delta = 1) {
-  const thread = findThreadById(threadId);
-  const currentThread = state.currentThread && String(state.currentThread.id || "") === String(threadId || "") ? state.currentThread : null;
-  const base = thread || currentThread;
+  const threads = taskCardCountThreadsForId(threadId);
+  const base = threads[0] || null;
   if (!base) return;
   const current = Math.max(0, Number(base.pendingIncomingTaskCardCount) || 0);
   const next = Math.max(0, current + Number(delta || 0));
   const outgoing = Math.max(0, Number(base.pendingOutgoingTaskCardCount) || 0);
-  if (thread) {
+  for (const thread of threads) {
     thread.pendingIncomingTaskCardCount = next;
+    thread.pendingOutgoingTaskCardCount = outgoing;
     thread.pendingTaskCardCount = next + outgoing;
-  }
-  if (currentThread) {
-    currentThread.pendingIncomingTaskCardCount = next;
-    currentThread.pendingTaskCardCount = next + outgoing;
   }
 }
 
 function incrementPendingOutgoingTaskCardCount(threadId, delta = 1) {
-  const thread = findThreadById(threadId);
-  const currentThread = state.currentThread && String(state.currentThread.id || "") === String(threadId || "") ? state.currentThread : null;
-  const base = thread || currentThread;
+  const threads = taskCardCountThreadsForId(threadId);
+  const base = threads[0] || null;
   if (!base) return;
   const current = Math.max(0, Number(base.pendingOutgoingTaskCardCount) || 0);
   const next = Math.max(0, current + Number(delta || 0));
   const incoming = Math.max(0, Number(base.pendingIncomingTaskCardCount) || 0);
-  if (thread) {
+  for (const thread of threads) {
+    thread.pendingIncomingTaskCardCount = incoming;
     thread.pendingOutgoingTaskCardCount = next;
     thread.pendingTaskCardCount = incoming + next;
   }
-  if (currentThread) {
-    currentThread.pendingOutgoingTaskCardCount = next;
-    currentThread.pendingTaskCardCount = incoming + next;
-  }
 }
 
-function settleCurrentThreadTaskCard(cardId, nextStatus, nextCard = null) {
-  const thread = state.currentThread;
+function settleThreadTaskCardForThread(threadId, cardId, nextStatus, nextCard = null) {
+  const targetThreadId = String(threadId || "").trim() || String(state.currentThreadId || "").trim();
+  const thread = taskCardActionThread(targetThreadId);
   if (!thread || !Array.isArray(thread.threadTaskCards)) return;
   const id = String(cardId || "").trim();
   if (!id) return;
@@ -13937,8 +16343,17 @@ function settleCurrentThreadTaskCard(cardId, nextStatus, nextCard = null) {
   if (!settledCard) return;
   if (settledCard.threadRole === "target") incrementPendingIncomingTaskCardCount(thread.id, -1);
   if (settledCard.threadRole === "source") incrementPendingOutgoingTaskCardCount(thread.id, -1);
+  if (state.threadTileDetails.has(String(thread.id || ""))) state.threadTileDetails.set(String(thread.id || ""), thread);
   renderThreads();
-  renderCurrentThread();
+  if (String(thread.id || "") === String(state.currentThreadId || "")) {
+    renderCurrentThread();
+  } else if (state.threadTileMode && threadTilePaneIsVisible(thread.id) && !scheduleRenderThreadTilePane(thread.id, { preserveScroll: true })) {
+    scheduleRenderCurrentThread();
+  }
+}
+
+function settleCurrentThreadTaskCard(cardId, nextStatus, nextCard = null) {
+  settleThreadTaskCardForThread(state.currentThreadId, cardId, nextStatus, nextCard);
 }
 
 function resolveTargetThreadReference(input) {
@@ -13971,10 +16386,19 @@ function resolveTargetThreadReferences(input) {
   return targets;
 }
 
-async function refreshCurrentThreadAfterTaskCard() {
-  if (!state.currentThreadId) return;
-  await refreshCurrentThread({ source: "task-card" });
+async function refreshThreadAfterTaskCard(threadId = "") {
+  const id = String(threadId || state.currentThreadId || "").trim();
+  if (!id) return;
+  if (id === String(state.currentThreadId || "")) {
+    await refreshCurrentThread({ source: "task-card" });
+  } else if (state.threadTileMode && threadTilePaneIsVisible(id)) {
+    await loadThreadTileDetail(id, { force: true, background: true, source: "task-card" });
+  }
   loadThreads({ silent: true }).catch(showError);
+}
+
+async function refreshCurrentThreadAfterTaskCard() {
+  await refreshThreadAfterTaskCard(state.currentThreadId);
 }
 
 function currentThreadHasTurn(turnId) {
@@ -14008,12 +16432,12 @@ async function waitForCurrentThreadTurn(turnId, options = {}) {
   return currentThreadHasTurn(targetTurnId);
 }
 
-async function createThreadTaskCardFromCurrent(event) {
+async function createThreadTaskCardFromThread(sourceThread, event) {
   if (event) {
     event.preventDefault();
     event.stopPropagation();
   }
-  const thread = state.currentThread;
+  const thread = sourceThread || state.currentThread;
   if (!thread || !thread.id) return;
   const targetInput = await requestAppTextInput("输入目标 thread id 或精确标题；多个目标用英文逗号分隔。", "", {
     title: "任务卡片目标",
@@ -14051,7 +16475,7 @@ async function createThreadTaskCardFromCurrent(event) {
       body: JSON.stringify({
         sourceWorkspaceId: thread.cwd || state.selectedCwd || "",
         sourceThreadId: thread.id,
-        sourceTurnId: currentLiveTurn() ? currentLiveTurn().id : "",
+        sourceTurnId: activeTurnIdForThread(thread),
         sourceThreadTitle: threadTitleForDisplay(thread) || thread.id,
         targetThreadIds: targets.map((target) => target.threadId),
         targetWorkspaceIds,
@@ -14064,10 +16488,49 @@ async function createThreadTaskCardFromCurrent(event) {
       timeoutMs: 30000,
     });
     $("connectionState").textContent = "Task card created";
-    await refreshCurrentThreadAfterTaskCard();
+    recordHomeAiDiagnosticSuccess({
+      category: "task_card_workflow_failed",
+      diagnostic_type: "task_card_creation_failed",
+      error_code: "task_card_create_failed",
+      context: {
+        surface: "task-card",
+        action: "manual-create",
+        thread_hash: diagnosticThreadHash(thread.id),
+      },
+    });
+    await refreshThreadAfterTaskCard(thread.id);
   } catch (err) {
+    recordHomeAiDiagnosticFailure({
+      category: "task_card_workflow_failed",
+      diagnostic_type: "task_card_creation_failed",
+      severity_hint: "H2",
+      evidence_confidence: 0.78,
+      error_code: diagnosticErrorCode(err, "task_card_create_failed"),
+      context: {
+        surface: "task-card",
+        action: "manual-create",
+        thread_hash: diagnosticThreadHash(thread.id),
+      },
+      counts: {
+        target_count: targets.length,
+        status_code: diagnosticErrorStatus(err),
+      },
+      breadcrumbs: [{
+        kind: "task-card",
+        code: "manual-create",
+        status: "failed",
+        fields: {
+          status_code: diagnosticErrorStatus(err),
+          thread_hash: diagnosticThreadHash(thread.id),
+        },
+      }],
+    });
     showError(err);
   }
+}
+
+async function createThreadTaskCardFromCurrent(event) {
+  await createThreadTaskCardFromThread(state.currentThread, event);
 }
 
 function startThreadRequestBody(sourceThread = null, options = {}) {
@@ -14377,21 +16840,23 @@ function renderThreadTaskCardExpandable(preview, sections) {
   </details>`;
 }
 
-function renderThreadTaskCardActions(card) {
+function renderThreadTaskCardActions(card, threadId = "") {
   if (!card) return "";
+  const ownerThreadId = String(threadId || "").trim();
+  const ownerAttribute = ownerThreadId ? ` data-task-card-thread-id="${escapeHtml(ownerThreadId)}"` : "";
   if (card.canApprove || card.canDelete || card.canReply || card.canRevoke) {
     const buttons = [];
     const approveLabel = card.workflow && card.workflow.mode === "autonomous" ? "Approve workflow" : "Approve";
-    if (card.canApprove) buttons.push(`<button class="approval-button allow" type="button" data-task-card-action="approve" data-task-card-id="${escapeHtml(card.id)}">${escapeHtml(approveLabel)}</button>`);
-    if (card.canReply) buttons.push(`<button class="approval-button allow" type="button" data-task-card-action="reply" data-task-card-id="${escapeHtml(card.id)}">Reply</button>`);
-    if (card.canDelete) buttons.push(`<button class="approval-button deny" type="button" data-task-card-action="delete" data-task-card-id="${escapeHtml(card.id)}">Delete</button>`);
-    if (card.canRevoke) buttons.push(`<button class="approval-button deny" type="button" data-task-card-action="revoke" data-task-card-id="${escapeHtml(card.id)}">Revoke</button>`);
+    if (card.canApprove) buttons.push(`<button class="approval-button allow" type="button" data-task-card-action="approve" data-task-card-id="${escapeHtml(card.id)}"${ownerAttribute}>${escapeHtml(approveLabel)}</button>`);
+    if (card.canReply) buttons.push(`<button class="approval-button allow" type="button" data-task-card-action="reply" data-task-card-id="${escapeHtml(card.id)}"${ownerAttribute}>Reply</button>`);
+    if (card.canDelete) buttons.push(`<button class="approval-button deny" type="button" data-task-card-action="delete" data-task-card-id="${escapeHtml(card.id)}"${ownerAttribute}>Delete</button>`);
+    if (card.canRevoke) buttons.push(`<button class="approval-button deny" type="button" data-task-card-action="revoke" data-task-card-id="${escapeHtml(card.id)}"${ownerAttribute}>Revoke</button>`);
     return `<div class="approval-actions">${buttons.join("")}</div>`;
   }
   return "";
 }
 
-function renderThreadTaskCard(card, previousKeys = new Set()) {
+function renderThreadTaskCard(card, previousKeys = new Set(), threadId = "") {
   const key = `task-card|${card.id}`;
   const status = String(card.status || "pending");
   const detail = taskCardDetailLines(card).join("\n");
@@ -14412,15 +16877,16 @@ function renderThreadTaskCard(card, previousKeys = new Set()) {
     </div>
     ${summary ? `<div class="approval-summary-line">${escapeHtml(summary)}</div>` : ""}
     ${renderThreadTaskCardExpandable(summary || detail || (card.message && card.message.title) || "Task card details", detailBlocks)}
-    ${renderThreadTaskCardActions(card)}
+    ${renderThreadTaskCardActions(card, threadId)}
   </section>`;
 }
 
 function renderThreadTaskCards(thread, previousKeys = new Set()) {
   const cards = threadTaskCardsForThread(thread);
   if (!cards.length) return "";
+  const threadId = String(thread && thread.id || "").trim();
   return `<div class="approval-stack thread-task-card-stack">
-    ${cards.map((card) => renderThreadTaskCard(card, previousKeys)).join("")}
+    ${cards.map((card) => renderThreadTaskCard(card, previousKeys, threadId)).join("")}
   </div>`;
 }
 
@@ -14456,20 +16922,23 @@ function threadTaskCardDraftDetailLines(draft, targetRefs, draftState) {
   ].filter(Boolean);
 }
 
-function renderThreadTaskCardDraftActions(draftKey, draft, draftState) {
+function renderThreadTaskCardDraftActions(draftKey, draft, draftState, thread = renderContextThread()) {
   if (!draft || draftState.status === "pending" || draftState.status === "creating" || draftState.status === "created" || draftState.status === "dismissed") return "";
+  const threadId = renderContextThreadId(thread);
+  const threadAttr = threadId ? ` data-task-card-draft-thread-id="${escapeHtml(threadId)}"` : "";
   if (draftState.status === "failed") {
     return `<div class="approval-actions">
-      <button class="approval-button deny" type="button" data-task-card-draft-action="dismiss" data-task-card-draft-key="${escapeHtml(draftKey)}">Dismiss</button>
+      <button class="approval-button deny" type="button" data-task-card-draft-action="dismiss" data-task-card-draft-key="${escapeHtml(draftKey)}"${threadAttr}>Dismiss</button>
     </div>`;
   }
   return `<div class="approval-actions">
-    <button class="approval-button deny" type="button" data-task-card-draft-action="dismiss" data-task-card-draft-key="${escapeHtml(draftKey)}">Dismiss</button>
+    <button class="approval-button deny" type="button" data-task-card-draft-action="dismiss" data-task-card-draft-key="${escapeHtml(draftKey)}"${threadAttr}>Dismiss</button>
   </div>`;
 }
 
-function renderThreadTaskCardDraft(draft, item, turn, previousKeys = new Set(), draftKey = "", draftState = null) {
+function renderThreadTaskCardDraft(draft, item, turn, previousKeys = new Set(), draftKey = "", draftState = null, thread = renderContextThread()) {
   if (!draft || !item || !turn) return "";
+  const contextThread = renderContextThread(thread);
   const resolvedDraftKey = draftKey || threadTaskCardDraftKeyForDraft(turn, draft, item);
   const resolvedDraftState = draftState || threadTaskCardDraftState(resolvedDraftKey);
   const targetRefs = threadTaskCardDraftTargetThreads(draft);
@@ -14490,7 +16959,7 @@ function renderThreadTaskCardDraft(draft, item, turn, previousKeys = new Set(), 
     </div>
     ${summary ? `<div class="approval-summary-line">${escapeHtml(summary)}</div>` : ""}
     ${renderThreadTaskCardExpandable(summary || detail || draft.title || "Task card draft details", detailBlocks)}
-    ${renderThreadTaskCardDraftActions(resolvedDraftKey, draft, resolvedDraftState)}
+    ${renderThreadTaskCardDraftActions(resolvedDraftKey, draft, resolvedDraftState, contextThread)}
   </section>`;
 }
 
@@ -14558,47 +17027,50 @@ function isUserInputRequest(request) {
   return USER_INPUT_REQUEST_METHODS.has(request && request.method);
 }
 
-function renderUserInputOptions(request) {
+function renderUserInputOptions(request, fallbackThreadId = "") {
   const params = request.params || {};
   const questions = Array.isArray(params.questions) ? params.questions : [];
   const question = questions.find((entry) => Array.isArray(entry.options) && entry.options.length) || questions[0] || null;
   if (!question || !Array.isArray(question.options) || !question.options.length) return "";
+  const threadId = approvalActionThreadId(request, fallbackThreadId);
   return `<div class="approval-option-grid">
-    ${question.options.map((option) => `<button class="approval-option" type="button" data-server-request-id="${escapeHtml(request.id)}" data-server-question-id="${escapeHtml(question.id || "answer")}" data-server-response-text="${escapeHtml(option.label || "")}">
+    ${question.options.map((option) => `<button class="approval-option" type="button" data-server-request-id="${escapeHtml(request.id)}" data-server-request-thread-id="${escapeHtml(threadId)}" data-server-question-id="${escapeHtml(question.id || "answer")}" data-server-response-text="${escapeHtml(option.label || "")}">
       <span>${escapeHtml(option.label || "选项")}</span>
       ${option.description ? `<small>${escapeHtml(option.description)}</small>` : ""}
     </button>`).join("")}
   </div>`;
 }
 
-function renderUserInputActions(request) {
+function renderUserInputActions(request, fallbackThreadId = "") {
   const params = request.params || {};
   const questions = Array.isArray(params.questions) ? params.questions : [];
   const question = questions[0] || {};
-  return `<form class="approval-response-form" data-server-request-form data-server-request-id="${escapeHtml(request.id)}" data-server-question-id="${escapeHtml(question.id || "answer")}">
-    ${renderUserInputOptions(request)}
+  const threadId = approvalActionThreadId(request, fallbackThreadId);
+  return `<form class="approval-response-form" data-server-request-form data-server-request-id="${escapeHtml(request.id)}" data-server-request-thread-id="${escapeHtml(threadId)}" data-server-question-id="${escapeHtml(question.id || "answer")}">
+    ${renderUserInputOptions(request, threadId)}
     <textarea class="approval-response-input" name="responseText" rows="3" placeholder="输入回复内容"></textarea>
     <div class="approval-actions request-actions">
       <button class="approval-button allow" type="submit">提交</button>
-      <button class="approval-button deny" type="button" data-server-request-id="${escapeHtml(request.id)}" data-server-request-decline>取消</button>
+      <button class="approval-button deny" type="button" data-server-request-id="${escapeHtml(request.id)}" data-server-request-thread-id="${escapeHtml(threadId)}" data-server-request-decline>取消</button>
     </div>
   </form>`;
 }
 
-function renderApprovalActions(request) {
+function renderApprovalActions(request, fallbackThreadId = "") {
   const waiting = request.status === "waiting";
   if (!request.actionable || !waiting) {
     return "";
   }
-  if (isUserInputRequest(request)) return renderUserInputActions(request);
+  if (isUserInputRequest(request)) return renderUserInputActions(request, fallbackThreadId);
+  const threadId = approvalActionThreadId(request, fallbackThreadId);
   return `<div class="approval-actions">
-    <button class="approval-button allow" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-action="allow_once">允许一次</button>
-    <button class="approval-button allow" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-action="allow_session">本会话允许</button>
-    <button class="approval-button deny" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-action="deny">拒绝</button>
+    <button class="approval-button allow" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-thread-id="${escapeHtml(threadId)}" data-approval-action="allow_once">允许一次</button>
+    <button class="approval-button allow" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-thread-id="${escapeHtml(threadId)}" data-approval-action="allow_session">本会话允许</button>
+    <button class="approval-button deny" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-thread-id="${escapeHtml(threadId)}" data-approval-action="deny">拒绝</button>
   </div>`;
 }
 
-function renderApprovalRequest(request, previousKeys = new Set()) {
+function renderApprovalRequest(request, previousKeys = new Set(), fallbackThreadId = "") {
   const key = `approval|${request.id}`;
   const status = String(request.status || "waiting");
   if (isApprovalSettled(request)) {
@@ -14619,17 +17091,17 @@ function renderApprovalRequest(request, previousKeys = new Set()) {
       <span class="approval-status">${escapeHtml(approvalStatusLabel(request.status))}</span>
     </div>
     ${detail ? `<pre class="approval-detail">${escapeHtml(detail)}</pre>` : ""}
-    ${renderApprovalActions(request)}
+    ${renderApprovalActions(request, fallbackThreadId)}
   </section>`;
 }
 
 function renderPendingApprovals(thread, previousKeys = new Set(), filter = null) {
-  const threadId = thread && (thread.id || state.currentThreadId);
+  const threadId = String(thread && (thread.id || state.currentThreadId) || "").trim();
   const requests = pendingApprovalsForThread(threadId)
     .filter((request) => !filter || filter(request));
   if (!requests.length) return "";
   return `<div class="approval-stack">
-    ${requests.map((request) => renderApprovalRequest(request, previousKeys)).join("")}
+    ${requests.map((request) => renderApprovalRequest(request, previousKeys, threadId)).join("")}
   </div>`;
 }
 
@@ -14653,32 +17125,33 @@ function renderLiveOperationDock(thread, previousKeys = new Set()) {
 }
 
 function renderTurn(turn, previousKeys = new Set()) {
-  const visibleEntries = visibleItemsForTurn(turn);
+  const thread = renderContextThread();
+  const visibleEntries = visibleItemsForTurn(turn, thread);
   const renderedItems = visibleEntries.map((entry, index) => {
     const item = entry.item;
     const sourceIndex = Number.isInteger(entry.sourceIndex) && entry.sourceIndex >= 0 ? entry.sourceIndex : index;
     let html = "";
-    html = renderVisibleItemPatchHtml(turn, item, previousKeys, sourceIndex);
+    html = renderVisibleItemPatchHtml(turn, item, previousKeys, sourceIndex, thread);
     return { html, sourceIndex, order: 1 };
   }).filter((entry) => entry && entry.html);
   const items = renderedItems
     .sort((a, b) => (a.sourceIndex - b.sourceIndex) || (a.order - b.order))
     .map((entry) => entry.html)
     .join("");
-  const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
+  const threadId = renderContextThreadId();
   const turnApprovals = approvalsForTurn(threadId, turn.id);
   const approvalsHtml = turnApprovals.length
-    ? `<div class="approval-stack in-turn">${turnApprovals.map((request) => renderApprovalRequest(request, previousKeys)).join("")}</div>`
+    ? `<div class="approval-stack in-turn">${turnApprovals.map((request) => renderApprovalRequest(request, previousKeys, threadId)).join("")}</div>`
     : "";
-  const draftHtml = renderTurnThreadTaskCardDraft(turn, previousKeys);
-  const pendingDraftHtml = !draftHtml && !turnHasThreadTaskCardDraftResponse(turn) && isLatestTurn(turn) && isLiveTurn(turn) && turnHasThreadTaskCardRequest(turn)
+  const draftHtml = renderTurnThreadTaskCardDraft(turn, previousKeys, thread);
+  const pendingDraftHtml = !draftHtml && !turnHasThreadTaskCardDraftResponse(turn) && isLatestTurn(turn, thread) && isLiveTurn(turn, thread) && turnHasThreadTaskCardRequest(turn)
     ? renderPendingThreadTaskCardDraft("Generating cross-thread task card draft...", "Generating")
     : "";
   if (!items.trim() && !approvalsHtml.trim() && !draftHtml.trim() && !pendingDraftHtml.trim()) return "";
   const turnKey = stableTurnKey(turn);
   const statusKey = stableTurnKey(turn, "status");
   const duration = turn.durationMs ? ` | ${formatElapsedTime(Math.round(turn.durationMs / 1000))}` : "";
-  const timerShowsStatus = isLatestTurn(turn) && (isLiveTurn(turn) || turnFinalSeconds(turn) != null);
+  const timerShowsStatus = isLatestTurn(turn, thread) && (isLiveTurn(turn, thread) || turnFinalSeconds(turn) != null);
   const showStatusLine = !timerShowsStatus;
   return `<article class="turn" data-turn="${escapeHtml(turn.id)}" data-render-key="${escapeHtml(turnKey)}">
     ${items}${approvalsHtml}
@@ -14701,24 +17174,18 @@ function renderOperationCard(item, key, options = {}) {
   const title = operationTitle(item);
   const detail = operationDetailText(item);
   const durationData = operationDurationData(item, status);
-  const duration = durationData
-    ? `<time class="operation-duration" ${operationDurationAttrs(durationData)} title="${escapeHtml(`Elapsed ${durationData.text}`)}">${escapeHtml(durationData.text)}</time>`
-    : "";
-  const classes = [
-    "item",
-    "live-operation",
-    options.extraClass || "",
-    isCompletedStatus(status) ? "completed" : "",
+  return liveOperationDockPolicy.operationCardHtml({
+    itemId: item && item.id || "",
     type,
-  ].filter(Boolean).map(escapeHtml).join(" ");
-  const body = `<div class="operation-detail-line${detail ? "" : " empty"}"><span class="operation-detail">${detail ? escapeHtml(detail) : "&nbsp;"}</span></div>`;
-  const statusHtml = String(status || "").trim()
-    ? `<span class="operation-status">${escapeHtml(status)}</span>`
-    : "";
-  return `<section class="${classes}" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}">
-    <div class="operation-meta-line"><span class="operation-meta-main"><span class="operation-title">${escapeHtml(title)}</span>${statusHtml}</span>${duration}</div>
-    ${body}
-  </section>`;
+    status,
+    title,
+    detail,
+    durationText: durationData && durationData.text || "",
+    durationAttrs: durationData ? operationDurationAttrs(durationData) : "",
+    extraClass: options.extraClass || "",
+    renderKey: key,
+    escapeHtml,
+  });
 }
 
 function operationDurationHtml(item, status = "", className = "operation-duration") {
@@ -14915,16 +17382,17 @@ function displayTurnStatus(turn) {
   return statusText(turn.status);
 }
 
-function renderContextCompaction(item, turn = null, previousKeys = new Set(), index = 0) {
-  const notice = contextCompactionNotice(item, turn);
+function renderContextCompaction(item, turn = null, previousKeys = new Set(), index = 0, thread = null) {
+  const notice = contextCompactionNotice(item, turn, thread);
   if (!notice) return "";
   const key = stableItemKey(turn, item, index, "context");
   return `<div class="context-compaction-note${entryAnimationClass(key, previousKeys)}" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}">${escapeHtml(notice)}</div>`;
 }
 
-function renderItem(item, turn = null, previousKeys = new Set(), index = 0) {
-  if (isContextCompactionItem(item)) return renderContextCompaction(item, turn, previousKeys, index);
-  if (isLiveReasoning(item, turn)) return "";
+function renderItem(item, turn = null, previousKeys = new Set(), index = 0, thread = null) {
+  const contextThread = renderContextThread(thread);
+  if (isContextCompactionItem(item)) return renderContextCompaction(item, turn, previousKeys, index, contextThread);
+  if (isLiveReasoning(item, turn, contextThread)) return "";
   const type = item.type || "item";
   const key = stableItemKey(turn, item, index);
   if (item.type === "turnUsageSummary") {
@@ -14933,10 +17401,10 @@ function renderItem(item, turn = null, previousKeys = new Set(), index = 0) {
     </section>`;
   }
   const injectedTaskCardText = injectedThreadTaskCardTextForItem(item);
-  if (injectedTaskCardText) return renderInjectedThreadTaskCardItem(item, turn, previousKeys, index, injectedTaskCardText);
+  if (injectedTaskCardText) return renderInjectedThreadTaskCardItem(item, turn, previousKeys, index, injectedTaskCardText, contextThread);
   const itemCopyKey = rememberCopyText(copyTextForItem(item));
   const itemCopyButton = copyButtonHtml(itemCopyKey, "复制全文", "item-copy-button");
-  const timestampHtml = renderItemTimestampHtml(item, turn);
+  const timestampHtml = renderItemTimestampHtml(item, turn, contextThread);
   return `<section class="item${entryAnimationClass(key, previousKeys)} ${escapeHtml(type)}" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}">
     <div class="item-head">
       <span>${escapeHtml(labelForItem(item))}</span>
@@ -14946,12 +17414,12 @@ function renderItem(item, turn = null, previousKeys = new Set(), index = 0) {
   </section>`;
 }
 
-function renderInjectedThreadTaskCardItem(item, turn = null, previousKeys = new Set(), index = 0, text = "") {
+function renderInjectedThreadTaskCardItem(item, turn = null, previousKeys = new Set(), index = 0, text = "", thread = null) {
   const key = stableItemKey(turn, item, index);
   const metadata = injectedThreadTaskCardMetadata(text);
   const itemCopyKey = rememberCopyText(copyTextForItem(item));
   const itemCopyButton = copyButtonHtml(itemCopyKey, "复制全文", "item-copy-button");
-  const timestampHtml = renderItemTimestampHtml(item, turn);
+  const timestampHtml = renderItemTimestampHtml(item, turn, thread);
   return `<section class="item${entryAnimationClass(key, previousKeys)} thread-task-card-injected" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}" data-thread-task-card-item>
     <div class="item-head thread-task-card-message-head">
       <span class="thread-task-card-message-heading">
@@ -14964,8 +17432,8 @@ function renderInjectedThreadTaskCardItem(item, turn = null, previousKeys = new 
   </section>`;
 }
 
-function renderItemTimestampHtml(item, turn = null) {
-  const timestampMs = itemTimestampMs(item, turn);
+function renderItemTimestampHtml(item, turn = null, thread = null) {
+  const timestampMs = itemTimestampMs(item, turn, thread);
   if (!timestampMs) return "";
   const label = formatCardTimestamp(timestampMs, state.nowMs);
   if (!label) return "";
@@ -14979,8 +17447,9 @@ function renderItemTimestampHtml(item, turn = null) {
   return `<time class="item-timestamp" datetime="${escapeHtml(new Date(timestampMs).toISOString())}" title="${escapeHtml(title)}">${escapeHtml(label)}</time>`;
 }
 
-function itemTimestampMs(item, turn = null) {
+function itemTimestampMs(item, turn = null, thread = null) {
   if (!item) return 0;
+  const contextThread = renderContextThread(thread);
   const itemStarted = numericTimestampMs(item.createdAtMs)
     || numericTimestampMs(item.createdAt)
     || numericTimestampMs(item.created_at_ms)
@@ -14997,12 +17466,12 @@ function itemTimestampMs(item, turn = null) {
       || numericTimestampMs(item.completedAt)
       || numericTimestampMs(item.completed_at_ms)
       || numericTimestampMs(item.completed_at)
-      || turnCompletedAtMs(turn, state.currentThread)
-      || (isLiveTurn(turn) ? 0 : turnStartedAtMs(turn))
+      || turnCompletedAtMs(turn, contextThread)
+      || (isLiveTurn(turn, contextThread) ? 0 : turnStartedAtMs(turn))
       || 0;
   }
-  if (isLiveTurn(turn) && isOperationalItem(item)) return 0;
-  return turnStartedAtMs(turn) || turnCompletedAtMs(turn, state.currentThread);
+  if (isLiveTurn(turn, contextThread) && isOperationalItem(item)) return 0;
+  return turnStartedAtMs(turn) || turnCompletedAtMs(turn, contextThread);
 }
 
 function turnStartedAtMs(turn) {
@@ -15161,9 +17630,9 @@ function isCodexMobileUploadPath(filePath) {
   return normalized.includes("\\.codex-mobile-web\\uploads\\");
 }
 
-function imageContentUrlForPath(filePath) {
+function imageContentUrlForPath(filePath, options = {}) {
   if (!filePath) return "";
-  return isCodexMobileUploadPath(filePath) ? uploadFileUrl(filePath) : localFilePreviewContentUrl(filePath);
+  return isCodexMobileUploadPath(filePath) ? uploadFileUrl(filePath) : localFilePreviewContentUrl(filePath, options);
 }
 
 function localAttachmentPreviewUrl(attachment) {
@@ -16301,6 +18770,7 @@ function closeFilePreview() {
   const dialog = $("filePreviewDialog");
   if (!dialog) return;
   state.filePreviewSwipe = null;
+  state.filePreviewThreadId = "";
   dialog.classList.add("hidden");
   $("filePreviewBody").innerHTML = "";
   $("filePreviewMeta").textContent = "";
@@ -16374,10 +18844,10 @@ function filePreviewMetaText(file) {
   return parts.join(" · ");
 }
 
-function filePreviewContentUrl(file) {
+function filePreviewContentUrl(file, options = {}) {
   if (file && file.contentUrl) return authenticatedApiContentUrl(file.contentUrl);
   if (!file || !file.path) return "";
-  return localFilePreviewContentUrl(file.path);
+  return localFilePreviewContentUrl(file.path, options);
 }
 
 function hermesPluginProxyPrefixFromPathname(pathname) {
@@ -16448,10 +18918,11 @@ function authenticatedApiContentUrl(value) {
   return raw;
 }
 
-function localFilePreviewContentUrl(filePath) {
+function localFilePreviewContentUrl(filePath, options = {}) {
   if (!filePath) return "";
+  const threadId = String(options.threadId || renderContextThreadId() || "").trim();
   const params = new URLSearchParams({
-    threadId: state.currentThreadId || "",
+    threadId,
     path: String(filePath),
   });
   if (state.key) params.set("key", state.key);
@@ -16511,15 +18982,15 @@ function renderCsvPreview(content) {
   return `<div class="file-preview-table-wrap"><table class="file-preview-table"><thead><tr>${headHtml}</tr></thead><tbody>${bodyHtml}</tbody></table></div>`;
 }
 
-function renderFilePreviewContent(file) {
+function renderFilePreviewContent(file, options = {}) {
   const content = String((file && file.content) || "");
   if (file && file.kind === "markdown") return renderMarkdown(content, { orderedListMode: "source" });
   if (file && file.kind === "image") {
-    const src = filePreviewContentUrl(file);
+    const src = filePreviewContentUrl(file, options);
     return `<div class="file-preview-media"><img class="file-preview-image" src="${escapeHtml(src)}" alt="${escapeHtml(file.fileName || "image preview")}"></div>`;
   }
   if (file && file.kind === "pdf") {
-    const src = filePreviewContentUrl(file);
+    const src = filePreviewContentUrl(file, options);
     return `<div class="file-preview-pdf"><iframe src="${escapeHtml(src)}" title="${escapeHtml(file.fileName || "PDF preview")}"></iframe><a href="${escapeHtml(src)}" target="_blank" rel="noreferrer">打开 PDF 预览</a></div>`;
   }
   if (file && file.kind === "json") return renderJsonPreview(content);
@@ -16575,7 +19046,7 @@ function renderImageView(item) {
   const filePath = imageViewPath(item);
   const contentUrl = imageViewContentUrl(item);
   const url = imageViewUrl(item);
-  const src = contentUrl ? authenticatedApiContentUrl(contentUrl) : (filePath ? imageContentUrlForPath(filePath) : url);
+  const src = contentUrl ? authenticatedApiContentUrl(contentUrl) : (filePath ? imageContentUrlForPath(filePath, { threadId: renderContextThreadId() }) : url);
   const label = shortPath(filePath || item.label || item.fileName || item.file_name || item.caption || url || item.id || "image");
   if (isImageViewUnavailable(item)) {
     return `<figure class="image-view image-load-failed">${label ? `<figcaption>${escapeHtml(label)}</figcaption>` : ""}</figure>`;
@@ -16593,12 +19064,56 @@ function handleConversationImageError(event) {
   if (typeof postImageDiagnosticEvent === "function") postImageDiagnosticEvent("error", image, {}, { force: true });
   if (handleProtectedAppImageError(image)) return;
   markFailedAppImage(image, { explicit: true });
+  if (typeof imageDiagnosticDetails === "function" && typeof recordHomeAiDiagnosticFailure === "function") {
+    const details = imageDiagnosticDetails(image, "error");
+    recordHomeAiDiagnosticFailure({
+      category: "media_render_failed",
+      diagnostic_type: "image_render_failed",
+      severity_hint: "H3",
+      evidence_confidence: 0.72,
+      error_code: "image_render_failed",
+      context: {
+        surface: "media-render",
+        action: "image-load",
+        source_kind: details.sourceKind || "",
+        item_hash: diagnosticItemHash(details.sourceHash || ""),
+      },
+      counts: {
+        recovery_count: details.recoveryCount,
+        natural_width: details.naturalWidth,
+        natural_height: details.naturalHeight,
+      },
+      breadcrumbs: [{
+        kind: "media-render",
+        code: "image-load",
+        status: "failed",
+        fields: {
+          source_kind: details.sourceKind || "",
+          item_hash: diagnosticItemHash(details.sourceHash || ""),
+        },
+      }],
+    });
+  }
   if (typeof probeFailedAuthenticatedImage === "function") probeFailedAuthenticatedImage(image);
 }
 
 function handleConversationImageLoad(event) {
   const image = event && event.target && event.target.closest ? event.target.closest("img") : null;
   if (typeof postImageDiagnosticEvent === "function") postImageDiagnosticEvent("load", image);
+  if (typeof imageDiagnosticDetails === "function" && typeof recordHomeAiDiagnosticSuccess === "function") {
+    const details = imageDiagnosticDetails(image, "load");
+    recordHomeAiDiagnosticSuccess({
+      category: "media_render_failed",
+      diagnostic_type: "image_render_failed",
+      error_code: "image_render_failed",
+      context: {
+        surface: "media-render",
+        action: "image-load",
+        source_kind: details.sourceKind || "",
+        item_hash: diagnosticItemHash(details.sourceHash || ""),
+      },
+    });
+  }
   clearFailedAppImage(image);
 }
 
@@ -17096,19 +19611,30 @@ function showFilePreviewLoading(label, filePath) {
   publishPluginNavigationState({ force: true });
 }
 
-async function openLocalFilePreview(link) {
+function localFilePreviewThreadIdFromLink(link, options = {}) {
+  const explicit = String(options.threadId || link && link.dataset && link.dataset.localFileThreadId || "").trim();
+  if (explicit) return explicit;
+  const pane = link && typeof link.closest === "function" ? link.closest("[data-thread-tile-pane]") : null;
+  const paneThreadId = String(pane && pane.getAttribute && pane.getAttribute("data-thread-tile-pane") || "").trim();
+  if (paneThreadId) return paneThreadId;
+  return String(state.filePreviewThreadId || renderContextThreadId() || "").trim();
+}
+
+async function openLocalFilePreview(link, options = {}) {
   const filePath = link && link.dataset ? link.dataset.localFilePath || "" : "";
   if (!filePath) return;
+  const threadId = localFilePreviewThreadIdFromLink(link, options);
+  state.filePreviewThreadId = threadId;
   const label = (link && link.dataset && link.dataset.localFileLabel) || (link && link.textContent ? link.textContent.replace(/预览文件\s*$/, "").trim() : "") || "文件预览";
   showFilePreviewLoading(label, filePath);
   try {
-    const file = await api(`/api/files/preview?threadId=${encodeURIComponent(state.currentThreadId || "")}&path=${encodeURIComponent(filePath)}`, {
+    const file = await api(`/api/files/preview?threadId=${encodeURIComponent(threadId)}&path=${encodeURIComponent(filePath)}`, {
       timeoutMs: 15000,
     });
     $("filePreviewTitle").textContent = file.fileName || label;
     $("filePreviewPath").textContent = file.relativePath || file.path || filePath;
     $("filePreviewMeta").textContent = filePreviewMetaText(file);
-    $("filePreviewBody").innerHTML = renderFilePreviewContent(file);
+    $("filePreviewBody").innerHTML = renderFilePreviewContent(file, { threadId });
     hydrateGitHubLinkCards($("filePreviewBody"));
     hydrateMermaidDiagrams($("filePreviewBody"));
     const copyButton = $("filePreviewCopyPath");
@@ -17500,18 +20026,10 @@ function ensureTurn(turnId) {
   return turn;
 }
 
-function turnHasOperationalItems(turn) {
-  const items = Array.isArray(turn && turn.items) ? turn.items : [];
-  return items.some((item) => isOperationalItem(item));
-}
-
 function shouldDeferLiveFinalReceipt(turn, itemType) {
-  return Boolean(
-    itemType === "agentMessage"
-    && isLatestTurn(turn)
-    && isLiveTurn(turn)
-    && turnHasOperationalItems(turn)
-  );
+  // Live assistant text must remain visible even while command/file operation
+  // bubbles are active; receipt stabilization is handled by merge/patch policy.
+  return false;
 }
 
 function shouldRenderAfterUpsert(turn, item) {
@@ -17607,10 +20125,6 @@ function ensureTimerItem(turnId, itemId, itemType) {
 
 function shouldRenderAfterAppend(turn, itemType, field, previousValue, nextValue, options = {}) {
   if (options.render === false) return false;
-  if (options.render === "defer-final-receipt" && shouldDeferLiveFinalReceipt(turn, itemType)) return false;
-  if (options.render !== "defer-final-receipt") return true;
-  if (itemType !== "agentMessage" || field !== "text") return true;
-  if (!isLatestTurn(turn) || !isLiveTurn(turn)) return true;
   return true;
 }
 
@@ -17682,16 +20196,20 @@ function scheduleRenderThreads() {
   }
 }
 
-function upsertServerRequest(request) {
+function upsertServerRequest(request, fallbackThreadId = "") {
   if (!request || request.id === null || request.id === undefined) return;
+  const key = String(request.id);
+  const existing = state.pendingApprovals.get(key);
+  const threadId = approvalActionThreadId(existing, fallbackThreadId);
   if (!shouldShowApprovalRequest(request)) {
-    state.pendingApprovals.delete(String(request.id));
-    if (state.currentThread && requestBelongsToThread(request, state.currentThread.id)) scheduleRenderCurrentThread();
+    state.pendingApprovals.delete(key);
+    scheduleApprovalThreadRender(approvalActionThreadId(request, threadId));
     return;
   }
   markActivity(isUserInputRequest(request) ? "等待输入" : "等待批准");
-  state.pendingApprovals.set(String(request.id), Object.assign({}, state.pendingApprovals.get(String(request.id)) || {}, request));
-  if (state.currentThread && requestBelongsToThread(request, state.currentThread.id)) scheduleRenderCurrentThread();
+  const next = serverRequestWithThreadContext(Object.assign({}, existing || {}, request), threadId);
+  state.pendingApprovals.set(key, next);
+  scheduleApprovalThreadRender(approvalActionThreadId(next));
 }
 
 function scheduleApprovalRemoval(requestId, delayMs = 6000) {
@@ -17700,8 +20218,9 @@ function scheduleApprovalRemoval(requestId, delayMs = 6000) {
   setTimeout(() => {
     const existing = state.pendingApprovals.get(key);
     if (!existing || !isApprovalSettled(existing)) return;
+    const threadId = approvalActionThreadId(existing);
     state.pendingApprovals.delete(key);
-    if (state.currentThread) scheduleRenderCurrentThread();
+    scheduleApprovalThreadRender(threadId);
   }, delayMs);
 }
 
@@ -17711,15 +20230,26 @@ function resolveServerRequest(payload) {
   const existing = state.pendingApprovals.get(requestId);
   let next = existing || null;
   if (payload.request) {
-    next = Object.assign({}, existing || {}, payload.request);
+    next = serverRequestWithThreadContext(
+      Object.assign({}, existing || {}, payload.request),
+      approvalActionThreadId(existing),
+    );
     state.pendingApprovals.set(requestId, next);
   } else if (existing) {
     existing.status = payload.status || "resolved";
     next = existing;
   }
-  if (state.currentThread && next && requestBelongsToThread(next, state.currentThread.id)) scheduleRenderCurrentThread();
+  if (next) scheduleApprovalThreadRender(approvalActionThreadId(next));
   if (next) markActivity(isUserInputRequest(next) ? "输入完成" : "批准完成");
   scheduleApprovalRemoval(requestId);
+}
+
+function serverRequestWithThreadContext(request, threadId) {
+  const id = String(threadId || "").trim();
+  if (!request || !id || approvalThreadId(request)) return request;
+  return Object.assign({}, request, {
+    params: Object.assign({}, request.params || {}, { threadId: id }),
+  });
 }
 
 function syncThreadPendingServerRequests(thread) {
@@ -17729,8 +20259,29 @@ function syncThreadPendingServerRequests(thread) {
   for (const request of requests) {
     if (!request || request.id === null || request.id === undefined) continue;
     if (!requestBelongsToThread(request, threadId)) continue;
-    upsertServerRequest(request);
+    upsertServerRequest(request, threadId);
   }
+}
+
+function applyThreadGoalToThread(thread, normalizedGoal) {
+  if (!thread) return false;
+  if (normalizedGoal) thread.goal = normalizedGoal;
+  else delete thread.goal;
+  return true;
+}
+
+function scheduleThreadGoalDetailRender(threadId = "") {
+  const id = String(threadId || state.currentThreadId || "").trim();
+  if (!id) return false;
+  if (state.currentThread && String(state.currentThread.id || "") === id) {
+    scheduleRenderCurrentThread();
+    return true;
+  }
+  if (state.threadTileMode && threadTilePaneIsVisible(id)) {
+    if (!scheduleRenderThreadTilePane(id, { preserveScroll: true })) scheduleRenderCurrentThread();
+    return true;
+  }
+  return false;
 }
 
 function updateThreadGoalState(threadId, goal) {
@@ -17738,15 +20289,10 @@ function updateThreadGoalState(threadId, goal) {
   if (!id) return;
   const normalizedGoal = goal ? normalizeThreadGoal(goal, id) : null;
   const thread = state.threads.find((entry) => String(entry && entry.id || "") === id);
-  if (thread) {
-    if (normalizedGoal) thread.goal = normalizedGoal;
-    else delete thread.goal;
-  }
-  if (state.currentThread && String(state.currentThread.id || "") === id) {
-    if (normalizedGoal) state.currentThread.goal = normalizedGoal;
-    else delete state.currentThread.goal;
-    scheduleRenderCurrentThread();
-  }
+  applyThreadGoalToThread(thread, normalizedGoal);
+  applyThreadGoalToThread(state.currentThread && String(state.currentThread.id || "") === id ? state.currentThread : null, normalizedGoal);
+  applyThreadGoalToThread(state.threadTileDetails && state.threadTileDetails.get(String(id)) || null, normalizedGoal);
+  scheduleThreadGoalDetailRender(id);
   if (state.goalDialogThreadId && state.goalDialogThreadId === id) {
     updateThreadGoalDialogState(normalizedGoal);
   }
@@ -17788,7 +20334,7 @@ function applyNotification(method, params) {
     const eventAtMs = threadStatusNotificationEventAtMs(params, runningNotification ? Date.now() : 0, {
       allowReplayReceivedAt: !replayed || runningNotification,
     });
-    const thread = state.threads.find((x) => x.id === params.threadId);
+    const thread = localThreadForStatusContext(params.threadId);
     const previousStatus = thread ? thread.status : null;
     updateThreadStatusHints(params.threadId, previousStatus, params.status, {
       thread,
@@ -17797,34 +20343,27 @@ function applyNotification(method, params) {
       eventAtMs,
       mobileReplay: replayed,
     });
-    if (thread) thread.status = params.status;
+    updateThreadListStatus(params.threadId, params.status);
     pruneHiddenThreads();
     if (state.currentThread && state.currentThread.id === params.threadId) {
-      state.currentThread.status = params.status;
       markThreadViewed(params.threadId, state.currentThread, eventAtMs);
       renderCurrentThread();
       scheduleLivePollIfNeeded(1400);
     } else if (state.threadTileMode && threadTilePaneIsVisible(params.threadId)) {
-      const cached = state.threadTileDetails.get(String(params.threadId || ""));
-      if (cached) cached.status = params.status;
+      scheduleThreadStatusDetailRender(params.threadId);
       loadThreadTileDetail(params.threadId, { force: true, background: true, source: "tile-status" }).catch(showError);
     }
     scheduleRenderThreads();
     return;
   }
   if (method === "thread/name/updated") {
-    const thread = state.threads.find((x) => x.id === params.threadId);
-    if (thread) thread.name = params.threadName;
+    updateThreadNameLocally(params.threadId, params.threadName);
     pruneHiddenThreads();
-    if (state.currentThread && state.currentThread.id === params.threadId) {
-      state.currentThread.name = params.threadName;
-      renderCurrentThread();
-    } else if (state.threadTileMode && threadTilePaneIsVisible(params.threadId)) {
-      const cached = state.threadTileDetails.get(String(params.threadId || ""));
-      if (cached) cached.name = params.threadName;
+    if (!(state.currentThread && state.currentThread.id === params.threadId)
+      && state.threadTileMode
+      && threadTilePaneIsVisible(params.threadId)) {
       loadThreadTileDetail(params.threadId, { force: true, background: true, source: "tile-name" }).catch(showError);
     }
-    scheduleRenderThreads();
     return;
   }
   if (method === "thread/goal/updated") {
@@ -17927,7 +20466,7 @@ function applyNotification(method, params) {
   }
   if (method === "item/agentMessage/delta") {
     markActivity("输出");
-    appendToItem(params.turnId, params.itemId, "agentMessage", "text", params.delta || "", 0, { render: "defer-final-receipt" });
+    appendToItem(params.turnId, params.itemId, "agentMessage", "text", params.delta || "", 0);
     markSteerAppliedIfNeeded(params.turnId, { type: "agentMessage" });
     return;
   }
@@ -18330,36 +20869,47 @@ function clearViewportBottomFollow() {
 }
 
 function shouldFollowSubmittedMessageToBottom() {
-  if (isUserReadingCurrentTurn()) {
-    clearSubmittedMessageBottomFollow();
-    return false;
+  const userReadingCurrentTurn = isUserReadingCurrentTurn();
+  let leaseActive = false;
+  if (!userReadingCurrentTurn) {
+    const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
+    leaseActive = conversationScroll.shouldFollowSubmittedMessage(state.submittedMessageBottomFollow, {
+      threadId,
+      nowMs: Date.now(),
+    });
   }
-  const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
-  const shouldFollow = conversationScroll.shouldFollowSubmittedMessage(state.submittedMessageBottomFollow, {
-    threadId,
-    nowMs: Date.now(),
+  const plan = conversationScroll.planBottomFollowLeaseEvaluation({
+    userReadingCurrentTurn,
+    leaseActive,
+    hasLease: Boolean(state.submittedMessageBottomFollow),
   });
-  if (!shouldFollow && state.submittedMessageBottomFollow) clearSubmittedMessageBottomFollow();
-  return shouldFollow;
+  if (plan.clearLease) clearSubmittedMessageBottomFollow();
+  return Boolean(plan.shouldFollow);
 }
 
 function shouldFollowViewportChangeToBottom() {
-  if (isUserReadingCurrentTurn()) {
-    clearViewportBottomFollow();
-    return false;
+  const userReadingCurrentTurn = isUserReadingCurrentTurn();
+  let leaseActive = false;
+  if (!userReadingCurrentTurn) {
+    const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
+    leaseActive = conversationScroll.shouldFollowViewport(state.viewportBottomFollow, {
+      threadId,
+      nowMs: Date.now(),
+    });
   }
-  const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
-  const shouldFollow = conversationScroll.shouldFollowViewport(state.viewportBottomFollow, {
-    threadId,
-    nowMs: Date.now(),
+  const plan = conversationScroll.planBottomFollowLeaseEvaluation({
+    userReadingCurrentTurn,
+    leaseActive,
+    hasLease: Boolean(state.viewportBottomFollow),
   });
-  if (!shouldFollow && state.viewportBottomFollow) clearViewportBottomFollow();
-  return shouldFollow;
+  if (plan.clearLease) clearViewportBottomFollow();
+  return Boolean(plan.shouldFollow);
 }
 
 function scheduleBottomFollowScroll(shouldFollow) {
-  clearBottomFollowTimers();
-  [0, 80, 240, 600, 1200].forEach((delay) => {
+  const plan = conversationScroll.planBottomFollowScrollSchedule();
+  if (plan.clearExistingTimers) clearBottomFollowTimers();
+  plan.delaysMs.forEach((delay) => {
     const timer = window.setTimeout(() => {
       state.bottomFollowTimers = state.bottomFollowTimers.filter((entry) => entry !== timer);
       if (shouldFollow()) scheduleConversationToBottom();
@@ -18398,6 +20948,22 @@ function sustainSubmittedMessageBottomFollow(turn, itemType, field) {
     nowMs: Date.now(),
   });
   scheduleSubmittedMessageBottomFollowScroll();
+}
+
+function sustainSubmittedMessageBottomFollowFromThread(thread) {
+  const follow = state.submittedMessageBottomFollow;
+  const threadId = state.currentThreadId || (thread && thread.id) || "";
+  if (!threadId || !follow || String(follow.threadId || "") !== String(threadId)) return false;
+  if (!conversationScroll.shouldFollowSubmittedMessage(follow, { threadId, nowMs: Date.now() })) return false;
+  const liveTurn = latestLiveTurnForThread(thread);
+  if (!liveTurn) return false;
+  const hasVisibleProgress = visibleItemsForTurn(liveTurn, thread)
+    .some((entry) => entry && entry.item && entry.item.type !== "userMessage");
+  if (!hasVisibleProgress) return false;
+  state.submittedMessageBottomFollow = conversationScroll.extendSubmittedMessageFollow(follow, {
+    nowMs: Date.now(),
+  });
+  return true;
 }
 
 function followThreadOpenToBottom(threadId, ttlMs = 8000) {
@@ -18506,19 +21072,35 @@ function isUserReadingCurrentTurn(options = {}) {
   const nearBottom = Object.prototype.hasOwnProperty.call(options, "nearBottom")
     ? Boolean(options.nearBottom)
     : isConversationNearBottom();
-  if (nearBottom) return false;
-  if (shouldHoldAutoScrollForCurrentTurn()) return true;
-  if (!hasRecentConversationScrollIntent()) return false;
-  return Boolean(turnForConversationAutoScrollHold());
+  const planInput = { nearBottom };
+  if (!nearBottom) {
+    planInput.autoScrollHold = shouldHoldAutoScrollForCurrentTurn();
+    if (!planInput.autoScrollHold) {
+      planInput.recentScrollIntent = hasRecentConversationScrollIntent();
+      if (planInput.recentScrollIntent) {
+        planInput.hasCurrentTurn = Boolean(turnForConversationAutoScrollHold());
+      }
+    }
+  }
+  const plan = conversationScroll.planUserReadingCurrentTurn(planInput);
+  return Boolean(plan.userReadingCurrentTurn);
 }
 
 function updateConversationAutoScrollHoldFromScroll() {
-  if (isConversationNearBottom()) {
+  const nearBottom = isConversationNearBottom();
+  const planInput = { nearBottom };
+  if (!nearBottom) {
+    planInput.recentScrollIntent = hasRecentConversationScrollIntent();
+    if (planInput.recentScrollIntent) {
+      planInput.hasCurrentTurn = Boolean(turnForConversationAutoScrollHold());
+    }
+  }
+  const plan = conversationScroll.planConversationAutoScrollHoldFromScroll(planInput);
+  if (plan.action === "clear-hold") {
     clearConversationAutoScrollHold();
     return;
   }
-  if (!hasRecentConversationScrollIntent()) return;
-  if (turnForConversationAutoScrollHold()) rememberConversationAutoScrollHold();
+  if (plan.action === "remember-hold") rememberConversationAutoScrollHold();
 }
 
 function clearRecentCompletedReplyAnchor() {
@@ -18763,28 +21345,23 @@ function updateScrollToBottomButton() {
   const el = $("conversation");
   if (!button || !el) return;
   const isScrollable = el.scrollHeight - el.clientHeight > 128;
-  const shouldShow = Boolean(
-    state.currentThread
-      && !state.currentThread.mobileLoading
-      && !state.currentThread.mobileLoadError
-      && isScrollable
-      && !isConversationNearBottom(),
-  );
+  const replyAnchor = replyButton ? currentRecentCompletedReplyAnchor() : null;
+  const replyNode = replyButton ? turnFinalReceiptNode(replyAnchor) : null;
+  const jumpPlan = conversationScroll.planConversationJumpButtons({
+    hasThread: Boolean(state.currentThread),
+    loading: Boolean(state.currentThread && state.currentThread.mobileLoading),
+    loadError: Boolean(state.currentThread && state.currentThread.mobileLoadError),
+    isScrollable,
+    nearBottom: isConversationNearBottom(),
+    hasReplyTarget: Boolean(replyNode),
+    replyTargetAbove: Boolean(replyNode && isNodeStartAboveConversationViewport(replyNode)),
+  });
+  const shouldShow = Boolean(jumpPlan.showBottom);
   button.classList.toggle("hidden", !shouldShow);
   button.setAttribute("aria-hidden", shouldShow ? "false" : "true");
   button.tabIndex = shouldShow ? 0 : -1;
   if (!replyButton) return;
-  const replyAnchor = currentRecentCompletedReplyAnchor();
-  const replyNode = turnFinalReceiptNode(replyAnchor);
-  const shouldShowReply = Boolean(
-    !shouldShow
-      && state.currentThread
-      && !state.currentThread.mobileLoading
-      && !state.currentThread.mobileLoadError
-      && isScrollable
-      && replyNode
-      && isNodeStartAboveConversationViewport(replyNode),
-  );
+  const shouldShowReply = Boolean(jumpPlan.showReply);
   replyButton.classList.toggle("hidden", !shouldShowReply);
   replyButton.setAttribute("aria-hidden", shouldShowReply ? "false" : "true");
   replyButton.tabIndex = shouldShowReply ? 0 : -1;
@@ -19145,6 +21722,31 @@ function saveComposerIntentDraft(kind, value) {
   try {
     localStorage.setItem(STORAGE_COMPOSER_INTENT_DRAFTS, JSON.stringify(drafts));
   } catch (err) {
+    recordHomeAiDiagnosticFailure({
+      category: "task_card_workflow_failed",
+      diagnostic_type: action === "reply" ? "task_card_return_failed" : "task_card_action_failed",
+      severity_hint: "H2",
+      evidence_confidence: 0.78,
+      error_code: diagnosticErrorCode(err, action === "reply" ? "task_card_return_failed" : "task_card_action_failed"),
+      context: {
+        surface: "task-card",
+        action: homeAiDiagnosticReportingApi.boundedToken(action, "mutate", 40),
+        thread_hash: diagnosticThreadHash(state.currentThreadId),
+        task_hash: diagnosticTaskHash(id),
+      },
+      counts: {
+        status_code: diagnosticErrorStatus(err),
+      },
+      breadcrumbs: [{
+        kind: "task-card",
+        code: homeAiDiagnosticReportingApi.boundedToken(action, "mutate", 40),
+        status: "failed",
+        fields: {
+          status_code: diagnosticErrorStatus(err),
+          task_hash: diagnosticTaskHash(id),
+        },
+      }],
+    });
     showError(err);
   }
 }
@@ -19844,13 +22446,46 @@ function toggleQuotaDetails(anchor) {
 }
 
 function composerPlaceholderText() {
-  if (state.newThreadDraft) return "输入第一条消息";
   const targetThreadId = currentComposerThreadId();
   const targetThread = composerTargetThread();
-  const shouldShow = Boolean(state.threadTileMode && !state.newThreadDraft && targetThreadId && targetThread);
-  if (!shouldShow) return "Message Codex";
-  const title = threadDisplayName(targetThread) || targetThreadId;
-  return `发送到：${title}`;
+  return threadTileStatePolicy.composerTargetPlaceholderPlan({
+    newThreadDraft: state.newThreadDraft,
+    tileContext: isThreadTileComposerContext(),
+    targetThreadId,
+    hasTargetThread: Boolean(targetThread),
+    targetTitle: targetThread ? threadDisplayName(targetThread) : "",
+    newThreadPlaceholder: "输入第一条消息",
+    defaultPlaceholder: "Message Codex",
+  }).text;
+}
+
+function composerShowsTargetPlaceholder() {
+  const targetThreadId = currentComposerThreadId();
+  const targetThread = composerTargetThread();
+  return threadTileStatePolicy.composerTargetPlaceholderPlan({
+    newThreadDraft: state.newThreadDraft,
+    tileContext: isThreadTileComposerContext(),
+    targetThreadId,
+    hasTargetThread: Boolean(targetThread),
+  }).showTargetPlaceholder === true;
+}
+
+function applyComposerActionControlPlan(sendButton, plan) {
+  if (!sendButton || !plan) return;
+  setComposerActionButtonLabel(sendButton, plan.label || "Send", { proxy: plan.labelProxy === true });
+  sendButton.title = plan.title || "";
+  const classState = plan.classState || {};
+  sendButton.classList.toggle("interrupt-mode", classState.interruptMode === true);
+  sendButton.classList.toggle("sending", classState.sending === true);
+  sendButton.classList.toggle("send-failed", classState.sendFailed === true);
+  sendButton.classList.toggle("steer-mode", classState.steerMode === true);
+  sendButton.classList.toggle("plugin-voice-input-gesture", classState.pluginVoiceInputGesture === true);
+  if (plan.ariaLabel) {
+    sendButton.setAttribute("aria-label", plan.ariaLabel);
+  } else {
+    sendButton.removeAttribute("aria-label");
+  }
+  sendButton.disabled = plan.sendButtonDisabled === true;
 }
 
 function renderComposerSettings() {
@@ -19893,14 +22528,29 @@ function updateComposerControls() {
     && !targetThread.mobileLoading
     && !targetThread.mobileLoadError);
   const hasNewThreadDraft = Boolean(state.newThreadDraft);
-  const canComposeNewThread = Boolean(hasNewThreadDraft);
-  const disabled = !(hasThread || canComposeNewThread) || state.composerBusy || state.attachmentProcessingCount > 0;
   const hasContent = composerHasContent();
   const bareIntentKind = composerIntentBareTagKind(composerText());
   const goalCommandMode = Boolean(!hasNewThreadDraft && isThreadGoalCommandText(composerText()));
   const commandMode = Boolean(!hasNewThreadDraft && isThreadTaskCardCommandText(composerText()));
-  const interruptMode = Boolean(!hasNewThreadDraft && targetActiveTurnId) && !hasContent;
-  const steerMode = Boolean(!hasNewThreadDraft && targetActiveTurnId) && hasContent;
+  const voiceGestureAvailable = pluginVoiceInputGestureAvailable();
+  const bareIntentOption = bareIntentKind ? composerIntentOption(bareIntentKind) : null;
+  const composerActionPlan = threadTileStatePolicy.composerActionControlPlan({
+    hasThread,
+    hasNewThreadDraft,
+    composerBusy: state.composerBusy,
+    attachmentProcessingCount: state.attachmentProcessingCount,
+    hasContent,
+    targetActiveTurnId,
+    bareIntentKind,
+    bareIntentTitle: bareIntentOption ? `Open ${bareIntentOption.label}` : "Open composer action",
+    goalCommandMode,
+    commandMode,
+    sendButtonHint: state.sendButtonHint,
+    steeringBusy: Boolean(state.steerFeedback && state.steerFeedback.status === "sending"),
+    voiceGestureAvailable,
+    hermesEmbedMode: isHermesEmbedMode(),
+  });
+  const disabled = composerActionPlan.disabled === true;
   const sendButton = $("sendMessage");
   const attachButton = $("attachFiles");
   const messageInput = $("messageInput");
@@ -19910,6 +22560,7 @@ function updateComposerControls() {
   }
   if (messageInput) {
     messageInput.dataset.placeholder = composerPlaceholderText();
+    messageInput.classList.toggle("has-target-placeholder", composerShowsTargetPlaceholder());
   }
   setMessageInputDisabled(disabled);
   $("fileInput").disabled = disabled;
@@ -19921,58 +22572,7 @@ function updateComposerControls() {
     const button = $(id);
     if (button) button.disabled = disabled;
   }
-  const showRetryHint = Boolean(state.sendButtonHint);
-  if (interruptMode) {
-    setComposerActionButtonLabel(sendButton, "Stop", { proxy: isHermesEmbedMode() });
-    sendButton.title = "Interrupt current turn";
-    sendButton.classList.add("interrupt-mode");
-    sendButton.classList.remove("sending", "send-failed", "steer-mode");
-  } else if (state.composerBusy) {
-    const steering = state.steerFeedback && state.steerFeedback.status === "sending";
-    setComposerActionButtonLabel(sendButton, steering ? "引导中…" : "发送中…");
-    sendButton.title = steering ? "Steering current turn" : "Message is sending";
-    sendButton.classList.add("sending");
-    sendButton.classList.toggle("steer-mode", Boolean(steering));
-    sendButton.classList.remove("send-failed", "interrupt-mode");
-  } else if (showRetryHint) {
-    setComposerActionButtonLabel(sendButton, "重试");
-    sendButton.title = "Retry sending message";
-    sendButton.classList.add("send-failed");
-    sendButton.classList.remove("sending", "interrupt-mode", "steer-mode");
-  } else if (goalCommandMode) {
-    setComposerActionButtonLabel(sendButton, "Goal");
-    sendButton.title = "Open goal dialog";
-    sendButton.classList.remove("sending", "send-failed", "interrupt-mode", "steer-mode");
-  } else if (bareIntentKind) {
-    const option = composerIntentOption(bareIntentKind);
-    setComposerActionButtonLabel(sendButton, "Open");
-    sendButton.title = option ? `Open ${option.label}` : "Open composer action";
-    sendButton.classList.remove("sending", "send-failed", "interrupt-mode", "steer-mode");
-  } else if (commandMode) {
-    setComposerActionButtonLabel(sendButton, "Task card");
-    sendButton.title = "Ask Codex to draft a cross-thread task card";
-    sendButton.classList.remove("sending", "send-failed", "interrupt-mode", "steer-mode");
-  } else if (steerMode) {
-    setComposerActionButtonLabel(sendButton, "引导");
-    sendButton.title = "Guide the current running turn";
-    sendButton.classList.add("steer-mode");
-    sendButton.classList.remove("sending", "send-failed", "interrupt-mode");
-  } else {
-    setComposerActionButtonLabel(sendButton, "Send");
-    sendButton.title = hasNewThreadDraft ? "Create new chat" : "Send message";
-    sendButton.classList.remove("sending", "send-failed", "interrupt-mode", "steer-mode");
-  }
-  const voiceGestureAvailable = pluginVoiceInputGestureAvailable();
-  sendButton.classList.toggle("plugin-voice-input-gesture", voiceGestureAvailable);
-  if (voiceGestureAvailable && !state.composerBusy && !interruptMode) {
-    sendButton.title = `${sendButton.title || "Send"}；按住录音，松开转写`;
-    sendButton.setAttribute("aria-label", `${sendButton.textContent || "Send"}。按住可语音输入`);
-  } else if (interruptMode && isHermesEmbedMode()) {
-    sendButton.setAttribute("aria-label", "Stop。按住可语音输入，轻点可中断当前任务");
-  } else {
-    sendButton.removeAttribute("aria-label");
-  }
-  sendButton.disabled = disabled || (!interruptMode && !hasContent && !voiceGestureAvailable);
+  applyComposerActionControlPlan(sendButton, composerActionPlan);
   publishPluginVoiceInputCapability();
 }
 
@@ -20230,6 +22830,16 @@ async function sendThreadTaskCardCommand(commandText, options = {}) {
     $("connectionState").classList.remove("error");
     $("connectionState").textContent = "Task card draft requested";
     markActivity("草案已请求");
+    recordHomeAiDiagnosticSuccess({
+      category: "task_card_workflow_failed",
+      diagnostic_type: "task_card_draft_request_failed",
+      error_code: "task_card_draft_request_failed",
+      context: {
+        surface: "task-card",
+        action: "draft-request",
+        thread_hash: diagnosticThreadHash(targetThreadId),
+      },
+    });
     scheduleComposerTargetRefresh(targetThreadId, 600, "task-card-submit");
     scheduleLivePollIfNeeded(1200);
     loadThreads({ silent: true }).catch(showError);
@@ -20247,6 +22857,30 @@ async function sendThreadTaskCardCommand(commandText, options = {}) {
       message,
       steering: false,
       taskCardCommand: true,
+    });
+    recordHomeAiDiagnosticFailure({
+      category: "task_card_workflow_failed",
+      diagnostic_type: "task_card_draft_request_failed",
+      severity_hint: "H2",
+      evidence_confidence: 0.76,
+      error_code: diagnosticErrorCode(err, "task_card_draft_request_failed"),
+      context: {
+        surface: "task-card",
+        action: "draft-request",
+        thread_hash: diagnosticThreadHash(targetThreadId),
+      },
+      counts: {
+        status_code: diagnosticErrorStatus(err),
+      },
+      breadcrumbs: [{
+        kind: "task-card",
+        code: "draft-request",
+        status: "failed",
+        fields: {
+          status_code: diagnosticErrorStatus(err),
+          thread_hash: diagnosticThreadHash(targetThreadId),
+        },
+      }],
     });
     if (options.rethrow) throw new Error(message);
     return false;
@@ -20606,35 +23240,36 @@ async function interruptActiveTurn(threadId = currentComposerThreadId(), activeT
     .catch(showError);
 }
 
-async function answerServerRequest(requestId, payload) {
+async function answerServerRequest(requestId, payload, options = {}) {
   const key = requestId !== null && requestId !== undefined ? String(requestId) : "";
   const request = state.pendingApprovals.get(key);
   if (!request || request.status !== "waiting") return;
+  const threadId = approvalActionThreadId(request, options.threadId);
   request.status = "responding";
   request.decision = payload && (payload.decision || payload.action) || "submitted";
   markActivity(isUserInputRequest(request) ? "输入发送中" : "批准中");
-  renderCurrentThread();
+  scheduleApprovalThreadRender(threadId);
   try {
     const result = await api(`/api/approvals/${encodeURIComponent(key)}`, {
       method: "POST",
       body: JSON.stringify(payload || {}),
       timeoutMs: 20000,
     });
-    if (result && result.request) state.pendingApprovals.set(key, result.request);
+    if (result && result.request) state.pendingApprovals.set(key, serverRequestWithThreadContext(result.request, threadId));
     $("connectionState").classList.remove("error");
     $("connectionState").textContent = isUserInputRequest(request) ? "Response sent" : "Approval sent";
     markActivity(isUserInputRequest(request) ? "输入已发送" : "批准发送");
-    renderCurrentThread();
+    scheduleApprovalThreadRender(threadId);
   } catch (err) {
     request.status = "waiting";
     request.decision = null;
     showError(err);
-    renderCurrentThread();
+    scheduleApprovalThreadRender(threadId);
   }
 }
 
-function answerApproval(requestId, decision) {
-  return answerServerRequest(requestId, { decision });
+function answerApproval(requestId, decision, options = {}) {
+  return answerServerRequest(requestId, { decision }, options);
 }
 
 function serverRequestPayload(request, responseText, questionId) {
@@ -20644,28 +23279,29 @@ function serverRequestPayload(request, responseText, questionId) {
   return { responseText, questionId };
 }
 
-function declineServerRequest(requestId) {
+function declineServerRequest(requestId, options = {}) {
   const key = requestId !== null && requestId !== undefined ? String(requestId) : "";
   const request = state.pendingApprovals.get(key);
   if (!request) return Promise.resolve();
   if (request.method === "mcpServer/elicitation/request") {
-    return answerServerRequest(key, { action: "decline" });
+    return answerServerRequest(key, { action: "decline" }, options);
   }
   if (request.method === "item/tool/requestUserInput") {
-    return answerServerRequest(key, { answers: {} });
+    return answerServerRequest(key, { answers: {} }, options);
   }
-  return answerApproval(key, "deny");
+  return answerApproval(key, "deny", options);
 }
 
-async function mutateThreadTaskCard(cardId, action, body = {}) {
+async function mutateThreadTaskCard(cardId, action, body = {}, options = {}) {
   const id = String(cardId || "").trim();
-  if (!id || !state.currentThreadId) return;
+  const threadId = String(options.threadId || body.threadId || state.currentThreadId || "").trim();
+  if (!id || !threadId) return;
   $("connectionState").classList.remove("error");
   $("connectionState").textContent = action === "approve" ? "Approving task card" : `${action} task card`;
   try {
     const result = await api(`/api/thread-task-cards/${encodeURIComponent(id)}/${encodeURIComponent(action)}`, {
       method: "POST",
-      body: JSON.stringify(Object.assign({ threadId: state.currentThreadId }, body)),
+      body: JSON.stringify(Object.assign({}, body, { threadId })),
       timeoutMs: 30000,
     });
     if (action === "approve" && result && result.execution && result.execution.turnId) {
@@ -20673,21 +23309,38 @@ async function mutateThreadTaskCard(cardId, action, body = {}) {
     } else {
       $("connectionState").textContent = "Task card updated";
     }
-    settleCurrentThreadTaskCard(id, action === "approve" ? "approved" : action === "delete" ? "deleted" : action === "revoke" ? "revoked" : "replied", result && result.card ? result.card : null);
+    settleThreadTaskCardForThread(threadId, id, action === "approve" ? "approved" : action === "delete" ? "deleted" : action === "revoke" ? "revoked" : "replied", result && result.card ? result.card : null);
+    recordHomeAiDiagnosticSuccess({
+      category: "task_card_workflow_failed",
+      diagnostic_type: action === "reply" ? "task_card_return_failed" : "task_card_action_failed",
+      error_code: action === "reply" ? "task_card_return_failed" : "task_card_action_failed",
+      context: {
+        surface: "task-card",
+        action: homeAiDiagnosticReportingApi.boundedToken(action, "mutate", 40),
+        thread_hash: diagnosticThreadHash(threadId),
+        task_hash: diagnosticTaskHash(id),
+      },
+    });
     if (action === "approve" && result && result.execution && result.execution.turnId) {
-      const injectedVisible = await waitForCurrentThreadTurn(result.execution.turnId, { timeoutMs: 10000, intervalMs: 500 });
+      let injectedVisible = false;
+      if (threadId === String(state.currentThreadId || "")) {
+        injectedVisible = await waitForCurrentThreadTurn(result.execution.turnId, { timeoutMs: 10000, intervalMs: 500 });
+      } else {
+        scheduleComposerTargetRefresh(threadId, 300, "task-card-approved");
+      }
       $("connectionState").textContent = injectedVisible ? "Task card approved and injected" : "Task card approved; waiting for thread refresh";
       loadThreads({ silent: true }).catch(showError);
       return;
     }
-    await refreshCurrentThreadAfterTaskCard();
+    await refreshThreadAfterTaskCard(threadId);
   } catch (err) {
     showError(err);
   }
 }
 
-async function replyTaskCard(cardId) {
-  const card = findThreadTaskCard(cardId);
+async function replyTaskCard(cardId, options = {}) {
+  const threadId = String(options.threadId || state.currentThreadId || "").trim();
+  const card = findThreadTaskCard(cardId, threadId);
   if (!card) return;
   const body = await requestAppTextInput("输入回复内容。", "", {
     title: "回复任务卡片",
@@ -20702,13 +23355,13 @@ async function replyTaskCard(cardId) {
     summary: summarizeTaskCardText(body),
     body: String(body).trim(),
     idempotencyKey: `task-card-reply:${card.id}:${Date.now()}:${Math.random().toString(16).slice(2, 8)}`,
-  });
+  }, { threadId });
 }
 
-function findThreadTaskCardDraftByKey(draftKey) {
+function findThreadTaskCardDraftByKey(draftKey, thread = renderContextThread()) {
   const key = String(draftKey || "");
-  const thread = state.currentThread;
-  const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+  const sourceThread = renderContextThread(thread) || state.currentThread;
+  const turns = Array.isArray(sourceThread && sourceThread.turns) ? sourceThread.turns : [];
   for (const turn of turns) {
     const items = Array.isArray(turn && turn.items) ? turn.items : [];
     for (const item of items) {
@@ -20718,10 +23371,23 @@ function findThreadTaskCardDraftByKey(draftKey) {
       const itemKey = threadTaskCardDraftKeyForDraft(turn, draft, item);
       const legacyItemKey = threadTaskCardDraftKey(turn.id, item.id || "");
       if (itemKey !== key && legacyItemKey !== key) continue;
-      return { key, draft, turn, item };
+      return { key, draft, turn, item, sourceThread };
     }
   }
   return null;
+}
+
+function scheduleThreadTaskCardDraftStateRender(threadId = "") {
+  const id = String(threadId || state.currentThreadId || "").trim();
+  if (!id || id === String(state.currentThreadId || "")) {
+    renderCurrentThread();
+    return true;
+  }
+  if (state.threadTileMode && threadTilePaneIsVisible(id)) {
+    if (!scheduleRenderThreadTilePane(id, { preserveScroll: true })) renderCurrentThread();
+    return true;
+  }
+  return false;
 }
 
 function setThreadTaskCardDraftState(draftKey, nextState, options = {}) {
@@ -20729,16 +23395,18 @@ function setThreadTaskCardDraftState(draftKey, nextState, options = {}) {
   if (!key) return;
   state.threadTaskCardDraftStates.set(key, Object.assign({}, threadTaskCardDraftState(key), nextState || {}, { updatedAtMs: Date.now() }));
   saveThreadTaskCardDraftStates();
-  if (options.render !== false) renderCurrentThread();
+  const threadId = String(options.threadId || options.thread && options.thread.id || "").trim();
+  if (options.render !== false) scheduleThreadTaskCardDraftStateRender(threadId);
 }
 
-function dismissThreadTaskCardDraft(draftKey) {
-  setThreadTaskCardDraftState(draftKey, { status: "dismissed", error: "" });
+function dismissThreadTaskCardDraft(draftKey, options = {}) {
+  setThreadTaskCardDraftState(draftKey, { status: "dismissed", error: "" }, options);
 }
 
-function queueThreadTaskCardDraftCreation(draftKey) {
+function queueThreadTaskCardDraftCreation(draftKey, thread = renderContextThread()) {
   const key = String(draftKey || "");
   if (!key || state.scheduledThreadTaskCardDraftCreations.has(key) || state.activeThreadTaskCardDraftCreations.has(key)) return;
+  const sourceThreadId = renderContextThreadId(thread);
   state.scheduledThreadTaskCardDraftCreations.add(key);
   const current = threadTaskCardDraftState(key);
   setThreadTaskCardDraftState(key, {
@@ -20748,17 +23416,21 @@ function queueThreadTaskCardDraftCreation(draftKey) {
   }, { render: false });
   window.setTimeout(() => {
     state.scheduledThreadTaskCardDraftCreations.delete(key);
-    createThreadTaskCardDraft(key).catch(showError);
+    createThreadTaskCardDraft(key, { threadId: sourceThreadId }).catch(showError);
   }, 0);
 }
 
-async function createThreadTaskCardDraft(draftKey) {
+async function createThreadTaskCardDraft(draftKey, options = {}) {
   const activeKey = String(draftKey || "");
   if (!activeKey || state.activeThreadTaskCardDraftCreations.has(activeKey)) return;
   state.activeThreadTaskCardDraftCreations.add(activeKey);
+  const requestedThreadId = String(options.threadId || "").trim();
   try {
-    const resolved = findThreadTaskCardDraftByKey(draftKey);
-    if (!resolved || !state.currentThreadId || !state.currentThread) {
+    const requestedThread = taskCardActionThread(requestedThreadId);
+    const resolved = findThreadTaskCardDraftByKey(draftKey, requestedThread);
+    const sourceThread = resolved && (resolved.sourceThread || requestedThread || state.currentThread);
+    const sourceThreadId = String(sourceThread && sourceThread.id || requestedThreadId || "").trim();
+    if (!resolved || !sourceThreadId || !sourceThread) {
       setThreadTaskCardDraftState(draftKey, { status: "pending", error: "" }, { render: false });
       return;
     }
@@ -20766,14 +23438,14 @@ async function createThreadTaskCardDraft(draftKey) {
     const targetRefs = threadTaskCardDraftTargetThreads(draft);
     const targetThreadIds = threadTaskCardDraftTargetIds(draft);
     if (!targetThreadIds.length) {
-      setThreadTaskCardDraftState(draftKey, { status: "failed", error: draft.error || "Draft did not include a target thread id" });
+      setThreadTaskCardDraftState(draftKey, { status: "failed", error: draft.error || "Draft did not include a target thread id" }, { threadId: sourceThreadId });
       return;
     }
     if (!draft.title || !draft.body) {
-      setThreadTaskCardDraftState(draftKey, { status: "failed", error: draft.error || "Draft is incomplete" });
+      setThreadTaskCardDraftState(draftKey, { status: "failed", error: draft.error || "Draft is incomplete" }, { threadId: sourceThreadId });
       return;
     }
-    setThreadTaskCardDraftState(draftKey, { status: "creating", error: "" });
+    setThreadTaskCardDraftState(draftKey, { status: "creating", error: "" }, { threadId: sourceThreadId });
     $("connectionState").classList.remove("error");
     $("connectionState").textContent = "Creating task card";
     const body = truncateThreadTaskCardBody(draft.body);
@@ -20784,13 +23456,13 @@ async function createThreadTaskCardDraft(draftKey) {
     const result = await api("/api/thread-task-cards", {
       method: "POST",
       body: JSON.stringify({
-        sourceWorkspaceId: state.currentThread.cwd || state.selectedCwd || "",
-        sourceThreadId: state.currentThreadId,
+        sourceWorkspaceId: sourceThread.cwd || state.selectedCwd || "",
+        sourceThreadId,
         sourceTurnId: String(turn && turn.id || ""),
-        sourceThreadTitle: threadTitleForDisplay(state.currentThread) || state.currentThreadId,
+        sourceThreadTitle: threadTitleForDisplay(sourceThread) || sourceThreadId,
         targetThreadIds,
         targetWorkspaceIds,
-        idempotencyKey: `task-card-draft:${state.currentThreadId}:${draftKey}`,
+        idempotencyKey: `task-card-draft:${sourceThreadId}:${draftKey}`,
         format: "markdown",
         title: draft.title,
         summary: draft.summary || summarizeTaskCardText(body),
@@ -20804,22 +23476,21 @@ async function createThreadTaskCardDraft(draftKey) {
       ? result.cards.filter(Boolean)
       : (result && result.card ? [result.card] : []);
     if (!createdCards.length) throw new Error("Task card creation returned no cards");
-    if (state.currentThread && String(state.currentThread.id || "") === String(state.currentThreadId || "")) {
-      for (const createdCard of createdCards) {
-        const pending = String(createdCard && createdCard.status || "pending") === "pending";
-        upsertThreadTaskCardOnThread(state.currentThread, createdCard);
-        if (pending) {
-          incrementPendingOutgoingTaskCardCount(state.currentThreadId, 1);
-          incrementPendingIncomingTaskCardCount(createdCard && createdCard.target && createdCard.target.threadId, 1);
-        }
+    for (const createdCard of createdCards) {
+      const pending = String(createdCard && createdCard.status || "pending") === "pending";
+      upsertThreadTaskCardOnThread(sourceThread, createdCard);
+      if (pending) {
+        incrementPendingOutgoingTaskCardCount(sourceThreadId, 1);
+        incrementPendingIncomingTaskCardCount(createdCard && createdCard.target && createdCard.target.threadId, 1);
       }
     }
+    if (state.threadTileDetails.has(sourceThreadId)) state.threadTileDetails.set(sourceThreadId, sourceThread);
     setThreadTaskCardDraftState(draftKey, {
       status: "created",
       error: "",
       cardId: String(createdCards[0] && createdCards[0].id || ""),
       cardIds: createdCards.map((card) => String(card && card.id || "")).filter(Boolean),
-    });
+    }, { threadId: sourceThreadId });
     $("connectionState").classList.remove("error");
     $("connectionState").textContent = createdCards.length === 1
       ? "Task card created; opening target thread"
@@ -20830,17 +23501,60 @@ async function createThreadTaskCardDraft(draftKey) {
       threadId: createdCards[0].target && createdCards[0].target.threadId || targetThreadIds[0],
       taskId: createdCards[0].id,
     }) : null;
+    recordHomeAiDiagnosticSuccess({
+      category: "task_card_workflow_failed",
+      diagnostic_type: "task_card_draft_materialize_failed",
+      error_code: "task_card_draft_materialize_failed",
+      context: {
+        surface: "task-card",
+        action: "draft-materialize",
+        thread_hash: diagnosticThreadHash(sourceThreadId),
+        item_hash: diagnosticItemHash(draftKey),
+      },
+    });
     renderThreads();
     loadThreads({ silent: true }).catch(showError);
     if (createdCards.length === 1) {
       await loadThread(createdCards[0].target && createdCards[0].target.threadId || targetThreadIds[0], { source: "task-card-created" });
     } else {
-      renderCurrentThread();
+      if (sourceThreadId === String(state.currentThreadId || "")) {
+        renderCurrentThread();
+      } else if (state.threadTileMode && threadTilePaneIsVisible(sourceThreadId)) {
+        scheduleRenderThreadTilePane(sourceThreadId, { preserveScroll: true });
+      } else {
+        renderCurrentThread();
+      }
     }
   } catch (err) {
+    const diagnosticThreadId = String(options.threadId || state.currentThreadId || "").trim();
     setThreadTaskCardDraftState(draftKey, {
       status: "failed",
       error: normalizeClientErrorMessage(err && err.message ? err.message : String(err)) || "Task card creation failed",
+    }, { threadId: diagnosticThreadId });
+    recordHomeAiDiagnosticFailure({
+      category: "task_card_workflow_failed",
+      diagnostic_type: "task_card_draft_materialize_failed",
+      severity_hint: "H2",
+      evidence_confidence: 0.78,
+      error_code: diagnosticErrorCode(err, "task_card_draft_materialize_failed"),
+      context: {
+        surface: "task-card",
+        action: "draft-materialize",
+        thread_hash: diagnosticThreadHash(diagnosticThreadId),
+        item_hash: diagnosticItemHash(draftKey),
+      },
+      counts: {
+        status_code: diagnosticErrorStatus(err),
+      },
+      breadcrumbs: [{
+        kind: "task-card",
+        code: "draft-materialize",
+        status: "failed",
+        fields: {
+          status_code: diagnosticErrorStatus(err),
+          item_hash: diagnosticItemHash(draftKey),
+        },
+      }],
     });
     throw err;
   } finally {
@@ -21084,11 +23798,7 @@ function wireUi() {
   $("threadList").addEventListener("touchcancel", cancelThreadLongPress, { passive: true });
   $("threadList").addEventListener("contextmenu", handleThreadListContextMenu);
   if ($("threadActionSheet")) $("threadActionSheet").addEventListener("click", handleThreadAction);
-  if ($("continuationConfirm")) $("continuationConfirm").addEventListener("click", () => {
-    const threadId = state.continuationDialogThreadId;
-    const thread = threadId === "__current__" ? (state.currentThread || null) : threadById(threadId);
-    startNewThreadFromThread(thread).catch(showError);
-  });
+  if ($("continuationConfirm")) $("continuationConfirm").addEventListener("click", confirmContinuationDialog);
   if ($("continuationCancel")) $("continuationCancel").addEventListener("click", closeContinuationDialog);
   if ($("continuationDialog")) $("continuationDialog").addEventListener("click", (event) => {
     if (event.target === $("continuationDialog")) closeContinuationDialog();
@@ -21157,14 +23867,21 @@ function wireUi() {
     maybeLoadOlderThreadTurnsFromScroll();
   }, { passive: true });
   $("conversation").addEventListener("click", (event) => {
-    const previewImage = previewableImageFromEvent(event);
+    const conversationRoot = event.currentTarget || $("conversation");
+    const previewImage = threadDetailActionsApi.previewableImageFromTarget(event.target, conversationRoot);
     if (previewImage && openImagePreviewFromImage(previewImage)) {
       event.preventDefault();
       event.stopPropagation();
       return;
     }
-    const copyButton = event.target.closest("[data-copy-key]");
-    if (copyButton) {
+    const actionPlan = threadDetailActionsApi.resolveThreadDetailClickAction({
+      target: event.target,
+      root: conversationRoot,
+    });
+    if (actionPlan.preventDefault) event.preventDefault();
+    if (actionPlan.stopPropagation) event.stopPropagation();
+    if (actionPlan.action === "copy") {
+      const copyButton = actionPlan.button || actionPlan.target;
       event.preventDefault();
       event.stopPropagation();
       handleCopyButtonClick(copyButton).catch(() => {
@@ -21175,60 +23892,48 @@ function wireUi() {
       });
       return;
     }
-    const localFileLink = event.target.closest("[data-local-file-path]");
-    if (localFileLink) {
+    if (actionPlan.action === "local-file-preview") {
       event.preventDefault();
       event.stopPropagation();
-      openLocalFilePreview(localFileLink).catch(showError);
+      openLocalFilePreview(actionPlan.link || actionPlan.target, { threadId: actionPlan.threadId }).catch(showError);
       return;
     }
-    const mermaidButton = event.target.closest("[data-mermaid-action]");
-    if (mermaidButton) {
+    if (actionPlan.action === "mermaid") {
       event.preventDefault();
       event.stopPropagation();
-      handleMermaidAction(mermaidButton);
+      handleMermaidAction(actionPlan.button || actionPlan.target);
       return;
     }
-    const githubPreviewExpand = event.target.closest("[data-github-link-preview-expand]");
-    if (githubPreviewExpand) {
+    if (actionPlan.action === "github-preview-toggle") {
       event.preventDefault();
       event.stopPropagation();
-      toggleGitHubLinkPreview(githubPreviewExpand);
+      toggleGitHubLinkPreview(actionPlan.button || actionPlan.target);
       return;
     }
-    const button = event.target.closest("[data-approval-action]");
-    if (button) {
-      answerApproval(button.dataset.approvalId, button.dataset.approvalAction).catch(showError);
+    if (actionPlan.action === "approval-answer") {
+      answerApproval(actionPlan.approvalId, actionPlan.approvalAction, { threadId: actionPlan.threadId }).catch(showError);
       return;
     }
-    const taskButton = event.target.closest("[data-task-card-action]");
-    if (taskButton) {
-      const action = taskButton.dataset.taskCardAction || "";
-      const cardId = taskButton.dataset.taskCardId || "";
-      if (action === "reply") {
-        replyTaskCard(cardId).catch(showError);
-      } else if (action === "approve" || action === "delete" || action === "revoke") {
-        mutateThreadTaskCard(cardId, action).catch(showError);
-      }
+    if (actionPlan.action === "task-card-reply") {
+      replyTaskCard(actionPlan.cardId, { threadId: actionPlan.threadId }).catch(showError);
       return;
     }
-    const taskDraftButton = event.target.closest("[data-task-card-draft-action]");
-    if (taskDraftButton) {
-      const action = String(taskDraftButton.dataset.taskCardDraftAction || "");
-      const draftKey = String(taskDraftButton.dataset.taskCardDraftKey || "");
-      if (action === "dismiss") dismissThreadTaskCardDraft(draftKey);
+    if (actionPlan.action === "task-card-mutate") {
+      mutateThreadTaskCard(actionPlan.cardId, actionPlan.taskCardAction, {}, { threadId: actionPlan.threadId }).catch(showError);
       return;
     }
-    const option = event.target.closest("[data-server-response-text]");
-    if (option) {
-      const requestId = option.dataset.serverRequestId;
-      const request = state.pendingApprovals.get(requestId !== null && requestId !== undefined ? String(requestId) : "");
-      answerServerRequest(requestId, serverRequestPayload(request, option.dataset.serverResponseText || "", option.dataset.serverQuestionId || "answer")).catch(showError);
+    if (actionPlan.action === "task-card-unknown") return;
+    if (actionPlan.action === "task-card-draft") {
+      if (actionPlan.draftAction === "dismiss") dismissThreadTaskCardDraft(actionPlan.draftKey, { threadId: actionPlan.threadId });
       return;
     }
-    const decline = event.target.closest("[data-server-request-decline]");
-    if (decline) {
-      declineServerRequest(decline.dataset.serverRequestId).catch(showError);
+    if (actionPlan.action === "server-response") {
+      const request = state.pendingApprovals.get(actionPlan.requestId !== null && actionPlan.requestId !== undefined ? String(actionPlan.requestId) : "");
+      answerServerRequest(actionPlan.requestId, serverRequestPayload(request, actionPlan.responseText || "", actionPlan.questionId || "answer"), { threadId: actionPlan.threadId }).catch(showError);
+      return;
+    }
+    if (actionPlan.action === "server-request-decline") {
+      declineServerRequest(actionPlan.requestId, { threadId: actionPlan.threadId }).catch(showError);
     }
   });
   $("conversation").addEventListener("submit", (event) => {
@@ -21238,7 +23943,7 @@ function wireUi() {
     const requestId = form.dataset.serverRequestId;
     const request = state.pendingApprovals.get(requestId !== null && requestId !== undefined ? String(requestId) : "");
     const responseText = new FormData(form).get("responseText") || "";
-    answerServerRequest(requestId, serverRequestPayload(request, String(responseText), form.dataset.serverQuestionId || "answer")).catch(showError);
+    answerServerRequest(requestId, serverRequestPayload(request, String(responseText), form.dataset.serverQuestionId || "answer"), { threadId: form.dataset.serverRequestThreadId }).catch(showError);
   });
   $("conversation").addEventListener("error", handleConversationImageError, true);
   $("conversation").addEventListener("load", handleConversationImageLoad, true);
@@ -21327,7 +24032,7 @@ function wireUi() {
       const localFileLink = event.target.closest("[data-local-file-path]");
       if (localFileLink) {
         event.preventDefault();
-        openLocalFilePreview(localFileLink).catch(showError);
+        openLocalFilePreview(localFileLink, { threadId: state.filePreviewThreadId }).catch(showError);
         return;
       }
       const mermaidButton = event.target.closest("[data-mermaid-action]");

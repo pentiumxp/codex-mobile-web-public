@@ -115,9 +115,9 @@ test("embedded plugin mode hides standalone chrome and installs navigation/windo
   assert.doesNotMatch(appJs, /openEmbedSettingsPanel/);
   assert.doesNotMatch(appJs, /function isPluginRootSwipeTarget/);
   assert.match(appJs, /function isHermesPluginPrimaryPage\(\)/);
-  assert.match(appJs, /function showHermesPluginPrimaryPage\(\)/);
+  assert.match(appJs, /function showHermesPluginPrimaryPage\(options = \{\}\)/);
   assert.match(appJs, /function beginSidebarEdgeSwipe\(event\) \{\s*if \(!isMobileViewport\(\) \|\| isHermesEmbedMode\(\)/);
-  assert.match(appJs, /else if \(state\.currentThreadId \|\| state\.newThreadDraft \|\| state\.selectedCwd\) \{[\s\S]*handled = showHermesPluginPrimaryPage\(\);/);
+  assert.match(appJs, /else if \(state\.currentThreadId \|\| state\.newThreadDraft \|\| state\.selectedCwd\) \{[\s\S]*handled = showHermesPluginPrimaryPage\(\{ force: true, source: "plugin-back" \}\);/);
   assert.doesNotMatch(appJs, /host_back_from_settings/);
   assert.doesNotMatch(appJs, /host_back_from_sidebar/);
   assert.doesNotMatch(appJs, /else if \(\$\("themeSettingsPanel"\)[\s\S]{0,180}closeSidebarMenu\(\);[\s\S]{0,80}handled = true;/);

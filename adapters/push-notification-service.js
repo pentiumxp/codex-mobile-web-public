@@ -133,6 +133,7 @@ function createThreadDisplaySummaryCache(options = {}) {
   const decorateSummary = typeof options.decorateSummary === "function"
     ? options.decorateSummary
     : (summary) => summary;
+  const decorateOnRead = options.decorateOnRead !== false;
   const mergeSummary = typeof options.mergeSummary === "function"
     ? options.mergeSummary
     : null;
@@ -207,7 +208,8 @@ function createThreadDisplaySummaryCache(options = {}) {
   function read(threadId) {
     prune();
     const entry = entries.get(normalizeId(threadId));
-    return entry && entry.thread ? decorateSummary(entry.thread) : null;
+    if (!entry || !entry.thread) return null;
+    return decorateOnRead ? decorateSummary(entry.thread) : Object.assign({}, entry.thread);
   }
 
   return {

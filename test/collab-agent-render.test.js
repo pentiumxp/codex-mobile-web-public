@@ -151,13 +151,12 @@ test("live operation cards dock on wide screens and become a mobile bubble", () 
   assert.match(appJs, /function finishLiveOperationDockGesture\(/);
   assert.match(functionBody("renderLiveOperation"), /renderOperationCard\(item, key, \{ status \}\)/);
   assert.match(functionBody("renderLiveOperation"), /stableOperationRenderKey\(turn, item, index\)/);
-  assert.match(functionBody("renderOperationCard"), /operation-meta-line/);
-  assert.match(functionBody("renderOperationCard"), /operation-detail-line/);
-  assert.match(functionBody("renderOperationCard"), /operation-detail-line\$\{detail \? "" : " empty"\}/);
-  assert.match(functionBody("renderOperationCard"), /detail \? escapeHtml\(detail\) : "&nbsp;"/);
-  assert.match(functionBody("renderOperationCard"), /const statusHtml = String\(status \|\| ""\)\.trim\(\)/);
-  assert.match(functionBody("renderOperationCard"), /operation-title[\s\S]*\$\{statusHtml\}/);
-  assert.match(functionBody("renderOperationCard"), /operation-duration/);
+  assert.match(functionBody("renderOperationCard"), /liveOperationDockPolicy\.operationCardHtml\(\{/);
+  assert.match(functionBody("renderOperationCard"), /renderKey:\s*key/);
+  assert.match(functionBody("renderOperationCard"), /escapeHtml/);
+  assert.doesNotMatch(functionBody("renderOperationCard"), /operation-meta-line/);
+  assert.doesNotMatch(functionBody("renderOperationCard"), /operation-detail-line/);
+  assert.doesNotMatch(functionBody("renderOperationCard"), /operationCardContentPlan/);
   assert.match(functionBody("renderOperationCard"), /operationDurationData\(item, status\)/);
   assert.match(functionBody("updateTurnTimer"), /updateOperationDurationBadges\(\)/);
   assert.match(functionBody("operationDurationData"), /operationStartedAtMs\(item\)/);
@@ -168,7 +167,7 @@ test("live operation cards dock on wide screens and become a mobile bubble", () 
   assert.match(functionBody("visibleItemsForTurn"), /const filtered = visible\.filter\(Boolean\)/);
   assert.match(functionBody("isSupersededLiveTurn"), /mobileSupersededLive/);
   assert.match(functionBody("visibleItemsForTurn"), /filtered\.every\(\(entry\) => isTurnUsageSummaryItem\(entry\.item\)\)/);
-  assert.match(functionBody("visibleItemsForTurn"), /return limitRawThreadVisibleEntries\(filtered\)/);
+  assert.match(functionBody("visibleItemsForTurn"), /return limitRawThreadVisibleEntries\(filtered, thread\)/);
   assert.doesNotMatch(functionBody("visibleItemsForTurn"), /const showOperations/);
   assert.doesNotMatch(functionBody("visibleItemsForTurn"), /latestOperationEntry/);
   assert.doesNotMatch(functionBody("visibleItemsForTurn"), /operationEntryByKey = new Map/);
@@ -388,4 +387,13 @@ test("current-turn subagent panel opens from a left swipe without a topbar butto
   assert.match(stylesCss, /\.side-chat-notice\s*{[\s\S]*display:\s*flex;/);
   assert.match(stylesCss, /\.side-chat-form textarea\s*{[\s\S]*font-size:\s*var\(--composer-input-font-size\);/);
   assert.match(stylesCss, /\.subagent-status-row/);
+});
+
+test("thread detail DOM patch helper owns keyed child reconciliation", () => {
+  assert.match(appJs, /const threadDetailDomPatchApi = window\.CodexThreadDetailDomPatch/);
+  assert.match(functionBody("patchNode"), /threadDetailDomPatchApi\.patchNode\(target, source\)/);
+  assert.match(functionBody("patchHtml"), /threadDetailDomPatchApi\.patchHtml\(\{ target, html, document \}\)/);
+  assert.doesNotMatch(appJs, /function patchChildNodes\(/);
+  assert.doesNotMatch(appJs, /function canPatchNode\(/);
+  assert.doesNotMatch(appJs, /function syncAttributes\(/);
 });

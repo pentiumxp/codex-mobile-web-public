@@ -6,6 +6,358 @@ const { test } = require("node:test");
 
 const renderPlan = require(path.resolve(__dirname, "..", "public", "thread-detail-render-plan.js"));
 
+function turn(id, items) {
+  return { id, items };
+}
+
+function item(type, text) {
+  return { type, text };
+}
+
+test("thread detail refresh request plan defaults to recent mode", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshRequest({
+    threadId: "thread-1",
+    threadLoadSeq: 7,
+    options: { source: "resume" },
+    hasActiveRefreshController: true,
+  }), {
+    shouldRefresh: true,
+    threadId: "thread-1",
+    seq: 7,
+    source: "resume",
+    requestedMode: "recent",
+    query: { mode: "recent" },
+    timeoutMs: 20000,
+    abortActiveRefresh: true,
+    reason: "recent-default",
+  });
+});
+
+test("thread detail refresh request plan handles full mode and missing thread", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshRequest({
+    currentThreadId: "thread-2",
+    threadLoadSeq: 3,
+    options: { mode: "FULL", source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA" },
+    hasActiveRefreshController: false,
+  }), {
+    shouldRefresh: true,
+    threadId: "thread-2",
+    seq: 3,
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR",
+    requestedMode: "full",
+    query: {},
+    timeoutMs: 20000,
+    abortActiveRefresh: false,
+    reason: "full-requested",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshRequest({
+    threadLoadSeq: 4,
+    options: { source: "ignored" },
+    hasActiveRefreshController: true,
+  }), {
+    shouldRefresh: false,
+    threadId: "",
+    seq: 4,
+    source: "",
+    requestedMode: "",
+    query: {},
+    timeoutMs: 20000,
+    abortActiveRefresh: false,
+    reason: "missing-thread-id",
+  });
+});
+
+test("thread detail refresh response effects apply only to current thread sequence", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshResponseEffects({
+    threadId: "thread-1",
+    seq: 7,
+    currentThreadId: "thread-1",
+    currentThreadSeq: 7,
+    source: "resume",
+  }), {
+    shouldApply: true,
+    effects: [
+      { type: "mark-thread-detail-loaded" },
+      {
+        type: "remember-render-evidence",
+        source: "resume-detail-api",
+      },
+      { type: "merge-current-thread" },
+    ],
+    reason: "current-thread",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshResponseEffects({
+    threadId: "thread-1",
+    seq: 7,
+    currentThreadId: "thread-2",
+    currentThreadSeq: 7,
+    source: "resume",
+  }), {
+    shouldApply: false,
+    effects: [],
+    reason: "stale-thread",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshResponseEffects({
+    threadId: "thread-1",
+    seq: 7,
+    currentThreadId: "thread-1",
+    currentThreadSeq: 8,
+    source: "resume",
+  }), {
+    shouldApply: false,
+    effects: [],
+    reason: "stale-seq",
+  });
+});
+
+test("thread detail history auto-backfill triggers for leading workflow receipts", () => {
+  const plan = renderPlan.planThreadDetailHistoryAutoBackfill({
+    thread: {
+      id: "thread-workflow",
+      mobileOlderTurnsCursor: { before: "cursor-1" },
+      turns: [
+        turn("t1", [item("agentMessage", "Task card id: ttc_1\nReturn policy: terminal receipt")]),
+        turn("t2", [item("agentMessage", "Source workspace: /workspace\nApproval: target approval bypassed")]),
+        turn("t3", [item("agentMessage", "Workflow mode: autonomous\nAuto-return: when complete")]),
+        turn("t4", [item("userMessage", "normal user message")]),
+      ],
+    },
+  });
+
+  assert.equal(plan.shouldLoad, true);
+  assert.equal(plan.reason, "leading-workflow-receipts");
+  assert.equal(plan.counts.leadingAssistantOnlyWorkflowTurns, 3);
+});
+
+test("thread detail history auto-backfill triggers for workflow dominated windows", () => {
+  const plan = renderPlan.planThreadDetailHistoryAutoBackfill({
+    thread: {
+      id: "thread-dominated",
+      mobileOlderTurnsCursor: "cursor-2",
+      turns: [
+        turn("t1", [item("userMessage", "[Cross-thread task card sent by source thread]\nTitle: A")]),
+        turn("t2", [item("agentMessage", "ordinary assistant response")]),
+        turn("t3", [item("userMessage", "Task card id: ttc_2\nReturn required: yes")]),
+        turn("t4", [item("agentMessage", "normal receipt")]),
+        turn("t5", [item("userMessage", "Source thread: Home AI\nWorkflow mode: autonomous")]),
+        turn("t6", [item("userMessage", "short normal user request")]),
+      ],
+    },
+  });
+
+  assert.equal(plan.shouldLoad, true);
+  assert.equal(plan.reason, "workflow-dominated-window");
+  assert.equal(plan.counts.workflowItemCount, 3);
+});
+
+test("thread detail history auto-backfill leaves ordinary recent windows alone", () => {
+  const plan = renderPlan.planThreadDetailHistoryAutoBackfill({
+    thread: {
+      id: "thread-normal",
+      mobileOlderTurnsCursor: "cursor-3",
+      turns: [
+        turn("t1", [item("userMessage", "first ordinary request"), item("agentMessage", "first answer")]),
+        turn("t2", [item("userMessage", "second ordinary request"), item("agentMessage", "second answer")]),
+        turn("t3", [item("userMessage", "third ordinary request"), item("agentMessage", "third answer")]),
+      ],
+    },
+  });
+
+  assert.equal(plan.shouldLoad, false);
+  assert.equal(plan.reason, "recent-window-has-context");
+});
+
+test("thread detail history auto-backfill respects cursor and busy guards", () => {
+  const thread = {
+    id: "thread-guard",
+    mobileOlderTurnsCursor: "cursor-4",
+    turns: [
+      turn("t1", [item("agentMessage", "Task card id: ttc_3\nReturn policy: terminal")]),
+      turn("t2", [item("agentMessage", "Task card id: ttc_4\nReturn policy: terminal")]),
+      turn("t3", [item("agentMessage", "Task card id: ttc_5\nReturn policy: terminal")]),
+    ],
+  };
+
+  assert.equal(renderPlan.planThreadDetailHistoryAutoBackfill({ thread: Object.assign({}, thread, { mobileOlderTurnsCursor: "" }) }).reason, "no-older-cursor");
+  assert.equal(renderPlan.planThreadDetailHistoryAutoBackfill({ thread, alreadyRequested: true }).reason, "already-requested");
+  assert.equal(renderPlan.planThreadDetailHistoryAutoBackfill({ thread, historyBusy: true }).reason, "history-busy");
+  assert.equal(renderPlan.planThreadDetailHistoryAutoBackfill({ thread: Object.assign({}, thread, { mobileHistoryExpanded: true }) }).reason, "history-expanded");
+});
+
+test("thread detail history auto-backfill effects plan owns event and load scheduling", () => {
+  const decision = {
+    shouldLoad: true,
+    reason: "workflow-dominated-window",
+    counts: {
+      turnCount: 4,
+      workflowItemCount: 3,
+      textItemCount: 4,
+    },
+  };
+  assert.deepEqual(renderPlan.planThreadDetailHistoryAutoBackfillEffects({
+    plan: decision,
+    key: "thread-1|cursor-a|first|last",
+    threadId: "thread-1",
+    seq: 7,
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA",
+    threadHash: "hash-1",
+    readMode: "turns-list-initial",
+    buildId: "build-1",
+  }), {
+    effects: [
+      {
+        type: "remember-history-auto-backfill-key",
+        key: "thread-1|cursor-a|first|last",
+      },
+      {
+        type: "post-client-event",
+        eventName: "thread_history_auto_backfill",
+        payload: {
+          source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR",
+          reason: "workflow-dominated-window",
+          counts: decision.counts,
+          thread_hash: "hash-1",
+          readMode: "turns-list-initial",
+          buildId: "build-1",
+        },
+      },
+      {
+        type: "schedule-load-older-thread-turns",
+        threadId: "thread-1",
+        seq: 7,
+        delayMs: 0,
+        preserveScroll: true,
+        source: "auto-context",
+      },
+    ],
+    reason: "history-auto-backfill-effects",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailHistoryAutoBackfillEffects({
+    plan: { shouldLoad: false, reason: "recent-window-has-context" },
+  }), {
+    effects: [],
+    reason: "recent-window-has-context",
+  });
+});
+
+test("thread detail first-paint response effects preserve loadThread success order", () => {
+  assert.deepEqual(renderPlan.planThreadDetailFirstPaintResponseEffects({
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA",
+  }), {
+    shouldApply: true,
+    effects: [
+      { type: "mark-thread-detail-loaded" },
+      {
+        type: "remember-render-evidence",
+        source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR-detail-api",
+      },
+      { type: "sync-pending-server-requests" },
+      { type: "merge-current-thread" },
+    ],
+    reason: "first-paint-response",
+  });
+});
+
+test("thread detail full-backfill response effects preserve detail API success order", () => {
+  assert.deepEqual(renderPlan.planThreadDetailFullBackfillResponseEffects({
+    source: "auto-context-full-backfill-source-extra",
+  }), {
+    shouldApply: true,
+    effects: [
+      { type: "mark-thread-detail-loaded" },
+      {
+        type: "remember-render-evidence",
+        source: "auto-context-full-backfill-source-extra-detail-api",
+      },
+      { type: "sync-pending-server-requests" },
+      { type: "merge-current-thread" },
+    ],
+    reason: "full-backfill-response",
+  });
+});
+
+test("thread detail refresh render input owns app fact field selection", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshRenderInput({
+    previousConversationSignature: "prev-sig",
+    nextConversationSignature: "next-sig",
+    renderedConversationSignature: "rendered-sig",
+    previousPatchShellSignature: "shell-prev",
+    renderedPatchShellSignature: "shell-rendered",
+    allowPatch: false,
+    singleThreadSurfaceAvailable: true,
+    renderedDomTurnCount: "2.9",
+    renderedDomItemCount: "6.2",
+    duplicateRenderKeyCount: "1.9",
+    nextVisibleShape: { visibleTurnCount: "4.8", visibleItemCount: "9.7" },
+    expectedTurnIds: ["turn-a", "", "turn-b"],
+    renderedDomTurnIds: ["turn-a"],
+  }), {
+    previousConversationSignature: "prev-sig",
+    nextConversationSignature: "next-sig",
+    renderedConversationSignature: "rendered-sig",
+    previousPatchShellSignature: "shell-prev",
+    renderedPatchShellSignature: "shell-rendered",
+    allowPatch: false,
+    singleThreadSurfaceAvailable: true,
+    renderedDomTurnCount: 2,
+    renderedDomItemCount: 6,
+    duplicateRenderKeyCount: 1,
+    nextVisibleTurnCount: 4,
+    nextVisibleItemCount: 9,
+    expectedTurnIds: ["turn-a", "turn-b"],
+    renderedDomTurnIds: ["turn-a"],
+  });
+
+  assert.equal(renderPlan.planThreadDetailRefreshRenderInput({
+    nextVisibleShape: { visibleTurnCount: 4, visibleItemCount: 8 },
+    nextVisibleTurnCount: 7,
+  }).nextVisibleTurnCount, 7);
+});
+
+test("thread detail refresh render stage owns input normalization and render decision", () => {
+  const stage = renderPlan.planThreadDetailRefreshRenderStage({
+    previousConversationSignature: "sig-a",
+    nextConversationSignature: "sig-b",
+    renderedConversationSignature: "sig-a",
+    previousPatchShellSignature: "shell-a",
+    renderedPatchShellSignature: "shell-a",
+    singleThreadSurfaceAvailable: true,
+    renderedDomTurnCount: "5",
+    renderedDomItemCount: "7",
+    nextVisibleShape: { visibleTurnCount: "5", visibleItemCount: "7" },
+  });
+
+  assert.deepEqual(stage.refreshRenderInput, {
+    previousConversationSignature: "sig-a",
+    nextConversationSignature: "sig-b",
+    renderedConversationSignature: "sig-a",
+    previousPatchShellSignature: "shell-a",
+    renderedPatchShellSignature: "shell-a",
+    allowPatch: true,
+    singleThreadSurfaceAvailable: true,
+    renderedDomTurnCount: 5,
+    renderedDomItemCount: 7,
+    duplicateRenderKeyCount: 0,
+    nextVisibleTurnCount: 5,
+    nextVisibleItemCount: 7,
+    expectedTurnIds: [],
+    renderedDomTurnIds: [],
+  });
+  assert.deepEqual(stage.renderPlan, {
+    shouldRenderDetail: true,
+    canPatch: true,
+    detailRenderMode: "patch",
+    reason: "signature-changed",
+  });
+  assert.equal(stage.shouldRenderDetail, true);
+  assert.equal(stage.detailRenderMode, "patch");
+  assert.equal(stage.reason, "signature-changed");
+});
+
 test("thread detail refresh render plan skips stable conversation signatures", () => {
   const plan = renderPlan.planThreadDetailRefreshRender({
     previousConversationSignature: "sig-a",
@@ -19,6 +371,79 @@ test("thread detail refresh render plan skips stable conversation signatures", (
     detailRenderMode: "metadata-only",
     reason: "signature-stable",
   });
+});
+
+test("thread detail refresh render plan invalidates stale empty single-thread DOM", () => {
+  const plan = renderPlan.planThreadDetailRefreshRender({
+    previousConversationSignature: "sig-a",
+    nextConversationSignature: "sig-a",
+    renderedConversationSignature: "sig-a",
+    singleThreadSurfaceAvailable: true,
+    renderedDomTurnCount: 0,
+    nextVisibleTurnCount: 3,
+  });
+
+  assert.deepEqual(plan, {
+    shouldRenderDetail: true,
+    canPatch: false,
+    detailRenderMode: "full-render",
+    reason: "rendered-dom-empty",
+  });
+
+  const tileTransitionPlan = renderPlan.planThreadDetailRefreshRender({
+    previousConversationSignature: "sig-a",
+    nextConversationSignature: "sig-a",
+    renderedConversationSignature: "sig-a",
+    singleThreadSurfaceAvailable: false,
+    renderedDomTurnCount: 0,
+    nextVisibleTurnCount: 3,
+  });
+  assert.equal(tileTransitionPlan.shouldRenderDetail, false);
+  assert.equal(tileTransitionPlan.reason, "signature-stable");
+});
+
+test("thread detail refresh render plan invalidates partial or corrupt stable DOM", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshRender({
+    previousConversationSignature: "sig-a",
+    nextConversationSignature: "sig-a",
+    renderedConversationSignature: "sig-a",
+    singleThreadSurfaceAvailable: true,
+    renderedDomTurnCount: 2,
+    nextVisibleTurnCount: 3,
+  }), {
+    shouldRenderDetail: true,
+    canPatch: false,
+    detailRenderMode: "full-render",
+    reason: "rendered-dom-turn-mismatch",
+  });
+
+  assert.equal(renderPlan.planThreadDetailRefreshRender({
+    previousConversationSignature: "sig-a",
+    nextConversationSignature: "sig-a",
+    renderedConversationSignature: "sig-a",
+    singleThreadSurfaceAvailable: true,
+    renderedDomTurnCount: 3,
+    nextVisibleTurnCount: 3,
+    renderedDomItemCount: 4,
+    nextVisibleItemCount: 5,
+  }).reason, "rendered-dom-item-mismatch");
+
+  assert.equal(renderPlan.planThreadDetailRefreshRender({
+    previousConversationSignature: "sig-a",
+    nextConversationSignature: "sig-a",
+    renderedConversationSignature: "sig-a",
+    singleThreadSurfaceAvailable: true,
+    duplicateRenderKeyCount: 1,
+  }).reason, "rendered-dom-duplicate-render-keys");
+
+  assert.equal(renderPlan.planThreadDetailRefreshRender({
+    previousConversationSignature: "sig-a",
+    nextConversationSignature: "sig-a",
+    renderedConversationSignature: "sig-a",
+    singleThreadSurfaceAvailable: true,
+    expectedTurnIds: ["a", "b"],
+    renderedDomTurnIds: ["b", "a"],
+  }).reason, "rendered-dom-turn-order-mismatch");
 });
 
 test("thread detail refresh render plan allows patch only when current DOM matches previous detail", () => {
@@ -37,6 +462,9 @@ test("thread detail refresh render plan allows patch only when current DOM match
   assert.deepEqual(renderPlan.finalizeThreadDetailRenderPlan(plan, { locallyPatchedDetail: true }), {
     detailRenderMode: "patch",
     locallyPatchedDetail: true,
+    tilePanePatchedDetail: false,
+    renderAction: "local-patch-metadata-update",
+    projectionConsistencyPhase: "refresh-local-patch",
   });
 });
 
@@ -56,6 +484,26 @@ test("thread detail refresh render plan requires full render when DOM signature 
   assert.deepEqual(renderPlan.finalizeThreadDetailRenderPlan(plan, { locallyPatchedDetail: false }), {
     detailRenderMode: "full-render",
     locallyPatchedDetail: false,
+    tilePanePatchedDetail: false,
+    renderAction: "full-render",
+    projectionConsistencyPhase: "",
+  });
+});
+
+test("thread detail refresh render plan can patch when only projection metadata makes the full signature stale", () => {
+  const plan = renderPlan.planThreadDetailRefreshRender({
+    previousConversationSignature: "sig-a",
+    nextConversationSignature: "sig-b",
+    renderedConversationSignature: "sig-old",
+    previousPatchShellSignature: "shell-a",
+    renderedPatchShellSignature: "shell-a",
+  });
+
+  assert.deepEqual(plan, {
+    shouldRenderDetail: true,
+    canPatch: true,
+    detailRenderMode: "patch",
+    reason: "patch-shell-stable",
   });
 });
 
@@ -64,10 +512,2462 @@ test("thread detail refresh render plan can disable patch explicitly", () => {
     previousConversationSignature: "sig-a",
     nextConversationSignature: "sig-b",
     renderedConversationSignature: "sig-a",
+    previousPatchShellSignature: "shell-a",
+    renderedPatchShellSignature: "shell-a",
     allowPatch: false,
   });
 
   assert.equal(plan.shouldRenderDetail, true);
   assert.equal(plan.canPatch, false);
   assert.equal(plan.detailRenderMode, "full-render");
+});
+
+test("thread detail refresh patch execution allows local patch only for non-tile patchable detail refreshes", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchExecution({
+    shouldRenderDetail: true,
+    canPatch: true,
+    tileSurfaceRefresh: false,
+  }), {
+    tryTilePanePatch: true,
+    tryLocalPatch: true,
+    updateMetadataOnTileMiss: false,
+    fallbackAction: "full-render",
+    localPatchBlockedReason: "",
+    reason: "local-patch-eligible",
+  });
+});
+
+test("thread detail refresh patch execution blocks single-thread patching on tile surfaces", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchExecution({
+    shouldRenderDetail: true,
+    canPatch: true,
+    tileSurfaceRefresh: true,
+  }), {
+    tryTilePanePatch: true,
+    tryLocalPatch: false,
+    updateMetadataOnTileMiss: false,
+    fallbackAction: "full-render",
+    localPatchBlockedReason: "tile-surface-refresh",
+    reason: "tile-surface-refresh",
+  });
+});
+
+test("thread detail refresh patch execution falls back to full render when patch is not allowed", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchExecution({
+    shouldRenderDetail: true,
+    canPatch: false,
+    tileSurfaceRefresh: false,
+  }), {
+    tryTilePanePatch: true,
+    tryLocalPatch: false,
+    updateMetadataOnTileMiss: false,
+    fallbackAction: "full-render",
+    localPatchBlockedReason: "patch-not-allowed",
+    reason: "full-render-required",
+  });
+});
+
+test("thread detail refresh patch execution keeps metadata-only refreshes out of full render", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchExecution({
+    shouldRenderDetail: false,
+    canPatch: false,
+    tileSurfaceRefresh: false,
+  }), {
+    tryTilePanePatch: true,
+    tryLocalPatch: false,
+    updateMetadataOnTileMiss: true,
+    fallbackAction: "metadata-update",
+    localPatchBlockedReason: "signature-stable",
+    reason: "metadata-only",
+  });
+});
+
+test("thread detail refresh patch surface plan classifies tile and single-thread surfaces", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchSurface({
+    shouldRenderDetail: true,
+    threadTileMode: true,
+    threadTileConversationSurface: false,
+  }), {
+    shouldProbeTilePatchSurface: true,
+    tileSurfaceRefresh: true,
+    tilePatchSurface: "",
+    reason: "tile-mode",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchSurface({
+    shouldRenderDetail: true,
+    threadTileMode: false,
+    threadTileConversationSurface: true,
+  }), {
+    shouldProbeTilePatchSurface: true,
+    tileSurfaceRefresh: true,
+    tilePatchSurface: "",
+    reason: "tile-conversation-surface",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchSurface({
+    shouldRenderDetail: true,
+    threadTileMode: false,
+    threadTileConversationSurface: false,
+    tilePatchSurface: "thread-tile-pane",
+  }), {
+    shouldProbeTilePatchSurface: true,
+    tileSurfaceRefresh: true,
+    tilePatchSurface: "thread-tile-pane",
+    reason: "tile-patch-surface",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchSurface({
+    shouldRenderDetail: true,
+    threadTileMode: false,
+    threadTileConversationSurface: false,
+    tilePatchSurface: "single-thread",
+  }), {
+    shouldProbeTilePatchSurface: true,
+    tileSurfaceRefresh: false,
+    tilePatchSurface: "single-thread",
+    reason: "single-thread-surface",
+  });
+});
+
+test("thread detail refresh patch surface plan keeps metadata-only probes quiet", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchSurface({
+    shouldRenderDetail: false,
+    threadTileMode: false,
+    threadTileConversationSurface: false,
+  }), {
+    shouldProbeTilePatchSurface: false,
+    tileSurfaceRefresh: false,
+    tilePatchSurface: "",
+    reason: "metadata-only-single-thread-surface",
+  });
+});
+
+test("thread detail refresh patch surface probe effects plan owns DOM probe intent", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchSurfaceProbeEffects({
+    patchSurfacePlan: {
+      shouldProbeTilePatchSurface: true,
+      reason: "tile-mode",
+    },
+    threadId: "thread-1",
+  }), {
+    effects: [
+      {
+        type: "probe-thread-detail-dom-patch-surface",
+        threadId: "thread-1",
+      },
+    ],
+    reason: "patch-surface-probe",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchSurfaceProbeEffects({
+    patchSurfacePlan: {
+      shouldProbeTilePatchSurface: false,
+      reason: "metadata-only-single-thread-surface",
+    },
+    threadId: "thread-1",
+  }), {
+    effects: [],
+    reason: "metadata-only-single-thread-surface",
+  });
+});
+
+test("thread detail refresh patch surface probe stage composes probe plan and DOM probe effects", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchSurfaceProbeStage({
+    shouldRenderDetail: true,
+    threadTileMode: false,
+    threadTileConversationSurface: false,
+    threadId: "thread-1",
+  }), {
+    patchSurfaceProbePlan: {
+      shouldProbeTilePatchSurface: true,
+      tileSurfaceRefresh: false,
+      tilePatchSurface: "",
+      reason: "single-thread-surface",
+    },
+    patchSurfaceProbeEffectsPlan: {
+      effects: [
+        {
+          type: "probe-thread-detail-dom-patch-surface",
+          threadId: "thread-1",
+        },
+      ],
+      reason: "patch-surface-probe",
+    },
+    reason: "patch-surface-probe",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchSurfaceProbeStage({
+    shouldRenderDetail: false,
+    threadTileMode: false,
+    threadTileConversationSurface: false,
+    threadId: "thread-1",
+  }), {
+    patchSurfaceProbePlan: {
+      shouldProbeTilePatchSurface: false,
+      tileSurfaceRefresh: false,
+      tilePatchSurface: "",
+      reason: "metadata-only-single-thread-surface",
+    },
+    patchSurfaceProbeEffectsPlan: {
+      effects: [],
+      reason: "metadata-only-single-thread-surface",
+    },
+    reason: "metadata-only-single-thread-surface",
+  });
+});
+
+test("thread detail refresh patch surface result stage composes final surface from DOM probe result", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchSurfaceResultStage({
+    shouldRenderDetail: true,
+    threadTileMode: false,
+    threadTileConversationSurface: false,
+    tilePatchPlan: {
+      surface: "thread-tile-pane",
+    },
+  }), {
+    patchSurfacePlan: {
+      shouldProbeTilePatchSurface: true,
+      tileSurfaceRefresh: true,
+      tilePatchSurface: "thread-tile-pane",
+      reason: "tile-patch-surface",
+    },
+    reason: "tile-patch-surface",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchSurfaceResultStage({
+    shouldRenderDetail: true,
+    threadTileMode: false,
+    threadTileConversationSurface: false,
+    tilePatchPlan: {
+      surface: "single-thread",
+    },
+  }), {
+    patchSurfacePlan: {
+      shouldProbeTilePatchSurface: true,
+      tileSurfaceRefresh: false,
+      tilePatchSurface: "single-thread",
+      reason: "single-thread-surface",
+    },
+    reason: "single-thread-surface",
+  });
+});
+
+test("thread detail refresh patch surface execution stage composes probe result and patch attempt effects", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchSurfaceExecutionStage({
+    shouldRenderDetail: true,
+    renderPlan: {
+      shouldRenderDetail: true,
+      canPatch: true,
+    },
+    threadTileMode: false,
+    threadTileConversationSurface: false,
+    tilePatchPlan: {
+      surface: "thread-tile-pane",
+    },
+  }), {
+    patchSurfaceResultStage: {
+      patchSurfacePlan: {
+        shouldProbeTilePatchSurface: true,
+        tileSurfaceRefresh: true,
+        tilePatchSurface: "thread-tile-pane",
+        reason: "tile-patch-surface",
+      },
+      reason: "tile-patch-surface",
+    },
+    patchSurfacePlan: {
+      shouldProbeTilePatchSurface: true,
+      tileSurfaceRefresh: true,
+      tilePatchSurface: "thread-tile-pane",
+      reason: "tile-patch-surface",
+    },
+    patchExecutionStage: {
+      patchExecutionPlan: {
+        tryTilePanePatch: true,
+        tryLocalPatch: false,
+        updateMetadataOnTileMiss: false,
+        fallbackAction: "full-render",
+        localPatchBlockedReason: "tile-surface-refresh",
+        reason: "tile-surface-refresh",
+      },
+      patchAttemptEffectsPlan: {
+        effects: [
+          {
+            type: "tile-pane-patch",
+            timingTarget: "tile-pane-patch",
+            preserveScroll: true,
+          },
+        ],
+        reason: "patch-attempt-effects",
+      },
+      reason: "tile-surface-refresh",
+    },
+    patchExecutionPlan: {
+      tryTilePanePatch: true,
+      tryLocalPatch: false,
+      updateMetadataOnTileMiss: false,
+      fallbackAction: "full-render",
+      localPatchBlockedReason: "tile-surface-refresh",
+      reason: "tile-surface-refresh",
+    },
+    patchAttemptEffectsPlan: {
+      effects: [
+        {
+          type: "tile-pane-patch",
+          timingTarget: "tile-pane-patch",
+          preserveScroll: true,
+        },
+      ],
+      reason: "patch-attempt-effects",
+    },
+    reason: "tile-surface-refresh",
+  });
+
+  const metadataStage = renderPlan.planThreadDetailRefreshPatchSurfaceExecutionStage({
+    renderPlan: {
+      shouldRenderDetail: false,
+      canPatch: false,
+    },
+    threadTileMode: false,
+    threadTileConversationSurface: false,
+    tilePatchPlan: {},
+  });
+  assert.equal(metadataStage.patchSurfacePlan.reason, "metadata-only-single-thread-surface");
+  assert.equal(metadataStage.patchExecutionPlan.fallbackAction, "metadata-update");
+  assert.equal(metadataStage.patchAttemptEffectsPlan.effects.length, 1);
+});
+
+test("thread detail refresh post-merge effects plan preserves timing groups and order", () => {
+  const postMergePlan = renderPlan.planThreadDetailRefreshPostMergeEffects();
+  assert.deepEqual(postMergePlan, {
+    groups: [
+      {
+        timing: "merge",
+        timingField: "mergeMs",
+        effects: ["merge-thread-list"],
+      },
+      {
+        timing: "composer-render",
+        timingField: "composerRenderMs",
+        effects: ["render-composer-settings", "sync-active-turn"],
+      },
+      {
+        timing: "thread-list-render",
+        timingField: "threadListRenderMs",
+        effects: ["render-threads"],
+      },
+    ],
+    reason: "default-post-merge-effects",
+  });
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPostMergeTimingFields(postMergePlan), {
+    ok: true,
+    entries: [
+      { timing: "merge", field: "mergeMs" },
+      { timing: "composer-render", field: "composerRenderMs" },
+      { timing: "thread-list-render", field: "threadListRenderMs" },
+    ],
+    timings: {
+      mergeMs: 0,
+      composerRenderMs: 0,
+      threadListRenderMs: 0,
+    },
+    reason: "post-merge-timing-fields",
+  });
+  assert.deepEqual(renderPlan.planThreadDetailFirstPaintPostMergeTimingEffects(postMergePlan), {
+    ok: true,
+    beforeDraftRestore: [
+      { timing: "merge", field: "mergeMs" },
+    ],
+    afterDraftRestore: [
+      { timing: "composer-render", field: "composerRenderMs" },
+      { timing: "thread-list-render", field: "threadListRenderMs" },
+    ],
+    timings: {
+      mergeMs: 0,
+      composerRenderMs: 0,
+      threadListRenderMs: 0,
+    },
+    reason: "first-paint-post-merge-timing-effects",
+  });
+});
+
+test("thread detail refresh post-merge timing field plan rejects invalid metadata", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPostMergeTimingFields({ groups: [] }), {
+    ok: false,
+    entries: [],
+    timings: {},
+    reason: "missing-post-merge-groups",
+  });
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPostMergeTimingFields({
+    groups: [{ timing: "merge", effects: ["merge-thread-list"] }],
+  }), {
+    ok: false,
+    entries: [],
+    timings: {},
+    reason: "missing-post-merge-timing-metadata",
+  });
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPostMergeTimingFields({
+    groups: [
+      { timing: "merge", timingField: "mergeMs", effects: [] },
+      { timing: "composer-render", timingField: "mergeMs", effects: [] },
+    ],
+  }), {
+    ok: false,
+    entries: [],
+    timings: {},
+    reason: "duplicate-post-merge-timing-field",
+  });
+  assert.deepEqual(renderPlan.planThreadDetailFirstPaintPostMergeTimingEffects({
+    groups: [
+      { timing: "composer-render", timingField: "composerRenderMs", effects: [] },
+      { timing: "thread-list-render", timingField: "threadListRenderMs", effects: [] },
+    ],
+  }), {
+    ok: false,
+    beforeDraftRestore: [],
+    afterDraftRestore: [],
+    timings: {},
+    reason: "missing-first-paint-merge-timing",
+  });
+});
+
+test("thread detail refresh patch attempt effects plan preserves tile before local patch order", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchAttemptEffects({
+    shouldRenderDetail: true,
+    tryTilePanePatch: true,
+    tryLocalPatch: true,
+  }), {
+    effects: [
+      {
+        type: "tile-pane-patch",
+        timingTarget: "tile-pane-patch",
+        preserveScroll: true,
+      },
+      {
+        type: "local-patch",
+        timingTarget: "local-patch",
+        skipWhenTilePanePatched: true,
+      },
+    ],
+    reason: "patch-attempt-effects",
+  });
+});
+
+test("thread detail refresh patch attempt effects plan omits local patch for metadata-only or blocked attempts", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchAttemptEffects({
+    shouldRenderDetail: false,
+    tryTilePanePatch: true,
+    tryLocalPatch: true,
+  }), {
+    effects: [
+      {
+        type: "tile-pane-patch",
+        timingTarget: "tile-pane-patch",
+        preserveScroll: true,
+      },
+    ],
+    reason: "patch-attempt-effects",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchAttemptEffects({
+    shouldRenderDetail: true,
+    tryTilePanePatch: false,
+    tryLocalPatch: false,
+  }), {
+    effects: [],
+    reason: "no-patch-attempt-effects",
+  });
+});
+
+test("thread detail refresh patch execution stage owns execution and attempt effect composition", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchExecutionStage({
+    renderPlan: {
+      shouldRenderDetail: true,
+      canPatch: true,
+    },
+    patchSurfacePlan: {
+      tileSurfaceRefresh: false,
+    },
+  }), {
+    patchExecutionPlan: {
+      tryTilePanePatch: true,
+      tryLocalPatch: true,
+      updateMetadataOnTileMiss: false,
+      fallbackAction: "full-render",
+      localPatchBlockedReason: "",
+      reason: "local-patch-eligible",
+    },
+    patchAttemptEffectsPlan: {
+      effects: [
+        {
+          type: "tile-pane-patch",
+          timingTarget: "tile-pane-patch",
+          preserveScroll: true,
+        },
+        {
+          type: "local-patch",
+          timingTarget: "local-patch",
+          skipWhenTilePanePatched: true,
+        },
+      ],
+      reason: "patch-attempt-effects",
+    },
+    reason: "local-patch-eligible",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchExecutionStage({
+    renderPlan: {
+      shouldRenderDetail: true,
+      canPatch: true,
+    },
+    patchSurfacePlan: {
+      tileSurfaceRefresh: true,
+    },
+  }).patchAttemptEffectsPlan, {
+    effects: [
+      {
+        type: "tile-pane-patch",
+        timingTarget: "tile-pane-patch",
+        preserveScroll: true,
+      },
+    ],
+    reason: "patch-attempt-effects",
+  });
+});
+
+test("thread detail refresh patch attempt aggregation starts from a bounded empty result", () => {
+  assert.deepEqual(renderPlan.emptyThreadDetailRefreshPatchAttempt(), {
+    tilePanePatchAttempted: false,
+    tilePanePatchedDetail: false,
+    localPatchAttempted: false,
+    locallyPatchedDetail: false,
+    tilePanePatchMs: 0,
+    localPatchMs: 0,
+    patchRejectReason: "",
+  });
+});
+
+test("thread detail refresh patch attempt context exposes prior tile success only", () => {
+  assert.deepEqual(renderPlan.threadDetailRefreshPatchAttemptEffectContext({
+    threadId: "thread-1",
+    previousConversationSignature: "sig-a",
+  }, {
+    tilePanePatchedDetail: true,
+    patchRejectReason: "ignored",
+  }), {
+    threadId: "thread-1",
+    previousConversationSignature: "sig-a",
+    tilePanePatchedDetail: true,
+  });
+});
+
+test("thread detail refresh patch attempt aggregation accumulates attempt timing and status", () => {
+  const afterTile = renderPlan.reduceThreadDetailRefreshPatchAttempt(
+    renderPlan.emptyThreadDetailRefreshPatchAttempt(),
+    {
+      tilePanePatchAttempted: true,
+      tilePanePatchedDetail: false,
+      tilePanePatchMs: 3.5,
+    },
+  );
+  assert.deepEqual(afterTile, {
+    tilePanePatchAttempted: true,
+    tilePanePatchedDetail: false,
+    localPatchAttempted: false,
+    locallyPatchedDetail: false,
+    tilePanePatchMs: 3.5,
+    localPatchMs: 0,
+    patchRejectReason: "",
+  });
+
+  assert.deepEqual(renderPlan.reduceThreadDetailRefreshPatchAttempt(afterTile, {
+    localPatchAttempted: true,
+    locallyPatchedDetail: false,
+    localPatchMs: 4.25,
+    patchRejectReason: "rendered-dom-stale",
+  }), {
+    tilePanePatchAttempted: true,
+    tilePanePatchedDetail: false,
+    localPatchAttempted: true,
+    locallyPatchedDetail: false,
+    tilePanePatchMs: 3.5,
+    localPatchMs: 4.25,
+    patchRejectReason: "rendered-dom-stale",
+  });
+});
+
+test("thread detail refresh patch attempt result makes tile pane patch terminal", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchAttemptResult({
+    shouldRenderDetail: true,
+    tilePanePatchAttempted: true,
+    tilePanePatchedDetail: true,
+    localPatchAttempted: true,
+    locallyPatchedDetail: true,
+    tilePanePatchMs: 4.5,
+    localPatchMs: 9.25,
+    patchRejectReason: "should-not-surface",
+  }), {
+    patchResult: "tile-pane-patched",
+    locallyPatchedDetail: false,
+    tilePanePatchedDetail: true,
+    detailPatchMs: 4.5,
+    patchTimingSource: "tile-pane",
+    patchRejectReason: "",
+    reportLocalPatchRejected: false,
+    finalizeResult: {
+      locallyPatchedDetail: false,
+      tilePanePatchedDetail: true,
+    },
+  });
+});
+
+test("thread detail refresh patch attempt result reports local patch rejection", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchAttemptResult({
+    shouldRenderDetail: true,
+    tilePanePatchAttempted: true,
+    tilePanePatchedDetail: false,
+    localPatchAttempted: true,
+    locallyPatchedDetail: false,
+    localPatchMs: 7.25,
+    patchRejectReason: "rendered-dom-stale",
+  }), {
+    patchResult: "local-patch-rejected",
+    locallyPatchedDetail: false,
+    tilePanePatchedDetail: false,
+    detailPatchMs: 7.25,
+    patchTimingSource: "local-patch-rejected",
+    patchRejectReason: "rendered-dom-stale",
+    reportLocalPatchRejected: true,
+    finalizeResult: {
+      locallyPatchedDetail: false,
+      tilePanePatchedDetail: false,
+    },
+  });
+});
+
+test("thread detail refresh patch attempt result records local patch timing", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchAttemptResult({
+    shouldRenderDetail: true,
+    tilePanePatchAttempted: true,
+    tilePanePatchedDetail: false,
+    localPatchAttempted: true,
+    locallyPatchedDetail: true,
+    tilePanePatchMs: 3,
+    localPatchMs: 6.5,
+    patchRejectReason: "ignored",
+  }), {
+    patchResult: "local-patched",
+    locallyPatchedDetail: true,
+    tilePanePatchedDetail: false,
+    detailPatchMs: 6.5,
+    patchTimingSource: "local-patch",
+    patchRejectReason: "",
+    reportLocalPatchRejected: false,
+    finalizeResult: {
+      locallyPatchedDetail: true,
+      tilePanePatchedDetail: false,
+    },
+  });
+});
+
+test("thread detail refresh patch attempt result keeps metadata tile misses quiet", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchAttemptResult({
+    shouldRenderDetail: false,
+    tilePanePatchAttempted: true,
+    tilePanePatchedDetail: false,
+    localPatchAttempted: false,
+    locallyPatchedDetail: false,
+    tilePanePatchMs: 5,
+    patchRejectReason: "ignored",
+  }), {
+    patchResult: "tile-pane-miss",
+    locallyPatchedDetail: false,
+    tilePanePatchedDetail: false,
+    detailPatchMs: 0,
+    patchTimingSource: "",
+    patchRejectReason: "",
+    reportLocalPatchRejected: false,
+    finalizeResult: {
+      locallyPatchedDetail: false,
+      tilePanePatchedDetail: false,
+    },
+  });
+});
+
+test("thread detail refresh patch rejected diagnostic plan owns bounded field selection", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchRejectedDiagnostic({
+    readMode: "projection-v4-dynamic",
+    renderPlan: {
+      detailRenderMode: "patch",
+      reason: "patch-shell-stable",
+    },
+    patchAttemptResult: {
+      reportLocalPatchRejected: true,
+      patchRejectReason: "rendered-dom-stale",
+    },
+    previousVisibleShape: {
+      visibleItemCount: 3,
+    },
+    nextVisibleShape: {
+      visibleItemCount: 5,
+    },
+  }), {
+    shouldReport: true,
+    diagnosticInput: {
+      readMode: "projection-v4-dynamic",
+      renderMode: "patch",
+      renderPlanReason: "patch-shell-stable",
+      patchRejectReason: "rendered-dom-stale",
+      previousVisibleItemCount: 3,
+      visibleItemCount: 5,
+    },
+    reason: "local-patch-rejected",
+  });
+});
+
+test("thread detail refresh patch rejected diagnostic plan stays quiet without rejection", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchRejectedDiagnostic({
+    readMode: "projection-v4-dynamic",
+    renderPlan: {
+      detailRenderMode: "patch",
+      reason: "signature-changed",
+    },
+    patchAttemptResult: {
+      reportLocalPatchRejected: false,
+      patchRejectReason: "ignored",
+    },
+    previousVisibleShape: {
+      visibleItemCount: 3,
+    },
+    nextVisibleShape: {
+      visibleItemCount: 5,
+    },
+  }), {
+    shouldReport: false,
+    diagnosticInput: null,
+    reason: "not-rejected",
+  });
+});
+
+test("thread detail refresh patch rejected diagnostic effects plan owns reporting intent", () => {
+  const diagnosticInput = {
+    readMode: "projection-v4-dynamic",
+    renderMode: "patch",
+    patchRejectReason: "rendered-dom-stale",
+  };
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchRejectedDiagnosticEffects({
+    diagnosticPlan: {
+      shouldReport: true,
+      diagnosticInput,
+      reason: "local-patch-rejected",
+    },
+  }), {
+    effects: [
+      {
+        type: "detail-patch-rejected-diagnostic-failure",
+        diagnosticInput,
+      },
+    ],
+    reason: "local-patch-rejected-diagnostic",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchRejectedDiagnosticEffects({
+    diagnosticPlan: {
+      shouldReport: false,
+      diagnosticInput,
+      reason: "not-rejected",
+    },
+  }), {
+    effects: [],
+    reason: "not-rejected",
+  });
+});
+
+test("thread detail refresh patch attempt result stage requests shapes only for local rejection", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchAttemptResultStage({
+    shouldRenderDetail: true,
+    renderPlan: {
+      detailRenderMode: "patch",
+      reason: "patch-shell-stable",
+    },
+    readMode: "projection-v4-dynamic",
+    patchAttempt: {
+      tilePanePatchAttempted: true,
+      tilePanePatchedDetail: false,
+      localPatchAttempted: true,
+      locallyPatchedDetail: false,
+      tilePanePatchMs: 2,
+      localPatchMs: 7,
+      patchRejectReason: "rendered-dom-stale",
+    },
+  }), {
+    patchAttemptResult: {
+      patchResult: "local-patch-rejected",
+      locallyPatchedDetail: false,
+      tilePanePatchedDetail: false,
+      detailPatchMs: 7,
+      patchTimingSource: "local-patch-rejected",
+      patchRejectReason: "rendered-dom-stale",
+      reportLocalPatchRejected: true,
+      finalizeResult: {
+        locallyPatchedDetail: false,
+        tilePanePatchedDetail: false,
+      },
+    },
+    needsPatchRejectedVisibleShapes: true,
+    patchRejectedDiagnosticPlan: null,
+    patchRejectedDiagnosticEffectsPlan: {
+      effects: [],
+      reason: "visible-shapes-required",
+    },
+    reason: "visible-shapes-required",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPatchAttemptResultStage({
+    shouldRenderDetail: true,
+    renderPlan: {
+      detailRenderMode: "patch",
+      reason: "patch-shell-stable",
+    },
+    readMode: "projection-v4-dynamic",
+    patchAttempt: {
+      tilePanePatchAttempted: true,
+      tilePanePatchedDetail: false,
+      localPatchAttempted: true,
+      locallyPatchedDetail: false,
+      localPatchMs: 7,
+      patchRejectReason: "rendered-dom-stale",
+    },
+    previousVisibleShape: { visibleItemCount: 3 },
+    nextVisibleShape: { visibleItemCount: 5 },
+  }), {
+    patchAttemptResult: {
+      patchResult: "local-patch-rejected",
+      locallyPatchedDetail: false,
+      tilePanePatchedDetail: false,
+      detailPatchMs: 7,
+      patchTimingSource: "local-patch-rejected",
+      patchRejectReason: "rendered-dom-stale",
+      reportLocalPatchRejected: true,
+      finalizeResult: {
+        locallyPatchedDetail: false,
+        tilePanePatchedDetail: false,
+      },
+    },
+    needsPatchRejectedVisibleShapes: false,
+    patchRejectedDiagnosticPlan: {
+      shouldReport: true,
+      diagnosticInput: {
+        readMode: "projection-v4-dynamic",
+        renderMode: "patch",
+        renderPlanReason: "patch-shell-stable",
+        patchRejectReason: "rendered-dom-stale",
+        previousVisibleItemCount: 3,
+        visibleItemCount: 5,
+      },
+      reason: "local-patch-rejected",
+    },
+    patchRejectedDiagnosticEffectsPlan: {
+      effects: [
+        {
+          type: "detail-patch-rejected-diagnostic-failure",
+          diagnosticInput: {
+            readMode: "projection-v4-dynamic",
+            renderMode: "patch",
+            renderPlanReason: "patch-shell-stable",
+            patchRejectReason: "rendered-dom-stale",
+            previousVisibleItemCount: 3,
+            visibleItemCount: 5,
+          },
+        },
+      ],
+      reason: "local-patch-rejected-diagnostic",
+    },
+    reason: "local-patch-rejected",
+  });
+});
+
+test("thread detail refresh patch attempt evidence stage owns visible-shape request and completion", () => {
+  const rejectedInput = {
+    shouldRenderDetail: true,
+    renderPlan: {
+      detailRenderMode: "patch",
+      reason: "patch-shell-stable",
+    },
+    readMode: "projection-v4-dynamic",
+    patchAttempt: {
+      tilePanePatchAttempted: true,
+      tilePanePatchedDetail: false,
+      localPatchAttempted: true,
+      locallyPatchedDetail: false,
+      localPatchMs: 7,
+      patchRejectReason: "rendered-dom-stale",
+    },
+  };
+  const evidenceStage = renderPlan.planThreadDetailRefreshPatchAttemptResultEvidenceStage(rejectedInput);
+
+  assert.equal(evidenceStage.needsPatchRejectedVisibleShapes, true);
+  assert.equal(evidenceStage.reason, "visible-shapes-required");
+  assert.deepEqual(evidenceStage.visibleShapeEvidenceEffectsPlan, {
+    effects: [
+      {
+        type: "collect-patch-rejected-visible-shapes",
+      },
+    ],
+    reason: "visible-shapes-required",
+  });
+
+  const completedStage = renderPlan.planThreadDetailRefreshPatchAttemptResultEvidenceCompletionStage({
+    ...rejectedInput,
+    visibleShapeEvidence: {
+      previousVisibleShape: { visibleItemCount: 3 },
+      nextVisibleShape: { visibleItemCount: 5 },
+    },
+  });
+  assert.equal(completedStage.needsPatchRejectedVisibleShapes, false);
+  assert.deepEqual(completedStage.patchRejectedDiagnosticPlan.diagnosticInput, {
+    readMode: "projection-v4-dynamic",
+    renderMode: "patch",
+    renderPlanReason: "patch-shell-stable",
+    patchRejectReason: "rendered-dom-stale",
+    previousVisibleItemCount: 3,
+    visibleItemCount: 5,
+  });
+
+  const unresolvedStage = renderPlan.planThreadDetailRefreshPatchAttemptResultEvidenceResolutionStage({
+    ...rejectedInput,
+    patchAttemptResultStage: evidenceStage.patchAttemptResultStage,
+    visibleShapeEvidence: {
+      collected: false,
+    },
+  });
+  assert.equal(unresolvedStage.resolvedFromEvidence, false);
+  assert.equal(unresolvedStage.patchAttemptResultStage, evidenceStage.patchAttemptResultStage);
+  assert.equal(unresolvedStage.reason, "visible-shapes-required");
+
+  const resolvedStage = renderPlan.planThreadDetailRefreshPatchAttemptResultEvidenceResolutionStage({
+    ...rejectedInput,
+    patchAttemptResultStage: evidenceStage.patchAttemptResultStage,
+    visibleShapeEvidence: {
+      collected: true,
+      previousVisibleShape: { visibleItemCount: 3 },
+      nextVisibleShape: { visibleItemCount: 5 },
+    },
+  });
+  assert.equal(resolvedStage.resolvedFromEvidence, true);
+  assert.deepEqual(resolvedStage.patchAttemptResultStage, completedStage);
+
+  const quietStage = renderPlan.planThreadDetailRefreshPatchAttemptResultEvidenceStage({
+    shouldRenderDetail: true,
+    patchAttempt: {
+      tilePanePatchAttempted: true,
+      tilePanePatchedDetail: true,
+      tilePanePatchMs: 2,
+    },
+  });
+  assert.equal(quietStage.needsPatchRejectedVisibleShapes, false);
+  assert.deepEqual(quietStage.visibleShapeEvidenceEffectsPlan, {
+    effects: [],
+    reason: "not-rejected",
+  });
+});
+
+test("thread detail refresh render outcome treats tile pane patch as terminal", () => {
+  const plan = renderPlan.planThreadDetailRefreshRender({
+    previousConversationSignature: "sig-a",
+    nextConversationSignature: "sig-b",
+    renderedConversationSignature: "sig-a",
+  });
+
+  assert.deepEqual(renderPlan.finalizeThreadDetailRenderPlan(plan, { tilePanePatchedDetail: true }), {
+    detailRenderMode: "tile-pane",
+    locallyPatchedDetail: false,
+    tilePanePatchedDetail: true,
+    renderAction: "tile-pane-patch",
+    projectionConsistencyPhase: "refresh-local-patch",
+  });
+});
+
+test("thread detail refresh render outcome keeps metadata-only tile patches out of full render", () => {
+  const plan = renderPlan.planThreadDetailRefreshRender({
+    previousConversationSignature: "sig-a",
+    nextConversationSignature: "sig-a",
+    renderedConversationSignature: "sig-a",
+  });
+
+  assert.deepEqual(renderPlan.finalizeThreadDetailRenderPlan(plan, { tilePanePatchedDetail: true }), {
+    detailRenderMode: "tile-pane-metadata",
+    locallyPatchedDetail: false,
+    tilePanePatchedDetail: true,
+    renderAction: "tile-pane-patch",
+    projectionConsistencyPhase: "refresh-metadata",
+  });
+});
+
+test("thread detail refresh outcome execution maps local patch completion to metadata update", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshOutcomeExecution({
+    renderAction: "local-patch-metadata-update",
+    detailRenderMode: "patch",
+    projectionConsistencyPhase: "refresh-local-patch",
+  }), {
+    renderAction: "local-patch-metadata-update",
+    metadataUpdateMode: "local-patch",
+    metadataEffects: [
+      "update-current-thread-header",
+      "update-tick-timer",
+      "publish-plugin-navigation-state",
+    ],
+    executionAction: "metadata-effects",
+    timingTarget: "metadata-update",
+    runFullRender: false,
+    projectionConsistencyPhase: "refresh-local-patch",
+    consistencyCheck: {
+      shouldCheck: true,
+      phase: "refresh-local-patch",
+      renderMode: "patch",
+      reason: "phase-present",
+    },
+    reason: "local-patch-complete",
+  });
+});
+
+test("thread detail refresh outcome execution maps metadata-only refreshes", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshOutcomeExecution({
+    renderAction: "metadata-update",
+    detailRenderMode: "metadata-only",
+    projectionConsistencyPhase: "refresh-metadata",
+  }), {
+    renderAction: "metadata-update",
+    metadataUpdateMode: "metadata-only",
+    metadataEffects: [
+      "update-current-thread-header",
+      "update-live-operation-dock",
+      "update-tick-timer",
+      "schedule-scroll-button-update",
+    ],
+    executionAction: "metadata-effects",
+    timingTarget: "metadata-update",
+    runFullRender: false,
+    projectionConsistencyPhase: "refresh-metadata",
+    consistencyCheck: {
+      shouldCheck: true,
+      phase: "refresh-metadata",
+      renderMode: "metadata-only",
+      reason: "phase-present",
+    },
+    reason: "metadata-only",
+  });
+});
+
+test("thread detail refresh outcome execution gives full render an explicit consistency phase", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshOutcomeExecution({
+    renderAction: "full-render",
+    detailRenderMode: "full-render",
+  }), {
+    renderAction: "full-render",
+    metadataUpdateMode: "",
+    metadataEffects: [],
+    executionAction: "full-render",
+    timingTarget: "conversation-render",
+    runFullRender: true,
+    projectionConsistencyPhase: "refresh-full-render",
+    consistencyCheck: {
+      shouldCheck: true,
+      phase: "refresh-full-render",
+      renderMode: "full-render",
+      reason: "phase-present",
+    },
+    reason: "full-render",
+  });
+});
+
+test("thread detail refresh outcome execution preserves terminal tile-pane patch phases", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshOutcomeExecution({
+    renderAction: "tile-pane-patch",
+    detailRenderMode: "tile-pane",
+    projectionConsistencyPhase: "refresh-local-patch",
+  }), {
+    renderAction: "tile-pane-patch",
+    metadataUpdateMode: "",
+    metadataEffects: [],
+    executionAction: "none",
+    timingTarget: "",
+    runFullRender: false,
+    projectionConsistencyPhase: "refresh-local-patch",
+    consistencyCheck: {
+      shouldCheck: true,
+      phase: "refresh-local-patch",
+      renderMode: "tile-pane",
+      reason: "phase-present",
+    },
+    reason: "tile-pane-patch",
+  });
+});
+
+test("thread detail refresh outcome execution stage composes outcome, execution effects, and consistency effects", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshOutcomeExecutionStage({
+    renderPlan: {
+      shouldRenderDetail: true,
+      detailRenderMode: "patch",
+    },
+    patchAttemptResult: {
+      finalizeResult: {
+        locallyPatchedDetail: true,
+        tilePanePatchedDetail: false,
+      },
+    },
+  }), {
+    renderOutcome: {
+      detailRenderMode: "patch",
+      locallyPatchedDetail: true,
+      tilePanePatchedDetail: false,
+      renderAction: "local-patch-metadata-update",
+      projectionConsistencyPhase: "refresh-local-patch",
+    },
+    executionPlan: {
+      renderAction: "local-patch-metadata-update",
+      metadataUpdateMode: "local-patch",
+      metadataEffects: [
+        "update-current-thread-header",
+        "update-tick-timer",
+        "publish-plugin-navigation-state",
+      ],
+      executionAction: "metadata-effects",
+      timingTarget: "metadata-update",
+      runFullRender: false,
+      projectionConsistencyPhase: "refresh-local-patch",
+      consistencyCheck: {
+        shouldCheck: true,
+        phase: "refresh-local-patch",
+        renderMode: "patch",
+        reason: "phase-present",
+      },
+      reason: "local-patch-complete",
+    },
+    executionEffectsPlan: {
+      effects: [
+        {
+          type: "metadata-effects",
+          metadataEffects: [
+            "update-current-thread-header",
+            "update-tick-timer",
+            "publish-plugin-navigation-state",
+          ],
+          timingTarget: "metadata-update",
+          requireEffects: true,
+        },
+      ],
+      reason: "metadata-effects",
+    },
+    consistencyCheckEffectsPlan: {
+      effects: [
+        {
+          type: "conversation-projection-consistency-check",
+          phase: "refresh-local-patch",
+          renderMode: "patch",
+        },
+      ],
+      reason: "consistency-check",
+    },
+    reason: "local-patch-complete",
+  });
+
+  assert.equal(renderPlan.planThreadDetailRefreshOutcomeExecutionStage({
+    renderPlan: {
+      shouldRenderDetail: true,
+      detailRenderMode: "full-render",
+    },
+    patchAttemptResult: {
+      finalizeResult: {
+        locallyPatchedDetail: false,
+        tilePanePatchedDetail: false,
+      },
+    },
+  }).executionEffectsPlan.effects[0].type, "full-render");
+});
+
+test("thread detail refresh consistency check planning skips missing phases", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshConsistencyCheck({
+    detailRenderMode: "full-render",
+  }), {
+    shouldCheck: false,
+    phase: "",
+    renderMode: "full-render",
+    reason: "no-phase",
+  });
+});
+
+test("thread detail refresh consistency check effects plan owns check execution intent", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshConsistencyCheckEffects({
+    consistencyCheck: {
+      shouldCheck: true,
+      phase: "refresh-local-patch",
+      renderMode: "patch",
+      reason: "phase-present",
+    },
+  }), {
+    effects: [
+      {
+        type: "conversation-projection-consistency-check",
+        phase: "refresh-local-patch",
+        renderMode: "patch",
+      },
+    ],
+    reason: "consistency-check",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshConsistencyCheckEffects({
+    consistencyCheck: {
+      shouldCheck: false,
+      phase: "",
+      renderMode: "full-render",
+      reason: "no-phase",
+    },
+  }), {
+    effects: [],
+    reason: "no-phase",
+  });
+});
+
+test("thread detail refresh performance input combines render and patch plans", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshPerformanceInput({
+    source: "refresh",
+    threadId: "thread-1",
+    requestedMode: "recent",
+    shouldRenderDetail: true,
+    renderPlan: {
+      detailRenderMode: "patch",
+      reason: "signature-changed",
+    },
+    renderOutcome: {
+      detailRenderMode: "patch",
+      renderAction: "local-patch-metadata-update",
+      locallyPatchedDetail: true,
+      tilePanePatchedDetail: false,
+    },
+    patchAttemptResult: {
+      detailPatchMs: 7.6,
+      patchRejectReason: "shape-changed",
+    },
+    timings: {
+      elapsedMs: 25.4,
+      apiElapsedMs: 10.2,
+      renderElapsedMs: 8.9,
+      mergeMs: 1.1,
+      composerRenderMs: 2.2,
+      threadListRenderMs: 3.3,
+      conversationRenderMs: 4.4,
+      metadataUpdateMs: 5.5,
+    },
+  }), {
+    source: "refresh",
+    threadId: "thread-1",
+    requestedMode: "recent",
+    elapsedMs: 25.4,
+    apiElapsedMs: 10.2,
+    renderElapsedMs: 8.9,
+    mergeMs: 1.1,
+    composerRenderMs: 2.2,
+    threadListRenderMs: 3.3,
+    conversationRenderMs: 4.4,
+    detailPatchMs: 7.6,
+    metadataUpdateMs: 5.5,
+    detailRenderMode: "patch",
+    refreshRenderAction: "local-patch-metadata-update",
+    renderPlanReason: "signature-changed",
+    patchRejectReason: "shape-changed",
+    skippedDetailRender: false,
+    locallyPatchedDetail: true,
+    tilePanePatchedDetail: false,
+  });
+});
+
+test("thread detail refresh reporting stage composes performance, telemetry, and completion config", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshReportingStage({
+    source: "refresh",
+    threadId: "thread-1",
+    requestedMode: "recent",
+    shouldRenderDetail: true,
+    renderPlan: {
+      detailRenderMode: "patch",
+      reason: "signature-changed",
+    },
+    renderOutcome: {
+      detailRenderMode: "patch",
+      renderAction: "local-patch-metadata-update",
+      locallyPatchedDetail: true,
+      tilePanePatchedDetail: false,
+    },
+    patchAttemptResult: {
+      detailPatchMs: 7.6,
+      patchRejectReason: "shape-changed",
+    },
+    timings: {
+      elapsedMs: 25.4,
+      apiElapsedMs: 10.2,
+      renderElapsedMs: 8.9,
+      mergeMs: 1.1,
+      composerRenderMs: 2.2,
+      threadListRenderMs: 3.3,
+      conversationRenderMs: 4.4,
+      metadataUpdateMs: 5.5,
+    },
+    eventName: "thread_refresh_ms",
+    throttleKey: "thread_refresh_ms",
+    minIntervalMs: 1000.4,
+    action: "thread-detail-refresh",
+    threadHash: "abc123",
+  }), {
+    performanceInput: {
+      source: "refresh",
+      threadId: "thread-1",
+      requestedMode: "recent",
+      elapsedMs: 25.4,
+      apiElapsedMs: 10.2,
+      renderElapsedMs: 8.9,
+      mergeMs: 1.1,
+      composerRenderMs: 2.2,
+      threadListRenderMs: 3.3,
+      conversationRenderMs: 4.4,
+      detailPatchMs: 7.6,
+      metadataUpdateMs: 5.5,
+      detailRenderMode: "patch",
+      refreshRenderAction: "local-patch-metadata-update",
+      renderPlanReason: "signature-changed",
+      patchRejectReason: "shape-changed",
+      skippedDetailRender: false,
+      locallyPatchedDetail: true,
+      tilePanePatchedDetail: false,
+    },
+    telemetryConfig: {
+      eventName: "thread_refresh_ms",
+      throttleKey: "thread_refresh_ms",
+      minIntervalMs: 1000.4,
+      action: "thread-detail-refresh",
+      threadId: "thread-1",
+    },
+    completionConfig: {
+      threadHash: "abc123",
+    },
+    reason: "refresh-reporting",
+  });
+});
+
+test("thread detail first-paint performance input preserves cached and API timing shape", () => {
+  const cachedInput = renderPlan.planThreadDetailFirstPaintPerformanceInput({
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA",
+    threadId: "thread-1",
+    detailRenderMode: "cached-current",
+    cached: true,
+    timings: {
+      elapsedMs: 12.5,
+      apiElapsedMs: 0,
+      renderElapsedMs: 4.4,
+      threadListRenderMs: 1.2,
+      conversationRenderMs: 2.3,
+    },
+  });
+  assert.deepEqual(cachedInput, {
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR",
+    threadId: "thread-1",
+    elapsedMs: 12.5,
+    apiElapsedMs: 0,
+    renderElapsedMs: 4.4,
+    detailRenderMode: "cached-current",
+    cached: true,
+    threadListRenderMs: 1.2,
+    conversationRenderMs: 2.3,
+  });
+  assert.equal(Object.hasOwn(cachedInput, "mergeMs"), false);
+  assert.equal(Object.hasOwn(cachedInput, "draftRestoreMs"), false);
+  assert.equal(Object.hasOwn(cachedInput, "composerRenderMs"), false);
+  assert.equal(Object.hasOwn(cachedInput, "postRenderMs"), false);
+
+  assert.deepEqual(renderPlan.planThreadDetailFirstPaintPerformanceInput({
+    source: "thread-list",
+    threadId: "thread-2",
+    cached: false,
+    timings: {
+      elapsedMs: 40,
+      apiElapsedMs: 13,
+      renderElapsedMs: 20,
+      mergeMs: 1,
+      draftRestoreMs: 2,
+      composerRenderMs: 3,
+      threadListRenderMs: 4,
+      conversationRenderMs: 5,
+      postRenderMs: 6,
+    },
+  }), {
+    source: "thread-list",
+    threadId: "thread-2",
+    elapsedMs: 40,
+    apiElapsedMs: 13,
+    renderElapsedMs: 20,
+    detailRenderMode: "first-paint",
+    cached: false,
+    mergeMs: 1,
+    draftRestoreMs: 2,
+    composerRenderMs: 3,
+    threadListRenderMs: 4,
+    conversationRenderMs: 5,
+    postRenderMs: 6,
+  });
+});
+
+test("thread detail first-paint reporting stage owns telemetry input shape", () => {
+  assert.deepEqual(renderPlan.planThreadDetailFirstPaintReportingStage({
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA",
+    threadId: "thread-1",
+    cached: true,
+    timings: {
+      elapsedMs: 12.5,
+      apiElapsedMs: 0,
+      renderElapsedMs: 4.4,
+      threadListRenderMs: 1.2,
+      conversationRenderMs: 2.3,
+    },
+    threadHash: "hash-1",
+  }), {
+    performanceInput: {
+      source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR",
+      threadId: "thread-1",
+      elapsedMs: 12.5,
+      apiElapsedMs: 0,
+      renderElapsedMs: 4.4,
+      detailRenderMode: "cached-current",
+      cached: true,
+      threadListRenderMs: 1.2,
+      conversationRenderMs: 2.3,
+    },
+    telemetryInput: {
+      source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR",
+      threadId: "thread-1",
+      elapsedMs: 12.5,
+      apiElapsedMs: 0,
+      renderElapsedMs: 4.4,
+      readMode: "",
+      status: "",
+      turns: 0,
+      omittedTurns: 0,
+      rolloutSizeBytes: 0,
+      threadHash: "hash-1",
+    },
+    reason: "cached-current-reporting",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailFirstPaintReportingStage({
+    source: "thread-list",
+    threadId: "thread-2",
+    cached: false,
+    timings: {
+      elapsedMs: 40,
+      apiElapsedMs: 13,
+      renderElapsedMs: 20,
+      mergeMs: 1,
+      draftRestoreMs: 2,
+      composerRenderMs: 3,
+      threadListRenderMs: 4,
+      conversationRenderMs: 5,
+      postRenderMs: 6,
+    },
+    readMode: "projection-active-overlay",
+    status: "completed",
+    turns: 10.8,
+    omittedTurns: 2.2,
+    rolloutSizeBytes: 12345.9,
+    threadHash: "hash-2",
+  }), {
+    performanceInput: {
+      source: "thread-list",
+      threadId: "thread-2",
+      elapsedMs: 40,
+      apiElapsedMs: 13,
+      renderElapsedMs: 20,
+      detailRenderMode: "first-paint",
+      cached: false,
+      mergeMs: 1,
+      draftRestoreMs: 2,
+      composerRenderMs: 3,
+      threadListRenderMs: 4,
+      conversationRenderMs: 5,
+      postRenderMs: 6,
+    },
+    telemetryInput: {
+      source: "thread-list",
+      threadId: "thread-2",
+      elapsedMs: 40,
+      apiElapsedMs: 13,
+      renderElapsedMs: 20,
+      readMode: "projection-active-overlay",
+      status: "completed",
+      turns: 10,
+      omittedTurns: 2,
+      rolloutSizeBytes: 12345,
+      threadHash: "hash-2",
+    },
+    reason: "first-paint-reporting",
+  });
+});
+
+test("thread detail full-backfill performance input preserves timing shape", () => {
+  assert.deepEqual(renderPlan.planThreadDetailFullBackfillPerformanceInput({
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA",
+    threadId: "thread-full",
+    timings: {
+      elapsedMs: 101.9,
+      apiElapsedMs: 77.2,
+      renderElapsedMs: 33.6,
+      mergeMs: 5.4,
+      composerRenderMs: 4.8,
+      threadListRenderMs: 3.3,
+      conversationRenderMs: 18.7,
+      postRenderMs: 2.1,
+    },
+  }), {
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR",
+    threadId: "thread-full",
+    elapsedMs: 101.9,
+    apiElapsedMs: 77.2,
+    renderElapsedMs: 33.6,
+    mergeMs: 5.4,
+    composerRenderMs: 4.8,
+    threadListRenderMs: 3.3,
+    conversationRenderMs: 18.7,
+    postRenderMs: 2.1,
+    detailRenderMode: "full-backfill",
+  });
+});
+
+test("thread detail full-backfill reporting stage owns telemetry input shape", () => {
+  assert.deepEqual(renderPlan.planThreadDetailFullBackfillReportingStage({
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA",
+    threadId: "thread-1",
+    timings: {
+      elapsedMs: 50,
+      apiElapsedMs: 11,
+      renderElapsedMs: 30,
+      mergeMs: 1,
+      composerRenderMs: 2,
+      threadListRenderMs: 3,
+      conversationRenderMs: 4,
+      postRenderMs: 5,
+    },
+  }), {
+    performanceInput: {
+      source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR",
+      threadId: "thread-1",
+      elapsedMs: 50,
+      apiElapsedMs: 11,
+      renderElapsedMs: 30,
+      mergeMs: 1,
+      composerRenderMs: 2,
+      threadListRenderMs: 3,
+      conversationRenderMs: 4,
+      postRenderMs: 5,
+      detailRenderMode: "full-backfill",
+    },
+    telemetryInput: {
+      threadId: "thread-1",
+    },
+    reason: "full-backfill-reporting",
+  });
+});
+
+test("thread detail refresh telemetry effects plan preserves event and diagnostics order", () => {
+  const performanceEvent = {
+    elapsedMs: 42,
+    readMode: "projection-v4-dynamic",
+    detailShape: { turns: 3 },
+  };
+  assert.deepEqual(renderPlan.planThreadDetailRefreshTelemetryEffects({
+    performanceEvent,
+    threadId: "thread-1",
+    action: "thread-detail-refresh",
+    eventName: "thread_refresh_ms",
+    throttleKey: "thread_refresh_ms",
+    minIntervalMs: 1000.4,
+  }), {
+    effects: [
+      {
+        type: "post-performance-event",
+        eventName: "thread_refresh_ms",
+        payload: performanceEvent,
+        options: {
+          key: "thread_refresh_ms",
+          minIntervalMs: 1000.4,
+        },
+      },
+      {
+        type: "record-thread-detail-response-diagnostics",
+        performanceEvent,
+        context: {
+          action: "thread-detail-refresh",
+          threadId: "thread-1",
+        },
+      },
+    ],
+    reason: "refresh-telemetry",
+  });
+});
+
+test("thread detail refresh reporting effects stage composes telemetry and completion effects", () => {
+  const performanceEvent = {
+    elapsedMs: 42,
+    readMode: "projection-v4-dynamic",
+    detailShape: { turns: 3 },
+  };
+  assert.deepEqual(renderPlan.planThreadDetailRefreshReportingEffectsStage({
+    performanceEvent,
+    telemetryConfig: {
+      threadId: "thread-1",
+      action: "thread-detail-refresh",
+      eventName: "thread_refresh_ms",
+      throttleKey: "thread_refresh_ms",
+      minIntervalMs: 1000.4,
+    },
+    completionConfig: {
+      threadHash: "abc123",
+    },
+  }), {
+    telemetryEffectsPlan: {
+      effects: [
+        {
+          type: "post-performance-event",
+          eventName: "thread_refresh_ms",
+          payload: performanceEvent,
+          options: {
+            key: "thread_refresh_ms",
+            minIntervalMs: 1000.4,
+          },
+        },
+        {
+          type: "record-thread-detail-response-diagnostics",
+          performanceEvent,
+          context: {
+            action: "thread-detail-refresh",
+            threadId: "thread-1",
+          },
+        },
+      ],
+      reason: "refresh-telemetry",
+    },
+    completionEffectsPlan: {
+      effects: [
+        {
+          type: "diagnostic-success",
+          payload: {
+            category: "thread_session_load_failed",
+            diagnostic_type: "thread_detail_refresh_failed",
+            error_code: "thread_detail_refresh_failed",
+            context: {
+              surface: "thread-session",
+              action: "thread-detail-refresh",
+              thread_hash: "abc123",
+            },
+          },
+        },
+        { type: "schedule-usage-backfill-refresh" },
+        { type: "schedule-live-poll" },
+      ],
+      reason: "refresh-complete",
+    },
+    reason: "refresh-reporting-effects",
+  });
+});
+
+test("thread detail refresh failure diagnostic effects plan bounds failure input", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshFailureDiagnosticEffects({
+    errorCode: "network_error",
+    durationBucket: "1s-3s",
+    statusCode: "503",
+    threadHash: "abc123",
+  }), {
+    effects: [
+      {
+        type: "thread-detail-refresh-failed-diagnostic-failure",
+        diagnosticInput: {
+          errorCode: "network_error",
+          durationBucket: "1s-3s",
+          statusCode: "503",
+          threadHash: "abc123",
+        },
+      },
+    ],
+    reason: "refresh-failed-diagnostic",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshFailureDiagnosticEffects({}), {
+    effects: [
+      {
+        type: "thread-detail-refresh-failed-diagnostic-failure",
+        diagnosticInput: {
+          errorCode: "thread_detail_refresh_failed",
+          durationBucket: "",
+          statusCode: "",
+          threadHash: "",
+        },
+      },
+    ],
+    reason: "refresh-failed-diagnostic",
+  });
+});
+
+test("thread detail refresh execution effects plan maps metadata, full render, none, and unknown actions", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshExecutionEffects({
+    executionAction: "metadata-effects",
+    metadataEffects: ["update-current-thread-header"],
+  }), {
+    effects: [
+      {
+        type: "metadata-effects",
+        timingTarget: "metadata-update",
+        metadataEffects: ["update-current-thread-header"],
+        requireEffects: true,
+      },
+    ],
+    reason: "metadata-effects",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshExecutionEffects({
+    executionAction: "full-render",
+    metadataEffects: ["ignored"],
+  }), {
+    effects: [
+      {
+        type: "full-render",
+        timingTarget: "conversation-render",
+        metadataEffects: [],
+        requireEffects: false,
+      },
+    ],
+    reason: "full-render",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshExecutionEffects({
+    executionAction: "none",
+  }), {
+    effects: [],
+    reason: "none",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshExecutionEffects({
+    executionAction: "surprise",
+  }), {
+    effects: [
+      {
+        type: "surprise",
+        timingTarget: "",
+        metadataEffects: [],
+        requireEffects: false,
+      },
+    ],
+    reason: "unknown-execution-action",
+  });
+});
+
+test("thread detail refresh completion effects plan bounded success side effects", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshCompletionEffects({
+    threadHash: "abc123",
+  }), {
+    effects: [
+      {
+        type: "diagnostic-success",
+        payload: {
+          category: "thread_session_load_failed",
+          diagnostic_type: "thread_detail_refresh_failed",
+          error_code: "thread_detail_refresh_failed",
+          context: {
+            surface: "thread-session",
+            action: "thread-detail-refresh",
+            thread_hash: "abc123",
+          },
+        },
+      },
+      { type: "schedule-usage-backfill-refresh" },
+      { type: "schedule-live-poll" },
+    ],
+    reason: "refresh-complete",
+  });
+});
+
+test("thread detail first-paint post-render effects plan preserves order and bounds inputs", () => {
+  assert.deepEqual(renderPlan.planThreadDetailFirstPaintPostRenderEffects({
+    threadId: "thread-1",
+    seq: 7,
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA",
+  }), {
+    effects: [
+      { type: "publish-plugin-navigation-state", force: true },
+      { type: "restore-connection-state" },
+      { type: "schedule-live-poll", delayMs: 1200 },
+      { type: "update-composer-controls" },
+      { type: "close-sidebar-menu-if-overlay" },
+      {
+        type: "backfill-full-thread-detail-if-needed",
+        threadId: "thread-1",
+        seq: 7,
+        source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR",
+      },
+      { type: "schedule-usage-backfill-refresh" },
+    ],
+    reason: "first-paint-post-render",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailFirstPaintPostRenderEffects({
+    threadId: "thread-2",
+    seq: "not-a-number",
+  }).effects[5], {
+    type: "backfill-full-thread-detail-if-needed",
+    threadId: "thread-2",
+    seq: 0,
+    source: "",
+  });
+});
+
+test("thread detail first-paint after-render effects plan preserves auto-backfill boundary", () => {
+  assert.deepEqual(renderPlan.planThreadDetailFirstPaintAfterRenderEffects({
+    seq: 7,
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA",
+  }), {
+    effects: [
+      {
+        type: "history-auto-backfill",
+        seq: 7,
+        source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR",
+      },
+    ],
+    reason: "first-paint-after-render",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailFirstPaintAfterRenderEffects({
+    seq: "bad",
+  }), {
+    effects: [
+      {
+        type: "history-auto-backfill",
+        seq: 0,
+        source: "first-paint",
+      },
+    ],
+    reason: "first-paint-after-render",
+  });
+});
+
+test("thread detail first-paint post-timing effects plan preserves consistency boundary", () => {
+  assert.deepEqual(renderPlan.planThreadDetailFirstPaintPostTimingEffects(), {
+    effects: [
+      {
+        type: "check-conversation-projection-consistency",
+        phase: "first-paint",
+        renderMode: "first-paint",
+      },
+    ],
+    reason: "first-paint-post-timing",
+  });
+});
+
+test("thread detail first-paint pre-render effects plan preserves local open ordering", () => {
+  assert.deepEqual(renderPlan.planThreadDetailFirstPaintPreRenderEffects({
+    threadId: "thread-1",
+    hasEvents: true,
+  }), {
+    effects: [
+      { type: "persist-current-thread-id", threadId: "thread-1" },
+      { type: "clear-draft-target-key" },
+      { type: "follow-thread-open-to-bottom", threadId: "thread-1" },
+      { type: "connect-events" },
+    ],
+    reason: "first-paint-pre-render",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailFirstPaintPreRenderEffects({
+    threadId: "thread-2",
+    hasEvents: false,
+  }), {
+    effects: [
+      { type: "persist-current-thread-id", threadId: "thread-2" },
+      { type: "clear-draft-target-key" },
+      { type: "follow-thread-open-to-bottom", threadId: "thread-2" },
+    ],
+    reason: "first-paint-pre-render",
+  });
+});
+
+test("thread detail first-paint draft-restore effects plan preserves timing target", () => {
+  assert.deepEqual(renderPlan.planThreadDetailFirstPaintDraftRestoreEffects(), {
+    effects: [
+      { type: "restore-draft-for-current-target" },
+    ],
+    reason: "first-paint-draft-restore",
+  });
+});
+
+test("thread detail load-error effects plan preserves state and render order", () => {
+  assert.deepEqual(renderPlan.planThreadDetailLoadErrorEffects({
+    threadId: "thread-1",
+    errorMessage: "Request timed out",
+  }), {
+    effects: [
+      {
+        type: "set-current-thread-load-error",
+        threadId: "thread-1",
+        errorMessage: "Request timed out",
+      },
+      { type: "sync-active-turn-from-thread" },
+      { type: "render-thread-list" },
+      { type: "render-current-thread" },
+      { type: "update-composer-controls" },
+    ],
+    reason: "thread-detail-load-error",
+  });
+});
+
+test("thread detail loading-shell post-state effects plan preserves visible open order", () => {
+  assert.deepEqual(renderPlan.planThreadDetailLoadingShellPostStateEffects({
+    threadId: "thread-1",
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA",
+  }), {
+    effects: [
+      { type: "follow-thread-open-to-bottom", threadId: "thread-1" },
+      { type: "restore-draft-for-current-target" },
+      { type: "render-composer-settings" },
+      { type: "sync-active-turn-from-thread" },
+      { type: "render-thread-list" },
+      { type: "render-current-thread", options: { stickToBottom: true } },
+      { type: "publish-plugin-navigation-state", force: true },
+      { type: "update-composer-controls" },
+      { type: "load-side-chat", threadId: "thread-1", silent: true },
+      { type: "set-connection-state", removeClass: "error", text: "Loading thread" },
+      { type: "mark-activity", label: "加载线程" },
+      {
+        type: "start-thread-load-watchdog",
+        threadId: "thread-1",
+        source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR",
+      },
+    ],
+    reason: "loading-shell-post-state",
+  });
+});
+
+test("thread detail cached-current post-render effects plan preserves order and runtime guards", () => {
+  assert.deepEqual(renderPlan.planThreadDetailCachedCurrentPostRenderEffects({
+    threadId: "thread-1",
+    seq: 7,
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA",
+    replacedTilePane: true,
+    hasSideChat: false,
+  }), {
+    effects: [
+      {
+        type: "history-auto-backfill",
+        seq: 7,
+        source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR",
+      },
+      { type: "restore-composer-for-replaced-tile-pane" },
+      { type: "close-sidebar-menu-if-overlay" },
+      {
+        type: "check-conversation-projection-consistency",
+        phase: "cached-current",
+        renderMode: "cached-current",
+      },
+      {
+        type: "record-empty-cached-detail-reuse-healthy",
+        reason: "cached-current",
+      },
+      {
+        type: "load-side-chat",
+        threadId: "thread-1",
+        silent: true,
+      },
+    ],
+    reason: "cached-current-post-render",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailCachedCurrentPostRenderEffects({
+    threadId: "thread-2",
+    seq: "bad",
+    hasSideChat: true,
+  }), {
+    effects: [
+      { type: "history-auto-backfill", seq: 0, source: "cached-current" },
+      { type: "close-sidebar-menu-if-overlay" },
+      {
+        type: "check-conversation-projection-consistency",
+        phase: "cached-current",
+        renderMode: "cached-current",
+      },
+      {
+        type: "record-empty-cached-detail-reuse-healthy",
+        reason: "cached-current",
+      },
+    ],
+    reason: "cached-current-post-render",
+  });
+});
+
+test("thread detail first-paint telemetry effects plan preserves bounded event order", () => {
+  const performanceEvent = { detailRenderMode: "first-paint", cached: false, renderElapsedMs: 12 };
+  assert.deepEqual(renderPlan.planThreadDetailFirstPaintTelemetryEffects({
+    performanceEvent,
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA",
+    threadId: "thread-1",
+    elapsedMs: 101.8,
+    apiElapsedMs: 55.2,
+    renderElapsedMs: 33.9,
+    readMode: "projection-active-overlay",
+    status: "completed",
+    turns: 10.8,
+    omittedTurns: 2,
+    rolloutSizeBytes: 12345.9,
+    threadHash: "hash-1",
+  }), {
+    effects: [
+      {
+        type: "post-performance-event",
+        eventName: "thread_detail_first_paint",
+        payload: performanceEvent,
+      },
+      {
+        type: "record-thread-detail-response-diagnostics",
+        performanceEvent,
+        context: {
+          action: "thread-detail-load",
+          threadId: "thread-1",
+        },
+      },
+      {
+        type: "post-client-event",
+        eventName: "thread_switch_complete",
+        payload: {
+          source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR",
+          threadId: "thread-1",
+          elapsedMs: 101.8,
+          apiElapsedMs: 55.2,
+          renderElapsedMs: 33.9,
+          readMode: "projection-active-overlay",
+          status: "completed",
+          turns: 10,
+          omittedTurns: 2,
+          rolloutSizeBytes: 12345,
+        },
+      },
+      {
+        type: "diagnostic-success",
+        payload: {
+          category: "thread_session_load_failed",
+          diagnostic_type: "thread_detail_load_failed",
+          error_code: "thread_detail_load_failed",
+          context: {
+            surface: "thread-session",
+            action: "thread-detail-load",
+            thread_hash: "hash-1",
+          },
+        },
+      },
+    ],
+    reason: "first-paint-telemetry",
+  });
+});
+
+test("thread detail full-backfill effects plans preserve post-render and telemetry order", () => {
+  assert.deepEqual(renderPlan.planThreadDetailFullBackfillPostRenderEffects(), {
+    effects: [
+      { type: "schedule-usage-backfill-refresh" },
+      { type: "schedule-live-poll" },
+      { type: "update-composer-controls" },
+    ],
+    reason: "full-backfill-post-render",
+  });
+
+  const performanceEvent = { detailRenderMode: "full-backfill", renderElapsedMs: 22 };
+  assert.deepEqual(renderPlan.planThreadDetailFullBackfillTelemetryEffects({
+    performanceEvent,
+    threadId: "thread-1",
+  }), {
+    effects: [
+      {
+        type: "post-performance-event",
+        eventName: "thread_detail_full_ready",
+        payload: performanceEvent,
+        options: { force: true },
+      },
+      {
+        type: "record-thread-detail-response-diagnostics",
+        performanceEvent,
+        context: {
+          action: "thread-detail-full-backfill",
+          threadId: "thread-1",
+        },
+      },
+    ],
+    reason: "full-backfill-telemetry",
+  });
+});
+
+test("thread detail cached-current telemetry effects plan preserves legacy event shape", () => {
+  const performanceEvent = { detailRenderMode: "cached-current", cached: true, renderElapsedMs: 8 };
+  assert.deepEqual(renderPlan.planThreadDetailCachedCurrentTelemetryEffects({
+    performanceEvent,
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA",
+    threadId: "thread-1",
+    elapsedMs: 44.4,
+    threadHash: "hash-1",
+  }), {
+    effects: [
+      {
+        type: "post-performance-event",
+        eventName: "thread_detail_first_paint",
+        payload: performanceEvent,
+      },
+      {
+        type: "post-client-event",
+        eventName: "thread_switch_cached",
+        payload: {
+          source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR",
+          threadId: "thread-1",
+          elapsedMs: 44.4,
+        },
+      },
+      {
+        type: "diagnostic-success",
+        payload: {
+          category: "thread_session_load_failed",
+          diagnostic_type: "thread_detail_load_failed",
+          error_code: "thread_detail_load_failed",
+          context: {
+            surface: "thread-session",
+            action: "thread-detail-load",
+            thread_hash: "hash-1",
+          },
+        },
+      },
+    ],
+    reason: "cached-current-telemetry",
+  });
+});
+
+test("thread detail switch client event plans bound start, cancel, and error payloads", () => {
+  assert.deepEqual(renderPlan.planThreadDetailSwitchStartClientEvent({
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA",
+    fromThreadId: "from-1",
+    toThreadId: "to-1",
+    listAgeMs: 33.7,
+    currentHadThread: 1,
+    eventOpen: true,
+  }), {
+    effects: [{
+      type: "post-client-event",
+      eventName: "thread_switch_start",
+      payload: {
+        source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR",
+        fromThreadId: "from-1",
+        toThreadId: "to-1",
+        listAgeMs: 33.7,
+        currentHadThread: true,
+        eventOpen: true,
+      },
+    }],
+    reason: "thread-switch-start",
+  });
+  assert.equal(renderPlan.planThreadDetailSwitchStartClientEvent({
+    listAgeMs: null,
+  }).effects[0].payload.listAgeMs, null);
+
+  assert.deepEqual(renderPlan.planThreadDetailSwitchCancelledClientEvent({
+    source: "abcdefghijklmnopqrstuvwxyz1234567890EXTRA",
+    threadId: "thread-1",
+    elapsedMs: 12.5,
+    apiElapsedMs: 9.2,
+  }), {
+    effects: [{
+      type: "post-client-event",
+      eventName: "thread_switch_cancelled",
+      payload: {
+        source: "abcdefghijklmnopqrstuvwxyz1234567890EXTR",
+        threadId: "thread-1",
+        elapsedMs: 12.5,
+        apiElapsedMs: 9.2,
+      },
+    }],
+    reason: "thread-switch-cancelled",
+  });
+
+  const longError = "x".repeat(240);
+  const errorPlan = renderPlan.planThreadDetailSwitchErrorClientEvent({
+    source: "thread-list",
+    threadId: "thread-2",
+    elapsedMs: -1,
+    apiElapsedMs: "bad",
+    error: longError,
+  });
+  assert.equal(errorPlan.effects[0].eventName, "thread_switch_error");
+  assert.deepEqual(errorPlan.effects[0].payload, {
+    source: "thread-list",
+    threadId: "thread-2",
+    elapsedMs: 0,
+    apiElapsedMs: 0,
+    error: "x".repeat(200),
+  });
+  assert.equal(errorPlan.reason, "thread-switch-error");
+});
+
+test("single-thread full render shell plans loading state", () => {
+  assert.deepEqual(renderPlan.planSingleThreadFullRenderShell({
+    threadId: "thread-1",
+    loadingWithoutVisibleTurns: true,
+  }), {
+    mode: "loading",
+    html: `<div class="empty-state entry-animate">Loading thread...</div>`,
+    clearLiveOperationDock: true,
+    bindRetry: false,
+    retryThreadId: "",
+    hasPrimaryContent: false,
+    emptyMessage: "",
+  });
+});
+
+test("single-thread early shell execution plans loading terminal render", () => {
+  assert.deepEqual(renderPlan.planSingleThreadEarlyShellExecution({
+    threadId: "thread-1",
+    loadingWithoutVisibleTurns: true,
+    conversationSignature: "loading|thread-1",
+    patchShellSignature: "patch|thread-1",
+    stickToBottom: true,
+  }), {
+    shouldRender: true,
+    mode: "loading",
+    reason: "loading",
+    html: `<div class="empty-state entry-animate">Loading thread...</div>`,
+    clearLiveOperationDock: true,
+    bindRetry: false,
+    retryThreadId: "",
+    conversationSignature: "loading|thread-1",
+    patchShellSignature: "patch|thread-1",
+    stickToBottom: true,
+  });
+});
+
+test("single-thread early shell execution plans load-error retry", () => {
+  const plan = renderPlan.planSingleThreadEarlyShellExecution({
+    currentThreadId: "thread-2",
+    loadError: "bad <state>",
+    conversationSignature: "error|thread-2",
+    patchShellSignature: "patch|thread-2",
+    stickToBottom: false,
+  });
+
+  assert.equal(plan.shouldRender, true);
+  assert.equal(plan.mode, "load-error");
+  assert.equal(plan.reason, "load-error");
+  assert.equal(plan.clearLiveOperationDock, true);
+  assert.equal(plan.bindRetry, true);
+  assert.equal(plan.retryThreadId, "thread-2");
+  assert.equal(plan.conversationSignature, "error|thread-2");
+  assert.equal(plan.patchShellSignature, "patch|thread-2");
+  assert.equal(plan.stickToBottom, false);
+  assert.match(plan.html, /Thread failed: bad &lt;state&gt;/);
+});
+
+test("single-thread early shell execution leaves detail content to full render path", () => {
+  assert.deepEqual(renderPlan.planSingleThreadEarlyShellExecution({
+    threadId: "thread-3",
+    conversationSignature: "detail|thread-3",
+    patchShellSignature: "patch|thread-3",
+    stickToBottom: true,
+  }), {
+    shouldRender: false,
+    mode: "detail",
+    reason: "detail-content",
+    html: "",
+    clearLiveOperationDock: false,
+    bindRetry: false,
+    retryThreadId: "",
+    conversationSignature: "detail|thread-3",
+    patchShellSignature: "patch|thread-3",
+    stickToBottom: true,
+  });
+});
+
+test("single-thread shell conversation update plans stable update inputs", () => {
+  assert.deepEqual(renderPlan.planSingleThreadShellConversationUpdate({
+    shellPlan: {
+      html: "<turn/>",
+    },
+    conversationSignature: "detail|thread-1",
+    patchShellSignature: "patch|thread-1",
+    stickToBottom: true,
+    expectedVisibleTurnCount: 2,
+    expectedVisibleItemCount: 4.9,
+    renderedDomTurnCount: 1.8,
+    renderedDomItemCount: 3.2,
+    duplicateRenderKeyCount: 1.1,
+    expectedTurnIds: ["a", "b"],
+    renderedDomTurnIds: ["a"],
+    source: "single-thread-render",
+  }), {
+    html: "<turn/>",
+    conversationSignature: "detail|thread-1",
+    options: {
+      stickToBottom: true,
+      patchShellSignature: "patch|thread-1",
+      expectedVisibleTurnCount: 2,
+      expectedVisibleItemCount: 4,
+      renderedDomTurnCount: 1,
+      renderedDomItemCount: 3,
+      duplicateRenderKeyCount: 1,
+      expectedTurnIds: ["a", "b"],
+      renderedDomTurnIds: ["a"],
+      source: "single-thread-render",
+    },
+    reason: "single-thread-render",
+  });
+
+  assert.deepEqual(renderPlan.planSingleThreadShellConversationUpdate({
+    shellPlan: {
+      html: "<loading/>",
+    },
+    conversationSignature: "loading|thread-2",
+    patchShellSignature: "patch|thread-2",
+    stickToBottom: false,
+    source: "single-thread-early-shell",
+  }), {
+    html: "<loading/>",
+    conversationSignature: "loading|thread-2",
+    options: {
+      stickToBottom: false,
+      patchShellSignature: "patch|thread-2",
+      expectedVisibleTurnCount: 0,
+      expectedVisibleItemCount: 0,
+      renderedDomTurnCount: 0,
+      renderedDomItemCount: 0,
+      duplicateRenderKeyCount: 0,
+      expectedTurnIds: [],
+      renderedDomTurnIds: [],
+      source: "single-thread-early-shell",
+    },
+    reason: "single-thread-early-shell",
+  });
+});
+
+test("single-thread shell post-update effects preserve early retry ordering", () => {
+  assert.deepEqual(renderPlan.planSingleThreadShellPostUpdateEffects({
+    shellPlan: {
+      bindRetry: true,
+      retryThreadId: "thread-2",
+    },
+    updateTickTimer: true,
+    publishPluginNavigationState: true,
+    reason: "single-thread-early-shell",
+  }), {
+    effects: [
+      {
+        type: "bind-retry-current-thread",
+        threadId: "thread-2",
+      },
+      {
+        type: "update-tick-timer",
+      },
+      {
+        type: "publish-plugin-navigation-state",
+      },
+    ],
+    reason: "single-thread-early-shell",
+  });
+});
+
+test("single-thread shell post-update effects preserve full-render ordering", () => {
+  assert.deepEqual(renderPlan.planSingleThreadShellPostUpdateEffects({
+    checkEmptyVisibleDetailMismatch: true,
+    source: "single-thread-render",
+    renderMode: "full-render",
+    domCount: 4,
+    previousCount: 3,
+    bindCurrentThreadActions: true,
+    scrollToTurnReceiptStart: "turn-9",
+    applyPendingPluginRouteHintFocus: true,
+    updateTickTimer: true,
+    publishPluginNavigationState: true,
+  }), {
+    effects: [
+      {
+        type: "check-empty-visible-detail-mismatch",
+        source: "single-thread-render",
+        renderMode: "full-render",
+        domCount: 4,
+        previousCount: 3,
+      },
+      {
+        type: "bind-current-thread-actions",
+      },
+      {
+        type: "scroll-turn-receipt-start",
+        turnId: "turn-9",
+      },
+      {
+        type: "apply-pending-plugin-route-hint-focus",
+      },
+      {
+        type: "update-tick-timer",
+      },
+      {
+        type: "publish-plugin-navigation-state",
+      },
+    ],
+    reason: "single-thread-shell-post-update",
+  });
+});
+
+test("single-thread full render shell plans escaped load error retry", () => {
+  const plan = renderPlan.planSingleThreadFullRenderShell({
+    threadId: "thread-1",
+    loadError: "bad <state>",
+  });
+
+  assert.equal(plan.mode, "load-error");
+  assert.equal(plan.clearLiveOperationDock, true);
+  assert.equal(plan.bindRetry, true);
+  assert.equal(plan.retryThreadId, "thread-1");
+  assert.match(plan.html, /Thread failed: bad &lt;state&gt;/);
+  assert.match(plan.html, /id="retryCurrentThread"/);
+});
+
+test("single-thread full render shell preserves fragment order with primary content", () => {
+  const plan = renderPlan.planSingleThreadFullRenderShell({
+    goalCard: "<goal/>",
+    rolloutWarning: "<rollout/>",
+    loadingNote: "<loading/>",
+    taskToolbar: "<toolbar/>",
+    omittedBanner: "<omitted/>",
+    readWarning: "<warning/>",
+    turnsHtml: "<turn/>",
+    approvalsHtml: "<approval/>",
+    taskCardsHtml: "<task/>",
+    pluginRefreshNotice: "<plugin/>",
+  });
+
+  assert.equal(plan.mode, "detail");
+  assert.equal(plan.hasPrimaryContent, true);
+  assert.equal(plan.emptyMessage, "No visible turns.");
+  assert.equal(plan.html, "<goal/><rollout/><loading/><toolbar/><omitted/><warning/><turn/><approval/><task/><plugin/>");
+});
+
+test("single-thread full render shell renders plugin notice before empty state", () => {
+  const plan = renderPlan.planSingleThreadFullRenderShell({
+    pluginRefreshNotice: "<plugin/>",
+  });
+
+  assert.equal(plan.hasPrimaryContent, false);
+  assert.equal(plan.emptyMessage, "No visible turns.");
+  assert.equal(plan.html, `<plugin/><div class="empty-state entry-animate">No visible turns.</div>`);
+});
+
+test("single-thread full render shell explains empty read-warning state", () => {
+  const plan = renderPlan.planSingleThreadFullRenderShell({
+    readWarningMessage: "summary fallback",
+  });
+
+  assert.equal(plan.hasPrimaryContent, false);
+  assert.equal(plan.emptyMessage, "暂时没有可显示的完整消息。共享模式恢复后刷新这个页面即可继续读取。");
+  assert.match(plan.html, /暂时没有可显示的完整消息/);
 });

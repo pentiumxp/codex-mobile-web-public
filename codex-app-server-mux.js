@@ -36,6 +36,9 @@ const REPLAY_BUFFER_MAX_AGE_MS = Math.max(0, Number(process.env.CODEX_MUX_REPLAY
 const REPLAY_DESKTOP_NOTIFICATIONS = /^(1|true|yes|on)$/i.test(process.env.CODEX_MUX_REPLAY_DESKTOP_NOTIFICATIONS || "1");
 const MOBILE_MAX_DELTA_CHARS = Math.max(1024, Number(process.env.CODEX_MUX_MOBILE_MAX_DELTA_CHARS || "12000"));
 const MOBILE_MAX_OUTPUT_CHARS = Math.max(MOBILE_MAX_DELTA_CHARS, Number(process.env.CODEX_MUX_MOBILE_MAX_OUTPUT_CHARS || "20000"));
+const MUX_METRIC_METHOD_LIMIT = Number.isFinite(Number(process.env.CODEX_MUX_METRIC_METHOD_LIMIT))
+  ? Math.max(20, Math.min(200, Number(process.env.CODEX_MUX_METRIC_METHOD_LIMIT)))
+  : 80;
 const MOBILE_DROP_NOTIFICATION_METHODS = new Set([
   "item/commandExecution/outputDelta",
   "item/fileChange/outputDelta",
@@ -55,10 +58,12 @@ const serverRequests = new Map();
 const activeTurnsByThread = new Map();
 const pendingMobileTurnStarts = new Map();
 const replayBuffer = [];
+const muxRpcMetrics = new Map();
 let nextSyntheticItemId = 1;
 let nextReplaySeq = 1;
 let initializeResult = null;
 let lastLogTrimAt = 0;
+const muxStartedAtMs = Date.now();
 
 function codexExeCandidatesFromDir(dir, maxDepth = 2) {
   const out = [];
@@ -138,6 +143,109 @@ function hasId(message) {
 
 function writeJsonLine(write, message) {
   return write(`${JSON.stringify(message)}\n`);
+}
+
+function safeJsonByteLength(value) {
+  try {
+    const json = JSON.stringify(value);
+    return Buffer.byteLength(json || "", "utf8");
+  } catch (_) {
+    return 0;
+  }
+}
+
+function boundedMetricLabel(value, maxLength = 100) {
+  return String(value || "").replace(/[^\w./:-]/g, "_").slice(0, maxLength) || "unknown";
+}
+
+function boundedMetricCount(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return 0;
+  return Math.min(1000000, Math.trunc(number));
+}
+
+function boundedMetricMs(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return 0;
+  return Math.min(10 * 60 * 1000, Math.trunc(number));
+}
+
+function boundedMetricBytes(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return 0;
+  return Math.min(100 * 1024 * 1024, Math.trunc(number));
+}
+
+function muxMetricForMethod(method) {
+  const key = boundedMetricLabel(method, 100);
+  let metric = muxRpcMetrics.get(key);
+  if (!metric) {
+    if (muxRpcMetrics.size >= MUX_METRIC_METHOD_LIMIT) return null;
+    metric = {
+      method: key,
+      count: 0,
+      errorCount: 0,
+      totalMs: 0,
+      lastMs: 0,
+      maxMs: 0,
+      lastRequestBytes: 0,
+      lastResponseBytes: 0,
+      lastAt: 0,
+    };
+    muxRpcMetrics.set(key, metric);
+  }
+  return metric;
+}
+
+function recordMuxRpcCompletion(request, message, responseBytes = 0) {
+  if (!request) return;
+  const metric = muxMetricForMethod(request.method);
+  if (!metric) return;
+  const elapsedMs = boundedMetricMs(Date.now() - Number(request.startedAt || Date.now()));
+  metric.count += 1;
+  if (message && message.error) metric.errorCount += 1;
+  metric.totalMs += elapsedMs;
+  metric.lastMs = elapsedMs;
+  metric.maxMs = Math.max(metric.maxMs || 0, elapsedMs);
+  metric.lastRequestBytes = boundedMetricBytes(request.requestBytes);
+  metric.lastResponseBytes = boundedMetricBytes(responseBytes);
+  metric.lastAt = Date.now();
+}
+
+function summarizeMuxRpcMetric(metric) {
+  const count = boundedMetricCount(metric && metric.count);
+  return {
+    method: boundedMetricLabel(metric && metric.method, 100),
+    count,
+    errorCount: boundedMetricCount(metric && metric.errorCount),
+    totalMs: boundedMetricMs(metric && metric.totalMs),
+    avgMs: count ? boundedMetricMs((metric.totalMs || 0) / count) : 0,
+    lastMs: boundedMetricMs(metric && metric.lastMs),
+    maxMs: boundedMetricMs(metric && metric.maxMs),
+    lastRequestBytes: boundedMetricBytes(metric && metric.lastRequestBytes),
+    lastResponseBytes: boundedMetricBytes(metric && metric.lastResponseBytes),
+    lastAgeMs: metric && metric.lastAt ? boundedMetricMs(Date.now() - metric.lastAt) : 0,
+  };
+}
+
+function summarizeMuxRpcMetrics(params = {}) {
+  const requested = Array.isArray(params.methods)
+    ? params.methods.map((method) => boundedMetricLabel(method, 100)).filter(Boolean).slice(0, 20)
+    : [];
+  const keys = requested.length ? requested : [...muxRpcMetrics.keys()].slice(0, MUX_METRIC_METHOD_LIMIT);
+  const methods = {};
+  for (const key of keys) {
+    const metric = muxRpcMetrics.get(key);
+    if (metric) methods[key] = summarizeMuxRpcMetric(metric);
+  }
+  return {
+    ok: true,
+    uptimeMs: boundedMetricMs(Date.now() - muxStartedAtMs),
+    pendingCount: boundedMetricCount(pending.size),
+    serverRequestCount: boundedMetricCount(serverRequests.size),
+    trackedMethodCount: boundedMetricCount(muxRpcMetrics.size),
+    methods,
+  };
 }
 
 function truncateMiddle(value, maxChars, label) {
@@ -462,7 +570,18 @@ function logThreadRpcResponse(request, message) {
 }
 
 function handleMuxMethod(client, message) {
-  if (!message || message.method !== "mux/userMessage") return false;
+  if (!message || !message.method) return false;
+  if (message.method === "mux/metrics/read") {
+    if (hasId(message)) {
+      sendToClient(client, {
+        jsonrpc: "2.0",
+        id: message.id,
+        result: summarizeMuxRpcMetrics(message.params || {}),
+      });
+    }
+    return true;
+  }
+  if (message.method !== "mux/userMessage") return false;
   const notification = isTcpClient(client) ? buildUserMessageNotification(message.params || {}) : null;
   if (notification) {
     cacheReplayNotification(notification);
@@ -591,13 +710,15 @@ function handleClientLine(client, line) {
   if (hasId(message)) {
     const originalId = message.id;
     const internalId = `${client.id}:${String(originalId)}`;
+    message.id = internalId;
     pending.set(internalId, {
       client,
       originalId,
       method: message.method || "",
       params: message.params && typeof message.params === "object" ? cloneJson(message.params) : {},
+      startedAt: Date.now(),
+      requestBytes: safeJsonByteLength(message),
     });
-    message.id = internalId;
     rememberPendingMobileTurnStart(internalId, client, message);
   }
 
@@ -607,11 +728,13 @@ function handleClientLine(client, line) {
     if (hasId(message)) {
       const request = pending.get(message.id);
       pending.delete(message.id);
-      sendToClient(client, {
+      const response = {
         jsonrpc: "2.0",
         id: request ? request.originalId : message.id,
         error: { code: -32000, message: err.message },
-      });
+      };
+      recordMuxRpcCompletion(request, response, safeJsonByteLength(response));
+      sendToClient(client, response);
     }
   }
 }
@@ -653,6 +776,7 @@ function handleChildLine(line) {
       if (!message.error) initializeResult = message.result || {};
     }
     logThreadRpcResponse(request, message);
+    recordMuxRpcCompletion(request, message, safeJsonByteLength(message));
     message.id = request.originalId;
     sendToClient(request.client, message);
     if (request.method === "initialize" && !message.error) {
@@ -754,6 +878,7 @@ function startTcpServer() {
         serverRequestProxy: true,
         notificationReplay: true,
         threadGoalRpc: true,
+        muxMetricsRpc: true,
       },
     };
     const publish = await shouldPublishEndpoint();

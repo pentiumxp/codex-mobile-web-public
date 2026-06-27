@@ -17,7 +17,7 @@ function usage() {
     "  --key-file <path>          Access key file. Default: $HOME/.codex-mobile-web/access_key",
     "  --task-card <id>           Original task-card id being returned.",
     "  --thread <id>              Current target thread id; used as reply actor.",
-    "  --status <value>           completed, blocked, redirected, or partially_completed.",
+    "  --status <value>           completed, blocked, redirected, rejected, or partially_completed.",
     "  --title <text>             Return-card title.",
     "  --summary <text>           Optional summary.",
     "  --body <text>              Body markdown. Prefer --body-file for long text.",
@@ -89,7 +89,7 @@ function parseArgs(argv) {
 function normalizeStatus(value) {
   const text = String(value || "").trim().toLowerCase();
   if (!text) return "";
-  if (!["completed", "blocked", "redirected", "partially_completed"].includes(text)) throw new Error("status_invalid");
+  if (!["completed", "blocked", "redirected", "rejected", "partially_completed"].includes(text)) throw new Error("status_invalid");
   return text;
 }
 

@@ -12,6 +12,27 @@ const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const { uploadPathForId } = require("../server");
 
+function functionBody(source, name) {
+  const marker = `function ${name}`;
+  const start = source.indexOf(marker);
+  assert.notEqual(start, -1, `${name} should exist`);
+  const signature = source.slice(start);
+  const signatureMatch = signature.match(/\)\s*\{/);
+  assert.ok(signatureMatch, `${name} should have a function body opener`);
+  const braceStart = start + signatureMatch.index + signatureMatch[0].lastIndexOf("{");
+  assert.notEqual(braceStart, -1, `${name} should have a body`);
+  let depth = 0;
+  for (let index = braceStart; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "{") depth += 1;
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) return source.slice(braceStart + 1, index);
+    }
+  }
+  throw new Error(`${name} body not found`);
+}
+
 test("mobile file preview UI is wired from markdown link to preview API", () => {
   assert.match(indexHtml, /id="filePreviewDialog"/);
   assert.match(indexHtml, /id="filePreviewBody"/);
@@ -81,6 +102,22 @@ test("mobile file preview UI is wired from markdown link to preview API", () => 
   assert.match(appJs, /\/api\/files\/preview\/content\?\$\{params\.toString\(\)\}/);
   assert.match(serverJs, /\/api\/files\/preview/);
   assert.match(serverJs, /\/api\/files\/preview\/content/);
+});
+
+test("file preview requests use owning thread context instead of global current thread", () => {
+  const localContentBody = functionBody(appJs, "localFilePreviewContentUrl");
+  assert.match(localContentBody, /options\.threadId \|\| renderContextThreadId\(\)/);
+  assert.doesNotMatch(localContentBody, /threadId:\s*state\.currentThreadId/);
+
+  const openBody = functionBody(appJs, "openLocalFilePreview");
+  assert.match(openBody, /const threadId = localFilePreviewThreadIdFromLink\(link, options\);/);
+  assert.match(openBody, /state\.filePreviewThreadId = threadId;/);
+  assert.match(openBody, /\/api\/files\/preview\?threadId=\$\{encodeURIComponent\(threadId\)\}/);
+  assert.doesNotMatch(openBody, /encodeURIComponent\(state\.currentThreadId/);
+
+  const wireBody = functionBody(appJs, "wireUi");
+  assert.match(wireBody, /openLocalFilePreview\(actionPlan\.link \|\| actionPlan\.target, \{ threadId: actionPlan\.threadId \}\)/);
+  assert.match(wireBody, /openLocalFilePreview\(localFileLink, \{ threadId: state\.filePreviewThreadId \}\)/);
 });
 
 test("upload image ids resolve only inside the upload root", () => {

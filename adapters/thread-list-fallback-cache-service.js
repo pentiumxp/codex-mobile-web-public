@@ -1,8 +1,77 @@
 "use strict";
 
+const {
+  createThreadListFallbackBaselineService,
+} = require("./thread-list-fallback-baseline-service");
+
 function clonePlainJson(value) {
   if (value === undefined) return undefined;
   return JSON.parse(JSON.stringify(value));
+}
+
+function shortStableHash(value) {
+  const text = String(value || "");
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619) >>> 0;
+  }
+  return hash.toString(36).padStart(6, "0").slice(0, 10);
+}
+
+const BASELINE_SOURCE_DIAGNOSTIC_COUNTERS = [
+  "rolloutDirectoryReadCount",
+  "rolloutFileStatCount",
+  "rolloutFileCollectedCount",
+  "rolloutFileSortedCount",
+  "rolloutCandidateFileCount",
+  "rolloutCandidateScannedCount",
+  "rolloutHeadReadCount",
+  "rolloutHeadBytes",
+  "rolloutSummaryReadCount",
+  "rolloutStatusAttachCount",
+  "rolloutStatusTailReadCount",
+  "rolloutStatusTailBytes",
+  "sessionIndexReadCount",
+  "sessionIndexReuseCount",
+  "sessionIndexLineCount",
+  "sessionIndexEntryCount",
+];
+
+const BASELINE_WORK_DIAGNOSTIC_COUNTERS = [
+  "baselineFinalFilterPassCount",
+  "baselineFinalFilterInputCount",
+  "baselineFinalFilterOutputCount",
+  "baselineMergeInputCount",
+  "baselineMergeOutputCount",
+  "baselineMergeDuplicateCount",
+  "baselineLimitDropCount",
+];
+
+function boundedCounter(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return 0;
+  return Math.min(Number.MAX_SAFE_INTEGER, Math.trunc(number));
+}
+
+function baselineSourceDiagnostics(timings = {}) {
+  const out = {};
+  if (!timings || typeof timings !== "object") return out;
+  for (const key of BASELINE_SOURCE_DIAGNOSTIC_COUNTERS) {
+    const value = boundedCounter(timings[key]);
+    if (value) out[key] = value;
+  }
+  return out;
+}
+
+function baselineWorkDiagnostics(timings = {}) {
+  const out = {};
+  if (!timings || typeof timings !== "object") return out;
+  for (const key of BASELINE_WORK_DIAGNOSTIC_COUNTERS) {
+    const value = boundedCounter(timings[key]);
+    if (value) out[key] = value;
+  }
+  return out;
 }
 
 function createThreadListFallbackCacheService(options = {}) {
@@ -43,11 +112,23 @@ function createThreadListFallbackCacheService(options = {}) {
   const readSessionIndexFallback = typeof options.readSessionIndexFallback === "function"
     ? options.readSessionIndexFallback
     : () => [];
+  const baselineService = options.baselineService && typeof options.baselineService.readBaseline === "function"
+    ? options.baselineService
+    : createThreadListFallbackBaselineService({
+      now,
+      readStateDbFallback,
+      readRolloutSessionFallback,
+      readSessionIndexFallback,
+      filterFallbackThreads,
+      mergeThreadSummaryList,
+    });
 
   const cache = new Map();
+  let buildCount = 0;
 
   function clear() {
     cache.clear();
+    if (typeof baselineService.clearSourceSnapshots === "function") baselineService.clearSourceSnapshots();
   }
 
   function removeThread(threadId) {
@@ -64,6 +145,7 @@ function createThreadListFallbackCacheService(options = {}) {
         entry.incrementalUpdates = Number(entry.incrementalUpdates || 0) + 1;
       }
     }
+    if (typeof baselineService.removeThread === "function") baselineService.removeThread(id);
     return removed;
   }
 
@@ -100,6 +182,9 @@ function createThreadListFallbackCacheService(options = {}) {
       entry.updatedAt = nowMs;
       entry.incrementalUpdates = Number(entry.incrementalUpdates || 0) + 1;
       changed = true;
+    }
+    if ((changed || addIfMissing) && typeof baselineService.upsertThread === "function") {
+      changed = baselineService.upsertThread(thread) || changed;
     }
     return changed;
   }
@@ -141,14 +226,44 @@ function createThreadListFallbackCacheService(options = {}) {
     });
   }
 
+  function filterScopeKey(filters = {}) {
+    const globalState = filters.globalState || readGlobalState();
+    const roots = [...visibleWorkspaceRoots(globalState)].map(normalizeFsPath).filter(Boolean).sort();
+    const projectlessIds = [...visibleProjectlessThreadIds(globalState)].map(normalizeThreadId).filter(Boolean).sort();
+    return JSON.stringify({
+      cwd: normalizeFsPath(filters.cwd || ""),
+      search: String(filters.searchTerm || "").trim().toLowerCase(),
+      roots,
+      projectlessIds,
+    });
+  }
+
+  function sourceSnapshotKey(limit, filters = {}) {
+    const globalState = filters.globalState || readGlobalState();
+    const roots = [...visibleWorkspaceRoots(globalState)].map(normalizeFsPath).filter(Boolean).sort();
+    const projectlessIds = [...visibleProjectlessThreadIds(globalState)].map(normalizeThreadId).filter(Boolean).sort();
+    return JSON.stringify({
+      roots,
+      projectlessIds,
+    });
+  }
+
+  function sourceSnapshotLimit(limit) {
+    const bounded = Math.max(1, Math.min(200, Number(limit || 80)));
+    return Math.max(200, Math.min(1000, bounded * 8));
+  }
+
   function remember(key, threads, timings = {}, rememberOptions = {}) {
     if (!key) return;
     const nowMs = now();
+    buildCount += 1;
     cache.set(key, {
       cachedAt: nowMs,
       updatedAt: nowMs,
+      buildNumber: buildCount,
       limit: Math.max(1, Math.min(200, Number(rememberOptions.limit || 80))),
       filters: cloneFilters(rememberOptions.filters || {}),
+      filterScopeKey: filterScopeKey(rememberOptions.filters || {}),
       threads: clonePlainJson(Array.isArray(threads) ? threads : []),
       timings: Object.assign({}, timings || {}),
       incrementalUpdates: 0,
@@ -159,65 +274,218 @@ function createThreadListFallbackCacheService(options = {}) {
     }
   }
 
-  function read(key) {
+  function assignReadDiagnostics(diagnostics, values = {}) {
+    if (!diagnostics || typeof diagnostics !== "object") return;
+    Object.assign(diagnostics, values);
+  }
+
+  function read(key, diagnostics = null) {
+    const keyHash = shortStableHash(key);
+    const baseDiagnostics = {
+      cacheKeyHash: key ? keyHash : "",
+      cacheEntryCount: cache.size,
+      cacheTtlMs: ttlMs,
+      cacheBuildCount: buildCount,
+    };
     if (!key) return null;
     const cached = cache.get(key);
-    if (!cached) return null;
-    if (ttlMs > 0
-      && cached.cachedAt
-      && now() - Number(cached.cachedAt || 0) > ttlMs) {
-      cache.delete(key);
+    if (!cached) {
+      assignReadDiagnostics(diagnostics, Object.assign({}, baseDiagnostics, {
+        cacheDecision: "miss",
+      }));
       return null;
     }
+    const nowMs = now();
+    const cachedAt = Number(cached.cachedAt || 0);
+    const updatedAt = Number(cached.updatedAt || cached.cachedAt || 0);
+    const cacheAgeMs = cachedAt ? Math.max(0, nowMs - cachedAt) : 0;
+    const cacheUpdatedAgeMs = updatedAt ? Math.max(0, nowMs - updatedAt) : 0;
+    if (ttlMs > 0
+      && cachedAt
+      && cacheAgeMs > ttlMs) {
+      cache.delete(key);
+      assignReadDiagnostics(diagnostics, Object.assign({}, baseDiagnostics, {
+        cacheDecision: "expired",
+        cacheAgeMs,
+        cacheUpdatedAgeMs,
+        cacheEntryCount: cache.size,
+        cacheBuildNumber: Number(cached.buildNumber || 0),
+        cacheIncrementalUpdates: Number(cached.incrementalUpdates || 0),
+      }));
+      return null;
+    }
+    assignReadDiagnostics(diagnostics, Object.assign({}, baseDiagnostics, {
+      cacheDecision: "hit",
+      cacheAgeMs,
+      cacheUpdatedAgeMs,
+      cacheBuildNumber: Number(cached.buildNumber || 0),
+      cacheIncrementalUpdates: Number(cached.incrementalUpdates || 0),
+      cachedSourceTimings: Object.assign({}, cached.timings || {}),
+    }));
     return {
       threads: clonePlainJson(cached.threads || []),
       timings: Object.assign({}, cached.timings || {}),
-      cachedAt: Number(cached.cachedAt || 0),
-      updatedAt: Number(cached.updatedAt || cached.cachedAt || 0),
+      cachedAt,
+      updatedAt,
+      buildNumber: Number(cached.buildNumber || 0),
       incrementalUpdates: Number(cached.incrementalUpdates || 0),
     };
+  }
+
+  function readCompatible(limit = 80, filters = {}, diagnostics = null) {
+    const requestedLimit = Math.max(1, Math.min(200, Number(limit || 80)));
+    const requestedScopeKey = filterScopeKey(filters);
+    let bestKey = "";
+    let bestLimit = Number.MAX_SAFE_INTEGER;
+    let bestUpdatedAt = 0;
+    for (const [entryKey, entry] of cache.entries()) {
+      if (!entry || entry.filterScopeKey !== requestedScopeKey) continue;
+      const entryLimit = Math.max(1, Math.min(200, Number(entry.limit || 80)));
+      if (entryLimit < requestedLimit) continue;
+      const updatedAt = Number(entry.updatedAt || entry.cachedAt || 0);
+      if (entryLimit < bestLimit || (entryLimit === bestLimit && updatedAt > bestUpdatedAt)) {
+        bestKey = entryKey;
+        bestLimit = entryLimit;
+        bestUpdatedAt = updatedAt;
+      }
+    }
+    if (!bestKey) return null;
+    const cached = read(bestKey, diagnostics);
+    if (!cached) return null;
+    if (diagnostics) {
+      diagnostics.cacheHit = true;
+      diagnostics.cacheDecision = "compatible-hit";
+      diagnostics.compatibleCacheHit = true;
+      diagnostics.compatibleCacheLimit = bestLimit;
+    }
+    return Object.assign({}, cached, {
+      threads: cached.threads.slice(0, requestedLimit),
+      compatible: true,
+      compatibleLimit: bestLimit,
+    });
   }
 
   function readFallback(limit = 80, filters = {}) {
     const diagnostics = filters.diagnostics && typeof filters.diagnostics === "object" ? filters.diagnostics : null;
     const key = cacheKey(limit, filters);
-    const cached = read(key);
+    const cached = read(key, diagnostics) || readCompatible(limit, filters, diagnostics);
     if (cached) {
       if (diagnostics) {
         diagnostics.cacheHit = true;
+        diagnostics.cacheDecision = cached.compatible ? "compatible-hit" : "hit";
         diagnostics.stateDbMs = 0;
         diagnostics.rolloutMs = 0;
         diagnostics.sessionIndexMs = 0;
         diagnostics.cachedSourceTimings = cached.timings;
         diagnostics.cacheAgeMs = cached.updatedAt ? Math.max(0, now() - cached.updatedAt) : 0;
+        diagnostics.cacheBaselineAgeMs = cached.cachedAt ? Math.max(0, now() - cached.cachedAt) : 0;
+        diagnostics.cacheBuildNumber = cached.buildNumber || 0;
         diagnostics.cacheIncrementalUpdates = cached.incrementalUpdates || 0;
+        if (cached.compatible) {
+          diagnostics.compatibleCacheHit = true;
+          diagnostics.compatibleCacheLimit = cached.compatibleLimit || 0;
+        }
       }
       return cached.threads;
     }
-    if (diagnostics) diagnostics.cacheHit = false;
-    const stateDbStartedAtMs = now();
-    const stateDbFallback = readStateDbFallback(limit, filters);
-    if (diagnostics) diagnostics.stateDbMs = Math.max(0, now() - stateDbStartedAtMs);
-    const rolloutStartedAtMs = now();
-    const rolloutFallback = readRolloutSessionFallback(limit, filters);
-    if (diagnostics) diagnostics.rolloutMs = Math.max(0, now() - rolloutStartedAtMs);
-    const sessionIndexStartedAtMs = now();
-    const sessionIndexFallback = readSessionIndexFallback(limit, filters);
-    if (diagnostics) diagnostics.sessionIndexMs = Math.max(0, now() - sessionIndexStartedAtMs);
-    const threads = mergeThreadSummaryList([
-      ...stateDbFallback,
-      ...rolloutFallback,
-      ...sessionIndexFallback,
-    ]).slice(0, limit);
+    if (diagnostics) {
+      diagnostics.cacheHit = false;
+      const missDecision = diagnostics.cacheDecision || "miss";
+      diagnostics.cacheBuildReason = missDecision;
+      diagnostics.cacheDecision = missDecision === "expired" ? "expired-rebuild" : "miss-rebuild";
+    }
+    const baseline = baselineService.readBaseline(limit, Object.assign({}, filters, {
+      sourceSnapshotKey: sourceSnapshotKey(limit, filters),
+      sourceSnapshotLimit: sourceSnapshotLimit(limit),
+    }));
+    const threads = Array.isArray(baseline && baseline.threads) ? baseline.threads : [];
+    const baselineTimings = baseline && baseline.timings && typeof baseline.timings === "object"
+      ? baseline.timings
+      : {};
+    if (diagnostics) {
+      diagnostics.stateDbMs = Number(baselineTimings.stateDbMs || 0);
+      diagnostics.rolloutMs = Number(baselineTimings.rolloutMs || 0);
+      diagnostics.sessionIndexMs = Number(baselineTimings.sessionIndexMs || 0);
+      diagnostics.stateDbCount = Number(baselineTimings.stateDbCount || 0);
+      diagnostics.rolloutCount = Number(baselineTimings.rolloutCount || 0);
+      diagnostics.sessionIndexCount = Number(baselineTimings.sessionIndexCount || 0);
+      diagnostics.baselineSourceCount = Number(baselineTimings.baselineSourceCount || 0);
+      diagnostics.baselineResultCount = Number(baselineTimings.baselineResultCount || threads.length);
+      Object.assign(diagnostics, baselineWorkDiagnostics(baselineTimings));
+      Object.assign(diagnostics, baselineSourceDiagnostics(baselineTimings));
+      if (Object.prototype.hasOwnProperty.call(baselineTimings, "sourceSnapshotHit")) {
+        diagnostics.sourceSnapshotHit = baselineTimings.sourceSnapshotHit === true;
+        diagnostics.sourceSnapshotAgeMs = Number(baselineTimings.sourceSnapshotAgeMs || 0);
+        diagnostics.sourceSnapshotLimit = Number(baselineTimings.sourceSnapshotLimit || 0);
+        diagnostics.sourceSnapshotBuildCount = Number(baselineTimings.sourceSnapshotBuildCount || 0);
+        diagnostics.sourceSnapshotBuildNumber = Number(baselineTimings.sourceSnapshotBuildNumber || 0);
+        diagnostics.sourceSnapshotRawCount = Number(baselineTimings.sourceSnapshotRawCount || 0);
+      }
+    }
     remember(key, threads, {
-      stateDbMs: diagnostics && diagnostics.stateDbMs || 0,
-      rolloutMs: diagnostics && diagnostics.rolloutMs || 0,
-      sessionIndexMs: diagnostics && diagnostics.sessionIndexMs || 0,
+      stateDbMs: Number(baselineTimings.stateDbMs || 0),
+      rolloutMs: Number(baselineTimings.rolloutMs || 0),
+      sessionIndexMs: Number(baselineTimings.sessionIndexMs || 0),
+      stateDbCount: Number(baselineTimings.stateDbCount || 0),
+      rolloutCount: Number(baselineTimings.rolloutCount || 0),
+      sessionIndexCount: Number(baselineTimings.sessionIndexCount || 0),
+      baselineSourceCount: Number(baselineTimings.baselineSourceCount || 0),
+      baselineResultCount: Number(baselineTimings.baselineResultCount || threads.length),
+      ...baselineWorkDiagnostics(baselineTimings),
+      ...baselineSourceDiagnostics(baselineTimings),
+      ...(Object.prototype.hasOwnProperty.call(baselineTimings, "sourceSnapshotHit") ? {
+        sourceSnapshotHit: baselineTimings.sourceSnapshotHit === true,
+        sourceSnapshotAgeMs: Number(baselineTimings.sourceSnapshotAgeMs || 0),
+        sourceSnapshotLimit: Number(baselineTimings.sourceSnapshotLimit || 0),
+        sourceSnapshotBuildCount: Number(baselineTimings.sourceSnapshotBuildCount || 0),
+        sourceSnapshotBuildNumber: Number(baselineTimings.sourceSnapshotBuildNumber || 0),
+        sourceSnapshotRawCount: Number(baselineTimings.sourceSnapshotRawCount || 0),
+      } : {}),
     }, {
       limit,
       filters,
     });
+    if (diagnostics) {
+      diagnostics.cacheEntryCount = cache.size;
+      diagnostics.cacheBuildCount = buildCount;
+      diagnostics.cacheBuildNumber = buildCount;
+      diagnostics.cacheIncrementalUpdates = 0;
+      diagnostics.cacheBaselineAgeMs = 0;
+      diagnostics.cacheAgeMs = 0;
+    }
     return threads;
+  }
+
+  function readCachedFallback(limit = 80, filters = {}) {
+    const diagnostics = filters.diagnostics && typeof filters.diagnostics === "object" ? filters.diagnostics : null;
+    const key = cacheKey(limit, filters);
+    const cached = read(key, diagnostics) || readCompatible(limit, filters, diagnostics);
+    if (!cached) {
+      if (diagnostics) {
+        diagnostics.cacheHit = false;
+        diagnostics.stateDbMs = 0;
+        diagnostics.rolloutMs = 0;
+        diagnostics.sessionIndexMs = 0;
+      }
+      return [];
+    }
+    if (diagnostics) {
+      diagnostics.cacheHit = true;
+      diagnostics.cacheDecision = cached.compatible ? "compatible-hit" : "hit";
+      diagnostics.stateDbMs = 0;
+      diagnostics.rolloutMs = 0;
+      diagnostics.sessionIndexMs = 0;
+      diagnostics.cachedSourceTimings = cached.timings;
+      diagnostics.cacheAgeMs = cached.updatedAt ? Math.max(0, now() - cached.updatedAt) : 0;
+      diagnostics.cacheBaselineAgeMs = cached.cachedAt ? Math.max(0, now() - cached.cachedAt) : 0;
+      diagnostics.cacheBuildNumber = cached.buildNumber || 0;
+      diagnostics.cacheIncrementalUpdates = cached.incrementalUpdates || 0;
+      if (cached.compatible) {
+        diagnostics.compatibleCacheHit = true;
+        diagnostics.compatibleCacheLimit = cached.compatibleLimit || 0;
+      }
+    }
+    return cached.threads;
   }
 
   return {
@@ -225,6 +493,7 @@ function createThreadListFallbackCacheService(options = {}) {
     cacheKey,
     clear,
     read,
+    readCachedFallback,
     readFallback,
     remember,
     removeThread,

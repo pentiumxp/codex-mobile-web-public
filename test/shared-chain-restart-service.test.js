@@ -252,6 +252,13 @@ test("macOS restart command restarts the existing LaunchDaemon when available", 
   assert.match(command, /service_domain="system\/\$service_label"/);
   assert.match(command, /target_codex_home='\/Users\/xuefusong\/\.codex'/);
   assert.match(command, /target_mux_endpoint_file='\/Users\/xuefusong\/\.codex\/app-server-mux\/endpoint\.json'/);
+  assert.match(command, /selected_mux_endpoint_pids/);
+  assert.match(command, /endpoint\.childPid/);
+  assert.match(command, /endpoint\.pid/);
+  assert.match(command, /stop_selected_mux_endpoint >/);
+  assert.match(command, /\*\"codex-app-server-mux\"\*/);
+  assert.match(command, /\*\"codex app-server\"\*/);
+  assert.match(command, /rm -f "\$target_mux_endpoint_file"/);
   assert.match(command, /system_launchdaemon_plist_path/);
   assert.match(command, /sync_system_launchdaemon_profile_env "\$service_plist_path"/);
   assert.match(command, /PlistBuddy -c "Set :EnvironmentVariables:\$\{key\} \$\{value\}"/);

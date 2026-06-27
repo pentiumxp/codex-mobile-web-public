@@ -58,3 +58,23 @@ git diff --check
 ```
 
 For server-side runtime changes, restart only the 8787 Node listener unless the change touches the mux, startup scripts, service worker shell cache, or external Codex app-server process.
+
+## Current Architecture Cadence
+
+After `codex-mobile-shell-v542`, pane/context reliability work uses small
+local commits as the default cadence. A slice should name one owning layer and
+one violated invariant, add focused executable coverage, pass full local
+checks, and stay undeployed until several compatible slices form a coherent
+runtime module. Do not bump shell/cache, deploy production, or push Public for
+each micro-slice unless the user explicitly asks.
+
+The current deployable module candidate is focused on large-session list first
+paint. Production v545 readback showed thread detail already using
+`projection-active-overlay`, while the default thread-list open still spent most
+time in local summary merge and token-usage decoration even when fallback cache
+was warm. The v546 module moves the first default list paint to the existing
+`initial=warm-fallback` memory path, keeps the authoritative app-server refresh
+as a deferred follow-up, prevents display-summary cache reads from re-running
+rollout stat decoration, and caches token-usage query summaries with
+`recordTurnUsage()` invalidation. This targets list/session load latency without
+changing thread-detail projection authority or introducing UI-only masking.

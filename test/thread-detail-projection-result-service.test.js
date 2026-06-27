@@ -96,6 +96,8 @@ test("projection result decorates cached thread detail with summary, runtime, ti
     retained: true,
     source: "cache",
     version: "v3",
+    partial: false,
+    partialKind: "",
     cachedAtMs: 1200,
     updatedAtMs: 1500,
     ageMs: 500,
@@ -127,6 +129,8 @@ test("projection result read mode follows cache source and v4 version", () => {
   assert.deepEqual(dynamic.thread.mobileProjection, {
     source: "dynamic",
     version: "v4",
+    partial: false,
+    partialKind: "",
     cachedAtMs: 900,
     updatedAtMs: 900,
     ageMs: null,
@@ -141,4 +145,127 @@ test("projection result read mode follows cache source and v4 version", () => {
   }, {}, {});
   assert.equal(cache.thread.mobileReadMode, "projection-v4-cache");
   assert.equal(cache.thread.mobileProjection.ageMs, 50);
+});
+
+test("projection result exposes partial recent window source and read mode", () => {
+  const service = createThreadDetailProjectionResultService({
+    maxTurns: 5,
+    now: () => 1000,
+  });
+
+  const partial = service.prepareProjectedThreadReadResult({
+    partial: true,
+    partialKind: "recent-window",
+    version: "v4",
+    cachedAtMs: 800,
+    updatedAtMs: 900,
+    result: {
+      thread: {
+        id: "thread-1",
+        turns: [{ id: "turn-recent" }],
+      },
+    },
+  }, {}, {});
+
+  assert.ok(partial);
+  assert.equal(partial.thread.mobileReadMode, "projection-v4-partial");
+  assert.deepEqual(partial.thread.mobileProjection, {
+    source: "partial",
+    version: "v4",
+    partial: true,
+    partialKind: "recent-window",
+    cachedAtMs: 800,
+    updatedAtMs: 900,
+    ageMs: 100,
+  });
+});
+
+test("projection result rejects cached detail missing the local active turn", () => {
+  const service = createThreadDetailProjectionResultService({
+    maxTurns: 5,
+    now: () => 1000,
+  });
+
+  const stale = service.prepareProjectedThreadReadResult({
+    dynamic: true,
+    version: "v4",
+    cachedAtMs: 900,
+    result: {
+      thread: {
+        id: "thread-1",
+        turns: [{
+          id: "turn-old",
+          status: { type: "active" },
+          items: [{ id: "agent-old", type: "agentMessage", text: "old output" }],
+        }],
+      },
+    },
+  }, {
+    id: "thread-1",
+    status: { type: "active" },
+    activeTurnId: "turn-new",
+    mobileLocalActiveStatus: { turnId: "turn-new" },
+  }, {});
+
+  assert.equal(stale, null);
+
+  const current = service.prepareProjectedThreadReadResult({
+    dynamic: true,
+    version: "v4",
+    cachedAtMs: 900,
+    result: {
+      thread: {
+        id: "thread-1",
+        turns: [{
+          id: "turn-new",
+          status: { type: "active" },
+          items: [{ id: "agent-new", type: "agentMessage", text: "new output" }],
+        }],
+      },
+    },
+  }, {
+    id: "thread-1",
+    status: { type: "active" },
+    mobileLocalActiveStatus: { turnId: "turn-new" },
+  }, {});
+
+  assert.ok(current);
+  assert.equal(current.thread.turns[0].id, "turn-new");
+});
+
+test("projection result allows missing local active turn only for active overlay window assembly", () => {
+  const service = createThreadDetailProjectionResultService({
+    maxTurns: 5,
+    now: () => 1000,
+  });
+  const cached = {
+    partial: true,
+    partialKind: "recent-window",
+    version: "v4",
+    cachedAtMs: 800,
+    updatedAtMs: 900,
+    result: {
+      thread: {
+        id: "thread-1",
+        turns: [{
+          id: "turn-window",
+          items: [{ id: "agent-window", type: "agentMessage" }],
+        }],
+      },
+    },
+  };
+  const summary = {
+    id: "thread-1",
+    status: { type: "active" },
+    activeTurnId: "turn-live",
+    mobileLocalActiveStatus: { turnId: "turn-live" },
+  };
+
+  assert.equal(service.prepareProjectedThreadReadResult(cached, summary, {}), null);
+
+  const overlayWindow = service.prepareProjectedThreadReadResult(cached, summary, {}, { activeOverlay: true });
+  assert.ok(overlayWindow);
+  assert.equal(overlayWindow.thread.turns[0].id, "turn-window");
+  assert.equal(overlayWindow.thread.mobileReadMode, "projection-v4-partial");
+  assert.equal(overlayWindow.thread.mobileProjection.partial, true);
 });

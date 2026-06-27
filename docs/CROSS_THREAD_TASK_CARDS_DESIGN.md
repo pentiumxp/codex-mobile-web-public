@@ -27,6 +27,36 @@ card is terminal: it does not request another completion auto-return after its
 own injected turn completes, and its title collapses repeated `Auto return:`
 prefixes to one prefix.
 
+Return cards and acknowledgement cards are terminal by default. A card created
+by `codex_mobile.return_to_source`, `scripts/return-thread-task-card.js`, or
+`/reply` with `returnToSource:true` carries structured terminal delivery state
+(`terminal:true`, `requiresReturn:false`, `ackPolicy:"none"`). It must not
+inject `Return required` guidance and must not require a second acknowledgement.
+If the source wants new actionable work after reviewing a terminal return, it
+must create a new work card instead of replying to the terminal receipt.
+
+When a terminal return card closes an original non-terminal work card, Codex
+Mobile also emits one bounded Home AI Autonomous Delivery Loop return-card
+event. The event contains only task-card ids, return-card id, return status,
+bounded title/summary, source/target thread ids, workflow id, and terminal
+metadata. It does not include card bodies, conversation text, prompts,
+completions, uploads, provider payloads, cookies, launch tokens, access keys,
+database rows, or logs. This event is state observation only: it must not
+create repair cards, request acknowledgement, or affect terminal return-card
+delivery. Unknown Home AI task-card ids are recorded as bounded diagnostics and
+do not block normal return delivery.
+
+Non-terminal approved work cards carry an `executionLease`. The lease records
+the active card id, source/target thread ids, workflow metadata, current injected
+turn id, last progress time, and `resumeRequired:true`. Ordinary user messages
+in the target thread do not cancel this lease. When an unrelated target-thread
+turn completes while a lease is still active, the runtime schedules a bounded
+continuation turn for the oldest active lease in that target thread. The
+continuation points to the original task-card id and earlier injected message;
+it does not duplicate the full private card body. Explicit pause/cancel actions
+set the lease to `paused` or `cancelled` and suppress continuation. Terminal
+return/no-op cards never create execution leases.
+
 ## High-Level Flow
 
 1. Source thread creates a task-card request addressed to one or more target
@@ -49,13 +79,16 @@ prefixes to one prefix.
 7. If the approved card has `workflow.mode=autonomous`, that approval activates
    the workflow grant. Later same-workflow cards between the same thread pair
    skip the pending UI and execute the approval path automatically.
-8. If the injected target turn for an approved autonomous card completes, the
+8. If the injected target turn for an approved autonomous work card completes,
    service creates one idempotent reverse-direction return card keyed by the
    original card id plus completed turn id. Because the workflow grant already
    covers the same two thread ids, that return card auto-approves and starts a
    real source-thread turn without another click. The return card's delivery
-   flags disable another completion auto-return so workflows do not ping-pong
-   indefinitely.
+   flags set `terminal:true`, `requiresReturn:false`, `ackPolicy:"none"`, and
+   `autoReturnOnCompletion:false`, so workflows do not ping-pong indefinitely.
+   The same terminal return is also eligible for a single Home AI delivery-loop
+   event keyed by the original card id plus return-card id; replayed completion
+   notifications stay idempotent.
 
 ## Data Model
 
@@ -86,7 +119,27 @@ Planned canonical object:
     "injectOnApprove": true,
     "allowReply": true,
     "allowRevoke": true,
-    "autoRunAfterFirstApproval": false
+    "autoRunAfterFirstApproval": false,
+    "autoReturnOnCompletion": false,
+    "requiresReturn": true,
+    "terminal": false,
+    "ackPolicy": "return_required|auto_return|none"
+  },
+  "executionLease": {
+    "cardId": "ttc_01...",
+    "sourceThreadId": "thread_src",
+    "targetThreadId": "thread_dst",
+    "workflowId": "workflow-id",
+    "workflowMode": "manual|autonomous",
+    "status": "active|resuming|paused|cancelled|completed",
+    "resumeRequired": true,
+    "startedAt": "2026-05-29T00:00:00Z",
+    "lastProgressAt": "2026-05-29T00:00:00Z",
+    "injectedTurnId": "turn_01",
+    "currentTurnId": "turn_01",
+    "lastInterruptedTurnId": "",
+    "lastContinuationTurnId": "",
+    "resumeCount": 0
   },
   "workflow": {
     "mode": "manual|autonomous",
@@ -143,6 +196,15 @@ and records `autoReplyCardId` / `autoReturn*` audit fields on the original
 card. Repeated or replayed completion notifications are idempotent and do not
 create a second return card.
 
+Interruption continuation is also server-side state, not model best effort. The
+server observes `turn/completed` in the target thread. If that turn is not the
+current turn recorded on an active execution lease, and the original card has
+not been replied/returned/cancelled/paused, the service re-injects one bounded
+continuation for that completed turn. Replayed completion notifications are
+deduplicated by `lastInterruptedTurnId` / `resumeForTurnId`. If several active
+leases exist for the same target thread, continuation uses oldest-started-first
+ordering so the queue is deterministic rather than hidden model state.
+
 ## API Shape
 
 ### Create
@@ -188,6 +250,17 @@ route can also be forced back to pending behavior with `pending:true`,
 ### Reply
 
 `POST /api/thread-task-cards/:id/reply`
+
+### Execution Pause / Cancel
+
+`POST /api/thread-task-cards/:id/execution/pause`
+
+`POST /api/thread-task-cards/:id/execution/cancel`
+
+These routes update the structured `executionLease` only. They do not create a
+return card and do not mark the original card completed. They exist so an owner
+or target thread can explicitly stop automatic continuation when an active card
+should no longer resume after ordinary user interruptions.
 
 ## Injection Result
 
@@ -280,6 +353,8 @@ for autonomous workflows and normally do not render as pending UI: they are
 created from the completed injected target turn, auto-approved by the existing
 workflow grant, and surface as a real new turn in the original source thread.
 They are terminal receipt turns rather than another auto-return source.
+Acknowledgements of those receipts are not required; new actionable work must
+start as a new work card.
 
 ## Storage
 

@@ -32,13 +32,36 @@ function createThreadDetailProjectionResultService(options = {}) {
 
   function mobileReadMode(cached, projectionVersion) {
     const v4 = projectionVersion === "v4";
+    if (cached && cached.partial) return v4 ? "projection-v4-partial" : "projection-partial";
     return cached && cached.dynamic
       ? (v4 ? "projection-v4-dynamic" : "projection-dynamic")
       : (v4 ? "projection-v4-cache" : "projection-cache");
   }
 
-  function prepareProjectedThreadReadResult(cached, summary, runtimeSettings) {
+  function summaryLocalActiveTurnId(summary) {
+    return String(summary && (
+      summary.activeTurnId
+      || summary.active_turn_id
+      || summary.mobileLocalActiveStatus && summary.mobileLocalActiveStatus.turnId
+      || summary.mobileLocalActiveStatus && summary.mobileLocalActiveStatus.turn_id
+    ) || "").trim();
+  }
+
+  function projectedThreadHasTurn(thread, turnId) {
+    const id = String(turnId || "").trim();
+    if (!id || !thread || !Array.isArray(thread.turns)) return !id;
+    return thread.turns.some((turn) => String(turn && (turn.id || turn.turnId || turn.turn_id) || "").trim() === id);
+  }
+
+  function projectedThreadSatisfiesLocalActiveSummary(cached, summary) {
+    const localActiveTurnId = summaryLocalActiveTurnId(summary);
+    if (!localActiveTurnId) return true;
+    return projectedThreadHasTurn(cached && cached.result && cached.result.thread, localActiveTurnId);
+  }
+
+  function prepareProjectedThreadReadResult(cached, summary, runtimeSettings, options = {}) {
     if (!cached || !cached.result || !cached.result.thread) return null;
+    if (options.activeOverlay !== true && !projectedThreadSatisfiesLocalActiveSummary(cached, summary)) return null;
     const mergedResult = Object.assign({}, cached.result, {
       thread: mergeThreadDisplaySummary(cached.result.thread, summary) || cached.result.thread,
     });
@@ -52,8 +75,10 @@ function createThreadDetailProjectionResultService(options = {}) {
     result.thread.mobileReadMode = mobileReadMode(cached, projectionVersion);
     result.thread.mobileProjection = {
       ...(result.thread.mobileProjection || {}),
-      source: cached.dynamic ? "dynamic" : "cache",
+      source: cached.partial ? "partial" : cached.dynamic ? "dynamic" : "cache",
       version: projectionVersion || result.thread.mobileProjectionVersion || "",
+      partial: cached.partial === true,
+      partialKind: cached.partialKind || "",
       cachedAtMs: cached.cachedAtMs || null,
       updatedAtMs: cached.updatedAtMs || cached.cachedAtMs || null,
       ageMs: cached.updatedAtMs ? Math.max(0, now() - cached.updatedAtMs) : null,

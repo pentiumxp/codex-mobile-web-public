@@ -1,5 +1,14 @@
 "use strict";
 
+const {
+  applyActiveThreadPolicyToBoundedReadDecision,
+  planActiveThreadDetailReadPolicy,
+} = require("./thread-detail-active-read-policy-service");
+const {
+  mergeProjectionThreadWithActiveOverlay,
+  planActiveWindowOverlay,
+} = require("./thread-detail-active-window-overlay-policy-service");
+
 function defaultNow() {
   return Date.now();
 }
@@ -34,6 +43,69 @@ function hiddenResponse() {
   };
 }
 
+function nonEmptyText(value) {
+  return String(value || "").trim();
+}
+
+function safeNonNegativeNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : 0;
+}
+
+function normalizeBoundedReadDecision(value) {
+  if (value && typeof value === "object") {
+    return {
+      prefer: Boolean(value.prefer || value.enabled || value.useBoundedRead),
+      rolloutSizeBytes: safeNonNegativeNumber(value.rolloutSizeBytes),
+      thresholdBytes: safeNonNegativeNumber(value.thresholdBytes),
+      source: nonEmptyText(value.source),
+      reason: nonEmptyText(value.reason),
+    };
+  }
+  return {
+    prefer: Boolean(value),
+    rolloutSizeBytes: 0,
+    thresholdBytes: 0,
+    source: "",
+    reason: Boolean(value) ? "enabled" : "",
+  };
+}
+
+function projectionDiagnosticsFromThread(thread) {
+  const projection = thread && thread.mobileProjection && typeof thread.mobileProjection === "object"
+    ? thread.mobileProjection
+    : {};
+  return {
+    source: nonEmptyText(projection.source),
+    version: nonEmptyText(projection.version),
+    ageMs: safeNonNegativeNumber(projection.ageMs),
+  };
+}
+
+function asActiveOverlayProjectionWindow(result, overlayInput = {}) {
+  const thread = result && result.thread && typeof result.thread === "object" ? result.thread : null;
+  if (!thread) return null;
+  const existingProjection = thread.mobileProjection && typeof thread.mobileProjection === "object"
+    ? thread.mobileProjection
+    : {};
+  const overlayRevision = safeNonNegativeNumber(overlayInput.overlayRevision);
+  const overlayTimestampMs = safeNonNegativeNumber(overlayInput.overlayTimestampMs);
+  thread.mobileReadMode = "projection-active-window";
+  thread.mobileProjection = Object.assign({}, existingProjection, {
+    source: "partial",
+    version: "active-window",
+    partial: true,
+    partialKind: "turns-list-active-overlay-window",
+    activeOverlayWindow: true,
+    revision: overlayRevision || safeNonNegativeNumber(existingProjection.revision),
+    updatedAtMs: overlayTimestampMs || safeNonNegativeNumber(existingProjection.updatedAtMs),
+    ageMs: 0,
+  });
+  if (overlayRevision) thread.mobileProjectionRevision = overlayRevision;
+  if (overlayTimestampMs) thread.mobileProjectionUpdatedAtMs = overlayTimestampMs;
+  return thread;
+}
+
 function createThreadDetailReadOrchestrationService(options = {}) {
   const now = typeof options.now === "function" ? options.now : defaultNow;
   const attachDiagnostics = typeof options.attachDiagnostics === "function"
@@ -57,6 +129,10 @@ function createThreadDetailReadOrchestrationService(options = {}) {
   const readRawThread = typeof options.readRawThread === "function" ? options.readRawThread : async () => ({ thread: null });
   const projectionInput = typeof options.projectionInput === "function" ? options.projectionInput : () => null;
   const projectedThreadResult = typeof options.projectedThreadResult === "function" ? options.projectedThreadResult : () => null;
+  const projectedThreadLookup = typeof options.projectedThreadLookup === "function" ? options.projectedThreadLookup : null;
+  const resolveActiveWindowOverlay = typeof options.resolveActiveWindowOverlay === "function"
+    ? options.resolveActiveWindowOverlay
+    : null;
   const rememberThreadSummary = typeof options.rememberThreadSummary === "function" ? options.rememberThreadSummary : () => {};
   const turnsListThreadReadResult = typeof options.turnsListThreadReadResult === "function"
     ? options.turnsListThreadReadResult
@@ -81,13 +157,38 @@ function createThreadDetailReadOrchestrationService(options = {}) {
   const maxThreadTurns = Number(options.maxThreadTurns || 0);
 
   function attachDetailDiagnostics(result, context, details = {}) {
+    const boundedDecision = context.boundedReadBeforeFullRead || null;
     return attachDiagnostics(result, {
       requestMode: context.preferRecentTurns ? "recent" : "full",
+      readDecision: details.readDecision || "",
       readMode: details.readMode || details.source || result && result.thread && result.thread.mobileReadMode || "",
       summarySource: context.summarySource,
+      projectionState: context.projectionState || "",
+      projectionInputAvailable: context.projectionInputAvailable === true,
+      projectionSource: context.projectionSource || "",
+      projectionVersion: context.projectionVersion || "",
+      projectionAgeMs: context.projectionAgeMs || 0,
+      projectionMissReason: context.projectionMissReason || "",
+      projectionSeedStatus: context.projectionSeedStatus || "",
+      projectionSeedSource: context.projectionSeedSource || "",
+      activeFullReadRequired: context.activeFullReadRequired === true,
+      activeFullReadReason: context.activeFullReadReason || "",
+      activeOverlayAction: context.activeOverlayAction || "",
+      activeOverlayReason: context.activeOverlayReason || "",
+      activeOverlaySource: context.activeOverlaySource || "",
+      activeOverlayItems: context.activeOverlayItems || 0,
+      activeOverlayOperationItems: context.activeOverlayOperationItems || 0,
+      activeOverlayUploadItems: context.activeOverlayUploadItems || 0,
+      activeOverlayAssistantItems: context.activeOverlayAssistantItems || 0,
+      activeOverlayReceiptItems: context.activeOverlayReceiptItems || 0,
       timings: context.timer.timings,
       totalMs: context.timer.elapsedMs(),
       rolloutSizeBytes: result && result.thread ? threadRolloutSizeBytes(result.thread) : 0,
+      largeReadProtected: Boolean(boundedDecision && boundedDecision.prefer),
+      largeReadRolloutSizeBytes: boundedDecision ? boundedDecision.rolloutSizeBytes : 0,
+      largeReadThresholdBytes: boundedDecision ? boundedDecision.thresholdBytes : 0,
+      largeReadSource: boundedDecision ? boundedDecision.source : "",
+      largeReadReason: boundedDecision ? boundedDecision.reason : "",
     });
   }
 
@@ -108,6 +209,22 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       timer,
       preferRecentTurns,
       summarySource: "",
+      projectionState: "",
+      projectionInputAvailable: false,
+      projectionSource: "",
+      projectionVersion: "",
+      projectionAgeMs: 0,
+      projectionMissReason: "",
+      projectionSeedStatus: "",
+      projectionSeedSource: "",
+      activeOverlayAction: "",
+      activeOverlayReason: "",
+      activeOverlaySource: "",
+      activeOverlayItems: 0,
+      activeOverlayOperationItems: 0,
+      activeOverlayUploadItems: 0,
+      activeOverlayAssistantItems: 0,
+      activeOverlayReceiptItems: 0,
     };
     threadLog("start", {
       transport: codex && codex.transportKind,
@@ -119,6 +236,9 @@ function createThreadDetailReadOrchestrationService(options = {}) {
     timer.mark("summaryMs", summaryStartedAtMs);
     const summary = summaryResult && summaryResult.summary || null;
     context.summarySource = summaryResult && summaryResult.source || "";
+    const activeReadPolicy = planActiveThreadDetailReadPolicy({ summary, preferRecentTurns });
+    context.activeFullReadRequired = activeReadPolicy.activeFullReadRequired;
+    context.activeFullReadReason = activeReadPolicy.activeFullReadReason || "";
     const runtimeSettings = threadRuntimeSettings(threadId, summary);
     if (summary && isHiddenThread(summary, visibility)) {
       threadLog("hidden", { status: 404 });
@@ -145,7 +265,11 @@ function createThreadDetailReadOrchestrationService(options = {}) {
         return {
           status: 200,
           mode: "thread-read-raw",
-          body: await prepareAndAttach(result, context, { threadId, source: "thread-read-raw" }),
+          body: await prepareAndAttach(result, context, {
+            threadId,
+            source: "thread-read-raw",
+            readDecision: "raw-thread-read",
+          }),
         };
       } catch (err) {
         threadLog("thread_read_raw_error", {
@@ -163,35 +287,198 @@ function createThreadDetailReadOrchestrationService(options = {}) {
     }
 
     const projection = projectionInput(threadId, summary);
+    context.projectionInputAvailable = Boolean(projection);
+    context.projectionState = projection ? "input-ready" : "unavailable";
     const projectionStartedAtMs = now();
-    const projected = projection ? projectedThreadResult(projection, summary, runtimeSettings) : null;
+    const allowPartialProjection = activeReadPolicy.allowPartialProjection;
+    const projectionLookup = projection && projectedThreadLookup
+      ? projectedThreadLookup(projection, summary, runtimeSettings, { allowPartial: allowPartialProjection })
+      : null;
+    const projected = projection
+      ? projectionLookup
+        ? projectionLookup.result
+        : projectedThreadResult(projection, summary, runtimeSettings, { allowPartial: allowPartialProjection })
+      : null;
+    context.projectionMissReason = projectionLookup && projectionLookup.missReason || "";
     timer.mark("projectionMs", projectionStartedAtMs);
-    if (projected && projected.thread) {
-      if (isHiddenThread(projected.thread, visibility)) {
+    const projectedThread = projected && projected.thread || null;
+    if (projectedThread) {
+      context.projectionState = "hit";
+      context.projectionMissReason = "";
+      const projectionInfo = projectionDiagnosticsFromThread(projectedThread);
+      context.projectionSource = projectionInfo.source;
+      context.projectionVersion = projectionInfo.version;
+      context.projectionAgeMs = projectionInfo.ageMs;
+      if (isHiddenThread(projectedThread, visibility)) {
         threadLog("projection_hidden", {
           durationMs: now() - projectionStartedAtMs,
           status: 404,
         });
         return hiddenResponse();
       }
-      rememberThreadSummary(projected.thread);
-      threadLog("projection_hit", {
+      threadLog(activeReadPolicy.activeFullReadRequired && resolveActiveWindowOverlay
+        ? "projection_hit_active_overlay_required"
+        : "projection_hit", {
         durationMs: now() - projectionStartedAtMs,
-        mode: projected.thread.mobileReadMode,
-        returnedTurns: Array.isArray(projected.thread.turns) ? projected.thread.turns.length : null,
-        omittedTurns: projected.thread.mobileOmittedTurnCount || 0,
+        mode: projectedThread.mobileReadMode,
+        returnedTurns: Array.isArray(projectedThread.turns) ? projectedThread.turns.length : null,
+        omittedTurns: projectedThread.mobileOmittedTurnCount || 0,
       });
-      return {
-        status: 200,
-        mode: projected.thread.mobileReadMode || "projection",
-        body: await prepareAndAttach(projected, context, {
-          threadId,
-          source: projected.thread.mobileReadMode || "projection",
-        }),
-      };
+      if (!activeReadPolicy.activeFullReadRequired || !resolveActiveWindowOverlay) {
+        rememberThreadSummary(projectedThread);
+        return {
+          status: 200,
+          mode: projectedThread.mobileReadMode || "projection",
+          body: await prepareAndAttach(projected, context, {
+            threadId,
+            source: projectedThread.mobileReadMode || "projection",
+            readDecision: projectedThread.mobileProjection && projectedThread.mobileProjection.partial
+              ? "projection-partial-hit"
+              : "projection-hit",
+          }),
+        };
+      }
+    }
+    if (projection && !projectedThread) {
+      context.projectionState = "miss";
+      if (!context.projectionMissReason) context.projectionMissReason = "result-missing";
     }
 
-    if (preferRecentTurns) {
+    if (activeReadPolicy.activeFullReadRequired && projection && resolveActiveWindowOverlay) {
+      const activeOverlayStartedAtMs = now();
+      const overlayProjectionLookup = projectedThreadLookup
+        ? projectedThreadLookup(projection, summary, runtimeSettings, { allowPartial: true, activeOverlay: true })
+        : null;
+      const overlayProjected = overlayProjectionLookup
+        ? overlayProjectionLookup.result
+        : projectedThreadResult(projection, summary, runtimeSettings, { allowPartial: true, activeOverlay: true });
+      const activeOverlayProjected = overlayProjected && overlayProjected.thread
+        ? overlayProjected
+        : projected && projected.thread
+          ? projected
+          : null;
+      const projectionThread = activeOverlayProjected && activeOverlayProjected.thread || null;
+      let overlayInput = null;
+      try {
+        overlayInput = await resolveActiveWindowOverlay({
+          threadId,
+          summary,
+          projection,
+          runtimeSettings,
+          projectionThread,
+          projectionLookup: overlayProjectionLookup,
+        });
+      } catch (err) {
+        overlayInput = { reason: "resolver-error", error: safeErrorMessage(err) };
+        threadLog("active_overlay_resolve_error", { error: safeErrorMessage(err) });
+      }
+      let activeOverlayPlan = planActiveWindowOverlay(Object.assign({}, overlayInput || {}, {
+        summary,
+        projectionThread,
+      }));
+      let activeOverlayProjectionThread = projectionThread;
+      let activeOverlayProjectionResult = activeOverlayProjected;
+      if (activeOverlayPlan.reason === "missing-projection-window"
+        && overlayInput
+        && overlayInput.overlayTurn
+        && turnsListThreadReadResult) {
+        const activeWindowStartedAtMs = now();
+        try {
+          const activeWindowResult = await turnsListThreadReadResult({
+            threadId,
+            summary,
+            runtimeSettings,
+            warning: "",
+            mode: "turns-list-active-overlay-window",
+            threadLog,
+          });
+          if (isHiddenThread(activeWindowResult && activeWindowResult.thread, visibility)) {
+            threadLog("active_overlay_window_hidden", {
+              durationMs: now() - activeWindowStartedAtMs,
+              status: 404,
+            });
+            return hiddenResponse();
+          }
+          timer.mark("activeOverlayWindowMs", activeWindowStartedAtMs);
+          activeOverlayProjectionThread = asActiveOverlayProjectionWindow(activeWindowResult, overlayInput);
+          activeOverlayProjectionResult = activeOverlayProjectionThread
+            ? Object.assign({}, activeWindowResult || {}, { thread: activeOverlayProjectionThread })
+            : activeWindowResult;
+          activeOverlayPlan = planActiveWindowOverlay(Object.assign({}, overlayInput || {}, {
+            summary,
+            projectionThread: activeOverlayProjectionThread,
+            projectionRevision: overlayInput.overlayRevision || overlayInput.projectionRevision,
+            projectionTimestampMs: overlayInput.overlayTimestampMs || overlayInput.projectionTimestampMs,
+          }));
+          threadLog("active_overlay_window", {
+            durationMs: now() - activeWindowStartedAtMs,
+            action: activeOverlayPlan.action || "require-full-read",
+            reason: activeOverlayPlan.reason || "",
+          });
+        } catch (err) {
+          threadLog("active_overlay_window_error", {
+            durationMs: now() - activeWindowStartedAtMs,
+            timeout: isReadTimeoutError(err),
+            error: safeErrorMessage(err),
+          });
+        }
+      }
+      timer.mark("activeOverlayMs", activeOverlayStartedAtMs);
+      context.activeOverlayAction = activeOverlayPlan.action || "require-full-read";
+      context.activeOverlayReason = activeOverlayPlan.reason || "";
+      context.activeOverlaySource = activeOverlayPlan.overlaySource || "";
+      context.activeOverlayItems = activeOverlayPlan.counts && activeOverlayPlan.counts.items || 0;
+      context.activeOverlayOperationItems = activeOverlayPlan.counts && activeOverlayPlan.counts.operationItems || 0;
+      context.activeOverlayUploadItems = activeOverlayPlan.counts && activeOverlayPlan.counts.uploadItems || 0;
+      context.activeOverlayAssistantItems = activeOverlayPlan.counts && activeOverlayPlan.counts.assistantItems || 0;
+      context.activeOverlayReceiptItems = activeOverlayPlan.counts && activeOverlayPlan.counts.receiptItems || 0;
+      threadLog("active_overlay_plan", {
+        action: context.activeOverlayAction,
+        reason: context.activeOverlayReason,
+        source: context.activeOverlaySource,
+      });
+      if (activeOverlayPlan.action === "use-projection-overlay" && activeOverlayProjectionThread) {
+        const mergedThread = mergeProjectionThreadWithActiveOverlay(
+          activeOverlayProjectionThread,
+          overlayInput && overlayInput.overlayTurn,
+          {
+            readMode: "projection-active-overlay",
+            overlaySource: activeOverlayPlan.overlaySource,
+            reason: activeOverlayPlan.reason,
+            counts: activeOverlayPlan.counts,
+          },
+        );
+        const result = Object.assign({}, activeOverlayProjectionResult || {}, { thread: mergedThread });
+        if (isHiddenThread(result && result.thread, visibility)) {
+          threadLog("active_overlay_hidden", {
+            durationMs: now() - activeOverlayStartedAtMs,
+            status: 404,
+          });
+          return hiddenResponse();
+        }
+        context.projectionState = "hit";
+        context.projectionMissReason = "";
+        const projectionInfo = projectionDiagnosticsFromThread(result.thread);
+        context.projectionSource = projectionInfo.source || "partial";
+        context.projectionVersion = projectionInfo.version;
+        context.projectionAgeMs = projectionInfo.ageMs;
+        rememberThreadSummary(result.thread);
+        return {
+          status: 200,
+          mode: "projection-active-overlay",
+          body: await prepareAndAttach(result, context, {
+            threadId,
+            source: "projection-active-overlay",
+            readDecision: "projection-active-overlay",
+          }),
+        };
+      }
+    } else if (activeReadPolicy.activeFullReadRequired) {
+      context.activeOverlayAction = "require-full-read";
+      context.activeOverlayReason = resolveActiveWindowOverlay ? "projection-input-unavailable" : "overlay-provider-unavailable";
+    }
+
+    if (activeReadPolicy.shouldUseInitialTurnsList) {
       const turnsStartedAtMs = now();
       try {
         const result = await turnsListThreadReadResult({
@@ -210,10 +497,35 @@ function createThreadDetailReadOrchestrationService(options = {}) {
           return hiddenResponse();
         }
         timer.mark("turnsListInitialMs", turnsStartedAtMs);
+        if (projection && result && result.thread) {
+          try {
+            const seeded = seedProjection(projection, result, {
+              partial: true,
+              partialKind: "recent-window",
+            });
+            context.projectionSeedStatus = seeded && seeded.skipped
+              ? "skipped"
+              : seeded && seeded.partial
+                ? "seeded-partial"
+                : "seeded";
+            context.projectionSeedSource = seeded && seeded.reason || "turns-list-initial";
+          } catch (err) {
+            context.projectionSeedStatus = "failed";
+            context.projectionSeedSource = "turns-list-initial";
+            threadLog("projection_seed_error", { error: safeErrorMessage(err) });
+          }
+        } else {
+          context.projectionSeedStatus = "skipped";
+          context.projectionSeedSource = projection ? "turns-list-initial" : "no-projection-input";
+        }
         return {
           status: 200,
           mode: "turns-list-initial",
-          body: attachDetailDiagnostics(result, context, { threadId, source: "turns-list-initial" }),
+          body: attachDetailDiagnostics(result, context, {
+            threadId,
+            source: "turns-list-initial",
+            readDecision: "initial-turns-list",
+          }),
         };
       } catch (err) {
         threadLog("turns_list_initial_error", {
@@ -222,15 +534,31 @@ function createThreadDetailReadOrchestrationService(options = {}) {
           error: safeErrorMessage(err),
         });
       }
+    } else if (activeReadPolicy.initialTurnsListSkipReason) {
+      threadLog("turns_list_initial_skipped_active", {
+        reason: activeReadPolicy.initialTurnsListSkipReason,
+      });
     }
 
-    if (preferBoundedReadBeforeFullRead({ threadId, summary, projection, runtimeSettings })) {
+    const rawBoundedReadDecision = normalizeBoundedReadDecision(
+      preferBoundedReadBeforeFullRead({ threadId, summary, projection, runtimeSettings }),
+    );
+    const boundedReadDecision = applyActiveThreadPolicyToBoundedReadDecision(
+      rawBoundedReadDecision,
+      activeReadPolicy,
+    );
+    context.boundedReadBeforeFullRead = boundedReadDecision;
+    if (boundedReadDecision.prefer) {
       const turnsStartedAtMs = now();
       const mode = "turns-list-large";
       threadLog("turns_list_before_full_start", {
         limit: maxThreadTurns,
         timeoutMs: threadDetailRpcTimeoutMs,
         fallbackFrom: "projection-miss",
+        rolloutSizeBytes: boundedReadDecision.rolloutSizeBytes || null,
+        thresholdBytes: boundedReadDecision.thresholdBytes || null,
+        decisionSource: boundedReadDecision.source || "",
+        decisionReason: boundedReadDecision.reason || "",
       });
       try {
         const result = await turnsListThreadReadResult({
@@ -253,14 +581,25 @@ function createThreadDetailReadOrchestrationService(options = {}) {
           try {
             seedProjection(projection, result);
             result.thread.mobileProjection = Object.assign({}, result.thread.mobileProjection || {}, { source: "seeded-from-turns-list" });
+            context.projectionSeedStatus = "seeded";
+            context.projectionSeedSource = "turns-list-large";
           } catch (err) {
+            context.projectionSeedStatus = "failed";
+            context.projectionSeedSource = "turns-list-large";
             threadLog("projection_seed_error", { error: safeErrorMessage(err) });
           }
+        } else {
+          context.projectionSeedStatus = "skipped";
+          context.projectionSeedSource = projection ? "turns-list-large" : "no-projection-input";
         }
         return {
           status: 200,
           mode,
-          body: attachDetailDiagnostics(result, context, { threadId, source: mode }),
+          body: attachDetailDiagnostics(result, context, {
+            threadId,
+            source: mode,
+            readDecision: "bounded-large-turns-list",
+          }),
         };
       } catch (err) {
         threadLog("turns_list_before_full_error", {
@@ -295,14 +634,25 @@ function createThreadDetailReadOrchestrationService(options = {}) {
         try {
           seedProjection(projection, result);
           result.thread.mobileProjection = Object.assign({}, result.thread.mobileProjection || {}, { source: "seeded" });
+          context.projectionSeedStatus = "seeded";
+          context.projectionSeedSource = "thread-read";
         } catch (err) {
+          context.projectionSeedStatus = "failed";
+          context.projectionSeedSource = "thread-read";
           threadLog("projection_seed_error", { error: safeErrorMessage(err) });
         }
+      } else {
+        context.projectionSeedStatus = "skipped";
+        context.projectionSeedSource = "no-projection-input";
       }
       return {
         status: 200,
         mode: "thread-read",
-        body: await prepareAndAttach(result, context, { threadId, source: "thread-read" }),
+        body: await prepareAndAttach(result, context, {
+          threadId,
+          source: "thread-read",
+          readDecision: "full-thread-read",
+        }),
       };
     } catch (readErr) {
       threadLog("thread_read_error", {
@@ -341,7 +691,11 @@ function createThreadDetailReadOrchestrationService(options = {}) {
         return {
           status: 200,
           mode: "turns-list",
-          body: attachDetailDiagnostics(result, context, { threadId, source: "turns-list" }),
+          body: attachDetailDiagnostics(result, context, {
+            threadId,
+            source: "turns-list",
+            readDecision: "fallback-turns-list",
+          }),
         };
       } catch (turnsErr) {
         threadLog("turns_list_error", {
@@ -360,7 +714,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
               runtimeSettings,
               warning: safeErrorMessage(turnsErr),
               mode,
-            }), context, { threadId, source: mode }),
+            }), context, { threadId, source: mode, readDecision: "summary-fallback" }),
           };
         }
         if (isReadTimeoutError(turnsErr)) {
@@ -374,7 +728,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
               runtimeSettings,
               warning: safeErrorMessage(turnsErr),
               mode,
-            }), context, { threadId, source: mode }),
+            }), context, { threadId, source: mode, readDecision: "summary-fallback" }),
           };
         }
         const mode = "summary-error-fallback";
@@ -387,7 +741,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
             runtimeSettings,
             warning: `thread/read failed: ${safeErrorMessage(readErr)}; thread/turns/list failed: ${safeErrorMessage(turnsErr)}`,
             mode,
-          }), context, { threadId, source: mode }),
+          }), context, { threadId, source: mode, readDecision: "summary-fallback" }),
         };
       }
     }

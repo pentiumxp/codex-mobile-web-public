@@ -9,7 +9,12 @@ const root = path.resolve(__dirname, "..");
 const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
+const threadDetailMergeStateJs = fs.readFileSync(path.join(root, "public", "thread-detail-merge-state.js"), "utf8");
+const threadDetailPatchPlan = require(path.join(root, "public", "thread-detail-patch-plan.js"));
+const threadDiagnosticEvents = require(path.join(root, "public", "thread-diagnostic-events.js"));
 const { createThreadDetailStatePolicy } = require(path.join(root, "public", "thread-detail-state.js"));
+const { createThreadDetailMergePolicy } = require(path.join(root, "public", "thread-detail-merge-state.js"));
+const { createThreadDetailV4MergePolicy } = require(path.join(root, "public", "thread-detail-v4-merge-state.js"));
 
 function functionBodyFrom(source, name) {
   const start = source.indexOf(`function ${name}(`);
@@ -83,6 +88,68 @@ function evaluatedInputContentRenderer() {
   return evaluatedInputContentRendererWithKey("");
 }
 
+function evaluatedConversationProjectionDiagnosticSnapshot() {
+  const source = functionSourceFrom(appJs, "conversationProjectionDiagnosticSnapshot");
+  return Function("threadDiagnosticEventsApi", `
+let classNames = new Set();
+let calls = [];
+const conversation = {
+  classList: {
+    contains(name) {
+      return classNames.has(name);
+    },
+  },
+};
+const state = {
+  threadTileMode: false,
+  renderedConversationSignature: "single-rendered",
+  currentThread: { id: "single", mobileReadMode: "recent", shape: { visibleTurnCount: 1, visibleItemCount: 3 } },
+};
+function $(id) {
+  return id === "conversation" ? conversation : null;
+}
+function conversationDomShape() {
+  return { renderKeyCount: 7, duplicateRenderKeyCount: 0, turnCount: 2 };
+}
+function visibleConversationShape(thread) {
+  return thread && thread.shape ? thread.shape : { visibleTurnCount: 0, visibleItemCount: 0 };
+}
+function conversationRenderSignature(thread) {
+  calls.push(["single", thread && thread.id || ""]);
+  return "single-current";
+}
+function threadTileLayout() {
+  calls.push(["layout"]);
+  return { enabled: true, columns: 2 };
+}
+function threadTileCandidateIds(layout) {
+  calls.push(["ids", layout && layout.columns || 0]);
+  return ["tile-a", "tile-b"];
+}
+function threadTileDisplayLayout(layout, ids) {
+  calls.push(["display", ids.length]);
+  return { enabled: true, columns: 2, rows: 1 };
+}
+function threadTileRenderSignature(layout, ids) {
+  calls.push(["tile", ids.join(",")]);
+  return "tile-current";
+}
+function threadTileDisplayThread(id) {
+  return { id, shape: { visibleTurnCount: 1, visibleItemCount: id === "tile-a" ? 2 : 4 } };
+}
+${source}
+return {
+  state,
+  calls: () => calls.slice(),
+  setTileDom(value) {
+    if (value) classNames.add("thread-tile-mode");
+    else classNames.delete("thread-tile-mode");
+  },
+  conversationProjectionDiagnosticSnapshot,
+};
+`)(threadDiagnosticEvents);
+}
+
 function evaluatedInputContentRendererWithKey(key = "", options = {}) {
   const sources = [
     "escapeHtml",
@@ -110,6 +177,7 @@ function evaluatedInputContentRendererWithKey(key = "", options = {}) {
     "authenticatedApiContentUrl",
     "protectedGeneratedImageSrc",
     "isHermesEmbedMode",
+    "renderContextThreadId",
     "imageDiagnosticSourceKind",
     "shouldRenderProtectedImageDirectly",
     "protectedImageDisplaySrc",
@@ -139,7 +207,7 @@ function evaluatedInputContentRendererWithKey(key = "", options = {}) {
   const pathname = options.pathname || "/";
   return Function(
     "URLSearchParams",
-    `const state = { key: ${JSON.stringify(String(key || ""))}, pluginEmbed: ${JSON.stringify(pluginEmbed)} };\nconst window = { location: { origin: "http://127.0.0.1:8787", pathname: ${JSON.stringify(pathname)} } };\nconst THREAD_TASK_CARD_REQUEST_TAG = "codex-mobile-thread-task-card-request";\nconst PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";\n${sources.join("\n")}\nreturn renderInputContent;`,
+    `const state = { key: ${JSON.stringify(String(key || ""))}, currentThreadId: "thread-id", renderContextThreadId: "", pluginEmbed: ${JSON.stringify(pluginEmbed)} };\nconst window = { location: { origin: "http://127.0.0.1:8787", pathname: ${JSON.stringify(pathname)} } };\nconst THREAD_TASK_CARD_REQUEST_TAG = "codex-mobile-thread-task-card-request";\nconst PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";\n${sources.join("\n")}\nreturn renderInputContent;`,
   )(URLSearchParams);
 }
 
@@ -161,6 +229,7 @@ function evaluatedActiveRuntimeHarness() {
     "isRunningStatus",
     "isCompletedStatus",
     "isTurnComplete",
+    "renderContextThread",
     "turnHasDisplayItems",
     "latestTurn",
     "latestRawTurn",
@@ -301,6 +370,7 @@ function evaluatedImageViewRenderer(options = {}) {
     "browserApiContentUrl",
     "protectedGeneratedImageSrc",
     "isHermesEmbedMode",
+    "renderContextThreadId",
     "imageDiagnosticSourceKind",
     "shouldRenderProtectedImageDirectly",
     "protectedImageDisplaySrc",
@@ -321,7 +391,7 @@ function evaluatedImageViewRenderer(options = {}) {
   const pathname = options.pathname || "/";
   return Function(
     "URLSearchParams",
-    `const state = { key: "test-key", currentThreadId: "thread-id", pluginEmbed: ${JSON.stringify(pluginEmbed)} };\nconst window = { location: { origin: "http://127.0.0.1:8787", pathname: ${JSON.stringify(pathname)} } };\nconst PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";\n${sources.join("\n")}\nreturn renderImageView;`,
+    `const state = { key: "test-key", currentThreadId: "thread-id", renderContextThreadId: "", pluginEmbed: ${JSON.stringify(pluginEmbed)} };\nconst window = { location: { origin: "http://127.0.0.1:8787", pathname: ${JSON.stringify(pathname)} } };\nconst PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";\n${sources.join("\n")}\nreturn ${options.harness ? "{ state, renderImageView }" : "renderImageView"};`,
   )(URLSearchParams);
 }
 
@@ -744,19 +814,6 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "threadDurableUserMessages",
     "shouldDropInitialSubmissionEchoTurn",
     "threadHasInitialSubmissionEcho",
-    "isV4ProjectionThread",
-    "shouldPreserveV4PendingOverlayItem",
-    "v4ThreadHasPendingMatch",
-    "appendV4PendingOverlayItem",
-    "copyTurnWithOnlyItems",
-    "applyV4PendingOverlay",
-    "v4ProjectionRevisionValue",
-    "isV4ProjectionRefreshRegressive",
-    "isActiveLikeProjectionTurn",
-    "incomingTurnsClearlySupersedeExistingTurn",
-    "existingV4TurnHasOnlyMatchedPendingItems",
-    "shouldPreserveExistingV4ProjectionTurn",
-    "mergeV4ProjectionThread",
     "comparableVisibleTextItem",
     "comparableVisibleText",
     "visibleTextItemsLikelySame",
@@ -777,7 +834,7 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "mergeTurnPreservingVisibleItems",
     "mergeThreadPreservingVisibleItems",
   ].map((name) => functionSourceFrom(appJs, name));
-  return Function("createThreadDetailStatePolicy", `
+  return Function("createThreadDetailStatePolicy", "createThreadDetailMergePolicy", "createThreadDetailV4MergePolicy", `
 const MAX_EXPANDED_VISIBLE_TURNS = 40;
 const state = { activeTurnId: "local-start-turn", currentThreadId: "thread-new" };
 function isReasoningItem(item) { return Boolean(item && item.type === "reasoning"); }
@@ -823,8 +880,41 @@ const threadDetailStatePolicy = createThreadDetailStatePolicy({
   visibleTextItemsLikelySame,
   completedReceiptItemsLikelySame,
 });
+const threadDetailV4MergePolicy = createThreadDetailV4MergePolicy({
+  normalizeThreadVisibleUserMessages,
+  turnVisibleWeight,
+  isOptimisticUserMessage,
+  isRecentlySubmittedUserMessage,
+  isReasoningItem,
+  userMessageHasSubmissionId,
+  userMessagesCanShadow,
+  isTurnComplete,
+  isRunningStatus,
+  isIncompleteInterruptedTurn,
+  turnHasActiveLiveItems,
+  turnOrderMs,
+  mergeTurnPreservingVisibleItems,
+  sortTurnsForDisplay,
+  maxVisibleTurnsForThread,
+});
+const threadDetailMergePolicy = createThreadDetailMergePolicy({
+  isV4ProjectionThread: threadDetailV4MergePolicy.isV4ProjectionThread,
+  mergeV4ProjectionThread: threadDetailV4MergePolicy.mergeV4ProjectionThread,
+  normalizeThreadVisibleUserMessages,
+  turnVisibleWeight,
+  shouldPreserveExistingTurnVisibleItems: (existingTurn, incomingTurn, existingWeight) => (
+    threadDetailStatePolicy.shouldPreserveExistingTurnVisibleItems(existingTurn, incomingTurn, existingWeight)
+  ),
+  mergeItemsPreservingLocalVisible,
+  shouldDropInitialSubmissionEchoTurn,
+  turnIsSupersededBy,
+  isTurnComplete,
+  sortTurnsForDisplay,
+  threadHasInitialSubmissionEcho,
+  maxExpandedVisibleTurns: MAX_EXPANDED_VISIBLE_TURNS,
+});
 return mergeThreadPreservingVisibleItems;
-`)(createThreadDetailStatePolicy);
+`)(createThreadDetailStatePolicy, createThreadDetailMergePolicy, createThreadDetailV4MergePolicy);
 }
 
 function evaluatedNormalizeThreadVisibleUserMessages() {
@@ -989,6 +1079,7 @@ function evaluatedVisibleItemsForTurn() {
     "shouldHideSupersededLiveUserMessage",
     "isRawThreadReadMode",
     "shouldPreserveRawThreadVisibleEntry",
+    "renderContextThread",
     "limitRawThreadVisibleEntries",
     "visibleItemsForTurn",
   ].map((name) => functionSourceFrom(appJs, name));
@@ -1012,6 +1103,7 @@ return { state, visibleItemsForTurn };
 
 function evaluatedLatestTurnHelpers() {
   const sources = [
+    "renderContextThread",
     "turnHasDisplayItems",
     "latestTurn",
     "latestRawTurn",
@@ -1140,14 +1232,154 @@ return {
   ].join("\n"))();
 }
 
+function evaluatedThreadStatusPaneContext() {
+  const sources = [
+    "applyThreadStatusToThread",
+    "scheduleThreadStatusDetailRender",
+    "updateThreadListStatus",
+    "localThreadForStatusContext",
+    "snapshotThreadStatus",
+    "restoreThreadStatusSnapshot",
+    "markThreadOptimisticallyActive",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`
+const calls = {
+  hinted: [],
+  statusHints: [],
+  currentRenders: 0,
+  tileRenders: [],
+  merges: 0,
+};
+const listThread = { id: "thread-pane", name: "Pane", status: { type: "idle" } };
+const tileThread = { id: "thread-pane", name: "Pane detail", status: { type: "idle" } };
+const currentThread = { id: "thread-current", name: "Current", status: { type: "idle" } };
+const state = {
+  currentThreadId: "thread-current",
+  currentThread,
+  threads: [listThread],
+  threadTileMode: true,
+  threadTileActiveIds: ["thread-pane"],
+  threadTileDetails: new Map([["thread-pane", tileThread]]),
+};
+function noteSubmittedProcessingThreadHint(id) { calls.hinted.push(id); }
+function updateThreadStatusHints(id, previousStatus, nextStatus, options) {
+  calls.statusHints.push({
+    id,
+    previousType: previousStatus && previousStatus.type,
+    nextType: nextStatus && nextStatus.type,
+    threadId: options && options.thread && options.thread.id,
+    threadName: options && options.threadName,
+    notify: options && options.notify,
+  });
+}
+function threadDisplayName(thread) { return thread && (thread.name || thread.id) || ""; }
+function threadTilePaneIsVisible(id) { return state.threadTileActiveIds.includes(id); }
+function scheduleRenderThreadTilePane(threadId, options = {}) {
+  calls.tileRenders.push({ threadId, preserveScroll: options.preserveScroll });
+  return true;
+}
+function scheduleRenderCurrentThread() { calls.currentRenders += 1; }
+function mergeThreadIntoThreadList() { calls.merges += 1; }
+function pruneHiddenThreads() { calls.pruned = true; }
+${sources.join("\n")}
+return {
+  state,
+  calls,
+  listThread,
+  tileThread,
+  currentThread,
+  snapshotThreadStatus,
+  restoreThreadStatusSnapshot,
+  markThreadOptimisticallyActive,
+  updateThreadListStatus,
+};
+`)();
+}
+
+function evaluatedThreadStatusNotificationContext() {
+  const sources = [
+    "applyThreadStatusToThread",
+    "scheduleThreadStatusDetailRender",
+    "updateThreadListStatus",
+    "localThreadForStatusContext",
+    "applyNotification",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`
+const calls = {
+  statusHints: [],
+  currentRenders: 0,
+  tileRenders: [],
+  tileLoads: [],
+  renderThreads: 0,
+  livePolls: [],
+  viewed: [],
+  clearedBubbles: [],
+};
+const listThread = { id: "thread-pane", name: "Pane", status: { type: "idle" } };
+const tileThread = { id: "thread-pane", name: "Pane detail", status: { type: "idle" } };
+const currentThread = { id: "thread-current", name: "Current", status: { type: "idle" } };
+const state = {
+  currentThreadId: "thread-current",
+  currentThread,
+  threads: [listThread],
+  threadTileMode: true,
+  threadTileActiveIds: ["thread-pane"],
+  threadTileDetails: new Map([["thread-pane", tileThread]]),
+};
+function shouldThrottleThreadNotification() { return false; }
+function clearThreadTileOperationBubble(threadId) { calls.clearedBubbles.push(threadId); }
+function isRunningStatus(status) { return status && status.type === "active"; }
+function threadStatusNotificationEventAtMs(params, fallback) { return params && params.eventAtMs || fallback || 0; }
+function updateThreadStatusHints(id, previousStatus, nextStatus, options) {
+  calls.statusHints.push({
+    id,
+    previousType: previousStatus && previousStatus.type,
+    nextType: nextStatus && nextStatus.type,
+    threadId: options && options.thread && options.thread.id,
+    threadName: options && options.threadName,
+    notify: options && options.notify,
+  });
+}
+function threadDisplayName(thread) { return thread && (thread.name || thread.id) || ""; }
+function pruneHiddenThreads() { calls.pruned = true; }
+function markThreadViewed(id, thread, eventAtMs) { calls.viewed.push({ id, threadId: thread && thread.id, eventAtMs }); }
+function renderCurrentThread() { calls.currentRenders += 1; }
+function scheduleLivePollIfNeeded(delayMs) { calls.livePolls.push(delayMs); }
+function threadTilePaneIsVisible(id) { return state.threadTileActiveIds.includes(id); }
+function scheduleRenderThreadTilePane(threadId, options = {}) {
+  calls.tileRenders.push({ threadId, preserveScroll: options.preserveScroll });
+  return true;
+}
+function scheduleRenderCurrentThread() { calls.currentRenders += 1; }
+function loadThreadTileDetail(threadId, options = {}) {
+  calls.tileLoads.push({ threadId, source: options.source, force: options.force, background: options.background });
+  return Promise.resolve();
+}
+function showError(err) { calls.error = err && err.message || String(err); }
+function scheduleRenderThreads() { calls.renderThreads += 1; }
+${sources.join("\n")}
+return {
+  state,
+  calls,
+  listThread,
+  tileThread,
+  currentThread,
+  applyNotification,
+};
+`)();
+}
+
 function evaluatedThreadPendingApprovalProjection() {
   const sources = [
+    "renderContextThreadId",
     "approvalThreadId",
     "approvalTurnId",
     "isApprovalActive",
     "isApprovalSettled",
     "shouldShowApprovalRequest",
     "requestBelongsToThread",
+    "approvalActionThreadId",
+    "scheduleApprovalThreadRender",
     "pendingApprovalsForThread",
     "permissionSummary",
     "approvalDetailLines",
@@ -1161,6 +1393,9 @@ function evaluatedThreadPendingApprovalProjection() {
     "renderPendingApprovals",
     "upsertServerRequest",
     "syncThreadPendingServerRequests",
+    "serverRequestWithThreadContext",
+    "resolveServerRequest",
+    "answerServerRequest",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
 const HIDDEN_SERVER_REQUEST_METHODS = new Set();
@@ -1169,9 +1404,15 @@ const state = {
   pendingApprovals: new Map(),
   currentThreadId: "thread-approval",
   currentThread: { id: "thread-approval" },
+  renderContextThreadId: "",
+  threadTileMode: false,
 };
 let activity = "";
 let renderCount = 0;
+let tileRenderCalls = [];
+let approvalRemovalCalls = [];
+let apiResult = {};
+const apiCalls = [];
 function escapeHtml(value) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -1182,8 +1423,183 @@ function escapeHtml(value) {
 function entryAnimationClass() { return ""; }
 function markActivity(value) { activity = value; }
 function scheduleRenderCurrentThread() { renderCount += 1; }
+function threadTilePaneIsVisible(threadId) { return String(threadId || "") === "thread-tile"; }
+function scheduleRenderThreadTilePane(threadId) {
+  tileRenderCalls.push(String(threadId || ""));
+  return true;
+}
+function scheduleApprovalRemoval(requestId, delayMs = 6000) {
+  approvalRemovalCalls.push({ requestId: String(requestId || ""), delayMs });
+}
+async function api(url, options) {
+  apiCalls.push({ url, options });
+  return apiResult;
+}
+function setApiResult(value) { apiResult = value; }
+function $(id) { return { classList: { remove() {}, add() {} }, textContent: "" }; }
+function showError(err) { throw err; }
 ${sources.join("\n")}
-return { state, syncThreadPendingServerRequests, renderPendingApprovals, activity: () => activity, renderCount: () => renderCount };
+return {
+  state,
+  syncThreadPendingServerRequests,
+  renderPendingApprovals,
+  upsertServerRequest,
+  resolveServerRequest,
+  answerServerRequest,
+  setApiResult,
+  apiCalls: () => apiCalls.slice(),
+  activity: () => activity,
+  renderCount: () => renderCount,
+  tileRenderCalls: () => tileRenderCalls.slice(),
+  approvalRemovalCalls: () => approvalRemovalCalls.slice(),
+};
+`)();
+}
+
+function evaluatedInTurnApprovalRenderer() {
+  const sources = [
+    "approvalThreadId",
+    "renderContextThreadId",
+    "renderContextThread",
+    "approvalTurnId",
+    "shouldShowApprovalRequest",
+    "requestBelongsToThread",
+    "approvalActionThreadId",
+    "pendingApprovalsForThread",
+    "approvalsForTurn",
+    "permissionSummary",
+    "approvalDetailLines",
+    "isUserInputRequest",
+    "renderUserInputOptions",
+    "renderUserInputActions",
+    "renderApprovalActions",
+    "approvalTitle",
+    "approvalStatusLabel",
+    "isApprovalSettled",
+    "renderApprovalRequest",
+    "renderTurn",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`
+const HIDDEN_SERVER_REQUEST_METHODS = new Set();
+const USER_INPUT_REQUEST_METHODS = new Set(["item/tool/requestUserInput", "mcpServer/elicitation/request"]);
+const state = {
+  pendingApprovals: new Map(),
+  currentThreadId: "thread-current",
+  currentThread: { id: "thread-current" },
+  renderContextThreadId: "thread-pane",
+  renderContextThread: { id: "thread-pane" },
+};
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+function entryAnimationClass() { return ""; }
+function visibleItemsForTurn() {
+  return [{ item: { id: "visible-item", type: "agentMessage" }, sourceIndex: 0 }];
+}
+function renderVisibleItemPatchHtml() { return "<div data-visible-item>visible</div>"; }
+function renderTurnThreadTaskCardDraft() { return ""; }
+function turnHasThreadTaskCardDraftResponse() { return false; }
+function isLatestTurn() { return false; }
+function isLiveTurn() { return false; }
+function turnHasThreadTaskCardRequest() { return false; }
+function renderPendingThreadTaskCardDraft() { return ""; }
+function stableTurnKey(turn, suffix = "") { return [turn && turn.id || "turn", suffix].filter(Boolean).join("|"); }
+function turnFinalSeconds() { return null; }
+function displayTurnStatus() { return "completed"; }
+function formatElapsedTime(seconds) { return String(seconds); }
+${sources.join("\n")}
+return {
+  state,
+  renderTurn,
+};
+`)();
+}
+
+function evaluatedThreadTileApprovalRenderer() {
+  const sources = [
+    "approvalThreadId",
+    "renderContextThreadId",
+    "renderContextThread",
+    "withRenderContextThread",
+    "approvalTurnId",
+    "isApprovalActive",
+    "isApprovalSettled",
+    "shouldShowApprovalRequest",
+    "requestBelongsToThread",
+    "approvalActionThreadId",
+    "pendingApprovalsForThread",
+    "approvalsForTurn",
+    "permissionSummary",
+    "approvalDetailLines",
+    "isUserInputRequest",
+    "renderUserInputOptions",
+    "renderUserInputActions",
+    "renderApprovalActions",
+    "approvalTitle",
+    "approvalStatusLabel",
+    "renderApprovalRequest",
+    "renderPendingApprovals",
+    "renderThreadTileTurn",
+    "renderThreadTilePane",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`
+const HIDDEN_SERVER_REQUEST_METHODS = new Set();
+const USER_INPUT_REQUEST_METHODS = new Set(["item/tool/requestUserInput", "mcpServer/elicitation/request"]);
+const state = {
+  pendingApprovals: new Map(),
+  currentThreadId: "thread-current",
+  currentThread: { id: "thread-current" },
+  renderContextThreadId: "",
+  renderContextThread: null,
+  threadTileLoadingIds: new Set(),
+  threadTileSwitchMenuPaneId: "",
+  threadById: new Map(),
+};
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+function entryAnimationClass() { return ""; }
+function visibleItemsForTurn(turn) {
+  return Array.isArray(turn && turn.items)
+    ? turn.items.map((item, index) => ({ item, sourceIndex: index }))
+    : [];
+}
+function renderVisibleItemPatchHtml(turn, item) {
+  return item ? '<div data-visible-item="' + escapeHtml(item.id || item.type || "item") + '">visible</div>' : "";
+}
+function threadTileDisplayThread(threadId) {
+  return state.threadById.get(String(threadId || "")) || null;
+}
+function threadTitleForDisplay(thread) { return thread && (thread.title || thread.id) || ""; }
+function threadTileSummary() { return null; }
+function turnTimerStateHtml() { return ""; }
+function threadTilePaneTimerState() { return {}; }
+function threadTileError() { return ""; }
+function threadHasVisibleConversationTurns(thread) {
+  return Array.isArray(thread && thread.turns) && thread.turns.length > 0;
+}
+function visibleTurnsForConversation(thread) {
+  return Array.isArray(thread && thread.turns) ? thread.turns : [];
+}
+function renderThreadHistoryNote() { return ""; }
+function threadReadWarningMessage() { return ""; }
+function renderThreadTileOperationDock() { return ""; }
+function renderThreadTileSwitchMenu() { return ""; }
+function effectiveThreadTileSelectedThreadId() { return "thread-pane"; }
+${sources.join("\n")}
+return {
+  state,
+  renderThreadTileTurn,
+  renderThreadTilePane,
+};
 `)();
 }
 
@@ -1213,20 +1629,20 @@ function evaluatedTurnUsageSummaryRenderer() {
 test("context compaction notices update status and collapse repeated turn notices", () => {
   assert.match(functionBody("visibleItemsForTurn"), /const contextEntryByKey = new Map\(\)/);
   assert.match(functionBody("visibleItemsForTurn"), /isContextCompactionItem\(item\)/);
-  assert.match(functionBody("visibleItemsForTurn"), /const notice = contextCompactionNotice\(item, turn\)/);
+  assert.match(functionBody("visibleItemsForTurn"), /const notice = contextCompactionNotice\(item, turn, thread\)/);
   assert.match(functionBody("visibleItemsForTurn"), /if \(!notice\) return/);
   assert.match(functionBody("visibleItemsForTurn"), /visible\[existing\.visibleIndex\] = null/);
   assert.match(functionBody("visibleItemsForTurn"), /const filtered = visible\.filter\(Boolean\)/);
   assert.match(functionBody("isSupersededLiveTurn"), /mobileSupersededLive/);
   assert.match(functionBody("visibleItemsForTurn"), /shouldHideSupersededLiveUserMessage\(turn, item\)/);
   assert.match(functionBody("visibleItemsForTurn"), /filtered\.every\(\(entry\) => isTurnUsageSummaryItem\(entry\.item\)\)/);
-  assert.match(functionBody("visibleItemsForTurn"), /return limitRawThreadVisibleEntries\(filtered\)/);
+  assert.match(functionBody("visibleItemsForTurn"), /return limitRawThreadVisibleEntries\(filtered, thread\)/);
   assert.match(functionBody("visibleItemSignature"), /isContextCompactionItem\(item\)/);
-  assert.match(functionBody("visibleItemSignature"), /const notice = contextCompactionNotice\(item, turn\)/);
+  assert.match(functionBody("visibleItemSignature"), /const notice = contextCompactionNotice\(item, turn, thread\)/);
   assert.match(functionBody("visibleItemSignature"), /if \(!notice\) return null/);
   assert.match(functionBody("visibleItemSignature"), /mobileCompactionStatus: item\.mobileCompactionStatus/);
   assert.match(functionBody("visibleItemSignature"), /notice,/);
-  assert.match(functionBody("conversationRenderSignature"), /visibleItemSignature\(entry\.item, turn\)/);
+  assert.match(functionBody("conversationRenderSignature"), /visibleItemSignature\(entry\.item, turn, thread\)/);
 });
 
 test("raw thread read mode limits visible items per turn while preserving user images", () => {
@@ -1253,17 +1669,21 @@ test("context compaction notices require explicit state and do not infer pending
   assert.match(functionBody("contextCompactionState"), /itemKind === "complete"/);
   assert.match(functionBody("contextCompactionState"), /mobileKind === "complete"/);
   assert.match(functionBody("contextCompactionState"), /itemKind === "pending"/);
-  assert.match(functionBody("contextCompactionState"), /canShowPendingContextCompaction\(turn\)/);
+  assert.match(functionBody("contextCompactionState"), /canShowPendingContextCompaction\(turn, thread\)/);
   assert.match(functionBody("contextCompactionState"), /return ""/);
-  assert.match(functionBody("canShowPendingContextCompaction"), /isLatestTurn\(turn\) && isLiveTurn\(turn\)/);
+  assert.match(functionBody("canShowPendingContextCompaction"), /isLatestTurn\(turn, thread\) && isLiveTurn\(turn, thread\)/);
   assert.doesNotMatch(functionBody("contextCompactionState"), /isContextCompactionType\(item\.type\)/);
-  assert.match(functionBody("renderContextCompaction"), /const notice = contextCompactionNotice\(item, turn\)/);
+  assert.match(functionBody("renderContextCompaction"), /const notice = contextCompactionNotice\(item, turn, thread\)/);
   assert.match(functionBody("renderContextCompaction"), /if \(!notice\) return ""/);
 });
 
 test("visible turn items keep source order after live operations move to the dock", () => {
   const body = functionBody("renderTurn");
-  assert.match(body, /const visibleEntries = visibleItemsForTurn\(turn\);/);
+  assert.match(body, /const thread = renderContextThread\(\);/);
+  assert.match(body, /const visibleEntries = visibleItemsForTurn\(turn, thread\);/);
+  assert.match(body, /renderVisibleItemPatchHtml\(turn, item, previousKeys, sourceIndex, thread\)/);
+  assert.match(body, /isLatestTurn\(turn, thread\) && isLiveTurn\(turn, thread\) && turnHasThreadTaskCardRequest\(turn\)/);
+  assert.match(body, /const timerShowsStatus = isLatestTurn\(turn, thread\) && \(isLiveTurn\(turn, thread\) \|\| turnFinalSeconds\(turn\) != null\);/);
   assert.doesNotMatch(body, /deferLiveFollowupUser/);
   assert.doesNotMatch(body, /candidate\.sourceIndex < sourceIndex/);
   assert.match(body, /return \{ html, sourceIndex, order: 1 \};/);
@@ -1671,17 +2091,41 @@ test("live detail refresh can patch changed visible items without replacing the 
   assert.match(appJs, /function patchVisibleItemDomNode\(/);
   assert.match(appJs, /function visibleItemPatchEntries\(/);
   assert.match(appJs, /function visibleItemPatchShapePreservesExisting\(/);
-  assert.match(appJs, /function patchVisibleItemsOnlyFromRefresh\(/);
-  assert.match(functionBody("patchVisibleItemsOnlyFromRefresh"), /!isLatestTurn\(nextTurn\)/);
-  assert.doesNotMatch(functionBody("patchVisibleItemsOnlyFromRefresh"), /!isLiveTurn\(nextTurn\)/);
-  assert.match(functionBody("patchVisibleItemsOnlyFromRefresh"), /visibleItemPatchShapePreservesExisting\(previousEntries, nextEntries\)/);
-  assert.match(functionBody("patchVisibleItemsOnlyFromRefresh"), /article\.insertBefore\(source, lastPatchedNode \? lastPatchedNode\.nextSibling : article\.firstChild\)/);
-  assert.match(functionBody("patchVisibleItemsOnlyFromRefresh"), /patchVisibleItemDomNode\(nextTurn, nextEntry\.item, previousKeys, nextEntry\.sourceIndex\)/);
-  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /patchVisibleItemsOnlyFromRefresh\(previousTurn, turn, previousKeys\)/);
+  assert.match(appJs, /function planVisibleItemsOnlyFromRefresh\(/);
+  assert.match(appJs, /function applyVisibleItemsOnlyRefreshPatch\(/);
+  assert.match(appJs, /const threadDetailPatchPlanApi = window\.CodexThreadDetailPatchPlan/);
+  assert.match(appJs, /const threadDetailDomPatchApi = window\.CodexThreadDetailDomPatch/);
+  assert.match(appJs, /const threadDetailActionsApi = window\.CodexThreadDetailActions/);
+  assert.match(functionBody("visibleItemPatchShapePreservesExisting"), /threadDetailPatchPlanApi\.visibleItemPatchShapePreservesExisting\(previousEntries, nextEntries\)/);
+  assert.match(functionBody("planVisibleItemsOnlyFromRefresh"), /!isLatestTurn\(nextTurn\)/);
+  assert.doesNotMatch(functionBody("planVisibleItemsOnlyFromRefresh"), /!isLiveTurn\(nextTurn\)/);
+  assert.match(functionBody("planVisibleItemsOnlyFromRefresh"), /threadDetailPatchPlanApi\.planVisibleItemRefreshPatch\(previousEntries, nextEntries\)/);
+  assert.match(functionBody("applyVisibleItemsOnlyRefreshPatch"), /threadDetailDomPatchApi\.applyVisibleItemRefreshDomPatch/);
+  assert.match(functionBody("applyVisibleItemsOnlyRefreshPatch"), /findElementByKey:/);
+  assert.match(functionBody("applyVisibleItemsOnlyRefreshPatch"), /renderElement:/);
+  assert.match(functionBody("applyVisibleItemsOnlyRefreshPatch"), /patchElement:/);
+  assert.doesNotMatch(functionBody("applyVisibleItemsOnlyRefreshPatch"), /for \(const operation of patchPlan\.operations\)/);
+  assert.doesNotMatch(functionBody("applyVisibleItemsOnlyRefreshPatch"), /article\.insertBefore\(source, lastPatchedNode/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /threadDetailPatchPlanApi\.planThreadDetailRefreshDomPatch\(turnPatchEntries\)/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /threadDetailDomPatchApi\.applyThreadDetailPatchTransaction\(\{/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /applyPatch: \(\) => threadDetailDomPatchApi\.applyThreadTurnRefreshDomPatch\(\{/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /const transactionEffectsPlan = threadDetailDomPatchApi\.planThreadDetailRefreshLocalPatchTransactionEffects\(\{/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /const transactionCallbacks = threadDetailRefreshLocalPatchTransactionCallbacks\(transactionEffectsPlan, \{/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /commitEffects: transactionCallbacks\.commitEffects/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /afterSuccess: transactionCallbacks\.afterSuccess/);
+  assert.match(functionBody("threadDetailRefreshLocalPatchTransactionCallback"), /type === "complete-local-conversation-dom-update"/);
+  assert.match(functionBody("threadDetailRefreshLocalPatchTransactionCallback"), /type === "update-live-operation-dock"/);
+  assert.match(functionBody("threadDetailRefreshLocalPatchTransactionCallback"), /type === "bind-current-thread-actions"/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /threadDetailDomPatchApi\.applyThreadTurnRefreshDomPatch/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /applyItemPatch:/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /insertTurnElement:/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /replaceTurnElement:/);
+  assert.doesNotMatch(functionBody("patchCurrentThreadDetailFromRefresh"), /for \(const operation of turnPatchPlan\.operations\)/);
+  assert.doesNotMatch(functionBody("patchCurrentThreadDetailFromRefresh"), /operation\.type === "item-patch"/);
 });
 
 test("visible item refresh patch shape preserves existing keys while appending usage", () => {
-  const preservesExisting = Function(`${functionSourceFrom(appJs, "visibleItemPatchShapePreservesExisting")}\nreturn visibleItemPatchShapePreservesExisting;`)();
+  const preservesExisting = threadDetailPatchPlan.visibleItemPatchShapePreservesExisting;
 
   assert.equal(
     preservesExisting(
@@ -1719,7 +2163,7 @@ test("turn timer prefers live item activity over idle sync labels", () => {
   assert.match(appJs, /function turnHasActiveLiveItems\(/);
   assert.match(appJs, /function liveTurnStartedAtMs\(/);
   assert.match(functionBody("isLiveTurn"), /turnHasActiveLiveItems\(turn\)/);
-  assert.match(functionBody("isLiveTurn"), /isLatestTurn\(turn\) && currentThreadHasActiveRuntimeStatus\(\)/);
+  assert.match(functionBody("isLiveTurn"), /isLatestTurn\(turn, thread\) && currentThreadHasActiveRuntimeStatus\(thread\)/);
   assert.match(functionBody("turnElapsedSeconds"), /liveTurnStartedAtMs\(turn\) \|\| state\.nowMs/);
   assert.match(functionBody("turnHasActiveLiveItems"), /isActiveOperationalItem\(item\)/);
   assert.match(functionBody("liveTurnStartedAtMs"), /numericTimestampMs\(item\.startedAtMs\)/);
@@ -1752,7 +2196,62 @@ test("loading and thread-list state preserve locally visible live turns", () => 
   assert.match(appJs, /function threadIsLoadingWithoutVisibleTurns\(/);
   assert.match(functionBody("conversationRenderSignature"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) return `loading\\|/);
   assert.match(functionBody("conversationRootSignature"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) return `loading\\|/);
-  assert.match(functionBody("renderCurrentThread"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) \{/);
+  assert.match(functionBody("loadThread"), /const loadingShellPlan = threadDetailStateApi\.planThreadOpenLoadingShell\(\{ threadId, summaryThread: summary \}\);/);
+  assert.match(functionBody("loadThread"), /state\.currentThreadId = loadingShellPlan\.currentThreadId \|\| threadId;/);
+  assert.match(functionBody("loadThread"), /state\.currentThread = loadingShellPlan\.thread \|\| \{[\s\S]*id: threadId,[\s\S]*name: threadId,[\s\S]*preview: threadId,[\s\S]*turns: \[\],[\s\S]*mobileLoading: true,[\s\S]*mobileLoadError: "",[\s\S]*\};/);
+  assert.match(functionBody("loadThread"), /const loadingShellPostStatePlan = threadDetailRenderPlanApi\.planThreadDetailLoadingShellPostStateEffects\(\{[\s\S]*threadId,[\s\S]*source,[\s\S]*\}\);/);
+  assert.match(functionBody("loadThread"), /applyThreadDetailPostRenderEffectsPlan\(loadingShellPostStatePlan, \{ thread: state\.currentThread \}\);/);
+  assert.doesNotMatch(functionBody("loadThread"), /followThreadOpenToBottom\(threadId\);\s*\n\s*restoreDraftForCurrentTarget\(\);\s*\n\s*renderComposerSettings\(\);\s*\n\s*syncActiveTurnFromThread\(\);\s*\n\s*renderThreads\(\);\s*\n\s*renderCurrentThread\(\{ stickToBottom: true \}\);/);
+  assert.doesNotMatch(functionBody("loadThread"), /Object\.assign\(\{\}, threadListSummaryFromDetailThread\(summary\) \|\| summary/);
+  assert.match(functionBody("loadThread"), /const cacheReusePlan = planThreadOpenCacheReuse\(\{/);
+  assert.match(functionBody("loadThread"), /recordEmptyCachedDetailReuseBlocked\(cacheReusePlan\.reason, state\.currentThread, \{ source \}\)/);
+  assert.match(functionBody("loadThread"), /if \(cacheReusePlan\.shouldUseCachedCurrent\) \{/);
+  assert.match(functionBody("loadThread"), /if \(cacheReusePlan\.shouldUseCachedCurrent\) \{\s*const renderStartedAt = nowPerfMs\(\);\s*const postMergePlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPostMergeEffects\(\);\s*followThreadOpenToBottom\(threadId\);\s*applyThreadDetailRefreshPostMergeEffectsGroup\(postMergePlan, "merge"\);\s*const threadListRenderMs = applyThreadDetailRefreshTimedPostMergeEffectsGroup\(postMergePlan, "thread-list-render"\);/);
+  assert.doesNotMatch(functionBody("loadThread"), /if \(cacheReusePlan\.shouldUseCachedCurrent\) \{[\s\S]*?mergeThreadIntoThreadList\(state\.currentThread\);[\s\S]*?maybeAutoBackfillThreadHistory\(state\.currentThread, \{ seq: state\.threadLoadSeq, source: "cached-current" \}\);/);
+  assert.doesNotMatch(functionBody("loadThread"), /if \(cacheReusePlan\.shouldUseCachedCurrent\) \{[\s\S]*?const threadListRenderStartedAt = nowPerfMs\(\);\s*renderThreads\(\);[\s\S]*?maybeAutoBackfillThreadHistory\(state\.currentThread, \{ seq: state\.threadLoadSeq, source: "cached-current" \}\);/);
+  assert.match(functionBody("loadThread"), /const cachedCurrentPostRenderPlan = threadDetailRenderPlanApi\.planThreadDetailCachedCurrentPostRenderEffects\(\{[\s\S]*threadId,[\s\S]*seq: state\.threadLoadSeq,[\s\S]*source: "cached-current",[\s\S]*replacedTilePane: replacedTilePaneForThreadListOpen,[\s\S]*hasSideChat: state\.threadSideChats\.has\(threadId\),[\s\S]*\}\);/);
+  assert.match(functionBody("loadThread"), /applyThreadDetailPostRenderEffectsPlan\(cachedCurrentPostRenderPlan, \{ thread: state\.currentThread \}\);/);
+  assert.match(functionBody("applyThreadDetailPostRenderEffect"), /recordEmptyCachedDetailReuseHealthy\(String\(item\.reason \|\| ""\), context\.thread\)/);
+  assert.doesNotMatch(functionBody("loadThread"), /recordEmptyCachedDetailReuseHealthy\("cached-current", state\.currentThread\)/);
+  assert.match(functionBody("loadThread"), /const cachedFirstPaintReportingStage = threadDetailRenderPlanApi\.planThreadDetailFirstPaintReportingStage\(\{[\s\S]*detailRenderMode: "cached-current",[\s\S]*cached: true,[\s\S]*threadHash: diagnosticThreadHash\(threadId\),[\s\S]*\}\);/);
+  assert.match(functionBody("loadThread"), /threadPerformanceMetrics\.threadDetailFirstPaintEventFields\(\s*state\.currentThread,\s*cachedFirstPaintReportingStage\.performanceInput,\s*\);/);
+  assert.match(functionBody("loadThread"), /const cachedTelemetryPlan = threadDetailRenderPlanApi\.planThreadDetailCachedCurrentTelemetryEffects\(Object\.assign\(\{[\s\S]*performanceEvent: firstPaintPerformance,[\s\S]*\}, cachedFirstPaintReportingStage\.telemetryInput\)\);[\s\S]*applyThreadDetailFirstPaintTelemetryEffectsPlan\(cachedTelemetryPlan, \{ thread: state\.currentThread \}\);/);
+  assert.doesNotMatch(functionBody("loadThread"), /postClientEvent\("thread_switch_cached"/);
+  assert.doesNotMatch(functionBody("loadThread"), /postPerformanceEvent\("thread_detail_first_paint", firstPaintPerformance\)/);
+  assert.doesNotMatch(functionBody("loadThread"), /threadHasReusableLoadedDetailState\(state\.currentThread\)/);
+  assert.doesNotMatch(functionBody("loadThread"), /threadHasLoadedDetailState\(state\.currentThread\)/);
+  assert.match(functionBody("loadThread"), /const firstPaintPreRenderPlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintPreRenderEffects\(\{[\s\S]*threadId,[\s\S]*hasEvents: Boolean\(state\.events\),[\s\S]*\}\);/);
+  assert.match(functionBody("loadThread"), /applyThreadDetailPostRenderEffectsPlan\(firstPaintPreRenderPlan, \{ thread: state\.currentThread \}\);/);
+  assert.match(functionBody("loadThread"), /const firstPaintDraftRestorePlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintDraftRestoreEffects\(\);[\s\S]*applyThreadDetailPostRenderEffectsPlan\(firstPaintDraftRestorePlan, \{ thread: state\.currentThread \}\);/);
+  assert.doesNotMatch(functionBody("loadThread"), /localStorage\.setItem\(STORAGE_THREAD_ID, threadId\);\s*\n\s*draftStore\.setTargetKey\(""\);\s*\n\s*followThreadOpenToBottom\(threadId\);/);
+  assert.match(functionBody("loadThreads"), /threadListSummaryFromDetailThread\(thread\) \|\| thread/);
+  assert.match(functionSourceFrom(appJs, "renderCurrentThread"), /let thread = state\.currentThread;/);
+  assert.match(functionBody("renderCurrentThread"), /threadDetailStateApi\.planSummaryOnlyCurrentThreadRecovery\(\{/);
+  assert.match(functionBody("renderCurrentThread"), /threadDetailStateApi\.planSummaryOnlyCurrentThreadRecoveryEffects\(summaryRecoveryPlan\)/);
+  assert.match(functionBody("renderCurrentThread"), /applySummaryOnlyCurrentThreadRecoveryEffectsPlan\(summaryRecoveryEffectsPlan\)/);
+  assert.match(functionBody("applySummaryOnlyCurrentThreadRecoveryEffect"), /postClientEvent\(String\(item\.name \|\| ""\), item\.payload \|\| \{\}\)/);
+  assert.match(functionBody("applySummaryOnlyCurrentThreadRecoveryEffect"), /scheduleCurrentThreadRefresh\(Math\.max\(0, Number\(item\.delayMs \|\| 0\)\), String\(item\.reason \|\| "refresh"\)\)/);
+  assert.doesNotMatch(functionBody("renderCurrentThread"), /postClientEvent\("thread_summary_detail_recovery", summaryRecoveryPlan\.event\)/);
+  assert.doesNotMatch(functionBody("renderCurrentThread"), /scheduleCurrentThreadRefresh\(0, "summary-detail-recovery"\)/);
+  assert.match(functionBody("renderCurrentThread"), /threadDetailRenderPlanApi\.planSingleThreadEarlyShellExecution\(\{/);
+  assert.match(functionBody("renderCurrentThread"), /loadingWithoutVisibleTurns: threadIsLoadingWithoutVisibleTurns\(thread\)/);
+  assert.match(functionBody("renderCurrentThread"), /loadError: thread\.mobileLoadError/);
+  assert.match(functionBody("renderCurrentThread"), /if \(earlyShellPlan\.shouldRender\) \{/);
+  assert.match(functionBody("renderCurrentThread"), /threadDetailRenderPlanApi\.planSingleThreadShellConversationUpdate\(\{[\s\S]*shellPlan: earlyShellPlan,/);
+  assert.match(functionBody("renderCurrentThread"), /updateConversationHtml\(\s*earlyUpdatePlan\.html,\s*earlyUpdatePlan\.conversationSignature,\s*earlyUpdatePlan\.options,/);
+  assert.match(functionBody("renderCurrentThread"), /threadDetailRenderPlanApi\.planSingleThreadShellPostUpdateEffects\(\{[\s\S]*bindRetry: earlyShellPlan\.bindRetry,/);
+  assert.match(functionBody("renderCurrentThread"), /applySingleThreadShellPostUpdateEffectsPlan\(earlyPostUpdateEffectsPlan,/);
+  assert.match(functionBody("renderCurrentThread"), /threadDetailRenderPlanApi\.planSingleThreadFullRenderShell/);
+  assert.doesNotMatch(functionBody("renderCurrentThread"), /Thread failed:/);
+  assert.doesNotMatch(functionBody("renderCurrentThread"), /No visible turns\./);
+  assert.match(appJs, /const EMPTY_DETAIL_HISTORY_RECOVERY_COOLDOWN_MS = 30000;/);
+  assert.match(appJs, /function maybeRecoverEmptyDetailWithHistoryEvidence\(/);
+  assert.doesNotMatch(appJs, /function threadHasNonemptyHistoryEvidence\(/);
+  assert.match(functionBody("maybeRecoverEmptyDetailWithHistoryEvidence"), /threadDetailStateApi\.planEmptyDetailHistoryRecovery\(\{/);
+  assert.match(functionBody("maybeRecoverEmptyDetailWithHistoryEvidence"), /lastRecoveredAtMs: state\.emptyDetailHistoryRecoveryAtByKey\.get\(basePlan\.recoveryKey\)/);
+  assert.match(functionBody("maybeRecoverEmptyDetailWithHistoryEvidence"), /recordEmptyVisibleDetailMismatch\(plan\.diagnosticReason \|\| "empty_render_with_history_evidence", thread, details\)/);
+  assert.match(functionBody("maybeRecoverEmptyDetailWithHistoryEvidence"), /scheduleCurrentThreadRefresh\(0, "empty-detail-history-evidence"\)/);
+  assert.match(functionBody("maybeRecoverEmptyDetailWithHistoryEvidence"), /postClientEvent\("empty_detail_history_recovery", plan\.event \|\| \{\}\)/);
   assert.match(functionBody("renderCurrentThread"), /const loadingNote = thread\.mobileLoading/);
   assert.match(functionBody("reconcileThreadStatusHints"), /currentLiveTurnSupportsThreadStatusHint\(id\)/);
   assert.match(functionBody("statusIconInfo"), /state\.runningThreadIds\.has\(id\)[\s\S]*currentLiveTurnSupportsThreadStatusHint\(id\)/);
@@ -1766,16 +2265,18 @@ test("long agent messages keep a stable render path when a turn completes", () =
   assert.doesNotMatch(functionBody("visibleItemsForTurn"), /shouldDeferLiveAgentMessage/);
   assert.match(appJs, /function shouldRenderAfterAppend\(turn, itemType, field, previousValue, nextValue, options = \{\}\)/);
   assert.match(appJs, /function shouldDeferLiveFinalReceipt\(turn, itemType\)/);
-  assert.match(functionBody("shouldDeferLiveFinalReceipt"), /turnHasOperationalItems\(turn\)/);
+  assert.doesNotMatch(appJs, /function turnHasOperationalItems\(/);
+  assert.doesNotMatch(functionBody("shouldDeferLiveFinalReceipt"), /isOperationalItem|turnHasOperationalItems/);
+  assert.match(functionBody("shouldDeferLiveFinalReceipt"), /return false;/);
   assert.match(appJs, /function shouldRenderAfterUpsert\(turn, item\)/);
   assert.match(functionBody("shouldRenderAfterUpsert"), /shouldDeferLiveFinalReceipt\(turn, item && item\.type\)/);
   assert.match(functionBody("upsertItem"), /const canPatchExistingItem = index >= 0;/);
   assert.match(functionBody("upsertItem"), /let structureChanged = false;/);
   assert.match(functionBody("upsertItem"), /if \(structureChanged\) scheduleRenderCurrentThread\(\);[\s\S]*else if \(canPatchExistingItem\) \{[\s\S]*patchVisibleItemDom\(turn, nextItem\)[\s\S]*\} else if \(!insertVisibleItemDom\(turn, nextItem\)\)/);
-  assert.match(functionBody("shouldRenderAfterAppend"), /options\.render === "defer-final-receipt" && shouldDeferLiveFinalReceipt\(turn, itemType\)/);
+  assert.doesNotMatch(functionBody("shouldRenderAfterAppend"), /defer-final-receipt|shouldDeferLiveFinalReceipt/);
   assert.doesNotMatch(functionBody("shouldRenderAfterAppend"), /previousLength < LONG_RECEIPT_SCROLL_CHARS && nextLength <= LONG_RECEIPT_SCROLL_CHARS/);
   assert.match(functionBody("appendToItem"), /shouldRenderAfterAppend\(turn, itemType, field, previousValue, nextValue, options\)/);
-  assert.match(functionBody("applyNotification"), /appendToItem\(params\.turnId, params\.itemId, "agentMessage", "text", params\.delta \|\| "", 0, \{ render: "defer-final-receipt" \}\)/);
+  assert.match(functionBody("applyNotification"), /appendToItem\(params\.turnId, params\.itemId, "agentMessage", "text", params\.delta \|\| "", 0\)/);
   assert.match(appJs, /function shouldScrollToLongReceiptStart\(turn\)/);
   assert.match(functionBody("shouldScrollToLongReceiptStart"), /finalReceiptTextForTurn\(turn\)\.length >= LONG_RECEIPT_SCROLL_CHARS/);
   assert.doesNotMatch(functionBody("applyNotification"), /renderCurrentThread\(shouldScrollToLongReceiptStart\(turn\) \? \{ scrollToTurnReceiptStart: params\.turn\.id \} : \{\}\)/);
@@ -1786,6 +2287,34 @@ test("long agent messages keep a stable render path when a turn completes", () =
   assert.match(appJs, /function mergeIncomingOrderedItem\(/);
   assert.match(functionBody("mergeItemsPreservingLocalVisible"), /for \(const incomingItem of incomingItems \|\| \[\]\)/);
   assert.match(functionBody("mergeItemsPreservingLocalVisible"), /findUnusedExistingItemIndexForIncoming\(incomingItem, existingItems \|\| \[\], usedExistingIndexes, incomingTurn\)/);
+});
+
+test("live agent message deltas render even while command operations are active", () => {
+  const sources = [
+    "shouldDeferLiveFinalReceipt",
+    "shouldRenderAfterUpsert",
+    "shouldRenderAfterAppend",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const harness = Function(`
+${sources.join("\n")}
+return { shouldDeferLiveFinalReceipt, shouldRenderAfterUpsert, shouldRenderAfterAppend };
+`)();
+  const turn = {
+    id: "turn-live",
+    status: { type: "active" },
+    items: [
+      { id: "cmd", type: "commandExecution", status: "running" },
+      { id: "agent", type: "agentMessage", text: "visible progress" },
+    ],
+  };
+  const item = turn.items[1];
+
+  assert.equal(harness.shouldDeferLiveFinalReceipt(turn, "agentMessage"), false);
+  assert.equal(harness.shouldRenderAfterUpsert(turn, item), true);
+  assert.equal(
+    harness.shouldRenderAfterAppend(turn, "agentMessage", "text", "", "visible progress", { render: "defer-final-receipt" }),
+    true,
+  );
 });
 
 test("turn diagnostic items render as explicit runtime diagnostics", () => {
@@ -1985,6 +2514,19 @@ test("imageView upload screenshots use opaque uploads route instead of file prev
   assert.doesNotMatch(html, /\/api\/files\/preview\/content/);
 });
 
+test("imageView local file paths use render context thread for preview content urls", () => {
+  const harness = evaluatedImageViewRenderer({ harness: true });
+  harness.state.renderContextThreadId = "thread-pane";
+  const html = harness.renderImageView({
+    type: "imageView",
+    path: "/Users/example/project/output.png",
+  });
+
+  assert.match(html, /class="image-view"/);
+  assert.match(html, /data-protected-image-src="\/api\/files\/preview\/content\?threadId=thread-pane&amp;path=%2FUsers%2Fexample%2Fproject%2Foutput\.png&amp;key=test-key"/);
+  assert.doesNotMatch(html, /threadId=thread-id/);
+});
+
 test("protected image auth recovery covers uploaded images", () => {
   assert.match(functionBody("protectedImageUpstreamPathname"), /"\/api\/generated-images\/file"/);
   assert.match(functionBody("protectedImageUpstreamPathname"), /"\/api\/uploads\/file"/);
@@ -2156,7 +2698,8 @@ test("failed conversation images collapse into a neutral fallback", () => {
   assert.equal(image.dataset.imageLoadError, "1");
   assert.match(appJs, /\$\("conversation"\)\.addEventListener\("error", handleConversationImageError, true\)/);
   assert.match(appJs, /\$\("conversation"\)\.addEventListener\("load", handleConversationImageLoad, true\)/);
-  assert.match(functionBody("updateConversationHtml"), /scheduleFailedAppImageScan\(conversation/);
+  assert.match(functionBody("updateConversationHtml"), /applyConversationHtmlUpdateEffectsPlan\(effectsPlan, \{ root: conversation \}\)/);
+  assert.match(functionBody("applyThreadDetailDomUpdateEffect"), /hydrateThreadDetailSurface\(context\.root, item\.hydrateOptions \|\| \{\}\)/);
   assert.match(functionBody("scheduleFailedAppImageScan"), /hydrateProtectedAppImages\(root, "scheduled-scan"\)/);
   assert.match(functionBody("handleConversationImageError"), /handleProtectedAppImageError\(image\)/);
   assert.match(functionBody("shouldHydrateProtectedAppImage"), /isIosWebKitBrowser\(\) \|\| imageDiagnosticSourceKind\(src\) === "upload" \|\| shouldRenderProtectedImageDirectly\(src\)/);
@@ -2749,12 +3292,796 @@ test("conversation image urls rerender when the auth key version changes", () =>
   assert.match(functionBody("exchangePluginLaunchSession"), /setAuthKey\(result\.session_key\)/);
 });
 
+test("conversation projection diagnostics use the tile-board signature in tile mode", () => {
+  const helpers = evaluatedConversationProjectionDiagnosticSnapshot();
+  helpers.state.threadTileMode = true;
+  helpers.state.renderedConversationSignature = "tile-current";
+  helpers.setTileDom(true);
+
+  const snapshot = helpers.conversationProjectionDiagnosticSnapshot("refresh-metadata", { renderMode: "metadata-only" });
+
+  assert.equal(snapshot.renderedSignature, "tile-current");
+  assert.equal(snapshot.currentSignature, "tile-current");
+  assert.equal(snapshot.context.route_kind, "thread-tile");
+  assert.equal(snapshot.context.read_mode, "mixed");
+  assert.equal(snapshot.counts.pane_count, 2);
+  assert.equal(snapshot.counts.visible_count, 6);
+  assert.deepEqual(helpers.calls().filter((entry) => entry[0] === "single"), []);
+  assert.ok(helpers.calls().some((entry) => entry[0] === "tile"));
+});
+
+test("conversation projection diagnostics skip mismatched tile transition surfaces", () => {
+  const helpers = evaluatedConversationProjectionDiagnosticSnapshot();
+  helpers.state.threadTileMode = true;
+  helpers.setTileDom(false);
+  assert.equal(helpers.conversationProjectionDiagnosticSnapshot("transition", {}), null);
+
+  helpers.state.threadTileMode = false;
+  helpers.setTileDom(true);
+  assert.equal(helpers.conversationProjectionDiagnosticSnapshot("transition", {}), null);
+});
+
+test("conversation projection diagnostics use the single-thread signature outside tile mode", () => {
+  const helpers = evaluatedConversationProjectionDiagnosticSnapshot();
+  helpers.state.threadTileMode = false;
+  helpers.state.renderedConversationSignature = "single-current";
+  helpers.setTileDom(false);
+
+  const snapshot = helpers.conversationProjectionDiagnosticSnapshot("first-paint", { renderMode: "first-paint" });
+
+  assert.equal(snapshot.renderedSignature, "single-current");
+  assert.equal(snapshot.currentSignature, "single-current");
+  assert.equal(snapshot.context.read_mode, "recent");
+  assert.equal(snapshot.context.render_mode, "first-paint");
+  assert.equal(snapshot.counts.visible_count, 3);
+  assert.ok(helpers.calls().some((entry) => entry[0] === "single"));
+  assert.deepEqual(helpers.calls().filter((entry) => entry[0] === "tile"), []);
+});
+
+test("conversation projection diagnostic snapshot delegates planning to helper", () => {
+  const body = functionBody("conversationProjectionDiagnosticSnapshot");
+  assert.match(body, /threadDiagnosticEventsApi\.conversationProjectionDiagnosticSnapshot\(\{/);
+  assert.match(body, /singleSignature: conversationRenderSignature/);
+  assert.match(body, /tileLayout: threadTileLayout/);
+  assert.match(body, /tileCandidateIds: threadTileCandidateIds/);
+  assert.match(body, /tileRenderSignature: threadTileRenderSignature/);
+  assert.match(body, /visibleShape: visibleConversationShape/);
+  assert.doesNotMatch(body, /ids\.reduce/);
+  assert.doesNotMatch(body, /route_kind: "thread-tile"/);
+});
+
+test("conversation projection consistency delegates report payloads to diagnostic helpers", () => {
+  const body = functionBody("checkConversationProjectionConsistency");
+  assert.match(body, /recordPrimaryShellSelectionHealthy\(source, state\.currentThread\)/);
+  assert.match(body, /const orderSnapshot = conversationTurnOrderDiagnosticSnapshot\(source, extra\);/);
+  assert.match(body, /threadDiagnosticEventsApi\.conversationProjectionConsistencyEffects\(\{ snapshot, orderSnapshot \}\)/);
+  assert.match(body, /applyConversationProjectionConsistencyEffectsPlan\(effectsPlan\)/);
+  assert.match(appJs, /function applyConversationProjectionConsistencyEffect\(effect\)/);
+  assert.match(functionBody("applyConversationProjectionConsistencyEffect"), /recordHomeAiDiagnosticFailure\(item\.diagnostic \|\| \{\}\)/);
+  assert.match(functionBody("applyConversationProjectionConsistencyEffect"), /recordHomeAiDiagnosticSuccess\(item\.diagnostic \|\| \{\}\)/);
+  assert.match(functionBody("applyConversationProjectionConsistencyEffectsPlan"), /for \(const effect of effects\) applyConversationProjectionConsistencyEffect\(effect\)/);
+  assert.doesNotMatch(body, /threadDiagnosticEventsApi\.hasRenderSignatureMismatch\(snapshot\)/);
+  assert.doesNotMatch(body, /threadDiagnosticEventsApi\.hasDuplicateRenderKeys\(snapshot\)/);
+  assert.doesNotMatch(body, /threadDiagnosticEventsApi\.hasTurnOrderMismatch\(orderSnapshot\)/);
+  assert.doesNotMatch(body, /threadDiagnosticEventsApi\.renderSignatureMismatchDiagnosticEvent/);
+  assert.doesNotMatch(body, /threadDiagnosticEventsApi\.duplicateRenderKeysDiagnosticEvent/);
+  assert.doesNotMatch(body, /threadDiagnosticEventsApi\.turnOrderMismatchDiagnosticEvent/);
+  assert.doesNotMatch(body, /diagnostic_type: "render_signature_mismatch"/);
+  assert.doesNotMatch(body, /diagnostic_type: "duplicate_render_keys"/);
+  assert.match(appJs, /const threadDiagnosticEventsApi = window\.CodexThreadDiagnosticEvents;/);
+});
+
+test("conversation turn-order diagnostics delegate empty DOM mismatch planning to helper", () => {
+  const body = functionBody("conversationTurnOrderDiagnosticSnapshot");
+  assert.match(body, /threadDiagnosticEventsApi\.turnOrderDiagnosticSnapshot\(\{/);
+  assert.match(body, /expectedTurnIds: expectedIds/);
+  assert.match(body, /domTurnIds: domIds/);
+  assert.match(body, /turnHash: diagnosticTurnHash\(expectedLatestId\)/);
+  assert.doesNotMatch(body, /!domIds\.length\) return null/);
+  assert.doesNotMatch(body, /orderMismatchCount = Math\.abs/);
+});
+
+test("primary shell selection conflicts are diagnosed instead of silently clearing thread detail", () => {
+  assert.match(appJs, /lastThreadDetailRenderEvidence: null/);
+  assert.match(appJs, /const PRIMARY_SHELL_CONFLICT_EVIDENCE_MS = 30000/);
+  assert.match(functionBody("rememberThreadDetailRenderEvidence"), /visibleConversationShape\(thread\)/);
+  assert.match(functionBody("rememberThreadDetailRenderEvidence"), /threadDetailStateApi\.buildThreadDetailRenderEvidence\(\{/);
+  assert.match(functionBody("rememberThreadDetailRenderEvidence"), /state\.lastThreadDetailRenderEvidence = evidence/);
+  assert.match(functionBody("recentThreadDetailRenderEvidence"), /threadDetailStateApi\.recentThreadDetailRenderEvidence\(\{/);
+  assert.match(functionBody("recordPrimaryShellSelectionConflict"), /threadDiagnosticEventsApi\.primaryShellSelectionConflictDiagnosticEvent/);
+  assert.match(functionBody("recordPrimaryShellSelectionHealthy"), /threadDiagnosticEventsApi\.primaryShellSelectionConflictDiagnosticSuccess/);
+  assert.match(functionBody("showHermesPluginPrimaryPage"), /recordPrimaryShellSelectionConflict\("primary_shell_suppressed_thread_open"/);
+  assert.match(functionBody("showHermesPluginPrimaryPage"), /if \(force\) clearThreadDetailRenderEvidence/);
+  assert.match(functionBody("updateConversationHtml"), /checkPrimaryShellSelectionConflictAfterRender\(\{/);
+  assert.match(functionBody("checkPrimaryShellSelectionConflictAfterRender"), /isHermesPluginPrimaryPage\(\)/);
+  assert.match(functionBody("checkPrimaryShellSelectionConflictAfterRender"), /recentThreadDetailRenderEvidence\(\)/);
+  assert.match(functionBody("checkPrimaryShellSelectionConflictAfterRender"), /recordPrimaryShellSelectionConflict\("primary_shell_render_after_detail"/);
+});
+
+test("empty visible detail mismatches are diagnosed from recent detail evidence", () => {
+  assert.match(functionBody("recordEmptyVisibleDetailMismatch"), /threadDiagnosticEventsApi\.emptyVisibleDetailMismatchDiagnosticEvent/);
+  assert.match(functionBody("recordEmptyVisibleDetailHealthy"), /threadDiagnosticEventsApi\.emptyVisibleDetailMismatchDiagnosticSuccess/);
+  assert.match(functionBody("checkConversationProjectionConsistency"), /recordEmptyVisibleDetailHealthy\(source, state\.currentThread\)/);
+  assert.match(functionBody("checkEmptyVisibleDetailMismatchAfterRender"), /shellPlan\.emptyMessage !== "No visible turns\."/);
+  assert.match(functionBody("checkEmptyVisibleDetailMismatchAfterRender"), /recentThreadDetailRenderEvidence\(\)/);
+  assert.match(functionBody("checkEmptyVisibleDetailMismatchAfterRender"), /threadDetailStateApi\.hasNonemptyThreadDetailRenderEvidence\(/);
+  assert.match(functionBody("checkEmptyVisibleDetailMismatchAfterRender"), /threadDetailStateApi\.sameThreadDetailRenderEvidence\(\{ evidence, threadId \}\)/);
+  assert.match(functionBody("checkEmptyVisibleDetailMismatchAfterRender"), /recordEmptyVisibleDetailMismatch\("empty_render_after_nonempty_detail"/);
+  assert.match(functionBody("renderCurrentThread"), /threadDetailRenderPlanApi\.planSingleThreadShellPostUpdateEffects\(\{[\s\S]*checkEmptyVisibleDetailMismatch: true,/);
+  assert.match(functionBody("renderCurrentThread"), /applySingleThreadShellPostUpdateEffectsPlan\(postUpdateEffectsPlan,/);
+  assert.match(functionBody("applySingleThreadShellPostUpdateEffect"), /checkEmptyVisibleDetailMismatchAfterRender\(context\.thread, context\.shellPlan, \{/);
+  assert.match(functionBody("loadThread"), /const firstPaintResponsePlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintResponseEffects\(\{[\s\S]*source,[\s\S]*\}\);[\s\S]*applyThreadDetailRefreshResponseEffectsPlan\(firstPaintResponsePlan, \{ thread: result\.thread \}\);/);
+  assert.match(functionBody("refreshCurrentThread"), /threadDetailRenderPlanApi\.planThreadDetailRefreshResponseEffects\(\{/);
+  assert.match(functionBody("refreshCurrentThread"), /applyThreadDetailRefreshResponseEffectsPlan\(responseEffectsPlan, \{ thread: result\.thread \}\);/);
+  assert.match(functionBody("applyThreadDetailRefreshResponseEffect"), /markThreadDetailLoaded\(thread\);/);
+  assert.match(functionBody("applyThreadDetailRefreshResponseEffect"), /rememberThreadDetailRenderEvidence\(thread, String\(item\.source \|\| "refresh-detail-api"\)\);/);
+  assert.match(functionBody("applyThreadDetailRefreshResponseEffect"), /syncThreadPendingServerRequests\(thread\);/);
+  assert.match(functionBody("backfillFullThreadDetail"), /const fullBackfillResponsePlan = threadDetailRenderPlanApi\.planThreadDetailFullBackfillResponseEffects\(\{[\s\S]*source: options\.source \|\| "unknown",[\s\S]*\}\);[\s\S]*applyThreadDetailRefreshResponseEffectsPlan\(fullBackfillResponsePlan, \{ thread: result\.thread \}\);/);
+});
+
+test("thread refresh render planning invalidates empty DOM for nonempty single-thread detail", () => {
+  const body = functionBody("refreshCurrentThread");
+  assert.match(body, /const nextVisibleShape = visibleConversationShape\(state\.currentThread\);/);
+  assert.match(body, /const refreshRenderStage = threadDetailRenderPlanApi\.planThreadDetailRefreshRenderStage\(\{/);
+  assert.match(body, /singleThreadSurfaceAvailable: canPatchSingleThreadConversationDom\(\{ threadId \}\)/);
+  assert.match(body, /renderedDomTurnCount: conversationDomTurnIds\(\)\.length/);
+  assert.match(body, /renderedDomItemCount: currentDomShape\.itemCount/);
+  assert.match(body, /duplicateRenderKeyCount: currentDomShape\.duplicateRenderKeyCount/);
+  assert.match(body, /expectedTurnIds: visibleRenderableTurnIds\(state\.currentThread\)/);
+  assert.match(body, /renderedDomTurnIds: conversationDomTurnIds\(\)/);
+  assert.match(body, /nextVisibleShape,/);
+  assert.match(body, /const renderPlan = refreshRenderStage\.renderPlan;/);
+  assert.doesNotMatch(body, /planThreadDetailRefreshRenderInput\(\{/);
+  assert.doesNotMatch(body, /planThreadDetailRefreshRender\(refreshRenderInput\)/);
+});
+
+test("conversation html update invalidates stable signatures when the DOM has lost visible turns", () => {
+  const updateBody = functionBody("updateConversationHtml");
+  assert.match(updateBody, /const preDomShape = conversationDomShape\(\);/);
+  assert.match(updateBody, /const expectedVisibleTurnCount = Math\.max\(0, Number\(options\.expectedVisibleTurnCount \|\| 0\)\);/);
+  assert.match(updateBody, /const expectedVisibleItemCount = Math\.max\(0, Number\(options\.expectedVisibleItemCount \|\| 0\)\);/);
+  assert.match(updateBody, /: preDomShape\.turnCount/);
+  assert.match(updateBody, /: preDomShape\.itemCount/);
+  assert.match(updateBody, /: preDomShape\.duplicateRenderKeyCount/);
+  assert.match(updateBody, /expectedVisibleTurnCount,/);
+  assert.match(updateBody, /renderedDomTurnCount,/);
+  assert.match(updateBody, /expectedVisibleItemCount,/);
+  assert.match(updateBody, /renderedDomItemCount,/);
+  assert.match(updateBody, /duplicateRenderKeyCount,/);
+  assert.match(updateBody, /expectedTurnIds,/);
+  assert.match(updateBody, /renderedDomTurnIds,/);
+  assert.match(updateBody, /threadDetailDomPatchApi\.planConversationDomAuthorityInvalidation\(\{/);
+  assert.match(updateBody, /if \(authorityInvalidationPlan\.shouldRecordMismatch\)/);
+  assert.match(updateBody, /recordEmptyVisibleDetailMismatch\([\s\S]*authorityInvalidationPlan\.mismatchReason/);
+  assert.match(updateBody, /if \(authorityInvalidationPlan\.shouldPostClientEvent\)/);
+  assert.match(updateBody, /postClientEvent\(authorityInvalidationPlan\.clientEventName, authorityInvalidationPlan\.clientEventPayload\)/);
+  assert.match(updateBody, /threadDetailDomPatchApi\.planConversationPostApplyDomConsistency\(\{/);
+  assert.match(updateBody, /if \(postApplyConsistencyPlan\.shouldFallbackToInnerHtml && conversation\)/);
+  assert.match(updateBody, /threadDiagnosticEventsApi\.detailPatchRejectedDiagnosticEvent\(postApplyConsistencyPlan\.diagnosticInput \|\| \{\}\)/);
+  assert.match(updateBody, /threadDetailDomPatchApi\.planConversationHtmlPerformanceEvent\(\{/);
+  assert.match(updateBody, /updatePlan,/);
+  assert.match(updateBody, /applicationPlan,/);
+  assert.match(functionBody("visibleConversationShape"), /visibleItemsForTurn\(turn, thread\)\.length/);
+  assert.match(functionBody("renderCurrentThread"), /expectedVisibleTurnCount: turns\.length/);
+  assert.match(functionBody("renderCurrentThread"), /expectedVisibleItemCount: renderVisibleShape\.visibleItemCount/);
+  assert.match(functionBody("renderCurrentThread"), /duplicateRenderKeyCount: renderDomShape\.duplicateRenderKeyCount/);
+  assert.match(functionBody("renderCurrentThread"), /updateConversationHtml\(shellUpdatePlan\.html, shellUpdatePlan\.conversationSignature, shellUpdatePlan\.options\)/);
+  assert.match(functionBody("visibleRenderableTurnIds"), /visibleItemsForTurn\(turn, thread\)\.length/);
+  assert.match(functionBody("threadTileVisibleShape"), /visibleTurnsForConversation\(thread\)/);
+  assert.match(functionBody("threadTileVisibleShape"), /visibleItemsForTurn\(turn, thread\)\.length/);
+  assert.match(functionBody("threadTileVisibleTurnCount"), /threadTileVisibleShape\(ids\)\.turnCount/);
+  assert.match(functionBody("threadTileDomTurnCount"), /article\.thread-tile-turn\[data-thread-tile-turn\]/);
+  assert.match(functionBody("renderThreadTileLayout"), /const visibleShape = threadTileVisibleShape\(ids\);/);
+  assert.match(functionBody("renderThreadTileLayout"), /const expectedVisibleTurnCount = visibleShape\.turnCount;/);
+  assert.match(functionBody("renderThreadTileLayout"), /const renderedDomTurnCount = threadTileDomTurnCount\(\);/);
+  assert.match(functionBody("renderThreadTileLayout"), /const renderedDomShape = conversationDomShape\(\);/);
+  assert.match(functionBody("renderThreadTileLayout"), /expectedVisibleItemCount: visibleShape\.visibleItemCount/);
+  assert.match(functionBody("renderThreadTileLayout"), /routeKind: "thread-tile"/);
+  assert.match(functionBody("renderThreadTileLayout"), /currentVisibleItems: visibleShape\.visibleItemCount/);
+  assert.match(functionBody("renderThreadTileLayout"), /source: "thread-tile-render"/);
+});
+
+test("thread detail refresh failure delegates diagnostic payloads to helper", () => {
+  const body = functionBody("refreshCurrentThread");
+  assert.match(body, /const failureEffectsPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshFailureDiagnosticEffects\(\{/);
+  assert.match(body, /errorCode: diagnosticErrorCode\(err, "thread_detail_refresh_failed"\)/);
+  assert.match(body, /durationBucket: diagnosticDurationBucket\(roundedDurationMs\(refreshStartedAt\)\)/);
+  assert.match(body, /statusCode: diagnosticErrorStatus\(err\)/);
+  assert.match(body, /threadHash: diagnosticThreadHash\(threadId\)/);
+  assert.match(body, /applyThreadDetailRefreshFailureDiagnosticEffectsPlan\(failureEffectsPlan\);/);
+  assert.match(appJs, /function applyThreadDetailRefreshFailureDiagnosticEffectsPlan\(plan\)/);
+  assert.match(functionBody("applyThreadDetailRefreshFailureDiagnosticEffect"), /threadDiagnosticEventsApi\.threadDetailRefreshFailedDiagnosticEvent\(item\.diagnosticInput \|\| \{\}\)/);
+  assert.doesNotMatch(body, /recordHomeAiDiagnosticFailure\(\{[\s\S]*diagnostic_type: "thread_detail_refresh_failed"/);
+  assert.doesNotMatch(body, /recordHomeAiDiagnosticFailure\(threadDiagnosticEventsApi\.threadDetailRefreshFailedDiagnosticEvent\(\{/);
+});
+
+test("thread detail load failure delegates diagnostic payloads to helper", () => {
+  const body = functionBody("loadThread");
+  assert.match(body, /recordHomeAiDiagnosticFailure\(threadDiagnosticEventsApi\.threadDetailLoadFailedDiagnosticEvent\(\{/);
+  assert.match(body, /errorCode: diagnosticErrorCode\(err, "thread_detail_load_failed"\)/);
+  assert.match(body, /durationBucket: diagnosticDurationBucket\(roundedDurationMs\(switchStartedAt\)\)/);
+  assert.match(body, /statusCode: diagnosticErrorStatus\(err\)/);
+  assert.match(body, /threadHash: diagnosticThreadHash\(threadId\)/);
+  assert.doesNotMatch(body, /recordHomeAiDiagnosticFailure\(\{[\s\S]*diagnostic_type: "thread_detail_load_failed"/);
+});
+
+test("thread detail switch start, cancel, and error events delegate payloads to render plan", () => {
+  const body = functionBody("loadThread");
+  assert.match(body, /const startEventPlan = threadDetailRenderPlanApi\.planThreadDetailSwitchStartClientEvent\(\{[\s\S]*source,[\s\S]*fromThreadId,[\s\S]*toThreadId: threadId \|\| "",[\s\S]*listAgeMs,[\s\S]*currentHadThread: Boolean\(state\.currentThread\),[\s\S]*eventOpen: Boolean\(state\.events && state\.events\.readyState === EventSource\.OPEN\),[\s\S]*\}\);[\s\S]*applyThreadDetailSwitchClientEventPlan\(startEventPlan\);/);
+  assert.match(body, /const cancelledEventPlan = threadDetailRenderPlanApi\.planThreadDetailSwitchCancelledClientEvent\(\{[\s\S]*source,[\s\S]*threadId,[\s\S]*elapsedMs: roundedDurationMs\(switchStartedAt\),[\s\S]*apiElapsedMs: roundedDurationMs\(apiStartedAt\),[\s\S]*\}\);[\s\S]*applyThreadDetailSwitchClientEventPlan\(cancelledEventPlan\);/);
+  assert.match(body, /const loadErrorPlan = threadDetailRenderPlanApi\.planThreadDetailLoadErrorEffects\(\{[\s\S]*threadId,[\s\S]*errorMessage: err\.message \|\| String\(err\),[\s\S]*\}\);[\s\S]*applyThreadDetailPostRenderEffectsPlan\(loadErrorPlan, \{ thread: state\.currentThread \}\);/);
+  assert.match(body, /const errorEventPlan = threadDetailRenderPlanApi\.planThreadDetailSwitchErrorClientEvent\(\{[\s\S]*source,[\s\S]*threadId,[\s\S]*elapsedMs: roundedDurationMs\(switchStartedAt\),[\s\S]*apiElapsedMs: roundedDurationMs\(apiStartedAt\),[\s\S]*error: err\.message \|\| String\(err\),[\s\S]*\}\);[\s\S]*applyThreadDetailSwitchClientEventPlan\(errorEventPlan\);/);
+  assert.match(body, /const cancelledEventPlan = threadDetailRenderPlanApi\.planThreadDetailSwitchCancelledClientEvent\(\{[\s\S]*apiElapsedMs,[\s\S]*\}\);[\s\S]*applyThreadDetailSwitchClientEventPlan\(cancelledEventPlan\);[\s\S]*return;/);
+  assert.match(functionBody("applyThreadDetailSwitchClientEventEffect"), /postClientEvent\(String\(item\.eventName \|\| ""\), item\.payload \|\| \{\}\);/);
+  assert.doesNotMatch(body, /state\.currentThread = Object\.assign\(\{\}, state\.currentThread \|\| \{ id: threadId,[\s\S]*syncActiveTurnFromThread\(\);\s*renderThreads\(\);\s*renderCurrentThread\(\);\s*updateComposerControls\(\);/);
+  assert.doesNotMatch(body, /postClientEvent\("thread_switch_start"/);
+  assert.doesNotMatch(body, /postClientEvent\("thread_switch_cancelled"/);
+  assert.doesNotMatch(body, /postClientEvent\("thread_switch_error"/);
+});
+
+test("thread tile local patch paths refresh the pane instead of writing a single-thread signature", () => {
+  assert.match(appJs, /function threadDetailDomPatchSurface\(/);
+  assert.match(functionBody("threadDetailDomPatchSurface"), /threadDetailPatchPlanApi\.planThreadDetailDomPatchSurface\(/);
+  assert.match(appJs, /function canPatchSingleThreadConversationDom\(/);
+  assert.match(appJs, /function patchCurrentThreadTilePaneFromState\(/);
+  assert.match(functionBody("patchCurrentThreadTilePaneFromState"), /threadDetailDomPatchSurface\(options\)/);
+  assert.match(functionBody("patchCurrentThreadTilePaneFromState"), /plan\.surface !== "thread-tile-pane"/);
+  assert.match(functionBody("patchCurrentThreadTilePaneFromState"), /clearGlobalLiveOperationDockForThreadTiles\(\)/);
+  assert.match(functionBody("patchCurrentThreadTilePaneFromState"), /patchThreadTilePane\(plan\.threadId, Object\.assign\(\{ preserveScroll: true \}, options\)\)/);
+
+  assert.match(appJs, /function completeLocalConversationDomUpdate\(root, wasNearBottom, userReadingCurrentTurn, options = \{\}\)/);
+  assert.match(functionBody("completeLocalConversationDomUpdate"), /hasOption\("tilePanePatched"\)[\s\S]*patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);
+  assert.match(functionBody("completeLocalConversationDomUpdate"), /threadDetailDomPatchApi\.planLocalConversationDomUpdateCompletionSnapshot\(\{/);
+  assert.match(functionBody("completeLocalConversationDomUpdate"), /threadDetailDomPatchApi\.planLocalConversationDomUpdateCompletion\(completionSnapshot\)/);
+  assert.match(functionBody("completeLocalConversationDomUpdate"), /const canPatchSingleThread = tilePanePatched[\s\S]*hasOption\("canPatchSingleThread"\)/);
+  assert.match(functionBody("completeLocalConversationDomUpdate"), /threadDetailDomPatchApi\.planLocalConversationDomUpdateCompletionEffects\(completionPlan\)/);
+  assert.match(functionBody("completeLocalConversationDomUpdate"), /applyLocalConversationDomUpdateCompletionEffectsPlan\(effectsPlan, \{ root \}\)/);
+  assert.match(functionBody("applyThreadDetailDomUpdateEffect"), /state\.renderedConversationSignature = String\(item\.value \|\| ""\);/);
+  assert.doesNotMatch(functionBody("completeLocalConversationDomUpdate"), /const conversationSignature =/);
+  assert.doesNotMatch(functionBody("completeLocalConversationDomUpdate"), /const patchShellSignature =/);
+  assert.doesNotMatch(functionBody("completeLocalConversationDomUpdate"), /state\.renderedConversationSignature = completionPlan\.nextRenderedConversationSignature/);
+  assert.match(functionBody("completeLocalConversationDomUpdate"), /const providedSnapshot = options && options\.completionSnapshot/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /const completionSnapshot = threadDetailDomPatchApi\.planLocalConversationDomUpdateCompletionSnapshot\(\{/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /hasRoot: Boolean\(conversation\)/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /scrollAction: scrollPlan\.action/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /threadDetailDomPatchApi\.planThreadDetailRefreshLocalPatchTransactionEffects\(\{[\s\S]*completionSnapshot,[\s\S]*\}\)/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /threadDetailRefreshLocalPatchTransactionCallbacks\(transactionEffectsPlan, \{/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /commitEffects: transactionCallbacks\.commitEffects/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /afterSuccess: transactionCallbacks\.afterSuccess/);
+  assert.doesNotMatch(functionBody("patchCurrentThreadDetailFromRefresh"), /const completionSnapshot = \{/);
+  assert.match(functionBody("threadDetailRefreshLocalPatchTransactionCallback"), /type === "complete-local-conversation-dom-update"/);
+  assert.match(functionBody("threadDetailRefreshLocalPatchTransactionCallback"), /\{ completionSnapshot: item\.completionSnapshot \|\| \{\} \}/);
+  assert.match(functionBody("threadDetailRefreshLocalPatchTransactionCallback"), /type === "update-live-operation-dock"/);
+  assert.match(functionBody("threadDetailRefreshLocalPatchTransactionCallback"), /type === "bind-current-thread-actions"/);
+  assert.doesNotMatch(functionBody("patchCurrentThreadDetailFromRefresh"), /commitEffects: \[[\s\S]*name: "complete-local-conversation-dom-update"/);
+  assert.doesNotMatch(functionBody("patchCurrentThreadDetailFromRefresh"), /afterSuccess: \[[\s\S]*name: "update-live-operation-dock"/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /conversationSignature: conversationRenderSignature\(nextThread\)/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /patchShellSignature: conversationPatchShellSignature\(nextThread\)/);
+  assert.match(functionBody("updateLiveOperationDockForLocalPatch"), /patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);
+  assert.match(functionBody("updateLiveOperationDockForLocalPatch"), /if \(!canPatchSingleThreadConversationDom\(\)\) return false;/);
+  assert.match(functionBody("insertVisibleItemDom"), /patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);
+  assert.match(functionBody("insertVisibleItemDom"), /if \(!canPatchSingleThreadConversationDom\(\)\) return false;/);
+  assert.match(functionBody("insertVisibleItemDom"), /const thread = renderContextThread\(\);/);
+  assert.match(functionBody("insertVisibleItemDom"), /const entries = visibleItemsForTurn\(turn, thread\);/);
+  assert.match(functionBody("insertVisibleItemDom"), /sourceIndexForVisibleItem\(turn, item, thread\)/);
+  assert.match(functionBody("insertVisibleItemDom"), /threadDetailDomPatchApi\.insertVisibleItemElement\(\{/);
+  assert.match(functionBody("patchVisibleItemDom"), /patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);
+  assert.match(functionBody("patchVisibleItemDom"), /if \(!canPatchSingleThreadConversationDom\(\)\) return false;/);
+  assert.match(appJs, /function sourceIndexForVisibleItem\(turn, item, thread = null\)/);
+  assert.match(functionBody("sourceIndexForVisibleItem"), /const contextThread = renderContextThread\(thread\);/);
+  assert.match(functionBody("sourceIndexForVisibleItem"), /visibleItemsForTurn\(turn, contextThread\)\.find/);
+  assert.match(functionBody("patchVisibleItemDomNode"), /sourceIndexForVisibleItem\(turn, item, renderContextThread\(\)\)/);
+  assert.match(functionBody("patchVisibleItemElement"), /sourceIndexForVisibleItem\(turn, item, renderContextThread\(\)\)/);
+  assert.match(functionBody("visibleItemPatchEntries"), /const thread = renderContextThread\(\);/);
+  assert.match(functionBody("visibleItemPatchEntries"), /visibleItemsForTurn\(turn, thread\)\.map/);
+  assert.match(functionBody("visibleItemPatchEntries"), /visibleItemSignature\(item, turn, thread\)/);
+  assert.match(functionBody("patchLiveTextItemDom"), /patchCurrentThreadTilePaneFromState\(\{ preserveScroll: true \}\)/);
+  assert.match(functionBody("patchLiveTextItemDom"), /if \(!canPatchSingleThreadConversationDom\(\)\) return false;/);
+  assert.match(functionBody("patchLiveTextItemDom"), /sourceIndexForVisibleItem\(turn, item, renderContextThread\(\)\)/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /const targetThreadId = nextThread\.id \|\| state\.currentThreadId;/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /patchCurrentThreadTilePaneFromState\(\{ threadId: targetThreadId, preserveScroll: true \}\)/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /canPatchSingleThreadConversationDom\(\{ threadId: targetThreadId \}\)/);
+});
+
+test("current-thread refresh patches the current tile pane for metadata-only tile updates", () => {
+  const body = functionBody("refreshCurrentThread");
+  assert.doesNotMatch(body, /let locallyPatchedDetail = false;/);
+  assert.doesNotMatch(body, /let tilePanePatchedDetail = false;/);
+  assert.match(body, /const patchSurfaceExecutionStage = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchSurfaceExecutionStage\(\{/);
+  assert.match(body, /shouldRenderDetail,[\s\S]*renderPlan,[\s\S]*threadTileMode: state\.threadTileMode,[\s\S]*threadTileConversationSurface,[\s\S]*tilePatchPlan,/);
+  assert.doesNotMatch(body, /planThreadDetailRefreshPatchSurfaceResultStage\(\{/);
+  assert.doesNotMatch(body, /planThreadDetailRefreshPatchExecutionStage\(\{/);
+  assert.doesNotMatch(body, /const patchExecutionPlan = patchExecutionStage\.patchExecutionPlan;/);
+  assert.match(body, /const patchAttemptEffectsPlan = patchSurfaceExecutionStage\.patchAttemptEffectsPlan;/);
+  assert.match(body, /const patchAttempt = applyThreadDetailRefreshPatchAttemptEffectsPlan\(patchAttemptEffectsPlan, \{/);
+  assert.doesNotMatch(body, /tilePanePatchedDetail = patchAttempt\.tilePanePatchedDetail;/);
+  assert.doesNotMatch(body, /locallyPatchedDetail = patchAttempt\.locallyPatchedDetail;/);
+  assert.doesNotMatch(body, /if \(patchExecutionPlan\.tryTilePanePatch\)/);
+  assert.doesNotMatch(body, /if \(shouldRenderDetail && !tilePanePatchedDetail && patchExecutionPlan\.tryLocalPatch\)/);
+  assert.doesNotMatch(body, /renderPlan\.canPatch && !tileSurfaceRefresh/);
+  assert.doesNotMatch(body, /canPatch: renderPlan\.canPatch/);
+  assert.doesNotMatch(body, /tileSurfaceRefresh: patchSurfacePlan\.tileSurfaceRefresh/);
+  assert.match(appJs, /function applyThreadDetailRefreshPatchAttemptEffectsPlan\(plan, context = \{\}\)/);
+  assert.match(functionBody("applyThreadDetailRefreshPatchAttemptEffectsPlan"), /let result = threadDetailRenderPlanApi\.emptyThreadDetailRefreshPatchAttempt\(\);/);
+  assert.match(functionBody("applyThreadDetailRefreshPatchAttemptEffectsPlan"), /threadDetailRenderPlanApi\.threadDetailRefreshPatchAttemptEffectContext\(context, result\)/);
+  assert.match(functionBody("applyThreadDetailRefreshPatchAttemptEffectsPlan"), /threadDetailRenderPlanApi\.reduceThreadDetailRefreshPatchAttempt\(result, attempt\)/);
+  assert.doesNotMatch(functionBody("applyThreadDetailRefreshPatchAttemptEffectsPlan"), /tilePanePatchMs \+=/);
+  assert.doesNotMatch(functionBody("applyThreadDetailRefreshPatchAttemptEffectsPlan"), /localPatchMs \+=/);
+  assert.match(functionBody("applyThreadDetailRefreshPatchAttemptEffect"), /patchCurrentThreadTilePaneFromState\(\{[\s\S]*threadId: context\.threadId,[\s\S]*preserveScroll: item\.preserveScroll !== false,/);
+  assert.match(functionBody("applyThreadDetailRefreshPatchAttemptEffect"), /patchCurrentThreadDetailFromRefresh\([\s\S]*context\.previousThread,[\s\S]*state\.currentThread,[\s\S]*context\.previousConversationSignature,/);
+  assert.match(functionBody("applyThreadDetailRefreshPatchAttemptEffect"), /const patchResult = patchCurrentThreadDetailFromRefresh\(/);
+  assert.match(functionBody("applyThreadDetailRefreshPatchAttemptEffect"), /patchRejectReason: patched \? "" : String\(\(patchResult && patchResult\.reason\) \|\| "unknown"\)/);
+  assert.match(functionBody("applyThreadDetailRefreshPatchAttemptEffect"), /item\.skipWhenTilePanePatched && context\.tilePanePatchedDetail/);
+  assert.match(body, /const patchAttemptResultEvidenceStage = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchAttemptResultEvidenceStage\(\{/);
+  assert.match(body, /patchAttempt,[\s\S]*renderPlan,[\s\S]*readMode: result\.thread && result\.thread\.mobileReadMode/);
+  assert.doesNotMatch(body, /let patchAttemptResultStage = patchAttemptResultEvidenceStage\.patchAttemptResultStage;/);
+  assert.match(body, /const patchRejectedVisibleShapeEvidence = applyThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffectsPlan\([\s\S]*patchAttemptResultEvidenceStage\.visibleShapeEvidenceEffectsPlan,[\s\S]*previousThread,[\s\S]*nextThread: state\.currentThread,[\s\S]*\);/);
+  assert.match(body, /const patchAttemptResultResolutionStage = threadDetailRenderPlanApi\.planThreadDetailRefreshPatchAttemptResultEvidenceResolutionStage\(\{/);
+  assert.match(body, /patchAttemptResultStage: patchAttemptResultEvidenceStage\.patchAttemptResultStage,[\s\S]*visibleShapeEvidence: patchRejectedVisibleShapeEvidence,/);
+  assert.match(body, /const patchAttemptResultStage = patchAttemptResultResolutionStage\.patchAttemptResultStage;/);
+  assert.doesNotMatch(body, /if \(patchRejectedVisibleShapeEvidence\.collected\)/);
+  assert.doesNotMatch(body, /planThreadDetailRefreshPatchAttemptResultEvidenceCompletionStage\(\{/);
+  assert.doesNotMatch(body, /previousVisibleShape: visibleConversationShape\(previousThread\)/);
+  assert.doesNotMatch(body, /nextVisibleShape: visibleConversationShape\(state\.currentThread\)/);
+  assert.match(body, /const patchAttemptResult = patchAttemptResultStage\.patchAttemptResult;/);
+  assert.doesNotMatch(body, /locallyPatchedDetail = patchAttemptResult\.locallyPatchedDetail;/);
+  assert.doesNotMatch(body, /tilePanePatchedDetail = patchAttemptResult\.tilePanePatchedDetail;/);
+  assert.match(appJs, /function applyThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffectsPlan\(plan, context = \{\}\)/);
+  assert.match(functionBody("applyThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffect"), /previousVisibleShape: visibleConversationShape\(context\.previousThread\)/);
+  assert.match(functionBody("applyThreadDetailRefreshPatchRejectedVisibleShapeEvidenceEffect"), /nextVisibleShape: visibleConversationShape\(context\.nextThread\)/);
+  assert.match(functionBody("rejectThreadDetailPatch"), /threadDetailDomPatchApi\.threadDetailPatchResult\(false, reason \|\| "unknown"\)/);
+  assert.match(functionBody("acceptThreadDetailPatch"), /threadDetailDomPatchApi\.threadDetailPatchResult\(true, reason \|\| "patched"\)/);
+  assert.doesNotMatch(appJs, /threadDetailPatchRejectReason/);
+  assert.doesNotMatch(body, /detailPatchMs = patchAttemptResult\.detailPatchMs;/);
+  assert.doesNotMatch(body, /patchRejectReason = patchAttemptResult\.patchRejectReason;/);
+  assert.doesNotMatch(body, /threadDetailRenderPlanApi\.planThreadDetailRefreshPatchAttemptResultStage\(\{/);
+  assert.doesNotMatch(body, /planThreadDetailRefreshPatchAttemptResult\(\{/);
+  assert.doesNotMatch(body, /planThreadDetailRefreshPatchRejectedDiagnostic\(\{/);
+  assert.doesNotMatch(body, /planThreadDetailRefreshPatchRejectedDiagnosticEffects\(\{/);
+  assert.match(body, /applyThreadDetailRefreshPatchRejectedDiagnosticEffectsPlan\(patchAttemptResultStage\.patchRejectedDiagnosticEffectsPlan\);/);
+  assert.match(appJs, /function applyThreadDetailRefreshPatchRejectedDiagnosticEffectsPlan\(plan\)/);
+  assert.match(functionBody("applyThreadDetailRefreshPatchRejectedDiagnosticEffect"), /threadDiagnosticEventsApi\.detailPatchRejectedDiagnosticEvent\(item\.diagnosticInput \|\| \{\}\)/);
+  assert.doesNotMatch(body, /if \(patchRejectedDiagnosticPlan\.shouldReport\)/);
+  assert.match(body, /const outcomeExecutionStage = threadDetailRenderPlanApi\.planThreadDetailRefreshOutcomeExecutionStage\(\{/);
+  assert.match(body, /renderPlan,[\s\S]*patchAttemptResult,/);
+  assert.match(body, /const renderOutcome = outcomeExecutionStage\.renderOutcome;/);
+  assert.doesNotMatch(body, /locallyPatchedDetail = renderOutcome\.locallyPatchedDetail;/);
+  assert.doesNotMatch(body, /tilePanePatchedDetail = renderOutcome\.tilePanePatchedDetail;/);
+  assert.doesNotMatch(body, /finalizeThreadDetailRenderPlan\(renderPlan, patchAttemptResult\.finalizeResult\)/);
+  assert.doesNotMatch(body, /detailRenderMode = renderOutcome\.detailRenderMode;/);
+  assert.doesNotMatch(body, /refreshRenderAction = renderOutcome\.renderAction;/);
+  assert.doesNotMatch(body, /let renderOutcome = null;/);
+  assert.doesNotMatch(body, /planThreadDetailRefreshOutcomeExecution\(renderOutcome\)/);
+  assert.doesNotMatch(body, /planThreadDetailRefreshExecutionEffects\(executionPlan\)/);
+  assert.match(body, /const executionTimings = applyThreadDetailRefreshExecutionEffectsPlan\(outcomeExecutionStage\.executionEffectsPlan\);/);
+  assert.match(body, /metadataUpdateMs \+= executionTimings\.metadataUpdateMs;/);
+  assert.match(body, /conversationRenderMs \+= executionTimings\.conversationRenderMs;/);
+  assert.doesNotMatch(body, /for \(const effect of executionEffects\)/);
+  assert.doesNotMatch(body, /executionPlan\.executionAction === "metadata-effects"/);
+  assert.doesNotMatch(body, /executionPlan\.executionAction === "full-render"/);
+  assert.match(appJs, /function applyThreadDetailRefreshExecutionEffectsPlan\(plan\)/);
+  assert.match(functionBody("applyThreadDetailRefreshExecutionEffectsPlan"), /for \(const effect of effects\) \{/);
+  assert.match(functionBody("applyThreadDetailRefreshExecutionEffectsPlan"), /applyThreadDetailRefreshExecutionEffect\(effect\)/);
+  assert.match(appJs, /function applyThreadDetailRefreshExecutionEffect\(effect\)/);
+  assert.match(functionBody("applyThreadDetailRefreshExecutionEffect"), /Thread detail refresh metadata effects are empty/);
+  assert.match(functionBody("applyThreadDetailRefreshExecutionEffect"), /for \(const metadataEffect of metadataEffects\) applyThreadDetailRefreshMetadataEffect\(metadataEffect\);/);
+  assert.match(functionBody("applyThreadDetailRefreshExecutionEffect"), /renderCurrentThread\(\);/);
+  assert.match(functionBody("applyThreadDetailRefreshExecutionEffect"), /Unknown thread detail refresh execution action/);
+  assert.match(appJs, /function applyThreadDetailRefreshMetadataEffect\(effect\)/);
+  assert.doesNotMatch(body, /planThreadDetailRefreshConsistencyCheckEffects\(executionPlan\.consistencyCheck \|\| \{\}\)/);
+  assert.match(body, /applyThreadDetailRefreshConsistencyCheckEffectsPlan\(outcomeExecutionStage\.consistencyCheckEffectsPlan\);/);
+  assert.match(functionBody("applyThreadDetailRefreshConsistencyCheckEffect"), /checkConversationProjectionConsistency\(String\(item\.phase \|\| ""\), \{ renderMode: String\(item\.renderMode \|\| ""\) \}\);/);
+  assert.doesNotMatch(body, /if \(consistencyCheck\.shouldCheck\)/);
+  assert.match(body, /const refreshReportingStage = threadDetailRenderPlanApi\.planThreadDetailRefreshReportingStage\(\{/);
+  assert.match(body, /shouldRenderDetail,[\s\S]*renderPlan,[\s\S]*renderOutcome,[\s\S]*patchAttemptResult,[\s\S]*timings: \{/);
+  assert.match(body, /eventName: "thread_refresh_ms",[\s\S]*throttleKey: "thread_refresh_ms",[\s\S]*minIntervalMs: PERF_EVENT_THROTTLE_MS,[\s\S]*action: "thread-detail-refresh",[\s\S]*threadHash: diagnosticThreadHash\(threadId\),/);
+  assert.doesNotMatch(body, /planThreadDetailRefreshPerformanceInput\(\{/);
+  assert.match(body, /const refreshPerformance = threadPerformanceMetrics\.threadDetailRefreshEventFields\([\s\S]*result\.thread,[\s\S]*refreshReportingStage\.performanceInput,[\s\S]*\);/);
+  assert.match(body, /const refreshReportingEffectsStage = threadDetailRenderPlanApi\.planThreadDetailRefreshReportingEffectsStage\(\{/);
+  assert.match(body, /performanceEvent: refreshPerformance,[\s\S]*telemetryConfig: refreshReportingStage\.telemetryConfig,[\s\S]*completionConfig: refreshReportingStage\.completionConfig,/);
+  assert.doesNotMatch(body, /planThreadDetailRefreshTelemetryEffects\(\{/);
+  assert.match(body, /applyThreadDetailRefreshTelemetryEffectsPlan\(refreshReportingEffectsStage\.telemetryEffectsPlan, \{ thread: result\.thread \}\);/);
+  assert.match(appJs, /function applyThreadDetailRefreshTelemetryEffectsPlan\(plan, context = \{\}\)/);
+  assert.match(functionBody("applyThreadDetailRefreshTelemetryEffect"), /postPerformanceEvent\(String\(item\.eventName \|\| ""\), item\.payload \|\| \{\}, item\.options \|\| \{\}\);/);
+  assert.match(functionBody("applyThreadDetailRefreshTelemetryEffect"), /recordThreadDetailResponseDiagnostics\(item\.performanceEvent \|\| \{\}, \{/);
+  assert.match(functionBody("applyThreadDetailRefreshTelemetryEffect"), /thread: context\.thread/);
+  assert.doesNotMatch(body, /planThreadDetailRefreshCompletionEffects\(\{/);
+  assert.match(body, /applyThreadDetailRefreshCompletionEffectsPlan\(refreshReportingEffectsStage\.completionEffectsPlan\);/);
+  assert.doesNotMatch(body, /for \(const effect of completionPlan\.effects\) applyThreadDetailRefreshCompletionEffect\(effect\);/);
+  assert.match(appJs, /function applyThreadDetailRefreshCompletionEffectsPlan\(plan\)/);
+  assert.match(functionBody("applyThreadDetailRefreshCompletionEffectsPlan"), /for \(const effect of effects\) applyThreadDetailRefreshCompletionEffect\(effect\);/);
+  assert.doesNotMatch(body, /recordHomeAiDiagnosticSuccess\(\{[\s\S]*thread_detail_refresh_failed/);
+});
+
+test("thread detail response diagnostics delegate outcome effects to helper", () => {
+  const body = functionBody("recordThreadDetailResponseDiagnostics");
+  assert.match(body, /const slowPlan = threadPerformanceMetrics\.planThreadDetailSlowPathDiagnostic\(performanceEvent, \{/);
+  assert.match(body, /const contractPlan = threadPerformanceMetrics\.planThreadDetailResponseContractDiagnostic\(performanceEvent, \{/);
+  assert.match(body, /const effectsPlan = threadDiagnosticEventsApi\.threadDetailResponseDiagnosticEffects\(\{/);
+  assert.match(body, /slowPlan,/);
+  assert.match(body, /slowSuccessInput: \{/);
+  assert.match(body, /contractPlan,/);
+  assert.match(body, /applyThreadDetailResponseDiagnosticEffectsPlan\(effectsPlan\);/);
+  assert.match(appJs, /function applyThreadDetailResponseDiagnosticEffectsPlan\(plan\)/);
+  assert.match(functionBody("applyThreadDetailResponseDiagnosticEffect"), /recordHomeAiDiagnosticFailure\(item\.diagnostic \|\| \{\}\)/);
+  assert.match(functionBody("applyThreadDetailResponseDiagnosticEffect"), /recordHomeAiDiagnosticSuccess\(item\.diagnostic \|\| \{\}\)/);
+  assert.doesNotMatch(body, /if \(slowPlan\.shouldReport\)/);
+  assert.doesNotMatch(body, /if \(contractPlan\.shouldReport\)/);
+  assert.doesNotMatch(body, /threadDetailSlowPathDiagnosticEvent\(slowPlan\)/);
+  assert.doesNotMatch(body, /threadDetailResponseContractDiagnosticEvent\(contractPlan\)/);
+});
+
 test("image view render keys include their image source", () => {
   const body = functionBody("stableItemKey");
   assert.match(body, /item\.type === "imageView" \|\| item\.type === "imageGeneration"/);
   assert.match(body, /imageViewContentUrl\(item\)/);
   assert.match(body, /imageViewUrl\(item\)/);
   assert.match(body, /stableTextHash\(imageSource\)/);
+});
+
+test("stable render keys use pane render context before global current thread", () => {
+  const sources = [
+    "renderContextThread",
+    "renderContextThreadId",
+    "stableItemKey",
+    "stableOperationRenderKey",
+    "stableTurnKey",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const result = Function(`
+const state = {
+  currentThreadId: "current-thread",
+  currentThread: { id: "current-object-thread" },
+  renderContextThreadId: "pane-thread",
+};
+function operationGroupKey(item) { return item && item.groupKey || ""; }
+${sources.join("\n")}
+return {
+  itemKey: stableItemKey({ id: "turn-a" }, { id: "item-a", type: "text" }, 0),
+  operationKey: stableOperationRenderKey({ id: "turn-a" }, { id: "op-a", groupKey: "op-group" }, 0),
+  turnKey: stableTurnKey({ id: "turn-a" }),
+};
+`)();
+
+  assert.equal(result.itemKey, "item|pane-thread|turn-a|item-a");
+  assert.equal(result.operationKey, "live-operation|pane-thread|turn-a|op-group");
+  assert.equal(result.turnKey, "turn|pane-thread|turn-a");
+});
+
+test("live turn helpers use pane render context thread before global current thread", () => {
+  const sources = [
+    "renderContextThread",
+    "withRenderContextThread",
+    "turnHasDisplayItems",
+    "latestTurn",
+    "latestRawTurn",
+    "currentThreadHasActiveRuntimeStatus",
+    "isLatestTurn",
+    "isLiveTurn",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const result = Function(`
+const state = {
+  activeTurnId: "current-active",
+  currentThreadId: "current-thread",
+  currentThread: {
+    id: "current-thread",
+    status: { type: "active" },
+    turns: [
+      { id: "current-old", status: { type: "completed" }, items: [{ id: "current-old-item" }] },
+      { id: "current-latest", status: { type: "idle" }, items: [{ id: "current-latest-item" }] },
+    ],
+  },
+  renderContextThreadId: "",
+  renderContextThread: null,
+};
+function isTurnComplete(turn) { return Boolean(turn && turn.complete); }
+function isRunningStatus(status) { return Boolean(status && (status === "running" || status.type === "active" || status.type === "running")); }
+function isStaleActiveStatus() { return false; }
+function isIncompleteInterruptedTurn() { return false; }
+function turnHasActiveLiveItems() { return false; }
+${sources.join("\n")}
+const paneThread = {
+  id: "pane-thread",
+  status: { type: "idle" },
+  turns: [
+    { id: "pane-old", status: { type: "completed" }, items: [{ id: "pane-old-item" }] },
+    { id: "pane-latest", status: { type: "idle" }, items: [{ id: "pane-latest-item" }] },
+  ],
+};
+const activePaneThread = Object.assign({}, paneThread, { status: { type: "active" } });
+return {
+  outsidePaneLatest: isLatestTurn(paneThread.turns[1]),
+  insidePaneLatest: withRenderContextThread(paneThread, () => isLatestTurn(paneThread.turns[1])),
+  insideCurrentLatest: withRenderContextThread(paneThread, () => isLatestTurn(state.currentThread.turns[1])),
+  paneRuntimeDoesNotUseCurrentActiveTurn: withRenderContextThread(paneThread, () => currentThreadHasActiveRuntimeStatus()),
+  paneLiveUsesPaneStatus: withRenderContextThread(activePaneThread, () => isLiveTurn(activePaneThread.turns[1])),
+  restoredCurrentLatest: isLatestTurn(state.currentThread.turns[1]),
+};
+`)();
+
+  assert.equal(result.outsidePaneLatest, false);
+  assert.equal(result.insidePaneLatest, true);
+  assert.equal(result.insideCurrentLatest, false);
+  assert.equal(result.paneRuntimeDoesNotUseCurrentActiveTurn, false);
+  assert.equal(result.paneLiveUsesPaneStatus, true);
+  assert.equal(result.restoredCurrentLatest, true);
+});
+
+test("visible item signatures use explicit pane thread for context compaction state", () => {
+  const sources = [
+    "statusText",
+    "contextCompactionStatusKind",
+    "renderContextThread",
+    "turnHasDisplayItems",
+    "latestTurn",
+    "currentThreadHasActiveRuntimeStatus",
+    "isLatestTurn",
+    "isLiveTurn",
+    "canShowPendingContextCompaction",
+    "contextCompactionState",
+    "contextCompactionNotice",
+    "visibleItemSignature",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const result = Function(`
+const CONTEXT_COMPACTION_PENDING_NOTICE = "Context compaction pending";
+const CONTEXT_COMPACTION_COMPLETE_NOTICE = "Context compaction complete";
+const state = {
+  activeTurnId: "",
+  currentThreadId: "current-thread",
+  currentThread: {
+    id: "current-thread",
+    status: { type: "active" },
+    turns: [
+      { id: "current-latest", status: { type: "running" }, items: [{ id: "current-item" }] },
+    ],
+  },
+  renderContextThread: null,
+};
+function isReasoningItem() { return false; }
+function isContextCompactionItem(item) { return Boolean(item && item.type === "contextCompaction"); }
+function isOperationalItem() { return false; }
+function isTurnUsageSummaryItem() { return false; }
+function isTurnComplete() { return false; }
+function isRunningStatus(status) { return Boolean(status && (status === "running" || status.type === "active" || status.type === "running")); }
+function isStaleActiveStatus() { return false; }
+function isIncompleteInterruptedTurn() { return false; }
+function turnHasActiveLiveItems() { return false; }
+${sources.join("\n")}
+const paneTurn = { id: "pane-latest", status: { type: "idle" }, items: [{ id: "pane-item" }] };
+const paneThread = { id: "pane-thread", status: { type: "active" }, turns: [paneTurn] };
+const item = { id: "context-item", type: "contextCompaction", status: { type: "pending" } };
+return {
+  withoutThread: visibleItemSignature(item, paneTurn),
+  withThread: visibleItemSignature(item, paneTurn, paneThread),
+};
+`)();
+
+  assert.equal(result.withoutThread, null);
+  assert.equal(result.withThread.notice, "Context compaction pending");
+  assert.equal(result.withThread.id, "context-item");
+});
+
+test("thread tile visible shape uses pane thread context for visible item filtering", () => {
+  const sources = [
+    "statusText",
+    "contextCompactionStatusKind",
+    "renderContextThread",
+    "turnHasDisplayItems",
+    "latestTurn",
+    "currentThreadHasActiveRuntimeStatus",
+    "isLatestTurn",
+    "isLiveTurn",
+    "canShowPendingContextCompaction",
+    "contextCompactionState",
+    "contextCompactionNotice",
+    "visibleItemsForTurn",
+    "visibleRenderableTurnIds",
+    "threadTileVisibleShape",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const result = Function(`
+const CONTEXT_COMPACTION_PENDING_NOTICE = "Context compaction pending";
+const CONTEXT_COMPACTION_COMPLETE_NOTICE = "Context compaction complete";
+const paneTurn = {
+  id: "pane-turn",
+  status: { type: "idle" },
+  items: [{ id: "context-item", type: "contextCompaction", status: { type: "pending" } }],
+};
+const paneThread = { id: "pane-thread", status: { type: "active" }, turns: [paneTurn] };
+const state = {
+  activeTurnId: "",
+  currentThreadId: "current-thread",
+  currentThread: {
+    id: "current-thread",
+    status: { type: "active" },
+    turns: [
+      { id: "current-latest", status: { type: "running" }, items: [{ id: "current-item" }] },
+    ],
+  },
+  renderContextThread: null,
+  threadTileActiveIds: ["pane-thread"],
+};
+function visibleTurnsForConversation(thread) { return thread && Array.isArray(thread.turns) ? thread.turns : []; }
+function threadTileDisplayThread(id) { return id === "pane-thread" ? paneThread : null; }
+function isReasoningItem() { return false; }
+function shouldHideSupersededLiveUserMessage() { return false; }
+function shouldHideDurableLiveUserMessage() { return false; }
+function isContextCompactionItem(item) { return Boolean(item && item.type === "contextCompaction"); }
+function isOperationalItem() { return false; }
+function isTurnUsageSummaryItem() { return false; }
+function isSupersededLiveTurn() { return false; }
+function limitRawThreadVisibleEntries(entries) { return entries; }
+function isTurnComplete() { return false; }
+function isRunningStatus(status) { return Boolean(status && (status === "running" || status.type === "active" || status.type === "running")); }
+function isStaleActiveStatus() { return false; }
+function isIncompleteInterruptedTurn() { return false; }
+function turnHasActiveLiveItems() { return false; }
+${sources.join("\n")}
+return {
+  tileShape: threadTileVisibleShape(["pane-thread"]),
+  paneTurnIds: visibleRenderableTurnIds(paneThread),
+};
+`)();
+
+  assert.deepEqual(result.tileShape, { turnCount: 1, visibleItemCount: 1 });
+  assert.deepEqual(result.paneTurnIds, ["pane-turn"]);
+});
+
+test("visible conversation shape uses explicit thread context for visible item filtering", () => {
+  const sources = [
+    "statusText",
+    "contextCompactionStatusKind",
+    "renderContextThread",
+    "turnHasDisplayItems",
+    "latestTurn",
+    "currentThreadHasActiveRuntimeStatus",
+    "isLatestTurn",
+    "isLiveTurn",
+    "canShowPendingContextCompaction",
+    "contextCompactionState",
+    "contextCompactionNotice",
+    "visibleItemsForTurn",
+    "visibleConversationShape",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const result = Function(`
+const CONTEXT_COMPACTION_PENDING_NOTICE = "Context compaction pending";
+const CONTEXT_COMPACTION_COMPLETE_NOTICE = "Context compaction complete";
+const targetTurn = {
+  id: "target-turn",
+  status: { type: "idle" },
+  items: [{ id: "context-item", type: "contextCompaction", status: { type: "pending" } }],
+};
+const targetThread = { id: "target-thread", status: { type: "active" }, turns: [targetTurn] };
+const state = {
+  activeTurnId: "",
+  currentThreadId: "current-thread",
+  currentThread: {
+    id: "current-thread",
+    status: { type: "active" },
+    turns: [
+      { id: "current-latest", status: { type: "running" }, items: [{ id: "current-item" }] },
+    ],
+  },
+  renderContextThread: null,
+};
+function visibleTurnsForConversation(thread) { return thread && Array.isArray(thread.turns) ? thread.turns : []; }
+function isReasoningItem() { return false; }
+function shouldHideSupersededLiveUserMessage() { return false; }
+function shouldHideDurableLiveUserMessage() { return false; }
+function isContextCompactionItem(item) { return Boolean(item && item.type === "contextCompaction"); }
+function isOperationalItem() { return false; }
+function isTurnUsageSummaryItem() { return false; }
+function isSupersededLiveTurn() { return false; }
+function limitRawThreadVisibleEntries(entries) { return entries; }
+function isTurnComplete() { return false; }
+function isRunningStatus(status) { return Boolean(status && (status === "running" || status.type === "active" || status.type === "running")); }
+function isStaleActiveStatus() { return false; }
+function isIncompleteInterruptedTurn() { return false; }
+function turnHasActiveLiveItems() { return false; }
+${sources.join("\n")}
+return visibleConversationShape(targetThread);
+`)();
+
+  assert.deepEqual(result, { visibleTurnCount: 1, visibleItemCount: 1 });
+});
+
+test("visible item patch entries use render context thread for filtering and signatures", () => {
+  const sources = [
+    "statusText",
+    "contextCompactionStatusKind",
+    "renderContextThread",
+    "renderContextThreadId",
+    "turnHasDisplayItems",
+    "latestTurn",
+    "currentThreadHasActiveRuntimeStatus",
+    "isLatestTurn",
+    "isLiveTurn",
+    "canShowPendingContextCompaction",
+    "contextCompactionState",
+    "contextCompactionNotice",
+    "visibleItemsForTurn",
+    "stableItemKey",
+    "visibleItemSignature",
+    "visibleItemPatchEntries",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const result = Function(`
+const CONTEXT_COMPACTION_PENDING_NOTICE = "Context compaction pending";
+const CONTEXT_COMPACTION_COMPLETE_NOTICE = "Context compaction complete";
+const targetTurn = {
+  id: "target-turn",
+  status: { type: "idle" },
+  items: [{ id: "context-item", type: "contextCompaction", status: { type: "pending" } }],
+};
+const targetThread = { id: "target-thread", status: { type: "active" }, turns: [targetTurn] };
+const state = {
+  activeTurnId: "",
+  currentThreadId: "current-thread",
+  currentThread: {
+    id: "current-thread",
+    status: { type: "active" },
+    turns: [
+      { id: "current-latest", status: { type: "running" }, items: [{ id: "current-item" }] },
+    ],
+  },
+  renderContextThreadId: "",
+  renderContextThread: targetThread,
+};
+function isReasoningItem() { return false; }
+function shouldHideSupersededLiveUserMessage() { return false; }
+function shouldHideDurableLiveUserMessage() { return false; }
+function isContextCompactionItem(item) { return Boolean(item && item.type === "contextCompaction"); }
+function isOperationalItem() { return false; }
+function isTurnUsageSummaryItem() { return false; }
+function isSupersededLiveTurn() { return false; }
+function limitRawThreadVisibleEntries(entries) { return entries; }
+function isTurnComplete() { return false; }
+function isRunningStatus(status) { return Boolean(status && (status === "running" || status.type === "active" || status.type === "running")); }
+function isStaleActiveStatus() { return false; }
+function isIncompleteInterruptedTurn() { return false; }
+function turnHasActiveLiveItems() { return false; }
+function imageViewPath() { return ""; }
+function imageViewContentUrl() { return ""; }
+function imageViewUrl() { return ""; }
+function imageSourceSignature(value) { return String(value || ""); }
+function stableTextHash(value) { return String(value || "").length; }
+function inputContentSignature() { return []; }
+function operationCommandText() { return ""; }
+function operationDetailText() { return ""; }
+${sources.join("\n")}
+return visibleItemPatchEntries(targetTurn);
+`)();
+
+  assert.equal(result.length, 1);
+  assert.equal(result[0].key, "item|target-thread|target-turn|context-item");
+  assert.equal(result[0].signature.notice, "Context compaction pending");
+});
+
+test("visible item source index uses render context thread for filtering", () => {
+  const sources = [
+    "renderContextThread",
+    "sourceIndexForVisibleItem",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const result = Function(`
+const targetItem = { id: "target-item" };
+const turn = { id: "turn", items: [{ id: "hidden" }, targetItem] };
+const targetThread = { id: "target-thread" };
+const explicitThread = { id: "explicit-thread" };
+const state = {
+  currentThread: { id: "current-thread" },
+  renderContextThread: targetThread,
+};
+function visibleItemsForTurn(sourceTurn, thread) {
+  const threadId = String(thread && thread.id || "");
+  if (threadId === "target-thread") return [{ item: targetItem, sourceIndex: 7 }];
+  if (threadId === "explicit-thread") return [{ item: targetItem, sourceIndex: 11 }];
+  return [{ item: targetItem, sourceIndex: 3 }];
+}
+${sources.join("\n")}
+return {
+  renderContext: sourceIndexForVisibleItem(turn, targetItem),
+  explicit: sourceIndexForVisibleItem(turn, targetItem, explicitThread),
+};
+`)();
+
+  assert.deepEqual(result, { renderContext: 7, explicit: 11 });
 });
 
 test("item merge delegates visible-field preservation to thread detail state policy", () => {
@@ -3200,6 +4527,47 @@ test("v4 projection merge preserves local pending message when server refresh ha
     "local-user-submit-current",
   ]);
   assert.equal(merged.mobileProjectionVersion, "v4");
+});
+
+test("v4 projection merge refuses empty incoming detail over stronger visible detail", () => {
+  const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
+  const existingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 8,
+    turns: [
+      {
+        id: "turn-existing-1",
+        status: { type: "completed" },
+        items: [
+          { id: "user-existing-1", type: "userMessage", content: [{ type: "text", text: "request" }] },
+          { id: "agent-existing-1", type: "agentMessage", text: "visible reply" },
+        ],
+      },
+      {
+        id: "turn-existing-2",
+        status: { type: "completed" },
+        items: [
+          { id: "user-existing-2", type: "userMessage", content: [{ type: "text", text: "follow up" }] },
+          { id: "agent-existing-2", type: "agentMessage", text: "visible follow up" },
+        ],
+      },
+    ],
+  };
+  const incomingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 9,
+    mobileReadMode: "projection-v4-dynamic",
+    turns: [],
+  };
+
+  const merged = mergeThreadPreservingVisibleItems(existingThread, incomingThread);
+
+  assert.deepEqual(merged.turns.map((turn) => turn.id), ["turn-existing-1", "turn-existing-2"]);
+  assert.equal(merged.mobileProjectionVersion, "v4");
+  assert.equal(merged.mobileProjectionRevision, 9);
+  assert.equal(merged.mobileReadMode, "projection-v4-dynamic");
 });
 
 test("v4 projection merge removes local pending message after matching mux echo arrives", () => {
@@ -3774,6 +5142,297 @@ test("thread detail pending server requests render approval cards without SSE ti
   assert.match(html, /权限需要批准/);
   assert.match(html, /api\.example\.test/);
   assert.match(html, /data-approval-id="approval-1"/);
+  assert.match(html, /data-approval-thread-id="thread-approval"/);
+});
+
+test("thread detail pending server requests refresh and render against tile pane thread context", () => {
+  const harness = evaluatedThreadPendingApprovalProjection();
+  harness.state.currentThreadId = "thread-current";
+  harness.state.currentThread = { id: "thread-current" };
+  harness.state.threadTileMode = true;
+  harness.syncThreadPendingServerRequests({
+    id: "thread-tile",
+    pendingServerRequests: [
+      {
+        id: "input-1",
+        method: "item/tool/requestUserInput",
+        status: "waiting",
+        actionable: true,
+        params: {
+          threadId: "thread-tile",
+          questions: [
+            {
+              id: "choice",
+              question: "Select",
+              options: [{ label: "继续", description: "continue" }],
+            },
+          ],
+        },
+      },
+    ],
+  });
+
+  const html = harness.renderPendingApprovals({ id: "thread-tile" });
+  assert.equal(harness.renderCount(), 0);
+  assert.deepEqual(harness.tileRenderCalls(), ["thread-tile"]);
+  assert.match(html, /data-server-request-id="input-1"/);
+  assert.match(html, /data-server-request-thread-id="thread-tile"/);
+  assert.match(html, /data-server-question-id="choice"/);
+});
+
+test("thread detail pending server requests attach pane thread context when request omits thread id", () => {
+  const harness = evaluatedThreadPendingApprovalProjection();
+  harness.state.currentThreadId = "thread-current";
+  harness.state.currentThread = { id: "thread-current" };
+  harness.state.threadTileMode = true;
+  harness.syncThreadPendingServerRequests({
+    id: "thread-tile",
+    pendingServerRequests: [
+      {
+        id: "approval-no-thread",
+        method: "item/permissions/requestApproval",
+        status: "waiting",
+        actionable: true,
+        params: {
+          turnId: "turn-approval",
+          permissions: { filesystem: { read: true } },
+          reason: "Need file access",
+        },
+      },
+    ],
+  });
+
+  const stored = harness.state.pendingApprovals.get("approval-no-thread");
+  const html = harness.renderPendingApprovals({ id: "thread-tile" });
+  assert.equal(stored.params.threadId, "thread-tile");
+  assert.deepEqual(harness.tileRenderCalls(), ["thread-tile"]);
+  assert.match(html, /data-approval-id="approval-no-thread"/);
+  assert.match(html, /data-approval-thread-id="thread-tile"/);
+  assert.doesNotMatch(html, /data-approval-thread-id="thread-current"/);
+});
+
+test("in-turn approval controls keep render pane thread context when request omits thread id", () => {
+  const harness = evaluatedInTurnApprovalRenderer();
+  harness.state.currentThreadId = "thread-current";
+  harness.state.currentThread = { id: "thread-current" };
+  harness.state.renderContextThreadId = "thread-pane";
+  harness.state.renderContextThread = { id: "thread-pane" };
+  harness.state.pendingApprovals.set("approval-pane", {
+    id: "approval-pane",
+    method: "item/permissions/requestApproval",
+    status: "waiting",
+    actionable: true,
+    params: {
+      turnId: "turn-pane",
+      permissions: { filesystem: { read: true } },
+      reason: "Need file access",
+    },
+  });
+
+  const html = harness.renderTurn({
+    id: "turn-pane",
+    status: "in_progress",
+    items: [{ id: "visible-item", type: "agentMessage" }],
+  });
+
+  assert.match(html, /class="approval-stack in-turn"/);
+  assert.match(html, /data-approval-id="approval-pane"/);
+  assert.match(html, /data-approval-thread-id="thread-pane"/);
+  assert.doesNotMatch(html, /data-approval-thread-id="thread-current"/);
+});
+
+test("thread tile turns render in-turn approval controls with pane thread context", () => {
+  const harness = evaluatedThreadTileApprovalRenderer();
+  harness.state.currentThreadId = "thread-current";
+  harness.state.currentThread = { id: "thread-current" };
+  const thread = {
+    id: "thread-pane",
+    turns: [
+      {
+        id: "turn-pane",
+        items: [{ id: "visible-item", type: "agentMessage" }],
+      },
+    ],
+  };
+  harness.state.threadById.set("thread-pane", thread);
+  harness.state.pendingApprovals.set("approval-pane", {
+    id: "approval-pane",
+    method: "item/permissions/requestApproval",
+    status: "waiting",
+    actionable: true,
+    params: {
+      turnId: "turn-pane",
+      permissions: { filesystem: { read: true } },
+      reason: "Need file access",
+    },
+  });
+
+  const html = harness.renderThreadTileTurn(thread, thread.turns[0]);
+
+  assert.match(html, /class="approval-stack in-turn"/);
+  assert.match(html, /data-approval-id="approval-pane"/);
+  assert.match(html, /data-approval-thread-id="thread-pane"/);
+  assert.doesNotMatch(html, /data-approval-thread-id="thread-current"/);
+});
+
+test("thread tile panes render non-visible-turn pending approvals without duplicating visible turn approvals", () => {
+  const harness = evaluatedThreadTileApprovalRenderer();
+  harness.state.currentThreadId = "thread-current";
+  harness.state.currentThread = { id: "thread-current" };
+  const thread = {
+    id: "thread-pane",
+    title: "Pane",
+    turns: [
+      {
+        id: "turn-pane",
+        items: [{ id: "visible-item", type: "agentMessage" }],
+      },
+    ],
+  };
+  harness.state.threadById.set("thread-pane", thread);
+  harness.state.pendingApprovals.set("approval-visible", {
+    id: "approval-visible",
+    method: "item/permissions/requestApproval",
+    status: "waiting",
+    actionable: true,
+    params: {
+      turnId: "turn-pane",
+      permissions: { filesystem: { read: true } },
+      reason: "Visible turn approval",
+    },
+  });
+  harness.state.pendingApprovals.set("approval-outside", {
+    id: "approval-outside",
+    method: "item/tool/requestUserInput",
+    status: "waiting",
+    actionable: true,
+    params: {
+      questions: [{ id: "answer" }],
+    },
+  });
+
+  const html = harness.renderThreadTilePane("thread-pane", {}, new Set());
+
+  assert.equal((html.match(/data-approval-card="approval-visible"/g) || []).length, 1);
+  assert.match(html, /class="approval-stack in-turn"/);
+  assert.match(html, /data-server-request-id="approval-outside"/);
+  assert.match(html, /data-server-request-thread-id="thread-pane"/);
+  assert.doesNotMatch(html, /data-server-request-thread-id="thread-current"/);
+});
+
+test("thread detail server request answers preserve pane thread context from server responses", async () => {
+  const harness = evaluatedThreadPendingApprovalProjection();
+  harness.state.currentThreadId = "thread-current";
+  harness.state.currentThread = { id: "thread-current" };
+  harness.state.threadTileMode = true;
+  harness.syncThreadPendingServerRequests({
+    id: "thread-tile",
+    pendingServerRequests: [
+      {
+        id: "input-answer",
+        method: "item/tool/requestUserInput",
+        status: "waiting",
+        actionable: true,
+        params: {
+          threadId: "thread-tile",
+          questions: [{ id: "answer" }],
+        },
+      },
+    ],
+  });
+  harness.setApiResult({
+    request: {
+      id: "input-answer",
+      method: "item/tool/requestUserInput",
+      status: "resolved",
+      actionable: false,
+      params: { questions: [{ id: "answer" }] },
+    },
+  });
+
+  await harness.answerServerRequest("input-answer", { responseText: "ok", questionId: "answer" }, { threadId: "thread-tile" });
+  const stored = harness.state.pendingApprovals.get("input-answer");
+
+  assert.equal(stored.params.threadId, "thread-tile");
+  assert.equal(harness.renderCount(), 0);
+  assert.deepEqual(harness.tileRenderCalls(), ["thread-tile", "thread-tile", "thread-tile"]);
+  assert.equal(harness.apiCalls()[0].url, "/api/approvals/input-answer");
+});
+
+test("pending server request updates preserve existing pane thread context", () => {
+  const harness = evaluatedThreadPendingApprovalProjection();
+  harness.state.currentThreadId = "thread-current";
+  harness.state.currentThread = { id: "thread-current" };
+  harness.state.threadTileMode = true;
+  harness.syncThreadPendingServerRequests({
+    id: "thread-tile",
+    pendingServerRequests: [
+      {
+        id: "input-update",
+        method: "item/tool/requestUserInput",
+        status: "waiting",
+        actionable: true,
+        params: {
+          threadId: "thread-tile",
+          questions: [{ id: "answer" }],
+        },
+      },
+    ],
+  });
+
+  harness.upsertServerRequest({
+    id: "input-update",
+    method: "item/tool/requestUserInput",
+    status: "waiting",
+    actionable: true,
+    params: { questions: [{ id: "answer" }] },
+  });
+  const stored = harness.state.pendingApprovals.get("input-update");
+
+  assert.equal(stored.params.threadId, "thread-tile");
+  assert.equal(stored.status, "waiting");
+  assert.equal(harness.renderCount(), 0);
+  assert.deepEqual(harness.tileRenderCalls(), ["thread-tile", "thread-tile"]);
+});
+
+test("resolved server request notifications preserve existing pane thread context", () => {
+  const harness = evaluatedThreadPendingApprovalProjection();
+  harness.state.currentThreadId = "thread-current";
+  harness.state.currentThread = { id: "thread-current" };
+  harness.state.threadTileMode = true;
+  harness.syncThreadPendingServerRequests({
+    id: "thread-tile",
+    pendingServerRequests: [
+      {
+        id: "input-resolved",
+        method: "item/tool/requestUserInput",
+        status: "waiting",
+        actionable: true,
+        params: {
+          threadId: "thread-tile",
+          questions: [{ id: "answer" }],
+        },
+      },
+    ],
+  });
+
+  harness.resolveServerRequest({
+    requestId: "input-resolved",
+    request: {
+      id: "input-resolved",
+      method: "item/tool/requestUserInput",
+      status: "resolved",
+      actionable: false,
+      params: { questions: [{ id: "answer" }] },
+    },
+  });
+  const stored = harness.state.pendingApprovals.get("input-resolved");
+
+  assert.equal(stored.params.threadId, "thread-tile");
+  assert.equal(stored.status, "resolved");
+  assert.equal(harness.renderCount(), 0);
+  assert.deepEqual(harness.tileRenderCalls(), ["thread-tile", "thread-tile"]);
+  assert.deepEqual(harness.approvalRemovalCalls(), [{ requestId: "input-resolved", delayMs: 6000 }]);
 });
 
 test("active turn state follows only the latest durable turn", () => {
@@ -3797,6 +5456,9 @@ test("active turn state follows only the latest durable turn", () => {
 
 test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(appJs, /function updateThreadListStatus\(/);
+  assert.match(appJs, /function applyThreadStatusToThread\(/);
+  assert.match(appJs, /function scheduleThreadStatusDetailRender\(/);
+  assert.match(appJs, /function localThreadForStatusContext\(/);
   assert.match(appJs, /function snapshotThreadStatus\(/);
   assert.match(appJs, /function restoreThreadStatusSnapshot\(/);
   assert.match(appJs, /function markThreadOptimisticallyActive\(/);
@@ -3826,20 +5488,84 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.doesNotMatch(functionBody("reconcileThreadStatusHints"), /else if \(!isRunning && wasRunning\)/);
 
   const listMergeBody = functionBody("mergeThreadIntoThreadList");
-  assert.match(listMergeBody, /threadListSummaryFromDetailThread\(thread\)/);
-  assert.match(listMergeBody, /Object\.assign\(\{\}, entry, summary\)/);
+  assert.match(listMergeBody, /threadDetailStateApi\.mergeThreadSummaryIntoList\(state\.threads, thread, \{ visibleThreads \}\)/);
+  assert.doesNotMatch(appJs, /function threadListSummaryFromDetailThread\(/);
+  assert.doesNotMatch(appJs, /function threadHasLoadedDetailState\(/);
   const optimisticBody = functionBody("markThreadOptimisticallyActive");
   assert.match(optimisticBody, /const runningStatus = \{ type: "active" \};/);
   assert.match(optimisticBody, /noteSubmittedProcessingThreadHint\(id\)/);
+  assert.match(optimisticBody, /const targetThread = localThreadForStatusContext\(id\) \|\| \(currentMatches \? state\.currentThread : listThread \|\| tileThread\)/);
   assert.match(optimisticBody, /updateThreadStatusHints\(id, previousStatus, runningStatus/);
-  assert.match(optimisticBody, /updateThreadListStatus\(id, runningStatus\)/);
+  assert.match(optimisticBody, /updateThreadListStatus\(id, runningStatus, \{ render: true \}\)/);
   assert.match(optimisticBody, /if \(currentMatches\) \{[\s\S]*mergeThreadIntoThreadList\(state\.currentThread\)/);
+  assert.match(functionBody("updateThreadListStatus"), /state\.threadTileDetails && state\.threadTileDetails\.get\(String\(id\)\)/);
+  assert.match(functionBody("updateThreadListStatus"), /if \(options\.render === true\) scheduleThreadStatusDetailRender\(id\)/);
+  assert.match(functionBody("scheduleThreadStatusDetailRender"), /threadTilePaneIsVisible\(id\)/);
+  assert.match(functionBody("scheduleThreadStatusDetailRender"), /scheduleRenderThreadTilePane\(id, \{ preserveScroll: true \}\)/);
+  assert.match(functionBody("localThreadForStatusContext"), /state\.currentThread && String\(state\.currentThread\.id \|\| ""\) === id/);
+  assert.match(functionBody("localThreadForStatusContext"), /state\.threadTileDetails && state\.threadTileDetails\.get\(String\(id\)\)/);
+  assert.match(functionBody("snapshotThreadStatus"), /state\.threadTileDetails && state\.threadTileDetails\.get\(String\(id\)\)/);
   const restoreBody = functionBody("restoreThreadStatusSnapshot");
+  assert.match(restoreBody, /snapshot\.hadTileThread/);
   assert.match(restoreBody, /updateThreadStatusHints\(id, \{ type: "active" \}, restoredStatus/);
   assert.match(restoreBody, /state\.currentThread\.status = snapshot\.currentStatus/);
-  assert.match(functionBody("loadThread"), /state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);\s*mergeThreadIntoThreadList\(state\.currentThread\);/);
-  assert.match(functionBody("refreshCurrentThread"), /state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);[\s\S]*mergeThreadIntoThreadList\(state\.currentThread\);/);
-  assert.match(functionBody("backfillFullThreadDetail"), /state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);\s*mergeThreadIntoThreadList\(state\.currentThread\);/);
+  assert.match(restoreBody, /applyThreadStatusToThread\(state\.threadTileDetails && state\.threadTileDetails\.get\(String\(id\)\) \|\| null, snapshot\.tileStatus\)/);
+  assert.match(restoreBody, /scheduleThreadStatusDetailRender\(id\)/);
+  assert.match(functionBody("loadThread"), /const firstPaintResponsePlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintResponseEffects\(\{[\s\S]*source,[\s\S]*\}\);[\s\S]*applyThreadDetailRefreshResponseEffectsPlan\(firstPaintResponsePlan, \{ thread: result\.thread \}\);[\s\S]*const postMergePlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPostMergeEffects\(\);/);
+  assert.match(functionBody("loadThread"), /const firstPaintPostMergeTimingPlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintPostMergeTimingEffects\(postMergePlan\);/);
+  assert.match(functionBody("loadThread"), /const firstPaintPostMergeTimings = applyThreadDetailRefreshTimedPostMergeEntries\([\s\S]*postMergePlan,[\s\S]*firstPaintPostMergeTimingPlan\.beforeDraftRestore,[\s\S]*\{ mergeStartedAt \},[\s\S]*\);/);
+  assert.match(functionBody("loadThread"), /const mergeMs = firstPaintPostMergeTimings\.mergeMs;[\s\S]*const firstPaintDraftRestorePlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintDraftRestoreEffects\(\);/);
+  assert.match(functionBody("loadThread"), /applyThreadDetailRefreshTimedPostMergeEntries\([\s\S]*postMergePlan,[\s\S]*firstPaintPostMergeTimingPlan\.afterDraftRestore,[\s\S]*firstPaintPostMergeTimings,[\s\S]*\);/);
+  assert.match(functionBody("loadThread"), /const composerRenderMs = firstPaintPostMergeTimings\.composerRenderMs;/);
+  assert.match(functionBody("loadThread"), /const threadListRenderMs = firstPaintPostMergeTimings\.threadListRenderMs;/);
+  assert.doesNotMatch(functionBody("loadThread"), /const firstPaintResponsePlan[\s\S]*?applyThreadDetailRefreshTimedPostMergeEffectsGroup\(postMergePlan, "composer-render"\)/);
+  assert.doesNotMatch(functionBody("loadThread"), /state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);\s*mergeThreadIntoThreadList\(state\.currentThread\);/);
+  assert.match(functionBody("loadThread"), /const firstPaintReportingStage = threadDetailRenderPlanApi\.planThreadDetailFirstPaintReportingStage\(\{[\s\S]*detailRenderMode: "first-paint",[\s\S]*cached: false,[\s\S]*threadHash: diagnosticThreadHash\(threadId\),[\s\S]*\}\);[\s\S]*threadPerformanceMetrics\.threadDetailFirstPaintEventFields\(\s*result\.thread,\s*firstPaintReportingStage\.performanceInput,\s*\);/);
+  assert.match(functionBody("refreshCurrentThread"), /const responseEffectsPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshResponseEffects\(\{/);
+  assert.match(functionBody("refreshCurrentThread"), /if \(!responseEffectsPlan\.shouldApply\) return;/);
+  assert.match(functionBody("refreshCurrentThread"), /applyThreadDetailRefreshResponseEffectsPlan\(responseEffectsPlan, \{ thread: result\.thread \}\);[\s\S]*const postMergePlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPostMergeEffects\(\);/);
+  assert.match(functionBody("applyThreadDetailRefreshResponseEffect"), /state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, thread\);/);
+  assert.match(appJs, /function applyThreadDetailRefreshTimedPostMergeEffectsGroup\(plan, timing, options = \{\}\)/);
+  assert.match(appJs, /function applyThreadDetailRefreshTimedPostMergeEntries\(plan, entries, timings, options = \{\}\)/);
+  assert.match(appJs, /function applyThreadDetailRefreshTimedPostMergeEffectsPlan\(plan, options = \{\}\)/);
+  assert.match(functionBody("applyThreadDetailRefreshTimedPostMergeEffectsPlan"), /const timingFieldsPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPostMergeTimingFields\(plan\);/);
+  assert.match(functionBody("applyThreadDetailRefreshTimedPostMergeEffectsPlan"), /return applyThreadDetailRefreshTimedPostMergeEntries\(/);
+  assert.match(functionBody("applyThreadDetailRefreshTimedPostMergeEffectsPlan"), /Object\.assign\(\{\}, timingFieldsPlan\.timings\)/);
+  assert.match(functionBody("applyThreadDetailRefreshTimedPostMergeEntries"), /for \(const entry of list\) \{/);
+  assert.match(functionBody("applyThreadDetailRefreshTimedPostMergeEntries"), /result\[field\] = applyThreadDetailRefreshTimedPostMergeEffectsGroup\(plan, timing, \{ startedAt \}\);/);
+  assert.doesNotMatch(functionBody("applyThreadDetailRefreshTimedPostMergeEffectsPlan"), /mergeMs: 0,\s*composerRenderMs: 0,\s*threadListRenderMs: 0/);
+  assert.doesNotMatch(functionBody("applyThreadDetailRefreshTimedPostMergeEffectsPlan"), /group && group\.timingField/);
+  assert.match(functionBody("refreshCurrentThread"), /const postMergeTimings = applyThreadDetailRefreshTimedPostMergeEffectsPlan\(postMergePlan, \{[\s\S]*mergeStartedAt,[\s\S]*\}\);/);
+  assert.match(functionBody("refreshCurrentThread"), /const mergeMs = postMergeTimings\.mergeMs;/);
+  assert.match(functionBody("refreshCurrentThread"), /const composerRenderMs = postMergeTimings\.composerRenderMs;/);
+  assert.match(functionBody("refreshCurrentThread"), /const threadListRenderMs = postMergeTimings\.threadListRenderMs;/);
+  assert.doesNotMatch(functionBody("refreshCurrentThread"), /applyThreadDetailRefreshTimedPostMergeEffectsGroup\(postMergePlan, "merge"/);
+  assert.match(functionBody("backfillFullThreadDetail"), /const fullBackfillResponsePlan = threadDetailRenderPlanApi\.planThreadDetailFullBackfillResponseEffects\(\{[\s\S]*source: options\.source \|\| "unknown",[\s\S]*\}\);[\s\S]*applyThreadDetailRefreshResponseEffectsPlan\(fullBackfillResponsePlan, \{ thread: result\.thread \}\);[\s\S]*const postMergePlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPostMergeEffects\(\);/);
+  assert.match(functionBody("applyThreadDetailRefreshResponseEffect"), /state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, thread\);/);
+  assert.match(functionBody("backfillFullThreadDetail"), /const postMergeTimings = applyThreadDetailRefreshTimedPostMergeEffectsPlan\(postMergePlan, \{[\s\S]*mergeStartedAt,[\s\S]*\}\);/);
+  assert.match(functionBody("backfillFullThreadDetail"), /const mergeMs = postMergeTimings\.mergeMs;/);
+  assert.match(functionBody("backfillFullThreadDetail"), /const composerRenderMs = postMergeTimings\.composerRenderMs;/);
+  assert.match(functionBody("backfillFullThreadDetail"), /const threadListRenderMs = postMergeTimings\.threadListRenderMs;/);
+  assert.doesNotMatch(functionBody("backfillFullThreadDetail"), /applyThreadDetailRefreshTimedPostMergeEffectsGroup\(postMergePlan, "merge"/);
+  assert.doesNotMatch(functionBody("backfillFullThreadDetail"), /mergeThreadIntoThreadList\(state\.currentThread\);\s*const mergeMs/);
+  assert.doesNotMatch(functionBody("backfillFullThreadDetail"), /renderComposerSettings\(\);\s*syncActiveTurnFromThread\(\);/);
+  assert.match(functionBody("backfillFullThreadDetail"), /const fullBackfillReportingStage = threadDetailRenderPlanApi\.planThreadDetailFullBackfillReportingStage\(\{[\s\S]*source,[\s\S]*threadId: id,[\s\S]*timings: \{[\s\S]*elapsedMs: roundedDurationMs\(apiStartedAt\),[\s\S]*postRenderMs,[\s\S]*\},[\s\S]*\}\);/);
+  assert.match(functionBody("backfillFullThreadDetail"), /threadPerformanceMetrics\.threadDetailFullReadyEventFields\(\s*result\.thread,\s*fullBackfillReportingStage\.performanceInput,\s*\);/);
+  assert.match(functionBody("backfillFullThreadDetail"), /const fullBackfillPostRenderPlan = threadDetailRenderPlanApi\.planThreadDetailFullBackfillPostRenderEffects\(\);[\s\S]*applyThreadDetailPostRenderEffectsPlan\(fullBackfillPostRenderPlan\);[\s\S]*const postRenderMs = roundedDurationMs\(postRenderStartedAt\);/);
+  assert.doesNotMatch(functionBody("backfillFullThreadDetail"), /scheduleUsageBackfillRefresh\(\);\s*scheduleLivePollIfNeeded\(\);\s*updateComposerControls\(\);/);
+  assert.match(functionBody("backfillFullThreadDetail"), /const fullBackfillTelemetryPlan = threadDetailRenderPlanApi\.planThreadDetailFullBackfillTelemetryEffects\(Object\.assign\(\{[\s\S]*performanceEvent: fullReadyPerformance,[\s\S]*\}, fullBackfillReportingStage\.telemetryInput\)\);[\s\S]*applyThreadDetailRefreshTelemetryEffectsPlan\(fullBackfillTelemetryPlan, \{ thread: result\.thread \}\);/);
+  assert.doesNotMatch(functionBody("backfillFullThreadDetail"), /postPerformanceEvent\("thread_detail_full_ready", fullReadyPerformance, \{ force: true \}\)/);
+  assert.doesNotMatch(functionBody("backfillFullThreadDetail"), /recordThreadDetailResponseDiagnostics\(fullReadyPerformance, \{/);
+  assert.match(functionBody("loadThread"), /const firstPaintPostRenderPlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintPostRenderEffects\(\{[\s\S]*threadId,[\s\S]*seq,[\s\S]*source,[\s\S]*\}\);[\s\S]*applyThreadDetailPostRenderEffectsPlan\(firstPaintPostRenderPlan, \{ thread: result\.thread \}\);[\s\S]*const postRenderMs = roundedDurationMs\(postRenderStartedAt\);/);
+  assert.match(functionBody("applyThreadDetailPostRenderEffect"), /publishPluginNavigationState\(\{ force: Boolean\(item\.force\) \}\)/);
+  assert.match(functionBody("applyThreadDetailPostRenderEffect"), /scheduleLivePollIfNeeded\(Number\.isFinite\(delayMs\) && delayMs >= 0 \? delayMs : undefined\)/);
+  assert.match(functionBody("applyThreadDetailPostRenderEffect"), /if \(shouldBackfillFullThreadDetail\(context\.thread\)\)/);
+  assert.doesNotMatch(functionBody("loadThread"), /publishPluginNavigationState\(\{ force: true \}\);\s*restoreConnectionState\(\);\s*scheduleLivePollIfNeeded\(1200\);/);
+  assert.match(functionBody("loadThread"), /const firstPaintTelemetryPlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintTelemetryEffects\(Object\.assign\(\{[\s\S]*performanceEvent: firstPaintPerformance,[\s\S]*\}, firstPaintReportingStage\.telemetryInput\)\);[\s\S]*applyThreadDetailFirstPaintTelemetryEffectsPlan\(firstPaintTelemetryPlan, \{ thread: result\.thread \}\);/);
+  assert.match(functionBody("applyThreadDetailFirstPaintTelemetryEffect"), /recordThreadDetailResponseDiagnostics\(item\.performanceEvent \|\| \{\}, \{[\s\S]*thread: context\.thread,[\s\S]*\}\);/);
+  assert.match(functionBody("applyThreadDetailFirstPaintTelemetryEffect"), /postClientEvent\(String\(item\.eventName \|\| ""\), item\.payload \|\| \{\}\);/);
+  assert.match(functionBody("applyThreadDetailFirstPaintTelemetryEffect"), /recordHomeAiDiagnosticSuccess\(item\.payload \|\| \{\}\);/);
+  assert.doesNotMatch(functionBody("loadThread"), /postPerformanceEvent\("thread_detail_first_paint", firstPaintPerformance\);\s*recordThreadDetailResponseDiagnostics\(firstPaintPerformance/);
   const sendBody = functionBody("sendMessage");
   assert.match(sendBody, /const targetThreadId = currentComposerThreadId\(\);/);
   assert.match(sendBody, /const previousThreadStatus = snapshotThreadStatus\(targetThreadId\);/);
@@ -3863,20 +5589,105 @@ test("thread running hints survive notLoaded list refreshes", () => {
 
   const notificationBody = functionBody("applyNotification");
   assert.match(notificationBody, /const runningStatus = \{ type: "active" \};/);
-  assert.match(notificationBody, /updateThreadStatusHints\(params\.threadId, state\.currentThread\.status, runningStatus/);
-  assert.match(notificationBody, /updateThreadListStatus\(params\.threadId, runningStatus\)/);
+  assert.match(notificationBody, /const thread = localThreadForStatusContext\(params\.threadId\)/);
+  assert.match(notificationBody, /const previousStatus = thread \? thread\.status : null/);
+  assert.match(notificationBody, /updateThreadListStatus\(params\.threadId, params\.status\)/);
   assert.match(notificationBody, /const completedStatus = \(params\.turn && params\.turn\.status\) \|\| \{ type: "completed" \};/);
   assert.match(notificationBody, /updateThreadStatusHints\(params\.threadId, state\.currentThread\.status, completedStatus/);
   assert.match(notificationBody, /updateThreadListStatus\(params\.threadId, completedStatus\)/);
+  assert.match(notificationBody, /scheduleThreadStatusDetailRender\(params\.threadId\)/);
   assert.match(notificationBody, /scheduleRenderThreads\(\);[\s\S]*scheduleCurrentThreadRefresh\(500\)/);
   assert.match(notificationBody, /scheduleRenderThreads\(\);[\s\S]*schedulePostCompletionThreadRefreshes\(params\.threadId, \[700, 2400\]\)/);
+});
+
+test("optimistic active status updates visible tile pane detail context", () => {
+  const harness = evaluatedThreadStatusPaneContext();
+
+  harness.markThreadOptimisticallyActive("thread-pane");
+
+  assert.equal(harness.listThread.status.type, "active");
+  assert.equal(harness.tileThread.status.type, "active");
+  assert.equal(harness.currentThread.status.type, "idle");
+  assert.deepEqual(harness.calls.hinted, ["thread-pane"]);
+  assert.deepEqual(harness.calls.statusHints, [{
+    id: "thread-pane",
+    previousType: "idle",
+    nextType: "active",
+    threadId: "thread-pane",
+    threadName: "Pane",
+    notify: false,
+  }]);
+  assert.deepEqual(harness.calls.tileRenders, [{ threadId: "thread-pane", preserveScroll: true }]);
+  assert.equal(harness.calls.currentRenders, 0);
+  assert.equal(harness.calls.merges, 0);
+});
+
+test("thread status snapshot restore resets visible tile pane detail context", () => {
+  const harness = evaluatedThreadStatusPaneContext();
+  const snapshot = harness.snapshotThreadStatus("thread-pane");
+
+  harness.markThreadOptimisticallyActive("thread-pane");
+  harness.restoreThreadStatusSnapshot(snapshot);
+
+  assert.equal(harness.listThread.status.type, "idle");
+  assert.equal(harness.tileThread.status.type, "idle");
+  assert.equal(harness.currentThread.status.type, "idle");
+  assert.deepEqual(harness.calls.tileRenders, [
+    { threadId: "thread-pane", preserveScroll: true },
+    { threadId: "thread-pane", preserveScroll: true },
+  ]);
+  assert.equal(harness.calls.currentRenders, 0);
+  assert.equal(harness.calls.pruned, true);
+  assert.equal(harness.calls.statusHints.length, 2);
+  assert.deepEqual(harness.calls.statusHints[1], {
+    id: "thread-pane",
+    previousType: "active",
+    nextType: "idle",
+    threadId: "thread-pane",
+    threadName: undefined,
+    notify: false,
+  });
+});
+
+test("thread status notifications update visible tile pane through status helper", () => {
+  const harness = evaluatedThreadStatusNotificationContext();
+
+  harness.applyNotification("thread/status/changed", {
+    threadId: "thread-pane",
+    status: { type: "active" },
+    eventAtMs: 1234,
+  });
+
+  assert.equal(harness.listThread.status.type, "active");
+  assert.equal(harness.tileThread.status.type, "active");
+  assert.equal(harness.currentThread.status.type, "idle");
+  assert.deepEqual(harness.calls.statusHints, [{
+    id: "thread-pane",
+    previousType: "idle",
+    nextType: "active",
+    threadId: "thread-pane",
+    threadName: "Pane",
+    notify: true,
+  }]);
+  assert.deepEqual(harness.calls.tileRenders, [{ threadId: "thread-pane", preserveScroll: true }]);
+  assert.deepEqual(harness.calls.tileLoads, [{
+    threadId: "thread-pane",
+    source: "tile-status",
+    force: true,
+    background: true,
+  }]);
+  assert.equal(harness.calls.currentRenders, 0);
+  assert.equal(harness.calls.renderThreads, 1);
+  assert.equal(harness.calls.pruned, true);
+  assert.deepEqual(harness.calls.livePolls, []);
 });
 
 test("thread merge drops superseded stale active turns", () => {
   assert.match(appJs, /function turnIsSupersededBy\(/);
   assert.match(functionBody("turnIsSupersededBy"), /return isTurnComplete\(newerTurn\) && !isTurnComplete\(turn\)/);
-  assert.match(functionBody("mergeThreadPreservingVisibleItems"), /const latestIncoming = merged\.turns\.length \? merged\.turns\[merged\.turns\.length - 1\] : null/);
-  assert.match(functionBody("mergeThreadPreservingVisibleItems"), /if \(turnIsSupersededBy\(existingTurn, latestIncoming\)\) continue/);
+  assert.match(functionBody("mergeThreadPreservingVisibleItems"), /threadDetailMergePolicy\.mergeThreadPreservingVisibleItems\(existingThread, incomingThread/);
+  assert.match(threadDetailMergeStateJs, /const latestIncoming = merged\.turns\.length \? merged\.turns\[merged\.turns\.length - 1\] : null/);
+  assert.match(threadDetailMergeStateJs, /if \(turnIsSupersededBy\(existingTurn, latestIncoming\)\) continue/);
 });
 
 test("completed turns can render context and token usage summaries", () => {

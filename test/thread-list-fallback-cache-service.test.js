@@ -99,6 +99,12 @@ test("readFallback uses cached fallback list after the first complete pass", () 
   const first = service.readFallback(10, { diagnostics: firstDiagnostics });
   assert.deepEqual(first.map((thread) => thread.id), ["thread-session", "thread-rollout", "thread-state"]);
   assert.equal(firstDiagnostics.cacheHit, false);
+  assert.equal(firstDiagnostics.cacheDecision, "miss-rebuild");
+  assert.equal(firstDiagnostics.cacheBuildReason, "miss");
+  assert.match(firstDiagnostics.cacheKeyHash, /^[a-z0-9]{6,10}$/);
+  assert.equal(firstDiagnostics.cacheBuildCount, 1);
+  assert.equal(firstDiagnostics.cacheBuildNumber, 1);
+  assert.equal(firstDiagnostics.cacheEntryCount, 1);
   assert.deepEqual(calls, { stateDb: 1, rollout: 1, sessionIndex: 1 });
 
   first[0].name = "mutated caller copy";
@@ -107,25 +113,317 @@ test("readFallback uses cached fallback list after the first complete pass", () 
   const second = service.readFallback(10, { diagnostics: secondDiagnostics });
   assert.deepEqual(calls, { stateDb: 1, rollout: 1, sessionIndex: 1 });
   assert.equal(secondDiagnostics.cacheHit, true);
+  assert.equal(secondDiagnostics.cacheDecision, "hit");
+  assert.equal(secondDiagnostics.cacheBuildCount, 1);
+  assert.equal(secondDiagnostics.cacheBuildNumber, 1);
+  assert.equal(secondDiagnostics.cacheEntryCount, 1);
   assert.equal(secondDiagnostics.cacheAgeMs, 250);
+  assert.equal(secondDiagnostics.cacheBaselineAgeMs, 250);
+  assert.equal(secondDiagnostics.cacheTtlMs, 0);
   assert.equal(second[0].name, "Session");
   assert.deepEqual(secondDiagnostics.cachedSourceTimings, {
     stateDbMs: 0,
     rolloutMs: 0,
     sessionIndexMs: 0,
+    stateDbCount: 1,
+    rolloutCount: 1,
+    sessionIndexCount: 1,
+    baselineSourceCount: 3,
+    baselineResultCount: 3,
+    baselineFinalFilterPassCount: 3,
+    baselineFinalFilterInputCount: 3,
+    baselineFinalFilterOutputCount: 3,
+    baselineMergeInputCount: 3,
+    baselineMergeOutputCount: 3,
+    sourceSnapshotHit: false,
+    sourceSnapshotAgeMs: 0,
+    sourceSnapshotLimit: 200,
+    sourceSnapshotBuildCount: 1,
+    sourceSnapshotBuildNumber: 1,
+    sourceSnapshotRawCount: 3,
+  });
+});
+
+test("readCachedFallback returns only warm cache and never builds cold baseline", () => {
+  const { calls, service, setNow } = createService();
+  const coldDiagnostics = {};
+  const cold = service.readCachedFallback(10, { diagnostics: coldDiagnostics });
+  assert.deepEqual(cold, []);
+  assert.equal(coldDiagnostics.cacheHit, false);
+  assert.equal(coldDiagnostics.cacheDecision, "miss");
+  assert.deepEqual(calls, { stateDb: 0, rollout: 0, sessionIndex: 0 });
+
+  const buildDiagnostics = {};
+  service.readFallback(10, { diagnostics: buildDiagnostics });
+  assert.equal(buildDiagnostics.cacheDecision, "miss-rebuild");
+  assert.deepEqual(calls, { stateDb: 1, rollout: 1, sessionIndex: 1 });
+
+  setNow(1500);
+  const warmDiagnostics = {};
+  const warm = service.readCachedFallback(10, { diagnostics: warmDiagnostics });
+  assert.deepEqual(warm.map((thread) => thread.id), ["thread-session", "thread-rollout", "thread-state"]);
+  assert.equal(warmDiagnostics.cacheHit, true);
+  assert.equal(warmDiagnostics.cacheDecision, "hit");
+  assert.equal(warmDiagnostics.cacheAgeMs, 500);
+  assert.equal(warmDiagnostics.cacheBaselineAgeMs, 500);
+  assert.equal(warmDiagnostics.cacheBuildNumber, 1);
+  assert.deepEqual(calls, { stateDb: 1, rollout: 1, sessionIndex: 1 });
+});
+
+test("fallback cache reuses wider warm entries for narrower same-scope requests", () => {
+  const { calls, service, setNow } = createService({
+    readStateDbFallback() {
+      return [
+        { id: "state-1", name: "State 1", updatedAt: 100 },
+        { id: "state-2", name: "State 2", updatedAt: 90 },
+      ];
+    },
+    readRolloutSessionFallback() {
+      return [
+        { id: "rollout-1", name: "Rollout 1", updatedAt: 300 },
+        { id: "rollout-2", name: "Rollout 2", updatedAt: 80 },
+      ];
+    },
+    readSessionIndexFallback() {
+      return [
+        { id: "session-1", name: "Session 1", updatedAt: 500 },
+      ];
+    },
+  });
+
+  const wideDiagnostics = {};
+  const wide = service.readFallback(40, { diagnostics: wideDiagnostics });
+  assert.equal(wideDiagnostics.cacheDecision, "miss-rebuild");
+  assert.deepEqual(wide.map((thread) => thread.id), [
+    "session-1",
+    "rollout-1",
+    "state-1",
+    "state-2",
+    "rollout-2",
+  ]);
+  assert.deepEqual(calls, { stateDb: 1, rollout: 1, sessionIndex: 1 });
+
+  setNow(1750);
+  const narrowDiagnostics = {};
+  const narrow = service.readFallback(2, { diagnostics: narrowDiagnostics });
+  assert.deepEqual(narrow.map((thread) => thread.id), ["session-1", "rollout-1"]);
+  assert.deepEqual(calls, { stateDb: 1, rollout: 1, sessionIndex: 1 });
+  assert.equal(narrowDiagnostics.cacheHit, true);
+  assert.equal(narrowDiagnostics.cacheDecision, "compatible-hit");
+  assert.equal(narrowDiagnostics.compatibleCacheHit, true);
+  assert.equal(narrowDiagnostics.compatibleCacheLimit, 40);
+  assert.equal(narrowDiagnostics.cacheBuildCount, 1);
+
+  const warmDiagnostics = {};
+  const warm = service.readCachedFallback(2, { diagnostics: warmDiagnostics });
+  assert.deepEqual(warm.map((thread) => thread.id), ["session-1", "rollout-1"]);
+  assert.equal(warmDiagnostics.cacheHit, true);
+  assert.equal(warmDiagnostics.cacheDecision, "compatible-hit");
+  assert.equal(warmDiagnostics.compatibleCacheLimit, 40);
+});
+
+test("fallback cache does not reuse narrower warm entries for wider requests", () => {
+  const { calls, service } = createService();
+
+  const narrowDiagnostics = {};
+  service.readFallback(2, { diagnostics: narrowDiagnostics });
+  assert.equal(narrowDiagnostics.cacheDecision, "miss-rebuild");
+  assert.deepEqual(calls, { stateDb: 1, rollout: 1, sessionIndex: 1 });
+
+  const widerDiagnostics = {};
+  service.readFallback(40, { diagnostics: widerDiagnostics });
+  assert.equal(widerDiagnostics.cacheHit, false);
+  assert.equal(widerDiagnostics.cacheDecision, "miss-rebuild");
+  assert.deepEqual(calls, { stateDb: 2, rollout: 2, sessionIndex: 2 });
+});
+
+test("readFallback reuses source snapshot across final-list filter cache misses", () => {
+  const { calls, service } = createService({
+    readStateDbFallback(limit, filters) {
+      assert.equal(limit, 200);
+      assert.equal(filters.searchTerm, undefined);
+      assert.equal(filters.cwd, undefined);
+      return [
+        { id: "alpha", name: "Alpha", updatedAt: 100 },
+        { id: "beta", name: "Beta", updatedAt: 200 },
+      ];
+    },
+    readRolloutSessionFallback() {
+      return [{ id: "rollout-alpha", name: "Alpha rollout", updatedAt: 300 }];
+    },
+    readSessionIndexFallback() {
+      return [];
+    },
+  });
+
+  const firstDiagnostics = {};
+  const first = service.readFallback(10, { searchTerm: "alpha", diagnostics: firstDiagnostics });
+  assert.deepEqual(first.map((thread) => thread.id), ["rollout-alpha", "alpha"]);
+  assert.equal(firstDiagnostics.cacheDecision, "miss-rebuild");
+  assert.equal(firstDiagnostics.sourceSnapshotHit, false);
+  assert.equal(firstDiagnostics.sourceSnapshotBuildCount, 1);
+  assert.deepEqual(calls, { stateDb: 1, rollout: 1, sessionIndex: 1 });
+
+  const secondDiagnostics = {};
+  const second = service.readFallback(10, { searchTerm: "beta", diagnostics: secondDiagnostics });
+  assert.deepEqual(second.map((thread) => thread.id), ["beta"]);
+  assert.equal(secondDiagnostics.cacheDecision, "miss-rebuild");
+  assert.equal(secondDiagnostics.sourceSnapshotHit, true);
+  assert.equal(secondDiagnostics.stateDbMs, 0);
+  assert.equal(secondDiagnostics.sourceSnapshotBuildCount, 1);
+  assert.deepEqual(calls, { stateDb: 1, rollout: 1, sessionIndex: 1 });
+});
+
+test("readFallback can build cold baseline through injected baseline service", () => {
+  const calls = [];
+  const directService = createThreadListFallbackCacheService({
+    now: () => 1000,
+    readGlobalState: () => ({
+      roots: ["/workspace/default"],
+      projectless: [],
+    }),
+    normalizeFsPath: (value) => String(value || "").replace(/[\\/]+/g, "/").toLowerCase(),
+    normalizeThreadId: (value) => String(value || "").trim().toLowerCase(),
+    visibleWorkspaceRoots: (globalState) => new Set(globalState.roots || []),
+    visibleProjectlessThreadIds: () => new Set(),
+    filterFallbackThreads: (threads) => threads || [],
+    mergeThreadSummaryList: mergeByUpdatedAt,
+    baselineService: {
+      readBaseline(limit, filters) {
+        calls.push({
+          limit,
+          cwd: filters.cwd,
+          searchTerm: filters.searchTerm,
+          roots: filters.globalState && filters.globalState.roots,
+        });
+        return {
+          threads: [
+            { id: "baseline-1", name: "Baseline", updatedAt: 10 },
+            { id: "baseline-2", name: "Second", updatedAt: 9 },
+          ],
+          timings: {
+            stateDbMs: 3,
+            rolloutMs: 5,
+            sessionIndexMs: 7,
+            stateDbCount: 4,
+            rolloutCount: 5,
+            sessionIndexCount: 6,
+            baselineSourceCount: 15,
+            baselineResultCount: 2,
+            baselineFinalFilterPassCount: 3,
+            baselineFinalFilterInputCount: 18,
+            baselineFinalFilterOutputCount: 15,
+            baselineMergeInputCount: 15,
+            baselineMergeOutputCount: 12,
+            baselineMergeDuplicateCount: 3,
+            baselineLimitDropCount: 10,
+            rolloutFileStatCount: 12,
+            rolloutStatusTailReadCount: 2,
+            rolloutStatusTailBytes: 8192,
+            sessionIndexReadCount: 3,
+            sessionIndexReuseCount: 1,
+            sessionIndexLineCount: 500,
+            privatePath: "/Users/private/session_index.jsonl",
+          },
+        };
+      },
+    },
+  });
+
+  const diagnostics = {};
+  const threads = directService.readFallback(2, {
+    cwd: "/workspace/default",
+    searchTerm: "base",
+    globalState: { roots: ["/workspace/default"] },
+    diagnostics,
+  });
+
+  assert.deepEqual(threads.map((thread) => thread.id), ["baseline-1", "baseline-2"]);
+  assert.deepEqual(calls, [{
+    limit: 2,
+    cwd: "/workspace/default",
+    searchTerm: "base",
+    roots: ["/workspace/default"],
+  }]);
+  assert.equal(diagnostics.cacheDecision, "miss-rebuild");
+  assert.equal(diagnostics.stateDbMs, 3);
+  assert.equal(diagnostics.rolloutMs, 5);
+  assert.equal(diagnostics.sessionIndexMs, 7);
+  assert.equal(diagnostics.stateDbCount, 4);
+  assert.equal(diagnostics.rolloutCount, 5);
+  assert.equal(diagnostics.sessionIndexCount, 6);
+  assert.equal(diagnostics.baselineSourceCount, 15);
+  assert.equal(diagnostics.baselineResultCount, 2);
+  assert.equal(diagnostics.baselineFinalFilterPassCount, 3);
+  assert.equal(diagnostics.baselineFinalFilterInputCount, 18);
+  assert.equal(diagnostics.baselineFinalFilterOutputCount, 15);
+  assert.equal(diagnostics.baselineMergeInputCount, 15);
+  assert.equal(diagnostics.baselineMergeOutputCount, 12);
+  assert.equal(diagnostics.baselineMergeDuplicateCount, 3);
+  assert.equal(diagnostics.baselineLimitDropCount, 10);
+  assert.equal(diagnostics.rolloutFileStatCount, 12);
+  assert.equal(diagnostics.rolloutStatusTailReadCount, 2);
+  assert.equal(diagnostics.rolloutStatusTailBytes, 8192);
+  assert.equal(diagnostics.sessionIndexReadCount, 3);
+  assert.equal(diagnostics.sessionIndexReuseCount, 1);
+  assert.equal(diagnostics.sessionIndexLineCount, 500);
+  assert.equal(diagnostics.privatePath, undefined);
+
+  const hitDiagnostics = {};
+  directService.readFallback(2, {
+    cwd: "/workspace/default",
+    searchTerm: "base",
+    globalState: { roots: ["/workspace/default"] },
+    diagnostics: hitDiagnostics,
+  });
+  assert.equal(hitDiagnostics.cacheDecision, "hit");
+  assert.deepEqual(hitDiagnostics.cachedSourceTimings, {
+    stateDbMs: 3,
+    rolloutMs: 5,
+    sessionIndexMs: 7,
+    stateDbCount: 4,
+    rolloutCount: 5,
+    sessionIndexCount: 6,
+    baselineSourceCount: 15,
+    baselineResultCount: 2,
+    baselineFinalFilterPassCount: 3,
+    baselineFinalFilterInputCount: 18,
+    baselineFinalFilterOutputCount: 15,
+    baselineMergeInputCount: 15,
+    baselineMergeOutputCount: 12,
+    baselineMergeDuplicateCount: 3,
+    baselineLimitDropCount: 10,
+    rolloutFileStatCount: 12,
+    rolloutStatusTailReadCount: 2,
+    rolloutStatusTailBytes: 8192,
+    sessionIndexReadCount: 3,
+    sessionIndexReuseCount: 1,
+    sessionIndexLineCount: 500,
   });
 });
 
 test("fallback cache ttl is opt-in and expires cached entries when configured", () => {
   const { calls, service, setNow } = createService({ ttlMs: 10 });
-  service.readFallback(10, {});
+  const firstDiagnostics = {};
+  service.readFallback(10, { diagnostics: firstDiagnostics });
+  assert.equal(firstDiagnostics.cacheDecision, "miss-rebuild");
   setNow(1005);
-  service.readFallback(10, {});
+  const hitDiagnostics = {};
+  service.readFallback(10, { diagnostics: hitDiagnostics });
+  assert.equal(hitDiagnostics.cacheDecision, "hit");
+  assert.equal(hitDiagnostics.cacheTtlMs, 10);
   assert.deepEqual(calls, { stateDb: 1, rollout: 1, sessionIndex: 1 });
 
   setNow(1015);
-  service.readFallback(10, {});
-  assert.deepEqual(calls, { stateDb: 2, rollout: 2, sessionIndex: 2 });
+  const expiredDiagnostics = {};
+  service.readFallback(10, { diagnostics: expiredDiagnostics });
+  assert.equal(expiredDiagnostics.cacheDecision, "expired-rebuild");
+  assert.equal(expiredDiagnostics.cacheBuildReason, "expired");
+  assert.equal(expiredDiagnostics.sourceSnapshotHit, true);
+  assert.equal(expiredDiagnostics.cacheTtlMs, 10);
+  assert.equal(expiredDiagnostics.cacheBuildCount, 2);
+  assert.equal(expiredDiagnostics.cacheBuildNumber, 2);
+  assert.deepEqual(calls, { stateDb: 1, rollout: 1, sessionIndex: 1 });
 });
 
 test("status updates patch cached rows without adding missing threads", () => {
@@ -143,7 +441,9 @@ test("status updates patch cached rows without adding missing threads", () => {
   const diagnostics = {};
   const threads = service.readFallback(10, { diagnostics });
   assert.equal(diagnostics.cacheHit, true);
+  assert.equal(diagnostics.cacheDecision, "hit");
   assert.equal(diagnostics.cacheIncrementalUpdates, 1);
+  assert.equal(diagnostics.cacheBuildNumber, 1);
   assert.deepEqual(threads, [{
     id: "thread-1",
     name: "One",

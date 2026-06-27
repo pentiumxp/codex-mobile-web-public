@@ -72,7 +72,7 @@ test("archive state merge keeps backup and archived-session filters active", () 
   assert.match(serverJs, /function isBackupRolloutPath\(/);
   assert.match(serverJs, /archivedSessionThreadIds\(\)/);
   assert.match(serverJs, /mobileArchiveIndexService\.threadIds\(\)/);
-  assert.match(serverJs, /threadHasArchiveSignal\(thread\)/);
+  assert.match(serverJs, /threadHasArchiveSignal\(thread, archivedIds\)/);
   assert.match(serverJs, /isBackupRolloutPath\(row\.rollout_path\)/);
   assert.ok(serverJs.includes("url.pathname.match(/^\\/api\\/threads\\/([^/]+)\\/archive$/)"));
 });
@@ -93,7 +93,8 @@ test("projectless session-index fallback skips archived sessions", () => {
   const start = serverJs.indexOf("function readSessionIndexFallback(");
   const end = serverJs.indexOf("\nfunction ", start + 1);
   const body = serverJs.slice(start, end);
-  assert.match(body, /const archivedIds = archivedSessionThreadIds\(\);/);
+  assert.match(body, /const archivedIds = filters\.archivedIds && typeof filters\.archivedIds\.has === "function"/);
+  assert.match(body, /: archivedSessionThreadIds\(\);/);
   assert.match(body, /if \(!entry\.id \|\| !projectlessThreadIds\.has\(entry\.id\)\) continue;/);
   assert.match(body, /if \(archivedIds\.has\(entry\.id\)\) continue;/);
   assert.ok(

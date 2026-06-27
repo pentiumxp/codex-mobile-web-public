@@ -245,6 +245,22 @@ test("thread tile id selection starts with current thread then fills recents", (
   }), ["thread-2", "thread-3", "thread-1"]);
 });
 
+test("thread tile pinned selection keeps current thread visible by replacing the last pane", () => {
+  assert.deepEqual(tile.selectPinnedThreadTileIds({
+    currentThreadId: "thread-current",
+    pinnedThreadIds: ["thread-1", "thread-2", "thread-3"],
+    threadIds: ["thread-current", "thread-4"],
+    maxPanes: 3,
+  }), ["thread-1", "thread-2", "thread-current"]);
+
+  assert.deepEqual(tile.selectPinnedThreadTileIds({
+    currentThreadId: "thread-2",
+    pinnedThreadIds: ["thread-1", "thread-2", "thread-3"],
+    threadIds: ["thread-4"],
+    maxPanes: 3,
+  }), ["thread-1", "thread-2", "thread-3"]);
+});
+
 test("thread tile id selection can fill the user pane ceiling", () => {
   const threadIds = Array.from({ length: 16 }, (_, index) => `thread-${index + 1}`);
 

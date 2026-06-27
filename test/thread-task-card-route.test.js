@@ -7,6 +7,7 @@ const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
 const routingServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-task-card-routing-service.js"), "utf8");
+const threadDetailRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-detail-route-service.js"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
@@ -31,8 +32,27 @@ function functionBody(source, name) {
   throw new Error(`could not parse function ${name}`);
 }
 
+function functionSource(source, name) {
+  let start = source.indexOf(`async function ${name}(`);
+  if (start < 0) start = source.indexOf(`function ${name}(`);
+  assert.notEqual(start, -1, `missing function ${name}`);
+  const bodyStart = source.indexOf(") {", start) + 2;
+  assert.notEqual(bodyStart, 1, `missing function body ${name}`);
+  let depth = 0;
+  for (let index = bodyStart; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "{") depth += 1;
+    if (char === "}") depth -= 1;
+    if (depth === 0) return source.slice(start, index + 1);
+  }
+  throw new Error(`could not parse function ${name}`);
+}
+
 test("server exposes thread task card routes and enriches thread detail responses", () => {
   assert.match(serverJs, /createThreadTaskCardService/);
+  assert.match(serverJs, /createHomeAiAutonomousDeliveryReturnService/);
+  assert.match(serverJs, /const homeAiAutonomousDeliveryReturnService = createHomeAiAutonomousDeliveryReturnService/);
+  assert.match(serverJs, /onTerminalReturnCard: async \(event\) => homeAiAutonomousDeliveryReturnService\.send\(event, \{ workspaceId: "owner" \}\)/);
   assert.doesNotMatch(serverJs, /createThreadTaskCardIntentService/);
   assert.match(serverJs, /CODEX_MOBILE_THREAD_TASK_CARD_FILE/);
   assert.match(serverJs, /"\/api\/thread-task-cards"/);
@@ -41,6 +61,8 @@ test("server exposes thread task card routes and enriches thread detail response
   assert.match(serverJs, /const threadTaskCardDelete = url\.pathname\.match\(/);
   assert.match(serverJs, /const threadTaskCardRevoke = url\.pathname\.match\(/);
   assert.match(serverJs, /const threadTaskCardReply = url\.pathname\.match\(/);
+  assert.match(serverJs, /const threadTaskCardExecutionPause = url\.pathname\.match\(/);
+  assert.match(serverJs, /const threadTaskCardExecutionCancel = url\.pathname\.match\(/);
   assert.match(serverJs, /function attachThreadTaskCardsToThread\(/);
   assert.match(serverJs, /thread\.threadTaskCards = threadTaskCardService\.listForThread\(thread\.id\)/);
   assert.match(serverJs, /thread\.pendingIncomingTaskCardCount = taskCardCounts\.pendingIncoming/);
@@ -155,11 +177,15 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(serverJs, "workspaceDelegationScriptFallbackInstruction"), /must not be used as a substitute/);
   assert.match(functionBody(serverJs, "applyStartThreadRuntimeSettings"), /attachWorkspaceDelegationRuntimeGuidance\(params\)/);
   assert.match(functionBody(serverJs, "applyTurnRuntimeSettings"), /attachWorkspaceDelegationRuntimeGuidance\(params\)/);
-  assert.match(functionBody(serverJs, "sendRpc"), /logWorkspaceDelegationRpc\(method, params\);[\s\S]*this\.ws\.send\(JSON\.stringify\(payload\)\)/);
+  assert.match(functionBody(serverJs, "sendRpc"), /const serializedPayload = JSON\.stringify\(payload\)/);
+  assert.match(functionBody(serverJs, "sendRpc"), /logWorkspaceDelegationRpc\(method, params\);[\s\S]*this\.ws\.send\(serializedPayload\)/);
   assert.match(functionBody(serverJs, "handleServerRequest"), /msg\.method === "item\/tool\/call"[\s\S]*answerDynamicToolServerRequest\(request\)/);
   assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /createThreadTaskCardsFromSourceThread\(body\.sourceThreadId, body\)/);
   assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /threadTaskCardService\.reply\(prepared\.taskCardId, prepared\.actorThreadId, prepared\.body\)/);
   assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /TASK_CARD_RETURN_TOOL_FULL_NAME/);
+  assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /replyCardTerminal: Boolean/);
+  assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /replyCardRequiresReturn: Boolean/);
+  assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /replyCardAckPolicy:/);
   assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /forcedDirect: true/);
   assert.match(functionBody(serverJs, "taskCardReturnDynamicToolBody"), /returnToSource: true/);
   assert.match(functionBody(serverJs, "taskCardReturnDynamicToolBody"), /const status = normalizedTaskCardReturnStatus/);
@@ -193,9 +219,12 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(returnThreadTaskCardScript, /\/api\/thread-task-cards\/\$\{encodeURIComponent\(taskCardId\)\}\/reply/);
   assert.match(returnThreadTaskCardScript, /CODEX_MOBILE_KEY_FILE/);
   assert.match(returnThreadTaskCardScript, /--status <value>/);
+  assert.match(returnThreadTaskCardScript, /rejected/);
   assert.match(returnThreadTaskCardScript, /partially_completed/);
   assert.match(returnThreadTaskCardScript, /returnToSource = true/);
   assert.match(returnThreadTaskCardScript, /task-card-return:/);
+  assert.match(functionBody(serverJs, "taskCardReturnDynamicToolSpec"), /rejected/);
+  assert.match(functionBody(serverJs, "taskCardReturnDynamicToolSpec"), /partially_completed/);
 });
 
 test("thread task card routes preserve service status codes", () => {
@@ -209,11 +238,14 @@ test("thread task card routes preserve service status codes", () => {
   assert.match(routeBlock, /threadTaskCardService\.deleteCard/);
   assert.match(routeBlock, /threadTaskCardService\.revoke/);
   assert.match(routeBlock, /threadTaskCardService\.reply/);
+  assert.match(routeBlock, /threadTaskCardService\.pauseExecution/);
+  assert.match(routeBlock, /threadTaskCardService\.cancelExecution/);
   assert.match(serverJs, /function maybeAutoReplyThreadTaskCard\(/);
   assert.match(serverJs, /threadTaskCardService\.maybeAutoReplyCompletedTurn/);
+  assert.match(serverJs, /threadTaskCardService\.maybeResumeInterruptedTaskCard/);
   assert.match(serverJs, /maybeAutoReplyThreadTaskCard\(msg\.method, msg\.params \|\| null\)/);
   const statusPreservingErrors = routeBlock.match(/sendJson\(res, err\.statusCode \|\| 500, \{ ok: false, error: err\.message \|\| String\(err\) \}\);/g) || [];
-  assert.equal(statusPreservingErrors.length, 6);
+  assert.equal(statusPreservingErrors.length, 8);
 });
 
 test("approved task cards inherit target thread model and effort", () => {
@@ -302,23 +334,27 @@ test("server materializes structured task-card drafts from thread detail", () =>
   assert.match(serverJs, /maybeMaterializeThreadTaskCardDrafts\(msg\.method, msg\.params \|\| null\)/);
   assert.match(serverJs, /prepareResponse: prepareThreadDetailResponseResult/);
   assert.match(serverJs, /threadDetailReadOrchestrationService\.readThreadDetail/);
-  assert.match(serverJs, /sendJson\(res, detailResponse\.status \|\| 200, detailResponse\.body \|\| \{\}\)/);
+  assert.match(serverJs, /handleThreadDetailReadRoute\(\{/);
+  assert.match(threadDetailRouteServiceJs, /const preferRecentTurns = detailModeFromUrl\(url\) === "recent"/);
+  assert.match(threadDetailRouteServiceJs, /sendJson\(status, body\)/);
 });
 
 test("conversation render includes task card signature, toolbar, and action handlers", () => {
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v434"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v548"/);
   assert.match(appJs, /function threadTaskCardsForThread\(/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.status \|\| ""\) === "pending"\)/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.threadRole \|\| ""\) === "target"\)/);
   assert.match(appJs, /function settleCurrentThreadTaskCard\(/);
   assert.match(appJs, /settledCard\.threadRole === "target"/);
   assert.match(appJs, /settledCard\.threadRole === "source"/);
-  assert.match(appJs, /settleCurrentThreadTaskCard\(id, action === "approve" \? "approved" : action === "delete" \? "deleted" : action === "revoke" \? "revoked" : "replied"/);
+  assert.match(appJs, /settleThreadTaskCardForThread\(threadId, id, action === "approve" \? "approved" : action === "delete" \? "deleted" : action === "revoke" \? "revoked" : "replied"/);
   assert.match(appJs, /function threadTaskCardsSignature\(/);
   assert.match(appJs, /taskCards: threadTaskCardsSignature\(thread\)/);
   assert.match(appJs, /thread-card-task-badge/);
   assert.match(appJs, /function renderThreadTaskToolbar\(/);
   assert.match(appJs, /data-create-thread-task-card/);
+  assert.match(functionBody(appJs, "renderThreadTaskToolbar"), /data-thread-action-thread-id/);
+  assert.match(functionBody(appJs, "renderRolloutWarning"), /data-thread-action-thread-id/);
   assert.match(appJs, /function openContinuationDialog\(/);
   assert.match(appJs, /function closeContinuationDialog\(/);
   assert.match(appJs, /if \(\$\("continuationDialog"\)\) \$\("continuationDialog"\)\.addEventListener\("click"/);
@@ -328,9 +364,23 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /data-task-card-action="reply"/);
   assert.match(appJs, /data-task-card-action="delete"/);
   assert.match(appJs, /data-task-card-action="revoke"/);
+  assert.match(appJs, /data-task-card-thread-id/);
+  assert.match(appJs, /const threadDetailActionsApi = window\.CodexThreadDetailActions/);
+  assert.match(appJs, /threadDetailActionsApi\.resolveThreadDetailClickAction/);
   assert.match(appJs, /function createThreadTaskCardFromCurrent\(/);
+  assert.match(appJs, /function createThreadTaskCardFromThread\(/);
+  assert.match(functionBody(appJs, "createThreadTaskCardFromThread"), /sourceTurnId: activeTurnIdForThread\(thread\)/);
+  assert.match(functionBody(appJs, "createThreadTaskCardFromThread"), /await refreshThreadAfterTaskCard\(thread\.id\)/);
+  assert.doesNotMatch(functionBody(appJs, "createThreadTaskCardFromThread"), /currentLiveTurn\(\)/);
   assert.match(appJs, /function mutateThreadTaskCard\(/);
   assert.match(appJs, /function replyTaskCard\(/);
+  assert.match(functionBody(appJs, "mutateThreadTaskCard"), /const threadId = String\(options\.threadId \|\| body\.threadId \|\| state\.currentThreadId \|\| ""\)\.trim\(\)/);
+  assert.match(functionBody(appJs, "mutateThreadTaskCard"), /Object\.assign\(\{\}, body, \{ threadId \}\)/);
+  assert.match(functionBody(appJs, "mutateThreadTaskCard"), /settleThreadTaskCardForThread\(threadId, id,/);
+  assert.match(functionBody(appJs, "replyTaskCard"), /findThreadTaskCard\(cardId, threadId\)/);
+  assert.match(appJs, /replyTaskCard\(actionPlan\.cardId, \{ threadId: actionPlan\.threadId \}\)/);
+  assert.match(appJs, /mutateThreadTaskCard\(actionPlan\.cardId, actionPlan\.taskCardAction, \{\}, \{ threadId: actionPlan\.threadId \}\)/);
+  assert.match(functionBody(appJs, "bindCurrentThreadActions"), /threadActionContextFromElement\(button\)/);
   assert.match(appJs, /function isThreadTaskCardCommandText\(/);
   assert.match(appJs, /function sendThreadTaskCardCommand\(/);
   assert.match(functionBody(appJs, "sendMessage"), /await sendThreadTaskCardCommand\(text\)/);
@@ -397,7 +447,8 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /commonPrefixLength\(id, thread\.id\)/);
   assert.match(appJs, /entry\.prefix >= 14/);
   assert.match(appJs, /function matchingThreadTaskCardsForDraft\(/);
-  assert.match(appJs, /matchingThreadTaskCardsForDraft\(draft, turn\)/);
+  assert.match(appJs, /matchingThreadTaskCardsForDraft\(draft, turn, contextThread\)/);
+  assert.match(functionBody(appJs, "matchingThreadTaskCardsForDraft"), /const contextThread = renderContextThread\(thread\)/);
   assert.match(appJs, /function renderThreadTaskCardExpandable\(/);
   assert.match(appJs, /const STORAGE_TASK_CARD_DRAFT_STATES = "codexMobileThreadTaskCardDraftStates"/);
   assert.match(appJs, /THREAD_TASK_CARD_DRAFT_CREATE_STALE_MS/);
@@ -407,7 +458,11 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /function saveThreadTaskCardDraftStates\(\)/);
   assert.match(appJs, /function queueThreadTaskCardDraftCreation\(/);
   assert.match(appJs, /state\.activeThreadTaskCardDraftCreations\.has\(key\)/);
+  assert.match(functionBody(appJs, "queueThreadTaskCardDraftCreation"), /const sourceThreadId = renderContextThreadId\(thread\)/);
+  assert.match(functionBody(appJs, "queueThreadTaskCardDraftCreation"), /createThreadTaskCardDraft\(key, \{ threadId: sourceThreadId \}\)/);
   assert.match(appJs, /function createThreadTaskCardDraft\(/);
+  assert.match(functionBody(appJs, "createThreadTaskCardDraft"), /const requestedThread = taskCardActionThread\(requestedThreadId\)/);
+  assert.match(functionBody(appJs, "createThreadTaskCardDraft"), /const resolved = findThreadTaskCardDraftByKey\(draftKey, requestedThread\)/);
   assert.match(functionBody(appJs, "createThreadTaskCardDraft"), /const targetRefs = threadTaskCardDraftTargetThreads\(draft\);/);
   assert.match(functionBody(appJs, "createThreadTaskCardDraft"), /const targetThreadIds = threadTaskCardDraftTargetIds\(draft\);/);
   assert.match(functionBody(appJs, "createThreadTaskCardDraft"), /const body = truncateThreadTaskCardBody\(draft\.body\);/);
@@ -425,7 +480,10 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.doesNotMatch(appJs, /data-task-card-draft-action="approve"/);
   assert.doesNotMatch(appJs, /approveThreadTaskCardDraft/);
   assert.match(appJs, /data-task-card-draft-action="dismiss"/);
-  assert.match(appJs, /idempotencyKey: `task-card-draft:\$\{state\.currentThreadId\}:\$\{draftKey\}`/);
+  assert.match(appJs, /data-task-card-draft-thread-id/);
+  assert.match(appJs, /function scheduleThreadTaskCardDraftStateRender\(/);
+  assert.match(appJs, /dismissThreadTaskCardDraft\(actionPlan\.draftKey, \{ threadId: actionPlan\.threadId \}\)/);
+  assert.match(appJs, /idempotencyKey: `task-card-draft:\$\{sourceThreadId\}:\$\{draftKey\}`/);
   assert.match(appJs, /Task card created; opening target thread/);
   assert.match(appJs, /Task cards created: \$\{createdCards\.length\}/);
   assert.match(appJs, /state\.pendingPluginRouteHint = createdCards\.length === 1 \? normalizePluginRouteHint\(\{/);
@@ -435,7 +493,8 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /pluginEmbedApi\.findRouteHintTargetNode\(conversation, hint, \{ escapeSelector: escapeSelectorAttr \}\)/);
   assert.match(appJs, /Task card approved; starting target turn/);
   assert.match(appJs, /\$\{items\}\$\{approvalsHtml\}[\s\S]*\$\{showStatusLine \? [\s\S]*: ""\}[\s\S]*\$\{draftHtml\}\$\{pendingDraftHtml\}/);
-  assert.match(appJs, /\$\{turnsHtml\}\$\{approvalsHtml\}\$\{taskCardsHtml\}/);
+  assert.match(functionBody(appJs, "renderCurrentThread"), /threadDetailRenderPlanApi\.planSingleThreadFullRenderShell/);
+  assert.match(functionBody(appJs, "renderCurrentThread"), /taskCardsHtml/);
   assert.match(appJs, /Task card draft request/);
   assert.match(indexHtml, /id="workspaceDelegationSettings"/);
   assert.match(stylesCss, /\.workspace-delegation-row/);
@@ -447,4 +506,522 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.doesNotMatch(appJs, /function maybeDelegateCrossWorkspaceMessage\(/);
   assert.doesNotMatch(functionBody(appJs, "sendMessage"), /maybeDelegateCrossWorkspaceMessage/);
   assert.doesNotMatch(functionBody(appJs, "sendMessage"), /workspaceDelegation/);
+});
+
+test("client pane toolbar actions use the owning pane thread", async () => {
+  const sources = [
+    "findThreadById",
+    "threadActionElementThreadId",
+    "threadActionContextFromElement",
+    "bindCurrentThreadActions",
+  ].map((name) => functionSource(appJs, name));
+  const harness = Function(`
+const calls = { start: [], task: [], dismiss: [], older: [], errors: [] };
+function button(dataset = {}) {
+  return {
+    dataset,
+    listeners: {},
+    addEventListener(type, listener) {
+      this.listeners[type] = listener;
+    },
+    closest() {
+      return null;
+    },
+  };
+}
+const newThreadButton = button({ threadActionThreadId: "thread-pane" });
+const taskButton = button({ threadActionThreadId: "thread-pane" });
+const dismissButton = button({ threadActionThreadId: "thread-pane" });
+const olderButton = button({ threadActionThreadId: "thread-pane" });
+const paneThread = { id: "thread-pane", name: "Pane" };
+const currentThread = { id: "thread-current", name: "Current" };
+const state = {
+  currentThreadId: "thread-current",
+  currentThread,
+  threads: [{ id: "thread-list", name: "List" }],
+  threadTileDetails: new Map([["thread-pane", paneThread]]),
+};
+const conversation = {
+  querySelectorAll(selector) {
+    if (selector === "[data-new-thread-from-current]") return [newThreadButton];
+    if (selector === "[data-create-thread-task-card]") return [taskButton];
+    if (selector === "[data-dismiss-rollout-warning]") return [dismissButton];
+    if (selector === "[data-load-older-turns]") return [olderButton];
+    return [];
+  },
+};
+function $(id) {
+  if (id === "conversation") return conversation;
+  return null;
+}
+function startNewThreadFromThread(thread) {
+  calls.start.push(thread && thread.id || "");
+  return Promise.resolve();
+}
+function createThreadTaskCardFromThread(thread) {
+  calls.task.push(thread && thread.id || "");
+  return Promise.resolve();
+}
+function dismissRolloutWarning(thread) {
+  calls.dismiss.push(thread && thread.id || "");
+}
+function loadOlderThreadTurns(options) {
+  calls.older.push({
+    threadId: options && options.threadId || "",
+    thread: options && options.thread && options.thread.id || "",
+    preserveScroll: Boolean(options && options.preserveScroll),
+    source: options && options.source || "",
+  });
+  return Promise.resolve();
+}
+function showError(err) { calls.errors.push(String(err && err.message || err)); }
+${sources.join("\n")}
+return {
+  bind: bindCurrentThreadActions,
+  async clickAll() {
+    newThreadButton.listeners.click({});
+    taskButton.listeners.click({});
+    dismissButton.listeners.click({});
+    olderButton.listeners.click({});
+    await Promise.resolve();
+  },
+  calls,
+};
+`)();
+
+  harness.bind();
+  await harness.clickAll();
+
+  assert.deepEqual(harness.calls.start, ["thread-pane"]);
+  assert.deepEqual(harness.calls.task, ["thread-pane"]);
+  assert.deepEqual(harness.calls.dismiss, ["thread-pane"]);
+  assert.deepEqual(harness.calls.older, [{
+    threadId: "thread-pane",
+    thread: "thread-pane",
+    preserveScroll: true,
+    source: "button",
+  }]);
+  assert.deepEqual(harness.calls.errors, []);
+});
+
+test("client manual task-card creation uses pane source turn and refresh", async () => {
+  const createSource = functionSource(appJs, "createThreadTaskCardFromThread");
+  const harness = Function(`
+const calls = { textInputs: [], activeTurnThreads: [], refreshes: [], successes: [], failures: [], errors: [] };
+const paneThread = { id: "thread-pane", cwd: "/work/pane", name: "Pane Thread" };
+const state = {
+  currentThreadId: "thread-current",
+  currentThread: { id: "thread-current", cwd: "/work/current", name: "Current Thread" },
+  selectedCwd: "/work/fallback",
+};
+let apiBody = null;
+const textInputResponses = ["thread-target", "Repair title", "Repair body"];
+function requestAppTextInput(message, value, options) {
+  calls.textInputs.push({ message, value, title: options && options.title || "" });
+  return Promise.resolve(textInputResponses.shift());
+}
+function resolveTargetThreadReferences(input) {
+  return [{ threadId: String(input || ""), thread: { id: String(input || ""), cwd: "/work/target" } }];
+}
+function threadTitleForDisplay(thread) { return thread && thread.name || ""; }
+function summarizeTaskCardText(value) { return String(value || "").slice(0, 80); }
+function activeTurnIdForThread(thread) {
+  calls.activeTurnThreads.push(thread && thread.id || "");
+  return thread && thread.id === "thread-pane" ? "turn-pane-live" : "turn-current-live";
+}
+function refreshThreadAfterTaskCard(threadId) {
+  calls.refreshes.push(String(threadId || ""));
+  return Promise.resolve();
+}
+function recordHomeAiDiagnosticSuccess(input) { calls.successes.push(input); }
+function recordHomeAiDiagnosticFailure(input) { calls.failures.push(input); }
+function diagnosticThreadHash(value) { return "hash:" + value; }
+function diagnosticErrorCode() { return "error"; }
+function diagnosticErrorStatus() { return 0; }
+function showError(err) { calls.errors.push(String(err && err.message || err)); }
+function $(id) { return { classList: { remove() {}, add() {} }, textContent: "" }; }
+async function api(url, options) {
+  apiBody = JSON.parse(options.body);
+  return { ok: true };
+}
+${createSource}
+return {
+  run: () => createThreadTaskCardFromThread(paneThread, { preventDefault() {}, stopPropagation() {} }),
+  result: () => ({ apiBody, calls }),
+};
+`)();
+
+  await harness.run();
+  const result = harness.result();
+
+  assert.equal(result.apiBody.sourceThreadId, "thread-pane");
+  assert.equal(result.apiBody.sourceWorkspaceId, "/work/pane");
+  assert.equal(result.apiBody.sourceThreadTitle, "Pane Thread");
+  assert.equal(result.apiBody.sourceTurnId, "turn-pane-live");
+  assert.deepEqual(result.apiBody.targetThreadIds, ["thread-target"]);
+  assert.deepEqual(result.apiBody.targetWorkspaceIds, { "thread-target": "/work/target" });
+  assert.deepEqual(result.calls.activeTurnThreads, ["thread-pane"]);
+  assert.deepEqual(result.calls.refreshes, ["thread-pane"]);
+  assert.equal(result.calls.successes.length, 1);
+  assert.deepEqual(result.calls.failures, []);
+  assert.deepEqual(result.calls.errors, []);
+});
+
+test("client older-turn loading updates the owning tile pane thread", async () => {
+  const sources = [
+    "findThreadById",
+    "threadTurnsCursorParam",
+    "turnsArrayFromListResult",
+    "threadHistoryLoadTarget",
+    "renderThreadHistoryLoadTarget",
+    "loadOlderThreadTurns",
+  ].map((name) => functionSource(appJs, name));
+  const harness = Function(`
+const calls = { api: [], currentRender: 0, tileRender: [], idle: [], errors: [] };
+const MAX_VISIBLE_TURNS = 10;
+const MAX_EXPANDED_VISIBLE_TURNS = 200;
+const currentThread = {
+  id: "thread-current",
+  turns: [{ id: "current-only" }],
+  mobileOlderTurnsCursor: "current-cursor",
+  mobileOmittedTurnCount: 1,
+};
+const paneThread = {
+  id: "thread-pane",
+  turns: [{ id: "existing" }],
+  mobileOlderTurnsCursor: "pane-cursor",
+  mobileOmittedTurnCount: 3,
+};
+const state = {
+  currentThreadId: "thread-current",
+  currentThread,
+  threadTileMode: true,
+  threadTileDetails: new Map([["thread-pane", paneThread]]),
+  threadHistoryBusy: false,
+  threadHistoryError: "",
+  threads: [],
+};
+function threadTilePaneIsVisible(id) { return id === "thread-pane"; }
+function renderCurrentThread() { calls.currentRender += 1; }
+function scheduleRenderThreadTilePane(id, options) {
+  calls.tileRender.push({ id, preserveScroll: Boolean(options && options.preserveScroll) });
+  return true;
+}
+function $(id) {
+  if (id !== "conversation") return null;
+  return { scrollTop: 0, scrollHeight: 100 };
+}
+function sortTurnsForDisplay(turns) { return Array.isArray(turns) ? turns.slice() : []; }
+function mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) {
+  return Object.assign({}, existingTurn || {}, incomingTurn || {}, { merged: true });
+}
+async function api(url, options) {
+  calls.api.push({ url, timeoutMs: options && options.timeoutMs });
+  return {
+    data: [{ id: "older" }, { id: "existing", text: "updated" }],
+    nextCursor: "next-cursor",
+    backwardsCursor: "newer-cursor",
+  };
+}
+function markIdleActivity(value) { calls.idle.push(value); }
+function normalizeClientErrorMessage(value) { return String(value || ""); }
+function showError(err) { calls.errors.push(String(err && err.message || err)); }
+function preserveConversationScrollAfterPrepend() { calls.errors.push("unexpected-current-scroll-preserve"); }
+${sources.join("\n")}
+return {
+  run: () => loadOlderThreadTurns({ threadId: "thread-pane", preserveScroll: true, source: "test" }),
+  result: () => ({
+    currentThread,
+    paneThread: state.threadTileDetails.get("thread-pane"),
+    busy: state.threadHistoryBusy,
+    error: state.threadHistoryError,
+    calls,
+  }),
+};
+`)();
+
+  await harness.run();
+  const result = harness.result();
+
+  assert.deepEqual(result.calls.api, [{
+    url: "/api/threads/thread-pane/turns?limit=10&sortDirection=desc&cursor=pane-cursor",
+    timeoutMs: 30000,
+  }]);
+  assert.equal(result.currentThread.turns.length, 1);
+  assert.equal(result.currentThread.turns[0].id, "current-only");
+  assert.deepEqual(result.paneThread.turns.map((turn) => turn.id), ["older", "existing"]);
+  assert.equal(result.paneThread.turns[1].merged, true);
+  assert.equal(result.paneThread.mobileHistoryExpanded, true);
+  assert.equal(result.paneThread.mobileOmittedTurnCount, 2);
+  assert.equal(result.paneThread.mobileOlderTurnsCursor, "next-cursor");
+  assert.equal(result.paneThread.mobileNewerTurnsCursor, "newer-cursor");
+  assert.equal(result.busy, false);
+  assert.equal(result.error, "");
+  assert.equal(result.calls.currentRender, 0);
+  assert.deepEqual(result.calls.tileRender, [
+    { id: "thread-pane", preserveScroll: true },
+    { id: "thread-pane", preserveScroll: true },
+  ]);
+  assert.deepEqual(result.calls.idle, ["History loaded"]);
+  assert.deepEqual(result.calls.errors, []);
+});
+
+test("client task-card draft matching uses the explicit render context thread", () => {
+  const sources = [
+    "renderContextThreadId",
+    "renderContextThread",
+    "uniqueThreadTaskCardTargetIds",
+    "threadTaskCardDraftTargetIds",
+    "matchingThreadTaskCardsForDraft",
+  ].map((name) => functionSource(appJs, name));
+  const harness = Function(`
+const state = {
+  currentThreadId: "thread-current",
+  currentThread: {
+    id: "thread-current",
+    threadTaskCards: [
+      {
+        id: "card-current",
+        source: { threadId: "thread-current", turnId: "turn-draft" },
+        target: { threadId: "thread-target" },
+        message: { title: "Repair", body: "Do the work" },
+      },
+    ],
+  },
+  renderContextThreadId: "",
+  renderContextThread: null,
+};
+${sources.join("\n")}
+return { matchingThreadTaskCardsForDraft };
+`)();
+  const paneThread = {
+    id: "thread-pane",
+    threadTaskCards: [
+      {
+        id: "card-pane",
+        source: { threadId: "thread-pane", turnId: "turn-draft" },
+        target: { threadId: "thread-target" },
+        message: { title: "Repair", body: "Do the work" },
+      },
+    ],
+  };
+  const draft = {
+    targetThreadIds: ["thread-target"],
+    title: "Repair",
+    body: "Do the work",
+  };
+  const turn = { id: "turn-draft" };
+
+  assert.equal(harness.matchingThreadTaskCardsForDraft(draft, turn)[0].id, "card-current");
+  assert.equal(harness.matchingThreadTaskCardsForDraft(draft, turn, paneThread)[0].id, "card-pane");
+});
+
+test("client task-card draft creation uses queued source thread context", async () => {
+  const createSource = functionSource(appJs, "createThreadTaskCardDraft");
+  const harness = Function(`
+const paneThread = { id: "thread-pane", cwd: "/work/pane", name: "Pane Thread", threadTaskCards: [] };
+const state = {
+  activeThreadTaskCardDraftCreations: new Set(),
+  threadTileDetails: new Map([["thread-pane", paneThread]]),
+  currentThreadId: "thread-current",
+  currentThread: { id: "thread-current", cwd: "/work/current", name: "Current Thread", threadTaskCards: [] },
+  selectedCwd: "/work/fallback",
+  pendingPluginRouteHint: null,
+  threadTileMode: true,
+};
+const draftStates = [];
+const outgoingCounts = [];
+const incomingCounts = [];
+let apiBody = null;
+let findThreadArg = null;
+let loadedThreadId = "";
+function taskCardActionThread(threadId) {
+  const id = String(threadId || "").trim();
+  if (id === "thread-pane") return paneThread;
+  if (id === "thread-current") return state.currentThread;
+  return state.currentThread;
+}
+function findThreadTaskCardDraftByKey(draftKey, thread) {
+  findThreadArg = thread;
+  return {
+    key: String(draftKey || ""),
+    sourceThread: thread,
+    turn: { id: "turn-pane" },
+    draft: {
+      targetThreadIds: ["thread-target"],
+      title: "Repair target",
+      summary: "Repair summary",
+      body: "Repair body",
+      workflowMode: "manual",
+      workflowId: "",
+    },
+  };
+}
+function setThreadTaskCardDraftState(key, value) { draftStates.push({ key, value }); }
+function threadTaskCardDraftTargetThreads(draft) { return [{ threadId: "thread-target", thread: { id: "thread-target", cwd: "/work/target" } }]; }
+function threadTaskCardDraftTargetIds(draft) { return draft.targetThreadIds || []; }
+function truncateThreadTaskCardBody(value) { return String(value || ""); }
+function threadTitleForDisplay(thread) { return thread && thread.name || ""; }
+function summarizeTaskCardText(value) { return String(value || "").slice(0, 80); }
+function upsertThreadTaskCardOnThread(thread, card) { thread.threadTaskCards = [card]; }
+function incrementPendingOutgoingTaskCardCount(threadId, delta) { outgoingCounts.push({ threadId, delta }); }
+function incrementPendingIncomingTaskCardCount(threadId, delta) { incomingCounts.push({ threadId, delta }); }
+function normalizePluginRouteHint(value) { return value; }
+function diagnosticThreadHash(value) { return "hash:" + value; }
+function diagnosticItemHash(value) { return "item:" + value; }
+function recordHomeAiDiagnosticSuccess() {}
+function recordHomeAiDiagnosticFailure() {}
+function diagnosticErrorCode() { return "error"; }
+function diagnosticErrorStatus() { return 0; }
+function normalizeClientErrorMessage(value) { return String(value || ""); }
+function renderThreads() {}
+function renderCurrentThread() {}
+function threadTilePaneIsVisible() { return true; }
+function scheduleRenderThreadTilePane() {}
+function showError(err) { throw err; }
+function loadThreads() { return Promise.resolve(); }
+function loadThread(threadId) { loadedThreadId = String(threadId || ""); return Promise.resolve(); }
+function $(id) { return { classList: { remove() {}, add() {} }, textContent: "" }; }
+async function api(url, options) {
+  apiBody = JSON.parse(options.body);
+  return {
+    cards: [{
+      id: "card-created",
+      status: "pending",
+      source: { threadId: apiBody.sourceThreadId, turnId: apiBody.sourceTurnId },
+      target: { threadId: "thread-target" },
+      message: { title: apiBody.title, body: apiBody.body },
+      threadRole: "source",
+    }],
+  };
+}
+${createSource}
+return {
+  run: () => createThreadTaskCardDraft("draft-key", { threadId: "thread-pane" }),
+  result: () => ({ apiBody, findThreadArg, paneThread, draftStates, outgoingCounts, incomingCounts, loadedThreadId }),
+};
+`)();
+
+  await harness.run();
+  const result = harness.result();
+  assert.equal(result.findThreadArg.id, "thread-pane");
+  assert.equal(result.apiBody.sourceThreadId, "thread-pane");
+  assert.equal(result.apiBody.sourceWorkspaceId, "/work/pane");
+  assert.equal(result.apiBody.sourceThreadTitle, "Pane Thread");
+  assert.equal(result.apiBody.idempotencyKey, "task-card-draft:thread-pane:draft-key");
+  assert.equal(result.apiBody.sourceTurnId, "turn-pane");
+  assert.equal(result.paneThread.threadTaskCards[0].id, "card-created");
+  assert.deepEqual(result.outgoingCounts, [{ threadId: "thread-pane", delta: 1 }]);
+  assert.deepEqual(result.incomingCounts, [{ threadId: "thread-target", delta: 1 }]);
+  assert.equal(result.loadedThreadId, "thread-target");
+});
+
+test("client task-card draft state updates render the owning pane thread", () => {
+  const sources = [
+    "scheduleThreadTaskCardDraftStateRender",
+    "setThreadTaskCardDraftState",
+    "dismissThreadTaskCardDraft",
+  ].map((name) => functionSource(appJs, name));
+  const harness = Function(`
+const state = {
+  currentThreadId: "thread-current",
+  threadTileMode: true,
+  threadTaskCardDraftStates: new Map(),
+};
+const currentRenders = [];
+const tileRenders = [];
+function threadTaskCardDraftState(key) {
+  return state.threadTaskCardDraftStates.get(String(key || "")) || {};
+}
+function saveThreadTaskCardDraftStates() {}
+function renderCurrentThread() { currentRenders.push("current"); }
+function threadTilePaneIsVisible(threadId) { return String(threadId || "") === "thread-pane"; }
+function scheduleRenderThreadTilePane(threadId, options) {
+  tileRenders.push({ threadId: String(threadId || ""), preserveScroll: Boolean(options && options.preserveScroll) });
+  return true;
+}
+${sources.join("\n")}
+return {
+  dismiss: (key, options) => dismissThreadTaskCardDraft(key, options),
+  setState: (key, value, options) => setThreadTaskCardDraftState(key, value, options),
+  result: () => ({
+    currentRenders,
+    tileRenders,
+    paneState: state.threadTaskCardDraftStates.get("draft-pane"),
+    currentState: state.threadTaskCardDraftStates.get("draft-current"),
+  }),
+};
+`)();
+
+  harness.dismiss("draft-pane", { threadId: "thread-pane" });
+  let result = harness.result();
+  assert.deepEqual(result.currentRenders, []);
+  assert.deepEqual(result.tileRenders, [{ threadId: "thread-pane", preserveScroll: true }]);
+  assert.equal(result.paneState.status, "dismissed");
+
+  harness.setState("draft-current", { status: "dismissed" }, { threadId: "thread-current" });
+  result = harness.result();
+  assert.deepEqual(result.currentRenders, ["current"]);
+  assert.equal(result.currentState.status, "dismissed");
+});
+
+test("client task-card pending counts update the owning tile pane detail", () => {
+  const sources = [
+    "findThreadById",
+    "taskCardCountThreadsForId",
+    "incrementPendingIncomingTaskCardCount",
+    "incrementPendingOutgoingTaskCardCount",
+  ].map((name) => functionSource(appJs, name));
+  const harness = Function(`
+const listThread = {
+  id: "thread-pane",
+  pendingIncomingTaskCardCount: 5,
+  pendingOutgoingTaskCardCount: 2,
+  pendingTaskCardCount: 7,
+};
+const tileThread = {
+  id: "thread-pane",
+  pendingIncomingTaskCardCount: 3,
+  pendingOutgoingTaskCardCount: 4,
+  pendingTaskCardCount: 7,
+};
+const currentThread = {
+  id: "thread-current",
+  pendingIncomingTaskCardCount: 1,
+  pendingOutgoingTaskCardCount: 1,
+  pendingTaskCardCount: 2,
+};
+const state = {
+  currentThreadId: "thread-current",
+  currentThread,
+  threads: [listThread],
+  threadTileDetails: new Map([["thread-pane", tileThread]]),
+};
+${sources.join("\n")}
+return {
+  listThread,
+  tileThread,
+  currentThread,
+  incrementIncoming: () => incrementPendingIncomingTaskCardCount("thread-pane", -1),
+  incrementOutgoing: () => incrementPendingOutgoingTaskCardCount("thread-pane", -2),
+};
+`)();
+
+  harness.incrementIncoming();
+  assert.equal(harness.tileThread.pendingIncomingTaskCardCount, 2);
+  assert.equal(harness.tileThread.pendingOutgoingTaskCardCount, 4);
+  assert.equal(harness.tileThread.pendingTaskCardCount, 6);
+  assert.equal(harness.listThread.pendingIncomingTaskCardCount, 2);
+  assert.equal(harness.listThread.pendingOutgoingTaskCardCount, 4);
+  assert.equal(harness.listThread.pendingTaskCardCount, 6);
+  assert.equal(harness.currentThread.pendingTaskCardCount, 2);
+
+  harness.incrementOutgoing();
+  assert.equal(harness.tileThread.pendingIncomingTaskCardCount, 2);
+  assert.equal(harness.tileThread.pendingOutgoingTaskCardCount, 2);
+  assert.equal(harness.tileThread.pendingTaskCardCount, 4);
+  assert.equal(harness.listThread.pendingIncomingTaskCardCount, 2);
+  assert.equal(harness.listThread.pendingOutgoingTaskCardCount, 2);
+  assert.equal(harness.listThread.pendingTaskCardCount, 4);
+  assert.equal(harness.currentThread.pendingTaskCardCount, 2);
 });

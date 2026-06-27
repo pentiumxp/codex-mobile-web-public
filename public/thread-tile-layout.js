@@ -116,6 +116,19 @@
     return ids.slice(0, maxPanes);
   }
 
+  function selectPinnedThreadTileIds(input = {}) {
+    const maxPanes = clampInteger(input.maxPanes || 1, 1, 12);
+    const currentThreadId = String(input.currentThreadId || "").trim();
+    const ids = uniqueThreadIds([
+      ...(Array.isArray(input.pinnedThreadIds) ? input.pinnedThreadIds : []),
+      ...(Array.isArray(input.threadIds) ? input.threadIds : []),
+    ]).slice(0, maxPanes);
+    if (!currentThreadId || ids.includes(currentThreadId)) return ids;
+    if (ids.length >= maxPanes) ids[Math.max(0, maxPanes - 1)] = currentThreadId;
+    else ids.push(currentThreadId);
+    return uniqueThreadIds(ids).slice(0, maxPanes);
+  }
+
   function normalizeSplitPairs(values = [], ids = []) {
     const idSet = new Set(uniqueThreadIds(ids));
     const used = new Set();
@@ -167,6 +180,7 @@
     DEFAULT_MIN_TABLET_PANE_WIDTH,
     layoutForViewport,
     normalizeSplitPairs,
+    selectPinnedThreadTileIds,
     selectThreadTileIds,
     threadTileColumnGroups,
   };

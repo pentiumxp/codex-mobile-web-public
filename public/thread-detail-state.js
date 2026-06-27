@@ -8,8 +8,399 @@
     root.CodexThreadDetailState = api;
   }
 }(typeof globalThis !== "undefined" ? globalThis : null, function () {
+  const DETAIL_ONLY_SUMMARY_FIELDS = Object.freeze([
+    "turns",
+    "runtimeSettings",
+    "threadTaskCards",
+    "mobileDetailLoaded",
+    "mobileLoading",
+    "mobileLoadError",
+    "mobileReadWarning",
+    "mobileReadMode",
+    "mobileDiagnostics",
+    "mobileProjectionVersion",
+    "mobileProjection",
+    "mobileProjectionRevision",
+    "mobileVisibleItemKeys",
+    "mobileOlderTurnsCursor",
+    "mobileNewerTurnsCursor",
+  ]);
+
   function defaultVisibleWeight(item) {
     return item ? JSON.stringify(item).length : 0;
+  }
+
+  function boundedCount(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number < 0) return 0;
+    return Math.trunc(number);
+  }
+
+  function shortString(value, maxLength = 80) {
+    return String(value || "").slice(0, maxLength);
+  }
+
+  function objectOrEmpty(value) {
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  }
+
+  function threadListSummaryFromDetailThread(thread) {
+    if (!thread || typeof thread !== "object" || !thread.id) return null;
+    const summary = Object.assign({}, thread);
+    for (const field of DETAIL_ONLY_SUMMARY_FIELDS) {
+      delete summary[field];
+    }
+    return summary;
+  }
+
+  function threadHasLoadedDetailState(thread) {
+    if (!thread || typeof thread !== "object") return false;
+    if (thread.mobileLoading || thread.mobileLoadError) return false;
+    if (!Array.isArray(thread.turns)) return false;
+    if (thread.turns.length > 0) return true;
+    return thread.mobileDetailLoaded === true;
+  }
+
+  function threadHasReusableLoadedDetailState(thread) {
+    if (!threadHasLoadedDetailState(thread)) return false;
+    return Array.isArray(thread.turns) && thread.turns.length > 0;
+  }
+
+  function rolloutSizeBytesFromThread(thread) {
+    const size = Number(thread && thread.rolloutSizeBytes);
+    return Number.isFinite(size) && size > 0 ? size : 0;
+  }
+
+  function emptyDetailHistoryEvidenceForThread(thread) {
+    const rolloutSizeBytes = rolloutSizeBytesFromThread(thread);
+    const omittedTurns = boundedCount(thread && thread.mobileOmittedTurnCount);
+    const visibleItemKeyCount = Array.isArray(thread && thread.mobileVisibleItemKeys)
+      ? thread.mobileVisibleItemKeys.length
+      : 0;
+    const taskCardCount = Array.isArray(thread && thread.threadTaskCards)
+      ? thread.threadTaskCards.length
+      : 0;
+    const pendingTaskCardCount = boundedCount(thread && thread.pendingTaskCardCount);
+    const hasActiveTurnEvidence = Boolean(thread && (thread.activeTurnId || thread.mobileRolloutActiveTurn));
+    return {
+      hasEvidence: rolloutSizeBytes > 0
+        || omittedTurns > 0
+        || visibleItemKeyCount > 0
+        || hasActiveTurnEvidence
+        || taskCardCount > 0
+        || pendingTaskCardCount > 0,
+      rolloutSizeBytes,
+      omittedTurns,
+      visibleItemKeyCount,
+      hasActiveTurnEvidence,
+      taskCardCount,
+      pendingTaskCardCount,
+    };
+  }
+
+  function planEmptyDetailHistoryRecovery(input = {}) {
+    const thread = input.thread;
+    if (!thread || typeof thread !== "object") {
+      return { shouldRecover: false, reason: "missing-thread" };
+    }
+    if (thread.mobileLoading) {
+      return { shouldRecover: false, reason: "thread-loading" };
+    }
+    if (thread.mobileLoadError) {
+      return { shouldRecover: false, reason: "thread-load-error" };
+    }
+    const threadId = String(input.threadId || input.currentThreadId || thread.id || "").trim();
+    if (!threadId) {
+      return { shouldRecover: false, reason: "missing-thread-id" };
+    }
+    const evidence = emptyDetailHistoryEvidenceForThread(thread);
+    if (!evidence.hasEvidence) {
+      return { shouldRecover: false, reason: "no-history-evidence", evidence };
+    }
+    const readMode = String(thread.mobileReadMode || "");
+    const recoveryKey = [threadId, readMode, evidence.rolloutSizeBytes, evidence.omittedTurns, evidence.visibleItemKeyCount].join("|");
+    const nowMs = Number.isFinite(Number(input.nowMs)) ? Number(input.nowMs) : Date.now();
+    const lastRecoveredAtMs = Number(input.lastRecoveredAtMs || 0);
+    const cooldownMs = Math.max(0, Number(input.cooldownMs || 0));
+    if (lastRecoveredAtMs && cooldownMs && nowMs - lastRecoveredAtMs < cooldownMs) {
+      return {
+        shouldRecover: false,
+        reason: "cooldown",
+        evidence,
+        recoveryKey,
+        nowMs,
+      };
+    }
+    const details = input.details && typeof input.details === "object" ? input.details : {};
+    return {
+      shouldRecover: true,
+      reason: "empty-detail-history-evidence",
+      evidence,
+      recoveryKey,
+      nowMs,
+      diagnosticReason: "empty_render_with_history_evidence",
+      event: {
+        threadId,
+        readMode,
+        rolloutSizeBytes: evidence.rolloutSizeBytes,
+        omittedTurns: evidence.omittedTurns,
+        visibleItemKeyCount: evidence.visibleItemKeyCount,
+        source: String(details.source || "").slice(0, 80),
+        renderMode: String(details.renderMode || "").slice(0, 80),
+      },
+    };
+  }
+
+  function buildThreadDetailRenderEvidence(input = {}) {
+    const threadId = String(input.threadId || "").trim();
+    if (!threadId) return null;
+    const turnCount = boundedCount(input.turnCount);
+    const visibleItemCount = boundedCount(input.visibleItemCount);
+    if (!turnCount && !visibleItemCount) return null;
+    return {
+      atMs: Number.isFinite(Number(input.atMs)) ? Number(input.atMs) : Date.now(),
+      threadId,
+      threadHash: shortString(input.threadHash, 80),
+      readMode: shortString(input.readMode, 80),
+      sourceKind: shortString(input.sourceKind, 80),
+      turnCount,
+      visibleItemCount,
+      itemCount: boundedCount(input.itemCount),
+    };
+  }
+
+  function recentThreadDetailRenderEvidence(input = {}) {
+    const evidence = input.evidence && typeof input.evidence === "object" ? input.evidence : null;
+    if (!evidence || !evidence.atMs) return null;
+    const nowMs = Number.isFinite(Number(input.nowMs)) ? Number(input.nowMs) : Date.now();
+    const maxAgeMs = Math.max(0, Number(input.maxAgeMs || 0));
+    const ageMs = Math.max(0, nowMs - Number(evidence.atMs || 0));
+    if (maxAgeMs && ageMs > maxAgeMs) return null;
+    return Object.assign({}, evidence, {
+      ageMs,
+      turnCount: boundedCount(evidence.turnCount),
+      visibleItemCount: boundedCount(evidence.visibleItemCount),
+      itemCount: boundedCount(evidence.itemCount),
+    });
+  }
+
+  function sameThreadDetailRenderEvidence(input = {}) {
+    const evidence = input.evidence && typeof input.evidence === "object" ? input.evidence : null;
+    if (!evidence) return null;
+    const threadId = String(input.threadId || "").trim();
+    if (threadId && String(evidence.threadId || "") !== threadId) return null;
+    return evidence;
+  }
+
+  function hasNonemptyThreadDetailRenderEvidence(evidence) {
+    return Boolean(evidence && (boundedCount(evidence.turnCount) || boundedCount(evidence.visibleItemCount)));
+  }
+
+  function planThreadOpenCacheReuse(input = {}) {
+    const requestedThreadId = String(input.requestedThreadId || input.threadId || "").trim();
+    const currentThreadId = String(input.currentThreadId || "").trim();
+    const thread = input.currentThread || input.thread || null;
+    const threadId = String(thread && thread.id || "").trim();
+    if (!requestedThreadId) {
+      return {
+        shouldUseCachedCurrent: false,
+        shouldReportEmptyCachedDetail: false,
+        reason: "missing-requested-thread-id",
+      };
+    }
+    if (requestedThreadId !== currentThreadId) {
+      return {
+        shouldUseCachedCurrent: false,
+        shouldReportEmptyCachedDetail: false,
+        reason: "different-current-thread",
+      };
+    }
+    if (!thread || typeof thread !== "object") {
+      return {
+        shouldUseCachedCurrent: false,
+        shouldReportEmptyCachedDetail: false,
+        reason: "missing-current-thread",
+      };
+    }
+    if (threadId && threadId !== requestedThreadId) {
+      return {
+        shouldUseCachedCurrent: false,
+        shouldReportEmptyCachedDetail: false,
+        reason: "current-thread-id-mismatch",
+      };
+    }
+    if (thread.mobileLoading) {
+      return {
+        shouldUseCachedCurrent: false,
+        shouldReportEmptyCachedDetail: false,
+        reason: "current-thread-loading",
+      };
+    }
+    if (thread.mobileLoadError) {
+      return {
+        shouldUseCachedCurrent: false,
+        shouldReportEmptyCachedDetail: false,
+        reason: "current-thread-load-error",
+      };
+    }
+    if (threadHasReusableLoadedDetailState(thread)) {
+      return {
+        shouldUseCachedCurrent: true,
+        shouldReportEmptyCachedDetail: false,
+        reason: "reusable-loaded-detail",
+      };
+    }
+    if (threadHasLoadedDetailState(thread) && Array.isArray(thread.turns) && thread.turns.length === 0) {
+      return {
+        shouldUseCachedCurrent: false,
+        shouldReportEmptyCachedDetail: true,
+        reason: "empty-loaded-detail-not-reusable",
+      };
+    }
+    return {
+      shouldUseCachedCurrent: false,
+      shouldReportEmptyCachedDetail: false,
+      reason: "not-loaded-detail",
+    };
+  }
+
+  function planThreadOpenLoadingShell(input = {}) {
+    const threadId = String(input.threadId || input.requestedThreadId || "").trim();
+    const summaryThread = input.summaryThread || input.summary || null;
+    const summaryId = String(summaryThread && summaryThread.id || "").trim();
+    if (!threadId) {
+      return {
+        currentThreadId: "",
+        thread: null,
+        hasSummary: false,
+        summaryAccepted: false,
+        hadListTurnsField: false,
+        reason: "missing-thread-id",
+      };
+    }
+    const summaryAccepted = Boolean(summaryThread && summaryId === threadId);
+    const summary = summaryAccepted ? threadListSummaryFromDetailThread(summaryThread) : null;
+    const base = summary || {
+      id: threadId,
+      name: threadId,
+      preview: threadId,
+    };
+    return {
+      currentThreadId: threadId,
+      thread: Object.assign({}, base, {
+        id: threadId,
+        turns: [],
+        mobileLoading: true,
+        mobileLoadError: "",
+      }),
+      hasSummary: Boolean(summaryThread),
+      summaryAccepted,
+      hadListTurnsField: Boolean(summaryThread && Object.prototype.hasOwnProperty.call(summaryThread, "turns")),
+      reason: summaryAccepted ? "summary-loading-shell" : "fallback-loading-shell",
+    };
+  }
+
+  function threadIsSummaryOnlyCurrentThread(thread, currentThreadId) {
+    return Boolean(thread
+      && currentThreadId
+      && String(thread.id || "") === String(currentThreadId || "")
+      && !threadHasLoadedDetailState(thread)
+      && !thread.mobileLoading
+      && !thread.mobileLoadError);
+  }
+
+  function planSummaryOnlyCurrentThreadRecovery(input = {}) {
+    const thread = input.thread;
+    const currentThreadId = input.currentThreadId;
+    if (!threadIsSummaryOnlyCurrentThread(thread, currentThreadId)) {
+      return {
+        shouldRecover: false,
+        shouldScheduleRefresh: false,
+        nextThread: thread || null,
+        event: null,
+        reason: "not-summary-only-current-thread",
+      };
+    }
+    const summary = threadListSummaryFromDetailThread(thread) || Object.assign({}, thread || {});
+    const nextThread = Object.assign({}, summary, {
+      turns: [],
+      mobileLoading: true,
+      mobileLoadError: "",
+    });
+    return {
+      shouldRecover: true,
+      shouldScheduleRefresh: !input.hasThreadLoadController && !input.hasRefreshThreadController,
+      nextThread,
+      event: {
+        threadId: String(currentThreadId || nextThread.id || ""),
+        reason: "summary-only-current-thread",
+        hasListTurnsField: Object.prototype.hasOwnProperty.call(thread, "turns"),
+        buildId: String(input.clientBuildId || ""),
+      },
+      reason: "summary-only-current-thread",
+    };
+  }
+
+  function planSummaryOnlyCurrentThreadRecoveryEffects(plan = {}) {
+    const recoveryPlan = objectOrEmpty(plan);
+    const effects = [];
+    if (!recoveryPlan.shouldRecover) {
+      return {
+        effects,
+        reason: shortString(recoveryPlan.reason || "not-recovered"),
+      };
+    }
+    effects.push({
+      type: "set-current-thread",
+      thread: recoveryPlan.nextThread || null,
+    });
+    if (recoveryPlan.event) {
+      effects.push({
+        type: "post-client-event",
+        name: "thread_summary_detail_recovery",
+        payload: recoveryPlan.event,
+      });
+    }
+    if (recoveryPlan.shouldScheduleRefresh) {
+      effects.push({
+        type: "schedule-current-thread-refresh",
+        delayMs: 0,
+        reason: "summary-detail-recovery",
+      });
+    }
+    return {
+      effects,
+      reason: shortString(recoveryPlan.reason || "summary-only-current-thread"),
+    };
+  }
+
+  function mergeThreadSummaryIntoList(threads, thread, options = {}) {
+    const summary = threadListSummaryFromDetailThread(thread);
+    const currentThreads = Array.isArray(threads) ? threads : [];
+    if (!summary) {
+      return {
+        changed: false,
+        threads: currentThreads,
+      };
+    }
+    const id = String(summary.id);
+    const index = currentThreads.findIndex((entry) => String(entry && entry.id || "") === id);
+    let nextThreads;
+    if (index >= 0) {
+      const existingSummary = threadListSummaryFromDetailThread(currentThreads[index]) || {};
+      nextThreads = currentThreads.map((entry, entryIndex) => (
+        entryIndex === index ? Object.assign({}, existingSummary, summary) : entry
+      ));
+    } else {
+      nextThreads = [summary, ...currentThreads];
+    }
+    const visibleThreads = typeof options.visibleThreads === "function"
+      ? options.visibleThreads
+      : (value) => value;
+    return {
+      changed: true,
+      threads: visibleThreads(nextThreads),
+    };
   }
 
   function createThreadDetailStatePolicy(options = {}) {
@@ -131,6 +522,22 @@
   }
 
   return {
+    buildThreadDetailRenderEvidence,
     createThreadDetailStatePolicy,
+    emptyDetailHistoryEvidenceForThread,
+    hasNonemptyThreadDetailRenderEvidence,
+    mergeThreadSummaryIntoList,
+    planEmptyDetailHistoryRecovery,
+    planThreadOpenLoadingShell,
+    planThreadOpenCacheReuse,
+    planSummaryOnlyCurrentThreadRecovery,
+    planSummaryOnlyCurrentThreadRecoveryEffects,
+    recentThreadDetailRenderEvidence,
+    rolloutSizeBytesFromThread,
+    sameThreadDetailRenderEvidence,
+    threadHasLoadedDetailState,
+    threadHasReusableLoadedDetailState,
+    threadIsSummaryOnlyCurrentThread,
+    threadListSummaryFromDetailThread,
   };
 }));

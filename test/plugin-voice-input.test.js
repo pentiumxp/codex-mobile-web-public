@@ -80,20 +80,42 @@ test("voice input helper builds Home AI embedded-plugin protocol messages", () =
 });
 
 test("voice input bridge is limited to Hermes embed mode and uses plugin scripts", () => {
-  assert.match(indexHtml, /<script src="\/plugin-voice-input\.js"><\/script>\s*<script src="\/thread-status-hints\.js"><\/script>\s*<script src="\/thread-performance-metrics\.js"><\/script>\s*<script src="\/live-operation-dock-state\.js"><\/script>\s*<script src="\/thread-detail-state\.js"><\/script>\s*<script src="\/thread-detail-render-plan\.js"><\/script>\s*<script src="\/thread-tile-layout\.js"><\/script>\s*<script src="\/build-refresh-policy\.js"><\/script>\s*<script src="\/app\.js"><\/script>/);
+  assert.match(indexHtml, /<script src="\/plugin-voice-input\.js"><\/script>\s*<script src="\/home-ai-diagnostic-reporting\.js"><\/script>\s*<script src="\/thread-diagnostic-events\.js"><\/script>\s*<script src="\/thread-status-hints\.js"><\/script>\s*<script src="\/thread-performance-metrics\.js"><\/script>\s*<script src="\/thread-list-load-policy\.js"><\/script>\s*<script src="\/thread-list-stable-order\.js"><\/script>\s*<script src="\/live-operation-dock-state\.js"><\/script>\s*<script src="\/thread-detail-state\.js"><\/script>\s*<script src="\/thread-detail-render-plan\.js"><\/script>\s*<script src="\/thread-detail-merge-state\.js"><\/script>\s*<script src="\/thread-detail-v4-merge-state\.js"><\/script>\s*<script src="\/thread-detail-patch-plan\.js"><\/script>\s*<script src="\/thread-detail-dom-patch\.js"><\/script>\s*<script src="\/thread-detail-actions\.js"><\/script>\s*<script src="\/thread-tile-actions\.js"><\/script>\s*<script src="\/thread-tile-state\.js"><\/script>\s*<script src="\/thread-tile-layout\.js"><\/script>\s*<script src="\/build-refresh-policy\.js"><\/script>\s*<script src="\/app\.js"><\/script>/);
   assert.match(swJs, /"\/plugin-voice-input\.js"/);
+  assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
+  assert.match(swJs, /"\/thread-diagnostic-events\.js"/);
   assert.match(swJs, /"\/thread-status-hints\.js"/);
   assert.match(swJs, /"\/thread-performance-metrics\.js"/);
+  assert.match(swJs, /"\/thread-list-load-policy\.js"/);
+  assert.match(swJs, /"\/thread-list-stable-order\.js"/);
   assert.match(swJs, /"\/live-operation-dock-state\.js"/);
   assert.match(swJs, /"\/thread-detail-state\.js"/);
   assert.match(swJs, /"\/thread-detail-render-plan\.js"/);
+  assert.match(swJs, /"\/thread-detail-merge-state\.js"/);
+  assert.match(swJs, /"\/thread-detail-v4-merge-state\.js"/);
+  assert.match(swJs, /"\/thread-detail-patch-plan\.js"/);
+  assert.match(swJs, /"\/thread-detail-dom-patch\.js"/);
+  assert.match(swJs, /"\/thread-detail-actions\.js"/);
+  assert.match(swJs, /"\/thread-tile-actions\.js"/);
+  assert.match(swJs, /"\/thread-tile-state\.js"/);
   assert.match(swJs, /"\/thread-tile-layout\.js"/);
   assert.match(appJs, /"\/plugin-voice-input\.js"/);
+  assert.match(appJs, /"\/thread-list-load-policy\.js"/);
+  assert.match(appJs, /"\/thread-list-stable-order\.js"/);
+  assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
+  assert.match(appJs, /"\/thread-diagnostic-events\.js"/);
   assert.match(appJs, /"\/thread-status-hints\.js"/);
   assert.match(appJs, /"\/thread-performance-metrics\.js"/);
   assert.match(appJs, /"\/live-operation-dock-state\.js"/);
   assert.match(appJs, /"\/thread-detail-state\.js"/);
   assert.match(appJs, /"\/thread-detail-render-plan\.js"/);
+  assert.match(appJs, /"\/thread-detail-merge-state\.js"/);
+  assert.match(appJs, /"\/thread-detail-v4-merge-state\.js"/);
+  assert.match(appJs, /"\/thread-detail-patch-plan\.js"/);
+  assert.match(appJs, /"\/thread-detail-dom-patch\.js"/);
+  assert.match(appJs, /"\/thread-detail-actions\.js"/);
+  assert.match(appJs, /"\/thread-tile-actions\.js"/);
+  assert.match(appJs, /"\/thread-tile-state\.js"/);
   assert.match(appJs, /"\/thread-tile-layout\.js"/);
   assert.match(functionBody("pluginVoiceInputComposerWritable"), /if \(!isHermesEmbedMode\(\)\) return false;/);
   assert.match(functionBody("pluginVoiceInputActiveTurnHoldAvailable"), /if \(!isHermesEmbedMode\(\)\) return false;/);
@@ -104,7 +126,9 @@ test("voice input bridge is limited to Hermes embed mode and uses plugin scripts
   assert.match(functionBody("handlePluginVoiceInputMessage"), /pluginVoiceInputParentOriginAllowed\(event\)/);
   assert.match(functionBody("handlePluginVoiceInputMessage"), /payload\.pluginId && String\(payload\.pluginId\) !== "codex-mobile"/);
   assert.match(functionBody("updateComposerControls"), /const voiceGestureAvailable = pluginVoiceInputGestureAvailable\(\)/);
-  assert.match(functionBody("updateComposerControls"), /!hasContent && !voiceGestureAvailable/);
+  assert.match(functionBody("updateComposerControls"), /voiceGestureAvailable,/);
+  assert.match(functionBody("updateComposerControls"), /applyComposerActionControlPlan\(sendButton, composerActionPlan\)/);
+  assert.match(functionBody("applyComposerActionControlPlan"), /plan\.sendButtonDisabled === true/);
   assert.match(functionBody("pluginVoiceInputCapabilityPayload"), /writable: pluginVoiceInputCanReceiveText\(\)/);
   assert.match(functionBody("pluginVoiceInputCapabilityPayload"), /"provisional_text"/);
   assert.match(functionBody("applyPluginVoiceInputTextMessage"), /const capability = pluginVoiceInputCapabilityPayload\(\)/);
@@ -138,7 +162,8 @@ test("send button long press delegates recording to Home AI only after threshold
 });
 
 test("embedded active-turn stop button is not rendered as selectable text", () => {
-  assert.match(functionBody("updateComposerControls"), /setComposerActionButtonLabel\(sendButton, "Stop", \{ proxy: isHermesEmbedMode\(\) \}\)/);
+  assert.match(functionBody("updateComposerControls"), /hermesEmbedMode: isHermesEmbedMode\(\)/);
+  assert.match(functionBody("applyComposerActionControlPlan"), /setComposerActionButtonLabel\(sendButton, plan\.label \|\| "Send", \{ proxy: plan\.labelProxy === true \}\)/);
   assert.match(functionBody("setComposerActionButtonLabel"), /button\.textContent = "";/);
   assert.match(functionBody("setComposerActionButtonLabel"), /button\.dataset\.visualLabel = text;/);
   assert.match(functionBody("setComposerActionButtonLabel"), /button\.classList\.toggle\("plugin-voice-input-label-proxy", useProxy\)/);

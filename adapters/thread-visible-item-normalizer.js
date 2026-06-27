@@ -125,6 +125,17 @@ function normalizeVisibleTurn(turn, options = {}) {
   out.mobileVisibleKey = `turn:${turnIdValue(out) || "unknown"}`;
   if (Array.isArray(out.items)) {
     out.items = out.items.map((item, index) => normalizeVisibleItem(item, out, index, options));
+    const seenKeys = new Map();
+    out.items = out.items.map((item, index) => {
+      const key = String(item && item.mobileVisibleKey || "");
+      if (!key) return item;
+      const seenCount = seenKeys.get(key) || 0;
+      seenKeys.set(key, seenCount + 1);
+      if (seenCount <= 0) return item;
+      return Object.assign({}, item, {
+        mobileVisibleKey: `${key}#${index}`,
+      });
+    });
     out.mobileVisibleItemKeys = out.items
       .map((item) => String(item && item.mobileVisibleKey || ""))
       .filter(Boolean);
@@ -192,8 +203,16 @@ function normalizeNotificationParamsForProjectionV4(method, params = {}) {
       ? false
       : undefined;
   if (out.item && typeof out.item === "object") {
+    const paramTurn = out.turn && typeof out.turn === "object" ? out.turn : {};
     const turn = {
-      id: out.turnId || out.turn_id || out.item.turnId || out.item.turn_id || "",
+      id: out.turnId
+        || out.turn_id
+        || out.item.turnId
+        || out.item.turn_id
+        || paramTurn.id
+        || paramTurn.turnId
+        || paramTurn.turn_id
+        || "",
     };
     out.item = normalizeVisibleItem(out.item, turn, 0, {
       source: method || "notification",

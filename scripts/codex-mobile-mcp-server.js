@@ -129,7 +129,7 @@ function toolsList() {
     ),
     tool(
       "return_to_source",
-      "Return a received Codex Mobile task card to its source thread. Use this when target work is completed, blocked, or redirected; a local final answer is not a return card.",
+      "Return a received Codex Mobile task card to its source thread. Use this when target work is completed, blocked, redirected, rejected, or partially completed; a local final answer is not a return card.",
       {
         type: "object",
         additionalProperties: false,
@@ -137,7 +137,7 @@ function toolsList() {
         properties: {
           taskCardId: { type: "string", minLength: 1, maxLength: 120 },
           threadId: { type: "string", minLength: 1, maxLength: 120 },
-          status: { type: "string", enum: ["completed", "blocked", "redirected", "partially_completed"] },
+          status: { type: "string", enum: ["completed", "blocked", "redirected", "rejected", "partially_completed"] },
           title: { type: "string", minLength: 1, maxLength: 120 },
           summary: { type: "string", maxLength: 300 },
           bodyMarkdown: { type: "string", minLength: 1 },
@@ -177,7 +177,7 @@ function stableTextHash(value) {
 function normalizedReturnStatus(value) {
   const status = boundedString(value, "status", 40, false).toLowerCase();
   if (!status) return "";
-  if (!["completed", "blocked", "redirected", "partially_completed"].includes(status)) throw new Error("status_invalid");
+  if (!["completed", "blocked", "redirected", "rejected", "partially_completed"].includes(status)) throw new Error("status_invalid");
   return status;
 }
 
@@ -312,6 +312,9 @@ async function returnToSource(context, args = {}) {
         injectedTurnId: String(replyCard.injectedTurnId || ""),
         returnToSource: Boolean(replyCard.delivery && replyCard.delivery.returnToSource),
         returnStatus: String(replyCard.delivery && replyCard.delivery.returnStatus || ""),
+        terminal: Boolean(replyCard.terminal || replyCard.delivery && replyCard.delivery.terminal),
+        requiresReturn: Boolean(replyCard.requiresReturn),
+        ackPolicy: String(replyCard.ackPolicy || replyCard.delivery && replyCard.delivery.ackPolicy || ""),
       },
     };
   }
@@ -325,7 +328,7 @@ async function handleMessage(context, message = {}) {
       serverInfo: { name: SERVER_NAME, version: packageVersion() },
       instructions: [
         "Use delegate_to_thread when a user request requires code, files, commands, tests, deployment, or other mutation in another Codex thread/workspace.",
-        "Use return_to_source when a received task card is completed, blocked, or redirected; a target-thread final answer is not a source-thread return card.",
+        "Use return_to_source when a received task card is completed, blocked, redirected, rejected, or partially completed; a target-thread final answer is not a source-thread return card.",
         "Do not use multi_agent_v1 tools as a substitute for Codex Mobile cross-thread task cards.",
       ].join("\n"),
     };

@@ -36,6 +36,11 @@ function isRestingStatus(value) {
   return /^(idle|completed|complete|success|succeeded|failed|failure|cancelled|canceled|interrupted|error)$/.test(status);
 }
 
+function isActiveLikeStatus(value) {
+  const status = normalizeStatus(value).replace(/[_\s]+/g, "-");
+  return /^(active|running|started|pending|queued|processing|inprogress|in-progress)$/i.test(status);
+}
+
 function projectionSignature(input = {}) {
   const stats = input.rolloutStats || {};
   const signature = {
@@ -86,6 +91,13 @@ function cacheFileForThread(cacheDir, threadId) {
   const hash = hashText(String(threadId || "")).slice(0, 32);
   return path.join(cacheDir, `${hash}.json`);
 }
+
+const STALE_FULL_MISS_REASONS = new Set([
+  "dynamic-summary-stale",
+  "static-signature-mismatch",
+  "dynamic-resting-signature-mismatch",
+  "dynamic-age-signature-mismatch",
+]);
 
 function rolloutPathForEntry(entry) {
   return String(entry && (entry.rolloutPath
@@ -143,6 +155,30 @@ function ensureThread(result, threadId) {
 function findTurn(thread, turnId) {
   if (!thread || !Array.isArray(thread.turns) || !turnId) return null;
   return thread.turns.find((turn) => String(turn && turn.id || "") === turnId) || null;
+}
+
+function turnId(turn) {
+  return String(turn && (turn.id || turn.turnId || turn.turn_id) || "").trim();
+}
+
+function inferredActiveTurnId(thread) {
+  if (!thread || typeof thread !== "object") return "";
+  const explicit = String(thread.activeTurnId || thread.active_turn_id || "").trim();
+  if (explicit) return explicit;
+  const turns = Array.isArray(thread.turns) ? thread.turns : [];
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    const id = turnId(turn);
+    if (id && isActiveLikeStatus(turn && turn.status)) return id;
+  }
+  if (!isActiveLikeStatus(thread.status)) return "";
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    const id = turnId(turn);
+    if (!id || isRestingStatus(turn && turn.status)) continue;
+    if (Array.isArray(turn.items) && turn.items.length > 0) return id;
+  }
+  return "";
 }
 
 function isTextReceiptItem(item) {
@@ -520,6 +556,42 @@ function trimTurns(thread, maxTurns) {
   if (thread.turns.length > limit) thread.turns = thread.turns.slice(-limit);
 }
 
+function hasCursor(value) {
+  return Boolean(String(value || "").trim());
+}
+
+function threadReadMode(thread) {
+  return String(thread && thread.mobileReadMode || "").trim();
+}
+
+function isTurnsListWindowThread(thread) {
+  if (!thread || typeof thread !== "object") return false;
+  const mode = threadReadMode(thread);
+  if (!/^turns-list(?:-|$)/.test(mode)) return false;
+  return hasCursor(thread.mobileOlderTurnsCursor) || hasCursor(thread.mobileNewerTurnsCursor);
+}
+
+function isNonFullWindowThread(thread) {
+  if (!thread || typeof thread !== "object") return false;
+  if (hasCursor(thread.mobileNewerTurnsCursor)) return true;
+  return isTurnsListWindowThread(thread);
+}
+
+function partialKindForWindowThread(thread, fallback = "recent-window") {
+  const mode = threadReadMode(thread);
+  if (mode === "turns-list-large") return "turns-list-window";
+  if (mode === "turns-list") return "turns-list-window";
+  return String(fallback || "recent-window").slice(0, 80);
+}
+
+function markWindowEntryPartial(entry, kind = "") {
+  if (!entry || !entry.result || !entry.result.thread) return false;
+  if (!isNonFullWindowThread(entry.result.thread)) return false;
+  entry.partial = true;
+  entry.partialKind = partialKindForWindowThread(entry.result.thread, kind || entry.partialKind || "recent-window");
+  return true;
+}
+
 function createThreadDetailProjectionService(options = {}) {
   const cacheDir = String(options.cacheDir || "").trim();
   const policyVersion = String(options.policyVersion || "1");
@@ -551,6 +623,17 @@ function createThreadDetailProjectionService(options = {}) {
       result: entry.result,
     });
     return true;
+  }
+
+  function removePersistedEntry(threadId) {
+    const id = String(threadId || "").trim();
+    if (!id || !cacheDir) return false;
+    try {
+      fs.rmSync(cacheFileForThread(cacheDir, id), { force: true });
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   function refreshEntrySignatureFromRollout(entry) {
@@ -594,10 +677,37 @@ function createThreadDetailProjectionService(options = {}) {
     return false;
   }
 
-  function seed(input = {}, result) {
+  function seed(input = {}, result, optionsForSeed = {}) {
     const threadId = String(input.threadId || result && result.thread && result.thread.id || "").trim();
     if (!threadId || !result || typeof result !== "object" || !result.thread) return null;
     const signature = projectionSignature(Object.assign({}, input, { policyVersion, maxTurns }));
+    const existing = entryForThread(threadId);
+    const explicitPartial = optionsForSeed.partial === true;
+    const windowPartial = isNonFullWindowThread(result.thread);
+    const partial = explicitPartial || windowPartial;
+    const partialKind = partial
+      ? partialKindForWindowThread(result.thread, optionsForSeed.partialKind || "recent-window")
+      : "";
+    let replacedStaleFull = false;
+    let staleFullReason = "";
+    if (partial && existing && !existing.partial) {
+      const reusableFullLookup = lookup(input);
+      if (reusableFullLookup.cached && reusableFullLookup.cached.partial !== true) {
+        return {
+          cachedAtMs: existing.cachedAtMs,
+          dynamic: existing.dynamic,
+          partial: false,
+          signatureHash: existing.signatureHash,
+          skipped: true,
+          reason: "full-cache-exists",
+        };
+      }
+      staleFullReason = reusableFullLookup.missReason || "";
+      if (STALE_FULL_MISS_REASONS.has(staleFullReason)) {
+        replacedStaleFull = true;
+        removePersistedEntry(threadId);
+      }
+    }
     const entry = {
       threadId,
       rolloutPath: String(input.rolloutPath || "").trim(),
@@ -607,7 +717,8 @@ function createThreadDetailProjectionService(options = {}) {
       updatedAtMs: now(),
       lastPersistedAtMs: 0,
       dynamic: false,
-      partial: false,
+      partial,
+      partialKind,
       result: cloneJson(result),
     };
     normalizeProjectionThreadUserMessages(entry.result.thread);
@@ -619,7 +730,10 @@ function createThreadDetailProjectionService(options = {}) {
       cachedAtMs: entry.cachedAtMs,
       dynamic: entry.dynamic,
       partial: entry.partial,
+      partialKind: entry.partialKind || "",
+      replacedStaleFull,
       signatureHash: entry.signatureHash,
+      staleFullReason,
     };
   }
 
@@ -637,30 +751,50 @@ function createThreadDetailProjectionService(options = {}) {
       lastPersistedAtMs: safeNumber(raw.updatedAtMs || raw.cachedAtMs),
       dynamic: Boolean(raw.dynamic),
       partial: Boolean(raw.partial),
+      partialKind: String(raw.partialKind || ""),
       result: raw.result,
     };
+    if (entry.partial || markWindowEntryPartial(entry)) {
+      removePersistedEntry(threadId);
+      return null;
+    }
     memory.set(threadId, entry);
     return entry;
   }
 
-  function get(input = {}) {
+  function lookup(input = {}, optionsForGet = {}) {
     const threadId = String(input.threadId || "").trim();
-    if (!threadId) return null;
+    if (!threadId) return { cached: null, missReason: "missing-thread-id" };
     const signature = projectionSignature(Object.assign({}, input, { policyVersion, maxTurns }));
     const expectedHash = signatureHash(signature);
     let entry = entryForThread(threadId);
     if (!entry) entry = readDisk(threadId);
-    if (!entry || !entry.result || entry.partial) return null;
+    if (!entry) return { cached: null, missReason: "entry-missing" };
+    if (!entry.result) return { cached: null, missReason: "entry-empty" };
+    if (!entry.partial && markWindowEntryPartial(entry)) removePersistedEntry(threadId);
+    if (entry.partial && !entry.signatureHash) return { cached: null, missReason: "partial-not-seeded" };
+    if (entry.partial && optionsForGet.allowPartial !== true) return { cached: null, missReason: "partial-not-allowed" };
 
     const summaryUpdatedAtMs = safeNumber(input.summaryUpdatedAtMs);
     if (entry.dynamic) {
-      if (summaryUpdatedAtMs && entry.updatedAtMs && summaryUpdatedAtMs > entry.updatedAtMs + 2000) return null;
+      const allowActiveOverlaySummaryStaleWindow = optionsForGet.activeOverlay === true
+        && optionsForGet.allowPartial === true
+        && isActiveLikeStatus(input.summaryStatus);
+      if (!allowActiveOverlaySummaryStaleWindow
+        && summaryUpdatedAtMs
+        && entry.updatedAtMs
+        && summaryUpdatedAtMs > entry.updatedAtMs + 2000) {
+        return { cached: null, missReason: "dynamic-summary-stale" };
+      }
       if (dynamicBackingSignatureChanged(entry.signature, signature)) {
         const dynamicAgeMs = Math.max(0, now() - safeNumber(entry.updatedAtMs || entry.cachedAtMs));
-        if (isRestingStatus(input.summaryStatus) || dynamicAgeMs > dynamicSignatureMismatchMaxAgeMs) return null;
+        if (isRestingStatus(input.summaryStatus)) return { cached: null, missReason: "dynamic-resting-signature-mismatch" };
+        if (dynamicAgeMs > dynamicSignatureMismatchMaxAgeMs) return { cached: null, missReason: "dynamic-age-signature-mismatch" };
       }
-    } else if (!expectedHash || entry.signatureHash !== expectedHash) {
-      return null;
+    } else if (!expectedHash) {
+      return { cached: null, missReason: "signature-unavailable" };
+    } else if (entry.signatureHash !== expectedHash) {
+      return { cached: null, missReason: "static-signature-mismatch" };
     }
 
     const result = cloneJson(entry.result);
@@ -668,10 +802,48 @@ function createThreadDetailProjectionService(options = {}) {
     normalizeProjectionSupersededLiveTurns(result.thread);
     trimTurns(result.thread, maxTurns);
     return {
-      cachedAtMs: entry.cachedAtMs,
-      updatedAtMs: entry.updatedAtMs,
-      dynamic: entry.dynamic,
-      result,
+      cached: {
+        cachedAtMs: entry.cachedAtMs,
+        updatedAtMs: entry.updatedAtMs,
+        dynamic: entry.dynamic,
+        partial: entry.partial === true,
+        partialKind: entry.partialKind || "",
+        result,
+      },
+      missReason: "",
+    };
+  }
+
+  function get(input = {}, optionsForGet = {}) {
+    const result = lookup(input, optionsForGet);
+    return result.cached;
+  }
+
+  function activeOverlaySnapshot(input = {}) {
+    const threadId = String(input.threadId || "").trim();
+    if (!threadId) return { found: false, reason: "missing-thread-id" };
+    const entry = entryForThread(threadId);
+    if (!entry) return { found: false, reason: "entry-missing" };
+    if (!entry.dynamic) return { found: false, reason: "entry-not-dynamic" };
+    const thread = entry.result && entry.result.thread;
+    if (!thread || typeof thread !== "object") return { found: false, reason: "thread-missing" };
+    const activeTurnId = String(input.activeTurnId || input.turnId || inferredActiveTurnId(thread)).trim();
+    if (!activeTurnId) return { found: false, reason: "missing-active-turn-id" };
+    const overlayTurn = findTurn(thread, activeTurnId);
+    if (!overlayTurn) return { found: false, reason: "active-turn-missing" };
+    const cloneOverlayTurn = input.cloneOverlayTurn !== false;
+    return {
+      found: true,
+      threadId,
+      activeTurnId,
+      overlaySource: "projection-live",
+      overlayTurn: cloneOverlayTurn ? cloneJson(overlayTurn) : overlayTurn,
+      cachedAtMs: safeNumber(entry.cachedAtMs),
+      updatedAtMs: safeNumber(entry.updatedAtMs),
+      dynamic: Boolean(entry.dynamic),
+      partial: Boolean(entry.partial),
+      partialKind: String(entry.partialKind || ""),
+      signatureHashPresent: Boolean(entry.signatureHash),
     };
   }
 
@@ -701,6 +873,7 @@ function createThreadDetailProjectionService(options = {}) {
         updatedAtMs: now(),
         dynamic: true,
         partial: true,
+        partialKind: "notification-shell",
         result: { thread: { id: threadId, turns: [] } },
       };
       memory.set(threadId, entry);
@@ -715,27 +888,49 @@ function createThreadDetailProjectionService(options = {}) {
     } else if (method === "turn/started" || method === "turn/completed") {
       const turn = params.turn && typeof params.turn === "object" ? cloneJson(params.turn) : { id: turnIdFromParams(params) };
       if (turn && turn.id) ensureTurn(thread, String(turn.id), turn);
-      if (method === "turn/started") thread.status = { type: "active" };
-      if (method === "turn/completed") thread.status = turn.status || params.status || { type: "completed" };
+      if (method === "turn/started") {
+        thread.status = { type: "active" };
+        if (turn && turn.id) thread.activeTurnId = String(turn.id);
+      }
+      if (method === "turn/completed") {
+        thread.status = turn.status || params.status || { type: "completed" };
+        if (turn && turn.id && String(thread.activeTurnId || "") === String(turn.id)) delete thread.activeTurnId;
+      }
     } else if (method === "item/started" || method === "item/completed") {
       const turnId = turnIdFromParams(params);
-      if (turnId && params.item) upsertItem(ensureTurn(thread, turnId), params.item);
+      if (turnId && params.item) {
+        if (isActiveLikeStatus(thread.status)) thread.activeTurnId = turnId;
+        upsertItem(ensureTurn(thread, turnId), params.item);
+      }
     } else if (method === "item/agentMessage/delta") {
       const turnId = turnIdFromParams(params);
-      if (turnId) appendItemText(ensureTurn(thread, turnId), String(params.itemId || ""), "agentMessage", "text", params.delta || "");
+      if (turnId) {
+        if (isActiveLikeStatus(thread.status)) thread.activeTurnId = turnId;
+        appendItemText(ensureTurn(thread, turnId), String(params.itemId || ""), "agentMessage", "text", params.delta || "");
+      }
     } else if (method === "item/reasoning/textDelta" || method === "item/reasoning/summaryTextDelta") {
       const turnId = turnIdFromParams(params);
-      if (turnId) appendItemText(ensureTurn(thread, turnId), String(params.itemId || ""), "reasoning", "text", params.delta || "");
+      if (turnId) {
+        if (isActiveLikeStatus(thread.status)) thread.activeTurnId = turnId;
+        appendItemText(ensureTurn(thread, turnId), String(params.itemId || ""), "reasoning", "text", params.delta || "");
+      }
     } else if (method === "item/commandExecution/outputDelta") {
       const turnId = turnIdFromParams(params);
-      if (turnId) appendItemText(ensureTurn(thread, turnId), String(params.itemId || ""), "commandExecution", "aggregatedOutput", params.delta || "");
+      if (turnId) {
+        if (isActiveLikeStatus(thread.status)) thread.activeTurnId = turnId;
+        appendItemText(ensureTurn(thread, turnId), String(params.itemId || ""), "commandExecution", "aggregatedOutput", params.delta || "");
+      }
     } else if (method === "item/fileChange/outputDelta") {
       const turnId = turnIdFromParams(params);
-      if (turnId) appendItemText(ensureTurn(thread, turnId), String(params.itemId || ""), "fileChange", "aggregatedOutput", params.delta || "");
+      if (turnId) {
+        if (isActiveLikeStatus(thread.status)) thread.activeTurnId = turnId;
+        appendItemText(ensureTurn(thread, turnId), String(params.itemId || ""), "fileChange", "aggregatedOutput", params.delta || "");
+      }
     }
     normalizeProjectionThreadUserMessages(thread);
     normalizeProjectionSupersededLiveTurns(thread);
     trimTurns(thread, maxTurns);
+    markWindowEntryPartial(entry);
     entry.updatedAtMs = now();
     entry.dynamic = true;
     persistDynamicEntry(entry, method);
@@ -743,9 +938,11 @@ function createThreadDetailProjectionService(options = {}) {
   }
 
   return {
+    activeOverlaySnapshot,
     applyNotification,
     forget,
     get,
+    lookup,
     projectionSignature,
     seed,
   };

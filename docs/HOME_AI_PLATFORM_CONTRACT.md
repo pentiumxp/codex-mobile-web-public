@@ -41,6 +41,8 @@ mobile visual behavior, fallback behavior, or cross-plugin reference behavior:
 - `/Users/hermes-dev/HermesMobileDev/app/docs/RUNBOOKS/macos-production-access.md`
 - `/Users/hermes-dev/HermesMobileDev/app/docs/RUNBOOKS/mcp-tool-upgrade-closure.md`
 - `/Users/hermes-dev/HermesMobileDev/app/docs/RUNBOOKS/macos-ios-simulator-appium.md`
+- `/Users/hermes-dev/HermesMobileDev/app/docs/PLATFORM_CONTRACTS/github-shared-source-account-contract.md`
+- `/Users/hermes-dev/HermesMobileDev/app/docs/RUNBOOKS/github-shared-source-account.md`
 - `/Users/hermes-dev/HermesMobileDev/app/docs/IMPLEMENTATION_NOTES/reference-memory-graph-v1.md`
 - `/Users/hermes-dev/HermesMobileDev/app/docs/IMPLEMENTATION_NOTES/reference-memory-graph-harness-plan.md`
 
@@ -56,7 +58,7 @@ Mobile docs should link to that registry instead of copying entries.
 | --- | --- |
 | `plugin_id` | `codex-mobile` |
 | `workspace_path_windows` | `C:\Users\xuxin\Documents\codex-mobile-web` |
-| `current_branch_snapshot` | `main` with local commits through `8a41a1e` before this production-evidence update |
+| `current_branch_snapshot` | `main` with local commits through `f92987e` before this production-evidence update |
 | `production_source_path_macos` | `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web` |
 | `production_data_root_macos` | `/Users/xuxin/.codex-mobile-web` |
 | `windows_dev_base_url` | `http://127.0.0.1:8787` |
@@ -81,6 +83,26 @@ Mobile docs should link to that registry instead of copying entries.
 | `ios_keyboard_visual_harness_command` | `cd /Users/hermes-dev/HermesMobileDev/app && npm run ios:pwa:visual -- --scenario embedded-plugin-keyboard-composer --plugin-id codex-mobile --plugin-thread-id <thread-id> --debug-url http://127.0.0.1:19073/` |
 | `ios_side_chat_keyboard_visual_harness_command` | `cd /Users/hermes-dev/HermesMobileDev/app && npm run ios:pwa:visual -- --scenario embedded-plugin-side-chat-keyboard --plugin-id codex-mobile --plugin-thread-id <thread-id> --debug-url http://127.0.0.1:19073/` |
 | `ios_image_order_visual_smoke_command` | `node scripts/codex-mobile-image-order-visual-smoke.js --debug-url http://127.0.0.1:19073/ --thread-id <thread-id> --target-turn-id <turn-id> --json` |
+
+## GitHub Shared Source Account Pointer
+
+Codex Mobile Web adopts the Home AI GitHub Shared Source Account for local
+development-source Git operations only.
+
+- Central contract:
+  `/Users/hermes-dev/HermesMobileDev/app/docs/PLATFORM_CONTRACTS/github-shared-source-account-contract.md`
+- Runbook:
+  `/Users/hermes-dev/HermesMobileDev/app/docs/RUNBOOKS/github-shared-source-account.md`
+- Helper:
+  `/Users/hermes-dev/HermesMobileDev/app/scripts/github-shared-source-account.js`
+- SSH host alias: `github.com-homeai-ssa`
+- Writable source remote: `git@github.com-homeai-ssa:pentiumxp/codex-mobile-web.git`
+- Public source/install manifests must keep using HTTPS public URLs; the SSA
+  alias is not a runtime credential and must not be deployed or copied into
+  source.
+- Adoption status: `github_ssa_smoke_passed` for
+  `git@github.com-homeai-ssa:pentiumxp/codex-mobile-web.git` on 2026-06-25.
+- Private key material remains a local operator secret outside this repository.
 
 ## Required Local Validation
 
@@ -200,43 +222,66 @@ Minimum closure for Codex Mobile production changes:
 
 ## Latest Production Evidence
 
-2026-06-25 Mac production deployment:
+2026-06-27 Mac production deployment:
 
 - Production source path:
   `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
 - LaunchDaemon: `system/com.hermesmobile.plugin.codex-mobile`.
 - Loopback production URL: `http://127.0.0.1:8787`.
-- Current verified shell after tile-mode composer intent-menu, Movie
-  operation-projection, live-to-completed weak projection merge, and tile local
-  split-pane layout fixes:
-  `0.1.11|codex-mobile-shell-v431`.
-- Source ref deployed for code change:
-  `0c297f045e44` with clean source worktree at deploy time.
+- Current verified shell after the Phase B RPC/mux evidence module:
+  `0.1.11|codex-mobile-shell-v537`.
+- Source ref deployed for runtime/static change:
+  `ae3388d080bc` with clean source worktree at deploy time.
 - Backup path:
-  `/Users/hermes-host/HermesMobile/backups/deploy/20260625T034418Z-plugin-codex-mobile-web-manual`.
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260627T002556Z-plugin-codex-mobile-web-codex-mobile-phase-b-rpc-metrics-v537`.
 - Production smoke confirmed `/api/public-config` reports
-  `clientBuildId=0.1.11|codex-mobile-shell-v431`,
-  `shellCacheName=codex-mobile-shell-v431`, `version=0.1.11`,
-  `authRequired=true`, production `workspacePath` above, and build id
-  `7ed7403159756514`.
-- Source/production short SHA-256 samples matched after deploy:
-  `server.js` `6681ceebf250df44`,
-  `public/app.js` `f79ee1b5ff49966f`,
-  `public/styles.css` `599815a5b4169435`,
-  `public/thread-tile-layout.js` `f10c7a0964ec983c`, and
-  `public/sw.js` `db1c6ff0ac07bb01`.
-- Focused validation before deploy included syntax checks for `server.js`,
-  `public/app.js`, and `public/sw.js`; task-card route, mobile viewport, goal
-  service, composer quota, thread tile UI, thread turn compaction, thread detail
-  projection, v4 projection, thread detail state, and conversation render tests
-  (including the v431 `98`-test tile-layout focused suite); plus `git diff
-  --check`. Browser automation through Node REPL failed with a tool
-  `sandboxCwd` error, and direct local Playwright smoke was not run because this
-  workspace does not have a `playwright` dependency; use the Home AI central
-  visual tool for live drag/split visual evidence if required.
+  `clientBuildId=0.1.11|codex-mobile-shell-v537`,
+  `shellCacheName=codex-mobile-shell-v537`, `version=0.1.11`, and
+  `authRequired=true`.
+- Bounded Phase B readback confirmed `threadListFallbackPrewarm.completed=true`.
+  The general sample used `fallback-source-snapshot` /
+  `source-snapshot-hit`, bounded the app-server request to 80 rows, and exposed
+  `profile-mux-file` / `jsonl-tcp` RPC evidence: one attempt, no timeout,
+  request payload `185` bytes, params payload `128` bytes, response payload
+  `235487` bytes, `appServerMs=1792`, `appServerRpcMs=1705`,
+  `appServerVisibleFilterMs=87`, and `appServerUnattributedMs=0`.
+- Targeted current-thread readback used `warm-fallback-cache` / `cache-hit`,
+  `appServerMs=98`, `appServerRpcMs=8`, and the same bounded 235487-byte
+  response payload. Detail used `projection-active-overlay` with active overlay
+  gate `ready`, and the Phase B decision was `ready`.
+- `/api/status?muxMetrics=1` returned `mux-metrics-unsupported`; selected
+  profile mux endpoint capabilities still lacked `muxMetricsRpc`, so the
+  running shared mux process had not restarted into the newly deployed
+  `codex-app-server-mux.js`. The next Phase B owner is shared mux
+  runtime/version activation before app-server query semantics are changed.
+- Validation before deploy:
+  focused Phase B/static shell tests passed (`86` tests), `npm test` passed
+  (`1200` tests), `npm run check` passed, `npm run check:macos` passed, and
+  `git diff --check` passed.
 - Deployment validation also ran the central production file-hash, LaunchDaemon,
   public-config, and non-strict auth-profile audit checks. The auth-profile
   audit remained non-blocking with zero blocking issues.
+- Source/prod short SHA-256 readback matched for `public/app.js`,
+  `public/sw.js`, `server.js`, `codex-app-server-mux.js`, and
+  `scripts/codex-mobile-phase-b-readback-smoke.js`.
+- A local follow-up after v537 updates
+  `adapters/phase-b-readback-decision-service.js` to route high-RPC samples
+  with unsupported mux metrics to `shared-mux-runtime`; that file is not yet
+  deployed and will be included in the next batched module.
+- The earlier 2026-06-27 `codex-mobile-shell-v536` app-server attribution
+  evidence is historical after this v537 RPC/mux evidence deployment.
+- The earlier 2026-06-27 `codex-mobile-shell-v535` list-refresh evidence is
+  historical after this v537 RPC/mux evidence deployment.
+- The earlier 2026-06-27 `codex-mobile-shell-v534` prewarm evidence is
+  historical after this v537 RPC/mux evidence deployment.
+- The earlier 2026-06-25 `codex-mobile-shell-v437` tile-title menu and
+  Composer placeholder evidence is historical after this v537 RPC/mux evidence
+  deployment.
+- The earlier 2026-06-25 `codex-mobile-shell-v434` tile-mode Composer
+  placeholder evidence is historical after the v435 thread-detail merge
+  deployment.
+- The earlier 2026-06-25 `codex-mobile-shell-v435` thread-detail merge evidence
+  is historical after the v436 tile-pane contrast deployment.
 - The earlier 2026-06-25 `codex-mobile-shell-v430` large-session detail-shape
   diagnostics evidence is historical after the v431 tile local split-pane
   deployment.

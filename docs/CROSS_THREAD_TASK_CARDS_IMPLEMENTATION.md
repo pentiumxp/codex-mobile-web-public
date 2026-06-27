@@ -13,19 +13,38 @@ layout and test strategy.
   - authorization checks
   - status transitions
   - target-side approval in-flight persistence before external `turn/start`
+  - active execution leases for non-terminal approved work cards, including
+    interruption-safe continuation state and explicit pause/cancel semantics
   - autonomous workflow grants after first target approval
   - automatic completion return cards for autonomous workflows, with terminal
     return-card delivery flags and single-prefix `Auto return:` titles
   - manual target-thread return cards for pending or approved original cards;
     local target-thread final text must not be treated as a source return
+  - bounded terminal return-card observer events for Home AI Autonomous Delivery
+    Loop state tracking; event success/failure is recorded on the return-card
+    audit metadata and must not block return-card delivery
   - idempotency
   - storage
   - injection payload generation
   - multi-target expansion into one stored card per target
 
+- `adapters/home-ai-autonomous-delivery-return-service.js`
+  - Home AI Autonomous Delivery Loop return-card event client
+  - normalizes the bounded payload for
+    `POST /api/autonomous-delivery/return-card-events`
+  - uses the existing backend trusted Home AI / Hermes web-key path
+  - sends only ids, status, bounded title/summary, workflow id, terminal flag,
+    and ack policy
+  - rejects unsafe visible metadata locally and never sends raw bodies,
+    prompts, completions, uploads, provider payloads, cookies, launch tokens,
+    access keys, database rows, or logs
+
 - `server.js`
   - route wiring
   - `turn/completed` notification hook for autonomous completion auto-return
+  - `turn/completed` notification hook for interruption-safe task-card
+    continuation when a normal target-thread turn completes while a non-terminal
+    work-card lease is still active
   - `turn/completed` and thread-detail hooks that materialize structured `#`
     task-card drafts through the same idempotent create service path
   - fallback `thread/turns/list` detail mode must still run task-card draft
@@ -78,6 +97,8 @@ layout and test strategy.
 - `POST /api/thread-task-cards/:id/delete`
 - `POST /api/thread-task-cards/:id/revoke`
 - `POST /api/thread-task-cards/:id/reply`
+- `POST /api/thread-task-cards/:id/execution/pause`
+- `POST /api/thread-task-cards/:id/execution/cancel`
 
 `POST /api/threads/:sourceThreadId/task-cards` is the thread-callable
 delegation route. It uses `buildThreadTaskCardCreatePayload()` to infer source
@@ -142,10 +163,59 @@ and must not be counted as `completed`, `blocked`, or `redirected` by the
 source workflow. Return cards created by `codex_mobile.return_to_source`,
 `scripts/return-thread-task-card.js`, or `/reply` with `returnToSource:true`
 are source-direct approved into the original source thread and do not require a
-second source-thread approval. If a previous runtime version already created a
-pending return card with the same `task-card-return:*` idempotency key, retrying
-through the return path promotes that existing card through the same direct
-return approval flow.
+second source-thread approval. They are also terminal by default:
+`delivery.terminal=true`, `delivery.requiresReturn=false`, and
+`delivery.ackPolicy="none"`. Terminal return cards do not inject `Return
+required` guidance, do not expose a reply affordance, and cannot be replied to
+through `/reply`; acknowledgements do not require acknowledgements. If a
+previous runtime version already created a pending return card with the same
+`task-card-return:*` idempotency key, retrying through the return path promotes
+that existing card through the same direct return approval flow and stamps the
+same terminal metadata.
+
+After a terminal return card is created for an original non-terminal work card,
+the task-card service builds a Home AI Autonomous Delivery Loop event:
+
+```json
+{
+  "taskCardId": "ttc_original",
+  "returnCardId": "ttc_return",
+  "status": "completed|blocked|redirected|rejected|partially_completed",
+  "title": "bounded return title",
+  "summary": "bounded short summary",
+  "metadata": {
+    "sourceThreadId": "original source thread id",
+    "targetThreadId": "original target thread id",
+    "workflowId": "workflow id when available",
+    "terminal": true,
+    "ackPolicy": "none"
+  }
+}
+```
+
+`server.js` wires that observer to
+`adapters/home-ai-autonomous-delivery-return-service.js`, which posts to
+Home AI's `/api/autonomous-delivery/return-card-events` endpoint through the
+same trusted backend web-key path used by Hermes plugin callbacks. The observer
+is idempotent at the Codex side after a successful send and Home AI also dedupes
+by the original/return card ids. If Home AI returns 404 for an unknown original
+task-card id, Codex Mobile records `unknown_task_card` plus the HTTP status in
+the return-card audit metadata and still delivers the terminal return normally.
+Transient send failures are recorded as `failed`; they do not create repair
+cards or acknowledgement loops.
+
+Every non-terminal approved work card also records an `executionLease` on the
+original card. The lease stores bounded ids and status only: card id,
+source/target thread ids, workflow id/mode, `startedAt`, `lastProgressAt`,
+`injectedTurnId`, `currentTurnId`, `lastInterruptedTurnId`,
+`lastContinuationTurnId`, `resumeCount`, and `resumeRequired`. If an unrelated
+target-thread turn completes while the lease is still active, the service
+starts a continuation turn with a bounded prompt that references the original
+task-card id and previous injected message. It does not duplicate the full task
+body. `execution/pause` and `execution/cancel` flip the lease to a non-resuming
+state. Terminal return/no-op cards set `requiresReturn:false` and never create
+leases, so acknowledgement-loop prevention remains separate from interruption
+continuation.
 
 When the runtime `跨工作区委派` switch is enabled, server-side `thread/start` and
 `turn/start` requests also receive a Codex app-server dynamic tool:
@@ -193,8 +263,8 @@ The server validates the target actor, allows return while the original card is
 `threadTaskCardService.reply()`, and keeps retries idempotent. Invalid status
 values, missing card ids, missing actor thread ids, missing title, and missing
 body return bounded tool errors instead of hanging the turn.
-The accepted return statuses are `completed`, `blocked`, `redirected`, and
-`partially_completed`.
+The accepted return statuses are `completed`, `blocked`, `redirected`,
+`rejected`, and `partially_completed`.
 
 Source-thread task-card creation has a stricter target resolver than the manual
 pending-card API. Exact `targetThreadId` and exact `targetThreadTitle` are
@@ -397,10 +467,13 @@ If sqlite is chosen, keep it separate from normal thread message history.
    `threadTaskCardService.maybeAutoReplyCompletedTurn()`, which creates an
    idempotent reverse-direction card with the completed turn receipt and the
    same workflow id. The existing workflow grant auto-approves that return card
-   and injects it into the original source thread. Return cards must set
-   `delivery.autoReturnOnCompletion=false` and their injected message must not
-   advertise another auto-return; otherwise a completed return turn can start an
-   indefinite ping-pong loop.
+   and injects it into the original source thread. Auto-return only applies to
+   real work cards with `requiresReturn=true`. Return cards must set
+   `delivery.terminal=true`, `delivery.requiresReturn=false`,
+   `delivery.ackPolicy="none"`, and `delivery.autoReturnOnCompletion=false`;
+   their injected message must not advertise another auto-return or `Return
+   required`, otherwise a completed return turn can start an indefinite
+   ping-pong loop.
 
 ## Harness
 

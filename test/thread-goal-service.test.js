@@ -34,6 +34,22 @@ function functionBody(source, name) {
   throw new Error(`could not parse function ${name}`);
 }
 
+function functionSource(source, name) {
+  let start = source.indexOf(`function ${name}(`);
+  if (start < 0) start = source.indexOf(`async function ${name}(`);
+  assert.notEqual(start, -1, `missing function ${name}`);
+  const bodyStart = source.indexOf(") {", start) + 2;
+  assert.notEqual(bodyStart, 1, `missing function body ${name}`);
+  let depth = 0;
+  for (let index = bodyStart; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "{") depth += 1;
+    if (char === "}") depth -= 1;
+    if (depth === 0) return source.slice(start, index + 1);
+  }
+  throw new Error(`could not parse function ${name}`);
+}
+
 test("thread goal service normalizes sqlite rows for public thread state", () => {
   assert.equal(normalizeThreadGoalStatus("budget_limited"), "budgetLimited");
   assert.equal(normalizeThreadGoalStatus("usage_limited"), "usageLimited");
@@ -202,7 +218,7 @@ test("server enriches thread list and detail responses with thread goals", () =>
 });
 
 test("mobile client renders and updates thread goals from app-server notifications", () => {
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v434"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v548"/);
   assert.match(appJs, /function normalizeThreadGoal\(/);
   assert.match(appJs, /function submittedThreadGoal\(/);
   assert.match(appJs, /function renderThreadGoal\(/);
@@ -217,12 +233,78 @@ test("mobile client renders and updates thread goals from app-server notificatio
   assert.match(functionBody(appJs, "threadGoalBudgetText"), /budget tokens/);
   assert.match(functionBody(appJs, "dialogPrefillThreadGoal"), /normalizedGoal\.status === "complete" \? null : normalizedGoal/);
   assert.match(functionBody(appJs, "openThreadGoalDialog"), /const goal = dialogPrefillThreadGoal\(threadGoalForThread\(thread\)\)/);
-  assert.match(functionBody(appJs, "updateThreadGoalState"), /delete thread\.goal/);
-  assert.match(functionBody(appJs, "updateThreadGoalState"), /delete state\.currentThread\.goal/);
+  assert.match(functionBody(appJs, "applyThreadGoalToThread"), /delete thread\.goal/);
+  assert.match(appJs, /function applyThreadGoalToThread\(/);
+  assert.match(appJs, /function scheduleThreadGoalDetailRender\(/);
+  assert.match(functionBody(appJs, "updateThreadGoalState"), /state\.threadTileDetails[\s\S]*\.get\(String\(id\)\)/);
+  assert.match(functionBody(appJs, "updateThreadGoalState"), /scheduleThreadGoalDetailRender\(id\)/);
   assert.match(functionBody(appJs, "applyNotification"), /method === "thread\/goal\/updated"[\s\S]*updateThreadGoalState\(params\.threadId, params\.goal\)/);
   assert.match(functionBody(appJs, "applyNotification"), /method === "thread\/goal\/cleared"[\s\S]*updateThreadGoalState\(params\.threadId, null\)/);
   assert.match(stylesCss, /\.thread-goal-card/);
   assert.match(stylesCss, /\.thread-card-goal-badge/);
+});
+
+test("mobile client applies thread goal updates to visible tile panes", () => {
+  const sources = [
+    "normalizeThreadGoalStatus",
+    "normalizeThreadGoal",
+    "applyThreadGoalToThread",
+    "scheduleThreadGoalDetailRender",
+    "updateThreadGoalState",
+  ].map((name) => functionSource(appJs, name));
+  const harness = Function(`
+const paneListThread = { id: "thread-pane" };
+const paneDetailThread = { id: "thread-pane" };
+const state = {
+  threads: [paneListThread],
+  currentThreadId: "thread-current",
+  currentThread: { id: "thread-current" },
+  threadTileMode: true,
+  threadTileDetails: new Map([["thread-pane", paneDetailThread]]),
+  goalDialogThreadId: "",
+};
+const currentRenders = [];
+const tileRenders = [];
+let listRenderCount = 0;
+function scheduleRenderCurrentThread() { currentRenders.push("current"); }
+function threadTilePaneIsVisible(threadId) { return String(threadId || "") === "thread-pane"; }
+function scheduleRenderThreadTilePane(threadId, options) {
+  tileRenders.push({ threadId: String(threadId || ""), preserveScroll: Boolean(options && options.preserveScroll) });
+  return true;
+}
+function updateThreadGoalDialogState() {}
+function scheduleRenderThreads() { listRenderCount += 1; }
+${sources.join("\n")}
+return {
+  update: updateThreadGoalState,
+  result: () => ({ paneListThread, paneDetailThread, currentThread: state.currentThread, currentRenders, tileRenders, listRenderCount }),
+};
+`)();
+
+  harness.update("thread-pane", {
+    threadId: "thread-pane",
+    objective: "Keep pane goal local",
+    status: "active",
+    updatedAt: 100,
+  });
+  let result = harness.result();
+  assert.equal(result.paneListThread.goal.objective, "Keep pane goal local");
+  assert.equal(result.paneDetailThread.goal.objective, "Keep pane goal local");
+  assert.equal(result.currentThread.goal, undefined);
+  assert.deepEqual(result.currentRenders, []);
+  assert.deepEqual(result.tileRenders, [{ threadId: "thread-pane", preserveScroll: true }]);
+  assert.equal(result.listRenderCount, 1);
+
+  harness.update("thread-pane", null);
+  result = harness.result();
+  assert.equal(result.paneListThread.goal, undefined);
+  assert.equal(result.paneDetailThread.goal, undefined);
+  assert.deepEqual(result.currentRenders, []);
+  assert.deepEqual(result.tileRenders, [
+    { threadId: "thread-pane", preserveScroll: true },
+    { threadId: "thread-pane", preserveScroll: true },
+  ]);
+  assert.equal(result.listRenderCount, 2);
 });
 
 test("mobile client opens goal dialog from /g and sets goal through app-server route", () => {
@@ -242,7 +324,8 @@ test("mobile client opens goal dialog from /g and sets goal through app-server r
   assert.doesNotMatch(appJs, /Please set the current goal for this Codex thread/);
   assert.doesNotMatch(appJs, /Use the CLI goal feature if it is available/);
   assert.match(functionBody(appJs, "updateComposerControls"), /isThreadGoalCommandText\(composerText\(\)\)/);
-  assert.match(functionBody(appJs, "updateComposerControls"), /setComposerActionButtonLabel\(sendButton, "Goal"\)/);
+  assert.match(functionBody(appJs, "updateComposerControls"), /goalCommandMode,/);
+  assert.match(appJs, /composerActionControlPlan/);
   assert.match(functionBody(appJs, "sendMessage"), /const threadGoalCommand = isThreadGoalCommandText\(text\)/);
   assert.match(functionBody(appJs, "sendMessage"), /openThreadGoalDialog\(targetThreadId\)/);
   assert.match(functionBody(appJs, "sendMessage"), /setComposerText\(""\)/);

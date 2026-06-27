@@ -49,7 +49,9 @@ test("switching targets saves the previous draft and restores the next draft", (
 
   const loadThreadBody = functionBody("loadThread");
   assert.match(loadThreadBody, /saveCurrentDraftNow\(\)/);
-  assert.match(loadThreadBody, /restoreDraftForCurrentTarget\(\)/);
+  assert.match(loadThreadBody, /planThreadDetailLoadingShellPostStateEffects\(\{/);
+  assert.match(loadThreadBody, /planThreadDetailFirstPaintDraftRestoreEffects\(\)/);
+  assert.match(functionBody("applyThreadDetailPostRenderEffect"), /if \(type === "restore-draft-for-current-target"\) \{[\s\S]*restoreDraftForCurrentTarget\(\);/);
 
   const newThreadBody = functionBody("enterNewThreadDraft");
   assert.match(newThreadBody, /saveCurrentDraftNow\(\)/);
@@ -57,12 +59,17 @@ test("switching targets saves the previous draft and restores the next draft", (
   assert.match(newThreadBody, /restoreDraftForCurrentTarget\(\)/);
 
   const tileSelectBody = functionBody("setThreadTileSelectedThread");
-  assert.match(tileSelectBody, /saveCurrentDraftNow\(\)/);
-  assert.match(tileSelectBody, /restoreDraftForCurrentTarget\(\{ resetRuntimeWhenMissingDraft: true \}\)/);
+  assert.match(tileSelectBody, /threadTileStatePolicy\.selectedPaneEffectsPlan\(plan/);
+  assert.match(tileSelectBody, /applyThreadTileSelectedPaneEffects/);
 
-  const tileReplaceBody = functionBody("replaceThreadTilePaneThread");
-  assert.match(tileReplaceBody, /saveCurrentDraftNow\(\)/);
-  assert.match(tileReplaceBody, /restoreDraftForCurrentTarget\(\{ resetRuntimeWhenMissingDraft: true \}\)/);
+  const tileSelectEffectsBody = functionBody("applyThreadTileSelectedPaneEffects");
+  assert.match(tileSelectEffectsBody, /saveCurrentDraftNow\(\)/);
+  assert.match(tileSelectEffectsBody, /restoreDraftForCurrentTarget\(\{ resetRuntimeWhenMissingDraft: true \}\)/);
+
+  const tileEffectsBody = functionBody("applyThreadTilePaneSlotEffects");
+  assert.match(tileEffectsBody, /if \(effect\.saveDraft\) saveCurrentDraftNow\(\)/);
+  assert.match(tileEffectsBody, /if \(effect\.restoreDraft\) restoreDraftForCurrentTarget\(\{ resetRuntimeWhenMissingDraft: true \}\)/);
+  assert.match(functionBody("replaceThreadTilePaneThread"), /paneSlotMutationEffectsPlan/);
 });
 
 test("composer runtime selections persist without typed text", () => {
@@ -97,20 +104,27 @@ test("composer runtime selections persist without typed text", () => {
   assert.doesNotMatch(appJs, /saveDraftForCurrentTarget/, "runtime controls must not call a missing draft-save helper");
 
   const restoreBody = functionBody("applyDraftRuntimeSelection");
-  assert.match(restoreBody, /const hasDraft = Boolean\(draft && typeof draft === "object"\)/);
-  assert.match(restoreBody, /state\.codexFastMode = Boolean\(draft && draft\.fastMode === true\)/);
+  assert.match(restoreBody, /threadTileStatePolicy\.composerDraftRuntimeSelectionPlan/);
+  assert.match(restoreBody, /effectivePermissionMode: effectiveComposerPermissionMode\(draft && draft\.permissionMode\)/);
+  assert.match(restoreBody, /state\.codexFastMode = plan\.fastMode === true/);
   assert.doesNotMatch(restoreBody, /localStorage\.setItem\(STORAGE_CODEX_FAST_MODE/);
   assert.match(restoreBody, /options\.resetRuntimeWhenMissingDraft === true/, "target switching can clear stale runtime overrides when the new target has no draft");
-  assert.match(restoreBody, /state\.composerModel = "";/);
-  assert.match(restoreBody, /state\.composerEffort = "";/);
-  assert.match(restoreBody, /state\.composerPermissionMode = "";/);
+  assert.match(restoreBody, /if \(!plan\.setThreadRuntime\)/);
+  assert.match(restoreBody, /state\.composerModel = plan\.composerModel \|\| "";/);
+  assert.match(restoreBody, /state\.composerEffort = plan\.composerEffort \|\| "";/);
+  assert.match(restoreBody, /state\.composerPermissionMode = plan\.composerPermissionMode \|\| "";/);
 
   const resetBody = functionBody("resetComposerRuntimeSelection");
   assert.match(resetBody, /state\.codexFastMode = false;/, "switching targets should clear Fast until that target draft is restored");
 
   const loadThreadBody = functionBody("loadThread");
-  assert.match(loadThreadBody, /state\.currentThread = mergeThreadPreservingVisibleItems/);
-  assert.match(loadThreadBody, /restoreDraftForCurrentTarget\(\);[\s\S]*renderComposerSettings\(\)/, "thread load should restore persisted runtime selections");
+  assert.match(loadThreadBody, /applyThreadDetailRefreshResponseEffectsPlan\(firstPaintResponsePlan, \{ thread: result\.thread \}\);/);
+  assert.match(functionBody("applyThreadDetailRefreshResponseEffect"), /state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, thread\);/);
+  assert.match(loadThreadBody, /const firstPaintDraftRestorePlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintDraftRestoreEffects\(\);/);
+  assert.match(loadThreadBody, /applyThreadDetailPostRenderEffectsPlan\(firstPaintDraftRestorePlan, \{ thread: state\.currentThread \}\);[\s\S]*firstPaintPostMergeTimingPlan\.afterDraftRestore[\s\S]*const composerRenderMs = firstPaintPostMergeTimings\.composerRenderMs;/, "thread load should restore persisted runtime selections before composer render timing");
+  assert.match(loadThreadBody, /planThreadDetailLoadingShellPostStateEffects\(\{[\s\S]*threadId,[\s\S]*source,[\s\S]*\}\)/, "loading shell opens should restore target runtime selections through the post-state plan");
+  assert.match(functionBody("applyThreadDetailPostRenderEffect"), /if \(type === "restore-draft-for-current-target"\) \{[\s\S]*restoreDraftForCurrentTarget\(\);/);
+  assert.match(functionBody("applyThreadDetailPostRenderEffect"), /if \(type === "render-composer-settings"\) \{[\s\S]*renderComposerSettings\(\);/);
 });
 
 test("draft attachments use IndexedDB and are cleared only after a successful send", () => {

@@ -39,7 +39,8 @@ Interpretation:
 | Archived projectless thread reappears | session-index fallback, `archived_sessions`, `test/thread-archive.test.js` |
 | After profile switch only a few workspaces or no threads appear | `/api/public-config.codexProfiles.activeCodexHome`, profile state links, and `state_5.sqlite` / `sessions` under the active home |
 | Threads are visible but names/times stay stale | `/api/threads` row `name`/`updatedAt`, state DB `title`/`updated_at`, rollout file mtime, fallback merge tests |
-| Large session first open is slow | On clients after `codex-mobile-shell-v405`, inspect `/api/client-events` `thread_detail_first_paint.serverTimings` and `performancePhase`. `warm-projection-cache` points away from rollout rebuild and toward network/DOM render, `cold-thread-read` points at full app-server read/projection seed, `cold-turns-list-initial` points at the bounded turns-list first paint path, and thread-list slowness should be checked through `thread_list_rendered.serverTimings` / `performancePhase` for `warm-fallback-cache` vs `cold-fallback-build`. |
+| Large session first open is slow | On clients after `codex-mobile-shell-v495`, inspect `/api/client-events` `thread_detail_first_paint.serverTimings` and `performancePhase`. `warm-projection-cache` points away from rollout rebuild and toward network/DOM render, `warm-projection-partial` means `mode=recent` reused a memory-only current-window projection, `cold-turns-list-initial` means the first recent window was loaded from bounded app-server turns-list and should report `projectionSeedStatus=seeded-partial` when projection input exists, and `cold-thread-read` points at full app-server read/projection seed. If `projectionState=miss`, inspect `projectionMissReason` before changing cache behavior: `entry-missing` means no cache exists, `partial-not-allowed` means a partial window was correctly rejected for a full read, `static-signature-mismatch` / dynamic signature mismatch reasons point at invalid full-cache lifecycle, and `signature-unavailable` points at projection input/stat construction. Thread-list slowness should be checked through `thread_list_rendered.serverTimings` / `performancePhase` for `warm-fallback-cache` vs `cold-fallback-build`; when cold, compare `fallbackStateDbCount`, `fallbackRolloutCount`, `fallbackSessionIndexCount`, `fallbackBaselineSourceCount`, and `fallbackBaselineResultCount` with the source timings before changing cache or prewarm behavior. |
+| Active large thread still uses full `thread/read` | Inspect `thread_detail_first_paint.serverTimings.activeFullReadRequired`, `activeFullReadReason`, `activeOverlayAction`, and `activeOverlayReason`. `overlay-provider-unavailable` means the safe orchestration seam is present but no authoritative provider is wired yet. Other `require-full-read` reasons such as `assistant-delta-unknown`, `receipt-evidence-unknown`, `active-turn-mismatch`, or `non-authoritative-overlay-source` are intentional fail-closed outcomes and should not be bypassed with a client refresh or UI dedupe layer. |
 | Running-thread indicator disappears | `/api/threads` row `status` and `rolloutSizeUpdatedAtMs`, rollout tail `task_started` / `task_complete`, `runningThreadIds`, stale browser shell |
 | Thread detail shakes during streaming output | Client shell version v317+, `/api/client-events` `conversation_render_ms`, `thread_refresh_ms.skippedDetailRender`, `thread_refresh_ms.locallyPatchedDetail`, compact Command dock height, stale PWA shell |
 | Listener/app-server update interrupts a running turn | Browser shell `codex-mobile-shell-v280+`, `/api/status.ready` recovery, bounded `auto_turn_recovery_result` client event, `/api/threads/:id/auto-recover` route |
@@ -199,8 +200,9 @@ Evidence of mux drift:
 Recovery:
 
 1. Call authenticated `POST /api/app-server/reconnect` when only Mobile Web is stale.
-2. If bridge code changed or endpoint process is stale, fully quit Desktop and relaunch once with `start-codex-desktop-shared.ps1 -ForceRestartMux`.
-3. Avoid starting an independent managed app-server when shared mode is required; that creates a divergent stream.
+2. If bridge code changed or endpoint process is version-stale, use authenticated `POST /api/restart/shared-chain` from a build that includes selected mux cleanup. On macOS that path reads only the selected profile endpoint file, stops the recorded mux/app-server PIDs when their command lines match `codex-app-server-mux` or `codex app-server`, removes that selected endpoint file, and restarts the listener. It must not scan or stop unrelated profile muxes.
+3. If Desktop owns the selected mux and the authenticated restart path cannot refresh it, fully quit Desktop and relaunch once with `start-codex-desktop-shared.ps1 -ForceRestartMux` or the macOS shared Desktop launcher equivalent.
+4. Avoid starting an independent managed app-server when shared mode is required; that creates a divergent stream.
 
 ## Continuation When Source Thread Cannot Reply
 
@@ -345,6 +347,17 @@ after a later full list refresh. Those hints also carry
 `notLoaded` without a terminal status and the current thread has no active turn,
 the hint expires after the stale window so completed work does not keep a
 permanent spinner.
+
+For active/running large threads, `/api/threads/:id` can avoid full
+`thread/read` only when the server-owned live projection has a complete active
+overlay proof. The provider reads only the projection service's in-memory
+notification snapshot and returns a cloned active turn plus bounded counts and
+v4 revision metadata. If `mobileDiagnostics.threadDetailTimings` reports
+`activeOverlayAction=require-full-read`, inspect `activeOverlayReason` first:
+`entry-missing`, `active-turn-missing`, `assistant-delta-unknown`, stale
+assistant evidence, unknown item kind, or missing receipt/operation/upload
+coverage all mean the request intentionally failed closed to full `thread/read`
+instead of rendering an unsafe partial live window.
 
 If a newly submitted message briefly shows local input feedback and then the
 right-side turn timer changes to `已结束` while `/api/threads/:id?mode=recent`
