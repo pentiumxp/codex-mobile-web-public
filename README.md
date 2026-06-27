@@ -130,6 +130,36 @@ node --test test/projection-replay-visual-smoke.test.js
 本切片没有 runtime/static app 变更，不 bump shell/cache，不部署；后续会和其它 Phase E
 live-debug smoke 切片一起收束为模块。
 
+## 2026-06-27 Phase E Long-Turn Viewport Fixture Local Slice
+
+这是 v542 之后的一个本地可验证切片，目标是把“长回执遮挡后续内容、上下跳转按钮
+位置反复回归、Usage 行沉底不可见、Composer 遮挡”这类手机视口问题固化成
+headless Chrome 视觉不变量。它不读取真实线程，不修改运行时滚动策略，只用合成
+长回执 DOM 和真实 `public/styles.css` 验证布局。
+
+新增 `scripts/codex-mobile-long-turn-viewport-fixture.js`：
+
+- 构造单线程手机视口，包含 `.item.agentMessage` 长最终回执和
+  `.item.turnUsageSummary`；
+- 验证 `#scrollToBottom` 与 `#scrollToTurnReply` 共用同一视觉槽位且互斥显示；
+- 验证长回执起点可被定位到 conversation 可视顶部附近；
+- 验证 Usage 在沉底状态可见，且不被 Composer 遮挡；
+- 验证 Composer 位于 conversation 下方，不占用错误的独立浮层空间。
+
+隐私边界：输出只包含 viewport、rect、scroll 计数、布尔不变量、artifact path hash
+和字节数；不输出真实线程、消息、任务卡、URL、路径、cookie、token、截图内容或日志。
+
+验证：
+
+```bash
+node --check scripts/codex-mobile-long-turn-viewport-fixture.js
+node --test test/long-turn-viewport-fixture.test.js
+node scripts/codex-mobile-long-turn-viewport-fixture.js --width 390 --height 844 --json
+```
+
+本切片没有 runtime/static app 变更，不 bump shell/cache，不部署；后续会和其它 Phase E
+script-only smoke 切片一起收束为模块。
+
 ## 2026-06-27 Phase E Media Render Visual Smoke Local Slice
 
 这是 v542 生产部署后的第二个新 Phase E 本地切片，目标是补 uploaded/generated image

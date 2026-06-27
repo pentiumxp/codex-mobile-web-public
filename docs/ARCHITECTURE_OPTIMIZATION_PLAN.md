@@ -1805,6 +1805,18 @@ Current local coverage:
   bodies, private routes, cookies, tokens, provider payloads, or logs. This
   gives Home AI diagnostics a replay target for "missing/duplicate/only one
   receipt visible" incidents without adding a client-side masking fallback.
+- The long-turn viewport fixture now covers the mobile single-thread shape that
+  triggered repeated "new replies hidden behind a long receipt" and scroll
+  button regressions. `scripts/codex-mobile-long-turn-viewport-fixture.js`
+  renders bounded fake `.item.agentMessage` and `.item.turnUsageSummary`
+  content with real `public/styles.css`, then verifies the long final-receipt
+  start can be anchored into the conversation viewport, Usage remains visible
+  at bottom, `#scrollToBottom` and `#scrollToTurnReply` share one mutually
+  exclusive floating slot, and the visible receipt/Usage bands do not overlap
+  the Composer. It reports only viewport/rect/scroll booleans plus artifact
+  path hashes and byte counts, and does not read private threads, messages,
+  task-card bodies, URLs, cookies, tokens, screenshots, or logs. This is
+  regression evidence for the existing scroll policy, not a runtime fallback.
 
 Current diagnostic intake bridge:
 

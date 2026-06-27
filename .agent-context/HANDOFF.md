@@ -20796,3 +20796,50 @@ The previous full handoff was archived and should be opened only when old proven
   - Continue with long-turn streaming evidence or bundle the current Phase E
     script-only slices for a later module after a runtime/static slice requires
     a shell/cache bump.
+
+## 2026-06-27 - Phase E long-turn viewport fixture local slice
+
+- Current local state:
+  - Continued after local projection-replay smoke commit `5479887`.
+  - This is a script/test/docs-only local slice. It has no runtime/static app
+    behavior change, no shell/cache bump, no deployment, and no Public push.
+- Root-cause boundary:
+  - Symptom/risk: mobile users repeatedly saw long final receipts obscure newer
+    content, scroll-to-bottom / scroll-to-reply controls regress into separate
+    positions, and Usage / Composer regions compete for vertical space.
+  - Failing layer: Phase E browser/visual harness evidence for the existing
+    single-thread scroll/viewport policy, not the runtime scroll policy itself.
+  - Violated invariant: long-receipt and Usage viewport behavior should have
+    repeatable browser evidence before UI changes are accepted or diagnosed.
+- Changes:
+  - Added `scripts/codex-mobile-long-turn-viewport-fixture.js`.
+  - The fixture renders bounded fake single-thread content through real
+    `public/styles.css`, including `.item.agentMessage` long final receipt and
+    `.item.turnUsageSummary`.
+  - It verifies the final-receipt start can be positioned in the conversation
+    viewport, Usage is visible at bottom, `#scrollToBottom` and
+    `#scrollToTurnReply` share one mutually exclusive floating slot, and
+    visible receipt/Usage bands do not overlap the Composer.
+  - Added `test/long-turn-viewport-fixture.test.js` and wired the script into
+    `npm run check`.
+- Privacy:
+  - Reports include viewport, rects, scroll counts, boolean invariant fields,
+    artifact path hashes, and byte counts.
+  - Reports do not include real thread/message/task-card bodies, URLs, local
+    paths, cookies, tokens, launch material, screenshots, uploads, provider
+    payloads, or logs.
+- Validation:
+  - `node --check scripts/codex-mobile-long-turn-viewport-fixture.js` passed.
+  - `node --test test/long-turn-viewport-fixture.test.js` passed (`6` tests).
+  - `node scripts/codex-mobile-long-turn-viewport-fixture.js --width 390 --height 844 --json` passed.
+  - `node scripts/codex-mobile-long-turn-viewport-fixture.js --width 390 --height 844 --font-size xxlarge --paragraphs 24 --json` passed.
+  - Phase E smoke suite
+    `node --test test/long-turn-viewport-fixture.test.js test/projection-replay-visual-smoke.test.js test/media-render-visual-smoke.test.js test/pwa-shell-refresh-smoke.test.js test/image-order-visual-smoke.test.js`
+    passed (`24` tests).
+  - `npm run check` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit this local Phase E slice.
+  - Continue with the next high-value optimization slice: either Phase A/B
+    projection state ownership cleanup or bundle script-only Phase E slices
+    once a runtime/static slice requires a shell/cache bump.
