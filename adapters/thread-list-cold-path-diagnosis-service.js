@@ -75,9 +75,20 @@ function diagnoseThreadListColdPath(input = {}) {
   }
 
   if (booleanFlag(source.appServerDeferred)) {
+    const deferredReason = compactLabel(source.appServerDeferredReason, 80) || "app-server-deferred";
+    if (
+      deferredReason === "cold-fallback-initial"
+      || decision === "miss-rebuild"
+      || (!booleanFlag(source.fallbackCacheHit) && numberValue(source.fallbackMs) > 0)
+    ) {
+      return {
+        owner: "fallback-baseline",
+        reason: baselineReason("cold-fallback-initial", source),
+      };
+    }
     return {
       owner: "warm-fallback-cache",
-      reason: compactLabel(source.appServerDeferredReason, 80) || "app-server-deferred",
+      reason: deferredReason,
     };
   }
 

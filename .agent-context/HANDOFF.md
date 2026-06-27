@@ -23740,6 +23740,9 @@ The previous full handoff was archived and should be opened only when old proven
     `threadListInitialFallbackMetadata()` so diagnostics distinguish
     `warm-fallback-initial` from `cold-fallback-initial` and
     `warm-fallback-cache` from `fallback-baseline`.
+  - `adapters/thread-list-cold-path-diagnosis-service.js` now attributes
+    `cold-fallback-initial` app-server-deferred first paint to
+    `fallback-baseline` instead of mislabeling it as `warm-fallback-cache`.
   - This does not change fallback baseline contents, thread-list authority,
     search/workspace/archive/cursor/full reads, thread-detail projection, or
     UI ordering.
@@ -23751,12 +23754,17 @@ The previous full handoff was archived and should be opened only when old proven
     `node --check adapters/thread-list-app-server-fetch-policy-service.js`,
     `node --check server.js`, and
     `node --test test/thread-list-app-server-fetch-policy-service.test.js test/thread-list-fallback-cache-service.test.js test/thread-list-fallback-baseline-service.test.js test/thread-visibility.test.js test/mobile-viewport.test.js test/phase-b-readback-smoke.test.js`
-    passed (`94` tests).
-  - Full `npm test` passed (`1335` tests).
-  - `npm run check` passed.
-  - `npm run check:macos` passed.
+    passed (`94` tests) before deploy.
+  - After first production readback exposed the cold-owner diagnostic
+    mislabel, focused tests including
+    `test/thread-list-cold-path-diagnosis-service.test.js` passed (`99`
+    tests).
+  - Full `npm test` passed twice (`1335` tests each).
+  - `npm run check` passed twice.
+  - `npm run check:macos` passed twice.
   - `git diff --check` passed.
-  - `codegraph sync && codegraph status` reported the index is up to date.
+  - `codegraph sync && codegraph status` reported the index is up to date after
+    both code slices.
 - Next:
   - Commit and deploy through the Home AI central macOS plugin deploy path with
     reason `codex-mobile-thread-list-cold-initial`.
