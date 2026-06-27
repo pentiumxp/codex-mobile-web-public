@@ -47,6 +47,10 @@ function nonEmptyText(value) {
   return String(value || "").trim();
 }
 
+function isPromiseLike(value) {
+  return value && typeof value.then === "function";
+}
+
 function safeNonNegativeNumber(value) {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? number : 0;
@@ -382,7 +386,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       let projectionThread = overlayProjected && overlayProjected.thread || null;
       let overlayInput = null;
       try {
-        overlayInput = await resolveActiveWindowOverlay({
+        const overlayResult = resolveActiveWindowOverlay({
           threadId,
           summary,
           projection,
@@ -390,6 +394,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
           projectionThread,
           projectionLookup: overlayProjectionLookup,
         });
+        overlayInput = isPromiseLike(overlayResult) ? await overlayResult : overlayResult;
       } catch (err) {
         overlayInput = { reason: "resolver-error", error: safeErrorMessage(err) };
         threadLog("active_overlay_resolve_error", { error: safeErrorMessage(err) });

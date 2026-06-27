@@ -489,8 +489,9 @@ test("active overlay complete evidence can use a cached partial projection windo
         missReason: "",
       };
     },
-    resolveActiveWindowOverlay: async ({ projectionThread }) => {
+    resolveActiveWindowOverlay: ({ projectionThread }) => {
       calls.push(`overlay-provider:${projectionThread && projectionThread.mobileReadMode}`);
+      Promise.resolve().then(() => calls.push("overlay-provider-microtask"));
       return {
         overlaySource: "app-server-notification",
         overlayTurn: {
@@ -527,6 +528,9 @@ test("active overlay complete evidence can use a cached partial projection windo
   assert.deepEqual(calls.filter((call) => call.startsWith("active-overlay-window-lookup:")), [
     "active-overlay-window-lookup:active-turn",
   ]);
+  assert.ok(
+    calls.indexOf("active-overlay-window-lookup:active-turn") < calls.indexOf("overlay-provider-microtask"),
+  );
   assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["older-turn", "active-turn"]);
   assert.equal(response.body.thread.mobileProjection.activeOverlay, true);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "projection-active-overlay");

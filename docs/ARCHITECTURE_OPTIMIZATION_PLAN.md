@@ -190,7 +190,13 @@ Current acceleration targets:
    next correction splits a dedicated lightweight
    `activeOverlayProjectionWindowLookup`: it uses the same proof-gated cache
    semantics, passes `skipNormalizeResult` through v4 projection lookup, and
-   returns only the projection window needed for the overlay proof/merge.
+   returns only the projection window needed for the overlay proof/merge. A
+   later timing readback showed this lookup itself was effectively zero-cost;
+   the remaining one-second `activeOverlayMs` came from using `await` on the
+   synchronous active-overlay provider, which let the event loop process other
+   active-session work before continuing the detail response. Read orchestration
+   now only awaits promise-like provider results; synchronous provider output
+   continues in the same call stack.
    `turns-list-active-overlay-window` remains a fail-closed fallback only when
    no usable projection window exists.
    Post-v542 local pane-context work is intentionally smaller than these
