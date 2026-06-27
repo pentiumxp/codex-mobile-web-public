@@ -22964,3 +22964,48 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit v549, deploy through the central Home AI macOS plugin deploy path,
     read back `/api/public-config`, then public-sync and close PR #79 as
     absorbed.
+
+## 2026-06-27 - v549 deployed, public-synced, PR #79 absorbed
+
+- Private implementation:
+  - Committed `bd39c72` (`fix terminal thread running hints`) on private
+    `main`.
+  - The fix absorbed PR #79's valuable frontend rule into the current v549
+    architecture instead of directly merging the stale v434/v435 branch.
+  - Server raw-operation fallback changes from PR #79 were not re-applied
+    because current `mergeRecentRawOperationsIntoTurn()` already only inserts
+    missing raw operations for live turns; terminal turns only merge into
+    existing operation items.
+- Validation:
+  - Manual repro now returns `keep=false` for terminal rows with newer local
+    running hints and terminal list rows without turn details.
+  - Focused tests passed:
+    `node --test test/thread-status-hints.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js test/app-update.test.js test/plugin-voice-input.test.js`
+    (`56` tests).
+  - `npm test` passed (`1307` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Production deployment:
+  - Deployed through Home AI central macOS plugin deploy path with reason
+    `codex-mobile-terminal-running-hints-v549`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T142547Z-plugin-codex-mobile-web-codex-mobile-terminal-running-hints-v549`.
+  - Production readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v549`,
+    `shellCacheName=codex-mobile-shell-v549`, `buildId=99feb668fa3ff98f`.
+- Public sync:
+  - Built a public-safe worktree at
+    `/tmp/codex-mobile-public-v549.uFULnt`.
+  - Public-safe validation passed: `git diff --cached --check`, public tree
+    private-path scan, `npm run check`, and the focused v549 test set.
+  - Pushed public commit `3989189`
+    (`release: publish v549 terminal running hints`) to `public/main`.
+  - Merged `public/main` back into private `main` with the `ours` strategy so
+    public history remains an ancestor while private `.agent-context` stays
+    private.
+- Next:
+  - Push the private merge/handoff record to `origin/main`.
+  - Close public PR #79 as absorbed/superseded by v549, then verify
+    `public/main` is an ancestor of private `main` and no non-agent-context
+    source drift remains from public to private.
