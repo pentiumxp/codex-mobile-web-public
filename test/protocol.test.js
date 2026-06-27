@@ -477,6 +477,72 @@ test("mux forwards server requests and returns client responses with the origina
   assert.equal(stderr, "");
 });
 
+test("mux exposes bounded per-method RPC metrics without payload content", async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-protocol-"));
+  const codexHome = path.join(tempRoot, "codex-home");
+  const endpointFile = path.join(codexHome, "app-server-mux", "endpoint.json");
+  const logFile = path.join(codexHome, "app-server-mux", "mux.log");
+  const child = spawn(process.execPath, [muxPath], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      CODEX_HOME: codexHome,
+      CODEX_MUX_STANDALONE: "1",
+      CODEX_MUX_HOST: "127.0.0.1",
+      CODEX_MUX_PORT: "0",
+      CODEX_MUX_CODEX_EXE: process.execPath,
+      CODEX_MUX_CODEX_ARGS: mockCodexPath,
+      CODEX_MUX_LOG_FILE: logFile,
+      CODEX_MUX_ENDPOINT_FILE: endpointFile,
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  t.after(() => {
+    child.kill("SIGTERM");
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const endpoint = await waitFor(() => readJsonFile(endpointFile));
+  assert.equal(endpoint.capabilities.muxMetricsRpc, true);
+
+  const socket = await connectJsonl(endpoint.port);
+  t.after(() => socket.destroy());
+  const messages = collectJsonLines(socket);
+
+  writeJsonLine(socket, {
+    jsonrpc: "2.0",
+    id: "list-1",
+    method: "thread/list",
+    params: {
+      limit: 80,
+      privatePrompt: "do not leak",
+      searchTerm: "private thread title",
+    },
+  });
+
+  const listResponse = await waitFor(() => messages.find((message) => message.id === "list-1"));
+  assert.equal(listResponse.result.data[0].id, "thread-1");
+
+  writeJsonLine(socket, {
+    jsonrpc: "2.0",
+    id: "metrics-1",
+    method: "mux/metrics/read",
+    params: { methods: ["thread/list"] },
+  });
+
+  const metricsResponse = await waitFor(() => messages.find((message) => message.id === "metrics-1"));
+  const metric = metricsResponse.result.methods["thread/list"];
+  assert.equal(metricsResponse.result.ok, true);
+  assert.equal(metric.method, "thread/list");
+  assert.equal(metric.count, 1);
+  assert.equal(metric.errorCount, 0);
+  assert.ok(metric.lastRequestBytes > 0);
+  assert.ok(metric.lastResponseBytes > 0);
+  assert.equal(typeof metric.lastMs, "number");
+  const serialized = JSON.stringify(metricsResponse);
+  assert.doesNotMatch(serialized, /privatePrompt|private thread title|searchTerm|thread-1/);
+});
+
 test("thread detail result carries public pending server requests for the thread", () => {
   const result = {
     thread: {

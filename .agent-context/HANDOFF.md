@@ -19378,3 +19378,50 @@ The previous full handoff was archived and should be opened only when old proven
     The next production readback should inspect `appServerResponsePayloadBytes`,
     `appServerRpcAttemptCount`, `appServerRpcTimedOut`, and endpoint kind before
     changing request cadence, mux transport, or app-server-side filtering.
+
+## 2026-06-27 - Phase B mux RPC metrics local slice
+
+- Current local state:
+  - Continued after local commit `6624f1b`, which exposed Mobile-side
+    `thread/list` transport/payload diagnostics but still could not compare
+    Mobile `appServerRpcMs` with mux-side forwarding time.
+  - This slice is local-only and does not bump `CLIENT_BUILD_ID` / PWA shell
+    cache or deploy production.
+- Root-cause boundary:
+  - Symptom/risk: v536 showed high `appServerRpcMs`, and `6624f1b` can expose
+    response/payload size and retry state, but the next owner still needs to
+    know whether time is spent before mux, inside mux/app-server forwarding, or
+    only in the real app-server response path.
+  - Failing layer: bounded Phase B mux/RPC evidence for forwarded JSON-RPC
+    methods, not thread-list semantics, fallback/prewarm, thread detail
+    projection, frontend rendering, or task-card workflow.
+  - Violated invariant: Phase B readback should compare Mobile-side RPC timing
+    with mux-side method timing without parsing mux logs or exposing params,
+    result payloads, thread ids, titles, prompts, task-card bodies, endpoint
+    paths, cookies, tokens, or long logs.
+- Changes:
+  - `codex-app-server-mux.js` now records method-level forwarded RPC metrics:
+    count, error count, total/avg/last/max ms, last request bytes, and last
+    response bytes.
+  - Added mux-owned read-only RPC `mux/metrics/read`, plus endpoint capability
+    `muxMetricsRpc: true`.
+  - `/api/status?muxMetrics=1` reads mux metrics on demand only; ordinary
+    `/api/status` and `/api/threads` hot paths do not add this extra RPC.
+  - Phase B readback smoke samples query-gated status after `/api/threads` and
+    includes `thread/list` mux metrics in report and decision evidence.
+  - Updated `README.md` and `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Validation:
+  - `node --check codex-app-server-mux.js && node --check server.js && node --check scripts/codex-mobile-phase-b-readback-smoke.js && node --check adapters/phase-b-readback-decision-service.js && node --test test/protocol.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js test/thread-task-card-route.test.js` passed (`54` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `npm test` passed (`1200` tests).
+  - `git diff --check` passed.
+- Deployment:
+  - Not deployed. This remains a local Phase B mux/RPC evidence slice for the
+    next batched module.
+- Next:
+  - Commit locally, then decide whether to deploy the two Phase B RPC evidence
+    slices as a module. Production readback should compare
+    `appServerRpcMs`, `appServerResponsePayloadBytes`, `threadListMuxRpcLastMs`,
+    `threadListMuxRequestBytes`, and `threadListMuxResponseBytes` before
+    changing request cadence, mux transport, or app-server-side filtering.

@@ -385,6 +385,37 @@ function summarizeThreadList(result = {}) {
   };
 }
 
+function summarizeMuxMetric(metric = {}) {
+  const source = objectOrNull(metric) || {};
+  return {
+    method: compactLabel(source.method, 100),
+    count: boundedCount(source.count),
+    errorCount: boundedCount(source.errorCount),
+    totalMs: boundedNumber(source.totalMs),
+    avgMs: boundedNumber(source.avgMs),
+    lastMs: boundedNumber(source.lastMs),
+    maxMs: boundedNumber(source.maxMs),
+    lastRequestBytes: boundedBytes(source.lastRequestBytes),
+    lastResponseBytes: boundedBytes(source.lastResponseBytes),
+    lastAgeMs: boundedNumber(source.lastAgeMs),
+  };
+}
+
+function summarizeMuxMetrics(status = {}) {
+  const metrics = objectOrNull(status && status.muxMetrics);
+  const methods = objectOrNull(metrics && metrics.methods) || {};
+  return {
+    supported: metrics && metrics.supported === true,
+    ok: metrics && metrics.ok === true,
+    reason: compactLabel(metrics && metrics.reason, 80),
+    uptimeMs: boundedNumber(metrics && metrics.uptimeMs),
+    pendingCount: boundedCount(metrics && metrics.pendingCount),
+    serverRequestCount: boundedCount(metrics && metrics.serverRequestCount),
+    trackedMethodCount: boundedCount(metrics && metrics.trackedMethodCount),
+    threadList: summarizeMuxMetric(methods["thread/list"]),
+  };
+}
+
 function detailTurns(thread) {
   return Array.isArray(thread && thread.turns) ? thread.turns : [];
 }
@@ -548,6 +579,7 @@ async function run(options = {}, env = process.env) {
     threadList: null,
     threadListAfterDeferred: null,
     threadListWarmCheck: null,
+    muxMetrics: null,
     detail: null,
     decision: null,
     checks: {},
@@ -561,6 +593,8 @@ async function run(options = {}, env = process.env) {
 
   const listResult = await fetchJson(requestUrl(options, "/api/threads", { limit: options.listLimit }), options, key);
   report.threadList = summarizeThreadList(listResult);
+  const statusResult = await fetchJson(requestUrl(options, "/api/status", { muxMetrics: 1 }), options, key);
+  report.muxMetrics = summarizeMuxMetrics(statusResult);
 
   let threadId = String(options.threadId || "").trim();
   if (!threadId) {

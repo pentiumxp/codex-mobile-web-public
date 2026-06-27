@@ -54,6 +54,23 @@ function handle(message) {
     return;
   }
 
+  if (message.method === "thread/list") {
+    send({
+      jsonrpc: "2.0",
+      id: message.id,
+      result: {
+        data: [
+          {
+            id: "thread-1",
+            status: "idle",
+            updatedAt: 1,
+          },
+        ],
+      },
+    });
+    return;
+  }
+
   if (message.method === "turn/start") {
     const threadId = message.params && message.params.threadId || "thread-1";
     const turnId = `turn-${Date.now()}`;

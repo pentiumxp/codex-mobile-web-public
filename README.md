@@ -16,6 +16,34 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-27 Phase B Mux RPC Metrics Slice
+
+本地小切片继续上一片 app-server RPC transport diagnostics。上一片能在 Mobile server
+侧看到 `thread/list` 的 transport、attempt、request/response bytes；这一片补 mux 自身的
+method-level 聚合指标，方便下一次生产读回区分“Mobile 到 mux 的等待”和“mux 转发到
+真实 Codex app-server 的等待”。
+
+改动边界：
+
+- `codex-app-server-mux.js` 记录每个 forwarded JSON-RPC method 的 bounded 聚合指标：
+  count、errorCount、total/avg/last/max ms、last request bytes、last response bytes。
+- 新增 mux 自有只读 RPC：`mux/metrics/read`。它只返回方法名和数值，不返回 params、
+  result、thread id、标题、消息正文、任务卡正文、endpoint path 或日志。
+- mux endpoint capability 新增 `muxMetricsRpc: true`。
+- `/api/status?muxMetrics=1` 才会主动读取 mux metrics；普通 status 和 `/api/threads`
+  热路径不额外读 mux。
+- Phase B readback smoke 在读取 `/api/threads` 后读一次 query-gated status，并把
+  `thread/list` mux metrics 放入 report / decision evidence。
+
+验证：
+
+```bash
+node --check codex-app-server-mux.js && node --check server.js && node --check scripts/codex-mobile-phase-b-readback-smoke.js && node --check adapters/phase-b-readback-decision-service.js && node --test test/protocol.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js test/thread-task-card-route.test.js
+```
+
+结果：focused `54` passed。未 bump `CLIENT_BUILD_ID` / PWA shell cache，未部署；继续作为
+Phase B 本地切片，等待下一次模块批量部署/readback。
+
 ## 2026-06-27 Phase B App-Server RPC Transport Diagnostics Slice
 
 本地小切片继续 v536 后的 Phase B。v536 生产读回已经证明普通线程列表慢样本主要

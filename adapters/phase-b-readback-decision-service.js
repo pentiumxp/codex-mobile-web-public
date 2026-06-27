@@ -27,6 +27,8 @@ function buildEvidence(report = {}) {
   const list = objectOrNull(report.threadList) || {};
   const afterDeferred = objectOrNull(report.threadListAfterDeferred) || {};
   const warmCheck = objectOrNull(report.threadListWarmCheck) || {};
+  const muxMetrics = objectOrNull(report.muxMetrics) || {};
+  const muxThreadList = objectOrNull(muxMetrics.threadList) || {};
   const detail = objectOrNull(report.detail) || {};
   return {
     threadListPrewarmEnabled: prewarm.enabled === true,
@@ -84,6 +86,21 @@ function buildEvidence(report = {}) {
     threadListAppServerRequestPayloadBytes: boundedBytes(list.appServerRequestPayloadBytes),
     threadListAppServerRequestParamBytes: boundedBytes(list.appServerRequestParamBytes),
     threadListAppServerResponsePayloadBytes: boundedBytes(list.appServerResponsePayloadBytes),
+    threadListMuxMetricsSupported: muxMetrics.supported === true,
+    threadListMuxMetricsOk: muxMetrics.ok === true,
+    threadListMuxMetricsReason: compactLabel(muxMetrics.reason, 80),
+    threadListMuxPendingCount: boundedCount(muxMetrics.pendingCount),
+    threadListMuxServerRequestCount: boundedCount(muxMetrics.serverRequestCount),
+    threadListMuxTrackedMethodCount: boundedCount(muxMetrics.trackedMethodCount),
+    threadListMuxRpcCount: boundedCount(muxThreadList.count),
+    threadListMuxRpcErrorCount: boundedCount(muxThreadList.errorCount),
+    threadListMuxRpcTotalMs: boundedCount(muxThreadList.totalMs),
+    threadListMuxRpcAvgMs: boundedCount(muxThreadList.avgMs),
+    threadListMuxRpcLastMs: boundedCount(muxThreadList.lastMs),
+    threadListMuxRpcMaxMs: boundedCount(muxThreadList.maxMs),
+    threadListMuxRequestBytes: boundedBytes(muxThreadList.lastRequestBytes),
+    threadListMuxResponseBytes: boundedBytes(muxThreadList.lastResponseBytes),
+    threadListMuxLastAgeMs: boundedCount(muxThreadList.lastAgeMs),
     threadListAfterDeferredOwner: compactLabel(afterDeferred.coldPathOwner, 80),
     threadListAfterDeferredReason: compactLabel(afterDeferred.coldPathReason, 80),
     threadListAfterDeferredCacheDecision: compactLabel(afterDeferred.fallbackCacheDecision, 80),

@@ -236,6 +236,24 @@ test("phase B readback decision routes high warm list latency to app-server RPC 
       appServerRequestParamBytes: 96,
       appServerResponsePayloadBytes: 45678,
     },
+    muxMetrics: {
+      supported: true,
+      ok: true,
+      pendingCount: 0,
+      serverRequestCount: 1,
+      trackedMethodCount: 2,
+      threadList: {
+        count: 3,
+        errorCount: 0,
+        totalMs: 2500,
+        avgMs: 833,
+        lastMs: 1980,
+        maxMs: 1980,
+        lastRequestBytes: 188,
+        lastResponseBytes: 45678,
+        lastAgeMs: 20,
+      },
+    },
     detail: {
       readMode: "projection-active-overlay",
       readDecision: "projection-active-overlay",
@@ -262,6 +280,14 @@ test("phase B readback decision routes high warm list latency to app-server RPC 
   assert.equal(decision.evidence.threadListAppServerRequestPayloadBytes, 188);
   assert.equal(decision.evidence.threadListAppServerRequestParamBytes, 96);
   assert.equal(decision.evidence.threadListAppServerResponsePayloadBytes, 45678);
+  assert.equal(decision.evidence.threadListMuxMetricsSupported, true);
+  assert.equal(decision.evidence.threadListMuxMetricsOk, true);
+  assert.equal(decision.evidence.threadListMuxServerRequestCount, 1);
+  assert.equal(decision.evidence.threadListMuxTrackedMethodCount, 2);
+  assert.equal(decision.evidence.threadListMuxRpcCount, 3);
+  assert.equal(decision.evidence.threadListMuxRpcLastMs, 1980);
+  assert.equal(decision.evidence.threadListMuxRequestBytes, 188);
+  assert.equal(decision.evidence.threadListMuxResponseBytes, 45678);
 });
 
 test("phase B readback decision routes high warm list latency to local filter owner", () => {

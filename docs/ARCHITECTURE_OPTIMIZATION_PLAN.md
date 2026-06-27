@@ -292,7 +292,15 @@ Current acceleration targets:
    and response contents are not exposed. Phase B readback and decision
    evidence carry these fields so the next module deploy can determine whether
    high `appServerRpcMs` correlates with response size, retry/timeout behavior,
-   or transport class before changing mux/app-server behavior.
+   or transport class before changing mux/app-server behavior. The follow-up
+   mux metrics slice adds a read-only `mux/metrics/read` RPC inside
+   `codex-app-server-mux.js` and exposes it only through
+   `/api/status?muxMetrics=1`; it records method-level count, error count,
+   total/avg/last/max elapsed time, and last request/response byte sizes for
+   forwarded RPCs. The metrics are method-name and numeric only. Phase B
+   readback samples them after `/api/threads`, so the next module deploy can
+   compare Mobile-side `appServerRpcMs` with mux-side `thread/list` elapsed
+   time without parsing mux logs or exposing request params/results.
    Earlier local
    fallback attribution slices also made baseline source work explicit:
    fallback baseline source reads now

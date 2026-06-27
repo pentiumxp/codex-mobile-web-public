@@ -9863,6 +9863,36 @@ class CodexAppServerClient {
     return this.sendNotification("mux/userMessage", params);
   }
 
+  supportsMuxMetricsRead() {
+    return this.isMuxEndpoint()
+      && this.endpoint.capabilities
+      && this.endpoint.capabilities.muxMetricsRpc === true;
+  }
+
+  async readMuxMetrics(methods = []) {
+    if (!this.supportsMuxMetricsRead()) {
+      return { ok: false, supported: false, reason: "mux-metrics-unsupported" };
+    }
+    const requestedMethods = Array.isArray(methods)
+      ? methods.map((method) => String(method || "").trim()).filter(Boolean).slice(0, 20)
+      : [];
+    try {
+      const result = await this.request("mux/metrics/read", { methods: requestedMethods }, {
+        timeoutMs: 1000,
+        retry: false,
+        resetOnTimeout: false,
+      });
+      return Object.assign({ supported: true }, result && typeof result === "object" ? result : {});
+    } catch (err) {
+      return {
+        ok: false,
+        supported: true,
+        reason: "mux-metrics-read-failed",
+        error: String(err && err.code || err && err.message || err || "unknown").slice(0, 120),
+      };
+    }
+  }
+
   async request(method, params, options = {}) {
     const timeoutMs = options.timeoutMs || (SAFE_RETRY_METHODS.has(method) ? READ_RPC_TIMEOUT_MS : DEFAULT_RPC_TIMEOUT_MS);
     const retry = options.retry !== false && SAFE_RETRY_METHODS.has(method);
@@ -14249,7 +14279,12 @@ async function handleApi(req, res) {
     });
     await codex.refreshRateLimitsIfMissing();
     loadRecentRateLimitsFromRollouts();
-    sendJson(res, 200, codex.status());
+    const status = codex.status();
+    const includeMuxMetrics = /^(1|true|yes|on)$/i.test(String(url.searchParams.get("muxMetrics") || ""));
+    if (includeMuxMetrics) {
+      status.muxMetrics = await codex.readMuxMetrics(["thread/list"]);
+    }
+    sendJson(res, 200, status);
     return;
   }
   if (url.pathname === "/api/uploads/file" && req.method === "GET") {

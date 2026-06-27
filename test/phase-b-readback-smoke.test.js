@@ -36,6 +36,33 @@ function createMockServer(handler) {
   });
 }
 
+function muxStatusFixture(overrides = {}) {
+  return {
+    muxMetrics: Object.assign({
+      supported: true,
+      ok: true,
+      uptimeMs: 1000,
+      pendingCount: 0,
+      serverRequestCount: 0,
+      trackedMethodCount: 1,
+      methods: {
+        "thread/list": {
+          method: "thread/list",
+          count: 1,
+          errorCount: 0,
+          totalMs: 11,
+          avgMs: 11,
+          lastMs: 11,
+          maxMs: 11,
+          lastRequestBytes: 188,
+          lastResponseBytes: 45678,
+          lastAgeMs: 3,
+        },
+      },
+    }, overrides),
+  };
+}
+
 test("phase B readback smoke parses prewarm settle options", () => {
   const parsed = parseArgs([
     "--prewarm-settle-ms",
@@ -128,6 +155,11 @@ test("phase B readback smoke collects bounded diagnostics without private fields
       });
       return;
     }
+    if (url.pathname === "/api/status") {
+      assert.equal(url.searchParams.get("muxMetrics"), "1");
+      send(200, muxStatusFixture());
+      return;
+    }
     if (url.pathname === "/api/threads/thread-private-1") {
       assert.equal(url.searchParams.get("mode"), "recent");
       send(200, {
@@ -193,6 +225,13 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.threadList.appServerRequestPayloadBytes, 188);
   assert.equal(report.threadList.appServerRequestParamBytes, 96);
   assert.equal(report.threadList.appServerResponsePayloadBytes, 45678);
+  assert.equal(report.muxMetrics.supported, true);
+  assert.equal(report.muxMetrics.ok, true);
+  assert.equal(report.muxMetrics.threadList.method, "thread/list");
+  assert.equal(report.muxMetrics.threadList.count, 1);
+  assert.equal(report.muxMetrics.threadList.lastMs, 11);
+  assert.equal(report.muxMetrics.threadList.lastRequestBytes, 188);
+  assert.equal(report.muxMetrics.threadList.lastResponseBytes, 45678);
   assert.equal(report.threadList.fallbackSourceSnapshotHit, true);
   assert.equal(report.threadList.fallbackSourceSnapshotRawCount, 12);
   assert.equal(report.publicConfig.threadListFallbackPrewarm.completed, true);
@@ -208,6 +247,7 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.deepEqual(seen.map((item) => item.path), [
     "/api/public-config",
     "/api/threads",
+    "/api/status",
     "/api/threads/thread-private-1",
   ]);
   assert.equal(seen.every((item) => item.authorization === ""), true);
@@ -272,6 +312,10 @@ test("phase B readback smoke waits for prewarm settle before reading thread list
       });
       return;
     }
+    if (url.pathname === "/api/status") {
+      send(200, muxStatusFixture());
+      return;
+    }
     send(404, { error: "not_found" });
   });
   t.after(() => new Promise((resolve) => server.close(resolve)));
@@ -305,6 +349,7 @@ test("phase B readback smoke waits for prewarm settle before reading thread list
     "/api/public-config",
     "/api/public-config",
     "/api/threads",
+    "/api/status",
   ]);
   assert.doesNotMatch(JSON.stringify(report), /private title/);
 });
@@ -324,6 +369,10 @@ test("phase B readback smoke fails when required thread-list cold path fields ar
           },
         },
       });
+      return;
+    }
+    if (url.pathname === "/api/status") {
+      send(200, muxStatusFixture());
       return;
     }
     if (url.pathname === "/api/threads/thread-1") {
@@ -413,6 +462,10 @@ test("phase B readback smoke verifies deferred fallback follow-up and warm check
       send(200, threadListResponses.shift() || threadListResponses[threadListResponses.length - 1]);
       return;
     }
+    if (url.pathname === "/api/status") {
+      send(200, muxStatusFixture());
+      return;
+    }
     if (url.pathname === "/api/threads/thread-1") {
       send(200, {
         thread: {
@@ -452,6 +505,7 @@ test("phase B readback smoke verifies deferred fallback follow-up and warm check
   assert.deepEqual(seen, [
     "/api/public-config",
     "/api/threads",
+    "/api/status",
     "/api/threads/thread-1",
     "/api/threads",
     "/api/threads",
@@ -502,6 +556,10 @@ test("phase B readback smoke verifies ordinary cold fallback warm check", async 
       send(200, threadListResponses.shift());
       return;
     }
+    if (url.pathname === "/api/status") {
+      send(200, muxStatusFixture());
+      return;
+    }
     if (url.pathname === "/api/threads/thread-1") {
       send(200, {
         thread: {
@@ -538,6 +596,7 @@ test("phase B readback smoke verifies ordinary cold fallback warm check", async 
   assert.deepEqual(seen, [
     "/api/public-config",
     "/api/threads",
+    "/api/status",
     "/api/threads/thread-1",
     "/api/threads",
   ]);
