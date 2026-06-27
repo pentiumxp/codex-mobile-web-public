@@ -637,6 +637,39 @@ npm run check:macos  # passed
 git diff --check  # passed
 ```
 
+## 2026-06-27 Phase C Task-card Draft Creation Source Context Slice
+
+这是 task-card draft render context 之后的相邻 Phase C 本地切片，不单独部署、
+不推 Public。它继续收敛 cross-thread task-card draft 的异步创建队列：pane 渲染时
+触发 draft materialization 后，timeout 执行的 `createThreadTaskCardDraft()` 会保留
+当时的 source thread id，并用该线程查找 draft、组装 source payload、更新本地 card
+状态和诊断 hash，不再默认使用全局 `state.currentThreadId` / `state.currentThread`。
+
+改动边界：
+
+- `queueThreadTaskCardDraftCreation(draftKey, thread)` 捕获 `renderContextThreadId(thread)`，
+  并传给 `createThreadTaskCardDraft(key, { threadId })`；
+- `findThreadTaskCardDraftByKey(draftKey, thread)` 支持显式 source thread，并返回
+  `sourceThread`；
+- `createThreadTaskCardDraft(draftKey, options)` 使用 explicit source thread 生成
+  `sourceThreadId`、`sourceWorkspaceId`、`sourceThreadTitle` 和 idempotency key；
+- 创建成功后把卡片 upsert 到 source thread，并按 source/target 更新 pending counts；
+- 新增可执行测试，验证 pane source 创建请求的 API body、idempotency key、本地 upsert
+  和计数更新全部使用 pane thread；
+- 不改变 server task-card create API、return/ack 协议、任务卡 body 结构、shell/cache
+  版本或生产部署状态。
+
+验证：
+
+```bash
+node --check public/app.js
+node --test test/thread-task-card-route.test.js test/conversation-render.test.js test/thread-detail-actions.test.js  # 137 passed
+npm test  # 1268 passed
+npm run check  # passed
+npm run check:macos  # passed
+git diff --check  # passed
+```
+
 ## 2026-06-27 Phase A Conversation DOM Authority Invalidation Local Slice
 
 这是 v542 后继续按“小切片本地提交、模块化再部署”节奏推进的 Phase A 切片。

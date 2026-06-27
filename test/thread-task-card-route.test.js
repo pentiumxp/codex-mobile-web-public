@@ -33,8 +33,8 @@ function functionBody(source, name) {
 }
 
 function functionSource(source, name) {
-  let start = source.indexOf(`function ${name}(`);
-  if (start < 0) start = source.indexOf(`async function ${name}(`);
+  let start = source.indexOf(`async function ${name}(`);
+  if (start < 0) start = source.indexOf(`function ${name}(`);
   assert.notEqual(start, -1, `missing function ${name}`);
   const bodyStart = source.indexOf(") {", start) + 2;
   assert.notEqual(bodyStart, 1, `missing function body ${name}`);
@@ -451,7 +451,11 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /function saveThreadTaskCardDraftStates\(\)/);
   assert.match(appJs, /function queueThreadTaskCardDraftCreation\(/);
   assert.match(appJs, /state\.activeThreadTaskCardDraftCreations\.has\(key\)/);
+  assert.match(functionBody(appJs, "queueThreadTaskCardDraftCreation"), /const sourceThreadId = renderContextThreadId\(thread\)/);
+  assert.match(functionBody(appJs, "queueThreadTaskCardDraftCreation"), /createThreadTaskCardDraft\(key, \{ threadId: sourceThreadId \}\)/);
   assert.match(appJs, /function createThreadTaskCardDraft\(/);
+  assert.match(functionBody(appJs, "createThreadTaskCardDraft"), /const requestedThread = taskCardActionThread\(requestedThreadId\)/);
+  assert.match(functionBody(appJs, "createThreadTaskCardDraft"), /const resolved = findThreadTaskCardDraftByKey\(draftKey, requestedThread\)/);
   assert.match(functionBody(appJs, "createThreadTaskCardDraft"), /const targetRefs = threadTaskCardDraftTargetThreads\(draft\);/);
   assert.match(functionBody(appJs, "createThreadTaskCardDraft"), /const targetThreadIds = threadTaskCardDraftTargetIds\(draft\);/);
   assert.match(functionBody(appJs, "createThreadTaskCardDraft"), /const body = truncateThreadTaskCardBody\(draft\.body\);/);
@@ -469,7 +473,7 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.doesNotMatch(appJs, /data-task-card-draft-action="approve"/);
   assert.doesNotMatch(appJs, /approveThreadTaskCardDraft/);
   assert.match(appJs, /data-task-card-draft-action="dismiss"/);
-  assert.match(appJs, /idempotencyKey: `task-card-draft:\$\{state\.currentThreadId\}:\$\{draftKey\}`/);
+  assert.match(appJs, /idempotencyKey: `task-card-draft:\$\{sourceThreadId\}:\$\{draftKey\}`/);
   assert.match(appJs, /Task card created; opening target thread/);
   assert.match(appJs, /Task cards created: \$\{createdCards\.length\}/);
   assert.match(appJs, /state\.pendingPluginRouteHint = createdCards\.length === 1 \? normalizePluginRouteHint\(\{/);
@@ -542,4 +546,104 @@ return { matchingThreadTaskCardsForDraft };
 
   assert.equal(harness.matchingThreadTaskCardsForDraft(draft, turn)[0].id, "card-current");
   assert.equal(harness.matchingThreadTaskCardsForDraft(draft, turn, paneThread)[0].id, "card-pane");
+});
+
+test("client task-card draft creation uses queued source thread context", async () => {
+  const createSource = functionSource(appJs, "createThreadTaskCardDraft");
+  const harness = Function(`
+const paneThread = { id: "thread-pane", cwd: "/work/pane", name: "Pane Thread", threadTaskCards: [] };
+const state = {
+  activeThreadTaskCardDraftCreations: new Set(),
+  threadTileDetails: new Map([["thread-pane", paneThread]]),
+  currentThreadId: "thread-current",
+  currentThread: { id: "thread-current", cwd: "/work/current", name: "Current Thread", threadTaskCards: [] },
+  selectedCwd: "/work/fallback",
+  pendingPluginRouteHint: null,
+  threadTileMode: true,
+};
+const draftStates = [];
+const outgoingCounts = [];
+const incomingCounts = [];
+let apiBody = null;
+let findThreadArg = null;
+let loadedThreadId = "";
+function taskCardActionThread(threadId) {
+  const id = String(threadId || "").trim();
+  if (id === "thread-pane") return paneThread;
+  if (id === "thread-current") return state.currentThread;
+  return state.currentThread;
+}
+function findThreadTaskCardDraftByKey(draftKey, thread) {
+  findThreadArg = thread;
+  return {
+    key: String(draftKey || ""),
+    sourceThread: thread,
+    turn: { id: "turn-pane" },
+    draft: {
+      targetThreadIds: ["thread-target"],
+      title: "Repair target",
+      summary: "Repair summary",
+      body: "Repair body",
+      workflowMode: "manual",
+      workflowId: "",
+    },
+  };
+}
+function setThreadTaskCardDraftState(key, value) { draftStates.push({ key, value }); }
+function threadTaskCardDraftTargetThreads(draft) { return [{ threadId: "thread-target", thread: { id: "thread-target", cwd: "/work/target" } }]; }
+function threadTaskCardDraftTargetIds(draft) { return draft.targetThreadIds || []; }
+function truncateThreadTaskCardBody(value) { return String(value || ""); }
+function threadTitleForDisplay(thread) { return thread && thread.name || ""; }
+function summarizeTaskCardText(value) { return String(value || "").slice(0, 80); }
+function upsertThreadTaskCardOnThread(thread, card) { thread.threadTaskCards = [card]; }
+function incrementPendingOutgoingTaskCardCount(threadId, delta) { outgoingCounts.push({ threadId, delta }); }
+function incrementPendingIncomingTaskCardCount(threadId, delta) { incomingCounts.push({ threadId, delta }); }
+function normalizePluginRouteHint(value) { return value; }
+function diagnosticThreadHash(value) { return "hash:" + value; }
+function diagnosticItemHash(value) { return "item:" + value; }
+function recordHomeAiDiagnosticSuccess() {}
+function recordHomeAiDiagnosticFailure() {}
+function diagnosticErrorCode() { return "error"; }
+function diagnosticErrorStatus() { return 0; }
+function normalizeClientErrorMessage(value) { return String(value || ""); }
+function renderThreads() {}
+function renderCurrentThread() {}
+function threadTilePaneIsVisible() { return true; }
+function scheduleRenderThreadTilePane() {}
+function showError(err) { throw err; }
+function loadThreads() { return Promise.resolve(); }
+function loadThread(threadId) { loadedThreadId = String(threadId || ""); return Promise.resolve(); }
+function $(id) { return { classList: { remove() {}, add() {} }, textContent: "" }; }
+async function api(url, options) {
+  apiBody = JSON.parse(options.body);
+  return {
+    cards: [{
+      id: "card-created",
+      status: "pending",
+      source: { threadId: apiBody.sourceThreadId, turnId: apiBody.sourceTurnId },
+      target: { threadId: "thread-target" },
+      message: { title: apiBody.title, body: apiBody.body },
+      threadRole: "source",
+    }],
+  };
+}
+${createSource}
+return {
+  run: () => createThreadTaskCardDraft("draft-key", { threadId: "thread-pane" }),
+  result: () => ({ apiBody, findThreadArg, paneThread, draftStates, outgoingCounts, incomingCounts, loadedThreadId }),
+};
+`)();
+
+  await harness.run();
+  const result = harness.result();
+  assert.equal(result.findThreadArg.id, "thread-pane");
+  assert.equal(result.apiBody.sourceThreadId, "thread-pane");
+  assert.equal(result.apiBody.sourceWorkspaceId, "/work/pane");
+  assert.equal(result.apiBody.sourceThreadTitle, "Pane Thread");
+  assert.equal(result.apiBody.idempotencyKey, "task-card-draft:thread-pane:draft-key");
+  assert.equal(result.apiBody.sourceTurnId, "turn-pane");
+  assert.equal(result.paneThread.threadTaskCards[0].id, "card-created");
+  assert.deepEqual(result.outgoingCounts, [{ threadId: "thread-pane", delta: 1 }]);
+  assert.deepEqual(result.incomingCounts, [{ threadId: "thread-target", delta: 1 }]);
+  assert.equal(result.loadedThreadId, "thread-target");
 });

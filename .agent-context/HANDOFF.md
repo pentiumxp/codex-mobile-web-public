@@ -21698,6 +21698,52 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit locally and keep undeployed until a coherent deployable module is
     ready.
 
+## 2026-06-27 - Phase C task-card draft creation source context local slice
+
+- Current local state:
+  - Continued after local commit `8579df7` (`refactor task card drafts use pane
+    context`).
+  - This is a local Phase C task-card draft queued-creation source-context
+    slice only. It changes `public/app.js`, `test/thread-task-card-route.test.js`,
+    README, the architecture plan, and this handoff. It does not bump
+    shell/cache, deploy production, or push Public.
+- Root-cause boundary:
+  - Symptom/risk: pane-local draft rendering could queue materialization with
+    the right render context, but the async timeout later ran
+    `createThreadTaskCardDraft()` against global `state.currentThreadId` /
+    `state.currentThread`, which could create the card with the wrong source
+    thread in split-screen mode.
+  - Failing layer: frontend task-card draft queued materialization source
+    context propagation, not server task-card create API, return/ack protocol,
+    server draft materialization, or Home AI host routing.
+  - Violated invariant: once a task-card draft belongs to a render/pane source
+    thread, queued creation, payload metadata, local upsert/counts, and
+    diagnostics must use that same source thread.
+- Changes:
+  - `queueThreadTaskCardDraftCreation(draftKey, thread)` captures
+    `renderContextThreadId(thread)` and passes it into
+    `createThreadTaskCardDraft(key, { threadId })`.
+  - `findThreadTaskCardDraftByKey(draftKey, thread)` now searches explicit
+    source thread turns and returns `sourceThread`.
+  - `createThreadTaskCardDraft(draftKey, options)` resolves the source thread
+    from the queued thread id, uses it for source workspace/id/title and
+    idempotency key, upserts created cards to that thread, updates pending
+    counts with the source thread id, and records diagnostics under that
+    source thread hash.
+  - Added executable coverage proving a queued pane draft creates API payload
+    and local state under the pane thread rather than global current thread.
+- Validation:
+  - `node --check public/app.js` passed.
+  - `node --test test/thread-task-card-route.test.js test/conversation-render.test.js test/thread-detail-actions.test.js`
+    passed (`137` tests).
+  - `npm test` passed (`1268` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit locally and keep undeployed until a coherent deployable module is
+    ready.
+
 ## 2026-06-27 - Phase C Composer action control planning local slice
 
 - Current local state:

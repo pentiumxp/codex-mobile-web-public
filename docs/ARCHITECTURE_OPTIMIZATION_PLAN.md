@@ -2038,6 +2038,10 @@ Target:
   checks whether a generated draft already has matching materialized task
   cards, so pane-local draft visibility is not decided from global
   `state.currentThread.threadTaskCards`.
+  The queued draft materialization path follows that same ownership boundary:
+  `queueThreadTaskCardDraftCreation(..., thread)` captures the pane source
+  thread id and `createThreadTaskCardDraft(..., { threadId })` uses it for
+  source payload metadata, local card upsert, pending counts, and diagnostics.
 - Treat each pane as a scaled mobile single-thread runtime instance. Shared
   global Composer chrome is only an interim input surface; global command dock
   or shared operation bubble are no longer acceptable in tile mode and must not
