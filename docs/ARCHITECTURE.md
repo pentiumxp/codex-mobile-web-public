@@ -370,6 +370,13 @@ Thread list reads app-server `thread/list`, then filters archived/deleted/sub-ag
 
 `adapters/thread-list-fallback-cache-service.js` owns the fallback cache policy: key construction from visible workspace roots/projectless thread ids, process-lifetime default retention, optional TTL expiry, cache-hit diagnostics, first-run fallback aggregation, and incremental status/title/archive mutation. State-db, rollout-session, and session-index scanners remain separate providers injected by `server.js`.
 
+`adapters/thread-list-response-coalescer-service.js` owns in-flight response
+coalescing for identical default full-list `/api/threads` requests. It shares
+one authoritative app-server `thread/list` plus merge/decorate result with
+concurrent follower requests so burst refreshes do not multiply app-server RPC
+waits or CPU post-processing. It is intentionally disabled for cursor,
+workspace, search, archived, fallback-defer, and warm-initial requests.
+
 Browser thread-status freshness policy lives in `public/thread-status-hints.js`.
 It records local viewed times and short submitted-processing hints, and it uses
 event timestamps plus mux `mobileReplay` metadata before clearing running

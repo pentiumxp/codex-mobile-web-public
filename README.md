@@ -16,6 +16,30 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-27 App Server 线程列表峰值耗时修复
+
+本次发布修复的是服务端线程列表的峰值耗时，而不是静态前端 shell。现象是
+多个相同的默认线程列表请求同时进入时，虽然底层 mux `thread/list` RPC 通常
+只有个位数毫秒，但 Mobile 服务端会为每个请求重复执行 app-server 读取、
+线程摘要合并和装饰逻辑，Node 事件循环被同步工作阻塞后，后续请求的
+`appServerRpcMs` 会被放大到数百甚至上千毫秒。
+
+修复方式是在 `/api/threads` 默认完整列表路径加入 in-flight coalescing：同一时刻
+相同的默认列表请求只让第一个 leader 执行真实读取和合并，其余 follower 等待并
+复用 leader 的结果。分页、搜索、workspace/cwd 过滤、归档列表、deferred fallback
+和 warm-initial 请求不参与合并，避免改变这些路径的语义。
+
+公开验证边界：
+
+- 新增 `thread-list-response-coalescer-service` 及可执行测试，覆盖默认列表 key、
+  follower 复用、失败释放和隐私安全 diagnostics；
+- 本地 5 并发默认列表请求从部署前的队列式峰值放大，变为 1 个 leader 和 4 个
+  coalesced follower 复用同一结果；
+- 生产读回中 5 并发默认列表请求全部返回约 `265ms`，底层 `appServerRpcMs`
+  保持约 `10ms`；
+- 这次没有改 `public/app.js` 或 service worker，因此 shell/cache 仍保持
+  `codex-mobile-shell-v549`。
+
 ## 2026-06-27 v549 吸收 PR #79 的 terminal running hint 修复
 
 v549 吸收 public PR #79 中有价值的一部分：已完成线程如果通过普通

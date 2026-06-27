@@ -413,6 +413,18 @@ Current acceleration targets:
    slices are batched as `codex-mobile-shell-v539` so production readback can
    validate the module as one coherent thread-list request/fallback boundary
    change rather than as several isolated micro-deploys.
+   The next app-server peak slice targets burst refresh behavior directly.
+   Live sampling showed five identical default `/api/threads?limit=40`
+   requests could serialize into rising Mobile-side `appServerRpcMs` values
+   even when the mux-side `thread/list` RPC itself stayed small; each request
+   also repeated the same route merge and token-usage decoration. The fix is a
+   server-side in-flight response coalescer for identical default full-list
+   requests. One leader performs the authoritative app-server `thread/list`,
+   fallback merge, and decoration; concurrent followers await and reuse the
+   bounded public response with `threadListCoalesced*` diagnostics. Cursor,
+   search, workspace, archived, fallback-defer, and warm-initial requests are
+   deliberately excluded so filtering, pagination, and first-paint warm-cache
+   semantics do not change.
    Earlier local
    fallback attribution slices also made baseline source work explicit:
    fallback baseline source reads now

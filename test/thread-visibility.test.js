@@ -962,6 +962,7 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   const routeMergeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-route-merge-service.js"), "utf8");
   const summaryMergeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-summary-merge-service.js"), "utf8");
   const requestContextServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-request-context-service.js"), "utf8");
+  const responseCoalescerServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-response-coalescer-service.js"), "utf8");
   const routeIndex = serverJs.indexOf('if (url.pathname === "/api/threads" && req.method === "GET")');
   assert.ok(routeIndex >= 0, "missing thread list route");
   const routeBody = serverJs.slice(routeIndex, serverJs.indexOf('const threadRename = url.pathname.match', routeIndex));
@@ -1001,6 +1002,9 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(requestContextServiceJs, /requestContextArchivedIdsReadCount/);
   assert.match(requestContextServiceJs, /requestContextRolloutStatReadCount/);
   assert.match(requestContextServiceJs, /rolloutStatsForPathForRequest/);
+  assert.match(responseCoalescerServiceJs, /createThreadListResponseCoalescer/);
+  assert.match(responseCoalescerServiceJs, /defaultThreadListCoalescingKey/);
+  assert.match(responseCoalescerServiceJs, /threadListCoalescedRequest/);
   assert.match(routeBody, /rolloutStatsForPath,/);
   assert.match(routeBody, /rolloutStatsForPath: getThreadListRequestContext\(\)\.rolloutStatsForPath/);
   assert.match(routeBody, /mergeThreadDisplaySummary: \(base, display\) => mergeThreadDisplaySummary\(base, display, \{/);
@@ -1103,7 +1107,11 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeBody, /readThreadListCachedFallback\(limit, \{ cwd, searchTerm, globalState, diagnostics: fallbackDiagnostics \}\)/);
   assert.match(routeBody, /decorated\.mobileDeferredAppServer = true/);
   assert.match(routeBody, /decorated\.mobileInitialSource = "warm-fallback-cache"/);
-  assert.match(routeBody, /logThreadList\("warm_fallback_initial"/);
+  assert.match(routeBody, /sendThreadListResult\("warm_fallback_initial"/);
+  assert.match(routeBody, /const threadListCoalescing = threadListResponseCoalescer\.begin\(\{/);
+  assert.match(routeBody, /await threadListCoalescing\.result\(\)/);
+  assert.match(routeBody, /threadListCoalescing\.complete\(result\)/);
+  assert.match(routeBody, /threadListCoalescing\.fail\(err\)/);
   assert.match(routeBody, /const shouldDeferFallback = shouldDeferThreadListFallbackForActiveDetail\(\{[\s\S]*deferFallback,[\s\S]*cursor,[\s\S]*archived,[\s\S]*searchTerm,[\s\S]*cwd,[\s\S]*\}\);/);
   assert.match(routeBody, /fallbackDeferred: true/);
   assert.match(routeBody, /fallbackDeferredReason: deferFallback \? "client" : "active-thread-detail"/);
@@ -1111,8 +1119,8 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeBody, /const indexedResult = normalizeThreadListResultStatuses\(hydrateThreadListResultTitlesFromSessionIndex\([\s\S]*appServerResult,[\s\S]*deferredMergeOptions\.sessionIndexEntries,[\s\S]*\)\)/);
   assert.match(routeBody, /attachThreadListStateToResult\(indexedResult\)/);
   assert.match(routeBody, /decorated\.mobileDeferredFallback = true/);
-  assert.match(routeBody, /logThreadList\("deferred_complete"/);
-  assert.match(routeBody, /logThreadList\("complete"/);
+  assert.match(routeBody, /sendThreadListResult\("deferred_complete"/);
+  assert.match(routeBody, /sendThreadListResult\("complete"/);
   assert.match(routeBody, /const fullMergeOptions = getMergeThreadSummaryListOptions\(\)/);
   assert.match(routeBody, /const fallback = readThreadListFallback\(limit, \{[\s\S]*cwd,[\s\S]*searchTerm,[\s\S]*globalState,[\s\S]*diagnostics: fallbackDiagnostics,[\s\S]*archivedIds: fullMergeOptions\.archivedIds,[\s\S]*mergeThreadSummaryListOptions: fullMergeOptions,[\s\S]*\}\);/);
   assert.match(routeBody, /const routeMerge = mergeThreadListRouteResult\(\{[\s\S]*result: appServerResult,[\s\S]*fallbackThreads: fallback,[\s\S]*limit,[\s\S]*mergeThreadSummaryList: mergeThreadSummaryListWithDiagnostics,[\s\S]*mergeThreadSummaryListOptions: fullMergeOptions,[\s\S]*\}\);/);
