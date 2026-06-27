@@ -695,6 +695,7 @@ test("phase B readback summary helpers keep only bounded metadata", () => {
         requestContextArchivedIdsReadCount: 1,
         requestContextSessionIndexReadCount: 1,
         requestContextCachedDisplayReadCount: 42,
+        requestContextRolloutStatReadCount: 16,
         totalMs: 999999999,
       },
     },
@@ -728,6 +729,7 @@ test("phase B readback summary helpers keep only bounded metadata", () => {
   assert.equal(list.requestContextArchivedIdsReadCount, 1);
   assert.equal(list.requestContextSessionIndexReadCount, 1);
   assert.equal(list.requestContextCachedDisplayReadCount, 42);
+  assert.equal(list.requestContextRolloutStatReadCount, 16);
   assert.equal(list.fallbackBaselineFinalFilterInputCount, 100000);
   assert.equal(list.fallbackBaselineFinalFilterOutputCount, 100000);
   assert.equal(list.fallbackBaselineMergeInputCount, 100000);

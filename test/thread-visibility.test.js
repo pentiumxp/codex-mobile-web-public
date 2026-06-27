@@ -953,8 +953,15 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeMergeServiceJs, /routeMergeLimitDropCount/);
   assert.match(summaryMergeServiceJs, /createThreadListSummaryMergeService/);
   assert.match(summaryMergeServiceJs, /summaryMergeDominantStage/);
+  assert.match(summaryMergeServiceJs, /mergeOptions && typeof mergeOptions\.mergeThreadDisplaySummary === "function"/);
   assert.match(requestContextServiceJs, /createThreadListRequestContext/);
   assert.match(requestContextServiceJs, /requestContextArchivedIdsReadCount/);
+  assert.match(requestContextServiceJs, /requestContextRolloutStatReadCount/);
+  assert.match(requestContextServiceJs, /rolloutStatsForPathForRequest/);
+  assert.match(routeBody, /rolloutStatsForPath,/);
+  assert.match(routeBody, /rolloutStatsForPath: getThreadListRequestContext\(\)\.rolloutStatsForPath/);
+  assert.match(routeBody, /mergeThreadDisplaySummary: \(base, display\) => mergeThreadDisplaySummary\(base, display, \{/);
+  assert.match(routeBody, /filterVisibleThreads\(appServerRawResult, globalState, \{[\s\S]*rolloutStatsForPath: getThreadListRequestContext\(\)\.rolloutStatsForPath/);
   assert.match(serverJs, /planThreadListAppServerFetch/);
   assert.match(serverJs, /threadListAppServerFetchTimingFields/);
   assert.match(serverJs, /threadListAppServerLatencyTimingFields/);
@@ -1035,7 +1042,7 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeBody, /limit: appServerFetchPlan\.appServerLimit/);
   assert.match(routeBody, /const appServerRpcDiagnostics = \{\}/);
   assert.match(routeBody, /const appServerRawResult = await codex\.request\("thread\/list", params, \{[\s\S]*timeoutMs: READ_RPC_TIMEOUT_MS,[\s\S]*diagnostics: appServerRpcDiagnostics,[\s\S]*\}\)/);
-  assert.match(routeBody, /const appServerVisibleResult = filterVisibleThreads\(appServerRawResult, globalState, \{ archivedIds: getRequestArchivedIds\(\) \}\)/);
+  assert.match(routeBody, /const appServerVisibleResult = filterVisibleThreads\(appServerRawResult, globalState, \{[\s\S]*archivedIds: getRequestArchivedIds\(\),[\s\S]*rolloutStatsForPath: getThreadListRequestContext\(\)\.rolloutStatsForPath,[\s\S]*\}\)/);
   assert.match(routeBody, /const appServerResult = filterThreadListByCwd\(appServerVisibleResult, cwd\)/);
   assert.match(routeBody, /Object\.assign\(timings, threadListAppServerLatencyTimingFields\(\{[\s\S]*rawResult: appServerRawResult,[\s\S]*visibleResult: appServerVisibleResult,[\s\S]*filteredResult: appServerResult,[\s\S]*totalMs: appServerElapsedMs,[\s\S]*rpcDiagnostics: appServerRpcDiagnostics,[\s\S]*\}\)\)/);
   assert.match(appServerFetchPolicyJs, /appServerRequestLimit/);

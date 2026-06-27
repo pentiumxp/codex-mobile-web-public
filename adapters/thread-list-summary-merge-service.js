@@ -102,6 +102,9 @@ function createThreadListSummaryMergeService(options = {}) {
     const mergeCachedDisplay = mergeOptions && typeof mergeOptions.mergeThreadWithCachedDisplaySummary === "function"
       ? mergeOptions.mergeThreadWithCachedDisplaySummary
       : mergeThreadWithCachedDisplaySummary;
+    const mergeDisplaySummary = mergeOptions && typeof mergeOptions.mergeThreadDisplaySummary === "function"
+      ? mergeOptions.mergeThreadDisplaySummary
+      : mergeThreadDisplaySummary;
     const archivedIds = safeArchivedIds(
       mergeOptions && mergeOptions.archivedIds
         ? mergeOptions.archivedIds
@@ -126,7 +129,7 @@ function createThreadListSummaryMergeService(options = {}) {
       const duplicate = byId.has(id);
       if (duplicate) diagnostics.summaryMergeDuplicateIdCount += 1;
       const merged = measure(diagnostics, "summaryMergeDisplayMergeMs", () => normalizeThreadSummaryLiveStatus(
-        duplicate ? mergeThreadDisplaySummary(byId.get(id), displayThread) : displayThread,
+        duplicate ? mergeDisplaySummary(byId.get(id), displayThread) : displayThread,
       ));
       const archived = threadHasArchiveSignal(merged, archivedIds);
       const subagent = isSubagentThreadSummary(merged);

@@ -343,6 +343,7 @@ function summarizeThreadList(result = {}) {
     requestContextArchivedIdsReadCount: boundedCount(timings && timings.requestContextArchivedIdsReadCount),
     requestContextSessionIndexReadCount: boundedCount(timings && timings.requestContextSessionIndexReadCount),
     requestContextCachedDisplayReadCount: boundedCount(timings && timings.requestContextCachedDisplayReadCount),
+    requestContextRolloutStatReadCount: boundedCount(timings && timings.requestContextRolloutStatReadCount),
     summaryMergeInputCount: boundedCount(timings && timings.summaryMergeInputCount),
     summaryMergeInvalidCount: boundedCount(timings && timings.summaryMergeInvalidCount),
     summaryMergeArchivedIdSkipCount: boundedCount(timings && timings.summaryMergeArchivedIdSkipCount),

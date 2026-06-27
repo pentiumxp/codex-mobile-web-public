@@ -19862,3 +19862,42 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit this local slice.
   - Continue the v539 module with the next actual Phase B optimization candidate, likely request-scope rollout stat reuse or route post-merge duplicate normalize/strip removal.
   - Do not deploy until the v539 module is batched and shell/cache is bumped.
+
+## 2026-06-27 - Phase B request-context rollout stat optimization local slice
+
+- Current local state:
+  - Continued after local commit `5e463b2` (`refactor: share thread list request context`).
+  - This slice is local only. It does not bump `CLIENT_BUILD_ID` / PWA shell
+    cache and is not deployed by itself.
+- Root-cause boundary:
+  - Symptom/risk: after archived/session-index/cached-display request sharing,
+    the same `/api/threads` request could still call rollout `statSync` multiple
+    times for identical rollout paths through visible filtering, cached display
+    merge, and duplicate display merge.
+  - Failing layer: Mobile thread-list request/merge ownership inside
+    `/api/threads`, specifically repeated rollout file metadata reads.
+  - Violated invariant: request-scope immutable metadata should be shared within
+    one authoritative list request while preserving thread-list data, ordering,
+    hidden/subagent/archive rules, fallback cache behavior, app-server query
+    semantics, and rollout-tail status authority.
+- Changes:
+  - Extended `adapters/thread-list-request-context-service.js` with
+    request-scoped `rolloutStatsForPath()` caching and bounded
+    `requestContextRolloutStatReadCount` diagnostics.
+  - `annotateThreadRolloutStats()`, `mergeThreadDisplaySummary()`,
+    `mergeThreadWithCachedDisplaySummary()`, and `filterVisibleThreads()` now
+    accept an injected rollout stat reader while retaining the old default.
+  - `/api/threads` passes the same request-scoped rollout stat reader into
+    app-server visible filtering, cached display summary merge, and summary
+    duplicate display merge.
+  - `thread-list-summary-merge-service` now accepts request-scoped
+    `mergeThreadDisplaySummary` for duplicate rows.
+  - Phase B readback/decision evidence now carries
+    `requestContextRolloutStatReadCount`.
+- Validation:
+  - `node --test test/thread-list-request-context-service.test.js test/thread-list-summary-merge-service.test.js test/thread-list-route-merge-service.test.js test/thread-list-fallback-baseline-service.test.js test/thread-list-fallback-cache-service.test.js test/thread-visibility.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js`
+    passed (`106` tests).
+- Next:
+  - Run `npm run check` and `git diff --check`, then commit this local slice.
+  - Continue v539 only if another small root-cause slice is clearly separable;
+    otherwise batch/bump/deploy the v539 module after validation.

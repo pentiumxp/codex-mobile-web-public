@@ -429,6 +429,7 @@ test("phase B readback decision routes dominant route-merge latency to merge own
       requestContextArchivedIdsReadCount: 1,
       requestContextSessionIndexReadCount: 1,
       requestContextCachedDisplayReadCount: 27,
+      requestContextRolloutStatReadCount: 19,
       summaryMergeInputCount: 44,
       summaryMergeDuplicateIdCount: 17,
       summaryMergeCachedDisplayMs: 420,
@@ -468,6 +469,7 @@ test("phase B readback decision routes dominant route-merge latency to merge own
   assert.equal(decision.evidence.threadListRequestContextArchivedIdsReadCount, 1);
   assert.equal(decision.evidence.threadListRequestContextSessionIndexReadCount, 1);
   assert.equal(decision.evidence.threadListRequestContextCachedDisplayReadCount, 27);
+  assert.equal(decision.evidence.threadListRequestContextRolloutStatReadCount, 19);
   assert.equal(decision.evidence.threadListSummaryMergeInputCount, 44);
   assert.equal(decision.evidence.threadListSummaryMergeDuplicateIdCount, 17);
   assert.equal(decision.evidence.threadListSummaryMergeCachedDisplayMs, 420);

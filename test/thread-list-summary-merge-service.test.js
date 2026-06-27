@@ -97,6 +97,7 @@ test("thread-list summary merge array wrapper returns only threads", () => {
 test("thread-list summary merge supports request-scoped cached display and title readers", () => {
   let archivedReaderCalls = 0;
   let cachedDisplayReads = 0;
+  let duplicateMergeCalls = 0;
   const cachedDisplayById = new Map([["dup", { id: "dup", name: "Cached", updatedAt: 30 }]]);
   const requestCachedDisplay = new Map();
   const service = createThreadListSummaryMergeService({
@@ -109,7 +110,9 @@ test("thread-list summary merge supports request-scoped cached display and title
     },
     stripThreadListDetailFields: (thread) => Object.assign({}, thread),
     normalizeThreadSummaryLiveStatus: (thread) => Object.assign({}, thread),
-    mergeThreadDisplaySummary: (base, display) => Object.assign({}, base || {}, display || {}),
+    mergeThreadDisplaySummary() {
+      throw new Error("default display merge should not run for request-scoped duplicate merge");
+    },
     hydrateThreadListTitlesFromSessionIndex: (threads, indexEntries) => threads.map((thread) => {
       const entry = indexEntries && indexEntries.get(thread.id);
       return entry && entry.thread_name ? Object.assign({}, thread, { name: entry.thread_name }) : thread;
@@ -133,13 +136,19 @@ test("thread-list summary merge supports request-scoped cached display and title
       const cached = requestCachedDisplay.get(id);
       return cached ? Object.assign({}, thread, cached) : thread;
     },
+    mergeThreadDisplaySummary(base, display) {
+      duplicateMergeCalls += 1;
+      return Object.assign({}, base || {}, display || {}, { requestScopedDuplicateMerge: true });
+    },
   });
 
   assert.equal(archivedReaderCalls, 0);
   assert.equal(cachedDisplayReads, 2);
+  assert.equal(duplicateMergeCalls, 1);
   assert.deepEqual(result.threads.map((thread) => thread.id), ["dup", "titled"]);
   assert.equal(result.threads[0].name, "Cached");
   assert.equal(result.threads[0].updatedAt, 30);
+  assert.equal(result.threads[0].requestScopedDuplicateMerge, true);
   assert.equal(result.threads[1].name, "Hydrated");
   assert.equal(result.diagnostics.summaryMergeArchivedIdSkipCount, 1);
   assert.equal(result.diagnostics.summaryMergeDuplicateIdCount, 1);

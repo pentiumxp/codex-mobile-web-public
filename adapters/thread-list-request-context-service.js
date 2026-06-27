@@ -17,11 +17,16 @@ function createThreadListRequestContext(options = {}) {
   const readSessionIndexEntries = typeof options.readSessionIndexEntries === "function"
     ? options.readSessionIndexEntries
     : () => new Map();
+  const readRolloutStatsForPath = typeof options.rolloutStatsForPath === "function"
+    ? options.rolloutStatsForPath
+    : () => null;
 
   let archivedIds = null;
   let archivedIdsReadCount = 0;
   const sessionIndexCache = new Map();
   let sessionIndexReadCount = 0;
+  const rolloutStatsCache = new Map();
+  let rolloutStatsReadCount = 0;
 
   function archivedIdsForRequest() {
     if (!archivedIds) {
@@ -44,16 +49,34 @@ function createThreadListRequestContext(options = {}) {
     return sessionIndexCache.get(key);
   }
 
+  function rolloutStatsForPathForRequest(rolloutPath) {
+    const key = String(rolloutPath || "").trim();
+    if (!key) return null;
+    if (!rolloutStatsCache.has(key)) {
+      let stats = null;
+      try {
+        stats = readRolloutStatsForPath(key) || null;
+      } catch (_) {
+        stats = null;
+      }
+      rolloutStatsCache.set(key, stats);
+      rolloutStatsReadCount += 1;
+    }
+    return rolloutStatsCache.get(key);
+  }
+
   function diagnostics() {
     return {
       requestContextArchivedIdsReadCount: boundedCount(archivedIdsReadCount),
       requestContextSessionIndexReadCount: boundedCount(sessionIndexReadCount),
+      requestContextRolloutStatReadCount: boundedCount(rolloutStatsReadCount),
     };
   }
 
   return {
     archivedIds: archivedIdsForRequest,
     diagnostics,
+    rolloutStatsForPath: rolloutStatsForPathForRequest,
     sessionIndexEntries: sessionIndexEntriesForRequest,
   };
 }

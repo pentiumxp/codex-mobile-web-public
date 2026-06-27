@@ -174,6 +174,38 @@ git diff --check
 结果：focused tests `104` passed；`npm run check` passed；`git diff --check`
 passed。该切片尚未部署；继续按 v539 模块批量提交/部署节奏推进。
 
+## 2026-06-27 Phase B Request Context Rollout Stat Local Slice
+
+继续 v539 的 thread-list 请求路径优化。本切片只减少同一 `/api/threads`
+请求内对相同 rollout path 的重复 `fs.statSync` 元数据读取，不改变线程状态、
+排序、隐藏/归档规则、fallback cache 语义、app-server 查询参数，也不把 rollout
+tail/status 判断改成缓存判断。
+
+改动：
+
+- `thread-list-request-context-service` 新增 request-scoped
+  `rolloutStatsForPath()`，按 rollout path 缓存 stat 结果或 null，并输出
+  `requestContextRolloutStatReadCount`。
+- `annotateThreadRolloutStats()`、`mergeThreadDisplaySummary()`、
+  `mergeThreadWithCachedDisplaySummary()` 和 `filterVisibleThreads()` 支持注入该
+  request-scoped reader；默认调用路径保持旧行为。
+- `/api/threads` route 把同一个 reader 传给 app-server visible filter、cached
+  display merge 和 summary duplicate merge，避免同一请求内重复读相同 rollout
+  文件 stat。
+- `thread-list-summary-merge-service` 支持 request-scoped
+  `mergeThreadDisplaySummary`，确保 duplicate display merge 也走同一个 reader。
+- Phase B readback smoke / decision evidence 新增
+  `requestContextRolloutStatReadCount`，用于部署后确认优化生效。
+
+验证：
+
+```bash
+node --test test/thread-list-request-context-service.test.js test/thread-list-summary-merge-service.test.js test/thread-list-route-merge-service.test.js test/thread-list-fallback-baseline-service.test.js test/thread-list-fallback-cache-service.test.js test/thread-visibility.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js
+```
+
+结果：focused tests `106` passed。该切片尚未部署；继续按 v539 模块批量提交/部署
+节奏推进。
+
 ## 2026-06-27 v537 Phase B RPC/Mux Evidence Module
 
 v537 把两个本地 Phase B 切片作为一个模块部署：`6624f1b` 记录 Mobile 到

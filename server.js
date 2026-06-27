@@ -3232,6 +3232,9 @@ function filterVisibleThreads(result, globalState = readGlobalState(), options =
   const archivedIds = options.archivedIds && typeof options.archivedIds.has === "function"
     ? options.archivedIds
     : archivedSessionThreadIds();
+  const annotateRolloutStats = (thread) => annotateThreadRolloutStats(thread, {
+    rolloutStatsForPath: options.rolloutStatsForPath,
+  });
   if (!result || typeof result !== "object") return result;
   const out = Object.assign({}, result);
   if (Array.isArray(out.data)) {
@@ -3239,14 +3242,14 @@ function filterVisibleThreads(result, globalState = readGlobalState(), options =
     const shouldFilterByWorkspace = anyThreadMatchesVisibleWorkspace(merged, visibility);
     out.data = merged
       .filter((thread) => !(shouldFilterByWorkspace ? isHiddenThread(thread, visibility, { archivedIds }) : shouldHideThreadListSummary(thread, archivedIds)))
-      .map(annotateThreadRolloutStats);
+      .map(annotateRolloutStats);
   }
   if (Array.isArray(out.threads)) {
     const merged = mergeThreadStateFromStateDb(out.threads, { archivedIds });
     const shouldFilterByWorkspace = anyThreadMatchesVisibleWorkspace(merged, visibility);
     out.threads = merged
       .filter((thread) => !(shouldFilterByWorkspace ? isHiddenThread(thread, visibility, { archivedIds }) : shouldHideThreadListSummary(thread, archivedIds)))
-      .map(annotateThreadRolloutStats);
+      .map(annotateRolloutStats);
   }
   return out;
 }
@@ -5187,10 +5190,13 @@ function workspaceContextStatsForCwd(cwd) {
   };
 }
 
-function annotateThreadRolloutStats(thread) {
+function annotateThreadRolloutStats(thread, options = {}) {
   if (!thread || typeof thread !== "object") return thread;
   const out = Object.assign({}, thread);
-  const stats = rolloutStatsForPath(rolloutPathForThread(out));
+  const readRolloutStats = typeof options.rolloutStatsForPath === "function"
+    ? options.rolloutStatsForPath
+    : rolloutStatsForPath;
+  const stats = readRolloutStats(rolloutPathForThread(out));
   out.rolloutWarningThresholdBytes = ROLLOUT_WARNING_BYTES;
   if (!stats) return out;
   out.rolloutSizeBytes = stats.sizeBytes;
@@ -11983,14 +11989,14 @@ function shouldReplaceThreadDisplayStatus(baseStatus, displayStatus, baseUpdated
   return true;
 }
 
-function mergeThreadWithCachedDisplaySummary(thread) {
+function mergeThreadWithCachedDisplaySummary(thread, options = {}) {
   if (!thread || typeof thread !== "object" || !thread.id) return thread;
   const cached = threadDisplaySummaryCache.read(thread.id);
-  return normalizeStaleContextOnlyActiveThread(cached ? (mergeThreadDisplaySummary(thread, cached) || thread) : thread);
+  return normalizeStaleContextOnlyActiveThread(cached ? (mergeThreadDisplaySummary(thread, cached, options) || thread) : thread);
 }
 
-function mergeThreadDisplaySummary(base, display) {
-  if (!base) return display ? normalizeStaleContextOnlyActiveThread(annotateThreadRolloutStats(display)) : null;
+function mergeThreadDisplaySummary(base, display, options = {}) {
+  if (!base) return display ? normalizeStaleContextOnlyActiveThread(annotateThreadRolloutStats(display, options)) : null;
   if (!display) return normalizeStaleContextOnlyActiveThread(base);
   const next = Object.assign({}, base);
   for (const key of ["name", "preview", "cwd"]) {
@@ -12011,7 +12017,7 @@ function mergeThreadDisplaySummary(base, display) {
   }
   if (display.isSpawnedChildThread || display.is_spawned_child) next.isSpawnedChildThread = true;
   if (display.mobileFallback && !next.mobileFallback) next.mobileFallback = true;
-  return normalizeStaleContextOnlyActiveThread(annotateThreadRolloutStats(next));
+  return normalizeStaleContextOnlyActiveThread(annotateThreadRolloutStats(next, options));
 }
 
 function mergeThreadRuntimeFromStateDb(thread, summary = null) {
@@ -14907,6 +14913,7 @@ async function handleApi(req, res) {
         threadListRequestContext = createThreadListRequestContext({
           readArchivedIds: archivedSessionThreadIds,
           readSessionIndexEntries,
+          rolloutStatsForPath,
         });
       }
       return threadListRequestContext;
@@ -14923,12 +14930,17 @@ async function handleApi(req, res) {
         requestCachedDisplayReadCount += 1;
       }
       const cached = requestCachedDisplaySummaries.get(id);
-      return normalizeStaleContextOnlyActiveThread(cached ? (mergeThreadDisplaySummary(thread, cached) || thread) : thread);
+      return normalizeStaleContextOnlyActiveThread(cached ? (mergeThreadDisplaySummary(thread, cached, {
+        rolloutStatsForPath: getThreadListRequestContext().rolloutStatsForPath,
+      }) || thread) : thread);
     };
     const getMergeThreadSummaryListOptions = () => {
       if (!mergeThreadSummaryListOptions) {
         mergeThreadSummaryListOptions = {
           archivedIds: getRequestArchivedIds(),
+          mergeThreadDisplaySummary: (base, display) => mergeThreadDisplaySummary(base, display, {
+            rolloutStatsForPath: getThreadListRequestContext().rolloutStatsForPath,
+          }),
           mergeThreadWithCachedDisplaySummary: mergeThreadWithCachedDisplaySummaryForRequest,
           sessionIndexEntries: getThreadListRequestContext().sessionIndexEntries(),
         };
@@ -15064,7 +15076,10 @@ async function handleApi(req, res) {
       });
       markTiming("appServerRpcMs", appServerRpcStartedAtMs);
       const appServerVisibleFilterStartedAtMs = Date.now();
-      const appServerVisibleResult = filterVisibleThreads(appServerRawResult, globalState, { archivedIds: getRequestArchivedIds() });
+      const appServerVisibleResult = filterVisibleThreads(appServerRawResult, globalState, {
+        archivedIds: getRequestArchivedIds(),
+        rolloutStatsForPath: getThreadListRequestContext().rolloutStatsForPath,
+      });
       markTiming("appServerVisibleFilterMs", appServerVisibleFilterStartedAtMs);
       const appServerWorkspaceFilterStartedAtMs = Date.now();
       const appServerResult = filterThreadListByCwd(appServerVisibleResult, cwd);

@@ -76,6 +76,7 @@ function buildEvidence(report = {}) {
     threadListRequestContextArchivedIdsReadCount: boundedCount(list.requestContextArchivedIdsReadCount),
     threadListRequestContextSessionIndexReadCount: boundedCount(list.requestContextSessionIndexReadCount),
     threadListRequestContextCachedDisplayReadCount: boundedCount(list.requestContextCachedDisplayReadCount),
+    threadListRequestContextRolloutStatReadCount: boundedCount(list.requestContextRolloutStatReadCount),
     threadListSummaryMergeInputCount: boundedCount(list.summaryMergeInputCount),
     threadListSummaryMergeInvalidCount: boundedCount(list.summaryMergeInvalidCount),
     threadListSummaryMergeArchivedIdSkipCount: boundedCount(list.summaryMergeArchivedIdSkipCount),
