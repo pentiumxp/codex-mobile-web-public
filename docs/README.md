@@ -68,20 +68,16 @@ checks, and stay undeployed until several compatible slices form a coherent
 runtime module. Do not bump shell/cache, deploy production, or push Public for
 each micro-slice unless the user explicitly asks.
 
-The latest deployed performance module is focused on thread-list cold-start
+The latest deployed performance modules target thread-list/detail cold-start
 and first-entry peak latency after the active-detail hot path work. Production
-readback showed steady-state list/detail reads around hundreds of milliseconds,
-but larger first-paint list requests such as `limit=137&initial=warm-fallback`
-could still miss the process cache even after the default 40-row prewarm had
-completed. The deployed fix makes prewarm build a wider source snapshot so
-larger same-scope first-paint requests can rebuild their final window from warm
-source data instead of synchronously scanning rollout tails again. This targets
-server-side cold peaks without making fallback persistent authority or adding
-client refresh masking. The next performance slice should target deferred/full
-app-server `thread/list` RPC peaks, which can still affect background refresh
-or non-initial full list reads.
+readback first showed larger first-paint list requests such as
+`limit=137&initial=warm-fallback` could still miss the process cache even after
+the default 40-row prewarm had completed. The deployed prewarm fix makes
+prewarm build a wider source snapshot so larger same-scope first-paint requests
+can rebuild their final window from warm source data instead of synchronously
+scanning rollout tails again.
 
-The current detail-payload slice tightens the cross-thread task-card summary
+The latest detail-payload slice tightens the cross-thread task-card summary
 contract. Production sampling showed `thread.threadTaskCards` could account for
 roughly half of some thread-detail response bodies because the summary list
 removed `message.body` but still carried full audit, delivery, injection, and
@@ -89,4 +85,7 @@ execution internals. The intended contract is now explicit: thread detail gets
 only a bounded task-card summary for first paint, while full card content and
 runtime internals remain available only through `GET /api/thread-task-cards/:id`
 when the user expands a card. This targets response-size peaks directly and
-does not add client-side hiding or refresh masking.
+does not add client-side hiding or refresh masking. The next performance slice
+should target the remaining cold/deferred app-server and active projection
+peaks: immediately after restart, a first list/detail request can still take
+seconds and then settle back to hundreds of milliseconds.
