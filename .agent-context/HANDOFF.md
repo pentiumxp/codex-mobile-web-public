@@ -20188,3 +20188,48 @@ The previous full handoff was archived and should be opened only when old proven
   - Read back `/api/public-config` and run the bounded Phase B smoke script to
     confirm production is on `clientBuildId=0.1.11|codex-mobile-shell-v540` and
     no unrelated thread-list/mux regression appears.
+
+## 2026-06-27 - v540 deployed; Phase A thread-detail post-merge planning readback closed
+
+- Commit:
+  - `798719a` `bump shell for phase a post merge planning`.
+- Deployment:
+  - Ran Home AI central macOS plugin deploy from
+    `/Users/hermes-dev/HermesMobileDev/app` with reason
+    `codex-mobile-v540-thread-detail-post-merge-planning`.
+  - Deploy result `ok=true`, source ref clean, production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T055616Z-plugin-codex-mobile-web-codex-mobile-v540-thread-detail-post-merge-planning`.
+  - `codex-mobile-selected-mux-refresh` was correctly skipped with
+    `reason=no_mux_runtime_change` because this module did not change mux
+    runtime trigger files.
+- Production readback:
+  - `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v540`,
+    `shellCacheName=codex-mobile-shell-v540`, and
+    `activeProfileId=previous`.
+  - `node scripts/codex-mobile-phase-b-readback-smoke.js --server http://127.0.0.1:8787 --json`
+    passed with `decision.status=ready`,
+    `decision.reason=warm-or-bounded-paths`.
+  - Detail readback remained on `readMode=projection-active-overlay` with
+    `activeOverlayGate=ready` and
+    `activeOverlayReason=overlay-evidence-complete`.
+  - Thread-list readback remained bounded/warm enough for this module:
+    `threadListOwner=fallback-source-snapshot`,
+    `threadListSourceSnapshotHit=true`,
+    `threadListRequestContextArchivedIdsReadCount=1`,
+    `threadListRequestContextSessionIndexReadCount=1`,
+    `threadListRequestContextRolloutStatReadCount=24`,
+    `threadListFallbackRolloutStatusStatReadCount=0`.
+  - Mux runtime/readback remained healthy:
+    `threadListMuxRuntimeMuxMetricsRpc=true`,
+    `threadListMuxMetricsSupported=true`, `threadListMuxMetricsOk=true`.
+  - Source/prod SHA-256 short hash parity confirmed for:
+    `public/app.js=7d1c0cea84229c19`,
+    `public/sw.js=df4ce5619d91c77a`,
+    `public/thread-detail-render-plan.js=795e7768489d31c8`,
+    `test/mobile-viewport.test.js=335f782357d8d1fd`.
+- Next:
+  - Current v540 Phase A frontend module is closed in production.
+  - Continue the broader architecture goal from the next root-cause target:
+    likely Phase C pane-state moduleization or Phase D task-card lease/runtime
+    hardening, unless a fresh production diagnostic points back to Phase A/B.

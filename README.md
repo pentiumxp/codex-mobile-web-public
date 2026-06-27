@@ -50,7 +50,26 @@ npm run check:macos  # passed
 git diff --check  # passed
 ```
 
-部署状态：本节记录的是 v540 模块准备和本地验证。生产部署/readback 在后续记录中闭环。
+生产部署/readback：
+
+- 部署方式：Home AI central macOS plugin deploy。
+- Deploy reason：`codex-mobile-v540-thread-detail-post-merge-planning`。
+- Source commit：`798719ad13c9`，source dirty false。
+- Backup：
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260627T055616Z-plugin-codex-mobile-web-codex-mobile-v540-thread-detail-post-merge-planning`。
+- Selected mux refresh：skipped，`reason=no_mux_runtime_change`，因为本模块未改 mux
+  runtime trigger files。
+- `/api/public-config` readback：
+  `clientBuildId=0.1.11|codex-mobile-shell-v540`，
+  `shellCacheName=codex-mobile-shell-v540`，
+  `activeProfileId=previous`。
+- `scripts/codex-mobile-phase-b-readback-smoke.js --server http://127.0.0.1:8787 --json`
+  passed，`decision.status=ready`，`decision.reason=warm-or-bounded-paths`。
+- 关键 source/prod SHA-256 短 hash 一致：
+  `public/app.js=7d1c0cea84229c19`，
+  `public/sw.js=df4ce5619d91c77a`，
+  `public/thread-detail-render-plan.js=795e7768489d31c8`，
+  `test/mobile-viewport.test.js=335f782357d8d1fd`。
 
 ## 2026-06-27 Phase A First-Paint Post-Merge Timing Sequence Local Slice
 
