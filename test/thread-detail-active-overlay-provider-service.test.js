@@ -124,6 +124,7 @@ test("active overlay provider requests clone-free snapshots for read-only proof"
   assert.equal(seenInput.threadId, "thread-1");
   assert.equal(seenInput.activeTurnId, "turn-1");
   assert.equal(seenInput.cloneOverlayTurn, false);
+  assert.equal(seenInput.normalizeOverlayTurn, false);
 });
 
 test("active overlay provider derives active turn from live projection when summary only says active", () => {

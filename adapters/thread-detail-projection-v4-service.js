@@ -159,6 +159,17 @@ function createThreadDetailProjectionV4Service(options = {}) {
     const activeTurnId = String(snapshot.activeTurnId || input.activeTurnId || input.turnId || "").trim();
     const updatedAtMs = safeNumber(snapshot.updatedAtMs);
     const cachedAtMs = safeNumber(snapshot.cachedAtMs);
+    if (input.normalizeOverlayTurn === false) {
+      return Object.assign({}, snapshot, {
+        version: PROJECTION_VERSION,
+        overlayRevision: revision,
+        overlayCacheHit: false,
+        overlayNormalized: false,
+        overlayTurn: input.cloneOverlayTurn === false
+          ? snapshot.overlayTurn
+          : cloneJson(snapshot.overlayTurn),
+      });
+    }
     const cacheEntry = activeOverlayCache.get(threadId);
     if (activeOverlayCacheEntryMatches(cacheEntry, {
       activeTurnId,

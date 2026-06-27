@@ -68,6 +68,7 @@ function createThreadDetailActiveOverlayProviderService(options = {}) {
       threadId,
       activeTurnId: summaryTurnId,
       cloneOverlayTurn: false,
+      normalizeOverlayTurn: false,
     });
     const activeTurnId = summaryTurnId || text(snapshot && snapshot.activeTurnId);
     if (!activeTurnId) return unavailableOverlayInput("", snapshot && snapshot.reason || "missing-active-turn-id");

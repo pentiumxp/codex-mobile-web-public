@@ -332,6 +332,23 @@ test("v4 projection service exposes active overlay snapshot with monotonic revis
   assert.equal(secondWarm.overlayCacheHit, true);
   assert.equal(secondWarm.overlayTurn.items[0].mobileProjectionVersion, "v4");
 
+  const rawReadOnly = service.activeOverlaySnapshot({
+    threadId: "thread-1",
+    activeTurnId: "turn-1",
+    cloneOverlayTurn: false,
+    normalizeOverlayTurn: false,
+  });
+  assert.equal(rawReadOnly.overlayRevision, 2);
+  assert.equal(rawReadOnly.overlayCacheHit, false);
+  assert.equal(rawReadOnly.overlayNormalized, false);
+  assert.equal(rawReadOnly.overlayTurn, service.activeOverlaySnapshot({
+    threadId: "thread-1",
+    activeTurnId: "turn-1",
+    cloneOverlayTurn: false,
+    normalizeOverlayTurn: false,
+  }).overlayTurn);
+  assert.equal(rawReadOnly.overlayTurn.items[0].mobileProjectionVersion, undefined);
+
   const readOnlyWarm = service.activeOverlaySnapshot({
     threadId: "thread-1",
     activeTurnId: "turn-1",
