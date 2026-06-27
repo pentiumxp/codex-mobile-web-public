@@ -1003,6 +1003,38 @@
     };
   }
 
+  function displaySettingsLoadPlan(input = {}) {
+    const localDisplayMode = text(input.localDisplayMode).trim().toLowerCase() === "tile" ? "tile" : "single";
+    const settings = input.settings && typeof input.settings === "object" ? input.settings : {};
+    const loadFailed = input.loadFailed === true;
+    if (loadFailed) {
+      return {
+        action: localDisplayMode === "tile" ? "apply-display-settings" : "skip",
+        reason: localDisplayMode === "tile" ? "load-error-local-tile" : "load-error-no-local-tile",
+        settings: localDisplayMode === "tile" ? { displayMode: "tile" } : null,
+        saveAfterApply: false,
+        rethrow: true,
+      };
+    }
+    const source = text(settings.source || input.source).trim();
+    if (source !== "runtime" && localDisplayMode === "tile") {
+      return {
+        action: "apply-display-settings",
+        reason: "legacy-local-tile-migration",
+        settings: { displayMode: "tile", paneThreadIds: [], selectedThreadId: "" },
+        saveAfterApply: true,
+        rethrow: false,
+      };
+    }
+    return {
+      action: "apply-display-settings",
+      reason: source === "runtime" ? "runtime-settings" : "default-settings",
+      settings,
+      saveAfterApply: false,
+      rethrow: false,
+    };
+  }
+
   function syncPinnedIdsFromActiveIds(input = {}, options = {}) {
     const activeIds = normalizePinnedIds(input.activeIds || [], options);
     const currentPinnedIds = normalizePinnedIds(input.pinnedIds || input.threadTilePinnedIds || [], options);
@@ -1605,6 +1637,7 @@
     composerTargetPlaceholderPlan,
     composerTargetPlan,
     displaySettingsPayload,
+    displaySettingsLoadPlan,
     dropPaneIntent,
     effectiveSelectedThreadId,
     idsEqual,

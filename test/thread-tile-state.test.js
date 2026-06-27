@@ -703,6 +703,50 @@ test("thread tile state builds and applies display settings payloads", () => {
     paneCount: 2,
     selectedThreadId: "",
   });
+
+  assert.deepEqual(state.displaySettingsLoadPlan({
+    settings: { source: "runtime", displayMode: "single" },
+    localDisplayMode: "tile",
+  }), {
+    action: "apply-display-settings",
+    reason: "runtime-settings",
+    settings: { source: "runtime", displayMode: "single" },
+    saveAfterApply: false,
+    rethrow: false,
+  });
+
+  assert.deepEqual(state.displaySettingsLoadPlan({
+    settings: { source: "default" },
+    localDisplayMode: "tile",
+  }), {
+    action: "apply-display-settings",
+    reason: "legacy-local-tile-migration",
+    settings: { displayMode: "tile", paneThreadIds: [], selectedThreadId: "" },
+    saveAfterApply: true,
+    rethrow: false,
+  });
+
+  assert.deepEqual(state.displaySettingsLoadPlan({
+    loadFailed: true,
+    localDisplayMode: "tile",
+  }), {
+    action: "apply-display-settings",
+    reason: "load-error-local-tile",
+    settings: { displayMode: "tile" },
+    saveAfterApply: false,
+    rethrow: true,
+  });
+
+  assert.deepEqual(state.displaySettingsLoadPlan({
+    loadFailed: true,
+    localDisplayMode: "single",
+  }), {
+    action: "skip",
+    reason: "load-error-no-local-tile",
+    settings: null,
+    saveAfterApply: false,
+    rethrow: true,
+  });
 });
 
 test("thread tile state syncs active ids into pinned slots only when needed", () => {

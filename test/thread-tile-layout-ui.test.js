@@ -103,6 +103,12 @@ test("thread tile layout is wired as an explicit shell policy", () => {
   assert.match(functionBody(appJs, "applyThreadDisplaySettings"), /threadTileStatePolicy\.normalizeDisplaySettings/);
   assert.match(functionBody(appJs, "applyThreadDisplaySettings"), /state\.threadTilePaneCount = normalized\.paneCount/);
   assert.match(functionBody(appJs, "applyThreadDisplaySettings"), /state\.threadTileSplitPairs = normalized\.paneSplitPairs/);
+  const loadDisplaySettingsBody = functionBody(appJs, "loadThreadDisplaySettings");
+  assert.match(loadDisplaySettingsBody, /threadTileStatePolicy\.displaySettingsLoadPlan/);
+  assert.match(loadDisplaySettingsBody, /localDisplayMode: localThreadDisplayMode\(\)/);
+  assert.match(loadDisplaySettingsBody, /if \(plan\.saveAfterApply\)/);
+  assert.match(loadDisplaySettingsBody, /if \(plan\.rethrow\) throw err/);
+  assert.doesNotMatch(loadDisplaySettingsBody, /settings\.source !== "runtime"/);
 
   const toggleBody = functionBody(appJs, "syncThreadTileToggle");
   assert.match(toggleBody, /threadTileLayout\(\{ enabled: true \}\)/);

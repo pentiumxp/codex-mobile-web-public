@@ -12829,16 +12829,26 @@ async function loadThreadDisplaySettings(options = {}) {
     const result = await api("/api/settings/thread-display");
     const settings = result && result.threadDisplay && typeof result.threadDisplay === "object" ? result.threadDisplay : {};
     state.threadDisplaySettingsLoaded = true;
-    if (settings.source !== "runtime" && localThreadDisplayMode() === "tile") {
-      applyThreadDisplaySettings({ displayMode: "tile", paneThreadIds: [], selectedThreadId: "" }, { render: options.render === true });
-      await saveThreadDisplaySettingsNow();
-      return;
+    const plan = threadTileStatePolicy.displaySettingsLoadPlan({
+      settings,
+      localDisplayMode: localThreadDisplayMode(),
+    });
+    if (plan.action === "apply-display-settings") {
+      applyThreadDisplaySettings(plan.settings || {}, { render: options.render === true });
     }
-    applyThreadDisplaySettings(settings, { render: options.render === true });
+    if (plan.saveAfterApply) {
+      await saveThreadDisplaySettingsNow();
+    }
   } catch (err) {
     state.threadDisplaySettingsLoaded = true;
-    if (localThreadDisplayMode() === "tile") applyThreadDisplaySettings({ displayMode: "tile" }, { render: options.render === true });
-    throw err;
+    const plan = threadTileStatePolicy.displaySettingsLoadPlan({
+      loadFailed: true,
+      localDisplayMode: localThreadDisplayMode(),
+    });
+    if (plan.action === "apply-display-settings") {
+      applyThreadDisplaySettings(plan.settings || {}, { render: options.render === true });
+    }
+    if (plan.rethrow) throw err;
   }
 }
 

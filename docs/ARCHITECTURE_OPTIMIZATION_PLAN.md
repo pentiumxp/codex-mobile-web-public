@@ -1862,6 +1862,10 @@ Target:
   Pane slot patch-miss full-render escalation intent also now lives there, so
   failed pane-level patch attempts no longer unconditionally schedule a full
   render from `app.js` without a helper-owned policy bit. Continue moving pane
+  Display-settings load/migration planning also now lives there, so server
+  runtime settings, legacy local tile migration, and load-error local recovery
+  are helper-owned while `app.js` keeps API/localStorage/apply/save side
+  effects. Continue moving pane
   widths, per-pane drafts, max concurrent detail reads, pane-local
   send/approval/interrupt ownership, command detail panels, and mobile collapse
   behavior into testable helpers without DOM side effects.

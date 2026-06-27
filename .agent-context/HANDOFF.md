@@ -20373,3 +20373,36 @@ The previous full handoff was archived and should be opened only when old proven
   - After this commit, run the Phase C local module test set before deciding
     whether to continue extracting or prepare a shell/cache bump for deployment
     when requested.
+
+## 2026-06-27 - Phase C display-settings load plan local slice
+
+- Current local state:
+  - Continued after local commit `20cd05e` (`refactor: plan thread tile patch
+    miss fallback`).
+  - This is a fifth local-only Phase C pane-state slice. It does not bump
+    `CLIENT_BUILD_ID` / PWA shell cache and is not deployed by itself.
+- Root-cause boundary:
+  - Symptom/risk: `loadThreadDisplaySettings()` still directly decided when a
+    non-runtime server response should migrate legacy local tile mode, when to
+    save migrated settings, and how to recover local tile mode after a settings
+    load error.
+  - Failing layer: frontend thread-tile display-settings lifecycle policy.
+  - Violated invariant: `public/thread-tile-state.js` should own settings load
+    and migration decisions; `public/app.js` should only execute API reads,
+    localStorage reads, settings application, saving, and planned error
+    propagation.
+- Changes:
+  - Added `displaySettingsLoadPlan()` to `public/thread-tile-state.js`.
+  - `loadThreadDisplaySettings()` now consumes that plan for runtime settings,
+    legacy local tile migration, save-after-apply, and load-error local tile
+    recovery/rethrow.
+  - Updated focused state and source-wiring tests plus Phase C docs.
+- Validation:
+  - `node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js`
+    passed (`39` tests).
+  - `node --check public/thread-tile-state.js && node --check public/app.js`
+    passed.
+- Next:
+  - Run `npm run check` and `git diff --check`, then commit this local slice.
+  - After this slice, run the broader Phase C module tests before any shell/cache
+    bump or deployment decision.
