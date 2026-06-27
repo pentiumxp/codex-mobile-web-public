@@ -24336,3 +24336,74 @@ The previous full handoff was archived and should be opened only when old proven
     thread-detail projection assembly peaks.
   - Next optimization should use Phase-B readback to target the next reported
     owner after this module, not add a client-side retry/fallback.
+
+## 2026-06-28 - Active Detail Text Budget Module
+
+- User-visible symptom:
+  - The user reported a newer slow-load shape where a thread can keep spinning
+    for a long time but eventually render, unlike the old explicit timeout /
+    network-failure state. This indicates a synchronous slow successful path,
+    not a broken connection.
+  - After the default thread-list warm-cache module, production still showed
+    an active detail sample at about `1170ms`, with
+    `projection-active-overlay`, `projectionMs=1089`, and
+    `prepareResponseMs=21`.
+- Root cause / invariant:
+  - Response preparation already had item-count and byte-pressure compaction,
+    but retained active assistant/reasoning text could still carry oversized
+    fields into the first-paint response when an active turn was under
+    progressive budget pressure.
+  - Invariant: active first-paint detail should stay bounded and observable;
+    pressure-triggered text preview must expose metadata instead of silently
+    hiding the condition. Completed turns are not newly truncated by this
+    module.
+- Implementation:
+  - Added progressive active retained-text compaction to
+    `adapters/thread-detail-response-budget-service.js`.
+  - `server.js` now wires
+    `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_ACTIVE_TEXT_CHARS`
+    (default `12288`, max `204800`, `0` disables) into the detail response
+    budget service.
+  - Oversized retained active assistant/reasoning fields now get a bounded
+    first-paint preview plus `mobileActiveTextBudget` and
+    `mobileTextTruncated=true`; budget stats include
+    `truncatedActiveTextItems`, `omittedActiveTextChars`,
+    `activeTextOriginalChars`, `activeTextRetainedChars`, and
+    `progressiveActiveTextChars`.
+  - Updated `docs/README.md`, `docs/MODULES.md`, `docs/ARCHITECTURE.md`,
+    `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Local validation:
+  - Focused active-detail / render / merge / performance suite passed
+    (`403` tests).
+  - Full `npm test` passed (`1353` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Commit / deployment:
+  - Runtime/docs commit `dcdfd67`
+    `fix: 限制 active detail 首屏文本预算`.
+  - Deployed through the Home AI central macOS plugin deploy path with reason
+    `codex-mobile-active-detail-text-budget`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T211135Z-plugin-codex-mobile-web-codex-mobile-active-detail-text-budget`.
+  - The change is server/docs only; shell stayed
+    `0.1.11|codex-mobile-shell-v553`, build id `8f5df1074a2bd651`.
+  - Source/prod SHA-256 prefixes matched for `server.js`,
+    `adapters/thread-detail-response-budget-service.js`, focused tests, and
+    updated docs.
+- Production readback:
+  - Phase-B readback returned list `totalMs=109`, `appServerMs=0`,
+    `fallbackCacheDecision=compatible-hit`, `coldPathReason=warm-fallback-default`,
+    and selected active detail `projection-active-overlay`, `totalMs=1170`,
+    `projectionMs=1089`, `prepareResponseMs=21`.
+  - A direct authenticated bounded detail read for the same hashed active
+    thread returned in about `179ms`, `responseBytes=98352`, `turnCount=10`,
+    `itemCount=66`, with `mobileDetailResponseBudget.applied=true`,
+    `progressiveActiveBudgetApplied=true`, `progressiveActiveTextChars=12288`,
+    and no retained-text truncation needed in that sample.
+- Residual / next target:
+  - This closes the retained-text response-size guard. It does not close
+    projection generation peaks; current evidence points the next optimization
+    at active projection calculation/reuse (`projectionMs`), not at network
+    timeout or client-only retry.
