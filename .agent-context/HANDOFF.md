@@ -21614,6 +21614,51 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit this local slice and keep it undeployed until a coherent deployable
     module is ready.
 
+## 2026-06-27 - Phase C approval request thread context local slice
+
+- Current local state:
+  - Continued after local commit `29c6c9d` (`refactor visible item html uses
+    pane context`).
+  - This is a local Phase C pending approval/user-input request thread-context
+    slice only. It changes `public/app.js`, `test/conversation-render.test.js`,
+    README, the architecture plan, and this handoff. It does not bump
+    shell/cache, deploy production, or push Public.
+- Root-cause boundary:
+  - Symptom/risk: pending approval rendering could be pane-scoped, but approval
+    action HTML and server-request sync still used global `state.currentThreadId`
+    when a request omitted `params.threadId`. In tile mode that can put an
+    approval/user-input action on the wrong thread even though the card rendered
+    in the right pane.
+  - Failing layer: frontend server-request thread-context propagation between
+    thread-detail `pendingServerRequests`, client pending-approval state, and
+    approval action HTML. This is not an MCP approval protocol, server
+    projection, shell/cache, or Home AI host issue.
+  - Violated invariant: if a server request is obtained from a specific thread
+    detail response, all client state and action elements derived from that
+    request must carry that same thread id unless the request already has a more
+    specific `params.threadId`.
+- Changes:
+  - Added `serverRequestWithThreadContext(request, threadId)` and used it from
+    `syncThreadPendingServerRequests(thread)` before upserting pending approval
+    state.
+  - `renderPendingApprovals(thread)` now passes the pane/thread id through to
+    `renderApprovalRequest()`.
+  - `renderApprovalActions()`, `renderUserInputActions()`, and
+    `renderUserInputOptions()` now accept fallback thread id for output data
+    attributes.
+  - Added executable coverage for a tile-pane pending approval whose request
+    omits `params.threadId` while global current thread points elsewhere.
+- Validation so far:
+  - `node --check public/app.js` passed.
+  - `node --test test/conversation-render.test.js` passed (`121` tests).
+  - `npm test` passed (`1266` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit locally and keep undeployed until a coherent deployable module is
+    ready.
+
 ## 2026-06-27 - Phase C Composer action control planning local slice
 
 - Current local state:

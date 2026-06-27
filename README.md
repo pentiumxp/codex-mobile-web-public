@@ -575,6 +575,38 @@ npm run check:macos  # passed
 git diff --check  # passed
 ```
 
+## 2026-06-27 Phase C Approval Request Thread Context Slice
+
+这是 visible-item HTML thread context 之后的相邻 Phase C 本地切片，不单独部署、
+不推 Public。它修正 pending approval / user-input request 在平铺 pane 中的线程归属：
+如果 server request 自身没有 `params.threadId`，但它来自某个 thread detail 的
+`pendingServerRequests`，前端会在状态入口补齐来源 threadId；approval card 的按钮、
+表单和选项也会沿用 render pane 的 fallback threadId，而不是回退到全局
+`state.currentThreadId`。
+
+改动边界：
+
+- `syncThreadPendingServerRequests(thread)` 在 upsert 前调用
+  `serverRequestWithThreadContext(request, threadId)`，只给缺失 threadId 的 request
+  补齐来源线程；
+- `renderPendingApprovals(thread)` 将 pane/thread id 传给 `renderApprovalRequest()`；
+- `renderApprovalActions()`、`renderUserInputActions()`、`renderUserInputOptions()` 都
+  接收 fallback threadId；
+- 新增可执行测试，覆盖当前线程为 `thread-current`、平铺 pane 为 `thread-tile`、
+  request 缺失 `params.threadId` 时，按钮仍输出 `data-approval-thread-id="thread-tile"`；
+- 不改变 approval API、MCP 授权协议、server projection、shell/cache 版本或生产部署状态。
+
+验证：
+
+```bash
+node --check public/app.js
+node --test test/conversation-render.test.js  # 121 passed
+npm test  # 1266 passed
+npm run check  # passed
+npm run check:macos  # passed
+git diff --check  # passed
+```
+
 ## 2026-06-27 Phase A Conversation DOM Authority Invalidation Local Slice
 
 这是 v542 后继续按“小切片本地提交、模块化再部署”节奏推进的 Phase A 切片。

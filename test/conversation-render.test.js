@@ -1256,6 +1256,7 @@ function evaluatedThreadPendingApprovalProjection() {
     "renderPendingApprovals",
     "upsertServerRequest",
     "syncThreadPendingServerRequests",
+    "serverRequestWithThreadContext",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
 const HIDDEN_SERVER_REQUEST_METHODS = new Set();
@@ -4845,6 +4846,37 @@ test("thread detail pending server requests refresh and render against tile pane
   assert.match(html, /data-server-request-id="input-1"/);
   assert.match(html, /data-server-request-thread-id="thread-tile"/);
   assert.match(html, /data-server-question-id="choice"/);
+});
+
+test("thread detail pending server requests attach pane thread context when request omits thread id", () => {
+  const harness = evaluatedThreadPendingApprovalProjection();
+  harness.state.currentThreadId = "thread-current";
+  harness.state.currentThread = { id: "thread-current" };
+  harness.state.threadTileMode = true;
+  harness.syncThreadPendingServerRequests({
+    id: "thread-tile",
+    pendingServerRequests: [
+      {
+        id: "approval-no-thread",
+        method: "item/permissions/requestApproval",
+        status: "waiting",
+        actionable: true,
+        params: {
+          turnId: "turn-approval",
+          permissions: { filesystem: { read: true } },
+          reason: "Need file access",
+        },
+      },
+    ],
+  });
+
+  const stored = harness.state.pendingApprovals.get("approval-no-thread");
+  const html = harness.renderPendingApprovals({ id: "thread-tile" });
+  assert.equal(stored.params.threadId, "thread-tile");
+  assert.deepEqual(harness.tileRenderCalls(), ["thread-tile"]);
+  assert.match(html, /data-approval-id="approval-no-thread"/);
+  assert.match(html, /data-approval-thread-id="thread-tile"/);
+  assert.doesNotMatch(html, /data-approval-thread-id="thread-current"/);
 });
 
 test("active turn state follows only the latest durable turn", () => {

@@ -16729,12 +16729,12 @@ function isUserInputRequest(request) {
   return USER_INPUT_REQUEST_METHODS.has(request && request.method);
 }
 
-function renderUserInputOptions(request) {
+function renderUserInputOptions(request, fallbackThreadId = "") {
   const params = request.params || {};
   const questions = Array.isArray(params.questions) ? params.questions : [];
   const question = questions.find((entry) => Array.isArray(entry.options) && entry.options.length) || questions[0] || null;
   if (!question || !Array.isArray(question.options) || !question.options.length) return "";
-  const threadId = approvalActionThreadId(request);
+  const threadId = approvalActionThreadId(request, fallbackThreadId);
   return `<div class="approval-option-grid">
     ${question.options.map((option) => `<button class="approval-option" type="button" data-server-request-id="${escapeHtml(request.id)}" data-server-request-thread-id="${escapeHtml(threadId)}" data-server-question-id="${escapeHtml(question.id || "answer")}" data-server-response-text="${escapeHtml(option.label || "")}">
       <span>${escapeHtml(option.label || "选项")}</span>
@@ -16743,13 +16743,13 @@ function renderUserInputOptions(request) {
   </div>`;
 }
 
-function renderUserInputActions(request) {
+function renderUserInputActions(request, fallbackThreadId = "") {
   const params = request.params || {};
   const questions = Array.isArray(params.questions) ? params.questions : [];
   const question = questions[0] || {};
-  const threadId = approvalActionThreadId(request);
+  const threadId = approvalActionThreadId(request, fallbackThreadId);
   return `<form class="approval-response-form" data-server-request-form data-server-request-id="${escapeHtml(request.id)}" data-server-request-thread-id="${escapeHtml(threadId)}" data-server-question-id="${escapeHtml(question.id || "answer")}">
-    ${renderUserInputOptions(request)}
+    ${renderUserInputOptions(request, threadId)}
     <textarea class="approval-response-input" name="responseText" rows="3" placeholder="输入回复内容"></textarea>
     <div class="approval-actions request-actions">
       <button class="approval-button allow" type="submit">提交</button>
@@ -16758,13 +16758,13 @@ function renderUserInputActions(request) {
   </form>`;
 }
 
-function renderApprovalActions(request) {
+function renderApprovalActions(request, fallbackThreadId = "") {
   const waiting = request.status === "waiting";
   if (!request.actionable || !waiting) {
     return "";
   }
-  if (isUserInputRequest(request)) return renderUserInputActions(request);
-  const threadId = approvalActionThreadId(request);
+  if (isUserInputRequest(request)) return renderUserInputActions(request, fallbackThreadId);
+  const threadId = approvalActionThreadId(request, fallbackThreadId);
   return `<div class="approval-actions">
     <button class="approval-button allow" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-thread-id="${escapeHtml(threadId)}" data-approval-action="allow_once">允许一次</button>
     <button class="approval-button allow" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-thread-id="${escapeHtml(threadId)}" data-approval-action="allow_session">本会话允许</button>
@@ -16772,7 +16772,7 @@ function renderApprovalActions(request) {
   </div>`;
 }
 
-function renderApprovalRequest(request, previousKeys = new Set()) {
+function renderApprovalRequest(request, previousKeys = new Set(), fallbackThreadId = "") {
   const key = `approval|${request.id}`;
   const status = String(request.status || "waiting");
   if (isApprovalSettled(request)) {
@@ -16793,17 +16793,17 @@ function renderApprovalRequest(request, previousKeys = new Set()) {
       <span class="approval-status">${escapeHtml(approvalStatusLabel(request.status))}</span>
     </div>
     ${detail ? `<pre class="approval-detail">${escapeHtml(detail)}</pre>` : ""}
-    ${renderApprovalActions(request)}
+    ${renderApprovalActions(request, fallbackThreadId)}
   </section>`;
 }
 
 function renderPendingApprovals(thread, previousKeys = new Set(), filter = null) {
-  const threadId = thread && (thread.id || state.currentThreadId);
+  const threadId = String(thread && (thread.id || state.currentThreadId) || "").trim();
   const requests = pendingApprovalsForThread(threadId)
     .filter((request) => !filter || filter(request));
   if (!requests.length) return "";
   return `<div class="approval-stack">
-    ${requests.map((request) => renderApprovalRequest(request, previousKeys)).join("")}
+    ${requests.map((request) => renderApprovalRequest(request, previousKeys, threadId)).join("")}
   </div>`;
 }
 
@@ -19939,6 +19939,14 @@ function resolveServerRequest(payload) {
   scheduleApprovalRemoval(requestId);
 }
 
+function serverRequestWithThreadContext(request, threadId) {
+  const id = String(threadId || "").trim();
+  if (!request || !id || approvalThreadId(request)) return request;
+  return Object.assign({}, request, {
+    params: Object.assign({}, request.params || {}, { threadId: id }),
+  });
+}
+
 function syncThreadPendingServerRequests(thread) {
   const threadId = String(thread && (thread.id || state.currentThreadId) || "").trim();
   const requests = Array.isArray(thread && thread.pendingServerRequests) ? thread.pendingServerRequests : [];
@@ -19946,7 +19954,7 @@ function syncThreadPendingServerRequests(thread) {
   for (const request of requests) {
     if (!request || request.id === null || request.id === undefined) continue;
     if (!requestBelongsToThread(request, threadId)) continue;
-    upsertServerRequest(request);
+    upsertServerRequest(serverRequestWithThreadContext(request, threadId));
   }
 }
 

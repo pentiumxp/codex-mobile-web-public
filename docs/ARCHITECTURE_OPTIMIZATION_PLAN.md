@@ -2029,6 +2029,11 @@ Target:
   context-compaction notes, reasoning visibility, task-card injected item
   timestamps, and item timestamp fallback through
   `renderVisibleItemPatchHtml(..., thread)`.
+  Pending approval rendering now follows the same rule: thread-detail
+  `pendingServerRequests` that omit `params.threadId` are tagged with their
+  source thread before entering client state, and approval/user-input action
+  HTML receives the pane thread id instead of falling back to global
+  `state.currentThreadId`.
 - Treat each pane as a scaled mobile single-thread runtime instance. Shared
   global Composer chrome is only an interim input surface; global command dock
   or shared operation bubble are no longer acceptable in tile mode and must not
