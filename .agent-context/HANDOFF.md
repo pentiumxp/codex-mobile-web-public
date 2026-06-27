@@ -23453,9 +23453,32 @@ The previous full handoff was archived and should be opened only when old proven
   - `git diff --check` passed.
   - `codegraph sync && codegraph status` reported an up-to-date graph, with the
     known earlier-engine reindex suggestion.
-- Next:
-  - Commit this v552 package.
-  - Deploy through the Home AI central macOS plugin deploy path with reason
+- Commit/deploy:
+  - Source commit: `38a4234` `fix thread detail response budget`.
+  - Deployed through the Home AI central macOS plugin deploy path with reason
     `codex-mobile-thread-detail-response-budget`.
-  - Read back `/api/public-config` and sample Home AI/Movie detail sizes from
-    production after deploy.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T182020Z-plugin-codex-mobile-web-codex-mobile-thread-detail-response-budget`.
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v552`,
+    `shellCacheName=codex-mobile-shell-v552`, `buildId=a9a59c513528ca43`.
+  - Deploy source ref: `38a42344a882`, dirty false.
+- Production readback:
+  - Home AI detail after warmup: `171723-171725` bytes, `66-195ms`,
+    `threadReadMs=0`, `coldPathOwner=warm-path`,
+    `coldPathReason=warm-projection-dynamic`, `cardsWithBodies=0`,
+    `cardsOmitted=24`, budget applied with `84` operation and `38` reasoning
+    items omitted.
+  - Movie detail after warmup: `132724` bytes, `128-136ms`,
+    `threadReadMs=0`, `coldPathOwner=warm-path`,
+    `coldPathReason=warm-projection-active-overlay`, `cardsWithBodies=0`,
+    `cardsOmitted=24`, budget applied with `12` reasoning items omitted.
+  - A deployment-adjacent first direct Home AI sample still took `2680ms`, but
+    repeated samples immediately after were warm and stable. Treat remaining
+    inconsistent first-entry latency as a separate thread-list/app-server
+    peak-latency module rather than a detail-response-body issue.
+- Residual:
+  - Phase-B readback still classifies the first thread-list read as
+    `needs_repair` for `thread-list-fallback-prewarm` with reason
+    `prewarm-completed-but-list-cold`; this is the next likely owner for
+    inconsistent entry speed.
