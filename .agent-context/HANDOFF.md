@@ -24696,3 +24696,77 @@ The previous full handoff was archived and should be opened only when old proven
   - It does not close true no-cache cold start, thread-list/prewarm rebuild
     spikes, or summary lookup spikes. Those should be handled as separate
     bounded modules with production timing evidence.
+
+## 2026-06-28 - Active Detail First-Paint Byte Budget Module
+
+- User-visible symptom:
+  - After active overlay, stale-history reuse, and visible-item ceilings, detail
+    reads could still be successful but heavy: `threadReadMs=0` and
+    `activeOverlayWindowMs=0`, yet the browser could still wait on a large
+    first-paint payload because retained completed assistant/plan receipts can
+    each carry long text.
+- Root cause / invariant:
+  - The previous response-budget service closed item-count pressure and active
+    retained-text pressure, but it did not re-check the post-budget thread JSON
+    byte size. A 48-item window can still be large when recent completed
+    receipts are long.
+  - The active detail first paint should have a server-owned byte ceiling under
+    explicit active progressive pressure. This must be metadata-visible and
+    service-owned, not a client refresh/timeout workaround.
+- Implementation:
+  - `adapters/thread-detail-response-budget-service.js` now applies a
+    second-stage first-paint byte budget after operation/reasoning/assistant
+    tail compaction and visible-item ceiling.
+  - When `progressiveActiveBudgetApplied=true` and the post-item-budget thread
+    JSON exceeds `progressiveFirstPaintThreadByteCeiling`, non-current
+    completed assistant/reasoning text fields are reduced to bounded previews.
+  - Affected items carry `mobileFirstPaintTextBudget` and
+    `mobileTextTruncated=true`; the current active turn still uses the
+    existing `mobileActiveTextBudget` path.
+  - New bounded server settings:
+    `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_FIRST_PAINT_THREAD_BYTES`
+    (default `160KB`) and
+    `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_COMPLETED_TEXT_CHARS`
+    (default `8KB`).
+  - Updated docs: `docs/README.md`, `docs/ARCHITECTURE.md`,
+    `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Local validation:
+  - Added focused tests proving completed receipt previews apply only under
+    active progressive pressure and first-paint byte pressure, and do not apply
+    to ordinary completed/small details.
+  - Focused detail/response/visible-key/render/orchestration suite passed
+    (`245` tests).
+  - Full `npm test` passed (`1366` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Commit / deployment:
+  - Commit `6a94559` `fix: 收紧 active detail first-paint 字节预算`.
+  - Deployed through the Home AI central macOS plugin deploy path with reason
+    `codex-mobile-active-first-paint-byte-budget`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T221704Z-plugin-codex-mobile-web-codex-mobile-active-first-paint-byte-budget`.
+  - Server/docs-only change; static shell stayed
+    `0.1.11|codex-mobile-shell-v553`, build id `8f5df1074a2bd651`.
+  - Source/prod SHA-256 prefixes matched for the changed service, `server.js`,
+    focused test, and docs.
+- Production readback:
+  - Production adapter fixture proved the deployed budget path:
+    `progressiveCompletedTextBudgetApplied=true`, completed text chars `240`,
+    one truncated completed receipt, before bytes `2756`, after bytes `825`,
+    and `mobileFirstPaintTextBudget=true`.
+  - Targeted Codex thread readback: `projection-active-overlay`, `totalMs=256`,
+    `threadReadMs=0`, `activeOverlayWindowMs=0`.
+  - Targeted Home AI thread readback: `projection-v4-dynamic`, `totalMs=116`,
+    `threadReadMs=0`.
+  - Targeted Movie thread readback: `projection-v4-dynamic`, `totalMs=76`,
+    `threadReadMs=0`.
+- Residual / next target:
+  - This closes the post-item-budget payload gap for active progressive first
+    paint. It does not implement on-demand expansion of previewed completed
+    receipts, and it does not close true no-cache cold start or thread-list /
+    summary prewarm rebuild spikes.
+  - Next performance module should target true cold/restart first-entry peaks
+    with timing evidence across thread-list prewarm, summary lookup, projection
+    seed/read, and app-server/mux RPC.
