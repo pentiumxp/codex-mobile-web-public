@@ -97,6 +97,39 @@ git diff --check  # passed
 本切片没有 runtime/static app 变更，不 bump shell/cache，不部署；后续会和其它 Phase E
 live-debug smoke 切片一起收束为模块。
 
+## 2026-06-27 Phase E Media Render Visual Smoke Local Slice
+
+这是 v542 生产部署后的第二个新 Phase E 本地切片，目标是补 uploaded/generated image
+在 Home AI embedded/PWA DOM 中的可回放视觉证据。它不修改运行时图片渲染逻辑，
+只新增 metadata-only 的 live-debug smoke，方便后续诊断闭环判断图片是否真的渲染、
+是否走了 proxy-safe URL、是否出现 raw local path leak 或失败占位。
+
+新增 `scripts/codex-mobile-media-render-visual-smoke.js`：
+
+- 通过 Home AI live-debug lane 打开 Codex Mobile；
+- 可指定 `--thread-id` / `--target-turn-id`，并支持 `--require-upload`、
+  `--require-generated`；
+- 检查 `.input-image`、`.image-view`、`.markdown-image`、`.file-preview-media`
+  这些真实 DOM surface；
+- 统计 visible/loaded/failed/retrying/missing-image、upload/generated、route kind、
+  image natural size、proxy-unsafe 和 local-path-leak；
+- 在 Home AI proxy embed 模式下默认要求 media URL 不退回裸 `/api/...`；
+- 默认只做 inspect 和截图，不改线程、不触发 reload。
+
+隐私边界：报告只输出 endpoint kind、期望 build/cache id、thread/turn/item/source hash、
+route-kind 计数、尺寸、rect、失败计数、截图 path hash 和 error code；不输出 raw image URL、
+本地路径、文件名、DOM text、upload 内容、cookie、token、provider payload 或日志。
+
+验证：
+
+```bash
+node --check scripts/codex-mobile-media-render-visual-smoke.js
+node --test test/media-render-visual-smoke.test.js
+```
+
+本切片没有 runtime/static app 变更，不 bump shell/cache，不部署；后续会和其它 Phase E
+live-debug smoke 切片一起收束为模块。
+
 ## 2026-06-27 Phase E Image-Order Visual Smoke Privacy Slice
 
 这是 v541 生产部署后的第二个 Phase E 本地切片，目标不是新增运行时行为，

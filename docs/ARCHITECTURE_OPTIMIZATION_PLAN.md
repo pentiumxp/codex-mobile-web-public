@@ -1767,9 +1767,9 @@ Current local coverage:
   ids, debug URLs, screenshot paths, `location.href`, DOM labels, DOM text, or
   error message bodies. The focused `test/image-order-visual-smoke.test.js`
   covers this metadata-only contract.
-- This does not replace Home AI embedded/PWA live-debug coverage. The next
-  Phase E slices still need real browser smoke around long-turn streaming,
-  upload/generated image rendering, and PWA shell refresh.
+- This does not replace Home AI embedded/PWA live-debug coverage. Remaining
+  Phase E slices still need real browser smoke around long-turn streaming and
+  deeper replay coverage for projection repair cases.
 - The next local Phase E slice starts the PWA shell-refresh live-debug coverage
   without executing a reload. `scripts/codex-mobile-pwa-shell-refresh-smoke.js`
   opens the embedded Codex Mobile shell through the Home AI debug lane,
@@ -1781,6 +1781,17 @@ Current local coverage:
   error codes. It does not output raw debug/server URLs, paths, DOM text,
   cookies, tokens, launch material, or logs. This is a harness/evidence slice,
   not a runtime fallback and not an automatic page reload.
+- The media-render live-debug smoke now covers uploaded/generated image DOM
+  surfaces as a local evidence slice. `scripts/codex-mobile-media-render-visual-smoke.js`
+  opens a bounded target thread, inspects `.input-image`, `.image-view`,
+  `.markdown-image`, and file-preview image surfaces, and verifies they are
+  visible, loaded, not failed, not leaking local paths, and proxy-safe when the
+  app is running under the Home AI plugin proxy. Reports are metadata-only:
+  endpoint kind, expected build/cache ids, hashed thread/turn/item/source ids,
+  route-kind counts, image dimensions, rects, failure counts, screenshot path
+  hash, and bounded error codes. It does not output raw image URLs, filenames,
+  local paths, DOM text, uploads, cookies, tokens, provider payloads, or logs.
+  This is browser evidence for future media incidents, not a rendering fallback.
 
 Current diagnostic intake bridge:
 

@@ -20702,3 +20702,46 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit this local Phase E slice.
   - Continue Phase E with long-turn streaming or upload/generated image
     embedded smoke. Do not deploy until another coherent module is ready.
+
+## 2026-06-27 - Phase E media render visual smoke local slice
+
+- Current local state:
+  - Continued after local PWA shell-refresh smoke commit `eff591a`.
+  - This is a script/test/docs-only local slice. It has no runtime/static app
+    behavior change, no shell/cache bump, no deployment, and no Public push.
+- Root-cause boundary:
+  - Symptom/risk: server/render tests cover uploaded/generated image URL
+    construction and recovery behavior, but there was no reusable Home AI
+    live-debug smoke that proves real embedded DOM image surfaces are visible,
+    loaded, proxy-safe, and not leaking raw local paths.
+  - Failing layer: Phase E browser/visual harness coverage for media rendering
+    evidence, not runtime image rendering itself.
+  - Violated invariant: media incidents should have metadata-only replay
+    evidence for image DOM state before they are escalated into repair cards.
+- Changes:
+  - Added `scripts/codex-mobile-media-render-visual-smoke.js`.
+  - The smoke opens a bounded target thread through the Home AI live-debug lane,
+    checks `.input-image`, `.image-view`, `.markdown-image`, and
+    `.file-preview-media`, and records visible/loaded/failed/retrying,
+    upload/generated counts, route-kind counts, natural image dimensions, rects,
+    Home AI proxy-safety, and raw local-path leak counts.
+  - Added optional `--require-upload` and `--require-generated` flags for
+    focused repro runs.
+  - Added `test/media-render-visual-smoke.test.js` and wired the script into
+    `npm run check`.
+- Privacy:
+  - Reports include endpoint kind, expected build/cache ids, hashed
+    thread/turn/item/source ids, route-kind counts, image dimensions, rects,
+    failure counts, screenshot path hash, and bounded error codes.
+  - Reports do not include raw image URLs, local paths, filenames, DOM text,
+    upload contents, cookies, tokens, launch material, provider payloads, or
+    logs.
+- Validation:
+  - `node --check scripts/codex-mobile-media-render-visual-smoke.js` passed.
+  - `node --test test/media-render-visual-smoke.test.js` passed (`5` tests).
+  - `npm run check` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit this local Phase E slice.
+  - Continue with long-turn streaming / projection replay browser evidence.
+    Do not deploy until another coherent Phase E module is ready.
