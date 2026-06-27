@@ -51,6 +51,10 @@ test("projection replay visual smoke browser report compares API shape to DOM me
   assert.match(script, /duplicateItemIdCount/);
   assert.match(script, /latestMismatchCount/);
   assert.match(script, /orderMismatchCount/);
+  assert.match(script, /visibleKeyForItem/);
+  assert.match(script, /visibleKeyHashes/);
+  assert.match(script, /renderKeyHashes/);
+  assert.match(script, /visibleKeyMismatchCount/);
   assert.match(script, /expected/);
   assert.match(script, /domShape/);
   assert.match(script, /mismatchCounts/);
@@ -64,6 +68,8 @@ test("projection replay visual smoke browser report compares API shape to DOM me
   assert.doesNotMatch(script, /\bloadedTurnIds\s*:/);
   assert.doesNotMatch(script, /\bitemIds\s*:/);
   assert.doesNotMatch(script, /\brenderKeys\s*:/);
+  assert.doesNotMatch(script, /\bexpectedKeyRows\s*:/);
+  assert.doesNotMatch(script, /\bdomKeyRows\s*:/);
   assert.doesNotMatch(script, /\bdetailPath\s*:/);
   assert.doesNotMatch(script, /\bhref\s*:/);
   assert.doesNotMatch(script, /\blabel\s*:/);

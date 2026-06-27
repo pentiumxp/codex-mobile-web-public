@@ -34,6 +34,17 @@ test("v4 normalizer adds explicit context compaction notice state from notificat
   assert.equal(completed.item.mobileNotice, CONTEXT_COMPACTION_COMPLETE_NOTICE);
 });
 
+test("v4 notification normalizer uses nested turn id for item visible keys", () => {
+  const normalized = normalizeNotificationParamsForProjectionV4("item/completed", {
+    threadId: "thread-1",
+    turn: { id: "turn-from-payload" },
+    item: { id: "agent-1", type: "agentMessage" },
+  });
+
+  assert.equal(normalized.item.mobileVisibleKey, "turn-from-payload:receipt:agent-1");
+  assert.equal(normalized.item.mobileVisibleKind, "receipt");
+});
+
 test("v4 normalizer keeps type-only historical context markers non-noticeable", () => {
   const result = normalizeThreadVisibleProjection({
     thread: {
@@ -75,6 +86,26 @@ test("v4 normalizer emits stable visible item keys for mixed visible content", (
     "turn-1:turnUsageSummary",
   ]);
   assert.deepEqual(result.thread.turns[0].mobileVisibleItemKeys, result.thread.mobileVisibleItemKeys);
+});
+
+test("v4 normalizer makes duplicate visible keys unique within a turn", () => {
+  const result = normalizeThreadVisibleProjection({
+    thread: {
+      id: "thread-1",
+      turns: [{
+        id: "turn-1",
+        items: [
+          { id: "agent-1", type: "agentMessage" },
+          { id: "agent-1", type: "agentMessage" },
+        ],
+      }],
+    },
+  }, { source: "test" });
+
+  assert.deepEqual(result.thread.mobileVisibleItemKeys, [
+    "turn-1:receipt:agent-1",
+    "turn-1:receipt:agent-1#1",
+  ]);
 });
 
 test("v4 projection diff summary is bounded and key-based", () => {

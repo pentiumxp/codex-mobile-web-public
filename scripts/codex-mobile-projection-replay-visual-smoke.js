@@ -252,6 +252,7 @@ const MEASURE_SCRIPT = `
   const duplicateCount = (values) => Object.values(countBy(values)).reduce((total, count) => total + Math.max(0, Number(count || 0) - 1), 0);
   const visibleItems = (turn) => (Array.isArray(turn && turn.items) ? turn.items : [])
     .filter((item) => item && item.type !== "reasoning");
+  const visibleKeyForItem = (item) => String(item && (item.mobileVisibleKey || item.id || item.itemId || "") || "");
   const detailThreadFrom = (payload) => {
     if (!payload || typeof payload !== "object") return null;
     if (payload.thread && typeof payload.thread === "object") return payload.thread;
@@ -265,12 +266,14 @@ const MEASURE_SCRIPT = `
     const turnRows = visibleTurns.map((turn, index) => {
       const items = visibleItems(turn);
       const itemHashes = items.map((item) => stableHash(item && item.id || ""));
+      const visibleKeyHashes = items.map((item) => stableHash(visibleKeyForItem(item))).filter(Boolean);
       items.forEach((item) => itemIds.push(String(item && item.id || "")));
       return {
         index,
         turnHash: stableHash(turn && turn.id || ""),
         itemCount: items.length,
         itemHashes: itemHashes.slice(0, 12),
+        visibleKeyHashes: visibleKeyHashes.slice(0, 12),
       };
     });
     return {
@@ -285,6 +288,12 @@ const MEASURE_SCRIPT = `
       latestTurnHash: stableHash(visibleTurns[visibleTurns.length - 1] && visibleTurns[visibleTurns.length - 1].id || ""),
       turnRows: turnRows.slice(-12),
     };
+  };
+  const detailKeyRows = (thread) => {
+    const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+    return turns
+      .filter((turn) => visibleItems(turn).length > 0)
+      .map((turn) => visibleItems(turn).map(visibleKeyForItem));
   };
   const proxyPrefixFromPath = (pathname) => {
     const match = String(pathname || "").match(/^(\\/api\\/hermes-plugins\\/[^/]+\\/proxy)(?:\\/|$)/);
@@ -324,11 +333,13 @@ const MEASURE_SCRIPT = `
   const itemIds = itemNodes.map((node) => String(node.getAttribute("data-item") || ""));
   const domRows = turnNodes.map((turn, index) => {
     const items = Array.from(turn.querySelectorAll(":scope > .item[data-item]"));
+    const itemRenderKeys = items.map((item) => String(item.getAttribute("data-render-key") || ""));
     return {
       index,
       turnHash: stableHash(turn.getAttribute("data-turn") || ""),
       itemCount: items.length,
       itemHashes: items.map((item) => stableHash(item.getAttribute("data-item") || "")).slice(0, 12),
+      renderKeyHashes: itemRenderKeys.map(stableHash).slice(0, 12),
     };
   });
   const domShape = {
@@ -362,6 +373,9 @@ const MEASURE_SCRIPT = `
       .slice(0, 80) || "detail_fetch_failed";
   }
   const expected = detailShape(detail);
+  const expectedKeyRows = detailKeyRows(detail);
+  const domKeyRows = turnNodes.map((turn) => Array.from(turn.querySelectorAll(":scope > .item[data-item]"))
+    .map((item) => String(item.getAttribute("data-render-key") || "")));
   const clientBuildMatches = Boolean(!expectedClientBuildId || clientBuildId === expectedClientBuildId);
   const missingDomTurnCount = Math.max(0, expected.visibleTurnCount - domShape.turnCount);
   const extraDomTurnCount = Math.max(0, domShape.turnCount - expected.visibleTurnCount);
@@ -372,6 +386,19 @@ const MEASURE_SCRIPT = `
   let orderMismatchCount = Math.abs(expected.turnRows.length - domShape.turnRows.length);
   for (let index = 0; index < comparableTurnCount; index += 1) {
     if (expected.turnRows[index].turnHash !== domShape.turnRows[index].turnHash) orderMismatchCount += 1;
+  }
+  const comparableKeyRowCount = Math.min(expectedKeyRows.length, domKeyRows.length);
+  let visibleKeyMismatchCount = Math.abs(expectedKeyRows.length - domKeyRows.length);
+  for (let rowIndex = 0; rowIndex < comparableKeyRowCount; rowIndex += 1) {
+    const expectedKeys = expectedKeyRows[rowIndex] || [];
+    const domKeys = domKeyRows[rowIndex] || [];
+    const comparableItemCount = Math.min(expectedKeys.length, domKeys.length);
+    visibleKeyMismatchCount += Math.abs(expectedKeys.length - domKeys.length);
+    for (let itemIndex = 0; itemIndex < comparableItemCount; itemIndex += 1) {
+      const expectedKey = String(expectedKeys[itemIndex] || "");
+      const domKey = String(domKeys[itemIndex] || "");
+      if (expectedKey && !domKey.includes(expectedKey)) visibleKeyMismatchCount += 1;
+    }
   }
   const minVisibleTurns = Math.max(1, Number(requirements.minVisibleTurns || 1) || 1);
   const detailComparisonAvailable = Boolean(expected.detailAvailable && !detailError);
@@ -384,6 +411,7 @@ const MEASURE_SCRIPT = `
       && domShape.duplicateItemIdCount === 0
       && !latestMismatch
       && orderMismatchCount === 0
+      && visibleKeyMismatchCount === 0
     )
   );
   const ok = Boolean(
@@ -417,6 +445,7 @@ const MEASURE_SCRIPT = `
       extraDomItemCount,
       latestMismatchCount: latestMismatch ? 1 : 0,
       orderMismatchCount,
+      visibleKeyMismatchCount,
     },
   };
 `;

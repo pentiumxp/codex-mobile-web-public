@@ -22571,6 +22571,67 @@ The previous full handoff was archived and should be opened only when old proven
   - Continue small local Phase C slices and do not deploy until a coherent
     deployable module is ready.
 
+## 2026-06-27 - Projection consistency v545 deployable module
+
+- Current local state:
+  - Continued after local commit `bbbfc2c` (`chore prepare phase c pane context
+    v544`).
+  - Prepared a single deployable projection-consistency module and bumped
+    `CLIENT_BUILD_ID` / PWA shell cache to `codex-mobile-shell-v545`.
+  - The module changes projection normalization, render planning, DOM patch
+    authority checks, projection replay smoke, docs, and focused tests.
+- Root-cause boundary:
+  - Symptom/risk: users observed intermittent conversation projection/DOM
+    divergence: missing middle turns, duplicate or stale rows, one long final
+    receipt covering newer content, and refreshes where server/current state and
+    browser DOM did not match.
+  - Failing layer: projection consistency boundary between v4 visible-item
+    normalization, refresh render planning, and browser DOM patch application.
+    This is not a Home AI host/proxy bug and not a UI-only dedupe problem.
+  - Violated invariant: a stable conversation signature is not proof that the
+    browser DOM is authoritative. The DOM must also match visible turn count,
+    visible item count, duplicate render-key count, and single-thread turn
+    order; item-only notifications must generate the same visible keys as full
+    projection reads.
+- Changes:
+  - `adapters/thread-visible-item-normalizer.js` now uses nested
+    `params.turn.id` for item-only notification visible keys and makes
+    duplicate visible keys unique inside one turn.
+  - `public/thread-detail-render-plan.js` now invalidates stable signatures when
+    the DOM is missing visible turns/items, has duplicate render keys, or has
+    mismatched single-thread turn order.
+  - `public/thread-detail-dom-patch.js` now owns stable-signature DOM
+    invalidation reasons and post-apply DOM consistency planning. A successful
+    patch that still leaves a partial/corrupt DOM falls back to canonical HTML
+    and reports bounded diagnostics.
+  - `public/app.js` now passes expected/current DOM shape evidence through
+    refresh, single-thread render, and tile render paths, and prefers v4
+    `mobileVisibleKey` for item render identity.
+  - `scripts/codex-mobile-projection-replay-visual-smoke.js` now compares API
+    visible-key hashes with DOM render-key hashes and reports mismatch counts
+    without raw ids, text, paths, or keys.
+  - `docs/README.md`, `docs/THREAD_DETAIL_PROJECTION_V4_DESIGN.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` record the v545 projection
+    consistency module.
+- Validation:
+  - `node --test test/thread-detail-dom-patch.test.js test/thread-detail-render-plan.test.js test/thread-visible-item-normalizer.test.js`
+    passed (`150` tests).
+  - `node --test test/conversation-render.test.js test/mobile-viewport.test.js`
+    passed (`141` tests).
+  - `node --test test/thread-detail-v4-merge-state.test.js test/thread-detail-merge-state.test.js test/thread-detail-patch-plan.test.js test/thread-diagnostic-events.test.js test/home-ai-diagnostic-reporting.test.js test/thread-detail-state.test.js test/thread-tile-state.test.js`
+    passed (`107` tests).
+  - `node --test test/thread-detail-projection-v4-service.test.js test/thread-detail-projection-service.test.js test/thread-detail-projection-input-service.test.js test/thread-detail-projection-result-service.test.js test/thread-detail-read-orchestration-service.test.js test/thread-detail-route-service.test.js test/thread-detail-active-overlay-provider-service.test.js test/thread-detail-active-window-overlay-policy-service.test.js test/thread-detail-active-overlay-integration.test.js test/projection-replay-visual-smoke.test.js`
+    passed (`89` tests).
+  - `node --check scripts/codex-mobile-projection-replay-visual-smoke.js &&
+    node --test test/projection-replay-visual-smoke.test.js` passed.
+  - `npm test` passed (`1293` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit this module, deploy through the central Home AI macOS plugin deploy
+    path, then perform `/api/public-config` and bounded projection readback.
+
 ## 2026-06-27 - Phase C in-turn approval render context local slice
 
 - Current local state:

@@ -2183,6 +2183,40 @@ This candidate is not deployed and not pushed Public at this point. Next action
 should be either deploy/readback of v544 or an explicit decision to pause Phase
 C and move to another phase.
 
+### 2026-06-27 Projection Consistency v545 deployable module
+
+The next batched module closes the recurring projection/DOM mismatch class
+instead of adding UI-only dedupe or refresh fallbacks. Static shell/cache is
+advanced to `codex-mobile-shell-v545`.
+
+Deployable scope:
+
+- `planThreadDetailRefreshRender()` treats DOM shape as part of render
+  authority. A stable signature still requires a full render when the DOM is
+  missing visible turns/items, has duplicate render keys, or has a mismatched
+  single-thread turn order.
+- `planConversationHtmlUpdate()` and `updateConversationHtml()` carry expected
+  visible turn/item counts, DOM turn/item counts, duplicate render-key count,
+  and turn ids through the same planning boundary.
+- After patch application, the browser re-reads the DOM shape. If the patch
+  leaves a partial/corrupt DOM, it falls back to canonical HTML and emits
+  bounded projection diagnostics.
+- v4 notification normalization now uses nested `params.turn.id` for item-only
+  notifications and makes duplicate visible keys unique inside one turn.
+- Projection replay visual smoke compares API visible-key hashes against DOM
+  render-key hashes and reports mismatch counts without raw ids, text, paths,
+  or keys.
+
+Required validation for this module:
+
+- focused projection and render tests;
+- full `npm test`;
+- `npm run check`;
+- `npm run check:macos`;
+- `git diff --check`;
+- central Home AI macOS plugin deployment with `/api/public-config` readback;
+- bounded projection replay/readback smoke after deployment.
+
 ### 2026-06-27 Phase E Visual Harness Module v542
 
 Phase E now has its first batched visual-harness module after the cadence

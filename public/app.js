@@ -518,7 +518,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v544";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v545";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -5031,7 +5031,8 @@ function isLatestTurn(turn, thread = null) {
 function stableItemKey(turn, item, index = 0, prefix = "item") {
   const threadId = renderContextThreadId() || "thread";
   const turnId = turn && (turn.id || turn.startedAt || "turn");
-  let itemId = item && (item.id || `${item.type || "item"}-${index}`);
+  const visibleKey = item && item.mobileVisibleKey;
+  let itemId = visibleKey || (item && item.id || `${item && item.type || "item"}-${index}`);
   if (item && (item.type === "imageView" || item.type === "imageGeneration")) {
     const imageSource = [
       imageViewPath(item),
@@ -6817,7 +6818,14 @@ function recordThreadDetailResponseDiagnostics(performanceEvent = {}, input = {}
 
 function conversationDomShape() {
   const conversation = $("conversation");
-  if (!conversation) return { renderKeyCount: 0, duplicateRenderKeyCount: 0, turnCount: 0 };
+  if (!conversation) {
+    return {
+      renderKeyCount: 0,
+      duplicateRenderKeyCount: 0,
+      turnCount: 0,
+      itemCount: 0,
+    };
+  }
   const seen = new Set();
   let duplicateRenderKeyCount = 0;
   for (const node of Array.from(conversation.querySelectorAll("[data-render-key]"))) {
@@ -6829,7 +6837,8 @@ function conversationDomShape() {
   return {
     renderKeyCount: seen.size,
     duplicateRenderKeyCount,
-    turnCount: conversation.querySelectorAll("[data-turn]").length,
+    turnCount: conversation.querySelectorAll("article.turn[data-turn], article.thread-tile-turn[data-thread-tile-turn]").length,
+    itemCount: conversation.querySelectorAll("[data-item]").length,
   };
 }
 
@@ -9900,6 +9909,7 @@ async function refreshCurrentThread(options = {}) {
   applyThreadDetailRefreshResponseEffectsPlan(responseEffectsPlan, { thread: result.thread });
   const nextVisibleShape = visibleConversationShape(state.currentThread);
   const nextConversationSignature = conversationRenderSignature(state.currentThread);
+  const currentDomShape = conversationDomShape();
   const refreshRenderStage = threadDetailRenderPlanApi.planThreadDetailRefreshRenderStage({
     previousConversationSignature,
     nextConversationSignature,
@@ -9908,7 +9918,11 @@ async function refreshCurrentThread(options = {}) {
     renderedPatchShellSignature: state.renderedConversationPatchShellSignature,
     singleThreadSurfaceAvailable: canPatchSingleThreadConversationDom({ threadId }),
     renderedDomTurnCount: conversationDomTurnIds().length,
+    renderedDomItemCount: currentDomShape.itemCount,
+    duplicateRenderKeyCount: currentDomShape.duplicateRenderKeyCount,
     nextVisibleShape,
+    expectedTurnIds: visibleRenderableTurnIds(state.currentThread),
+    renderedDomTurnIds: conversationDomTurnIds(),
   });
   const renderPlan = refreshRenderStage.renderPlan;
   const shouldRenderDetail = renderPlan.shouldRenderDetail;
@@ -12679,10 +12693,24 @@ function checkPrimaryShellSelectionConflictAfterRender(metrics = {}) {
 
 function updateConversationHtml(html, signature, options = {}) {
   const conversation = $("conversation");
+  const preDomShape = conversationDomShape();
   const expectedVisibleTurnCount = Math.max(0, Number(options.expectedVisibleTurnCount || 0));
+  const expectedVisibleItemCount = Math.max(0, Number(options.expectedVisibleItemCount || 0));
   const renderedDomTurnCount = Object.prototype.hasOwnProperty.call(options, "renderedDomTurnCount")
     ? Math.max(0, Number(options.renderedDomTurnCount || 0))
-    : conversationDomTurnIds(conversation).length;
+    : preDomShape.turnCount;
+  const renderedDomItemCount = Object.prototype.hasOwnProperty.call(options, "renderedDomItemCount")
+    ? Math.max(0, Number(options.renderedDomItemCount || 0))
+    : preDomShape.itemCount;
+  const duplicateRenderKeyCount = Object.prototype.hasOwnProperty.call(options, "duplicateRenderKeyCount")
+    ? Math.max(0, Number(options.duplicateRenderKeyCount || 0))
+    : preDomShape.duplicateRenderKeyCount;
+  const renderedDomTurnIds = Array.isArray(options.renderedDomTurnIds)
+    ? options.renderedDomTurnIds.map(String).filter(Boolean)
+    : conversationDomTurnIds(conversation);
+  const expectedTurnIds = Array.isArray(options.expectedTurnIds)
+    ? options.expectedTurnIds.map(String).filter(Boolean)
+    : [];
   const updatePlan = threadDetailDomPatchApi.planConversationHtmlUpdate({
     signature,
     renderedConversationSignature: state.renderedConversationSignature,
@@ -12692,6 +12720,11 @@ function updateConversationHtml(html, signature, options = {}) {
     hasExistingChildren: Boolean(conversation && conversation.childNodes && conversation.childNodes.length),
     expectedVisibleTurnCount,
     renderedDomTurnCount,
+    expectedVisibleItemCount,
+    renderedDomItemCount,
+    duplicateRenderKeyCount,
+    expectedTurnIds,
+    renderedDomTurnIds,
   });
   const effectsPlan = threadDetailDomPatchApi.planConversationHtmlUpdateEffects(updatePlan);
   if (updatePlan.action === "hydrate-existing") {
@@ -12709,6 +12742,9 @@ function updateConversationHtml(html, signature, options = {}) {
     currentVisibleItems: Object.prototype.hasOwnProperty.call(options, "currentVisibleItems") ? options.currentVisibleItems : undefined,
     expectedVisibleTurnCount,
     renderedDomTurnCount,
+    expectedVisibleItemCount,
+    renderedDomItemCount,
+    duplicateRenderKeyCount,
     previousChildCount,
     threadId: state.currentThreadId || "",
   });
@@ -12735,6 +12771,33 @@ function updateConversationHtml(html, signature, options = {}) {
     if (applicationPlan.fallbackApplied) conversation.innerHTML = html;
   } else if (updatePlan.action === "set-inner-html") {
     conversation.innerHTML = html;
+  }
+  const postDomShape = conversationDomShape();
+  const postApplyConsistencyPlan = threadDetailDomPatchApi.planConversationPostApplyDomConsistency({
+    updatePlan,
+    applicationPlan,
+    expectedVisibleTurnCount,
+    renderedDomTurnCount: postDomShape.turnCount,
+    expectedVisibleItemCount,
+    renderedDomItemCount: postDomShape.itemCount,
+    duplicateRenderKeyCount: postDomShape.duplicateRenderKeyCount,
+    expectedTurnIds,
+    renderedDomTurnIds: conversationDomTurnIds(conversation),
+    readMode: state.currentThread && state.currentThread.mobileReadMode || "",
+  });
+  if (postApplyConsistencyPlan.shouldFallbackToInnerHtml && conversation) {
+    conversation.innerHTML = html;
+    applicationPlan = Object.assign({}, applicationPlan, {
+      finalAction: "set-inner-html",
+      fallbackApplied: true,
+      patchRejectReason: postApplyConsistencyPlan.reason,
+      reason: "post-apply-dom-inconsistent",
+    });
+  }
+  if (postApplyConsistencyPlan.shouldReport) {
+    recordHomeAiDiagnosticFailure(
+      threadDiagnosticEventsApi.detailPatchRejectedDiagnosticEvent(postApplyConsistencyPlan.diagnosticInput || {}),
+    );
   }
   const fallbackEventPlan = threadDetailDomPatchApi.planConversationHtmlPatchFallbackClientEvent({
     applicationPlan,
@@ -14216,12 +14279,16 @@ function renderThreadTileLayout(layout, options = {}) {
   const visibleShape = threadTileVisibleShape(ids);
   const expectedVisibleTurnCount = visibleShape.turnCount;
   const renderedDomTurnCount = threadTileDomTurnCount();
+  const renderedDomShape = conversationDomShape();
   setThreadTileConversationMode(true, displayLayout);
   updateConversationHtml(html, signature, {
     stickToBottom: options.stickToBottom === true,
     patchShellSignature: "",
     expectedVisibleTurnCount,
     renderedDomTurnCount,
+    expectedVisibleItemCount: visibleShape.visibleItemCount,
+    renderedDomItemCount: renderedDomShape.itemCount,
+    duplicateRenderKeyCount: renderedDomShape.duplicateRenderKeyCount,
     action: "thread-tile-empty-state",
     routeKind: "thread-tile",
     threadHash: diagnosticHash(`thread-tile:${ids.join("|")}`),
@@ -15553,12 +15620,20 @@ function renderCurrentThread(options = {}) {
   });
   updateLiveOperationDockHtml(liveOperationDock);
   const previousChildCount = $("conversation") ? $("conversation").childNodes.length : 0;
+  const renderVisibleShape = visibleConversationShape(thread);
+  const renderDomShape = conversationDomShape();
   const shellUpdatePlan = threadDetailRenderPlanApi.planSingleThreadShellConversationUpdate({
     shellPlan,
     conversationSignature: conversationRenderSignature(thread),
     patchShellSignature: conversationPatchShellSignature(thread),
     stickToBottom: shouldStickToBottom,
     expectedVisibleTurnCount: turns.length,
+    expectedVisibleItemCount: renderVisibleShape.visibleItemCount,
+    renderedDomTurnCount: conversationDomTurnIds().length,
+    renderedDomItemCount: renderDomShape.itemCount,
+    duplicateRenderKeyCount: renderDomShape.duplicateRenderKeyCount,
+    expectedTurnIds: visibleRenderableTurnIds(thread),
+    renderedDomTurnIds: conversationDomTurnIds(),
     source: "single-thread-render",
   });
   updateConversationHtml(shellUpdatePlan.html, shellUpdatePlan.conversationSignature, shellUpdatePlan.options);

@@ -3425,6 +3425,10 @@ test("thread refresh render planning invalidates empty DOM for nonempty single-t
   assert.match(body, /const refreshRenderStage = threadDetailRenderPlanApi\.planThreadDetailRefreshRenderStage\(\{/);
   assert.match(body, /singleThreadSurfaceAvailable: canPatchSingleThreadConversationDom\(\{ threadId \}\)/);
   assert.match(body, /renderedDomTurnCount: conversationDomTurnIds\(\)\.length/);
+  assert.match(body, /renderedDomItemCount: currentDomShape\.itemCount/);
+  assert.match(body, /duplicateRenderKeyCount: currentDomShape\.duplicateRenderKeyCount/);
+  assert.match(body, /expectedTurnIds: visibleRenderableTurnIds\(state\.currentThread\)/);
+  assert.match(body, /renderedDomTurnIds: conversationDomTurnIds\(\)/);
   assert.match(body, /nextVisibleShape,/);
   assert.match(body, /const renderPlan = refreshRenderStage\.renderPlan;/);
   assert.doesNotMatch(body, /planThreadDetailRefreshRenderInput\(\{/);
@@ -3433,20 +3437,34 @@ test("thread refresh render planning invalidates empty DOM for nonempty single-t
 
 test("conversation html update invalidates stable signatures when the DOM has lost visible turns", () => {
   const updateBody = functionBody("updateConversationHtml");
+  assert.match(updateBody, /const preDomShape = conversationDomShape\(\);/);
   assert.match(updateBody, /const expectedVisibleTurnCount = Math\.max\(0, Number\(options\.expectedVisibleTurnCount \|\| 0\)\);/);
-  assert.match(updateBody, /conversationDomTurnIds\(conversation\)\.length/);
+  assert.match(updateBody, /const expectedVisibleItemCount = Math\.max\(0, Number\(options\.expectedVisibleItemCount \|\| 0\)\);/);
+  assert.match(updateBody, /: preDomShape\.turnCount/);
+  assert.match(updateBody, /: preDomShape\.itemCount/);
+  assert.match(updateBody, /: preDomShape\.duplicateRenderKeyCount/);
   assert.match(updateBody, /expectedVisibleTurnCount,/);
   assert.match(updateBody, /renderedDomTurnCount,/);
+  assert.match(updateBody, /expectedVisibleItemCount,/);
+  assert.match(updateBody, /renderedDomItemCount,/);
+  assert.match(updateBody, /duplicateRenderKeyCount,/);
+  assert.match(updateBody, /expectedTurnIds,/);
+  assert.match(updateBody, /renderedDomTurnIds,/);
   assert.match(updateBody, /threadDetailDomPatchApi\.planConversationDomAuthorityInvalidation\(\{/);
   assert.match(updateBody, /if \(authorityInvalidationPlan\.shouldRecordMismatch\)/);
   assert.match(updateBody, /recordEmptyVisibleDetailMismatch\([\s\S]*authorityInvalidationPlan\.mismatchReason/);
   assert.match(updateBody, /if \(authorityInvalidationPlan\.shouldPostClientEvent\)/);
   assert.match(updateBody, /postClientEvent\(authorityInvalidationPlan\.clientEventName, authorityInvalidationPlan\.clientEventPayload\)/);
+  assert.match(updateBody, /threadDetailDomPatchApi\.planConversationPostApplyDomConsistency\(\{/);
+  assert.match(updateBody, /if \(postApplyConsistencyPlan\.shouldFallbackToInnerHtml && conversation\)/);
+  assert.match(updateBody, /threadDiagnosticEventsApi\.detailPatchRejectedDiagnosticEvent\(postApplyConsistencyPlan\.diagnosticInput \|\| \{\}\)/);
   assert.match(updateBody, /threadDetailDomPatchApi\.planConversationHtmlPerformanceEvent\(\{/);
   assert.match(updateBody, /updatePlan,/);
   assert.match(updateBody, /applicationPlan,/);
   assert.match(functionBody("visibleConversationShape"), /visibleItemsForTurn\(turn, thread\)\.length/);
   assert.match(functionBody("renderCurrentThread"), /expectedVisibleTurnCount: turns\.length/);
+  assert.match(functionBody("renderCurrentThread"), /expectedVisibleItemCount: renderVisibleShape\.visibleItemCount/);
+  assert.match(functionBody("renderCurrentThread"), /duplicateRenderKeyCount: renderDomShape\.duplicateRenderKeyCount/);
   assert.match(functionBody("renderCurrentThread"), /updateConversationHtml\(shellUpdatePlan\.html, shellUpdatePlan\.conversationSignature, shellUpdatePlan\.options\)/);
   assert.match(functionBody("visibleRenderableTurnIds"), /visibleItemsForTurn\(turn, thread\)\.length/);
   assert.match(functionBody("threadTileVisibleShape"), /visibleTurnsForConversation\(thread\)/);
@@ -3456,6 +3474,8 @@ test("conversation html update invalidates stable signatures when the DOM has lo
   assert.match(functionBody("renderThreadTileLayout"), /const visibleShape = threadTileVisibleShape\(ids\);/);
   assert.match(functionBody("renderThreadTileLayout"), /const expectedVisibleTurnCount = visibleShape\.turnCount;/);
   assert.match(functionBody("renderThreadTileLayout"), /const renderedDomTurnCount = threadTileDomTurnCount\(\);/);
+  assert.match(functionBody("renderThreadTileLayout"), /const renderedDomShape = conversationDomShape\(\);/);
+  assert.match(functionBody("renderThreadTileLayout"), /expectedVisibleItemCount: visibleShape\.visibleItemCount/);
   assert.match(functionBody("renderThreadTileLayout"), /routeKind: "thread-tile"/);
   assert.match(functionBody("renderThreadTileLayout"), /currentVisibleItems: visibleShape\.visibleItemCount/);
   assert.match(functionBody("renderThreadTileLayout"), /source: "thread-tile-render"/);

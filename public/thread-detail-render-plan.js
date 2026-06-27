@@ -27,6 +27,21 @@
     return Number.isFinite(numberValue) && numberValue > 0 ? Math.trunc(numberValue) : 0;
   }
 
+  function normalizedStringList(value) {
+    return Array.isArray(value) ? value.map((entry) => String(entry || "")).filter(Boolean) : [];
+  }
+
+  function turnOrderMismatch(expectedValue, renderedValue) {
+    const expected = normalizedStringList(expectedValue);
+    const rendered = normalizedStringList(renderedValue);
+    if (!expected.length) return false;
+    if (expected.length !== rendered.length) return true;
+    for (let index = 0; index < expected.length; index += 1) {
+      if (expected[index] !== rendered[index]) return true;
+    }
+    return false;
+  }
+
   function compactReason(value, fallback = "", maxLength = 80) {
     const reason = String(value || "").trim();
     return (reason || fallback).slice(0, maxLength);
@@ -325,6 +340,9 @@
     const nextVisibleTurnCount = Object.prototype.hasOwnProperty.call(input, "nextVisibleTurnCount")
       ? input.nextVisibleTurnCount
       : nextVisibleShape.visibleTurnCount;
+    const nextVisibleItemCount = Object.prototype.hasOwnProperty.call(input, "nextVisibleItemCount")
+      ? input.nextVisibleItemCount
+      : nextVisibleShape.visibleItemCount;
     return {
       previousConversationSignature: normalizeSignature(input.previousConversationSignature),
       nextConversationSignature: normalizeSignature(input.nextConversationSignature),
@@ -334,7 +352,12 @@
       allowPatch: input.allowPatch !== false,
       singleThreadSurfaceAvailable: input.singleThreadSurfaceAvailable === true,
       renderedDomTurnCount: normalizedCount(input.renderedDomTurnCount),
+      renderedDomItemCount: normalizedCount(input.renderedDomItemCount),
+      duplicateRenderKeyCount: normalizedCount(input.duplicateRenderKeyCount),
       nextVisibleTurnCount: normalizedCount(nextVisibleTurnCount),
+      nextVisibleItemCount: normalizedCount(nextVisibleItemCount),
+      expectedTurnIds: normalizedStringList(input.expectedTurnIds),
+      renderedDomTurnIds: normalizedStringList(input.renderedDomTurnIds),
     };
   }
 
@@ -349,12 +372,29 @@
     const singleThreadSurfaceAvailable = renderInput.singleThreadSurfaceAvailable === true;
     const renderedDomTurnCount = renderInput.renderedDomTurnCount;
     const nextVisibleTurnCount = renderInput.nextVisibleTurnCount;
-    const renderedDomEmptyForNonemptyDetail = Boolean(
+    const renderedDomMissingVisibleTurns = Boolean(
       singleThreadSurfaceAvailable
       && nextVisibleTurnCount > 0
-      && renderedDomTurnCount <= 0
+      && renderedDomTurnCount < nextVisibleTurnCount
     );
-    const shouldRenderDetail = renderedDomEmptyForNonemptyDetail
+    const renderedDomMissingVisibleItems = Boolean(
+      singleThreadSurfaceAvailable
+      && renderInput.nextVisibleItemCount > 0
+      && renderInput.renderedDomItemCount < renderInput.nextVisibleItemCount
+    );
+    const renderedDomDuplicateKeys = Boolean(
+      singleThreadSurfaceAvailable
+      && renderInput.duplicateRenderKeyCount > 0
+    );
+    const renderedDomTurnOrderMismatch = Boolean(
+      singleThreadSurfaceAvailable
+      && turnOrderMismatch(renderInput.expectedTurnIds, renderInput.renderedDomTurnIds)
+    );
+    const renderedDomInvalidForNonemptyDetail = renderedDomMissingVisibleTurns
+      || renderedDomMissingVisibleItems
+      || renderedDomDuplicateKeys
+      || renderedDomTurnOrderMismatch;
+    const shouldRenderDetail = renderedDomInvalidForNonemptyDetail
       || previousConversationSignature !== nextConversationSignature
       || renderedConversationSignature !== nextConversationSignature;
 
@@ -366,12 +406,17 @@
         reason: "signature-stable",
       };
     }
-    if (renderedDomEmptyForNonemptyDetail) {
+    if (renderedDomInvalidForNonemptyDetail) {
+      let reason = "rendered-dom-empty";
+      if (renderedDomDuplicateKeys) reason = "rendered-dom-duplicate-render-keys";
+      else if (renderedDomTurnOrderMismatch) reason = "rendered-dom-turn-order-mismatch";
+      else if (renderedDomMissingVisibleItems) reason = "rendered-dom-item-mismatch";
+      else if (renderedDomMissingVisibleTurns && renderedDomTurnCount > 0) reason = "rendered-dom-turn-mismatch";
       return {
         shouldRenderDetail: true,
         canPatch: false,
         detailRenderMode: "full-render",
-        reason: "rendered-dom-empty",
+        reason,
       };
     }
 
@@ -1804,6 +1849,12 @@
         stickToBottom: Boolean(input.stickToBottom),
         patchShellSignature: text(input.patchShellSignature),
         expectedVisibleTurnCount: normalizedCount(input.expectedVisibleTurnCount),
+        expectedVisibleItemCount: normalizedCount(input.expectedVisibleItemCount),
+        renderedDomTurnCount: normalizedCount(input.renderedDomTurnCount),
+        renderedDomItemCount: normalizedCount(input.renderedDomItemCount),
+        duplicateRenderKeyCount: normalizedCount(input.duplicateRenderKeyCount),
+        expectedTurnIds: normalizedStringList(input.expectedTurnIds),
+        renderedDomTurnIds: normalizedStringList(input.renderedDomTurnIds),
         source,
       },
       reason: source,

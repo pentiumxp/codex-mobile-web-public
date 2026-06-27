@@ -355,14 +355,52 @@ test("conversation HTML update plan invalidates stable signatures when visible t
   assert.equal(plan.nextRenderedConversationSignature, "sig-a");
   assert.equal(plan.nextRenderedConversationPatchShellSignature, "shell-new");
 
+  const partialPlan = domPatch.planConversationHtmlUpdate({
+    signature: "sig-a",
+    renderedConversationSignature: "sig-a",
+    hasExistingChildren: true,
+    expectedVisibleTurnCount: 3,
+    renderedDomTurnCount: 2,
+  });
+  assert.equal(partialPlan.action, "patch-html");
+  assert.equal(partialPlan.reason, "stable-signature-dom-turn-mismatch");
+
   const healthyPlan = domPatch.planConversationHtmlUpdate({
     signature: "sig-a",
     renderedConversationSignature: "sig-a",
     expectedVisibleTurnCount: 3,
-    renderedDomTurnCount: 2,
+    renderedDomTurnCount: 3,
   });
   assert.equal(healthyPlan.action, "hydrate-existing");
   assert.equal(healthyPlan.reason, "signature-stable");
+});
+
+test("conversation HTML update plan invalidates stable signatures for item/key/order mismatches", () => {
+  assert.equal(domPatch.planConversationHtmlUpdate({
+    signature: "sig-a",
+    renderedConversationSignature: "sig-a",
+    expectedVisibleTurnCount: 2,
+    renderedDomTurnCount: 2,
+    expectedVisibleItemCount: 5,
+    renderedDomItemCount: 4,
+  }).reason, "stable-signature-dom-item-mismatch");
+
+  assert.equal(domPatch.planConversationHtmlUpdate({
+    signature: "sig-a",
+    renderedConversationSignature: "sig-a",
+    expectedVisibleTurnCount: 2,
+    renderedDomTurnCount: 2,
+    duplicateRenderKeyCount: 1,
+  }).reason, "stable-signature-duplicate-render-keys");
+
+  assert.equal(domPatch.planConversationHtmlUpdate({
+    signature: "sig-a",
+    renderedConversationSignature: "sig-a",
+    expectedVisibleTurnCount: 2,
+    renderedDomTurnCount: 2,
+    expectedTurnIds: ["a", "b"],
+    renderedDomTurnIds: ["b", "a"],
+  }).reason, "stable-signature-turn-order-mismatch");
 });
 
 test("conversation HTML update effects preserve hydrate-existing ordering", () => {
@@ -452,6 +490,8 @@ test("conversation DOM authority invalidation is planned from stable empty DOM m
     currentVisibleItems: 9,
     expectedVisibleTurnCount: 3,
     renderedDomTurnCount: 0,
+    expectedVisibleItemCount: 6,
+    renderedDomItemCount: 0,
     previousChildCount: 2,
     threadId: "thread-123",
   });
@@ -467,6 +507,8 @@ test("conversation DOM authority invalidation is planned from stable empty DOM m
     currentTurns: 5,
     currentVisibleItems: 9,
     domCount: 0,
+    domItemCount: 0,
+    duplicateRenderKeyCount: 0,
     previousCount: 2,
   });
   assert.equal(plan.shouldPostClientEvent, true);
@@ -476,8 +518,27 @@ test("conversation DOM authority invalidation is planned from stable empty DOM m
     reason: "stable-signature-dom-empty",
     expectedVisibleTurnCount: 3,
     renderedDomTurnCount: 0,
+    expectedVisibleItemCount: 6,
+    renderedDomItemCount: 0,
+    duplicateRenderKeyCount: 0,
     action: "patch-html",
   });
+});
+
+test("conversation DOM authority invalidation covers non-empty projection shape mismatches", () => {
+  const plan = domPatch.planConversationDomAuthorityInvalidation({
+    updatePlan: {
+      action: "patch-html",
+      reason: "stable-signature-dom-turn-mismatch",
+    },
+    expectedVisibleTurnCount: 4,
+    renderedDomTurnCount: 2,
+    threadId: "thread-123",
+  });
+
+  assert.equal(plan.shouldRecordMismatch, true);
+  assert.equal(plan.mismatchReason, "stable_signature_dom_turn_mismatch");
+  assert.equal(plan.reason, "stable-signature-dom-turn-mismatch");
 });
 
 test("conversation DOM authority invalidation stays quiet for healthy updates", () => {
@@ -512,7 +573,7 @@ test("conversation DOM authority invalidation stays quiet for healthy updates", 
     shouldPostClientEvent: false,
     clientEventName: "",
     clientEventPayload: null,
-    reason: "no-expected-visible-turns",
+    reason: "no-expected-visible-content",
   });
 });
 
@@ -570,6 +631,64 @@ test("conversation HTML update application exposes patch outcomes", () => {
     patchRejectReason: "",
     reason: "set-inner-html",
   });
+});
+
+test("conversation post-apply DOM consistency requires fallback for partial patched DOM", () => {
+  const plan = domPatch.planConversationPostApplyDomConsistency({
+    updatePlan: {
+      action: "patch-html",
+      reason: "signature-changed",
+    },
+    applicationPlan: {
+      finalAction: "patch-html",
+    },
+    expectedVisibleTurnCount: 3,
+    renderedDomTurnCount: 2,
+    expectedVisibleItemCount: 5,
+    renderedDomItemCount: 5,
+    readMode: "recent",
+  });
+
+  assert.equal(plan.ok, false);
+  assert.equal(plan.shouldFallbackToInnerHtml, true);
+  assert.equal(plan.shouldReport, true);
+  assert.equal(plan.reason, "post-apply-dom-turn-mismatch");
+  assert.deepEqual(plan.diagnosticInput, {
+    readMode: "recent",
+    renderMode: "patch-html",
+    renderPlanReason: "signature-changed",
+    patchRejectReason: "post-apply-dom-turn-mismatch",
+    previousVisibleItemCount: 5,
+    visibleItemCount: 5,
+  });
+
+  assert.deepEqual(domPatch.planConversationPostApplyDomConsistency({
+    updatePlan: { action: "set-inner-html", reason: "signature-changed" },
+    applicationPlan: { finalAction: "set-inner-html" },
+    expectedVisibleTurnCount: 1,
+    renderedDomTurnCount: 1,
+    expectedVisibleItemCount: 2,
+    renderedDomItemCount: 2,
+  }), {
+    ok: true,
+    shouldFallbackToInnerHtml: false,
+    shouldReport: false,
+    reason: "dom-consistent",
+    diagnosticInput: null,
+  });
+});
+
+test("conversation post-apply DOM consistency reports duplicate keys and order mismatches", () => {
+  assert.equal(domPatch.planConversationPostApplyDomConsistency({
+    applicationPlan: { finalAction: "set-inner-html" },
+    duplicateRenderKeyCount: 2,
+  }).reason, "post-apply-duplicate-render-keys");
+
+  assert.equal(domPatch.planConversationPostApplyDomConsistency({
+    applicationPlan: { finalAction: "patch-html" },
+    expectedTurnIds: ["a", "b"],
+    renderedDomTurnIds: ["b", "a"],
+  }).reason, "post-apply-turn-order-mismatch");
 });
 
 test("conversation HTML patch fallback client event plan bounds payload fields", () => {

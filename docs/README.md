@@ -68,23 +68,19 @@ checks, and stay undeployed until several compatible slices form a coherent
 runtime module. Do not bump shell/cache, deploy production, or push Public for
 each micro-slice unless the user explicitly asks.
 
-The current local module candidate is focused on pane-local context ownership:
-thread metadata, metadata notifications, pending actions, pending-action
-request/update notifications, pending-action resolution notifications,
-task-card draft state, task-card pending counts, optimistic thread status,
-failed-send status restore, thread status notifications, and pane toolbar
-actions, older-history pagination, and continuation confirmation dialogs must
-all update or operate on the target pane instead of falling back to the global
-current thread. Manual task-card creation must also use the source pane's live
-turn id and refresh the source pane after card creation. In-turn approval and
-user-input controls must render action thread ids from the active pane/render
-context when the server request itself omits a thread id. Tile panes must also
-render visible-turn approvals inline and non-visible-turn pending approvals in
-the pane body, matching the single-thread surface instead of dropping pane-local
-requests.
+The current deployable module candidate is focused on projection consistency.
+Stable render signatures are not sufficient proof that the DOM is correct:
+single-thread and tile refresh planning must also validate visible turn count,
+visible item count, duplicate render keys, and single-thread turn order before
+choosing metadata-only or patch rendering. After a patch is applied,
+`updateConversationHtml()` re-reads the DOM shape and falls back to canonical
+HTML if the DOM still violates the projection shape. v4 notification
+normalization must derive item visible keys from nested `turn.id` when present
+and keep duplicate visible keys unique inside a turn. Projection replay visual
+smoke now compares API visible-key hashes to DOM render-key hashes and reports
+only bounded mismatch counts.
 
-The current pane/context batch is prepared as deployable shell
-`codex-mobile-shell-v544`. It remains local until the Owner explicitly chooses
-deployment. Deployment should use the central Home AI macOS plugin deploy path
-and should be followed by `/api/public-config` readback plus pane/thread-tile
-smoke observation.
+The current projection-consistency batch is prepared as deployable shell
+`codex-mobile-shell-v545`. It should be committed, deployed through the central
+Home AI macOS plugin deploy path, and followed by `/api/public-config` readback
+plus bounded projection replay smoke.

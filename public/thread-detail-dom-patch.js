@@ -37,6 +37,25 @@
     return Number.isFinite(numberValue) && numberValue > 0 ? Math.trunc(numberValue) : 0;
   }
 
+  function hasOwn(input, key) {
+    return Object.prototype.hasOwnProperty.call(input, key);
+  }
+
+  function normalizedStringList(value) {
+    return Array.isArray(value) ? value.map((entry) => String(entry || "")).filter(Boolean) : [];
+  }
+
+  function visibleTurnOrderMismatch(input = {}) {
+    const expected = normalizedStringList(input.expectedTurnIds);
+    const rendered = normalizedStringList(input.renderedDomTurnIds || input.domTurnIds);
+    if (!expected.length) return false;
+    if (expected.length !== rendered.length) return true;
+    for (let index = 0; index < expected.length; index += 1) {
+      if (expected[index] !== rendered[index]) return true;
+    }
+    return false;
+  }
+
   function boundedDuration(value) {
     const numberValue = Number(value);
     return Number.isFinite(numberValue) && numberValue >= 0 ? Math.round(numberValue) : 0;
@@ -187,13 +206,35 @@
     const stableSignature = renderedConversationSignature === signature;
     const expectedVisibleTurnCount = Math.max(0, Number(input.expectedVisibleTurnCount || 0));
     const renderedDomTurnCount = Math.max(0, Number(input.renderedDomTurnCount || 0));
+    const expectedVisibleItemCount = boundedCount(input.expectedVisibleItemCount);
+    const renderedDomItemCount = boundedCount(input.renderedDomItemCount);
+    const duplicateRenderKeyCount = boundedCount(input.duplicateRenderKeyCount);
     const stableSignatureButMissingTurns = Boolean(
       stableSignature
       && expectedVisibleTurnCount > 0
-      && renderedDomTurnCount <= 0
+      && renderedDomTurnCount < expectedVisibleTurnCount
     );
+    const stableSignatureButMissingItems = Boolean(
+      stableSignature
+      && expectedVisibleItemCount > 0
+      && hasOwn(input, "renderedDomItemCount")
+      && renderedDomItemCount < expectedVisibleItemCount
+    );
+    const stableSignatureButDuplicateKeys = Boolean(stableSignature && duplicateRenderKeyCount > 0);
+    const stableSignatureButTurnOrderMismatch = Boolean(stableSignature && visibleTurnOrderMismatch(input));
+    const stableSignatureDomInvalid = stableSignatureButMissingTurns
+      || stableSignatureButMissingItems
+      || stableSignatureButDuplicateKeys
+      || stableSignatureButTurnOrderMismatch;
+    let invalidationReason = "signature-changed";
+    if (stableSignatureButDuplicateKeys) invalidationReason = "stable-signature-duplicate-render-keys";
+    else if (stableSignatureButTurnOrderMismatch) invalidationReason = "stable-signature-turn-order-mismatch";
+    else if (stableSignatureButMissingItems) invalidationReason = "stable-signature-dom-item-mismatch";
+    else if (stableSignatureButMissingTurns) {
+      invalidationReason = renderedDomTurnCount <= 0 ? "stable-signature-dom-empty" : "stable-signature-dom-turn-mismatch";
+    }
     const scrollAction = input.stickToBottom ? "scroll-to-bottom" : "update-bottom-button";
-    if (stableSignature && !stableSignatureButMissingTurns) {
+    if (stableSignature && !stableSignatureDomInvalid) {
       return {
         action: "hydrate-existing",
         changed: false,
@@ -218,7 +259,7 @@
       fallbackAction: "set-inner-html",
       changed: true,
       stableSignature,
-      reason: stableSignatureButMissingTurns ? "stable-signature-dom-empty" : "signature-changed",
+      reason: invalidationReason,
       signature,
       patchShellSignature,
       updateRenderedConversationSignature: true,
@@ -343,6 +384,66 @@
     };
   }
 
+  function compactMismatchReason(reason) {
+    return String(reason || "unknown")
+      .replace(/[^a-z0-9_-]+/gi, "_")
+      .replace(/-+/g, "_")
+      .slice(0, 80) || "unknown";
+  }
+
+  function conversationDomConsistencyReason(input = {}) {
+    const expectedVisibleTurnCount = boundedCount(input.expectedVisibleTurnCount);
+    const renderedDomTurnCount = boundedCount(input.renderedDomTurnCount);
+    const expectedVisibleItemCount = boundedCount(input.expectedVisibleItemCount);
+    const renderedDomItemCount = boundedCount(input.renderedDomItemCount);
+    const duplicateRenderKeyCount = boundedCount(input.duplicateRenderKeyCount);
+    if (duplicateRenderKeyCount > 0) return "post-apply-duplicate-render-keys";
+    if (visibleTurnOrderMismatch(input)) return "post-apply-turn-order-mismatch";
+    if (expectedVisibleItemCount > 0
+      && hasOwn(input, "renderedDomItemCount")
+      && renderedDomItemCount < expectedVisibleItemCount) {
+      return "post-apply-dom-item-mismatch";
+    }
+    if (expectedVisibleTurnCount > 0 && renderedDomTurnCount < expectedVisibleTurnCount) {
+      return renderedDomTurnCount <= 0 ? "post-apply-dom-empty" : "post-apply-dom-turn-mismatch";
+    }
+    return "";
+  }
+
+  function planConversationPostApplyDomConsistency(input = {}) {
+    const updatePlan = objectOrEmpty(input.updatePlan);
+    const applicationPlan = objectOrEmpty(input.applicationPlan);
+    const reason = conversationDomConsistencyReason(input);
+    if (!reason) {
+      return {
+        ok: true,
+        shouldFallbackToInnerHtml: false,
+        shouldReport: false,
+        reason: "dom-consistent",
+        diagnosticInput: null,
+      };
+    }
+    const finalAction = String(applicationPlan.finalAction || updatePlan.action || "");
+    const expectedVisibleTurnCount = boundedCount(input.expectedVisibleTurnCount);
+    const renderedDomTurnCount = boundedCount(input.renderedDomTurnCount);
+    const expectedVisibleItemCount = boundedCount(input.expectedVisibleItemCount);
+    const renderedDomItemCount = boundedCount(input.renderedDomItemCount);
+    return {
+      ok: false,
+      shouldFallbackToInnerHtml: finalAction !== "set-inner-html",
+      shouldReport: true,
+      reason,
+      diagnosticInput: {
+        readMode: optionalBoundedString(input, "readMode", 80) || "",
+        renderMode: finalAction.slice(0, 40),
+        renderPlanReason: String(updatePlan.reason || "").slice(0, 80),
+        patchRejectReason: reason,
+        previousVisibleItemCount: renderedDomItemCount || renderedDomTurnCount,
+        visibleItemCount: expectedVisibleItemCount || expectedVisibleTurnCount,
+      },
+    };
+  }
+
   function planConversationHtmlPatchFallbackClientEvent(input = {}) {
     const applicationPlan = objectOrEmpty(input.applicationPlan || input.plan);
     if (!applicationPlan.fallbackApplied) {
@@ -370,10 +471,6 @@
     };
   }
 
-  function hasOwn(input, key) {
-    return Object.prototype.hasOwnProperty.call(input, key);
-  }
-
   function optionalBoundedString(input, key, max = 120) {
     if (!hasOwn(input, key) || input[key] === undefined || input[key] === null) return undefined;
     const value = String(input[key] || "").slice(0, max);
@@ -384,9 +481,20 @@
     const updatePlan = objectOrEmpty(input.updatePlan || input.plan);
     const expectedVisibleTurnCount = boundedCount(input.expectedVisibleTurnCount);
     const renderedDomTurnCount = boundedCount(input.renderedDomTurnCount);
+    const expectedVisibleItemCount = boundedCount(input.expectedVisibleItemCount);
+    const renderedDomItemCount = boundedCount(input.renderedDomItemCount);
+    const duplicateRenderKeyCount = boundedCount(input.duplicateRenderKeyCount);
+    const reason = String(updatePlan.reason || "");
+    const invalidationReasons = new Set([
+      "stable-signature-dom-empty",
+      "stable-signature-dom-turn-mismatch",
+      "stable-signature-dom-item-mismatch",
+      "stable-signature-duplicate-render-keys",
+      "stable-signature-turn-order-mismatch",
+    ]);
     const shouldInvalidate = Boolean(
-      updatePlan.reason === "stable-signature-dom-empty"
-      && expectedVisibleTurnCount > 0
+      invalidationReasons.has(reason)
+      && (expectedVisibleTurnCount > 0 || expectedVisibleItemCount > 0 || duplicateRenderKeyCount > 0)
     );
     if (!shouldInvalidate) {
       return {
@@ -396,7 +504,7 @@
         shouldPostClientEvent: false,
         clientEventName: "",
         clientEventPayload: null,
-        reason: updatePlan.reason === "stable-signature-dom-empty" ? "no-expected-visible-turns" : "not-authority-invalidated",
+        reason: invalidationReasons.has(reason) ? "no-expected-visible-content" : "not-authority-invalidated",
       };
     }
     const mismatchPayload = {
@@ -408,22 +516,27 @@
       currentTurns: hasOwn(input, "currentTurns") ? input.currentTurns : undefined,
       currentVisibleItems: hasOwn(input, "currentVisibleItems") ? input.currentVisibleItems : undefined,
       domCount: renderedDomTurnCount,
+      domItemCount: renderedDomItemCount,
+      duplicateRenderKeyCount,
       previousCount: boundedCount(input.previousChildCount),
     };
     return {
       shouldRecordMismatch: true,
-      mismatchReason: "stable_signature_dom_empty",
+      mismatchReason: compactMismatchReason(reason),
       mismatchPayload,
       shouldPostClientEvent: true,
       clientEventName: "conversation_dom_authority_invalidated",
       clientEventPayload: {
         threadId: String(input.threadId || ""),
-        reason: String(updatePlan.reason || "").slice(0, 80),
+        reason: reason.slice(0, 80),
         expectedVisibleTurnCount,
         renderedDomTurnCount,
+        expectedVisibleItemCount,
+        renderedDomItemCount,
+        duplicateRenderKeyCount,
         action: String(updatePlan.action || "").slice(0, 40),
       },
-      reason: "stable-signature-dom-empty",
+      reason,
     };
   }
 
@@ -601,10 +714,6 @@
       document: input.document,
       html,
     });
-  }
-
-  function hasOwn(object, key) {
-    return Object.prototype.hasOwnProperty.call(object, key);
   }
 
   function hydrateRenderedSurface(input = {}) {
@@ -950,6 +1059,7 @@
     planConversationHtmlUpdate,
     planConversationHtmlUpdateEffects,
     planConversationHtmlUpdateApplication,
+    planConversationPostApplyDomConsistency,
     planConversationDomAuthorityInvalidation,
     planConversationHtmlPatchFallbackClientEvent,
     planConversationHtmlPerformanceEvent,
@@ -961,5 +1071,6 @@
     resolveTurnInsertAnchor,
     syncAttributes,
     threadDetailPatchResult,
+    visibleTurnOrderMismatch,
   };
 }));

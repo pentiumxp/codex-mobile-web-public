@@ -290,7 +290,11 @@ test("thread detail refresh render input owns app fact field selection", () => {
     allowPatch: false,
     singleThreadSurfaceAvailable: true,
     renderedDomTurnCount: "2.9",
-    nextVisibleShape: { visibleTurnCount: "4.8" },
+    renderedDomItemCount: "6.2",
+    duplicateRenderKeyCount: "1.9",
+    nextVisibleShape: { visibleTurnCount: "4.8", visibleItemCount: "9.7" },
+    expectedTurnIds: ["turn-a", "", "turn-b"],
+    renderedDomTurnIds: ["turn-a"],
   }), {
     previousConversationSignature: "prev-sig",
     nextConversationSignature: "next-sig",
@@ -300,11 +304,16 @@ test("thread detail refresh render input owns app fact field selection", () => {
     allowPatch: false,
     singleThreadSurfaceAvailable: true,
     renderedDomTurnCount: 2,
+    renderedDomItemCount: 6,
+    duplicateRenderKeyCount: 1,
     nextVisibleTurnCount: 4,
+    nextVisibleItemCount: 9,
+    expectedTurnIds: ["turn-a", "turn-b"],
+    renderedDomTurnIds: ["turn-a"],
   });
 
   assert.equal(renderPlan.planThreadDetailRefreshRenderInput({
-    nextVisibleShape: { visibleTurnCount: 4 },
+    nextVisibleShape: { visibleTurnCount: 4, visibleItemCount: 8 },
     nextVisibleTurnCount: 7,
   }).nextVisibleTurnCount, 7);
 });
@@ -317,8 +326,9 @@ test("thread detail refresh render stage owns input normalization and render dec
     previousPatchShellSignature: "shell-a",
     renderedPatchShellSignature: "shell-a",
     singleThreadSurfaceAvailable: true,
-    renderedDomTurnCount: "3",
-    nextVisibleShape: { visibleTurnCount: "5" },
+    renderedDomTurnCount: "5",
+    renderedDomItemCount: "7",
+    nextVisibleShape: { visibleTurnCount: "5", visibleItemCount: "7" },
   });
 
   assert.deepEqual(stage.refreshRenderInput, {
@@ -329,8 +339,13 @@ test("thread detail refresh render stage owns input normalization and render dec
     renderedPatchShellSignature: "shell-a",
     allowPatch: true,
     singleThreadSurfaceAvailable: true,
-    renderedDomTurnCount: 3,
+    renderedDomTurnCount: 5,
+    renderedDomItemCount: 7,
+    duplicateRenderKeyCount: 0,
     nextVisibleTurnCount: 5,
+    nextVisibleItemCount: 7,
+    expectedTurnIds: [],
+    renderedDomTurnIds: [],
   });
   assert.deepEqual(stage.renderPlan, {
     shouldRenderDetail: true,
@@ -385,6 +400,50 @@ test("thread detail refresh render plan invalidates stale empty single-thread DO
   });
   assert.equal(tileTransitionPlan.shouldRenderDetail, false);
   assert.equal(tileTransitionPlan.reason, "signature-stable");
+});
+
+test("thread detail refresh render plan invalidates partial or corrupt stable DOM", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshRender({
+    previousConversationSignature: "sig-a",
+    nextConversationSignature: "sig-a",
+    renderedConversationSignature: "sig-a",
+    singleThreadSurfaceAvailable: true,
+    renderedDomTurnCount: 2,
+    nextVisibleTurnCount: 3,
+  }), {
+    shouldRenderDetail: true,
+    canPatch: false,
+    detailRenderMode: "full-render",
+    reason: "rendered-dom-turn-mismatch",
+  });
+
+  assert.equal(renderPlan.planThreadDetailRefreshRender({
+    previousConversationSignature: "sig-a",
+    nextConversationSignature: "sig-a",
+    renderedConversationSignature: "sig-a",
+    singleThreadSurfaceAvailable: true,
+    renderedDomTurnCount: 3,
+    nextVisibleTurnCount: 3,
+    renderedDomItemCount: 4,
+    nextVisibleItemCount: 5,
+  }).reason, "rendered-dom-item-mismatch");
+
+  assert.equal(renderPlan.planThreadDetailRefreshRender({
+    previousConversationSignature: "sig-a",
+    nextConversationSignature: "sig-a",
+    renderedConversationSignature: "sig-a",
+    singleThreadSurfaceAvailable: true,
+    duplicateRenderKeyCount: 1,
+  }).reason, "rendered-dom-duplicate-render-keys");
+
+  assert.equal(renderPlan.planThreadDetailRefreshRender({
+    previousConversationSignature: "sig-a",
+    nextConversationSignature: "sig-a",
+    renderedConversationSignature: "sig-a",
+    singleThreadSurfaceAvailable: true,
+    expectedTurnIds: ["a", "b"],
+    renderedDomTurnIds: ["b", "a"],
+  }).reason, "rendered-dom-turn-order-mismatch");
 });
 
 test("thread detail refresh render plan allows patch only when current DOM matches previous detail", () => {
@@ -2739,6 +2798,12 @@ test("single-thread shell conversation update plans stable update inputs", () =>
     patchShellSignature: "patch|thread-1",
     stickToBottom: true,
     expectedVisibleTurnCount: 2,
+    expectedVisibleItemCount: 4.9,
+    renderedDomTurnCount: 1.8,
+    renderedDomItemCount: 3.2,
+    duplicateRenderKeyCount: 1.1,
+    expectedTurnIds: ["a", "b"],
+    renderedDomTurnIds: ["a"],
     source: "single-thread-render",
   }), {
     html: "<turn/>",
@@ -2747,6 +2812,12 @@ test("single-thread shell conversation update plans stable update inputs", () =>
       stickToBottom: true,
       patchShellSignature: "patch|thread-1",
       expectedVisibleTurnCount: 2,
+      expectedVisibleItemCount: 4,
+      renderedDomTurnCount: 1,
+      renderedDomItemCount: 3,
+      duplicateRenderKeyCount: 1,
+      expectedTurnIds: ["a", "b"],
+      renderedDomTurnIds: ["a"],
       source: "single-thread-render",
     },
     reason: "single-thread-render",
@@ -2767,6 +2838,12 @@ test("single-thread shell conversation update plans stable update inputs", () =>
       stickToBottom: false,
       patchShellSignature: "patch|thread-2",
       expectedVisibleTurnCount: 0,
+      expectedVisibleItemCount: 0,
+      renderedDomTurnCount: 0,
+      renderedDomItemCount: 0,
+      duplicateRenderKeyCount: 0,
+      expectedTurnIds: [],
+      renderedDomTurnIds: [],
       source: "single-thread-early-shell",
     },
     reason: "single-thread-early-shell",

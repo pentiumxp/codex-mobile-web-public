@@ -186,6 +186,32 @@ client state:
 6. Scroll preservation should use visible keys and element anchors, not broad
    thread-object equality.
 
+## Projection Consistency Authority
+
+As of `codex-mobile-shell-v545`, a stable conversation signature is not enough
+to prove the browser surface is correct. The client must treat the server v4
+projection as authoritative and validate the rendered DOM against bounded shape
+evidence:
+
+- expected visible turn count;
+- expected visible item count;
+- duplicate `data-render-key` count;
+- single-thread visible turn order;
+- v4 `mobileVisibleKey` / DOM render-key correspondence in replay smoke.
+
+If the signature is stable but the DOM has fewer visible turns/items, duplicate
+render keys, or a different single-thread order, the DOM authority is
+invalidated and the conversation must render from canonical HTML instead of
+metadata-only hydration. If a patch reports success but the post-apply DOM still
+violates those invariants, the browser falls back to the full HTML generated
+from canonical state and emits only bounded diagnostic counts/reasons.
+
+Notification normalization is part of the same invariant: item-only
+notifications that carry `params.turn.id` must produce the same visible key as a
+full projection read, and duplicate visible keys inside one turn must be made
+unique during v4 normalization. The UI must not hide duplicate DOM rows as a
+substitute for fixing projection identity.
+
 ## Shadow Comparison
 
 Before broad runtime cutover, v4 should be able to run in shadow mode:
