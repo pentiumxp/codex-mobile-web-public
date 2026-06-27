@@ -19937,3 +19937,37 @@ The previous full handoff was archived and should be opened only when old proven
   - Consider batching the current v539 Phase B local commits for shell/cache
     bump and deployment unless another equally small root-cause backend slice is
     clearly separable.
+
+## 2026-06-27 - v539 Phase B thread-list module prep
+
+- Current local state:
+  - After local commits `4b96222`, `2dc5caa`, `5e463b2`, `1373160`, and
+    `e6fc874`, the Phase B thread-list request/fallback work is now large
+    enough to batch as a module instead of continuing micro-slices.
+  - Prepared the v539 bump: `public/app.js` `CLIENT_BUILD_ID` and
+    `public/sw.js` `CACHE_NAME` move from `codex-mobile-shell-v538` to
+    `codex-mobile-shell-v539`.
+- Module boundary:
+  - Route merge attribution, summary merge attribution, request-context shared
+    archived/session-index/cached-display reads, request-scoped rollout stat
+    reads, and rollout fallback status stat reuse.
+  - Still no change to thread-list row semantics, ordering, hidden/subagent/
+    archive rules, fallback cache semantics, app-server query parameters, or
+    rollout-tail status authority.
+- Validation:
+  - Focused v539 Phase B suite passed (`107` tests):
+    `node --test test/thread-list-request-context-service.test.js test/thread-list-summary-merge-service.test.js test/thread-list-route-merge-service.test.js test/thread-list-fallback-baseline-service.test.js test/thread-list-fallback-cache-service.test.js test/thread-visibility.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js`.
+  - Full `npm test` passed (`1219` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - Full-test follow-up updated stale source-string/version tests for the new
+    `mergeThreadDisplaySummary(base, display, options = {})` signature, v539
+    shell id, and request-context `archivedIds` injection semantics. No runtime
+    behavior was changed for these test updates.
+- Next:
+  - Commit the v539 bump/docs/test assertion updates.
+  - Deploy through the Home AI central macOS plugin deploy path.
+  - Post-deploy readback should confirm `clientBuildId` /
+    `shellCacheName=codex-mobile-shell-v539` and include the new Phase B
+    counters, especially request-context and fallback status stat counters.

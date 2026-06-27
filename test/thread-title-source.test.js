@@ -9,14 +9,14 @@ const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "ut
 const summaryServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-detail-summary-service.js"), "utf8");
 
 test("thread detail refreshes display title from app-server summary", () => {
-  assert.match(serverJs, /function mergeThreadDisplaySummary\(base, display\)/);
+  assert.match(serverJs, /function mergeThreadDisplaySummary\(base, display, options = \{\}\)/);
   assert.match(serverJs, /createThreadDetailSummaryService\(\{\s*readStateDbThread,\s*readStartedThread,\s*readRolloutSessionFallbackThread,\s*readThreadSummaryFromAppServer,\s*mergeThreadDisplaySummary,/);
   assert.match(summaryServiceJs, /summary = mergeThreadDisplaySummary\(summary, appServerSummary\);/);
   assert.match(summaryServiceJs, /source = `\$\{source\}\+app-server`;/);
 });
 
 test("thread display summary keeps local runtime fields while accepting display fields", () => {
-  const helperStart = serverJs.indexOf("function mergeThreadDisplaySummary(base, display)");
+  const helperStart = serverJs.indexOf("function mergeThreadDisplaySummary(base, display, options = {})");
   assert.notEqual(helperStart, -1, "missing mergeThreadDisplaySummary helper");
   const helperEnd = serverJs.indexOf("function mergeThreadRuntimeFromStateDb", helperStart);
   assert.ok(helperEnd > helperStart, "helper should be placed before runtime merge");

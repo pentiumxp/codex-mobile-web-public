@@ -16,6 +16,41 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-27 v539 Phase B Thread-List Request/Fallback Module
+
+v539 将 v538 后累积的 Phase B thread-list 小切片收束为一个模块，而不是逐个
+小优化部署。本模块仍不改变 `/api/threads` 的 row 语义、排序、归档/隐藏规则、
+fallback cache 语义或 app-server 查询参数；目标是把大 session / thread-list
+路径中的重复同步读取收敛到清晰的 request/source 边界，并让生产读回能解释慢点。
+
+本模块包含：
+
+- `4b96222`：route-level merge 归因，新增 `routeMerge*` bounded counters。
+- `2dc5caa`：summary merge service 化，新增 `summaryMerge*` stage counters/timings。
+- `5e463b2`：request context 共享 archived ids、session-index entries、cached
+  display summary reads。
+- `1373160`：request-scoped rollout stat reader，减少 visible filter / cached
+  display merge / duplicate merge 内重复 stat。
+- `e6fc874`：rollout fallback summary read 到 status attach 之间复用已验证
+  `fs.Stats`，但 active/completed 状态仍由 rollout tail 实时判断。
+
+本次 bump：`CLIENT_BUILD_ID` 和 PWA shell cache 从
+`codex-mobile-shell-v538` 升到 `codex-mobile-shell-v539`。
+
+预部署验证已通过：
+
+```bash
+node --test test/thread-list-request-context-service.test.js test/thread-list-summary-merge-service.test.js test/thread-list-route-merge-service.test.js test/thread-list-fallback-baseline-service.test.js test/thread-list-fallback-cache-service.test.js test/thread-visibility.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js  # 107 passed
+npm test  # 1219 passed
+npm run check  # passed
+npm run check:macos  # passed
+git diff --check  # passed
+```
+
+全量测试暴露了几处旧 source-string/version 断言仍固定在 v538 或旧函数签名。
+本次同步更新测试断言到 v539 和 request-context archived id 注入语义；没有因此改变
+运行时业务逻辑。
+
 ## 2026-06-27 v538 Phase B Selected Mux Runtime / Phase A Conversation Patch Module
 
 v538 将 v537 后累积的本地切片收束为一个模块，而不是逐个小优化部署：

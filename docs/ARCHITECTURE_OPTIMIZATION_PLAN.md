@@ -380,7 +380,10 @@ Current acceleration targets:
    path still reads rollout tail through `inferRolloutFallbackStatus`, so
    active/completed evidence remains tail-authoritative. Readback exposes only
    numeric `fallbackRolloutStatusStatReadCount` and
-   `fallbackRolloutStatusStatReuseCount`.
+   `fallbackRolloutStatusStatReuseCount`. These route/summary/request-context
+   slices are batched as `codex-mobile-shell-v539` so production readback can
+   validate the module as one coherent thread-list request/fallback boundary
+   change rather than as several isolated micro-deploys.
    Earlier local
    fallback attribution slices also made baseline source work explicit:
    fallback baseline source reads now
