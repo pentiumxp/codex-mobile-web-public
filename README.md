@@ -100,6 +100,31 @@ node --check public/app.js
 node --test test/conversation-render.test.js test/thread-detail-dom-patch.test.js  # 161 passed
 ```
 
+## 2026-06-27 Phase A Local Patch Transaction Effects Slice
+
+这是上一个 completion snapshot 切片之后的第二个本地小切片，继续按“本地小提交、
+模块验证后再部署”的节奏推进，不单独部署、不推 Public。
+
+改动边界：
+
+- `threadDetailDomPatchApi.planThreadDetailRefreshLocalPatchTransactionEffects()`
+  现在负责规划 refresh local patch 事务的 commit effects 和 after-success effects；
+- `patchCurrentThreadDetailFromRefresh()` 不再内联
+  `complete-local-conversation-dom-update`、operation dock refresh、action bind
+  的事务副作用数组；
+- `public/app.js` 只把 helper 计划映射成真实 DOM/state 回调，仍然保留实际
+  DOM 操作、dock 更新和事件绑定副作用；
+- 事务顺序保持不变：turn DOM patch 成功后先完成 local conversation DOM commit，
+  commit 成功后才刷新 operation dock 和重新绑定 actions；
+- 不改变 server projection、merge、scroll-follow policy、shell/cache 版本或生产部署状态。
+
+验证：
+
+```bash
+node --check public/thread-detail-dom-patch.js && node --check public/app.js
+node --test test/thread-detail-dom-patch.test.js test/conversation-render.test.js test/mobile-viewport.test.js  # 173 passed
+```
+
 ## 2026-06-27 Phase A Conversation DOM Authority Invalidation Local Slice
 
 这是 v542 后继续按“小切片本地提交、模块化再部署”节奏推进的 Phase A 切片。

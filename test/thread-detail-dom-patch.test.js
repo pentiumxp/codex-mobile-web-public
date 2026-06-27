@@ -889,6 +889,40 @@ test("local conversation DOM update completion effects plan preserves terminal n
   ]);
 });
 
+test("thread detail refresh local patch transaction effects preserve commit order", () => {
+  const completionSnapshot = domPatch.planLocalConversationDomUpdateCompletionSnapshot({
+    tilePanePatched: false,
+    canPatchSingleThread: true,
+    hasRoot: true,
+    conversationSignature: "sig-next",
+    patchShellSignature: "shell-next",
+    scrollAction: "scroll-to-bottom",
+  });
+
+  assert.deepEqual(domPatch.planThreadDetailRefreshLocalPatchTransactionEffects({
+    completionSnapshot,
+  }), {
+    commitEffects: [
+      {
+        type: "complete-local-conversation-dom-update",
+        name: "complete-local-conversation-dom-update",
+        completionSnapshot,
+      },
+    ],
+    afterSuccess: [
+      {
+        type: "update-live-operation-dock",
+        name: "update-live-operation-dock",
+      },
+      {
+        type: "bind-current-thread-actions",
+        name: "bind-current-thread-actions",
+      },
+    ],
+    reason: "refresh-local-patch-transaction-effects",
+  });
+});
+
 function applyFixture(article, patchPlan, options = {}) {
   return domPatch.applyVisibleItemRefreshDomPatch({
     article,

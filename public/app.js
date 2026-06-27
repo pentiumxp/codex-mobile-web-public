@@ -14783,6 +14783,55 @@ function patchLiveTextItemDom(turn, item) {
   return completeLocalConversationDomUpdate(patchResult.target, wasNearBottom, userReadingCurrentTurn);
 }
 
+function threadDetailRefreshLocalPatchTransactionCallback(effect, context = {}) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  const type = String(item.type || item.name || "");
+  if (type === "complete-local-conversation-dom-update") {
+    return {
+      name: "complete-local-conversation-dom-update",
+      apply: () => completeLocalConversationDomUpdate(
+        context.conversation,
+        context.wasNearBottom,
+        context.userReadingCurrentTurn,
+        { completionSnapshot: item.completionSnapshot || {} },
+      )
+        ? { ok: true }
+        : { ok: false, reason: "complete-dom-update-failed" },
+    };
+  }
+  if (type === "update-live-operation-dock") {
+    return {
+      name: "update-live-operation-dock",
+      apply: () => {
+        updateLiveOperationDockHtml(renderLiveOperationDock(context.nextThread, context.previousKeys));
+        return { ok: true };
+      },
+    };
+  }
+  if (type === "bind-current-thread-actions") {
+    return {
+      name: "bind-current-thread-actions",
+      apply: () => {
+        bindCurrentThreadActions();
+        return { ok: true };
+      },
+    };
+  }
+  return {
+    name: type || "unknown-local-patch-transaction-effect",
+    apply: () => ({ ok: false, reason: `unknown-effect:${type || "empty"}`.slice(0, 80) }),
+  };
+}
+
+function threadDetailRefreshLocalPatchTransactionCallbacks(plan = {}, context = {}) {
+  const commitEffects = Array.isArray(plan.commitEffects) ? plan.commitEffects : [];
+  const afterSuccess = Array.isArray(plan.afterSuccess) ? plan.afterSuccess : [];
+  return {
+    commitEffects: commitEffects.map((effect) => threadDetailRefreshLocalPatchTransactionCallback(effect, context)),
+    afterSuccess: afterSuccess.map((effect) => threadDetailRefreshLocalPatchTransactionCallback(effect, context)),
+  };
+}
+
 function rejectThreadDetailPatch(reason) {
   return threadDetailDomPatchApi.threadDetailPatchResult(false, reason || "unknown");
 }
@@ -14866,6 +14915,16 @@ function patchCurrentThreadDetailFromRefresh(previousThread, nextThread, previou
   });
   const turnPatchPlan = threadDetailPatchPlanApi.planThreadDetailRefreshDomPatch(turnPatchEntries);
   if (!turnPatchPlan.canPatch) return rejectThreadDetailPatch(turnPatchPlan.reason || "turn-patch-plan-rejected");
+  const transactionEffectsPlan = threadDetailDomPatchApi.planThreadDetailRefreshLocalPatchTransactionEffects({
+    completionSnapshot,
+  });
+  const transactionCallbacks = threadDetailRefreshLocalPatchTransactionCallbacks(transactionEffectsPlan, {
+    conversation,
+    wasNearBottom,
+    userReadingCurrentTurn,
+    nextThread,
+    previousKeys,
+  });
   const applyResult = threadDetailDomPatchApi.applyThreadDetailPatchTransaction({
     applyPatch: () => threadDetailDomPatchApi.applyThreadTurnRefreshDomPatch({
       patchPlan: turnPatchPlan,
@@ -14892,35 +14951,8 @@ function patchCurrentThreadDetailFromRefresh(previousThread, nextThread, previou
         return { ok: true };
       },
     }),
-    commitEffects: [
-      {
-        name: "complete-local-conversation-dom-update",
-        apply: () => completeLocalConversationDomUpdate(
-          conversation,
-          wasNearBottom,
-          userReadingCurrentTurn,
-          { completionSnapshot },
-        )
-          ? { ok: true }
-          : { ok: false, reason: "complete-dom-update-failed" },
-      },
-    ],
-    afterSuccess: [
-      {
-        name: "update-live-operation-dock",
-        apply: () => {
-          updateLiveOperationDockHtml(renderLiveOperationDock(nextThread, previousKeys));
-          return { ok: true };
-        },
-      },
-      {
-        name: "bind-current-thread-actions",
-        apply: () => {
-          bindCurrentThreadActions();
-          return { ok: true };
-        },
-      },
-    ],
+    commitEffects: transactionCallbacks.commitEffects,
+    afterSuccess: transactionCallbacks.afterSuccess,
   });
   if (!applyResult.ok) return rejectThreadDetailPatch(applyResult.reason || "turn-patch-apply-failed");
   return acceptThreadDetailPatch("patched");

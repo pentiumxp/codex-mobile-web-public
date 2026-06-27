@@ -20995,3 +20995,48 @@ The previous full handoff was archived and should be opened only when old proven
   - Run broader local checks, commit this local slice, and continue with the
     next bounded Phase A/B candidate. Do not deploy until a coherent module is
     ready.
+
+## 2026-06-27 - Phase A local patch transaction effects local slice
+
+- Current local state:
+  - Continued after local commit `1df083d` (`refactor local patch completion
+    snapshot`).
+  - This is a second local Phase A ownership slice only. It changes
+    `public/thread-detail-dom-patch.js`, `public/app.js`, focused tests,
+    README, and the architecture plan. It does not bump shell/cache, deploy
+    production, or push Public.
+- Root-cause boundary:
+  - Symptom/risk: `patchCurrentThreadDetailFromRefresh()` still owned the
+    ordered `commitEffects` / `afterSuccess` arrays for a successful local DOM
+    patch transaction. That left the transaction effect policy split between
+    helper-owned transaction execution and app-owned effect ordering.
+  - Failing layer: frontend local refresh DOM patch transaction effect
+    planning, not server projection, merge semantics, scroll behavior,
+    task-card protocol, or Home AI diagnostic transport.
+  - Violated invariant: the helper should own transaction effect order and
+    bounded effect descriptors; `public/app.js` should only execute real DOM
+    and state side effects requested by that plan.
+- Changes:
+  - Added
+    `planThreadDetailRefreshLocalPatchTransactionEffects()` to
+    `public/thread-detail-dom-patch.js`.
+  - `patchCurrentThreadDetailFromRefresh()` now asks the helper for ordered
+    transaction effects and maps them through
+    `threadDetailRefreshLocalPatchTransactionCallbacks()`.
+  - The runtime order remains unchanged: apply turn DOM patch, commit local
+    conversation DOM completion, then refresh the operation dock and bind
+    current-thread actions only after commit success.
+  - Focused tests assert the helper-owned effect order and that
+    `patchCurrentThreadDetailFromRefresh()` no longer inlines the transaction
+    effect arrays.
+- Validation:
+  - `node --check public/thread-detail-dom-patch.js && node --check public/app.js`
+    passed.
+  - `node --test test/thread-detail-dom-patch.test.js test/conversation-render.test.js test/mobile-viewport.test.js`
+    passed (`173` tests).
+  - `npm test` passed (`1249` tests).
+  - `npm run check` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit this local slice and keep it undeployed until a coherent deployable
+    module is ready.

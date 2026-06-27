@@ -548,6 +548,29 @@
     };
   }
 
+  function planThreadDetailRefreshLocalPatchTransactionEffects(input = {}) {
+    return {
+      commitEffects: [
+        {
+          type: "complete-local-conversation-dom-update",
+          name: "complete-local-conversation-dom-update",
+          completionSnapshot: objectOrEmpty(input.completionSnapshot),
+        },
+      ],
+      afterSuccess: [
+        {
+          type: "update-live-operation-dock",
+          name: "update-live-operation-dock",
+        },
+        {
+          type: "bind-current-thread-actions",
+          name: "bind-current-thread-actions",
+        },
+      ],
+      reason: "refresh-local-patch-transaction-effects",
+    };
+  }
+
   function createElementFromHtml(input = {}) {
     const html = String(input.html || "");
     if (!html.trim()) return null;
@@ -933,6 +956,7 @@
     planLocalConversationDomUpdateCompletionSnapshot,
     planLocalConversationDomUpdateCompletion,
     planLocalConversationDomUpdateCompletionEffects,
+    planThreadDetailRefreshLocalPatchTransactionEffects,
     renderKeyForNode,
     resolveTurnInsertAnchor,
     syncAttributes,

@@ -1117,6 +1117,13 @@ executor can still collect live DOM/scroll facts for other patch callers, but
 it can also consume a preplanned helper snapshot. This keeps local refresh
 patch completion input authority in `thread-detail-dom-patch` instead of
 duplicating a similar object shape in `public/app.js`.
+The next local Phase A slice moves refresh local-patch transaction effect
+planning into the same helper. `planThreadDetailRefreshLocalPatchTransactionEffects()`
+now owns the ordered commit effect and after-success effect list, while
+`public/app.js` only adapts those planned effects to the real DOM/state
+callbacks. This keeps the local transaction boundary testable without changing
+the runtime order: turn DOM patch, completion commit, then operation-dock
+refresh and action rebinding.
 Refresh patch surface planning now also lives in this helper:
 `planThreadDetailRefreshPatchSurface` decides whether the refresh should probe
 tile-pane DOM state and whether the current patch path is a tile surface based
