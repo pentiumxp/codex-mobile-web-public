@@ -16,6 +16,45 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-27 v538 Phase B Selected Mux Runtime / Phase A Conversation Patch Module
+
+v538 将 v537 后累积的本地切片收束为一个模块，而不是逐个小优化部署：
+
+- Phase B：`8330750`、`4e49fb7` 完成 selected shared mux runtime/readback
+  边界。`/api/status` 暴露 sanitized endpoint kind；Phase B readback smoke
+  输出 metadata-only `muxRuntime` capability；macOS shared-chain restart 只读取
+  selected profile endpoint file，并只停止 endpoint 里记录且命令行匹配的
+  mux/app-server PID。
+- Phase A：`968e4de`、`724cfd9`、`fa9cd7c` 继续收敛
+  `updateConversationHtml()`。`thread-detail-dom-patch` 现在拥有
+  conversation HTML application outcome、patch-fallback client event、以及
+  `conversation_render_ms` bounded performance payload/slow-render force
+  decision。`public/app.js` 只执行真实 DOM/reporting side effect。
+- 本次 bump：`CLIENT_BUILD_ID` 和 PWA shell cache 从
+  `codex-mobile-shell-v537` 升到 `codex-mobile-shell-v538`。
+
+部署前生产读回确认旧状态仍是 v537：
+
+- `/api/public-config`：`clientBuildId=0.1.11|codex-mobile-shell-v537`，
+  `shellCacheName=codex-mobile-shell-v537`。
+- Phase B readback：thread-list 已走 warm cache / profile mux transport，但
+  `muxRuntime.muxMetricsRpc=false`，`muxMetrics.supported=false`，
+  `muxMetrics.reason=mux-metrics-unsupported`。这证明 selected mux 仍运行旧能力面。
+
+v538 部署目标不是修改 app-server 查询语义，而是先闭合 runtime/version 证据链：
+Home AI central deploy contract 已修复，plugin deploy 后应刷新 selected mux；读回应确认
+`muxRuntime.muxMetricsRpc=true` 且 `/api/status?muxMetrics=1` 支持 bounded mux metrics。
+
+预部署验证命令：
+
+```bash
+node --check adapters/shared-chain-restart-service.js && node --check server.js && node --check codex-app-server-mux.js && node --check scripts/codex-mobile-phase-b-readback-smoke.js && node --check adapters/phase-b-readback-decision-service.js && node --check public/thread-detail-dom-patch.js && node --check public/app.js && node --test test/shared-chain-restart-service.test.js test/shared-chain-restart-script.test.js test/protocol.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js test/thread-detail-dom-patch.test.js test/thread-detail-refresh-dom-harness.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/app-update.test.js test/build-refresh-policy.test.js
+npm run check
+npm run check:macos
+npm test
+git diff --check
+```
+
 ## 2026-06-27 v537 Phase B RPC/Mux Evidence Module
 
 v537 把两个本地 Phase B 切片作为一个模块部署：`6624f1b` 记录 Mobile 到

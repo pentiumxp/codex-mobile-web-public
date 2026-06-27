@@ -19606,3 +19606,54 @@ The previous full handoff was archived and should be opened only when old proven
   - Continue Phase A by moving more `updateConversationHtml` execution/effects
     and single-thread/tile patch branch ownership into helper-tested boundaries
     if staying on local refactor slices.
+
+## 2026-06-27 - v538 module deploy prep: selected mux runtime plus conversation patch telemetry
+
+- Current local state:
+  - Continued after `fa9cd7c plan conversation render performance event`.
+  - Home AI returned the central selected-mux deploy-contract repair as
+    completed. That unblocks plugin-owned deployment of the local Phase B
+    selected mux runtime/readback commits.
+  - This is a module-level deploy candidate, not a single tiny slice deploy.
+    It batches v537 follow-ups:
+    - Phase B selected mux runtime/readback: `8330750`, `4e49fb7`.
+    - Phase A conversation patch outcome/event/performance ownership:
+      `968e4de`, `724cfd9`, `fa9cd7c`.
+- Root-cause boundary:
+  - Symptom/risk: v537 production had the Mobile listener/source files updated
+    but selected profile mux metrics were still unsupported, so Phase B could
+    not compare Mobile-side `appServerRpcMs` with mux-side `thread/list`
+    timings.
+  - Failing layer: selected shared mux runtime activation during deploy, not
+    app-server query semantics, frontend refresh, fallback cache, or projection
+    state.
+  - Violated invariant: module deployment that changes mux bridge/runtime files
+    must refresh the selected mux runtime or report that the mux capability
+    evidence is stale before Phase B moves to app-server behavior changes.
+- Deployment-prep changes:
+  - Bumped `CLIENT_BUILD_ID` and PWA shell cache from
+    `codex-mobile-shell-v537` to `codex-mobile-shell-v538`.
+  - Updated `README.md` and `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` with the
+    v538 module boundary and readback gate.
+- Pre-deploy production readback:
+  - `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v537` and
+    `shellCacheName=codex-mobile-shell-v537`.
+  - `scripts/codex-mobile-phase-b-readback-smoke.js --server http://127.0.0.1:8787 --json`
+    succeeded but reported `muxRuntime.muxMetricsRpc=false`,
+    `muxMetrics.supported=false`, and
+    `muxMetrics.reason=mux-metrics-unsupported`.
+- Validation:
+  - Focused v538 module validation passed:
+    `node --check adapters/shared-chain-restart-service.js && node --check server.js && node --check codex-app-server-mux.js && node --check scripts/codex-mobile-phase-b-readback-smoke.js && node --check adapters/phase-b-readback-decision-service.js && node --check public/thread-detail-dom-patch.js && node --check public/app.js && node --test test/shared-chain-restart-service.test.js test/shared-chain-restart-script.test.js test/protocol.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js test/thread-detail-dom-patch.test.js test/thread-detail-refresh-dom-harness.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/app-update.test.js test/build-refresh-policy.test.js`
+    (`249` tests).
+  - Full validation passed: `npm run check`, `npm run check:macos`,
+    `npm test` (`1204` tests), and `git diff --check`.
+- Next:
+  - Commit the v538 bump/docs.
+  - Deploy through the Home AI central macOS plugin deploy script with reason
+    `codex-mobile-v538-selected-mux-runtime`.
+  - Post-deploy readback must confirm
+    `clientBuildId=0.1.11|codex-mobile-shell-v538`,
+    `shellCacheName=codex-mobile-shell-v538`,
+    `muxRuntime.muxMetricsRpc=true`, and supported bounded mux metrics.

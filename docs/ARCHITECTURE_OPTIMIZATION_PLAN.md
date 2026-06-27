@@ -324,7 +324,18 @@ Current acceleration targets:
    `/api/threads` behavior, but it makes manual restart capable of refreshing a
    version-stale selected mux. The remaining deploy-contract owner is Home AI
    central deploy: plugin source sync plus LaunchDaemon kickstart alone still
-   does not invoke this selected-mux refresh path.
+   does not invoke this selected-mux refresh path. Home AI has since repaired
+   that central deploy contract for `plugin:codex-mobile-web`: when mux bridge
+   or runtime files change, the deploy plan refreshes only the currently
+   selected profile mux after source sync and plugin host restart. The next
+   Codex Mobile module is therefore `codex-mobile-shell-v538`, which batches
+   the selected mux runtime/readback slices with the local conversation DOM
+   patch outcome telemetry slices. Its closure gate is not a query-semantic
+   change; it is production readback that `muxRuntime.muxMetricsRpc=true` and
+   `/api/status?muxMetrics=1` returns supported bounded mux metrics. Only after
+   that evidence exists should Phase B compare Mobile-side `appServerRpcMs`
+   against mux-side `thread/list` elapsed time and choose the next app-server
+   or transport owner.
    Earlier local
    fallback attribution slices also made baseline source work explicit:
    fallback baseline source reads now
