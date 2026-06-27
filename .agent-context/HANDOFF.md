@@ -22469,15 +22469,56 @@ The previous full handoff was archived and should be opened only when old proven
   - `701d217` `refactor pane toolbar actions keep thread context`
   - `f10d19d` `refactor older history loads keep pane context`
   - `028c1ec` `refactor continuation confirm keeps pane context`
-  - pending local slice before commit: manual task-card creation uses the pane
-    source live turn and refreshes the pane source thread.
-- Latest validation for the pending manual task-card create slice:
+  - `fd3735f` `refactor manual task cards keep pane source context`
+  - current committed slice: `refactor in-turn approvals keep pane context`
+- Latest validation for the in-turn approval render-context slice:
   - `node --check public/app.js` passed.
-  - `node --test test/thread-task-card-route.test.js test/thread-task-card-service.test.js test/new-thread-route.test.js`
-    passed (`69` tests).
-  - `npm test` passed (`1283` tests).
+  - `node --test test/conversation-render.test.js test/thread-tile-state.test.js`
+    passed (`164` tests).
+  - `npm test` passed (`1284` tests).
   - `npm run check` passed.
   - `npm run check:macos` passed.
   - `git diff --check` passed.
 - Still not deployed and not pushed Public. Continue small local commits until
   a coherent deployable Phase C module is ready.
+
+## 2026-06-27 - Phase C in-turn approval render context local slice
+
+- Current local state:
+  - Continued after local commit `fd3735f` (`refactor manual task cards keep
+    pane source context`).
+  - Committed in the current local slice as `refactor in-turn approvals keep
+    pane context`.
+  - This is a local Phase C pane-context/action-control slice only. It changes
+    `public/app.js`, focused tests, README, the architecture plan, and this
+    handoff. It does not bump shell/cache, deploy production, or push Public.
+- Root-cause boundary:
+  - Symptom/risk: `renderPendingApprovals(thread)` already passed the owning
+    pane thread id into approval/user-input action controls, but approvals
+    rendered inline inside a turn still called `renderApprovalRequest()` with
+    no fallback thread id. If the request omitted `params.threadId`, actions
+    in a non-current tile pane could fall back to global `state.currentThreadId`
+    and answer or approve against the wrong thread.
+  - Failing layer: frontend in-turn approval/user-input rendering context, not
+    the approval API, MCP protocol, task execution, shell/cache, or Home AI
+    host routing.
+  - Violated invariant: every action control rendered inside a pane/thread
+    render context must carry that pane/thread id when the server request lacks
+    an explicit thread id.
+- Changes:
+  - `renderTurn()` now passes the active `renderContextThreadId()` into
+    `renderApprovalRequest()` for in-turn approval stacks.
+  - Added executable coverage proving an in-turn approval with no request
+    `threadId` renders `data-approval-thread-id` from the pane render context
+    instead of global current thread state.
+- Validation:
+  - `node --check public/app.js` passed.
+  - `node --test test/conversation-render.test.js test/thread-tile-state.test.js`
+    passed (`164` tests).
+  - `npm test` passed (`1284` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit this local slice and keep it undeployed until a coherent deployable
+    Phase C module is ready.

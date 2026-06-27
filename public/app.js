@@ -17026,7 +17026,7 @@ function renderTurn(turn, previousKeys = new Set()) {
   const threadId = renderContextThreadId();
   const turnApprovals = approvalsForTurn(threadId, turn.id);
   const approvalsHtml = turnApprovals.length
-    ? `<div class="approval-stack in-turn">${turnApprovals.map((request) => renderApprovalRequest(request, previousKeys)).join("")}</div>`
+    ? `<div class="approval-stack in-turn">${turnApprovals.map((request) => renderApprovalRequest(request, previousKeys, threadId)).join("")}</div>`
     : "";
   const draftHtml = renderTurnThreadTaskCardDraft(turn, previousKeys, thread);
   const pendingDraftHtml = !draftHtml && !turnHasThreadTaskCardDraftResponse(turn) && isLatestTurn(turn, thread) && isLiveTurn(turn, thread) && turnHasThreadTaskCardRequest(turn)

@@ -2033,7 +2033,9 @@ Target:
   patch the current detail or the visible tile pane that owns the request.
   Conversation signatures and in-turn approval rendering now use the active
   render context thread id, so tile-pane approval state is no longer keyed to
-  the global current thread.
+  the global current thread. When an in-turn approval/user-input request lacks
+  its own `threadId`, rendered action controls must receive the active
+  render-context thread id rather than falling back to `state.currentThreadId`.
   Local file preview context is now pane-aware: local image/file preview
   content URLs, imageView file paths, explicit preview opens, and nested file
   preview links resolve against the render/action/file-preview thread context

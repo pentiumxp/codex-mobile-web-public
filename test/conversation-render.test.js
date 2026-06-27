@@ -1456,6 +1456,69 @@ return {
 `)();
 }
 
+function evaluatedInTurnApprovalRenderer() {
+  const sources = [
+    "approvalThreadId",
+    "renderContextThreadId",
+    "renderContextThread",
+    "approvalTurnId",
+    "shouldShowApprovalRequest",
+    "requestBelongsToThread",
+    "approvalActionThreadId",
+    "pendingApprovalsForThread",
+    "approvalsForTurn",
+    "permissionSummary",
+    "approvalDetailLines",
+    "isUserInputRequest",
+    "renderUserInputOptions",
+    "renderUserInputActions",
+    "renderApprovalActions",
+    "approvalTitle",
+    "approvalStatusLabel",
+    "isApprovalSettled",
+    "renderApprovalRequest",
+    "renderTurn",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`
+const HIDDEN_SERVER_REQUEST_METHODS = new Set();
+const USER_INPUT_REQUEST_METHODS = new Set(["item/tool/requestUserInput", "mcpServer/elicitation/request"]);
+const state = {
+  pendingApprovals: new Map(),
+  currentThreadId: "thread-current",
+  currentThread: { id: "thread-current" },
+  renderContextThreadId: "thread-pane",
+  renderContextThread: { id: "thread-pane" },
+};
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+function entryAnimationClass() { return ""; }
+function visibleItemsForTurn() {
+  return [{ item: { id: "visible-item", type: "agentMessage" }, sourceIndex: 0 }];
+}
+function renderVisibleItemPatchHtml() { return "<div data-visible-item>visible</div>"; }
+function renderTurnThreadTaskCardDraft() { return ""; }
+function turnHasThreadTaskCardDraftResponse() { return false; }
+function isLatestTurn() { return false; }
+function isLiveTurn() { return false; }
+function turnHasThreadTaskCardRequest() { return false; }
+function renderPendingThreadTaskCardDraft() { return ""; }
+function stableTurnKey(turn, suffix = "") { return [turn && turn.id || "turn", suffix].filter(Boolean).join("|"); }
+function turnFinalSeconds() { return null; }
+function displayTurnStatus() { return "completed"; }
+function formatElapsedTime(seconds) { return String(seconds); }
+${sources.join("\n")}
+return {
+  state,
+  renderTurn,
+};
+`)();
+}
+
 function evaluatedTurnUsageSummaryRenderer() {
   const sources = [
     "escapeHtml",
@@ -5041,6 +5104,36 @@ test("thread detail pending server requests attach pane thread context when requ
   assert.deepEqual(harness.tileRenderCalls(), ["thread-tile"]);
   assert.match(html, /data-approval-id="approval-no-thread"/);
   assert.match(html, /data-approval-thread-id="thread-tile"/);
+  assert.doesNotMatch(html, /data-approval-thread-id="thread-current"/);
+});
+
+test("in-turn approval controls keep render pane thread context when request omits thread id", () => {
+  const harness = evaluatedInTurnApprovalRenderer();
+  harness.state.currentThreadId = "thread-current";
+  harness.state.currentThread = { id: "thread-current" };
+  harness.state.renderContextThreadId = "thread-pane";
+  harness.state.renderContextThread = { id: "thread-pane" };
+  harness.state.pendingApprovals.set("approval-pane", {
+    id: "approval-pane",
+    method: "item/permissions/requestApproval",
+    status: "waiting",
+    actionable: true,
+    params: {
+      turnId: "turn-pane",
+      permissions: { filesystem: { read: true } },
+      reason: "Need file access",
+    },
+  });
+
+  const html = harness.renderTurn({
+    id: "turn-pane",
+    status: "in_progress",
+    items: [{ id: "visible-item", type: "agentMessage" }],
+  });
+
+  assert.match(html, /class="approval-stack in-turn"/);
+  assert.match(html, /data-approval-id="approval-pane"/);
+  assert.match(html, /data-approval-thread-id="thread-pane"/);
   assert.doesNotMatch(html, /data-approval-thread-id="thread-current"/);
 });
 
