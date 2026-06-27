@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
 
 const DEFAULT_DEBUG_URL = "http://127.0.0.1:19073/";
 const DEFAULT_THREAD_ID = "019ea76b-d846-7892-bda0-c0fff9cf7581";
@@ -61,6 +62,58 @@ function apiUrl(options, pathname) {
   return new URL(pathname.replace(/^\//, ""), options.debugUrl).toString();
 }
 
+function stableTextHash(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  return crypto.createHash("sha256").update(text).digest("hex").slice(0, 16);
+}
+
+function debugEndpointKind(value) {
+  try {
+    const url = new URL(value || DEFAULT_DEBUG_URL);
+    const host = String(url.hostname || "").toLowerCase();
+    if (host === "127.0.0.1" || host === "localhost" || host === "::1") return "local-debug";
+    return "remote-debug";
+  } catch (_) {
+    return "unknown-debug";
+  }
+}
+
+function safeErrorCode(error, fallback = "error") {
+  const text = String(error && error.message || error || "").toLowerCase();
+  const status = text.match(/\b([1-5]\d\d)\b/);
+  if (status) return `http_${status[1]}`;
+  if (text.includes("abort") || text.includes("timeout")) return "request_timeout";
+  if (text.includes("lease")) return "debug_lane_lease_failed";
+  if (text.includes("screenshot")) return "screenshot_failed";
+  if (text.includes("action")) return "action_failed";
+  const token = text.match(/\b[a-z][a-z0-9_:-]{2,80}\b/);
+  return String(token && token[0] || fallback)
+    .replace(/[^a-z0-9_:-]/g, "_")
+    .slice(0, 80) || fallback;
+}
+
+function safeScreenshotResult(screenshotPath, bytes) {
+  return {
+    pathHash: stableTextHash(screenshotPath),
+    bytes: Number(bytes || 0),
+  };
+}
+
+function createInitialReport(options) {
+  return {
+    ok: false,
+    debugEndpoint: debugEndpointKind(options.debugUrl),
+    threadHash: stableTextHash(options.threadId),
+    targetTurnHash: stableTextHash(options.targetTurnId),
+    startedAt: new Date().toISOString(),
+    recovery: [],
+    metrics: null,
+    screenshot: null,
+    lease: null,
+  };
+}
+
 function printHelp() {
   console.log([
     "Usage: node scripts/codex-mobile-image-order-visual-smoke.js [options]",
@@ -90,10 +143,7 @@ async function fetchJson(url, init = {}, timeoutMs = 15000) {
     } catch (_) {
       parsed = { raw: text.slice(0, 1000) };
     }
-    if (!response.ok) {
-      const error = parsed && (parsed.error || parsed.message) || response.statusText || "request_failed";
-      throw new Error(`${response.status}:${String(error).slice(0, 300)}`);
-    }
+    if (!response.ok) throw new Error(`http_${response.status}`);
     return parsed;
   } finally {
     clearTimeout(timer);
@@ -114,7 +164,7 @@ async function acquireLease(options) {
     owner,
     ttlMs: Math.max(120000, options.timeoutMs * 4 + options.waitMs * options.attempts + 30000),
   });
-  if (!response.ok || !response.token) throw new Error(`debug_lane_lease_failed:${response.error || "missing_token"}`);
+  if (!response.ok || !response.token) throw new Error("debug_lane_lease_failed");
   options.leaseToken = response.token;
   return response;
 }
@@ -130,7 +180,7 @@ async function postAction(options, body) {
   const response = await postJson(options, "/api/action", Object.assign({}, body, {
     leaseToken: options.leaseToken,
   }));
-  if (!response.ok) throw new Error(`action_failed:${response.error || "unknown"}`);
+  if (!response.ok) throw new Error(`action_failed:${safeErrorCode(response.error, "unknown")}`);
   return response.value;
 }
 
@@ -147,12 +197,26 @@ async function saveScreenshot(options) {
   const bytes = Buffer.from(await response.arrayBuffer());
   fs.mkdirSync(path.dirname(screenshotPath), { recursive: true });
   fs.writeFileSync(screenshotPath, bytes);
-  return { path: screenshotPath, bytes: bytes.length };
+  return safeScreenshotResult(screenshotPath, bytes.length);
 }
 
 const MEASURE_SCRIPT = `
   const threadId = String(arguments[0] || "");
   const targetTurnId = String(arguments[1] || "");
+  const stableHash = (value) => {
+    const text = String(value || "");
+    let hash = 2166136261;
+    for (let index = 0; index < text.length; index += 1) {
+      hash ^= text.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(16).padStart(8, "0");
+  };
+  const boundedClassName = (value) => String(value || "")
+    .split(/\\s+/)
+    .filter(Boolean)
+    .slice(0, 8)
+    .join(" ");
   const frame = document.querySelector("#codexPluginHost .embedded-plugin-frame, .embedded-plugin-frame");
   if (!frame) return { ok: false, error: "plugin_frame_missing", retryAfterMs: 900 };
   const win = frame.contentWindow;
@@ -175,7 +239,7 @@ const MEASURE_SCRIPT = `
   const targetPresent = targetTurnId ? loadedTurnIds.includes(targetTurnId) : loadedTurnIds.length > 0;
   if (!targetPresent && threadId) {
     const openedBy = openThread();
-    return { ok: false, error: openedBy ? "thread_open_requested" : "thread_open_unavailable", openedBy, loadedTurnIds: loadedTurnIds.slice(-12), retryAfterMs: 1800 };
+    return { ok: false, error: openedBy ? "thread_open_requested" : "thread_open_unavailable", openedBy, loadedTurnHashes: loadedTurnIds.slice(-12).map(stableHash), retryAfterMs: 1800 };
   }
   const rect = (node) => {
     if (!node) return null;
@@ -185,7 +249,6 @@ const MEASURE_SCRIPT = `
   const itemRows = [];
   const orderProblems = [];
   const turns = turnNodes
-    .filter((turn) => !targetTurnId || turn.getAttribute("data-turn") === targetTurnId || true)
     .map((turn) => {
       const turnId = turn.getAttribute("data-turn") || "";
       const items = Array.from(turn.querySelectorAll(":scope > .item[data-item]")).map((item, index) => {
@@ -194,82 +257,69 @@ const MEASURE_SCRIPT = `
         const timestampMs = Date.parse(datetime);
         const isImage = item.classList.contains("imageView") || Boolean(item.querySelector(".image-view, .input-image"));
         const row = {
-          turnId,
+          turnHash: stableHash(turnId),
           index,
-          itemId: item.getAttribute("data-item") || "",
-          className: String(item.className || ""),
+          itemHash: stableHash(item.getAttribute("data-item") || ""),
+          className: boundedClassName(item.className),
           isImage,
           datetime,
           timestampMs: Number.isFinite(timestampMs) ? timestampMs : null,
-          label: (item.querySelector(".item-head span")?.textContent || "").trim().slice(0, 40),
-          text: (item.innerText || item.textContent || "").replace(/\\s+/g, " ").trim().slice(0, 120),
           rect: rect(item),
         };
         itemRows.push(row);
         return row;
       });
       let previous = -Infinity;
-      let previousItemId = "";
+      let previousItemHash = "";
       for (const item of items) {
         if (Number.isFinite(item.timestampMs)) {
           if (item.timestampMs < previous) {
             orderProblems.push({
-              turnId,
-              itemId: item.itemId,
+              turnHash: item.turnHash,
+              itemHash: item.itemHash,
               className: item.className,
               datetime: item.datetime,
-              previousItemId,
+              previousItemHash,
               previous,
             });
           }
           if (item.timestampMs >= previous) {
             previous = item.timestampMs;
-            previousItemId = item.itemId;
+            previousItemHash = item.itemHash;
           }
         }
       }
-      return { turnId, itemCount: items.length, imageCount: items.filter((item) => item.isImage).length };
+      return { turnHash: stableHash(turnId), itemCount: items.length, imageCount: items.filter((item) => item.isImage).length };
     });
-  const targetItems = targetTurnId ? itemRows.filter((item) => item.turnId === targetTurnId) : itemRows;
+  const targetTurnHash = stableHash(targetTurnId);
+  const targetItems = targetTurnId ? itemRows.filter((item) => item.turnHash === targetTurnHash) : itemRows;
   return {
     ok: Boolean(conversation) && targetPresent && orderProblems.length === 0 && itemRows.some((item) => item.isImage),
     error: "",
-    href: location.href.replace(/codexPluginLaunch=[^&]+/g, "codexPluginLaunch=[redacted]"),
+    routeKind: location.pathname ? "home-ai-debug-page" : "unknown",
     hostClientVersion: document.documentElement.getAttribute("data-client-version") || "",
     pluginClientBuildId: win.CLIENT_BUILD_ID || "",
     frame: rect(frame),
     conversation: rect(conversation),
-    loadedTurnIds: loadedTurnIds.slice(-12),
-    targetTurnId,
+    loadedTurnHashes: loadedTurnIds.slice(-12).map(stableHash),
+    targetTurnHash,
     targetPresent,
     turnCount: turns.length,
     imageCount: itemRows.filter((item) => item.isImage).length,
     orderProblems,
     targetItems: targetItems.map((item) => ({
       index: item.index,
-      itemId: item.itemId,
+      itemHash: item.itemHash,
       className: item.className,
       isImage: item.isImage,
       datetime: item.datetime,
-      label: item.label,
-      text: item.text,
       rect: item.rect,
     })),
   };
 `;
 
 async function run(options) {
-  const report = {
-    ok: false,
-    debugUrl: options.debugUrl,
-    threadId: options.threadId,
-    targetTurnId: options.targetTurnId,
-    startedAt: new Date().toISOString(),
-    recovery: [],
-    metrics: null,
-    screenshot: null,
-    lease: null,
-  };
+  const report = createInitialReport(options);
   await acquireLease(options);
   report.lease = { acquired: true };
   try {
@@ -283,7 +333,7 @@ async function run(options) {
     try {
       await postAction(options, { type: "connect", resetSession: false });
     } catch (err) {
-      report.recovery.push({ action: "connect", error: String(err.message || err).slice(0, 200) });
+      report.recovery.push({ action: "connect", errorCode: safeErrorCode(err, "connect_failed") });
       await postAction(options, { type: "connect", resetSession: true });
     }
     for (let attempt = 1; attempt <= options.attempts; attempt += 1) {
@@ -315,7 +365,7 @@ if (require.main === module) {
     console.log(output);
     if (!report.ok) process.exitCode = 1;
   }).catch((err) => {
-    const report = { ok: false, error: String(err && err.message || err).slice(0, 500) };
+    const report = { ok: false, errorCode: safeErrorCode(err, "image_order_visual_smoke_failed") };
     console.log(JSON.stringify(report, null, 2));
     process.exitCode = 1;
   });
@@ -324,4 +374,10 @@ if (require.main === module) {
 module.exports = {
   parseArgs,
   run,
+  createInitialReport,
+  debugEndpointKind,
+  safeErrorCode,
+  safeScreenshotResult,
+  stableTextHash,
+  MEASURE_SCRIPT,
 };

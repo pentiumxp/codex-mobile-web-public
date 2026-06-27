@@ -16,6 +16,33 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-27 Phase E Image-Order Visual Smoke Privacy Slice
+
+这是 v541 生产部署后的第二个 Phase E 本地切片，目标不是新增运行时行为，
+而是让现有 live-debug 图片顺序视觉 smoke 可以安全进入常规闭环。此前
+`scripts/codex-mobile-image-order-visual-smoke.js` 会在报告中输出 raw thread/turn/item
+标识、debug URL、截图绝对路径，以及截断后的 DOM label/text。那些字段对判断
+图片卡片 DOM 顺序不是必要证据，也不适合进入 Home AI 诊断/审计材料。
+
+本切片把输出边界收敛为 metadata/hash-only：
+
+- 顶层报告只输出 `debugEndpoint`、`threadHash`、`targetTurnHash`；
+- 浏览器测量结果只输出 `turnHash`、`itemHash`、`loadedTurnHashes`、`routeKind`、
+  class、rect、timestamp 和计数；
+- 截图结果只输出 `pathHash` 和 byte count；
+- 错误只输出 bounded `errorCode`；
+- 不再读取或输出 DOM `innerText` / `textContent`，也不输出 `location.href`。
+
+验证：
+
+```bash
+node --check scripts/codex-mobile-image-order-visual-smoke.js
+node --test test/image-order-visual-smoke.test.js  # 4 passed
+```
+
+本切片没有 runtime/static app 变更，没有 bump shell/cache，没有部署，也没有 Public
+push。它是下一批 Phase E visual harness 模块的一部分。
+
 ## 2026-06-27 Phase E Task-Card Visual Fixture Local Slice
 
 这是 v541 生产部署后的第一个 Phase E 本地切片，目标是补浏览器级视觉验证，

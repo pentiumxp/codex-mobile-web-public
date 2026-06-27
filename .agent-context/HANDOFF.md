@@ -20543,3 +20543,41 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit this local Phase E slice.
   - Continue Phase E with upload/generated image or PWA shell refresh browser
     smoke as the next independent slice.
+
+## 2026-06-27 - Phase E image-order visual smoke privacy local slice
+
+- Current local state:
+  - Continued after local Phase E task-card visual fixture commit `516c7e7`.
+  - This is a script/test/docs-only local slice; it has no runtime/static app
+    behavior change, no shell/cache bump, no deployment, and no Public push.
+- Root-cause boundary:
+  - Symptom/risk: `scripts/codex-mobile-image-order-visual-smoke.js` is intended
+    as a Home AI live-debug visual closure tool for image-card ordering, but its
+    report shape could include raw thread/turn/item ids, debug URL, screenshot
+    path, DOM label/text snippets, and error message bodies. That made the
+    harness itself unsafe for routine diagnostic/audit evidence.
+  - Failing layer: Phase E browser/visual harness evidence boundary, not runtime
+    image rendering or server projection.
+  - Violated invariant: visual/diagnostic smoke output must be bounded and
+    metadata-only; it should prove layout/order behavior without copying private
+    identifiers, URLs, paths, message text, uploads, cookies, tokens, provider
+    payloads, or logs.
+- Changes:
+  - Added stable report hashing and bounded endpoint/error helpers.
+  - Top-level reports now use `debugEndpoint`, `threadHash`, and
+    `targetTurnHash` instead of raw debug URL or raw ids.
+  - Browser metrics now use `loadedTurnHashes`, `turnHash`, `itemHash`, and
+    `routeKind`; they no longer output `location.href`, raw item/turn ids,
+    labels, text, or DOM `innerText` / `textContent`.
+  - Screenshot output now reports `pathHash` plus byte count, not the local path.
+  - Added `test/image-order-visual-smoke.test.js` for the metadata-only contract.
+- Validation:
+  - `node --check scripts/codex-mobile-image-order-visual-smoke.js` passed.
+  - `node --test test/image-order-visual-smoke.test.js` passed (`4` tests).
+- Next:
+  - Run full source validation (`npm test`, `npm run check`,
+    `npm run check:macos`, `git diff --check`) and commit this local slice.
+  - Do not deploy this slice alone. It should join the next Phase E module
+    bundle; that later module needs a shell/cache bump only if it includes
+    runtime/static browser changes such as the pending `public/styles.css`
+    task-card fixture slice.

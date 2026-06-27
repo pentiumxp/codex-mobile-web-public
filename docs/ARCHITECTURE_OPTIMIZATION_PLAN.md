@@ -1758,6 +1758,15 @@ Current local coverage:
   content scrolls inside the scaled pane. It does not read private task-card
   bodies. Because this touches `public/styles.css`, it remains local until the
   next Phase E module shell/cache bump and deploy.
+- The image-order live-debug smoke is now privacy-bounded before it is used as a
+  Phase E closure tool. `scripts/codex-mobile-image-order-visual-smoke.js`
+  still uses raw ids internally to open the requested thread through the
+  live-debug lane, but its report output now contains only endpoint kind,
+  build ids, turn/item hashes, route kind, rects, timestamps, counts, screenshot
+  path hash, and bounded error codes. It no longer prints raw thread/turn/item
+  ids, debug URLs, screenshot paths, `location.href`, DOM labels, DOM text, or
+  error message bodies. The focused `test/image-order-visual-smoke.test.js`
+  covers this metadata-only contract.
 - This does not replace Home AI embedded/PWA live-debug coverage. The next
   Phase E slices still need real browser smoke around long-turn streaming,
   upload/generated image rendering, and PWA shell refresh.
