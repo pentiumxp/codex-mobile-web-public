@@ -23061,3 +23061,42 @@ The previous full handoff was archived and should be opened only when old proven
   - Continue with the remaining app-server peak sources only after fresh
     evidence shows a separate peak. This change specifically closes the
     identical default-list burst amplification path.
+
+## 2026-06-27 - App-server peak latency public sync
+
+- Public publishing:
+  - Added a public README note describing the server-only app-server thread-list
+    peak latency fix and why shell/cache remains `codex-mobile-shell-v549`.
+  - Private README commit: `95cca16`
+    (`docs describe thread list peak latency release`).
+  - Public-safe worktree:
+    `/tmp/codex-mobile-public-thread-list.R3ucso`.
+  - Public release commit: `c3c78d4`
+    (`release: publish thread list peak latency fix`), pushed to
+    `public/main`.
+  - Merged `public/main` back into private `main` with the `ours` strategy:
+    `be9aa94`.
+- Public validation:
+  - Public staged diff contained only publishable files:
+    `README.md`, `server.js`, `package.json`, thread-list docs, the new
+    `thread-list-response-coalescer-service`, and its tests.
+  - `git diff --cached --check` passed in the public worktree.
+  - Bounded cached-diff scan for private paths/secrets produced no matches.
+  - `npm run check` passed in the public worktree.
+  - Focused public tests passed with the private workspace `node_modules`
+    exposed through `NODE_PATH` because the temporary public worktree has no
+    local dependencies installed:
+    `node --test test/thread-list-response-coalescer-service.test.js test/thread-list-app-server-fetch-policy-service.test.js test/thread-visibility.test.js`
+    (`61` tests).
+  - Verified after merge: `public/main` is an ancestor of private `main`, and
+    `git diff public/main..main -- ':!.agent-context'` is empty.
+- Next optimization candidates:
+  - Thread/detail projection consistency auto-diagnosis: strengthen client-side
+    detection for missing/duplicate/out-of-order visible items and ensure
+    repeated mismatches create bounded Home AI diagnostic reports.
+  - Remaining app-server peak sources: profile non-default list/detail paths
+    only after fresh evidence shows peaks outside the default full-list burst
+    path fixed by coalescing.
+  - UI stability: keep scroll-user-interaction protection and list-order
+    throttling as separate, small slices because they are client behavior, not
+    app-server peak latency.
