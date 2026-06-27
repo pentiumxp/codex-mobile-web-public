@@ -20036,3 +20036,38 @@ The previous full handoff was archived and should be opened only when old proven
   - Run `npm run check` and `git diff --check`, then commit this local slice.
   - Do not deploy until enough Phase A local slices are batched into the next
     shell/cache module.
+
+## 2026-06-27 - Phase A post-merge timing plan local slice
+
+- Current local state:
+  - Continued after local commit `972e5e4` (`refactor: stage thread detail
+    refresh render planning`).
+  - This is another local Phase A slice. It does not bump `CLIENT_BUILD_ID` /
+    PWA shell cache and is not deployed by itself.
+- Root-cause boundary:
+  - Symptom/risk: `refreshCurrentThread()` and full-backfill still hardcoded
+    the post-merge effect timing groups (`merge`, `composer-render`,
+    `thread-list-render`). Any future group/order/timing-field change would
+    have required policy edits in app orchestration.
+  - Failing layer: frontend thread-detail post-merge execution ownership.
+  - Violated invariant: post-merge group order and timing field names should be
+    declared by `public/thread-detail-render-plan.js`; app code should execute
+    the plan and collect timings.
+- Changes:
+  - Added `timingField` to each
+    `planThreadDetailRefreshPostMergeEffects()` group.
+  - Added `applyThreadDetailRefreshTimedPostMergeEffectsPlan()` in
+    `public/app.js` to execute groups generically and return timing fields.
+  - `refreshCurrentThread()` and `backfillFullThreadDetail()` now consume the
+    generic executor.
+  - First-paint remains explicit because draft restore intentionally runs
+    between merge and composer render.
+- Validation:
+  - `node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/composer-draft.test.js`
+    passed (`200` tests).
+  - `npm run check` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit this local slice.
+  - Continue Phase A with one more adjacent refresh ownership slice, then decide
+    whether the local Phase A batch is ready for shell/cache bump and deploy.

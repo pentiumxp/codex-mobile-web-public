@@ -9466,6 +9466,26 @@ function applyThreadDetailRefreshTimedPostMergeEffectsGroup(plan, timing, option
   return roundedDurationMs(startedAt);
 }
 
+function applyThreadDetailRefreshTimedPostMergeEffectsPlan(plan, options = {}) {
+  const groups = Array.isArray(plan && plan.groups) ? plan.groups : [];
+  if (!groups.length) throw new Error("Thread detail refresh post-merge effects missing");
+  const timings = {
+    mergeMs: 0,
+    composerRenderMs: 0,
+    threadListRenderMs: 0,
+  };
+  for (const group of groups) {
+    const timing = String(group && group.timing || "");
+    const field = String(group && group.timingField || "");
+    if (!timing || !field) throw new Error("Thread detail refresh post-merge timing metadata missing");
+    const startedAt = timing === "merge" && Number.isFinite(options.mergeStartedAt)
+      ? options.mergeStartedAt
+      : nowPerfMs();
+    timings[field] = applyThreadDetailRefreshTimedPostMergeEffectsGroup(plan, timing, { startedAt });
+  }
+  return timings;
+}
+
 function applyThreadDetailRefreshResponseEffect(effect, context = {}) {
   const item = effect && typeof effect === "object" ? effect : {};
   const type = String(item.type || "");
@@ -9767,11 +9787,12 @@ async function refreshCurrentThread(options = {}) {
   const renderPlan = refreshRenderStage.renderPlan;
   const shouldRenderDetail = renderPlan.shouldRenderDetail;
   const postMergePlan = threadDetailRenderPlanApi.planThreadDetailRefreshPostMergeEffects();
-  const mergeMs = applyThreadDetailRefreshTimedPostMergeEffectsGroup(postMergePlan, "merge", {
-    startedAt: mergeStartedAt,
+  const postMergeTimings = applyThreadDetailRefreshTimedPostMergeEffectsPlan(postMergePlan, {
+    mergeStartedAt,
   });
-  const composerRenderMs = applyThreadDetailRefreshTimedPostMergeEffectsGroup(postMergePlan, "composer-render");
-  const threadListRenderMs = applyThreadDetailRefreshTimedPostMergeEffectsGroup(postMergePlan, "thread-list-render");
+  const mergeMs = postMergeTimings.mergeMs;
+  const composerRenderMs = postMergeTimings.composerRenderMs;
+  const threadListRenderMs = postMergeTimings.threadListRenderMs;
   let conversationRenderMs = 0;
   let metadataUpdateMs = 0;
   const threadTileConversationSurface = isThreadTileConversationSurface();
@@ -10003,11 +10024,12 @@ async function backfillFullThreadDetail(threadId, options = {}) {
   });
   applyThreadDetailRefreshResponseEffectsPlan(fullBackfillResponsePlan, { thread: result.thread });
   const postMergePlan = threadDetailRenderPlanApi.planThreadDetailRefreshPostMergeEffects();
-  const mergeMs = applyThreadDetailRefreshTimedPostMergeEffectsGroup(postMergePlan, "merge", {
-    startedAt: mergeStartedAt,
+  const postMergeTimings = applyThreadDetailRefreshTimedPostMergeEffectsPlan(postMergePlan, {
+    mergeStartedAt,
   });
-  const composerRenderMs = applyThreadDetailRefreshTimedPostMergeEffectsGroup(postMergePlan, "composer-render");
-  const threadListRenderMs = applyThreadDetailRefreshTimedPostMergeEffectsGroup(postMergePlan, "thread-list-render");
+  const mergeMs = postMergeTimings.mergeMs;
+  const composerRenderMs = postMergeTimings.composerRenderMs;
+  const threadListRenderMs = postMergeTimings.threadListRenderMs;
   const conversationRenderStartedAt = nowPerfMs();
   renderCurrentThread({ stickToBottom: wasNearBottom });
   const conversationRenderMs = roundedDurationMs(conversationRenderStartedAt);

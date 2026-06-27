@@ -46,6 +46,37 @@ node --test test/thread-detail-render-plan.test.js test/conversation-render.test
 node --check public/thread-detail-render-plan.js && node --check public/app.js
 ```
 
+## 2026-06-27 Phase A Post-Merge Timing Plan Local Slice
+
+这是同一 Phase A 模块的第二个本地小切片，尚未 bump shell/cache，尚未部署。
+
+根因边界：
+
+- 症状/风险：`refreshCurrentThread()` 和 full-backfill 仍硬编码执行
+  `merge`、`composer-render`、`thread-list-render` 三段 post-merge effect。
+  如果 post-merge 顺序或 timing field 后续调整，app 编排层会再次持有策略细节。
+- 失败层：前端 thread-detail post-merge execution ownership，不是 server projection、
+  read API、DOM patch、scroll 或 task-card 协议。
+- 不变式：post-merge effect 的顺序和 timing field 应由
+  `public/thread-detail-render-plan.js` 声明；app 层只执行 plan 并收集结果。
+
+改动：
+
+- `planThreadDetailRefreshPostMergeEffects()` 的每个 group 增加 `timingField`。
+- 新增 `applyThreadDetailRefreshTimedPostMergeEffectsPlan()`，按 plan group 顺序执行并返回
+  `mergeMs`、`composerRenderMs`、`threadListRenderMs`。
+- `refreshCurrentThread()` 和 `backfillFullThreadDetail()` 改为消费该执行器。
+- 保留 first-paint 的旧执行顺序，因为它需要在 merge 和 composer render 之间执行
+  draft restore。
+
+验证：
+
+```bash
+node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/composer-draft.test.js  # 200 passed
+npm run check  # passed
+git diff --check  # passed
+```
+
 ## 2026-06-27 v539 Phase B Thread-List Request/Fallback Module
 
 v539 将 v538 后累积的 Phase B thread-list 小切片收束为一个模块，而不是逐个

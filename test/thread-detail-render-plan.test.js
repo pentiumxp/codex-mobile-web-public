@@ -783,14 +783,17 @@ test("thread detail refresh post-merge effects plan preserves timing groups and 
     groups: [
       {
         timing: "merge",
+        timingField: "mergeMs",
         effects: ["merge-thread-list"],
       },
       {
         timing: "composer-render",
+        timingField: "composerRenderMs",
         effects: ["render-composer-settings", "sync-active-turn"],
       },
       {
         timing: "thread-list-render",
+        timingField: "threadListRenderMs",
         effects: ["render-threads"],
       },
     ],

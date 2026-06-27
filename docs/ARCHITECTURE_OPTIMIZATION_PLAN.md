@@ -903,7 +903,13 @@ update metadata without full render, and which fallback action applies.
 `planThreadDetailRefreshPatchExecutionStage` owns the composition from
 `renderPlan` plus `patchSurfacePlan` into both the execution plan and ordered
 patch-attempt effects. App code keeps real DOM patch attempts, metadata writes,
-full render execution, and diagnostic/performance reporting.
+full render execution, and diagnostic/performance reporting. The follow-up
+local slice makes post-merge timing execution plan-driven as well:
+`planThreadDetailRefreshPostMergeEffects` now declares the timing field for
+each group, and `refreshCurrentThread` / full-backfill consume a generic
+post-merge execution helper instead of hardcoding `merge`, `composer-render`,
+and `thread-list-render` timing calls. First-paint keeps its explicit split
+because draft restore intentionally runs between merge and composer render.
 Refresh patch attempt result planning now also lives there:
 `planThreadDetailRefreshPatchAttemptResult` normalizes tile-pane success,
 local-patch success, local-patch rejection, metadata-only tile misses, and
