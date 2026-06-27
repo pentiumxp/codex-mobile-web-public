@@ -24085,5 +24085,31 @@ The previous full handoff was archived and should be opened only when old proven
   - Home AI and Movie task-card summaries dropped from about `65KB` to about
     `35KB`.
 - Pending:
-  - Commit, deploy through the central macOS plugin deploy contract, then
-    record production readback.
+  - Runtime/docs commit `3314185` (`fix task-card detail summary payload`).
+  - Deployed through the Home AI central macOS plugin deploy path with reason
+    `codex-mobile-task-card-detail-summary`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T201154Z-plugin-codex-mobile-web-codex-mobile-task-card-detail-summary`.
+  - Production source ref `3314185d8ba9`, dirty false. Shell remained
+    `0.1.11|codex-mobile-shell-v552` because this was server/docs only and did
+    not change static browser assets.
+- Production readback:
+  - `/api/public-config` returned build id `a9a59c513528ca43` and shell
+    `0.1.11|codex-mobile-shell-v552`.
+  - First post-deploy sample still showed a cold peak:
+    `/api/threads?limit=80` about `1927ms`, current Codex Mobile detail about
+    `2480ms`. Both returned successfully; this matches the user-visible
+    symptom where the client waits a long time but does not time out.
+  - Immediate repeated samples stabilized:
+    list reads about `244-282ms`; current active Codex Mobile detail about
+    `167-371ms` with `threadReadMs=0` and
+    `activeOverlayWindowFirst=true`.
+  - Production task-card summary payloads:
+    current Codex Mobile thread `threadTaskCardsBytes=33197`;
+    Home AI `35564`; Movie `35506`. Previous same-store bounded local sample
+    was about `59-65KB`.
+- Residual:
+  - The task-card detail payload is now bounded by explicit summary fields, but
+    first request after restart can still hit a cold app-server/projection peak.
+    The next module should target cold/deferred app-server and active
+    projection readiness rather than further client refresh masking.
