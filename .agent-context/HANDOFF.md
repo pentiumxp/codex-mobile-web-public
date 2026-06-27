@@ -23294,3 +23294,81 @@ The previous full handoff was archived and should be opened only when old proven
     while active detail was in flight, the first list read was
     `deferred-fallback`, then the follow-up hit warm fallback cache. Treat that
     as a separate next slice if entry speed still feels inconsistent.
+
+## 2026-06-28 - Active-overlay cold path full-read loop closed
+
+- Problem:
+  - After the active-overlay payload compaction slice, large active session
+    detail could still be inconsistent immediately after deploy/restart or when
+    the projection proof gate was recovering. Production samples of the active
+    Codex Mobile thread showed a first bounded overlay-window read followed by
+    repeated `thread-read` responses around `2.7-3.3s`.
+  - Bounded diagnostics identified the owner as the active detail proof gate:
+    `activeOverlayReason=assistant-delta-unknown`,
+    `projectionSeedStatus=skipped`, `projectionSeedSource=active-thread-read`.
+  - The slow path was not ordinary thread-list fallback. It was active thread
+    detail proving that live assistant deltas were fresh enough to avoid full
+    app-server `thread/read`.
+- Fixes:
+  - `adapters/thread-detail-active-overlay-provider-service.js` now uses a
+    bounded per-turn evidence cache so repeated proof checks do not resummarize
+    the same active overlay shape.
+  - `adapters/thread-detail-read-orchestration-service.js` now records
+    `activeOverlayResolveMs`, `activeOverlayProjectionLookupMs`,
+    `activeOverlayPlanMs`, `activeOverlayWindowMs`, and
+    `activeOverlayMergeMs` in diagnostics for root-cause timing attribution.
+  - Active overlay window reads now seed a dedicated sidecar partial window in
+    `adapters/thread-detail-projection-v4-service.js` instead of replacing the
+    dynamic live overlay snapshot.
+  - Active-thread full `thread/read` fallback no longer seeds the v4 projection
+    cache. This prevents a slow fallback read from polluting the dynamic live
+    overlay proof state.
+  - Active overlay window sidecar entries now preserve projection
+    revision/timestamp metadata from the live overlay proof input.
+  - `adapters/thread-detail-active-window-overlay-policy-service.js` now uses
+    dual proof domains correctly: complete revision evidence wins first; if
+    only one side has revision but both sides have timestamps, timestamp
+    freshness is used instead of incorrectly returning
+    `assistant-delta-unknown`.
+- Commits/deploys:
+  - `a981311` `fix active overlay evidence cache`
+  - `fb4f567` `diagnose active overlay detail phases`
+  - `bfa027e` `fix active overlay window reuse`
+  - `84527c5` `fix active overlay window sidecar cache`
+  - `506c20b` `fix active full read cache pollution`
+  - `c64d7d0` `fix active overlay window revision metadata`
+  - `672b7d2` `fix active overlay mixed proof freshness`
+  - Latest deploy through the Home AI central macOS plugin deploy path used
+    reason `codex-mobile-active-overlay-mixed-proof-freshness`.
+  - Latest backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T171825Z-plugin-codex-mobile-web-codex-mobile-active-overlay-mixed-proof-freshness`.
+  - Latest deploy source ref: `672b7d226dc4`, dirty false.
+  - Static shell stayed at `clientBuildId=0.1.11|codex-mobile-shell-v550`,
+    expected for this server-only slice.
+- Validation:
+  - Focused active-overlay tests passed after the final proof-domain change:
+    `node --test test/thread-detail-active-window-overlay-policy-service.test.js test/thread-detail-active-overlay-provider-service.test.js test/thread-detail-projection-v4-service.test.js test/thread-detail-read-orchestration-service.test.js test/thread-detail-active-overlay-integration.test.js`
+    (`52` tests).
+  - Full `npm test` passed after the final proof-domain change (`1321` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - `codegraph sync && codegraph status` reported an up-to-date graph, with the
+    known earlier-engine reindex suggestion.
+- Production readback:
+  - Immediate post-deploy sample of
+    `GET /api/threads/019eee6c-a6f5-7b20-bfb4-f96ccb6431b3?mode=recent`
+    returned 12/12 `projection-active-overlay` responses.
+  - `threadReadMs` was `0` for all 12 samples.
+  - `activeOverlayReason` was consistently `overlay-evidence-complete`.
+  - `coldPathOwner` was consistently `warm-path`.
+  - Summary: elapsed average `181ms`, min `139ms`, max `491ms`;
+    server `totalMs` average `167ms`, min `136ms`, max `474ms`;
+    `activeOverlayWindowMs=0` for all samples.
+- Residual:
+  - This closes the repeated app-server full-read loop for the active detail
+    cold path. The active response for very long current turns is still around
+    `475KB` in the sampled thread because the active turn currently contains
+    hundreds of visible assistant/operation summary items. Further improvement
+    should be a separate visible-item compaction / progressive-active-detail
+    slice, not another full-read fallback change.
