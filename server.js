@@ -108,6 +108,9 @@ const {
 const {
   createThreadListRequestContext,
 } = require("./adapters/thread-list-request-context-service");
+const {
+  createThreadListResponseCoalescer,
+} = require("./adapters/thread-list-response-coalescer-service");
 const { diagnoseThreadListColdPath } = require("./adapters/thread-list-cold-path-diagnosis-service");
 const {
   stripThreadListDetailFields,
@@ -13686,6 +13689,7 @@ const threadListFallbackCacheService = createThreadListFallbackCacheService({
   readRolloutSessionFallback,
   readSessionIndexFallback,
 });
+const threadListResponseCoalescer = createThreadListResponseCoalescer();
 
 function clearThreadListFallbackCache() {
   threadListFallbackCacheService.clear();
@@ -15027,6 +15031,31 @@ async function handleApi(req, res) {
       sendJson(res, 200, { data: [] });
       return;
     }
+    const threadListCoalescing = threadListResponseCoalescer.begin({
+      limit,
+      cursor,
+      archived,
+      cwd,
+      searchTerm,
+      fallbackMode,
+      initialMode,
+    });
+    if (threadListCoalescing.enabled && !threadListCoalescing.leader) {
+      sendJson(res, 200, await threadListCoalescing.result());
+      return;
+    }
+    const sendThreadListResult = (event, result) => {
+      if (threadListCoalescing.enabled && threadListCoalescing.leader) {
+        threadListCoalescing.complete(result);
+      }
+      logThreadList(event, result && result.mobileDiagnostics && result.mobileDiagnostics.threadListTimings);
+      sendJson(res, 200, result);
+    };
+    const failThreadListCoalescing = (err) => {
+      if (threadListCoalescing.enabled && threadListCoalescing.leader) {
+        threadListCoalescing.fail(err);
+      }
+    };
     const appServerFetchPlan = planThreadListAppServerFetch({
       limit,
       cursor,
@@ -15104,8 +15133,7 @@ async function handleApi(req, res) {
           decorated.mobileDeferredAppServer = true;
           decorated.mobileInitialSource = "warm-fallback-cache";
           attachDiagnostics(decorated);
-          logThreadList("warm_fallback_initial", decorated.mobileDiagnostics.threadListTimings);
-          sendJson(res, 200, decorated);
+          sendThreadListResult("warm_fallback_initial", decorated);
           return;
         }
       }
@@ -15174,8 +15202,7 @@ async function handleApi(req, res) {
         markTiming("decorateMs", decorateStartedAtMs);
         decorated.mobileDeferredFallback = true;
         attachDiagnostics(decorated);
-        logThreadList("deferred_complete", decorated.mobileDiagnostics.threadListTimings);
-        sendJson(res, 200, decorated);
+        sendThreadListResult("deferred_complete", decorated);
         return;
       }
       const fallbackStartedAtMs = Date.now();
@@ -15243,8 +15270,7 @@ async function handleApi(req, res) {
       );
       markTiming("decorateMs", decorateStartedAtMs);
       attachDiagnostics(decorated);
-      logThreadList("complete", decorated.mobileDiagnostics.threadListTimings);
-      sendJson(res, 200, decorated);
+      sendThreadListResult("complete", decorated);
     } catch (err) {
       const fallbackStartedAtMs = Date.now();
       const fallbackDiagnostics = {};
@@ -15302,10 +15328,10 @@ async function handleApi(req, res) {
         }, { cwd, days: 31, workspaceCwds: tokenUsageWorkspaceCwds(globalState) });
         markTiming("decorateMs", decorateStartedAtMs);
         attachDiagnostics(decorated, { appServerError: err.message || String(err) });
-        logThreadList("fallback_complete", decorated.mobileDiagnostics.threadListTimings);
-        sendJson(res, 200, decorated);
+        sendThreadListResult("fallback_complete", decorated);
         return;
       }
+      failThreadListCoalescing(err);
       logThreadList("error", Object.assign({
         totalMs: Math.max(0, Date.now() - routeStartedAtMs),
         error: err.message || String(err),
