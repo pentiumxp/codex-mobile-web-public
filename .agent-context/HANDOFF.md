@@ -20003,3 +20003,36 @@ The previous full handoff was archived and should be opened only when old proven
   - Continue the optimization plan from the next root-cause target. Current
     production evidence says this v539 module is closed; do not keep extending
     this same module without a new failing invariant.
+
+## 2026-06-27 - Phase A refresh render stage local slice
+
+- Current local state:
+  - Continued after v539 production readback closed.
+  - This is a local slice only. It does not bump `CLIENT_BUILD_ID` / PWA shell
+    cache and is not deployed by itself.
+- Root-cause boundary:
+  - Symptom/risk: `refreshCurrentThread()` still wired refresh render input
+    normalization and render-decision calls separately, so future single-thread
+    / tile-pane / DOM-shape evidence changes could re-spread metadata-only,
+    patch, and full-render decisions through `public/app.js`.
+  - Failing layer: frontend thread-detail refresh render ownership.
+  - Violated invariant: app code should collect facts and execute effects, but
+    the policy stage that maps facts to metadata-only / patch / full-render
+    must be owned by `public/thread-detail-render-plan.js`.
+- Changes:
+  - Added `planThreadDetailRefreshRenderStage()` in
+    `public/thread-detail-render-plan.js`.
+  - `refreshCurrentThread()` now consumes the stage result instead of directly
+    calling `planThreadDetailRefreshRenderInput()` and
+    `planThreadDetailRefreshRender()` separately.
+  - Added focused tests in `test/thread-detail-render-plan.test.js` and
+    updated `test/conversation-render.test.js` source-level regression checks.
+- Validation:
+  - `node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js`
+    passed (`196` tests).
+  - `node --check public/thread-detail-render-plan.js && node --check public/app.js`
+    passed.
+- Next:
+  - Run `npm run check` and `git diff --check`, then commit this local slice.
+  - Do not deploy until enough Phase A local slices are batched into the next
+    shell/cache module.

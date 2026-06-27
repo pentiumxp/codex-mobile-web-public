@@ -3070,11 +3070,13 @@ test("empty visible detail mismatches are diagnosed from recent detail evidence"
 test("thread refresh render planning invalidates empty DOM for nonempty single-thread detail", () => {
   const body = functionBody("refreshCurrentThread");
   assert.match(body, /const nextVisibleShape = visibleConversationShape\(state\.currentThread\);/);
-  assert.match(body, /const refreshRenderInput = threadDetailRenderPlanApi\.planThreadDetailRefreshRenderInput\(\{/);
+  assert.match(body, /const refreshRenderStage = threadDetailRenderPlanApi\.planThreadDetailRefreshRenderStage\(\{/);
   assert.match(body, /singleThreadSurfaceAvailable: canPatchSingleThreadConversationDom\(\{ threadId \}\)/);
   assert.match(body, /renderedDomTurnCount: conversationDomTurnIds\(\)\.length/);
   assert.match(body, /nextVisibleShape,/);
-  assert.match(body, /const renderPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshRender\(refreshRenderInput\);/);
+  assert.match(body, /const renderPlan = refreshRenderStage\.renderPlan;/);
+  assert.doesNotMatch(body, /planThreadDetailRefreshRenderInput\(\{/);
+  assert.doesNotMatch(body, /planThreadDetailRefreshRender\(refreshRenderInput\)/);
 });
 
 test("conversation html update invalidates stable signatures when the DOM has lost visible turns", () => {

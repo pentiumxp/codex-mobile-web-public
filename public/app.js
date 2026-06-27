@@ -9754,7 +9754,7 @@ async function refreshCurrentThread(options = {}) {
   applyThreadDetailRefreshResponseEffectsPlan(responseEffectsPlan, { thread: result.thread });
   const nextVisibleShape = visibleConversationShape(state.currentThread);
   const nextConversationSignature = conversationRenderSignature(state.currentThread);
-  const refreshRenderInput = threadDetailRenderPlanApi.planThreadDetailRefreshRenderInput({
+  const refreshRenderStage = threadDetailRenderPlanApi.planThreadDetailRefreshRenderStage({
     previousConversationSignature,
     nextConversationSignature,
     renderedConversationSignature: state.renderedConversationSignature,
@@ -9764,7 +9764,7 @@ async function refreshCurrentThread(options = {}) {
     renderedDomTurnCount: conversationDomTurnIds().length,
     nextVisibleShape,
   });
-  const renderPlan = threadDetailRenderPlanApi.planThreadDetailRefreshRender(refreshRenderInput);
+  const renderPlan = refreshRenderStage.renderPlan;
   const shouldRenderDetail = renderPlan.shouldRenderDetail;
   const postMergePlan = threadDetailRenderPlanApi.planThreadDetailRefreshPostMergeEffects();
   const mergeMs = applyThreadDetailRefreshTimedPostMergeEffectsGroup(postMergePlan, "merge", {

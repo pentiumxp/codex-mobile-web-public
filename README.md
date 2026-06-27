@@ -16,6 +16,36 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-27 Phase A Refresh Render Stage Local Slice
+
+这是 v539 生产部署后的下一个本地小切片，尚未 bump shell/cache，尚未部署。
+
+根因边界：
+
+- 症状/风险：`refreshCurrentThread()` 仍直接串联 refresh render input
+  normalization 和 render decision，后续单窗口、tile pane、DOM shape 证据继续扩展时，
+  容易把 full-render / metadata-only / local patch 的判断再次散落回 `public/app.js`。
+- 失败层：前端 thread-detail refresh render ownership，不是 server projection、
+  app-server 读取、SSE merge、DOM patch 执行或 scroll 策略。
+- 不变式：app 层只采集当前事实并执行 effect；是否根据这些事实进入 metadata-only、
+  patch 或 full-render 应由 `public/thread-detail-render-plan.js` 的纯策略边界统一决定。
+
+改动：
+
+- 新增 `planThreadDetailRefreshRenderStage()`，组合 refresh render input normalization
+  和 render decision，返回 normalized input、render plan、render mode 和 reason。
+- `refreshCurrentThread()` 改为消费该 stage，不再直接分别调用
+  `planThreadDetailRefreshRenderInput()` 和 `planThreadDetailRefreshRender()`。
+- 补充 focused tests，证明 stage 同时拥有 input normalization 和 render decision，
+  并用 source-level regression 防止 app 编排重新绕过 stage。
+
+验证：
+
+```bash
+node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js  # 196 passed
+node --check public/thread-detail-render-plan.js && node --check public/app.js
+```
+
 ## 2026-06-27 v539 Phase B Thread-List Request/Fallback Module
 
 v539 将 v538 后累积的 Phase B thread-list 小切片收束为一个模块，而不是逐个

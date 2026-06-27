@@ -392,6 +392,18 @@
     };
   }
 
+  function planThreadDetailRefreshRenderStage(input = {}) {
+    const refreshRenderInput = planThreadDetailRefreshRenderInput(input);
+    const renderPlan = planThreadDetailRefreshRender(refreshRenderInput);
+    return {
+      refreshRenderInput,
+      renderPlan,
+      shouldRenderDetail: Boolean(renderPlan.shouldRenderDetail),
+      detailRenderMode: compactReason(renderPlan.detailRenderMode, ""),
+      reason: compactReason(renderPlan.reason, "refresh-render-stage"),
+    };
+  }
+
   function planThreadDetailRefreshPatchExecution(input = {}) {
     const shouldRenderDetail = Boolean(input.shouldRenderDetail);
     const canPatch = Boolean(input.canPatch);
@@ -1764,6 +1776,7 @@
     planThreadDetailRefreshPatchExecution,
     planThreadDetailRefreshRenderInput,
     planThreadDetailRefreshRender,
+    planThreadDetailRefreshRenderStage,
     reduceThreadDetailRefreshPatchAttempt,
     threadDetailRefreshPatchAttemptEffectContext,
   };

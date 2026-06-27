@@ -805,7 +805,11 @@ already stale, and owns the final refresh render outcome (`renderAction`,
 field selection also lives in the same helper: app code still measures the
 current mounted DOM/signature facts, but `planThreadDetailRefreshRenderInput`
 owns which facts form the render-plan input, including visible-shape count
-normalization. Tile-pane patch success is now a terminal render outcome instead
+normalization. The 2026-06-27 local follow-up adds
+`planThreadDetailRefreshRenderStage`, so input normalization and the
+metadata-only / patch / full-render decision are consumed as one policy stage by
+`refreshCurrentThread`. App code still collects facts and executes effects, but
+it no longer wires the two render-plan calls separately. Tile-pane patch success is now a terminal render outcome instead
 of falling through to a single-thread full render. Thread/turn-level merge
 orchestration now lives in
 `public/thread-detail-merge-state.js`: it coordinates v4 projection delegation,

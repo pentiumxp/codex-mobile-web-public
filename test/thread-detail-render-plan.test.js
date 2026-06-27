@@ -309,6 +309,40 @@ test("thread detail refresh render input owns app fact field selection", () => {
   }).nextVisibleTurnCount, 7);
 });
 
+test("thread detail refresh render stage owns input normalization and render decision", () => {
+  const stage = renderPlan.planThreadDetailRefreshRenderStage({
+    previousConversationSignature: "sig-a",
+    nextConversationSignature: "sig-b",
+    renderedConversationSignature: "sig-a",
+    previousPatchShellSignature: "shell-a",
+    renderedPatchShellSignature: "shell-a",
+    singleThreadSurfaceAvailable: true,
+    renderedDomTurnCount: "3",
+    nextVisibleShape: { visibleTurnCount: "5" },
+  });
+
+  assert.deepEqual(stage.refreshRenderInput, {
+    previousConversationSignature: "sig-a",
+    nextConversationSignature: "sig-b",
+    renderedConversationSignature: "sig-a",
+    previousPatchShellSignature: "shell-a",
+    renderedPatchShellSignature: "shell-a",
+    allowPatch: true,
+    singleThreadSurfaceAvailable: true,
+    renderedDomTurnCount: 3,
+    nextVisibleTurnCount: 5,
+  });
+  assert.deepEqual(stage.renderPlan, {
+    shouldRenderDetail: true,
+    canPatch: true,
+    detailRenderMode: "patch",
+    reason: "signature-changed",
+  });
+  assert.equal(stage.shouldRenderDetail, true);
+  assert.equal(stage.detailRenderMode, "patch");
+  assert.equal(stage.reason, "signature-changed");
+});
+
 test("thread detail refresh render plan skips stable conversation signatures", () => {
   const plan = renderPlan.planThreadDetailRefreshRender({
     previousConversationSignature: "sig-a",
