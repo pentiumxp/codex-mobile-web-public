@@ -709,7 +709,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
         omittedTurns: result && result.thread && result.thread.mobileOmittedTurnCount ? result.thread.mobileOmittedTurnCount : 0,
       });
       timer.mark("threadReadMs", readStartedAtMs);
-      if (projection && result && result.thread) {
+      if (projection && result && result.thread && !activeReadPolicy.activeFullReadRequired) {
         try {
           seedProjection(projection, result);
           result.thread.mobileProjection = Object.assign({}, result.thread.mobileProjection || {}, { source: "seeded" });
@@ -720,6 +720,9 @@ function createThreadDetailReadOrchestrationService(options = {}) {
           context.projectionSeedSource = "thread-read";
           threadLog("projection_seed_error", { error: safeErrorMessage(err) });
         }
+      } else if (activeReadPolicy.activeFullReadRequired) {
+        context.projectionSeedStatus = "skipped";
+        context.projectionSeedSource = "active-thread-read";
       } else {
         context.projectionSeedStatus = "skipped";
         context.projectionSeedSource = "no-projection-input";

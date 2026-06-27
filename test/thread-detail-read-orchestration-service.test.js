@@ -354,11 +354,14 @@ test("active recent thread detail skips partial windows and bounded turns/list",
   assert.equal(calls.includes("turns-list:turns-list-initial"), false);
   assert.equal(calls.includes("turns-list:turns-list-large"), false);
   assert.ok(calls.includes("thread-read"));
+  assert.equal(calls.includes("seed"), false);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "full-thread-read");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeFullReadRequired, true);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeFullReadReason, "active-turn-id");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayAction, "require-full-read");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayReason, "overlay-provider-unavailable");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedStatus, "skipped");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedSource, "active-thread-read");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadProtected, false);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadReason, "active-thread-requires-full-read");
 });
@@ -432,6 +435,7 @@ test("active overlay incomplete evidence still falls through to full thread/read
   assert.equal(response.mode, "thread-read");
   assert.ok(calls.indexOf("overlay-provider") > calls.indexOf("projection-lookup:full"));
   assert.ok(calls.includes("thread-read"));
+  assert.equal(calls.includes("seed"), false);
   assert.equal(calls.includes("turns-list:turns-list-initial"), false);
   assert.equal(calls.includes("turns-list:turns-list-large"), false);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "full-thread-read");
@@ -439,6 +443,8 @@ test("active overlay incomplete evidence still falls through to full thread/read
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayReason, "assistant-delta-unknown");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlaySource, "app-server-notification");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayAssistantItems, 1);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedStatus, "skipped");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedSource, "active-thread-read");
 });
 
 test("active overlay complete evidence can use a cached partial projection window plus overlay without app-server reads", async () => {
@@ -824,10 +830,13 @@ test("active full thread detail skips bounded turns/list", async () => {
   assert.equal(response.mode, "thread-read");
   assert.equal(calls.includes("turns-list:turns-list-large"), false);
   assert.ok(calls.includes("thread-read"));
+  assert.equal(calls.includes("seed"), false);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "full-thread-read");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeFullReadRequired, true);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeFullReadReason, "status-active");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadReason, "active-thread-requires-full-read");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedStatus, "skipped");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedSource, "active-thread-read");
 });
 
 test("small summary read still uses full thread/read when projection input is unavailable", async () => {
