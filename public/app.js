@@ -6787,7 +6787,7 @@ function conversationDomShape() {
 
 function visibleConversationShape(thread) {
   const turns = visibleTurnsForConversation(thread);
-  const visibleItemCount = turns.reduce((total, turn) => total + visibleItemsForTurn(turn).length, 0);
+  const visibleItemCount = turns.reduce((total, turn) => total + visibleItemsForTurn(turn, thread).length, 0);
   return {
     visibleTurnCount: turns.length,
     visibleItemCount,

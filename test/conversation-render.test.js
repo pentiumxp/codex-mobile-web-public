@@ -3128,6 +3128,7 @@ test("conversation html update invalidates stable signatures when the DOM has lo
   assert.match(updateBody, /threadDetailDomPatchApi\.planConversationHtmlPerformanceEvent\(\{/);
   assert.match(updateBody, /updatePlan,/);
   assert.match(updateBody, /applicationPlan,/);
+  assert.match(functionBody("visibleConversationShape"), /visibleItemsForTurn\(turn, thread\)\.length/);
   assert.match(functionBody("renderCurrentThread"), /expectedVisibleTurnCount: turns\.length/);
   assert.match(functionBody("renderCurrentThread"), /updateConversationHtml\(shellUpdatePlan\.html, shellUpdatePlan\.conversationSignature, shellUpdatePlan\.options\)/);
   assert.match(functionBody("visibleRenderableTurnIds"), /visibleItemsForTurn\(turn, thread\)\.length/);
@@ -3573,6 +3574,64 @@ return {
 
   assert.deepEqual(result.tileShape, { turnCount: 1, visibleItemCount: 1 });
   assert.deepEqual(result.paneTurnIds, ["pane-turn"]);
+});
+
+test("visible conversation shape uses explicit thread context for visible item filtering", () => {
+  const sources = [
+    "statusText",
+    "contextCompactionStatusKind",
+    "renderContextThread",
+    "turnHasDisplayItems",
+    "latestTurn",
+    "currentThreadHasActiveRuntimeStatus",
+    "isLatestTurn",
+    "isLiveTurn",
+    "canShowPendingContextCompaction",
+    "contextCompactionState",
+    "contextCompactionNotice",
+    "visibleItemsForTurn",
+    "visibleConversationShape",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const result = Function(`
+const CONTEXT_COMPACTION_PENDING_NOTICE = "Context compaction pending";
+const CONTEXT_COMPACTION_COMPLETE_NOTICE = "Context compaction complete";
+const targetTurn = {
+  id: "target-turn",
+  status: { type: "idle" },
+  items: [{ id: "context-item", type: "contextCompaction", status: { type: "pending" } }],
+};
+const targetThread = { id: "target-thread", status: { type: "active" }, turns: [targetTurn] };
+const state = {
+  activeTurnId: "",
+  currentThreadId: "current-thread",
+  currentThread: {
+    id: "current-thread",
+    status: { type: "active" },
+    turns: [
+      { id: "current-latest", status: { type: "running" }, items: [{ id: "current-item" }] },
+    ],
+  },
+  renderContextThread: null,
+};
+function visibleTurnsForConversation(thread) { return thread && Array.isArray(thread.turns) ? thread.turns : []; }
+function isReasoningItem() { return false; }
+function shouldHideSupersededLiveUserMessage() { return false; }
+function shouldHideDurableLiveUserMessage() { return false; }
+function isContextCompactionItem(item) { return Boolean(item && item.type === "contextCompaction"); }
+function isOperationalItem() { return false; }
+function isTurnUsageSummaryItem() { return false; }
+function isSupersededLiveTurn() { return false; }
+function limitRawThreadVisibleEntries(entries) { return entries; }
+function isTurnComplete() { return false; }
+function isRunningStatus(status) { return Boolean(status && (status === "running" || status.type === "active" || status.type === "running")); }
+function isStaleActiveStatus() { return false; }
+function isIncompleteInterruptedTurn() { return false; }
+function turnHasActiveLiveItems() { return false; }
+${sources.join("\n")}
+return visibleConversationShape(targetThread);
+`)();
+
+  assert.deepEqual(result, { visibleTurnCount: 1, visibleItemCount: 1 });
 });
 
 test("item merge delegates visible-field preservation to thread detail state policy", () => {

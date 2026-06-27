@@ -2011,6 +2011,10 @@ Target:
   `visibleRenderableTurnIds()` and `threadTileVisibleShape()` pass the pane
   thread into `visibleItemsForTurn()`, so tile patch expected counts and
   render diagnostics use the same visible-item filter as the pane renderer.
+  The shared `visibleConversationShape()` evidence helper now also passes its
+  input thread into `visibleItemsForTurn()`, so render evidence, empty-detail
+  mismatch checks, and patch-rejection shape evidence do not count items using
+  global current-thread state.
 - Treat each pane as a scaled mobile single-thread runtime instance. Shared
   global Composer chrome is only an interim input surface; global command dock
   or shared operation bubble are no longer acceptable in tile mode and must not

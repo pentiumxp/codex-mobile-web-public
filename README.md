@@ -426,6 +426,33 @@ npm run check:macos  # passed
 git diff --check  # passed
 ```
 
+## 2026-06-27 Phase C Visible Conversation Shape Thread Context Slice
+
+这是 thread-tile visible shape thread context 之后的相邻 Phase C 本地切片，不单独
+部署、不推 Public。它修正 `visibleConversationShape(thread)` 的 visible item count
+仍可能用全局 current thread 过滤 visible items 的问题。
+
+改动边界：
+
+- `visibleConversationShape(thread)` 调用 `visibleItemsForTurn(turn, thread)`；
+- 新增可执行测试，证明 context-compaction pending item 的 visibleItemCount 使用传入
+  thread，而不是全局 current thread；
+- 这样 render evidence、empty visible detail mismatch、patch rejected evidence、
+  refresh render planning 里的 visible shape 和目标 thread 的真实渲染过滤一致；
+- 不改变 server projection、merge、DOM patch 算法、任务卡协议、shell/cache 版本或
+  生产部署状态。
+
+验证：
+
+```bash
+node --check public/app.js
+node --test test/conversation-render.test.js test/thread-tile-layout-ui.test.js test/collab-agent-render.test.js  # 127 passed
+npm test  # 1261 passed
+npm run check  # passed
+npm run check:macos  # passed
+git diff --check  # passed
+```
+
 ## 2026-06-27 Phase A Conversation DOM Authority Invalidation Local Slice
 
 这是 v542 后继续按“小切片本地提交、模块化再部署”节奏推进的 Phase A 切片。
