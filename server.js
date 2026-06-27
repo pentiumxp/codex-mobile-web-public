@@ -12886,7 +12886,9 @@ async function materializeThreadTaskCardDraftsForThread(thread) {
     if (!turnId || !Array.isArray(turn && turn.items)) continue;
     for (const item of turn.items) {
       if (!item || (item.type !== "agentMessage" && item.type !== "plan")) continue;
-      const draft = parseThreadTaskCardDraftText(threadTaskCardItemText(item));
+      const itemText = threadTaskCardItemText(item);
+      if (!itemText.includes(THREAD_TASK_CARD_DRAFT_TAG)) continue;
+      const draft = parseThreadTaskCardDraftText(itemText);
       if (!draft || draft.error || !draft.title || !draft.body || !draft.targetThreadIds.length) continue;
       const targetWorkspaceIds = {};
       for (const targetThreadId of draft.targetThreadIds) {

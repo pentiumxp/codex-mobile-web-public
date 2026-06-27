@@ -331,6 +331,22 @@ test("v4 projection service exposes active overlay snapshot with monotonic revis
   assert.equal(secondWarm.overlayRevision, 2);
   assert.equal(secondWarm.overlayCacheHit, true);
   assert.equal(secondWarm.overlayTurn.items[0].mobileProjectionVersion, "v4");
+
+  const readOnlyWarm = service.activeOverlaySnapshot({
+    threadId: "thread-1",
+    activeTurnId: "turn-1",
+    cloneOverlayTurn: false,
+  });
+  assert.equal(readOnlyWarm.overlayCacheHit, true);
+  assert.equal(readOnlyWarm.overlayTurn, service.activeOverlaySnapshot({
+    threadId: "thread-1",
+    activeTurnId: "turn-1",
+    cloneOverlayTurn: false,
+  }).overlayTurn);
+  assert.notEqual(readOnlyWarm.overlayTurn, service.activeOverlaySnapshot({
+    threadId: "thread-1",
+    activeTurnId: "turn-1",
+  }).overlayTurn);
 });
 
 test("v4 projection service treats turn completion as an item-preserving patch", () => {

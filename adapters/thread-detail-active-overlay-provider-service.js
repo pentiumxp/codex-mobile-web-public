@@ -64,7 +64,11 @@ function createThreadDetailActiveOverlayProviderService(options = {}) {
       return unavailableOverlayInput(summaryActiveTurnId(input.summary), "snapshot-api-unavailable");
     }
     const summaryTurnId = summaryActiveTurnId(input.summary);
-    const snapshot = projectionService.activeOverlaySnapshot({ threadId, activeTurnId: summaryTurnId });
+    const snapshot = projectionService.activeOverlaySnapshot({
+      threadId,
+      activeTurnId: summaryTurnId,
+      cloneOverlayTurn: false,
+    });
     const activeTurnId = summaryTurnId || text(snapshot && snapshot.activeTurnId);
     if (!activeTurnId) return unavailableOverlayInput("", snapshot && snapshot.reason || "missing-active-turn-id");
     if (!snapshot || snapshot.found !== true) {

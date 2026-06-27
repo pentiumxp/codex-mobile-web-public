@@ -103,6 +103,29 @@ test("active overlay provider converts live projection snapshot into complete po
   assert.equal(plan.reason, "overlay-evidence-complete");
 });
 
+test("active overlay provider requests clone-free snapshots for read-only proof", () => {
+  let seenInput = null;
+  const projectionService = {
+    activeOverlaySnapshot(input) {
+      seenInput = input;
+      return {
+        found: false,
+        reason: "entry-missing",
+      };
+    },
+  };
+  const provider = createThreadDetailActiveOverlayProviderService({ projectionService });
+  provider.resolveActiveWindowOverlay({
+    threadId: "thread-1",
+    summary: activeSummary(),
+    projectionThread: projectionThread(),
+  });
+
+  assert.equal(seenInput.threadId, "thread-1");
+  assert.equal(seenInput.activeTurnId, "turn-1");
+  assert.equal(seenInput.cloneOverlayTurn, false);
+});
+
 test("active overlay provider derives active turn from live projection when summary only says active", () => {
   const projectionService = createThreadDetailProjectionV4Service({
     cacheDir: "",

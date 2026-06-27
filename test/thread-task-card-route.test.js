@@ -318,7 +318,9 @@ test("server materializes structured task-card drafts from thread detail", () =>
   assert.match(functionBody(serverJs, "maybeMaterializeThreadTaskCardDrafts"), /method !== "turn\/completed"/);
   assert.match(functionBody(serverJs, "maybeMaterializeThreadTaskCardDrafts"), /codex\.request\("thread\/turns\/list"/);
   assert.match(functionBody(serverJs, "maybeMaterializeThreadTaskCardDrafts"), /await materializeThreadTaskCardDraftsForThread\(thread\)/);
-  assert.match(functionBody(serverJs, "materializeThreadTaskCardDraftsForThread"), /parseThreadTaskCardDraftText\(threadTaskCardItemText\(item\)\)/);
+  assert.match(functionBody(serverJs, "materializeThreadTaskCardDraftsForThread"), /const itemText = threadTaskCardItemText\(item\);/);
+  assert.match(functionBody(serverJs, "materializeThreadTaskCardDraftsForThread"), /if \(!itemText\.includes\(THREAD_TASK_CARD_DRAFT_TAG\)\) continue;/);
+  assert.match(functionBody(serverJs, "materializeThreadTaskCardDraftsForThread"), /const draft = parseThreadTaskCardDraftText\(itemText\);/);
   assert.match(functionBody(serverJs, "materializeThreadTaskCardDraftsForThread"), /readStateDbThread\(targetThreadId\) \|\| readStartedThread\(targetThreadId\)/);
   assert.match(functionBody(serverJs, "materializeThreadTaskCardDraftsForThread"), /const body = truncateThreadTaskCardBody\(draft\.body\)/);
   assert.match(functionBody(serverJs, "materializeThreadTaskCardDraftsForThread"), /threadTaskCardService\.createMany/);

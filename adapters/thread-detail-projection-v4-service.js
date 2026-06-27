@@ -166,11 +166,14 @@ function createThreadDetailProjectionV4Service(options = {}) {
       updatedAtMs,
       cachedAtMs,
     })) {
+      const overlayTurn = input.cloneOverlayTurn === false
+        ? cacheEntry.overlayTurn
+        : cloneJson(cacheEntry.overlayTurn);
       return Object.assign({}, snapshot, {
         version: PROJECTION_VERSION,
         overlayRevision: revision,
         overlayCacheHit: true,
-        overlayTurn: cloneJson(cacheEntry.overlayTurn),
+        overlayTurn,
       });
     }
     const normalizedOverlay = normalizeResult({
