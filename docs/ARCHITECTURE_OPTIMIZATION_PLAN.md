@@ -259,6 +259,14 @@ Current acceleration targets:
    full entry into a history-only `turns-list-active-overlay-window`; ordinary
    lookups and resting threads keep rejecting the mismatch and reseed through
    the authoritative app-server path.
+   The history-baseline follow-up handles the related restart race where the
+   active notification stream reaches the process before the warm full
+   projection has been loaded into memory. The projection service now restores a
+   persisted full projection before applying `turn/started` / active item
+   notifications, then keeps that process-local full history baseline available
+   for the active-overlay proof gate. Notification-only shells still cannot
+   become normal detail authority, and partial active-window state is still not
+   persisted.
    The next measured detail-shape problem was not timeout or window proof: after
    `threadReadMs=0`, `turnsListMs=0`, and `activeOverlayWindowMs=0`, active and
    recently completed detail responses could still carry dozens of intermediate

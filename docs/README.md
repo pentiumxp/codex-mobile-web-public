@@ -145,3 +145,11 @@ matches but the rollout size/mtime moved because the current active turn kept
 growing. This is limited to explicit `activeOverlay` partial lookups with an
 `omitActiveTurnId`; ordinary detail lookups and resting threads still reject the
 same stale signature and reseed from the authoritative app-server path.
+
+The follow-up active history-baseline slice closes another restart/notification
+race: if a `turn/started` or active item notification arrives before the process
+has reloaded the warm full projection into memory, the projection service first
+restores the persisted full cache and then applies the live notification. That
+keeps a full history baseline available for the active-overlay proof gate, so a
+foreground detail read is less likely to join a background
+`turns-list-active-overlay-window` rebuild.

@@ -307,6 +307,75 @@ test("v4 projection service reuses stale full cache as active overlay history wi
   assert.deepEqual(lookedUp.cached.result.thread.mobileVisibleItemKeys, ["turn-old:receipt:agent-old"]);
 });
 
+test("v4 projection service restores persisted full history before active notifications", () => {
+  const dir = tempDir();
+  try {
+    const writer = createThreadDetailProjectionV4Service({
+      cacheDir: dir,
+      policyVersion: "test-v4",
+      maxTurns: 3,
+      now: () => 2000,
+    });
+    writer.seed(signatureInput({
+      summaryStatus: "completed",
+      summaryUpdatedAtMs: 1000,
+    }), {
+      thread: {
+        id: "thread-1",
+        turns: [
+          {
+            id: "turn-old",
+            items: [{ id: "agent-old", type: "agentMessage" }],
+          },
+        ],
+      },
+    });
+
+    const service = createThreadDetailProjectionV4Service({
+      cacheDir: dir,
+      policyVersion: "test-v4",
+      maxTurns: 3,
+      now: (() => {
+        let current = 10000;
+        return () => current += 100;
+      })(),
+    });
+    service.applyNotification("turn/started", {
+      threadId: "thread-1",
+      turn: { id: "turn-active", status: { type: "active" }, items: [] },
+    });
+    service.applyNotification("item/agentMessage/delta", {
+      threadId: "thread-1",
+      turnId: "turn-active",
+      itemId: "agent-active",
+      delta: "live",
+    });
+
+    const overlay = service.activeOverlaySnapshot({ threadId: "thread-1", activeTurnId: "turn-active" });
+    assert.equal(overlay.found, true);
+    assert.equal(overlay.activeTurnId, "turn-active");
+
+    const lookedUp = service.lookup(signatureInput({
+      summaryStatus: "active",
+      summaryUpdatedAtMs: 12000,
+      rolloutStats: { sizeBytes: 8192, mtimeMs: 12000 },
+    }), {
+      allowPartial: true,
+      activeOverlay: true,
+      omitActiveTurnId: "turn-active",
+    });
+
+    assert.ok(lookedUp.cached);
+    assert.equal(lookedUp.missReason, "");
+    assert.equal(lookedUp.cached.version, "v4");
+    assert.equal(lookedUp.cached.dynamic, true);
+    assert.deepEqual(lookedUp.cached.result.thread.turns.map((turn) => turn.id), ["turn-old"]);
+    assert.deepEqual(lookedUp.cached.result.thread.mobileVisibleItemKeys, ["turn-old:receipt:agent-old"]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("v4 projection service lets partial recent windows replace stale full cache", () => {
   const service = createThreadDetailProjectionV4Service({
     cacheDir: "",

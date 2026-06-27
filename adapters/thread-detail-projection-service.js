@@ -200,6 +200,8 @@ function shouldUseStaleFullAsActiveOverlayWindow(entry, signature, input = {}, o
 }
 
 function staleFullActiveOverlayWindow(entry, optionsForGet = {}) {
+  const omittedTurnId = String(optionsForGet.omitActiveTurnId || "").trim();
+  if (omittedTurnId && !findTurn(entry && entry.result && entry.result.thread, omittedTurnId)) return null;
   const result = cloneProjectionResultForLookup(entry && entry.result, optionsForGet);
   const thread = result && result.thread;
   if (!thread || !Array.isArray(thread.turns) || !thread.turns.length) return null;
@@ -213,6 +215,7 @@ function staleFullActiveOverlayWindow(entry, optionsForGet = {}) {
     partialKind: "turns-list-active-overlay-window",
     activeOverlayWindow: true,
     staleFullWindow: true,
+    staleFullHistoryBaseline: entry.historyBaseline === true,
   });
   return {
     cached: {
@@ -668,10 +671,44 @@ function createThreadDetailProjectionService(options = {}) {
     : Math.max(0, safeNumber(options.dynamicPersistMinIntervalMs));
   const now = typeof options.now === "function" ? options.now : () => Date.now();
   const memory = new Map();
+  const fullHistory = new Map();
 
   function entryForThread(threadId) {
     const id = String(threadId || "").trim();
     return id ? memory.get(id) || null : null;
+  }
+
+  function isReusableFullEntry(entry) {
+    return Boolean(
+      entry
+        && entry.partial !== true
+        && entry.signatureHash
+        && entry.result
+        && entry.result.thread
+        && !isNonFullWindowThread(entry.result.thread),
+    );
+  }
+
+  function cloneEntry(entry, overrides = {}) {
+    return Object.assign({
+      threadId: entry.threadId,
+      rolloutPath: entry.rolloutPath || "",
+      signature: entry.signature ? cloneJson(entry.signature) : null,
+      signatureHash: entry.signatureHash || "",
+      cachedAtMs: safeNumber(entry.cachedAtMs),
+      updatedAtMs: safeNumber(entry.updatedAtMs || entry.cachedAtMs),
+      lastPersistedAtMs: safeNumber(entry.lastPersistedAtMs || entry.updatedAtMs || entry.cachedAtMs),
+      dynamic: Boolean(entry.dynamic),
+      partial: Boolean(entry.partial),
+      partialKind: String(entry.partialKind || ""),
+      result: cloneJson(entry.result),
+    }, overrides);
+  }
+
+  function rememberFullHistoryEntry(entry) {
+    if (!isReusableFullEntry(entry)) return false;
+    fullHistory.set(entry.threadId, cloneEntry(entry, { historyBaseline: true }));
+    return true;
   }
 
   function persistEntry(entry) {
@@ -743,6 +780,47 @@ function createThreadDetailProjectionService(options = {}) {
     return false;
   }
 
+  function persistedEntryForThread(threadId) {
+    if (!cacheDir || !threadId) return null;
+    const raw = readJsonFile(cacheFileForThread(cacheDir, threadId));
+    if (!raw || raw.version !== 1 || raw.policyVersion !== policyVersion || !raw.result) return null;
+    const entry = {
+      threadId,
+      rolloutPath: String(raw.rolloutPath || "").trim(),
+      signature: raw.signature || null,
+      signatureHash: String(raw.signatureHash || ""),
+      cachedAtMs: safeNumber(raw.cachedAtMs),
+      updatedAtMs: safeNumber(raw.updatedAtMs || raw.cachedAtMs),
+      lastPersistedAtMs: safeNumber(raw.updatedAtMs || raw.cachedAtMs),
+      dynamic: Boolean(raw.dynamic),
+      partial: Boolean(raw.partial),
+      partialKind: String(raw.partialKind || ""),
+      result: raw.result,
+    };
+    if (entry.partial || markWindowEntryPartial(entry)) {
+      removePersistedEntry(threadId);
+      return null;
+    }
+    return entry;
+  }
+
+  function fullHistoryEntryForThread(threadId) {
+    const id = String(threadId || "").trim();
+    if (!id) return null;
+    const entry = fullHistory.get(id);
+    if (entry) return entry;
+    const persisted = persistedEntryForThread(id);
+    if (!persisted) return null;
+    rememberFullHistoryEntry(persisted);
+    return fullHistory.get(id) || null;
+  }
+
+  function staleFullHistoryWindowForLookup(threadId, signature, input = {}, optionsForGet = {}) {
+    const entry = fullHistoryEntryForThread(threadId);
+    if (!shouldUseStaleFullAsActiveOverlayWindow(entry, signature, input, optionsForGet)) return null;
+    return staleFullActiveOverlayWindow(entry, optionsForGet);
+  }
+
   function seed(input = {}, result, optionsForSeed = {}) {
     const threadId = String(input.threadId || result && result.thread && result.thread.id || "").trim();
     if (!threadId || !result || typeof result !== "object" || !result.thread) return null;
@@ -771,6 +849,7 @@ function createThreadDetailProjectionService(options = {}) {
       staleFullReason = reusableFullLookup.missReason || "";
       if (STALE_FULL_MISS_REASONS.has(staleFullReason)) {
         replacedStaleFull = true;
+        fullHistory.delete(threadId);
         removePersistedEntry(threadId);
       }
     }
@@ -791,6 +870,7 @@ function createThreadDetailProjectionService(options = {}) {
     normalizeProjectionSupersededLiveTurns(entry.result.thread);
     trimTurns(entry.result.thread, maxTurns);
     memory.set(threadId, entry);
+    rememberFullHistoryEntry(entry);
     persistEntry(entry);
     return {
       cachedAtMs: entry.cachedAtMs,
@@ -804,27 +884,10 @@ function createThreadDetailProjectionService(options = {}) {
   }
 
   function readDisk(threadId) {
-    if (!cacheDir || !threadId) return null;
-    const raw = readJsonFile(cacheFileForThread(cacheDir, threadId));
-    if (!raw || raw.version !== 1 || raw.policyVersion !== policyVersion || !raw.result) return null;
-    const entry = {
-      threadId,
-      rolloutPath: String(raw.rolloutPath || "").trim(),
-      signature: raw.signature || null,
-      signatureHash: String(raw.signatureHash || ""),
-      cachedAtMs: safeNumber(raw.cachedAtMs),
-      updatedAtMs: safeNumber(raw.updatedAtMs || raw.cachedAtMs),
-      lastPersistedAtMs: safeNumber(raw.updatedAtMs || raw.cachedAtMs),
-      dynamic: Boolean(raw.dynamic),
-      partial: Boolean(raw.partial),
-      partialKind: String(raw.partialKind || ""),
-      result: raw.result,
-    };
-    if (entry.partial || markWindowEntryPartial(entry)) {
-      removePersistedEntry(threadId);
-      return null;
-    }
+    const entry = persistedEntryForThread(threadId);
+    if (!entry) return null;
     memory.set(threadId, entry);
+    rememberFullHistoryEntry(entry);
     return entry;
   }
 
@@ -838,11 +901,16 @@ function createThreadDetailProjectionService(options = {}) {
     if (!entry) return { cached: null, missReason: "entry-missing" };
     if (!entry.result) return { cached: null, missReason: "entry-empty" };
     if (!entry.partial && markWindowEntryPartial(entry)) removePersistedEntry(threadId);
-    if (entry.partial && !entry.signatureHash) return { cached: null, missReason: "partial-not-seeded" };
-    if (entry.partial && optionsForGet.allowPartial !== true) return { cached: null, missReason: "partial-not-allowed" };
 
     const summaryUpdatedAtMs = safeNumber(input.summaryUpdatedAtMs);
     const activeOverlayStaleWindowAllowed = shouldUseStaleFullAsActiveOverlayWindow(entry, signature, input, optionsForGet);
+    const activeOverlayFullHistoryWindow = () => staleFullHistoryWindowForLookup(threadId, signature, input, optionsForGet);
+    if (entry.partial && !entry.signatureHash) {
+      const staleWindow = activeOverlayFullHistoryWindow();
+      if (staleWindow) return staleWindow;
+      return { cached: null, missReason: "partial-not-seeded" };
+    }
+    if (entry.partial && optionsForGet.allowPartial !== true) return { cached: null, missReason: "partial-not-allowed" };
     if (entry.dynamic) {
       const allowActiveOverlaySummaryStaleWindow = optionsForGet.activeOverlay === true
         && optionsForGet.allowPartial === true
@@ -853,6 +921,8 @@ function createThreadDetailProjectionService(options = {}) {
         && summaryUpdatedAtMs > entry.updatedAtMs + 2000) {
         const staleWindow = activeOverlayStaleWindowAllowed ? staleFullActiveOverlayWindow(entry, optionsForGet) : null;
         if (staleWindow) return staleWindow;
+        const historyWindow = activeOverlayFullHistoryWindow();
+        if (historyWindow) return historyWindow;
         return { cached: null, missReason: "dynamic-summary-stale" };
       }
       if (dynamicBackingSignatureChanged(entry.signature, signature)) {
@@ -860,11 +930,15 @@ function createThreadDetailProjectionService(options = {}) {
         if (isRestingStatus(input.summaryStatus)) {
           const staleWindow = activeOverlayStaleWindowAllowed ? staleFullActiveOverlayWindow(entry, optionsForGet) : null;
           if (staleWindow) return staleWindow;
+          const historyWindow = activeOverlayFullHistoryWindow();
+          if (historyWindow) return historyWindow;
           return { cached: null, missReason: "dynamic-resting-signature-mismatch" };
         }
         if (dynamicAgeMs > dynamicSignatureMismatchMaxAgeMs) {
           const staleWindow = activeOverlayStaleWindowAllowed ? staleFullActiveOverlayWindow(entry, optionsForGet) : null;
           if (staleWindow) return staleWindow;
+          const historyWindow = activeOverlayFullHistoryWindow();
+          if (historyWindow) return historyWindow;
           return { cached: null, missReason: "dynamic-age-signature-mismatch" };
         }
       }
@@ -873,6 +947,8 @@ function createThreadDetailProjectionService(options = {}) {
     } else if (entry.signatureHash !== expectedHash) {
       const staleWindow = activeOverlayStaleWindowAllowed ? staleFullActiveOverlayWindow(entry, optionsForGet) : null;
       if (staleWindow) return staleWindow;
+      const historyWindow = activeOverlayFullHistoryWindow();
+      if (historyWindow) return historyWindow;
       return { cached: null, missReason: "static-signature-mismatch" };
     }
 
@@ -930,6 +1006,7 @@ function createThreadDetailProjectionService(options = {}) {
     const id = String(threadId || "").trim();
     if (!id) return false;
     memory.delete(id);
+    fullHistory.delete(id);
     if (cacheDir) {
       try {
         fs.rmSync(cacheFileForThread(cacheDir, id), { force: true });
@@ -942,6 +1019,14 @@ function createThreadDetailProjectionService(options = {}) {
     const threadId = notificationThreadId(method, params);
     if (!threadId) return false;
     let entry = entryForThread(threadId);
+    if (!entry || (entry.partial && !entry.signatureHash)) {
+      const persisted = persistedEntryForThread(threadId);
+      if (persisted) {
+        entry = persisted;
+        memory.set(threadId, entry);
+        rememberFullHistoryEntry(entry);
+      }
+    }
     if (!entry) {
       if (method !== "turn/started" && method !== "turn/completed") return false;
       entry = {
@@ -1009,9 +1094,10 @@ function createThreadDetailProjectionService(options = {}) {
     normalizeProjectionThreadUserMessages(thread);
     normalizeProjectionSupersededLiveTurns(thread);
     trimTurns(thread, maxTurns);
-    markWindowEntryPartial(entry);
     entry.updatedAtMs = now();
     entry.dynamic = true;
+    rememberFullHistoryEntry(entry);
+    markWindowEntryPartial(entry);
     persistDynamicEntry(entry, method);
     return true;
   }

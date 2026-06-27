@@ -495,6 +495,12 @@ the currently growing active turn. Ordinary lookup paths still reject the same
 rollout size/mtime mismatch; the downgraded window is history-only input for
 the proof gate, while the live active turn continues to come from the
 server-owned active overlay provider.
+The projection service also keeps a process-local full history baseline. When a
+live active notification reaches a restarted process before the full projection
+has been loaded into memory, the service restores the persisted full cache
+before applying the notification. This preserves the history side of the
+overlay proof gate without promoting notification-only shells to normal detail
+authority or persisting partial active-window state.
 
 Active-overlay detail responses preserve the same compaction boundary as normal
 thread-detail responses. The proof gate may merge a live overlay turn into a

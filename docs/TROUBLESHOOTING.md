@@ -389,6 +389,13 @@ post-restart or active-growth sample still spends seconds in app-server
 missing entirely, the stable identity changed, or the lookup lacked
 `activeOverlay=true` plus `omitActiveTurnId`; those cases remain authoritative
 app-server reads rather than client timeouts.
+If logs show a foreground detail request coalescing with background prewarm
+immediately after restart or after a new active turn starts, verify whether a
+persisted full projection existed before the active notification. Current
+servers should restore that full projection before applying `turn/started` /
+active item notifications, preserving a history baseline and avoiding a
+foreground `turns-list-active-overlay-window` rebuild when the full cache is
+available and matches the stable thread identity.
 Current builds also expose
 `mobileDiagnostics.threadDetailTimings.activeOverlayWindowFirst`. When this is
 `true`, the active detail orchestrator used the dedicated active-overlay

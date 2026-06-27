@@ -147,6 +147,75 @@ test("thread detail projection reuses stale full cache as active overlay history
   }
 });
 
+test("thread detail projection restores persisted full history before active notifications", () => {
+  const dir = tempDir();
+  try {
+    const writer = createThreadDetailProjectionService({
+      cacheDir: dir,
+      policyVersion: "test-v1",
+      maxTurns: 3,
+      now: () => 2000,
+    });
+    writer.seed(signatureInput({
+      maxTurns: 3,
+      summaryStatus: "completed",
+      summaryUpdatedAtMs: 1000,
+    }), {
+      thread: {
+        id: "thread-1",
+        turns: [
+          { id: "turn-old", items: [{ id: "agent-old", type: "agentMessage" }] },
+        ],
+      },
+    });
+
+    const service = createThreadDetailProjectionService({
+      cacheDir: dir,
+      policyVersion: "test-v1",
+      maxTurns: 3,
+      now: (() => {
+        let current = 10000;
+        return () => current += 100;
+      })(),
+    });
+    service.applyNotification("turn/started", {
+      threadId: "thread-1",
+      turn: { id: "turn-active", status: { type: "active" }, items: [] },
+    });
+    service.applyNotification("item/agentMessage/delta", {
+      threadId: "thread-1",
+      turnId: "turn-active",
+      itemId: "agent-active",
+      delta: "live",
+    });
+
+    const overlay = service.activeOverlaySnapshot({ threadId: "thread-1", activeTurnId: "turn-active" });
+    assert.equal(overlay.found, true);
+    assert.equal(overlay.activeTurnId, "turn-active");
+
+    const activeInput = signatureInput({
+      maxTurns: 3,
+      summaryStatus: "active",
+      summaryUpdatedAtMs: 12000,
+      rolloutStats: {
+        sizeBytes: 4096,
+        mtimeMs: 12000,
+      },
+    });
+    const windowLookup = service.lookup(activeInput, {
+      allowPartial: true,
+      activeOverlay: true,
+      omitActiveTurnId: "turn-active",
+    });
+    assert.ok(windowLookup.cached);
+    assert.equal(windowLookup.missReason, "");
+    assert.equal(windowLookup.cached.dynamic, true);
+    assert.deepEqual(windowLookup.cached.result.thread.turns.map((turn) => turn.id), ["turn-old"]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("thread detail projection updates live intermediate items from notifications", () => {
   const service = createThreadDetailProjectionService({
     cacheDir: "",
