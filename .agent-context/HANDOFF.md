@@ -23221,3 +23221,76 @@ The previous full handoff was archived and should be opened only when old proven
     `projectionMs` / `activeOverlayMs` and large active operation payloads.
   - Next optimization should be a separate active-detail response-size /
     active-overlay projection module, not another thread-list fallback change.
+
+## 2026-06-27 - Active-overlay detail payload compaction deployed
+
+- Problem:
+  - Active-thread detail reads were already using `projection-active-overlay`,
+    but recent production samples still returned large active detail payloads:
+    one current-thread pre-fix sample was about `519KB` with `904ms` elapsed,
+    `totalMs=598`, `projectionMs=318`, `activeOverlayMs=126`,
+    `prepareResponseMs=70`, `mcpToolCall` items carrying about `141KB`, and
+    `commandExecution` items carrying about `77KB`.
+  - Older active-overlay samples on other running threads had also shown
+    `868-896KB` responses.
+  - Root cause: the proof-gated overlay turn was merged into an already
+    compacted projection result after response compaction, so raw live
+    `mcpToolCall.arguments` / `mcpToolCall.result` and long operation payloads
+    could survive in `/api/threads/:id?mode=recent`.
+- Fix:
+  - `adapters/thread-detail-read-orchestration-service.js` now accepts an
+    injected `compactActiveOverlayTurn` dependency and passes it into the
+    active-overlay merge seam after the proof gate succeeds.
+  - `server.js` wires that dependency to the existing `compactTurn()` policy
+    with `allowOperations: true` and `MAX_LIVE_OPERATION_ITEMS`.
+  - `adapters/thread-detail-active-window-overlay-policy-service.js` compacts
+    the overlay turn before cloning it into the response and classifies
+    `mcpToolCall` / `dynamicToolCall` as operation evidence.
+  - Docs updated: `README.md`, `docs/ARCHITECTURE.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, and `docs/MODULES.md`.
+- Commit/deploy:
+  - Private commit: `e6f0aec` (`fix active overlay detail payload compaction`).
+  - Deployed through Home AI central macOS plugin deploy path with reason
+    `codex-mobile-active-overlay-detail-payload`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T155659Z-plugin-codex-mobile-web-codex-mobile-active-overlay-detail-payload`.
+  - Static readback stayed on `clientBuildId=0.1.11|codex-mobile-shell-v550`,
+    `shellCacheName=codex-mobile-shell-v550`, as expected for a server-only
+    change.
+  - Source/prod SHA-256 short hashes matched for all changed code/doc/test
+    files, including `server.js`,
+    `adapters/thread-detail-active-window-overlay-policy-service.js`, and
+    `adapters/thread-detail-read-orchestration-service.js`.
+- Validation:
+  - Focused tests passed:
+    `node --test test/thread-detail-active-window-overlay-policy-service.test.js test/thread-detail-active-overlay-integration.test.js test/thread-detail-active-overlay-provider-service.test.js test/thread-detail-read-orchestration-service.test.js test/thread-detail-projection-v4-service.test.js test/thread-detail-performance-service.test.js test/thread-turn-compaction-policy-service.test.js test/thread-visibility.test.js`
+    (`112` tests).
+  - `npm test` passed (`1316` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - `codegraph sync` reported the graph already up to date; `codegraph status`
+    reported current index with the known earlier-engine warning.
+- Production comparison:
+  - Six direct metadata-only samples of the current active Codex Mobile thread
+    after deploy stayed in `projection-active-overlay`.
+  - Warm samples after the first post-restart read were about `334-430ms`
+    elapsed with stable `379337-379338` byte responses. Server timings were
+    roughly `totalMs=279-348`, `projectionMs=100-104`,
+    `activeOverlayMs=96-104`, and `prepareResponseMs=18-23`.
+  - The same responses contained `mcpToolCall` items with about `6.5KB` total,
+    max item about `432B`, and no `arguments` / `result` fields. `commandExecution`
+    items had no `aggregatedOutput` field.
+  - Phase-B readback passed `--require-active-overlay`: detail owner
+    `warm-path`, reason `warm-projection-active-overlay`, gate `ready`,
+    active overlay reason `overlay-evidence-complete`.
+- Residual evidence:
+  - This slice closes the raw active operation payload path. Response size is
+    still about `379KB` on the active current thread because the visible active
+    turn now legitimately contains many assistant/reasoning items
+    (`agentMessage` and `reasoning` dominate bytes), not raw MCP/tool result
+    payload.
+  - Phase-B smoke also reported a separate thread-list prewarm/cache-key issue:
+    while active detail was in flight, the first list read was
+    `deferred-fallback`, then the follow-up hit warm fallback cache. Treat that
+    as a separate next slice if entry speed still feels inconsistent.
