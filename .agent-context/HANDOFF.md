@@ -23820,7 +23820,7 @@ The previous full handoff was archived and should be opened only when old proven
     warm baseline, not as app-server/network timeout. Next performance slice
     should reduce or move the `fallback-baseline`/rollout prewarm cost itself.
 
-## 2026-06-28 - Active turn progressive detail budget ready for deploy
+## 2026-06-28 - Active turn progressive detail budget deployed
 
 - Root cause / invariant:
   - Active detail no longer needed full `thread/read`, but large active threads
@@ -23864,15 +23864,40 @@ The previous full handoff was archived and should be opened only when old proven
   - `npm run check:macos` passed.
   - `git diff --check` passed.
   - `codegraph sync && codegraph status` reported the index is up to date.
+- Commit/deploy:
+  - Initial module commit `05c8a2d` deployed with reason
+    `codex-mobile-active-progressive-budget`.
+  - Production readback showed stale active-looking row ownership was fixed, but
+    the initial threshold was too high for the observed active-turn pressure and
+    idle large threads could report `progressiveActiveBudgetApplied=true`
+    without a current active turn.
+  - Follow-up commit `e814890` lowered the default active progressive threshold
+    to `50` and requires a current active turn before progressive active budget
+    can be marked applied.
+  - Deployed `e8148909361f` through the Home AI central macOS plugin deploy
+    path with reason `codex-mobile-active-progressive-budget-trigger`; backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T193154Z-plugin-codex-mobile-web-codex-mobile-active-progressive-budget-trigger`.
 - Pre-deploy production shape evidence:
   - Current Codex Mobile active detail sample had `activeTurnCount=2`, including
     one non-current `inProgress` row, original `1688` items, retained `98`
     items, response about `153KB`, and active limits
     `operation=12/reasoning=2/assistant=8`.
-- Next:
-  - Commit and deploy through the Home AI central macOS plugin deploy path with
-    reason `codex-mobile-active-progressive-budget`.
-  - Production readback should compare the current active detail response bytes,
-    `activeTurnCount`, `staleActiveTurnCount`,
-    `progressiveActiveBudgetApplied`, effective active limits, retained item
-    count, and omitted item counts.
+- Production readback after `e814890`:
+  - Current Codex Mobile active detail remained
+    `readMode=projection-active-overlay`, `activeTurnCount=1`,
+    `staleActiveTurnCount=0`, and now reports
+    `progressiveActiveBudgetApplied=true` with reason
+    `active-item-pressure`.
+  - Effective active limits are `operation=6/reasoning=1/assistant=4`, with
+    configured limits preserved as `12/2/8`. The active detail retained `35`
+    items from `111` original items and returned about `119KB`.
+  - Home AI idle detail reports `activeTurnCount=0` and
+    `progressiveActiveBudgetApplied=false`, proving the progressive flag no
+    longer marks idle large threads.
+  - `node scripts/codex-mobile-phase-b-readback-smoke.js --server http://127.0.0.1:8787 --thread-id 019eee6c-a6f5-7b20-bfb4-f96ccb6431b3 --require-active-overlay --json`
+    passed with decision `ready`.
+- Residual:
+  - The current active detail path still sampled at about `4s` in production.
+    The response is smaller and ownership is correct, but the next optimization
+    slice should target the remaining active detail peak latency rather than
+    adding UI/client fallback masking.
