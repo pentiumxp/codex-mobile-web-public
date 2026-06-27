@@ -24113,3 +24113,80 @@ The previous full handoff was archived and should be opened only when old proven
     first request after restart can still hit a cold app-server/projection peak.
     The next module should target cold/deferred app-server and active
     projection readiness rather than further client refresh masking.
+
+## 2026-06-28 - Active-Window Read Coalescing And Startup Prewarm Module
+
+- User-visible symptom:
+  - Large active threads could show a long spinner and then eventually render,
+    instead of failing with the old timeout-style error. Production and local
+    logs showed successful but expensive `turns-list-active-overlay-window`
+    reads, not network/RPC timeout failures.
+- Root cause / invariant:
+  - Background active-window prewarm and the foreground `/api/threads/:id`
+    detail path could race and start the same app-server
+    `turns-list-active-overlay-window` read for the same active thread.
+  - After restart, thread-list fallback prewarm warmed the list baseline/source
+    snapshot, but did not pass active rows into active-window prewarm. A user
+    opening the active large thread soon after restart could still pay the
+    single active-window read on the first visible detail request.
+  - Active detail first paint must avoid duplicate app-server work and should
+    start active-window prewarm as early as existing bounded metadata permits,
+    without changing projection authority or adding client refresh masking.
+- Implementation:
+  - Added `adapters/thread-detail-active-window-read-coalescer-service.js`.
+    It coalesces only in-flight `turns-list-active-overlay-window` reads for
+    the same thread/mode, logs bounded `turns_list_coalesced` metadata for
+    joiners, clears failed reads for normal retry, and does not coalesce other
+    modes or other threads.
+  - Wired the same coalescer instance into both
+    `thread-detail-active-window-prewarm-service` and
+    `thread-detail-read-orchestration-service` from `server.js`.
+  - Added an internal `onResult` hook to
+    `thread-list-fallback-prewarm-service`; when startup fallback baseline
+    prewarm completes, server glue schedules active-window prewarm for active
+    rows from the already-read result. Public fallback-prewarm status remains
+    count/timing only.
+  - Updated `docs/README.md`, `docs/MODULES.md`, `docs/ARCHITECTURE.md`,
+    `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` with the active-window cold-path
+    classification and residual diagnosis rules.
+- Local validation:
+  - Focused active-window/list-prewarm suite passed (`43` tests).
+  - Full `npm test` passed (`1346` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Commits / deployment:
+  - `70873c8` `fix active window read coalescing`.
+  - `1e920ad` `prewarm active windows after list baseline`.
+  - Deployed through the Home AI central macOS plugin deploy path with reasons
+    `codex-mobile-active-window-read-coalescing` and
+    `codex-mobile-active-window-startup-prewarm`.
+  - Latest production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T203453Z-plugin-codex-mobile-web-codex-mobile-active-window-startup-prewarm`.
+  - Latest production source ref `1e920ad170ab`, dirty false. Shell stayed
+    `0.1.11|codex-mobile-shell-v552` because this was server/docs only.
+- Production readback:
+  - `/api/public-config` returned version `0.1.11`, build id
+    `a9a59c513528ca43`, shell `0.1.11|codex-mobile-shell-v552`, and startup
+    `threadListFallbackPrewarm.completed=true`.
+  - Source/prod SHA-256 prefixes matched for `server.js`,
+    `adapters/thread-list-fallback-prewarm-service.js`, and
+    `adapters/thread-detail-active-window-read-coalescer-service.js`.
+  - Logs showed `turns_list_coalesced` after the coalescer deployment,
+    proving foreground detail joined an in-flight active-window prewarm rather
+    than starting a duplicate app-server read.
+  - Logs after the startup-prewarm deployment showed
+    `trigger="thread-list-prewarm:completed"` for active-window prewarm.
+  - Phase-B smoke after the final deploy returned
+    `readMode=projection-active-overlay`, `activeOverlayWindowFirst=true`,
+    `activeOverlayWindowMs=0`, `threadReadMs=0`, and `turnsListInitialMs=0` for
+    the current active Codex Mobile thread.
+- Residual:
+  - Phase-B still classified the next owner as `app-server-thread-list-rpc`
+    because a thread-list request reported about `1.7s` app-server RPC time.
+  - The final active detail smoke still had about `1.1s` total with
+    `projectionMs` about `1.0s`, even though active-window construction was no
+    longer on the hot path. The next performance module should target
+    app-server thread-list RPC peaks and projection lookup/assembly peaks, not
+    active-window duplicate reads.
