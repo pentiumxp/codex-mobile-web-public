@@ -1325,11 +1325,11 @@ test("context compaction notices update status and collapse repeated turn notice
   assert.match(functionBody("visibleItemsForTurn"), /filtered\.every\(\(entry\) => isTurnUsageSummaryItem\(entry\.item\)\)/);
   assert.match(functionBody("visibleItemsForTurn"), /return limitRawThreadVisibleEntries\(filtered, thread\)/);
   assert.match(functionBody("visibleItemSignature"), /isContextCompactionItem\(item\)/);
-  assert.match(functionBody("visibleItemSignature"), /const notice = contextCompactionNotice\(item, turn\)/);
+  assert.match(functionBody("visibleItemSignature"), /const notice = contextCompactionNotice\(item, turn, thread\)/);
   assert.match(functionBody("visibleItemSignature"), /if \(!notice\) return null/);
   assert.match(functionBody("visibleItemSignature"), /mobileCompactionStatus: item\.mobileCompactionStatus/);
   assert.match(functionBody("visibleItemSignature"), /notice,/);
-  assert.match(functionBody("conversationRenderSignature"), /visibleItemSignature\(entry\.item, turn\)/);
+  assert.match(functionBody("conversationRenderSignature"), /visibleItemSignature\(entry\.item, turn, thread\)/);
 });
 
 test("raw thread read mode limits visible items per turn while preserving user images", () => {
@@ -3453,6 +3453,60 @@ return {
   assert.equal(result.paneRuntimeDoesNotUseCurrentActiveTurn, false);
   assert.equal(result.paneLiveUsesPaneStatus, true);
   assert.equal(result.restoredCurrentLatest, true);
+});
+
+test("visible item signatures use explicit pane thread for context compaction state", () => {
+  const sources = [
+    "statusText",
+    "contextCompactionStatusKind",
+    "renderContextThread",
+    "turnHasDisplayItems",
+    "latestTurn",
+    "currentThreadHasActiveRuntimeStatus",
+    "isLatestTurn",
+    "isLiveTurn",
+    "canShowPendingContextCompaction",
+    "contextCompactionState",
+    "contextCompactionNotice",
+    "visibleItemSignature",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const result = Function(`
+const CONTEXT_COMPACTION_PENDING_NOTICE = "Context compaction pending";
+const CONTEXT_COMPACTION_COMPLETE_NOTICE = "Context compaction complete";
+const state = {
+  activeTurnId: "",
+  currentThreadId: "current-thread",
+  currentThread: {
+    id: "current-thread",
+    status: { type: "active" },
+    turns: [
+      { id: "current-latest", status: { type: "running" }, items: [{ id: "current-item" }] },
+    ],
+  },
+  renderContextThread: null,
+};
+function isReasoningItem() { return false; }
+function isContextCompactionItem(item) { return Boolean(item && item.type === "contextCompaction"); }
+function isOperationalItem() { return false; }
+function isTurnUsageSummaryItem() { return false; }
+function isTurnComplete() { return false; }
+function isRunningStatus(status) { return Boolean(status && (status === "running" || status.type === "active" || status.type === "running")); }
+function isStaleActiveStatus() { return false; }
+function isIncompleteInterruptedTurn() { return false; }
+function turnHasActiveLiveItems() { return false; }
+${sources.join("\n")}
+const paneTurn = { id: "pane-latest", status: { type: "idle" }, items: [{ id: "pane-item" }] };
+const paneThread = { id: "pane-thread", status: { type: "active" }, turns: [paneTurn] };
+const item = { id: "context-item", type: "contextCompaction", status: { type: "pending" } };
+return {
+  withoutThread: visibleItemSignature(item, paneTurn),
+  withThread: visibleItemSignature(item, paneTurn, paneThread),
+};
+`)();
+
+  assert.equal(result.withoutThread, null);
+  assert.equal(result.withThread.notice, "Context compaction pending");
+  assert.equal(result.withThread.id, "context-item");
 });
 
 test("item merge delegates visible-field preservation to thread detail state policy", () => {

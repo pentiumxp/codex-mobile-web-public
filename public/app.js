@@ -5208,14 +5208,14 @@ function liveTurnStatusDockItem(turn) {
   };
 }
 
-function visibleItemSignature(item, turn = null) {
+function visibleItemSignature(item, turn = null, thread = null) {
   if (!item || isReasoningItem(item)) return null;
   const projection = {
     mobileVisibleKey: item.mobileVisibleKey || "",
     mobileVisibleKind: item.mobileVisibleKind || "",
   };
   if (isContextCompactionItem(item)) {
-    const notice = contextCompactionNotice(item, turn);
+    const notice = contextCompactionNotice(item, turn, thread);
     if (!notice) return null;
     return {
       ...projection,
@@ -6138,7 +6138,7 @@ function conversationRenderSignature(thread) {
           durationMs: timerShowsStatus ? "" : (turn.durationMs || ""),
           items: visibleItemsForTurn(turn, thread).map((entry) => ({
             sourceIndex: entry.sourceIndex,
-            item: visibleItemSignature(entry.item, turn),
+            item: visibleItemSignature(entry.item, turn, thread),
           })).filter((entry) => entry.item),
         };
       }),
@@ -13752,7 +13752,7 @@ function threadTileOperationSignature(threadId) {
     remembered: state.threadTileOperationBubblesById.get(id),
     nowMs: Date.now(),
     entrySignature: entry && entry.item && entry.item.type !== "liveTurnStatus"
-      ? visibleItemSignature(entry.item, entry.turn)
+      ? visibleItemSignature(entry.item, entry.turn, thread)
       : null,
   });
 }
@@ -14766,7 +14766,7 @@ function visibleItemPatchEntries(turn) {
       item,
       sourceIndex,
       key: stableItemKey(turn, item, sourceIndex),
-      signature: visibleItemSignature(item, turn),
+      signature: visibleItemSignature(item, turn, renderContextThread()),
     };
   }).filter((entry) => entry.item && entry.key && entry.signature);
 }

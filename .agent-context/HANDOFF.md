@@ -21125,6 +21125,46 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit this local slice and keep it undeployed until a coherent Phase C/Phase
     A module is ready.
 
+## 2026-06-27 - Phase C visible item signature thread context local slice
+
+- Current local state:
+  - Continued after local commit `421f85b` (`refactor render context owns pane
+    thread`).
+  - This is a local Phase C render-context/pane-state slice only. It changes
+    `public/app.js`, focused frontend tests, README, and the architecture plan.
+    It does not bump shell/cache, deploy production, or push Public.
+- Root-cause boundary:
+  - Symptom/risk: the previous render-context slice made latest/live/raw-mode
+    decisions pane-thread aware, but `visibleItemSignature()` still computed
+    context-compaction notice state without an explicit thread parameter. In
+    tile mode a pane render signature or operation bubble signature could still
+    infer pending/complete state from the global current thread.
+  - Failing layer: frontend visible-item signature thread-context ownership.
+    This is not a server projection, merge, DOM-patch algorithm, task-card
+    protocol, or Home AI host change.
+  - Violated invariant: visible-item signatures used for pane-local render
+    comparisons must read the same explicit thread context as the pane render
+    itself.
+- Changes:
+  - `visibleItemSignature(item, turn, thread)` now accepts an explicit thread
+    and passes it into `contextCompactionNotice()`.
+  - `conversationRenderSignature(thread)`,
+    `threadTileOperationSignature(threadId)`, and `visibleItemPatchEntries()`
+    now pass the render/pane thread into visible-item signatures.
+  - Added executable coverage proving context-compaction signatures do not use
+    current-thread state unless the matching pane thread is passed explicitly.
+- Validation:
+  - `node --check public/app.js` passed.
+  - `node --test test/conversation-render.test.js test/thread-tile-layout-ui.test.js test/collab-agent-render.test.js`
+    passed (`125` tests).
+  - `npm test` passed (`1259` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed after docs/context updates.
+- Next:
+  - Commit this local slice and keep it undeployed until a coherent Phase C/Phase
+    A module is ready.
+
 ## 2026-06-27 - Phase C approval pane action context local slice
 
 - Current local state:

@@ -367,6 +367,7 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(functionBody(appJs, "rememberThreadTileOperationBubble"), /threadTileStatePolicy\.operationBubbleRecord/);
   assert.doesNotMatch(appJs, /function recentThreadTileOperationBubble\(/);
   assert.match(functionBody(appJs, "threadTileOperationSignature"), /threadTileStatePolicy\.operationSignature/);
+  assert.match(functionBody(appJs, "threadTileOperationSignature"), /visibleItemSignature\(entry\.item, entry\.turn, thread\)/);
   const operationRefreshBody = functionBody(appJs, "scheduleThreadTileOperationMinimumRefresh");
   assert.match(operationRefreshBody, /threadTileStatePolicy\.operationMinimumRefreshPlan/);
   assert.match(operationRefreshBody, /activeIds: state\.threadTileActiveIds/);

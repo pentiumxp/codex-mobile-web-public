@@ -368,6 +368,35 @@ npm run check:macos  # passed
 git diff --check  # passed
 ```
 
+## 2026-06-27 Phase C Visible Item Signature Thread Context Slice
+
+这是 render context thread object 后的相邻 Phase C 本地切片，不单独部署、不推
+Public。它把 visible item 签名里的 context-compaction 判断也改成显式 thread
+上下文，避免平铺 pane 签名仍从全局 current thread 推导 pending/complete 状态。
+
+改动边界：
+
+- `visibleItemSignature(item, turn, thread)` 接收可选 thread 参数；
+- context compaction notice 签名时调用
+  `contextCompactionNotice(item, turn, thread)`；
+- `conversationRenderSignature(thread)`、`threadTileOperationSignature(threadId)`
+  和 visible item patch entries 都传入当前 pane/render context thread；
+- 新增可执行测试，证明同一个 context-compaction item 在没有显式 pane thread 时
+  不会误用 current thread 状态，而传入 pane thread 后才生成 pending notice；
+- 不改变 server projection、merge、DOM patch 算法、任务卡协议、shell/cache 版本或
+  生产部署状态。
+
+验证：
+
+```bash
+node --check public/app.js
+node --test test/conversation-render.test.js test/thread-tile-layout-ui.test.js test/collab-agent-render.test.js  # 125 passed
+npm test  # 1259 passed
+npm run check  # passed
+npm run check:macos  # passed
+git diff --check  # passed
+```
+
 ## 2026-06-27 Phase A Conversation DOM Authority Invalidation Local Slice
 
 这是 v542 后继续按“小切片本地提交、模块化再部署”节奏推进的 Phase A 切片。

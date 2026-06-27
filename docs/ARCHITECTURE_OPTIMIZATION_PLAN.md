@@ -2002,6 +2002,11 @@ Target:
   `withRenderContextThread()` scopes conversation signatures and tile-pane turn
   rendering so latest/live/context-compaction/raw-mode visible-item decisions
   read the pane thread instead of `state.currentThread`.
+  Visible item signatures now follow the same ownership rule:
+  `visibleItemSignature()` accepts the explicit thread and passes it through to
+  `contextCompactionNotice()`, so pane-local render signatures and operation
+  signatures do not infer context-compaction state from the global current
+  thread.
 - Treat each pane as a scaled mobile single-thread runtime instance. Shared
   global Composer chrome is only an interim input surface; global command dock
   or shared operation bubble are no longer acceptable in tile mode and must not
