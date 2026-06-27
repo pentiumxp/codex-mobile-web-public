@@ -12505,17 +12505,14 @@ function updateConversationHtml(html, signature, options = {}) {
   } else if (updatePlan.action === "set-inner-html") {
     conversation.innerHTML = html;
   }
-  if (applicationPlan.fallbackApplied) {
-    postClientEvent("conversation_patch_html_fallback", {
-      threadId: state.currentThreadId || "",
-      reason: applicationPlan.patchRejectReason || applicationPlan.reason || "patch-html-failed",
-      updateReason: updatePlan.reason || "",
-      expectedVisibleTurnCount,
-      renderedDomTurnCount,
-      action: applicationPlan.primaryAction || "",
-      finalAction: applicationPlan.finalAction || "",
-    });
-  }
+  const fallbackEventPlan = threadDetailDomPatchApi.planConversationHtmlPatchFallbackClientEvent({
+    applicationPlan,
+    updatePlan,
+    threadId: state.currentThreadId || "",
+    expectedVisibleTurnCount,
+    renderedDomTurnCount,
+  });
+  if (fallbackEventPlan.shouldPost) postClientEvent(fallbackEventPlan.eventName, fallbackEventPlan.payload);
   applyConversationHtmlUpdateEffectsPlan(effectsPlan, { root: conversation });
   const renderElapsedMs = roundedDurationMs(startedAt);
   const forceReport = renderElapsedMs >= PERF_SLOW_RENDER_REPORT_MS;

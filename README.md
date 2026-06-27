@@ -8615,12 +8615,16 @@ thread-list fallback, task-card protocol, or Home AI diagnostic intake.
 `public/thread-detail-dom-patch.js` now owns a bounded
 `planConversationHtmlUpdateApplication` outcome. It classifies hydrate-only,
 `patch-html`, direct `set-inner-html`, and `patch-html-failed` replacement
-paths. `public/app.js` uses that outcome when applying conversation HTML; if a
-patch attempt fails, the full replacement is now observable through bounded
+paths. The same helper also owns
+`planConversationHtmlPatchFallbackClientEvent`, which decides whether a failed
+patch should emit a bounded client event and which fields are allowed.
+`public/app.js` uses those outcomes when applying conversation HTML; if a patch
+attempt fails, the full replacement is now observable through bounded
 client/performance metadata instead of being only a console warning. The
-payload records action labels, visible-turn counts, and a bounded reject reason
-only. It must not include message text, task-card bodies, upload contents,
-paths, cookies, tokens, prompts, provider payloads, or long logs.
+payload records action labels, visible-turn counts, update reason, and a
+bounded reject reason only. It must not include message text, task-card bodies,
+upload contents, paths, cookies, tokens, prompts, provider payloads, or long
+logs.
 
 Focused validation for the local slice:
 

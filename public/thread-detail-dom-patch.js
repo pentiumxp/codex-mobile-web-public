@@ -32,6 +32,11 @@
     return value && typeof value === "object" && !Array.isArray(value) ? value : {};
   }
 
+  function boundedCount(value) {
+    const numberValue = Number(value);
+    return Number.isFinite(numberValue) && numberValue > 0 ? Math.trunc(numberValue) : 0;
+  }
+
   function renderKeyForNode(node) {
     return node && node.nodeType === ELEMENT_NODE && typeof node.getAttribute === "function"
       ? node.getAttribute("data-render-key") || ""
@@ -330,6 +335,33 @@
       fallbackApplied: false,
       patchRejectReason: "",
       reason: action ? "unknown-action" : "missing-action",
+    };
+  }
+
+  function planConversationHtmlPatchFallbackClientEvent(input = {}) {
+    const applicationPlan = objectOrEmpty(input.applicationPlan || input.plan);
+    if (!applicationPlan.fallbackApplied) {
+      return {
+        shouldPost: false,
+        eventName: "",
+        payload: null,
+        reason: "no-fallback",
+      };
+    }
+    const updatePlan = objectOrEmpty(input.updatePlan);
+    return {
+      shouldPost: true,
+      eventName: "conversation_patch_html_fallback",
+      payload: {
+        threadId: String(input.threadId || ""),
+        reason: String(applicationPlan.patchRejectReason || applicationPlan.reason || "patch-html-failed").slice(0, 80),
+        updateReason: String(updatePlan.reason || "").slice(0, 80),
+        expectedVisibleTurnCount: boundedCount(input.expectedVisibleTurnCount),
+        renderedDomTurnCount: boundedCount(input.renderedDomTurnCount),
+        action: String(applicationPlan.primaryAction || "").slice(0, 40),
+        finalAction: String(applicationPlan.finalAction || "").slice(0, 40),
+      },
+      reason: "patch-html-fallback",
     };
   }
 
@@ -802,6 +834,7 @@
     planConversationHtmlUpdate,
     planConversationHtmlUpdateEffects,
     planConversationHtmlUpdateApplication,
+    planConversationHtmlPatchFallbackClientEvent,
     planLocalConversationDomUpdateCompletionSnapshot,
     planLocalConversationDomUpdateCompletion,
     planLocalConversationDomUpdateCompletionEffects,

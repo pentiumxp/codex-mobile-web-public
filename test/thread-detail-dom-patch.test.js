@@ -494,6 +494,47 @@ test("conversation HTML update application exposes patch outcomes", () => {
   });
 });
 
+test("conversation HTML patch fallback client event plan bounds payload fields", () => {
+  assert.deepEqual(domPatch.planConversationHtmlPatchFallbackClientEvent({
+    applicationPlan: {
+      fallbackApplied: false,
+    },
+  }), {
+    shouldPost: false,
+    eventName: "",
+    payload: null,
+    reason: "no-fallback",
+  });
+
+  const plan = domPatch.planConversationHtmlPatchFallbackClientEvent({
+    applicationPlan: {
+      fallbackApplied: true,
+      primaryAction: "patch-html",
+      finalAction: "set-inner-html",
+      patchRejectReason: "missing-document-private-detail-that-should-be-bounded-and-not-grow-longer-than-needed",
+    },
+    updatePlan: {
+      reason: "stable-signature-dom-empty-private-detail-that-should-be-bounded-and-not-grow-longer-than-needed",
+    },
+    threadId: "thread-1",
+    expectedVisibleTurnCount: 3.9,
+    renderedDomTurnCount: "0",
+  });
+
+  assert.equal(plan.shouldPost, true);
+  assert.equal(plan.eventName, "conversation_patch_html_fallback");
+  assert.equal(plan.reason, "patch-html-fallback");
+  assert.deepEqual(plan.payload, {
+    threadId: "thread-1",
+    reason: "missing-document-private-detail-that-should-be-bounded-and-not-grow-longer-than-",
+    updateReason: "stable-signature-dom-empty-private-detail-that-should-be-bounded-and-not-grow-lo",
+    expectedVisibleTurnCount: 3,
+    renderedDomTurnCount: 0,
+    action: "patch-html",
+    finalAction: "set-inner-html",
+  });
+});
+
 test("local conversation DOM update completion snapshot normalizes tile-pane terminal state", () => {
   assert.deepEqual(domPatch.planLocalConversationDomUpdateCompletionSnapshot({
     tilePanePatched: true,

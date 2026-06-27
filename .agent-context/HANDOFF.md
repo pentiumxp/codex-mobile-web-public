@@ -19570,6 +19570,10 @@ The previous full handoff was archived and should be opened only when old proven
     `planConversationHtmlUpdateApplication`, which classifies hydrate-only,
     successful patch-html, direct set-inner-html, and patch-html-failed
     replacement outcomes.
+  - The same helper now owns
+    `planConversationHtmlPatchFallbackClientEvent`, which decides whether the
+    patch-failure replacement should post a client event and bounds the allowed
+    payload fields.
   - `public/app.js` uses that outcome while applying conversation HTML. When a
     patch attempt fails, the replacement remains the same user-visible recovery
     path but now emits bounded client/performance metadata:

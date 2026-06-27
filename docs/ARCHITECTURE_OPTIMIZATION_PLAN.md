@@ -801,12 +801,15 @@ while app code keeps the real DOM write/fallback, callback execution, state
 assignment, and performance event emission. The 2026-06-27 local follow-up
 adds `planConversationHtmlUpdateApplication` in the same helper. It owns the
 bounded outcome classification for hydrate-only, `patch-html`, direct
-`set-inner-html`, and `patch-html-failed` replacement paths. App code still
-executes the real DOM mutation, but a failed HTML patch now becomes observable
-through bounded client/performance metadata instead of being only a console
-warning. This does not change render strategy or hide projection mismatches; it
-separates normal full render from patch-failure replacement so future
-diagnostics can route flicker/repaint incidents to the DOM patch layer.
+`set-inner-html`, and `patch-html-failed` replacement paths. The same helper
+also owns `planConversationHtmlPatchFallbackClientEvent`, which determines
+whether a patch-failure replacement should emit a client event and bounds its
+payload fields. App code still executes the real DOM mutation and event post,
+but a failed HTML patch now becomes observable through helper-selected
+client/performance metadata instead of being only a console warning. This does
+not change render strategy or hide projection mismatches; it separates normal
+full render from patch-failure replacement so future diagnostics can route
+flicker/repaint incidents to the DOM patch layer.
 Local DOM patch completion
 planning now also lives in that helper:
 `planLocalConversationDomUpdateCompletion` owns the tile-pane terminal state,
