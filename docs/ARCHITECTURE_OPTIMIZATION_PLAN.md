@@ -1770,6 +1770,17 @@ Current local coverage:
 - This does not replace Home AI embedded/PWA live-debug coverage. The next
   Phase E slices still need real browser smoke around long-turn streaming,
   upload/generated image rendering, and PWA shell refresh.
+- The next local Phase E slice starts the PWA shell-refresh live-debug coverage
+  without executing a reload. `scripts/codex-mobile-pwa-shell-refresh-smoke.js`
+  opens the embedded Codex Mobile shell through the Home AI debug lane,
+  compares the visual harness client build id with `/api/public-config`, and
+  verifies boot recovery is hidden, the app shell is visible, hard-refresh and
+  page-refresh controls are present, shell refresh functions are callable, and
+  service-worker/cache capabilities are observable. It reports only endpoint
+  kind, expected build/cache ids, bounded booleans, screenshot path hash, and
+  error codes. It does not output raw debug/server URLs, paths, DOM text,
+  cookies, tokens, launch material, or logs. This is a harness/evidence slice,
+  not a runtime fallback and not an automatic page reload.
 
 Current diagnostic intake bridge:
 

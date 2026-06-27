@@ -67,6 +67,36 @@ git diff --check  # passed
 
 Public push 仍然等生产和用户验证。
 
+## 2026-06-27 Phase E PWA Shell Refresh Smoke Local Slice
+
+这是 v542 生产部署后的第一个新 Phase E 本地切片，目标是补 PWA shell refresh 的
+live-debug smoke 入口，但默认不执行 reload，避免普通验证打断用户页面。
+
+新增 `scripts/codex-mobile-pwa-shell-refresh-smoke.js`：
+
+- 通过 Home AI live-debug lane 打开 embedded Codex Mobile；
+- 从 Codex Mobile `/api/public-config` 读取期望 `clientBuildId` / `shellCacheName`；
+- 在 iframe 内通过 `__codexMobileVisualHarness.clientBuildId()` 对齐当前 shell build；
+- 验证 boot recovery 隐藏、app shell 可见、hard refresh 和 page refresh 控件存在；
+- 验证 `refreshPageForNewBuild`、`clearAllShellCaches`、`resetPageShellServiceWorker`
+  可调用；
+- 记录 service worker / cache API 能力是否可见。
+
+隐私边界：报告只输出 endpoint kind、期望 build/cache id、bounded boolean、截图 path hash
+和 error code；不输出 raw URL、路径、DOM text、cookie、token、launch material 或日志。
+
+验证：
+
+```bash
+node --check scripts/codex-mobile-pwa-shell-refresh-smoke.js
+node --test test/pwa-shell-refresh-smoke.test.js  # 4 passed
+npm run check  # passed
+git diff --check  # passed
+```
+
+本切片没有 runtime/static app 变更，不 bump shell/cache，不部署；后续会和其它 Phase E
+live-debug smoke 切片一起收束为模块。
+
 ## 2026-06-27 Phase E Image-Order Visual Smoke Privacy Slice
 
 这是 v541 生产部署后的第二个 Phase E 本地切片，目标不是新增运行时行为，

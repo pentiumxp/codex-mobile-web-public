@@ -20657,3 +20657,48 @@ The previous full handoff was archived and should be opened only when old proven
   - Continue Phase E with live embedded/PWA coverage for long-turn streaming,
     upload/generated image rendering, and PWA shell refresh; keep using local
     slices and module-batched deployment.
+
+## 2026-06-27 - Phase E PWA shell refresh smoke local slice
+
+- Current local state:
+  - Continued after v542 production deployment and docs commit `7be7e05`.
+  - This is a script/test/docs-only local slice. It has no runtime/static app
+    behavior change, no shell/cache bump, no deployment, and no Public push.
+- Root-cause boundary:
+  - Symptom/risk: PWA shell refresh and boot recovery have unit/static tests,
+    but there was no reusable Home AI live-debug smoke that proves the embedded
+    Codex shell is loaded with the expected client build and has the refresh
+    affordances/capabilities present.
+  - Failing layer: Phase E browser/visual harness coverage for PWA shell
+    readiness, not runtime refresh behavior itself.
+  - Violated invariant: browser/PWA closure evidence should be observable and
+    metadata-only before using it in production/user incident loops.
+- Changes:
+  - Added `scripts/codex-mobile-pwa-shell-refresh-smoke.js`.
+  - The smoke opens the embedded Codex Mobile shell through the Home AI
+    live-debug lane, reads expected build/cache metadata from
+    `/api/public-config`, compares it to
+    `__codexMobileVisualHarness.clientBuildId()`, and verifies boot recovery is
+    hidden, the app shell is visible, hard-refresh/page-refresh controls exist,
+    shell refresh functions are callable, and service-worker/cache capabilities
+    are observable.
+  - Default behavior is inspect-only; it does not trigger a reload.
+  - Added `test/pwa-shell-refresh-smoke.test.js` for metadata-only report shape
+    and shell-refresh readiness checks.
+  - Added the script to `npm run check`.
+- Privacy:
+  - Reports include endpoint kind, expected build/cache ids, bounded booleans,
+    screenshot path hash, and error codes.
+  - Reports do not include raw debug/server URLs, filesystem paths, DOM text,
+    cookies, tokens, launch material, screenshots, uploads, provider payloads,
+    or logs.
+- Validation:
+  - `node --check scripts/codex-mobile-pwa-shell-refresh-smoke.js` passed.
+  - `node --test test/pwa-shell-refresh-smoke.test.js` passed (`4` tests).
+  - `node -e 'require("./package.json")'` passed.
+  - `npm run check` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit this local Phase E slice.
+  - Continue Phase E with long-turn streaming or upload/generated image
+    embedded smoke. Do not deploy until another coherent module is ready.
