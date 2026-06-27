@@ -19495,3 +19495,53 @@ The previous full handoff was archived and should be opened only when old proven
   - After selected mux runs code with `muxMetricsRpc`, rerun Phase B readback
     and compare Mobile `appServerRpcMs` against mux `threadListMuxRpcLastMs`
     plus request/response bytes.
+
+## 2026-06-27 - Phase B shared mux runtime readiness local slice
+
+- Current local state:
+  - Continued from v537 production readback where production source contained
+    `muxMetricsRpc`, but `/api/status?muxMetrics=1` returned
+    `mux-metrics-unsupported` because the selected profile mux process was
+    still running old code.
+  - This slice is local-only and does not bump `CLIENT_BUILD_ID` / PWA shell
+    cache or deploy production.
+- Root-cause boundary:
+  - Symptom/risk: Mobile listener deploy can update server files and restart
+    8787 while leaving the selected shared mux process alive, so runtime
+    capability evidence remains stale and Phase B cannot compare Mobile
+    `appServerRpcMs` with mux-side `thread/list` timing.
+  - Failing layer: selected shared mux runtime/version activation for macOS
+    restart/deploy flows, not app-server query semantics, fallback/prewarm,
+    frontend render, or thread detail projection.
+  - Violated invariant: when mux bridge code changes, the selected profile mux
+    runtime must either refresh or be reported as stale before readback claims
+    the mux-side evidence path is available.
+- Changes:
+  - `server.js` status endpoint now includes sanitized `endpoint.kind` derived
+    from `CodexAppServerClient.rpcEndpointKind()`.
+  - Phase B readback smoke now includes metadata-only `muxRuntime` with
+    transport, endpoint kind/protocol, selected profile mux flag, shared/persist
+    booleans, and capability booleans (`mobileEcho`, notification replay,
+    server-request proxy, thread-goal RPC, mux metrics RPC). It does not expose
+    endpoint path, host, port, PID, thread titles, message text, or logs.
+  - Phase B decision evidence includes the same `muxRuntime` fields.
+  - macOS shared-chain restart shell generation now reads only the selected
+    profile endpoint file, stops recorded `pid`/`childPid` only when their
+    command lines match `codex-app-server-mux` or `codex app-server`, and
+    removes that selected endpoint file. It must not scan or stop unrelated
+    profile muxes.
+  - Updated `README.md`, `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`,
+    `docs/ARCHITECTURE.md`, and `docs/TROUBLESHOOTING.md`.
+- Validation:
+  - `node --check adapters/shared-chain-restart-service.js && node --check server.js && node --check scripts/codex-mobile-phase-b-readback-smoke.js && node --check adapters/phase-b-readback-decision-service.js && node --test test/shared-chain-restart-service.test.js test/shared-chain-restart-script.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js test/protocol.test.js`
+    passed (`62` tests).
+- Deployment:
+  - Not deployed. Keep this as a local slice until the next Phase B module.
+- Next:
+  - Send a Home AI task card for the central macOS plugin deploy contract:
+    source sync + LaunchDaemon kickstart alone does not invoke the plugin-owned
+    selected mux refresh path when `codex-app-server-mux.js` changes.
+  - After the central deploy contract is repaired or an explicit selected mux
+    restart is approved, deploy/read back and require `muxRuntime.muxMetricsRpc`
+    plus `muxMetrics.supported=true` before app-server query semantics are
+    changed.

@@ -315,7 +315,16 @@ Current acceleration targets:
    readback-decision follow-up now classifies high-RPC samples with unsupported
    mux metrics as `shared-mux-runtime` /
    `restart-selected-shared-mux-before-rpc-repair` before any app-server query
-   semantics are changed.
+   semantics are changed. The next local slice closes the plugin-owned half of
+   that runtime boundary: authenticated `/api/status` now exposes a sanitized
+   endpoint kind, Phase B readback carries a metadata-only `muxRuntime` summary
+   with capability booleans, and macOS shared-chain restart now stops only the
+   selected profile mux/app-server PIDs recorded in that profile's endpoint file
+   before deleting that stale endpoint. This does not change normal
+   `/api/threads` behavior, but it makes manual restart capable of refreshing a
+   version-stale selected mux. The remaining deploy-contract owner is Home AI
+   central deploy: plugin source sync plus LaunchDaemon kickstart alone still
+   does not invoke this selected-mux refresh path.
    Earlier local
    fallback attribution slices also made baseline source work explicit:
    fallback baseline source reads now

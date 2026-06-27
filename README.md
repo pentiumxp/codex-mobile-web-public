@@ -90,6 +90,40 @@ node --check adapters/phase-b-readback-decision-service.js && node --test test/p
 结果：focused `29` passed。该 follow-up 尚未 bump shell/cache，尚未部署；等待下一个
 Phase B 模块一起部署。
 
+## 2026-06-27 Phase B Shared Mux Runtime Readiness Slice
+
+本地小切片继续 v537 后的 mux runtime 边界。症状是生产目录里的
+`codex-app-server-mux.js` 已经包含 `muxMetricsRpc`，但 selected `previous`
+profile 的运行中 mux endpoint capability 仍缺这个字段，说明普通 central deploy
+只重启了 Mobile listener，没有刷新已经运行的 selected mux 进程。
+
+改动边界：
+
+- `/api/status.endpoint` 增加 sanitized `kind`，例如 `profile-mux-file`。原有
+  authenticated raw endpoint 字段保持不变，但 Phase B readback 只消费 kind/protocol
+  和 capability 布尔值。
+- `scripts/codex-mobile-phase-b-readback-smoke.js` 新增 `muxRuntime` 摘要：
+  transport、endpoint kind/protocol、是否 profile mux、shared-required、
+  persistent-owned-mux、mobile-owned-mux running，以及 `mobileEcho`、
+  `notificationReplay`、`serverRequestProxy`、`threadGoalRpc`、`muxMetricsRpc`。
+  不输出 endpoint path、host、port、pid、线程标题、消息正文或日志。
+- Phase B decision evidence 保留同一组 bounded runtime 字段，让后续读回能自动判断
+  “listener 新、mux 旧”的状态。
+- macOS `POST /api/restart/shared-chain` 生成的 shell command 现在会先读取 selected
+  `CODEX_HOME/app-server-mux/endpoint.json` 的 `pid` / `childPid`，仅当对应命令行匹配
+  `codex-app-server-mux` 或 `codex app-server` 时才 kill，并删除该 selected endpoint
+  文件。它不扫描或清理其它 profile mux。
+
+验证：
+
+```bash
+node --check adapters/shared-chain-restart-service.js && node --check server.js && node --check scripts/codex-mobile-phase-b-readback-smoke.js && node --check adapters/phase-b-readback-decision-service.js && node --test test/shared-chain-restart-service.test.js test/shared-chain-restart-script.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js test/protocol.test.js
+```
+
+结果：focused `62` passed。该 slice 尚未 bump shell/cache，尚未部署；下一步需要把它和
+Home AI central deploy contract 修复一起作为模块闭环，否则 central deploy 仍不会自动刷新
+selected mux。
+
 ## 2026-06-27 Phase B Mux RPC Metrics Slice
 
 本地小切片继续上一片 app-server RPC transport diagnostics。上一片能在 Mobile server

@@ -200,8 +200,9 @@ Evidence of mux drift:
 Recovery:
 
 1. Call authenticated `POST /api/app-server/reconnect` when only Mobile Web is stale.
-2. If bridge code changed or endpoint process is stale, fully quit Desktop and relaunch once with `start-codex-desktop-shared.ps1 -ForceRestartMux`.
-3. Avoid starting an independent managed app-server when shared mode is required; that creates a divergent stream.
+2. If bridge code changed or endpoint process is version-stale, use authenticated `POST /api/restart/shared-chain` from a build that includes selected mux cleanup. On macOS that path reads only the selected profile endpoint file, stops the recorded mux/app-server PIDs when their command lines match `codex-app-server-mux` or `codex app-server`, removes that selected endpoint file, and restarts the listener. It must not scan or stop unrelated profile muxes.
+3. If Desktop owns the selected mux and the authenticated restart path cannot refresh it, fully quit Desktop and relaunch once with `start-codex-desktop-shared.ps1 -ForceRestartMux` or the macOS shared Desktop launcher equivalent.
+4. Avoid starting an independent managed app-server when shared mode is required; that creates a divergent stream.
 
 ## Continuation When Source Thread Cannot Reply
 

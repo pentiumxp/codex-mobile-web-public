@@ -38,6 +38,24 @@ function createMockServer(handler) {
 
 function muxStatusFixture(overrides = {}) {
   return {
+    transport: "external-jsonl-tcp",
+    sharedRequired: true,
+    persistentOwnedMux: true,
+    mobileOwnedMux: { pid: 12345, running: false },
+    endpoint: {
+      protocol: "jsonl-tcp",
+      kind: "profile-mux-file",
+      source: "/private/runtime/endpoint.json",
+      host: "10.0.0.5",
+      port: 12345,
+      capabilities: {
+        mobileUserMessageEcho: true,
+        notificationReplay: true,
+        serverRequestProxy: true,
+        threadGoalRpc: true,
+        muxMetricsRpc: true,
+      },
+    },
     muxMetrics: Object.assign({
       supported: true,
       ok: true,
@@ -225,6 +243,18 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.threadList.appServerRequestPayloadBytes, 188);
   assert.equal(report.threadList.appServerRequestParamBytes, 96);
   assert.equal(report.threadList.appServerResponsePayloadBytes, 45678);
+  assert.equal(report.muxRuntime.transport, "external-jsonl-tcp");
+  assert.equal(report.muxRuntime.endpointKind, "profile-mux-file");
+  assert.equal(report.muxRuntime.endpointProtocol, "jsonl-tcp");
+  assert.equal(report.muxRuntime.isProfileMuxEndpoint, true);
+  assert.equal(report.muxRuntime.sharedRequired, true);
+  assert.equal(report.muxRuntime.persistentOwnedMux, true);
+  assert.equal(report.muxRuntime.mobileOwnedMuxRunning, false);
+  assert.equal(report.muxRuntime.mobileEcho, true);
+  assert.equal(report.muxRuntime.notificationReplay, true);
+  assert.equal(report.muxRuntime.serverRequestProxy, true);
+  assert.equal(report.muxRuntime.threadGoalRpc, true);
+  assert.equal(report.muxRuntime.muxMetricsRpc, true);
   assert.equal(report.muxMetrics.supported, true);
   assert.equal(report.muxMetrics.ok, true);
   assert.equal(report.muxMetrics.threadList.method, "thread/list");
@@ -252,7 +282,7 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   ]);
   assert.equal(seen.every((item) => item.authorization === ""), true);
   const serialized = JSON.stringify(report);
-  assert.doesNotMatch(serialized, /PRIVATE|MESSAGE BODY|do not leak|SHOULD NOT LEAK/);
+  assert.doesNotMatch(serialized, /PRIVATE|MESSAGE BODY|do not leak|SHOULD NOT LEAK|endpoint\.json|10\.0\.0\.5|12345/);
 });
 
 test("phase B readback smoke waits for prewarm settle before reading thread list", async (t) => {

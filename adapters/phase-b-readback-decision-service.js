@@ -27,6 +27,7 @@ function buildEvidence(report = {}) {
   const list = objectOrNull(report.threadList) || {};
   const afterDeferred = objectOrNull(report.threadListAfterDeferred) || {};
   const warmCheck = objectOrNull(report.threadListWarmCheck) || {};
+  const muxRuntime = objectOrNull(report.muxRuntime) || {};
   const muxMetrics = objectOrNull(report.muxMetrics) || {};
   const muxThreadList = objectOrNull(muxMetrics.threadList) || {};
   const detail = objectOrNull(report.detail) || {};
@@ -86,6 +87,18 @@ function buildEvidence(report = {}) {
     threadListAppServerRequestPayloadBytes: boundedBytes(list.appServerRequestPayloadBytes),
     threadListAppServerRequestParamBytes: boundedBytes(list.appServerRequestParamBytes),
     threadListAppServerResponsePayloadBytes: boundedBytes(list.appServerResponsePayloadBytes),
+    threadListMuxRuntimeTransport: compactLabel(muxRuntime.transport, 80),
+    threadListMuxRuntimeEndpointKind: compactLabel(muxRuntime.endpointKind, 80),
+    threadListMuxRuntimeEndpointProtocol: compactLabel(muxRuntime.endpointProtocol, 40),
+    threadListMuxRuntimeIsProfileMuxEndpoint: muxRuntime.isProfileMuxEndpoint === true,
+    threadListMuxRuntimeSharedRequired: muxRuntime.sharedRequired === true,
+    threadListMuxRuntimePersistentOwnedMux: muxRuntime.persistentOwnedMux === true,
+    threadListMuxRuntimeMobileOwnedMuxRunning: muxRuntime.mobileOwnedMuxRunning === true,
+    threadListMuxRuntimeMobileEcho: muxRuntime.mobileEcho === true,
+    threadListMuxRuntimeNotificationReplay: muxRuntime.notificationReplay === true,
+    threadListMuxRuntimeServerRequestProxy: muxRuntime.serverRequestProxy === true,
+    threadListMuxRuntimeThreadGoalRpc: muxRuntime.threadGoalRpc === true,
+    threadListMuxRuntimeMuxMetricsRpc: muxRuntime.muxMetricsRpc === true,
     threadListMuxMetricsSupported: muxMetrics.supported === true,
     threadListMuxMetricsOk: muxMetrics.ok === true,
     threadListMuxMetricsReason: compactLabel(muxMetrics.reason, 80),

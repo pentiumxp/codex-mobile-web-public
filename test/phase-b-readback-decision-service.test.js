@@ -236,6 +236,20 @@ test("phase B readback decision routes high warm list latency to app-server RPC 
       appServerRequestParamBytes: 96,
       appServerResponsePayloadBytes: 45678,
     },
+    muxRuntime: {
+      transport: "external-jsonl-tcp",
+      endpointKind: "profile-mux-file",
+      endpointProtocol: "jsonl-tcp",
+      isProfileMuxEndpoint: true,
+      sharedRequired: true,
+      persistentOwnedMux: true,
+      mobileOwnedMuxRunning: false,
+      mobileEcho: true,
+      notificationReplay: true,
+      serverRequestProxy: true,
+      threadGoalRpc: true,
+      muxMetricsRpc: true,
+    },
     muxMetrics: {
       supported: true,
       ok: true,
@@ -280,6 +294,9 @@ test("phase B readback decision routes high warm list latency to app-server RPC 
   assert.equal(decision.evidence.threadListAppServerRequestPayloadBytes, 188);
   assert.equal(decision.evidence.threadListAppServerRequestParamBytes, 96);
   assert.equal(decision.evidence.threadListAppServerResponsePayloadBytes, 45678);
+  assert.equal(decision.evidence.threadListMuxRuntimeEndpointKind, "profile-mux-file");
+  assert.equal(decision.evidence.threadListMuxRuntimeMobileEcho, true);
+  assert.equal(decision.evidence.threadListMuxRuntimeMuxMetricsRpc, true);
   assert.equal(decision.evidence.threadListMuxMetricsSupported, true);
   assert.equal(decision.evidence.threadListMuxMetricsOk, true);
   assert.equal(decision.evidence.threadListMuxServerRequestCount, 1);
@@ -317,6 +334,19 @@ test("phase B readback decision routes high RPC latency with unsupported mux met
       appServerRequestParamBytes: 128,
       appServerResponsePayloadBytes: 235487,
     },
+    muxRuntime: {
+      transport: "external-jsonl-tcp",
+      endpointKind: "profile-mux-file",
+      endpointProtocol: "jsonl-tcp",
+      isProfileMuxEndpoint: true,
+      sharedRequired: true,
+      persistentOwnedMux: true,
+      mobileEcho: true,
+      notificationReplay: true,
+      serverRequestProxy: true,
+      threadGoalRpc: true,
+      muxMetricsRpc: false,
+    },
     muxMetrics: {
       supported: false,
       ok: false,
@@ -337,6 +367,9 @@ test("phase B readback decision routes high RPC latency with unsupported mux met
   assert.equal(decision.nextAction, "restart-selected-shared-mux-before-rpc-repair");
   assert.equal(decision.evidence.threadListAppServerRpcMs, 1705);
   assert.equal(decision.evidence.threadListAppServerResponsePayloadBytes, 235487);
+  assert.equal(decision.evidence.threadListMuxRuntimeTransport, "external-jsonl-tcp");
+  assert.equal(decision.evidence.threadListMuxRuntimeEndpointKind, "profile-mux-file");
+  assert.equal(decision.evidence.threadListMuxRuntimeMuxMetricsRpc, false);
   assert.equal(decision.evidence.threadListMuxMetricsSupported, false);
   assert.equal(decision.evidence.threadListMuxMetricsReason, "mux-metrics-unsupported");
 });

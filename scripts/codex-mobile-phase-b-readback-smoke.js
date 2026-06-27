@@ -401,6 +401,26 @@ function summarizeMuxMetric(metric = {}) {
   };
 }
 
+function summarizeMuxRuntime(status = {}) {
+  const endpoint = objectOrNull(status && status.endpoint) || {};
+  const capabilities = objectOrNull(endpoint.capabilities) || {};
+  const endpointKind = compactLabel(endpoint.kind, 80);
+  return {
+    transport: compactLabel(status && status.transport, 80),
+    endpointKind,
+    endpointProtocol: compactLabel(endpoint.protocol, 40),
+    isProfileMuxEndpoint: endpointKind === "profile-mux-file",
+    sharedRequired: status && status.sharedRequired === true,
+    persistentOwnedMux: status && status.persistentOwnedMux === true,
+    mobileOwnedMuxRunning: Boolean(status && status.mobileOwnedMux && status.mobileOwnedMux.running === true),
+    mobileEcho: capabilities.mobileUserMessageEcho === true,
+    notificationReplay: capabilities.notificationReplay === true,
+    serverRequestProxy: capabilities.serverRequestProxy === true,
+    threadGoalRpc: capabilities.threadGoalRpc === true,
+    muxMetricsRpc: capabilities.muxMetricsRpc === true,
+  };
+}
+
 function summarizeMuxMetrics(status = {}) {
   const metrics = objectOrNull(status && status.muxMetrics);
   const methods = objectOrNull(metrics && metrics.methods) || {};
@@ -579,6 +599,7 @@ async function run(options = {}, env = process.env) {
     threadList: null,
     threadListAfterDeferred: null,
     threadListWarmCheck: null,
+    muxRuntime: null,
     muxMetrics: null,
     detail: null,
     decision: null,
@@ -594,6 +615,7 @@ async function run(options = {}, env = process.env) {
   const listResult = await fetchJson(requestUrl(options, "/api/threads", { limit: options.listLimit }), options, key);
   report.threadList = summarizeThreadList(listResult);
   const statusResult = await fetchJson(requestUrl(options, "/api/status", { muxMetrics: 1 }), options, key);
+  report.muxRuntime = summarizeMuxRuntime(statusResult);
   report.muxMetrics = summarizeMuxMetrics(statusResult);
 
   let threadId = String(options.threadId || "").trim();
@@ -659,6 +681,7 @@ module.exports = {
   parseArgs,
   run,
   settlePublicConfigPrewarm,
+  summarizeMuxRuntime,
   summarizeThreadDetail,
   summarizeThreadList,
   summarizePublicConfig,

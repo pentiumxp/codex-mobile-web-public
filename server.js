@@ -9917,6 +9917,7 @@ class CodexAppServerClient {
       transport: this.transportKind,
       endpoint: this.endpoint ? {
         protocol: this.endpoint.protocol,
+        kind: this.rpcEndpointKind(),
         source: this.endpoint.source || null,
         host: this.endpoint.host || null,
         port: this.endpoint.port || null,
