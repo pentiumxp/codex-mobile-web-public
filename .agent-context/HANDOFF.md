@@ -19657,3 +19657,43 @@ The previous full handoff was archived and should be opened only when old proven
     `clientBuildId=0.1.11|codex-mobile-shell-v538`,
     `shellCacheName=codex-mobile-shell-v538`,
     `muxRuntime.muxMetricsRpc=true`, and supported bounded mux metrics.
+
+## 2026-06-27 - v538 deploy blocked by Home AI selected-mux sudo/stdin bug
+
+- Current local state:
+  - Committed v538 module prep as `33e3546 bump shell for selected mux runtime
+    readback`.
+  - Working tree was clean before deployment attempt.
+- Deployment attempt:
+  - Ran Home AI central macOS plugin deploy from
+    `/Users/hermes-dev/HermesMobileDev/app` with reason
+    `codex-mobile-v538-selected-mux-runtime`.
+  - Command failed during the Home AI `codex-mobile-selected-mux-refresh`
+    post-sync repair before production readback.
+- Root-cause boundary:
+  - Failing layer: Home AI central deploy script selected-mux refresh, not
+    Codex Mobile source, tests, or runtime module code.
+  - Observed failure: `sudo_command_failed:node` for Node args
+    `["-", "/Users/xuxin/.codex-homes/previous/app-server-mux/endpoint.json"]`.
+  - Privacy note: do not print the raw stderr because it includes password-file
+    text interpreted by Node as JavaScript.
+  - Strong hypothesis from read-only Home AI source inspection:
+    `scripts/deploy-macos-production.js` `runSudo()` passes the sudo password
+    through stdin for `sudo -S`, while selected mux refresh calls
+    `runSudo(node, ["-", endpointFile], password, script)`. This makes Node
+    `-` consume the same stdin as JavaScript after sudo reads from it.
+- Cross-thread repair:
+  - Sent Home AI task card `ttc_bc41b12714cae2cb98`
+    (`Repair Home AI deploy selected mux refresh sudo stdin bug`) to source
+    thread `019eed86-2002-7cc2-b0b7-937eb5355f36`.
+  - Requested Home AI to change the selected mux refresh to avoid sharing stdin
+    between sudo password transport and `node -`, for example by using
+    `node -e` or a bounded temp script, and to add focused tests.
+- Next:
+  - Wait for Home AI repair/return.
+  - Retry the same Codex Mobile v538 plugin-owned deployment after Home AI
+    confirms the deploy script fix.
+  - Required post-deploy gate remains:
+    `clientBuildId=0.1.11|codex-mobile-shell-v538`,
+    `shellCacheName=codex-mobile-shell-v538`,
+    `muxRuntime.muxMetricsRpc=true`, and `muxMetrics.supported=true`.
