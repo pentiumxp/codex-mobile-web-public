@@ -370,6 +370,17 @@ Thread list reads app-server `thread/list`, then filters archived/deleted/sub-ag
 
 `adapters/thread-list-fallback-cache-service.js` owns the fallback cache policy: key construction from visible workspace roots/projectless thread ids, process-lifetime default retention, optional TTL expiry, cache-hit diagnostics, first-run fallback aggregation, and incremental status/title/archive mutation. Final fallback cache entries remain limit-scoped: a narrow cached final list is not treated as a wider final list. The service can, however, reuse a wider same-scope source snapshot for a later wider final-list cache miss, so a prewarmed source snapshot can rebuild `limit=137` first-paint windows without re-reading state DB, rollout tails, or `session_index.jsonl`. `adapters/thread-list-fallback-prewarm-service.js` passes a bounded `sourceSnapshotLimit` for this purpose and reports it through `threadListFallbackPrewarm.sourceSnapshotLimit` / `lastSourceSnapshotLimit`; this is warm source data for the current process, not persistent authority. State-db, rollout-session, and session-index scanners remain separate providers injected by `server.js`.
 
+`adapters/thread-list-fallback-persistent-cache-store.js` persists only bounded
+thread-list summary cache entries under the Codex Mobile runtime root so a
+fresh server process can restore the previous warm fallback cache before the
+first request. This is a startup baseline, not a new authority: app-server
+rows, visibility filters, source snapshots, and incremental status/title/archive
+events still own live correctness. The store allowlists thread-list summary
+fields and strips local rollout paths, task/card bodies, prompts, provider
+payloads, tokens, cookies, and other unsafe fields. Corrupt or unsupported
+cache files are treated as cache misses and must not be surfaced as an empty
+normal list.
+
 `adapters/thread-list-route-merge-service.js` owns the app-server plus fallback
 route merge boundary. The normal `/api/threads` route drops fallback rows whose
 thread id is already present in the authoritative app-server result before

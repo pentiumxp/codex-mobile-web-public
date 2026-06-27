@@ -2727,6 +2727,50 @@ Required validation:
   `sourceSnapshotLimit=1000`, and a larger same-scope
   `initial=warm-fallback` request avoids rollout/source rereads after prewarm.
 
+### 2026-06-28 Thread-List Persistent Warm Baseline Module
+
+This module targets the remaining restart/deploy peak where the process-local
+fallback cache and source snapshot are both lost. Hot production sampling showed
+ordinary list reads in tens of milliseconds once warm, but `/api/public-config`
+could still report startup prewarm `lastCacheDecision=miss-rebuild` with
+multi-second elapsed time after a listener restart.
+
+Root cause: the fallback cache service owned the correct in-process baseline,
+but it had no bounded persistent warm-start record. A fresh process therefore
+had to rediscover the same thread-list summaries by scanning state DB, rollout
+session files, and `session_index.jsonl` before the first default list could
+hit `warm-fallback-cache`.
+
+Scope:
+
+- Persist only bounded thread-list summary cache entries under the runtime root.
+- Restore those entries into the process fallback cache at service startup.
+- Keep final cache entries limit-scoped and still keyed by visible workspace
+  roots/projectless ids/search/cwd.
+- Keep app-server list rows, visibility filters, source snapshots, and
+  notification-driven upsert/remove/status updates as the live correctness
+  owners.
+- Treat missing/corrupt/unsupported persistent files as cold cache misses, not
+  normal empty state.
+- Expose `fallbackCachePersistentRestored` in thread-list timings for production
+  readback.
+
+Non-goals:
+
+- Do not persist full conversations, task-card bodies, prompts, uploads, or raw
+  rollout paths.
+- Do not turn fallback cache into authoritative state.
+- Do not add a client-side timeout or loading-mask workaround.
+
+Required validation:
+
+- Focused cache/store tests proving a new service instance restores a warm
+  entry without reading state DB, rollout, or session-index sources.
+- Corrupt-file test proving fail-cold behavior.
+- Thread-list route/readback evidence showing first default list after restart
+  can hit `warm-fallback-cache` with `fallbackCachePersistentRestored=true` once
+  a previous process has written the runtime cache.
+
 ## Release Rule
 
 Follow the current release order:

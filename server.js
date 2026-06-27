@@ -93,6 +93,7 @@ const { attachThreadDetailDiagnostics } = require("./adapters/thread-detail-perf
 const { createThreadDetailReadOrchestrationService } = require("./adapters/thread-detail-read-orchestration-service");
 const { handleThreadDetailReadRoute } = require("./adapters/thread-detail-route-service");
 const { createThreadListFallbackCacheService } = require("./adapters/thread-list-fallback-cache-service");
+const { createThreadListFallbackPersistentCacheStore } = require("./adapters/thread-list-fallback-persistent-cache-store");
 const {
   createThreadListFallbackPrewarmService,
   summarizePrewarmStatus,
@@ -947,6 +948,12 @@ const THREAD_DETAIL_PROGRESSIVE_FIRST_PAINT_THREAD_BYTES = Math.max(0, Math.min(
 const THREAD_DETAIL_PROGRESSIVE_COMPLETED_TEXT_CHARS = Math.max(0, Math.min(200 * 1024, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_COMPLETED_TEXT_CHARS || String(8 * 1024))));
 const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "collabAgentToolCall", "fileChange", "dynamicToolCall", "mcpToolCall"]);
 const THREAD_LIST_FALLBACK_CACHE_TTL_MS = Math.max(0, Number(process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_TTL_MS || "0"));
+const THREAD_LIST_FALLBACK_CACHE_FILE = process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_FILE
+  || path.join(RUNTIME_ROOT, "thread-list-fallback-cache.json");
+const THREAD_LIST_FALLBACK_CACHE_PERSIST_MAX_AGE_MS = Math.max(
+  0,
+  Math.min(30 * 24 * 60 * 60 * 1000, Number(process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_PERSIST_MAX_AGE_MS || String(7 * 24 * 60 * 60 * 1000))),
+);
 const THREAD_LIST_DEFAULT_WARM_FALLBACK_ENABLED = !/^(0|false|no|off)$/i.test(process.env.CODEX_MOBILE_THREAD_LIST_DEFAULT_WARM_FALLBACK || "1");
 const THREAD_LIST_FALLBACK_PREWARM_ENABLED = !/^(0|false|no|off)$/i.test(process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM || "1");
 const THREAD_LIST_FALLBACK_PREWARM_DELAY_MS = Math.max(
@@ -13864,6 +13871,12 @@ function readSessionIndexFallback(limit = 80, filters = {}) {
 const threadListFallbackCacheService = createThreadListFallbackCacheService({
   ttlMs: THREAD_LIST_FALLBACK_CACHE_TTL_MS,
   maxEntries: 12,
+  persistentStore: createThreadListFallbackPersistentCacheStore({
+    filePath: THREAD_LIST_FALLBACK_CACHE_FILE,
+    maxEntries: 12,
+    maxThreadsPerEntry: 200,
+    maxAgeMs: THREAD_LIST_FALLBACK_CACHE_PERSIST_MAX_AGE_MS,
+  }),
   readGlobalState,
   normalizeFsPath,
   normalizeThreadId,
@@ -15321,6 +15334,7 @@ async function handleApi(req, res) {
             fallbackCacheBuildCount: Number(fallbackDiagnostics.cacheBuildCount || 0),
             fallbackCacheBuildNumber: Number(fallbackDiagnostics.cacheBuildNumber || 0),
             fallbackCacheIncrementalUpdates: Number(fallbackDiagnostics.cacheIncrementalUpdates || 0),
+            fallbackCachePersistentRestored: fallbackDiagnostics.cachePersistentRestored === true,
             fallbackCompatibleCacheHit: fallbackDiagnostics.compatibleCacheHit === true,
             fallbackCompatibleCacheLimit: Number(fallbackDiagnostics.compatibleCacheLimit || 0),
             fallbackStateDbMs: Number(fallbackDiagnostics.stateDbMs || 0),
@@ -15452,6 +15466,7 @@ async function handleApi(req, res) {
         fallbackCacheBuildCount: Number(fallbackDiagnostics.cacheBuildCount || 0),
         fallbackCacheBuildNumber: Number(fallbackDiagnostics.cacheBuildNumber || 0),
         fallbackCacheIncrementalUpdates: Number(fallbackDiagnostics.cacheIncrementalUpdates || 0),
+        fallbackCachePersistentRestored: fallbackDiagnostics.cachePersistentRestored === true,
         fallbackCompatibleCacheHit: fallbackDiagnostics.compatibleCacheHit === true,
         fallbackCompatibleCacheLimit: Number(fallbackDiagnostics.compatibleCacheLimit || 0),
         fallbackStateDbMs: Number(fallbackDiagnostics.stateDbMs || 0),
@@ -15520,6 +15535,7 @@ async function handleApi(req, res) {
         fallbackCacheBuildCount: Number(fallbackDiagnostics.cacheBuildCount || 0),
         fallbackCacheBuildNumber: Number(fallbackDiagnostics.cacheBuildNumber || 0),
         fallbackCacheIncrementalUpdates: Number(fallbackDiagnostics.cacheIncrementalUpdates || 0),
+        fallbackCachePersistentRestored: fallbackDiagnostics.cachePersistentRestored === true,
         fallbackCompatibleCacheHit: fallbackDiagnostics.compatibleCacheHit === true,
         fallbackCompatibleCacheLimit: Number(fallbackDiagnostics.compatibleCacheLimit || 0),
         fallbackStateDbMs: Number(fallbackDiagnostics.stateDbMs || 0),

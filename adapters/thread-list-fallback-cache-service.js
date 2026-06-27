@@ -122,13 +122,54 @@ function createThreadListFallbackCacheService(options = {}) {
       filterFallbackThreads,
       mergeThreadSummaryList,
     });
+  const persistentStore = options.persistentStore
+    && typeof options.persistentStore.loadEntries === "function"
+    && typeof options.persistentStore.saveEntries === "function"
+    ? options.persistentStore
+    : null;
 
   const cache = new Map();
   let buildCount = 0;
 
+  function cacheEntriesForPersistence() {
+    return [...cache.entries()].map(([key, entry]) => Object.assign({ key }, entry || {}));
+  }
+
+  function persistCache() {
+    if (!persistentStore) return false;
+    try {
+      return persistentStore.saveEntries(cacheEntriesForPersistence());
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function seedPersistedCache() {
+    if (!persistentStore) return;
+    let entries = [];
+    try {
+      entries = persistentStore.loadEntries();
+    } catch (_) {
+      entries = [];
+    }
+    for (const entry of Array.isArray(entries) ? entries : []) {
+      const key = String(entry && entry.key || "");
+      if (!key) continue;
+      cache.set(key, Object.assign({}, entry, { persistentRestored: true }));
+      buildCount = Math.max(buildCount, Number(entry.buildNumber || 0));
+    }
+    while (cache.size > maxEntries) {
+      const oldestKey = cache.keys().next().value;
+      if (oldestKey) cache.delete(oldestKey);
+    }
+  }
+
+  seedPersistedCache();
+
   function clear() {
     cache.clear();
     if (typeof baselineService.clearSourceSnapshots === "function") baselineService.clearSourceSnapshots();
+    if (persistentStore && typeof persistentStore.clear === "function") persistentStore.clear();
   }
 
   function removeThread(threadId) {
@@ -146,6 +187,7 @@ function createThreadListFallbackCacheService(options = {}) {
       }
     }
     if (typeof baselineService.removeThread === "function") baselineService.removeThread(id);
+    if (removed) persistCache();
     return removed;
   }
 
@@ -186,6 +228,7 @@ function createThreadListFallbackCacheService(options = {}) {
     if ((changed || addIfMissing) && typeof baselineService.upsertThread === "function") {
       changed = baselineService.upsertThread(thread) || changed;
     }
+    if (changed) persistCache();
     return changed;
   }
 
@@ -271,11 +314,13 @@ function createThreadListFallbackCacheService(options = {}) {
       threads: clonePlainJson(Array.isArray(threads) ? threads : []),
       timings: Object.assign({}, timings || {}),
       incrementalUpdates: 0,
+      persistentRestored: false,
     });
     while (cache.size > maxEntries) {
       const oldestKey = cache.keys().next().value;
       if (oldestKey) cache.delete(oldestKey);
     }
+    persistCache();
   }
 
   function assignReadDiagnostics(diagnostics, values = {}) {
@@ -324,6 +369,7 @@ function createThreadListFallbackCacheService(options = {}) {
       cacheUpdatedAgeMs,
       cacheBuildNumber: Number(cached.buildNumber || 0),
       cacheIncrementalUpdates: Number(cached.incrementalUpdates || 0),
+      cachePersistentRestored: cached.persistentRestored === true,
       cachedSourceTimings: Object.assign({}, cached.timings || {}),
     }));
     return {
@@ -333,6 +379,7 @@ function createThreadListFallbackCacheService(options = {}) {
       updatedAt,
       buildNumber: Number(cached.buildNumber || 0),
       incrementalUpdates: Number(cached.incrementalUpdates || 0),
+      persistentRestored: cached.persistentRestored === true,
     };
   }
 
@@ -385,6 +432,7 @@ function createThreadListFallbackCacheService(options = {}) {
         diagnostics.cacheBaselineAgeMs = cached.cachedAt ? Math.max(0, now() - cached.cachedAt) : 0;
         diagnostics.cacheBuildNumber = cached.buildNumber || 0;
         diagnostics.cacheIncrementalUpdates = cached.incrementalUpdates || 0;
+        diagnostics.cachePersistentRestored = cached.persistentRestored === true;
         if (cached.compatible) {
           diagnostics.compatibleCacheHit = true;
           diagnostics.compatibleCacheLimit = cached.compatibleLimit || 0;
@@ -484,6 +532,7 @@ function createThreadListFallbackCacheService(options = {}) {
       diagnostics.cacheBaselineAgeMs = cached.cachedAt ? Math.max(0, now() - cached.cachedAt) : 0;
       diagnostics.cacheBuildNumber = cached.buildNumber || 0;
       diagnostics.cacheIncrementalUpdates = cached.incrementalUpdates || 0;
+      diagnostics.cachePersistentRestored = cached.persistentRestored === true;
       if (cached.compatible) {
         diagnostics.compatibleCacheHit = true;
         diagnostics.compatibleCacheLimit = cached.compatibleLimit || 0;

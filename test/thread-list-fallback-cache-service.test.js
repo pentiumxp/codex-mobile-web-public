@@ -1,11 +1,17 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 const { test } = require("node:test");
 
 const {
   createThreadListFallbackCacheService,
 } = require("../adapters/thread-list-fallback-cache-service");
+const {
+  createThreadListFallbackPersistentCacheStore,
+} = require("../adapters/thread-list-fallback-persistent-cache-store");
 
 function mergeByUpdatedAt(threads) {
   const byId = new Map();
@@ -523,4 +529,109 @@ test("upsert and remove keep filtered cached lists incrementally current", () =>
 
   assert.equal(service.removeThread("thread-1"), true);
   assert.deepEqual(service.readFallback(10, { searchTerm: "alpha" }), []);
+});
+
+test("fallback cache restores persisted warm entries after a service restart", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-thread-list-cache-"));
+  const filePath = path.join(dir, "thread-list-fallback-cache.json");
+  let nowMs = 10_000;
+  const firstStore = createThreadListFallbackPersistentCacheStore({
+    filePath,
+    now: () => nowMs,
+  });
+  const firstService = createThreadListFallbackCacheService({
+    now: () => nowMs,
+    persistentStore: firstStore,
+    readGlobalState: () => ({
+      roots: ["/workspace/default"],
+      projectless: ["thread-projectless"],
+    }),
+    normalizeFsPath: (value) => String(value || "").replace(/[\\/]+/g, "/").toLowerCase(),
+    normalizeThreadId: (value) => String(value || "").trim().toLowerCase(),
+    visibleWorkspaceRoots: (globalState) => new Set(globalState.roots || []),
+    visibleProjectlessThreadIds: (globalState) => new Set(globalState.projectless || []),
+    mergeThreadDisplaySummary: (base, display) => Object.assign({}, base || {}, display || {}),
+    normalizeThreadSummaryLiveStatus: (thread) => thread,
+    filterFallbackThreads: (threads) => threads || [],
+    mergeThreadSummaryList: mergeByUpdatedAt,
+    readStateDbFallback: () => [{ id: "thread-state", name: "State", updatedAt: 100, path: "/private/rollout.jsonl" }],
+    readRolloutSessionFallback: () => [{ id: "thread-rollout", name: "Rollout", updatedAt: 200 }],
+    readSessionIndexFallback: () => [],
+  });
+  const buildDiagnostics = {};
+  assert.deepEqual(firstService.readFallback(10, { diagnostics: buildDiagnostics }).map((thread) => thread.id), [
+    "thread-rollout",
+    "thread-state",
+  ]);
+  assert.equal(buildDiagnostics.cacheDecision, "miss-rebuild");
+  assert.equal(firstStore.status().lastWriteStatus, "ok");
+
+  let stateDbCalls = 0;
+  let rolloutCalls = 0;
+  let sessionCalls = 0;
+  nowMs = 12_500;
+  const restoredStore = createThreadListFallbackPersistentCacheStore({
+    filePath,
+    now: () => nowMs,
+  });
+  const restoredService = createThreadListFallbackCacheService({
+    now: () => nowMs,
+    persistentStore: restoredStore,
+    readGlobalState: () => ({
+      roots: ["/workspace/default"],
+      projectless: ["thread-projectless"],
+    }),
+    normalizeFsPath: (value) => String(value || "").replace(/[\\/]+/g, "/").toLowerCase(),
+    normalizeThreadId: (value) => String(value || "").trim().toLowerCase(),
+    visibleWorkspaceRoots: (globalState) => new Set(globalState.roots || []),
+    visibleProjectlessThreadIds: (globalState) => new Set(globalState.projectless || []),
+    mergeThreadDisplaySummary: (base, display) => Object.assign({}, base || {}, display || {}),
+    normalizeThreadSummaryLiveStatus: (thread) => thread,
+    filterFallbackThreads: (threads) => threads || [],
+    mergeThreadSummaryList: mergeByUpdatedAt,
+    readStateDbFallback: () => {
+      stateDbCalls += 1;
+      return [];
+    },
+    readRolloutSessionFallback: () => {
+      rolloutCalls += 1;
+      return [];
+    },
+    readSessionIndexFallback: () => {
+      sessionCalls += 1;
+      return [];
+    },
+  });
+
+  const restoredDiagnostics = {};
+  const restored = restoredService.readCachedFallback(10, { diagnostics: restoredDiagnostics });
+  assert.deepEqual(restored.map((thread) => thread.id), ["thread-rollout", "thread-state"]);
+  assert.equal(restoredDiagnostics.cacheHit, true);
+  assert.equal(restoredDiagnostics.cacheDecision, "hit");
+  assert.equal(restoredDiagnostics.cachePersistentRestored, true);
+  assert.equal(restoredDiagnostics.cacheAgeMs, 2500);
+  assert.deepEqual({ stateDbCalls, rolloutCalls, sessionCalls }, { stateDbCalls: 0, rolloutCalls: 0, sessionCalls: 0 });
+  assert.doesNotMatch(fs.readFileSync(filePath, "utf8"), /private\/rollout|path/);
+});
+
+test("persistent fallback cache store ignores corrupt files as a cold cache miss", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-thread-list-cache-corrupt-"));
+  const filePath = path.join(dir, "thread-list-fallback-cache.json");
+  fs.writeFileSync(filePath, "{not json", "utf8");
+
+  const store = createThreadListFallbackPersistentCacheStore({ filePath, now: () => 1000 });
+  const entries = store.loadEntries();
+
+  assert.deepEqual(entries, []);
+  assert.equal(store.status().lastReadStatus, "invalid-json");
+});
+
+test("persistent fallback cache store is disabled without a file path", () => {
+  const store = createThreadListFallbackPersistentCacheStore({ filePath: "", now: () => 1000 });
+
+  assert.deepEqual(store.loadEntries(), []);
+  assert.equal(store.saveEntries([]), false);
+  assert.equal(store.status().fileConfigured, false);
+  assert.equal(store.status().lastReadStatus, "disabled");
+  assert.equal(store.status().lastWriteStatus, "disabled");
 });
