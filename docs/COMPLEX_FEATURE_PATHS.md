@@ -118,7 +118,7 @@ Implementation path:
 4. Raw operation fallback must respect latest live turn id and completion outputs. Completed fallback is allowed only while the latest turn is still live and the completed operation is tied to that same turn, so older completed operations cannot attach to a newer live turn.
 5. Live reasoning should update the timer/activity label, not insert reasoning rows.
 6. Type-only context compaction markers must not synthesize visible pending/completed notices.
-7. Current-turn upward scroll jump targets the final receipt/summary: the last `agentMessage` or `plan`, then the last non-user, non-live-operation fallback. It should not jump to the first assistant reply. Preserve an already activated live-turn anchor across `turn/completed`, and show the button when the target item's start is above the viewport.
+7. Current-turn upward scroll jump targets the final receipt/summary: the last `agentMessage` or `plan`, then the last non-user, non-live-operation fallback. It should not jump to the first assistant reply. Preserve an already activated live-turn anchor across `turn/completed`, and show the button when the target item's start is above the viewport. Do not expire this jump by elapsed time; hide it through thread/turn changes, explicit bottom navigation, or target visibility instead.
 8. Live/final receipt rendering must not force-scroll while the user is reading. Recent manual scroll away from bottom should create a current-turn hold even during programmatic bottom-scroll; render stick-to-bottom and bottom-follow timers must respect that hold. The latest live `agentMessage` should be deferred until completion; a long final receipt should render once and position the viewport at the receipt start, not at the bottom.
 9. Thread detail compaction should keep a small recent-turn window by default and expose `mobileOlderTurnsCursor` when older turns exist. Browser top-of-window pagination should request the next bounded page and preserve scroll position after prepending turns.
 10. Completed-turn context/token usage summaries should be synthetic diagnostic items from rollout `token_count` events. They must be omitted when no scoped token event exists and must not become the upward final-receipt jump target. Turn-level token usage should be derived from cumulative `total_token_usage` deltas across all valid scoped events in that turn, not only the final event's `last_token_usage`; context-window percent/risk stays based on the raw input tokens from the final valid event. If cached input is present, the displayed `in` value should exclude cached input.
@@ -148,6 +148,15 @@ Implementation path:
     authoritative completed-receipt detection, and local-only item retention
     covered by `test/thread-detail-state.test.js`; `public/app.js` should only
     create the policy with local classifiers and delegate merge calls.
+16. Projection/DOM consistency diagnostics must run after real single-thread
+    and thread-tile renders, not only refresh-local-patch paths. Use
+    `public/thread-diagnostic-events.js` to produce bounded
+    `render_signature_mismatch`, `duplicate_render_keys`, and
+    `turn_order_mismatch` events, and route repeated failures through
+    `public/home-ai-diagnostic-reporting.js`. Single transient mismatches should
+    not notify Owner; matching healthy renders must clear the repeated-failure
+    counter. Do not include message text, task-card bodies, upload contents,
+    local paths, tokens, cookies, or long logs in reports.
 16. Wide-screen multi-thread reading layout belongs in
     `public/thread-tile-layout.js`. Keep viewport/sidebar/orientation to
     columns/rows/maxPanes decisions covered by `test/thread-tile-layout.test.js`,

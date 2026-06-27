@@ -6,6 +6,7 @@ const { test } = require("node:test");
 const {
   countDuplicateIds,
   countUniqueIds,
+  fallbackThreadsForRouteMerge,
   mergeThreadListRouteResult,
   threadRowsFromResult,
 } = require("../adapters/thread-list-route-merge-service");
@@ -48,6 +49,7 @@ test("thread-list route merge preserves result shape and exposes bounded diagnos
     routeMergeInputCount: 5,
     routeMergeUniqueInputCount: 4,
     routeMergeDuplicateCount: 1,
+    routeMergeFallbackDuplicateDropCount: 0,
     routeMergeMergedCount: 4,
     routeMergeOutputCount: 2,
     routeMergeLimitDropCount: 2,
@@ -72,6 +74,33 @@ test("thread-list route merge supports threads-array results", () => {
   assert.deepEqual(merged.result.threads.map((thread) => thread.id), ["y", "x"]);
   assert.deepEqual(threadRowsFromResult(merged.result).map((thread) => thread.id), ["y", "x"]);
   assert.equal(merged.diagnostics.routeMergeOutputCount, 2);
+});
+
+test("thread-list route merge can drop fallback duplicates already covered by app-server rows", () => {
+  const fallbackMerge = fallbackThreadsForRouteMerge([
+    { id: "a" },
+    { id: "b" },
+  ], [
+    { id: "b", updatedAt: 2 },
+    { id: "c", updatedAt: 3 },
+  ], { dropDuplicateFallbackThreads: true });
+
+  assert.deepEqual(fallbackMerge.fallbackThreads.map((thread) => thread.id), ["c"]);
+  assert.equal(fallbackMerge.duplicateDropCount, 1);
+
+  const merged = mergeThreadListRouteResult({
+    result: { data: [{ id: "a", updatedAt: 10 }, { id: "b", updatedAt: 9 }] },
+    fallbackThreads: [{ id: "b", updatedAt: 20 }, { id: "c", updatedAt: 8 }],
+    dropDuplicateFallbackThreads: true,
+    limit: 10,
+    mergeThreadSummaryList: mergeByUpdatedAt,
+  });
+
+  assert.deepEqual(merged.result.data.map((thread) => thread.id), ["a", "b", "c"]);
+  assert.equal(merged.diagnostics.routeMergeFallbackInputCount, 2);
+  assert.equal(merged.diagnostics.routeMergeFallbackDuplicateDropCount, 1);
+  assert.equal(merged.diagnostics.routeMergeInputCount, 3);
+  assert.equal(merged.diagnostics.routeMergeDuplicateCount, 0);
 });
 
 test("thread-list route merge includes summary-merge diagnostics without private fields", () => {

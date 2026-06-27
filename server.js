@@ -5204,11 +5204,19 @@ function workspaceContextStatsForCwd(cwd) {
 function annotateThreadRolloutStats(thread, options = {}) {
   if (!thread || typeof thread !== "object") return thread;
   const out = Object.assign({}, thread);
+  out.rolloutWarningThresholdBytes = ROLLOUT_WARNING_BYTES;
+  const hasExistingRolloutStats = Number.isFinite(Number(out.rolloutSizeBytes))
+    && Number.isFinite(Number(out.rolloutSizeUpdatedAtMs));
+  if (options.preferExistingRolloutStats === true && hasExistingRolloutStats) {
+    if (typeof out.rolloutOverWarningThreshold !== "boolean") {
+      out.rolloutOverWarningThreshold = Number(out.rolloutSizeBytes || 0) >= ROLLOUT_WARNING_BYTES;
+    }
+    return out;
+  }
   const readRolloutStats = typeof options.rolloutStatsForPath === "function"
     ? options.rolloutStatsForPath
     : rolloutStatsForPath;
   const stats = readRolloutStats(rolloutPathForThread(out));
-  out.rolloutWarningThresholdBytes = ROLLOUT_WARNING_BYTES;
   if (!stats) return out;
   out.rolloutSizeBytes = stats.sizeBytes;
   out.rolloutSizeUpdatedAtMs = stats.mtimeMs;
@@ -5271,6 +5279,36 @@ const threadDetailReadOrchestrationService = createThreadDetailReadOrchestration
       missReason: lookedUp && lookedUp.missReason || "",
     };
   },
+  activeOverlayProjectionWindowLookup: (input, summary, runtimeSettings, optionsForProjection = {}) => {
+    const lookedUp = typeof threadDetailProjectionService.lookup === "function"
+      ? threadDetailProjectionService.lookup(input, Object.assign({}, optionsForProjection, { skipNormalizeResult: true }))
+      : { cached: threadDetailProjectionService.get(input, optionsForProjection), missReason: "" };
+    const cached = lookedUp && lookedUp.cached || null;
+    let result = cached && cached.result || null;
+    if (result && result.thread) {
+      const projectionVersion = String(cached.version || result.thread.mobileProjectionVersion || "");
+      const thread = Object.assign({}, result.thread);
+      thread.mobileReadMode = cached.partial
+        ? (projectionVersion === "v4" ? "projection-v4-partial" : "projection-partial")
+        : cached.dynamic
+          ? (projectionVersion === "v4" ? "projection-v4-dynamic" : "projection-dynamic")
+          : (projectionVersion === "v4" ? "projection-v4-cache" : "projection-cache");
+      thread.mobileProjection = Object.assign({}, thread.mobileProjection || {}, {
+        source: cached.partial ? "partial" : cached.dynamic ? "dynamic" : "cache",
+        version: projectionVersion || result.thread.mobileProjectionVersion || "",
+        partial: cached.partial === true,
+        partialKind: cached.partialKind || "",
+        cachedAtMs: cached.cachedAtMs || null,
+        updatedAtMs: cached.updatedAtMs || cached.cachedAtMs || null,
+        ageMs: cached.updatedAtMs ? Math.max(0, Date.now() - cached.updatedAtMs) : null,
+      });
+      result = Object.assign({}, result, { thread });
+    }
+    return {
+      result,
+      missReason: lookedUp && lookedUp.missReason || "",
+    };
+  },
   projectedThreadResult: (input, summary, runtimeSettings, optionsForProjection = {}) => prepareProjectedThreadReadResult(
     threadDetailProjectionService.get(input, optionsForProjection),
     summary,
@@ -5291,6 +5329,11 @@ const threadDetailReadOrchestrationService = createThreadDetailReadOrchestration
   seedProjection: (input, result, optionsForSeed = {}) => threadDetailProjectionService.seed(input, result, optionsForSeed),
   preferBoundedReadBeforeFullRead: (input) => threadDetailBoundedReadPolicyService.preferBoundedReadBeforeFullRead(input),
   prepareResponse: prepareThreadDetailResponseResult,
+  compactActiveOverlayTurn: (turn, details = {}) => compactTurn(turn, {
+    allowOperations: true,
+    maxOperationItems: MAX_LIVE_OPERATION_ITEMS,
+    threadId: details.threadId || "",
+  }),
   fallbackThreadReadResult: fallbackThreadReadResultForOrchestrator,
   isReadTimeoutError,
   isUnmaterializedThreadError,
@@ -12873,7 +12916,9 @@ async function materializeThreadTaskCardDraftsForThread(thread) {
     if (!turnId || !Array.isArray(turn && turn.items)) continue;
     for (const item of turn.items) {
       if (!item || (item.type !== "agentMessage" && item.type !== "plan")) continue;
-      const draft = parseThreadTaskCardDraftText(threadTaskCardItemText(item));
+      const itemText = threadTaskCardItemText(item);
+      if (!itemText.includes(THREAD_TASK_CARD_DRAFT_TAG)) continue;
+      const draft = parseThreadTaskCardDraftText(itemText);
       if (!draft || draft.error || !draft.title || !draft.body || !draft.targetThreadIds.length) continue;
       const targetWorkspaceIds = {};
       for (const targetThreadId of draft.targetThreadIds) {
@@ -14976,6 +15021,7 @@ async function handleApi(req, res) {
       const cached = requestCachedDisplaySummaries.get(id);
       return normalizeStaleContextOnlyActiveThread(cached ? (mergeThreadDisplaySummary(thread, cached, {
         rolloutStatsForPath: getThreadListRequestContext().rolloutStatsForPath,
+        preferExistingRolloutStats: true,
       }) || thread) : thread);
     };
     const getMergeThreadSummaryListOptions = () => {
@@ -14984,6 +15030,7 @@ async function handleApi(req, res) {
           archivedIds: getRequestArchivedIds(),
           mergeThreadDisplaySummary: (base, display) => mergeThreadDisplaySummary(base, display, {
             rolloutStatsForPath: getThreadListRequestContext().rolloutStatsForPath,
+            preferExistingRolloutStats: true,
           }),
           mergeThreadWithCachedDisplaySummary: mergeThreadWithCachedDisplaySummaryForRequest,
           sessionIndexEntries: getThreadListRequestContext().sessionIndexEntries(),
@@ -15254,6 +15301,7 @@ async function handleApi(req, res) {
         result: appServerResult,
         fallbackThreads: fallback,
         limit,
+        dropDuplicateFallbackThreads: true,
         mergeThreadSummaryList: mergeThreadSummaryListWithDiagnostics,
         mergeThreadSummaryListOptions: fullMergeOptions,
       });

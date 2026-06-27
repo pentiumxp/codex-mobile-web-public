@@ -55,7 +55,7 @@ test("current-turn reply jump shares one floating slot with the bottom jump", ()
   assert.match(stylesCss, /\.scroll-turn-reply-button/);
   assert.doesNotMatch(stylesCss, /\.scroll-turn-reply-button\s*\{[^}]*right:\s*74px;/);
   assert.doesNotMatch(stylesCss, /\.scroll-turn-reply-button\s*\{[^}]*right:\s*calc\(var\(--mobile-floating-control-right\) \+ var\(--mobile-floating-control-size\) \+ 8px\)/);
-  assert.match(appJs, /const TURN_REPLY_JUMP_WINDOW_MS = 10 \* 60 \* 1000;/);
+  assert.doesNotMatch(appJs, /TURN_REPLY_JUMP_WINDOW_MS/);
   assert.match(appJs, /function rememberRecentCompletedTurnReply\(turnId\)/);
   assert.match(appJs, /rememberRecentCompletedTurnReply\(params\.turn\.id\)/);
   assert.match(appJs, /postCompletionRefreshTimers: \[\]/);
@@ -85,6 +85,7 @@ test("current-turn reply jump shares one floating slot with the bottom jump", ()
   assert.match(appJs, /delta > 2 && !\(state\.recentCompletedReplyAnchor && state\.recentCompletedReplyAnchor\.activatedByCompletion\)/);
   assert.match(appJs, /activatedByUserScroll: true/);
   assert.match(appJs, /if \(!anchor\.activatedByUserScroll && !anchor\.activatedByCompletion\) return null;/);
+  assert.doesNotMatch(functionBody("currentRecentCompletedReplyAnchor"), /Date\.now\(\) - Number\(anchor\.completedAtMs/);
   assert.match(appJs, /function turnFinalReceiptNode\(/);
   assert.match(appJs, /querySelectorAll\("\.item\.agentMessage, \.item\.plan"\)/);
   assert.match(appJs, /return finalReceipts\[finalReceipts\.length - 1\];/);

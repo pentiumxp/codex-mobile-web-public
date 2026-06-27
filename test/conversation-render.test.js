@@ -3458,6 +3458,10 @@ test("conversation html update invalidates stable signatures when the DOM has lo
   assert.match(updateBody, /threadDetailDomPatchApi\.planConversationPostApplyDomConsistency\(\{/);
   assert.match(updateBody, /if \(postApplyConsistencyPlan\.shouldFallbackToInnerHtml && conversation\)/);
   assert.match(updateBody, /threadDiagnosticEventsApi\.detailPatchRejectedDiagnosticEvent\(postApplyConsistencyPlan\.diagnosticInput \|\| \{\}\)/);
+  assert.match(updateBody, /const shouldCheckProjectionConsistency = options\.checkProjectionConsistency === true;/);
+  assert.match(updateBody, /const projectionConsistencySource = String\(options\.source \|\| "conversation-update"\);/);
+  assert.match(updateBody, /if \(shouldCheckProjectionConsistency\) \{[\s\S]*checkConversationProjectionConsistency\(projectionConsistencySource, \{[\s\S]*renderMode: String\(options\.renderMode \|\| updatePlan\.action \|\| ""\),[\s\S]*\}\);[\s\S]*\}/);
+  assert.match(updateBody, /if \(shouldCheckProjectionConsistency\) \{[\s\S]*checkConversationProjectionConsistency\(projectionConsistencySource, \{[\s\S]*renderMode: String\(options\.renderMode \|\| applicationPlan\.finalAction \|\| updatePlan\.action \|\| ""\),[\s\S]*\}\);[\s\S]*\}/);
   assert.match(updateBody, /threadDetailDomPatchApi\.planConversationHtmlPerformanceEvent\(\{/);
   assert.match(updateBody, /updatePlan,/);
   assert.match(updateBody, /applicationPlan,/);
@@ -3465,6 +3469,7 @@ test("conversation html update invalidates stable signatures when the DOM has lo
   assert.match(functionBody("renderCurrentThread"), /expectedVisibleTurnCount: turns\.length/);
   assert.match(functionBody("renderCurrentThread"), /expectedVisibleItemCount: renderVisibleShape\.visibleItemCount/);
   assert.match(functionBody("renderCurrentThread"), /duplicateRenderKeyCount: renderDomShape\.duplicateRenderKeyCount/);
+  assert.match(functionBody("renderCurrentThread"), /checkProjectionConsistency: true/);
   assert.match(functionBody("renderCurrentThread"), /updateConversationHtml\(shellUpdatePlan\.html, shellUpdatePlan\.conversationSignature, shellUpdatePlan\.options\)/);
   assert.match(functionBody("visibleRenderableTurnIds"), /visibleItemsForTurn\(turn, thread\)\.length/);
   assert.match(functionBody("threadTileVisibleShape"), /visibleTurnsForConversation\(thread\)/);
@@ -3479,6 +3484,7 @@ test("conversation html update invalidates stable signatures when the DOM has lo
   assert.match(functionBody("renderThreadTileLayout"), /routeKind: "thread-tile"/);
   assert.match(functionBody("renderThreadTileLayout"), /currentVisibleItems: visibleShape\.visibleItemCount/);
   assert.match(functionBody("renderThreadTileLayout"), /source: "thread-tile-render"/);
+  assert.match(functionBody("renderThreadTileLayout"), /checkProjectionConsistency: true/);
 });
 
 test("thread detail refresh failure delegates diagnostic payloads to helper", () => {

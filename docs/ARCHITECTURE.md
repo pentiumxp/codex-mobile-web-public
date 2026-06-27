@@ -370,6 +370,24 @@ Thread list reads app-server `thread/list`, then filters archived/deleted/sub-ag
 
 `adapters/thread-list-fallback-cache-service.js` owns the fallback cache policy: key construction from visible workspace roots/projectless thread ids, process-lifetime default retention, optional TTL expiry, cache-hit diagnostics, first-run fallback aggregation, and incremental status/title/archive mutation. State-db, rollout-session, and session-index scanners remain separate providers injected by `server.js`.
 
+`adapters/thread-list-route-merge-service.js` owns the app-server plus fallback
+route merge boundary. The normal `/api/threads` route drops fallback rows whose
+thread id is already present in the authoritative app-server result before
+calling the summary merge service. This keeps fallback rows useful for
+app-server omissions, but prevents warm fallback-cache duplicates from running
+the expensive duplicate merge path on every list read. The diagnostics preserve
+both original fallback input count and duplicate-drop count so latency changes
+remain attributable without private thread content. `server.js` also reuses
+rollout size/stat metadata that was already attached during the visible-thread
+filter pass when later display-summary merge stages run in the same request.
+
+`adapters/thread-list-summary-merge-service.js` owns duplicate summary merge
+semantics. It only invokes duplicate display-summary merge when two rows with
+the same thread id are actually present; unique rows proceed directly to
+archive/sub-agent filtering, stripping, sorting, and limiting. This preserves
+duplicate resolution semantics while avoiding a non-duplicate display-merge
+stage that was measurable on warm large-session list reads.
+
 `adapters/thread-list-response-coalescer-service.js` owns in-flight response
 coalescing for identical default full-list `/api/threads` requests. It shares
 one authoritative app-server `thread/list` plus merge/decorate result with
@@ -443,6 +461,17 @@ browser loads older turns in 10-turn pages when the user scrolls to the top of
 the current detail window and preserves the reading position after prepending
 those turns.
 
+Active-overlay detail responses preserve the same compaction boundary as normal
+thread-detail responses. The proof gate may merge a live overlay turn into a
+bounded projection window only after the injected server-owned compactor has
+processed that overlay turn with the live-operation retention policy. Raw MCP
+or dynamic tool payloads such as tool arguments/results, provider bodies, and
+long command output must not pass through `/api/threads/:id`; they are reduced
+to compact operation evidence before the overlay turn is cloned into the
+response. `mcpToolCall` and `dynamicToolCall` count as operation evidence for
+active-overlay coverage, so the proof gate and response payload use the same
+operation taxonomy.
+
 The current implementation above is the v3 projection path. The v4 replacement
 contract is documented in `docs/THREAD_DETAIL_PROJECTION_V4_DESIGN.md`: it keeps
 v3 in place while adding a canonical server-side visible-item projection, a
@@ -451,6 +480,21 @@ stable visible item keys so DOM patching is only a rendering optimization.
 Production may switch to v4 after focused service/UI tests and visual
 verification pass; public release remains a separate public-safe validation and
 publish gate.
+
+Browser rendering performs a post-render projection-consistency check for real
+single-thread and thread-tile conversation surfaces. The check compares the
+current conversation signature with the server/projection-derived signature,
+detects duplicate DOM render keys, and verifies visible single-thread turn
+order/latest-turn coverage when turn ids are available. Failures are converted
+into bounded diagnostic events by `public/thread-diagnostic-events.js` and then
+fed through `public/home-ai-diagnostic-reporting.js`, which reports to Home AI
+only after the repeated-failure threshold and clears the counter on a matching
+healthy render. The report channel carries only metadata such as build/cache id,
+read/render mode, route kind, short thread/turn hashes, counts, and reason
+codes. It must not include message bodies, task-card bodies, upload bytes,
+private paths, provider payloads, cookies, tokens, or long logs. Home AI owns
+Owner notification and Owner-triggered repair-card dispatch; Codex Mobile does
+not automatically dispatch repair cards from these diagnostics.
 
 The detail path compacts command/tool/file/search items, enriches item timestamps from rollout events, injects pending steer echoes when needed, and may attach a raw operation fallback only when it belongs to the same latest live turn. The current live turn keeps all compact process cards, and the previous ended turn also keeps those intermediate cards so the user can scroll back to inspect a just-finished step. If no live turn exists, the latest ended turn keeps compact process cards. Older-history pages and older turns outside that state-relevant set are receipt-only, retaining user question items, the last assistant/plan receipt item, and any `turnUsageSummary` metadata while omitting older assistant progress updates, process, reasoning, and operation cards. The pure selection rules for operation-retaining turns and receipt-only item indexes live in `adapters/thread-turn-compaction-policy-service.js`; `server.js` composes those rules with rollout, image, Usage, and stale-active enrichment. Completed raw fallback is accepted only while the latest turn is still live and the operation has a matching latest turn id; old completed operations must not attach to newer live turns. If app-server `thread/turns/list` omits the latest completed turn even though the thread summary and rollout `task_complete` point to it, server compaction appends a synthetic completed turn from the rollout completion event before trimming the recent window. The rollout enrichment index treats an EOF carry as visible only when it is a complete parseable JSON object; incomplete final fragments stay invisible, but a valid final `task_complete` line does not require a trailing newline before it can repair first-open detail. If a completed turn lacks an assistant/plan item whose text matches rollout `task_complete.last_agent_message`, detail enrichment inserts a synthetic final receipt before Usage so stale projections that still contain intermediate agent messages cannot cover the real final receipt on first open. Existing matching assistant/plan receipts are never replaced by this fallback, and failed, cancelled, interrupted, active, or otherwise incomplete turns are not backfilled. The usage summary is diagnostic UI only for successfully completed turns: turn-level token use, cumulative token use, model context-window percentage/risk, rollout size, and current workspace `PROJECT_CONTEXT.md` / `HANDOFF.md` sizes. `interrupted`, failed, cancelled, active, or otherwise incomplete turns do not render a Usage card even when their rollout contains `token_count` events, because that would imply a final receipt exists. Turn-level use is derived from cumulative `total_token_usage` deltas across all valid scoped token events in the turn, so multi-call turns are not reduced to the final model call. The usage row's `in` value displays uncached input when cached input is reported; context-window usage still uses raw input tokens from the final valid event. If app-server emits a final zero/window sentinel token event after valid usage, Mobile Web ignores that sentinel and keeps the latest valid scoped token event. Usage collection starts with the bounded rollout tail for speed, but thread detail also passes the currently returned turn ids into the collector. If any target turn is missing from the tail result and the rollout is within the runtime scan limit, the server scans the rollout file and caches only token summaries so recent completed turns do not lose Usage when later output pushes their `token_count` events out of the tail window. If rollout or workspace context sizes cross continuation thresholds, the Usage block may show the same `压缩续接` action used by the top warning.
 

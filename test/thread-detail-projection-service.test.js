@@ -262,6 +262,19 @@ test("thread detail projection allows stale active summary only for active overl
   assert.equal(overlay.cached.partial, true);
   assert.deepEqual(overlay.cached.result.thread.turns.map((turn) => turn.id), ["older-turn", "turn-1"]);
 
+  const overlayWindowOnly = service.lookup(staleInput, {
+    allowPartial: true,
+    activeOverlay: true,
+    omitActiveTurnId: "turn-1",
+  });
+  assert.ok(overlayWindowOnly.cached);
+  assert.equal(overlayWindowOnly.missReason, "");
+  assert.deepEqual(overlayWindowOnly.cached.result.thread.turns.map((turn) => turn.id), ["older-turn"]);
+  assert.deepEqual(
+    service.activeOverlaySnapshot({ threadId: "thread-1" }).overlayTurn.id,
+    "turn-1",
+  );
+
   const restingOverlay = service.lookup(signatureInput({
     summaryStatus: "completed",
     summaryUpdatedAtMs: 20000,

@@ -100,6 +100,19 @@ test("v4 projection service preserves partial recent-window opt-in semantics", (
     assert.equal(cached.result.thread.mobileProjectionRevision, 1);
     assert.deepEqual(cached.result.thread.mobileVisibleItemKeys, ["turn-recent:user:user-1"]);
 
+    const lightweight = service.lookup(signatureInput(), {
+      allowPartial: true,
+      activeOverlay: true,
+      skipNormalizeResult: true,
+    });
+    assert.ok(lightweight.cached);
+    assert.equal(lightweight.cached.version, "v4");
+    assert.equal(lightweight.cached.result.thread.mobileReadMode, "projection-v4-partial");
+    assert.equal(lightweight.cached.result.thread.mobileProjection.version, "v4");
+    assert.equal(lightweight.cached.result.thread.mobileProjection.source, "partial");
+    assert.equal(lightweight.cached.result.thread.mobileProjection.revision, 1);
+    assert.deepEqual(lightweight.cached.result.thread.mobileVisibleItemKeys, ["turn-recent:user:user-1"]);
+
     const restoredService = createThreadDetailProjectionV4Service({
       cacheDir: dir,
       policyVersion: "test-v4",
@@ -331,6 +344,132 @@ test("v4 projection service exposes active overlay snapshot with monotonic revis
   assert.equal(secondWarm.overlayRevision, 2);
   assert.equal(secondWarm.overlayCacheHit, true);
   assert.equal(secondWarm.overlayTurn.items[0].mobileProjectionVersion, "v4");
+
+  const rawReadOnly = service.activeOverlaySnapshot({
+    threadId: "thread-1",
+    activeTurnId: "turn-1",
+    cloneOverlayTurn: false,
+    normalizeOverlayTurn: false,
+  });
+  assert.equal(rawReadOnly.overlayRevision, 2);
+  assert.equal(rawReadOnly.overlayCacheHit, false);
+  assert.equal(rawReadOnly.overlayNormalized, false);
+  assert.equal(rawReadOnly.overlayTurn, service.activeOverlaySnapshot({
+    threadId: "thread-1",
+    activeTurnId: "turn-1",
+    cloneOverlayTurn: false,
+    normalizeOverlayTurn: false,
+  }).overlayTurn);
+  assert.equal(rawReadOnly.overlayTurn.items[0].mobileProjectionVersion, undefined);
+
+  const readOnlyWarm = service.activeOverlaySnapshot({
+    threadId: "thread-1",
+    activeTurnId: "turn-1",
+    cloneOverlayTurn: false,
+  });
+  assert.equal(readOnlyWarm.overlayCacheHit, true);
+  assert.equal(readOnlyWarm.overlayTurn, service.activeOverlaySnapshot({
+    threadId: "thread-1",
+    activeTurnId: "turn-1",
+    cloneOverlayTurn: false,
+  }).overlayTurn);
+  assert.notEqual(readOnlyWarm.overlayTurn, service.activeOverlaySnapshot({
+    threadId: "thread-1",
+    activeTurnId: "turn-1",
+  }).overlayTurn);
+});
+
+test("v4 active overlay window seed does not replace live overlay snapshot", () => {
+  const service = createThreadDetailProjectionV4Service({
+    cacheDir: "",
+    policyVersion: "test-v4",
+    maxTurns: 3,
+    now: () => 8000,
+  });
+
+  service.applyNotification("turn/started", {
+    threadId: "thread-1",
+    turn: { id: "active-turn", status: { type: "active" }, items: [] },
+  });
+  service.applyNotification("item/agentMessage/delta", {
+    threadId: "thread-1",
+    turnId: "active-turn",
+    itemId: "agent-1",
+    delta: "partial reply",
+  });
+
+  const seeded = service.seed(signatureInput({
+    summaryUpdatedAtMs: 1100,
+  }), {
+    thread: {
+      id: "thread-1",
+      turns: [
+        { id: "older-turn", items: [{ id: "old-agent", type: "agentMessage" }] },
+        { id: "active-turn", items: [{ id: "stale-active", type: "agentMessage" }] },
+      ],
+    },
+  }, {
+    partial: true,
+    partialKind: "turns-list-active-overlay-window",
+    projectionRevision: 2,
+    projectionTimestampMs: 8000,
+  });
+  assert.equal(seeded.partial, true);
+  assert.equal(seeded.partialKind, "turns-list-active-overlay-window");
+
+  const live = service.activeOverlaySnapshot({
+    threadId: "thread-1",
+    activeTurnId: "active-turn",
+    cloneOverlayTurn: false,
+    normalizeOverlayTurn: false,
+  });
+  assert.equal(live.found, true);
+  assert.equal(live.overlayTurn.items[0].id, "agent-1");
+
+  const activeWindow = service.lookup(signatureInput({
+    summaryUpdatedAtMs: 2200,
+  }), {
+    allowPartial: true,
+    activeOverlay: true,
+    omitActiveTurnId: "active-turn",
+    skipNormalizeResult: true,
+  });
+  assert.equal(activeWindow.missReason, "");
+  assert.equal(activeWindow.cached.partial, true);
+  assert.equal(activeWindow.cached.partialKind, "turns-list-active-overlay-window");
+  assert.equal(activeWindow.cached.result.thread.mobileProjection.revision, 2);
+  assert.deepEqual(activeWindow.cached.result.thread.turns.map((turn) => turn.id), ["older-turn"]);
+
+  service.applyNotification("item/agentMessage/delta", {
+    threadId: "thread-1",
+    turnId: "active-turn",
+    itemId: "agent-1",
+    delta: " still live",
+  });
+  const windowAfterItem = service.lookup(signatureInput({
+    summaryUpdatedAtMs: 3300,
+  }), {
+    allowPartial: true,
+    activeOverlay: true,
+    omitActiveTurnId: "active-turn",
+    skipNormalizeResult: true,
+  });
+  assert.equal(windowAfterItem.missReason, "");
+  assert.deepEqual(windowAfterItem.cached.result.thread.turns.map((turn) => turn.id), ["older-turn"]);
+
+  service.applyNotification("turn/completed", {
+    threadId: "thread-1",
+    turn: { id: "active-turn", status: { type: "completed" }, items: [] },
+  });
+  const windowAfterTurnBoundary = service.lookup(signatureInput({
+    summaryUpdatedAtMs: 4400,
+  }), {
+    allowPartial: true,
+    activeOverlay: true,
+    omitActiveTurnId: "active-turn",
+    skipNormalizeResult: true,
+  });
+  assert.equal(windowAfterTurnBoundary.cached, null);
 });
 
 test("v4 projection service treats turn completion as an item-preserving patch", () => {

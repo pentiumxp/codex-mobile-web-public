@@ -70,6 +70,8 @@ function classifyActiveOverlayItem(item) {
     || type === "toolcall"
     || type === "tool_call"
     || type === "function_call"
+    || type === "mcptoolcall"
+    || type === "dynamictoolcall"
     || type === "operation"
     || type === "live-operation"
     || type === "operationitem"
@@ -162,8 +164,7 @@ function normalizeAssistantCoverage(value, evidence, input) {
   if (evidence.assistantItems <= 0) return "unknown";
   const projectionRevision = numberOrZero(input.projectionRevision);
   const overlayRevision = numberOrZero(input.overlayRevision);
-  if (projectionRevision || overlayRevision) {
-    if (!projectionRevision || !overlayRevision) return "unknown";
+  if (projectionRevision && overlayRevision) {
     if (overlayRevision < projectionRevision) return "stale";
     return "fresh";
   }
@@ -305,7 +306,18 @@ function mergeProjectionThreadWithActiveOverlay(projectionThread, overlayTurn, o
   if (!projectionThread || typeof projectionThread !== "object") return null;
   if (!overlayTurn || typeof overlayTurn !== "object") return cloneJson(projectionThread);
   const thread = cloneJson(projectionThread);
-  const turn = cloneJson(overlayTurn);
+  const compactOverlayTurn = typeof options.compactOverlayTurn === "function"
+    ? options.compactOverlayTurn
+    : null;
+  const preparedOverlayTurn = compactOverlayTurn
+    ? compactOverlayTurn(overlayTurn, {
+      projectionThread,
+      overlaySource: options.overlaySource,
+      reason: options.reason,
+      counts: options.counts,
+    }) || overlayTurn
+    : overlayTurn;
+  const turn = cloneJson(preparedOverlayTurn);
   const id = turnId(turn);
   const turns = asArray(thread.turns).map((candidate) => cloneJson(candidate));
   const existingIndex = id ? turns.findIndex((candidate) => turnId(candidate) === id) : -1;

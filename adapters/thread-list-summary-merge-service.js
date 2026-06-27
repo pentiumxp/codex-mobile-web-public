@@ -128,9 +128,11 @@ function createThreadListSummaryMergeService(options = {}) {
       ));
       const duplicate = byId.has(id);
       if (duplicate) diagnostics.summaryMergeDuplicateIdCount += 1;
-      const merged = measure(diagnostics, "summaryMergeDisplayMergeMs", () => normalizeThreadSummaryLiveStatus(
-        duplicate ? mergeDisplaySummary(byId.get(id), displayThread) : displayThread,
-      ));
+      const merged = duplicate
+        ? measure(diagnostics, "summaryMergeDisplayMergeMs", () => normalizeThreadSummaryLiveStatus(
+          mergeDisplaySummary(byId.get(id), displayThread),
+        ))
+        : displayThread;
       const archived = threadHasArchiveSignal(merged, archivedIds);
       const subagent = isSubagentThreadSummary(merged);
       if (archived || subagent) {

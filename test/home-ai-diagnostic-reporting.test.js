@@ -104,6 +104,65 @@ test("repeated thread route failure creates bounded diagnostic report", () => {
   assert.equal(result.report.context.route_kind, "plugin-route");
 });
 
+test("repeated projection mismatch reports at threshold and success clears", () => {
+  let now = 1000;
+  const reporter = diagnostics.createDiagnosticReporter({ threshold: 3, throttleMs: 60000, now: () => now });
+  const input = {
+    category: "conversation_projection_mismatch",
+    diagnostic_type: "render_signature_mismatch",
+    error_code: "render_signature_mismatch",
+    context: {
+      surface: "conversation-render",
+      action: "single-thread-render",
+      route_kind: "single-thread",
+      read_mode: "projection-active-overlay",
+      render_mode: "set-inner-html",
+      thread_hash: diagnostics.hashIdentifier("thread-secret"),
+      build_id: "0.1.11|codex-mobile-shell-v551",
+      title: "private title stripped",
+    },
+    counts: {
+      dom_count: 8,
+      visible_count: 10,
+      turn_count: 5,
+      raw_message_chars: 9000,
+    },
+    breadcrumbs: [{
+      kind: "conversation-render",
+      code: "signature-check",
+      status: "failed",
+      fields: {
+        read_mode: "projection-active-overlay",
+        render_mode: "set-inner-html",
+        dom_count: 8,
+        visible_count: 10,
+        message: "private message stripped",
+      },
+    }],
+  };
+
+  assert.equal(reporter.recordFailure(input).eligible, false);
+  assert.equal(reporter.recordFailure(input).eligible, false);
+  const third = reporter.recordFailure(input);
+  assert.equal(third.eligible, true);
+  assert.equal(third.report.category, "conversation_projection_mismatch");
+  assert.equal(third.report.diagnostic_type, "render_signature_mismatch");
+  assert.equal(third.report.counts.repeated_failures, 3);
+  assert.equal(third.report.context.render_mode, "set-inner-html");
+  assert.equal(third.report.context.thread_hash.startsWith("h_"), true);
+  assert.doesNotMatch(JSON.stringify(third.report), /thread-secret|private title|private message|raw_message_chars/);
+
+  assert.equal(reporter.recordSuccess({
+    category: "conversation_projection_mismatch",
+    diagnostic_type: "render_signature_mismatch",
+    error_code: "render_signature_mismatch",
+    context: input.context,
+  }).cleared, 1);
+  assert.equal(reporter.failureCount(input), 0);
+  now += 1;
+  assert.equal(reporter.recordFailure(input).eligible, false);
+});
+
 test("report payload strips unsafe private fields", () => {
   const event = diagnostics.sanitizeInput(taskCardFailure({
     body: "raw body",

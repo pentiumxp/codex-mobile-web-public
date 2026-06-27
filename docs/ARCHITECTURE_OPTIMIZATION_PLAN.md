@@ -164,6 +164,44 @@ Current acceleration targets:
    treats that projection hit only as a window candidate for active/running
    summaries; active detail still has to pass the server-owned live overlay
    provider and proof gate before returning without full `thread/read`.
+   The current active-detail response-size slice closes a later proof-gated
+   payload gap rather than changing the proof gate: live overlay turns were
+   merged into already compacted projection results after response compaction,
+   so raw MCP tool arguments/results and long operation payloads could survive
+   in `projection-active-overlay` responses. Read orchestration now injects the
+   existing server `compactTurn()` policy into the overlay merge seam, with
+   `MAX_LIVE_OPERATION_ITEMS` live-operation retention. MCP and dynamic tool
+   calls are counted as operation evidence, and the merged detail response
+   contains only compact operation metadata. This is the closure path for the
+   observed 500KB-900KB active-overlay responses; if latency remains high after
+   deployment, the next owner is earlier active-overlay snapshot normalization
+   or projection work, not client de-duplication.
+   The follow-up active-detail hot-path slice keeps that same proof gate but
+   changes the common active window source. A naive reuse of the active dynamic
+   projection regressed production because the lookup still cloned/normalized
+   the currently growing live turn; that attempt was reverted. The corrected
+   path lets active-overlay projection lookup pass `omitActiveTurnId`, so the
+   cached partial projection window is cloned without the live active turn and
+   the provider's clone-free active-overlay snapshot is merged separately after
+   proof. Production readback then showed `threadReadMs=0`,
+   `turnsListMs=0`, and `activeOverlayWindowMs=0`, but still kept
+   `activeOverlayMs` around the one-second range because the active-overlay
+   retry was still routed through full projected-detail response assembly. The
+   next correction splits a dedicated lightweight
+   `activeOverlayProjectionWindowLookup`: it uses the same proof-gated cache
+   semantics, passes `skipNormalizeResult` through v4 projection lookup, and
+   returns only the projection window needed for the overlay proof/merge. A
+   later timing readback showed this lookup itself was effectively zero-cost;
+   the remaining one-second `activeOverlayMs` came from using `await` on the
+   synchronous active-overlay provider, which let the event loop process other
+   active-session work before continuing the detail response. Read orchestration
+   now only awaits promise-like provider results; synchronous provider output
+   continues in the same call stack. The provider also caches bounded
+   active-turn evidence counts for repeated reads of the same active turn
+   shape; this keeps proof-gate evidence out of the request hot path without
+   caching message text, tool payloads, uploads, or private content.
+   `turns-list-active-overlay-window` remains a fail-closed fallback only when
+   no usable projection window exists.
    Post-v542 local pane-context work is intentionally smaller than these
    deployable Phase B modules: each slice fixes one frontend state writer,
    adds executable pane-local coverage, commits locally, and does not deploy
@@ -2194,6 +2232,35 @@ bounded fixture smoke:
 This candidate is not deployed and not pushed Public at this point. Next action
 should be either deploy/readback of v544 or an explicit decision to pause Phase
 C and move to another phase.
+
+### 2026-06-27 Thread-list local merge latency module
+
+This server-only module follows the v550 projection diagnostic deployment.
+Fresh production sampling showed the remaining default list-entry cost was not
+the mux/app-server RPC: `/api/threads?limit=25` spent roughly `397-473ms` while
+`appServerRpcMs` stayed around `7-9ms`. The hot path was local Mobile Node
+merge work: warm fallback rows duplicated app-server ids, summary merge still
+ran duplicate/display merge accounting across the effective list, and rollout
+stat decoration could be repeated inside the same request.
+
+Deployable scope:
+
+- `/api/threads` passes `dropDuplicateFallbackThreads: true` into
+  `thread-list-route-merge-service` so fallback rows are used for app-server
+  omissions, but same-id fallback duplicates do not enter summary merge.
+- `thread-list-summary-merge-service` only invokes duplicate display merge for
+  actual duplicate ids; unique ids keep existing filter/strip/sort semantics.
+- `server.js` reuses already-attached rollout size/stat metadata during
+  same-request display-summary merge.
+- The module does not change app-server authority, fallback cache lifecycle,
+  thread-detail projection, list ordering rules, archived/hidden/sub-agent
+  filtering, shell/cache version, or client UI behavior.
+
+Closure requires focused route/summary/visibility coverage, full local checks,
+central macOS plugin deployment, and bounded post-deploy samples proving
+`routeMergeFallbackDuplicateDropCount`, `summaryMergeInputCount`,
+`summaryMergeDisplayMergeMs`, `summaryMergeTotalMs`, `mergeMs`, and total list
+latency move in the expected direction without leaking private thread content.
 
 ### 2026-06-27 Large Session List First Paint v546 deployable module
 

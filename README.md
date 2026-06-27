@@ -16,6 +16,115 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-28 长回执向上箭头取消时间窗口
+
+本次 public 发布在 active overlay 冷路径修复之外，补一个移动端阅读体验修正：
+长回执完成后，右下角“回到本轮总结”的向上箭头不再有 10 分钟时间窗口。
+以前锚点会在 `currentRecentCompletedReplyAnchor()` 中按完成时间过期，超过窗口后
+即使用户仍在当前线程、最终回执开头仍在视口上方，也无法再通过向上箭头跳回长回执
+开头。现在显示资格只由当前线程、最新 turn、锚点是否已经由完成或用户上滑激活、
+以及目标回执位置是否在视口上方决定；线程切换、点击向下箭头回到底部、发送新消息
+等既有清理路径保持不变。
+
+本次是前端静态行为变化，`CLIENT_BUILD_ID` 和 PWA service worker cache 从
+`codex-mobile-shell-v550` 升级到 `codex-mobile-shell-v551`。已经打开的浏览器或
+PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新控件逻辑。
+
+## 2026-06-28 Active Overlay 冷路径 full-read 循环关闭
+
+这次发布继续处理大 session 进入线程时的服务端详情慢路径。上一轮已经把
+active overlay 详情里的 raw 工具/命令 payload 压缩掉，但生产采样仍显示：
+部署或重启后，运行中的大线程详情可能先走一次 bounded overlay-window 读取，
+随后连续多次退回 app-server full `thread/read`，单次约 `2.7-3.3s`。
+诊断字段显示失败层在 active detail proof gate：
+`activeOverlayReason=assistant-delta-unknown`，而不是线程列表 fallback、
+前端 DOM patch 或普通 app-server 列表 RPC。
+
+本轮修复没有放松 freshness 证明，也没有增加前端兜底。服务端现在把
+active overlay window 作为独立 sidecar partial window 缓存，不再覆盖 live
+dynamic overlay snapshot；active-thread 的 full `thread/read` fallback 也不再
+反向 seed v4 projection cache，避免慢 fallback 污染后续快路径。窗口 sidecar
+会保留来自 live overlay proof input 的 revision/timestamp 元数据；proof policy
+也明确使用双证明域：完整 revision 证据优先，若只有一侧 revision 可见但双方
+timestamp 完整，则使用 timestamp 判断 fresh/stale，只有两个证明域都不完整时才
+返回 `assistant-delta-unknown` 并要求 full read。
+
+生产读回显示当前 active Codex Mobile 大线程连续 12 次
+`GET /api/threads/:id?mode=recent` 全部返回 `projection-active-overlay`，
+`threadReadMs=0`，`activeOverlayReason=overlay-evidence-complete`，
+`coldPathOwner=warm-path`。12 次采样平均耗时约 `181ms`，最小 `139ms`，
+最大 `491ms`。这说明 repeated full-read loop 已关闭。当前极长 active turn
+响应仍约数百 KB，因为其中确实包含大量可见 assistant/operation summary item；
+后续如果继续优化，应进入“可见 item 渐进加载/进一步压缩”模块，而不是再改
+full-read fallback。
+
+验证边界：
+
+- focused active-overlay tests：`52 passed`；
+- full `npm test`：`1321 passed`；
+- `npm run check`、`npm run check:macos`、`git diff --check` 均通过；
+- 通过 Home AI central macOS plugin deploy 路径部署到生产；
+- 本次是 server-only 修复，未改 `public/app.js` 或 service worker，因此
+  app shell/cache 仍保持 `codex-mobile-shell-v550`。
+
+## 2026-06-27 Active Overlay 详情响应体压缩
+
+这次修复的是运行中大线程详情打开仍然不稳定的第二段服务端路径。部署前采样显示，
+普通 warm projection 详情通常只有几十毫秒，但 `projection-active-overlay`
+运行中详情可到数百毫秒，并返回数百 KB 响应体。根因不是 app-server RPC，
+而是 active overlay proof gate 通过后，服务端把 live overlay turn 合并回
+已经压缩过的 projection 结果时，没有再次对 overlay turn 执行 thread-detail
+compaction。于是 raw `mcpToolCall.arguments` / `mcpToolCall.result` 和较长
+command payload 可以进入 `/api/threads/:id` 响应。
+
+修复方式是在 `thread-detail-read-orchestration-service` 和
+`thread-detail-active-window-overlay-policy-service` 的交界处注入
+`compactActiveOverlayTurn`：只有 proof gate 已经证明 live overlay 可用时，仍然先按
+既有 `compactTurn()` 和 `MAX_LIVE_OPERATION_ITEMS` 规则压缩 overlay turn，再合并到
+detail 响应。`mcpToolCall` 和 `dynamicToolCall` 现在也被归类为 operation evidence，
+既进入 active-overlay 覆盖率计数，也不会以 raw arguments/result 形态越过服务端
+响应边界。
+
+本次是 server-only 性能和隐私边界修复，不改变 projection 权威源、active-overlay
+proof gate、前端 DOM patch、PWA shell/cache 版本或 Home AI 诊断派卡流程。
+
+## 2026-06-27 v550 投影一致性自动诊断闭环
+
+v550 强化线程详情投影与浏览器 DOM 的一致性检测。单线程 full render 和
+平铺 thread-tile render 完成后，客户端会统一检查当前 projection/render
+signature、DOM render-key 数量、重复 render key、可见 turn 顺序以及最新 turn
+是否匹配。
+
+如果连续出现缺消息、重复消息、顺序错或 DOM 与 projection signature 不一致，
+Codex Mobile 会通过 Home AI 的 `homeai.diagnostic.report` 通道上报 bounded
+metadata。单次瞬时不一致只记录本地失败计数，不通知 Owner；后续健康渲染会清零
+同一签名的计数。上报内容只包含 build/cache id、read/render mode、线程/turn 短
+hash、数量和错误类型，不包含消息正文、任务卡正文、上传内容、路径、token、
+cookie 或长日志。Home AI 仍然负责 Owner 通知和 Owner 触发修复卡，插件不会自动
+派发修复任务。
+
+本次是前端运行时行为变化，`CLIENT_BUILD_ID` 和 service worker cache 升级到
+`codex-mobile-shell-v550`。
+
+## 2026-06-27 线程列表本地 merge 耗时修复
+
+这次修复的是进入线程时仍然偶发慢的服务端本地列表路径。部署前的精确采样显示，
+底层 mux/app-server `thread/list` RPC 通常只有 `7-9ms`，但 `/api/threads?limit=25`
+总耗时仍在 `397-473ms`，主要耗在 Mobile Node 里的 route merge / summary merge：
+fallback cache 已经是 warm 命中，但 app-server rows 和 fallback rows 中同 id 的
+重复行仍一起进入 summary merge，随后非重复行也会跑一次 display-summary merge
+阶段，导致本地同步 CPU 工作放大。
+
+修复方式不是前端去重，也不是新的 fallback cache。`/api/threads` route 现在只在
+app-server 已经返回同一个 thread id 时，提前丢弃 fallback 里的重复行；fallback
+里真正缺失于 app-server 的线程仍然正常参与合并。summary merge 也只在遇到真实
+重复 id 时才执行 duplicate display merge，唯一 id 直接进入后续过滤/排序。已经在
+`filterVisibleThreads()` 阶段读取过的 rollout size/stat 会在后续 display merge 中
+复用，避免同一请求内重复 `stat`。
+
+本次是 server-only 性能修复，不改变线程列表权威源、排序、归档/隐藏规则、fallback
+cache 生命周期、thread detail projection 或 PWA shell/cache 版本。
+
 ## 2026-06-27 App Server 线程列表峰值耗时修复
 
 本次发布修复的是服务端线程列表的峰值耗时，而不是静态前端 shell。现象是

@@ -24,6 +24,34 @@ function coverageForCount(count) {
   return Number(count || 0) > 0 ? "present" : "none";
 }
 
+function itemKey(item) {
+  return [
+    text(item && (item.id || item.itemId || item.item_id)),
+    text(item && (item.type || item.itemType || item.kind)),
+  ].join(":");
+}
+
+function evidenceCacheKey(threadId, activeTurnId, turn) {
+  const items = Array.isArray(turn && turn.items) ? turn.items : [];
+  return [
+    text(threadId),
+    text(activeTurnId),
+    items.length,
+    itemKey(items[0]),
+    itemKey(items[items.length - 1]),
+  ].join("|");
+}
+
+function rememberBoundedMapEntry(map, key, value, maxSize = 100) {
+  if (!map || !key) return value;
+  if (map.size >= maxSize && !map.has(key)) {
+    const firstKey = map.keys().next().value;
+    if (firstKey) map.delete(firstKey);
+  }
+  map.set(key, value);
+  return value;
+}
+
 function projectionRevisionFromThread(thread) {
   const projection = thread && thread.mobileProjection && typeof thread.mobileProjection === "object"
     ? thread.mobileProjection
@@ -57,6 +85,16 @@ function unavailableOverlayInput(activeTurnId, reason) {
 
 function createThreadDetailActiveOverlayProviderService(options = {}) {
   const projectionService = options.projectionService || null;
+  const summarizeOverlayTurnEvidence = typeof options.summarizeOverlayTurnEvidence === "function"
+    ? options.summarizeOverlayTurnEvidence
+    : summarizeActiveOverlayTurnEvidence;
+  const evidenceCache = new Map();
+
+  function cachedOverlayEvidence(threadId, activeTurnId, turn) {
+    const key = evidenceCacheKey(threadId, activeTurnId, turn);
+    if (key && evidenceCache.has(key)) return evidenceCache.get(key);
+    return rememberBoundedMapEntry(evidenceCache, key, summarizeOverlayTurnEvidence(turn));
+  }
 
   function resolveActiveWindowOverlay(input = {}) {
     const threadId = text(input.threadId);
@@ -64,14 +102,19 @@ function createThreadDetailActiveOverlayProviderService(options = {}) {
       return unavailableOverlayInput(summaryActiveTurnId(input.summary), "snapshot-api-unavailable");
     }
     const summaryTurnId = summaryActiveTurnId(input.summary);
-    const snapshot = projectionService.activeOverlaySnapshot({ threadId, activeTurnId: summaryTurnId });
+    const snapshot = projectionService.activeOverlaySnapshot({
+      threadId,
+      activeTurnId: summaryTurnId,
+      cloneOverlayTurn: false,
+      normalizeOverlayTurn: false,
+    });
     const activeTurnId = summaryTurnId || text(snapshot && snapshot.activeTurnId);
     if (!activeTurnId) return unavailableOverlayInput("", snapshot && snapshot.reason || "missing-active-turn-id");
     if (!snapshot || snapshot.found !== true) {
       return unavailableOverlayInput(activeTurnId, snapshot && snapshot.reason || "snapshot-missing");
     }
 
-    const evidence = summarizeActiveOverlayTurnEvidence(snapshot.overlayTurn);
+    const evidence = cachedOverlayEvidence(threadId, activeTurnId, snapshot.overlayTurn);
     const projectionRevision = projectionRevisionFromThread(input.projectionThread);
     const overlayRevision = numberOrZero(snapshot.overlayRevision);
     const projectionTimestampMs = projectionTimestampFromThread(input.projectionThread);

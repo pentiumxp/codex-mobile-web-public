@@ -527,7 +527,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v549";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v551";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -635,7 +635,6 @@ const threadDetailMergePolicy = threadDetailMergeStateApi.createThreadDetailMerg
   threadHasInitialSubmissionEcho,
   maxExpandedVisibleTurns: MAX_EXPANDED_VISIBLE_TURNS,
 });
-const TURN_REPLY_JUMP_WINDOW_MS = 10 * 60 * 1000;
 const CONVERSATION_SCROLL_INTENT_MS = 4000;
 const STORAGE_THREAD_ID = "codexMobileCurrentThreadId";
 const STORAGE_CONTINUATION_JOB = "codexMobileContinuationJobId";
@@ -12756,8 +12755,15 @@ function updateConversationHtml(html, signature, options = {}) {
     renderedDomTurnIds,
   });
   const effectsPlan = threadDetailDomPatchApi.planConversationHtmlUpdateEffects(updatePlan);
+  const shouldCheckProjectionConsistency = options.checkProjectionConsistency === true;
+  const projectionConsistencySource = String(options.source || "conversation-update");
   if (updatePlan.action === "hydrate-existing") {
     applyConversationHtmlUpdateEffectsPlan(effectsPlan, { root: conversation });
+    if (shouldCheckProjectionConsistency) {
+      checkConversationProjectionConsistency(projectionConsistencySource, {
+        renderMode: String(options.renderMode || updatePlan.action || ""),
+      });
+    }
     return false;
   }
   const previousChildCount = conversation ? conversation.childNodes.length : 0;
@@ -12837,6 +12843,11 @@ function updateConversationHtml(html, signature, options = {}) {
   });
   if (fallbackEventPlan.shouldPost) postClientEvent(fallbackEventPlan.eventName, fallbackEventPlan.payload);
   applyConversationHtmlUpdateEffectsPlan(effectsPlan, { root: conversation });
+  if (shouldCheckProjectionConsistency) {
+    checkConversationProjectionConsistency(projectionConsistencySource, {
+      renderMode: String(options.renderMode || applicationPlan.finalAction || updatePlan.action || ""),
+    });
+  }
   const renderElapsedMs = roundedDurationMs(startedAt);
   const performancePlan = threadDetailDomPatchApi.planConversationHtmlPerformanceEvent({
     updatePlan,
@@ -14324,6 +14335,7 @@ function renderThreadTileLayout(layout, options = {}) {
     currentTurns: expectedVisibleTurnCount,
     currentVisibleItems: visibleShape.visibleItemCount,
     source: "thread-tile-render",
+    checkProjectionConsistency: true,
   });
   bindThreadTileActions();
   restoreThreadTilePaneScrollState(scrollState);
@@ -15664,6 +15676,7 @@ function renderCurrentThread(options = {}) {
     expectedTurnIds: visibleRenderableTurnIds(thread),
     renderedDomTurnIds: conversationDomTurnIds(),
     source: "single-thread-render",
+    checkProjectionConsistency: true,
   });
   updateConversationHtml(shellUpdatePlan.html, shellUpdatePlan.conversationSignature, shellUpdatePlan.options);
   const postUpdateEffectsPlan = threadDetailRenderPlanApi.planSingleThreadShellPostUpdateEffects({
@@ -21161,8 +21174,7 @@ function turnCompletedAtMs(turn, thread = null) {
 function isRecentReplyJumpTurn(turn) {
   if (!turn) return false;
   if (isLiveTurn(turn)) return true;
-  const completedAtMs = turnCompletedAtMs(turn, state.currentThread);
-  return Boolean(completedAtMs && Date.now() - completedAtMs <= TURN_REPLY_JUMP_WINDOW_MS);
+  return isTurnComplete(turn);
 }
 
 function activateRecentCompletedReplyAnchorFromUserScroll() {
@@ -21204,10 +21216,6 @@ function currentRecentCompletedReplyAnchor() {
   const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
   if (!threadId || anchor.threadId !== String(threadId)) return null;
   if (!anchor.activatedByUserScroll && !anchor.activatedByCompletion) return null;
-  if (Date.now() - Number(anchor.completedAtMs || 0) > TURN_REPLY_JUMP_WINDOW_MS) {
-    clearRecentCompletedReplyAnchor();
-    return null;
-  }
   const turn = latestTurn();
   if (!turn || String(turn.id || "") !== anchor.turnId || (!isTurnComplete(turn) && !isLiveTurn(turn))) return null;
   return anchor;
