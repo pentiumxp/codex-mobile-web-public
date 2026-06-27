@@ -24995,3 +24995,96 @@ The previous full handoff was archived and should be opened only when old proven
     partial current-window reads, because a projection miss can still spend
     roughly 1.5-2.3s in `turnsListInitialMs` even when summary and thread-list
     paths are bounded.
+
+## 2026-06-28 - Projection Cache Stale Partial First-Paint Module
+
+- User-visible symptom:
+  - Large thread opens sometimes no longer fail with the old timeout shape; they
+    spin for seconds and then eventually render.
+  - Production readback showed the request was not hung. It was falling from a
+    warm projection path into synchronous app-server `thread/turns/list` for the
+    recent window, then returning after `turnsListInitialMs` around 1.5-2.4s.
+- Root cause / invariant:
+  - Signed partial `recent-window` projections were usable only while their
+    backing rollout signature matched exactly.
+  - Normal summary timestamp-only changes had already been stopped from
+    invalidating cache, and notification-completed partial entries now refresh
+    their signature. The remaining miss happened when the backing file moved
+    without enough notification coverage, especially for dynamic partial
+    projections, producing `dynamic-resting-signature-mismatch` or
+    `dynamic-summary-stale`.
+  - For `mode=recent`, a signed partial window is valid first-paint authority
+    even if stale, as long as it is explicitly marked stale and a background
+    bounded window refresh is scheduled. It must not become full-history
+    authority.
+- Implementation:
+  - `thread-detail-projection-service` can return a marked stale partial
+    (`stalePartial`, `staleReason=backing-signature-mismatch`) only when the
+    caller passes both `allowPartial` and `allowStalePartial`.
+  - The stale-partial path now covers static partial mismatches and dynamic
+    partial `dynamic-summary-stale`, `dynamic-resting-signature-mismatch`, and
+    age-signature mismatch branches.
+  - `thread-detail-read-orchestration-service` requests stale partials only for
+    recent-mode partial reads and returns `projection-stale-partial-hit` while
+    scheduling a background refresh instead of blocking first paint on
+    `turns-list-initial`.
+  - `server.js` wires `scheduleRecentWindowProjectionRefresh`, deduped per
+    thread, which asynchronously calls bounded `turns-list-background-refresh`
+    and reseeds a `recent-window` partial projection.
+  - Projection-result and performance diagnostics expose stale partial metadata;
+    client/server phase classification treats `projection-stale-partial-hit` as
+    `warm-projection-partial`.
+  - Static shell bumped to `0.1.11|codex-mobile-shell-v554` because
+    `public/thread-performance-metrics.js` changed.
+  - Updated docs: `docs/ARCHITECTURE.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, `docs/MODULES.md`, and
+    `docs/TROUBLESHOOTING.md`.
+- Local validation:
+  - Focused projection/read-orchestration/performance route suite passed
+    (`144` tests).
+  - Full `npm test` passed (`1380` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Commit `16b1359` `fix: serve stale recent projections before refresh`
+    deployed first, but production readback still found a dynamic partial miss
+    on the third sample. It was not considered closed.
+  - Follow-up commit `c1992ba` `fix: reuse stale dynamic partial projections`
+    added the dynamic partial branch coverage and was deployed through the Home
+    AI central macOS plugin path with reason
+    `codex-mobile-projection-cache-stale-partial`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T233751Z-plugin-codex-mobile-web-codex-mobile-projection-cache-stale-partial`.
+  - Source ref deployed: `c1992ba2bd2f`, dirty false.
+  - Production public config reported
+    `clientBuildId=0.1.11|codex-mobile-shell-v554` and
+    `shellCacheName=codex-mobile-shell-v554`.
+  - Source/prod SHA-256 prefixes matched for `server.js`,
+    `adapters/thread-detail-projection-service.js`,
+    `adapters/thread-detail-read-orchestration-service.js`,
+    `adapters/thread-detail-projection-result-service.js`,
+    `adapters/thread-detail-performance-service.js`, `public/app.js`,
+    `public/sw.js`, `public/thread-performance-metrics.js`, focused tests, and
+    docs.
+- Production readback:
+  - Codex Mobile thread `019eee6c-a6f5-7b20-bfb4-f96ccb6431b3` sampled four
+    times with 1s, 3s, and 6s gaps: all returned `projection-v4-partial`,
+    `projection-partial-hit`, `projectionState=hit`, `turnsListInitialMs=0`,
+    and `totalMs=52-64`.
+  - Home AI thread `019eed86-2002-7cc2-b0b7-937eb5355f36` sampled three times:
+    all returned `projection-v4-dynamic`, `projection-hit`, `threadReadMs=0`,
+    `turnsListInitialMs=0`, and `totalMs=54-59`.
+  - General Phase-B smoke passed with thread list on warm fallback cache
+    (`fallbackCacheDecision=compatible-hit`, `fallbackMs=0`, `totalMs=97`) and
+    detail `projection-v4-partial`, `projection-partial-hit`, `totalMs=54`.
+- Residual / next target:
+  - This closes the confirmed recent-window projection miss that produced
+    seconds-long successful loads on warm large threads.
+  - A true cold thread with no signed partial projection still needs an initial
+    bounded window seed; that remains expected and should be diagnosed by
+    `entry-missing` / `cold-turns-list-initial`.
+  - Movie-thread-specific readback was not completed because the generic
+    authenticated `/api/threads?limit=300` request returned an empty current
+    default scope. If the Movie thread id is available, run the same
+    `codex-mobile-phase-b-readback-smoke.js --thread-id <id>` probe.
