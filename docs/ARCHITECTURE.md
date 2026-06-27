@@ -523,20 +523,26 @@ The detail path compacts command/tool/file/search items, enriches item timestamp
 After projection/read orchestration, the HTTP detail response applies a final
 item budget to reduce successful-but-heavy first paints. Completed turns keep
 the latest assistant/plan receipt, active turns keep a bounded recent
-assistant/plan tail, retained text is not truncated, and
-`mobileDetailResponseBudget.omittedAssistantItems` records omitted progress-row
-counts. The server then rebuilds visible projection keys so the browser receives
-a smaller authoritative shape instead of masking oversized responses with a
-client refresh fallback. If the thread exposes a current active turn id, only
-that matching turn receives active response budgets; older turns whose status
-still looks `inProgress` are counted as stale active-looking turns and receive
-completed-turn budgets for response shaping. When the returned detail window is
-under high item-count or byte pressure, the same response-budget service enables
-progressive active limits for the current active turn's operation, reasoning,
-and assistant/plan tails. The operation budget includes command, file, dynamic
-tool, MCP, and collab-agent tool-call items. The response records the item and
-byte thresholds, trigger reason, configured limits, effective limits, and
-original byte counts in `mobileDetailResponseBudget`.
+assistant/plan tail, and `mobileDetailResponseBudget.omittedAssistantItems`
+records omitted progress-row counts. The server then rebuilds visible projection
+keys so the browser receives a smaller authoritative shape instead of masking
+oversized responses with a client refresh fallback. If the thread exposes a
+current active turn id, only that matching turn receives active response
+budgets; older turns whose status still looks `inProgress` are counted as stale
+active-looking turns and receive completed-turn budgets for response shaping.
+When the returned detail window is under high item-count or byte pressure, the
+same response-budget service enables progressive active limits for the current
+active turn's operation, reasoning, and assistant/plan tails. Under that
+progressive active pressure only, oversized retained active assistant/reasoning
+text fields may be reduced to a bounded first-paint preview with
+`mobileActiveTextBudget` metadata and `mobileTextTruncated=true`; ordinary
+small active turns and completed-turn receipts keep their existing text
+behavior. `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_ACTIVE_TEXT_CHARS=0`
+disables only that retained-text preview budget for diagnostics. The operation
+budget includes command, file, dynamic tool, MCP, and collab-agent tool-call
+items. The response records the item and byte thresholds, trigger reason,
+configured limits, effective limits, text-budget counters, and original byte
+counts in `mobileDetailResponseBudget`.
 
 `HANDOFF.md` has a separate 200KB Usage prompt threshold so recently compacted handoffs near 100KB do not immediately ask for another continuation.
 

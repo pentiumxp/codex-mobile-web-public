@@ -14,6 +14,8 @@ const DEFAULT_ACTIVE_PROGRESSIVE_THREAD_BYTES = 160 * 1024;
 const DEFAULT_PROGRESSIVE_ACTIVE_OPERATION_ITEMS = 6;
 const DEFAULT_PROGRESSIVE_ACTIVE_REASONING_ITEMS = 1;
 const DEFAULT_PROGRESSIVE_ACTIVE_ASSISTANT_ITEMS = 4;
+const DEFAULT_PROGRESSIVE_ACTIVE_TEXT_CHARS = 12 * 1024;
+const ACTIVE_TEXT_BUDGET_MARKER = "\n\n[active item preview truncated]\n\n";
 
 const OPERATION_ITEM_TYPES = new Set([
   "commandExecution",
@@ -140,6 +142,88 @@ function trailingIndexes(items, limit, predicate) {
   return out;
 }
 
+function textCharLength(value) {
+  return typeof value === "string" ? value.length : 0;
+}
+
+function truncateMiddleText(value, maxChars) {
+  const text = String(value || "");
+  const max = Math.max(0, Math.trunc(Number(maxChars) || 0));
+  if (!max || text.length <= max) return text;
+  if (max <= ACTIVE_TEXT_BUDGET_MARKER.length + 2) return text.slice(0, max);
+  const available = max - ACTIVE_TEXT_BUDGET_MARKER.length;
+  const head = Math.ceil(available * 0.55);
+  const tail = Math.max(0, available - head);
+  return `${text.slice(0, head)}${ACTIVE_TEXT_BUDGET_MARKER}${tail ? text.slice(-tail) : ""}`;
+}
+
+function compactStringForActiveTextBudget(value, budget) {
+  if (typeof value !== "string") return value;
+  const originalChars = textCharLength(value);
+  budget.originalChars += originalChars;
+  if (!originalChars) return value;
+  const remaining = Math.max(0, budget.maxChars - budget.retainedChars);
+  if (originalChars <= remaining) {
+    budget.retainedChars += originalChars;
+    return value;
+  }
+  const compacted = truncateMiddleText(value, remaining);
+  const retainedChars = textCharLength(compacted);
+  budget.retainedChars += retainedChars;
+  budget.omittedChars += Math.max(0, originalChars - retainedChars);
+  budget.truncated = true;
+  return compacted;
+}
+
+function compactValueForActiveTextBudget(value, budget) {
+  if (typeof value === "string") return compactStringForActiveTextBudget(value, budget);
+  if (Array.isArray(value)) {
+    return value.map((entry) => {
+      if (typeof entry === "string") return compactStringForActiveTextBudget(entry, budget);
+      return entry;
+    });
+  }
+  return value;
+}
+
+function compactActiveTextItem(item, options, stats) {
+  if (!item || typeof item !== "object") return item;
+  if (!isAssistantItem(item) && !isReasoningItem(item)) return item;
+  const maxChars = Math.max(0, Math.trunc(Number(options.progressiveActiveTextChars || 0)));
+  if (!maxChars) return item;
+  const out = cloneJson(item);
+  const budget = {
+    maxChars,
+    originalChars: 0,
+    retainedChars: 0,
+    omittedChars: 0,
+    truncated: false,
+    fields: [],
+  };
+  for (const field of ["text", "message", "content", "summary"]) {
+    if (!(field in out)) continue;
+    const beforeOriginal = budget.originalChars;
+    out[field] = compactValueForActiveTextBudget(out[field], budget);
+    if (budget.originalChars > beforeOriginal) budget.fields.push(field);
+  }
+  if (!budget.truncated) return item;
+  const itemBudget = {
+    version: "thread-detail-active-text-budget-v1",
+    maxChars,
+    originalChars: budget.originalChars,
+    retainedChars: budget.retainedChars,
+    omittedChars: budget.omittedChars,
+    fields: budget.fields,
+  };
+  out.mobileActiveTextBudget = itemBudget;
+  out.mobileTextTruncated = true;
+  stats.truncatedActiveTextItems += 1;
+  stats.activeTextOriginalChars += budget.originalChars;
+  stats.activeTextRetainedChars += budget.retainedChars;
+  stats.omittedActiveTextChars += budget.omittedChars;
+  return out;
+}
+
 function compactTurnWithBudget(turn, thread, options, stats) {
   if (!turn || typeof turn !== "object" || !Array.isArray(turn.items)) return turn;
   const active = isActiveTurn(turn, thread);
@@ -177,6 +261,9 @@ function compactTurnWithBudget(turn, thread, options, stats) {
     if (!isAssistantItem(item)) return true;
     return keepAssistantIndexes.has(index);
   });
+  if (active && options.progressiveActiveBudgetApplied) {
+    compacted.items = compacted.items.map((item) => compactActiveTextItem(item, options, stats));
+  }
   const afterOperationCount = countBy(compacted.items, isOperationItem);
   const afterReasoningCount = countBy(compacted.items, isReasoningItem);
   const afterAssistantCount = countBy(compacted.items, isAssistantItem);
@@ -262,6 +349,11 @@ function compactThreadDetailResponseResult(result, options = {}) {
     DEFAULT_PROGRESSIVE_ACTIVE_ASSISTANT_ITEMS,
     100,
   ));
+  const progressiveActiveTextChars = boundedCount(
+    options.progressiveActiveTextChars,
+    DEFAULT_PROGRESSIVE_ACTIVE_TEXT_CHARS,
+    200 * 1024,
+  );
   const effectiveActiveOperationItems = progressiveActiveBudgetApplied
     ? Math.min(configuredActiveOperationItems, progressiveActiveOperationItems)
     : configuredActiveOperationItems;
@@ -279,6 +371,10 @@ function compactThreadDetailResponseResult(result, options = {}) {
     omittedOperationItems: 0,
     omittedReasoningItems: 0,
     omittedAssistantItems: 0,
+    omittedActiveTextChars: 0,
+    truncatedActiveTextItems: 0,
+    activeTextOriginalChars: 0,
+    activeTextRetainedChars: 0,
     activeTurnCount: 0,
     staleActiveTurnCount: 0,
     completedOperationItems: boundedCount(options.completedOperationItems, DEFAULT_COMPLETED_OPERATION_ITEMS, 100),
@@ -290,6 +386,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
     activeProgressiveItemThreshold,
     activeProgressiveByteThreshold,
     activeProgressiveThreadByteThreshold,
+    progressiveActiveTextChars,
     progressiveActiveBudgetApplied,
     progressiveActiveBudgetReason,
     progressiveActiveOriginalItemCount: pressureOriginalItemCount,
@@ -306,8 +403,9 @@ function compactThreadDetailResponseResult(result, options = {}) {
   thread.turns = thread.turns.map((turn) => compactTurnWithBudget(turn, thread, budgetOptions, stats));
   stats.applied = stats.omittedOperationItems > 0
     || stats.omittedReasoningItems > 0
-    || stats.omittedAssistantItems > 0;
-  if (!stats.applied) return out;
+    || stats.omittedAssistantItems > 0
+    || stats.truncatedActiveTextItems > 0;
+  if (!stats.applied && !stats.progressiveActiveBudgetApplied) return out;
   const revision = thread.mobileProjectionRevision;
   const normalized = normalizeThreadVisibleProjection(out, {
     source: thread.mobileReadMode || "thread-detail-response-budget",

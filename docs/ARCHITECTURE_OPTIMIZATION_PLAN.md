@@ -2377,8 +2377,12 @@ Deployable scope:
   completed-turn budgets.
 - The same service applies pressure-triggered progressive active limits when
   the detail window crosses the item-count threshold or active/thread byte
-  thresholds, lowering active operation/reasoning/assistant tails while keeping
-  retained text untruncated.
+  thresholds, lowering active operation/reasoning/assistant tails. Under that
+  progressive active pressure only, oversized retained active
+  assistant/reasoning text fields are reduced to a bounded first-paint preview
+  and marked with `mobileActiveTextBudget` / `mobileTextTruncated`. The text
+  preview budget can be disabled for diagnostics with
+  `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_ACTIVE_TEXT_CHARS=0`.
 - `server.js` wires the progressive thresholds and effective active limits from
   bounded environment variables.
 - Operation budgets now include `collabAgentToolCall`, and v4 visible-item
@@ -2400,7 +2404,8 @@ Required validation:
 - production readback comparing active detail response bytes,
   `activeTurnCount`, `staleActiveTurnCount`,
   `progressiveActiveBudgetApplied`, `progressiveActiveBudgetReason`,
-  active/thread byte counters, and omitted item counts.
+  active/thread byte counters, omitted item counts, and active text-budget
+  counters.
 
 ### 2026-06-28 Thread List Default Warm-Cache Early Return module
 

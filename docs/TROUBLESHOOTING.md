@@ -408,6 +408,8 @@ active-looking turns were deliberately downgraded for response shaping. When
 `progressiveActiveBudgetReason`, `activeProgressiveItemThreshold`,
 `activeProgressiveByteThreshold`,
 `activeProgressiveThreadByteThreshold`,
+`progressiveActiveTextChars`, `truncatedActiveTextItems`,
+`omittedActiveTextChars`,
 `progressiveActiveTurnOriginalBytes`, `progressiveActiveOriginalBytes`,
 `configuredActive*Items`, and the effective `active*Items` fields before
 changing visible-item policy. Reasons ending in `-byte-pressure` mean the
@@ -562,7 +564,10 @@ Cause to check:
   projection/read orchestration: active turns keep a bounded recent assistant
   tail, completed turns keep the latest assistant/plan receipt, and
   `mobileOmittedAssistantItemCount` / `mobileDetailResponseBudget` record the
-  omitted progress-row count.
+  omitted progress-row count. If `progressiveActiveBudgetApplied=true`, retained
+  active assistant/reasoning text fields may also carry
+  `mobileActiveTextBudget`; that is a pressure-triggered first-paint preview,
+  not a generic completed-turn truncation rule.
 - Current clients still enter thread detail at the bottom. Do not fix missing
   large-thread history by changing the open position; first check whether the
   server returned full `thread-read` or a fallback `turns-list` window.

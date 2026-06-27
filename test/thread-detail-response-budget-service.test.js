@@ -283,6 +283,124 @@ test("thread detail response budget applies progressive active limits under acti
   assert.equal(budget.activeAssistantItems, 2);
 });
 
+test("thread detail response budget truncates oversized retained active assistant text under progressive pressure", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      mobileProjectionRevision: 11,
+      turns: [
+        {
+          id: "turn-active",
+          status: "inProgress",
+          items: [
+            { id: "u1", type: "userMessage", text: "Question" },
+            { id: "a1", type: "agentMessage", text: "A".repeat(2400) },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeProgressiveItemThreshold: 100,
+    activeProgressiveByteThreshold: 1000,
+    activeProgressiveThreadByteThreshold: 0,
+    progressiveActiveAssistantItems: 1,
+    progressiveActiveTextChars: 1000,
+  });
+
+  const assistant = compacted.thread.turns[0].items[1];
+  assert.equal(assistant.id, "a1");
+  assert.equal(assistant.mobileTextTruncated, true);
+  assert.match(assistant.text, /active item preview truncated/);
+  assert.ok(assistant.text.length <= 1000);
+  assert.deepEqual(assistant.mobileActiveTextBudget.fields, ["text"]);
+  assert.equal(assistant.mobileActiveTextBudget.originalChars, 2400);
+  assert.equal(assistant.mobileActiveTextBudget.maxChars, 1000);
+  assert.ok(assistant.mobileActiveTextBudget.omittedChars > 0);
+  const budget = compacted.thread.mobileDetailResponseBudget;
+  assert.equal(budget.applied, true);
+  assert.equal(budget.progressiveActiveBudgetApplied, true);
+  assert.equal(budget.progressiveActiveBudgetReason, "active-byte-pressure");
+  assert.equal(budget.progressiveActiveTextChars, 1000);
+  assert.equal(budget.truncatedActiveTextItems, 1);
+  assert.equal(budget.activeTextOriginalChars, 2400);
+  assert.ok(budget.activeTextRetainedChars <= 1000);
+  assert.ok(budget.omittedActiveTextChars > 0);
+  assert.equal(compacted.thread.mobileProjectionRevision, 11);
+  assert.deepEqual(compacted.thread.mobileVisibleItemKeys, compacted.thread.turns[0].items.map((item) => item.mobileVisibleKey));
+});
+
+test("thread detail response budget does not truncate large active text without progressive pressure", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      turns: [
+        {
+          id: "turn-active",
+          status: "inProgress",
+          items: [
+            { id: "u1", type: "userMessage", text: "Question" },
+            { id: "a1", type: "agentMessage", text: "A".repeat(2400) },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeProgressiveItemThreshold: 100,
+    activeProgressiveByteThreshold: 10_000,
+    activeProgressiveThreadByteThreshold: 0,
+    progressiveActiveTextChars: 1000,
+  });
+
+  assert.equal(compacted.thread.mobileDetailResponseBudget, undefined);
+  assert.deepEqual(compacted, result);
+});
+
+test("thread detail response budget can disable progressive active text truncation", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      turns: [
+        {
+          id: "turn-active",
+          status: "inProgress",
+          items: [
+            { id: "u1", type: "userMessage", text: "Question" },
+            { id: "a1", type: "agentMessage", text: "A".repeat(2400) },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeProgressiveItemThreshold: 100,
+    activeProgressiveByteThreshold: 1000,
+    activeProgressiveThreadByteThreshold: 0,
+    progressiveActiveTextChars: 0,
+  });
+
+  const assistant = compacted.thread.turns[0].items[1];
+  assert.equal(assistant.text.length, 2400);
+  assert.equal(assistant.mobileActiveTextBudget, undefined);
+  assert.equal(compacted.thread.mobileDetailResponseBudget.applied, false);
+  assert.equal(compacted.thread.mobileDetailResponseBudget.progressiveActiveBudgetApplied, true);
+  assert.equal(compacted.thread.mobileDetailResponseBudget.progressiveActiveTextChars, 0);
+  assert.equal(compacted.thread.mobileDetailResponseBudget.truncatedActiveTextItems, 0);
+});
+
 test("thread detail response budget applies progressive active limits under item pressure", () => {
   const result = {
     thread: {

@@ -82,12 +82,14 @@ item-count pressure to item-count plus byte-pressure decisions. Active turns now
 enter progressive operation/reasoning/assistant budgets when either the active
 turn body or returned detail window is too large, and collab-agent tool calls
 are classified as operation items across server budget, v4 visible keys, and the
-browser activity label. This targets the successful-but-heavy state where a
-thread does not time out but still waits too long before first paint. The next
-performance slice should target the remaining cold/deferred app-server and
-active projection peaks: immediately after restart, a first list/detail request
-can still take
-seconds and then settle back to hundreds of milliseconds.
+browser activity label. When progressive active pressure is already triggered,
+oversized retained active assistant/reasoning text fields are also reduced to a
+bounded first-paint preview and marked with `mobileActiveTextBudget`. This
+targets the successful-but-heavy state where a thread does not time out but
+still waits too long before first paint. The next performance slice should
+target the remaining cold/deferred app-server and active projection peaks:
+immediately after restart, a first list/detail request can still take seconds
+and then settle back to hundreds of milliseconds.
 
 The latest thread-list slice targets the ordinary default list read after a
 process warm cache already exists. A no-search, no-workspace, no-cursor,
