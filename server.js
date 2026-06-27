@@ -87,6 +87,7 @@ const { compactThreadDetailResponseResult } = require("./adapters/thread-detail-
 const { createThreadDetailSummaryService } = require("./adapters/thread-detail-summary-service");
 const { createThreadDetailBoundedReadPolicyService } = require("./adapters/thread-detail-bounded-read-policy-service");
 const { createThreadDetailActiveOverlayProviderService } = require("./adapters/thread-detail-active-overlay-provider-service");
+const { createThreadDetailActiveWindowPrewarmService } = require("./adapters/thread-detail-active-window-prewarm-service");
 const { attachThreadDetailDiagnostics } = require("./adapters/thread-detail-performance-service");
 const { createThreadDetailReadOrchestrationService } = require("./adapters/thread-detail-read-orchestration-service");
 const { handleThreadDetailReadRoute } = require("./adapters/thread-detail-route-service");
@@ -5260,6 +5261,32 @@ const threadDetailBoundedReadPolicyService = createThreadDetailBoundedReadPolicy
 const threadDetailActiveOverlayProviderService = createThreadDetailActiveOverlayProviderService({
   projectionService: threadDetailProjectionService,
 });
+const threadDetailActiveWindowPrewarmService = createThreadDetailActiveWindowPrewarmService({
+  resolveSummary: (requestCodex, threadId, options) => threadDetailSummaryService.resolveSummary(requestCodex, threadId, options),
+  threadRuntimeSettings,
+  projectionInput: threadDetailProjectionInput,
+  activeOverlayProjectionWindowLookup: (input, summary, runtimeSettings, optionsForProjection = {}) => {
+    const lookedUp = typeof threadDetailProjectionService.lookup === "function"
+      ? threadDetailProjectionService.lookup(input, Object.assign({}, optionsForProjection, { skipNormalizeResult: true }))
+      : { cached: threadDetailProjectionService.get(input, optionsForProjection), missReason: "" };
+    const cached = lookedUp && lookedUp.cached || null;
+    return {
+      result: cached && cached.result || null,
+      missReason: lookedUp && lookedUp.missReason || "",
+    };
+  },
+  resolveActiveWindowOverlay: (input) => threadDetailActiveOverlayProviderService.resolveActiveWindowOverlay(input),
+  turnsListThreadReadResult: ({ threadId, summary, runtimeSettings, warning, mode, threadLog }) => turnsListThreadReadResult(
+    threadId,
+    summary,
+    runtimeSettings,
+    warning,
+    mode,
+    threadLog,
+  ),
+  seedProjection: (input, result, optionsForSeed = {}) => threadDetailProjectionService.seed(input, result, optionsForSeed),
+  log: (event, details) => logThreadDetail(event, details),
+});
 const threadDetailReadOrchestrationService = createThreadDetailReadOrchestrationService({
   attachDiagnostics: attachThreadDetailDiagnostics,
   resolveSummary: (requestCodex, threadId, options) => threadDetailSummaryService.resolveSummary(requestCodex, threadId, options),
@@ -8731,6 +8758,7 @@ function broadcast(payload) {
     } catch (err) {
       console.error(`[thread projection] notification update failed: ${err.message || String(err)}`);
     }
+    scheduleActiveWindowPrewarmFromNotification(payload);
   }
   const compacted = compactNotification(payload);
   if (!compacted) return;
@@ -8750,6 +8778,54 @@ function broadcast(payload) {
 function notificationThreadId(payload) {
   if (!payload || payload.type !== "notification" || !payload.params) return "";
   return String(payload.params.threadId || payload.params.conversationId || "");
+}
+
+function threadSummaryLooksActive(summary) {
+  if (!summary || typeof summary !== "object") return false;
+  if (summary.activeTurnId || summary.active_turn_id) return true;
+  const local = summary.mobileLocalActiveStatus && typeof summary.mobileLocalActiveStatus === "object"
+    ? summary.mobileLocalActiveStatus
+    : null;
+  if (local && (local.turnId || local.turn_id)) return true;
+  const statusValue = summary.status && typeof summary.status === "object"
+    ? summary.status.type
+    : summary.status || summary.mobileStatus || local && local.status;
+  return /^(active|running|started|pending|queued|processing|inprogress|in_progress|in-progress)$/i
+    .test(String(statusValue || "").trim());
+}
+
+function scheduleActiveWindowPrewarm(threadId, summary = null, reason = "") {
+  const id = String(threadId || summary && (summary.id || summary.threadId || summary.thread_id) || "").trim();
+  if (!id) return { scheduled: false, reason: "missing-thread-id" };
+  return threadDetailActiveWindowPrewarmService.schedule({
+    codex,
+    threadId: id,
+    summary,
+    reason,
+    threadLog: (event, details = {}) => logThreadDetail(`active_window_prewarm_${event}`, Object.assign({ threadId: id }, details)),
+  });
+}
+
+function scheduleActiveWindowPrewarmFromNotification(payload) {
+  if (!payload || payload.type !== "notification" || !payload.params) return;
+  const method = String(payload.method || "");
+  if (method !== "turn/started" && method !== "thread/status/changed") return;
+  const threadId = notificationThreadId(payload);
+  if (!threadId) return;
+  if (method === "thread/status/changed" && !threadSummaryLooksActive(payload.params)) return;
+  scheduleActiveWindowPrewarm(threadId, null, method);
+}
+
+function scheduleActiveWindowPrewarmFromThreadListResult(result, reason = "") {
+  const rows = Array.isArray(result && result.data)
+    ? result.data
+    : Array.isArray(result && result.threads)
+      ? result.threads
+      : [];
+  for (const thread of rows) {
+    if (!threadSummaryLooksActive(thread)) continue;
+    scheduleActiveWindowPrewarm(thread.id || thread.threadId || thread.thread_id, thread, reason || "thread-list");
+  }
 }
 
 function threadStatusChangedPayload(threadId, status, meta = {}) {
@@ -8792,6 +8868,7 @@ function notifyLocalTurnStarted(threadId, result, meta = {}) {
       turn: Object.assign({ id: turnId, status: { type: "active" } }, result && result.turn && typeof result.turn === "object" ? result.turn : {}),
     });
   }
+  scheduleActiveWindowPrewarm(id, { id, status: { type: "active" }, activeTurnId: turnId }, "local-turn-start");
   broadcastThreadStatusChanged(id, { type: "active" }, {
     source: String(meta.source || "local-turn-start"),
     turnId,
@@ -15110,6 +15187,7 @@ async function handleApi(req, res) {
         threadListCoalescing.complete(result);
       }
       logThreadList(event, result && result.mobileDiagnostics && result.mobileDiagnostics.threadListTimings);
+      scheduleActiveWindowPrewarmFromThreadListResult(result, `thread-list:${event}`);
       sendJson(res, 200, result);
     };
     const failThreadListCoalescing = (err) => {

@@ -265,6 +265,31 @@ test("active window overlay plan rejects stale assistant deltas", () => {
   assert.equal(plan.assistantDeltaCoverage, "stale");
 });
 
+test("active overlay window projection revision does not make live overlay stale", () => {
+  const plan = planActiveWindowOverlay({
+    summary: { activeTurnId: "active-turn" },
+    projectionThread: projectionThread({
+      mobileReadMode: "projection-active-window",
+      mobileProjection: {
+        partial: true,
+        source: "partial",
+        version: "active-window",
+        partialKind: "turns-list-active-overlay-window",
+        activeOverlayWindow: true,
+        revision: 10,
+      },
+    }),
+    overlaySource: "projection-live",
+    overlayTurn: overlayTurn(),
+    projectionRevision: 10,
+    overlayRevision: 9,
+  });
+
+  assert.equal(plan.action, "use-projection-overlay");
+  assert.equal(plan.reason, "overlay-evidence-complete");
+  assert.equal(plan.assistantDeltaCoverage, "fresh");
+});
+
 test("active window overlay plan requires receipt coverage", () => {
   const plan = planActiveWindowOverlay({
     summary: { activeTurnId: "active-turn" },

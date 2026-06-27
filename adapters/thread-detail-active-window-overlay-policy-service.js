@@ -162,6 +162,12 @@ function normalizeAssistantCoverage(value, evidence, input) {
   if (normalized === "fresh" || normalized === "none") return normalized;
   if (normalized === "stale" || normalized === "unknown") return normalized;
   if (evidence.assistantItems <= 0) return "unknown";
+  if (bool(input.ignoreProjectionFreshness)) {
+    const overlayRevision = numberOrZero(input.overlayRevision);
+    const overlayTimestampMs = numberOrZero(input.overlayTimestampMs || evidence.latestItemTimestampMs);
+    if (overlayRevision || overlayTimestampMs) return "fresh";
+    return "unknown";
+  }
   const projectionRevision = numberOrZero(input.projectionRevision);
   const overlayRevision = numberOrZero(input.overlayRevision);
   if (projectionRevision && overlayRevision) {
@@ -192,6 +198,16 @@ function projectionWindowReason(thread) {
   const dynamic = /projection/.test(mode) || source === "dynamic" || source === "cache" || source === "partial" || version === "v4";
   if (!partial && !dynamic) return "not-projection-window";
   return "";
+}
+
+function isActiveOverlayWindowProjection(thread) {
+  if (!thread || typeof thread !== "object") return false;
+  const projection = thread.mobileProjection && typeof thread.mobileProjection === "object"
+    ? thread.mobileProjection
+    : {};
+  return bool(projection.activeOverlayWindow)
+    || lower(projection.partialKind) === "turns-list-active-overlay-window"
+    || lower(thread.mobileReadMode) === "projection-active-window";
 }
 
 function authoritativeSource(value) {
@@ -264,7 +280,9 @@ function planActiveWindowOverlay(input = {}) {
   if (uploadCoverage === "unknown") {
     return Object.assign({}, resultBase, { reason: "upload-evidence-unknown", operationCoverage, uploadCoverage });
   }
-  const assistantDeltaCoverage = normalizeAssistantCoverage(input.assistantDeltaCoverage, evidence, input);
+  const assistantDeltaCoverage = normalizeAssistantCoverage(input.assistantDeltaCoverage, evidence, Object.assign({}, input, {
+    ignoreProjectionFreshness: isActiveOverlayWindowProjection(input.projectionThread),
+  }));
   if (assistantDeltaCoverage === "unknown") {
     return Object.assign({}, resultBase, {
       reason: "assistant-delta-unknown",

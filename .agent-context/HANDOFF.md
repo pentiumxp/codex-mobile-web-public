@@ -23482,3 +23482,152 @@ The previous full handoff was archived and should be opened only when old proven
     `needs_repair` for `thread-list-fallback-prewarm` with reason
     `prewarm-completed-but-list-cold`; this is the next likely owner for
     inconsistent entry speed.
+
+## 2026-06-28 - Active overlay window prewarm ready for deploy
+
+- User report:
+  - Active/large threads sometimes kept spinning for a long time but eventually
+    rendered. This differed from older timeout/network/server-failure cases
+    where the request failed or surfaced a timeout.
+- Bounded evidence:
+  - Current production was `0.1.11|codex-mobile-shell-v552`.
+  - A direct authenticated sample of the Codex Mobile active thread showed the
+    first `GET /api/threads/:id?mode=recent` taking about `1468ms`, with
+    `activeOverlayWindowMs=1365ms`, `readMode=projection-active-overlay`,
+    `threadReadMs=0`, and rollout size about `392MB`.
+  - Immediate repeated reads of the same thread returned in about `75ms` with
+    `activeOverlayWindowMs=0`.
+  - Interpretation: the request succeeded and warmed the active overlay window;
+    the long spinner was synchronous active-window rebuild from app-server
+    `thread/turns/list`, not a hard network/RPC timeout.
+- Fix:
+  - Added `adapters/thread-detail-active-window-prewarm-service.js`.
+  - The service schedules and deduplicates background
+    `turns-list-active-overlay-window` prewarm for active/running threads after
+    turn/status notifications and thread-list refreshes.
+  - Prewarm reuses the same overlay provider, active projection-window lookup,
+    turns-list read, and partial projection seed path as detail reads.
+  - It skips non-active summaries and already-cached windows, and records only
+    bounded status metadata.
+  - `server.js` wires the service to notification broadcast, local turn start,
+    and thread-list responses. It does not loosen the active-overlay proof gate
+    or add a client loading fallback.
+- Docs/tests:
+  - Added `test/thread-detail-active-window-prewarm-service.test.js`.
+  - Updated `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Validation before this handoff update:
+  - Focused active-window/projection tests passed (`45` tests).
+  - Full `npm test` passed (`1329` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - `codegraph sync && codegraph status` reported an up-to-date graph, with the
+    known earlier-engine reindex suggestion.
+- Next:
+  - Commit and deploy this server-only package through the Home AI central
+    macOS plugin deploy path.
+  - After deploy, verify that active thread-list refreshes schedule prewarm and
+    repeated active detail reads show `activeOverlayWindowMs=0`.
+
+## 2026-06-28 - Active overlay prewarm second correction
+
+- First deploy/readback of the active-window prewarm module still showed a
+  deployment-adjacent first detail read taking about `2269ms`, with
+  `activeOverlayWindowMs=2131ms`.
+- Root cause:
+  - The first prewarm implementation required live overlay turn evidence before
+    it would build the `turns-list-active-overlay-window` history window.
+  - Immediately after restart, thread-list refresh can know a thread is active
+    before the live overlay snapshot is available, so prewarm skipped the exact
+    cold work that later blocked the first visible detail open.
+- Correction:
+  - `thread-detail-active-window-prewarm-service` can now preseed the active
+    history/projection window before overlay turn evidence exists.
+  - Overlay revision/timestamp metadata is still used when available, and the
+    detail route still keeps the active-overlay proof gate before serving
+    `projection-active-overlay`.
+  - This is not a client fallback or timeout extension; it moves only the
+    expensive window build out of the user-visible detail request.
+- Validation after the correction:
+  - Focused active/projection tests passed (`38` tests).
+  - Full `npm test` passed (`1330` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit/amend the corrected module and redeploy through the Home AI central
+    macOS plugin deploy path.
+  - After deploy/restart, trigger a thread-list refresh, allow the background
+    prewarm to run briefly, then sample an active large thread detail and verify
+    the first visible detail read no longer spends seconds in
+    `activeOverlayWindowMs`.
+
+## 2026-06-28 - Active overlay freshness correction
+
+- Second deploy/readback proved prewarm was now running:
+  - Logs showed `active_window_prewarm_done` with
+    `turns-list-active-overlay-window-preseed` for active threads.
+  - The same readback still showed several user-visible detail reads around
+    `2.9s`, but this time the slow path was `thread-read` after
+    `activeOverlayReason=assistant-delta-stale`, not
+    `activeOverlayWindowMs`.
+- Root cause:
+  - `turns-list-active-overlay-window` is a history/projection window that
+    intentionally omits the live active turn.
+  - When it is preseeded before overlay evidence exists, the cached projection
+    window may carry a newer projection revision/timestamp than the later live
+    overlay snapshot.
+  - The active-overlay proof policy incorrectly compared that history-window
+    revision to the live active-turn overlay revision, so it treated the live
+    assistant delta as stale and forced full `thread/read`.
+- Correction:
+  - `thread-detail-active-window-overlay-policy-service` now treats
+    `projection-active-window` / `turns-list-active-overlay-window` as a
+    history-only window. Its projection revision is not used to invalidate live
+    active-turn assistant evidence.
+  - Ordinary projection windows still keep the existing stale assistant-delta
+    fail-closed protection.
+- Validation after this correction:
+  - Focused active overlay/provider/orchestration/projection tests passed
+    (`55` tests).
+  - Full `npm test` passed (`1332` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Amend the active-window prewarm commit, redeploy, and verify production
+    detail reads use `projection-active-overlay` with `threadReadMs=0` and
+    `activeOverlayWindowMs=0` after thread-list-triggered prewarm.
+
+## 2026-06-28 - Active overlay prewarm deployed and verified
+
+- Commit:
+  - `fix active overlay window prewarm`; see `git log -1` for the exact current
+    hash because this handoff is part of the amended commit.
+- Deployment:
+  - Deployed through the Home AI central macOS plugin deploy path with reason
+    `codex-mobile-active-window-prewarm`.
+  - Production backup path is recorded in the central deploy output for reason
+    `codex-mobile-active-window-prewarm`.
+  - Production health readback stayed on static shell
+    `0.1.11|codex-mobile-shell-v552`; expected because this was server-side
+    runtime code only.
+- Production readback:
+  - Triggered `/api/threads?limit=80`, waited for background prewarm, then
+    sampled active Codex Mobile thread
+    `019eee6c-a6f5-7b20-bfb4-f96ccb6431b3`.
+  - Final readback after the last deploy returned `projection-active-overlay`
+    on repeated detail reads with `threadReadMs=0`, `activeOverlayWindowMs=0`,
+    and `activeOverlayReason=overlay-evidence-complete`.
+  - A prior readback in the same slice showed five consecutive detail reads with
+    `threadReadMs=0`, `activeOverlayWindowMs=0`,
+    `activeOverlayReason=overlay-evidence-complete`.
+  - Final observed elapsed time was about `97-134ms` for the sampled detail
+    reads.
+  - The first thread-list request after restart still took about `3.7s`; this
+    is now separated as a thread-list cold-path owner, not the active detail
+    overlay-window owner.
+- Residual:
+  - If users still see slow entry before opening detail, prioritize thread-list
+    cold path / app-server list latency next.

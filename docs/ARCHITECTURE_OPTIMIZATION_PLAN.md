@@ -212,6 +212,28 @@ Current acceleration targets:
    caching message text, tool payloads, uploads, or private content.
    `turns-list-active-overlay-window` remains a fail-closed fallback only when
    no usable projection window exists.
+   A later production timing sample on a roughly 392MB active Codex Mobile
+   session explained the new "long spinner but eventual success" shape:
+   the first detail open after the active-window cache was cleared spent about
+   1.3 seconds in `activeOverlayWindowMs`, while repeated reads immediately
+   returned with `activeOverlayWindowMs=0`. That is not the older timeout
+   failure; it is a synchronous active-window rebuild from app-server
+   `thread/turns/list`. The follow-up server slice adds
+   `thread-detail-active-window-prewarm-service`: turn/status notifications and
+   thread-list refreshes now schedule a deduplicated background
+   `turns-list-active-overlay-window` prewarm for active/running threads. The
+   prewarm reuses the same projection-window lookup, turns-list read, and
+   partial projection seed path as the detail route. Overlay revision/timestamp
+   metadata is used when the live overlay already exists, but the history window
+   can be preseeded before overlay turn evidence is available. It skips
+   non-active summaries and already-cached windows, and stores only bounded
+   status metadata. This does not loosen the active-overlay proof gate; it
+   moves the expected window build out of the user-visible first-detail request
+   whenever the notification/list path has enough time to prewarm it. The
+   follow-up active-overlay policy fix treats that preseeded window as
+   history-only evidence: its projection revision cannot mark the separately
+   supplied live active-turn overlay stale, while ordinary projection windows
+   still keep the stale assistant-delta fail-closed rule.
    Post-v542 local pane-context work is intentionally smaller than these
    deployable Phase B modules: each slice fixes one frontend state writer,
    adds executable pane-local coverage, commits locally, and does not deploy
