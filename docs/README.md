@@ -58,3 +58,12 @@ git diff --check
 ```
 
 For server-side runtime changes, restart only the 8787 Node listener unless the change touches the mux, startup scripts, service worker shell cache, or external Codex app-server process.
+
+## Current Architecture Cadence
+
+After `codex-mobile-shell-v542`, pane/context reliability work uses small
+local commits as the default cadence. A slice should name one owning layer and
+one violated invariant, add focused executable coverage, pass full local
+checks, and stay undeployed until several compatible slices form a coherent
+runtime module. Do not bump shell/cache, deploy production, or push Public for
+each micro-slice unless the user explicitly asks.

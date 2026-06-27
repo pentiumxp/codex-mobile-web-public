@@ -4717,12 +4717,34 @@ function pruneHiddenThreads() {
   state.threads = visibleThreads();
 }
 
-function updateThreadListStatus(threadId, status) {
+function applyThreadStatusToThread(thread, status) {
+  if (!thread) return false;
+  thread.status = status;
+  return true;
+}
+
+function scheduleThreadStatusDetailRender(threadId = "") {
+  const id = String(threadId || state.currentThreadId || "").trim();
+  if (!id) return false;
+  if (state.currentThread && String(state.currentThread.id || "") === id) {
+    scheduleRenderCurrentThread();
+    return true;
+  }
+  if (state.threadTileMode && threadTilePaneIsVisible(id)) {
+    if (!scheduleRenderThreadTilePane(id, { preserveScroll: true })) scheduleRenderCurrentThread();
+    return true;
+  }
+  return false;
+}
+
+function updateThreadListStatus(threadId, status, options = {}) {
   const id = String(threadId || "");
   if (!id) return;
   const thread = state.threads.find((entry) => String(entry && entry.id || "") === id);
-  if (thread) thread.status = status;
-  if (state.currentThread && String(state.currentThread.id || "") === id) state.currentThread.status = status;
+  applyThreadStatusToThread(thread, status);
+  applyThreadStatusToThread(state.currentThread && String(state.currentThread.id || "") === id ? state.currentThread : null, status);
+  applyThreadStatusToThread(state.threadTileDetails && state.threadTileDetails.get(String(id)) || null, status);
+  if (options.render === true) scheduleThreadStatusDetailRender(id);
 }
 
 function snapshotThreadStatus(threadId) {
@@ -4766,13 +4788,15 @@ function markThreadOptimisticallyActive(threadId) {
   noteSubmittedProcessingThreadHint(id);
   const listThread = state.threads.find((entry) => String(entry && entry.id || "") === id) || null;
   const currentMatches = Boolean(state.currentThread && String(state.currentThread.id || "") === id);
-  const previousStatus = currentMatches ? state.currentThread.status : listThread && listThread.status;
+  const tileThread = state.threadTileDetails && state.threadTileDetails.get(String(id)) || null;
+  const targetThread = currentMatches ? state.currentThread : listThread || tileThread;
+  const previousStatus = targetThread && targetThread.status;
   updateThreadStatusHints(id, previousStatus, runningStatus, {
-    thread: state.currentThread || listThread,
-    threadName: threadDisplayName(state.currentThread || listThread),
+    thread: targetThread,
+    threadName: threadDisplayName(targetThread),
     notify: false,
   });
-  updateThreadListStatus(id, runningStatus);
+  updateThreadListStatus(id, runningStatus, { render: true });
   if (currentMatches) {
     state.currentThread = Object.assign({}, state.currentThread, { status: runningStatus });
     mergeThreadIntoThreadList(state.currentThread);

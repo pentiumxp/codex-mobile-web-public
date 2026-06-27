@@ -21996,3 +21996,47 @@ The previous full handoff was archived and should be opened only when old proven
 - Next:
   - Commit this local slice and keep it undeployed until a coherent deployable
     module is ready.
+
+## 2026-06-27 - Phase C optimistic thread status pane context local slice
+
+- Current local state:
+  - Continued after local commit `86bf00b` (`refactor thread names keep pane
+    context`).
+  - This is a local Phase C pane-state/thread-status context slice only. It
+    changes `public/app.js`, focused tests, README, and the architecture plan.
+    It does not bump shell/cache, deploy production, or push Public.
+- Root-cause boundary:
+  - Symptom/risk: when the shared Composer sends to a visible non-current tile
+    pane, `markThreadOptimisticallyActive()` previously updated the thread
+    list/current-thread status but did not update `state.threadTileDetails`;
+    it also used `state.currentThread` as the status-hint context for
+    non-current panes.
+  - Failing layer: frontend optimistic thread status propagation and local
+    render scheduling, not app-server notifications, server projection,
+    shell/cache, or Home AI host routing.
+  - Violated invariant: thread-scoped status must be applied to every local
+    representation of the target thread, including visible pane detail cache,
+    and render scheduling must target the owning pane/current detail.
+- Changes:
+  - Added `applyThreadStatusToThread()` for centralized local status writes.
+  - Added `scheduleThreadStatusDetailRender()` for current-thread versus
+    pane-local render scheduling.
+  - `updateThreadListStatus()` now updates thread-list, current-thread, and
+    `state.threadTileDetails` entries for the affected thread, with an
+    explicit render option.
+  - `markThreadOptimisticallyActive()` now builds status-hint context from the
+    actual target thread and schedules the affected pane render.
+  - Added executable coverage proving a non-current visible tile pane receives
+    active status, uses the pane thread as hint context, and avoids global
+    current-thread render/merge.
+- Validation:
+  - `node --check public/app.js` passed.
+  - `node --test test/conversation-render.test.js test/thread-tile-state.test.js`
+    passed (`159` tests).
+  - `npm test` passed (`1273` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit this local slice and keep it undeployed until a coherent deployable
+    module is ready.

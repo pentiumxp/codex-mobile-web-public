@@ -2078,6 +2078,10 @@ the affected pane render instead of relying only on the global current thread.
 Thread title/name updates follow that boundary too: local title changes must
 write list state, current detail, and visible pane detail cache before
 scheduling only the owning detail surface.
+Optimistic thread running status now follows the same rule: a send from the
+shared Composer must update the target thread's list row, current detail or
+visible pane detail cache, and thread-status hint context before scheduling
+only the owning detail surface.
 
 ### 2026-06-27 Phase E Visual Harness Module v542
 
