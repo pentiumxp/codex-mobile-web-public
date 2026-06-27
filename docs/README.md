@@ -75,4 +75,5 @@ task-card draft state, task-card pending counts, optimistic thread status,
 failed-send status restore, thread status notifications, and pane toolbar
 actions, older-history pagination, and continuation confirmation dialogs must
 all update or operate on the target pane instead of falling back to the global
-current thread.
+current thread. Manual task-card creation must also use the source pane's live
+turn id and refresh the source pane after card creation.

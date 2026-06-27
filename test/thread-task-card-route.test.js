@@ -369,6 +369,9 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /threadDetailActionsApi\.resolveThreadDetailClickAction/);
   assert.match(appJs, /function createThreadTaskCardFromCurrent\(/);
   assert.match(appJs, /function createThreadTaskCardFromThread\(/);
+  assert.match(functionBody(appJs, "createThreadTaskCardFromThread"), /sourceTurnId: activeTurnIdForThread\(thread\)/);
+  assert.match(functionBody(appJs, "createThreadTaskCardFromThread"), /await refreshThreadAfterTaskCard\(thread\.id\)/);
+  assert.doesNotMatch(functionBody(appJs, "createThreadTaskCardFromThread"), /currentLiveTurn\(\)/);
   assert.match(appJs, /function mutateThreadTaskCard\(/);
   assert.match(appJs, /function replyTaskCard\(/);
   assert.match(functionBody(appJs, "mutateThreadTaskCard"), /const threadId = String\(options\.threadId \|\| body\.threadId \|\| state\.currentThreadId \|\| ""\)\.trim\(\)/);
@@ -599,6 +602,69 @@ return {
     source: "button",
   }]);
   assert.deepEqual(harness.calls.errors, []);
+});
+
+test("client manual task-card creation uses pane source turn and refresh", async () => {
+  const createSource = functionSource(appJs, "createThreadTaskCardFromThread");
+  const harness = Function(`
+const calls = { textInputs: [], activeTurnThreads: [], refreshes: [], successes: [], failures: [], errors: [] };
+const paneThread = { id: "thread-pane", cwd: "/work/pane", name: "Pane Thread" };
+const state = {
+  currentThreadId: "thread-current",
+  currentThread: { id: "thread-current", cwd: "/work/current", name: "Current Thread" },
+  selectedCwd: "/work/fallback",
+};
+let apiBody = null;
+const textInputResponses = ["thread-target", "Repair title", "Repair body"];
+function requestAppTextInput(message, value, options) {
+  calls.textInputs.push({ message, value, title: options && options.title || "" });
+  return Promise.resolve(textInputResponses.shift());
+}
+function resolveTargetThreadReferences(input) {
+  return [{ threadId: String(input || ""), thread: { id: String(input || ""), cwd: "/work/target" } }];
+}
+function threadTitleForDisplay(thread) { return thread && thread.name || ""; }
+function summarizeTaskCardText(value) { return String(value || "").slice(0, 80); }
+function activeTurnIdForThread(thread) {
+  calls.activeTurnThreads.push(thread && thread.id || "");
+  return thread && thread.id === "thread-pane" ? "turn-pane-live" : "turn-current-live";
+}
+function refreshThreadAfterTaskCard(threadId) {
+  calls.refreshes.push(String(threadId || ""));
+  return Promise.resolve();
+}
+function recordHomeAiDiagnosticSuccess(input) { calls.successes.push(input); }
+function recordHomeAiDiagnosticFailure(input) { calls.failures.push(input); }
+function diagnosticThreadHash(value) { return "hash:" + value; }
+function diagnosticErrorCode() { return "error"; }
+function diagnosticErrorStatus() { return 0; }
+function showError(err) { calls.errors.push(String(err && err.message || err)); }
+function $(id) { return { classList: { remove() {}, add() {} }, textContent: "" }; }
+async function api(url, options) {
+  apiBody = JSON.parse(options.body);
+  return { ok: true };
+}
+${createSource}
+return {
+  run: () => createThreadTaskCardFromThread(paneThread, { preventDefault() {}, stopPropagation() {} }),
+  result: () => ({ apiBody, calls }),
+};
+`)();
+
+  await harness.run();
+  const result = harness.result();
+
+  assert.equal(result.apiBody.sourceThreadId, "thread-pane");
+  assert.equal(result.apiBody.sourceWorkspaceId, "/work/pane");
+  assert.equal(result.apiBody.sourceThreadTitle, "Pane Thread");
+  assert.equal(result.apiBody.sourceTurnId, "turn-pane-live");
+  assert.deepEqual(result.apiBody.targetThreadIds, ["thread-target"]);
+  assert.deepEqual(result.apiBody.targetWorkspaceIds, { "thread-target": "/work/target" });
+  assert.deepEqual(result.calls.activeTurnThreads, ["thread-pane"]);
+  assert.deepEqual(result.calls.refreshes, ["thread-pane"]);
+  assert.equal(result.calls.successes.length, 1);
+  assert.deepEqual(result.calls.failures, []);
+  assert.deepEqual(result.calls.errors, []);
 });
 
 test("client older-turn loading updates the owning tile pane thread", async () => {

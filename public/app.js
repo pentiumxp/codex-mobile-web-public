@@ -16360,7 +16360,7 @@ async function createThreadTaskCardFromThread(sourceThread, event) {
       body: JSON.stringify({
         sourceWorkspaceId: thread.cwd || state.selectedCwd || "",
         sourceThreadId: thread.id,
-        sourceTurnId: currentLiveTurn() ? currentLiveTurn().id : "",
+        sourceTurnId: activeTurnIdForThread(thread),
         sourceThreadTitle: threadTitleForDisplay(thread) || thread.id,
         targetThreadIds: targets.map((target) => target.threadId),
         targetWorkspaceIds,
@@ -16383,7 +16383,7 @@ async function createThreadTaskCardFromThread(sourceThread, event) {
         thread_hash: diagnosticThreadHash(thread.id),
       },
     });
-    await refreshCurrentThreadAfterTaskCard();
+    await refreshThreadAfterTaskCard(thread.id);
   } catch (err) {
     recordHomeAiDiagnosticFailure({
       category: "task_card_workflow_failed",

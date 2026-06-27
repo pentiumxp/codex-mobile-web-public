@@ -21041,6 +21041,46 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit this local slice and keep it undeployed until a coherent deployable
     module is ready.
 
+## 2026-06-27 - Phase C manual task-card create pane context local slice
+
+- Current local state:
+  - Continued after local commit `028c1ec` (`refactor continuation confirm
+    keeps pane context`).
+  - This is a local Phase C manual task-card creation source-context slice only.
+    It changes `public/app.js`, focused tests, README, the architecture plan,
+    and this handoff. It does not bump shell/cache, deploy production, or push
+    Public.
+- Root-cause boundary:
+  - Symptom/risk: `bindCurrentThreadActions()` could pass the owning pane thread
+    into `createThreadTaskCardFromThread()`, but the function still populated
+    `sourceTurnId` from global `currentLiveTurn()` and refreshed through the
+    current-thread wrapper after creation. In split-screen mode, a card created
+    from a non-current pane could be stamped with the wrong source turn and
+    repaint the wrong detail surface.
+  - Failing layer: frontend manual task-card creation source-turn and
+    post-create refresh targeting, not task-card service persistence, target
+    routing, same-workspace delivery, shell/cache, or Home AI host routing.
+  - Violated invariant: a task-card source action initiated from a pane must use
+    that pane thread for source metadata and post-action refresh.
+- Changes:
+  - Manual task-card creation now uses `activeTurnIdForThread(thread)` for
+    `sourceTurnId`.
+  - Manual task-card creation now calls `refreshThreadAfterTaskCard(thread.id)`,
+    which targets current detail or visible tile-pane detail as appropriate.
+  - Added executable coverage proving pane manual task-card creation uses the
+    pane source turn and refreshes the pane source thread.
+- Validation:
+  - `node --check public/app.js` passed.
+  - `node --test test/thread-task-card-route.test.js test/thread-task-card-service.test.js test/new-thread-route.test.js`
+    passed (`69` tests).
+  - `npm test` passed (`1283` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit this local slice and keep it undeployed until a coherent deployable
+    module is ready.
+
 ## 2026-06-27 - Phase C continuation confirm pane context local slice
 
 - Current local state:
@@ -22420,3 +22460,24 @@ The previous full handoff was archived and should be opened only when old proven
 - Next:
   - Commit this local slice and keep it undeployed until a coherent deployable
     module is ready.
+
+## 2026-06-27 - Latest Phase C pane-context local slices index
+
+- This tail index exists because several detailed Phase C slice records were
+  inserted above older handoff sections. Treat these commits as the current
+  local, undeployed pane-context batch:
+  - `701d217` `refactor pane toolbar actions keep thread context`
+  - `f10d19d` `refactor older history loads keep pane context`
+  - `028c1ec` `refactor continuation confirm keeps pane context`
+  - pending local slice before commit: manual task-card creation uses the pane
+    source live turn and refreshes the pane source thread.
+- Latest validation for the pending manual task-card create slice:
+  - `node --check public/app.js` passed.
+  - `node --test test/thread-task-card-route.test.js test/thread-task-card-service.test.js test/new-thread-route.test.js`
+    passed (`69` tests).
+  - `npm test` passed (`1283` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Still not deployed and not pushed Public. Continue small local commits until
+  a coherent deployable Phase C module is ready.

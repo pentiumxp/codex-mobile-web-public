@@ -190,6 +190,9 @@ Current acceleration targets:
    dialog records a concrete source thread id, confirmation must resolve that
    thread from current detail, thread list, or visible tile details, and must
    not silently fall back to global current thread if the source disappears.
+   Manual task-card creation uses the same pane ownership boundary: the source
+   turn id must come from the source thread, and post-create refresh must target
+   the source thread/pane rather than the global current thread.
 2. Thread-list cold starts no longer hide source collection inside the fallback
    cache policy. The local `thread-list-fallback-baseline-service` slice now
    owns state DB / rollout session / session-index source collection,
@@ -2020,6 +2023,10 @@ Target:
   Continuation confirmation is also pane-aware: the dialog confirm path resolves
   tile-detail-only source threads and fails closed if a concrete source id can
   no longer be found, instead of compressing the unrelated current thread.
+  Manual task-card creation now uses `activeTurnIdForThread(sourceThread)` and
+  `refreshThreadAfterTaskCard(sourceThread.id)`, so a pane-local task-card
+  source does not borrow the global current live turn or repaint the wrong
+  detail surface.
   Approval/server-request action context is now pane-aware as well: rendered
   approval and user-input controls carry their owning thread id, the shared
   click resolver returns it, and pending/resolved/request-response refreshes
