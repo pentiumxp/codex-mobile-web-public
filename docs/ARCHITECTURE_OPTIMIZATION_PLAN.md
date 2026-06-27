@@ -1855,7 +1855,11 @@ Target:
   permission recovery across pane switches no longer depends on scattered
   `app.js` branches. Operation minimum-refresh planning also now lives there,
   so remembered command bubbles can expire through pane-local patch targets
-  without `app.js` owning that state decision. Continue moving pane
+  without `app.js` owning that state decision. Thread-tile viewport baseline
+  and Composer chrome-height planning also now live there, so keyboard-active
+  split-screen layouts use a helper-owned stable viewport/composer baseline
+  while `app.js` only reads DOM viewport facts and writes the planned baseline.
+  Continue moving pane
   widths, per-pane drafts, max concurrent detail reads, pane-local
   send/approval/interrupt ownership, command detail panels, and mobile collapse
   behavior into testable helpers without DOM side effects.

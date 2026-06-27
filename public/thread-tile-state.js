@@ -181,6 +181,69 @@
     return Math.max(1, Math.min(maxPanes, Number.isFinite(parsed) && parsed > 0 ? parsed : 1));
   }
 
+  function viewportSize(value = {}) {
+    return {
+      width: Math.round(nonNegativeNumber(value && value.width, 0)),
+      height: Math.round(nonNegativeNumber(value && value.height, 0)),
+    };
+  }
+
+  function threadTileViewportBaselinePlan(input = {}) {
+    const layoutViewport = viewportSize(input.layoutViewport || input.viewport || {});
+    const baseline = viewportSize(input.baseline || input.previousBaseline || {});
+    const keyboardActive = input.keyboardActive === true;
+    const hasBaseline = baseline.width > 0 && baseline.height > 0;
+    if (!keyboardActive) {
+      return {
+        action: "thread-tile-viewport-baseline",
+        reason: "layout-viewport",
+        keyboardActive,
+        viewport: layoutViewport,
+        nextBaseline: layoutViewport,
+        updateBaseline: true,
+      };
+    }
+    return {
+      action: "thread-tile-viewport-baseline",
+      reason: hasBaseline ? "keyboard-baseline" : "keyboard-layout-viewport",
+      keyboardActive,
+      viewport: hasBaseline ? baseline : layoutViewport,
+      nextBaseline: hasBaseline ? baseline : layoutViewport,
+      updateBaseline: false,
+    };
+  }
+
+  function threadTileVerticalChromePlan(input = {}, options = {}) {
+    const keyboardActive = input.keyboardActive === true;
+    const composerHeightPx = nonNegativeNumber(input.composerHeightPx, 0);
+    const baselineComposerHeightPx = nonNegativeNumber(input.baselineComposerHeightPx, 0);
+    const minChromePx = nonNegativeNumber(
+      Object.prototype.hasOwnProperty.call(options, "minChromePx") ? options.minChromePx : input.minChromePx,
+      120,
+    );
+    const extraChromePx = nonNegativeNumber(
+      Object.prototype.hasOwnProperty.call(options, "extraChromePx") ? options.extraChromePx : input.extraChromePx,
+      64,
+    );
+    const effectiveComposerHeightPx = keyboardActive && baselineComposerHeightPx
+      ? baselineComposerHeightPx
+      : composerHeightPx;
+    const nextComposerHeightBaselinePx = keyboardActive
+      ? baselineComposerHeightPx
+      : (composerHeightPx || baselineComposerHeightPx || 0);
+    return {
+      action: "thread-tile-vertical-chrome",
+      reason: keyboardActive
+        ? (baselineComposerHeightPx ? "keyboard-baseline" : "keyboard-composer")
+        : "composer-baseline",
+      keyboardActive,
+      composerHeightPx: effectiveComposerHeightPx,
+      nextComposerHeightBaselinePx,
+      updateBaseline: !keyboardActive,
+      verticalChromePx: Math.max(minChromePx, effectiveComposerHeightPx + extraChromePx),
+    };
+  }
+
   function normalizeColumnGroups(values = []) {
     return (Array.isArray(values) ? values : [])
       .map((group) => uniqueIds(Array.isArray(group) ? group : []))
@@ -1586,6 +1649,8 @@
     switchMenuOptionsPlan,
     switchMenuPlan,
     syncPinnedIdsFromActiveIds,
+    threadTileVerticalChromePlan,
+    threadTileViewportBaselinePlan,
     toggleOperationMode,
     uniqueIds,
   };

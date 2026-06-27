@@ -20233,3 +20233,41 @@ The previous full handoff was archived and should be opened only when old proven
   - Continue the broader architecture goal from the next root-cause target:
     likely Phase C pane-state moduleization or Phase D task-card lease/runtime
     hardening, unless a fresh production diagnostic points back to Phase A/B.
+
+## 2026-06-27 - Phase C thread-tile viewport baseline local slice
+
+- Current local state:
+  - Started Phase C pane-state / split-screen architecture work after v540.
+  - This is a local-only slice. It does not bump `CLIENT_BUILD_ID` /
+    `public/sw.js` shell cache and is not deployed by itself.
+- Root-cause boundary:
+  - Symptom/risk: split-screen Composer focus and virtual keyboard changes can
+    shrink the visual viewport and cause pane layout recomputation/full-screen
+    movement. `public/app.js` still directly owned the policy for when to
+    refresh thread-tile viewport/composer baselines versus reuse the stable
+    pre-keyboard baseline.
+  - Failing layer: frontend thread-tile pane-state / keyboard layout policy.
+  - Violated invariant: `public/app.js` should read DOM viewport facts and write
+    state effects, while `public/thread-tile-state.js` owns the policy for
+    keyboard-active viewport and Composer chrome baseline planning.
+- Changes:
+  - Added `threadTileViewportBaselinePlan()` and
+    `threadTileVerticalChromePlan()` to `public/thread-tile-state.js`.
+  - `threadTileViewportSize()` and `threadTileVerticalChromePx()` in
+    `public/app.js` now consume those plans and only execute planned baseline
+    writes.
+  - Updated `docs/MODULES.md` and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` to record the ownership boundary.
+- Validation:
+  - `node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js`
+    passed (`39` tests).
+  - `node --check public/thread-tile-state.js && node --check public/app.js`
+    passed.
+  - `npm run check` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit this local slice.
+  - Continue Phase C with the next small extraction. The read-only sidecar
+    analysis recommended moving the detail-load queue drain decision out of
+    `applyThreadTileDetailLoadQueuePlan()` into `detailLoadQueuePlan()` as the
+    next low-risk pane-state policy slice.

@@ -62,8 +62,10 @@ test("thread tile layout is wired as an explicit shell policy", () => {
   assert.match(appJs, /function isThreadTileKeyboardFocusActive\(/);
   assert.match(appJs, /function threadTileViewportSize\(/);
   assert.match(appJs, /function threadTileVerticalChromePx\(/);
-  assert.match(functionBody(appJs, "threadTileViewportSize"), /state\.threadTileViewportBaseline = layoutViewport/);
-  assert.match(functionBody(appJs, "threadTileViewportSize"), /return baseline && baseline\.width && baseline\.height \? baseline : layoutViewport/);
+  assert.match(functionBody(appJs, "threadTileViewportSize"), /threadTileStatePolicy\.threadTileViewportBaselinePlan/);
+  assert.match(functionBody(appJs, "threadTileViewportSize"), /if \(plan\.updateBaseline\) state\.threadTileViewportBaseline = plan\.nextBaseline/);
+  assert.match(functionBody(appJs, "threadTileVerticalChromePx"), /threadTileStatePolicy\.threadTileVerticalChromePlan/);
+  assert.match(functionBody(appJs, "threadTileVerticalChromePx"), /if \(plan\.updateBaseline\) state\.threadTileComposerHeightBaselinePx = plan\.nextComposerHeightBaselinePx/);
   assert.match(layoutBody, /const viewport = threadTileViewportSize\(\)/);
   assert.match(layoutBody, /const sidebarSplitVisible = splitPaneSidebarVisible\(\)/);
   assert.match(layoutBody, /const menuOverlay = isMenuOverlayMode\(\) \|\| !sidebarSplitVisible/);

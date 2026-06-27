@@ -61,6 +61,81 @@ test("thread tile state plans display layout and overflow split columns", () => 
   assert.deepEqual(plan.displayLayout.columnGroups, [["a"], ["b"], ["c"], ["d", "e"]]);
 });
 
+test("thread tile state owns viewport and composer chrome baseline planning", () => {
+  assert.deepEqual(state.threadTileViewportBaselinePlan({
+    keyboardActive: false,
+    layoutViewport: { width: 1200.4, height: 800.2 },
+    baseline: { width: 1000, height: 700 },
+  }), {
+    action: "thread-tile-viewport-baseline",
+    reason: "layout-viewport",
+    keyboardActive: false,
+    viewport: { width: 1200, height: 800 },
+    nextBaseline: { width: 1200, height: 800 },
+    updateBaseline: true,
+  });
+
+  assert.deepEqual(state.threadTileViewportBaselinePlan({
+    keyboardActive: true,
+    layoutViewport: { width: 1200, height: 420 },
+    baseline: { width: 1200, height: 800 },
+  }), {
+    action: "thread-tile-viewport-baseline",
+    reason: "keyboard-baseline",
+    keyboardActive: true,
+    viewport: { width: 1200, height: 800 },
+    nextBaseline: { width: 1200, height: 800 },
+    updateBaseline: false,
+  });
+
+  assert.equal(state.threadTileViewportBaselinePlan({
+    keyboardActive: true,
+    layoutViewport: { width: 900, height: 480 },
+  }).reason, "keyboard-layout-viewport");
+
+  assert.deepEqual(state.threadTileVerticalChromePlan({
+    keyboardActive: false,
+    composerHeightPx: 82,
+    baselineComposerHeightPx: 48,
+  }), {
+    action: "thread-tile-vertical-chrome",
+    reason: "composer-baseline",
+    keyboardActive: false,
+    composerHeightPx: 82,
+    nextComposerHeightBaselinePx: 82,
+    updateBaseline: true,
+    verticalChromePx: 146,
+  });
+
+  const preserveBaseline = state.threadTileVerticalChromePlan({
+    keyboardActive: false,
+    composerHeightPx: 0,
+    baselineComposerHeightPx: 82,
+  });
+  assert.equal(preserveBaseline.nextComposerHeightBaselinePx, 82);
+  assert.equal(preserveBaseline.verticalChromePx, 120);
+
+  assert.deepEqual(state.threadTileVerticalChromePlan({
+    keyboardActive: true,
+    composerHeightPx: 180,
+    baselineComposerHeightPx: 82,
+  }), {
+    action: "thread-tile-vertical-chrome",
+    reason: "keyboard-baseline",
+    keyboardActive: true,
+    composerHeightPx: 82,
+    nextComposerHeightBaselinePx: 82,
+    updateBaseline: false,
+    verticalChromePx: 146,
+  });
+
+  assert.equal(state.threadTileVerticalChromePlan({
+    keyboardActive: true,
+    composerHeightPx: 30,
+    baselineComposerHeightPx: 0,
+  }).verticalChromePx, 120);
+});
+
 test("thread tile state keeps explicit split pairs in display layout", () => {
   const plan = state.paneDisplayLayoutPlan({
     layout: { enabled: true, columns: 4, rows: 1, maxPanes: 6, recommendedMaxPanes: 6 },

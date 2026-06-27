@@ -12621,25 +12621,24 @@ function isThreadTileKeyboardFocusActive() {
 }
 
 function threadTileViewportSize() {
-  const keyboardActive = isThreadTileKeyboardFocusActive();
   const layoutViewport = viewportPixelSize({ preferLayoutViewport: true });
-  if (!keyboardActive) {
-    state.threadTileViewportBaseline = layoutViewport;
-    return layoutViewport;
-  }
-  const baseline = state.threadTileViewportBaseline;
-  return baseline && baseline.width && baseline.height ? baseline : layoutViewport;
+  const plan = threadTileStatePolicy.threadTileViewportBaselinePlan({
+    keyboardActive: isThreadTileKeyboardFocusActive(),
+    layoutViewport,
+    baseline: state.threadTileViewportBaseline,
+  });
+  if (plan.updateBaseline) state.threadTileViewportBaseline = plan.nextBaseline;
+  return plan.viewport;
 }
 
 function threadTileVerticalChromePx() {
-  const keyboardActive = isThreadTileKeyboardFocusActive();
-  if (!keyboardActive) {
-    state.threadTileComposerHeightBaselinePx = Number(state.composerHeightPx || 0) || state.threadTileComposerHeightBaselinePx || 0;
-  }
-  const composerHeight = keyboardActive && state.threadTileComposerHeightBaselinePx
-    ? state.threadTileComposerHeightBaselinePx
-    : Number(state.composerHeightPx || 0);
-  return Math.max(120, composerHeight + 64);
+  const plan = threadTileStatePolicy.threadTileVerticalChromePlan({
+    keyboardActive: isThreadTileKeyboardFocusActive(),
+    composerHeightPx: state.composerHeightPx,
+    baselineComposerHeightPx: state.threadTileComposerHeightBaselinePx,
+  });
+  if (plan.updateBaseline) state.threadTileComposerHeightBaselinePx = plan.nextComposerHeightBaselinePx;
+  return plan.verticalChromePx;
 }
 
 function threadTileLayout(options = {}) {
