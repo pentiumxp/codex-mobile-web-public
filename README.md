@@ -641,6 +641,36 @@ npm run check:macos  # passed
 git diff --check  # passed
 ```
 
+## 2026-06-27 Phase C Thread Name Pane Context Slice
+
+这是 thread goal pane context 之后的相邻 Phase C 本地切片，不单独部署、
+不推 Public。它收敛线程标题在平铺 pane 中的本地状态归属：当本地重命名或 display
+summary 更新调用 `updateThreadNameLocally()` 时，非当前但可见的 pane 也会同步
+`state.threadTileDetails` 并触发 pane-local render，避免 pane header 继续显示旧标题。
+
+改动边界：
+
+- 新增 `applyThreadNameToThread(thread, title)`，集中处理本地标题写入；
+- 新增 `scheduleThreadNameDetailRender(threadId)`，按 current thread 或 visible tile pane
+  调度 detail render；
+- `updateThreadNameLocally()` 同步更新 thread list entry、`state.currentThread` 和
+  `state.threadTileDetails` 中对应 thread；
+- 新增可执行测试，验证非当前 `thread-pane` 的标题更新会更新 list + pane detail cache，
+  只调度 pane render，不触发 current render；
+- 不改变 thread display summary server merge、rename API、thread list 排序、shell/cache
+  版本或生产部署状态。
+
+验证：
+
+```bash
+node --check public/app.js
+node --test test/thread-title-source.test.js test/thread-tile-state.test.js  # 39 passed
+npm test  # 1272 passed
+npm run check  # passed
+npm run check:macos  # passed
+git diff --check  # passed
+```
+
 ## 2026-06-27 Phase C Thread Goal Pane Context Slice
 
 这是 server request answer context 之后的相邻 Phase C 本地切片，不单独部署、

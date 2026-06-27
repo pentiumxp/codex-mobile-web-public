@@ -2075,6 +2075,9 @@ resolved/removal renders cannot fall back to the wrong current thread.
 Thread goal notifications follow the same pane ownership boundary: updates and
 clears must write both list state and visible pane detail cache, then schedule
 the affected pane render instead of relying only on the global current thread.
+Thread title/name updates follow that boundary too: local title changes must
+write list state, current detail, and visible pane detail cache before
+scheduling only the owning detail surface.
 
 ### 2026-06-27 Phase E Visual Harness Module v542
 

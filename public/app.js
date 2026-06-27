@@ -11793,16 +11793,35 @@ function threadTitleForDisplay(thread) {
   return preferredThreadDisplayTitle(thread);
 }
 
+function applyThreadNameToThread(thread, title) {
+  if (!thread || !title) return false;
+  thread.name = title;
+  return true;
+}
+
+function scheduleThreadNameDetailRender(threadId = "") {
+  const id = String(threadId || state.currentThreadId || "").trim();
+  if (!id) return false;
+  if (state.currentThread && String(state.currentThread.id || "") === id) {
+    renderCurrentThread();
+    return true;
+  }
+  if (state.threadTileMode && threadTilePaneIsVisible(id)) {
+    if (!scheduleRenderThreadTilePane(id, { preserveScroll: true })) renderCurrentThread();
+    return true;
+  }
+  return false;
+}
+
 function updateThreadNameLocally(threadId, name) {
   const id = String(threadId || "");
   const title = String(name || "").trim();
   if (!id || !title) return;
   const thread = state.threads.find((entry) => String(entry && entry.id || "") === id);
-  if (thread) thread.name = title;
-  if (state.currentThread && String(state.currentThread.id || "") === id) {
-    state.currentThread.name = title;
-    renderCurrentThread();
-  }
+  applyThreadNameToThread(thread, title);
+  applyThreadNameToThread(state.currentThread && String(state.currentThread.id || "") === id ? state.currentThread : null, title);
+  applyThreadNameToThread(state.threadTileDetails && state.threadTileDetails.get(String(id)) || null, title);
+  scheduleThreadNameDetailRender(id);
   state.renderedThreadListSignature = "";
   renderThreads();
 }

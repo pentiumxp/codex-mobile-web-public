@@ -21957,3 +21957,42 @@ The previous full handoff was archived and should be opened only when old proven
 - Next:
   - Commit this local slice and keep it undeployed until a coherent deployable
     module is ready.
+
+## 2026-06-27 - Phase C thread name pane context local slice
+
+- Current local state:
+  - Continued after local commit `e4f6c57` (`refactor thread goals keep pane
+    context`).
+  - This is a local Phase C pane-state/thread-title context slice only. It
+    changes `public/app.js`, focused tests, README, and the architecture plan.
+    It does not bump shell/cache, deploy production, or push Public.
+- Root-cause boundary:
+  - Symptom/risk: `updateThreadNameLocally()` updated the thread-list entry
+    and current detail, but a visible non-current tile pane could keep a stale
+    title because `state.threadTileDetails` was not updated and no pane-local
+    render was scheduled.
+  - Failing layer: frontend thread-title local state propagation to visible
+    tile-pane detail cache, not server display summary merge, rename API,
+    thread list sorting, shell/cache, or Home AI host routing.
+  - Violated invariant: thread-scoped display title/name state must be applied
+    to every local representation of that thread, including visible pane detail
+    cache, and render scheduling must target the owning pane/current detail.
+- Changes:
+  - Added `applyThreadNameToThread()` for centralized local title writes.
+  - Added `scheduleThreadNameDetailRender()` for current-thread versus
+    pane-local render scheduling.
+  - `updateThreadNameLocally()` now updates thread-list, current-thread, and
+    `state.threadTileDetails` entries for the affected thread.
+  - Added executable coverage proving a non-current visible pane receives name
+    update state and schedules pane render without current render.
+- Validation:
+  - `node --check public/app.js` passed.
+  - `node --test test/thread-title-source.test.js test/thread-tile-state.test.js`
+    passed (`39` tests).
+  - `npm test` passed (`1272` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit this local slice and keep it undeployed until a coherent deployable
+    module is ready.
