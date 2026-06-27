@@ -89,6 +89,17 @@ active projection peaks: immediately after restart, a first list/detail request
 can still take
 seconds and then settle back to hundreds of milliseconds.
 
+The latest thread-list slice targets the ordinary default list read after a
+process warm cache already exists. A no-search, no-workspace, no-cursor,
+non-archived `/api/threads` request can now return the process warm fallback
+cache immediately and defer app-server refresh, reporting
+`appServerDeferredReason=warm-fallback-default` and
+`appServerDeferredInitialReason=default-warm-cache`. It does not build a cold
+local baseline for ordinary default reads; if the warm cache is missing, the
+request continues through the existing app-server path so true cold startup
+cost stays observable. Explicit `initial=warm-fallback` first-paint requests
+keep their existing cold-baseline behavior.
+
 The active-window coalescing slice targets the "long spinner, then eventual
 success" shape seen on active large sessions. That shape is not a network/RPC
 timeout: the request completes after synchronously building

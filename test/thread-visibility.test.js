@@ -1094,7 +1094,7 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeBody, /const fallbackMode = String\(url\.searchParams\.get\("fallback"\) \|\| ""\)/);
   assert.match(routeBody, /const deferFallback = fallbackMode === "defer" && !cursor && !archived && !searchTerm/);
   assert.match(routeBody, /const initialMode = String\(url\.searchParams\.get\("initial"\) \|\| ""\)/);
-  assert.match(routeBody, /const allowWarmFallbackInitial = initialMode === "warm-fallback" && !cursor && !archived && !searchTerm && !cwd/);
+  assert.match(routeBody, /const initialFallbackPlan = planThreadListInitialFallbackAttempt\(\{[\s\S]*initialMode,[\s\S]*fallbackMode,[\s\S]*cursor,[\s\S]*archived,[\s\S]*cwd,[\s\S]*searchTerm,[\s\S]*defaultWarmFallback: THREAD_LIST_DEFAULT_WARM_FALLBACK_ENABLED,[\s\S]*\}\)/);
   assert.match(routeBody, /const appServerFetchPlan = planThreadListAppServerFetch\(\{[\s\S]*limit,[\s\S]*cursor,[\s\S]*archived,[\s\S]*cwd,[\s\S]*searchTerm,[\s\S]*\}\);/);
   assert.match(routeBody, /Object\.assign\(timings, threadListAppServerFetchTimingFields\(appServerFetchPlan\)\)/);
   assert.match(routeBody, /limit: appServerFetchPlan\.appServerLimit/);
@@ -1110,9 +1110,13 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(appServerFetchPolicyJs, /appServerRawCount/);
   assert.match(appServerFetchPolicyJs, /appServerResponsePayloadBytes/);
   assert.match(routeBody, /let initialFallback = readThreadListCachedFallback\(limit, \{ cwd, searchTerm, globalState, diagnostics: fallbackDiagnostics \}\)/);
-  assert.match(routeBody, /if \(!initialFallback\.length\) \{[\s\S]*const initialMergeOptions = getMergeThreadSummaryListOptions\(\);[\s\S]*initialFallback = readThreadListFallback\(limit, \{[\s\S]*archivedIds: initialMergeOptions\.archivedIds,[\s\S]*mergeThreadSummaryListOptions: initialMergeOptions,[\s\S]*\}\);[\s\S]*\}/);
+  assert.match(routeBody, /const initialFallbackCacheHit = fallbackDiagnostics\.cacheHit === true/);
+  assert.match(routeBody, /if \(!initialFallback\.length && initialFallbackPlan\.allowBaseline\) \{[\s\S]*const initialMergeOptions = getMergeThreadSummaryListOptions\(\);[\s\S]*initialFallback = readThreadListFallback\(limit, \{[\s\S]*archivedIds: initialMergeOptions\.archivedIds,[\s\S]*mergeThreadSummaryListOptions: initialMergeOptions,[\s\S]*\}\);[\s\S]*\}/);
+  assert.match(routeBody, /if \(initialFallback\.length && \(!initialFallbackPlan\.requireCacheHit \|\| initialFallbackCacheHit\)\) \{/);
   assert.match(routeBody, /decorated\.mobileDeferredAppServer = true/);
   assert.match(routeBody, /const initialFallbackMeta = threadListInitialFallbackMetadata\(\{/);
+  assert.match(routeBody, /reason: initialFallbackPlan\.reason/);
+  assert.match(routeBody, /appServerDeferredInitialReason: initialFallbackPlan\.reason/);
   assert.match(routeBody, /decorated\.mobileInitialSource = initialFallbackMeta\.initialSource/);
   assert.match(routeBody, /sendThreadListResult\(initialFallbackMeta\.eventName/);
   assert.ok(

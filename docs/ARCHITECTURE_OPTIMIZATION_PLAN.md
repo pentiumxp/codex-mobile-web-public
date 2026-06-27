@@ -2402,6 +2402,49 @@ Required validation:
   `progressiveActiveBudgetApplied`, `progressiveActiveBudgetReason`,
   active/thread byte counters, and omitted item counts.
 
+### 2026-06-28 Thread List Default Warm-Cache Early Return module
+
+This module targets the residual "successful but slow" ordinary thread-list
+open after the process already has a compatible fallback cache. Production
+sampling showed a first `/api/threads?limit=20` request could spend about two
+seconds waiting in the Mobile Web app-server bridge while the mux's own
+thread/list execution was only single-digit milliseconds. The same request
+settled back to hundreds of milliseconds on repeat reads. The violated
+invariant is that an ordinary unfiltered list request should not block first
+paint on a synchronous app-server refresh when the same process already has a
+compatible warm list baseline.
+
+Deployable scope:
+
+- `adapters/thread-list-app-server-fetch-policy-service.js` now owns
+  `planThreadListInitialFallbackAttempt()`, separating explicit
+  `initial=warm-fallback`, ordinary default warm-cache early return, and
+  ineligible filtered/cursor/archived paths.
+- `server.js` can answer no-search/no-workspace/no-cursor/non-archived default
+  `/api/threads` requests from an already-warm fallback cache and mark the
+  app-server refresh deferred with
+  `appServerDeferredReason=warm-fallback-default` and
+  `appServerDeferredInitialReason=default-warm-cache`.
+- Ordinary default reads do not build a cold fallback baseline on cache miss.
+  They fall through to the existing app-server path so true cold startup cost
+  remains visible instead of being hidden by a new fallback layer.
+- Search, workspace-filtered, archived, cursor, explicit `fallback=defer`, and
+  explicit `initial=warm-fallback` semantics remain separate.
+
+Required validation:
+
+- focused thread-list app-server policy, visibility route, load-policy,
+  coalescer, Phase-B readback, and performance-metrics tests;
+- full `npm test`;
+- `npm run check`;
+- `npm run check:macos`;
+- `git diff --check`;
+- central Home AI macOS plugin deployment;
+- bounded production readback proving ordinary default list reads can report
+  `appServerMs=0`, `mobileDeferredAppServer=true`,
+  `appServerDeferredReason=warm-fallback-default`, and
+  `fallbackCacheDecision=compatible-hit` when the warm cache is available.
+
 ### 2026-06-28 Thread List Cold Initial App-Server Deferral module
 
 This module closes the remaining first-paint coupling where

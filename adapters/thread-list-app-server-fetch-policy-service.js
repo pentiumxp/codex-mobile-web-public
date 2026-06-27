@@ -36,6 +36,10 @@ function booleanFlag(value) {
   return true;
 }
 
+function normalizedMode(value) {
+  return compactLabel(value, "", 80).toLowerCase();
+}
+
 function boundedOverfetchLimit(requestedLimit, multiplier = 2, floor = 80, ceiling = 500) {
   const limit = boundedLimit(requestedLimit);
   const raw = Math.max(limit * multiplier, floor);
@@ -125,6 +129,55 @@ function planThreadListAppServerFetch(input = {}) {
   };
 }
 
+function planThreadListInitialFallbackAttempt(input = {}) {
+  const initialMode = normalizedMode(input.initialMode);
+  const fallbackMode = normalizedMode(input.fallbackMode);
+  const hasCursor = booleanFlag(input.cursor);
+  const hasWorkspace = booleanFlag(input.cwd || input.workspace || input.hasWorkspace);
+  const hasSearch = booleanFlag(input.searchTerm || input.search || input.hasSearch);
+  const archived = input.archived === true;
+  const defaultWarmFallback = input.defaultWarmFallback !== false;
+  const defaultList = !hasCursor && !archived && !hasWorkspace && !hasSearch;
+  if (!defaultList) {
+    return {
+      attempt: false,
+      allowBaseline: false,
+      requireCacheHit: true,
+      reason: "not-default-list",
+      initialMode,
+      fallbackMode,
+    };
+  }
+  if (initialMode === "warm-fallback") {
+    return {
+      attempt: true,
+      allowBaseline: true,
+      requireCacheHit: false,
+      reason: "explicit-warm-fallback",
+      initialMode,
+      fallbackMode,
+    };
+  }
+  if (defaultWarmFallback && !fallbackMode && !initialMode) {
+    return {
+      attempt: true,
+      allowBaseline: false,
+      requireCacheHit: true,
+      reason: "default-warm-cache",
+      initialMode,
+      fallbackMode,
+    };
+  }
+  return {
+    attempt: false,
+    allowBaseline: false,
+    requireCacheHit: true,
+    reason: "not-requested",
+    initialMode,
+    fallbackMode,
+  };
+}
+
 function threadListAppServerFetchTimingFields(plan = {}) {
   const safePlan = plan && typeof plan === "object" ? plan : {};
   return {
@@ -139,10 +192,16 @@ function threadListAppServerFetchTimingFields(plan = {}) {
 
 function threadListInitialFallbackMetadata(input = {}) {
   const cacheHit = input && input.cacheHit === true;
+  const reason = compactLabel(input && input.reason, "", 80);
+  const defaultWarmCache = reason === "default-warm-cache";
   return {
-    appServerDeferredReason: cacheHit ? "warm-fallback-initial" : "cold-fallback-initial",
+    appServerDeferredReason: cacheHit
+      ? (defaultWarmCache ? "warm-fallback-default" : "warm-fallback-initial")
+      : "cold-fallback-initial",
     initialSource: cacheHit ? "warm-fallback-cache" : "fallback-baseline",
-    eventName: cacheHit ? "warm_fallback_initial" : "fallback_baseline_initial",
+    eventName: cacheHit
+      ? (defaultWarmCache ? "warm_fallback_default" : "warm_fallback_initial")
+      : "fallback_baseline_initial",
   };
 }
 
@@ -189,6 +248,7 @@ function threadListAppServerLatencyTimingFields(input = {}) {
 module.exports = {
   countThreadListRows,
   planThreadListAppServerFetch,
+  planThreadListInitialFallbackAttempt,
   threadListInitialFallbackMetadata,
   threadListAppServerLatencyTimingFields,
   threadListAppServerFetchTimingFields,

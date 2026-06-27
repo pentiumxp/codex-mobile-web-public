@@ -6,6 +6,7 @@ const { test } = require("node:test");
 const {
   countThreadListRows,
   planThreadListAppServerFetch,
+  planThreadListInitialFallbackAttempt,
   threadListInitialFallbackMetadata,
   threadListAppServerLatencyTimingFields,
   threadListAppServerFetchTimingFields,
@@ -165,11 +166,61 @@ test("thread-list initial fallback metadata separates warm cache and cold baseli
     eventName: "warm_fallback_initial",
   });
 
+  assert.deepEqual(threadListInitialFallbackMetadata({ cacheHit: true, reason: "default-warm-cache" }), {
+    appServerDeferredReason: "warm-fallback-default",
+    initialSource: "warm-fallback-cache",
+    eventName: "warm_fallback_default",
+  });
+
   assert.deepEqual(threadListInitialFallbackMetadata({ cacheHit: false }), {
     appServerDeferredReason: "cold-fallback-initial",
     initialSource: "fallback-baseline",
     eventName: "fallback_baseline_initial",
   });
+});
+
+test("thread-list initial fallback policy separates explicit fallback from default warm cache", () => {
+  assert.deepEqual(planThreadListInitialFallbackAttempt({
+    initialMode: "warm-fallback",
+    limit: 40,
+  }), {
+    attempt: true,
+    allowBaseline: true,
+    requireCacheHit: false,
+    reason: "explicit-warm-fallback",
+    initialMode: "warm-fallback",
+    fallbackMode: "",
+  });
+
+  assert.deepEqual(planThreadListInitialFallbackAttempt({
+    limit: 40,
+  }), {
+    attempt: true,
+    allowBaseline: false,
+    requireCacheHit: true,
+    reason: "default-warm-cache",
+    initialMode: "",
+    fallbackMode: "",
+  });
+
+  assert.equal(planThreadListInitialFallbackAttempt({
+    searchTerm: "private query",
+  }).attempt, false);
+  assert.equal(planThreadListInitialFallbackAttempt({
+    cwd: "/private/workspace",
+  }).attempt, false);
+  assert.equal(planThreadListInitialFallbackAttempt({
+    cursor: "cursor",
+  }).attempt, false);
+  assert.equal(planThreadListInitialFallbackAttempt({
+    archived: true,
+  }).attempt, false);
+  assert.equal(planThreadListInitialFallbackAttempt({
+    defaultWarmFallback: false,
+  }).attempt, false);
+  assert.equal(planThreadListInitialFallbackAttempt({
+    fallbackMode: "defer",
+  }).attempt, false);
 });
 
 test("thread-list app-server latency fields are bounded and count data or threads arrays", () => {

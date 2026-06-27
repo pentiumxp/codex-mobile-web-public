@@ -740,6 +740,17 @@ paint before the app-server refresh arrives. That policy lives in
 full list requests remain on the full authoritative path. The server-side
 display-summary cache also skips read-time rollout-stat decoration on cache
 reads when the list merge already has request-scoped rollout/session metadata.
+Separate from that explicit first-paint mode, the server may also answer an
+ordinary no-search/no-workspace/no-cursor/non-archived default `/api/threads`
+request from the warm fallback cache when it is already present. This reports
+`appServerDeferredReason=warm-fallback-default`,
+`appServerDeferredInitialReason=default-warm-cache`, and
+`mobileDeferredAppServer=true`, then lets the app-server refresh continue as the
+authority follow-up. The ordinary default path does not build a cold local
+fallback baseline on cache miss; it falls through to app-server so true
+cold-start cost remains measurable. Set
+`CODEX_MOBILE_THREAD_LIST_DEFAULT_WARM_FALLBACK=0` to disable only this default
+warm-cache early return during diagnostics.
 
 ### Conversation Navigation
 

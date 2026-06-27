@@ -99,6 +99,7 @@ const {
 } = require("./adapters/thread-list-fallback-prewarm-service");
 const {
   planThreadListAppServerFetch,
+  planThreadListInitialFallbackAttempt,
   threadListInitialFallbackMetadata,
   threadListAppServerLatencyTimingFields,
   threadListAppServerFetchTimingFields,
@@ -942,6 +943,7 @@ const THREAD_DETAIL_PROGRESSIVE_ACTIVE_REASONING_ITEMS = Math.max(0, Math.min(20
 const THREAD_DETAIL_PROGRESSIVE_ACTIVE_ASSISTANT_ITEMS = Math.max(1, Math.min(50, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_ACTIVE_ASSISTANT_ITEMS || "4")));
 const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "collabAgentToolCall", "fileChange", "dynamicToolCall", "mcpToolCall"]);
 const THREAD_LIST_FALLBACK_CACHE_TTL_MS = Math.max(0, Number(process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_TTL_MS || "0"));
+const THREAD_LIST_DEFAULT_WARM_FALLBACK_ENABLED = !/^(0|false|no|off)$/i.test(process.env.CODEX_MOBILE_THREAD_LIST_DEFAULT_WARM_FALLBACK || "1");
 const THREAD_LIST_FALLBACK_PREWARM_ENABLED = !/^(0|false|no|off)$/i.test(process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM || "1");
 const THREAD_LIST_FALLBACK_PREWARM_DELAY_MS = Math.max(
   0,
@@ -15210,7 +15212,15 @@ async function handleApi(req, res) {
     const fallbackMode = String(url.searchParams.get("fallback") || "").trim().toLowerCase();
     const deferFallback = fallbackMode === "defer" && !cursor && !archived && !searchTerm;
     const initialMode = String(url.searchParams.get("initial") || "").trim().toLowerCase();
-    const allowWarmFallbackInitial = initialMode === "warm-fallback" && !cursor && !archived && !searchTerm && !cwd;
+    const initialFallbackPlan = planThreadListInitialFallbackAttempt({
+      initialMode,
+      fallbackMode,
+      cursor,
+      archived,
+      cwd,
+      searchTerm,
+      defaultWarmFallback: THREAD_LIST_DEFAULT_WARM_FALLBACK_ENABLED,
+    });
     if (cwd && !visibility.workspaceKeys.has(normalizeFsPath(cwd))) {
       sendJson(res, 200, { data: [] });
       return;
@@ -15260,11 +15270,12 @@ async function handleApi(req, res) {
     };
     if (searchTerm) params.searchTerm = searchTerm;
     try {
-      if (allowWarmFallbackInitial) {
+      if (initialFallbackPlan.attempt) {
         const fallbackStartedAtMs = Date.now();
         const fallbackDiagnostics = {};
         let initialFallback = readThreadListCachedFallback(limit, { cwd, searchTerm, globalState, diagnostics: fallbackDiagnostics });
-        if (!initialFallback.length) {
+        const initialFallbackCacheHit = fallbackDiagnostics.cacheHit === true;
+        if (!initialFallback.length && initialFallbackPlan.allowBaseline) {
           const initialMergeOptions = getMergeThreadSummaryListOptions();
           initialFallback = readThreadListFallback(limit, {
             cwd,
@@ -15276,9 +15287,10 @@ async function handleApi(req, res) {
           });
         }
         markTiming("fallbackMs", fallbackStartedAtMs);
-        if (initialFallback.length) {
+        if (initialFallback.length && (!initialFallbackPlan.requireCacheHit || initialFallbackCacheHit)) {
           const initialFallbackMeta = threadListInitialFallbackMetadata({
-            cacheHit: fallbackDiagnostics.cacheHit === true,
+            cacheHit: initialFallbackCacheHit,
+            reason: initialFallbackPlan.reason,
           });
           const cachedSourceTimings = fallbackDiagnostics.cachedSourceTimings && typeof fallbackDiagnostics.cachedSourceTimings === "object"
             ? fallbackDiagnostics.cachedSourceTimings
@@ -15288,6 +15300,7 @@ async function handleApi(req, res) {
             appServerMs: 0,
             appServerDeferred: true,
             appServerDeferredReason: initialFallbackMeta.appServerDeferredReason,
+            appServerDeferredInitialReason: initialFallbackPlan.reason,
             fallbackCacheHit: fallbackDiagnostics.cacheHit === true,
             fallbackCacheDecision: String(fallbackDiagnostics.cacheDecision || "hit"),
             fallbackCacheBuildReason: String(fallbackDiagnostics.cacheBuildReason || ""),
