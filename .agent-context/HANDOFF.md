@@ -19574,6 +19574,9 @@ The previous full handoff was archived and should be opened only when old proven
     `planConversationHtmlPatchFallbackClientEvent`, which decides whether the
     patch-failure replacement should post a client event and bounds the allowed
     payload fields.
+  - The same helper now owns `planConversationHtmlPerformanceEvent`, which
+    builds bounded `conversation_render_ms` payload fields and the slow-render
+    force decision from measured facts supplied by app code.
   - `public/app.js` uses that outcome while applying conversation HTML. When a
     patch attempt fails, the replacement remains the same user-visible recovery
     path but now emits bounded client/performance metadata:
@@ -19583,12 +19586,23 @@ The previous full handoff was archived and should be opened only when old proven
 - Validation:
   - `node --check public/thread-detail-dom-patch.js && node --check public/app.js && node --test test/thread-detail-dom-patch.test.js test/thread-detail-refresh-dom-harness.test.js test/thread-detail-render-plan.test.js test/conversation-render.test.js`
     passed (`244` tests).
+  - Follow-up focused validation after adding performance-event planning:
+    `node --check public/thread-detail-dom-patch.js && node --check public/app.js && node --test test/thread-detail-dom-patch.test.js test/thread-detail-refresh-dom-harness.test.js test/conversation-render.test.js`
+    passed (`162` tests).
+  - Final focused validation after updating mobile viewport assertions:
+    `node --check public/thread-detail-dom-patch.js && node --check public/app.js && node --test test/thread-detail-dom-patch.test.js test/thread-detail-refresh-dom-harness.test.js test/conversation-render.test.js test/mobile-viewport.test.js`
+    passed (`173` tests).
+  - Full validation passed: `npm run check`, `npm run check:macos`,
+    `npm test` (`1204` tests), and `git diff --check`.
 - Deployment:
   - Not deployed. Keep batching Phase A frontend ownership slices before the
     next production deployment.
 - Next:
-  - Run full validation and commit this local slice.
+  - Commit this local slice.
+  - Home AI returned the selected mux deploy-contract repair as completed. The
+    next deployable Codex Mobile closure is to deploy the plugin-owned mux
+    runtime/readback commits through the central script and verify
+    `muxRuntime.muxMetricsRpc=true` / supported mux metrics.
   - Continue Phase A by moving more `updateConversationHtml` execution/effects
-    and single-thread/tile patch branch ownership into helper-tested boundaries,
-    or resume Phase B deploy/readback once Home AI returns the selected mux
-    deploy-contract repair.
+    and single-thread/tile patch branch ownership into helper-tested boundaries
+    if staying on local refactor slices.

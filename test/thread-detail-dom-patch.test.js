@@ -535,6 +535,84 @@ test("conversation HTML patch fallback client event plan bounds payload fields",
   });
 });
 
+test("conversation HTML performance event plan owns bounded render payload", () => {
+  const normal = domPatch.planConversationHtmlPerformanceEvent({
+    updatePlan: {
+      reason: "signature-changed",
+    },
+    applicationPlan: {
+      finalAction: "patch-html",
+      fallbackApplied: false,
+    },
+    renderElapsedMs: 12.6,
+    html: "<article>ok</article>",
+    previousChildCount: 2.9,
+    childCount: 3.1,
+    stickToBottom: true,
+    threadId: "thread-1",
+    currentThreadStatus: "active",
+    slowThresholdMs: 120,
+    minIntervalMs: 500,
+  });
+
+  assert.deepEqual(normal, {
+    eventName: "conversation_render_ms",
+    payload: {
+      renderElapsedMs: 13,
+      htmlChars: 21,
+      previousChildCount: 2,
+      childCount: 3,
+      stickToBottom: true,
+      threadId: "thread-1",
+      currentThreadStatus: "active",
+      updateReason: "signature-changed",
+      domUpdateAction: "patch-html",
+      patchFallbackApplied: false,
+      patchRejectReason: "",
+    },
+    options: {
+      key: "conversation_render_ms",
+      minIntervalMs: 500,
+      force: false,
+    },
+    reason: "normal-render",
+  });
+
+  const slowFallback = domPatch.planConversationHtmlPerformanceEvent({
+    updatePlan: {
+      reason: "stable-signature-dom-empty-private-detail-that-should-be-bounded-and-not-grow-longer-than-needed",
+    },
+    applicationPlan: {
+      finalAction: "set-inner-html",
+      fallbackApplied: true,
+      patchRejectReason: "missing-document-private-detail-that-should-be-bounded-and-not-grow-longer-than-needed",
+    },
+    renderElapsedMs: 130,
+    html: "<article>fallback</article>",
+    previousChildCount: -1,
+    childCount: 1,
+    stickToBottom: false,
+    threadId: "thread-2",
+    currentThreadStatus: "completed",
+    slowThresholdMs: 120,
+    minIntervalMs: 500,
+  });
+
+  assert.equal(slowFallback.reason, "slow-render");
+  assert.equal(slowFallback.options.force, true);
+  assert.equal(slowFallback.options.minIntervalMs, 0);
+  assert.equal(slowFallback.payload.previousChildCount, 0);
+  assert.equal(slowFallback.payload.patchFallbackApplied, true);
+  assert.equal(
+    slowFallback.payload.updateReason,
+    "stable-signature-dom-empty-private-detail-that-should-be-bounded-and-not-grow-lo",
+  );
+  assert.equal(
+    slowFallback.payload.patchRejectReason,
+    "missing-document-private-detail-that-should-be-bounded-and-not-grow-longer-than-",
+  );
+});
+
 test("local conversation DOM update completion snapshot normalizes tile-pane terminal state", () => {
   assert.deepEqual(domPatch.planLocalConversationDomUpdateCompletionSnapshot({
     tilePanePatched: true,

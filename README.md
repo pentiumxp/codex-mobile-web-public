@@ -8626,6 +8626,11 @@ bounded reject reason only. It must not include message text, task-card bodies,
 upload contents, paths, cookies, tokens, prompts, provider payloads, or long
 logs.
 
+The same helper now also owns `planConversationHtmlPerformanceEvent`, which
+builds the bounded `conversation_render_ms` performance payload and slow-render
+`force` decision. App code still records the actual duration and posts the
+event, but it no longer selects telemetry fields directly.
+
 Focused validation for the local slice:
 
 ```bash
@@ -8637,7 +8642,7 @@ node --test test/thread-detail-dom-patch.test.js \
   test/conversation-render.test.js
 ```
 
-Result: `244` tests passed. This slice is not deployed by itself; keep batching
+Result: focused tests passed. This slice is not deployed by itself; keep batching
 Phase A frontend ownership work before the next production deployment.
 
 ## Troubleshooting

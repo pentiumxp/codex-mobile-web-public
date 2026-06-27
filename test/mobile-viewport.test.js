@@ -317,7 +317,8 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(functionBody("applyThreadDetailFirstPaintTelemetryEffect"), /postPerformanceEvent\(String\(item\.eventName \|\| ""\), item\.payload \|\| \{\}, item\.options \|\| \{\}\);/);
   assert.match(functionBody("applyThreadDetailFirstPaintTelemetryEffect"), /recordThreadDetailResponseDiagnostics\(item\.performanceEvent \|\| \{\}, \{/);
   assert.match(functionBody("applyThreadDetailFirstPaintTelemetryEffect"), /postClientEvent\(String\(item\.eventName \|\| ""\), item\.payload \|\| \{\}\);/);
-  assert.match(appJs, /postPerformanceEvent\("conversation_render_ms"/);
+  assert.match(appJs, /threadDetailDomPatchApi\.planConversationHtmlPerformanceEvent\(\{/);
+  assert.match(appJs, /postPerformanceEvent\(performancePlan\.eventName, performancePlan\.payload, performancePlan\.options\)/);
   assert.match(appJs, /postPerformanceEvent\("github_cards_hydrate_ms"/);
   assert.match(appJs, /postPerformanceEvent\("mermaid_hydrate_ms"/);
   assert.match(appJs, /eventName: "thread_refresh_ms"/);

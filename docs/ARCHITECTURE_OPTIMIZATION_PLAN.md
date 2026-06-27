@@ -809,7 +809,12 @@ but a failed HTML patch now becomes observable through helper-selected
 client/performance metadata instead of being only a console warning. This does
 not change render strategy or hide projection mismatches; it separates normal
 full render from patch-failure replacement so future diagnostics can route
-flicker/repaint incidents to the DOM patch layer.
+flicker/repaint incidents to the DOM patch layer. The same local batch moves
+`conversation_render_ms` payload ownership into
+`planConversationHtmlPerformanceEvent`: render duration, child counts,
+html-length, update reason, patch fallback fields, throttle interval, and
+slow-render force decision are now helper-selected. App code supplies measured
+facts and posts the event.
 Local DOM patch completion
 planning now also lives in that helper:
 `planLocalConversationDomUpdateCompletion` owns the tile-pane terminal state,

@@ -37,6 +37,11 @@
     return Number.isFinite(numberValue) && numberValue > 0 ? Math.trunc(numberValue) : 0;
   }
 
+  function boundedDuration(value) {
+    const numberValue = Number(value);
+    return Number.isFinite(numberValue) && numberValue >= 0 ? Math.round(numberValue) : 0;
+  }
+
   function renderKeyForNode(node) {
     return node && node.nodeType === ELEMENT_NODE && typeof node.getAttribute === "function"
       ? node.getAttribute("data-render-key") || ""
@@ -362,6 +367,37 @@
         finalAction: String(applicationPlan.finalAction || "").slice(0, 40),
       },
       reason: "patch-html-fallback",
+    };
+  }
+
+  function planConversationHtmlPerformanceEvent(input = {}) {
+    const updatePlan = objectOrEmpty(input.updatePlan);
+    const applicationPlan = objectOrEmpty(input.applicationPlan);
+    const renderElapsedMs = boundedDuration(input.renderElapsedMs);
+    const slowThresholdMs = boundedDuration(input.slowThresholdMs);
+    const minIntervalMs = boundedDuration(input.minIntervalMs);
+    const force = slowThresholdMs > 0 && renderElapsedMs >= slowThresholdMs;
+    return {
+      eventName: "conversation_render_ms",
+      payload: {
+        renderElapsedMs,
+        htmlChars: String(input.html || "").length,
+        previousChildCount: boundedCount(input.previousChildCount),
+        childCount: boundedCount(input.childCount),
+        stickToBottom: input.stickToBottom === true,
+        threadId: String(input.threadId || ""),
+        currentThreadStatus: String(input.currentThreadStatus || ""),
+        updateReason: String(updatePlan.reason || "").slice(0, 80),
+        domUpdateAction: String(applicationPlan.finalAction || "").slice(0, 40),
+        patchFallbackApplied: applicationPlan.fallbackApplied === true,
+        patchRejectReason: String(applicationPlan.patchRejectReason || "").slice(0, 80),
+      },
+      options: {
+        key: "conversation_render_ms",
+        minIntervalMs: force ? 0 : minIntervalMs,
+        force,
+      },
+      reason: force ? "slow-render" : "normal-render",
     };
   }
 
@@ -835,6 +871,7 @@
     planConversationHtmlUpdateEffects,
     planConversationHtmlUpdateApplication,
     planConversationHtmlPatchFallbackClientEvent,
+    planConversationHtmlPerformanceEvent,
     planLocalConversationDomUpdateCompletionSnapshot,
     planLocalConversationDomUpdateCompletion,
     planLocalConversationDomUpdateCompletionEffects,

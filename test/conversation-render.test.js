@@ -3086,7 +3086,9 @@ test("conversation html update invalidates stable signatures when the DOM has lo
   assert.match(updateBody, /updatePlan\.reason === "stable-signature-dom-empty"/);
   assert.match(updateBody, /recordEmptyVisibleDetailMismatch\("stable_signature_dom_empty"/);
   assert.match(updateBody, /postClientEvent\("conversation_dom_authority_invalidated"/);
-  assert.match(updateBody, /updateReason: updatePlan\.reason \|\| ""/);
+  assert.match(updateBody, /threadDetailDomPatchApi\.planConversationHtmlPerformanceEvent\(\{/);
+  assert.match(updateBody, /updatePlan,/);
+  assert.match(updateBody, /applicationPlan,/);
   assert.match(functionBody("renderCurrentThread"), /expectedVisibleTurnCount: turns\.length/);
   assert.match(functionBody("renderCurrentThread"), /updateConversationHtml\(shellUpdatePlan\.html, shellUpdatePlan\.conversationSignature, shellUpdatePlan\.options\)/);
   assert.match(functionBody("threadTileVisibleShape"), /visibleTurnsForConversation\(thread\)/);

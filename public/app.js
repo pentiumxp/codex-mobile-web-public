@@ -12515,24 +12515,20 @@ function updateConversationHtml(html, signature, options = {}) {
   if (fallbackEventPlan.shouldPost) postClientEvent(fallbackEventPlan.eventName, fallbackEventPlan.payload);
   applyConversationHtmlUpdateEffectsPlan(effectsPlan, { root: conversation });
   const renderElapsedMs = roundedDurationMs(startedAt);
-  const forceReport = renderElapsedMs >= PERF_SLOW_RENDER_REPORT_MS;
-  postPerformanceEvent("conversation_render_ms", {
+  const performancePlan = threadDetailDomPatchApi.planConversationHtmlPerformanceEvent({
+    updatePlan,
+    applicationPlan,
     renderElapsedMs,
-    htmlChars: String(html || "").length,
     previousChildCount,
     childCount: conversation ? conversation.childNodes.length : 0,
     stickToBottom: Boolean(options.stickToBottom),
     threadId: state.currentThreadId || "",
     currentThreadStatus: statusText(state.currentThread && state.currentThread.status),
-    updateReason: updatePlan.reason || "",
-    domUpdateAction: applicationPlan.finalAction || "",
-    patchFallbackApplied: Boolean(applicationPlan.fallbackApplied),
-    patchRejectReason: applicationPlan.patchRejectReason || "",
-  }, {
-    key: "conversation_render_ms",
-    minIntervalMs: forceReport ? 0 : PERF_EVENT_THROTTLE_MS,
-    force: forceReport,
+    html,
+    slowThresholdMs: PERF_SLOW_RENDER_REPORT_MS,
+    minIntervalMs: PERF_EVENT_THROTTLE_MS,
   });
+  postPerformanceEvent(performancePlan.eventName, performancePlan.payload, performancePlan.options);
   checkPrimaryShellSelectionConflictAfterRender({
     childCount: conversation ? conversation.childNodes.length : 0,
     previousChildCount,
