@@ -370,6 +370,24 @@ Thread list reads app-server `thread/list`, then filters archived/deleted/sub-ag
 
 `adapters/thread-list-fallback-cache-service.js` owns the fallback cache policy: key construction from visible workspace roots/projectless thread ids, process-lifetime default retention, optional TTL expiry, cache-hit diagnostics, first-run fallback aggregation, and incremental status/title/archive mutation. State-db, rollout-session, and session-index scanners remain separate providers injected by `server.js`.
 
+`adapters/thread-list-route-merge-service.js` owns the app-server plus fallback
+route merge boundary. The normal `/api/threads` route drops fallback rows whose
+thread id is already present in the authoritative app-server result before
+calling the summary merge service. This keeps fallback rows useful for
+app-server omissions, but prevents warm fallback-cache duplicates from running
+the expensive duplicate merge path on every list read. The diagnostics preserve
+both original fallback input count and duplicate-drop count so latency changes
+remain attributable without private thread content. `server.js` also reuses
+rollout size/stat metadata that was already attached during the visible-thread
+filter pass when later display-summary merge stages run in the same request.
+
+`adapters/thread-list-summary-merge-service.js` owns duplicate summary merge
+semantics. It only invokes duplicate display-summary merge when two rows with
+the same thread id are actually present; unique rows proceed directly to
+archive/sub-agent filtering, stripping, sorting, and limiting. This preserves
+duplicate resolution semantics while avoiding a non-duplicate display-merge
+stage that was measurable on warm large-session list reads.
+
 `adapters/thread-list-response-coalescer-service.js` owns in-flight response
 coalescing for identical default full-list `/api/threads` requests. It shares
 one authoritative app-server `thread/list` plus merge/decorate result with

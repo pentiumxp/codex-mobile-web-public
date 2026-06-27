@@ -2195,6 +2195,35 @@ This candidate is not deployed and not pushed Public at this point. Next action
 should be either deploy/readback of v544 or an explicit decision to pause Phase
 C and move to another phase.
 
+### 2026-06-27 Thread-list local merge latency module
+
+This server-only module follows the v550 projection diagnostic deployment.
+Fresh production sampling showed the remaining default list-entry cost was not
+the mux/app-server RPC: `/api/threads?limit=25` spent roughly `397-473ms` while
+`appServerRpcMs` stayed around `7-9ms`. The hot path was local Mobile Node
+merge work: warm fallback rows duplicated app-server ids, summary merge still
+ran duplicate/display merge accounting across the effective list, and rollout
+stat decoration could be repeated inside the same request.
+
+Deployable scope:
+
+- `/api/threads` passes `dropDuplicateFallbackThreads: true` into
+  `thread-list-route-merge-service` so fallback rows are used for app-server
+  omissions, but same-id fallback duplicates do not enter summary merge.
+- `thread-list-summary-merge-service` only invokes duplicate display merge for
+  actual duplicate ids; unique ids keep existing filter/strip/sort semantics.
+- `server.js` reuses already-attached rollout size/stat metadata during
+  same-request display-summary merge.
+- The module does not change app-server authority, fallback cache lifecycle,
+  thread-detail projection, list ordering rules, archived/hidden/sub-agent
+  filtering, shell/cache version, or client UI behavior.
+
+Closure requires focused route/summary/visibility coverage, full local checks,
+central macOS plugin deployment, and bounded post-deploy samples proving
+`routeMergeFallbackDuplicateDropCount`, `summaryMergeInputCount`,
+`summaryMergeDisplayMergeMs`, `summaryMergeTotalMs`, `mergeMs`, and total list
+latency move in the expected direction without leaking private thread content.
+
 ### 2026-06-27 Large Session List First Paint v546 deployable module
 
 This batched module targets the remaining large-session startup/load cost after

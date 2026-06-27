@@ -1008,6 +1008,7 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeBody, /rolloutStatsForPath,/);
   assert.match(routeBody, /rolloutStatsForPath: getThreadListRequestContext\(\)\.rolloutStatsForPath/);
   assert.match(routeBody, /mergeThreadDisplaySummary: \(base, display\) => mergeThreadDisplaySummary\(base, display, \{/);
+  assert.match(routeBody, /preferExistingRolloutStats: true/);
   assert.match(routeBody, /filterVisibleThreads\(appServerRawResult, globalState, \{[\s\S]*rolloutStatsForPath: getThreadListRequestContext\(\)\.rolloutStatsForPath/);
   assert.match(serverJs, /planThreadListAppServerFetch/);
   assert.match(serverJs, /threadListAppServerFetchTimingFields/);
@@ -1124,6 +1125,7 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeBody, /const fullMergeOptions = getMergeThreadSummaryListOptions\(\)/);
   assert.match(routeBody, /const fallback = readThreadListFallback\(limit, \{[\s\S]*cwd,[\s\S]*searchTerm,[\s\S]*globalState,[\s\S]*diagnostics: fallbackDiagnostics,[\s\S]*archivedIds: fullMergeOptions\.archivedIds,[\s\S]*mergeThreadSummaryListOptions: fullMergeOptions,[\s\S]*\}\);/);
   assert.match(routeBody, /const routeMerge = mergeThreadListRouteResult\(\{[\s\S]*result: appServerResult,[\s\S]*fallbackThreads: fallback,[\s\S]*limit,[\s\S]*mergeThreadSummaryList: mergeThreadSummaryListWithDiagnostics,[\s\S]*mergeThreadSummaryListOptions: fullMergeOptions,[\s\S]*\}\);/);
+  assert.match(routeBody, /dropDuplicateFallbackThreads: true/);
   assert.match(routeBody, /Object\.assign\(timings, routeMerge\.diagnostics\)/);
   assert.match(routeBody, /normalizeThreadListResultStatuses\(routeMerge\.result\)/);
   assert.match(routeBody, /normalizeThreadSummaryLiveStatus\(attachThreadTaskCardCountsToSummary\(thread\)\)/);

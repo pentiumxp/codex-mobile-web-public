@@ -34,6 +34,25 @@ cookie 或长日志。Home AI 仍然负责 Owner 通知和 Owner 触发修复卡
 本次是前端运行时行为变化，`CLIENT_BUILD_ID` 和 service worker cache 升级到
 `codex-mobile-shell-v550`。
 
+## 2026-06-27 线程列表本地 merge 耗时修复
+
+这次修复的是进入线程时仍然偶发慢的服务端本地列表路径。部署前的精确采样显示，
+底层 mux/app-server `thread/list` RPC 通常只有 `7-9ms`，但 `/api/threads?limit=25`
+总耗时仍在 `397-473ms`，主要耗在 Mobile Node 里的 route merge / summary merge：
+fallback cache 已经是 warm 命中，但 app-server rows 和 fallback rows 中同 id 的
+重复行仍一起进入 summary merge，随后非重复行也会跑一次 display-summary merge
+阶段，导致本地同步 CPU 工作放大。
+
+修复方式不是前端去重，也不是新的 fallback cache。`/api/threads` route 现在只在
+app-server 已经返回同一个 thread id 时，提前丢弃 fallback 里的重复行；fallback
+里真正缺失于 app-server 的线程仍然正常参与合并。summary merge 也只在遇到真实
+重复 id 时才执行 duplicate display merge，唯一 id 直接进入后续过滤/排序。已经在
+`filterVisibleThreads()` 阶段读取过的 rollout size/stat 会在后续 display merge 中
+复用，避免同一请求内重复 `stat`。
+
+本次是 server-only 性能修复，不改变线程列表权威源、排序、归档/隐藏规则、fallback
+cache 生命周期、thread detail projection 或 PWA shell/cache 版本。
+
 ## 2026-06-27 App Server 线程列表峰值耗时修复
 
 本次发布修复的是服务端线程列表的峰值耗时，而不是静态前端 shell。现象是

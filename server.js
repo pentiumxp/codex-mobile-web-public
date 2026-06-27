@@ -5204,11 +5204,19 @@ function workspaceContextStatsForCwd(cwd) {
 function annotateThreadRolloutStats(thread, options = {}) {
   if (!thread || typeof thread !== "object") return thread;
   const out = Object.assign({}, thread);
+  out.rolloutWarningThresholdBytes = ROLLOUT_WARNING_BYTES;
+  const hasExistingRolloutStats = Number.isFinite(Number(out.rolloutSizeBytes))
+    && Number.isFinite(Number(out.rolloutSizeUpdatedAtMs));
+  if (options.preferExistingRolloutStats === true && hasExistingRolloutStats) {
+    if (typeof out.rolloutOverWarningThreshold !== "boolean") {
+      out.rolloutOverWarningThreshold = Number(out.rolloutSizeBytes || 0) >= ROLLOUT_WARNING_BYTES;
+    }
+    return out;
+  }
   const readRolloutStats = typeof options.rolloutStatsForPath === "function"
     ? options.rolloutStatsForPath
     : rolloutStatsForPath;
   const stats = readRolloutStats(rolloutPathForThread(out));
-  out.rolloutWarningThresholdBytes = ROLLOUT_WARNING_BYTES;
   if (!stats) return out;
   out.rolloutSizeBytes = stats.sizeBytes;
   out.rolloutSizeUpdatedAtMs = stats.mtimeMs;
@@ -14976,6 +14984,7 @@ async function handleApi(req, res) {
       const cached = requestCachedDisplaySummaries.get(id);
       return normalizeStaleContextOnlyActiveThread(cached ? (mergeThreadDisplaySummary(thread, cached, {
         rolloutStatsForPath: getThreadListRequestContext().rolloutStatsForPath,
+        preferExistingRolloutStats: true,
       }) || thread) : thread);
     };
     const getMergeThreadSummaryListOptions = () => {
@@ -14984,6 +14993,7 @@ async function handleApi(req, res) {
           archivedIds: getRequestArchivedIds(),
           mergeThreadDisplaySummary: (base, display) => mergeThreadDisplaySummary(base, display, {
             rolloutStatsForPath: getThreadListRequestContext().rolloutStatsForPath,
+            preferExistingRolloutStats: true,
           }),
           mergeThreadWithCachedDisplaySummary: mergeThreadWithCachedDisplaySummaryForRequest,
           sessionIndexEntries: getThreadListRequestContext().sessionIndexEntries(),
@@ -15254,6 +15264,7 @@ async function handleApi(req, res) {
         result: appServerResult,
         fallbackThreads: fallback,
         limit,
+        dropDuplicateFallbackThreads: true,
         mergeThreadSummaryList: mergeThreadSummaryListWithDiagnostics,
         mergeThreadSummaryListOptions: fullMergeOptions,
       });

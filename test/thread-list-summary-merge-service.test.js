@@ -94,6 +94,28 @@ test("thread-list summary merge array wrapper returns only threads", () => {
   assert.deepEqual(service.mergeThreadSummaryList([{ id: "a" }]), [{ id: "a" }]);
 });
 
+test("thread-list summary merge avoids duplicate merge stage when ids are unique", () => {
+  const service = createThreadListSummaryMergeService({
+    nowMs: stepClock(),
+    mergeThreadWithCachedDisplaySummary: (thread) => Object.assign({}, thread),
+    stripThreadListDetailFields: (thread) => Object.assign({}, thread),
+    normalizeThreadSummaryLiveStatus: (thread) => Object.assign({}, thread),
+    mergeThreadDisplaySummary() {
+      throw new Error("duplicate display merge should not run for unique ids");
+    },
+    sortThreadListSummaries: (threads) => threads,
+  });
+
+  const result = service.mergeThreadSummaryListWithDiagnostics([
+    { id: "a", updatedAt: 1 },
+    { id: "b", updatedAt: 2 },
+  ]);
+
+  assert.deepEqual(result.threads.map((thread) => thread.id), ["a", "b"]);
+  assert.equal(result.diagnostics.summaryMergeDuplicateIdCount, 0);
+  assert.equal(result.diagnostics.summaryMergeDisplayMergeMs, 0);
+});
+
 test("thread-list summary merge supports request-scoped cached display and title readers", () => {
   let archivedReaderCalls = 0;
   let cachedDisplayReads = 0;

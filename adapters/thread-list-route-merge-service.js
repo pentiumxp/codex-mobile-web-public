@@ -62,9 +62,40 @@ function countDuplicateIds(threads) {
   return duplicates;
 }
 
+function fallbackThreadsForRouteMerge(appServerThreads, fallbackThreads, options = {}) {
+  const fallbackInput = safeThreadList(fallbackThreads);
+  if (options.dropDuplicateFallbackThreads !== true) {
+    return {
+      fallbackThreads: fallbackInput,
+      duplicateDropCount: 0,
+    };
+  }
+  const appServerIds = new Set(safeThreadList(appServerThreads).map(threadId).filter(Boolean));
+  if (!appServerIds.size) {
+    return {
+      fallbackThreads: fallbackInput,
+      duplicateDropCount: 0,
+    };
+  }
+  const out = [];
+  let duplicateDropCount = 0;
+  for (const thread of fallbackInput) {
+    const id = threadId(thread);
+    if (id && appServerIds.has(id)) {
+      duplicateDropCount += 1;
+      continue;
+    }
+    out.push(thread);
+  }
+  return {
+    fallbackThreads: out,
+    duplicateDropCount,
+  };
+}
+
 function routeMergeDiagnostics(input = {}) {
   const appServerInput = safeThreadList(input.appServerThreads);
-  const fallbackInput = safeThreadList(input.fallbackThreads);
+  const fallbackInput = safeThreadList(input.originalFallbackThreads || input.fallbackThreads);
   const rawInput = safeThreadList(input.rawInput);
   const merged = safeThreadList(input.mergedThreads);
   const output = safeThreadList(input.outputThreads);
@@ -74,6 +105,7 @@ function routeMergeDiagnostics(input = {}) {
     routeMergeInputCount: boundedCount(rawInput.length),
     routeMergeUniqueInputCount: boundedCount(countUniqueIds(rawInput)),
     routeMergeDuplicateCount: boundedCount(countDuplicateIds(rawInput)),
+    routeMergeFallbackDuplicateDropCount: boundedCount(input.fallbackDuplicateDropCount),
     routeMergeMergedCount: boundedCount(merged.length),
     routeMergeOutputCount: boundedCount(output.length),
     routeMergeLimitDropCount: boundedCount(Math.max(0, merged.length - output.length)),
@@ -109,7 +141,8 @@ function mergeThreadListRouteResult(options = {}) {
   const sourceResult = options.result && typeof options.result === "object" ? options.result : {};
   const out = Object.assign({}, sourceResult);
   const appServerThreads = threadRowsFromResult(out);
-  const fallbackThreads = safeThreadList(options.fallbackThreads);
+  const fallbackMerge = fallbackThreadsForRouteMerge(appServerThreads, options.fallbackThreads, options);
+  const fallbackThreads = fallbackMerge.fallbackThreads;
   const rawInput = [...appServerThreads, ...fallbackThreads];
   const mergeThreadSummaryList = typeof options.mergeThreadSummaryList === "function"
     ? options.mergeThreadSummaryList
@@ -128,10 +161,12 @@ function mergeThreadListRouteResult(options = {}) {
       {},
       routeMergeDiagnostics({
         appServerThreads,
+        originalFallbackThreads: options.fallbackThreads,
         fallbackThreads,
         rawInput,
         mergedThreads,
         outputThreads,
+        fallbackDuplicateDropCount: fallbackMerge.duplicateDropCount,
       }),
       summaryMergeDiagnostics(mergeOutputObject && mergeOutputObject.diagnostics),
     ),
@@ -141,6 +176,7 @@ function mergeThreadListRouteResult(options = {}) {
 module.exports = {
   countDuplicateIds,
   countUniqueIds,
+  fallbackThreadsForRouteMerge,
   mergeThreadListRouteResult,
   routeMergeDiagnostics,
   summaryMergeDiagnostics,
