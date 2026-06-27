@@ -24407,3 +24407,72 @@ The previous full handoff was archived and should be opened only when old proven
     projection generation peaks; current evidence points the next optimization
     at active projection calculation/reuse (`projectionMs`), not at network
     timeout or client-only retry.
+
+## 2026-06-28 - V4 Projection Hit Fast Path Module
+
+- User-visible symptom:
+  - The user observed a newer slow-load shape where a thread could keep loading
+    for a long time and still eventually render. This differed from the older
+    timeout/network-failure state and matched a synchronous successful server
+    path with high first-paint detail cost.
+  - After the active-detail text-budget module, production Phase-B still showed
+    selected active detail at about `1170ms`, dominated by
+    `projection-active-overlay` with `projectionMs=1089`.
+- Root cause / invariant:
+  - Warm `projection-v4-cache` / `projection-v4-dynamic` hits could still pay a
+    whole-result v4 visible-item normalization pass, even though seeded v4
+    results already carry stable visible keys.
+  - The projection-result assembler also ran raw `thread/read` compaction on
+    response-shaped v4 hits. That is unnecessary when the v4 result already has
+    complete thread/turn/item visible-key metadata.
+  - Invariant: response-ready v4 projections may reuse visible metadata and
+    skip raw compaction; incomplete, legacy, duplicate-key, or delta-created
+    unnormalized shapes must fail closed to the full normalizer/compaction path.
+- Implementation:
+  - `adapters/thread-detail-projection-v4-service.js` now reuses already
+    normalized visible metadata on ordinary cache/dynamic hits by refreshing
+    source, revision, read-mode, and aggregate visible-key lists. Missing or
+    duplicate v4 metadata still falls back to full normalization.
+  - `adapters/thread-detail-projection-result-service.js` now detects
+    response-ready v4 projection hits after summary merge and skips raw
+    `compactThreadReadResult`; invalid or incomplete v4 shapes still compact.
+  - Added focused tests for metadata reuse, delta-created fallback, result
+    compaction skip, and fail-closed compaction.
+  - Updated `docs/README.md`, `docs/MODULES.md`, `docs/ARCHITECTURE.md`,
+    `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Local validation:
+  - Focused projection/detail/render/performance suite passed (`457` tests).
+  - Full `npm test` passed (`1357` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Commit / deployment:
+  - Runtime/docs commit `7c76059`
+    `fix: 优化 v4 投影命中快路径`.
+  - Deployed through the Home AI central macOS plugin deploy path with reason
+    `codex-mobile-v4-projection-hit-fast-path`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T212644Z-plugin-codex-mobile-web-codex-mobile-v4-projection-hit-fast-path`.
+  - The change is server/docs only; shell stayed
+    `0.1.11|codex-mobile-shell-v553`, build id `8f5df1074a2bd651`.
+  - Source/prod SHA-256 prefixes matched for both projection services, both
+    focused tests, and updated docs.
+- Production readback:
+  - Five Phase-B samples after deploy returned thread-list `totalMs=87-105`,
+    `appServerMs=0`, `fallbackCacheDecision=compatible-hit`, and
+    `coldPathReason=warm-fallback-default`.
+  - The same samples returned selected active detail `projection-active-overlay`
+    with `totalMs=223-226`, `projectionMs=62-64`,
+    `prepareResponseMs=80-83`, and `threadReadMs=0`.
+  - A direct authenticated bounded detail read returned in about `273ms`,
+    `readMode=projection-active-overlay`, `projectionVersion=v4`,
+    `turnCount=10`, `itemCount=66`, and preserved
+    `mobileDetailResponseBudget.applied=true` plus
+    `progressiveActiveBudgetApplied=true`.
+- Residual / next target:
+  - This closes the repeated v4 projection-hit normalization/compaction cost.
+    It does not eliminate true immediate-post-restart cold prewarm work or
+    future app-server stalls outside the projection-hit path. Continue using
+    Phase-B readback and diagnostics to target the next owner instead of adding
+    client retry/fallback behavior.
