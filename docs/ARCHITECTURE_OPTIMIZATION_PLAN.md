@@ -2007,6 +2007,10 @@ Target:
   `contextCompactionNotice()`, so pane-local render signatures and operation
   signatures do not infer context-compaction state from the global current
   thread.
+  Thread-tile visible-shape evidence now follows that same context too:
+  `visibleRenderableTurnIds()` and `threadTileVisibleShape()` pass the pane
+  thread into `visibleItemsForTurn()`, so tile patch expected counts and
+  render diagnostics use the same visible-item filter as the pane renderer.
 - Treat each pane as a scaled mobile single-thread runtime instance. Shared
   global Composer chrome is only an interim input surface; global command dock
   or shared operation bubble are no longer acceptable in tile mode and must not

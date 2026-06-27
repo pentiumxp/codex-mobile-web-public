@@ -3130,8 +3130,9 @@ test("conversation html update invalidates stable signatures when the DOM has lo
   assert.match(updateBody, /applicationPlan,/);
   assert.match(functionBody("renderCurrentThread"), /expectedVisibleTurnCount: turns\.length/);
   assert.match(functionBody("renderCurrentThread"), /updateConversationHtml\(shellUpdatePlan\.html, shellUpdatePlan\.conversationSignature, shellUpdatePlan\.options\)/);
+  assert.match(functionBody("visibleRenderableTurnIds"), /visibleItemsForTurn\(turn, thread\)\.length/);
   assert.match(functionBody("threadTileVisibleShape"), /visibleTurnsForConversation\(thread\)/);
-  assert.match(functionBody("threadTileVisibleShape"), /visibleItemsForTurn\(turn\)\.length/);
+  assert.match(functionBody("threadTileVisibleShape"), /visibleItemsForTurn\(turn, thread\)\.length/);
   assert.match(functionBody("threadTileVisibleTurnCount"), /threadTileVisibleShape\(ids\)\.turnCount/);
   assert.match(functionBody("threadTileDomTurnCount"), /article\.thread-tile-turn\[data-thread-tile-turn\]/);
   assert.match(functionBody("renderThreadTileLayout"), /const visibleShape = threadTileVisibleShape\(ids\);/);
@@ -3507,6 +3508,71 @@ return {
   assert.equal(result.withoutThread, null);
   assert.equal(result.withThread.notice, "Context compaction pending");
   assert.equal(result.withThread.id, "context-item");
+});
+
+test("thread tile visible shape uses pane thread context for visible item filtering", () => {
+  const sources = [
+    "statusText",
+    "contextCompactionStatusKind",
+    "renderContextThread",
+    "turnHasDisplayItems",
+    "latestTurn",
+    "currentThreadHasActiveRuntimeStatus",
+    "isLatestTurn",
+    "isLiveTurn",
+    "canShowPendingContextCompaction",
+    "contextCompactionState",
+    "contextCompactionNotice",
+    "visibleItemsForTurn",
+    "visibleRenderableTurnIds",
+    "threadTileVisibleShape",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const result = Function(`
+const CONTEXT_COMPACTION_PENDING_NOTICE = "Context compaction pending";
+const CONTEXT_COMPACTION_COMPLETE_NOTICE = "Context compaction complete";
+const paneTurn = {
+  id: "pane-turn",
+  status: { type: "idle" },
+  items: [{ id: "context-item", type: "contextCompaction", status: { type: "pending" } }],
+};
+const paneThread = { id: "pane-thread", status: { type: "active" }, turns: [paneTurn] };
+const state = {
+  activeTurnId: "",
+  currentThreadId: "current-thread",
+  currentThread: {
+    id: "current-thread",
+    status: { type: "active" },
+    turns: [
+      { id: "current-latest", status: { type: "running" }, items: [{ id: "current-item" }] },
+    ],
+  },
+  renderContextThread: null,
+  threadTileActiveIds: ["pane-thread"],
+};
+function visibleTurnsForConversation(thread) { return thread && Array.isArray(thread.turns) ? thread.turns : []; }
+function threadTileDisplayThread(id) { return id === "pane-thread" ? paneThread : null; }
+function isReasoningItem() { return false; }
+function shouldHideSupersededLiveUserMessage() { return false; }
+function shouldHideDurableLiveUserMessage() { return false; }
+function isContextCompactionItem(item) { return Boolean(item && item.type === "contextCompaction"); }
+function isOperationalItem() { return false; }
+function isTurnUsageSummaryItem() { return false; }
+function isSupersededLiveTurn() { return false; }
+function limitRawThreadVisibleEntries(entries) { return entries; }
+function isTurnComplete() { return false; }
+function isRunningStatus(status) { return Boolean(status && (status === "running" || status.type === "active" || status.type === "running")); }
+function isStaleActiveStatus() { return false; }
+function isIncompleteInterruptedTurn() { return false; }
+function turnHasActiveLiveItems() { return false; }
+${sources.join("\n")}
+return {
+  tileShape: threadTileVisibleShape(["pane-thread"]),
+  paneTurnIds: visibleRenderableTurnIds(paneThread),
+};
+`)();
+
+  assert.deepEqual(result.tileShape, { turnCount: 1, visibleItemCount: 1 });
+  assert.deepEqual(result.paneTurnIds, ["pane-turn"]);
 });
 
 test("item merge delegates visible-field preservation to thread detail state policy", () => {

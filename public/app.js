@@ -7020,7 +7020,7 @@ function checkEmptyVisibleDetailMismatchAfterRender(thread, shellPlan = {}, metr
 
 function visibleRenderableTurnIds(thread) {
   return visibleTurnsForConversation(thread)
-    .filter((turn) => turn && turn.id && visibleItemsForTurn(turn).length > 0)
+    .filter((turn) => turn && turn.id && visibleItemsForTurn(turn, thread).length > 0)
     .map((turn) => String(turn.id));
 }
 
@@ -7035,7 +7035,7 @@ function threadTileVisibleShape(ids = state.threadTileActiveIds) {
   return (Array.isArray(ids) ? ids : []).reduce((shape, id) => {
     const thread = threadTileDisplayThread(id);
     visibleTurnsForConversation(thread).forEach((turn) => {
-      const itemCount = visibleItemsForTurn(turn).length;
+      const itemCount = visibleItemsForTurn(turn, thread).length;
       if (itemCount > 0) {
         shape.turnCount += 1;
         shape.visibleItemCount += itemCount;

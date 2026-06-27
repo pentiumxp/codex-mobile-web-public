@@ -21165,6 +21165,48 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit this local slice and keep it undeployed until a coherent Phase C/Phase
     A module is ready.
 
+## 2026-06-27 - Phase C thread-tile visible shape thread context local slice
+
+- Current local state:
+  - Continued after local commit `97f35ac` (`refactor visible item signatures
+    use pane context`).
+  - This is a local Phase C render-context/pane-state evidence slice only. It
+    changes `public/app.js`, focused frontend tests, README, and the
+    architecture plan. It does not bump shell/cache, deploy production, or push
+    Public.
+- Root-cause boundary:
+  - Symptom/risk: after visible-item signatures became pane-thread aware, the
+    tile visible-shape/count evidence still called `visibleItemsForTurn(turn)`
+    without the pane thread. Tile patch expected counts and thread-tile render
+    diagnostics could therefore filter context-compaction or live user-message
+    visibility through the global current-thread context instead of the pane
+    being counted.
+  - Failing layer: frontend thread-tile visible-shape evidence ownership. This
+    is not a server projection, merge, DOM-patch execution, task-card protocol,
+    or Home AI host change.
+  - Violated invariant: pane-local render diagnostics and patch preconditions
+    must count visible items with the same explicit thread context as pane
+    rendering.
+- Changes:
+  - `visibleRenderableTurnIds(thread)` now calls
+    `visibleItemsForTurn(turn, thread)`.
+  - `threadTileVisibleShape(ids)` now passes each pane's thread into
+    `visibleItemsForTurn()`.
+  - Added executable coverage proving a context-compaction pending item counts
+    in tile visible shape only through its pane thread context, not through the
+    global current thread.
+- Validation:
+  - `node --check public/app.js` passed.
+  - `node --test test/conversation-render.test.js test/thread-tile-layout-ui.test.js test/collab-agent-render.test.js`
+    passed (`126` tests).
+  - `npm test` passed (`1260` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed after docs/context updates.
+- Next:
+  - Commit this local slice and keep it undeployed until a coherent Phase C/Phase
+    A module is ready.
+
 ## 2026-06-27 - Phase C approval pane action context local slice
 
 - Current local state:
