@@ -231,14 +231,15 @@ test("visual harness can replay empty cached detail openings without exposing th
 });
 
 test("public app shell cache advances with static frontend changes", () => {
-  assert.match(swJs, /codex-mobile-shell-v545/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v545"/);
+  assert.match(swJs, /codex-mobile-shell-v546/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v546"/);
   assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(swJs, /"\/thread-diagnostic-events\.js"/);
   assert.match(appJs, /"\/thread-diagnostic-events\.js"/);
   assert.match(swJs, /"\/thread-status-hints\.js"/);
   assert.match(swJs, /"\/thread-performance-metrics\.js"/);
+  assert.match(swJs, /"\/thread-list-load-policy\.js"/);
   assert.match(swJs, /"\/live-operation-dock-state\.js"/);
   assert.match(swJs, /"\/thread-detail-state\.js"/);
   assert.match(swJs, /"\/thread-detail-render-plan\.js"/);
@@ -750,6 +751,7 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(swJs, /"\/thread-diagnostic-events\.js"/);
   assert.match(swJs, /"\/thread-performance-metrics\.js"/);
+  assert.match(swJs, /"\/thread-list-load-policy\.js"/);
   assert.match(swJs, /"\/live-operation-dock-state\.js"/);
   assert.match(swJs, /"\/thread-detail-state\.js"/);
   assert.match(swJs, /"\/thread-detail-render-plan\.js"/);
@@ -768,6 +770,7 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(appJs, /"\/thread-diagnostic-events\.js"/);
   assert.match(appJs, /"\/thread-performance-metrics\.js"/);
+  assert.match(appJs, /"\/thread-list-load-policy\.js"/);
   assert.match(appJs, /"\/live-operation-dock-state\.js"/);
   assert.match(appJs, /"\/thread-detail-state\.js"/);
   assert.match(appJs, /"\/thread-detail-render-plan\.js"/);
@@ -778,6 +781,7 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /"\/thread-tile-actions\.js"/);
   assert.match(appJs, /"\/thread-tile-state\.js"/);
   assert.match(appJs, /"\/thread-tile-layout\.js"/);
+  assert.match(indexHtml, /src="\/thread-list-load-policy\.js"/);
   assert.match(appJs, /"\/build-refresh-policy\.js"/);
   assert.match(appJs, /navigator\.serviceWorker\.register\("\/sw\.js"\)/);
   assert.match(appJs, /state\.serviceWorkerRegistration\.update\(\)\.catch/);
@@ -787,6 +791,7 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(swJs, /self\.clients\.openWindow\(target\.url\)/);
   assert.match(indexHtml, /id="workspaceTokenUsage"/);
   assert.match(indexHtml, /id="workspaceStatsDialog"/);
+  assert.match(appJs, /const threadListLoadPolicy = window\.CodexThreadListLoadPolicy;/);
   assert.match(appJs, /workspaceTokenUsage: null/);
   assert.match(appJs, /function renderWorkspaceTokenUsage\(\)/);
   assert.match(appJs, /function renderWorkspaceStatsDialog\(\)/);
@@ -797,8 +802,10 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /function hasThreadDetailRequestInFlight\(\)/);
   assert.match(appJs, /state\.threadLoadController[\s\S]*state\.refreshThreadController[\s\S]*state\.currentThread && state\.currentThread\.mobileLoading/);
   assert.match(appJs, /const threadDetailOpening = hasThreadDetailRequestInFlight\(\);/);
-  assert.match(appJs, /silent && options\.deferFallback !== false && threadDetailOpening && !state\.selectedCwd && !search/);
-  assert.match(appJs, /if \(shouldDeferFallback && !search\) \{[\s\S]*params\.set\("fallback", "defer"\);[\s\S]*params\.set\("initial", "warm-fallback"\);[\s\S]*\}/);
+  assert.match(appJs, /const loadPlan = threadListLoadPolicy\.planThreadListLoadRequest\(\{/);
+  assert.match(appJs, /threadListLoadedAtMs: state\.threadListLoadedAtMs/);
+  assert.match(appJs, /if \(loadPlan\.params && loadPlan\.params\.fallback\) \{[\s\S]*params\.set\("fallback", "defer"\);[\s\S]*\}/);
+  assert.match(appJs, /if \(loadPlan\.params && loadPlan\.params\.initial\) \{[\s\S]*params\.set\("initial", "warm-fallback"\);[\s\S]*\}/);
   assert.match(appJs, /params\.set\("initial", "warm-fallback"\)/);
   assert.match(appJs, /const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;/);
   assert.match(appJs, /const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;/);

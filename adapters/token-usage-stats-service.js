@@ -215,8 +215,80 @@ function createTokenUsageStatsService(options = {}) {
   const dbPath = String(options.dbPath || "").trim();
   const sqlite = options.sqlite || { exec: runSqliteExec, json: runSqliteJson };
   const now = typeof options.now === "function" ? options.now : () => Date.now();
+  const queryCacheTtlMs = Math.max(0, Math.min(60_000, Number(options.queryCacheTtlMs || 0)));
+  const queryCacheMaxEntries = Math.max(1, Math.min(200, Number(options.queryCacheMaxEntries || 50)));
   let initialized = false;
   let lastError = null;
+  const queryCache = new Map();
+
+  function cloneJson(value) {
+    if (value === null || value === undefined) return value;
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  function rememberQuery(key, value) {
+    if (!queryCacheTtlMs || !key) return value;
+    queryCache.set(key, { cachedAt: now(), value: cloneJson(value) });
+    while (queryCache.size > queryCacheMaxEntries) {
+      const firstKey = queryCache.keys().next().value;
+      if (!firstKey) break;
+      queryCache.delete(firstKey);
+    }
+    return value;
+  }
+
+  function readQuery(key) {
+    if (!queryCacheTtlMs || !key) return null;
+    const entry = queryCache.get(key);
+    if (!entry) return null;
+    const ageMs = Math.max(0, now() - Number(entry.cachedAt || 0));
+    if (ageMs > queryCacheTtlMs) {
+      queryCache.delete(key);
+      return null;
+    }
+    return cloneJson(entry.value);
+  }
+
+  function clearQueryCache() {
+    queryCache.clear();
+  }
+
+  function stableWorkspaceKey(values = []) {
+    return [...new Set((values || []).map((value) => String(value || "").trim()).filter(Boolean))]
+      .sort()
+      .join("\u001f");
+  }
+
+  function usageDateScope(optionsForQuery = {}) {
+    const nowMs = Number(optionsForQuery.nowMs) || now();
+    return {
+      today: localDateKey(nowMs),
+      weekStart: weekStartDateKey(nowMs),
+    };
+  }
+
+  function threadUsageCacheKey(ids = [], optionsForQuery = {}) {
+    const date = usageDateScope(optionsForQuery);
+    return JSON.stringify({
+      type: "thread-usage",
+      ids: [...ids].sort(),
+      today: date.today,
+      weekStart: date.weekStart,
+    });
+  }
+
+  function workspaceSummaryCacheKey(optionsForQuery = {}) {
+    const date = usageDateScope(optionsForQuery);
+    return JSON.stringify({
+      type: "workspace-summary",
+      cwd: String(optionsForQuery.cwd || "").trim(),
+      days: Math.max(1, Math.min(366, Number(optionsForQuery.days || 31))),
+      workspaceLimit: Math.max(1, Math.min(200, Number(optionsForQuery.workspaceLimit || 50))),
+      workspaceCwds: stableWorkspaceKey(optionsForQuery.workspaceCwds || []),
+      today: date.today,
+      weekStart: date.weekStart,
+    });
+  }
 
   function init() {
     if (initialized) return true;
@@ -300,6 +372,7 @@ ON CONFLICT(thread_id, turn_id) DO UPDATE SET
       lastError = result && result.error ? result.error : new Error("sqlite token usage upsert failed");
       return { ok: false, error: lastError };
     }
+    clearQueryCache();
     lastError = null;
     return { ok: true, threadId, turnId, day, usage };
   }
@@ -326,6 +399,13 @@ ON CONFLICT(thread_id, turn_id) DO UPDATE SET
   function summaryForThreads(threadIds = [], optionsForQuery = {}) {
     const ids = [...new Set((threadIds || []).map((id) => String(id || "").trim()).filter(Boolean))];
     if (!ids.length) return { byThreadId: new Map(), workspace: workspaceSummary(optionsForQuery) };
+    const cacheKey = threadUsageCacheKey(ids, optionsForQuery);
+    const cachedRows = readQuery(cacheKey);
+    if (cachedRows) {
+      const byThreadId = new Map();
+      for (const row of cachedRows) byThreadId.set(String(row.threadId || ""), publicUsage(row));
+      return { byThreadId, workspace: workspaceSummary(optionsForQuery) };
+    }
     const today = localDateKey(optionsForQuery.nowMs || now());
     const weekStart = weekStartDateKey(optionsForQuery.nowMs || now());
     const quotedIds = ids.map(sqlString).join(",");
@@ -345,10 +425,23 @@ GROUP BY thread_id
 `);
     const byThreadId = new Map();
     for (const row of rows) byThreadId.set(String(row.thread_id || ""), publicUsage(row));
+    rememberQuery(cacheKey, rows.map((row) => ({
+      threadId: String(row.thread_id || ""),
+      total_tokens: sqlNumber(row.total_tokens),
+      today_tokens: sqlNumber(row.today_tokens),
+      week_tokens: sqlNumber(row.week_tokens),
+      input_tokens: sqlNumber(row.input_tokens),
+      cached_input_tokens: sqlNumber(row.cached_input_tokens),
+      output_tokens: sqlNumber(row.output_tokens),
+      reasoning_output_tokens: sqlNumber(row.reasoning_output_tokens),
+    })));
     return { byThreadId, workspace: workspaceSummary(optionsForQuery) };
   }
 
   function workspaceSummary(optionsForQuery = {}) {
+    const cacheKey = workspaceSummaryCacheKey(optionsForQuery);
+    const cached = readQuery(cacheKey);
+    if (cached) return cached;
     const nowMs = Number(optionsForQuery.nowMs) || now();
     const today = localDateKey(nowMs);
     const weekStart = weekStartDateKey(nowMs);
@@ -396,12 +489,12 @@ GROUP BY cwd
 ORDER BY total_tokens DESC
 LIMIT ${workspaceLimit}
 `), optionsForQuery).slice(0, workspaceLimit);
-    return Object.assign(publicUsage(rows[0] || {}), {
+    return rememberQuery(cacheKey, Object.assign(publicUsage(rows[0] || {}), {
       todayDate: today,
       weekStartDate: weekStart,
       daily,
       workspaces,
-    });
+    }));
   }
 
   function decorateThreadListResult(result, optionsForQuery = {}) {
@@ -422,6 +515,7 @@ LIMIT ${workspaceLimit}
 
   return {
     dbPath,
+    clearQueryCache,
     decorateThreadListResult,
     getLastError: () => lastError,
     init,

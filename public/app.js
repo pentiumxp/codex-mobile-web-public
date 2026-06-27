@@ -91,6 +91,10 @@ const threadPerformanceMetrics = window.CodexThreadPerformanceMetrics;
 if (!threadPerformanceMetrics) {
   throw new Error("CodexThreadPerformanceMetrics script failed to load");
 }
+const threadListLoadPolicy = window.CodexThreadListLoadPolicy;
+if (!threadListLoadPolicy) {
+  throw new Error("CodexThreadListLoadPolicy script failed to load");
+}
 const liveOperationDockPolicy = window.CodexLiveOperationDockState;
 if (!liveOperationDockPolicy) {
   throw new Error("CodexLiveOperationDockState script failed to load");
@@ -518,7 +522,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v545";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v546";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -571,6 +575,7 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/thread-diagnostic-events.js",
   "/thread-status-hints.js",
   "/thread-performance-metrics.js",
+  "/thread-list-load-policy.js",
   "/live-operation-dock-state.js",
   "/thread-detail-state.js",
   "/thread-detail-render-plan.js",
@@ -8904,10 +8909,18 @@ async function loadThreads(options = {}) {
   const search = $("threadSearch").value.trim();
   if (search) params.set("search", search);
   const threadDetailOpening = hasThreadDetailRequestInFlight();
-  const shouldDeferFallback = options.deferFallback === true
-    || (silent && options.deferFallback !== false && threadDetailOpening && !state.selectedCwd && !search);
-  if (shouldDeferFallback && !search) {
+  const loadPlan = threadListLoadPolicy.planThreadListLoadRequest({
+    deferFallback: options.deferFallback,
+    search,
+    selectedCwd: state.selectedCwd,
+    silent,
+    threadDetailOpening,
+    threadListLoadedAtMs: state.threadListLoadedAtMs,
+  });
+  if (loadPlan.params && loadPlan.params.fallback) {
     params.set("fallback", "defer");
+  }
+  if (loadPlan.params && loadPlan.params.initial) {
     params.set("initial", "warm-fallback");
   }
   if (!silent) renderThreadListLoading();

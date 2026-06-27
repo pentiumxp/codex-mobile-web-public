@@ -22571,6 +22571,58 @@ The previous full handoff was archived and should be opened only when old proven
   - Continue small local Phase C slices and do not deploy until a coherent
     deployable module is ready.
 
+## 2026-06-27 - Large Session List First Paint v546 deployable module
+
+- Current local state:
+  - Large-session load work is batched as one deployable module and advances the
+    static shell/cache to `codex-mobile-shell-v546`.
+  - CodeGraph status was checked after edits; the index is up to date, with a
+    note that it was built by an earlier engine version.
+- Root-cause boundary:
+  - Runtime readback before this module showed thread detail already using
+    `projection-active-overlay`; remaining large-session first-open cost was
+    dominated by thread-list local summary merge/token-usage decoration even
+    when fallback cache was warm.
+  - Failing layer: thread-list first-paint request policy and repeated local
+    decoration/query work, not thread-detail projection authority, task-card
+    rendering, Home AI host proxying, or a UI-only refresh fallback.
+  - Violated invariant: after startup/deploy prewarm, the first default
+    thread-list paint should use the warm process baseline while preserving a
+    later authoritative app-server/list refresh path; repeated list paints
+    should not re-run the same local SQLite aggregates or rollout-stat
+    decoration unnecessarily.
+- Changes:
+  - Added `public/thread-list-load-policy.js` with focused tests. Ordinary first
+    default list paint now requests `initial=warm-fallback`; active-detail
+    silent refresh still requests `fallback=defer`; search/workspace/explicit
+    no-defer requests remain full authoritative requests.
+  - `public/index.html`, `public/app.js`, `public/sw.js`, `server.js`,
+    `package.json`, and shell tests now load, serve, cache, and syntax-check the
+    new helper under `codex-mobile-shell-v546`.
+  - `adapters/push-notification-service.js` display-summary cache can skip
+    repeated read-time decoration when the list merge already has
+    request-scoped rollout/session metadata.
+  - `adapters/token-usage-stats-service.js` adds a bounded in-process query
+    cache for thread-list token decoration and invalidates it on completed-turn
+    writes.
+  - `docs/README.md`, `docs/ARCHITECTURE.md`, `docs/MODULES.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` record the v546 module boundary.
+- Validation:
+  - Focused large-session/list tests passed:
+    `node --test test/thread-list-load-policy.test.js test/token-usage-stats-service.test.js test/push-notification-service.test.js test/thread-list-route-merge-service.test.js test/thread-list-app-server-fetch-policy-service.test.js test/thread-list-cold-path-diagnosis-service.test.js test/mobile-viewport.test.js`
+    (`55` tests).
+  - Static shell ordering tests passed:
+    `node --test test/app-update.test.js test/plugin-voice-input.test.js test/mobile-viewport.test.js`
+    (`25` tests).
+  - `npm test` passed (`1298` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit this module, deploy through the central Home AI macOS plugin deploy
+    path, then perform `/api/public-config`, Phase-B readback, and warm-list
+    timing readback against production.
+
 ## 2026-06-27 - Projection consistency v545 deployable module
 
 - Current local state:

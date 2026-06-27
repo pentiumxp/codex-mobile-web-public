@@ -2183,6 +2183,42 @@ This candidate is not deployed and not pushed Public at this point. Next action
 should be either deploy/readback of v544 or an explicit decision to pause Phase
 C and move to another phase.
 
+### 2026-06-27 Large Session List First Paint v546 deployable module
+
+This batched module targets the remaining large-session startup/load cost after
+v545 proved thread detail could already use `projection-active-overlay`. Runtime
+readback showed the ordinary default thread-list open still waited on local
+summary merge and token-usage decoration even when the fallback cache was warm.
+
+Deployable scope:
+
+- `public/thread-list-load-policy.js` owns first-list request policy. Ordinary
+  initial list paint uses the existing `initial=warm-fallback` path; active
+  detail still uses `fallback=defer`; search/workspace-filtered requests remain
+  full authoritative requests.
+- `public/index.html`, `public/app.js`, `public/sw.js`, and the shell asset list
+  load/cache the new helper under `codex-mobile-shell-v546`.
+- `adapters/push-notification-service.js` display-summary cache can skip
+  repeated read-time decoration when the list merge already has request-scoped
+  rollout/session metadata.
+- `adapters/token-usage-stats-service.js` adds a bounded in-process query cache
+  for thread-list token decoration and invalidates it on completed-turn writes.
+- The module does not change thread-detail projection authority, visible-item
+  ordering, task-card rendering, or fallback-cache data semantics.
+
+Required validation for this module:
+
+- focused thread-list load-policy, token-usage, display-summary cache, list
+  route/merge/cold-path, and mobile-shell tests;
+- full `npm test`;
+- `npm run check`;
+- `npm run check:macos`;
+- `git diff --check`;
+- central Home AI macOS plugin deployment with `/api/public-config` v546
+  readback;
+- bounded Phase-B readback smoke proving warm fallback cache and active-overlay
+  detail still pass after deployment.
+
 ### 2026-06-27 Projection Consistency v545 deployable module
 
 The next batched module closes the recurring projection/DOM mismatch class

@@ -97,6 +97,28 @@ test("thread display summary cache stores app-server display names before previe
   assert.ok(decorated.includes("thread-main"));
 });
 
+test("thread display summary cache can skip repeated read decoration", () => {
+  const decorated = [];
+  const cache = createThreadDisplaySummaryCache({
+    ttlMs: 60_000,
+    maxEntries: 10,
+    decorateOnRead: false,
+    decorateSummary(summary) {
+      decorated.push(summary.id);
+      return Object.assign({ decorated: true }, summary);
+    },
+  });
+
+  cache.remember({ id: "thread-main", name: "Thread" });
+  const first = cache.read("thread-main");
+  const second = cache.read("thread-main");
+  first.name = "mutated";
+
+  assert.equal(first.decorated, true);
+  assert.equal(second.name, "Thread");
+  assert.deepEqual(decorated, ["thread-main"]);
+});
+
 test("thread display summary cache remembers thread/list result arrays", () => {
   const cache = createThreadDisplaySummaryCache({ ttlMs: 60_000, maxEntries: 10 });
   const result = {

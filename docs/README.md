@@ -68,19 +68,13 @@ checks, and stay undeployed until several compatible slices form a coherent
 runtime module. Do not bump shell/cache, deploy production, or push Public for
 each micro-slice unless the user explicitly asks.
 
-The current deployable module candidate is focused on projection consistency.
-Stable render signatures are not sufficient proof that the DOM is correct:
-single-thread and tile refresh planning must also validate visible turn count,
-visible item count, duplicate render keys, and single-thread turn order before
-choosing metadata-only or patch rendering. After a patch is applied,
-`updateConversationHtml()` re-reads the DOM shape and falls back to canonical
-HTML if the DOM still violates the projection shape. v4 notification
-normalization must derive item visible keys from nested `turn.id` when present
-and keep duplicate visible keys unique inside a turn. Projection replay visual
-smoke now compares API visible-key hashes to DOM render-key hashes and reports
-only bounded mismatch counts.
-
-The current projection-consistency batch is prepared as deployable shell
-`codex-mobile-shell-v545`. It should be committed, deployed through the central
-Home AI macOS plugin deploy path, and followed by `/api/public-config` readback
-plus bounded projection replay smoke.
+The current deployable module candidate is focused on large-session list first
+paint. Production v545 readback showed thread detail already using
+`projection-active-overlay`, while the default thread-list open still spent most
+time in local summary merge and token-usage decoration even when fallback cache
+was warm. The v546 module moves the first default list paint to the existing
+`initial=warm-fallback` memory path, keeps the authoritative app-server refresh
+as a deferred follow-up, prevents display-summary cache reads from re-running
+rollout stat decoration, and caches token-usage query summaries with
+`recordTurnUsage()` invalidation. This targets list/session load latency without
+changing thread-detail projection authority or introducing UI-only masking.

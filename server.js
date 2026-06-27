@@ -317,6 +317,10 @@ const WORKSPACE_REGISTRY_FILE = process.env.CODEX_MOBILE_WORKSPACE_REGISTRY_FILE
   || path.join(RUNTIME_ROOT, "workspace-registry.json");
 const TOKEN_USAGE_STATS_DB = process.env.CODEX_MOBILE_TOKEN_USAGE_DB
   || path.join(RUNTIME_ROOT, "token-usage-stats.sqlite");
+const TOKEN_USAGE_QUERY_CACHE_TTL_MS = Math.max(
+  0,
+  Math.min(60_000, Number(process.env.CODEX_MOBILE_TOKEN_USAGE_QUERY_CACHE_TTL_MS || "3000")),
+);
 const THREAD_DETAIL_PROJECTION_CACHE_DIR = process.env.CODEX_MOBILE_THREAD_DETAIL_PROJECTION_CACHE_DIR
   || path.join(RUNTIME_ROOT, "thread-detail-projections");
 const THREAD_DETAIL_PROJECTION_POLICY_VERSION = "state-relevant-receipt-v3";
@@ -449,6 +453,7 @@ function activeProfileRestartOptions(profile = null) {
 
 const tokenUsageStatsService = createTokenUsageStatsService({
   dbPath: TOKEN_USAGE_STATS_DB,
+  queryCacheTtlMs: TOKEN_USAGE_QUERY_CACHE_TTL_MS,
 });
 const threadGoalService = createThreadGoalService({
   dbPath: GOALS_DB,
@@ -1142,6 +1147,7 @@ const localActiveThreadStatuses = new Map();
 const threadDisplaySummaryCache = createThreadDisplaySummaryCache({
   ttlMs: THREAD_DISPLAY_SUMMARY_CACHE_TTL_MS,
   maxEntries: THREAD_DISPLAY_SUMMARY_CACHE_MAX,
+  decorateOnRead: false,
   decorateSummary: annotateThreadRolloutStats,
   mergeSummary: mergeThreadDisplaySummary,
 });
@@ -1231,6 +1237,7 @@ function appShellBuildId(cacheName = readServiceWorkerCacheName()) {
     "thread-diagnostic-events.js",
     "build-refresh-policy.js",
     "thread-performance-metrics.js",
+    "thread-list-load-policy.js",
     "live-operation-dock-state.js",
     "thread-detail-state.js",
     "thread-detail-render-plan.js",

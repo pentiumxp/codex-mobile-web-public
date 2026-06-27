@@ -129,6 +129,49 @@ test("decorates thread list results while keeping workspace totals primary", () 
   assert.equal(result.data[1].mobileTokenUsage, undefined);
 });
 
+test("decorating thread list reuses token query cache and record writes invalidate it", () => {
+  const calls = [];
+  let totalTokens = 8000;
+  const service = createTokenUsageStatsService({
+    dbPath: tempDbPath("decorate-cache"),
+    queryCacheTtlMs: 60_000,
+    now: () => Date.parse("2026-06-01T12:00:00.000Z"),
+    sqlite: {
+      exec: () => ({ ok: true }),
+      json: (_dbPath, sql) => {
+        calls.push(sql);
+        if (/GROUP BY thread_id/i.test(sql)) {
+          return { ok: true, rows: [{ thread_id: "thread-a", total_tokens: totalTokens, today_tokens: totalTokens, week_tokens: totalTokens, input_tokens: totalTokens, cached_input_tokens: 0, output_tokens: 0, reasoning_output_tokens: 0 }] };
+        }
+        if (/GROUP BY day/i.test(sql)) return { ok: true, rows: [] };
+        if (/GROUP BY cwd/i.test(sql)) return { ok: true, rows: [] };
+        return { ok: true, rows: [{ total_tokens: totalTokens, today_tokens: totalTokens, week_tokens: totalTokens, input_tokens: totalTokens, cached_input_tokens: 0, output_tokens: 0, reasoning_output_tokens: 0 }] };
+      },
+    },
+  });
+
+  const options = {
+    cwd: "C:\\repo\\alpha",
+    nowMs: Date.parse("2026-06-01T12:00:00.000Z"),
+  };
+  service.decorateThreadListResult({ data: [{ id: "thread-a" }] }, options);
+  const firstCallCount = calls.length;
+  service.decorateThreadListResult({ data: [{ id: "thread-a" }] }, options);
+  assert.equal(calls.length, firstCallCount);
+
+  totalTokens = 9000;
+  service.recordTurnUsage({
+    threadId: "thread-a",
+    turnId: "turn-2",
+    cwd: "C:\\repo\\alpha",
+    completedAtMs: Date.parse("2026-06-01T11:00:00.000Z"),
+    usage: { totalTokens: 9000 },
+  });
+  const result = service.decorateThreadListResult({ data: [{ id: "thread-a" }] }, options);
+  assert.ok(calls.length > firstCallCount);
+  assert.equal(result.mobileTokenUsage.totalTokens, 9000);
+});
+
 test("normalizes known mojibake workspace paths for project stats", () => {
   const dbPath = tempDbPath("mojibake");
   const service = createTokenUsageStatsService({ dbPath });
