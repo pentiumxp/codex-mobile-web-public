@@ -97,6 +97,39 @@ git diff --check  # passed
 本切片没有 runtime/static app 变更，不 bump shell/cache，不部署；后续会和其它 Phase E
 live-debug smoke 切片一起收束为模块。
 
+## 2026-06-27 Phase E Projection Replay Visual Smoke Local Slice
+
+这是 v542 之后的另一个 Phase E 本地切片，目标是给“线程详情少消息、重复消息、
+错序、空 DOM、render signature mismatch”这类问题补一个可回放的浏览器证据入口。
+它不改变投影、merge、patch 或刷新策略，只新增 smoke：
+
+新增 `scripts/codex-mobile-projection-replay-visual-smoke.js`：
+
+- 通过 Home AI live-debug lane 打开 Codex Mobile；
+- 在 iframe 内按当前运行形态构造 proxy-safe detail API：
+  - direct app：`/api/threads/:threadId?mode=recent`；
+  - Home AI embed：`/api/hermes-plugins/codex-mobile/proxy/api/threads/:threadId?mode=recent`；
+- 只从 API 返回里读取 turn/item id、计数、read mode，不读取正文；
+- 和真实 DOM 的 `.turn[data-turn]`、`.item[data-item]`、`data-render-key`
+  结构比较；
+- 输出 missing/extra turn、missing/extra item、duplicate render key、duplicate item id、
+  latest mismatch、order mismatch 等计数；
+- 支持 `--allow-dom-only` 用于 API 详情不可读时只做 DOM 侧异常确认。
+
+隐私边界：报告只输出 endpoint kind、期望 build/cache id、thread/turn/item hash、
+read mode、计数、mismatch counts、截图 path hash 和 error code；不输出 raw thread id、
+item id、message text、task-card body、debug URL、cookie、token、私有 route 或日志。
+
+验证：
+
+```bash
+node --check scripts/codex-mobile-projection-replay-visual-smoke.js
+node --test test/projection-replay-visual-smoke.test.js
+```
+
+本切片没有 runtime/static app 变更，不 bump shell/cache，不部署；后续会和其它 Phase E
+live-debug smoke 切片一起收束为模块。
+
 ## 2026-06-27 Phase E Media Render Visual Smoke Local Slice
 
 这是 v542 生产部署后的第二个新 Phase E 本地切片，目标是补 uploaded/generated image

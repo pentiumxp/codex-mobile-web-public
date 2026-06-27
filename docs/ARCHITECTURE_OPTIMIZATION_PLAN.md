@@ -1769,7 +1769,8 @@ Current local coverage:
   covers this metadata-only contract.
 - This does not replace Home AI embedded/PWA live-debug coverage. Remaining
   Phase E slices still need real browser smoke around long-turn streaming and
-  deeper replay coverage for projection repair cases.
+  more scenario-specific projection repair cases, but the generic API-vs-DOM
+  replay smoke now exists locally.
 - The next local Phase E slice starts the PWA shell-refresh live-debug coverage
   without executing a reload. `scripts/codex-mobile-pwa-shell-refresh-smoke.js`
   opens the embedded Codex Mobile shell through the Home AI debug lane,
@@ -1792,6 +1793,18 @@ Current local coverage:
   hash, and bounded error codes. It does not output raw image URLs, filenames,
   local paths, DOM text, uploads, cookies, tokens, provider payloads, or logs.
   This is browser evidence for future media incidents, not a rendering fallback.
+- The projection-replay live-debug smoke now compares server/API thread detail
+  structure with the actual embedded DOM as a local evidence slice.
+  `scripts/codex-mobile-projection-replay-visual-smoke.js` opens a bounded
+  thread, fetches `mode=recent` detail through the same direct/proxy-safe route
+  the iframe can use, and compares visible turn/item counts, latest turn hash,
+  turn order hashes, duplicate DOM render keys, and duplicate DOM item ids.
+  Reports contain only endpoint kind, expected build/cache ids, hashed
+  thread/turn/item ids, read mode, mismatch counts, screenshot path hash, and
+  bounded error codes. It does not output raw ids, message text, task-card
+  bodies, private routes, cookies, tokens, provider payloads, or logs. This
+  gives Home AI diagnostics a replay target for "missing/duplicate/only one
+  receipt visible" incidents without adding a client-side masking fallback.
 
 Current diagnostic intake bridge:
 

@@ -20745,3 +20745,54 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit this local Phase E slice.
   - Continue with long-turn streaming / projection replay browser evidence.
     Do not deploy until another coherent Phase E module is ready.
+
+## 2026-06-27 - Phase E projection replay visual smoke local slice
+
+- Current local state:
+  - Continued after local media-render smoke commit `e232c4c`.
+  - This is a script/test/docs-only local slice. It has no runtime/static app
+    behavior change, no shell/cache bump, no deployment, and no Public push.
+- Root-cause boundary:
+  - Symptom/risk: missing/duplicate/out-of-order thread-detail incidents can
+    pass unit tests until they appear in the embedded browser DOM. Existing
+    empty-detail smoke covers one empty DOM recovery class, but there was no
+    reusable live-debug smoke that compares the API detail shape with the
+    mounted DOM shape.
+  - Failing layer: Phase E browser/visual harness evidence for projection/API
+    versus DOM replay, not server projection or client patch behavior itself.
+  - Violated invariant: projection mismatch incidents should have replayable,
+    metadata-only API-vs-DOM evidence before producing Home AI repair cards.
+- Changes:
+  - Added `scripts/codex-mobile-projection-replay-visual-smoke.js`.
+  - The smoke opens a bounded target thread through the Home AI live-debug lane,
+    fetches `mode=recent` thread detail through the iframe's direct or Home AI
+    proxy-safe `/api/threads/:id` path, and compares API visible-turn/item
+    counts with actual `.turn[data-turn]`, `.item[data-item]`, and
+    `data-render-key` DOM metadata.
+  - It records missing/extra turn counts, missing/extra item counts, duplicate
+    render-key count, duplicate item-id count, latest-turn mismatch count, and
+    order mismatch count.
+  - Added `test/projection-replay-visual-smoke.test.js` and wired the script
+    into `npm run check`.
+- Privacy:
+  - Reports include endpoint kind, expected build/cache ids, hashed
+    thread/turn/item ids, read mode, mismatch counts, screenshot path hash, and
+    bounded error codes.
+  - Reports do not include raw thread ids, item ids, message text, task-card
+    bodies, debug URLs, cookies, tokens, private routes, provider payloads, or
+    logs.
+- Validation:
+  - `node --check scripts/codex-mobile-projection-replay-visual-smoke.js`
+    passed.
+  - `node --test test/projection-replay-visual-smoke.test.js` passed
+    (`5` tests).
+  - Phase E smoke suite
+    `node --test test/projection-replay-visual-smoke.test.js test/media-render-visual-smoke.test.js test/pwa-shell-refresh-smoke.test.js test/image-order-visual-smoke.test.js`
+    passed (`18` tests).
+  - `npm run check` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit this local Phase E slice.
+  - Continue with long-turn streaming evidence or bundle the current Phase E
+    script-only slices for a later module after a runtime/static slice requires
+    a shell/cache bump.
