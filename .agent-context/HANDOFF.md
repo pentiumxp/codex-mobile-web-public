@@ -20882,3 +20882,34 @@ The previous full handoff was archived and should be opened only when old proven
   - Run broader check, commit locally, and continue Phase A/B only if the next
     ownership cut is equally bounded; otherwise batch accumulated local slices
     into the next deployable module with shell/cache bump and central deploy.
+
+## 2026-06-27 - v543 Phase A/E stability evidence module prep
+
+- Current local state:
+  - Batched the v542-follow-up local commits:
+    - `eff591a` PWA shell refresh smoke;
+    - `e232c4c` media render visual smoke;
+    - `5479887` projection replay visual smoke;
+    - `252c2e1` long-turn viewport fixture;
+    - `b45afb3` conversation DOM authority invalidation helper.
+  - This follows the updated cadence: small slices were committed locally
+    first, then batched into one deployable module.
+- Module boundary:
+  - Phase E evidence: PWA refresh readiness, media render DOM state,
+    API-vs-DOM projection replay, and long-turn mobile viewport behavior.
+  - Phase A ownership: stable-signature DOM-empty mismatch/client-event payload
+    planning moved from `updateConversationHtml()` into
+    `thread-detail-dom-patch`.
+  - No fallback or client-side masking was added.
+- Static shell bump:
+  - `public/app.js` `CLIENT_BUILD_ID` moved from
+    `0.1.11|codex-mobile-shell-v542` to `0.1.11|codex-mobile-shell-v543`.
+  - `public/sw.js` `CACHE_NAME` moved from `codex-mobile-shell-v542` to
+    `codex-mobile-shell-v543`.
+- Validation to complete before deploy:
+  - Focused Phase E and Phase A tests.
+  - `npm test`, `npm run check`, `npm run check:macos`, `git diff --check`.
+- Next:
+  - Commit the v543 bump after validation, deploy through Home AI central
+    macOS plugin deploy, read back `/api/public-config`, and record production
+    evidence without pushing Public yet.

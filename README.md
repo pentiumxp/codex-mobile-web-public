@@ -16,6 +16,31 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-27 v543 Phase A/E Stability Evidence Module
+
+v543 将 v542 之后累积的本地切片收束为一个可部署模块。模块边界不是新增
+产品功能，而是继续降低投影/渲染不同步、长回执遮挡、图片/PWA/DOM 证据不足
+这些高复发风险。
+
+包含的本地切片：
+
+- `eff591a`：PWA shell refresh live-debug smoke，验证 embedded shell build、
+  boot recovery、hard/page refresh 控件和 service-worker/cache 能力。
+- `e232c4c`：media render live-debug smoke，验证 uploaded/generated image
+  DOM surface 是否 visible/loaded/proxy-safe、是否泄露 raw local path。
+- `5479887`：projection replay live-debug smoke，比较 `/api/threads/:id?mode=recent`
+  可见 turn/item shape 与实际 DOM 的 missing/extra/duplicate/order mismatch。
+- `252c2e1`：long-turn viewport fixture，验证手机单线程长回执起点定位、
+  Usage 沉底可见、上下跳转按钮同槽位互斥、Composer 不遮挡。
+- `b45afb3`：Phase A DOM authority invalidation helper，将
+  `stable-signature-dom-empty` mismatch/client-event payload 组装从
+  `updateConversationHtml()` 移入 `thread-detail-dom-patch` 纯 helper。
+
+本次 bump：`CLIENT_BUILD_ID` 和 PWA shell cache 从
+`codex-mobile-shell-v542` 升到 `codex-mobile-shell-v543`。
+
+验证和部署读回待本模块完成后记录；Public push 仍然等生产和用户验证。
+
 ## 2026-06-27 Phase A Conversation DOM Authority Invalidation Local Slice
 
 这是 v542 后继续按“小切片本地提交、模块化再部署”节奏推进的 Phase A 切片。
