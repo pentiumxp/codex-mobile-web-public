@@ -1891,6 +1891,7 @@ test("thread tile state plans detail loads and skips stale work", () => {
     clearLoading: true,
     renderPane: true,
     preserveScroll: true,
+    scheduleQueueDrain: true,
   });
 });
 

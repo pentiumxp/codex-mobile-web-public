@@ -20305,3 +20305,35 @@ The previous full handoff was archived and should be opened only when old proven
   - Continue Phase C with another low-risk policy extraction, or batch these
     local Phase C slices into a shell/cache module only when a coherent module
     boundary is ready.
+
+## 2026-06-27 - Phase C detail-load finally drain local slice
+
+- Current local state:
+  - Continued after local commit `32a3854` (`refactor: plan thread tile detail
+    queue drain`).
+  - This is a third local-only Phase C pane-state slice. It does not bump
+    `CLIENT_BUILD_ID` / PWA shell cache and is not deployed by itself.
+- Root-cause boundary:
+  - Symptom/risk: `detailLoadFinallyEffectsPlan()` already owned controller /
+    loading cleanup and pane render intent, but `applyThreadTileDetailLoadFinallyEffects()`
+    still unconditionally decided to force a detail-load queue drain after each
+    settled load.
+  - Failing layer: frontend thread-tile detail-load lifecycle policy.
+  - Violated invariant: helper plans should own lifecycle follow-up intent;
+    app code should execute timer scheduling only when the planned effect says
+    to schedule it.
+- Changes:
+  - Added `scheduleQueueDrain` to `detailLoadFinallyEffectsPlan()`.
+  - `applyThreadTileDetailLoadFinallyEffects()` now schedules the force drain
+    only when `effect.scheduleQueueDrain` is true.
+  - Updated focused state and source-wiring tests.
+- Validation:
+  - `node --test test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js`
+    passed (`39` tests).
+  - `node --check public/thread-tile-state.js && node --check public/app.js`
+    passed.
+- Next:
+  - Run `npm run check` and `git diff --check`, then commit this local slice.
+  - The three local Phase C slices now form a small pane-state module candidate;
+    before deployment, run a broader module validation and bump shell/cache only
+    if the user asks to deploy or if another coherent Phase C slice is added.

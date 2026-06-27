@@ -1588,6 +1588,7 @@
       clearLoading: true,
       renderPane: input.visible === true,
       preserveScroll: true,
+      scheduleQueueDrain: true,
     };
   }
 

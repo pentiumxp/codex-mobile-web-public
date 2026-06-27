@@ -13537,7 +13537,7 @@ function applyThreadTileDetailLoadFinallyEffects(effect) {
   if (effect.renderPane && !scheduleRenderThreadTilePane(id, { preserveScroll: effect.preserveScroll !== false })) {
     scheduleRenderCurrentThread();
   }
-  scheduleThreadTileDetailLoadQueueDrain({ force: true });
+  if (effect.scheduleQueueDrain) scheduleThreadTileDetailLoadQueueDrain({ force: true });
   return true;
 }
 
