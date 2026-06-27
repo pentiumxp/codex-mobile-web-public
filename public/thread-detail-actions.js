@@ -75,13 +75,14 @@
     if (node) {
       const taskCardAction = dataValue(node, "taskCardAction");
       const cardId = dataValue(node, "taskCardId");
+      const threadId = dataValue(node, "taskCardThreadId");
       if (taskCardAction === "reply") {
-        return action("task-card-reply", node, { button: node, cardId, taskCardAction });
+        return action("task-card-reply", node, { button: node, cardId, taskCardAction, threadId });
       }
       if (taskCardAction === "approve" || taskCardAction === "delete" || taskCardAction === "revoke") {
-        return action("task-card-mutate", node, { button: node, cardId, taskCardAction });
+        return action("task-card-mutate", node, { button: node, cardId, taskCardAction, threadId });
       }
-      return action("task-card-unknown", node, { button: node, cardId, taskCardAction });
+      return action("task-card-unknown", node, { button: node, cardId, taskCardAction, threadId });
     }
     node = closestWithin(target, "[data-task-card-draft-action]", root);
     if (node) {

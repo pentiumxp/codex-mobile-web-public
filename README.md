@@ -213,6 +213,33 @@ npm run check  # passed
 git diff --check  # passed
 ```
 
+## 2026-06-27 Phase C Task-Card Pane Action Context Slice
+
+这是 Phase C 的下一个本地小切片，不单独部署、不推 Public。它修正 task-card
+前端操作仍依赖全局 `state.currentThreadId` 的架构边界，为平铺 pane 内独立任务卡
+操作做准备。
+
+改动边界：
+
+- `renderThreadTaskCardActions()` 现在把 owning thread id 写入
+  `data-task-card-thread-id`；
+- `thread-detail-actions` 解析 task-card action 时返回 `threadId`；
+- `mutateThreadTaskCard()` 和 `replyTaskCard()` 接收 action context thread id，
+  API 请求体使用该 thread id，而不是无条件使用全局 current thread；
+- 本地 task-card settle/refresh 按 thread id 更新当前详情或可见 tile pane cache；
+- 不改变 task-card server protocol、return/ack 语义、任务卡正文渲染、shell/cache
+  版本或生产部署状态。
+
+验证：
+
+```bash
+node --check public/thread-detail-actions.js && node --check public/app.js
+node --test test/thread-detail-actions.test.js test/thread-task-card-route.test.js test/thread-tile-layout-ui.test.js  # 17 passed
+npm test  # 1252 passed
+npm run check  # passed
+git diff --check  # passed
+```
+
 ## 2026-06-27 Phase A Conversation DOM Authority Invalidation Local Slice
 
 这是 v542 后继续按“小切片本地提交、模块化再部署”节奏推进的 Phase A 切片。

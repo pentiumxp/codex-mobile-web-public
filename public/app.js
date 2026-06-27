@@ -15506,8 +15506,17 @@ function bindCurrentThreadActions() {
   if (olderTurns) olderTurns.addEventListener("click", () => loadOlderThreadTurns({ preserveScroll: true, source: "button" }).catch(showError));
 }
 
-function findThreadTaskCard(cardId) {
-  const cards = threadTaskCardsForThread(state.currentThread || {});
+function taskCardActionThread(threadId) {
+  const id = String(threadId || "").trim();
+  if (id && state.currentThread && String(state.currentThread.id || "") === id) return state.currentThread;
+  if (id && state.threadTileDetails.has(id)) return state.threadTileDetails.get(id);
+  if (!id) return state.currentThread || null;
+  return null;
+}
+
+function findThreadTaskCard(cardId, threadId = "") {
+  const thread = taskCardActionThread(threadId);
+  const cards = threadTaskCardsForThread(thread || {});
   return cards.find((card) => card.id === String(cardId || "")) || null;
 }
 
@@ -15961,8 +15970,9 @@ function incrementPendingOutgoingTaskCardCount(threadId, delta = 1) {
   }
 }
 
-function settleCurrentThreadTaskCard(cardId, nextStatus, nextCard = null) {
-  const thread = state.currentThread;
+function settleThreadTaskCardForThread(threadId, cardId, nextStatus, nextCard = null) {
+  const targetThreadId = String(threadId || "").trim() || String(state.currentThreadId || "").trim();
+  const thread = taskCardActionThread(targetThreadId);
   if (!thread || !Array.isArray(thread.threadTaskCards)) return;
   const id = String(cardId || "").trim();
   if (!id) return;
@@ -15975,8 +15985,17 @@ function settleCurrentThreadTaskCard(cardId, nextStatus, nextCard = null) {
   if (!settledCard) return;
   if (settledCard.threadRole === "target") incrementPendingIncomingTaskCardCount(thread.id, -1);
   if (settledCard.threadRole === "source") incrementPendingOutgoingTaskCardCount(thread.id, -1);
+  if (state.threadTileDetails.has(String(thread.id || ""))) state.threadTileDetails.set(String(thread.id || ""), thread);
   renderThreads();
-  renderCurrentThread();
+  if (String(thread.id || "") === String(state.currentThreadId || "")) {
+    renderCurrentThread();
+  } else if (state.threadTileMode && threadTilePaneIsVisible(thread.id) && !scheduleRenderThreadTilePane(thread.id, { preserveScroll: true })) {
+    scheduleRenderCurrentThread();
+  }
+}
+
+function settleCurrentThreadTaskCard(cardId, nextStatus, nextCard = null) {
+  settleThreadTaskCardForThread(state.currentThreadId, cardId, nextStatus, nextCard);
 }
 
 function resolveTargetThreadReference(input) {
@@ -16009,10 +16028,19 @@ function resolveTargetThreadReferences(input) {
   return targets;
 }
 
-async function refreshCurrentThreadAfterTaskCard() {
-  if (!state.currentThreadId) return;
-  await refreshCurrentThread({ source: "task-card" });
+async function refreshThreadAfterTaskCard(threadId = "") {
+  const id = String(threadId || state.currentThreadId || "").trim();
+  if (!id) return;
+  if (id === String(state.currentThreadId || "")) {
+    await refreshCurrentThread({ source: "task-card" });
+  } else if (state.threadTileMode && threadTilePaneIsVisible(id)) {
+    await loadThreadTileDetail(id, { force: true, background: true, source: "task-card" });
+  }
   loadThreads({ silent: true }).catch(showError);
+}
+
+async function refreshCurrentThreadAfterTaskCard() {
+  await refreshThreadAfterTaskCard(state.currentThreadId);
 }
 
 function currentThreadHasTurn(turnId) {
@@ -16450,21 +16478,23 @@ function renderThreadTaskCardExpandable(preview, sections) {
   </details>`;
 }
 
-function renderThreadTaskCardActions(card) {
+function renderThreadTaskCardActions(card, threadId = "") {
   if (!card) return "";
+  const ownerThreadId = String(threadId || "").trim();
+  const ownerAttribute = ownerThreadId ? ` data-task-card-thread-id="${escapeHtml(ownerThreadId)}"` : "";
   if (card.canApprove || card.canDelete || card.canReply || card.canRevoke) {
     const buttons = [];
     const approveLabel = card.workflow && card.workflow.mode === "autonomous" ? "Approve workflow" : "Approve";
-    if (card.canApprove) buttons.push(`<button class="approval-button allow" type="button" data-task-card-action="approve" data-task-card-id="${escapeHtml(card.id)}">${escapeHtml(approveLabel)}</button>`);
-    if (card.canReply) buttons.push(`<button class="approval-button allow" type="button" data-task-card-action="reply" data-task-card-id="${escapeHtml(card.id)}">Reply</button>`);
-    if (card.canDelete) buttons.push(`<button class="approval-button deny" type="button" data-task-card-action="delete" data-task-card-id="${escapeHtml(card.id)}">Delete</button>`);
-    if (card.canRevoke) buttons.push(`<button class="approval-button deny" type="button" data-task-card-action="revoke" data-task-card-id="${escapeHtml(card.id)}">Revoke</button>`);
+    if (card.canApprove) buttons.push(`<button class="approval-button allow" type="button" data-task-card-action="approve" data-task-card-id="${escapeHtml(card.id)}"${ownerAttribute}>${escapeHtml(approveLabel)}</button>`);
+    if (card.canReply) buttons.push(`<button class="approval-button allow" type="button" data-task-card-action="reply" data-task-card-id="${escapeHtml(card.id)}"${ownerAttribute}>Reply</button>`);
+    if (card.canDelete) buttons.push(`<button class="approval-button deny" type="button" data-task-card-action="delete" data-task-card-id="${escapeHtml(card.id)}"${ownerAttribute}>Delete</button>`);
+    if (card.canRevoke) buttons.push(`<button class="approval-button deny" type="button" data-task-card-action="revoke" data-task-card-id="${escapeHtml(card.id)}"${ownerAttribute}>Revoke</button>`);
     return `<div class="approval-actions">${buttons.join("")}</div>`;
   }
   return "";
 }
 
-function renderThreadTaskCard(card, previousKeys = new Set()) {
+function renderThreadTaskCard(card, previousKeys = new Set(), threadId = "") {
   const key = `task-card|${card.id}`;
   const status = String(card.status || "pending");
   const detail = taskCardDetailLines(card).join("\n");
@@ -16485,15 +16515,16 @@ function renderThreadTaskCard(card, previousKeys = new Set()) {
     </div>
     ${summary ? `<div class="approval-summary-line">${escapeHtml(summary)}</div>` : ""}
     ${renderThreadTaskCardExpandable(summary || detail || (card.message && card.message.title) || "Task card details", detailBlocks)}
-    ${renderThreadTaskCardActions(card)}
+    ${renderThreadTaskCardActions(card, threadId)}
   </section>`;
 }
 
 function renderThreadTaskCards(thread, previousKeys = new Set()) {
   const cards = threadTaskCardsForThread(thread);
   if (!cards.length) return "";
+  const threadId = String(thread && thread.id || "").trim();
   return `<div class="approval-stack thread-task-card-stack">
-    ${cards.map((card) => renderThreadTaskCard(card, previousKeys)).join("")}
+    ${cards.map((card) => renderThreadTaskCard(card, previousKeys, threadId)).join("")}
   </div>`;
 }
 
@@ -22851,15 +22882,16 @@ function declineServerRequest(requestId) {
   return answerApproval(key, "deny");
 }
 
-async function mutateThreadTaskCard(cardId, action, body = {}) {
+async function mutateThreadTaskCard(cardId, action, body = {}, options = {}) {
   const id = String(cardId || "").trim();
-  if (!id || !state.currentThreadId) return;
+  const threadId = String(options.threadId || body.threadId || state.currentThreadId || "").trim();
+  if (!id || !threadId) return;
   $("connectionState").classList.remove("error");
   $("connectionState").textContent = action === "approve" ? "Approving task card" : `${action} task card`;
   try {
     const result = await api(`/api/thread-task-cards/${encodeURIComponent(id)}/${encodeURIComponent(action)}`, {
       method: "POST",
-      body: JSON.stringify(Object.assign({ threadId: state.currentThreadId }, body)),
+      body: JSON.stringify(Object.assign({}, body, { threadId })),
       timeoutMs: 30000,
     });
     if (action === "approve" && result && result.execution && result.execution.turnId) {
@@ -22867,7 +22899,7 @@ async function mutateThreadTaskCard(cardId, action, body = {}) {
     } else {
       $("connectionState").textContent = "Task card updated";
     }
-    settleCurrentThreadTaskCard(id, action === "approve" ? "approved" : action === "delete" ? "deleted" : action === "revoke" ? "revoked" : "replied", result && result.card ? result.card : null);
+    settleThreadTaskCardForThread(threadId, id, action === "approve" ? "approved" : action === "delete" ? "deleted" : action === "revoke" ? "revoked" : "replied", result && result.card ? result.card : null);
     recordHomeAiDiagnosticSuccess({
       category: "task_card_workflow_failed",
       diagnostic_type: action === "reply" ? "task_card_return_failed" : "task_card_action_failed",
@@ -22875,24 +22907,30 @@ async function mutateThreadTaskCard(cardId, action, body = {}) {
       context: {
         surface: "task-card",
         action: homeAiDiagnosticReportingApi.boundedToken(action, "mutate", 40),
-        thread_hash: diagnosticThreadHash(state.currentThreadId),
+        thread_hash: diagnosticThreadHash(threadId),
         task_hash: diagnosticTaskHash(id),
       },
     });
     if (action === "approve" && result && result.execution && result.execution.turnId) {
-      const injectedVisible = await waitForCurrentThreadTurn(result.execution.turnId, { timeoutMs: 10000, intervalMs: 500 });
+      let injectedVisible = false;
+      if (threadId === String(state.currentThreadId || "")) {
+        injectedVisible = await waitForCurrentThreadTurn(result.execution.turnId, { timeoutMs: 10000, intervalMs: 500 });
+      } else {
+        scheduleComposerTargetRefresh(threadId, 300, "task-card-approved");
+      }
       $("connectionState").textContent = injectedVisible ? "Task card approved and injected" : "Task card approved; waiting for thread refresh";
       loadThreads({ silent: true }).catch(showError);
       return;
     }
-    await refreshCurrentThreadAfterTaskCard();
+    await refreshThreadAfterTaskCard(threadId);
   } catch (err) {
     showError(err);
   }
 }
 
-async function replyTaskCard(cardId) {
-  const card = findThreadTaskCard(cardId);
+async function replyTaskCard(cardId, options = {}) {
+  const threadId = String(options.threadId || state.currentThreadId || "").trim();
+  const card = findThreadTaskCard(cardId, threadId);
   if (!card) return;
   const body = await requestAppTextInput("输入回复内容。", "", {
     title: "回复任务卡片",
@@ -22907,7 +22945,7 @@ async function replyTaskCard(cardId) {
     summary: summarizeTaskCardText(body),
     body: String(body).trim(),
     idempotencyKey: `task-card-reply:${card.id}:${Date.now()}:${Math.random().toString(16).slice(2, 8)}`,
-  });
+  }, { threadId });
 }
 
 function findThreadTaskCardDraftByKey(draftKey) {
@@ -23446,11 +23484,11 @@ function wireUi() {
       return;
     }
     if (actionPlan.action === "task-card-reply") {
-      replyTaskCard(actionPlan.cardId).catch(showError);
+      replyTaskCard(actionPlan.cardId, { threadId: actionPlan.threadId }).catch(showError);
       return;
     }
     if (actionPlan.action === "task-card-mutate") {
-      mutateThreadTaskCard(actionPlan.cardId, actionPlan.taskCardAction).catch(showError);
+      mutateThreadTaskCard(actionPlan.cardId, actionPlan.taskCardAction, {}, { threadId: actionPlan.threadId }).catch(showError);
       return;
     }
     if (actionPlan.action === "task-card-unknown") return;

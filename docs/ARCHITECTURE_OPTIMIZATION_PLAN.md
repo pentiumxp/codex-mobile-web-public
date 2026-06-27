@@ -1977,8 +1977,12 @@ Target:
   are helper-owned while `app.js` keeps API/localStorage/apply/save side
   effects. Continue moving pane
   widths, per-pane drafts, max concurrent detail reads, pane-local
-  send/approval/interrupt ownership, command detail panels, and mobile collapse
+  approval surfaces, command detail panels, and mobile collapse
   behavior into testable helpers without DOM side effects.
+  Task-card action context is now pane-aware: rendered task-card buttons carry
+  their owning thread id, the shared click resolver returns that id, and
+  mutation/reply calls send and settle against that action thread instead of
+  unconditionally using global `state.currentThreadId`.
 - Treat each pane as a scaled mobile single-thread runtime instance. Shared
   global Composer chrome is only an interim input surface; global command dock
   or shared operation bubble are no longer acceptable in tile mode and must not

@@ -87,18 +87,21 @@ test("thread detail click action resolves approval and task card controls", () =
     approvalAction: "allow_once",
   });
 
-  const reply = node("reply", { taskCardAction: "reply", taskCardId: "ttc_1" });
-  assert.equal(actions.resolveThreadDetailClickAction({
+  const reply = node("reply", { taskCardAction: "reply", taskCardId: "ttc_1", taskCardThreadId: "thread-a" });
+  const replyPlan = actions.resolveThreadDetailClickAction({
     target: targetWith({ "[data-task-card-action]": reply }),
-  }).action, "task-card-reply");
+  });
+  assert.equal(replyPlan.action, "task-card-reply");
+  assert.equal(replyPlan.threadId, "thread-a");
 
-  const approve = node("approve", { taskCardAction: "approve", taskCardId: "ttc_2" });
+  const approve = node("approve", { taskCardAction: "approve", taskCardId: "ttc_2", taskCardThreadId: "thread-b" });
   const approvePlan = actions.resolveThreadDetailClickAction({
     target: targetWith({ "[data-task-card-action]": approve }),
   });
   assert.equal(approvePlan.action, "task-card-mutate");
   assert.equal(approvePlan.taskCardAction, "approve");
   assert.equal(approvePlan.cardId, "ttc_2");
+  assert.equal(approvePlan.threadId, "thread-b");
 });
 
 test("thread detail click action resolves draft and server response controls", () => {

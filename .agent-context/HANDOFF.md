@@ -21174,3 +21174,47 @@ The previous full handoff was archived and should be opened only when old proven
 - Next:
   - Commit this local slice and keep it undeployed until a coherent deployable
     module is ready.
+
+## 2026-06-27 - Phase C task-card pane action context local slice
+
+- Current local state:
+  - Continued after local commit `0a4bccd` (`refactor composer action control
+    planning`).
+  - This is a local Phase C pane-state/task-card action-context slice only. It
+    changes `public/app.js`, `public/thread-detail-actions.js`, focused tests,
+    README, and the architecture plan. It does not bump shell/cache, deploy
+    production, or push Public.
+- Root-cause boundary:
+  - Symptom/risk: task-card buttons carried only card id/action, the shared
+    click resolver returned only those fields, and `mutateThreadTaskCard()`
+    always sent `state.currentThreadId` in the API request body. In tile mode
+    this would route a pane-local task-card action through the global current
+    thread rather than the pane owning the card.
+  - Failing layer: frontend task-card action context propagation across
+    rendered controls, click resolution, local settle, and refresh dispatch.
+    This is not a server task-card protocol change, return/ack semantic
+    change, or task-card body rendering change.
+  - Violated invariant: pane-local task-card actions must carry their owning
+    thread context explicitly; global current-thread fallback is acceptable
+    only for legacy/current-thread controls without an owning thread id.
+- Changes:
+  - `renderThreadTaskCardActions()` writes `data-task-card-thread-id` on
+    approve/reply/delete/revoke buttons.
+  - `public/thread-detail-actions.js` returns `threadId` for task-card reply,
+    mutate, and unknown action plans.
+  - `mutateThreadTaskCard()` and `replyTaskCard()` accept an action-context
+    thread id and send it in the request body.
+  - Added `settleThreadTaskCardForThread()` and `refreshThreadAfterTaskCard()`
+    so local settle/refresh can target the current detail or a visible tile
+    pane cache without repainting an unrelated current thread.
+- Validation:
+  - `node --check public/thread-detail-actions.js && node --check public/app.js`
+    passed.
+  - `node --test test/thread-detail-actions.test.js test/thread-task-card-route.test.js test/thread-tile-layout-ui.test.js`
+    passed (`17` tests).
+  - `npm test` passed (`1252` tests).
+  - `npm run check` passed.
+  - `git diff --check` passed after docs/context updates.
+- Next:
+  - Commit this local slice and keep it undeployed until a coherent deployable
+    module is ready.

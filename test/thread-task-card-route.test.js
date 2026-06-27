@@ -331,7 +331,7 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /function settleCurrentThreadTaskCard\(/);
   assert.match(appJs, /settledCard\.threadRole === "target"/);
   assert.match(appJs, /settledCard\.threadRole === "source"/);
-  assert.match(appJs, /settleCurrentThreadTaskCard\(id, action === "approve" \? "approved" : action === "delete" \? "deleted" : action === "revoke" \? "revoked" : "replied"/);
+  assert.match(appJs, /settleThreadTaskCardForThread\(threadId, id, action === "approve" \? "approved" : action === "delete" \? "deleted" : action === "revoke" \? "revoked" : "replied"/);
   assert.match(appJs, /function threadTaskCardsSignature\(/);
   assert.match(appJs, /taskCards: threadTaskCardsSignature\(thread\)/);
   assert.match(appJs, /thread-card-task-badge/);
@@ -346,11 +346,18 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /data-task-card-action="reply"/);
   assert.match(appJs, /data-task-card-action="delete"/);
   assert.match(appJs, /data-task-card-action="revoke"/);
+  assert.match(appJs, /data-task-card-thread-id/);
   assert.match(appJs, /const threadDetailActionsApi = window\.CodexThreadDetailActions/);
   assert.match(appJs, /threadDetailActionsApi\.resolveThreadDetailClickAction/);
   assert.match(appJs, /function createThreadTaskCardFromCurrent\(/);
   assert.match(appJs, /function mutateThreadTaskCard\(/);
   assert.match(appJs, /function replyTaskCard\(/);
+  assert.match(functionBody(appJs, "mutateThreadTaskCard"), /const threadId = String\(options\.threadId \|\| body\.threadId \|\| state\.currentThreadId \|\| ""\)\.trim\(\)/);
+  assert.match(functionBody(appJs, "mutateThreadTaskCard"), /Object\.assign\(\{\}, body, \{ threadId \}\)/);
+  assert.match(functionBody(appJs, "mutateThreadTaskCard"), /settleThreadTaskCardForThread\(threadId, id,/);
+  assert.match(functionBody(appJs, "replyTaskCard"), /findThreadTaskCard\(cardId, threadId\)/);
+  assert.match(appJs, /replyTaskCard\(actionPlan\.cardId, \{ threadId: actionPlan\.threadId \}\)/);
+  assert.match(appJs, /mutateThreadTaskCard\(actionPlan\.cardId, actionPlan\.taskCardAction, \{\}, \{ threadId: actionPlan\.threadId \}\)/);
   assert.match(appJs, /function isThreadTaskCardCommandText\(/);
   assert.match(appJs, /function sendThreadTaskCardCommand\(/);
   assert.match(functionBody(appJs, "sendMessage"), /await sendThreadTaskCardCommand\(text\)/);
