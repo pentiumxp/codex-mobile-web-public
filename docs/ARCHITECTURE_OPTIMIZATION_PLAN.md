@@ -1838,8 +1838,11 @@ metadata.
 - `mode=recent` can seed and reuse a signed partial projection. Partial
   projections carry `partial:true` / `partialKind:recent-window`, are only
   returned when the coordinator explicitly passes `allowPartial`, may be
-  persisted/restored only with a matching projection signature, and cannot
-  overwrite a reusable full projection cache.
+  persisted/restored with a matching projection signature, and cannot overwrite a
+  reusable full projection cache. When only a stale signed partial is available
+  after backing movement, recent-mode first paint may return it with
+  `stalePartial` metadata while scheduling a background window refresh; it still
+  cannot become full-history authority.
   A stale full cache whose signature no longer matches must not block the
   recent partial warm path.
   The v4 projection wrapper must pass those seed/get options through to the

@@ -220,6 +220,57 @@ test("thread detail orchestration records bounded projection lookup miss reason"
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "bounded-large-turns-list");
 });
 
+test("thread detail orchestration returns stale partial projection and schedules refresh", async () => {
+  const scheduled = [];
+  const { service, calls } = createHarness({
+    projectedThreadLookup: (projection, summary, runtimeSettings, options) => {
+      calls.push(`projection-lookup-stale:${options.allowStalePartial === true}`);
+      return {
+        stalePartial: true,
+        staleReason: "backing-signature-mismatch",
+        result: {
+          thread: {
+            id: "thread-1",
+            turns: [{ id: "turn-cached" }],
+            mobileReadMode: "projection-v4-partial",
+            mobileProjection: {
+              source: "partial",
+              version: "v4",
+              partial: true,
+              stalePartial: true,
+              staleReason: "backing-signature-mismatch",
+            },
+          },
+        },
+        missReason: "",
+      };
+    },
+    scheduleProjectionRefresh: (input) => {
+      calls.push(`schedule-refresh:${input.reason}`);
+      scheduled.push(input);
+      return { scheduled: true };
+    },
+  });
+
+  const response = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: true,
+    threadLog: () => {},
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.mode, "projection-v4-partial");
+  assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["turn-cached"]);
+  assert.equal(calls.includes("turns-list:turns-list-initial"), false);
+  assert.equal(calls.includes("thread-read"), false);
+  assert.equal(calls.includes("projection-lookup-stale:true"), true);
+  assert.equal(calls.includes("schedule-refresh:backing-signature-mismatch"), true);
+  assert.equal(scheduled.length, 1);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "projection-stale-partial-hit");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionState, "hit");
+});
+
 test("thread detail orchestration preserves full thread/read before bounded turns/list fallback", async () => {
   const { service, calls } = createHarness();
 

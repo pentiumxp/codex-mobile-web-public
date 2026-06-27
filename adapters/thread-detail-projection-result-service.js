@@ -119,6 +119,10 @@ function createThreadDetailProjectionResultService(options = {}) {
       updatedAtMs: cached.updatedAtMs || cached.cachedAtMs || null,
       ageMs: cached.updatedAtMs ? Math.max(0, now() - cached.updatedAtMs) : null,
     };
+    if (cached.stalePartial === true) {
+      result.thread.mobileProjection.stalePartial = true;
+      result.thread.mobileProjection.staleReason = cached.staleReason || "";
+    }
     return result;
   }
 

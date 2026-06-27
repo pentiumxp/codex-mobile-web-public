@@ -5378,11 +5378,17 @@ const threadDetailReadOrchestrationService = createThreadDetailReadOrchestration
         updatedAtMs: cached.updatedAtMs || cached.cachedAtMs || null,
         ageMs: cached.updatedAtMs ? Math.max(0, Date.now() - cached.updatedAtMs) : null,
       });
+      if (cached.stalePartial === true) {
+        thread.mobileProjection.stalePartial = true;
+        thread.mobileProjection.staleReason = cached.staleReason || "";
+      }
       result = Object.assign({}, result, { thread });
     }
     return {
       result,
       missReason: lookedUp && lookedUp.missReason || "",
+      stalePartial: cached && cached.stalePartial === true,
+      staleReason: cached && cached.staleReason || "",
     };
   },
   projectedThreadResult: (input, summary, runtimeSettings, optionsForProjection = {}) => prepareProjectedThreadReadResult(
@@ -5410,6 +5416,7 @@ const threadDetailReadOrchestrationService = createThreadDetailReadOrchestration
   )),
   readFullThread: readFullThreadDetailForOrchestrator,
   seedProjection: (input, result, optionsForSeed = {}) => threadDetailProjectionService.seed(input, result, optionsForSeed),
+  scheduleProjectionRefresh: (input = {}) => scheduleRecentWindowProjectionRefresh(input),
   preferBoundedReadBeforeFullRead: (input) => threadDetailBoundedReadPolicyService.preferBoundedReadBeforeFullRead(input),
   prepareResponse: prepareThreadDetailResponseResult,
   compactActiveOverlayTurn: (turn, details = {}) => compactTurn(turn, {
@@ -8856,6 +8863,59 @@ function scheduleActiveWindowPrewarm(threadId, summary = null, reason = "") {
     reason,
     threadLog: (event, details = {}) => logThreadDetail(`active_window_prewarm_${event}`, Object.assign({ threadId: id }, details)),
   });
+}
+
+const recentWindowProjectionRefreshPending = new Map();
+
+function scheduleRecentWindowProjectionRefresh(input = {}) {
+  const id = String(input.threadId || input.summary && (input.summary.id || input.summary.threadId || input.summary.thread_id) || "").trim();
+  if (!id) return { scheduled: false, reason: "missing-thread-id" };
+  if (!input.projection) return { scheduled: false, reason: "projection-input-unavailable" };
+  if (recentWindowProjectionRefreshPending.has(id)) return { scheduled: false, reason: "already-pending" };
+  const reason = String(input.reason || "stale-partial").slice(0, 80);
+  recentWindowProjectionRefreshPending.set(id, { reason, scheduledAtMs: Date.now() });
+  const timer = setTimeout(() => {
+    const threadLog = typeof input.threadLog === "function"
+      ? input.threadLog
+      : (event, details = {}) => logThreadDetail(`recent_window_refresh_${event}`, Object.assign({ threadId: id }, details));
+    turnsListThreadReadResult(
+      id,
+      input.summary || null,
+      input.runtimeSettings || null,
+      "",
+      "turns-list-background-refresh",
+      threadLog,
+    ).then((result) => {
+      if (result && result.thread) {
+        const seeded = threadDetailProjectionService.seed(input.projection, result, {
+          partial: true,
+          partialKind: "recent-window",
+        });
+        logThreadDetail("recent_window_refresh_done", {
+          threadId: id,
+          trigger: reason,
+          status: seeded && seeded.skipped ? "skipped" : "seeded",
+          seedReason: seeded && seeded.reason || "",
+        });
+      } else {
+        logThreadDetail("recent_window_refresh_skipped", {
+          threadId: id,
+          trigger: reason,
+          status: "empty-result",
+        });
+      }
+    }).catch((err) => {
+      logThreadDetail("recent_window_refresh_failed", {
+        threadId: id,
+        trigger: reason,
+        error: err && err.message ? String(err.message).slice(0, 120) : String(err).slice(0, 120),
+      });
+    }).finally(() => {
+      recentWindowProjectionRefreshPending.delete(id);
+    });
+  }, 25);
+  if (timer && typeof timer.unref === "function") timer.unref();
+  return { scheduled: true, reason: "scheduled" };
 }
 
 function scheduleActiveWindowPrewarmFromNotification(payload) {

@@ -58,6 +58,7 @@ test("thread performance metrics classify thread detail cold and warm phases fro
   assert.equal(metrics.classifyThreadDetailPhase({ phase: "unknown", readDecision: "projection-hit", projectionSource: "cache" }), "warm-projection-cache");
   assert.equal(metrics.classifyThreadDetailPhase({ readDecision: "projection-hit", projectionSource: "dynamic" }), "warm-projection-dynamic");
   assert.equal(metrics.classifyThreadDetailPhase({ readDecision: "projection-partial-hit" }), "warm-projection-partial");
+  assert.equal(metrics.classifyThreadDetailPhase({ readDecision: "projection-stale-partial-hit" }), "warm-projection-partial");
   assert.equal(metrics.classifyThreadDetailPhase({ readMode: "projection-v4-partial" }), "warm-projection-partial");
   assert.equal(metrics.classifyThreadDetailPhase({ readDecision: "initial-turns-list", projectionSeedStatus: "seeded-partial" }), "cold-turns-list-initial-seeded-partial");
   assert.equal(metrics.classifyThreadDetailPhase({ readDecision: "initial-turns-list" }), "cold-turns-list-initial");

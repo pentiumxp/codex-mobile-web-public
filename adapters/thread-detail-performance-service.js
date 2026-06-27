@@ -31,7 +31,9 @@ function classifyThreadDetailPhase(readMode, options = {}) {
   const projectionState = nonEmptyText(options.projectionState).toLowerCase();
   const projectionSource = nonEmptyText(options.projectionSource).toLowerCase();
   const projectionSeedStatus = nonEmptyText(options.projectionSeedStatus).toLowerCase();
-  if (readDecision === "projection-partial-hit" || /projection-v?\d*-partial|projection-partial/.test(mode)) {
+  if (readDecision === "projection-partial-hit"
+    || readDecision === "projection-stale-partial-hit"
+    || /projection-v?\d*-partial|projection-partial/.test(mode)) {
     return "warm-projection-partial";
   }
   if (readDecision === "projection-active-overlay" || /projection-active-overlay/.test(mode)) {

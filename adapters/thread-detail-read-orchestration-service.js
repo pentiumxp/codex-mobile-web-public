@@ -171,6 +171,9 @@ function createThreadDetailReadOrchestrationService(options = {}) {
     : async () => ({ thread: null });
   const readFullThread = typeof options.readFullThread === "function" ? options.readFullThread : async () => ({ thread: null });
   const seedProjection = typeof options.seedProjection === "function" ? options.seedProjection : () => {};
+  const scheduleProjectionRefresh = typeof options.scheduleProjectionRefresh === "function"
+    ? options.scheduleProjectionRefresh
+    : null;
   const preferBoundedReadBeforeFullRead = typeof options.preferBoundedReadBeforeFullRead === "function"
     ? options.preferBoundedReadBeforeFullRead
     : () => false;
@@ -335,7 +338,10 @@ function createThreadDetailReadOrchestrationService(options = {}) {
     );
     context.activeOverlayWindowFirst = shouldUseActiveOverlayWindowFirst;
     const projectionLookup = projection && projectedThreadLookup && !shouldUseActiveOverlayWindowFirst
-      ? projectedThreadLookup(projection, summary, runtimeSettings, { allowPartial: allowPartialProjection })
+      ? projectedThreadLookup(projection, summary, runtimeSettings, {
+        allowPartial: allowPartialProjection,
+        allowStalePartial: allowPartialProjection,
+      })
       : null;
     const projected = projection
       ? projectionLookup
@@ -346,6 +352,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
     timer.mark("projectionMs", projectionStartedAtMs);
     const projectedThread = projected && projected.thread || null;
     if (projectedThread) {
+      const stalePartialHit = Boolean(projectionLookup && projectionLookup.stalePartial);
       context.projectionState = "hit";
       context.projectionMissReason = "";
       const projectionInfo = projectionDiagnosticsFromThread(projectedThread);
@@ -368,6 +375,20 @@ function createThreadDetailReadOrchestrationService(options = {}) {
         omittedTurns: projectedThread.mobileOmittedTurnCount || 0,
       });
       if (!activeReadPolicy.activeFullReadRequired || !resolveActiveWindowOverlay) {
+        if (stalePartialHit && scheduleProjectionRefresh) {
+          try {
+            scheduleProjectionRefresh({
+              threadId,
+              summary,
+              projection,
+              runtimeSettings,
+              reason: projectionLookup.staleReason || "stale-partial",
+              threadLog,
+            });
+          } catch (err) {
+            threadLog("projection_refresh_schedule_error", { error: safeErrorMessage(err) });
+          }
+        }
         rememberThreadSummary(projectedThread);
         return {
           status: 200,
@@ -375,7 +396,9 @@ function createThreadDetailReadOrchestrationService(options = {}) {
           body: await prepareAndAttach(projected, context, {
             threadId,
             source: projectedThread.mobileReadMode || "projection",
-            readDecision: projectedThread.mobileProjection && projectedThread.mobileProjection.partial
+            readDecision: stalePartialHit
+              ? "projection-stale-partial-hit"
+              : projectedThread.mobileProjection && projectedThread.mobileProjection.partial
               ? "projection-partial-hit"
               : "projection-hit",
           }),

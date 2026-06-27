@@ -476,10 +476,14 @@ may reuse that partial projection only when the coordinator explicitly passes
 `allowPartial`. Full/detail reads still reject partial windows as complete
 history. Signed partial windows may be persisted and restored after restart when
 their backing signature still matches, but notification-only shells remain
-memory-only and are not valid detail authority. If the route needs complete
-history or a recent window cannot be used, the coordinator falls through to full
-app-server `thread/read includeTurns:true`, bounded `thread/turns/list`, then
-local summary fallback. A `thread/turns/list` response can also carry the
+memory-only and are not valid detail authority. If a signed partial window
+exists after backing movement, recent-mode first paint may return it only as a
+marked stale partial and schedule a background refresh of the same bounded
+window; full/detail authority still requires a fresh full cache or a new window
+read. If the route needs complete history or a recent window cannot be used, the
+coordinator falls through to full app-server `thread/read includeTurns:true`,
+bounded `thread/turns/list`, then local summary fallback. A `thread/turns/list`
+response can also carry the
 app-server older-history cursor so the browser can page in earlier turns. The
 browser loads older turns in 10-turn pages when the user scrolls to the top of
 the current detail window and preserves the reading position after prepending

@@ -1072,6 +1072,16 @@ test("thread detail projection reuses partial recent windows when only summary m
     const staleLookup = restoredService.lookup(backingChange, { allowPartial: true });
     assert.equal(staleLookup.cached, null);
     assert.equal(staleLookup.missReason, "static-signature-mismatch");
+
+    const staleFirstPaint = restoredService.lookup(backingChange, {
+      allowPartial: true,
+      allowStalePartial: true,
+    });
+    assert.equal(staleFirstPaint.missReason, "");
+    assert.ok(staleFirstPaint.cached);
+    assert.equal(staleFirstPaint.cached.partial, true);
+    assert.equal(staleFirstPaint.cached.stalePartial, true);
+    assert.equal(staleFirstPaint.cached.staleReason, "backing-signature-mismatch");
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

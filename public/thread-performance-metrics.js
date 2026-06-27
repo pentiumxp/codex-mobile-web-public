@@ -80,7 +80,9 @@
     const projectionState = compactLabel(value.projectionState, 80).toLowerCase();
     const projectionSource = compactLabel(value.projectionSource, 80).toLowerCase();
     const projectionSeedStatus = compactLabel(value.projectionSeedStatus, 80).toLowerCase();
-    if (readDecision === "projection-partial-hit" || /projection-v?\d*-partial|projection-partial/.test(readMode)) {
+    if (readDecision === "projection-partial-hit"
+      || readDecision === "projection-stale-partial-hit"
+      || /projection-v?\d*-partial|projection-partial/.test(readMode)) {
       return "warm-projection-partial";
     }
     if (readDecision === "projection-hit" || projectionState === "hit") {

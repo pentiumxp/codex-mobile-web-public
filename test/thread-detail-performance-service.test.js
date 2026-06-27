@@ -145,6 +145,10 @@ test("thread detail phase classification uses bounded read decisions without rea
     "warm-projection-partial",
   );
   assert.equal(
+    classifyThreadDetailPhase("", { readDecision: "projection-stale-partial-hit" }),
+    "warm-projection-partial",
+  );
+  assert.equal(
     classifyThreadDetailPhase("", { readDecision: "projection-active-overlay" }),
     "warm-projection-active-overlay",
   );

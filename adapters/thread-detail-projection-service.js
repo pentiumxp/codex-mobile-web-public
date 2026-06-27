@@ -921,6 +921,25 @@ function createThreadDetailProjectionService(options = {}) {
         if (staleWindow) return staleWindow;
         const historyWindow = activeOverlayFullHistoryWindow();
         if (historyWindow) return historyWindow;
+        if (optionsForGet.allowStalePartial === true) {
+          const result = cloneProjectionResultForLookup(entry.result, optionsForGet);
+          normalizeProjectionThreadUserMessages(result.thread);
+          normalizeProjectionSupersededLiveTurns(result.thread);
+          trimTurns(result.thread, maxTurns);
+          return {
+            cached: {
+              cachedAtMs: entry.cachedAtMs,
+              updatedAtMs: entry.updatedAtMs,
+              dynamic: entry.dynamic,
+              partial: true,
+              partialKind: entry.partialKind || "",
+              stalePartial: true,
+              staleReason: "backing-signature-mismatch",
+              result,
+            },
+            missReason: "",
+          };
+        }
         return { cached: null, missReason: "static-signature-mismatch" };
       }
     } else if (entry.dynamic) {
