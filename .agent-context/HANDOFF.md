@@ -22895,3 +22895,31 @@ The previous full handoff was archived and should be opened only when old proven
     `thread/list` RPC jitter path with mux metrics/readback evidence. Do not
     reopen fallback-cache or rollout-rebuild work unless readback again points
     there.
+
+## 2026-06-27 - v548 private/public push completed
+
+- Private push:
+  - Pushed private `main` through `origin`
+    (`git@github.com-homeai-ssa:pentiumxp/codex-mobile-web.git`) after local
+    commits through `8738696`.
+- Public sync:
+  - Built a public-safe worktree at
+    `/tmp/codex-mobile-public-v548.kaKrkU` from `public/main`.
+  - Applied `main` to `public/main` diff excluding `.agent-context`.
+  - Public-safe validation:
+    - `git diff --cached --check` passed.
+    - Public tree scan found no `.agent-context`, `.env`, `data/`, `runtime/`,
+      `logs/`, or `uploads/` paths.
+    - `npm run check` passed in the public worktree.
+    - Focused public tests passed:
+      `node --test test/thread-list-stable-order.test.js test/thread-list-load-policy.test.js test/mobile-viewport.test.js test/app-update.test.js test/plugin-voice-input.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js`
+      (`63` tests).
+  - Pushed public commit `0642ecf` (`release: publish v548 stability updates`)
+    to `public/main`.
+  - Merged `public/main` back into private `main` with the `ours` strategy so
+    the private branch keeps `.agent-context` while public history remains an
+    ancestor.
+- Next:
+  - Push the private merge/handoff record to `origin/main` and verify
+    `git merge-base --is-ancestor public/main main` plus
+    `git diff --stat public/main..main -- ':!.agent-context'`.
