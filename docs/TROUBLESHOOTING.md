@@ -412,10 +412,17 @@ active-looking turns were deliberately downgraded for response shaping. When
 `omittedActiveTextChars`,
 `progressiveActiveTurnOriginalBytes`, `progressiveActiveOriginalBytes`,
 `configuredActive*Items`, and the effective `active*Items` fields before
-changing visible-item policy. Reasons ending in `-byte-pressure` mean the
-request was successful but too large, not that the network or app-server RPC
-timed out. On-demand expansion of omitted historical assistant progress is a
-separate route/API feature, not part of the default first paint.
+changing visible-item policy. Current servers also expose
+`progressiveVisibleItemCeiling`, `progressiveVisibleItemBudgetApplied`,
+`progressiveVisibleItemOriginalCount`, `progressiveVisibleItemRetainedCount`,
+`omittedVisibleItems`, and per-turn `mobileVisibleItemBudget` when progressive
+active pressure still leaves too many first-paint visible items after per-type
+compaction. That ceiling should remove older operation/reasoning rows first;
+user messages, images, Usage rows, diagnostics, and retained final receipts
+should stay visible. Reasons ending in `-byte-pressure` mean the request was
+successful but too large, not that the network or app-server RPC timed out.
+On-demand expansion of omitted historical assistant progress is a separate
+route/API feature, not part of the default first paint.
 
 If a newly submitted message briefly shows local input feedback and then the
 right-side turn timer changes to `已结束` while `/api/threads/:id?mode=recent`

@@ -470,6 +470,166 @@ test("thread detail response budget applies progressive active limits under item
   assert.equal(budget.progressiveActiveTurnOriginalItemCount, 24);
 });
 
+test("thread detail response budget applies progressive visible item ceiling after per-turn compaction", () => {
+  const completedTurn = (turnIndex) => ({
+    id: `turn-${turnIndex}`,
+    status: "completed",
+    items: [
+      { id: `u${turnIndex}`, type: "userMessage", text: `Question ${turnIndex}` },
+      { id: `a${turnIndex}`, type: "agentMessage", text: `Answer ${turnIndex}` },
+      { id: `usage${turnIndex}`, type: "turnUsageSummary" },
+      ...Array.from({ length: 3 }, (_, index) => ({
+        id: `c${turnIndex}-${index + 1}`,
+        type: "commandExecution",
+        command: `cmd ${turnIndex}-${index + 1}`,
+      })),
+    ],
+  });
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      turns: [
+        completedTurn(1),
+        completedTurn(2),
+        completedTurn(3),
+        completedTurn(4),
+        {
+          id: "turn-active",
+          status: "inProgress",
+          items: [
+            { id: "live-a1", type: "agentMessage", text: "Working" },
+            { id: "live-c1", type: "commandExecution", command: "live 1" },
+            { id: "live-c2", type: "commandExecution", command: "live 2" },
+            { id: "live-r1", type: "reasoning", text: "reason" },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    completedOperationItems: 3,
+    activeOperationItems: 2,
+    activeAssistantItems: 1,
+    activeReasoningItems: 1,
+    activeProgressiveItemThreshold: 1,
+    progressiveActiveOperationItems: 2,
+    progressiveActiveAssistantItems: 1,
+    progressiveActiveReasoningItems: 1,
+    progressiveVisibleItemCeiling: 20,
+  });
+
+  const turns = compacted.thread.turns;
+  assert.deepEqual(turns[0].items.map((item) => item.id), ["u1", "a1", "usage1"]);
+  assert.deepEqual(turns[1].items.map((item) => item.id), ["u2", "a2", "usage2"]);
+  assert.deepEqual(turns[2].items.map((item) => item.id), ["u3", "a3", "usage3", "c3-3"]);
+  assert.deepEqual(turns[3].items.map((item) => item.id), ["u4", "a4", "usage4", "c4-1", "c4-2", "c4-3"]);
+  assert.deepEqual(turns[4].items.map((item) => item.id), ["live-a1", "live-c1", "live-c2", "live-r1"]);
+  const totalItems = turns.reduce((sum, turn) => sum + turn.items.length, 0);
+  assert.equal(totalItems, 20);
+  assert.equal(turns[0].mobileOmittedVisibleItemCount, 3);
+  assert.equal(turns[0].mobileVisibleItemBudget.reason, "progressive-visible-item-ceiling");
+  const budget = compacted.thread.mobileDetailResponseBudget;
+  assert.equal(budget.progressiveVisibleItemBudgetApplied, true);
+  assert.equal(budget.progressiveVisibleItemBudgetReason, "progressive-visible-item-ceiling");
+  assert.equal(budget.progressiveVisibleItemOriginalCount, 28);
+  assert.equal(budget.progressiveVisibleItemRetainedCount, 20);
+  assert.equal(budget.progressiveVisibleItemCeiling, 20);
+  assert.equal(budget.omittedVisibleItems, 8);
+  assert.equal(budget.omittedOperationItems, 8);
+  assert.equal(budget.retainedItemCount, 20);
+  assert.deepEqual(compacted.thread.mobileVisibleItemKeys, turns.flatMap((turn) => turn.items.map((item) => item.mobileVisibleKey)));
+});
+
+test("thread detail response budget uses active items only after older operations for visible item ceiling", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      turns: [{
+        id: "turn-active",
+        status: "inProgress",
+        items: [
+          { id: "u1", type: "userMessage", text: "Question" },
+          ...Array.from({ length: 6 }, (_, index) => ({
+            id: `c${index + 1}`,
+            type: "commandExecution",
+            command: `cmd ${index + 1}`,
+          })),
+          { id: "r1", type: "reasoning", text: "reason 1" },
+          { id: "r2", type: "reasoning", text: "reason 2" },
+          { id: "a1", type: "agentMessage", text: "progress 1" },
+          { id: "a2", type: "agentMessage", text: "progress 2" },
+        ],
+      }],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeOperationItems: 6,
+    activeReasoningItems: 2,
+    activeAssistantItems: 2,
+    activeProgressiveItemThreshold: 1,
+    progressiveActiveOperationItems: 6,
+    progressiveActiveReasoningItems: 2,
+    progressiveActiveAssistantItems: 2,
+    progressiveVisibleItemCeiling: 7,
+  });
+
+  const items = compacted.thread.turns[0].items;
+  assert.deepEqual(items.map((item) => item.id), ["u1", "c5", "c6", "r1", "r2", "a1", "a2"]);
+  const budget = compacted.thread.mobileDetailResponseBudget;
+  assert.equal(budget.progressiveVisibleItemBudgetApplied, true);
+  assert.equal(budget.progressiveVisibleItemOriginalCount, 11);
+  assert.equal(budget.progressiveVisibleItemRetainedCount, 7);
+  assert.equal(budget.omittedVisibleItems, 4);
+  assert.equal(budget.omittedOperationItems, 4);
+  assert.equal(compacted.thread.turns[0].mobileOmittedVisibleItemCount, 4);
+});
+
+test("thread detail response budget does not apply visible item ceiling without progressive active pressure", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      mobileReadMode: "projection-v4-dynamic",
+      turns: [{
+        id: "turn-completed",
+        status: "completed",
+        items: [
+          { id: "u1", type: "userMessage", text: "Question" },
+          ...Array.from({ length: 6 }, (_, index) => ({
+            id: `c${index + 1}`,
+            type: "commandExecution",
+            command: `cmd ${index + 1}`,
+          })),
+          { id: "a1", type: "agentMessage", text: "Answer" },
+          { id: "usage", type: "turnUsageSummary" },
+        ],
+      }],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    completedOperationItems: 3,
+    activeProgressiveItemThreshold: 1,
+    progressiveVisibleItemCeiling: 4,
+  });
+
+  const budget = compacted.thread.mobileDetailResponseBudget;
+  assert.equal(budget.progressiveActiveBudgetApplied, false);
+  assert.equal(budget.progressiveVisibleItemBudgetApplied, false);
+  assert.equal(budget.progressiveVisibleItemOriginalCount, 6);
+  assert.equal(budget.progressiveVisibleItemRetainedCount, 6);
+  assert.equal(budget.omittedVisibleItems, 0);
+  assert.equal(budget.omittedOperationItems, 3);
+});
+
 test("thread detail response budget does not mark progressive active budget without a current active turn", () => {
   const result = {
     thread: {

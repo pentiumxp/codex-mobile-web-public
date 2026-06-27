@@ -101,6 +101,15 @@ returning the response. The projection-result assembler also skips raw
 `thread/read` compaction for response-ready v4 hits with complete visible-key
 metadata, while keeping the compaction path for invalid or legacy cache shapes.
 
+The latest response-budget slice adds a second-stage first-paint visible item
+ceiling for active/progressive pressure. After operation/reasoning/assistant
+tails and active text are compacted, the server can prune older
+operation/reasoning rows until the first-paint detail shape is below the
+configured ceiling (`CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_VISIBLE_ITEM_CEILING`,
+default `48`, `0` disables). User messages, images, Usage rows, diagnostics,
+and retained final assistant/plan receipts remain protected, and the response
+records the omitted visible-item counts in `mobileDetailResponseBudget`.
+
 The latest thread-list slice targets the ordinary default list read after a
 process warm cache already exists. A no-search, no-workspace, no-cursor,
 non-archived `/api/threads` request can now return the process warm fallback

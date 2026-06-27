@@ -2394,6 +2394,14 @@ Deployable scope:
   and marked with `mobileActiveTextBudget` / `mobileTextTruncated`. The text
   preview budget can be disabled for diagnostics with
   `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_ACTIVE_TEXT_CHARS=0`.
+- After those per-type budgets, the same pressure condition can apply a
+  first-paint visible item ceiling
+  (`CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_VISIBLE_ITEM_CEILING`, default `48`,
+  `0` disables). The ceiling prunes older operation/reasoning rows before
+  current active operation/reasoning rows and records
+  `progressiveVisibleItemBudgetApplied`, `omittedVisibleItems`, and per-turn
+  `mobileVisibleItemBudget`; user messages, images, Usage rows, diagnostics,
+  and retained final assistant/plan receipts remain protected.
 - `server.js` wires the progressive thresholds and effective active limits from
   bounded environment variables.
 - Operation budgets now include `collabAgentToolCall`, and v4 visible-item

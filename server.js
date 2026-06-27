@@ -942,6 +942,7 @@ const THREAD_DETAIL_PROGRESSIVE_ACTIVE_OPERATION_ITEMS = Math.max(0, Math.min(30
 const THREAD_DETAIL_PROGRESSIVE_ACTIVE_REASONING_ITEMS = Math.max(0, Math.min(20, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_ACTIVE_REASONING_ITEMS || "1")));
 const THREAD_DETAIL_PROGRESSIVE_ACTIVE_ASSISTANT_ITEMS = Math.max(1, Math.min(50, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_ACTIVE_ASSISTANT_ITEMS || "4")));
 const THREAD_DETAIL_PROGRESSIVE_ACTIVE_TEXT_CHARS = Math.max(0, Math.min(200 * 1024, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_ACTIVE_TEXT_CHARS || String(12 * 1024))));
+const THREAD_DETAIL_PROGRESSIVE_VISIBLE_ITEM_CEILING = Math.max(0, Math.min(10000, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_VISIBLE_ITEM_CEILING || "48")));
 const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "collabAgentToolCall", "fileChange", "dynamicToolCall", "mcpToolCall"]);
 const THREAD_LIST_FALLBACK_CACHE_TTL_MS = Math.max(0, Number(process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_TTL_MS || "0"));
 const THREAD_LIST_DEFAULT_WARM_FALLBACK_ENABLED = !/^(0|false|no|off)$/i.test(process.env.CODEX_MOBILE_THREAD_LIST_DEFAULT_WARM_FALLBACK || "1");
@@ -13102,6 +13103,7 @@ async function prepareThreadDetailResponseResult(result, details = {}) {
       progressiveActiveReasoningItems: THREAD_DETAIL_PROGRESSIVE_ACTIVE_REASONING_ITEMS,
       progressiveActiveAssistantItems: THREAD_DETAIL_PROGRESSIVE_ACTIVE_ASSISTANT_ITEMS,
       progressiveActiveTextChars: THREAD_DETAIL_PROGRESSIVE_ACTIVE_TEXT_CHARS,
+      progressiveVisibleItemCeiling: THREAD_DETAIL_PROGRESSIVE_VISIBLE_ITEM_CEILING,
     }),
     details,
   );

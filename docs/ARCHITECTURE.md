@@ -549,11 +549,17 @@ text fields may be reduced to a bounded first-paint preview with
 `mobileActiveTextBudget` metadata and `mobileTextTruncated=true`; ordinary
 small active turns and completed-turn receipts keep their existing text
 behavior. `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_ACTIVE_TEXT_CHARS=0`
-disables only that retained-text preview budget for diagnostics. The operation
-budget includes command, file, dynamic tool, MCP, and collab-agent tool-call
-items. The response records the item and byte thresholds, trigger reason,
-configured limits, effective limits, text-budget counters, and original byte
-counts in `mobileDetailResponseBudget`.
+disables only that retained-text preview budget for diagnostics. When the same
+progressive pressure still leaves too many visible first-paint items after
+per-type compaction, the service applies
+`CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_VISIBLE_ITEM_CEILING` (default `48`,
+`0` disables) by pruning older operation/reasoning rows before touching current
+active operation/reasoning rows. User messages, images, Usage rows, diagnostics,
+and the retained final assistant/plan receipt are protected by this ceiling.
+The operation budget includes command, file, dynamic tool, MCP, and collab-agent
+tool-call items. The response records the item and byte thresholds, trigger
+reason, configured limits, effective limits, text-budget counters, visible-item
+ceiling counters, and original byte counts in `mobileDetailResponseBudget`.
 
 `HANDOFF.md` has a separate 200KB Usage prompt threshold so recently compacted handoffs near 100KB do not immediately ask for another continuation.
 
