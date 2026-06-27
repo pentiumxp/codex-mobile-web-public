@@ -24622,3 +24622,77 @@ The previous full handoff was archived and should be opened only when old proven
     cache exists at all, the stable projection identity changed, or background
     prewarm itself still needs to build a large window. Continue measuring with
     Phase-B readback and bounded logs before changing client loading behavior.
+
+## 2026-06-28 - Active Overlay Full History Baseline Module
+
+- User-visible symptom:
+  - The user reported a different shape from old timeout/network failures: the
+    thread can keep loading for a long time, then eventually render normally.
+  - Production logs after the prior stale-history deployment showed one
+    foreground active detail request still joined
+    `turns-list-active-overlay-window` and completed successfully around
+    `1533ms`. That means the request was not failing; it was waiting for
+    foreground history-window reconstruction.
+- Root cause / invariant:
+  - A notification can arrive after restart or before a full projection is
+    restored into memory. The process can then hold only a notification/partial
+    active-overlay shell while a persisted full projection still exists on disk.
+  - Active-overlay proof needs the historical window, but ordinary stale
+    projection semantics must remain strict. The narrower invariant is:
+    before applying active notifications, restore the last reusable full
+    projection as the history baseline, then keep active-window proof/gating in
+    the existing active-overlay path.
+- Implementation:
+  - `adapters/thread-detail-projection-service.js` now keeps a process-local
+    `fullHistory` baseline, remembers reusable full projections from seed/read
+    paths, and restores a persisted full projection before applying active
+    notifications when memory only has no entry or a partial shell.
+  - Active overlay lookup can use that baseline only for the historical window
+    required by `allowPartial + activeOverlay`; ordinary full/resting lookup
+    still rejects stale signatures and does not silently accept the baseline as
+    current detail.
+  - The service marks restored stale-history baseline usage through
+    `mobileProjection.staleFullHistoryBaseline` for bounded diagnostics.
+  - Updated docs: `docs/README.md`, `docs/ARCHITECTURE.md`,
+    `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Local validation:
+  - Added focused tests for restored persisted full history before active
+    notifications in both projection service and v4 wrapper.
+  - Focused projection/detail/readback/render suite passed (`339` tests).
+  - Full `npm test` passed (`1364` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Commit / deployment:
+  - Commit `12e47d6` `fix: 保留 active overlay full history baseline`.
+  - Deployed through the Home AI central macOS plugin deploy path with reason
+    `codex-mobile-active-history-baseline`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T220631Z-plugin-codex-mobile-web-codex-mobile-active-history-baseline`.
+  - Server/docs-only change; static shell stayed
+    `0.1.11|codex-mobile-shell-v553`, build id `8f5df1074a2bd651`.
+  - Source/prod SHA-256 prefixes matched for the changed service, focused tests,
+    and docs.
+- Production readback:
+  - General Phase-B readback: thread list `totalMs=103`,
+    `fallbackCacheDecision=compatible-hit`, mux metrics supported, selected
+    active detail `projection-active-overlay`, `totalMs=239`,
+    `activeOverlayWindowMs=0`, `threadReadMs=0`.
+  - Targeted Codex active thread readback: `projection-active-overlay`,
+    `totalMs=271`, `activeOverlayWindowMs=0`, `threadReadMs=0`.
+  - Targeted Home AI thread readback: `projection-v4-dynamic`, `totalMs=67`,
+    `threadReadMs=0`.
+  - Targeted Movie thread readback: `projection-v4-dynamic`, `totalMs=110`,
+    `threadReadMs=0`.
+  - Bounded log tail after deploy showed foreground active detail returning
+    from `projection-active-overlay` without a new foreground
+    `turns-list-active-overlay-window` rebuild. Older pre-deploy log evidence
+    still contains the `1533ms` stall and should be treated as baseline
+    evidence, not current readback.
+- Residual / next target:
+  - This closes the restart/notification race where persisted full history was
+    present but not restored before active notification overlay.
+  - It does not close true no-cache cold start, thread-list/prewarm rebuild
+    spikes, or summary lookup spikes. Those should be handled as separate
+    bounded modules with production timing evidence.
