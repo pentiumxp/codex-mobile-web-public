@@ -24962,11 +24962,36 @@ The previous full handoff was archived and should be opened only when old proven
   - `npm run check:macos` passed.
   - `git diff --check` passed.
 - Deployment:
-  - Pending at the time this local handoff section was written. Deploy through
-    the Home AI central macOS plugin path with reason
+  - Commit `6c638f2` `fix: 跳过 warm detail 同步摘要刷新`.
+  - Deployed through the Home AI central macOS plugin path with reason
     `codex-mobile-detail-summary-refresh-budget`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T230106Z-plugin-codex-mobile-web-codex-mobile-detail-summary-refresh-budget`.
+  - Source ref deployed: `6c638f2243bb`, dirty false.
+  - Server/docs-only change; static shell stayed
+    `0.1.11|codex-mobile-shell-v553`, build id `8f5df1074a2bd651`.
+  - Production source/prod SHA-256 prefixes matched for `server.js`,
+    `adapters/thread-detail-summary-service.js`, focused tests, docs, and
+    `package.json`.
+- Production readback:
+  - Phase-B smoke passed. Thread list remained on warm persistent fallback cache:
+    `lastCacheDecision=hit`, `lastElapsedMs=8`,
+    `fallbackCacheDecision=compatible-hit`, `fallbackMs=1`, `totalMs=103`.
+  - Home AI thread readback returned `projection-v4-dynamic`,
+    `projectionState=hit`, `threadReadMs=0`, `summaryMs=11`, and
+    `totalMs=74` after the earlier pre-fix shape had shown
+    `summaryMs=228` / `totalMs=277`.
+  - Codex Mobile thread readback proved the summary fix but exposed the next
+    bottleneck: when projection cache missed with
+    `dynamic-resting-signature-mismatch`, the request used
+    `turns-list-initial`, with `summaryMs=10-11` but
+    `turnsListInitialMs=1481-2291` and `totalMs=1505-2314`.
+  - A corrected production synthetic summary-service fixture confirmed display
+    cache merges skip app-server refresh: `appServerCalls=0` and
+    `summary_app_server_refresh_skipped` reason `display-cache`.
 - Residual / next target:
   - This removes a synchronous summary refresh from warm detail first paint.
-    Remaining slow opens after deployment should be attributed to projection
-    lookup/seed, active overlay proof/window, app-server/mux RPC, or browser
-    rendering using the existing bounded timing fields.
+    The next confirmed root-cause target is projection cache lifecycle / seeded
+    partial current-window reads, because a projection miss can still spend
+    roughly 1.5-2.3s in `turnsListInitialMs` even when summary and thread-list
+    paths are bounded.
