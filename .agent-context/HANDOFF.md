@@ -23009,3 +23009,55 @@ The previous full handoff was archived and should be opened only when old proven
   - Close public PR #79 as absorbed/superseded by v549, then verify
     `public/main` is an ancestor of private `main` and no non-agent-context
     source drift remains from public to private.
+
+## 2026-06-27 - App-server thread-list peak latency coalescing deployed
+
+- Problem:
+  - Production default `/api/threads?limit=40` list reads were unstable under
+    burst refresh. A 5-way concurrent read reproduced Mobile-side
+    `appServerRpcMs` cascading from roughly `500ms` to `1900ms` even though the
+    underlying mux `thread/list` RPC was normally single-digit milliseconds.
+  - Root cause: identical full-list requests were processed independently in
+    the Node route. Repeated synchronous merge/decorate work blocked the event
+    loop and made later same-burst requests appear as app-server RPC peaks.
+- Fix:
+  - Added `adapters/thread-list-response-coalescer-service.js`.
+  - The `/api/threads` route now coalesces only identical default full-list
+    requests while a leader request is in flight.
+  - Cursor, search, workspace/cwd filtered, archived, fallback-deferred, and
+    warm-initial requests remain uncoalesced.
+  - Followers receive cloned leader results with bounded diagnostics:
+    `threadListCoalescedRequest`, `threadListCoalescedWaitMs`,
+    `threadListCoalescedLeaderTotalMs`, and `threadListCoalescedKeyHash`.
+- Commit/deploy:
+  - Private commit: `53eb2ff` (`fix thread list app-server peak latency`).
+  - Deployed through Home AI central macOS plugin deploy path with reason
+    `codex-mobile-thread-list-coalescing`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T145212Z-plugin-codex-mobile-web-codex-mobile-thread-list-coalescing`.
+  - Static readback stayed on `clientBuildId=0.1.11|codex-mobile-shell-v549`,
+    `shellCacheName=codex-mobile-shell-v549`, as expected for a server-only
+    change.
+- Validation:
+  - Focused tests passed:
+    `node --test test/thread-list-response-coalescer-service.test.js test/thread-list-app-server-fetch-policy-service.test.js test/thread-visibility.test.js`
+    (`61` tests).
+  - `npm test` passed (`1311` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - Local 5-way concurrent default-list read after fix: one leader at about
+    `296ms`; four coalesced followers reused the leader with
+    `threadListCoalescedWaitMs=293-294ms`; `appServerRpcMs=8ms`.
+  - Production Phase-B readback after deploy:
+    thread list `totalMs=343`, `appServerRpcMs=8`, `appServerMs=27`,
+    `mergeMs=158`; detail read mode `projection-active-overlay`,
+    `activeOverlayGate=ready`.
+  - Production 5-way concurrent default-list read after deploy:
+    one leader and four coalesced followers all returned `totalMs=265`,
+    `appServerRpcMs=10`, `appServerMs=29`, `mergeMs=80`,
+    `summaryMergeTotalMs=67`, `resultCount=25`.
+- Next:
+  - Continue with the remaining app-server peak sources only after fresh
+    evidence shows a separate peak. This change specifically closes the
+    identical default-list burst amplification path.
