@@ -196,7 +196,10 @@ Current acceleration targets:
    synchronous active-overlay provider, which let the event loop process other
    active-session work before continuing the detail response. Read orchestration
    now only awaits promise-like provider results; synchronous provider output
-   continues in the same call stack.
+   continues in the same call stack. The provider also caches bounded
+   active-turn evidence counts for repeated reads of the same active turn
+   shape; this keeps proof-gate evidence out of the request hot path without
+   caching message text, tool payloads, uploads, or private content.
    `turns-list-active-overlay-window` remains a fail-closed fallback only when
    no usable projection window exists.
    Post-v542 local pane-context work is intentionally smaller than these
