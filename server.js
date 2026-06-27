@@ -13937,6 +13937,9 @@ const threadListFallbackPrewarmService = createThreadListFallbackPrewarmService(
   shouldRun: () => (activeThreadDetailRequestCount > 0
     ? { run: false, reason: "active-detail-in-flight" }
     : { run: true }),
+  onResult: ({ threads }) => scheduleActiveWindowPrewarmFromThreadListResult({
+    data: threads,
+  }, "thread-list-prewarm:completed"),
   logger: console,
 });
 

@@ -374,7 +374,12 @@ foreground detail and background prewarm reads for the same thread/mode through
 `thread-detail-active-window-read-coalescer-service`. If logs show
 `turns_list_coalesced`, duplicate app-server work has been suppressed and the
 remaining wait belongs to the single authoritative
-`turns-list-active-overlay-window` read or earlier prewarm readiness.
+`turns-list-active-overlay-window` read or earlier prewarm readiness. After
+restart, the thread-list fallback prewarm should also schedule active-window
+prewarm for active rows when it completes; if the first active detail open is
+still cold after the fallback baseline has completed, inspect whether
+`thread-list-prewarm:completed` produced an active-window prewarm result before
+the detail request arrived.
 Current builds also expose
 `mobileDiagnostics.threadDetailTimings.activeOverlayWindowFirst`. When this is
 `true`, the active detail orchestrator used the dedicated active-overlay

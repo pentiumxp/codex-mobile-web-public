@@ -471,6 +471,11 @@ app-server turns-list read runs at a time for the same thread and mode; later
 callers join the existing promise and log bounded `turns_list_coalesced`
 metadata. This is process-local duplicate suppression, not a persistent cache
 or an alternate projection authority.
+Startup fallback prewarm feeds the same path: after
+`adapters/thread-list-fallback-prewarm-service.js` builds the process fallback
+baseline, server glue can schedule active-window prewarm for active rows from
+that already-read result. The public fallback-prewarm status still exposes only
+counts/timings, not thread titles, message text, or row payloads.
 
 Active-overlay detail responses preserve the same compaction boundary as normal
 thread-detail responses. The proof gate may merge a live overlay turn into a

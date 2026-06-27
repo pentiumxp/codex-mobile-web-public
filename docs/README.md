@@ -99,3 +99,11 @@ active-window read between background prewarm and the foreground
 does not duplicate the same app-server turns-list work. Residual latency after
 this slice belongs to the single authoritative app-server active-window read or
 earlier prewarm readiness, not duplicate frontend refreshes.
+
+The same module also links startup thread-list fallback prewarm to
+active-window prewarm. When the process-lifetime fallback baseline finishes, the
+server inspects only the already-returned active thread summaries and schedules
+active-window prewarm for those rows. This keeps list fallback authority and
+public diagnostics unchanged while increasing the chance that a restarted
+server has the active detail window ready before the user opens the large
+thread.

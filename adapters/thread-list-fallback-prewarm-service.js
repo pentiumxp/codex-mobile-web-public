@@ -113,6 +113,7 @@ function createThreadListFallbackPrewarmService(options = {}) {
   const readFallback = typeof options.readFallback === "function" ? options.readFallback : null;
   const readGlobalState = typeof options.readGlobalState === "function" ? options.readGlobalState : () => ({});
   const shouldRun = typeof options.shouldRun === "function" ? options.shouldRun : () => true;
+  const onResult = typeof options.onResult === "function" ? options.onResult : null;
   const logger = options.logger === false
     ? null
     : (options.logger && typeof options.logger === "object" ? options.logger : defaultLogger());
@@ -179,6 +180,19 @@ function createThreadListFallbackPrewarmService(options = {}) {
         diagnostics,
         sourceSnapshotLimit: normalized.sourceSnapshotLimit,
       });
+      if (onResult) {
+        try {
+          onResult({
+            threads: Array.isArray(threads) ? threads : [],
+            globalState,
+            config: normalized,
+          });
+        } catch (err) {
+          log("warn", "[thread-list-prewarm] on-result failed", {
+            errorCode: compactLabel(err && (err.code || err.name) || "on_result_failed", "", 80),
+          });
+        }
+      }
       const result = summarizePrewarmResult({
         status: "completed",
         limit: normalized.limit,

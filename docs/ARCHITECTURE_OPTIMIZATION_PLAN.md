@@ -245,6 +245,12 @@ Current acceleration targets:
    without changing active-overlay proof gates, projection cache semantics, or
    cross-thread concurrency. Residual latency after this slice is the single
    authoritative app-server active-window read or a prewarm-readiness issue.
+   The startup-readiness follow-up connects `thread-list-fallback-prewarm` to
+   this path: when the process fallback baseline completes, its already-read
+   active thread summaries are passed through an internal hook to schedule
+   active-window prewarm. The hook does not alter public fallback status or
+   expose private row data; it only starts the existing bounded active-window
+   prewarm earlier after restart.
    The next measured detail-shape problem was not timeout or window proof: after
    `threadReadMs=0`, `turnsListMs=0`, and `activeOverlayWindowMs=0`, active and
    recently completed detail responses could still carry dozens of intermediate

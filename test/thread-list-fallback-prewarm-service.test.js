@@ -113,6 +113,63 @@ test("thread-list fallback prewarm schedules once and warms the default cache", 
   assert.doesNotMatch(JSON.stringify(loggerMessages), /private-id/);
 });
 
+test("thread-list fallback prewarm reports successful rows to an internal hook", () => {
+  const hookCalls = [];
+  const service = createThreadListFallbackPrewarmService({
+    now: () => 100,
+    readGlobalState() {
+      return { roots: ["/workspace/default"] };
+    },
+    readFallback(limit, filters) {
+      filters.diagnostics.cacheDecision = "miss-rebuild";
+      return [{ id: "thread-active", status: { type: "active" } }];
+    },
+    onResult(payload) {
+      hookCalls.push(payload);
+    },
+    logger: false,
+  });
+
+  const result = service.run({ limit: 40, sourceSnapshotLimit: 1000 });
+
+  assert.equal(result.status, "completed");
+  assert.equal(hookCalls.length, 1);
+  assert.deepEqual(hookCalls[0].threads, [{ id: "thread-active", status: { type: "active" } }]);
+  assert.deepEqual(hookCalls[0].globalState, { roots: ["/workspace/default"] });
+  assert.equal(hookCalls[0].config.limit, 40);
+  assert.equal(service.status().completed, true);
+  assert.equal(service.status().lastResult.resultCount, 1);
+  assert.equal(service.status().lastResult.cacheDecision, "miss-rebuild");
+});
+
+test("thread-list fallback prewarm hook failures are bounded and do not fail prewarm", () => {
+  const loggerMessages = [];
+  const service = createThreadListFallbackPrewarmService({
+    now: () => 100,
+    readFallback() {
+      return [{ id: "private-thread-id", title: "private title" }];
+    },
+    onResult() {
+      const err = new Error("private path /Users/example/session.jsonl");
+      err.code = "EHOOK";
+      throw err;
+    },
+    logger: {
+      warn(message, payload) {
+        loggerMessages.push({ message, payload });
+      },
+    },
+  });
+
+  const result = service.run({ limit: 40 });
+
+  assert.equal(result.status, "completed");
+  assert.equal(result.resultCount, 1);
+  assert.equal(loggerMessages.length, 1);
+  assert.equal(loggerMessages[0].payload.errorCode, "EHOOK");
+  assert.doesNotMatch(JSON.stringify(loggerMessages), /private path|private-thread-id|private title/);
+});
+
 test("thread-list fallback prewarm defers while active detail is in flight", () => {
   const callbacks = [];
   const calls = [];
