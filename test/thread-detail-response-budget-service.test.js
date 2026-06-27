@@ -145,6 +145,130 @@ test("thread detail response budget keeps bounded active assistant tail", () => 
   assert.deepEqual(compacted.thread.mobileVisibleItemKeys, turn.items.map((item) => item.mobileVisibleKey));
 });
 
+test("thread detail response budget treats non-current active-looking turns as stale when active id is known", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-current",
+      mobileReadMode: "projection-active-overlay",
+      turns: [
+        {
+          id: "turn-stale",
+          status: "inProgress",
+          items: [
+            { id: "u1", type: "userMessage", text: "Old question" },
+            { id: "a1", type: "agentMessage", text: "old progress 1" },
+            { id: "a2", type: "agentMessage", text: "old progress 2" },
+            { id: "r1", type: "reasoning", text: "old reason" },
+            { id: "c1", type: "commandExecution", command: "a" },
+            { id: "c2", type: "commandExecution", command: "b" },
+            { id: "c3", type: "commandExecution", command: "c" },
+          ],
+        },
+        {
+          id: "turn-current",
+          status: "inProgress",
+          items: [
+            { id: "a3", type: "agentMessage", text: "current progress 1" },
+            { id: "a4", type: "agentMessage", text: "current progress 2" },
+            { id: "c4", type: "commandExecution", command: "d" },
+            { id: "c5", type: "commandExecution", command: "e" },
+            { id: "r2", type: "reasoning", text: "current reason" },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    completedOperationItems: 1,
+    completedAssistantItems: 1,
+    completedReasoningItems: 0,
+    activeOperationItems: 2,
+    activeAssistantItems: 2,
+    activeReasoningItems: 1,
+    activeProgressiveItemThreshold: 0,
+  });
+
+  assert.deepEqual(compacted.thread.turns[0].items.map((item) => item.id), ["u1", "a2", "c3"]);
+  assert.deepEqual(compacted.thread.turns[1].items.map((item) => item.id), ["a3", "a4", "c4", "c5", "r2"]);
+  assert.equal(compacted.thread.mobileDetailResponseBudget.activeTurnCount, 1);
+  assert.equal(compacted.thread.mobileDetailResponseBudget.staleActiveTurnCount, 1);
+  assert.equal(compacted.thread.mobileDetailResponseBudget.omittedOperationItems, 2);
+  assert.equal(compacted.thread.mobileDetailResponseBudget.omittedReasoningItems, 1);
+  assert.equal(compacted.thread.mobileDetailResponseBudget.omittedAssistantItems, 1);
+});
+
+test("thread detail response budget applies progressive active limits under item pressure", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      turns: [
+        {
+          id: "turn-active",
+          status: "inProgress",
+          items: [
+            { id: "u1", type: "userMessage", text: "Question" },
+            ...Array.from({ length: 10 }, (_, index) => ({
+              id: `a${index + 1}`,
+              type: "agentMessage",
+              text: `progress ${index + 1}`,
+            })),
+            ...Array.from({ length: 10 }, (_, index) => ({
+              id: `c${index + 1}`,
+              type: "commandExecution",
+              command: `cmd ${index + 1}`,
+            })),
+            ...Array.from({ length: 3 }, (_, index) => ({
+              id: `r${index + 1}`,
+              type: "reasoning",
+              text: `reason ${index + 1}`,
+            })),
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeOperationItems: 8,
+    activeAssistantItems: 8,
+    activeReasoningItems: 2,
+    activeProgressiveItemThreshold: 12,
+    progressiveActiveOperationItems: 4,
+    progressiveActiveAssistantItems: 3,
+    progressiveActiveReasoningItems: 1,
+  });
+
+  const itemIds = compacted.thread.turns[0].items.map((item) => item.id);
+  assert.deepEqual(itemIds, [
+    "u1",
+    "a8",
+    "a9",
+    "a10",
+    "c7",
+    "c8",
+    "c9",
+    "c10",
+    "r3",
+  ]);
+  const budget = compacted.thread.mobileDetailResponseBudget;
+  assert.equal(budget.progressiveActiveBudgetApplied, true);
+  assert.equal(budget.progressiveActiveBudgetReason, "active-item-pressure");
+  assert.equal(budget.activeOperationItems, 4);
+  assert.equal(budget.activeAssistantItems, 3);
+  assert.equal(budget.activeReasoningItems, 1);
+  assert.equal(budget.configuredActiveOperationItems, 8);
+  assert.equal(budget.configuredActiveAssistantItems, 8);
+  assert.equal(budget.configuredActiveReasoningItems, 2);
+  assert.equal(budget.progressiveActiveOriginalItemCount, 24);
+  assert.equal(budget.progressiveActiveTurnOriginalItemCount, 24);
+});
+
 test("thread detail response budget keeps the latest completed assistant receipt", () => {
   const result = {
     thread: {

@@ -23819,3 +23819,59 @@ The previous full handoff was archived and should be opened only when old proven
     explainable as local fallback baseline/prewarm cost when the process has no
     warm baseline, not as app-server/network timeout. Next performance slice
     should reduce or move the `fallback-baseline`/rollout prewarm cost itself.
+
+## 2026-06-28 - Active turn progressive detail budget ready for deploy
+
+- Root cause / invariant:
+  - Active detail no longer needed full `thread/read`, but large active threads
+    could still return heavy bodies because the response-budget policy treated
+    any active-looking turn status as current active even when the thread had a
+    newer `activeTurnId`.
+  - The current active turn is the only turn that should receive active
+    operation/reasoning/assistant budgets when `activeTurnId` is known. Older
+    active-looking rows should be shaped as stale for response size, and high
+    item pressure should apply stricter progressive active limits.
+- Implementation:
+  - `adapters/thread-detail-response-budget-service.js` now treats a known
+    `activeTurnId` as the active budget owner. Non-current `inProgress` rows
+    are counted as `staleActiveTurnCount` and shaped with completed-turn
+    budgets.
+  - The same service applies progressive active limits when the detail window
+    crosses `activeProgressiveItemThreshold` (default `120` items): active
+    operation tail defaults to `6`, reasoning tail to `1`, and assistant/plan
+    tail to `4`, while retained item text remains untruncated.
+  - `server.js` wires the bounded environment overrides:
+    `CODEX_MOBILE_THREAD_DETAIL_ACTIVE_PROGRESSIVE_ITEM_THRESHOLD`,
+    `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_ACTIVE_OPERATION_ITEMS`,
+    `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_ACTIVE_REASONING_ITEMS`, and
+    `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_ACTIVE_ASSISTANT_ITEMS`.
+  - `mobileDetailResponseBudget` now records progressive trigger/effective
+    limit evidence and stale active-looking turn count.
+  - This does not change projection/read authority, active-overlay proof gates,
+    item text, or browser render semantics.
+- Documentation:
+  - Updated `docs/README.md`, `docs/MODULES.md`, `docs/ARCHITECTURE.md`,
+    `docs/TROUBLESHOOTING.md`, and `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Validation completed before commit/deploy:
+  - Focused:
+    `node --check adapters/thread-detail-response-budget-service.js`,
+    `node --check server.js`, and
+    `node --test test/thread-detail-response-budget-service.test.js test/thread-visible-item-normalizer.test.js test/thread-detail-read-orchestration-service.test.js test/thread-detail-route-service.test.js test/thread-detail-active-window-overlay-policy-service.test.js test/thread-detail-active-overlay-provider-service.test.js test/thread-detail-active-overlay-integration.test.js test/conversation-render.test.js test/thread-performance-metrics.test.js`
+    passed (`208` tests).
+  - Full `npm test` passed (`1337` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - `codegraph sync && codegraph status` reported the index is up to date.
+- Pre-deploy production shape evidence:
+  - Current Codex Mobile active detail sample had `activeTurnCount=2`, including
+    one non-current `inProgress` row, original `1688` items, retained `98`
+    items, response about `153KB`, and active limits
+    `operation=12/reasoning=2/assistant=8`.
+- Next:
+  - Commit and deploy through the Home AI central macOS plugin deploy path with
+    reason `codex-mobile-active-progressive-budget`.
+  - Production readback should compare the current active detail response bytes,
+    `activeTurnCount`, `staleActiveTurnCount`,
+    `progressiveActiveBudgetApplied`, effective active limits, retained item
+    count, and omitted item counts.

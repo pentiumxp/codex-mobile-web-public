@@ -8,6 +8,10 @@ const DEFAULT_ACTIVE_REASONING_ITEMS = 2;
 const DEFAULT_COMPLETED_REASONING_ITEMS = 0;
 const DEFAULT_ACTIVE_ASSISTANT_ITEMS = 8;
 const DEFAULT_COMPLETED_ASSISTANT_ITEMS = 1;
+const DEFAULT_ACTIVE_PROGRESSIVE_ITEM_THRESHOLD = 120;
+const DEFAULT_PROGRESSIVE_ACTIVE_OPERATION_ITEMS = 6;
+const DEFAULT_PROGRESSIVE_ACTIVE_REASONING_ITEMS = 1;
+const DEFAULT_PROGRESSIVE_ACTIVE_ASSISTANT_ITEMS = 4;
 
 const OPERATION_ITEM_TYPES = new Set([
   "commandExecution",
@@ -54,7 +58,14 @@ function activeTurnId(thread) {
 function isActiveTurn(turn, thread) {
   const id = turnId(turn);
   const activeId = activeTurnId(thread);
-  return Boolean((id && activeId && id === activeId) || isActiveStatus(turn && turn.status));
+  if (activeId) return Boolean(id && id === activeId);
+  return isActiveStatus(turn && turn.status);
+}
+
+function isStaleActiveLikeTurn(turn, thread) {
+  const id = turnId(turn);
+  const activeId = activeTurnId(thread);
+  return Boolean(activeId && id && id !== activeId && isActiveStatus(turn && turn.status));
 }
 
 function isOperationItem(item) {
@@ -85,6 +96,15 @@ function reasoningHasVisibleText(item) {
 
 function countBy(items, predicate) {
   return (Array.isArray(items) ? items : []).filter(predicate).length;
+}
+
+function itemCountForTurns(turns, predicate = null) {
+  let total = 0;
+  for (const turn of Array.isArray(turns) ? turns : []) {
+    if (predicate && !predicate(turn)) continue;
+    total += Array.isArray(turn && turn.items) ? turn.items.length : 0;
+  }
+  return total;
 }
 
 function trailingIndexes(items, limit, predicate) {
@@ -158,6 +178,7 @@ function compactTurnWithBudget(turn, thread, options, stats) {
   stats.omittedReasoningItems += Math.max(0, beforeReasoningCount - afterReasoningCount);
   stats.omittedAssistantItems += omittedAssistantItems;
   stats.activeTurnCount += active ? 1 : 0;
+  stats.staleActiveTurnCount += !active && isStaleActiveLikeTurn(turn, thread) ? 1 : 0;
   return compacted;
 }
 
@@ -165,6 +186,43 @@ function compactThreadDetailResponseResult(result, options = {}) {
   if (!result || typeof result !== "object" || !result.thread || !Array.isArray(result.thread.turns)) return result;
   const out = cloneJson(result);
   const thread = out.thread;
+  const configuredActiveOperationItems = boundedCount(options.activeOperationItems, DEFAULT_ACTIVE_OPERATION_ITEMS, 100);
+  const configuredActiveReasoningItems = boundedCount(options.activeReasoningItems, DEFAULT_ACTIVE_REASONING_ITEMS, 100);
+  const configuredActiveAssistantItems = Math.max(1, boundedCount(options.activeAssistantItems, DEFAULT_ACTIVE_ASSISTANT_ITEMS, 100));
+  const activeProgressiveItemThreshold = boundedCount(
+    options.activeProgressiveItemThreshold,
+    DEFAULT_ACTIVE_PROGRESSIVE_ITEM_THRESHOLD,
+    10000,
+  );
+  const pressureOriginalItemCount = itemCountForTurns(thread.turns);
+  const pressureActiveItemCount = itemCountForTurns(thread.turns, (turn) => isActiveTurn(turn, thread));
+  const progressiveActiveBudgetApplied = activeProgressiveItemThreshold > 0
+    && (pressureOriginalItemCount >= activeProgressiveItemThreshold
+      || pressureActiveItemCount >= activeProgressiveItemThreshold);
+  const progressiveActiveOperationItems = boundedCount(
+    options.progressiveActiveOperationItems,
+    DEFAULT_PROGRESSIVE_ACTIVE_OPERATION_ITEMS,
+    100,
+  );
+  const progressiveActiveReasoningItems = boundedCount(
+    options.progressiveActiveReasoningItems,
+    DEFAULT_PROGRESSIVE_ACTIVE_REASONING_ITEMS,
+    100,
+  );
+  const progressiveActiveAssistantItems = Math.max(1, boundedCount(
+    options.progressiveActiveAssistantItems,
+    DEFAULT_PROGRESSIVE_ACTIVE_ASSISTANT_ITEMS,
+    100,
+  ));
+  const effectiveActiveOperationItems = progressiveActiveBudgetApplied
+    ? Math.min(configuredActiveOperationItems, progressiveActiveOperationItems)
+    : configuredActiveOperationItems;
+  const effectiveActiveReasoningItems = progressiveActiveBudgetApplied
+    ? Math.min(configuredActiveReasoningItems, progressiveActiveReasoningItems)
+    : configuredActiveReasoningItems;
+  const effectiveActiveAssistantItems = progressiveActiveBudgetApplied
+    ? Math.min(configuredActiveAssistantItems, progressiveActiveAssistantItems)
+    : configuredActiveAssistantItems;
   const stats = {
     version: "thread-detail-response-budget-v2",
     applied: false,
@@ -174,13 +232,26 @@ function compactThreadDetailResponseResult(result, options = {}) {
     omittedReasoningItems: 0,
     omittedAssistantItems: 0,
     activeTurnCount: 0,
+    staleActiveTurnCount: 0,
     completedOperationItems: boundedCount(options.completedOperationItems, DEFAULT_COMPLETED_OPERATION_ITEMS, 100),
-    activeOperationItems: boundedCount(options.activeOperationItems, DEFAULT_ACTIVE_OPERATION_ITEMS, 100),
+    activeOperationItems: effectiveActiveOperationItems,
     completedReasoningItems: boundedCount(options.completedReasoningItems, DEFAULT_COMPLETED_REASONING_ITEMS, 100),
-    activeReasoningItems: boundedCount(options.activeReasoningItems, DEFAULT_ACTIVE_REASONING_ITEMS, 100),
+    activeReasoningItems: effectiveActiveReasoningItems,
     completedAssistantItems: Math.max(1, boundedCount(options.completedAssistantItems, DEFAULT_COMPLETED_ASSISTANT_ITEMS, 100)),
-    activeAssistantItems: Math.max(1, boundedCount(options.activeAssistantItems, DEFAULT_ACTIVE_ASSISTANT_ITEMS, 100)),
+    activeAssistantItems: effectiveActiveAssistantItems,
+    activeProgressiveItemThreshold,
+    progressiveActiveBudgetApplied,
+    progressiveActiveBudgetReason: progressiveActiveBudgetApplied
+      ? (pressureActiveItemCount >= activeProgressiveItemThreshold ? "active-item-pressure" : "thread-item-pressure")
+      : "",
+    progressiveActiveOriginalItemCount: pressureOriginalItemCount,
+    progressiveActiveTurnOriginalItemCount: pressureActiveItemCount,
   };
+  if (progressiveActiveBudgetApplied) {
+    stats.configuredActiveOperationItems = configuredActiveOperationItems;
+    stats.configuredActiveReasoningItems = configuredActiveReasoningItems;
+    stats.configuredActiveAssistantItems = configuredActiveAssistantItems;
+  }
   const budgetOptions = Object.assign({}, options, stats);
   thread.turns = thread.turns.map((turn) => compactTurnWithBudget(turn, thread, budgetOptions, stats));
   stats.applied = stats.omittedOperationItems > 0

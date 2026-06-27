@@ -2308,6 +2308,42 @@ central macOS plugin deployment, and bounded post-deploy samples proving
 `summaryMergeDisplayMergeMs`, `summaryMergeTotalMs`, `mergeMs`, and total list
 latency move in the expected direction without leaking private thread content.
 
+### 2026-06-28 Active Turn Progressive Detail Budget module
+
+This module targets the remaining active-detail payload pressure after
+`projection-active-overlay` and thread-list first-paint deferral were deployed.
+Production readback showed the detail path could be warm and still return a
+large body because stale active-looking turns and the current active turn kept
+many visible operation/reasoning/assistant progress rows.
+
+Deployable scope:
+
+- `adapters/thread-detail-response-budget-service.js` treats a known
+  `activeTurnId` as the only current active response-budget owner. Older
+  `inProgress` rows are counted as `staleActiveTurnCount` and shaped by
+  completed-turn budgets.
+- The same service applies pressure-triggered progressive active limits when
+  the detail window crosses `activeProgressiveItemThreshold`, lowering active
+  operation/reasoning/assistant tails while keeping retained text untruncated.
+- `server.js` wires the progressive thresholds and effective active limits from
+  bounded environment variables.
+- The module preserves projection/read authority, active-overlay proof gates,
+  visible-key rebuilds, and browser render semantics. It is server response
+  shaping, not client refresh masking.
+
+Required validation:
+
+- focused response-budget, visible-key, active-overlay, orchestration, route,
+  render, and performance-metrics tests;
+- full `npm test`;
+- `npm run check`;
+- `npm run check:macos`;
+- `git diff --check`;
+- central Home AI macOS plugin deployment;
+- production readback comparing active detail response bytes,
+  `activeTurnCount`, `staleActiveTurnCount`,
+  `progressiveActiveBudgetApplied`, and omitted item counts.
+
 ### 2026-06-28 Thread List Cold Initial App-Server Deferral module
 
 This module closes the remaining first-paint coupling where

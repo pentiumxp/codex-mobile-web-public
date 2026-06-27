@@ -68,12 +68,15 @@ checks, and stay undeployed until several compatible slices form a coherent
 runtime module. Do not bump shell/cache, deploy production, or push Public for
 each micro-slice unless the user explicitly asks.
 
-The current deployable module candidate is focused on large-session list first
-paint. Production readback showed thread detail already using
-`projection-active-overlay`, while the default thread-list open could still
-serialize fallback-baseline work with an app-server `thread/list` RPC. The
-current module lets `initial=warm-fallback` return the process cache when warm,
-or build and return a local fallback baseline on cache miss, while marking the
-authoritative app-server refresh as deferred. This targets list/session load
-latency without changing thread-detail projection authority, thread-list
-authority, or introducing UI-only masking.
+The current deployable module candidate is focused on active-turn detail
+payload pressure. Production readback showed active detail already using
+`projection-active-overlay` and initial thread-list paint no longer waiting for
+app-server `thread/list`, while large active threads could still return heavy
+detail bodies because stale active-looking turns and current active progress
+items retained too many visible rows. The current module tightens the
+server-side detail response budget: when a thread has a known active turn id,
+only that turn receives active progress budgets; older active-looking turns are
+treated as stale for response budgeting, and high item pressure enables
+progressive active limits for operation/reasoning/assistant tails. This targets
+large active detail payload and DOM pressure without changing projection
+authority or adding client refresh masking.

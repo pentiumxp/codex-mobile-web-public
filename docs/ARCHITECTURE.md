@@ -505,7 +505,14 @@ assistant/plan tail, retained text is not truncated, and
 `mobileDetailResponseBudget.omittedAssistantItems` records omitted progress-row
 counts. The server then rebuilds visible projection keys so the browser receives
 a smaller authoritative shape instead of masking oversized responses with a
-client refresh fallback.
+client refresh fallback. If the thread exposes a current active turn id, only
+that matching turn receives active response budgets; older turns whose status
+still looks `inProgress` are counted as stale active-looking turns and receive
+completed-turn budgets for response shaping. When the returned detail window is
+under high item pressure, the same response-budget service enables progressive
+active limits for the current active turn's operation, reasoning, and
+assistant/plan tails, and records the threshold, trigger reason, configured
+limits, and effective limits in `mobileDetailResponseBudget`.
 
 `HANDOFF.md` has a separate 200KB Usage prompt threshold so recently compacted handoffs near 100KB do not immediately ask for another continuation.
 

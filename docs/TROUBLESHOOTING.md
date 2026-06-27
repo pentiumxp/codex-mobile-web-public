@@ -380,8 +380,16 @@ version `thread-detail-response-budget-v2` should report whether
 body points at server detail payload size or browser DOM merge pressure; do not
 fix that by repeated client refreshes or by loosening the timeout. The default
 detail response keeps completed turns receipt-only and active turns on a bounded
-recent assistant tail. On-demand expansion of omitted historical assistant
-progress is a separate route/API feature, not part of the default first paint.
+recent assistant tail. When a thread has a known current active turn id, only
+that matching turn should use the active budget; if
+`mobileDetailResponseBudget.staleActiveTurnCount` is non-zero, older
+active-looking turns were deliberately downgraded for response shaping. When
+`progressiveActiveBudgetApplied=true`, compare
+`progressiveActiveBudgetReason`, `activeProgressiveItemThreshold`,
+`configuredActive*Items`, and the effective `active*Items` fields before
+changing visible-item policy. On-demand expansion of omitted historical
+assistant progress is a separate route/API feature, not part of the default
+first paint.
 
 If a newly submitted message briefly shows local input feedback and then the
 right-side turn timer changes to `已结束` while `/api/threads/:id?mode=recent`
