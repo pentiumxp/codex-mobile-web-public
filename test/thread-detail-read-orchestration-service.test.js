@@ -691,12 +691,110 @@ test("active overlay can build a bounded projection window before full thread/re
   assert.equal(timings.readDecision, "projection-active-overlay");
   assert.equal(timings.projectionState, "hit");
   assert.equal(timings.projectionMissReason, "");
+  assert.equal(timings.projectionSeedStatus, "seeded-partial");
+  assert.equal(timings.projectionSeedSource, "turns-list-active-overlay-window");
   assert.equal(timings.activeOverlayAction, "use-projection-overlay");
   assert.equal(timings.activeOverlayReason, "overlay-evidence-complete");
   assert.equal(timings.activeOverlayOperationItems, 1);
   assert.equal(timings.activeOverlayAssistantItems, 1);
   assert.equal(timings.activeOverlayReceiptItems, 1);
   assert.ok(timings.timings.activeOverlayWindowMs >= 0);
+});
+
+test("active overlay seeds bounded window so repeated reads avoid turns-list", async () => {
+  let seededWindow = null;
+  const { service, calls } = createHarness({
+    summary: {
+      id: "thread-1",
+      status: { type: "active" },
+      activeTurnId: "active-turn",
+      rolloutPath: "/tmp/rollout.jsonl",
+    },
+    projectedThreadLookup: (input, summary, runtimeSettings, options = {}) => {
+      calls.push(`projection-lookup:${options.activeOverlay === true ? "active-overlay" : "ordinary"}`);
+      if (options.activeOverlay === true && seededWindow) {
+        return {
+          result: JSON.parse(JSON.stringify(seededWindow)),
+          missReason: "",
+        };
+      }
+      return {
+        result: null,
+        missReason: options.activeOverlay === true ? "entry-missing" : "dynamic-summary-stale",
+      };
+    },
+    resolveActiveWindowOverlay: () => ({
+      activeTurnId: "active-turn",
+      overlaySource: "projection-live",
+      operationCoverage: "present",
+      uploadCoverage: "none",
+      assistantDeltaCoverage: "",
+      receiptCoverage: "present",
+      overlayRevision: 8,
+      overlayTimestampMs: 24000,
+      overlayTurn: {
+        id: "active-turn",
+        items: [
+          { id: "cmd-1", type: "commandExecution" },
+          { id: "agent-1", type: "agentMessage" },
+          { id: "usage-1", type: "turnUsageSummary" },
+        ],
+      },
+    }),
+    turnsListThreadReadResult: async ({ mode }) => {
+      calls.push(`turns-list:${mode}`);
+      return {
+        thread: {
+          id: "thread-1",
+          turns: [{ id: "older-turn", items: [{ id: "agent-old", type: "agentMessage" }] }],
+          mobileReadMode: mode,
+        },
+      };
+    },
+    seedProjection: (input, result, options = {}) => {
+      calls.push(`seed:${options.partialKind || "full"}`);
+      seededWindow = result;
+      return {
+        partial: options.partial === true,
+        partialKind: options.partialKind || "",
+        signatureHash: "seeded-active-window",
+      };
+    },
+  });
+
+  const first = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: true,
+    threadLog: () => {},
+  });
+
+  assert.equal(first.status, 200);
+  assert.equal(first.mode, "projection-active-overlay");
+  assert.ok(calls.includes("turns-list:turns-list-active-overlay-window"));
+  assert.ok(calls.includes("seed:turns-list-active-overlay-window"));
+
+  calls.length = 0;
+  const second = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: true,
+    threadLog: () => {},
+  });
+
+  assert.equal(second.status, 200);
+  assert.equal(second.mode, "projection-active-overlay");
+  assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), [
+    "projection-lookup:ordinary",
+    "projection-lookup:active-overlay",
+  ]);
+  assert.equal(calls.includes("turns-list:turns-list-active-overlay-window"), false);
+  assert.deepEqual(second.body.thread.turns.map((turn) => turn.id), ["older-turn", "active-turn"]);
+  const timings = second.body.thread.mobileDiagnostics.threadDetailTimings;
+  assert.equal(timings.readDecision, "projection-active-overlay");
+  assert.equal(timings.activeOverlayAction, "use-projection-overlay");
+  assert.equal(timings.projectionSeedStatus, "");
+  assert.equal(timings.projectionSeedSource, "");
 });
 
 test("active full thread detail skips bounded turns/list", async () => {

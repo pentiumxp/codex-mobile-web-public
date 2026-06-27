@@ -449,6 +449,24 @@ function createThreadDetailReadOrchestrationService(options = {}) {
             return hiddenResponse();
           }
           timer.mark("activeOverlayWindowMs", activeWindowStartedAtMs);
+          if (projection && activeWindowResult && activeWindowResult.thread) {
+            try {
+              const seeded = seedProjection(projection, activeWindowResult, {
+                partial: true,
+                partialKind: "turns-list-active-overlay-window",
+              });
+              context.projectionSeedStatus = seeded && seeded.skipped
+                ? "skipped"
+                : seeded && seeded.partial
+                  ? "seeded-partial"
+                  : "seeded";
+              context.projectionSeedSource = seeded && seeded.reason || "turns-list-active-overlay-window";
+            } catch (err) {
+              context.projectionSeedStatus = "failed";
+              context.projectionSeedSource = "turns-list-active-overlay-window";
+              threadLog("projection_seed_error", { error: safeErrorMessage(err) });
+            }
+          }
           activeOverlayProjectionThread = asActiveOverlayProjectionWindow(activeWindowResult, overlayInput);
           activeOverlayProjectionResult = activeOverlayProjectionThread
             ? Object.assign({}, activeWindowResult || {}, { thread: activeOverlayProjectionThread })
