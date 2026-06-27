@@ -1894,6 +1894,34 @@ Target:
   or shared operation bubble are no longer acceptable in tile mode and must not
   be considered closure for the split-screen feature.
 
+### 2026-06-27 Phase E Visual Harness Module v542
+
+Phase E now has its first batched visual-harness module after the cadence
+change. The module bundles two local slices instead of deploying each small
+change separately:
+
+- task-card tile visual coverage for collapsed, expanded, and keyboard-open
+  pane states, including the pane-local CSS cap that keeps expanded task-card
+  content inside the scaled pane and away from the shared Composer;
+- image-order live-debug smoke privacy hardening, so the harness can be used as
+  closure evidence without printing raw thread/turn/item ids, debug URLs,
+  screenshot paths, DOM text, `location.href`, or error message bodies.
+
+Static shell/cache is advanced to `codex-mobile-shell-v542` because the module
+includes a `public/styles.css` runtime style fix. Local focused validation for
+the module passed:
+
+- `node --test test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js test/thread-tile-layout-ui.test.js test/image-order-visual-smoke.test.js`
+  (`34` tests).
+- full `npm test` (`1226` tests);
+- `npm run check`;
+- `npm run check:macos`;
+- `git diff --check`.
+
+The module still needs Home AI central macOS plugin deployment/readback before
+it is considered production-closed. Public publishing remains gated by
+production/user validation.
+
 ### 2026-06-27 Phase C Pane-State Module v541
 
 Phase C is now batched as a coherent local pane-state module instead of a long

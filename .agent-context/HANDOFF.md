@@ -20581,3 +20581,38 @@ The previous full handoff was archived and should be opened only when old proven
     bundle; that later module needs a shell/cache bump only if it includes
     runtime/static browser changes such as the pending `public/styles.css`
     task-card fixture slice.
+
+## 2026-06-27 - v542 Phase E visual harness module prepared locally
+
+- Current local state:
+  - Local slices `516c7e7` and `c5cf72b` are being bundled as the first Phase E
+    visual-harness module after the faster module cadence change.
+  - This module is not deployed yet and has not been pushed Public.
+- Module boundary:
+  - `516c7e7` adds browser/rect evidence for collapsed and expanded injected
+    task cards inside split-screen panes, including keyboard-open Composer
+    containment. It also includes a pane-local `public/styles.css` cap so
+    expanded task-card bodies scroll inside the scaled pane instead of
+    overlapping the shared Composer.
+  - `c5cf72b` hardens the image-order live-debug smoke report so it emits only
+    metadata/hash evidence and bounded error codes.
+- Version bump:
+  - `public/app.js` `CLIENT_BUILD_ID` moved from
+    `0.1.11|codex-mobile-shell-v541` to `0.1.11|codex-mobile-shell-v542`.
+  - `public/sw.js` `CACHE_NAME` moved from `codex-mobile-shell-v541` to
+    `codex-mobile-shell-v542`.
+  - Version assertions were updated in `test/mobile-viewport.test.js`,
+    `test/thread-goal-service.test.js`, and
+    `test/thread-task-card-route.test.js`.
+- Validation so far:
+  - Focused module suite passed:
+    `node --test test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js test/thread-tile-layout-ui.test.js test/image-order-visual-smoke.test.js`
+    (`34` tests).
+  - `node --check public/app.js` and `node --check public/sw.js` passed.
+  - Full source `npm test` passed (`1226` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Next:
+  - Commit the v542 module bump locally.
+  - Deploy through the Home AI central macOS plugin deploy path only after the
+    full validation gate passes. Public remains gated by production/user
+    validation.

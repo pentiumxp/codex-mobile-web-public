@@ -16,6 +16,31 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-27 v542 Phase E Visual Harness Module
+
+v542 把 v541 之后的两个 Phase E 本地切片收束为一个可部署模块，而不是逐个小优化部署。
+模块边界是 browser/visual harness 稳定化：
+
+- `516c7e7`：task-card split-screen 视觉 fixture，补 collapsed/expanded/keyboard-open
+  证据，并用 pane-local CSS 限制 expanded task-card body 高度，防止覆盖共享 Composer。
+- `c5cf72b`：image-order live-debug smoke 隐私边界，报告只输出 metadata/hash-only，
+  不输出 raw thread/turn/item id、debug URL、截图路径、DOM text 或错误正文。
+
+本次 bump：`CLIENT_BUILD_ID` 和 PWA shell cache 从
+`codex-mobile-shell-v541` 升到 `codex-mobile-shell-v542`。
+
+本地模块验证：
+
+```bash
+node --test test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js test/thread-tile-layout-ui.test.js test/image-order-visual-smoke.test.js  # 34 passed
+npm test  # 1226 passed
+npm run check  # passed
+npm run check:macos  # passed
+git diff --check  # passed
+```
+
+后续走 Home AI central macOS plugin deploy 做生产部署/readback。Public push 仍然等生产和用户验证。
+
 ## 2026-06-27 Phase E Image-Order Visual Smoke Privacy Slice
 
 这是 v541 生产部署后的第二个 Phase E 本地切片，目标不是新增运行时行为，
@@ -40,8 +65,8 @@ node --check scripts/codex-mobile-image-order-visual-smoke.js
 node --test test/image-order-visual-smoke.test.js  # 4 passed
 ```
 
-本切片没有 runtime/static app 变更，没有 bump shell/cache，没有部署，也没有 Public
-push。它是下一批 Phase E visual harness 模块的一部分。
+本切片没有 runtime/static app 变更，本身不单独部署；它已被 v542 Phase E visual
+harness module 收束。
 
 ## 2026-06-27 Phase E Task-Card Visual Fixture Local Slice
 
@@ -77,9 +102,8 @@ node scripts/codex-mobile-thread-tile-visual-fixture.js --width 2200 --height 12
 node scripts/codex-mobile-thread-tile-visual-fixture.js --width 1800 --height 920 --panes 3 --keyboard --typed-lines 4 --task-card expanded --json
 ```
 
-本切片包含 `public/styles.css` 运行时样式变化，但没有单独 bump shell/cache，
-也没有部署。它是下一批 Phase E visual harness 模块的一部分；模块收束时需要
-统一 bump shell/cache、完整验证并按中央部署流程部署。
+本切片包含 `public/styles.css` 运行时样式变化，因此不单独部署；它已被 v542 Phase E
+visual harness module 收束并统一 bump shell/cache。
 
 ## 2026-06-27 v541 Phase C Pane-State Module
 
