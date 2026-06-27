@@ -349,12 +349,8 @@ function createThreadDetailReadOrchestrationService(options = {}) {
 
     if (activeReadPolicy.activeFullReadRequired && projection && resolveActiveWindowOverlay) {
       const activeOverlayStartedAtMs = now();
-      const overlayProjectionLookup = projectedThreadLookup
-        ? projectedThreadLookup(projection, summary, runtimeSettings, { allowPartial: true, activeOverlay: true })
-        : null;
-      const overlayProjected = overlayProjectionLookup
-        ? overlayProjectionLookup.result
-        : projectedThreadResult(projection, summary, runtimeSettings, { allowPartial: true, activeOverlay: true });
+      const overlayProjectionLookup = projectionLookup;
+      const overlayProjected = projected && projected.thread ? projected : null;
       const activeOverlayProjected = overlayProjected && overlayProjected.thread
         ? overlayProjected
         : projected && projected.thread
