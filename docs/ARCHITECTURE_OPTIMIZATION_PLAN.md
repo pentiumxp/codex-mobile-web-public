@@ -1888,8 +1888,8 @@ out of `public/app.js` and into `public/thread-tile-state.js`:
 This is an acceleration boundary, not a broad rewrite. The implementation
 keeps `app.js` responsible for DOM/API/localStorage side effects while
 `thread-tile-state.js` owns the tested policy decisions. Static shell/cache is
-advanced to `codex-mobile-shell-v541` so this module can be deployed as one
-runtime unit when requested.
+advanced to `codex-mobile-shell-v541`, and the module was deployed as one
+runtime unit after the local validation gate passed.
 
 Local validation for the module passed:
 
@@ -1901,9 +1901,21 @@ Local validation for the module passed:
 - `npm run check:macos`;
 - `git diff --check`.
 
-Deployment remains gated by the release rule below: local module commit first,
-Mac production deploy only when requested, Public only after production/user
-validation.
+Production deployment/readback:
+
+- commit `7ba66236f480`;
+- deploy reason `codex-mobile-v541-phase-c-pane-state`;
+- production `/api/public-config` returned
+  `clientBuildId=0.1.11|codex-mobile-shell-v541`,
+  `shellCacheName=codex-mobile-shell-v541`, and `activeProfileId=previous`;
+- source/prod hashes matched for `public/app.js`, `public/sw.js`,
+  `public/thread-tile-state.js`, and focused pane-state tests; this deployment
+  evidence section was updated locally after readback and is not itself
+  production runtime evidence;
+- the bounded 3000px / 5-pane visual fixture passed with a single row, no pane
+  overlap, bottom Composer, and visible operation duration.
+
+Public publishing remains gated by production/user validation.
 
 ## Release Rule
 

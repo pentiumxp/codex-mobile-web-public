@@ -16,6 +16,57 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-27 v541 Phase C Pane-State Module
+
+v541 将 5 个 Phase C 平铺/分屏 pane-state 本地切片收束为一个可部署模块，
+用于加快工程节奏：小切片先本地提交，形成一个 coherent module 后再统一验证、
+部署和读回。本模块不重写 split-screen，也不增加 UI fallback；它继续把
+`public/app.js` 中的 pane policy 拆到 `public/thread-tile-state.js`，让 app 层
+只执行 DOM/API/localStorage/timer side effects。
+
+本模块包含：
+
+- `c00e05c`：viewport / Composer chrome baseline planning。
+- `32a3854`：detail-load queue drain scheduling planning。
+- `52093d0`：detail-load settle queue-drain follow-up planning。
+- `20cd05e`：pane patch-miss full-render escalation intent。
+- `9eb8fd4`：display-settings load、legacy migration、local recovery planning。
+
+本次 bump：`CLIENT_BUILD_ID` 和 PWA shell cache 从
+`codex-mobile-shell-v540` 升到 `codex-mobile-shell-v541`。
+
+验证：
+
+```bash
+node --test test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js test/tablet-layout.test.js  # 66 passed
+npm test  # 1222 passed
+npm run check  # passed
+npm run check:macos  # passed
+git diff --check  # passed
+```
+
+生产部署/readback：
+
+- 部署方式：Home AI central macOS plugin deploy。
+- Deploy reason：`codex-mobile-v541-phase-c-pane-state`。
+- Source commit：`7ba66236f480`，source dirty false。
+- Backup：
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260627T062145Z-plugin-codex-mobile-web-codex-mobile-v541-phase-c-pane-state`。
+- Selected mux refresh：skipped，`reason=no_mux_runtime_change`，因为本模块未改 mux
+  runtime trigger files。
+- `/api/public-config` readback：
+  `clientBuildId=0.1.11|codex-mobile-shell-v541`，
+  `shellCacheName=codex-mobile-shell-v541`，
+  `activeProfileId=previous`。
+- 关键 source/prod SHA-256 短 hash 一致：
+  `public/app.js=da3e291a5e17c3c2`，
+  `public/sw.js=e536a1d1245727b4`，
+  `public/thread-tile-state.js=b8d9820d702adda9`，
+  `test/thread-tile-state.test.js=6519fda2d37d4cc3`，
+  `test/thread-tile-layout-ui.test.js=e7a21e490fd7cda3`。
+- `scripts/codex-mobile-thread-tile-visual-fixture.js --width 3000 --height 1500 --panes 5 --json`
+  passed：5 panes 单行、无 pane overlap、Composer 在底部、operation duration 可见。
+
 ## 2026-06-27 v540 Phase A Thread-Detail Post-Merge Planning Module
 
 v540 将 v539 生产部署后累积的 4 个 Phase A 本地切片收束为一个前端

@@ -20446,3 +20446,44 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit the v541 module bump locally.
   - Deploy only after the user explicitly asks for deployment; then use the
     central Home AI macOS plugin deploy path and production readback.
+
+## 2026-06-27 - v541 Phase C pane-state module deployed
+
+- Current state:
+  - Local module commit `7ba6623` (`bump shell for phase c pane state module`)
+    was deployed to Mac production through the Home AI central macOS plugin
+    deploy path.
+  - Public has not been pushed from this step.
+- Deploy:
+  - Command target: `plugin:codex-mobile-web`.
+  - Deploy reason: `codex-mobile-v541-phase-c-pane-state`.
+  - Source commit: `7ba66236f480`, source dirty false.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T062145Z-plugin-codex-mobile-web-codex-mobile-v541-phase-c-pane-state`.
+  - Selected mux refresh skipped with `reason=no_mux_runtime_change`; no mux
+    runtime trigger files changed in this module.
+- Production readback:
+  - `/api/public-config` returned status `200`,
+    `clientBuildId=0.1.11|codex-mobile-shell-v541`,
+    `shellCacheName=codex-mobile-shell-v541`,
+    `activeProfileId=previous`, and production workspace path
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Source/prod SHA-256 prefixes matched:
+    `public/app.js=da3e291a5e17c3c2`,
+    `public/sw.js=e536a1d1245727b4`,
+    `public/thread-tile-state.js=b8d9820d702adda9`,
+    `test/thread-tile-state.test.js=6519fda2d37d4cc3`,
+    `test/thread-tile-layout-ui.test.js=e7a21e490fd7cda3`.
+  - Deployment evidence docs were updated locally after production readback;
+    those docs are not counted as production runtime hash evidence.
+- Visual fixture:
+  - `node scripts/codex-mobile-thread-tile-visual-fixture.js --width 3000 --height 1500 --panes 5 --json`
+    passed.
+  - Bounded evidence: `columns=5`, `rows=1`, `paneCount=5`,
+    `noPaneOverlap=true`, `composerBelowConversation=true`,
+    `durationVisible=true`, `operationDockOverlay=true`,
+    `inputInsideComposer=true`.
+- Next:
+  - Observe production/user behavior before Public push.
+  - Continue with the next architecture module rather than mixing additional
+    small pane tweaks into the deployed v541 closure.
