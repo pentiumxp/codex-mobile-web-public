@@ -23100,3 +23100,51 @@ The previous full handoff was archived and should be opened only when old proven
   - UI stability: keep scroll-user-interaction protection and list-order
     throttling as separate, small slices because they are client behavior, not
     app-server peak latency.
+
+## 2026-06-27 - v550 projection consistency diagnostic loop ready
+
+- Problem:
+  - Users were still seeing intermittent missing/duplicate/out-of-order
+    conversation projection symptoms that were difficult to reproduce after the
+    fact.
+  - Existing client diagnostics could build bounded projection mismatch events,
+    but real single-thread full renders and thread-tile full renders did not
+    uniformly run the consistency check after DOM update.
+- Fix:
+  - Bumped static shell/cache to `codex-mobile-shell-v550`.
+  - `updateConversationHtml()` now accepts an explicit
+    `checkProjectionConsistency` flag and runs
+    `checkConversationProjectionConsistency()` after both hydrate-existing and
+    normal mutation paths when requested.
+  - Single-thread full render and thread-tile full render paths now request the
+    post-render consistency check.
+  - The check reports repeated bounded `conversation_projection_mismatch`
+    diagnostics through the existing Home AI `homeai.diagnostic.report`
+    channel. Single transient mismatches do not notify Owner; a healthy render
+    clears the same-signature count.
+  - No repair-card auto-dispatch was added. Home AI remains the owner for Owner
+    notification and Owner-triggered repair-card dispatch.
+- Tests/validation:
+  - Focused tests passed:
+    `node --test test/thread-detail-render-plan.test.js test/conversation-render.test.js test/thread-diagnostic-events.test.js test/home-ai-diagnostic-reporting.test.js test/app-update.test.js test/build-refresh-policy.test.js`
+    (`261` tests).
+  - `npm test` passed (`1312` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - `codegraph sync` reported already up to date.
+- Live latency evidence captured during this work:
+  - Production was still v549 at sampling time.
+  - Direct `/api/threads?limit=25` samples showed `342-942ms` response time.
+  - Phase-B smoke showed thread-list `totalMs=393`, `appServerRpcMs=9`,
+    `appServerMs=33`, `mergeMs=167`, `summaryMergeTotalMs=135`,
+    `coldPathOwner=warm-fallback-cache`.
+  - Detail readback remained `projection-active-overlay` and
+    `activeOverlayGate=ready`; the slow entry symptom is therefore stronger
+    evidence for remaining list/summary merge, response-size, host CPU, or
+    browser render cost than for mux/app-server RPC latency.
+- Next:
+  - Commit and deploy v550 through the central Home AI macOS plugin deploy path.
+  - After deployment, read back `/api/public-config` and Phase-B smoke.
+  - Treat the captured list/detail latency evidence as the input for the next
+    large-session entry-speed module.

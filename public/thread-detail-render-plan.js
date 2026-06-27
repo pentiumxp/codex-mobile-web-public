@@ -1855,6 +1855,7 @@
         duplicateRenderKeyCount: normalizedCount(input.duplicateRenderKeyCount),
         expectedTurnIds: normalizedStringList(input.expectedTurnIds),
         renderedDomTurnIds: normalizedStringList(input.renderedDomTurnIds),
+        checkProjectionConsistency: input.checkProjectionConsistency === true,
         source,
       },
       reason: source,

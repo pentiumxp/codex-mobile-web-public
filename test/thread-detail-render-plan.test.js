@@ -2804,6 +2804,7 @@ test("single-thread shell conversation update plans stable update inputs", () =>
     duplicateRenderKeyCount: 1.1,
     expectedTurnIds: ["a", "b"],
     renderedDomTurnIds: ["a"],
+    checkProjectionConsistency: true,
     source: "single-thread-render",
   }), {
     html: "<turn/>",
@@ -2818,6 +2819,7 @@ test("single-thread shell conversation update plans stable update inputs", () =>
       duplicateRenderKeyCount: 1,
       expectedTurnIds: ["a", "b"],
       renderedDomTurnIds: ["a"],
+      checkProjectionConsistency: true,
       source: "single-thread-render",
     },
     reason: "single-thread-render",
@@ -2844,6 +2846,7 @@ test("single-thread shell conversation update plans stable update inputs", () =>
       duplicateRenderKeyCount: 0,
       expectedTurnIds: [],
       renderedDomTurnIds: [],
+      checkProjectionConsistency: false,
       source: "single-thread-early-shell",
     },
     reason: "single-thread-early-shell",

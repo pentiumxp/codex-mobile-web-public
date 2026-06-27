@@ -16,6 +16,24 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-27 v550 投影一致性自动诊断闭环
+
+v550 强化线程详情投影与浏览器 DOM 的一致性检测。单线程 full render 和
+平铺 thread-tile render 完成后，客户端会统一检查当前 projection/render
+signature、DOM render-key 数量、重复 render key、可见 turn 顺序以及最新 turn
+是否匹配。
+
+如果连续出现缺消息、重复消息、顺序错或 DOM 与 projection signature 不一致，
+Codex Mobile 会通过 Home AI 的 `homeai.diagnostic.report` 通道上报 bounded
+metadata。单次瞬时不一致只记录本地失败计数，不通知 Owner；后续健康渲染会清零
+同一签名的计数。上报内容只包含 build/cache id、read/render mode、线程/turn 短
+hash、数量和错误类型，不包含消息正文、任务卡正文、上传内容、路径、token、
+cookie 或长日志。Home AI 仍然负责 Owner 通知和 Owner 触发修复卡，插件不会自动
+派发修复任务。
+
+本次是前端运行时行为变化，`CLIENT_BUILD_ID` 和 service worker cache 升级到
+`codex-mobile-shell-v550`。
+
 ## 2026-06-27 App Server 线程列表峰值耗时修复
 
 本次发布修复的是服务端线程列表的峰值耗时，而不是静态前端 shell。现象是

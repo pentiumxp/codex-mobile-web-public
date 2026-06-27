@@ -148,6 +148,15 @@ Implementation path:
     authoritative completed-receipt detection, and local-only item retention
     covered by `test/thread-detail-state.test.js`; `public/app.js` should only
     create the policy with local classifiers and delegate merge calls.
+16. Projection/DOM consistency diagnostics must run after real single-thread
+    and thread-tile renders, not only refresh-local-patch paths. Use
+    `public/thread-diagnostic-events.js` to produce bounded
+    `render_signature_mismatch`, `duplicate_render_keys`, and
+    `turn_order_mismatch` events, and route repeated failures through
+    `public/home-ai-diagnostic-reporting.js`. Single transient mismatches should
+    not notify Owner; matching healthy renders must clear the repeated-failure
+    counter. Do not include message text, task-card bodies, upload contents,
+    local paths, tokens, cookies, or long logs in reports.
 16. Wide-screen multi-thread reading layout belongs in
     `public/thread-tile-layout.js`. Keep viewport/sidebar/orientation to
     columns/rows/maxPanes decisions covered by `test/thread-tile-layout.test.js`,
