@@ -2438,6 +2438,14 @@ Deployable scope:
   per item). Items carry `mobileFirstPaintTextBudget`; the response records
   before/after first-paint byte counts and completed-text counters in
   `mobileDetailResponseBudget`.
+- A later summary-phase slice targets warm projection hits whose `summaryMs`
+  dominates `totalMs` even though `threadReadMs=0`. Detail summary resolution
+  now merges the existing display-summary cache for local summaries and skips
+  the synchronous app-server `thread/list limit=1000` refresh on display-cache
+  hits. Repeated app-server summary refreshes for the same thread are suppressed
+  for `CODEX_MOBILE_THREAD_DETAIL_SUMMARY_APP_SERVER_REFRESH_TTL_MS` (default
+  `30s`). Missing local and display-cache summaries still use the app-server
+  lookup so deep-link and true cold paths remain observable.
 - `server.js` wires the progressive thresholds and effective active limits from
   bounded environment variables.
 - Operation budgets now include `collabAgentToolCall`, and v4 visible-item

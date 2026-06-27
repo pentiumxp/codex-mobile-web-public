@@ -27,9 +27,13 @@ function functionSource(source, name) {
 
 test("thread detail refreshes display title from app-server summary", () => {
   assert.match(serverJs, /function mergeThreadDisplaySummary\(base, display, options = \{\}\)/);
-  assert.match(serverJs, /createThreadDetailSummaryService\(\{\s*readStateDbThread,\s*readStartedThread,\s*readRolloutSessionFallbackThread,\s*readThreadSummaryFromAppServer,\s*mergeThreadDisplaySummary,/);
+  assert.match(serverJs, /createThreadDetailSummaryService\(\{\s*readStateDbThread,\s*readStartedThread,\s*readRolloutSessionFallbackThread,\s*readDisplaySummaryThread: \(threadId\) => threadDisplaySummaryCache\.read\(threadId\),\s*readThreadSummaryFromAppServer,\s*mergeThreadDisplaySummary,/);
+  assert.match(serverJs, /appServerRefreshTtlMs: THREAD_DETAIL_SUMMARY_APP_SERVER_REFRESH_TTL_MS,/);
+  assert.match(serverJs, /skipAppServerRefreshWhenDisplayCachePresent: true,/);
   assert.match(summaryServiceJs, /summary = mergeThreadDisplaySummary\(summary, appServerSummary\);/);
   assert.match(summaryServiceJs, /source = `\$\{source\}\+app-server`;/);
+  assert.match(summaryServiceJs, /const merged = mergeThreadDisplaySummary\(summary, displaySummary\);/);
+  assert.match(summaryServiceJs, /summary_app_server_refresh_skipped/);
 });
 
 test("thread display summary keeps local runtime fields while accepting display fields", () => {

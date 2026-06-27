@@ -788,6 +788,19 @@ fields include `requestMode`, `readMode`, `phase`, `summarySource`, `totalMs`,
 `rawThreadReadMs`, `turnsListFallbackMs`, `prepareResponseMs`,
 `returnedTurns`, `omittedTurns`, and `rolloutSizeBytes`.
 
+The summary phase is not allowed to turn every warm detail open into a blocking
+app-server `thread/list` refresh. `adapters/thread-detail-summary-service.js`
+keeps the state-db -> started-cache -> rollout-session -> display-cache ->
+app-server lookup order for missing summaries, and when a local summary already
+exists it first merges the process display-summary cache. In production,
+display-cache hits skip the synchronous app-server summary refresh, and repeated
+app-server refreshes for the same thread are suppressed for
+`CODEX_MOBILE_THREAD_DETAIL_SUMMARY_APP_SERVER_REFRESH_TTL_MS` (default `30s`).
+The detail log emits `summary_display_cache_merge` and
+`summary_app_server_refresh_skipped` events so high `summaryMs` can be
+attributed without copying titles, messages, or app-server payloads into
+diagnostics.
+
 The browser forwards those fields through `/api/client-events` as
 `thread_detail_first_paint.serverTimings`, `thread_refresh_ms.serverTimings`,
 and `thread_detail_full_ready.serverTimings`, plus a compact

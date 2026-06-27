@@ -24919,3 +24919,54 @@ The previous full handoff was archived and should be opened only when old proven
     payloads. It does not by itself eliminate all slow detail opens; remaining
     spikes should be attributed with server timing evidence across projection
     lookup/seed, summary lookup, active overlay proof, and app-server/mux RPC.
+
+## 2026-06-28 - Thread Detail Summary Refresh Budget Module
+
+- User-visible symptom:
+  - Production readback after the active operation payload module showed the
+    warm detail path was generally bounded, but a non-active Home AI detail read
+    still returned `projection-v4-dynamic` with `threadReadMs=0` and
+    `summaryMs=228` out of `totalMs=277`.
+  - This matches the "long wait, then eventual success" shape: the request does
+    not time out, but a synchronous metadata refresh can dominate first paint.
+- Root cause / invariant:
+  - `adapters/thread-detail-summary-service.js` refreshed an existing
+    state-db/started/rollout summary by synchronously calling app-server
+    `thread/list limit=1000 useStateDbOnly` on every detail open.
+  - A warm projection hit must not block first paint on a broad app-server
+    summary refresh when the process already has bounded local summary data or
+    display-summary cache. Missing local/display summaries remain a true cold
+    path and still use the app-server lookup.
+- Implementation:
+  - `thread-detail-summary-service` now reads a `readDisplaySummaryThread`
+    dependency after state-db/started/rollout lookup.
+  - Display-cache-only summaries can satisfy the summary phase without
+    synchronous app-server refresh.
+  - Existing local summaries merge display-cache data before projection/read
+    orchestration.
+  - When display cache is present, production wiring skips the synchronous
+    app-server summary refresh and logs `summary_app_server_refresh_skipped`
+    with reason `display-cache`.
+  - Repeated app-server summary refreshes for the same thread are suppressed for
+    `CODEX_MOBILE_THREAD_DETAIL_SUMMARY_APP_SERVER_REFRESH_TTL_MS` (default
+    `30s`) and logged with reason `recent-app-server-refresh`.
+  - `server.js` wires the display-summary cache and TTL policy; no frontend
+    behavior or projection format changed.
+  - Updated docs: `docs/ARCHITECTURE.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, `docs/MODULES.md`, and
+    `docs/TROUBLESHOOTING.md`.
+- Local validation:
+  - Focused summary/detail/list suite passed (`53` tests).
+  - Full `npm test` passed (`1375` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Pending at the time this local handoff section was written. Deploy through
+    the Home AI central macOS plugin path with reason
+    `codex-mobile-detail-summary-refresh-budget`.
+- Residual / next target:
+  - This removes a synchronous summary refresh from warm detail first paint.
+    Remaining slow opens after deployment should be attributed to projection
+    lookup/seed, active overlay proof/window, app-server/mux RPC, or browser
+    rendering using the existing bounded timing fields.

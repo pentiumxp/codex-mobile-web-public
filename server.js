@@ -947,6 +947,7 @@ const THREAD_DETAIL_PROGRESSIVE_ACTIVE_OPERATION_PAYLOAD_CHARS = Math.max(0, Mat
 const THREAD_DETAIL_PROGRESSIVE_VISIBLE_ITEM_CEILING = Math.max(0, Math.min(10000, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_VISIBLE_ITEM_CEILING || "48")));
 const THREAD_DETAIL_PROGRESSIVE_FIRST_PAINT_THREAD_BYTES = Math.max(0, Math.min(50 * 1024 * 1024, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_FIRST_PAINT_THREAD_BYTES || String(160 * 1024))));
 const THREAD_DETAIL_PROGRESSIVE_COMPLETED_TEXT_CHARS = Math.max(0, Math.min(200 * 1024, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_COMPLETED_TEXT_CHARS || String(8 * 1024))));
+const THREAD_DETAIL_SUMMARY_APP_SERVER_REFRESH_TTL_MS = Math.max(0, Math.min(60 * 60 * 1000, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_SUMMARY_APP_SERVER_REFRESH_TTL_MS || String(30 * 1000))));
 const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "collabAgentToolCall", "fileChange", "dynamicToolCall", "mcpToolCall"]);
 const THREAD_LIST_FALLBACK_CACHE_TTL_MS = Math.max(0, Number(process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_TTL_MS || "0"));
 const THREAD_LIST_FALLBACK_CACHE_FILE = process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_FILE
@@ -5282,10 +5283,13 @@ const threadDetailSummaryService = createThreadDetailSummaryService({
   readStateDbThread,
   readStartedThread,
   readRolloutSessionFallbackThread,
+  readDisplaySummaryThread: (threadId) => threadDisplaySummaryCache.read(threadId),
   readThreadSummaryFromAppServer,
   mergeThreadDisplaySummary,
   applyLocalActiveThreadStatusToSummary,
   threadRolloutSizeBytes,
+  appServerRefreshTtlMs: THREAD_DETAIL_SUMMARY_APP_SERVER_REFRESH_TTL_MS,
+  skipAppServerRefreshWhenDisplayCachePresent: true,
 });
 const threadDetailBoundedReadPolicyService = createThreadDetailBoundedReadPolicyService({
   thresholdBytes: THREAD_DETAIL_TURNS_LIST_FIRST_BYTES,

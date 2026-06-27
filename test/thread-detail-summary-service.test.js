@@ -16,6 +16,7 @@ function createResolver(overrides = {}) {
     state: 0,
     started: 0,
     rollout: 0,
+    display: 0,
     appServer: 0,
   };
   const service = createThreadDetailSummaryService({
@@ -32,6 +33,12 @@ function createResolver(overrides = {}) {
       calls.rollout += 1;
       return typeof overrides.readRolloutSessionFallbackThread === "function"
         ? overrides.readRolloutSessionFallbackThread(threadId)
+        : null;
+    },
+    readDisplaySummaryThread(threadId) {
+      calls.display += 1;
+      return typeof overrides.readDisplaySummaryThread === "function"
+        ? overrides.readDisplaySummaryThread(threadId)
         : null;
     },
     async readThreadSummaryFromAppServer(codex, threadId) {
@@ -51,6 +58,8 @@ function createResolver(overrides = {}) {
     threadRolloutSizeBytes(summary) {
       return summary && summary.rolloutSizeBytes || 0;
     },
+    appServerRefreshTtlMs: overrides.appServerRefreshTtlMs,
+    skipAppServerRefreshWhenDisplayCachePresent: overrides.skipAppServerRefreshWhenDisplayCachePresent,
   });
   return {
     calls,
@@ -82,7 +91,7 @@ test("summary resolver refreshes state-db summary with app-server display data",
     },
     source: "state-db+app-server",
   });
-  assert.deepEqual(resolver.calls, { state: 1, started: 0, rollout: 0, appServer: 1 });
+  assert.deepEqual(resolver.calls, { state: 1, started: 0, rollout: 0, display: 1, appServer: 1 });
   assert.deepEqual(resolver.logs, [
     ["summary_app_server_refresh_start", { baseSource: "state-db" }],
     ["summary_app_server_refresh_ok", { durationMs: 0, found: true }],
@@ -104,7 +113,7 @@ test("summary resolver falls through started and rollout before app-server looku
 
   assert.equal(result.source, "started-cache");
   assert.equal(result.summary.name, "Started");
-  assert.deepEqual(resolver.calls, { state: 1, started: 1, rollout: 0, appServer: 1 });
+  assert.deepEqual(resolver.calls, { state: 1, started: 1, rollout: 0, display: 1, appServer: 1 });
   assert.deepEqual(resolver.logs.map(([event]) => event), [
     "summary_app_server_refresh_start",
     "summary_app_server_refresh_ok",
@@ -125,7 +134,7 @@ test("summary resolver uses app-server as primary when local summaries are absen
 
   assert.equal(result.source, "app-server");
   assert.equal(result.summary.activeOverlayThreadId, "thread-1");
-  assert.deepEqual(resolver.calls, { state: 1, started: 1, rollout: 1, appServer: 1 });
+  assert.deepEqual(resolver.calls, { state: 1, started: 1, rollout: 1, display: 1, appServer: 1 });
   assert.deepEqual(resolver.logs.map(([event]) => event), [
     "summary_app_server_start",
     "summary_app_server_ok",
@@ -153,6 +162,66 @@ test("summary resolver logs app-server errors without hiding local fallback summ
     error: "offline",
   }]);
   assert.equal(resolver.logs[2][0], "summary_ready");
+});
+
+test("summary resolver merges display cache and skips app-server refresh for existing summaries", async () => {
+  const resolver = createResolver({
+    readStateDbThread: () => ({ id: "thread-1", name: "State title", status: { type: "idle" } }),
+    readDisplaySummaryThread: () => ({ id: "thread-1", name: "Cached title", preview: "Cached preview", model: "gpt-cache" }),
+    readThreadSummaryFromAppServer: () => ({ id: "thread-1", name: "App title" }),
+    skipAppServerRefreshWhenDisplayCachePresent: true,
+    appServerRefreshTtlMs: 30_000,
+  });
+  const result = await resolver.service.resolveSummary({}, "thread-1", { threadLog: resolver.threadLog });
+
+  assert.equal(result.source, "state-db+display-cache");
+  assert.equal(result.summary.name, "Cached title");
+  assert.equal(result.summary.model, "gpt-cache");
+  assert.deepEqual(resolver.calls, { state: 1, started: 0, rollout: 0, display: 1, appServer: 0 });
+  assert.deepEqual(resolver.logs.map(([event]) => event), [
+    "summary_display_cache_merge",
+    "summary_app_server_refresh_skipped",
+    "summary_ready",
+  ]);
+  assert.equal(resolver.logs[1][1].reason, "display-cache");
+});
+
+test("summary resolver can use display cache as the local summary source", async () => {
+  const resolver = createResolver({
+    readDisplaySummaryThread: () => ({ id: "thread-1", name: "Cached title", status: { type: "completed" } }),
+    readThreadSummaryFromAppServer: () => ({ id: "thread-1", name: "App title" }),
+    skipAppServerRefreshWhenDisplayCachePresent: true,
+    appServerRefreshTtlMs: 30_000,
+  });
+  const result = await resolver.service.resolveSummary({}, "thread-1", { threadLog: resolver.threadLog });
+
+  assert.equal(result.source, "display-cache");
+  assert.equal(result.summary.name, "Cached title");
+  assert.deepEqual(resolver.calls, { state: 1, started: 1, rollout: 1, display: 1, appServer: 0 });
+  assert.deepEqual(resolver.logs.map(([event]) => event), [
+    "summary_display_cache_hit",
+    "summary_app_server_refresh_skipped",
+    "summary_ready",
+  ]);
+});
+
+test("summary resolver skips repeated app-server refreshes within ttl", async () => {
+  const resolver = createResolver({
+    readStateDbThread: () => ({ id: "thread-1", name: "State title", status: { type: "idle" } }),
+    readThreadSummaryFromAppServer: () => ({ id: "thread-1", name: "App title" }),
+    appServerRefreshTtlMs: 30_000,
+  });
+  const first = await resolver.service.resolveSummary({}, "thread-1", { threadLog: resolver.threadLog });
+  resolver.setNow(10_000);
+  const second = await resolver.service.resolveSummary({}, "thread-1", { threadLog: resolver.threadLog });
+
+  assert.equal(first.source, "state-db+app-server");
+  assert.equal(second.source, "state-db");
+  assert.deepEqual(resolver.calls, { state: 2, started: 0, rollout: 0, display: 2, appServer: 1 });
+  const skipLog = resolver.logs.find(([event]) => event === "summary_app_server_refresh_skipped");
+  assert.ok(skipLog);
+  assert.equal(skipLog[1].reason, "recent-app-server-refresh");
+  assert.equal(skipLog[1].ageMs, 9000);
 });
 
 test("summary helper fields match route diagnostics", () => {

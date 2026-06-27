@@ -460,6 +460,18 @@ output tail in the default first paint.
 On-demand expansion of omitted historical assistant progress is a separate
 route/API feature, not part of the default first paint.
 
+If `threadReadMs=0`, `projectionState=hit`, and `summaryMs` dominates
+`totalMs`, inspect the thread-detail summary phase before changing projection
+or frontend render policy. A warm detail open should not synchronously run
+app-server `thread/list limit=1000` when the process already has local
+state-db/started/rollout summary plus display-summary cache. The expected
+server-side evidence is `summary_display_cache_merge` followed by
+`summary_app_server_refresh_skipped` with reason `display-cache`, or reason
+`recent-app-server-refresh` within
+`CODEX_MOBILE_THREAD_DETAIL_SUMMARY_APP_SERVER_REFRESH_TTL_MS` (default `30s`).
+Missing local and display-cache summaries still require the app-server lookup;
+that is a different cold/deep-link path.
+
 If a newly submitted message briefly shows local input feedback and then the
 right-side turn timer changes to `已结束` while `/api/threads/:id?mode=recent`
 still returns thread-level `status=active`, check for a stale latest turn row in
