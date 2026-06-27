@@ -6187,8 +6187,8 @@ function collectFileNames(value, out = [], keyHint = "") {
   return out;
 }
 
-function isLiveReasoning(item, turn) {
-  return item && item.type === "reasoning" && isLatestTurn(turn) && isLiveTurn(turn) && !isCompletedStatus(item.status);
+function isLiveReasoning(item, turn, thread = null) {
+  return item && item.type === "reasoning" && isLatestTurn(turn, thread) && isLiveTurn(turn, thread) && !isCompletedStatus(item.status);
 }
 
 function liveReasoningElapsed(item, turn) {
@@ -13659,7 +13659,7 @@ function renderThreadTileTurn(thread, turn, previousKeys = new Set()) {
     const renderedItems = visibleItemsForTurn(turn, thread).map((entry, index) => {
       const item = entry && entry.item;
       const sourceIndex = Number.isInteger(entry && entry.sourceIndex) && entry.sourceIndex >= 0 ? entry.sourceIndex : index;
-      return renderVisibleItemPatchHtml(turn, item, previousKeys, sourceIndex);
+      return renderVisibleItemPatchHtml(turn, item, previousKeys, sourceIndex, thread);
     }).filter(Boolean).join("");
     if (!renderedItems.trim()) return "";
     const threadId = String(thread && thread.id || "");
@@ -14531,12 +14531,15 @@ function sourceIndexForVisibleItem(turn, item, thread = null) {
   return index >= 0 ? index : 0;
 }
 
-function renderVisibleItemPatchHtml(turn, item, previousKeys = new Set(), index = 0) {
-  if (!item) return "";
-  if (isContextCompactionItem(item)) return renderContextCompaction(item, turn, previousKeys, index);
-  if (isOperationalItem(item)) return renderLiveOperation(item, turn, previousKeys, index);
-  if (item.type === "reasoning" && isLiveTurn(turn)) return "";
-  return renderItem(item, turn, previousKeys, index);
+function renderVisibleItemPatchHtml(turn, item, previousKeys = new Set(), index = 0, thread = null) {
+  const contextThread = renderContextThread(thread);
+  return withRenderContextThread(contextThread, () => {
+    if (!item) return "";
+    if (isContextCompactionItem(item)) return renderContextCompaction(item, turn, previousKeys, index, contextThread);
+    if (isOperationalItem(item)) return renderLiveOperation(item, turn, previousKeys, index);
+    if (item.type === "reasoning" && isLiveTurn(turn, contextThread)) return "";
+    return renderItem(item, turn, previousKeys, index, contextThread);
+  });
 }
 
 function firstElementFromHtml(html) {
@@ -14706,7 +14709,7 @@ function insertVisibleItemDom(turn, item) {
   const visibleIndex = entries.findIndex((entry) => entry && entry.item === item);
   if (visibleIndex < 0) return false;
   const sourceIndex = Number.isInteger(entries[visibleIndex].sourceIndex) ? entries[visibleIndex].sourceIndex : sourceIndexForVisibleItem(turn, item, thread);
-  const html = renderVisibleItemPatchHtml(turn, item, previousKeys, sourceIndex);
+  const html = renderVisibleItemPatchHtml(turn, item, previousKeys, sourceIndex, thread);
   const source = firstElementFromHtml(html);
   if (!source) return false;
   const insertResult = threadDetailDomPatchApi.insertVisibleItemElement({
@@ -14751,7 +14754,7 @@ function patchVisibleItemElement(target, turn, item, previousKeys, sourceIndex =
   const index = Number.isInteger(sourceIndex) && sourceIndex >= 0
     ? sourceIndex
     : sourceIndexForVisibleItem(turn, item, renderContextThread());
-  const html = renderVisibleItemPatchHtml(turn, item, previousKeys, index);
+  const html = renderVisibleItemPatchHtml(turn, item, previousKeys, index, renderContextThread());
   const source = firstElementFromHtml(html);
   if (!source) return null;
   patchNode(target, source);
@@ -14798,6 +14801,7 @@ function applyVisibleItemsOnlyRefreshPatch(nextTurn, patchPlan, previousKeys) {
       nextEntry.item,
       previousKeys,
       nextEntry.sourceIndex,
+      renderContextThread(),
     )),
     patchElement: (target, nextEntry) => patchVisibleItemElement(
       target,
@@ -14827,7 +14831,7 @@ function patchLiveTextItemDom(turn, item) {
     key,
     document,
     escapeSelectorAttr,
-    renderHtml: () => renderItem(item, turn, previousKeys, index),
+    renderHtml: () => renderItem(item, turn, previousKeys, index, renderContextThread()),
     patchElement: (target, source) => {
       patchNode(target, source);
       return target;
@@ -16829,7 +16833,7 @@ function renderTurn(turn, previousKeys = new Set()) {
     const item = entry.item;
     const sourceIndex = Number.isInteger(entry.sourceIndex) && entry.sourceIndex >= 0 ? entry.sourceIndex : index;
     let html = "";
-    html = renderVisibleItemPatchHtml(turn, item, previousKeys, sourceIndex);
+    html = renderVisibleItemPatchHtml(turn, item, previousKeys, sourceIndex, thread);
     return { html, sourceIndex, order: 1 };
   }).filter((entry) => entry && entry.html);
   const items = renderedItems
@@ -16842,14 +16846,14 @@ function renderTurn(turn, previousKeys = new Set()) {
     ? `<div class="approval-stack in-turn">${turnApprovals.map((request) => renderApprovalRequest(request, previousKeys)).join("")}</div>`
     : "";
   const draftHtml = renderTurnThreadTaskCardDraft(turn, previousKeys);
-  const pendingDraftHtml = !draftHtml && !turnHasThreadTaskCardDraftResponse(turn) && isLatestTurn(turn) && isLiveTurn(turn) && turnHasThreadTaskCardRequest(turn)
+  const pendingDraftHtml = !draftHtml && !turnHasThreadTaskCardDraftResponse(turn) && isLatestTurn(turn, thread) && isLiveTurn(turn, thread) && turnHasThreadTaskCardRequest(turn)
     ? renderPendingThreadTaskCardDraft("Generating cross-thread task card draft...", "Generating")
     : "";
   if (!items.trim() && !approvalsHtml.trim() && !draftHtml.trim() && !pendingDraftHtml.trim()) return "";
   const turnKey = stableTurnKey(turn);
   const statusKey = stableTurnKey(turn, "status");
   const duration = turn.durationMs ? ` | ${formatElapsedTime(Math.round(turn.durationMs / 1000))}` : "";
-  const timerShowsStatus = isLatestTurn(turn) && (isLiveTurn(turn) || turnFinalSeconds(turn) != null);
+  const timerShowsStatus = isLatestTurn(turn, thread) && (isLiveTurn(turn, thread) || turnFinalSeconds(turn) != null);
   const showStatusLine = !timerShowsStatus;
   return `<article class="turn" data-turn="${escapeHtml(turn.id)}" data-render-key="${escapeHtml(turnKey)}">
     ${items}${approvalsHtml}
@@ -17080,16 +17084,17 @@ function displayTurnStatus(turn) {
   return statusText(turn.status);
 }
 
-function renderContextCompaction(item, turn = null, previousKeys = new Set(), index = 0) {
-  const notice = contextCompactionNotice(item, turn);
+function renderContextCompaction(item, turn = null, previousKeys = new Set(), index = 0, thread = null) {
+  const notice = contextCompactionNotice(item, turn, thread);
   if (!notice) return "";
   const key = stableItemKey(turn, item, index, "context");
   return `<div class="context-compaction-note${entryAnimationClass(key, previousKeys)}" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}">${escapeHtml(notice)}</div>`;
 }
 
-function renderItem(item, turn = null, previousKeys = new Set(), index = 0) {
-  if (isContextCompactionItem(item)) return renderContextCompaction(item, turn, previousKeys, index);
-  if (isLiveReasoning(item, turn)) return "";
+function renderItem(item, turn = null, previousKeys = new Set(), index = 0, thread = null) {
+  const contextThread = renderContextThread(thread);
+  if (isContextCompactionItem(item)) return renderContextCompaction(item, turn, previousKeys, index, contextThread);
+  if (isLiveReasoning(item, turn, contextThread)) return "";
   const type = item.type || "item";
   const key = stableItemKey(turn, item, index);
   if (item.type === "turnUsageSummary") {
@@ -17098,10 +17103,10 @@ function renderItem(item, turn = null, previousKeys = new Set(), index = 0) {
     </section>`;
   }
   const injectedTaskCardText = injectedThreadTaskCardTextForItem(item);
-  if (injectedTaskCardText) return renderInjectedThreadTaskCardItem(item, turn, previousKeys, index, injectedTaskCardText);
+  if (injectedTaskCardText) return renderInjectedThreadTaskCardItem(item, turn, previousKeys, index, injectedTaskCardText, contextThread);
   const itemCopyKey = rememberCopyText(copyTextForItem(item));
   const itemCopyButton = copyButtonHtml(itemCopyKey, "复制全文", "item-copy-button");
-  const timestampHtml = renderItemTimestampHtml(item, turn);
+  const timestampHtml = renderItemTimestampHtml(item, turn, contextThread);
   return `<section class="item${entryAnimationClass(key, previousKeys)} ${escapeHtml(type)}" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}">
     <div class="item-head">
       <span>${escapeHtml(labelForItem(item))}</span>
@@ -17111,12 +17116,12 @@ function renderItem(item, turn = null, previousKeys = new Set(), index = 0) {
   </section>`;
 }
 
-function renderInjectedThreadTaskCardItem(item, turn = null, previousKeys = new Set(), index = 0, text = "") {
+function renderInjectedThreadTaskCardItem(item, turn = null, previousKeys = new Set(), index = 0, text = "", thread = null) {
   const key = stableItemKey(turn, item, index);
   const metadata = injectedThreadTaskCardMetadata(text);
   const itemCopyKey = rememberCopyText(copyTextForItem(item));
   const itemCopyButton = copyButtonHtml(itemCopyKey, "复制全文", "item-copy-button");
-  const timestampHtml = renderItemTimestampHtml(item, turn);
+  const timestampHtml = renderItemTimestampHtml(item, turn, thread);
   return `<section class="item${entryAnimationClass(key, previousKeys)} thread-task-card-injected" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}" data-thread-task-card-item>
     <div class="item-head thread-task-card-message-head">
       <span class="thread-task-card-message-heading">
@@ -17129,8 +17134,8 @@ function renderInjectedThreadTaskCardItem(item, turn = null, previousKeys = new 
   </section>`;
 }
 
-function renderItemTimestampHtml(item, turn = null) {
-  const timestampMs = itemTimestampMs(item, turn);
+function renderItemTimestampHtml(item, turn = null, thread = null) {
+  const timestampMs = itemTimestampMs(item, turn, thread);
   if (!timestampMs) return "";
   const label = formatCardTimestamp(timestampMs, state.nowMs);
   if (!label) return "";
@@ -17144,8 +17149,9 @@ function renderItemTimestampHtml(item, turn = null) {
   return `<time class="item-timestamp" datetime="${escapeHtml(new Date(timestampMs).toISOString())}" title="${escapeHtml(title)}">${escapeHtml(label)}</time>`;
 }
 
-function itemTimestampMs(item, turn = null) {
+function itemTimestampMs(item, turn = null, thread = null) {
   if (!item) return 0;
+  const contextThread = renderContextThread(thread);
   const itemStarted = numericTimestampMs(item.createdAtMs)
     || numericTimestampMs(item.createdAt)
     || numericTimestampMs(item.created_at_ms)
@@ -17162,12 +17168,12 @@ function itemTimestampMs(item, turn = null) {
       || numericTimestampMs(item.completedAt)
       || numericTimestampMs(item.completed_at_ms)
       || numericTimestampMs(item.completed_at)
-      || turnCompletedAtMs(turn, state.currentThread)
-      || (isLiveTurn(turn) ? 0 : turnStartedAtMs(turn))
+      || turnCompletedAtMs(turn, contextThread)
+      || (isLiveTurn(turn, contextThread) ? 0 : turnStartedAtMs(turn))
       || 0;
   }
-  if (isLiveTurn(turn) && isOperationalItem(item)) return 0;
-  return turnStartedAtMs(turn) || turnCompletedAtMs(turn, state.currentThread);
+  if (isLiveTurn(turn, contextThread) && isOperationalItem(item)) return 0;
+  return turnStartedAtMs(turn) || turnCompletedAtMs(turn, contextThread);
 }
 
 function turnStartedAtMs(turn) {

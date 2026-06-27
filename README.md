@@ -543,6 +543,38 @@ npm run check:macos  # passed
 git diff --check  # passed
 ```
 
+## 2026-06-27 Phase C Visible Item HTML Thread Context Slice
+
+这是 submitted follow visible progress thread context 之后的相邻 Phase C 本地切片，
+不单独部署、不推 Public。它把单个 visible item 的 HTML 渲染链路也收束到显式
+render context thread，避免 context-compaction、reasoning 隐藏、timestamp fallback
+和 task-card injected item 在 pane 渲染时读取全局 current thread。
+
+改动边界：
+
+- `renderVisibleItemPatchHtml(turn, item, ..., thread)` 接收可选 thread，并用
+  `withRenderContextThread()` 包住单项渲染；
+- `renderContextCompaction()`、`renderItem()`、`renderInjectedThreadTaskCardItem()`、
+  `renderItemTimestampHtml()`、`itemTimestampMs()` 和 `isLiveReasoning()` 传递显式
+  thread/context；
+- `renderTurn()`、`renderThreadTileTurn()`、visible-item local insert/patch、
+  live text patch 都把当前 render context thread 传给单项 HTML 渲染；
+- 新增可执行测试，证明 item timestamp fallback 使用显式 render context thread，
+  不再固定读 `state.currentThread`；
+- 不改变 server projection、merge、DOM patch 算法、任务卡协议、shell/cache 版本或
+  生产部署状态。
+
+验证：
+
+```bash
+node --check public/app.js
+node --test test/conversation-render.test.js test/message-timestamp.test.js test/turn-scroll-controls.test.js test/thread-tile-layout-ui.test.js  # 137 passed
+npm test  # 1265 passed
+npm run check  # passed
+npm run check:macos  # passed
+git diff --check  # passed
+```
+
 ## 2026-06-27 Phase A Conversation DOM Authority Invalidation Local Slice
 
 这是 v542 后继续按“小切片本地提交、模块化再部署”节奏推进的 Phase A 切片。

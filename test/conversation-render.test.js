@@ -1360,7 +1360,7 @@ test("context compaction notices require explicit state and do not infer pending
   assert.match(functionBody("contextCompactionState"), /return ""/);
   assert.match(functionBody("canShowPendingContextCompaction"), /isLatestTurn\(turn, thread\) && isLiveTurn\(turn, thread\)/);
   assert.doesNotMatch(functionBody("contextCompactionState"), /isContextCompactionType\(item\.type\)/);
-  assert.match(functionBody("renderContextCompaction"), /const notice = contextCompactionNotice\(item, turn\)/);
+  assert.match(functionBody("renderContextCompaction"), /const notice = contextCompactionNotice\(item, turn, thread\)/);
   assert.match(functionBody("renderContextCompaction"), /if \(!notice\) return ""/);
 });
 
@@ -1368,6 +1368,9 @@ test("visible turn items keep source order after live operations move to the doc
   const body = functionBody("renderTurn");
   assert.match(body, /const thread = renderContextThread\(\);/);
   assert.match(body, /const visibleEntries = visibleItemsForTurn\(turn, thread\);/);
+  assert.match(body, /renderVisibleItemPatchHtml\(turn, item, previousKeys, sourceIndex, thread\)/);
+  assert.match(body, /isLatestTurn\(turn, thread\) && isLiveTurn\(turn, thread\) && turnHasThreadTaskCardRequest\(turn\)/);
+  assert.match(body, /const timerShowsStatus = isLatestTurn\(turn, thread\) && \(isLiveTurn\(turn, thread\) \|\| turnFinalSeconds\(turn\) != null\);/);
   assert.doesNotMatch(body, /deferLiveFollowupUser/);
   assert.doesNotMatch(body, /candidate\.sourceIndex < sourceIndex/);
   assert.match(body, /return \{ html, sourceIndex, order: 1 \};/);

@@ -2025,6 +2025,10 @@ Target:
   Submitted-message bottom-follow sustain now also evaluates visible progress
   with `visibleItemsForTurn(liveTurn, thread)`, so scroll-follow leases do not
   read global current-thread progress while rendering another pane/thread.
+  Visible item HTML rendering now carries the same explicit context into
+  context-compaction notes, reasoning visibility, task-card injected item
+  timestamps, and item timestamp fallback through
+  `renderVisibleItemPatchHtml(..., thread)`.
 - Treat each pane as a scaled mobile single-thread runtime instance. Shared
   global Composer chrome is only an interim input surface; global command dock
   or shared operation bubble are no longer acceptable in tile mode and must not

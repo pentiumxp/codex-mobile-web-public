@@ -21565,6 +21565,55 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit this local slice and keep it undeployed until a coherent deployable
     module is ready.
 
+## 2026-06-27 - Phase C visible item HTML thread context local slice
+
+- Current local state:
+  - Continued after local commit `825424c` (`refactor submitted follow uses
+    pane progress context`).
+  - This is a local Phase C visible-item HTML/render-context slice only. It
+    changes `public/app.js`, `test/conversation-render.test.js`,
+    `test/message-timestamp.test.js`, `test/turn-scroll-controls.test.js`,
+    README, the architecture plan, and this handoff. It does not bump
+    shell/cache, deploy production, or push Public.
+- Root-cause boundary:
+  - Symptom/risk: prior slices made visible-item filtering, source index, and
+    submitted bottom-follow pane-aware, but the single visible item HTML chain
+    still had implicit current-thread reads: context-compaction render,
+    reasoning visibility, `renderTurn()` status/draft conditions, and item
+    timestamp fallback could infer latest/live/completed state from global
+    `state.currentThread`.
+  - Failing layer: frontend visible-item HTML render context propagation, not
+    server projection, merge policy, DOM reconciliation internals, task-card
+    protocol, or Home AI diagnostic transport.
+  - Violated invariant: once a pane/thread render context is selected, every
+    visible-item render decision and timestamp fallback inside that render must
+    use the same explicit thread context.
+- Changes:
+  - `renderVisibleItemPatchHtml(..., thread)` now accepts an optional thread
+    and wraps item HTML rendering with `withRenderContextThread()`.
+  - `renderContextCompaction()`, `renderItem()`,
+    `renderInjectedThreadTaskCardItem()`, `renderItemTimestampHtml()`,
+    `itemTimestampMs()`, and `isLiveReasoning()` now pass explicit thread
+    context where they evaluate latest/live/completed/timestamp state.
+  - `renderTurn()` and `renderThreadTileTurn()` pass their pane/render thread
+    through to item HTML rendering and status/draft checks.
+  - Local insert/patch/live-text render paths pass the current render context
+    thread into item HTML rendering.
+  - Added executable coverage proving item timestamp fallback uses explicit
+    render context thread rather than always using `state.currentThread`.
+- Validation:
+  - `node --check public/app.js` passed.
+  - `node --test test/conversation-render.test.js test/message-timestamp.test.js test/turn-scroll-controls.test.js test/thread-tile-layout-ui.test.js`
+    passed (`137` tests).
+  - `npm test` passed (`1265` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed before docs/context updates; rerun after this
+    handoff update before committing.
+- Next:
+  - Commit this local slice and keep it undeployed until a coherent deployable
+    module is ready.
+
 ## 2026-06-27 - Phase C Composer action control planning local slice
 
 - Current local state:
