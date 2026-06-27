@@ -16070,39 +16070,45 @@ function upsertThreadTaskCardOnThread(thread, card) {
   thread.threadTaskCards = [card, ...existing.filter((entry) => String(entry && entry.id || "") !== String(card.id || ""))];
 }
 
+function taskCardCountThreadsForId(threadId) {
+  const id = String(threadId || "").trim();
+  if (!id) return [];
+  const threads = [];
+  const add = (thread) => {
+    if (!thread || String(thread.id || "") !== id || threads.includes(thread)) return;
+    threads.push(thread);
+  };
+  add(state.currentThread);
+  add(state.threadTileDetails && state.threadTileDetails.get(id));
+  add(findThreadById(id));
+  return threads;
+}
+
 function incrementPendingIncomingTaskCardCount(threadId, delta = 1) {
-  const thread = findThreadById(threadId);
-  const currentThread = state.currentThread && String(state.currentThread.id || "") === String(threadId || "") ? state.currentThread : null;
-  const base = thread || currentThread;
+  const threads = taskCardCountThreadsForId(threadId);
+  const base = threads[0] || null;
   if (!base) return;
   const current = Math.max(0, Number(base.pendingIncomingTaskCardCount) || 0);
   const next = Math.max(0, current + Number(delta || 0));
   const outgoing = Math.max(0, Number(base.pendingOutgoingTaskCardCount) || 0);
-  if (thread) {
+  for (const thread of threads) {
     thread.pendingIncomingTaskCardCount = next;
+    thread.pendingOutgoingTaskCardCount = outgoing;
     thread.pendingTaskCardCount = next + outgoing;
-  }
-  if (currentThread) {
-    currentThread.pendingIncomingTaskCardCount = next;
-    currentThread.pendingTaskCardCount = next + outgoing;
   }
 }
 
 function incrementPendingOutgoingTaskCardCount(threadId, delta = 1) {
-  const thread = findThreadById(threadId);
-  const currentThread = state.currentThread && String(state.currentThread.id || "") === String(threadId || "") ? state.currentThread : null;
-  const base = thread || currentThread;
+  const threads = taskCardCountThreadsForId(threadId);
+  const base = threads[0] || null;
   if (!base) return;
   const current = Math.max(0, Number(base.pendingOutgoingTaskCardCount) || 0);
   const next = Math.max(0, current + Number(delta || 0));
   const incoming = Math.max(0, Number(base.pendingIncomingTaskCardCount) || 0);
-  if (thread) {
+  for (const thread of threads) {
+    thread.pendingIncomingTaskCardCount = incoming;
     thread.pendingOutgoingTaskCardCount = next;
     thread.pendingTaskCardCount = incoming + next;
-  }
-  if (currentThread) {
-    currentThread.pendingOutgoingTaskCardCount = next;
-    currentThread.pendingTaskCardCount = incoming + next;
   }
 }
 

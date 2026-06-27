@@ -173,6 +173,11 @@ Current acceleration targets:
    it must preserve the existing pane thread context already attached when the
    request was rendered or answered, and it must schedule the owning pane
    instead of falling back to the global current thread.
+   Task-card pending counts follow the same rule: approving, replying,
+   revoking, deleting, or draft-sending a card must update the owning pane
+   detail, current detail, and thread-list mirrors from one count helper so the
+   badge total and incoming/outgoing subcounts cannot drift across split-screen
+   surfaces.
 2. Thread-list cold starts no longer hide source collection inside the fallback
    cache policy. The local `thread-list-fallback-baseline-service` slice now
    owns state DB / rollout session / session-index source collection,

@@ -699,3 +699,64 @@ return {
   assert.deepEqual(result.currentRenders, ["current"]);
   assert.equal(result.currentState.status, "dismissed");
 });
+
+test("client task-card pending counts update the owning tile pane detail", () => {
+  const sources = [
+    "findThreadById",
+    "taskCardCountThreadsForId",
+    "incrementPendingIncomingTaskCardCount",
+    "incrementPendingOutgoingTaskCardCount",
+  ].map((name) => functionSource(appJs, name));
+  const harness = Function(`
+const listThread = {
+  id: "thread-pane",
+  pendingIncomingTaskCardCount: 5,
+  pendingOutgoingTaskCardCount: 2,
+  pendingTaskCardCount: 7,
+};
+const tileThread = {
+  id: "thread-pane",
+  pendingIncomingTaskCardCount: 3,
+  pendingOutgoingTaskCardCount: 4,
+  pendingTaskCardCount: 7,
+};
+const currentThread = {
+  id: "thread-current",
+  pendingIncomingTaskCardCount: 1,
+  pendingOutgoingTaskCardCount: 1,
+  pendingTaskCardCount: 2,
+};
+const state = {
+  currentThreadId: "thread-current",
+  currentThread,
+  threads: [listThread],
+  threadTileDetails: new Map([["thread-pane", tileThread]]),
+};
+${sources.join("\n")}
+return {
+  listThread,
+  tileThread,
+  currentThread,
+  incrementIncoming: () => incrementPendingIncomingTaskCardCount("thread-pane", -1),
+  incrementOutgoing: () => incrementPendingOutgoingTaskCardCount("thread-pane", -2),
+};
+`)();
+
+  harness.incrementIncoming();
+  assert.equal(harness.tileThread.pendingIncomingTaskCardCount, 2);
+  assert.equal(harness.tileThread.pendingOutgoingTaskCardCount, 4);
+  assert.equal(harness.tileThread.pendingTaskCardCount, 6);
+  assert.equal(harness.listThread.pendingIncomingTaskCardCount, 2);
+  assert.equal(harness.listThread.pendingOutgoingTaskCardCount, 4);
+  assert.equal(harness.listThread.pendingTaskCardCount, 6);
+  assert.equal(harness.currentThread.pendingTaskCardCount, 2);
+
+  harness.incrementOutgoing();
+  assert.equal(harness.tileThread.pendingIncomingTaskCardCount, 2);
+  assert.equal(harness.tileThread.pendingOutgoingTaskCardCount, 2);
+  assert.equal(harness.tileThread.pendingTaskCardCount, 4);
+  assert.equal(harness.listThread.pendingIncomingTaskCardCount, 2);
+  assert.equal(harness.listThread.pendingOutgoingTaskCardCount, 2);
+  assert.equal(harness.listThread.pendingTaskCardCount, 4);
+  assert.equal(harness.currentThread.pendingTaskCardCount, 2);
+});

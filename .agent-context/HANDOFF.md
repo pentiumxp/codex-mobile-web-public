@@ -22241,3 +22241,46 @@ The previous full handoff was archived and should be opened only when old proven
 - Next:
   - Commit this local slice and keep it undeployed until a coherent deployable
     module is ready.
+
+## 2026-06-27 - Phase C task-card pending count pane context local slice
+
+- Current local state:
+  - Continued after local commit `97c5933` (`refactor server request updates
+    keep pane context`).
+  - This is a local Phase C task-card pending count slice only. It changes
+    `public/app.js`, focused tests, README, the architecture plan, and this
+    handoff. It does not bump shell/cache, deploy production, or push Public.
+- Root-cause boundary:
+  - Symptom/risk: task-card action settlement and draft creation adjusted
+    pending incoming/outgoing counts through helpers that only updated the
+    thread list row and current detail. A visible non-current tile pane could
+    have its `threadTaskCards` updated while its pending count fields stayed
+    stale, and list/detail mirrors could have inconsistent total versus
+    incoming/outgoing subcounts.
+  - Failing layer: frontend task-card count state propagation across current
+    detail, tile detail, and thread-list mirrors, not task-card service
+    persistence, route delivery, action execution, shell/cache, or Home AI
+    host routing.
+  - Violated invariant: task-card count mutations must update every local
+    mirror of the owning thread from one pane-aware helper boundary.
+- Changes:
+  - Added `taskCardCountThreadsForId()` to collect the current detail, visible
+    tile detail, and thread-list row for a target thread id without duplicate
+    object writes.
+  - `incrementPendingIncomingTaskCardCount()` and
+    `incrementPendingOutgoingTaskCardCount()` now use that helper and write
+    incoming, outgoing, and total count fields consistently to every mirror.
+  - Added executable coverage proving a non-current tile pane count update
+    updates both tile detail and thread-list mirrors without touching the
+    unrelated current thread.
+- Validation:
+  - `node --check public/app.js` passed.
+  - `node --test test/thread-task-card-route.test.js test/thread-task-card-service.test.js test/thread-detail-actions.test.js`
+    passed (`50` tests).
+  - `npm test` passed (`1279` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit this local slice and keep it undeployed until a coherent deployable
+    module is ready.
