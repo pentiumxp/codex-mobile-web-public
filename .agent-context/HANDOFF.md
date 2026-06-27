@@ -22571,6 +22571,50 @@ The previous full handoff was archived and should be opened only when old proven
   - Continue small local Phase C slices and do not deploy until a coherent
     deployable module is ready.
 
+## 2026-06-27 - Conversation Scroll Protection v547
+
+- Current local state:
+  - Implemented the small user-scroll protection fix requested after v546.
+  - `public/app.js` `CLIENT_BUILD_ID` and `public/sw.js` `CACHE_NAME` are
+    bumped to `codex-mobile-shell-v547`.
+- Root-cause boundary:
+  - Symptom: while the user was manually scrolling/reading a thread, a new
+    receipt or refresh could still move the conversation viewport.
+  - Failing layer: frontend conversation full-render scroll planning in
+    `public/conversation-scroll.js`.
+  - Violated invariant: user reading/manual scroll intent and current-turn
+    auto-scroll hold must win over render-time bottom-follow leases.
+  - Root cause: `planFullRenderScroll()` checked submitted-message and viewport
+    bottom-follow before `userReadingCurrentTurn` / `autoScrollHold`, so a full
+    render could pull the screen to the bottom even though local patch paths
+    already protected the user.
+- Changes:
+  - `planFullRenderScroll()` now applies explicit no-stick first, then
+    `userReadingCurrentTurn` and `autoScrollHold`, then submitted/viewport
+    bottom-follow.
+  - `CONVERSATION_SCROLL_INTENT_MS` increased from `1200` to `4000` so mobile
+    scroll gestures stay protected across adjacent receipt refreshes.
+  - `docs/ARCHITECTURE.md` records the four-second manual-scroll protection
+    window and the precedence rule.
+- Validation:
+  - `node --test test/conversation-scroll.test.js test/turn-scroll-controls.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    passed (`184` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`1298` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Deployed through the Home AI central macOS plugin deploy script with reason
+    `codex-mobile-scroll-protection-v547`.
+  - Production `/api/public-config` readback returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v547` and
+    `shellCacheName=codex-mobile-shell-v547`.
+  - Production/source SHA parity was verified for `public/app.js`,
+    `public/sw.js`, and `public/conversation-scroll.js`.
+- Next:
+  - Ask the user to refresh/reopen the embedded Codex Mobile page and verify
+    that new receipts no longer move the viewport during manual scrolling.
+
 ## 2026-06-27 - Large Session List First Paint v546 deployable module
 
 - Current local state:

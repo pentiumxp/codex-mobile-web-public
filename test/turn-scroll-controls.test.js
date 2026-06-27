@@ -119,7 +119,7 @@ test("manual conversation scroll pauses live auto-stick until the user returns t
   assert.match(appJs, /viewportBottomFollow: null/);
   assert.match(appJs, /function rememberConversationScrollIntent\(\)/);
   assert.match(appJs, /clearSubmittedMessageBottomFollow\(\);\s*clearViewportBottomFollow\(\);\s*syncConversationScrollPosition\(\);/);
-  assert.match(appJs, /const CONVERSATION_SCROLL_INTENT_MS = 1200;/);
+  assert.match(appJs, /const CONVERSATION_SCROLL_INTENT_MS = 4000;/);
   assert.match(appJs, /function hasRecentConversationScrollIntent\(nowMs = Date\.now\(\)\)/);
   assert.match(appJs, /const userReadingCurrentTurn = isUserReadingCurrentTurn\(\{ nearBottom \}\);/);
   assert.match(functionBody("isUserReadingCurrentTurn"), /const planInput = \{ nearBottom \};/);

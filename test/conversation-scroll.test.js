@@ -350,7 +350,7 @@ test("auto-scroll hold planning reacts only to explicit scroll facts", () => {
   });
 });
 
-test("full render scroll planning preserves bottom-follow precedence", () => {
+test("full render scroll planning protects user scroll before bottom follow", () => {
   assert.deepEqual(conversationScroll.planFullRenderScroll({
     stickToBottom: false,
     nearBottom: true,
@@ -366,20 +366,30 @@ test("full render scroll planning preserves bottom-follow precedence", () => {
     sustainedSubmittedFollow: true,
     userReadingCurrentTurn: true,
   }), {
-    stickToBottom: true,
+    stickToBottom: false,
     explicitNoStickToBottom: false,
-    shouldFollowBottom: true,
-    reason: "sustained-submitted-message-follow",
+    shouldFollowBottom: false,
+    reason: "user-reading-current-turn",
   });
 
   assert.deepEqual(conversationScroll.planFullRenderScroll({
     submittedMessageFollow: true,
     autoScrollHold: true,
   }), {
-    stickToBottom: true,
+    stickToBottom: false,
     explicitNoStickToBottom: false,
-    shouldFollowBottom: true,
-    reason: "submitted-message-follow",
+    shouldFollowBottom: false,
+    reason: "auto-scroll-hold",
+  });
+
+  assert.deepEqual(conversationScroll.planFullRenderScroll({
+    submittedMessageFollow: true,
+    userReadingCurrentTurn: true,
+  }), {
+    stickToBottom: false,
+    explicitNoStickToBottom: false,
+    shouldFollowBottom: false,
+    reason: "user-reading-current-turn",
   });
 
   assert.deepEqual(conversationScroll.planFullRenderScroll({
