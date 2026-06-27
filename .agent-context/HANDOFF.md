@@ -20406,3 +20406,43 @@ The previous full handoff was archived and should be opened only when old proven
   - Run `npm run check` and `git diff --check`, then commit this local slice.
   - After this slice, run the broader Phase C module tests before any shell/cache
     bump or deployment decision.
+
+## 2026-06-27 - v541 Phase C pane-state module prepared locally
+
+- Current local state:
+  - Phase C was switched to the faster module cadence requested by the user:
+    small local slices, then one coherent module bump and validation before any
+    deployment decision.
+  - Five local pane-state slices are now bundled as static shell/cache
+    `codex-mobile-shell-v541`.
+  - Not deployed and not pushed Public in this step.
+- Root-cause boundary:
+  - Symptom/risk: split-screen and pane-local runtime behavior had too many
+    small policy branches remaining in `public/app.js`, making UI regressions
+    expensive to isolate and causing long integration cycles.
+  - Failing layer: frontend thread-tile pane-state ownership.
+  - Violated invariant: `public/thread-tile-state.js` should own pane policy
+    decisions; `public/app.js` should execute DOM/API/localStorage/timer side
+    effects from explicit plans.
+- Bundled local slices:
+  - `c00e05c` viewport/composer chrome baseline planning.
+  - `32a3854` detail-load queue drain planning.
+  - `52093d0` detail-load settle queue-drain planning.
+  - `20cd05e` pane patch-miss fallback planning.
+  - `9eb8fd4` display-settings load/migration/error-recovery planning.
+- Module changes:
+  - `public/app.js` `CLIENT_BUILD_ID` advanced to
+    `0.1.11|codex-mobile-shell-v541`.
+  - `public/sw.js` cache advanced to `codex-mobile-shell-v541`.
+  - Version assertions updated in focused static/UI tests.
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` records the v541 module boundary.
+- Validation:
+  - Focused:
+    `node --test test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js test/tablet-layout.test.js`
+    passed (`66` tests).
+  - Full source `npm test` passed (`1222` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Next:
+  - Commit the v541 module bump locally.
+  - Deploy only after the user explicitly asks for deployment; then use the
+    central Home AI macOS plugin deploy path and production readback.

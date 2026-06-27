@@ -1874,6 +1874,37 @@ Target:
   or shared operation bubble are no longer acceptable in tile mode and must not
   be considered closure for the split-screen feature.
 
+### 2026-06-27 Phase C Pane-State Module v541
+
+Phase C is now batched as a coherent local pane-state module instead of a long
+open-ended refactor. The five local slices move split-screen policy decisions
+out of `public/app.js` and into `public/thread-tile-state.js`:
+
+- viewport/composer chrome baseline planning;
+- detail-load queue drain and settle follow-up planning;
+- pane patch-miss full-render escalation intent;
+- display-settings load, legacy migration, and local recovery planning.
+
+This is an acceleration boundary, not a broad rewrite. The implementation
+keeps `app.js` responsible for DOM/API/localStorage side effects while
+`thread-tile-state.js` owns the tested policy decisions. Static shell/cache is
+advanced to `codex-mobile-shell-v541` so this module can be deployed as one
+runtime unit when requested.
+
+Local validation for the module passed:
+
+- focused Phase C suite:
+  `node --test test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js test/thread-tile-state.test.js test/thread-tile-layout-ui.test.js test/tablet-layout.test.js`
+  (`66` tests);
+- full `npm test` (`1222` tests);
+- `npm run check`;
+- `npm run check:macos`;
+- `git diff --check`.
+
+Deployment remains gated by the release rule below: local module commit first,
+Mac production deploy only when requested, Public only after production/user
+validation.
+
 ## Release Rule
 
 Follow the current release order:
