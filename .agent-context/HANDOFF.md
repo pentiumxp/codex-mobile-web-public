@@ -22160,3 +22160,43 @@ The previous full handoff was archived and should be opened only when old proven
 - Next:
   - Commit this local slice and keep it undeployed until a coherent deployable
     module is ready.
+
+## 2026-06-27 - Phase C server request resolution pane context local slice
+
+- Current local state:
+  - Continued after local commit `28730c8` (`refactor thread name notifications
+    keep pane context`).
+  - This is a local Phase C pending-action resolution slice only. It changes
+    `public/app.js`, focused tests, README, the architecture plan, and this
+    handoff. It does not bump shell/cache, deploy production, or push Public.
+- Root-cause boundary:
+  - Symptom/risk: `answerServerRequest()` already preserved pane thread
+    context when a server response omitted thread metadata, but
+    `resolveServerRequest()` still shallow-merged the incoming
+    `payload.request`. If the server-side resolved notification omitted
+    `params.threadId`, the request could lose its pane owner and schedule
+    rendering against the global current thread.
+  - Failing layer: frontend pending server request completion notification
+    state propagation, not task execution, approval API, server request
+    delivery, shell/cache, or Home AI host routing.
+  - Violated invariant: every pending-action writer must preserve the target
+    pane thread context once it has been attached locally.
+- Changes:
+  - `resolveServerRequest()` now reuses `serverRequestWithThreadContext()` with
+    the existing request's `approvalActionThreadId()` when merging a server
+    resolved payload.
+  - Added executable coverage for a resolved user-input request notification
+    whose server payload omits `threadId`; it keeps `thread-tile`, avoids
+    current-thread rendering, schedules pane-local rendering, and queues the
+    settled-request removal.
+- Validation:
+  - `node --check public/app.js` passed.
+  - `node --test test/conversation-render.test.js test/thread-tile-state.test.js`
+    passed (`162` tests).
+  - `npm test` passed (`1277` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit this local slice and keep it undeployed until a coherent deployable
+    module is ready.

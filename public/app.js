@@ -20000,7 +20000,10 @@ function resolveServerRequest(payload) {
   const existing = state.pendingApprovals.get(requestId);
   let next = existing || null;
   if (payload.request) {
-    next = Object.assign({}, existing || {}, payload.request);
+    next = serverRequestWithThreadContext(
+      Object.assign({}, existing || {}, payload.request),
+      approvalActionThreadId(existing),
+    );
     state.pendingApprovals.set(requestId, next);
   } else if (existing) {
     existing.status = payload.status || "resolved";
