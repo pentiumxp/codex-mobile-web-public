@@ -182,6 +182,10 @@ Current acceleration targets:
    continuation, and manual task-card creation must carry the owning pane
    thread id from rendered DOM into the action handler before invoking
    thread-specific behavior.
+   Older-history pagination follows the same ownership rule: a pane-local
+   history button or scheduled backfill must resolve the pane thread, fetch that
+   thread's cursor, update that pane detail cache, and schedule pane-local
+   render instead of mutating global `state.currentThread`.
 2. Thread-list cold starts no longer hide source collection inside the fallback
    cache policy. The local `thread-list-fallback-baseline-service` slice now
    owns state DB / rollout session / session-index source collection,
@@ -2005,6 +2009,10 @@ Target:
   continuation, and manual task-card buttons carry their owning thread id, and
   the shared resolver reads that id or nearest pane id before falling back to
   the global current thread.
+  Older-history pagination is now pane-aware: history buttons carry their
+  owning thread id, tile panes render the same history loader affordance as the
+  single-thread surface, and `loadOlderThreadTurns()` updates the target pane
+  detail cache before scheduling pane-local render.
   Approval/server-request action context is now pane-aware as well: rendered
   approval and user-input controls carry their owning thread id, the shared
   click resolver returns it, and pending/resolved/request-response refreshes

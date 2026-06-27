@@ -443,9 +443,11 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /const preserveScroll = Boolean\(options\.preserveScroll\)/);
   assert.match(appJs, /let newlyLoadedTurnCount = 0/);
   assert.match(appJs, /if \(!existingTurn\) newlyLoadedTurnCount \+= 1/);
-  assert.match(appJs, /state\.currentThread\.mobileOmittedTurnCount = Math\.max\(0, Number\(state\.currentThread\.mobileOmittedTurnCount \|\| 0\) - newlyLoadedTurnCount\)/);
-  assert.match(appJs, /renderCurrentThread\(\{ stickToBottom: false \}\)/);
+  assert.match(appJs, /targetThread\.mobileOmittedTurnCount = Math\.max\(0, Number\(targetThread\.mobileOmittedTurnCount \|\| 0\) - newlyLoadedTurnCount\)/);
+  assert.match(appJs, /renderThreadHistoryLoadTarget\(threadId, \{ preserveScroll \}\)/);
   assert.match(appJs, /preserveConversationScrollAfterPrepend\(previousScrollTop, previousScrollHeight\)/);
+  assert.match(appJs, /function threadHistoryLoadTarget\(options = \{\}\)/);
+  assert.match(appJs, /function renderThreadHistoryLoadTarget\(threadId, options = \{\}\)/);
   assert.match(appJs, /function maybeLoadOlderThreadTurnsFromScroll\(\)/);
   assert.match(appJs, /conversation\.scrollTop > THREAD_HISTORY_TOP_LOAD_PX/);
   assert.match(appJs, /loadOlderThreadTurns\(\{ preserveScroll: true, source: "scroll-top" \}\)/);
@@ -457,9 +459,10 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.doesNotMatch(functionBody("maybeAutoBackfillThreadHistory"), /postClientEvent\("thread_history_auto_backfill"/);
   assert.doesNotMatch(functionBody("maybeAutoBackfillThreadHistory"), /setTimeout\(\(\) => \{/);
   assert.match(functionBody("applyThreadDetailHistoryAutoBackfillEffect"), /postClientEvent\(String\(item\.eventName \|\| ""\), item\.payload \|\| \{\}\);/);
-  assert.match(functionBody("applyThreadDetailHistoryAutoBackfillEffect"), /loadOlderThreadTurns\(\{[\s\S]*preserveScroll: item\.preserveScroll !== false,[\s\S]*source: String\(item\.source \|\| "auto-context"\)\.slice\(0, 40\),[\s\S]*\}\)\.catch\(showError\);/);
+  assert.match(functionBody("applyThreadDetailHistoryAutoBackfillEffect"), /loadOlderThreadTurns\(\{[\s\S]*threadId,[\s\S]*preserveScroll: item\.preserveScroll !== false,[\s\S]*source: String\(item\.source \|\| "auto-context"\)\.slice\(0, 40\),[\s\S]*\}\)\.catch\(showError\);/);
   assert.match(appJs, /data-load-older-turns/);
-  assert.match(appJs, /loadOlderThreadTurns\(\{ preserveScroll: true, source: "button" \}\)/);
+  assert.match(functionBody("bindCurrentThreadActions"), /querySelectorAll\("\[data-load-older-turns\]"\)/);
+  assert.match(functionBody("bindCurrentThreadActions"), /threadId: threadActionElementThreadId\(button\) \|\| thread && thread\.id \|\| ""/);
   assert.match(appJs, /cursor: threadTurnsCursorParam\(cursor\)/);
   assert.match(appJs, /mobileHistoryExpanded = true/);
   assert.match(appJs, /function shouldBackfillFullThreadDetail\(thread\)/);

@@ -10060,8 +10060,13 @@ function applyThreadDetailHistoryAutoBackfillEffect(effect) {
     const seq = Number(item.seq || 0);
     const delayMs = Math.max(0, Number(item.delayMs || 0));
     setTimeout(() => {
-      if (state.currentThreadId !== threadId || seq !== state.threadLoadSeq) return;
+      if (state.currentThreadId === threadId) {
+        if (seq !== state.threadLoadSeq) return;
+      } else if (!state.threadTileMode || !threadTilePaneIsVisible(threadId)) {
+        return;
+      }
       loadOlderThreadTurns({
+        threadId,
         preserveScroll: item.preserveScroll !== false,
         source: String(item.source || "auto-context").slice(0, 40),
       }).catch(showError);
@@ -10201,9 +10206,46 @@ function preserveConversationScrollAfterPrepend(previousScrollTop, previousScrol
   scheduleScrollToBottomButtonUpdate();
 }
 
+function threadHistoryLoadTarget(options = {}) {
+  const explicitThread = options.thread && typeof options.thread === "object" ? options.thread : null;
+  const id = String(options.threadId || explicitThread && explicitThread.id || state.currentThreadId || state.currentThread && state.currentThread.id || "").trim();
+  if (!id) return { threadId: "", thread: null, current: false, tile: false };
+  if (state.currentThread && String(state.currentThread.id || "") === id) {
+    return { threadId: id, thread: state.currentThread, current: true, tile: false };
+  }
+  if (explicitThread && String(explicitThread.id || "") === id) {
+    return {
+      threadId: id,
+      thread: explicitThread,
+      current: id === String(state.currentThreadId || ""),
+      tile: Boolean(state.threadTileMode && threadTilePaneIsVisible(id)),
+    };
+  }
+  if (state.threadTileDetails && state.threadTileDetails.has(id)) {
+    return { threadId: id, thread: state.threadTileDetails.get(id), current: false, tile: Boolean(state.threadTileMode && threadTilePaneIsVisible(id)) };
+  }
+  const listThread = findThreadById(id);
+  return { threadId: id, thread: listThread || null, current: false, tile: Boolean(state.threadTileMode && threadTilePaneIsVisible(id)) };
+}
+
+function renderThreadHistoryLoadTarget(threadId, options = {}) {
+  const id = String(threadId || "").trim();
+  if (id && state.currentThreadId === id) {
+    renderCurrentThread({ stickToBottom: false });
+    return true;
+  }
+  if (id && state.threadTileMode && threadTilePaneIsVisible(id)) {
+    if (!scheduleRenderThreadTilePane(id, { preserveScroll: options.preserveScroll !== false })) renderCurrentThread({ stickToBottom: false });
+    return true;
+  }
+  renderCurrentThread({ stickToBottom: false });
+  return false;
+}
+
 async function loadOlderThreadTurns(options = {}) {
-  const thread = state.currentThread;
-  const threadId = state.currentThreadId || (thread && thread.id) || "";
+  const target = threadHistoryLoadTarget(options);
+  const thread = target.thread;
+  const threadId = target.threadId;
   const cursor = thread && thread.mobileOlderTurnsCursor;
   if (!thread || !threadId || !cursor || state.threadHistoryBusy) return;
   const preserveScroll = Boolean(options.preserveScroll);
@@ -10212,7 +10254,7 @@ async function loadOlderThreadTurns(options = {}) {
   const previousScrollHeight = preserveScroll && conversation ? conversation.scrollHeight : 0;
   state.threadHistoryBusy = true;
   state.threadHistoryError = "";
-  renderCurrentThread({ stickToBottom: false });
+  renderThreadHistoryLoadTarget(threadId, { preserveScroll });
   try {
     const params = new URLSearchParams({
       limit: String(MAX_VISIBLE_TURNS),
@@ -10222,9 +10264,11 @@ async function loadOlderThreadTurns(options = {}) {
     const result = await api(`/api/threads/${encodeURIComponent(threadId)}/turns?${params.toString()}`, {
       timeoutMs: 30000,
     });
-    if (state.currentThreadId !== threadId || !state.currentThread) return;
+    const latestTarget = threadHistoryLoadTarget({ threadId, thread });
+    const targetThread = latestTarget.thread;
+    if (!targetThread) return;
     const incomingTurns = sortTurnsForDisplay(turnsArrayFromListResult(result));
-    const existingTurns = Array.isArray(state.currentThread.turns) ? state.currentThread.turns : [];
+    const existingTurns = Array.isArray(targetThread.turns) ? targetThread.turns : [];
     const existingById = new Map(existingTurns.map((turn) => [String(turn && turn.id || ""), turn]));
     const mergedById = new Map();
     let newlyLoadedTurnCount = 0;
@@ -10238,20 +10282,22 @@ async function loadOlderThreadTurns(options = {}) {
       if (!existingTurn || !existingTurn.id) continue;
       if (!mergedById.has(String(existingTurn.id))) mergedById.set(String(existingTurn.id), existingTurn);
     }
-    state.currentThread.turns = sortTurnsForDisplay(Array.from(mergedById.values())).slice(-MAX_EXPANDED_VISIBLE_TURNS);
-    state.currentThread.mobileHistoryExpanded = true;
+    targetThread.turns = sortTurnsForDisplay(Array.from(mergedById.values())).slice(-MAX_EXPANDED_VISIBLE_TURNS);
+    targetThread.mobileHistoryExpanded = true;
     if (newlyLoadedTurnCount > 0) {
-      state.currentThread.mobileOmittedTurnCount = Math.max(0, Number(state.currentThread.mobileOmittedTurnCount || 0) - newlyLoadedTurnCount);
+      targetThread.mobileOmittedTurnCount = Math.max(0, Number(targetThread.mobileOmittedTurnCount || 0) - newlyLoadedTurnCount);
     }
-    state.currentThread.mobileOlderTurnsCursor = result && result.nextCursor ? result.nextCursor : null;
-    state.currentThread.mobileNewerTurnsCursor = result && result.backwardsCursor ? result.backwardsCursor : state.currentThread.mobileNewerTurnsCursor;
+    targetThread.mobileOlderTurnsCursor = result && result.nextCursor ? result.nextCursor : null;
+    targetThread.mobileNewerTurnsCursor = result && result.backwardsCursor ? result.backwardsCursor : targetThread.mobileNewerTurnsCursor;
+    if (threadId === state.currentThreadId) state.currentThread = targetThread;
+    if (state.threadTileMode && state.threadTileDetails && threadTilePaneIsVisible(threadId)) state.threadTileDetails.set(threadId, targetThread);
     markIdleActivity("History loaded");
   } catch (err) {
     state.threadHistoryError = `Older history failed: ${normalizeClientErrorMessage(err && err.message ? err.message : String(err)) || String(err && err.message || err)}`;
     showError(new Error(state.threadHistoryError));
   } finally {
     state.threadHistoryBusy = false;
-    renderCurrentThread({ stickToBottom: false });
+    renderThreadHistoryLoadTarget(threadId, { preserveScroll });
     if (preserveScroll && state.currentThreadId === threadId) {
       preserveConversationScrollAfterPrepend(previousScrollTop, previousScrollHeight);
     }
@@ -13911,12 +13957,13 @@ function renderThreadTilePane(threadId, layout, previousKeys = new Set()) {
   const readWarning = threadReadWarningMessage(thread);
   const turns = visibleTurnsForConversation(thread);
   const omitted = Number(thread && thread.mobileOmittedTurnCount || 0) + Math.max(0, ((thread && thread.turns) || []).length - turns.length);
+  const historyNote = renderThreadHistoryNote(thread, omitted, previousKeys);
   const body = error
     ? `<div class="thread-tile-empty error">Thread failed: ${escapeHtml(error)}</div>`
     : loading
       ? `<div class="thread-tile-empty">Loading thread...</div>`
       : [
-        omitted > 0 ? `<div class="history-note">Older history hidden: ${escapeHtml(omitted.toLocaleString())} turn(s).</div>` : "",
+        historyNote,
         readWarning ? `<div class="history-note">${escapeHtml(readWarning)}</div>` : "",
         turns.map((turn) => renderThreadTileTurn(thread, turn, previousKeys)).join("") || `<div class="thread-tile-empty">No visible turns.</div>`,
       ].join("");
@@ -15245,7 +15292,9 @@ function renderThreadHistoryNote(thread, omitted, previousKeys = new Set()) {
   const error = String(state.threadHistoryError || "");
   if (!omitted && !hasOlder && !busy && !error) return "";
   const loaded = Array.isArray(thread && thread.turns) ? thread.turns.length : 0;
-  const key = `history|${state.currentThreadId || thread.id || ""}|${omitted}|${threadTurnsCursorSignature(olderCursor)}|${busy}|${error}`;
+  const threadId = String(thread && thread.id || state.currentThreadId || "").trim();
+  const ownerAttribute = threadId ? ` data-thread-action-thread-id="${escapeHtml(threadId)}"` : "";
+  const key = `history|${threadId}|${omitted}|${threadTurnsCursorSignature(olderCursor)}|${busy}|${error}`;
   const parts = [];
   if (omitted > 0) {
     parts.push(`Older history hidden on mobile: ${omitted.toLocaleString()} turn(s).`);
@@ -15256,7 +15305,7 @@ function renderThreadHistoryNote(thread, omitted, previousKeys = new Set()) {
   }
   if (error) parts.push(error);
   const button = hasOlder
-    ? `<button class="history-load-button" type="button" data-load-older-turns ${busy ? "disabled" : ""}>${busy ? "Loading..." : "Load older"}</button>`
+    ? `<button class="history-load-button" type="button" data-load-older-turns${ownerAttribute}${busy ? " disabled" : ""}>${busy ? "Loading..." : "Load older"}</button>`
     : "";
   return `<div class="history-note history-loader${entryAnimationClass(key, previousKeys)}" data-render-key="${escapeHtml(key)}">
     <span>${escapeHtml(parts.join(" "))}</span>
@@ -15663,8 +15712,17 @@ function bindCurrentThreadActions() {
   $("conversation").querySelectorAll("[data-dismiss-rollout-warning]").forEach((button) => {
     button.addEventListener("click", () => dismissRolloutWarning(threadActionContextFromElement(button)));
   });
-  const olderTurns = $("conversation").querySelector("[data-load-older-turns]");
-  if (olderTurns) olderTurns.addEventListener("click", () => loadOlderThreadTurns({ preserveScroll: true, source: "button" }).catch(showError));
+  $("conversation").querySelectorAll("[data-load-older-turns]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const thread = threadActionContextFromElement(button);
+      loadOlderThreadTurns({
+        thread,
+        threadId: threadActionElementThreadId(button) || thread && thread.id || "",
+        preserveScroll: true,
+        source: "button",
+      }).catch(showError);
+    });
+  });
 }
 
 function taskCardActionThread(threadId) {

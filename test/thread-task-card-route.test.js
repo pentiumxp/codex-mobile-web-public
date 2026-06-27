@@ -505,7 +505,7 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.doesNotMatch(functionBody(appJs, "sendMessage"), /workspaceDelegation/);
 });
 
-test("client pane toolbar actions use the owning pane thread", () => {
+test("client pane toolbar actions use the owning pane thread", async () => {
   const sources = [
     "findThreadById",
     "threadActionElementThreadId",
@@ -513,7 +513,7 @@ test("client pane toolbar actions use the owning pane thread", () => {
     "bindCurrentThreadActions",
   ].map((name) => functionSource(appJs, name));
   const harness = Function(`
-const calls = { start: [], task: [], dismiss: [], errors: [] };
+const calls = { start: [], task: [], dismiss: [], older: [], errors: [] };
 function button(dataset = {}) {
   return {
     dataset,
@@ -529,7 +529,7 @@ function button(dataset = {}) {
 const newThreadButton = button({ threadActionThreadId: "thread-pane" });
 const taskButton = button({ threadActionThreadId: "thread-pane" });
 const dismissButton = button({ threadActionThreadId: "thread-pane" });
-const olderButton = button();
+const olderButton = button({ threadActionThreadId: "thread-pane" });
 const paneThread = { id: "thread-pane", name: "Pane" };
 const currentThread = { id: "thread-current", name: "Current" };
 const state = {
@@ -543,11 +543,8 @@ const conversation = {
     if (selector === "[data-new-thread-from-current]") return [newThreadButton];
     if (selector === "[data-create-thread-task-card]") return [taskButton];
     if (selector === "[data-dismiss-rollout-warning]") return [dismissButton];
+    if (selector === "[data-load-older-turns]") return [olderButton];
     return [];
-  },
-  querySelector(selector) {
-    if (selector === "[data-load-older-turns]") return olderButton;
-    return null;
   },
 };
 function $(id) {
@@ -565,27 +562,142 @@ function createThreadTaskCardFromThread(thread) {
 function dismissRolloutWarning(thread) {
   calls.dismiss.push(thread && thread.id || "");
 }
-function loadOlderThreadTurns() { return Promise.resolve(); }
+function loadOlderThreadTurns(options) {
+  calls.older.push({
+    threadId: options && options.threadId || "",
+    thread: options && options.thread && options.thread.id || "",
+    preserveScroll: Boolean(options && options.preserveScroll),
+    source: options && options.source || "",
+  });
+  return Promise.resolve();
+}
 function showError(err) { calls.errors.push(String(err && err.message || err)); }
 ${sources.join("\n")}
 return {
   bind: bindCurrentThreadActions,
-  clickAll() {
+  async clickAll() {
     newThreadButton.listeners.click({});
     taskButton.listeners.click({});
     dismissButton.listeners.click({});
+    olderButton.listeners.click({});
+    await Promise.resolve();
   },
   calls,
 };
 `)();
 
   harness.bind();
-  harness.clickAll();
+  await harness.clickAll();
 
   assert.deepEqual(harness.calls.start, ["thread-pane"]);
   assert.deepEqual(harness.calls.task, ["thread-pane"]);
   assert.deepEqual(harness.calls.dismiss, ["thread-pane"]);
+  assert.deepEqual(harness.calls.older, [{
+    threadId: "thread-pane",
+    thread: "thread-pane",
+    preserveScroll: true,
+    source: "button",
+  }]);
   assert.deepEqual(harness.calls.errors, []);
+});
+
+test("client older-turn loading updates the owning tile pane thread", async () => {
+  const sources = [
+    "findThreadById",
+    "threadTurnsCursorParam",
+    "turnsArrayFromListResult",
+    "threadHistoryLoadTarget",
+    "renderThreadHistoryLoadTarget",
+    "loadOlderThreadTurns",
+  ].map((name) => functionSource(appJs, name));
+  const harness = Function(`
+const calls = { api: [], currentRender: 0, tileRender: [], idle: [], errors: [] };
+const MAX_VISIBLE_TURNS = 10;
+const MAX_EXPANDED_VISIBLE_TURNS = 200;
+const currentThread = {
+  id: "thread-current",
+  turns: [{ id: "current-only" }],
+  mobileOlderTurnsCursor: "current-cursor",
+  mobileOmittedTurnCount: 1,
+};
+const paneThread = {
+  id: "thread-pane",
+  turns: [{ id: "existing" }],
+  mobileOlderTurnsCursor: "pane-cursor",
+  mobileOmittedTurnCount: 3,
+};
+const state = {
+  currentThreadId: "thread-current",
+  currentThread,
+  threadTileMode: true,
+  threadTileDetails: new Map([["thread-pane", paneThread]]),
+  threadHistoryBusy: false,
+  threadHistoryError: "",
+  threads: [],
+};
+function threadTilePaneIsVisible(id) { return id === "thread-pane"; }
+function renderCurrentThread() { calls.currentRender += 1; }
+function scheduleRenderThreadTilePane(id, options) {
+  calls.tileRender.push({ id, preserveScroll: Boolean(options && options.preserveScroll) });
+  return true;
+}
+function $(id) {
+  if (id !== "conversation") return null;
+  return { scrollTop: 0, scrollHeight: 100 };
+}
+function sortTurnsForDisplay(turns) { return Array.isArray(turns) ? turns.slice() : []; }
+function mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) {
+  return Object.assign({}, existingTurn || {}, incomingTurn || {}, { merged: true });
+}
+async function api(url, options) {
+  calls.api.push({ url, timeoutMs: options && options.timeoutMs });
+  return {
+    data: [{ id: "older" }, { id: "existing", text: "updated" }],
+    nextCursor: "next-cursor",
+    backwardsCursor: "newer-cursor",
+  };
+}
+function markIdleActivity(value) { calls.idle.push(value); }
+function normalizeClientErrorMessage(value) { return String(value || ""); }
+function showError(err) { calls.errors.push(String(err && err.message || err)); }
+function preserveConversationScrollAfterPrepend() { calls.errors.push("unexpected-current-scroll-preserve"); }
+${sources.join("\n")}
+return {
+  run: () => loadOlderThreadTurns({ threadId: "thread-pane", preserveScroll: true, source: "test" }),
+  result: () => ({
+    currentThread,
+    paneThread: state.threadTileDetails.get("thread-pane"),
+    busy: state.threadHistoryBusy,
+    error: state.threadHistoryError,
+    calls,
+  }),
+};
+`)();
+
+  await harness.run();
+  const result = harness.result();
+
+  assert.deepEqual(result.calls.api, [{
+    url: "/api/threads/thread-pane/turns?limit=10&sortDirection=desc&cursor=pane-cursor",
+    timeoutMs: 30000,
+  }]);
+  assert.equal(result.currentThread.turns.length, 1);
+  assert.equal(result.currentThread.turns[0].id, "current-only");
+  assert.deepEqual(result.paneThread.turns.map((turn) => turn.id), ["older", "existing"]);
+  assert.equal(result.paneThread.turns[1].merged, true);
+  assert.equal(result.paneThread.mobileHistoryExpanded, true);
+  assert.equal(result.paneThread.mobileOmittedTurnCount, 2);
+  assert.equal(result.paneThread.mobileOlderTurnsCursor, "next-cursor");
+  assert.equal(result.paneThread.mobileNewerTurnsCursor, "newer-cursor");
+  assert.equal(result.busy, false);
+  assert.equal(result.error, "");
+  assert.equal(result.calls.currentRender, 0);
+  assert.deepEqual(result.calls.tileRender, [
+    { id: "thread-pane", preserveScroll: true },
+    { id: "thread-pane", preserveScroll: true },
+  ]);
+  assert.deepEqual(result.calls.idle, ["History loaded"]);
+  assert.deepEqual(result.calls.errors, []);
 });
 
 test("client task-card draft matching uses the explicit render context thread", () => {

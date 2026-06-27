@@ -21041,6 +21041,59 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit this local slice and keep it undeployed until a coherent deployable
     module is ready.
 
+## 2026-06-27 - Phase C older-history pane context local slice
+
+- Current local state:
+  - Continued after local commit `701d217` (`refactor pane toolbar actions keep
+    thread context`).
+  - This is a local Phase C pane-history pagination context slice only. It
+    changes `public/app.js`, focused tests, README, the architecture plan, and
+    this handoff. It does not bump shell/cache, deploy production, or push
+    Public.
+- Root-cause boundary:
+  - Symptom/risk: the history loader button was rendered from thread detail
+    state, but event binding selected only the first `[data-load-older-turns]`
+    button and called `loadOlderThreadTurns()` with no target. The loader then
+    read and mutated global `state.currentThread`. In split-screen mode this
+    could load older turns for the wrong thread, and tile panes only showed an
+    inert "Older history hidden" note instead of the same loader affordance as
+    single-thread mode.
+  - Failing layer: frontend older-history pagination action context and pane
+    detail-cache mutation, not server turns-list API, projection cache, scroll
+    policy, shell/cache, or Home AI host routing.
+  - Violated invariant: pagination initiated from a pane must fetch using that
+    pane thread's cursor, update that pane's detail cache, and schedule the
+    owning pane render.
+- Changes:
+  - History loader buttons now carry `data-thread-action-thread-id`.
+  - `bindCurrentThreadActions()` binds all history loader buttons and passes
+    the owning thread/thread id to `loadOlderThreadTurns()`.
+  - `loadOlderThreadTurns()` now resolves a target thread from explicit
+    options, current detail, visible tile detail, or thread list row; it writes
+    loaded turns, cursors, and omitted counts back to that target.
+  - Tile panes now render the shared history loader note instead of an inert
+    hidden-history message.
+  - Scheduled history auto-backfill now passes `threadId` through and can target
+    visible tile panes without falling back to global current-thread mutation.
+- Validation:
+  - `node --check public/app.js` passed.
+  - `node --test test/thread-task-card-route.test.js test/mobile-viewport.test.js test/thread-tile-state.test.js`
+    passed (`61` tests).
+  - `npm test` passed (`1281` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Read-only sidecar findings for next small slices:
+  - Continuation confirm still needs a pane-aware resolver when the dialog
+    thread is tile-detail-only.
+  - Manual task-card creation still needs pane-local `sourceTurnId` lookup and
+    pane-local post-create refresh.
+  - In-turn approval rendering should pass the render-context thread id into
+    `renderApprovalRequest()` when request params omit `threadId`.
+- Next:
+  - Commit this local slice and keep it undeployed until a coherent deployable
+    module is ready.
+
 ## 2026-06-27 - Phase C pane toolbar action context local slice
 
 - Current local state:
