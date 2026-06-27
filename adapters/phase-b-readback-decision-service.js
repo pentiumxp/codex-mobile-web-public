@@ -268,7 +268,7 @@ function fallbackBaselineReasonDecision(reason) {
   };
 }
 
-function appServerThreadListLatencyDecision(list = {}) {
+function appServerThreadListLatencyDecision(list = {}, report = {}) {
   const totalMs = boundedCount(list.appServerMs);
   if (totalMs < 1000) return null;
 
@@ -281,6 +281,25 @@ function appServerThreadListLatencyDecision(list = {}) {
   const dominantFloorMs = Math.max(500, Math.trunc(totalMs * 0.6));
 
   if (rpcMs >= dominantFloorMs) {
+    const muxMetrics = objectOrNull(report.muxMetrics);
+    if (muxMetrics && muxMetrics.supported !== true) {
+      return {
+        status: "needs_repair",
+        priority: "H2",
+        owner: "shared-mux-runtime",
+        reason: compactLabel(muxMetrics.reason, 80) || "mux-metrics-unsupported",
+        nextAction: "restart-selected-shared-mux-before-rpc-repair",
+      };
+    }
+    if (muxMetrics && muxMetrics.ok !== true) {
+      return {
+        status: "needs_repair",
+        priority: "H2",
+        owner: "shared-mux-metrics",
+        reason: compactLabel(muxMetrics.reason, 80) || "mux-metrics-read-failed",
+        nextAction: "repair-mux-metrics-readback",
+      };
+    }
     return {
       status: "needs_repair",
       priority: "H2",
@@ -394,7 +413,7 @@ function threadListDecision(list = {}, report = {}) {
   const owner = lowerLabel(list.coldPathOwner, 80);
   const reason = compactLabel(list.coldPathReason, 80);
   if (!owner || owner === "warm-fallback-cache" || owner === "fallback-source-snapshot") {
-    return appServerThreadListLatencyDecision(list);
+    return appServerThreadListLatencyDecision(list, report);
   }
   const prewarmDecision = threadListPrewarmDecision(list, report);
   if (prewarmDecision && prewarmDecision.status === "needs_repair") return prewarmDecision;
@@ -433,7 +452,7 @@ function threadListDecision(list = {}, report = {}) {
     };
   }
   if (owner === "app-server-thread-list") {
-    return appServerThreadListLatencyDecision(list) || {
+    return appServerThreadListLatencyDecision(list, report) || {
       status: "needs_repair",
       priority: "H2",
       owner: "app-server-thread-list",

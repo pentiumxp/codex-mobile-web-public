@@ -19425,3 +19425,73 @@ The previous full handoff was archived and should be opened only when old proven
     `appServerRpcMs`, `appServerResponsePayloadBytes`, `threadListMuxRpcLastMs`,
     `threadListMuxRequestBytes`, and `threadListMuxResponseBytes` before
     changing request cadence, mux transport, or app-server-side filtering.
+
+## 2026-06-27 - Phase B v537 RPC/mux evidence module deployed/read back
+
+- Current production state:
+  - Deployed local source ref `ae3388d080bc` through the Home AI central macOS
+    plugin deploy script with reason `codex-mobile-phase-b-rpc-metrics-v537`.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T002556Z-plugin-codex-mobile-web-codex-mobile-phase-b-rpc-metrics-v537`.
+  - Production `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v537` and
+    `shellCacheName=codex-mobile-shell-v537`.
+- Included local commits:
+  - `6624f1b` Mobile-side `thread/list` RPC transport/payload diagnostics.
+  - `e433ba0` mux-side read-only `mux/metrics/read` metrics path.
+  - `ae3388d` shell/cache v537 bump.
+- Validation before deploy:
+  - Focused Phase B/static shell tests passed (`86` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `npm test` passed (`1200` tests).
+  - `git diff --check` passed.
+- Deployment validation:
+  - Central deploy returned `ok=true`.
+  - LaunchDaemon check reported `system/com.hermesmobile.plugin.codex-mobile`
+    running.
+  - Public-config health check passed.
+  - Non-strict auth-profile audit had zero blocking issues.
+  - Source/prod short SHA-256 readback matched for:
+    `public/app.js`, `public/sw.js`, `server.js`,
+    `codex-app-server-mux.js`, and
+    `scripts/codex-mobile-phase-b-readback-smoke.js`.
+- Readback:
+  - First general Phase B readback:
+    `threadListFallbackPrewarm.completed=true`;
+    thread-list `coldPathOwner=fallback-source-snapshot`,
+    `coldPathReason=source-snapshot-hit`, `appServerRequestLimit=80`,
+    `appServerMs=1792`, `appServerRpcMs=1705`,
+    `appServerVisibleFilterMs=87`, `appServerUnattributedMs=0`;
+    RPC transport `external-jsonl-tcp`, endpoint kind `profile-mux-file`,
+    endpoint protocol `jsonl-tcp`, attempt count `1`, timeout `false`,
+    request payload `185` bytes, params `128` bytes, response payload
+    `235487` bytes.
+  - Targeted current Codex Mobile thread readback:
+    thread-list `warm-fallback-cache/cache-hit`, `appServerMs=98`,
+    `appServerRpcMs=8`, response payload `235487` bytes; detail
+    `projection-active-overlay` with active overlay gate `ready`; decision
+    `ready`.
+  - `/api/status?muxMetrics=1` returned `mux-metrics-unsupported`.
+    Selected profile mux endpoint capabilities lacked `muxMetricsRpc`, so the
+    running shared mux process did not restart into the newly deployed
+    `codex-app-server-mux.js`.
+- Local follow-up after deploy:
+  - Updated `adapters/phase-b-readback-decision-service.js` so a high
+    `appServerRpcMs` sample with explicit unsupported/failed mux metrics routes
+    to `shared-mux-runtime` / `shared-mux-metrics` before app-server query
+    semantics are changed.
+  - Added focused coverage in `test/phase-b-readback-decision-service.test.js`.
+  - Validation:
+    `node --check adapters/phase-b-readback-decision-service.js && node --test test/phase-b-readback-decision-service.test.js test/phase-b-readback-smoke.test.js`
+    passed (`29` tests).
+  - Not deployed; include this decision slice in the next batched module.
+- Next:
+  - Do not start with frontend fallback, app-server query semantic changes, or
+    response filtering. First close the selected shared mux runtime/version
+    boundary: decide whether the plugin-owned restart/deploy path should
+    safely restart only the selected profile mux when `codex-app-server-mux.js`
+    changes, or whether Home AI central deploy contract must own that action.
+  - After selected mux runs code with `muxMetricsRpc`, rerun Phase B readback
+    and compare Mobile `appServerRpcMs` against mux `threadListMuxRpcLastMs`
+    plus request/response bytes.

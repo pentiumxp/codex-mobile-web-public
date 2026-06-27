@@ -16,6 +16,80 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-27 v537 Phase B RPC/Mux Evidence Module
+
+v537 把两个本地 Phase B 切片作为一个模块部署：`6624f1b` 记录 Mobile 到
+Codex app-server `thread/list` RPC 的 transport、attempt、timeout 和
+request/response bytes；`e433ba0` 在 mux 内部增加 query-gated
+`mux/metrics/read` 聚合指标；`ae3388d` bump `CLIENT_BUILD_ID` / PWA shell cache
+到 `codex-mobile-shell-v537`。
+
+预部署验证：
+
+```bash
+node --check codex-app-server-mux.js && node --check server.js && node --check scripts/codex-mobile-phase-b-readback-smoke.js && node --check adapters/phase-b-readback-decision-service.js && node --test test/protocol.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js test/thread-task-card-route.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/app-update.test.js test/build-refresh-policy.test.js
+npm run check
+npm run check:macos
+npm test
+git diff --check
+```
+
+结果：focused `86` passed；`npm test` `1200` passed；`check`、`check:macos`、
+`git diff --check` passed。
+
+已通过 Home AI 中央 macOS 插件部署脚本部署，source ref `ae3388d080bc`，reason
+`codex-mobile-phase-b-rpc-metrics-v537`，backup path：
+`/Users/hermes-host/HermesMobile/backups/deploy/20260627T002556Z-plugin-codex-mobile-web-codex-mobile-phase-b-rpc-metrics-v537`。
+
+生产读回：
+
+- `/api/public-config` 返回 `clientBuildId=0.1.11|codex-mobile-shell-v537`、
+  `shellCacheName=codex-mobile-shell-v537`。
+- 首个一般 Phase B readback：prewarm completed；thread-list 使用
+  `fallback-source-snapshot` / `source-snapshot-hit`；`appServerRequestLimit=80`；
+  `appServerMs=1792`，`appServerRpcMs=1705`，`appServerVisibleFilterMs=87`，
+  `appServerUnattributedMs=0`；RPC transport 为 `external-jsonl-tcp`，
+  endpoint kind 为 `profile-mux-file`，attempt count `1`，未 timeout，
+  request payload `185` bytes，params `128` bytes，response payload `235487`
+  bytes。
+- targeted 当前 Codex Mobile 线程 readback：thread-list 为
+  `warm-fallback-cache` / `cache-hit`；`appServerMs=98`，`appServerRpcMs=8`，
+  response payload 同为 `235487` bytes；detail 仍为
+  `projection-active-overlay`，active overlay gate=`ready`，decision=`ready`。
+- `/api/status?muxMetrics=1` 返回 `mux-metrics-unsupported`。只读 runtime
+  检查显示 selected `previous` profile mux endpoint capability 仍缺
+  `muxMetricsRpc`，同时机器上存在多个旧 mux 进程。这说明 central deploy 已让
+  Mobile listener 进入 v537，但没有替换已经运行的 selected shared mux 进程。
+- Source/prod short SHA-256 readback matched for `public/app.js`, `public/sw.js`,
+  `server.js`, `codex-app-server-mux.js`, and
+  `scripts/codex-mobile-phase-b-readback-smoke.js`。后续本地 follow-up 已更新
+  `adapters/phase-b-readback-decision-service.js`，所以该文件在下一次部署前会
+  与生产不同。
+
+生产观察：v537 把大 session 线程列表慢路径进一步收窄到
+`profile-mux-file/jsonl-tcp` 的 `thread/list` RPC 边界，并证明单次响应体约
+235KB、没有 retry/timeout。由于 mux-side metrics 尚未在运行中的 selected mux
+进程生效，下一步应优先修正 shared mux runtime/version 或部署重启契约，让
+`threadListMuxRpcLastMs` 可读；在拿到 mux-side timing 前，不应直接改
+app-server 查询语义或再加前端兜底。
+
+## 2026-06-27 Phase B Readback Decision Mux Runtime Follow-up
+
+v537 读回后补了一个本地 decision 小切片：当 `appServerRpcMs` 已经占主导且报告
+明确显示 `muxMetrics.supported=false` 或 mux metrics read 失败时，Phase B
+decision 先路由到 `shared-mux-runtime` / `shared-mux-metrics`，而不是继续泛化成
+`app-server-thread-list-rpc`。这只改变诊断归因，不改变运行路径、请求窗口、缓存、
+投影或 UI。
+
+验证：
+
+```bash
+node --check adapters/phase-b-readback-decision-service.js && node --test test/phase-b-readback-decision-service.test.js test/phase-b-readback-smoke.test.js
+```
+
+结果：focused `29` passed。该 follow-up 尚未 bump shell/cache，尚未部署；等待下一个
+Phase B 模块一起部署。
+
 ## 2026-06-27 Phase B Mux RPC Metrics Slice
 
 本地小切片继续上一片 app-server RPC transport diagnostics。上一片能在 Mobile server

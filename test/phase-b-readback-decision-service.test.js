@@ -290,6 +290,57 @@ test("phase B readback decision routes high warm list latency to app-server RPC 
   assert.equal(decision.evidence.threadListMuxResponseBytes, 45678);
 });
 
+test("phase B readback decision routes high RPC latency with unsupported mux metrics to shared mux runtime", () => {
+  const decision = classifyPhaseBReadback({
+    ok: true,
+    threadList: {
+      coldPathOwner: "fallback-source-snapshot",
+      coldPathReason: "source-snapshot-hit",
+      fallbackSourceSnapshotHit: true,
+      appServerMs: 1996,
+      appServerRpcMs: 1705,
+      appServerVisibleFilterMs: 87,
+      appServerWorkspaceFilterMs: 0,
+      appServerPostProcessMs: 87,
+      appServerMeasuredMs: 1792,
+      appServerUnattributedMs: 0,
+      appServerRequestLimit: 80,
+      appServerTransportKind: "external-jsonl-tcp",
+      appServerEndpointKind: "profile-mux-file",
+      appServerEndpointProtocol: "jsonl-tcp",
+      appServerRpcAttemptCount: 1,
+      appServerRpcTimeoutMs: 12000,
+      appServerRpcRetryEnabled: true,
+      appServerRpcTimedOut: false,
+      appServerRpcErrorCode: "",
+      appServerRequestPayloadBytes: 185,
+      appServerRequestParamBytes: 128,
+      appServerResponsePayloadBytes: 235487,
+    },
+    muxMetrics: {
+      supported: false,
+      ok: false,
+      reason: "mux-metrics-unsupported",
+    },
+    detail: {
+      readMode: "projection-active-overlay",
+      readDecision: "projection-active-overlay",
+      coldPathOwner: "warm-path",
+      coldPathReason: "warm-projection-active-overlay",
+    },
+  });
+
+  assert.equal(decision.status, "needs_repair");
+  assert.equal(decision.priority, "H2");
+  assert.equal(decision.owner, "shared-mux-runtime");
+  assert.equal(decision.reason, "mux-metrics-unsupported");
+  assert.equal(decision.nextAction, "restart-selected-shared-mux-before-rpc-repair");
+  assert.equal(decision.evidence.threadListAppServerRpcMs, 1705);
+  assert.equal(decision.evidence.threadListAppServerResponsePayloadBytes, 235487);
+  assert.equal(decision.evidence.threadListMuxMetricsSupported, false);
+  assert.equal(decision.evidence.threadListMuxMetricsReason, "mux-metrics-unsupported");
+});
+
 test("phase B readback decision routes high warm list latency to local filter owner", () => {
   const decision = classifyPhaseBReadback({
     ok: true,

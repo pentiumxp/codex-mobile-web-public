@@ -301,6 +301,21 @@ Current acceleration targets:
    readback samples them after `/api/threads`, so the next module deploy can
    compare Mobile-side `appServerRpcMs` with mux-side `thread/list` elapsed
    time without parsing mux logs or exposing request params/results.
+   Those RPC/mux evidence slices deployed as `codex-mobile-shell-v537`.
+   Production readback confirmed the Mobile listener and shell moved to v537
+   and exposed the Mobile-side transport split: the first general sample used
+   `profile-mux-file` / `jsonl-tcp`, one RPC attempt, no timeout, a 185-byte
+   request payload, a 128-byte params payload, and a 235487-byte response
+   payload while `appServerRpcMs` was 1705ms. A later targeted warm sample
+   showed the same response payload with `appServerRpcMs=8ms` and active detail
+   still on `projection-active-overlay`. The mux-side metrics read returned
+   `mux-metrics-unsupported`; selected profile mux endpoint capabilities still
+   lacked `muxMetricsRpc`, which means the running shared mux process did not
+   restart into the newly deployed `codex-app-server-mux.js`. The local
+   readback-decision follow-up now classifies high-RPC samples with unsupported
+   mux metrics as `shared-mux-runtime` /
+   `restart-selected-shared-mux-before-rpc-repair` before any app-server query
+   semantics are changed.
    Earlier local
    fallback attribution slices also made baseline source work explicit:
    fallback baseline source reads now

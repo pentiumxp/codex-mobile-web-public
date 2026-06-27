@@ -228,45 +228,55 @@ Minimum closure for Codex Mobile production changes:
   `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
 - LaunchDaemon: `system/com.hermesmobile.plugin.codex-mobile`.
 - Loopback production URL: `http://127.0.0.1:8787`.
-- Current verified shell after the Phase B app-server list attribution module:
-  `0.1.11|codex-mobile-shell-v536`.
+- Current verified shell after the Phase B RPC/mux evidence module:
+  `0.1.11|codex-mobile-shell-v537`.
 - Source ref deployed for runtime/static change:
-  `f9d262d0e1ae` with clean source worktree at deploy time.
+  `ae3388d080bc` with clean source worktree at deploy time.
 - Backup path:
-  `/Users/hermes-host/HermesMobile/backups/deploy/20260626T235211Z-plugin-codex-mobile-web-codex-mobile-phase-b-app-server-attribution-v536`.
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260627T002556Z-plugin-codex-mobile-web-codex-mobile-phase-b-rpc-metrics-v537`.
 - Production smoke confirmed `/api/public-config` reports
-  `clientBuildId=0.1.11|codex-mobile-shell-v536`,
-  `shellCacheName=codex-mobile-shell-v536`, `version=0.1.11`, and
+  `clientBuildId=0.1.11|codex-mobile-shell-v537`,
+  `shellCacheName=codex-mobile-shell-v537`, `version=0.1.11`, and
   `authRequired=true`.
 - Bounded Phase B readback confirmed `threadListFallbackPrewarm.completed=true`.
   The general sample used `fallback-source-snapshot` /
-  `source-snapshot-hit`, bounded the app-server request to 80 rows, and
-  classified the remaining thread-list latency as
-  `app-server-thread-list-rpc` with `appServerMs=1939`,
-  `appServerRpcMs=1853`, `appServerVisibleFilterMs=86`,
-  `appServerMeasuredMs=1939`, and `appServerUnattributedMs=0`.
-- Targeted current-thread readback used `warm-fallback-cache` / `cache-hit`;
-  detail used `projection-active-overlay` with active overlay gate `ready`, and
-  the Phase B decision was `ready`.
+  `source-snapshot-hit`, bounded the app-server request to 80 rows, and exposed
+  `profile-mux-file` / `jsonl-tcp` RPC evidence: one attempt, no timeout,
+  request payload `185` bytes, params payload `128` bytes, response payload
+  `235487` bytes, `appServerMs=1792`, `appServerRpcMs=1705`,
+  `appServerVisibleFilterMs=87`, and `appServerUnattributedMs=0`.
+- Targeted current-thread readback used `warm-fallback-cache` / `cache-hit`,
+  `appServerMs=98`, `appServerRpcMs=8`, and the same bounded 235487-byte
+  response payload. Detail used `projection-active-overlay` with active overlay
+  gate `ready`, and the Phase B decision was `ready`.
+- `/api/status?muxMetrics=1` returned `mux-metrics-unsupported`; selected
+  profile mux endpoint capabilities still lacked `muxMetricsRpc`, so the
+  running shared mux process had not restarted into the newly deployed
+  `codex-app-server-mux.js`. The next Phase B owner is shared mux
+  runtime/version activation before app-server query semantics are changed.
 - Validation before deploy:
-  focused Phase B/static shell tests passed (`124` tests), `npm test` passed
-  (`1199` tests), `npm run check` passed, `npm run check:macos` passed, and
+  focused Phase B/static shell tests passed (`86` tests), `npm test` passed
+  (`1200` tests), `npm run check` passed, `npm run check:macos` passed, and
   `git diff --check` passed.
 - Deployment validation also ran the central production file-hash, LaunchDaemon,
   public-config, and non-strict auth-profile audit checks. The auth-profile
   audit remained non-blocking with zero blocking issues.
 - Source/prod short SHA-256 readback matched for `public/app.js`,
-  `public/sw.js`, `server.js`,
-  `adapters/thread-list-app-server-fetch-policy-service.js`,
-  `adapters/phase-b-readback-decision-service.js`, and
+  `public/sw.js`, `server.js`, `codex-app-server-mux.js`, and
   `scripts/codex-mobile-phase-b-readback-smoke.js`.
+- A local follow-up after v537 updates
+  `adapters/phase-b-readback-decision-service.js` to route high-RPC samples
+  with unsupported mux metrics to `shared-mux-runtime`; that file is not yet
+  deployed and will be included in the next batched module.
+- The earlier 2026-06-27 `codex-mobile-shell-v536` app-server attribution
+  evidence is historical after this v537 RPC/mux evidence deployment.
 - The earlier 2026-06-27 `codex-mobile-shell-v535` list-refresh evidence is
-  historical after this v536 app-server attribution deployment.
+  historical after this v537 RPC/mux evidence deployment.
 - The earlier 2026-06-27 `codex-mobile-shell-v534` prewarm evidence is
-  historical after this v536 app-server attribution deployment.
+  historical after this v537 RPC/mux evidence deployment.
 - The earlier 2026-06-25 `codex-mobile-shell-v437` tile-title menu and
-  Composer placeholder evidence is historical after this v536 app-server
-  attribution deployment.
+  Composer placeholder evidence is historical after this v537 RPC/mux evidence
+  deployment.
 - The earlier 2026-06-25 `codex-mobile-shell-v434` tile-mode Composer
   placeholder evidence is historical after the v435 thread-detail merge
   deployment.
