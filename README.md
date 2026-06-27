@@ -49,6 +49,40 @@ npm run check:macos  # passed
 git diff --check  # passed
 ```
 
+## 2026-06-27 Phase C Task-card Draft State Render Context Slice
+
+这是 task-card draft creation source context 之后的相邻 Phase C 本地切片，不单独部署、
+不推 Public。它继续收敛 cross-thread task-card draft 的状态更新路径：draft 的
+`Dismiss` 按钮和 materialization 状态变更会携带 source thread id，并只刷新当前线程
+或所属平铺 pane，不再默认刷新全局 `state.currentThreadId`。
+
+改动边界：
+
+- `renderThreadTaskCardDraftActions()` 在 draft action button 上写入
+  `data-task-card-draft-thread-id`；
+- `public/thread-detail-actions.js` 把 draft action 的 `threadId` 解析出来；
+- `dismissThreadTaskCardDraft()` / `setThreadTaskCardDraftState()` 支持显式 thread
+  context，并通过 `scheduleThreadTaskCardDraftStateRender()` 调度 current render 或
+  pane-local render；
+- `createThreadTaskCardDraft()` 的可见状态更新继续使用 source thread id，避免异步
+  draft 创建阶段把错误/成功状态画到错误窗口；
+- 新增可执行测试，验证 pane draft dismiss 只触发所属 pane render，current thread
+  draft 才触发 `renderCurrentThread()`；
+- 不改变 server task-card create API、return/ack 协议、任务卡 body 结构、
+  shell/cache 版本或生产部署状态。
+
+验证：
+
+```bash
+node --check public/app.js
+node --check public/thread-detail-actions.js
+node --test test/thread-task-card-route.test.js test/thread-detail-actions.test.js test/conversation-render.test.js  # 138 passed
+npm test  # 1269 passed
+npm run check  # passed
+npm run check:macos  # passed
+git diff --check  # passed
+```
+
 生产部署/readback：
 
 - 部署方式：Home AI central macOS plugin deploy。

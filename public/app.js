@@ -15871,7 +15871,7 @@ function renderTurnThreadTaskCardDraft(turn, previousKeys = new Set(), thread = 
         draftState = Object.assign({}, draftState, { status: "creating" });
       }
       if (draftState.status === "creating") return "";
-      return renderThreadTaskCardDraft(draft, item, turn, previousKeys, draftKey, draftState);
+      return renderThreadTaskCardDraft(draft, item, turn, previousKeys, draftKey, draftState, contextThread);
     }
     if (hasThreadTaskCardDraftTag(text)) {
       return renderPendingThreadTaskCardDraft("Generating cross-thread task card draft...", "Generating");
@@ -16629,20 +16629,23 @@ function threadTaskCardDraftDetailLines(draft, targetRefs, draftState) {
   ].filter(Boolean);
 }
 
-function renderThreadTaskCardDraftActions(draftKey, draft, draftState) {
+function renderThreadTaskCardDraftActions(draftKey, draft, draftState, thread = renderContextThread()) {
   if (!draft || draftState.status === "pending" || draftState.status === "creating" || draftState.status === "created" || draftState.status === "dismissed") return "";
+  const threadId = renderContextThreadId(thread);
+  const threadAttr = threadId ? ` data-task-card-draft-thread-id="${escapeHtml(threadId)}"` : "";
   if (draftState.status === "failed") {
     return `<div class="approval-actions">
-      <button class="approval-button deny" type="button" data-task-card-draft-action="dismiss" data-task-card-draft-key="${escapeHtml(draftKey)}">Dismiss</button>
+      <button class="approval-button deny" type="button" data-task-card-draft-action="dismiss" data-task-card-draft-key="${escapeHtml(draftKey)}"${threadAttr}>Dismiss</button>
     </div>`;
   }
   return `<div class="approval-actions">
-    <button class="approval-button deny" type="button" data-task-card-draft-action="dismiss" data-task-card-draft-key="${escapeHtml(draftKey)}">Dismiss</button>
+    <button class="approval-button deny" type="button" data-task-card-draft-action="dismiss" data-task-card-draft-key="${escapeHtml(draftKey)}"${threadAttr}>Dismiss</button>
   </div>`;
 }
 
-function renderThreadTaskCardDraft(draft, item, turn, previousKeys = new Set(), draftKey = "", draftState = null) {
+function renderThreadTaskCardDraft(draft, item, turn, previousKeys = new Set(), draftKey = "", draftState = null, thread = renderContextThread()) {
   if (!draft || !item || !turn) return "";
+  const contextThread = renderContextThread(thread);
   const resolvedDraftKey = draftKey || threadTaskCardDraftKeyForDraft(turn, draft, item);
   const resolvedDraftState = draftState || threadTaskCardDraftState(resolvedDraftKey);
   const targetRefs = threadTaskCardDraftTargetThreads(draft);
@@ -16663,7 +16666,7 @@ function renderThreadTaskCardDraft(draft, item, turn, previousKeys = new Set(), 
     </div>
     ${summary ? `<div class="approval-summary-line">${escapeHtml(summary)}</div>` : ""}
     ${renderThreadTaskCardExpandable(summary || detail || draft.title || "Task card draft details", detailBlocks)}
-    ${renderThreadTaskCardDraftActions(resolvedDraftKey, draft, resolvedDraftState)}
+    ${renderThreadTaskCardDraftActions(resolvedDraftKey, draft, resolvedDraftState, contextThread)}
   </section>`;
 }
 
@@ -23065,16 +23068,30 @@ function findThreadTaskCardDraftByKey(draftKey, thread = renderContextThread()) 
   return null;
 }
 
+function scheduleThreadTaskCardDraftStateRender(threadId = "") {
+  const id = String(threadId || state.currentThreadId || "").trim();
+  if (!id || id === String(state.currentThreadId || "")) {
+    renderCurrentThread();
+    return true;
+  }
+  if (state.threadTileMode && threadTilePaneIsVisible(id)) {
+    if (!scheduleRenderThreadTilePane(id, { preserveScroll: true })) renderCurrentThread();
+    return true;
+  }
+  return false;
+}
+
 function setThreadTaskCardDraftState(draftKey, nextState, options = {}) {
   const key = String(draftKey || "");
   if (!key) return;
   state.threadTaskCardDraftStates.set(key, Object.assign({}, threadTaskCardDraftState(key), nextState || {}, { updatedAtMs: Date.now() }));
   saveThreadTaskCardDraftStates();
-  if (options.render !== false) renderCurrentThread();
+  const threadId = String(options.threadId || options.thread && options.thread.id || "").trim();
+  if (options.render !== false) scheduleThreadTaskCardDraftStateRender(threadId);
 }
 
-function dismissThreadTaskCardDraft(draftKey) {
-  setThreadTaskCardDraftState(draftKey, { status: "dismissed", error: "" });
+function dismissThreadTaskCardDraft(draftKey, options = {}) {
+  setThreadTaskCardDraftState(draftKey, { status: "dismissed", error: "" }, options);
 }
 
 function queueThreadTaskCardDraftCreation(draftKey, thread = renderContextThread()) {
@@ -23112,14 +23129,14 @@ async function createThreadTaskCardDraft(draftKey, options = {}) {
     const targetRefs = threadTaskCardDraftTargetThreads(draft);
     const targetThreadIds = threadTaskCardDraftTargetIds(draft);
     if (!targetThreadIds.length) {
-      setThreadTaskCardDraftState(draftKey, { status: "failed", error: draft.error || "Draft did not include a target thread id" });
+      setThreadTaskCardDraftState(draftKey, { status: "failed", error: draft.error || "Draft did not include a target thread id" }, { threadId: sourceThreadId });
       return;
     }
     if (!draft.title || !draft.body) {
-      setThreadTaskCardDraftState(draftKey, { status: "failed", error: draft.error || "Draft is incomplete" });
+      setThreadTaskCardDraftState(draftKey, { status: "failed", error: draft.error || "Draft is incomplete" }, { threadId: sourceThreadId });
       return;
     }
-    setThreadTaskCardDraftState(draftKey, { status: "creating", error: "" });
+    setThreadTaskCardDraftState(draftKey, { status: "creating", error: "" }, { threadId: sourceThreadId });
     $("connectionState").classList.remove("error");
     $("connectionState").textContent = "Creating task card";
     const body = truncateThreadTaskCardBody(draft.body);
@@ -23164,7 +23181,7 @@ async function createThreadTaskCardDraft(draftKey, options = {}) {
       error: "",
       cardId: String(createdCards[0] && createdCards[0].id || ""),
       cardIds: createdCards.map((card) => String(card && card.id || "")).filter(Boolean),
-    });
+    }, { threadId: sourceThreadId });
     $("connectionState").classList.remove("error");
     $("connectionState").textContent = createdCards.length === 1
       ? "Task card created; opening target thread"
@@ -23204,7 +23221,7 @@ async function createThreadTaskCardDraft(draftKey, options = {}) {
     setThreadTaskCardDraftState(draftKey, {
       status: "failed",
       error: normalizeClientErrorMessage(err && err.message ? err.message : String(err)) || "Task card creation failed",
-    });
+    }, { threadId: diagnosticThreadId });
     recordHomeAiDiagnosticFailure({
       category: "task_card_workflow_failed",
       diagnostic_type: "task_card_draft_materialize_failed",
@@ -23602,7 +23619,7 @@ function wireUi() {
     }
     if (actionPlan.action === "task-card-unknown") return;
     if (actionPlan.action === "task-card-draft") {
-      if (actionPlan.draftAction === "dismiss") dismissThreadTaskCardDraft(actionPlan.draftKey);
+      if (actionPlan.draftAction === "dismiss") dismissThreadTaskCardDraft(actionPlan.draftKey, { threadId: actionPlan.threadId });
       return;
     }
     if (actionPlan.action === "server-response") {

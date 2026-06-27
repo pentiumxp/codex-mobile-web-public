@@ -118,13 +118,14 @@ test("thread detail click action resolves approval and task card controls", () =
 });
 
 test("thread detail click action resolves draft and server response controls", () => {
-  const draft = node("draft", { taskCardDraftAction: "dismiss", taskCardDraftKey: "draft-1" });
+  const draft = node("draft", { taskCardDraftAction: "dismiss", taskCardDraftKey: "draft-1", taskCardDraftThreadId: "thread-draft" });
   const draftPlan = actions.resolveThreadDetailClickAction({
     target: targetWith({ "[data-task-card-draft-action]": draft }),
   });
   assert.equal(draftPlan.action, "task-card-draft");
   assert.equal(draftPlan.draftAction, "dismiss");
   assert.equal(draftPlan.draftKey, "draft-1");
+  assert.equal(draftPlan.threadId, "thread-draft");
 
   const response = node("response", {
     serverRequestId: "req-1",

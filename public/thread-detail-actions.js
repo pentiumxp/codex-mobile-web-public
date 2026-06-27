@@ -105,6 +105,7 @@
         button: node,
         draftAction: dataValue(node, "taskCardDraftAction"),
         draftKey: dataValue(node, "taskCardDraftKey"),
+        threadId: dataValue(node, "taskCardDraftThreadId"),
       });
     }
     node = closestWithin(target, "[data-server-response-text]", root);

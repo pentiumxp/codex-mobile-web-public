@@ -473,6 +473,9 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.doesNotMatch(appJs, /data-task-card-draft-action="approve"/);
   assert.doesNotMatch(appJs, /approveThreadTaskCardDraft/);
   assert.match(appJs, /data-task-card-draft-action="dismiss"/);
+  assert.match(appJs, /data-task-card-draft-thread-id/);
+  assert.match(appJs, /function scheduleThreadTaskCardDraftStateRender\(/);
+  assert.match(appJs, /dismissThreadTaskCardDraft\(actionPlan\.draftKey, \{ threadId: actionPlan\.threadId \}\)/);
   assert.match(appJs, /idempotencyKey: `task-card-draft:\$\{sourceThreadId\}:\$\{draftKey\}`/);
   assert.match(appJs, /Task card created; opening target thread/);
   assert.match(appJs, /Task cards created: \$\{createdCards\.length\}/);
@@ -646,4 +649,53 @@ return {
   assert.deepEqual(result.outgoingCounts, [{ threadId: "thread-pane", delta: 1 }]);
   assert.deepEqual(result.incomingCounts, [{ threadId: "thread-target", delta: 1 }]);
   assert.equal(result.loadedThreadId, "thread-target");
+});
+
+test("client task-card draft state updates render the owning pane thread", () => {
+  const sources = [
+    "scheduleThreadTaskCardDraftStateRender",
+    "setThreadTaskCardDraftState",
+    "dismissThreadTaskCardDraft",
+  ].map((name) => functionSource(appJs, name));
+  const harness = Function(`
+const state = {
+  currentThreadId: "thread-current",
+  threadTileMode: true,
+  threadTaskCardDraftStates: new Map(),
+};
+const currentRenders = [];
+const tileRenders = [];
+function threadTaskCardDraftState(key) {
+  return state.threadTaskCardDraftStates.get(String(key || "")) || {};
+}
+function saveThreadTaskCardDraftStates() {}
+function renderCurrentThread() { currentRenders.push("current"); }
+function threadTilePaneIsVisible(threadId) { return String(threadId || "") === "thread-pane"; }
+function scheduleRenderThreadTilePane(threadId, options) {
+  tileRenders.push({ threadId: String(threadId || ""), preserveScroll: Boolean(options && options.preserveScroll) });
+  return true;
+}
+${sources.join("\n")}
+return {
+  dismiss: (key, options) => dismissThreadTaskCardDraft(key, options),
+  setState: (key, value, options) => setThreadTaskCardDraftState(key, value, options),
+  result: () => ({
+    currentRenders,
+    tileRenders,
+    paneState: state.threadTaskCardDraftStates.get("draft-pane"),
+    currentState: state.threadTaskCardDraftStates.get("draft-current"),
+  }),
+};
+`)();
+
+  harness.dismiss("draft-pane", { threadId: "thread-pane" });
+  let result = harness.result();
+  assert.deepEqual(result.currentRenders, []);
+  assert.deepEqual(result.tileRenders, [{ threadId: "thread-pane", preserveScroll: true }]);
+  assert.equal(result.paneState.status, "dismissed");
+
+  harness.setState("draft-current", { status: "dismissed" }, { threadId: "thread-current" });
+  result = harness.result();
+  assert.deepEqual(result.currentRenders, ["current"]);
+  assert.equal(result.currentState.status, "dismissed");
 });

@@ -2047,6 +2047,28 @@ Target:
   or shared operation bubble are no longer acceptable in tile mode and must not
   be considered closure for the split-screen feature.
 
+### 2026-06-27 Post-v542 Local Slice Acceleration Rule
+
+After v542, Phase C continues as small, locally committed context-ownership
+slices instead of one long open-ended refactor. Each slice must:
+
+- name one violated invariant and one owning layer;
+- keep runtime scope narrow enough for focused tests plus full local checks;
+- avoid shell/cache bumps, production deploys, and Public pushes until a
+  coherent module is ready;
+- update README and handoff with the slice boundary and validation evidence;
+- commit locally after validation so later slices do not accumulate into an
+  unreviewable diff.
+
+The current follow-up slices focus on pane-local thread context propagation:
+task-card action controls, approval controls, file preview controls, visible
+item signatures, render/patch visible items, submitted progress state,
+approval-request context, task-card draft render matching, queued draft
+materialization, and draft state transitions. The draft state slice requires
+`Dismiss` and materialization status changes to carry source thread id and
+schedule either current-thread render or pane-local render, not global
+`renderCurrentThread()` by default.
+
 ### 2026-06-27 Phase E Visual Harness Module v542
 
 Phase E now has its first batched visual-harness module after the cadence

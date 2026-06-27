@@ -21830,3 +21830,51 @@ The previous full handoff was archived and should be opened only when old proven
 - Next:
   - Commit this local slice and keep it undeployed until a coherent deployable
     module is ready.
+
+## 2026-06-27 - Phase C task-card draft state render context local slice
+
+- Current local state:
+  - Continued after local commit `064fe92` (`refactor visible conversation
+    shape uses thread context`) and subsequent local Phase C context slices.
+  - This is a local Phase C pane-state/task-card draft state slice only. It
+    changes `public/app.js`, `public/thread-detail-actions.js`, focused tests,
+    README, and the architecture plan. It does not bump shell/cache, deploy
+    production, or push Public.
+- Root-cause boundary:
+  - Symptom/risk: task-card draft render matching and queued creation had
+    explicit pane/source thread context, but draft state transitions such as
+    `Dismiss`, failed materialization, creating, and created status still
+    defaulted to global current-thread rendering unless the code path manually
+    followed up. In tile mode that could repaint the wrong window or force a
+    broader current-thread refresh.
+  - Failing layer: frontend task-card draft state render scheduling and click
+    action context propagation, not server materialization, task-card create
+    API, return/ack protocol, shell/cache, or Home AI host routing.
+  - Violated invariant: once a task-card draft belongs to a source thread or
+    pane, every visible state transition must carry that same thread id and
+    schedule either current-thread render or pane-local render.
+- Changes:
+  - `renderThreadTaskCardDraftActions()` writes
+    `data-task-card-draft-thread-id` on draft action controls.
+  - `public/thread-detail-actions.js` returns `threadId` for draft action
+    plans.
+  - `dismissThreadTaskCardDraft()` and `setThreadTaskCardDraftState()` accept
+    explicit thread context and route repaint through
+    `scheduleThreadTaskCardDraftStateRender()`.
+  - `createThreadTaskCardDraft()` visible state transitions pass the resolved
+    source thread id.
+  - Added executable coverage proving pane draft dismissal renders the owning
+    pane instead of global current thread, while current-thread draft state
+    updates still render current.
+- Validation:
+  - `node --check public/app.js` passed.
+  - `node --check public/thread-detail-actions.js` passed.
+  - `node --test test/thread-task-card-route.test.js test/thread-detail-actions.test.js test/conversation-render.test.js`
+    passed (`138` tests).
+  - `npm test` passed (`1269` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit this local slice and keep it undeployed until a coherent deployable
+    module is ready.
