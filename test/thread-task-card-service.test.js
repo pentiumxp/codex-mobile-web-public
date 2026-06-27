@@ -108,6 +108,73 @@ test("create persists a pending task card and lists it for source and target thr
   });
 });
 
+test("listForThread returns bounded summary cards while get keeps full task-card detail", async () => {
+  const storageFile = tempFile("cards.json");
+  const body = Array.from({ length: 300 }, () => "Detailed request.").join(" ");
+  const service = createThreadTaskCardService({
+    storageFile,
+    executeApprovedCard: async () => ({
+      threadId: "thread-dst",
+      turnId: "turn-approved",
+      result: {
+        syntheticProviderPayload: "provider-payload-should-not-be-in-summary".repeat(300),
+      },
+      runtime: {
+        reasoningEffort: "xhigh",
+        requestedReasoningEffort: "xhigh",
+      },
+    }),
+  });
+  const card = await service.create({
+    sourceWorkspaceId: "finance",
+    sourceThreadId: "thread-src",
+    sourceTurnId: "turn-src",
+    sourceThreadTitle: "Finance close",
+    targetWorkspaceId: "ops",
+    targetThreadId: "thread-dst",
+    idempotencyKey: "finance:summary",
+    format: "markdown",
+    title: "Need verification",
+    summary: "Please verify the mapping.",
+    body,
+    workflowMode: "autonomous",
+    reasoningEffort: "xhigh",
+  });
+  await service.approve(card.id, "thread-dst");
+
+  const store = JSON.parse(fs.readFileSync(storageFile, "utf8"));
+  store.cards[0].audit.rawDiagnosticBody = "raw-audit-should-not-be-in-summary".repeat(200);
+  store.cards[0].delivery.rawPrompt = "raw-delivery-should-not-be-in-summary".repeat(200);
+  store.cards[0].workflow.rawPlan = "raw-workflow-should-not-be-in-summary".repeat(200);
+  store.cards[0].executionLease.continuationTurnIds = Array.from({ length: 20 }, (_, index) => `turn-extra-${index}`);
+  fs.writeFileSync(storageFile, JSON.stringify(store), "utf8");
+
+  const summary = service.listForThread("thread-src")[0];
+  const full = service.get(card.id, "thread-src");
+  const summaryJson = JSON.stringify(summary);
+  const fullJson = JSON.stringify(full);
+
+  assert.equal(summary.message.body, undefined);
+  assert.equal(summary.message.bodyOmitted, true);
+  assert.equal(summary.message.bodyChars, body.length);
+  assert.equal(summary.delivery.reasoningEffort, "xhigh");
+  assert.equal(summary.workflow.mode, "autonomous");
+  assert.equal(summary.workflow.id, full.workflow.id);
+  assert.equal(summary.executionLease.status, "active");
+  assert.equal(summary.injectionRuntime.reasoningEffort, "xhigh");
+  assert.equal(summary.injectionResult, undefined);
+  assert.equal(summary.idempotencyKey, undefined);
+  assert.equal(summaryJson.includes("provider-payload-should-not-be-in-summary"), false);
+  assert.equal(summaryJson.includes("raw-audit-should-not-be-in-summary"), false);
+  assert.equal(summaryJson.includes("raw-delivery-should-not-be-in-summary"), false);
+  assert.equal(summaryJson.includes("raw-workflow-should-not-be-in-summary"), false);
+  assert.ok(Buffer.byteLength(summaryJson) < 2500);
+
+  assert.equal(full.message.body, body);
+  assert.ok(fullJson.includes("provider-payload-should-not-be-in-summary"));
+  assert.ok(fullJson.includes("raw-audit-should-not-be-in-summary"));
+});
+
 test("createMany persists one pending task card per target thread", async () => {
   const service = createThreadTaskCardService({ storageFile: tempFile("cards.json") });
   const cards = await service.createMany({

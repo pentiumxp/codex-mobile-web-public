@@ -550,9 +550,10 @@ Implementation path:
    - `thread.threadTaskCards` on thread-detail responses
    - `public/app.js` task-card stack rendered outside normal turn items
    Thread-detail `thread.threadTaskCards` must stay summary-only for first
-   paint. Do not include full `message.body` in the detail-attached list; the
-   browser fetches the full body through `GET /api/thread-task-cards/:id` when
-   the user expands a card.
+   paint. Do not include full `message.body`, idempotency keys,
+   `injectionResult`, raw audit/provider payloads, or full execution internals
+   in the detail-attached list; the browser fetches the full body through
+   `GET /api/thread-task-cards/:id` when the user expands a card.
 12. Approval currently injects the approved card as a real new target-thread
    `turn/start` input, not as a fake static `userMessage`.
     The thread-callable route is a separate model/tool surface. By default it

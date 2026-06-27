@@ -406,13 +406,131 @@ function publicCard(card, threadId) {
   return out;
 }
 
+function omitEmptyObject(value) {
+  if (!value || typeof value !== "object") return null;
+  for (const key of Object.keys(value)) {
+    if (value[key] == null || value[key] === "" || value[key] === false) delete value[key];
+  }
+  return Object.keys(value).length ? value : null;
+}
+
+function summarizePublicCardThreadRef(ref = {}, includeTurnId = false) {
+  const out = {
+    workspaceId: boundedMetadataString(ref.workspaceId, 260),
+    threadId: boundedMetadataString(ref.threadId, 220),
+    title: boundedMetadataString(ref.title, 200),
+  };
+  if (includeTurnId) out.turnId = boundedMetadataString(ref.turnId, 220);
+  return omitEmptyObject(out);
+}
+
+function summarizePublicCardMessage(message = {}) {
+  const out = {
+    format: boundedMetadataString(message.format || "markdown", 40),
+    title: boundedVisibleText(message.title, MAX_TITLE_CHARS),
+    summary: boundedVisibleText(message.summary, MAX_SUMMARY_CHARS),
+  };
+  if (typeof message.body === "string" && message.body) {
+    out.bodyOmitted = true;
+    out.bodyChars = message.body.length;
+  } else if (message.bodyOmitted) {
+    out.bodyOmitted = true;
+    out.bodyChars = Math.max(0, Math.trunc(Number(message.bodyChars || 0)) || 0);
+  }
+  return omitEmptyObject(out);
+}
+
+function summarizePublicCardWorkflow(workflow = {}) {
+  if (!workflow || typeof workflow !== "object") return null;
+  return omitEmptyObject({
+    mode: boundedMetadataString(workflow.mode, 40),
+    id: boundedMetadataString(workflow.id, 220),
+    authorized: workflow.authorized === true,
+    authorizedAt: boundedMetadataString(workflow.authorizedAt, 80),
+    authorizedByThreadId: boundedMetadataString(workflow.authorizedByThreadId, 220),
+  });
+}
+
+function summarizePublicCardDelivery(delivery = {}) {
+  if (!delivery || typeof delivery !== "object") return null;
+  return omitEmptyObject({
+    approvalMode: boundedMetadataString(delivery.approvalMode, 80),
+    targetApprovalBypassed: delivery.targetApprovalBypassed === true,
+    reasoningEffort: boundedMetadataString(delivery.reasoningEffort, 40),
+    returnStatus: boundedMetadataString(delivery.returnStatus, 40),
+    returnToSource: delivery.returnToSource === true,
+    autoReturnOnCompletion: delivery.autoReturnOnCompletion === true,
+    requiresReturn: delivery.requiresReturn === false ? false : delivery.requiresReturn === true ? true : undefined,
+    terminal: delivery.terminal === true,
+    ackPolicy: boundedMetadataString(delivery.ackPolicy, 40),
+  });
+}
+
+function summarizePublicCardAudit(audit = {}) {
+  if (!audit || typeof audit !== "object") return null;
+  return omitEmptyObject({
+    replyToCardId: boundedMetadataString(audit.replyToCardId, 180),
+    returnToSource: audit.returnToSource === true,
+    returnStatus: boundedMetadataString(audit.returnStatus, 40),
+    terminal: audit.terminal === true,
+    ackPolicy: boundedMetadataString(audit.ackPolicy, 40),
+    homeAiDeliveryReturnEventStatus: boundedMetadataString(audit.homeAiDeliveryReturnEventStatus, 80),
+    homeAiDeliveryReturnEventHttpStatus: Math.max(0, Math.trunc(Number(audit.homeAiDeliveryReturnEventHttpStatus || 0)) || 0),
+  });
+}
+
+function summarizePublicCardExecutionLease(lease = {}) {
+  if (!lease || typeof lease !== "object") return null;
+  return omitEmptyObject({
+    cardId: boundedMetadataString(lease.cardId, 80),
+    sourceThreadId: boundedMetadataString(lease.sourceThreadId, 80),
+    targetThreadId: boundedMetadataString(lease.targetThreadId, 80),
+    workflowId: boundedMetadataString(lease.workflowId, 120),
+    workflowMode: boundedMetadataString(lease.workflowMode, 40),
+    status: boundedMetadataString(lease.status, 40),
+    resumeRequired: lease.resumeRequired === true,
+    lastProgressAt: boundedMetadataString(lease.lastProgressAt, 80),
+    currentTurnId: boundedMetadataString(lease.currentTurnId, 120),
+    lastInterruptedTurnId: boundedMetadataString(lease.lastInterruptedTurnId, 120),
+    lastContinuationTurnId: boundedMetadataString(lease.lastContinuationTurnId, 120),
+    resumeCount: Math.max(0, Math.trunc(Number(lease.resumeCount || 0)) || 0),
+    resumeForTurnId: boundedMetadataString(lease.resumeForTurnId, 120),
+  });
+}
+
 function summarizePublicCard(card) {
-  const out = clone(card);
-  const message = out.message && typeof out.message === "object" ? out.message : null;
-  if (!message || typeof message.body !== "string" || !message.body) return out;
-  message.bodyOmitted = true;
-  message.bodyChars = message.body.length;
-  delete message.body;
+  const out = {
+    id: boundedMetadataString(card && card.id, 180),
+    status: boundedMetadataString(card && card.status, 40),
+    createdAt: boundedMetadataString(card && card.createdAt, 80),
+    updatedAt: boundedMetadataString(card && card.updatedAt, 80),
+    source: summarizePublicCardThreadRef(card && card.source, true),
+    target: summarizePublicCardThreadRef(card && card.target, false),
+    message: summarizePublicCardMessage(card && card.message),
+    delivery: summarizePublicCardDelivery(card && card.delivery),
+    workflow: summarizePublicCardWorkflow(card && card.workflow),
+    audit: summarizePublicCardAudit(card && card.audit),
+    executionLease: summarizePublicCardExecutionLease(card && card.executionLease),
+    injectionRuntime: omitEmptyObject({
+      reasoningEffort: boundedMetadataString(card && card.injectionRuntime && card.injectionRuntime.reasoningEffort, 40),
+      requestedReasoningEffort: boundedMetadataString(card && card.injectionRuntime && card.injectionRuntime.requestedReasoningEffort, 40),
+    }),
+    injectedTurnId: boundedMetadataString(card && card.injectedTurnId, 120),
+    injectedThreadId: boundedMetadataString(card && card.injectedThreadId, 120),
+    lastContinuationTurnId: boundedMetadataString(card && card.lastContinuationTurnId, 120),
+    replyCardId: boundedMetadataString(card && card.replyCardId, 180),
+    terminal: card && card.terminal === true,
+    requiresReturn: card && card.requiresReturn === true,
+    ackPolicy: boundedMetadataString(card && card.ackPolicy, 40),
+    threadRole: boundedMetadataString(card && card.threadRole, 40),
+    canApprove: card && card.canApprove === true,
+    canDelete: card && card.canDelete === true,
+    canReply: card && card.canReply === true,
+    canRevoke: card && card.canRevoke === true,
+  };
+  for (const key of Object.keys(out)) {
+    if (out[key] == null || out[key] === "" || out[key] === false) delete out[key];
+  }
   return out;
 }
 

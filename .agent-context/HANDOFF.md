@@ -24042,3 +24042,48 @@ The previous full handoff was archived and should be opened only when old proven
     `thread/list` RPC peaks around `2s`. That path is now separated from
     first-paint fallback work and should be the next performance module if
     background/full list refresh still feels slow.
+
+## 2026-06-28 - Thread Detail Task-Card Summary Payload Module
+
+- User-visible symptom:
+  - Some thread entries still felt inconsistent after active detail and
+    thread-list prewarm work. Production sampling showed active/current detail
+    reads were no longer paying rollout `thread/read`, but large
+    `thread.threadTaskCards` arrays still contributed about `59-65KB` to some
+    detail response bodies.
+- Root cause / invariant:
+  - `threadTaskCardService.listForThread()` already called
+    `summarizePublicCard()`, but that summary only removed `message.body`.
+    It still returned full or near-full card objects, including audit/delivery
+    internals, injection results, idempotency keys, and full public execution
+    lease metadata.
+  - Thread detail first paint must carry bounded task-card summaries only.
+    Full card bodies and runtime internals belong behind
+    `GET /api/thread-task-cards/:id` when the user expands a card.
+- Implementation:
+  - `adapters/thread-task-card-service.js` now builds task-card summary records
+    from an explicit field whitelist: id/status/timestamps, source/target
+    thread metadata, message title/summary/body-omission metadata, bounded
+    workflow/delivery/audit status, bounded execution status, injected turn id,
+    runtime effort metadata, thread role, and action booleans.
+  - Summary records omit `message.body`, `idempotencyKey`, `injectionResult`,
+    raw audit/provider fields, raw delivery/workflow fields, and full execution
+    internals. `get()` still returns the full public card.
+  - Added focused service coverage proving a synthetic heavy card stays small
+    in `listForThread()` while `get()` preserves full detail.
+  - Updated `docs/ARCHITECTURE.md`, `docs/COMPLEX_FEATURE_PATHS.md`, and
+    `docs/README.md` with the stronger summary-only first-paint contract.
+- Local validation:
+  - Focused task-card/detail/render suite passed (`253` tests).
+  - Full `npm test` passed (`1340` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Local bounded size check before deploy:
+  - Current Codex Mobile thread task-card summaries dropped from about `59KB`
+    to about `33KB` for 24 recent cards.
+  - Home AI and Movie task-card summaries dropped from about `65KB` to about
+    `35KB`.
+- Pending:
+  - Commit, deploy through the central macOS plugin deploy contract, then
+    record production readback.

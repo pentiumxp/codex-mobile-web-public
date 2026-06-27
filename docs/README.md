@@ -80,3 +80,13 @@ server-side cold peaks without making fallback persistent authority or adding
 client refresh masking. The next performance slice should target deferred/full
 app-server `thread/list` RPC peaks, which can still affect background refresh
 or non-initial full list reads.
+
+The current detail-payload slice tightens the cross-thread task-card summary
+contract. Production sampling showed `thread.threadTaskCards` could account for
+roughly half of some thread-detail response bodies because the summary list
+removed `message.body` but still carried full audit, delivery, injection, and
+execution internals. The intended contract is now explicit: thread detail gets
+only a bounded task-card summary for first paint, while full card content and
+runtime internals remain available only through `GET /api/thread-task-cards/:id`
+when the user expands a card. This targets response-size peaks directly and
+does not add client-side hiding or refresh masking.

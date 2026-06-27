@@ -536,13 +536,16 @@ The sidebar `Restart` action is separate from self-update. Before calling `/api/
 Thread detail responses may also include `thread.threadTaskCards`. These are
 cross-thread collaboration cards that stay outside normal `thread.turns[*].items`
 until the target thread explicitly approves them. Detail responses carry
-task-card summary records only: title, summary, status, workflow/delivery
-metadata, counts, and bounded body-omission metadata. Full `message.body`
-content remains available through `GET /api/thread-task-cards/:id` and is loaded
-by the browser only when the user expands a card. This keeps large historical
-task-card bodies out of every thread-detail first paint while preserving the
-explicit inspection path. The browser renders cards in a separate stack after
-the visible turn list and detached approvals, so they stay near the active
+task-card summary records only: title, summary, status, source/target thread
+metadata, bounded workflow/delivery/audit status fields, bounded execution
+status, and body-omission metadata. Full `message.body`, idempotency keys,
+raw audit/provider payloads, injection results, and other runtime internals
+must not be attached to thread detail. Full card content remains available
+through `GET /api/thread-task-cards/:id` and is loaded by the browser only when
+the user expands a card. This keeps large historical task-card bodies and
+internal workflow state out of every thread-detail first paint while preserving
+the explicit inspection path. The browser renders cards in a separate stack
+after the visible turn list and detached approvals, so they stay near the active
 bottom surface without polluting message flow.
 The composer reserves leading non-empty `#` commands as the cross-thread
 task-card command path. Plain `# ...` defaults to a manual one-off card request;
