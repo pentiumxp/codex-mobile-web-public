@@ -379,7 +379,7 @@ counters. Fast successful list loads clear the repeated-failure signature; slow
 loads must not trigger a client-side masking refresh or duplicate-render
 workaround.
 
-`adapters/thread-list-fallback-cache-service.js` owns the fallback cache policy: key construction from visible workspace roots/projectless thread ids, process-lifetime default retention, optional TTL expiry, cache-hit diagnostics, first-run fallback aggregation, and incremental status/title/archive mutation. Final fallback cache entries remain limit-scoped: a narrow cached final list is not treated as a wider final list. The service can, however, reuse a wider same-scope source snapshot for a later wider final-list cache miss, so a prewarmed source snapshot can rebuild `limit=137` first-paint windows without re-reading state DB, rollout tails, or `session_index.jsonl`. `adapters/thread-list-fallback-prewarm-service.js` passes a bounded `sourceSnapshotLimit` for this purpose and reports it through `threadListFallbackPrewarm.sourceSnapshotLimit` / `lastSourceSnapshotLimit`; this is warm source data for the current process, not persistent authority. State-db, rollout-session, and session-index scanners remain separate providers injected by `server.js`.
+`adapters/thread-list-fallback-cache-service.js` owns the fallback cache policy: key construction from visible workspace roots/projectless thread ids, process-lifetime default retention, optional TTL expiry, cache-hit diagnostics, first-run fallback aggregation, and incremental status/title/archive mutation. Final fallback cache entries remain limit-scoped: a narrow cached final list is not treated as a wider final list. The service can, however, reuse a wider same-scope source snapshot for a later wider final-list cache miss, so a prewarmed source snapshot can rebuild `limit=137` first-paint windows without re-reading state DB, rollout tails, or `session_index.jsonl`. Ordinary Workspace first-paint reads can also derive a scoped warm row set from the default visible-thread warm cache and then remember that Workspace cache; this reports `workspace-derived-hit` and only applies when there is no search, cursor, or archived filter. `adapters/thread-list-fallback-prewarm-service.js` passes a bounded `sourceSnapshotLimit` for this purpose and reports it through `threadListFallbackPrewarm.sourceSnapshotLimit` / `lastSourceSnapshotLimit`; this is warm source data for the current process, not persistent authority. State-db, rollout-session, and session-index scanners remain separate providers injected by `server.js`.
 
 `adapters/thread-list-fallback-persistent-cache-store.js` persists only bounded
 thread-list summary cache entries under the Codex Mobile runtime root so a
@@ -854,16 +854,20 @@ full list requests remain on the full authoritative path. The server-side
 display-summary cache also skips read-time rollout-stat decoration on cache
 reads when the list merge already has request-scoped rollout/session metadata.
 Separate from that explicit first-paint mode, the server may also answer an
-ordinary no-search/no-workspace/no-cursor/non-archived default `/api/threads`
-request from the warm fallback cache when it is already present. This reports
-`appServerDeferredReason=warm-fallback-default`,
-`appServerDeferredInitialReason=default-warm-cache`, and
-`mobileDeferredAppServer=true`, then lets the app-server refresh continue as the
-authority follow-up. The ordinary default path does not build a cold local
-fallback baseline on cache miss; it falls through to app-server so true
+ordinary no-search/no-cursor/non-archived default or Workspace `/api/threads`
+request from the warm fallback cache when it is already present. Default reads
+report `appServerDeferredReason=warm-fallback-default` and
+`appServerDeferredInitialReason=default-warm-cache`; Workspace reads report
+`appServerDeferredReason=warm-fallback-workspace` and
+`appServerDeferredInitialReason=workspace-warm-cache`. If the Workspace has no
+exact warm entry but the default visible-thread warm cache contains matching
+rows, the cache decision is `workspace-derived-hit`. Both paths set
+`mobileDeferredAppServer=true`, then let the app-server refresh continue as the
+authority follow-up. The ordinary default/workspace path does not build a cold
+local fallback baseline on cache miss; it falls through to app-server so true
 cold-start cost remains measurable. Set
-`CODEX_MOBILE_THREAD_LIST_DEFAULT_WARM_FALLBACK=0` to disable only this default
-warm-cache early return during diagnostics.
+`CODEX_MOBILE_THREAD_LIST_DEFAULT_WARM_FALLBACK=0` to disable this warm-cache
+early return during diagnostics.
 
 ### Conversation Navigation
 

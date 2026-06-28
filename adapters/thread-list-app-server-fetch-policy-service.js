@@ -138,7 +138,8 @@ function planThreadListInitialFallbackAttempt(input = {}) {
   const archived = input.archived === true;
   const defaultWarmFallback = input.defaultWarmFallback !== false;
   const defaultList = !hasCursor && !archived && !hasWorkspace && !hasSearch;
-  if (!defaultList) {
+  const workspaceList = !hasCursor && !archived && hasWorkspace && !hasSearch;
+  if (!defaultList && !workspaceList) {
     return {
       attempt: false,
       allowBaseline: false,
@@ -151,9 +152,9 @@ function planThreadListInitialFallbackAttempt(input = {}) {
   if (initialMode === "warm-fallback") {
     return {
       attempt: true,
-      allowBaseline: true,
-      requireCacheHit: false,
-      reason: "explicit-warm-fallback",
+      allowBaseline: defaultList,
+      requireCacheHit: workspaceList,
+      reason: workspaceList ? "workspace-warm-cache" : "explicit-warm-fallback",
       initialMode,
       fallbackMode,
     };
@@ -163,7 +164,7 @@ function planThreadListInitialFallbackAttempt(input = {}) {
       attempt: true,
       allowBaseline: false,
       requireCacheHit: true,
-      reason: "default-warm-cache",
+      reason: workspaceList ? "workspace-warm-cache" : "default-warm-cache",
       initialMode,
       fallbackMode,
     };
@@ -194,13 +195,14 @@ function threadListInitialFallbackMetadata(input = {}) {
   const cacheHit = input && input.cacheHit === true;
   const reason = compactLabel(input && input.reason, "", 80);
   const defaultWarmCache = reason === "default-warm-cache";
+  const workspaceWarmCache = reason === "workspace-warm-cache";
   return {
     appServerDeferredReason: cacheHit
-      ? (defaultWarmCache ? "warm-fallback-default" : "warm-fallback-initial")
+      ? (defaultWarmCache ? "warm-fallback-default" : workspaceWarmCache ? "warm-fallback-workspace" : "warm-fallback-initial")
       : "cold-fallback-initial",
     initialSource: cacheHit ? "warm-fallback-cache" : "fallback-baseline",
     eventName: cacheHit
-      ? (defaultWarmCache ? "warm_fallback_default" : "warm_fallback_initial")
+      ? (defaultWarmCache ? "warm_fallback_default" : workspaceWarmCache ? "warm_fallback_workspace" : "warm_fallback_initial")
       : "fallback_baseline_initial",
   };
 }

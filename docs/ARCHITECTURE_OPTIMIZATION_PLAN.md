@@ -2519,16 +2519,21 @@ Deployable scope:
   `planThreadListInitialFallbackAttempt()`, separating explicit
   `initial=warm-fallback`, ordinary default warm-cache early return, and
   ineligible filtered/cursor/archived paths.
-- `server.js` can answer no-search/no-workspace/no-cursor/non-archived default
+- `server.js` can answer no-search/no-cursor/non-archived default and Workspace
   `/api/threads` requests from an already-warm fallback cache and mark the
-  app-server refresh deferred with
-  `appServerDeferredReason=warm-fallback-default` and
-  `appServerDeferredInitialReason=default-warm-cache`.
-- Ordinary default reads do not build a cold fallback baseline on cache miss.
+  app-server refresh deferred. Default reads report
+  `appServerDeferredReason=warm-fallback-default` /
+  `appServerDeferredInitialReason=default-warm-cache`; Workspace reads report
+  `appServerDeferredReason=warm-fallback-workspace` /
+  `appServerDeferredInitialReason=workspace-warm-cache`.
+- Workspace reads can derive first-paint rows from the default visible-thread
+  warm cache when an exact Workspace cache is not present; this reports
+  `fallbackCacheDecision=workspace-derived-hit`.
+- Ordinary default/workspace reads do not build a cold fallback baseline on cache miss.
   They fall through to the existing app-server path so true cold startup cost
   remains visible instead of being hidden by a new fallback layer.
-- Search, workspace-filtered, archived, cursor, explicit `fallback=defer`, and
-  explicit `initial=warm-fallback` semantics remain separate.
+- Search, archived, cursor, explicit `fallback=defer`, and explicit
+  `initial=warm-fallback` semantics remain separate.
 
 Required validation:
 

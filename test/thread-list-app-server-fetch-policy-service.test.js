@@ -172,6 +172,12 @@ test("thread-list initial fallback metadata separates warm cache and cold baseli
     eventName: "warm_fallback_default",
   });
 
+  assert.deepEqual(threadListInitialFallbackMetadata({ cacheHit: true, reason: "workspace-warm-cache" }), {
+    appServerDeferredReason: "warm-fallback-workspace",
+    initialSource: "warm-fallback-cache",
+    eventName: "warm_fallback_workspace",
+  });
+
   assert.deepEqual(threadListInitialFallbackMetadata({ cacheHit: false }), {
     appServerDeferredReason: "cold-fallback-initial",
     initialSource: "fallback-baseline",
@@ -203,11 +209,32 @@ test("thread-list initial fallback policy separates explicit fallback from defau
     fallbackMode: "",
   });
 
+  assert.deepEqual(planThreadListInitialFallbackAttempt({
+    limit: 40,
+    cwd: "/private/workspace",
+  }), {
+    attempt: true,
+    allowBaseline: false,
+    requireCacheHit: true,
+    reason: "workspace-warm-cache",
+    initialMode: "",
+    fallbackMode: "",
+  });
+
+  assert.deepEqual(planThreadListInitialFallbackAttempt({
+    initialMode: "warm-fallback",
+    cwd: "/private/workspace",
+  }), {
+    attempt: true,
+    allowBaseline: false,
+    requireCacheHit: true,
+    reason: "workspace-warm-cache",
+    initialMode: "warm-fallback",
+    fallbackMode: "",
+  });
+
   assert.equal(planThreadListInitialFallbackAttempt({
     searchTerm: "private query",
-  }).attempt, false);
-  assert.equal(planThreadListInitialFallbackAttempt({
-    cwd: "/private/workspace",
   }).attempt, false);
   assert.equal(planThreadListInitialFallbackAttempt({
     cursor: "cursor",

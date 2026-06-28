@@ -1054,8 +1054,10 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.doesNotMatch(cacheServiceJs, /fileFingerprint/);
   assert.match(cacheServiceJs, /ttlMs > 0/);
   assert.match(cacheServiceJs, /diagnostics\.cacheHit = true/);
-  assert.match(cacheServiceJs, /diagnostics\.cacheDecision = cached\.compatible \? "compatible-hit" : "hit"/);
+  assert.match(cacheServiceJs, /diagnostics\.cacheDecision = cached\.workspaceDerived \? "workspace-derived-hit" : cached\.compatible \? "compatible-hit" : "hit"/);
   assert.match(cacheServiceJs, /compatibleCacheLimit/);
+  assert.match(cacheServiceJs, /workspaceDerivedCacheHit/);
+  assert.match(cacheServiceJs, /function readWorkspaceDerivedCompatible\(limit = 80, filters = \{\}, diagnostics = null\)/);
   assert.match(cacheServiceJs, /diagnostics\.cacheBuildReason = missDecision/);
   assert.match(cacheServiceJs, /diagnostics\.cacheIncrementalUpdates = cached\.incrementalUpdates/);
   assert.match(routeBody, /mobileDiagnostics[\s\S]*threadListTimings/);

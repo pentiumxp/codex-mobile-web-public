@@ -416,14 +416,77 @@ function createThreadListFallbackCacheService(options = {}) {
     });
   }
 
+  function readWorkspaceDerivedCompatible(limit = 80, filters = {}, diagnostics = null) {
+    const cwd = String(filters.cwd || "").trim();
+    const searchTerm = String(filters.searchTerm || "").trim();
+    if (!cwd || searchTerm) return null;
+    const requestedLimit = Math.max(1, Math.min(200, Number(limit || 80)));
+    const defaultScopeKey = filterScopeKey(Object.assign({}, filters, {
+      cwd: "",
+      searchTerm: "",
+    }));
+    let bestKey = "";
+    let bestLimit = 0;
+    let bestUpdatedAt = 0;
+    for (const [entryKey, entry] of cache.entries()) {
+      if (!entry || entry.filterScopeKey !== defaultScopeKey) continue;
+      const entryLimit = Math.max(1, Math.min(200, Number(entry.limit || 80)));
+      const updatedAt = Number(entry.updatedAt || entry.cachedAt || 0);
+      if (entryLimit > bestLimit || (entryLimit === bestLimit && updatedAt > bestUpdatedAt)) {
+        bestKey = entryKey;
+        bestLimit = entryLimit;
+        bestUpdatedAt = updatedAt;
+      }
+    }
+    if (!bestKey) return null;
+    const cached = read(bestKey, null);
+    if (!cached || !Array.isArray(cached.threads) || !cached.threads.length) return null;
+    const filtered = filterFallbackThreads(cached.threads, {
+      cwd,
+      searchTerm: "",
+      globalState: filters.globalState || undefined,
+    }).slice(0, requestedLimit);
+    if (!filtered.length) return null;
+    if (diagnostics) {
+      diagnostics.cacheHit = true;
+      diagnostics.cacheDecision = "workspace-derived-hit";
+      diagnostics.workspaceDerivedCacheHit = true;
+      diagnostics.workspaceDerivedCacheLimit = bestLimit;
+      diagnostics.compatibleCacheHit = true;
+      diagnostics.compatibleCacheLimit = bestLimit;
+      diagnostics.cacheBuildNumber = cached.buildNumber || 0;
+      diagnostics.cacheIncrementalUpdates = cached.incrementalUpdates || 0;
+      diagnostics.cachePersistentRestored = cached.persistentRestored === true;
+      diagnostics.cachedSourceTimings = cached.timings;
+    }
+    remember(cacheKey(requestedLimit, filters), filtered, cached.timings, {
+      limit: requestedLimit,
+      filters,
+    });
+    return {
+      threads: filtered,
+      timings: cached.timings,
+      cachedAt: cached.cachedAt,
+      updatedAt: now(),
+      buildNumber: buildCount,
+      incrementalUpdates: 0,
+      persistentRestored: false,
+      compatible: true,
+      compatibleLimit: bestLimit,
+      workspaceDerived: true,
+    };
+  }
+
   function readFallback(limit = 80, filters = {}) {
     const diagnostics = filters.diagnostics && typeof filters.diagnostics === "object" ? filters.diagnostics : null;
     const key = cacheKey(limit, filters);
-    const cached = read(key, diagnostics) || readCompatible(limit, filters, diagnostics);
+    const cached = read(key, diagnostics)
+      || readCompatible(limit, filters, diagnostics)
+      || readWorkspaceDerivedCompatible(limit, filters, diagnostics);
     if (cached) {
       if (diagnostics) {
         diagnostics.cacheHit = true;
-        diagnostics.cacheDecision = cached.compatible ? "compatible-hit" : "hit";
+        diagnostics.cacheDecision = cached.workspaceDerived ? "workspace-derived-hit" : cached.compatible ? "compatible-hit" : "hit";
         diagnostics.stateDbMs = 0;
         diagnostics.rolloutMs = 0;
         diagnostics.sessionIndexMs = 0;
@@ -436,6 +499,10 @@ function createThreadListFallbackCacheService(options = {}) {
         if (cached.compatible) {
           diagnostics.compatibleCacheHit = true;
           diagnostics.compatibleCacheLimit = cached.compatibleLimit || 0;
+        }
+        if (cached.workspaceDerived) {
+          diagnostics.workspaceDerivedCacheHit = true;
+          diagnostics.workspaceDerivedCacheLimit = cached.compatibleLimit || 0;
         }
       }
       return cached.threads;
@@ -511,7 +578,9 @@ function createThreadListFallbackCacheService(options = {}) {
   function readCachedFallback(limit = 80, filters = {}) {
     const diagnostics = filters.diagnostics && typeof filters.diagnostics === "object" ? filters.diagnostics : null;
     const key = cacheKey(limit, filters);
-    const cached = read(key, diagnostics) || readCompatible(limit, filters, diagnostics);
+    const cached = read(key, diagnostics)
+      || readCompatible(limit, filters, diagnostics)
+      || readWorkspaceDerivedCompatible(limit, filters, diagnostics);
     if (!cached) {
       if (diagnostics) {
         diagnostics.cacheHit = false;
@@ -523,7 +592,7 @@ function createThreadListFallbackCacheService(options = {}) {
     }
     if (diagnostics) {
       diagnostics.cacheHit = true;
-      diagnostics.cacheDecision = cached.compatible ? "compatible-hit" : "hit";
+      diagnostics.cacheDecision = cached.workspaceDerived ? "workspace-derived-hit" : cached.compatible ? "compatible-hit" : "hit";
       diagnostics.stateDbMs = 0;
       diagnostics.rolloutMs = 0;
       diagnostics.sessionIndexMs = 0;
@@ -536,6 +605,10 @@ function createThreadListFallbackCacheService(options = {}) {
       if (cached.compatible) {
         diagnostics.compatibleCacheHit = true;
         diagnostics.compatibleCacheLimit = cached.compatibleLimit || 0;
+      }
+      if (cached.workspaceDerived) {
+        diagnostics.workspaceDerivedCacheHit = true;
+        diagnostics.workspaceDerivedCacheLimit = cached.compatibleLimit || 0;
       }
     }
     return cached.threads;

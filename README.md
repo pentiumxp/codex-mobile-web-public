@@ -16,6 +16,24 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-28 Workspace Thread List Warm First Paint
+
+这次模块处理一个剩余的线程列表首屏峰值：默认 `/api/threads` 已经可以在 warm
+fallback cache 存在时几十毫秒返回，但切到某个 Workspace 时仍会先等
+app-server `thread/list` 的 workspace-filtered 500-row 窗口，Movie workspace
+采样中一次请求约 465ms，其中 app-server RPC 约 240ms，route merge 约 177ms。
+
+本模块把普通 Workspace 列表也接入 warm first-paint 策略。无 cursor、无 search、
+非 archived 的 Workspace 请求会先尝试已有 warm cache；如果没有 Workspace 专属
+cache，服务端可以从默认可见线程 warm cache 派生出该 Workspace 的子集并写回
+Workspace cache。cache miss 时仍回到现有 app-server 权威路径，不构建新的冷
+baseline，不改变 cursor/search/archived 语义。
+
+生产诊断可以通过 `appServerDeferredReason=warm-fallback-workspace`、
+`appServerDeferredInitialReason=workspace-warm-cache`、
+`fallbackCacheDecision=workspace-derived-hit` 和
+`fallbackWorkspaceDerivedCacheHit=true` 识别这条路径。
+
 ## 2026-06-28 Active First-Paint Item Budget
 
 当前大 session 进入速度已经主要走 `projection-v4-partial` /

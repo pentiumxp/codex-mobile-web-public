@@ -784,16 +784,20 @@ Do not infer from rollout file size alone. Separate:
   explicitly set for diagnostics. Normal turn/status/title/archive changes
   should update the cached row incrementally rather than clearing the baseline
   and forcing another rollout/session scan.
-- Did an ordinary no-search default thread-list request wait on app-server even
-  though the process fallback cache was warm? Current server behavior should
-  report `appServerDeferredReason=warm-fallback-default`,
-  `appServerDeferredInitialReason=default-warm-cache`,
-  `mobileDeferredAppServer=true`, and `fallbackCacheDecision=compatible-hit` for
-  that path. If those fields are absent, check
+- Did an ordinary no-search default or Workspace thread-list request wait on
+  app-server even though the process fallback cache was warm? Current server
+  behavior should report `mobileDeferredAppServer=true`. Default list reads
+  should report `appServerDeferredReason=warm-fallback-default` and
+  `appServerDeferredInitialReason=default-warm-cache`; Workspace reads should
+  report `appServerDeferredReason=warm-fallback-workspace` and
+  `appServerDeferredInitialReason=workspace-warm-cache`. A Workspace read that
+  is served by filtering the default visible-thread warm cache should report
+  `fallbackCacheDecision=workspace-derived-hit` and
+  `fallbackWorkspaceDerivedCacheHit=true`. If those fields are absent, check
   `CODEX_MOBILE_THREAD_LIST_DEFAULT_WARM_FALLBACK`, the request filter shape,
   and whether the process cache was actually warm. A miss on this ordinary
-  default path intentionally falls through to app-server instead of building a
-  cold fallback baseline.
+  default/workspace path intentionally falls through to app-server instead of
+  building a cold fallback baseline.
 - Is app-server/mux CPU active?
 - Is the latest turn `inProgress` but no event has been written for minutes?
 

@@ -46,10 +46,12 @@ function createService(overrides = {}) {
     visibleProjectlessThreadIds: (globalState) => new Set(globalState.projectless || []),
     mergeThreadDisplaySummary: (base, display) => Object.assign({}, base || {}, display || {}),
     normalizeThreadSummaryLiveStatus: (thread) => Object.assign({}, thread, { normalized: true }),
-    filterFallbackThreads: (threads, filters = {}) => {
-      const search = String(filters.searchTerm || "").trim().toLowerCase();
-      return (threads || []).filter((thread) => !search || String(thread.name || "").toLowerCase().includes(search));
-    },
+    filterFallbackThreads: typeof overrides.filterFallbackThreads === "function"
+      ? overrides.filterFallbackThreads
+      : (threads, filters = {}) => {
+        const search = String(filters.searchTerm || "").trim().toLowerCase();
+        return (threads || []).filter((thread) => !search || String(thread.name || "").toLowerCase().includes(search));
+      },
     mergeThreadSummaryList: mergeByUpdatedAt,
     readStateDbFallback(limit, filters) {
       calls.stateDb += 1;
@@ -557,6 +559,47 @@ test("fresh scoped thread rows backfill the default warm fallback cache", () => 
   assert.equal(defaultHitDiagnostics.cacheHit, true);
   assert.equal(defaultHitDiagnostics.cacheDecision, "hit");
   assert.equal(defaultHitDiagnostics.cacheIncrementalUpdates, 1);
+});
+
+test("workspace reads can derive first paint rows from default warm fallback cache", () => {
+  const { service } = createService({
+    readStateDbFallback: () => [
+      { id: "thread-home", name: "Home", cwd: "/workspace/default", updatedAt: 100 },
+      { id: "thread-movie", name: "Movie", cwd: "/workspace/movie", updatedAt: 300 },
+    ],
+    readRolloutSessionFallback: () => [],
+    readSessionIndexFallback: () => [],
+    filterFallbackThreads: (threads, filters = {}) => {
+      const cwd = String(filters.cwd || "").trim().toLowerCase();
+      const search = String(filters.searchTerm || "").trim().toLowerCase();
+      return (threads || []).filter((thread) => {
+        if (cwd && String(thread.cwd || "").trim().toLowerCase() !== cwd) return false;
+        if (search && !String(thread.name || "").toLowerCase().includes(search)) return false;
+        return true;
+      });
+    },
+  });
+  service.readFallback(10);
+
+  const diagnostics = {};
+  const movieRows = service.readCachedFallback(10, {
+    cwd: "/workspace/movie",
+    diagnostics,
+  });
+
+  assert.deepEqual(movieRows.map((thread) => thread.id), ["thread-movie"]);
+  assert.equal(diagnostics.cacheHit, true);
+  assert.equal(diagnostics.cacheDecision, "workspace-derived-hit");
+  assert.equal(diagnostics.workspaceDerivedCacheHit, true);
+  assert.equal(diagnostics.compatibleCacheHit, true);
+
+  const exactDiagnostics = {};
+  assert.deepEqual(service.readCachedFallback(10, {
+    cwd: "/workspace/movie",
+    diagnostics: exactDiagnostics,
+  }).map((thread) => thread.id), ["thread-movie"]);
+  assert.equal(exactDiagnostics.cacheHit, true);
+  assert.equal(exactDiagnostics.cacheDecision, "hit");
 });
 
 test("fallback cache restores persisted warm entries after a service restart", () => {

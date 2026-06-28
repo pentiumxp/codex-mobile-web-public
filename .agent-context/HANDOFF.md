@@ -26059,3 +26059,56 @@ The previous full handoff was archived and should be opened only when old proven
     `progressive-active-first-paint-byte-ceiling`,
     `responseBudgetProgressiveActiveFirstPaintBytesAfterItemBudget`, and
     `detailResponseBudgetProgressiveActiveFirstPaintBytesAfterItemBudget`.
+
+## 2026-06-28 - Workspace Thread List Warm First Paint Module
+
+- User-visible target:
+  - Reduce the remaining thread-list first-screen peak when switching into a
+    specific Workspace. Default `/api/threads` was already warm and fast, but
+    Movie workspace sampling still took about `465ms` with `appServerRpcMs`
+    around `240ms` and route merge around `177ms`.
+- Root cause / invariant:
+  - `planThreadListInitialFallbackAttempt()` explicitly treated
+    workspace-filtered list reads as ineligible for warm-cache first paint, so
+    a Workspace switch waited on the legacy app-server 500-row window even
+    when the process already had a warm visible-thread cache.
+  - The invariant is that ordinary no-search/no-cursor/non-archived Workspace
+    list first paint can use bounded warm cache rows, then let app-server remain
+    the authority follow-up. Search, cursor, and archived semantics must stay
+    authoritative and unchanged.
+- Implementation:
+  - `adapters/thread-list-app-server-fetch-policy-service.js` now classifies
+    ordinary Workspace warm first paint separately as
+    `workspace-warm-cache`, producing
+    `appServerDeferredReason=warm-fallback-workspace`.
+  - `adapters/thread-list-fallback-cache-service.js` can derive Workspace
+    first-paint rows from the default visible-thread warm cache when an exact
+    Workspace cache entry is absent, then remember the derived Workspace cache.
+    The bounded cache decision is `workspace-derived-hit` with
+    `workspaceDerivedCacheHit=true`.
+  - `server.js` exposes `fallbackWorkspaceDerivedCacheHit` and
+    `fallbackWorkspaceDerivedCacheLimit` in thread-list timing diagnostics.
+  - Cache miss still falls through to app-server; no cold fallback baseline is
+    built for ordinary Workspace warm-first-paint attempts.
+- Docs:
+  - Updated `README.md`, `docs/MODULES.md`, `docs/ARCHITECTURE.md`,
+    `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` with the Workspace warm first
+    paint contract and diagnostics.
+- Local validation:
+  - Focused syntax checks passed:
+    `node --check adapters/thread-list-app-server-fetch-policy-service.js`,
+    `node --check adapters/thread-list-fallback-cache-service.js`, and
+    `node --check server.js`.
+  - Focused suite passed:
+    `node --test test/thread-list-app-server-fetch-policy-service.test.js test/thread-list-fallback-cache-service.test.js test/thread-visibility.test.js`
+    (`75` tests).
+  - `git diff --check`, `npm run check`, and `npm run check:macos` passed.
+  - Full `npm test -- --test-reporter=dot` passed.
+  - Home AI fallback governance check passed for changed runtime/test files;
+    classification is closure, not fallback.
+  - `codegraph sync && codegraph status` reported the graph up to date.
+- Deployment status:
+  - Not yet deployed at this handoff entry. Next step is commit, central macOS
+    plugin deploy, and production readback comparing default and Movie
+    Workspace list timings.
