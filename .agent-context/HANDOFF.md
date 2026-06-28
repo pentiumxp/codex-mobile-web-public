@@ -27548,6 +27548,22 @@ The previous full handoff was archived and should be opened only when old proven
   - `npm run check`, `npm run check:macos`, `git diff --check`, and Home AI
     fallback governance check passed.
 - Status:
-  - Ready to commit and deploy through the Home AI central macOS plugin deploy
-    path. Runtime/static shell cache does not need a bump unless later public
-    frontend files are changed.
+  - Committed as `2ddf957` and pushed to private `origin/main`.
+  - Deployed through the Home AI central macOS plugin deploy path with reason
+    `codex-mobile-active-overlay-window-backfill`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260628T115817Z-plugin-codex-mobile-web-codex-mobile-active-overlay-window-backfill`.
+  - Production `/api/public-config` remained
+    `clientBuildId=0.1.11|codex-mobile-shell-v571`,
+    `shellCacheName=codex-mobile-shell-v571`, and build id
+    `ea68b50ee73958c0`; shell/cache did not change because this is a
+    server/script/test-only slice.
+  - Production source/prod hash readback matched for all changed source,
+    script, and test files.
+  - Movie production self-check with repeat reads returned `ok:true`,
+    `issueCount=0`, `blockingIssueCount=0`, and
+    `diagnosticCandidateCount=0`.
+  - Production sample self-check with eight threads returned `ok:true`,
+    `issueCount=0`, `blockingIssueCount=0`, and
+    `diagnosticCandidateCount=0`.
+  - Public push is not requested.
