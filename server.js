@@ -936,6 +936,7 @@ const THREAD_DETAIL_ACTIVE_REASONING_ITEMS = Math.max(0, Math.min(20, Number(pro
 const THREAD_DETAIL_COMPLETED_REASONING_ITEMS = Math.max(0, Math.min(20, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_COMPLETED_REASONING_ITEMS || "0")));
 const THREAD_DETAIL_ACTIVE_ASSISTANT_ITEMS = Math.max(1, Math.min(50, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_ACTIVE_ASSISTANT_ITEMS || "8")));
 const THREAD_DETAIL_COMPLETED_ASSISTANT_ITEMS = Math.max(1, Math.min(20, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_COMPLETED_ASSISTANT_ITEMS || "1")));
+const THREAD_DETAIL_COMPLETED_PROGRESS_MESSAGES = Math.max(0, Math.min(20, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_COMPLETED_PROGRESS_MESSAGES || "8")));
 const THREAD_DETAIL_ACTIVE_PROGRESSIVE_ITEM_THRESHOLD = Math.max(0, Math.min(10000, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_ACTIVE_PROGRESSIVE_ITEM_THRESHOLD || "50")));
 const THREAD_DETAIL_ACTIVE_PROGRESSIVE_BYTES = Math.max(0, Math.min(10 * 1024 * 1024, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_ACTIVE_PROGRESSIVE_BYTES || String(48 * 1024))));
 const THREAD_DETAIL_ACTIVE_PROGRESSIVE_THREAD_BYTES = Math.max(0, Math.min(50 * 1024 * 1024, Number(process.env.CODEX_MOBILE_THREAD_DETAIL_ACTIVE_PROGRESSIVE_THREAD_BYTES || String(160 * 1024))));
@@ -4717,13 +4718,79 @@ function cloneRolloutFinalReceiptPayload(payload) {
 }
 
 function rolloutFinalReceiptItem(entry, turnId, text) {
+  const completedAtMs = rolloutCompletionTimestampMs(entry);
+  const timestampFields = completedAtMs
+    ? { completedAtMs, completedAt: new Date(completedAtMs).toISOString() }
+    : rolloutTimestampFields(entry);
   return {
     id: `mobile-final-receipt-${turnId || stableTextHash(text)}`,
     type: "agentMessage",
     text,
     source: "rollout_task_complete",
     mobileSyntheticFinalReceipt: true,
+    ...timestampFields,
   };
+}
+
+function rolloutProgressTextFromValue(value) {
+  if (value == null) return "";
+  if (typeof value === "string") return redactInlineImageDataUrls(value).trim();
+  if (Array.isArray(value)) {
+    return value.map((entry) => rolloutProgressTextFromValue(entry)).filter(Boolean).join("\n").trim();
+  }
+  if (typeof value === "object") {
+    if (typeof value.text === "string") return redactInlineImageDataUrls(value.text).trim();
+    if (typeof value.message === "string") return redactInlineImageDataUrls(value.message).trim();
+    if (typeof value.content === "string") return redactInlineImageDataUrls(value.content).trim();
+    if (typeof value.output === "string") return redactInlineImageDataUrls(value.output).trim();
+    if (Array.isArray(value.content)) return rolloutProgressTextFromValue(value.content);
+    if (Array.isArray(value.summary)) return rolloutProgressTextFromValue(value.summary);
+  }
+  return "";
+}
+
+function rolloutProgressTextFromEntry(entry) {
+  const payload = entry && entry.payload && typeof entry.payload === "object" ? entry.payload : {};
+  if (entry && entry.type === "event_msg" && payload.type === "agent_message") {
+    return rolloutProgressTextFromValue(payload.message || payload.text || payload.content || payload.summary);
+  }
+  if (entry && entry.type === "response_item" && payload.type === "message") {
+    const role = String(payload.role || payload.author || "").toLowerCase();
+    if (role === "assistant") {
+      return rolloutProgressTextFromValue(payload.content || payload.message || payload.text || payload.summary);
+    }
+  }
+  return "";
+}
+
+function rolloutProgressItem(entry, turnId, text, index) {
+  const timestampFields = rolloutTimestampFields(entry);
+  return {
+    id: `mobile-progress-message-${turnId || "unscoped"}-${index}-${stableTextHash(text)}`,
+    type: "agentMessage",
+    text,
+    source: "rollout_agent_message",
+    mobileSyntheticProgressMessage: true,
+    ...timestampFields,
+  };
+}
+
+function appendRolloutProgressMessage(progressByTurn, entry, turnId) {
+  if (!turnId || THREAD_DETAIL_COMPLETED_PROGRESS_MESSAGES <= 0) return;
+  const text = rolloutProgressTextFromEntry(entry);
+  if (!text) return;
+  const normalized = normalizeFinalReceiptText(text);
+  if (!normalized) return;
+  let list = progressByTurn.get(turnId);
+  if (!list) {
+    list = [];
+    progressByTurn.set(turnId, list);
+  }
+  if (list.some((item) => normalizeFinalReceiptText(assistantReceiptText(item)) === normalized)) return;
+  list.push(rolloutProgressItem(entry, turnId, text, list.length));
+  if (list.length > THREAD_DETAIL_COMPLETED_PROGRESS_MESSAGES) {
+    list.splice(0, list.length - THREAD_DETAIL_COMPLETED_PROGRESS_MESSAGES);
+  }
 }
 
 function rolloutCompletionTimestampMs(entry) {
@@ -4731,17 +4798,29 @@ function rolloutCompletionTimestampMs(entry) {
   return timestampToMs(payload.completed_at || payload.completedAt || entry.timestamp || payload.timestamp);
 }
 
-function rolloutCompletionTurnFromEntry(entry, turnId, text) {
+function rolloutCompletionTurnFromEntry(entry, turnId, text, progressItems = []) {
   const payload = entry && entry.payload && typeof entry.payload === "object" ? entry.payload : {};
   const completedAtMs = rolloutCompletionTimestampMs(entry);
+  const normalizedFinalText = normalizeFinalReceiptText(text);
+  const seenProgress = new Set();
+  const retainedProgressItems = (Array.isArray(progressItems) ? progressItems : [])
+    .filter((item) => {
+      const normalized = normalizeFinalReceiptText(assistantReceiptText(item));
+      if (!normalized || normalized === normalizedFinalText || seenProgress.has(normalized)) return false;
+      seenProgress.add(normalized);
+      return true;
+    })
+    .slice(-THREAD_DETAIL_COMPLETED_PROGRESS_MESSAGES)
+    .map(clonePlainJson);
   const durationMs = Number(payload.duration_ms || payload.durationMs || 0);
   const turn = {
     id: turnId,
     status: "completed",
-    items: [rolloutFinalReceiptItem(entry, turnId, text)],
+    items: [...retainedProgressItems, rolloutFinalReceiptItem(entry, turnId, text)],
     source: "rollout_task_complete",
     mobileSyntheticCompletionTurn: true,
   };
+  if (retainedProgressItems.length) turn.mobileSyntheticProgressMessageCount = retainedProgressItems.length;
   if (completedAtMs) {
     turn.completedAt = Math.floor(completedAtMs / 1000);
     turn.completedAtMs = completedAtMs;
@@ -4784,6 +4863,7 @@ function readRolloutCompletionTurns(rolloutPath) {
     return { byTurn: new Map(), scopedCount: 0 };
   }
   const byTurn = new Map();
+  const progressByTurn = new Map();
   let scopedCount = 0;
   let currentTurnId = "";
   for (const entry of readRolloutEnrichmentEntries(rolloutPath)) {
@@ -4792,12 +4872,13 @@ function readRolloutCompletionTurns(rolloutPath) {
     const explicitTurnId = rolloutEntryTurnId(entry);
     if (entry.type === "turn_context" && explicitTurnId) currentTurnId = explicitTurnId;
     if (entry.type === "event_msg" && payload.type === "task_started" && explicitTurnId) currentTurnId = explicitTurnId;
-    if (entry.type !== "event_msg" || !/^(task_complete|task_completed)$/.test(String(payload.type || ""))) continue;
     const turnId = explicitTurnId || currentTurnId;
+    appendRolloutProgressMessage(progressByTurn, entry, turnId);
+    if (entry.type !== "event_msg" || !/^(task_complete|task_completed)$/.test(String(payload.type || ""))) continue;
     if (!turnId) continue;
     const text = finalReceiptTextFromParams(payload);
     if (!text) continue;
-    byTurn.set(turnId, rolloutCompletionTurnFromEntry(entry, turnId, text));
+    byTurn.set(turnId, rolloutCompletionTurnFromEntry(entry, turnId, text, progressByTurn.get(turnId) || []));
     scopedCount += 1;
   }
   const payload = { byTurn, scopedCount };
@@ -6215,6 +6296,11 @@ function mergeRecentRawOperationsIntoTurn(thread, turn, options = {}) {
   }
 }
 
+function turnHasSyntheticProgressMessages(turn) {
+  return Array.isArray(turn && turn.items)
+    && turn.items.some((item) => item && item.mobileSyntheticProgressMessage === true);
+}
+
 function compactItem(item, options = {}) {
   if (!item || typeof item !== "object") return item;
   const out = Object.assign({}, item);
@@ -6592,8 +6678,8 @@ function compactThread(thread, options = {}) {
     }
     const latestIndex = out.turns.length - 1;
     out.turns = out.turns.map((turn, index) => compactTurn(turn, {
-      allowOperations: operationDetailIndexes.has(index),
-      maxOperationItems: operationDetailIndexes.has(index) ? "all" : MAX_LIVE_OPERATION_ITEMS,
+      allowOperations: operationDetailIndexes.has(index) && !turnHasSyntheticProgressMessages(turn),
+      maxOperationItems: operationDetailIndexes.has(index) && !turnHasSyntheticProgressMessages(turn) ? "all" : MAX_LIVE_OPERATION_ITEMS,
       receiptOnly: !operationDetailIndexes.has(index),
       threadId: out.id || out.threadId || "",
       suppressedUploadViewImageCallIds: toolOutputImagePayload.suppressedUploadViewImageCallIdsByTurn instanceof Map

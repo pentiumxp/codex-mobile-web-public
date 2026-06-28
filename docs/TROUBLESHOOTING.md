@@ -673,6 +673,14 @@ Cause to check:
   items are not enough to suppress this fallback. Existing matching receipts
   must not be replaced, and failed, cancelled, interrupted, active, or
   in-progress turns must not receive this fallback.
+- If only command/file rows appear for the latest completed turn after
+  re-entering a thread, inspect the rollout completion-turn backfill before
+  changing browser rendering. Current server builds retain a bounded tail of
+  scoped `agent_message` / assistant `response_item` progress text for the
+  latest completed turn, attach `task_complete.completed_at` to the synthetic
+  final receipt, and suppress command/file raw-operation rows when progress
+  text exists. Command/file rows are only a degraded replay signal when the
+  rollout has no usable assistant progress text for that completed turn.
 - If rollout has `task_complete` / `task_completed` with an explicit empty
   final assistant message, do not synthesize a normal `agentMessage`. That
   indicates the runtime completed the turn without a response. The detail

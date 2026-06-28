@@ -26503,6 +26503,53 @@ The previous full handoff was archived and should be opened only when old proven
   - Public was not pushed; keep Public unchanged unless the user explicitly
     asks.
 
+## 2026-06-28 - Latest Completed Progress Text Replay (local, not deployed)
+
+- User-visible incident:
+  - After the v566 completed-turn visibility repair, re-entering a thread could
+    show the latest completed turn's intermediate area as only command/file
+    process rows. The user clarified that those commands are lower-value and
+    the desired replay is the assistant's textual progress.
+  - The final receipt row for a reloaded completed turn could also lack a
+    compact timestamp even though live newly received receipts showed one.
+- Root cause / invariant:
+  - `readRolloutCompletionTurns()` synthesized a missing completed turn only
+    from `task_complete.last_agent_message`; it did not retain the scoped
+    `agent_message` / assistant `response_item` progress text already present
+    in the rollout for that same turn.
+  - `rolloutFinalReceiptItem()` did not attach item-level timestamp fields, so
+    reloaded synthetic final receipts depended on weaker turn-level fallback.
+  - Completed raw operations were merged back into the same latest completed
+    turn even when textual progress existed, so the visible replay favored
+    command/file rows over user-readable progress.
+- Implementation:
+  - Server completion-turn backfill now keeps a bounded tail of assistant
+    progress messages for the completed rollout turn and marks them with
+    `mobileSyntheticProgressMessage`.
+  - Synthetic final receipts now carry `completedAtMs` / `completedAt` from
+    `task_complete.completed_at`.
+  - Completed operation replay is suppressed for completed turns that have
+    synthetic progress text; raw operations remain a fallback when no usable
+    progress text exists.
+  - `docs/TROUBLESHOOTING.md` records the new diagnosis rule.
+- Validation:
+  - Focused:
+    `node --test test/thread-visibility.test.js test/thread-detail-response-budget-service.test.js test/conversation-render.test.js`
+    (`219` tests)
+  - Full/local: `npm test` (`1413` tests), `npm run check`,
+    `npm run check:macos`, and `git diff --check` passed.
+  - Metadata-only local readback using the current Codex Mobile rollout showed
+    the newest completed turn before an active turn with `progressCount=7`,
+    `operationCount=0`, and a timestamped synthetic final receipt. No message
+    bodies, upload contents, secrets, keys, cookies, launch tokens, or raw logs
+    were recorded.
+- Deployment status:
+  - Not committed or deployed yet as of `2026-06-28T06:19:45Z`.
+  - Static shell was not changed. If deployed as-is, it is server-only and does
+    not require a shell/cache bump.
+  - Public was not pushed; keep Public unchanged unless the user explicitly
+    asks.
+
 ## 2026-06-28 - Latest Completed Replay Detail And Active List Freshness
 
 - User-visible incident:

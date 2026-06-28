@@ -1469,6 +1469,7 @@ test("thread detail compaction appends latest rollout completion from final json
     assert.ok(latest);
     assert.equal(latest.mobileSyntheticCompletionTurn, true);
     assert.equal(latest.items[0].text, "latest completed receipt without newline");
+    assert.equal(latest.items[0].completedAtMs, completedAt.getTime());
     assert.equal(compacted.mobileAppendedRolloutCompletionTurn, latestTurnId);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
@@ -1576,6 +1577,14 @@ test("active overlay detail result backfills missing completed turn through resp
         type: "event_msg",
         timestamp: completedAt.toISOString(),
         payload: {
+          type: "agent_message",
+          message: "progress text before active overlay",
+        },
+      }),
+      JSON.stringify({
+        type: "event_msg",
+        timestamp: new Date(completedAt.getTime() + 500).toISOString(),
+        payload: {
           type: "exec_command_end",
           turn_id: missingCompletedTurnId,
           call_id: "call_overlay_command",
@@ -1628,8 +1637,13 @@ test("active overlay detail result backfills missing completed turn through resp
     assert.ok(ids.includes(missingCompletedTurnId));
     assert.ok(ids.indexOf(missingCompletedTurnId) < ids.indexOf(activeTurnId));
     const missing = turns.find((turn) => turn.id === missingCompletedTurnId);
-    assert.ok(missing.items.some((item) => item.type === "commandExecution"));
+    assert.ok(!missing.items.some((item) => item.type === "commandExecution"));
+    assert.ok(missing.items.some((item) => item.type === "agentMessage"
+      && item.mobileSyntheticProgressMessage === true
+      && item.text === "progress text before active overlay"));
     assert.ok(missing.items.some((item) => item.type === "agentMessage" && item.text === "completed before active overlay"));
+    const finalReceipt = missing.items.find((item) => item.mobileSyntheticFinalReceipt === true);
+    assert.equal(finalReceipt.completedAtMs, completedAt.getTime() + 1000);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
