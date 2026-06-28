@@ -31,6 +31,12 @@
     return boundedCount(Math.ceil(number / (1024 * 1024)));
   }
 
+  function boundedPayloadKb(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) return 0;
+    return boundedCount(Math.ceil(number / 1024));
+  }
+
   function projectionDiagnosticContext(input = {}) {
     const source = input && typeof input === "object" ? input : {};
     const out = {
@@ -785,6 +791,100 @@
     };
   }
 
+  function threadListSlowPathDiagnosticEvent(input = {}) {
+    const source = input && typeof input === "object" ? input : {};
+    const action = compactToken(source.action, "thread-list-load", 80);
+    const reason = compactToken(source.reason, "elapsed-slow", 80);
+    const performancePhase = compactToken(source.performancePhase || source.performance_phase, "", 80);
+    const coldPathOwner = compactToken(source.coldPathOwner || source.cold_path_owner, "", 80);
+    const coldPathReason = compactToken(source.coldPathReason || source.cold_path_reason, "", 80);
+    const fallbackCacheDecision = compactToken(source.fallbackCacheDecision || source.fallback_cache_decision, "", 80);
+    const fallbackDeferredReason = compactToken(source.fallbackDeferredReason || source.fallback_deferred_reason, "", 80);
+    const appServerDeferredReason = compactToken(source.appServerDeferredReason || source.app_server_deferred_reason, "", 80);
+    const appServerRequestReason = compactToken(source.appServerRequestReason || source.app_server_request_reason, "", 80);
+    const durationBucket = compactToken(source.durationBucket || source.duration_bucket, "", 80);
+    const counts = {
+      elapsed_ms: boundedCount(source.elapsedMs || source.elapsed_ms),
+      api_elapsed_ms: boundedCount(source.apiElapsedMs || source.api_elapsed_ms),
+      render_elapsed_ms: boundedCount(source.renderElapsedMs || source.render_elapsed_ms),
+      threshold_ms: boundedCount(source.thresholdMs || source.threshold_ms),
+      result_count: boundedCount(source.count || source.result_count),
+      server_total_ms: boundedCount(source.totalMs || source.total_ms),
+      app_server_ms: boundedCount(source.appServerMs || source.app_server_ms),
+      app_server_rpc_ms: boundedCount(source.appServerRpcMs || source.app_server_rpc_ms),
+      app_server_unattributed_ms: boundedCount(source.appServerUnattributedMs || source.app_server_unattributed_ms),
+      fallback_ms: boundedCount(source.fallbackMs || source.fallback_ms),
+      merge_ms: boundedCount(source.mergeMs || source.merge_ms),
+      summary_merge_ms: boundedCount(source.summaryMergeTotalMs || source.summary_merge_ms),
+      fallback_snapshot_age_ms: boundedCount(source.fallbackSourceSnapshotAgeMs || source.fallback_snapshot_age_ms),
+      fallback_rollout_stat_count: boundedCount(source.fallbackRolloutFileStatCount || source.fallback_rollout_stat_count),
+      fallback_rollout_head_read_count: boundedCount(source.fallbackRolloutHeadReadCount || source.fallback_rollout_head_read_count),
+      fallback_rollout_summary_read_count: boundedCount(source.fallbackRolloutSummaryReadCount || source.fallback_rollout_summary_read_count),
+      app_server_request_limit: boundedCount(source.appServerRequestLimit || source.app_server_request_limit),
+      app_server_response_kb: boundedCount(source.appServerResponsePayloadKb || source.app_server_response_kb)
+        || boundedPayloadKb(source.appServerResponsePayloadBytes || source.app_server_response_bytes),
+      silent: source.silent || source.is_silent ? 1 : 0,
+      has_search: source.hasSearch || source.has_search ? 1 : 0,
+      has_workspace: source.hasWorkspace || source.has_workspace ? 1 : 0,
+      mobile_fallback: source.mobileFallback || source.mobile_fallback ? 1 : 0,
+    };
+    const context = {
+      surface: "thread-session",
+      action,
+    };
+    if (performancePhase) context.performance_phase = performancePhase;
+    if (coldPathOwner) context.cold_path_owner = coldPathOwner;
+    if (coldPathReason) context.cold_path_reason = coldPathReason;
+    if (fallbackCacheDecision) context.fallback_cache_decision = fallbackCacheDecision;
+    if (fallbackDeferredReason) context.fallback_deferred_reason = fallbackDeferredReason;
+    if (appServerDeferredReason) context.app_server_deferred_reason = appServerDeferredReason;
+    if (appServerRequestReason) context.app_server_request_reason = appServerRequestReason;
+    return {
+      category: "thread_session_slow_path",
+      diagnostic_type: "thread_list_slow_path",
+      severity_hint: compactToken(source.severityHint || source.severity_hint, "H3", 8),
+      evidence_confidence: 0.7,
+      error_code: reason,
+      duration_bucket: durationBucket,
+      context,
+      counts,
+      breadcrumbs: [{
+        kind: "thread-session",
+        code: "thread-list-slow-path",
+        status: "slow",
+        duration_bucket: durationBucket,
+        fields: {
+          performance_phase: performancePhase,
+          cold_path_owner: coldPathOwner,
+          cold_path_reason: coldPathReason,
+          fallback_cache_decision: fallbackCacheDecision,
+          app_server_request_reason: appServerRequestReason,
+          elapsed_ms: counts.elapsed_ms,
+          api_elapsed_ms: counts.api_elapsed_ms,
+          render_elapsed_ms: counts.render_elapsed_ms,
+          threshold_ms: counts.threshold_ms,
+          result_count: counts.result_count,
+        },
+      }],
+    };
+  }
+
+  function threadListSlowPathDiagnosticSuccess(input = {}) {
+    const source = input && typeof input === "object" ? input : {};
+    const context = {
+      surface: "thread-session",
+      action: compactToken(source.action, "thread-list-load", 80),
+    };
+    const performancePhase = compactToken(source.performancePhase || source.performance_phase, "", 80);
+    if (performancePhase) context.performance_phase = performancePhase;
+    return {
+      category: "thread_session_slow_path",
+      diagnostic_type: "thread_list_slow_path",
+      error_code: "thread_list_slow_path",
+      context,
+    };
+  }
+
   function threadDetailResponseContractDiagnosticContext(input = {}) {
     const source = input && typeof input === "object" ? input : {};
     const context = {
@@ -931,6 +1031,8 @@
     threadDetailLoadFailedDiagnosticEvent,
     threadDetailSlowPathDiagnosticEvent,
     threadDetailSlowPathDiagnosticSuccess,
+    threadListSlowPathDiagnosticEvent,
+    threadListSlowPathDiagnosticSuccess,
     turnOrderDiagnosticSnapshot,
     threadDetailRefreshFailedDiagnosticEvent,
     turnOrderMismatchDiagnosticEvent,

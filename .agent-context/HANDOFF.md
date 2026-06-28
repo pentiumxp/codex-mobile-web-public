@@ -25205,3 +25205,47 @@ The previous full handoff was archived and should be opened only when old proven
     `projection-v4-dynamic`, `turnsListInitialMs=0`, `totalMs=58`.
   - Source/prod SHA-256 prefixes matched for the response-budget service,
     focused test, and updated docs.
+
+## 2026-06-28 - Thread-List Successful Slow-Path Diagnostic Module
+
+- User-visible symptom:
+  - Some list/thread-entry flows no longer fail with the old timeout shape.
+    They can remain pending for seconds and then eventually render, so the
+    user sees a real stall but the client may classify the request as ordinary
+    success.
+- Root cause / invariant:
+  - Thread detail already had a slow-path watchdog and Home AI diagnostic
+    reporting, but successful thread-list loads only emitted
+    `thread_list_rendered` performance events and then cleared load-failure
+    diagnostics.
+  - A successful-but-slow thread-list load is still a product-visible slow path
+    and needs bounded evidence for the Owner-gated Home AI repair loop.
+- Implementation:
+  - `public/thread-performance-metrics.js` now plans
+    `thread_list_slow_path` from `thread_list_rendered` evidence when elapsed,
+    API, or render time crosses the bounded list threshold.
+  - `public/thread-diagnostic-events.js` now builds metadata-only
+    `thread_list_slow_path` failure/success payloads with safe phase labels and
+    bounded timing/count fields, including fallback-cache decision,
+    app-server request reason, app-server timing split, fallback counters, and
+    response size in KB.
+  - `public/app.js` records the slow-path failure or clears the signature after
+    each successful list load, while preserving the existing
+    `thread_list_load_failed` path for true errors.
+  - Static shell/cache bumped to `0.1.11|codex-mobile-shell-v556` because
+    browser scripts changed.
+  - Updated docs: `docs/README.md`, `docs/ARCHITECTURE.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, `docs/MODULES.md`, and
+    `docs/TROUBLESHOOTING.md`.
+- Local validation:
+  - `node --check public/thread-performance-metrics.js && node --check public/thread-diagnostic-events.js && node --check public/app.js` passed.
+  - `node --test test/thread-performance-metrics.test.js test/thread-diagnostic-events.test.js test/mobile-viewport.test.js` passed (`48` tests).
+  - Focused frontend/diagnostic suite passed (`192` tests).
+  - Full `npm test` passed (`1385` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - `codegraph sync && codegraph status` reported the index up to date.
+- Deployment status:
+  - Not deployed yet at the time of this note. Next step is commit, central
+    macOS plugin deploy, and production readback for v556.

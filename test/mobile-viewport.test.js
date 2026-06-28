@@ -231,8 +231,8 @@ test("visual harness can replay empty cached detail openings without exposing th
 });
 
 test("public app shell cache advances with static frontend changes", () => {
-  assert.match(swJs, /codex-mobile-shell-v555/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v555"/);
+  assert.match(swJs, /codex-mobile-shell-v556/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v556"/);
   assert.match(swJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(appJs, /"\/home-ai-diagnostic-reporting\.js"/);
   assert.match(swJs, /"\/thread-diagnostic-events\.js"/);
@@ -297,6 +297,10 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /postPerformanceEvent\("shell_loaded"/);
   assert.match(appJs, /postPerformanceEvent\("thread_list_rendered"/);
   assert.match(appJs, /const listPerformance = threadPerformanceMetrics\.threadListEventFields\(result\);/);
+  assert.match(appJs, /THREAD_LIST_SLOW_PATH_MS = 1500/);
+  assert.match(appJs, /const listSlowPlan = threadPerformanceMetrics\.planThreadListSlowPathDiagnostic\(listPerformanceEvent, \{/);
+  assert.match(appJs, /threadDiagnosticEventsApi\.threadListSlowPathDiagnosticEvent\(listSlowPlan\)/);
+  assert.match(appJs, /threadDiagnosticEventsApi\.threadListSlowPathDiagnosticSuccess\(\{/);
   assert.match(appJs, /serverTimings: listPerformance\.serverTimings/);
   assert.match(appJs, /performancePhase: listPerformance\.performancePhase/);
   assert.match(functionBody("loadThread"), /const cachedFirstPaintReportingStage = threadDetailRenderPlanApi\.planThreadDetailFirstPaintReportingStage\(\{[\s\S]*detailRenderMode: "cached-current",[\s\S]*cached: true,[\s\S]*threadHash: diagnosticThreadHash\(threadId\),[\s\S]*\}\);[\s\S]*threadPerformanceMetrics\.threadDetailFirstPaintEventFields\(\s*state\.currentThread,\s*cachedFirstPaintReportingStage\.performanceInput,\s*\);/);

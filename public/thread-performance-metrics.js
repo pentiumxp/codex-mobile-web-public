@@ -336,6 +336,81 @@
     };
   }
 
+  function planThreadListSlowPathDiagnostic(event = {}, input = {}) {
+    const fields = objectOrNull(event) || {};
+    const source = objectOrNull(input) || {};
+    const thresholdMs = boundedTiming(source.thresholdMs) || 1500;
+    const elapsedMs = boundedTiming(fields.elapsedMs || source.elapsedMs) || 0;
+    const apiElapsedMs = boundedTiming(fields.apiElapsedMs || source.apiElapsedMs) || 0;
+    const renderElapsedMs = boundedTiming(fields.renderElapsedMs || source.renderElapsedMs) || 0;
+    const serverTimings = objectOrNull(fields.serverTimings) || {};
+    const slowElapsed = elapsedMs >= thresholdMs;
+    const slowApi = apiElapsedMs >= thresholdMs;
+    const slowRender = renderElapsedMs >= thresholdMs;
+    if (!slowElapsed && !slowApi && !slowRender) {
+      return {
+        shouldReport: false,
+        reason: "below-threshold",
+        thresholdMs,
+        elapsedMs,
+        apiElapsedMs,
+        renderElapsedMs,
+      };
+    }
+    const performancePhase = compactLabel(fields.performancePhase, 80);
+    const reason = slowApi
+      ? "api-slow"
+      : slowRender
+        ? "render-slow"
+        : "elapsed-slow";
+    const severe = elapsedMs >= thresholdMs * 3
+      || apiElapsedMs >= thresholdMs * 3
+      || /cold|app-server-only|fallback-build/.test(performancePhase);
+    const responseBytes = Number(serverTimings.appServerResponsePayloadBytes);
+    return {
+      shouldReport: true,
+      reason,
+      severityHint: severe ? "H2" : "H3",
+      thresholdMs,
+      elapsedMs,
+      apiElapsedMs,
+      renderElapsedMs,
+      action: compactLabel(source.action || "thread-list-load", 80),
+      source: compactLabel(fields.source || source.source, 40),
+      durationBucket: compactLabel(source.durationBucket || source.duration_bucket, 40),
+      performancePhase,
+      count: boundedCount(fields.count || source.count),
+      silent: fields.silent === true || source.silent === true,
+      hasSearch: fields.hasSearch === true || source.hasSearch === true,
+      hasWorkspace: fields.hasWorkspace === true || source.hasWorkspace === true,
+      mobileFallback: fields.mobileFallback === true || source.mobileFallback === true,
+      coldPathOwner: compactLabel(fields.coldPathOwner || serverTimings.coldPathOwner, 80),
+      coldPathReason: compactLabel(fields.coldPathReason || serverTimings.coldPathReason, 80),
+      fallbackCacheDecision: compactLabel(serverTimings.fallbackCacheDecision, 80),
+      fallbackDeferredReason: compactLabel(serverTimings.fallbackDeferredReason, 80),
+      appServerDeferredReason: compactLabel(
+        serverTimings.appServerDeferredReason || serverTimings.appServerDeferredInitialReason,
+        80,
+      ),
+      appServerRequestReason: compactLabel(serverTimings.appServerRequestReason, 80),
+      totalMs: boundedTiming(serverTimings.totalMs),
+      appServerMs: boundedTiming(serverTimings.appServerMs),
+      appServerRpcMs: boundedTiming(serverTimings.appServerRpcMs),
+      appServerUnattributedMs: boundedTiming(serverTimings.appServerUnattributedMs),
+      fallbackMs: boundedTiming(serverTimings.fallbackMs),
+      mergeMs: boundedTiming(serverTimings.mergeMs),
+      summaryMergeTotalMs: boundedTiming(serverTimings.summaryMergeTotalMs),
+      fallbackSourceSnapshotAgeMs: boundedTiming(serverTimings.fallbackSourceSnapshotAgeMs),
+      fallbackRolloutFileStatCount: boundedCount(serverTimings.fallbackRolloutFileStatCount),
+      fallbackRolloutHeadReadCount: boundedCount(serverTimings.fallbackRolloutHeadReadCount),
+      fallbackRolloutSummaryReadCount: boundedCount(serverTimings.fallbackRolloutSummaryReadCount),
+      appServerRequestLimit: boundedCount(serverTimings.appServerRequestLimit),
+      appServerResponsePayloadKb: Number.isFinite(responseBytes) && responseBytes > 0
+        ? boundedCount(Math.ceil(responseBytes / 1024))
+        : 0,
+    };
+  }
+
   function threadDetailProjectionContractFields(thread) {
     const projection = objectOrNull(thread && thread.mobileProjection) || {};
     const timings = threadDetailTimings(thread) || {};
@@ -521,6 +596,7 @@
     threadDetailTimings,
     planThreadDetailResponseContractDiagnostic,
     planThreadDetailSlowPathDiagnostic,
+    planThreadListSlowPathDiagnostic,
     threadDetailProjectionContractFields,
     threadOmittedTurnCount,
     threadTurnCount,

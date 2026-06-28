@@ -805,6 +805,70 @@ test("thread diagnostic events build bounded slow path payloads", () => {
   });
 });
 
+test("thread diagnostic events build bounded thread-list slow path payloads", () => {
+  const event = diagnostics.threadListSlowPathDiagnosticEvent({
+    action: "thread-list-load",
+    reason: "api-slow",
+    performancePhase: "app-server-only",
+    coldPathOwner: "app-server",
+    coldPathReason: "default-list-refresh",
+    fallbackCacheDecision: "miss-rebuild",
+    appServerRequestReason: "default-bounded-overfetch",
+    durationBucket: "3_10s",
+    elapsedMs: 6400,
+    apiElapsedMs: 5100,
+    renderElapsedMs: 80,
+    thresholdMs: 1500,
+    count: 40,
+    totalMs: 5050,
+    appServerMs: 4900,
+    appServerRpcMs: 4300,
+    appServerUnattributedMs: 200,
+    fallbackMs: 0,
+    mergeMs: 40,
+    summaryMergeTotalMs: 60,
+    appServerRequestLimit: 80,
+    appServerResponsePayloadKb: 411,
+    body: "private body ignored",
+    prompt: "private prompt ignored",
+    token: "secret ignored",
+    url: "https://example.invalid/private",
+  });
+
+  assert.equal(event.category, "thread_session_slow_path");
+  assert.equal(event.diagnostic_type, "thread_list_slow_path");
+  assert.equal(event.error_code, "api-slow");
+  assert.equal(event.context.performance_phase, "app-server-only");
+  assert.equal(event.context.cold_path_owner, "app-server");
+  assert.equal(event.context.cold_path_reason, "default-list-refresh");
+  assert.equal(event.context.fallback_cache_decision, "miss-rebuild");
+  assert.equal(event.context.app_server_request_reason, "default-bounded-overfetch");
+  assert.equal(event.counts.elapsed_ms, 6400);
+  assert.equal(event.counts.api_elapsed_ms, 5100);
+  assert.equal(event.counts.threshold_ms, 1500);
+  assert.equal(event.counts.result_count, 40);
+  assert.equal(event.counts.server_total_ms, 5050);
+  assert.equal(event.counts.app_server_rpc_ms, 4300);
+  assert.equal(event.counts.app_server_response_kb, 411);
+  assert.equal(event.breadcrumbs[0].fields.performance_phase, "app-server-only");
+  assert.equal(JSON.stringify(event).includes("private"), false);
+  assert.equal(JSON.stringify(event).includes("secret"), false);
+
+  assert.deepEqual(diagnostics.threadListSlowPathDiagnosticSuccess({
+    action: "thread-list-load",
+    performancePhase: "warm-fallback-cache",
+  }), {
+    category: "thread_session_slow_path",
+    diagnostic_type: "thread_list_slow_path",
+    error_code: "thread_list_slow_path",
+    context: {
+      surface: "thread-session",
+      action: "thread-list-load",
+      performance_phase: "warm-fallback-cache",
+    },
+  });
+});
+
 test("thread diagnostic events build bounded detail response contract payloads", () => {
   const event = diagnostics.threadDetailResponseContractDiagnosticEvent({
     reason: "empty-projection-shell",

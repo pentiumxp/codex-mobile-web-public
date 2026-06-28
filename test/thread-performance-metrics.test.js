@@ -489,6 +489,68 @@ test("thread performance metrics plan slow detail path diagnostics only at thres
   assert.equal(planned.rolloutSizeBytes, 2 * 1024 * 1024);
 });
 
+test("thread performance metrics plan slow thread-list diagnostics only at threshold", () => {
+  const below = metrics.planThreadListSlowPathDiagnostic({
+    elapsedMs: 1499,
+    apiElapsedMs: 100,
+    renderElapsedMs: 5,
+    performancePhase: "warm-fallback-cache",
+    count: 12,
+  }, {
+    action: "thread-list-load",
+    durationBucket: "1_3s",
+    thresholdMs: 1500,
+  });
+
+  assert.equal(below.shouldReport, false);
+  assert.equal(below.reason, "below-threshold");
+
+  const planned = metrics.planThreadListSlowPathDiagnostic({
+    elapsedMs: 6400,
+    apiElapsedMs: 5100,
+    renderElapsedMs: 80,
+    performancePhase: "app-server-only",
+    count: 40,
+    silent: false,
+    hasSearch: false,
+    hasWorkspace: false,
+    mobileFallback: false,
+    serverTimings: {
+      totalMs: 5050,
+      appServerMs: 4900,
+      appServerRpcMs: 4300,
+      appServerUnattributedMs: 200,
+      fallbackMs: 0,
+      mergeMs: 40,
+      summaryMergeTotalMs: 60,
+      coldPathOwner: "app-server",
+      coldPathReason: "default-list-refresh",
+      fallbackCacheDecision: "miss-rebuild",
+      appServerRequestReason: "default-bounded-overfetch",
+      fallbackRolloutFileStatCount: 0,
+      appServerRequestLimit: 80,
+      appServerResponsePayloadBytes: 420000,
+    },
+  }, {
+    action: "thread-list-load",
+    durationBucket: "3_10s",
+    thresholdMs: 1500,
+  });
+
+  assert.equal(planned.shouldReport, true);
+  assert.equal(planned.reason, "api-slow");
+  assert.equal(planned.severityHint, "H2");
+  assert.equal(planned.performancePhase, "app-server-only");
+  assert.equal(planned.count, 40);
+  assert.equal(planned.coldPathOwner, "app-server");
+  assert.equal(planned.coldPathReason, "default-list-refresh");
+  assert.equal(planned.fallbackCacheDecision, "miss-rebuild");
+  assert.equal(planned.appServerRequestReason, "default-bounded-overfetch");
+  assert.equal(planned.totalMs, 5050);
+  assert.equal(planned.appServerRpcMs, 4300);
+  assert.equal(planned.appServerResponsePayloadKb, 411);
+});
+
 test("thread performance metrics detect empty projection response shells", () => {
   const planned = metrics.planThreadDetailResponseContractDiagnostic({
     source: "thread-list",

@@ -137,6 +137,15 @@ request continues through the existing app-server path so true cold startup
 cost stays observable. Explicit `initial=warm-fallback` first-paint requests
 keep their existing cold-baseline behavior.
 
+The follow-up client diagnostics slice treats thread-list "slow but eventually
+successful" loads as a first-class slow path. Successful list loads now plan a
+bounded `thread_list_slow_path` diagnostic from the same `thread_list_rendered`
+performance evidence, including client elapsed/API/render timings plus safe
+server timing labels such as `performancePhase`, fallback-cache decision,
+app-server request reason, and bounded source/app-server counters. Repeated
+matching stalls can enter Home AI's Owner-gated diagnostic loop instead of
+being cleared as ordinary success.
+
 The active-window coalescing slice targets the "long spinner, then eventual
 success" shape seen on active large sessions. That shape is not a network/RPC
 timeout: the request completes after synchronously building

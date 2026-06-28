@@ -528,7 +528,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v555";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v556";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -554,6 +554,7 @@ const HEAVY_VISUAL_RECOVERY_MIN_INTERVAL_MS = 4000;
 const PUBLIC_CONFIG_TIMEOUT_MS = 8000;
 const PUBLIC_CONFIG_RETRY_DELAYS_MS = [0, 300, 1200];
 const THREAD_LOAD_STALL_MS = 12000;
+const THREAD_LIST_SLOW_PATH_MS = 1500;
 const PERF_EVENT_THROTTLE_MS = 2000;
 const PERF_RENDER_REPORT_MIN_MS = 16;
 const PERF_SLOW_RENDER_REPORT_MS = 50;
@@ -8968,7 +8969,7 @@ async function loadThreads(options = {}) {
     }
     if (shouldRenderPrimaryConversationShell()) renderCurrentThread();
     const listPerformance = threadPerformanceMetrics.threadListEventFields(result);
-    postPerformanceEvent("thread_list_rendered", {
+    const listPerformanceEvent = {
       elapsedMs: roundedDurationMs(loadStartedAt),
       apiElapsedMs,
       renderElapsedMs: roundedDurationMs(renderStartedAt),
@@ -8979,7 +8980,22 @@ async function loadThreads(options = {}) {
       hasSearch: Boolean(search),
       hasWorkspace: Boolean(state.selectedCwd),
       mobileFallback: Boolean(result.mobileFallback),
+    };
+    postPerformanceEvent("thread_list_rendered", listPerformanceEvent);
+    const listSlowPlan = threadPerformanceMetrics.planThreadListSlowPathDiagnostic(listPerformanceEvent, {
+      action: "thread-list-load",
+      source: silent ? "thread-list-refresh" : "thread-list-load",
+      durationBucket: diagnosticDurationBucket(listPerformanceEvent.elapsedMs),
+      thresholdMs: THREAD_LIST_SLOW_PATH_MS,
     });
+    if (listSlowPlan.shouldReport) {
+      recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.threadListSlowPathDiagnosticEvent(listSlowPlan));
+    } else {
+      recordHomeAiDiagnosticSuccess(threadDiagnosticEventsApi.threadListSlowPathDiagnosticSuccess({
+        action: "thread-list-load",
+        performancePhase: listPerformance.performancePhase,
+      }));
+    }
     recordHomeAiDiagnosticSuccess({
       category: "thread_session_load_failed",
       diagnostic_type: "thread_list_load_failed",

@@ -2800,6 +2800,48 @@ Required validation:
   can hit `warm-fallback-cache` with `fallbackCachePersistentRestored=true` once
   a previous process has written the runtime cache.
 
+### 2026-06-28 Thread-List Successful Slow-Path Diagnostics Module
+
+This module targets the residual user-visible shape where a thread list or
+startup list load takes noticeably long but eventually succeeds. Before this
+slice, detail had a slow-path watchdog, while successful thread-list loads only
+posted `thread_list_rendered` performance events and then cleared ordinary
+load-failure diagnostics. That meant repeated successful stalls could fail to
+enter the Home AI Owner-gated repair loop.
+
+Root cause: the client treated successful list responses as normal completion
+regardless of elapsed/API/render duration. The list performance event already
+had the right bounded timing evidence, but there was no slow-path diagnostic
+planner or event payload for list success.
+
+Scope:
+
+- `public/thread-performance-metrics.js` plans `thread_list_slow_path` from
+  `thread_list_rendered` evidence when elapsed, API, or render time crosses the
+  bounded list threshold.
+- `public/thread-diagnostic-events.js` builds metadata-only list slow-path
+  failure/success payloads with phase labels and bounded timing/count fields.
+- `public/app.js` records the slow-path failure or clears the signature after
+  each successful list load, while preserving the existing load-failed
+  diagnostic for true errors.
+- Static shell/cache is bumped because browser scripts changed.
+
+Non-goals:
+
+- Do not add a loading-mask, client retry loop, or duplicate-render fallback.
+- Do not include thread titles, prompts, task-card bodies, upload names, local
+  paths, cookies, tokens, or raw app-server payloads in diagnostics.
+
+Required validation:
+
+- Focused tests for list slow-path planning, diagnostic payload privacy, and
+  app wiring.
+- Full `npm test`, `npm run check`, `npm run check:macos`, and
+  `git diff --check`.
+- Production readback should confirm the v556 shell and still show fast warm
+  list/detail paths; future repeated slow list cases should surface as Home AI
+  `thread_list_slow_path` diagnostics.
+
 ## Release Rule
 
 Follow the current release order:
