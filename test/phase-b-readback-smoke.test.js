@@ -161,6 +161,7 @@ test("phase B readback smoke collects bounded diagnostics without private fields
             appServerResponsePayloadBytes: 45678,
             fallbackMs: 8,
             mergeMs: 2,
+            fallbackCachePersistentRestored: true,
             fallbackCacheDecision: "miss-rebuild",
             fallbackBaselineSourceCount: 9,
             fallbackBaselineResultCount: 1,
@@ -252,6 +253,7 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.threadList.appServerRequestPayloadBytes, 188);
   assert.equal(report.threadList.appServerRequestParamBytes, 96);
   assert.equal(report.threadList.appServerResponsePayloadBytes, 45678);
+  assert.equal(report.threadList.fallbackCachePersistentRestored, true);
   assert.equal(report.muxRuntime.transport, "external-jsonl-tcp");
   assert.equal(report.muxRuntime.endpointKind, "profile-mux-file");
   assert.equal(report.muxRuntime.endpointProtocol, "jsonl-tcp");

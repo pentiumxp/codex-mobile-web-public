@@ -25677,3 +25677,57 @@ The previous full handoff was archived and should be opened only when old proven
     - Home AI thread `019eed86-2002-7cc2-b0b7-937eb5355f36`:
       `projection-v4-dynamic`, warm path, `60ms`, `threadReadMs=0`,
       `turnsListInitialMs=0`.
+
+## 2026-06-28 - Thread List Persistent Warm Baseline Readback Module
+
+- User-visible symptom:
+  - After several performance slices, the user still observed occasional
+    first-entry stalls of roughly seconds to tens of seconds, especially after
+    refresh/restart or when switching into large threads such as Home AI.
+- Current evidence:
+  - Runtime after the latest restart was fast in bounded logs: recent
+    thread-list completions were roughly `13-34ms` and detail readback for
+    Codex Mobile/Home AI stayed around `46-61ms`.
+  - Earlier same-day logs showed slow app-server-backed list/detail work, so
+    closure needs restart/cold-path readback evidence rather than only warm
+    browser perception.
+- Root cause / invariant:
+  - Source already contains the intended persistent warm thread-list baseline:
+    `adapters/thread-list-fallback-cache-service.js` seeds from
+    `adapters/thread-list-fallback-persistent-cache-store.js`, persists bounded
+    thread summary scalars, and exposes `cachePersistentRestored` through route
+    timing diagnostics.
+  - The missing closure surface was the Phase-B production readback smoke: it
+    reported fallback hit/compatibility but not whether the process restored the
+    baseline from the persistent store after startup.
+  - This is a readback/verification gap, not a request to add another fallback
+    cache layer.
+- Implementation:
+  - Updated `scripts/codex-mobile-phase-b-readback-smoke.js` so thread-list
+    readback includes `fallbackCachePersistentRestored`.
+  - Updated `test/phase-b-readback-smoke.test.js` to prove the bounded field is
+    collected without exposing private thread content.
+- Local validation:
+  - Focused suite passed:
+    `node --test test/phase-b-readback-smoke.test.js test/thread-list-fallback-cache-service.test.js test/phase-b-readback-decision-service.test.js`
+    (`44` tests).
+  - `node --check scripts/codex-mobile-phase-b-readback-smoke.js` passed.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - Full `npm test` passed (`1394` tests).
+- Pre-deploy production readback using the updated local smoke script:
+  - `/api/public-config`: `clientBuildId=0.1.11|codex-mobile-shell-v558`,
+    prewarm completed.
+  - Thread list smoke: `ok=true`, `listTotalMs=13`,
+    `coldPathOwner=warm-fallback-cache`,
+    `fallbackCacheDecision=compatible-hit`,
+    `fallbackCacheHit=true`,
+    `fallbackCompatibleCacheHit=true`,
+    `fallbackCachePersistentRestored=true`,
+    `fallbackMs=0`, `appServerMs=0`.
+  - This confirms the current production API has restored the persistent warm
+    baseline and can serve the list first-paint path without app-server work in
+    the sampled state.
+- Deployment status:
+  - Pending commit/deploy at this handoff update.
