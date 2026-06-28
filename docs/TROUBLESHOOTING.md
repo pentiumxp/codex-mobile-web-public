@@ -432,7 +432,11 @@ active-looking turns were deliberately downgraded for response shaping. When
 `omittedActiveOperationPayloadChars`,
 `progressiveActiveTurnOriginalBytes`, `progressiveActiveOriginalBytes`,
 `configuredActive*Items`, and the effective `active*Items` fields before
-changing visible-item policy. Current servers also expose
+changing visible-item policy. Affected operation rows expose
+`mobileOperationPayloadBudget.fields`; that set can include command output,
+operation display text such as collab-agent task/prompt text, file-change
+`changes`, tool arguments/results/content items, and bounded
+action/request/response payloads. Current servers also expose
 `progressiveVisibleItemCeiling`, `progressiveVisibleItemBudgetApplied`,
 `progressiveVisibleItemOriginalCount`, `progressiveVisibleItemRetainedCount`,
 `omittedVisibleItems`, and per-turn `mobileVisibleItemBudget` when progressive

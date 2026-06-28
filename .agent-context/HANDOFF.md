@@ -25133,7 +25133,59 @@ The previous full handoff was archived and should be opened only when old proven
   - `npm run check:macos` passed.
   - `git diff --check` passed.
   - `codegraph sync && codegraph status` reported the index up to date.
+- Deployment:
+  - Commit `f278e59` `fix: report slow detail loads and budget resting receipts`
+    was deployed through the Home AI central macOS plugin path with reason
+    `codex-mobile-resting-detail-budget-watchdog-diagnostic`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260627T235720Z-plugin-codex-mobile-web-codex-mobile-resting-detail-budget-watchdog-diagnostic`.
+  - Production public config reported
+    `clientBuildId=0.1.11|codex-mobile-shell-v555` and
+    `shellCacheName=codex-mobile-shell-v555`.
+  - Production readback sampled Codex Mobile detail at `42-44ms` and Home AI
+    detail at `54-55ms`, both with `turnsListInitialMs=0`.
+  - Source/prod SHA-256 prefixes matched for the response-budget service,
+    `public/app.js`, `public/sw.js`, focused tests, and docs.
+
+## 2026-06-28 - Active Operation Payload Budget Coverage
+
+- User goal:
+  - Continue the active-turn visible item / progressive loading module. The
+    remaining root risk is not only item count; retained active operation items
+    can still carry large display or structured payload fields.
+- Root cause / invariant:
+  - `thread-detail-response-budget-service` already budgeted command output and
+    tool arguments/results/content items under progressive active pressure.
+  - Renderer-visible operation shapes also use file-change `changes`,
+    collab-agent task/prompt/description/instructions text, and bounded
+    action/request/response payloads. These fields could remain large even
+    after operation item count was bounded.
+  - First-paint payload ownership belongs in the server response-budget service,
+    not in `public/app.js` render fallbacks.
+- Implementation:
+  - Extended active operation payload budgeting to pressure-gated operation
+    display text fields (`command`, `message`, `text`, `summary`, `detail`,
+    `task`, `prompt`, `description`, `instructions`) only when they exceed the
+    configured payload budget.
+  - Extended structured operation payload budgeting to `changes`, `action`,
+    `request`, and `response` in addition to existing `arguments`, `result`,
+    and `contentItems`.
+  - Small new fields are not counted or rewritten, preserving existing compact
+    operation metadata. Truncated rows continue to expose
+    `mobileOperationPayloadBudget.fields` and `mobilePayloadTruncated`.
+  - Updated docs: `docs/README.md`, `docs/ARCHITECTURE.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, `docs/MODULES.md`, and
+    `docs/TROUBLESHOOTING.md`.
+- Local validation:
+  - `node --test test/thread-detail-response-budget-service.test.js` passed
+    (`24` tests).
+  - Focused active/detail/render suite passed (`195` tests).
+  - Full `npm test` passed (`1383` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - `codegraph sync && codegraph status` reported the index up to date.
 - Deployment status:
   - Not deployed yet at the time of this note. Next step is commit, central
-    macOS plugin deploy, and production readback for public config plus
-    Codex Mobile/Home AI thread detail probes.
+    macOS plugin deploy, and production readback. No static shell bump is
+    needed because this slice does not change `public/app.js` or `public/sw.js`.

@@ -109,6 +109,11 @@ configured ceiling (`CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_VISIBLE_ITEM_CEILING
 default `48`, `0` disables). User messages, images, Usage rows, diagnostics,
 and retained final assistant/plan receipts remain protected, and the response
 records the omitted visible-item counts in `mobileDetailResponseBudget`.
+Active operation payload budgeting also covers retained operation display and
+structured fields used by command/file/tool/MCP/collab-agent cards, including
+file-change `changes`, collab-agent task/prompt text, and bounded
+action/request/response payloads, so these rows cannot bypass first-paint
+budgets just because their item count is already small.
 The follow-up first-paint byte slice closes the remaining case where the item
 count is already small but retained completed assistant/plan receipts still
 make the detail body heavy. When active progressive pressure is present, or

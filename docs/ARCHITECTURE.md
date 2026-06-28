@@ -581,10 +581,10 @@ text fields may be reduced to a bounded first-paint preview with
 small active turns and completed-turn receipts keep their existing text
 behavior. `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_ACTIVE_TEXT_CHARS=0`
 disables only that retained-text preview budget for diagnostics. Retained
-active operation items can also carry large output, arguments, result, or
-content payloads even after the item-count tail is bounded. Under the
-same progressive active pressure, the service reduces those operation payload
-fields to bounded previews using
+active operation items can also carry large output, display text, file-change
+lists, arguments, result, content, action, request, or response payloads even
+after the item-count tail is bounded. Under the same progressive active
+pressure, the service reduces those operation payload fields to bounded previews using
 `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_ACTIVE_OPERATION_PAYLOAD_CHARS`
 (default `6KB`, `0` disables) and marks affected items with
 `mobileOperationPayloadBudget` / `mobilePayloadTruncated`; command output keeps

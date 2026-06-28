@@ -31,6 +31,28 @@ const OPERATION_ITEM_TYPES = new Set([
   "mcpToolCall",
 ]);
 
+const OPERATION_STRING_PAYLOAD_FIELDS = [
+  "command",
+  "message",
+  "text",
+  "summary",
+  "detail",
+  "task",
+  "prompt",
+  "description",
+  "instructions",
+];
+
+const OPERATION_STRUCTURED_PAYLOAD_FIELDS = [
+  "arguments",
+  "result",
+  "contentItems",
+  "changes",
+  "action",
+  "request",
+  "response",
+];
+
 const ASSISTANT_ITEM_TYPES = new Set([
   "agentMessage",
   "plan",
@@ -323,8 +345,14 @@ function compactActiveOperationPayloadItem(item, options, stats) {
     if (!(field in out) || typeof out[field] !== "string") continue;
     record(field, compactStringFieldForOperationPayload(out[field], maxChars, field === "aggregatedOutput"));
   }
-  for (const field of ["arguments", "result", "contentItems"]) {
+  for (const field of OPERATION_STRING_PAYLOAD_FIELDS) {
+    if (!(field in out) || typeof out[field] !== "string") continue;
+    if (textCharLength(out[field]) <= maxChars) continue;
+    record(field, compactStringFieldForOperationPayload(out[field], maxChars));
+  }
+  for (const field of OPERATION_STRUCTURED_PAYLOAD_FIELDS) {
     if (!(field in out) || out[field] === undefined || out[field] === null) continue;
+    if (jsonByteLength(out[field]) <= maxChars) continue;
     record(field, compactStructuredValueForOperationPayload(out[field], maxChars));
   }
   if (!budget.truncated) return item;

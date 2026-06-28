@@ -439,6 +439,99 @@ test("thread detail response budget previews retained active structured tool pay
   assert.ok(budget.activeOperationPayloadOriginalChars > budget.activeOperationPayloadRetainedChars);
 });
 
+test("thread detail response budget previews retained active file change payloads under progressive pressure", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      turns: [
+        {
+          id: "turn-active",
+          status: "inProgress",
+          items: [
+            {
+              id: "file-1",
+              type: "fileChange",
+              changes: [
+                {
+                  path: "public/app.js",
+                  diff: `${"- old\n+ new\n"}${"x".repeat(2000)}`,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeOperationItems: 2,
+    activeProgressiveItemThreshold: 100,
+    activeProgressiveByteThreshold: 1000,
+    activeProgressiveThreadByteThreshold: 0,
+    progressiveActiveOperationPayloadChars: 320,
+  });
+
+  const fileChange = compacted.thread.turns[0].items[0];
+  assert.equal(fileChange.mobilePayloadTruncated, true);
+  assert.deepEqual(fileChange.mobileOperationPayloadBudget.fields, ["changes"]);
+  assert.equal(fileChange.changes.truncated, true);
+  assert.match(fileChange.changes.preview, /operation payload preview truncated/);
+  assert.ok(fileChange.changes.preview.length <= 320);
+  const budget = compacted.thread.mobileDetailResponseBudget;
+  assert.equal(budget.truncatedActiveOperationPayloadItems, 1);
+  assert.ok(budget.activeOperationPayloadOriginalChars > budget.activeOperationPayloadRetainedChars);
+});
+
+test("thread detail response budget previews retained active collab agent display text under progressive pressure", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      turns: [
+        {
+          id: "turn-active",
+          status: "inProgress",
+          items: [
+            {
+              id: "agent-1",
+              type: "collabAgentToolCall",
+              tool: "spawnAgent",
+              status: "running",
+              task: `${"Investigate active payload. ".repeat(120)}Keep the latest evidence.`,
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeOperationItems: 2,
+    activeProgressiveItemThreshold: 100,
+    activeProgressiveByteThreshold: 1000,
+    activeProgressiveThreadByteThreshold: 0,
+    progressiveActiveOperationPayloadChars: 360,
+  });
+
+  const call = compacted.thread.turns[0].items[0];
+  assert.equal(call.mobilePayloadTruncated, true);
+  assert.deepEqual(call.mobileOperationPayloadBudget.fields, ["task"]);
+  assert.match(call.task, /operation payload preview truncated/);
+  assert.ok(call.task.endsWith("Keep the latest evidence."));
+  assert.ok(call.task.length <= 360);
+  assert.equal(call.tool, "spawnAgent");
+  assert.equal(call.status, "running");
+  const budget = compacted.thread.mobileDetailResponseBudget;
+  assert.equal(budget.truncatedActiveOperationPayloadItems, 1);
+  assert.ok(budget.activeOperationPayloadOriginalChars > budget.activeOperationPayloadRetainedChars);
+});
+
 test("thread detail response budget does not truncate operation payloads without progressive pressure", () => {
   const result = {
     thread: {

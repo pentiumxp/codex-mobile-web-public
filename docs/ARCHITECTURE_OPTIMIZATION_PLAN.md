@@ -2420,8 +2420,9 @@ Deployable scope:
   preview budget can be disabled for diagnostics with
   `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_ACTIVE_TEXT_CHARS=0`.
 - Retained active operation items now get the same pressure-gated payload
-  treatment. Large command output, tool arguments/results, and content item
-  arrays are reduced to bounded previews through
+  treatment. Large command output, file-change lists, collab-agent display text
+  such as task/prompt fields, tool arguments/results, content item arrays, and
+  bounded action/request/response payloads are reduced to bounded previews through
   `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_ACTIVE_OPERATION_PAYLOAD_CHARS`
   (default `6KB`, `0` disables). Affected operation items carry
   `mobileOperationPayloadBudget` / `mobilePayloadTruncated`; command output
