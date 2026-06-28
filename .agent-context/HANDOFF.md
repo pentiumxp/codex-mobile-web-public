@@ -28221,6 +28221,16 @@ The previous full handoff was archived and should be opened only when old proven
   - Full `npm test` passed (`1500` tests).
   - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
 - Deployment:
-  - Not deployed at the time of this handoff entry. Deploy this module through
-    the central Home AI plugin macOS path after committing, then require
-    `/api/public-config` readback for `codex-mobile-shell-v574`.
+  - Commit `a2720b2` (`feat: add frontend runtime health diagnostics`) deployed
+    through the central Home AI plugin macOS path with reason
+    `codex-mobile-frontend-runtime-health-v574`.
+  - Production `/api/public-config` readback confirmed
+    `clientBuildId=0.1.11|codex-mobile-shell-v574` and
+    `shellCacheName=codex-mobile-shell-v574`.
+  - Production static readback confirmed `/frontend-runtime-health.js` is loaded
+    after `/thread-diagnostic-events.js` in `public/index.html`.
+  - Phase-B readback smoke passed with warm thread-list cache, supported mux
+    metrics, and active-overlay detail path.
+  - Production thread self-check repeated two samples across three recent
+    threads with `issueCount=0`, `blockingIssueCount=0`, and
+    `diagnosticCandidateCount=0`.
