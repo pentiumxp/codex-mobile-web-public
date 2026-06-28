@@ -18,6 +18,7 @@ function policy() {
   return createThreadTurnCompactionPolicyService({
     isOperationalItem: (item) => Boolean(item && item.operation),
     isUserQuestionItem: (item) => Boolean(item && item.kind === "user"),
+    isUserVisibleInputItem: (item) => Boolean(item && (item.kind === "user" || item.kind === "context")),
     isAssistantReceiptItem: (item) => Boolean(item && item.kind === "assistant"),
     isVisualReceiptItem: (item) => Boolean(item && item.kind === "visual"),
     isTurnUsageSummaryItem: (item) => Boolean(item && item.kind === "usage"),
@@ -71,6 +72,17 @@ test("receiptOnlyItemIndexes preserves user, visual, diagnostic, usage, and the 
   ];
 
   assert.deepEqual(setValues(service.receiptOnlyItemIndexes(items)), [0, 3, 4, 5, 6]);
+});
+
+test("receiptOnlyItemIndexes preserves non-message visible input anchors", () => {
+  const service = policy();
+  const items = [
+    { kind: "context" },
+    { kind: "assistant", id: "final" },
+    { kind: "usage" },
+  ];
+
+  assert.deepEqual(setValues(service.receiptOnlyItemIndexes(items)), [0, 1, 2]);
 });
 
 test("operationDetailTurnIndexes keeps latest live, previous visible, and previous ended turns", () => {
@@ -130,4 +142,12 @@ test("server compaction merges rollout operations into operation-detail turns", 
       compactThreadBody.indexOf("out.turns = out.turns.map"),
     "rollout operations must be merged before compactTurn filters operational items",
   );
+});
+
+test("server compaction policy preserves context compaction as a visible input anchor", () => {
+  const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+  assert.match(serverJs, /function isUserVisibleInputItem\(/);
+  assert.match(functionBody(serverJs, "isUserVisibleInputItem"), /isUserQuestionItem\(item\)/);
+  assert.match(functionBody(serverJs, "isUserVisibleInputItem"), /isContextCompactionType\(item && item\.type\)/);
+  assert.match(serverJs, /createThreadTurnCompactionPolicyService\(\{[\s\S]*isUserVisibleInputItem,[\s\S]*isAssistantReceiptItem,/);
 });

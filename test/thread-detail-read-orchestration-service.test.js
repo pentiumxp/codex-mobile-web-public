@@ -816,6 +816,98 @@ test("active overlay window projection revision does not force full read when li
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayWindowFirst, true);
 });
 
+test("active overlay accepts context compaction as latest completed input anchor", async () => {
+  const { service, calls } = createHarness({
+    summary: {
+      id: "thread-1",
+      status: { type: "active" },
+      activeTurnId: "active-turn",
+      rolloutPath: "/tmp/rollout.jsonl",
+    },
+    projectedThreadResult: (projection, summary, runtimeSettings, options = {}) => {
+      calls.push(`full-projection:${options.activeOverlay === true}:${options.allowPartial === true}`);
+      return null;
+    },
+    activeOverlayProjectionWindowLookup: (input, summary, runtimeSettings, options = {}) => {
+      calls.push(`active-overlay-window-lookup:${options.omitActiveTurnId || ""}`);
+      return {
+        result: {
+          thread: {
+            id: "thread-1",
+            turns: [
+              {
+                id: "completed-turn",
+                status: "completed",
+                items: [
+                  { id: "context-1", type: "contextCompaction" },
+                  { id: "agent-1", type: "agentMessage" },
+                  { id: "usage-1", type: "turnUsageSummary" },
+                ],
+              },
+            ],
+            mobileReadMode: "projection-active-window",
+            mobileProjection: {
+              source: "partial",
+              version: "active-window",
+              partial: true,
+              partialKind: "turns-list-active-overlay-window",
+              activeOverlayWindow: true,
+              revision: 12,
+              ageMs: 12,
+            },
+          },
+        },
+        missReason: "",
+      };
+    },
+    resolveActiveWindowOverlay: () => ({
+      activeTurnId: "active-turn",
+      overlaySource: "projection-live",
+      operationCoverage: "present",
+      uploadCoverage: "none",
+      assistantDeltaCoverage: "",
+      receiptCoverage: "present",
+      projectionRevision: 12,
+      overlayRevision: 13,
+      overlayTimestampMs: 13000,
+      overlayTurn: {
+        id: "active-turn",
+        status: "running",
+        items: [
+          { id: "cmd-1", type: "commandExecution" },
+          { id: "agent-live", type: "agentMessage" },
+        ],
+      },
+    }),
+  });
+
+  const response = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: true,
+    threadLog: () => {},
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.mode, "projection-active-overlay");
+  assert.equal(calls.includes("thread-read"), false);
+  assert.deepEqual(calls.filter((call) => call.startsWith("full-projection:")), [
+    "full-projection:false:false",
+  ]);
+  const completed = response.body.thread.turns.find((turn) => turn.id === "completed-turn");
+  assert.ok(completed);
+  assert.deepEqual(completed.items.map((item) => item.type), [
+    "contextCompaction",
+    "agentMessage",
+    "turnUsageSummary",
+  ]);
+  const timings = response.body.thread.mobileDiagnostics.threadDetailTimings;
+  assert.equal(timings.readDecision, "projection-active-overlay");
+  assert.equal(timings.activeOverlayAction, "use-projection-overlay");
+  assert.equal(timings.activeOverlayReason, "overlay-evidence-complete");
+  assert.equal(timings.activeOverlayWindowFirst, true);
+});
+
 test("active ordinary projection hits still pass through active overlay proof gate", async () => {
   const { service, calls } = createHarness({
     summary: {

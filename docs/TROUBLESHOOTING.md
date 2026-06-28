@@ -359,6 +359,12 @@ v4 revision metadata. If `mobileDiagnostics.threadDetailTimings` reports
 assistant evidence, unknown item kind, or missing receipt/operation/upload
 coverage all mean the request intentionally failed closed to full `thread/read`
 instead of rendering an unsafe partial live window.
+If the reason is `latest-completed-input-missing`, inspect the receipt-only
+active window before changing the browser renderer. The latest completed replay
+must retain a user-visible input anchor (`userMessage` or `contextCompaction`)
+next to the final assistant/Usage rows; otherwise the active-window projection
+is correctly treated as an unsafe downgrade and the request falls back to a
+slow full read.
 
 If an active large thread spins for a long time but eventually renders, inspect
 `mobileDiagnostics.threadDetailTimings.activeOverlayWindowMs`. A high first

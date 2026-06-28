@@ -6350,6 +6350,7 @@ const threadTurnCompactionPolicyService = createThreadTurnCompactionPolicyServic
   isCompletedStatus,
   isOperationalItem,
   isUserQuestionItem,
+  isUserVisibleInputItem,
   isAssistantReceiptItem,
   isVisualReceiptItem,
   isTurnUsageSummaryItem,
@@ -6369,6 +6370,11 @@ function isUserQuestionItem(item) {
     return role === "user";
   }
   return false;
+}
+
+function isUserVisibleInputItem(item) {
+  if (isUserQuestionItem(item)) return true;
+  return isContextCompactionType(item && item.type);
 }
 
 function userMessageContentParts(item) {
