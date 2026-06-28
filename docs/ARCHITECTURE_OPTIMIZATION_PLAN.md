@@ -2929,7 +2929,12 @@ Scope:
   and turn start/completion timestamps, plus thread-list repeat lost rows and
   updated-at downgrades.
 - Combined summaries deduplicate identical issue metadata so repeated samples
-  do not inflate the blocking/warning counts.
+  do not inflate the blocking/warning counts. They now retain bounded
+  occurrence counts and produce metadata-only `diagnosticCandidates` for H1/H2
+  findings and repeated H3 warnings, so Home AI can create an Owner-gated
+  remediation case without private thread text or screenshots. This remains
+  diagnostic evidence only; self-check ingestion must not directly dispatch a
+  repair card.
 
 Required validation:
 

@@ -10,6 +10,7 @@ const {
   compareDetailReadbacks,
   compareThreadListReadbacks,
   itemTimestampMs,
+  selfCheckDiagnosticCandidate,
 } = require("../adapters/thread-detail-self-check-service");
 
 const TURN_ID = "019f0ca6-a9c9-7753-8224-416f754b6c03";
@@ -210,11 +211,14 @@ test("self check summary fails only on H1/H2 issues", () => {
 
   assert.equal(warningOnly.ok, true);
   assert.equal(warningOnly.blockingIssueCount, 0);
+  assert.equal(warningOnly.diagnosticCandidateCount, 0);
   assert.equal(blocking.ok, false);
   assert.equal(blocking.blockingIssueCount, 1);
+  assert.equal(blocking.diagnosticCandidateCount, 1);
+  assert.equal(blocking.diagnosticCandidates[0].diagnostic_type, "thread_detail_response_contract_mismatch");
 });
 
-test("self check summary deduplicates repeated issue metadata", () => {
+test("self check summary deduplicates repeated issue metadata and keeps occurrence counts", () => {
   const issue = {
     code: "latest_completed_replay_receipt_only",
     severity: "H3",
@@ -229,6 +233,50 @@ test("self check summary deduplicates repeated issue metadata", () => {
 
   assert.equal(summary.issueCount, 1);
   assert.equal(summary.blockingIssueCount, 0);
+  assert.equal(summary.issues[0].occurrenceCount, 2);
+  assert.equal(summary.diagnosticCandidateCount, 1);
+  assert.equal(summary.diagnosticCandidates[0].category, "conversation_projection_mismatch");
+  assert.equal(summary.diagnosticCandidates[0].diagnostic_type, "thread_detail_response_contract_mismatch");
+  assert.equal(summary.diagnosticCandidates[0].error_code, "latest_completed_replay_receipt_only");
+  assert.equal(summary.diagnosticCandidates[0].counts.repeated_failures, 2);
+  assert.equal(summary.diagnosticCandidates[0].context.thread_hash, "thread-hash");
+  assert.equal(summary.diagnosticCandidates[0].context.turn_hash, "turn-hash");
+  assert.deepEqual(Object.keys(summary.diagnosticCandidates[0]).sort(), [
+    "breadcrumbs",
+    "category",
+    "context",
+    "counts",
+    "diagnostic_type",
+    "error_code",
+    "evidence_confidence",
+    "severity_hint",
+  ]);
+});
+
+test("self check diagnostic candidate is metadata-only and skips one-off warnings", () => {
+  const oneOffWarning = selfCheckDiagnosticCandidate({
+    code: "thread_list_repeat_order_changed",
+    severity: "H3",
+    surface: "thread-list-refresh",
+    threadHash: "thread-hash",
+    occurrenceCount: 1,
+  });
+  const blocking = selfCheckDiagnosticCandidate({
+    code: "thread_detail_refresh_lost_usage",
+    severity: "H2",
+    surface: "thread-detail-refresh",
+    threadHash: "thread-hash",
+    turnHash: "turn-hash",
+    title: "private title must not appear",
+    message: "private body must not appear",
+  });
+
+  assert.equal(oneOffWarning, null);
+  assert.equal(blocking.category, "conversation_projection_mismatch");
+  assert.equal(blocking.diagnostic_type, "thread_detail_response_contract_mismatch");
+  assert.equal(blocking.severity_hint, "H2");
+  const serialized = JSON.stringify(blocking);
+  assert.doesNotMatch(serialized, /private title|private body|message|title/i);
 });
 
 test("timestamp self check uses UUIDv7 turn fallback", () => {

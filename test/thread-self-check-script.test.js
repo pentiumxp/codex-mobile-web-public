@@ -92,6 +92,13 @@ test("thread self-check repeat catches transient list and detail downgrade", asy
     assert.ok(codes.includes("thread_list_repeat_lost_thread_ids"));
     assert.ok(codes.includes("thread_detail_refresh_lost_user_input"));
     assert.ok(codes.includes("thread_detail_refresh_lost_assistant_items"));
+    assert.ok(report.summary.diagnosticCandidateCount >= 1);
+    assert.ok(report.summary.diagnosticCandidates.some((candidate) => (
+      candidate.category === "conversation_projection_mismatch"
+        && candidate.diagnostic_type === "thread_detail_response_contract_mismatch"
+        && candidate.error_code === "thread_detail_refresh_lost_user_input"
+    )));
+    assert.doesNotMatch(JSON.stringify(report.summary.diagnosticCandidates), /thread-a|thread-b|private|message|title/i);
     assert.equal(report.threadDetails[0].repeat.ok, true, "final read can recover while transient downgrade remains reported");
   } finally {
     global.fetch = originalFetch;

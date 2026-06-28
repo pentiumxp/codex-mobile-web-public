@@ -25,6 +25,8 @@ function usage() {
     "timestamps, completed replay reasoning/operation rows, duplicate keys, and bounded",
     "response-budget evidence without printing message text, titles, task-card bodies,",
     "uploads, tokens, cookies, raw paths, or long logs.",
+    "Repeated warnings and H1/H2 violations are also summarized as metadata-only",
+    "diagnosticCandidates that can feed the Home AI Owner-gated repair loop.",
     "",
     "Options:",
     "  --server <url>             Codex Mobile server. Default: http://127.0.0.1:8787",

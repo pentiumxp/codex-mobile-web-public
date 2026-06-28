@@ -27268,3 +27268,51 @@ The previous full handoff was archived and should be opened only when old proven
 - Status:
   - Ready for commit and plugin-owned production deploy. Public push is not
     requested for this module.
+
+## 2026-06-28 - Thread Display Self-Check Diagnostic Candidates
+
+- Scope:
+  - First slice of the projection-consistency self-check closure plan.
+  - Diagnostic/verification-only change; it does not change rendering,
+    projection authority, thread-list ordering, or add a fallback.
+- Root cause / gap addressed:
+  - The production self-check could detect repeated H3 issues such as
+    `latest_completed_replay_receipt_only` and
+    `latest_completed_user_input_missing`, but the combined summary only
+    deduplicated issue metadata and counted H1/H2 blockers.
+  - Repeated warnings were visible to a human but were not converted into a
+    metadata-only, Home AI-compatible diagnostic candidate that can feed the
+    Owner-gated remediation loop.
+- Behavior added:
+  - `adapters/thread-detail-self-check-service.js` now retains bounded
+    `occurrenceCount` for deduplicated issues.
+  - H1/H2 findings and repeated H3 warnings produce bounded
+    `diagnosticCandidates` with `conversation_projection_mismatch`,
+    `thread_detail_response_contract_mismatch` /
+    `thread_list_response_contract_mismatch`, issue code, short thread/turn/item
+    hashes, and occurrence counts only.
+  - The self-check script help text documents that candidates are metadata-only
+    and do not directly dispatch repair cards.
+- Changed files:
+  - `adapters/thread-detail-self-check-service.js`
+  - `scripts/codex-mobile-thread-self-check.js`
+  - `test/thread-detail-self-check-service.test.js`
+  - `test/thread-self-check-script.test.js`
+  - `docs/MODULES.md`
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`
+- Validation before commit/deploy:
+  - Focused:
+    `node --test test/thread-detail-self-check-service.test.js
+    test/thread-self-check-script.test.js` passed (`15` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`1447` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - `codegraph sync && codegraph status` passed with index up to date.
+  - Live source-script self-check against production v571 with
+    `--sample-threads 5 --repeat 5` returned `ok:true`,
+    `blockingIssueCount=0`, and one metadata-only diagnostic candidate for
+    repeated H3 `latest_completed_replay_receipt_only`.
+- Status:
+  - Ready for local commit and plugin-owned production deploy. Public push is
+    not requested for this module.

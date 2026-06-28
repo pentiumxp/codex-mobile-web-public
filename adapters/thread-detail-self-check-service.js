@@ -22,6 +22,8 @@ const USER_INPUT_TYPES = new Set([
   "filePreview",
 ]);
 
+const DEFAULT_WARNING_ACTION_THRESHOLD = 2;
+
 function text(value) {
   return String(value || "").trim();
 }
@@ -201,6 +203,14 @@ function hasDuplicate(values) {
     seen.add(key);
   }
   return false;
+}
+
+function compactToken(value, fallback = "", maxLength = 80) {
+  const safe = text(value)
+    .replace(/[^a-zA-Z0-9_.:-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, maxLength);
+  return safe || fallback;
 }
 
 function summarizeTurn(turn = {}, thread = null) {
@@ -546,15 +556,78 @@ function issueDedupKey(issue = {}) {
   ].join("|");
 }
 
-function combineSelfCheck(parts = {}) {
+function issueSeverityBlocks(issue = {}) {
+  const severity = text(issue.severity).toUpperCase();
+  return severity === "H1" || severity === "H2";
+}
+
+function selfCheckDiagnosticType(issue = {}) {
+  const surface = text(issue.surface);
+  if (surface === "thread-list" || surface === "thread-list-refresh") return "thread_list_response_contract_mismatch";
+  return "thread_detail_response_contract_mismatch";
+}
+
+function selfCheckDiagnosticCandidate(issue = {}, options = {}) {
+  const occurrenceCount = boundedCount(issue.occurrenceCount || 1);
+  const warningThreshold = Math.max(1, boundedCount(
+    options.warningActionThreshold,
+    10,
+  ) || DEFAULT_WARNING_ACTION_THRESHOLD);
+  if (!issueSeverityBlocks(issue) && occurrenceCount < warningThreshold) return null;
+  const code = compactToken(issue.code, "thread_display_self_check_failed", 100);
+  const surface = compactToken(issue.surface, "thread-detail", 80);
+  const severity = compactToken(issue.severity, "H2", 8).toUpperCase();
+  const threadHash = compactToken(issue.threadHash, "", 80);
+  const turnHash = compactToken(issue.turnHash, "", 80);
+  const itemHash = compactToken(issue.itemHash, "", 80);
+  const context = {
+    surface,
+    action: "self-check",
+    diagnostic_source: "codex-mobile-thread-self-check",
+  };
+  if (threadHash) context.thread_hash = threadHash;
+  if (turnHash) context.turn_hash = turnHash;
+  if (itemHash) context.item_hash = itemHash;
+  const fields = {
+    repeated_failures: occurrenceCount,
+  };
+  if (threadHash) fields.thread_hash = threadHash;
+  if (turnHash) fields.turn_hash = turnHash;
+  if (itemHash) fields.item_hash = itemHash;
+  return {
+    category: "conversation_projection_mismatch",
+    diagnostic_type: selfCheckDiagnosticType(issue),
+    severity_hint: severity === "H1" ? "H1" : issueSeverityBlocks(issue) ? "H2" : "H3",
+    evidence_confidence: issueSeverityBlocks(issue) ? 0.82 : 0.72,
+    error_code: code,
+    counts: {
+      repeated_failures: occurrenceCount,
+      occurrences: occurrenceCount,
+    },
+    context,
+    breadcrumbs: [{
+      kind: "thread-display-self-check",
+      code,
+      status: "failed",
+      fields,
+    }],
+  };
+}
+
+function combineSelfCheck(parts = {}, options = {}) {
   const issues = [];
-  const seen = new Set();
+  const byKey = new Map();
   const pushUnique = (issue) => {
     if (!issue || typeof issue !== "object") return;
     const key = issueDedupKey(issue);
-    if (seen.has(key)) return;
-    seen.add(key);
-    issues.push(issue);
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.occurrenceCount = boundedCount((existing.occurrenceCount || 1) + 1);
+      return;
+    }
+    const normalized = Object.assign({}, issue, { occurrenceCount: 1 });
+    byKey.set(key, normalized);
+    issues.push(normalized);
   };
   for (const value of Object.values(parts)) {
     if (!value) continue;
@@ -566,11 +639,16 @@ function combineSelfCheck(parts = {}) {
     }
     if (Array.isArray(value.issues)) value.issues.forEach(pushUnique);
   }
-  const h2Count = issues.filter((issue) => issue.severity === "H1" || issue.severity === "H2").length;
+  const diagnosticCandidates = issues
+    .map((issue) => selfCheckDiagnosticCandidate(issue, options))
+    .filter(Boolean);
+  const h2Count = issues.filter(issueSeverityBlocks).length;
   return {
     ok: h2Count === 0,
     issueCount: boundedCount(issues.length),
     blockingIssueCount: boundedCount(h2Count),
+    diagnosticCandidateCount: boundedCount(diagnosticCandidates.length),
+    diagnosticCandidates,
     issues,
   };
 }
@@ -585,6 +663,7 @@ module.exports = {
   itemTimestampMs,
   latestCompletedTurn,
   numericTimestampMs,
+  selfCheckDiagnosticCandidate,
   shortHash,
   summarizeTurn,
   threadRows,
