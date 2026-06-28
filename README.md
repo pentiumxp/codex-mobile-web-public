@@ -16,6 +16,36 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-28 Embedded Thread Flicker / Missing Current Replies Hotfix
+
+这次热修复处理 Home AI embedded 模式下的客户端回归：用户重新进入线程后可能只看到
+旧回执，看不到当前用户消息和新回执，同时页面反复闪烁。生产日志显示，客户端反复
+触发 `thread_detail_render_evidence_cleared`，原因是 `primary-force:plugin-back`，
+随后把 conversation 渲染成 `threadId:""` 的主页面状态。这不是单纯的渲染抖动，
+而是 embedded 返回手势误触发后清空了当前线程选择。
+
+根因有两层：
+
+- 前端 embedded back-swipe guard 过于敏感：可以从 conversation 区域起手，
+  edge `touchstart` 就阻止原生处理，并且允许 velocity-only 横向完成。普通阅读或
+  滚动时靠近屏幕边缘，就可能被误判为插件返回。
+- 服务端 detail response 有时同时暴露一个旧的 active-looking turn 和一个当前
+  active turn，其中当前 turn 状态不完整。客户端合并这种响应时更容易把旧状态当成
+  活跃状态继续保留。
+
+修复后，`public/app.js` 不再允许 conversation 区域启动 embedded 返回手势，要求
+明确的水平/垂直移动比例，移除 velocity-only 完成条件，并在用户刚发生 conversation
+滚动意图后抑制 plugin-back。服务端
+`adapters/thread-detail-response-budget-service.js` 在响应出口统一修正 visible
+active-turn 契约：`activeTurnId` 必须指向返回窗口中的 turn，当前 active turn 必须
+有 active 状态，旧的 active-looking turn 必须降级为 completed 语义。
+
+这次是前端静态和服务端响应契约共同变化，`CLIENT_BUILD_ID` 和 PWA service worker
+cache 从 `codex-mobile-shell-v559` 升级到 `codex-mobile-shell-v560`。生产读回已确认
+`v560` 后同一日志窗口内没有继续出现新版客户端的 `primary-force:plugin-back` 清屏。
+已经打开的 iPhone / iPad / Home AI embedded WebView 需要接受刷新提示、硬刷新或关闭
+重开后才能停止旧 shell 继续运行。
+
 ## 2026-06-28 Workspace Thread List Warm First Paint
 
 这次模块处理一个剩余的线程列表首屏峰值：默认 `/api/threads` 已经可以在 warm
