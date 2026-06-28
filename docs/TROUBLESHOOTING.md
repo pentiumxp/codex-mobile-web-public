@@ -365,6 +365,10 @@ must retain a user-visible input anchor (`userMessage` or `contextCompaction`)
 next to the final assistant/Usage rows; otherwise the active-window projection
 is correctly treated as an unsafe downgrade and the request falls back to a
 slow full read.
+Current orchestration first invalidates that unsafe cached active window and
+rebuilds a bounded `turns-list-active-overlay-window`; only if the rebuilt
+window still lacks the input anchor should it try full projection or full
+`thread/read`.
 
 If an active large thread spins for a long time but eventually renders, inspect
 `mobileDiagnostics.threadDetailTimings.activeOverlayWindowMs`. A high first

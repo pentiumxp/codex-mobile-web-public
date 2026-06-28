@@ -516,10 +516,20 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       timer.mark("activeOverlayPlanMs", activeOverlayPlanStartedAtMs);
       let activeOverlayProjectionThread = projectionThread;
       let activeOverlayProjectionResult = overlayProjected;
-      if (activeOverlayPlan.reason === "missing-projection-window"
+      const activeOverlayWindowHasInputGap = Boolean(activeOverlayProjectionThread
+        && latestCompletedReplayInputGap(activeOverlayProjectionThread));
+      const activeOverlayWindowRebuildReason = activeOverlayPlan.reason === "missing-projection-window"
+        ? "missing-projection-window"
+        : activeOverlayPlan.action === "use-projection-overlay" && activeOverlayWindowHasInputGap
+          ? "latest-completed-input-missing"
+          : "";
+      if (activeOverlayWindowRebuildReason
         && overlayInput
         && overlayInput.overlayTurn
         && turnsListThreadReadResult) {
+        if (activeOverlayWindowRebuildReason === "latest-completed-input-missing") {
+          threadLog("active_overlay_window_input_gap", { action: "rebuild-window" });
+        }
         const activeWindowStartedAtMs = now();
         try {
           const activeWindowResult = await turnsListThreadReadResult({
