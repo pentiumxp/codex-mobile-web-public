@@ -102,16 +102,16 @@ function isActiveTurn(turn, thread) {
   return isActiveStatus(turn && turn.status);
 }
 
-function hasVisibleActiveTurn(thread) {
-  if (!thread || !Array.isArray(thread.turns)) return false;
-  return thread.turns.some((turn) => isActiveTurn(turn, thread));
+function isStaleActiveCompletionStatus(value) {
+  return Boolean(value && typeof value === "object" && value.mobileStaleActiveTurn === true);
 }
 
 function isLatestCompletedReplayTurn(turn, thread) {
   if (!turn || !thread || !Array.isArray(thread.turns)) return false;
-  if (hasVisibleActiveTurn(thread)) return false;
   for (let index = thread.turns.length - 1; index >= 0; index -= 1) {
     const candidate = thread.turns[index];
+    if (isActiveTurn(candidate, thread)) continue;
+    if (isStaleActiveCompletionStatus(candidate && candidate.status)) continue;
     if (!turnHasItems(candidate)) continue;
     if (!isCompletedStatus(candidate && candidate.status)) continue;
     return candidate === turn;

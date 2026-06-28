@@ -26647,3 +26647,39 @@ The previous full handoff was archived and should be opened only when old proven
     `middle=7`, `explicitMiddleTimes=0`, and `computedMiddleTimes=7` after the
     new turn-start fallback.
   - Public was not pushed; keep Public unchanged unless the user explicitly asks.
+
+## 2026-06-28 - Completed Progress Replay Budget Follow-up
+
+- User-visible incident:
+  - After re-entering a thread, the newest completed turn could still collapse
+    to only the final assistant receipt/Usage row even though the server
+    compaction layer had recovered assistant progress text and final timestamps
+    from rollout completion data.
+  - Newly received live rows could show timestamps because they had client/live
+    merge state; reloaded completed rows were affected by the response budget
+    layer.
+- Root cause / invariant:
+  - `readRolloutCompletionTurns()` and `compactThread()` now produce bounded
+    completed progress items plus `completedAtMs`, but
+    `thread-detail-response-budget-service` still treated any visible active
+    turn as a reason to disable latest-completed replay preservation.
+  - That caused the just-completed turn before an active overlay to be compacted
+    like old history. A first-pass fix was too broad and also classified stale
+    active-like turns as latest completed replay.
+- Implementation:
+  - `isLatestCompletedReplayTurn()` now scans backward past the current active
+    turn and preserves the newest real completed turn.
+  - Stale active turns downgraded with `mobileStaleActiveTurn:true` are excluded
+    from latest-completed replay protection.
+  - Added focused coverage proving completed replay progress before an active
+    turn is retained, operations remain suppressed when configured, stale
+    active-like turns still compact as history, and global visible-item ceiling
+    accounting remains bounded.
+- Validation:
+  - `node --test test/thread-detail-response-budget-service.test.js test/thread-visibility.test.js test/conversation-render.test.js`
+    (`220` tests)
+  - Full `npm test` (`1414` tests), `npm run check`, `npm run check:macos`, and
+    `git diff --check` passed.
+- Deployment status:
+  - Pending commit/deploy at the time of this handoff entry.
+  - Public must remain unchanged unless the user explicitly asks for Public.
