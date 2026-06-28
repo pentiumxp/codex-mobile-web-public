@@ -16,6 +16,37 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-28 Public 发布说明（线程详情自检、Usage 工具条和 completed replay 稳定性）
+
+本次 Public 同步的是 `codex-mobile-shell-v568` 前后的线程详情稳定性修复。它覆盖了
+最近生产中已经验证过的一组根因修复：线程详情 authority 不能被 stale projection
+覆盖、active-overlay 不能丢失刚完成 turn、completed replay 要保留用户可见进度但
+去掉命令/推理噪声、Usage 必须随最终回执稳定附加，以及系统要能用 metadata-only
+自检主动发现这些回归。
+
+主要变化：
+
+- 线程详情响应出口统一修正 visible active-turn 契约，避免旧的 active-looking turn
+  在刷新时继续遮挡当前 turn。
+- active-overlay / turns-list / projection 路径都会在缺失最新 completed turn 时补回
+  rollout completion，并在响应准备阶段统一附加 Usage summary。
+- 最新 completed turn 的 replay 只保留用户可见的 assistant/progress/final receipt
+  和 Usage；operation/command/file/tool 行与 reasoning 行不再在重新进入线程后显示。
+- Usage 行不再显示额外的 `Usage` 标题和 Usage 自身时间戳，只保留 compact Usage
+  工具条；最终回执自身仍承担该 turn 的时间锚点。
+- 新增 `adapters/thread-detail-self-check-service.js` 和
+  `scripts/codex-mobile-thread-self-check.js`，用于 metadata-only 检查线程列表排序
+  稳定性、详情刷新降级、最新 completed turn Usage、时间戳、重复 visible key、
+  completed replay 行类型和 response-budget 证据。
+- active-overlay partial window 如果包含 assistant/Usage 但缺失对应的用户输入或上下文，
+  不再被写入 projection seed，也不会直接返回给客户端；服务端会先尝试 full/dynamic
+  projection 修复，修复不了才退回 full read。
+
+这次 Public 发布只同步公开源码、README、docs、scripts 和测试；不包含
+`.agent-context`、runtime state、本地密钥、上传内容、完整 rollout、访问 key、
+launch token、私有日志或机器特定诊断。已经打开的浏览器、PWA 或 Home AI embedded
+WebView 需要接受刷新提示、硬刷新或关闭重开后才能加载 `codex-mobile-shell-v568`。
+
 ## 2026-06-28 Embedded Thread Flicker / Missing Current Replies Hotfix
 
 这次热修复处理 Home AI embedded 模式下的客户端回归：用户重新进入线程后可能只看到
