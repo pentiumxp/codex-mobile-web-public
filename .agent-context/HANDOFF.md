@@ -25249,3 +25249,25 @@ The previous full handoff was archived and should be opened only when old proven
 - Deployment status:
   - Not deployed yet at the time of this note. Next step is commit, central
     macOS plugin deploy, and production readback for v556.
+
+### Deployment Update - Thread-List Successful Slow-Path Diagnostic Module
+
+- Commit `476393e` `fix: report slow successful thread lists` was deployed
+  through the Home AI central macOS plugin path with reason
+  `codex-mobile-thread-list-slow-path-diagnostic`.
+- Production backup:
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260628T001958Z-plugin-codex-mobile-web-codex-mobile-thread-list-slow-path-diagnostic`.
+- Production public config reported `clientBuildId=0.1.11|codex-mobile-shell-v556`
+  and `shellCacheName=codex-mobile-shell-v556`.
+- General Phase-B readback passed with thread list `coldPathOwner=warm-fallback-cache`,
+  `coldPathReason=warm-fallback-default`, `fallbackCacheDecision=compatible-hit`,
+  and `totalMs=99`; detail returned `projection-v4-partial`,
+  `turnsListInitialMs=0`, and `totalMs=44`.
+- Codex Mobile thread `019eee6c-a6f5-7b20-bfb4-f96ccb6431b3` readback passed
+  with `projection-v4-partial`, `turnsListInitialMs=0`, `threadReadMs=0`, and
+  `totalMs=41`.
+- Home AI thread `019eed86-2002-7cc2-b0b7-937eb5355f36` readback passed with
+  `projection-v4-dynamic`, `turnsListInitialMs=0`, `threadReadMs=0`, and
+  `totalMs=58`.
+- Source/prod SHA-256 prefixes matched for the changed runtime files, focused
+  tests, and updated docs.
