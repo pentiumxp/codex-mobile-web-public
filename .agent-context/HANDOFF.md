@@ -26438,3 +26438,52 @@ The previous full handoff was archived and should be opened only when old proven
     metrics supported, and thread-list app-server request reason
     `default-preserve-visible-entry-window` with request limit `500`.
   - Public was not pushed; keep Public unchanged unless the user explicitly asks.
+
+## 2026-06-28 - Latest Completed Replay Detail And Active List Freshness
+
+- User-visible incident:
+  - After recent detail/list optimizations, completed turns in the current
+    thread could appear as only the user message plus final long receipt. The
+    user clarified that only the latest turn needs visible intermediate
+    reasoning/process; older turns should stay compact.
+  - A running Movie thread could show an old last-updated time in the thread
+    list even though it was actively working.
+- Root cause / invariant:
+  - `adapters/thread-detail-response-budget-service.js` applied the historical
+    completed-turn receipt-only budget to every completed turn, including the
+    just-finished latest turn when no active turn remained.
+  - Route-level thread-list duplicate dropping could discard a duplicate
+    fallback/rollout row before merge even when that row carried fresher rollout
+    mtime and active status. When rollout mtime was the newest timestamp,
+    `mergeThreadDisplaySummary()` still wrote back the old `updatedAt` field.
+- Implementation:
+  - Added a latest-completed replay budget state: when no visible active turn
+    exists, only the newest completed turn keeps a bounded recent
+    operation/reasoning/assistant tail using active budget limits. Historical
+    completed turns remain receipt-focused.
+  - Thread-list route merge now drops duplicate fallback rows only when they are
+    not fresher than the app-server row. Fallback rows with newer rollout mtime
+    survive into the normal merge path.
+  - Active rollout fallback status now advances `updatedAt` to rollout mtime
+    when that is newer, and display-summary merge writes the effective newest
+    summary timestamp instead of an older display field.
+- Validation:
+  - `node --test test/thread-list-route-merge-service.test.js test/thread-visibility.test.js test/thread-detail-response-budget-service.test.js`
+    (`90` tests)
+  - `npm run check`, `npm run check:macos`, `git diff --check`, and full
+    `npm test` (`1407` tests) passed.
+- Deployment status:
+  - Deployed commit `0df3a01` through the Home AI central macOS plugin deploy
+    path with reason `codex-mobile-latest-completed-replay-detail`.
+  - Production `/api/public-config` still reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v564` and
+    `shellCacheName=codex-mobile-shell-v564`; this is expected because no
+    static client files changed.
+  - Phase-B readback smoke returned `ok:true`, warm active-overlay detail,
+    mux metrics supported, and response-budget evidence.
+  - Source/production SHA parity was confirmed for `server.js`,
+    `adapters/thread-detail-response-budget-service.js`,
+    `adapters/thread-list-route-merge-service.js`, related tests, and docs.
+  - Authenticated metadata-only thread-list check showed Movie visible in All as
+    `active` with a current `updatedAt` and active turn id.
+  - Public was not pushed; keep Public unchanged unless the user explicitly asks.
