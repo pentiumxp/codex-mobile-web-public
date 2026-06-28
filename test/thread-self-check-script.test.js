@@ -125,6 +125,8 @@ test("thread self-check catches active turn assistant projection gap from raw ro
   const activeDetail = {
     thread: {
       id: "thread-active",
+      activeTurnId,
+      path: rolloutPath,
       turns: [{
         id: activeTurnId,
         status: "active",
@@ -147,8 +149,6 @@ test("thread self-check catches active turn assistant projection gap from raw ro
       return responseJson({
         data: [{
           id: "thread-active",
-          activeTurnId,
-          path: rolloutPath,
           updatedAt: 1782624000000,
         }],
       });

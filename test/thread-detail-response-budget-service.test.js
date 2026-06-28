@@ -563,6 +563,9 @@ test("thread detail response budget applies progressive active limits under acti
   assert.equal(budget.activeOperationItems, 1);
   assert.equal(budget.activeAssistantItems, 2);
   assert.equal(budget.omittedAssistantItems, 0);
+  assert.equal(budget.activeAssistantItemsBefore, 4);
+  assert.equal(budget.activeAssistantItemsAfter, 4);
+  assert.equal(budget.activeOmittedAssistantItems, 0);
   assert.equal(budget.preservedReplayAssistantItems, 2);
 });
 

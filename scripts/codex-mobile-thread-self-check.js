@@ -180,6 +180,17 @@ function threadId(row) {
   return text(row && (row.id || row.threadId || row.thread_id));
 }
 
+function statusText(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object" && value.type) return text(value.type);
+  return text(value);
+}
+
+function isActiveStatus(value) {
+  return /active|running|started|pending|queued|processing|inprogress|in_progress|in-progress/i.test(statusText(value));
+}
+
 function activeTurnIdFromThreadRow(row = {}) {
   const localActive = objectOrNull(row.mobileLocalActiveStatus) || {};
   const status = objectOrNull(row.status) || {};
@@ -293,6 +304,17 @@ async function readRawActiveTurnCounts(row = {}, options = {}) {
   return counts;
 }
 
+function rawActiveCountSource(row = {}, detail = {}) {
+  const thread = detailThread(detail);
+  return Object.assign({}, row || {}, {
+    id: threadId(row) || threadId(thread),
+    activeTurnId: activeTurnIdFromThreadRow(row) || activeTurnIdFromThreadRow(thread),
+    active_turn_id: activeTurnIdFromThreadRow(row) || activeTurnIdFromThreadRow(thread),
+    path: rolloutPathFromThreadRow(row) || rolloutPathFromThreadRow(thread),
+    rolloutPath: rolloutPathFromThreadRow(row) || rolloutPathFromThreadRow(thread),
+  });
+}
+
 function detailThread(detail = {}) {
   return objectOrNull(detail.thread) || objectOrNull(detail) || {};
 }
@@ -305,10 +327,11 @@ function findTurnById(thread = {}, expectedTurnId = "") {
 
 function analyzeActiveTurnRawProjection(row = {}, detail = {}, rawCounts = null) {
   if (!rawCounts || rawCounts.checked !== true || rawCounts.found !== true) return null;
-  const activeTurnId = activeTurnIdFromThreadRow(row);
+  const activeTurnId = activeTurnIdFromThreadRow(row) || activeTurnIdFromThreadRow(detailThread(detail));
   if (!activeTurnId || rawCounts.rawAssistantItems <= 0) return null;
   const thread = detailThread(detail);
   const turn = findTurnById(thread, activeTurnId);
+  if (!turn || !isActiveStatus(turn && turn.status)) return null;
   const summary = turn ? summarizeTurn(turn, thread) : null;
   const detailAssistantItems = summary ? summary.assistantItems : 0;
   const issues = [];
@@ -382,8 +405,8 @@ async function run(options = {}, env = process.env) {
   report.checkedThreads = safeThreadIds(selectedThreadIds);
 
   for (const { id: threadId, row } of selectedThreadRefs) {
-    const rawCountsBeforeFirstDetail = await readRawActiveTurnCounts(row, options);
     const firstDetail = await fetchThreadDetail(options, key, threadId, 0);
+    const rawCountsBeforeFirstDetail = await readRawActiveTurnCounts(rawActiveCountSource(row, firstDetail), options);
     const firstAnalysis = analyzeThreadDetail(firstDetail, { threadId });
     const firstActiveRawProjection = analyzeActiveTurnRawProjection(row, firstDetail, rawCountsBeforeFirstDetail);
     const detailReport = {
@@ -399,8 +422,8 @@ async function run(options = {}, env = process.env) {
       let lastAnalysis = firstAnalysis;
       for (let index = 1; index < options.repeat; index += 1) {
         await sleep(options.repeatDelayMs);
-        const rawCountsBeforeNextDetail = await readRawActiveTurnCounts(row, options);
         const nextDetail = await fetchThreadDetail(options, key, threadId, index);
+        const rawCountsBeforeNextDetail = await readRawActiveTurnCounts(rawActiveCountSource(row, nextDetail), options);
         detailReads.push(nextDetail);
         const nextAnalysis = analyzeThreadDetail(nextDetail, { threadId });
         const nextActiveRawProjection = analyzeActiveTurnRawProjection(row, nextDetail, rawCountsBeforeNextDetail);

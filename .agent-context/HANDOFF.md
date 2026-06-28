@@ -27612,3 +27612,51 @@ The previous full handoff was archived and should be opened only when old proven
     tests).
   - Active overlay/read orchestration focused suite passed (`46` tests).
   - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+
+## 2026-06-28 - Active Turn Assistant Projection Self-Check
+
+- Source report:
+  - User observed currently-running Movie-style turns sometimes showing only
+    the latest few rows, raising concern that earlier same-turn progress
+    receipts were being omitted while the turn was still active.
+- Runtime evidence:
+  - Metadata-only Movie production probe showed active detail
+    `mobileReadMode=projection-active-overlay`.
+  - Current raw rollout active turn and detail projection aligned for
+    user-visible assistant receipts: raw `event_msg.agent_message=21`, detail
+    `agentMessage=21`.
+  - The difference between overlay source item count and detail item count was
+    low-value runtime material such as function/tool calls, tool outputs, and
+    reasoning rows, which remain intentionally bounded.
+- Fix / detection:
+  - `thread-detail-response-budget-service` now records active assistant
+    before/after/omitted counts so active-turn receipt loss is visible in the
+    response budget.
+  - `thread-detail-self-check-service` emits H2
+    `active_turn_assistant_budget` when active assistant rows are budgeted away
+    and H2 `active_overlay_assistant_projection_gap` when active overlay
+    assistant counts exceed detail assistant counts.
+  - `scripts/codex-mobile-thread-self-check.js` now falls back to detail
+    `path`/`activeTurnId` for raw active-turn rollout comparison because thread
+    list rows do not always expose those fields, and only runs that raw active
+    comparison for detail turns that are still active.
+- Changed files:
+  - `adapters/thread-detail-response-budget-service.js`
+  - `adapters/thread-detail-self-check-service.js`
+  - `scripts/codex-mobile-thread-self-check.js`
+  - `test/thread-detail-response-budget-service.test.js`
+  - `test/thread-detail-self-check-service.test.js`
+  - `test/thread-self-check-script.test.js`
+- Validation before commit/deploy:
+  - `node --test test/thread-detail-response-budget-service.test.js` passed
+    (`34` tests).
+  - `node --test test/thread-detail-self-check-service.test.js
+    test/thread-self-check-script.test.js` passed (`21` tests).
+  - Combined focused self-check/budget suite passed (`53` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - Local revised self-check against production returned `ok:true`; Movie raw
+    active assistant receipts matched detail assistant receipts.
+- Residual:
+  - Existing H3 `latest_completed_user_input_missing` remains for a Codex
+    Mobile assistant-only completed turn and should be classified/fixed as a
+    separate completed-turn provenance issue.

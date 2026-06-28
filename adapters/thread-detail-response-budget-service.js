@@ -863,6 +863,9 @@ function compactTurnWithBudget(turn, thread, options, stats) {
   stats.omittedOperationItems += Math.max(0, beforeOperationCount - afterOperationCount);
   stats.omittedReasoningItems += Math.max(0, beforeReasoningCount - afterReasoningCount);
   stats.omittedAssistantItems += omittedAssistantItems;
+  stats.activeOmittedAssistantItems += active ? omittedAssistantItems : 0;
+  stats.activeAssistantItemsBefore += active ? beforeAssistantCount : 0;
+  stats.activeAssistantItemsAfter += active ? afterAssistantCount : 0;
   stats.activeTurnCount += active ? 1 : 0;
   stats.latestCompletedReplayTurnCount += latestCompletedReplay ? 1 : 0;
   stats.latestCompletedReplayOperationItems += latestCompletedReplay ? afterOperationCount : 0;
@@ -1005,6 +1008,9 @@ function compactThreadDetailResponseResult(result, options = {}) {
     completedTextOriginalChars: 0,
     completedTextRetainedChars: 0,
     activeTurnCount: 0,
+    activeOmittedAssistantItems: 0,
+    activeAssistantItemsBefore: 0,
+    activeAssistantItemsAfter: 0,
     latestCompletedReplayTurnCount: 0,
     latestCompletedReplayOperationItems: 0,
     latestCompletedReplayReasoningItems: 0,

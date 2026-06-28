@@ -128,6 +128,46 @@ test("thread detail self check fails when active turn visible items were budgete
   assert.equal(issue.omittedVisibleItems, 6);
 });
 
+test("thread detail self check fails when active assistant items were budgeted away", () => {
+  const detail = healthyDetail();
+  detail.thread.activeTurnId = "turn-active";
+  detail.thread.mobileActiveOverlay = {
+    reason: "overlay-evidence-complete",
+    source: "projection-live",
+    counts: {
+      items: 4,
+      assistantItems: 3,
+      operationItems: 0,
+      uploadItems: 0,
+      receiptItems: 0,
+      otherItems: 1,
+      unknownItems: 0,
+    },
+  };
+  detail.thread.turns.push({
+    id: "turn-active",
+    status: "inProgress",
+    items: [
+      { id: "u-live", type: "userMessage" },
+      { id: "a-live-3", type: "agentMessage" },
+    ],
+  });
+  detail.thread.mobileDetailResponseBudget.activeTurnCount = 1;
+  detail.thread.mobileDetailResponseBudget.activeAssistantItemsBefore = 3;
+  detail.thread.mobileDetailResponseBudget.activeAssistantItemsAfter = 1;
+  detail.thread.mobileDetailResponseBudget.activeOmittedAssistantItems = 2;
+
+  const report = analyzeThreadDetail(detail);
+  const codes = report.issues.map((issue) => issue.code);
+
+  assert.equal(report.ok, false);
+  assert.equal(report.budget.activeOmittedAssistantItems, 2);
+  assert.equal(report.budget.activeAssistantItemsBefore, 3);
+  assert.equal(report.budget.activeAssistantItemsAfter, 1);
+  assert.ok(codes.includes("active_turn_assistant_budget"));
+  assert.ok(codes.includes("active_overlay_assistant_projection_gap"));
+});
+
 test("thread detail self check detects missing usage and timestamp", () => {
   const detail = healthyDetail();
   detail.thread.turns[0].id = "not-a-v7-id";
