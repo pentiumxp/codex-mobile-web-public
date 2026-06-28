@@ -4809,25 +4809,54 @@ function threadUpdatedAtOnlyMs(thread) {
   return timestampToMs(thread && (thread.updatedAt || thread.updated_at || thread.updatedAtMs || thread.updated_at_ms));
 }
 
+function turnCompletionTimestampMs(turn) {
+  return timestampToMs(turn && (
+    turn.completedAtMs
+    || turn.completedAt
+    || turn.completed_at_ms
+    || turn.completed_at
+    || turn.finishedAt
+    || turn.finished_at
+  )) || turnSortTimestampMs(turn);
+}
+
+function latestExistingCompletedTurnTimestampMs(thread) {
+  if (!thread || !Array.isArray(thread.turns)) return 0;
+  let latest = 0;
+  for (const turn of thread.turns) {
+    if (!turn || isLiveTurn(turn) || !isCompletedStatus(turn.status)) continue;
+    latest = Math.max(latest, turnCompletionTimestampMs(turn));
+  }
+  return latest;
+}
+
 function appendMissingRolloutCompletionTurnsToThread(thread) {
   if (!thread || typeof thread !== "object" || !Array.isArray(thread.turns)) return thread;
-  if (!isThreadListRestStatus(thread.status)) return thread;
+  const threadIsResting = isThreadListRestStatus(thread.status);
+  const threadIsLive = isThreadListLiveStatus(thread.status);
+  if (!threadIsResting && !threadIsLive) return thread;
   const rolloutPath = rolloutPathForThread(thread);
   if (!rolloutPath) return thread;
   const payload = readRolloutCompletionTurns(rolloutPath);
   if (!payload || !(payload.byTurn instanceof Map) || !payload.byTurn.size) return thread;
   const existingIds = new Set(thread.turns.map(turnIdentifier).filter(Boolean));
   const updatedAtMs = threadUpdatedAtOnlyMs(thread);
+  const latestExistingCompletedMs = latestExistingCompletedTurnTimestampMs(thread);
   const candidates = Array.from(payload.byTurn.values())
     .filter((turn) => turn && turn.id && !existingIds.has(String(turn.id)))
     .filter((turn) => {
-      if (!updatedAtMs) return true;
       const completedAtMs = timestampToMs(turn.completedAtMs || turn.completedAt);
-      return Boolean(completedAtMs && completedAtMs >= updatedAtMs - 5000);
+      if (!completedAtMs) return false;
+      if (threadIsLive) {
+        return !latestExistingCompletedMs || completedAtMs >= latestExistingCompletedMs - 1000;
+      }
+      if (!updatedAtMs) return true;
+      return completedAtMs >= updatedAtMs - 5000;
     })
     .sort((a, b) => turnSortTimestampMs(a) - turnSortTimestampMs(b));
   if (!candidates.length) return thread;
   thread.turns.push(...candidates.map(clonePlainJson));
+  thread.turns = sortTurnsChronologically(thread.turns);
   thread.mobileAppendedRolloutCompletionTurn = candidates[candidates.length - 1].id || true;
   return thread;
 }
