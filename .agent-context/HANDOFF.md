@@ -26942,5 +26942,33 @@ The previous full handoff was archived and should be opened only when old proven
     downgrade.
   - Focused production self-checks for the current Codex Mobile thread and the
     Movie thread both returned `ok:true`.
-  - Public was not pushed and must remain unchanged unless the user explicitly
-    asks for Public.
+
+## 2026-06-28 - Public v568 Publish
+
+- User explicitly requested `推送 Public` after the v568 thread display and
+  active-overlay fixes were deployed and production self-checks returned clean.
+- Public publish scope:
+  - Synced product files from private `main` through the v568 fixes into a clean
+    public worktree based on `public/main`.
+  - Added a detailed Chinese README release section describing thread detail
+    self-checks, Usage toolbar cleanup, completed replay stability, and the
+    active-overlay input-gap repair.
+  - Removed previously tracked `.agent-context/HANDOFF.md` and
+    `.agent-context/PROJECT_CONTEXT.md` from the current Public tree. The
+    Public release must not include shared-context bodies, runtime state,
+    local keys, uploads, full rollouts, launch tokens, private logs, or
+    machine-specific diagnostics.
+- Validation in the public worktree:
+  - Initial `npm test` failed only because the temporary public worktree had no
+    installed dependencies and `server.js` could not resolve `web-push`.
+  - After `npm ci --ignore-scripts`, `npm test` passed (`1424` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - Staged privacy scan found no suspicious key/token additions; forbidden
+    paths appeared only as `.agent-context` deletions.
+- Publication:
+  - Public commit `5011fdf` (`release: 发布 v568 线程详情稳定性修复`) was pushed to
+    `public/main` (`pentiumxp/codex-mobile-web-public`).
+  - Private `main` was aligned with `public/main` using merge commit `320da63`;
+    `git merge-base --is-ancestor public/main main` passed, and
+    `git diff --stat public/main..main -- ':!.agent-context'` was empty before
+    this handoff-only note.
