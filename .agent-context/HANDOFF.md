@@ -27495,3 +27495,59 @@ The previous full handoff was archived and should be opened only when old proven
     `latest_completed_user_input_missing` diagnostic candidate remains for a
     separate slice.
   - Runtime/static shell cache is unchanged; no public push requested.
+
+## 2026-06-28 - Active Overlay Window Backfill For In-Progress Turns
+
+- Source report:
+  - User observed Movie and other currently-running thread details showing only
+    the most recent few rows of the active turn; earlier user-visible assistant
+    progress for the same still-running turn was missing.
+- Runtime evidence:
+  - Metadata-only Movie investigation found the active turn raw rollout had
+    more assistant `response_item` messages than `/api/threads/:id?mode=recent`
+    returned in the active projected turn.
+  - Production self-check at the time of final validation no longer reproduced
+    the gap, which is consistent with a timing-sensitive overlay cache issue;
+    the new self-check now detects this class by comparing raw active-turn
+    assistant counts to projected detail assistant counts using only hashes and
+    counts.
+- Root cause / failing layer:
+  - Active detail used a live overlay turn built from notification/dynamic-cache
+    state. If that cache was created or refreshed after the active turn had
+    already emitted earlier assistant progress, the overlay could be internally
+    complete for the visible deltas it knew about while still missing older
+    same-turn assistant rows.
+  - The detail route trusted that overlay turn and did not backfill same-turn
+    items from the active-window projection before merging it into the response.
+- Fix:
+  - Active-window lookup now keeps the active turn so the same cached window can
+    serve both as the static projection window and as the backfill source.
+  - Added `mergeActiveOverlayTurnWithWindowBackfill()` to merge active-window
+    items with live overlay items by stable item identity; live overlay items
+    win when both sides contain the same item, while earlier window-only user
+    and assistant rows are preserved.
+  - The read orchestration re-summarizes overlay evidence after backfill and
+    avoids repeated active-window cache lookups within one request.
+  - `scripts/codex-mobile-thread-self-check.js` now includes a metadata-only
+    raw active-turn assistant projection check. It reads local rollout JSONL as
+    counts only, never reports raw paths or message bodies, and emits
+    `active_turn_assistant_projection_gap` when detail projection is missing
+    active assistant rows that already existed before the detail request.
+- Changed files:
+  - `adapters/thread-detail-active-window-overlay-policy-service.js`
+  - `adapters/thread-detail-read-orchestration-service.js`
+  - `scripts/codex-mobile-thread-self-check.js`
+  - `test/thread-detail-active-window-overlay-policy-service.test.js`
+  - `test/thread-detail-read-orchestration-service.test.js`
+  - `test/thread-self-check-script.test.js`
+- Validation before commit/deploy:
+  - Focused active overlay/read orchestration/self-check tests passed (`43`
+    tests).
+  - Broader projection/readback/self-check suite passed (`127` tests).
+  - `npm test` passed (`1458` tests).
+  - `npm run check`, `npm run check:macos`, `git diff --check`, and Home AI
+    fallback governance check passed.
+- Status:
+  - Ready to commit and deploy through the Home AI central macOS plugin deploy
+    path. Runtime/static shell cache does not need a bump unless later public
+    frontend files are changed.

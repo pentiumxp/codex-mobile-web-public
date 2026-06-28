@@ -5,6 +5,7 @@ const { test } = require("node:test");
 
 const {
   classifyActiveOverlayItem,
+  mergeActiveOverlayTurnWithWindowBackfill,
   mergeProjectionThreadWithActiveOverlay,
   planActiveWindowOverlay,
   summarizeActiveOverlayTurnEvidence,
@@ -337,6 +338,34 @@ test("active window overlay merge appends or replaces the active turn without mu
   });
   assert.equal(replaced.turns.length, 1);
   assert.equal(replaced.turns[0].items[0].text, "new");
+});
+
+test("active overlay turn backfill preserves earlier assistant items from active window", () => {
+  const merged = mergeActiveOverlayTurnWithWindowBackfill({
+    id: "active-turn",
+    items: [
+      { id: "agent-2", type: "agentMessage", text: "newer delta" },
+      { id: "agent-3", type: "agentMessage", text: "late overlay" },
+    ],
+  }, {
+    id: "thread-1",
+    turns: [{
+      id: "active-turn",
+      status: "inProgress",
+      items: [
+        { id: "user-1", type: "userMessage", text: "private user" },
+        { id: "agent-1", type: "agentMessage", text: "early assistant" },
+        { id: "agent-2", type: "agentMessage", text: "old assistant" },
+      ],
+    }],
+  });
+
+  assert.deepEqual(merged.items.map((item) => item.id), ["user-1", "agent-1", "agent-2", "agent-3"]);
+  assert.equal(merged.items[2].text, "newer delta");
+  assert.equal(merged.mobileActiveOverlayBackfill.version, "active-overlay-window-backfill-v1");
+  assert.equal(merged.mobileActiveOverlayBackfill.sourceItems, 3);
+  assert.equal(merged.mobileActiveOverlayBackfill.overlayItems, 2);
+  assert.equal(merged.mobileActiveOverlayBackfill.mergedItems, 4);
 });
 
 test("active window overlay merge compacts overlay turn before response merge", () => {

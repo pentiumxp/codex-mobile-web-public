@@ -61,6 +61,24 @@ function itemTimestampMs(item) {
   ));
 }
 
+function itemIdentity(item) {
+  const id = text(item && (
+    item.id
+    || item.itemId
+    || item.item_id
+    || item.mobileVisibleKey
+    || item.renderKey
+    || item.visibleKey
+  ));
+  return id ? `${itemType(item)}:${id}` : "";
+}
+
+function findTurnById(thread, id) {
+  const expected = text(id);
+  if (!expected || !thread || typeof thread !== "object") return null;
+  return asArray(thread.turns).find((turn) => turnId(turn) === expected) || null;
+}
+
 function classifyActiveOverlayItem(item) {
   if (!item || typeof item !== "object") return "unknown";
   const type = itemType(item);
@@ -359,8 +377,45 @@ function mergeProjectionThreadWithActiveOverlay(projectionThread, overlayTurn, o
   return thread;
 }
 
+function mergeActiveOverlayTurnWithWindowBackfill(overlayTurn, windowThreadOrTurn) {
+  if (!overlayTurn || typeof overlayTurn !== "object") return overlayTurn;
+  const id = turnId(overlayTurn);
+  const windowTurn = turnId(windowThreadOrTurn) === id
+    ? windowThreadOrTurn
+    : findTurnById(windowThreadOrTurn, id);
+  if (!windowTurn || typeof windowTurn !== "object") return overlayTurn;
+  const windowItems = asArray(windowTurn.items).map((item) => cloneJson(item));
+  const overlayItems = asArray(overlayTurn.items).map((item) => cloneJson(item));
+  if (!windowItems.length || !overlayItems.length) return overlayTurn;
+  const mergedItems = windowItems.slice();
+  const indexByIdentity = new Map();
+  mergedItems.forEach((item, index) => {
+    const identity = itemIdentity(item);
+    if (identity && !indexByIdentity.has(identity)) indexByIdentity.set(identity, index);
+  });
+  for (const item of overlayItems) {
+    const identity = itemIdentity(item);
+    if (identity && indexByIdentity.has(identity)) {
+      mergedItems[indexByIdentity.get(identity)] = item;
+      continue;
+    }
+    if (identity) indexByIdentity.set(identity, mergedItems.length);
+    mergedItems.push(item);
+  }
+  return Object.assign({}, windowTurn, overlayTurn, {
+    items: mergedItems,
+    mobileActiveOverlayBackfill: {
+      version: "active-overlay-window-backfill-v1",
+      sourceItems: windowItems.length,
+      overlayItems: overlayItems.length,
+      mergedItems: mergedItems.length,
+    },
+  });
+}
+
 module.exports = {
   classifyActiveOverlayItem,
+  mergeActiveOverlayTurnWithWindowBackfill,
   mergeProjectionThreadWithActiveOverlay,
   planActiveWindowOverlay,
   summarizeActiveOverlayTurnEvidence,

@@ -486,8 +486,8 @@ test("active overlay incomplete evidence still falls through to full thread/read
   assert.equal(response.status, 200);
   assert.equal(response.mode, "thread-read");
   assert.equal(calls.includes("projection-lookup:full:"), false);
-  assert.ok(calls.includes("active-overlay-window-lookup:active-turn"));
-  assert.ok(calls.indexOf("overlay-provider") < calls.indexOf("active-overlay-window-lookup:active-turn"));
+  assert.ok(calls.includes("active-overlay-window-lookup:"));
+  assert.ok(calls.indexOf("overlay-provider") < calls.indexOf("active-overlay-window-lookup:"));
   assert.ok(calls.includes("thread-read"));
   assert.equal(calls.includes("seed"), false);
   assert.equal(calls.includes("turns-list:turns-list-initial"), false);
@@ -502,7 +502,132 @@ test("active overlay incomplete evidence still falls through to full thread/read
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedSource, "active-thread-read");
 });
 
-test("active overlay complete evidence can use a cached partial projection window plus overlay without app-server reads", async () => {
+test("active overlay complete evidence backfills active turn from cached active-window without app-server reads", async () => {
+  const { service, calls } = createHarness({
+    summary: {
+      id: "thread-1",
+      status: { type: "active" },
+      activeTurnId: "active-turn",
+      rolloutPath: "/tmp/rollout.jsonl",
+    },
+    projectedThreadLookup: (input, summary, runtimeSettings, options = {}) => {
+      calls.push(`projection-lookup:${options.allowPartial === true ? "partial" : "full"}:${options.omitActiveTurnId || ""}`);
+      if (!options.allowPartial) return { result: null, missReason: "partial-not-allowed" };
+      return {
+        result: {
+          thread: {
+            id: "thread-1",
+            turns: [{ id: "older-turn", items: [{ type: "agentMessage" }] }],
+            mobileReadMode: "projection-v4-partial",
+            mobileProjection: {
+              source: "partial",
+              version: "v4",
+              partial: true,
+              ageMs: 12,
+            },
+          },
+        },
+        missReason: "",
+      };
+    },
+    activeOverlayProjectionWindowLookup: (input, summary, runtimeSettings, options = {}) => {
+      calls.push(`active-overlay-window-lookup:${options.omitActiveTurnId || ""}`);
+      const turns = options.omitActiveTurnId
+        ? [{ id: "older-turn", items: [{ type: "agentMessage" }] }]
+        : [
+          { id: "older-turn", items: [{ type: "agentMessage" }] },
+          {
+            id: "active-turn",
+            items: [
+              { id: "user-1", type: "userMessage" },
+              { id: "agent-early", type: "agentMessage", text: "early assistant" },
+              { id: "agent-live", type: "agentMessage", text: "stale live assistant" },
+            ],
+          },
+        ];
+      return {
+        result: {
+          thread: {
+            id: "thread-1",
+            turns,
+            mobileReadMode: "projection-v4-partial",
+            mobileProjection: {
+              source: "partial",
+              version: "v4",
+              partial: true,
+              revision: 4,
+              ageMs: 12,
+            },
+          },
+        },
+        missReason: "",
+      };
+    },
+    resolveActiveWindowOverlay: ({ projectionThread }) => {
+      calls.push(`overlay-provider:${projectionThread && projectionThread.mobileReadMode}`);
+      Promise.resolve().then(() => calls.push("overlay-provider-microtask"));
+      return {
+        overlaySource: "app-server-notification",
+        overlayTurn: {
+          id: "active-turn",
+          items: [
+            { type: "commandExecution", startedAtMs: 110, text: "private command" },
+            { type: "input_image", createdAtMs: 111, path: "/private/upload.png" },
+            { id: "agent-live", type: "agentMessage", updatedAtMs: 120, text: "private response" },
+            { type: "turnDiagnostic", createdAtMs: 121 },
+          ],
+        },
+        projectionRevision: 4,
+        overlayRevision: 5,
+      };
+    },
+  });
+
+  const response = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: true,
+    threadLog: () => {},
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.mode, "projection-active-overlay");
+  assert.equal(calls.includes("thread-read"), false);
+  assert.equal(calls.includes("turns-list:turns-list-initial"), false);
+  assert.equal(calls.includes("turns-list:turns-list-large"), false);
+  assert.equal(calls.includes("turns-list:turns-list-active-overlay-window"), false);
+  assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), [
+  ]);
+  assert.deepEqual(calls.filter((call) => call.startsWith("active-overlay-window-lookup:")), [
+    "active-overlay-window-lookup:",
+  ]);
+  assert.ok(calls.indexOf("active-overlay-window-lookup:") < calls.indexOf("overlay-provider-microtask"));
+  assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["older-turn", "active-turn"]);
+  const activeTurn = response.body.thread.turns.find((turn) => turn.id === "active-turn");
+  assert.deepEqual(activeTurn.items.map((item) => item.id || item.type), [
+    "user-1",
+    "agent-early",
+    "agent-live",
+    "commandExecution",
+    "input_image",
+    "turnDiagnostic",
+  ]);
+  assert.equal(activeTurn.items[2].text, "private response");
+  assert.equal(response.body.thread.mobileProjection.activeOverlay, true);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "projection-active-overlay");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeFullReadRequired, true);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayAction, "use-projection-overlay");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayReason, "overlay-evidence-complete");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayItems, 6);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayOperationItems, 1);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayUploadItems, 1);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayAssistantItems, 2);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayReceiptItems, 1);
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayWindowFirst, true);
+  assert.doesNotMatch(JSON.stringify(response.body.thread.mobileDiagnostics.threadDetailTimings), /private|upload\.png/);
+});
+
+test("active overlay reads bounded active-window when cached window lacks active turn", async () => {
   const { service, calls } = createHarness({
     summary: {
       id: "thread-1",
@@ -550,22 +675,39 @@ test("active overlay complete evidence can use a cached partial projection windo
         missReason: "",
       };
     },
-    resolveActiveWindowOverlay: ({ projectionThread }) => {
-      calls.push(`overlay-provider:${projectionThread && projectionThread.mobileReadMode}`);
-      Promise.resolve().then(() => calls.push("overlay-provider-microtask"));
+    resolveActiveWindowOverlay: () => ({
+      overlaySource: "app-server-notification",
+      overlayTurn: {
+        id: "active-turn",
+        items: [
+          { id: "agent-live", type: "agentMessage", updatedAtMs: 120, text: "private response" },
+          { type: "turnDiagnostic", createdAtMs: 121 },
+        ],
+      },
+      operationCoverage: "none",
+      uploadCoverage: "none",
+      projectionRevision: 4,
+      overlayRevision: 5,
+    }),
+    turnsListThreadReadResult: async ({ mode }) => {
+      calls.push(`turns-list:${mode}`);
       return {
-        overlaySource: "app-server-notification",
-        overlayTurn: {
-          id: "active-turn",
-          items: [
-            { type: "commandExecution", startedAtMs: 110, text: "private command" },
-            { type: "input_image", createdAtMs: 111, path: "/private/upload.png" },
-            { type: "agentMessage", updatedAtMs: 120, text: "private response" },
-            { type: "turnDiagnostic", createdAtMs: 121 },
+        thread: {
+          id: "thread-1",
+          turns: [
+            { id: "older-turn", items: [{ type: "agentMessage" }] },
+            {
+              id: "active-turn",
+              status: "inProgress",
+              items: [
+                { id: "user-1", type: "userMessage" },
+                { id: "agent-early", type: "agentMessage", text: "early assistant" },
+                { id: "agent-live", type: "agentMessage", text: "stale live assistant" },
+              ],
+            },
           ],
+          mobileReadMode: mode,
         },
-        projectionRevision: 4,
-        overlayRevision: 5,
       };
     },
   });
@@ -579,31 +721,22 @@ test("active overlay complete evidence can use a cached partial projection windo
 
   assert.equal(response.status, 200);
   assert.equal(response.mode, "projection-active-overlay");
-  assert.equal(calls.includes("thread-read"), false);
-  assert.equal(calls.includes("turns-list:turns-list-initial"), false);
-  assert.equal(calls.includes("turns-list:turns-list-large"), false);
-  assert.equal(calls.includes("turns-list:turns-list-active-overlay-window"), false);
-  assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), [
+  assert.ok(calls.includes("turns-list:turns-list-active-overlay-window"));
+  assert.ok(calls.includes("seed:partial"));
+  const activeTurn = response.body.thread.turns.find((turn) => turn.id === "active-turn");
+  assert.deepEqual(activeTurn.items.map((item) => item.id || item.type), [
+    "user-1",
+    "agent-early",
+    "agent-live",
+    "turnDiagnostic",
   ]);
-  assert.deepEqual(calls.filter((call) => call.startsWith("active-overlay-window-lookup:")), [
-    "active-overlay-window-lookup:active-turn",
-  ]);
-  assert.ok(
-    calls.indexOf("active-overlay-window-lookup:active-turn") < calls.indexOf("overlay-provider-microtask"),
-  );
-  assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["older-turn", "active-turn"]);
-  assert.equal(response.body.thread.mobileProjection.activeOverlay, true);
-  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "projection-active-overlay");
-  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeFullReadRequired, true);
-  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayAction, "use-projection-overlay");
-  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayReason, "overlay-evidence-complete");
-  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayItems, 4);
-  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayOperationItems, 1);
-  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayUploadItems, 1);
-  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayAssistantItems, 1);
-  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayReceiptItems, 1);
-  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayWindowFirst, true);
-  assert.doesNotMatch(JSON.stringify(response.body.thread.mobileDiagnostics.threadDetailTimings), /private|upload\.png/);
+  assert.equal(activeTurn.items[2].text, "private response");
+  const timings = response.body.thread.mobileDiagnostics.threadDetailTimings;
+  assert.equal(timings.readDecision, "projection-active-overlay");
+  assert.equal(timings.activeOverlayAction, "use-projection-overlay");
+  assert.equal(timings.activeOverlayAssistantItems, 2);
+  assert.ok(Object.prototype.hasOwnProperty.call(timings.timings, "activeOverlayBackfillWindowMs"));
+  assert.doesNotMatch(JSON.stringify(timings), /private/);
 });
 
 test("active overlay rebuilds cached window missing latest completed input from bounded turns-list", async () => {
@@ -711,7 +844,7 @@ test("active overlay rebuilds cached window missing latest completed input from 
   assert.equal(response.mode, "projection-active-overlay");
   assert.equal(calls.includes("thread-read"), false);
   assert.deepEqual(calls.filter((call) => call.startsWith("active-overlay-window-lookup:")), [
-    "active-overlay-window-lookup:active-turn",
+    "active-overlay-window-lookup:",
   ]);
   assert.deepEqual(calls.filter((call) => call.startsWith("turns-list:")), [
     "turns-list:turns-list-active-overlay-window",
@@ -956,7 +1089,7 @@ test("active overlay window projection revision does not force full read when li
   assert.equal(calls.includes("thread-read"), false);
   assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), []);
   assert.deepEqual(calls.filter((call) => call.startsWith("active-overlay-window-lookup:")), [
-    "active-overlay-window-lookup:active-turn",
+    "active-overlay-window-lookup:",
   ]);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayAction, "use-projection-overlay");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayReason, "overlay-evidence-complete");
@@ -1141,7 +1274,9 @@ test("active overlay accepts synthetic rollout completion turns without input an
   assert.equal(response.status, 200);
   assert.equal(response.mode, "projection-active-overlay");
   assert.equal(calls.includes("thread-read"), false);
-  assert.deepEqual(calls.filter((call) => call.startsWith("turns-list:")), []);
+  assert.deepEqual(calls.filter((call) => call.startsWith("turns-list:")), [
+    "turns-list:turns-list-active-overlay-window",
+  ]);
   assert.deepEqual(calls.filter((call) => call.startsWith("full-projection:")), [
     "full-projection:false:false",
   ]);
@@ -1278,7 +1413,18 @@ test("active overlay can build a bounded projection window before full thread/re
       return {
         thread: {
           id: "thread-1",
-          turns: [{ id: "older-turn", items: [{ id: "agent-old", type: "agentMessage" }] }],
+          turns: [
+            { id: "older-turn", items: [{ id: "agent-old", type: "agentMessage" }] },
+            {
+              id: "active-turn",
+              items: [
+                { id: "cmd-1", type: "commandExecution" },
+                { id: "agent-early", type: "agentMessage" },
+                { id: "agent-1", type: "agentMessage" },
+                { id: "usage-1", type: "turnUsageSummary" },
+              ],
+            },
+          ],
           mobileReadMode: mode,
         },
       };
@@ -1310,7 +1456,7 @@ test("active overlay can build a bounded projection window before full thread/re
   assert.equal(timings.activeOverlayAction, "use-projection-overlay");
   assert.equal(timings.activeOverlayReason, "overlay-evidence-complete");
   assert.equal(timings.activeOverlayOperationItems, 1);
-  assert.equal(timings.activeOverlayAssistantItems, 1);
+  assert.equal(timings.activeOverlayAssistantItems, 2);
   assert.equal(timings.activeOverlayReceiptItems, 1);
   assert.equal(timings.activeOverlayWindowFirst, false);
   assert.ok(timings.timings.activeOverlayWindowMs >= 0);
@@ -1361,7 +1507,18 @@ test("active overlay seeds bounded window so repeated reads avoid turns-list", a
       return {
         thread: {
           id: "thread-1",
-          turns: [{ id: "older-turn", items: [{ id: "agent-old", type: "agentMessage" }] }],
+          turns: [
+            { id: "older-turn", items: [{ id: "agent-old", type: "agentMessage" }] },
+            {
+              id: "active-turn",
+              items: [
+                { id: "cmd-1", type: "commandExecution" },
+                { id: "agent-early", type: "agentMessage" },
+                { id: "agent-1", type: "agentMessage" },
+                { id: "usage-1", type: "turnUsageSummary" },
+              ],
+            },
+          ],
           mobileReadMode: mode,
         },
       };
