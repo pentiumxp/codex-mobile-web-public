@@ -528,7 +528,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v564";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v565";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -17642,7 +17642,7 @@ function itemTimestampMs(item, turn = null, thread = null) {
       || (isLiveTurn(turn, contextThread) ? 0 : turnStartedAtMs(turn))
       || 0;
   }
-  if (isLiveTurn(turn, contextThread) && isOperationalItem(item)) return 0;
+  if (isLiveTurn(turn, contextThread) && isOperationalItem(item)) return turnStartedAtMs(turn) || 0;
   return turnStartedAtMs(turn) || turnCompletedAtMs(turn, contextThread);
 }
 
@@ -17655,7 +17655,8 @@ function turnStartedAtMs(turn) {
     || numericTimestampMs(turn.createdAtMs)
     || numericTimestampMs(turn.createdAt)
     || numericTimestampMs(turn.created_at_ms)
-    || numericTimestampMs(turn.created_at);
+    || numericTimestampMs(turn.created_at)
+    || turnIdentityTimestampMs(turn);
 }
 
 function renderLiveReasoning(item, turn) {
@@ -21312,6 +21313,19 @@ function numericTimestampMs(value) {
   return number > 100000000000 ? number : number * 1000;
 }
 
+function uuidV7TimestampMs(value) {
+  const text = String(value || "").trim();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text)) return 0;
+  const timestampMs = Number.parseInt(text.replace(/-/g, "").slice(0, 12), 16);
+  if (!Number.isFinite(timestampMs)) return 0;
+  if (timestampMs < 946684800000 || timestampMs > 4102444800000) return 0;
+  return timestampMs;
+}
+
+function turnIdentityTimestampMs(turn) {
+  return uuidV7TimestampMs(turn && (turn.id || turn.turnId || turn.turn_id));
+}
+
 function turnCompletedAtMs(turn, thread = null) {
   if (!turn) return 0;
   const explicitCompletedAt = numericTimestampMs(turn.completedAtMs)
@@ -21325,7 +21339,7 @@ function turnCompletedAtMs(turn, thread = null) {
   const startedAt = turnStartedAtMs(turn);
   const fallback = numericTimestampMs(turn.updatedAt)
     || numericTimestampMs(turn.updated_at)
-    || numericTimestampMs(thread && (thread.updatedAt || thread.updated_at));
+    || (turnIdentityTimestampMs(turn) ? 0 : numericTimestampMs(thread && (thread.updatedAt || thread.updated_at)));
   if (!fallback || (startedAt && fallback < startedAt)) return 0;
   return fallback;
 }
