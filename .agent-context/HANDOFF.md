@@ -25408,9 +25408,23 @@ The previous full handoff was archived and should be opened only when old proven
   - `git diff --check` passed.
   - Full `npm test` passed (`1392` tests).
 - Deployment status:
-  - Not deployed yet at the time of this note. Next step is commit, central
-    macOS plugin deploy, and production readback. Static shell/cache bump is
-    not expected because no browser static files changed.
+  - Commit `763b338` `fix: batch thread list task card state` was deployed
+    through the Home AI central macOS plugin path with reason
+    `codex-mobile-thread-list-state-attach-batch`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260628T010544Z-plugin-codex-mobile-web-codex-mobile-thread-list-state-attach-batch`.
+  - Production public config remained `clientBuildId=0.1.11|codex-mobile-shell-v556`
+    and `shellCacheName=codex-mobile-shell-v556`, expected because no browser
+    static files changed.
+  - Production repeated `/api/threads?limit=20` readback after deploy:
+    first read `totalMs=35`, `stateAttachMs=11`, `decorateMs=22`,
+    `tokenUsageQueryCount=4`; repeated reads settled at roughly
+    `totalMs=21-49`, `stateAttachMs=17-36`, `decorateMs=1-2`,
+    `tokenUsageQueryCount=0`, and `tokenUsageWorkspaceSnapshotCacheHitCount=1`.
+  - This confirms the previous 75-120ms `decorateMs` production signal was
+    misattributed outer route work. Token usage decoration is now near-zero on
+    repeated list first paint; the remaining measurable work is state attach
+    and general route overhead.
 
 ### Deployment Update - Active User Input First-Paint Budget Module
 
