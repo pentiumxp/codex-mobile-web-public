@@ -27656,6 +27656,17 @@ The previous full handoff was archived and should be opened only when old proven
   - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
   - Local revised self-check against production returned `ok:true`; Movie raw
     active assistant receipts matched detail assistant receipts.
+- Follow-up during deployment readback:
+  - Production sample self-check initially flagged `Home AI Deploy` H2
+    `latest_completed_replay_has_operation_items` and
+    `latest_completed_usage_missing`.
+  - Bounded detail read showed the target turn was a stale active shell marked
+    `status.mobileStaleActiveTurn=true`, while a newer active turn was running.
+  - `thread-detail-response-budget-service` already skips stale active shells
+    when choosing latest completed replay; self-check now uses the same rule.
+  - Revised local self-check against production returned `ok:true`; Home AI
+    Deploy active raw assistant receipts matched detail assistant receipts, and
+    Movie remained stable.
 - Residual:
   - Existing H3 `latest_completed_user_input_missing` remains for a Codex
     Mobile assistant-only completed turn and should be classified/fixed as a

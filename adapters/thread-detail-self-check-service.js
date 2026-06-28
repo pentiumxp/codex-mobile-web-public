@@ -100,6 +100,10 @@ function isTurnComplete(turn) {
   return isCompletedStatus(turn && turn.status);
 }
 
+function isStaleActiveCompletionStatus(value) {
+  return Boolean(value && typeof value === "object" && value.mobileStaleActiveTurn === true);
+}
+
 function turnCompletedAtMs(turn, thread = null) {
   if (!isTurnComplete(turn)) return 0;
   const direct = numericTimestampMs(turn && (
@@ -184,6 +188,7 @@ function latestCompletedTurn(thread = {}) {
     const turn = turns[index];
     if (!safeArray(turn && turn.items).length) continue;
     if (isActiveStatus(turn && turn.status)) continue;
+    if (isStaleActiveCompletionStatus(turn && turn.status)) continue;
     if (!isCompletedStatus(turn && turn.status)) continue;
     return { turn, index };
   }

@@ -168,6 +168,36 @@ test("thread detail self check fails when active assistant items were budgeted a
   assert.ok(codes.includes("active_overlay_assistant_projection_gap"));
 });
 
+test("thread detail self check ignores stale active completion shell as latest completed replay", () => {
+  const detail = healthyDetail();
+  detail.thread.turns.push({
+    id: "stale-active-shell",
+    status: {
+      type: "completed",
+      mobileStaleActiveTurn: true,
+      previousType: "active",
+    },
+    items: [
+      { id: "u-stale", type: "userMessage" },
+      { id: "cmd-stale", type: "commandExecution" },
+      { id: "a-stale", type: "agentMessage" },
+    ],
+  });
+
+  const report = analyzeThreadDetail(detail);
+  const codes = report.issues.map((issue) => issue.code);
+
+  assert.equal(report.ok, true);
+  assert.deepEqual(report.latestCompleted.counts, {
+    userMessage: 1,
+    agentMessage: 1,
+    plan: 1,
+    turnUsageSummary: 1,
+  });
+  assert.ok(!codes.includes("latest_completed_replay_has_operation_items"));
+  assert.ok(!codes.includes("latest_completed_usage_missing"));
+});
+
 test("thread detail self check detects missing usage and timestamp", () => {
   const detail = healthyDetail();
   detail.thread.turns[0].id = "not-a-v7-id";
