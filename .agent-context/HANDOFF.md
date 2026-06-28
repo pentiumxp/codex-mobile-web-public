@@ -26388,3 +26388,53 @@ The previous full handoff was archived and should be opened only when old proven
     `public/sw.js`, `docs/TROUBLESHOOTING.md`,
     `test/mobile-viewport.test.js`, and `test/hermes-plugin-route.test.js`.
   - Do not push Public unless the user explicitly asks.
+
+## 2026-06-28 - Thread Detail Authority And All-Workspace List Coverage v564
+
+- User-visible incident:
+  - In embedded/mobile thread detail, the current turn could be present in runtime
+    state but the visible conversation regressed to an older receipt after a
+    refresh. User-uploaded PNG summaries could then appear missing because the
+    containing user message was not in the mounted DOM. Separately, All
+    workspaces could omit normal implementation threads such as Healthy until
+    the user opened the workspace-filtered thread and sent a new message.
+- Root cause / invariant:
+  - `public/thread-detail-dom-patch.js` treated stable conversation signatures
+    with missing DOM turns/items, duplicate render keys, or turn-order mismatch
+    as eligible for `patch-html`. Once the DOM shape is known invalid, patching
+    from that DOM violates the projection contract; the client must reset from
+    the canonical server-rendered HTML.
+  - The All-workspaces list still used a 40-row client window and default
+    80-row app-server overfetch from an older performance contract. That made
+    All behave like a recent-only slice; workspace-filtered reads used wider
+    coverage and could find omitted threads.
+- Implementation:
+  - Stable-signature DOM authority failures now plan `set-inner-html` directly.
+  - Current PNG upload-summary rendering is covered in Hermes proxy embedded
+    mode with `type: "text"`; rendered image URLs must stay on the protected
+    `/api/uploads/file?id=...` route and must not expose local paths.
+  - All-workspaces client list window is now `THREAD_LIST_PAGE_LIMIT = 200`.
+    Default app-server fetch policy reads a bounded 500 rows with reason
+    `default-preserve-visible-entry-window` before visibility/workspace merge.
+  - Static shell advanced from `codex-mobile-shell-v563` to
+    `codex-mobile-shell-v564`.
+- Validation:
+  - `node --test test/thread-detail-dom-patch.test.js test/conversation-render.test.js`
+  - `node --test test/thread-list-app-server-fetch-policy-service.test.js test/mobile-viewport.test.js test/thread-diagnostic-events.test.js test/thread-performance-metrics.test.js test/phase-b-readback-decision-service.test.js test/phase-b-readback-smoke.test.js`
+  - `node --test test/thread-visibility.test.js test/thread-list-route-merge-service.test.js test/thread-list-fallback-cache-service.test.js test/thread-list-stable-order.test.js test/thread-detail-render-plan.test.js test/thread-detail-v4-merge-state.test.js`
+  - `npm run check`, `npm run check:macos`, `git diff --check`, and full
+    `npm test` (`1404` tests) passed.
+- Deployment status:
+  - Deployed commit `64ed63d` through the Home AI central macOS plugin deploy
+    path with reason `codex-mobile-thread-detail-authority-list-coverage-v564`.
+  - Production `/api/public-config` reported
+    `clientBuildId=0.1.11|codex-mobile-shell-v564` and
+    `shellCacheName=codex-mobile-shell-v564`.
+  - Source/production SHA parity was confirmed for `public/app.js`,
+    `public/sw.js`, `public/thread-detail-dom-patch.js`,
+    `adapters/thread-list-app-server-fetch-policy-service.js`,
+    `docs/TROUBLESHOOTING.md`, and focused regression tests.
+  - Phase-B readback smoke returned `ok:true`, warm/bounded detail path, mux
+    metrics supported, and thread-list app-server request reason
+    `default-preserve-visible-entry-window` with request limit `500`.
+  - Public was not pushed; keep Public unchanged unless the user explicitly asks.
