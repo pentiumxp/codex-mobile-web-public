@@ -62,6 +62,46 @@ test("thread detail self check accepts healthy latest completed replay", () => {
   assert.equal(report.budget.latestCompletedReplayOmittedAssistantItems, 0);
 });
 
+test("thread detail self check accepts repeated operation groups with unique client render keys", () => {
+  const detail = healthyDetail();
+  detail.thread.activeTurnId = "turn-active";
+  detail.thread.turns.push({
+    id: "turn-active",
+    status: "inProgress",
+    items: [
+      { id: "cmd-a", type: "commandExecution", groupKey: "same-command" },
+      { id: "cmd-b", type: "commandExecution", groupKey: "same-command" },
+    ],
+  });
+
+  const report = analyzeThreadDetail(detail);
+  const codes = report.issues.map((issue) => issue.code);
+
+  assert.equal(report.ok, true);
+  assert.ok(!codes.includes("duplicate_client_render_keys"));
+});
+
+test("thread detail self check detects duplicate client render keys", () => {
+  const detail = healthyDetail();
+  detail.thread.activeTurnId = "turn-active";
+  detail.thread.turns.push({
+    id: "turn-active",
+    status: "inProgress",
+    items: [
+      { id: "agent-a", type: "agentMessage", renderKey: "same-render-key" },
+      { id: "agent-b", type: "plan", renderKey: "same-render-key" },
+    ],
+  });
+
+  const report = analyzeThreadDetail(detail);
+  const issue = report.issues.find((entry) => entry.code === "duplicate_client_render_keys");
+
+  assert.equal(report.ok, false);
+  assert.equal(issue.severity, "H2");
+  assert.equal(issue.surface, "thread-detail");
+  assert.equal(issue.threadHash, "4b0a5fefc328e6b9");
+});
+
 test("thread detail self check accepts naturally short completed replay receipts", () => {
   const detail = healthyDetail();
   detail.thread.mobileVisibleItemKeys = ["u1", "a1", "usage1"];

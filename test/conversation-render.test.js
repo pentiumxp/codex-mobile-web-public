@@ -3842,8 +3842,36 @@ return {
 `)(clientRenderStabilityGuard);
 
   assert.equal(result.itemKey, "item|pane-thread|turn-a|item-a");
-  assert.equal(result.operationKey, "live-operation|pane-thread|turn-a|op-group");
+  assert.equal(result.operationKey, "live-operation|pane-thread|turn-a|op-group|op-a|0");
   assert.equal(result.turnKey, "turn|pane-thread|turn-a");
+});
+
+test("operation render keys stay unique for repeated commands in one turn", () => {
+  const sources = [
+    "renderContextThread",
+    "renderContextThreadId",
+    "stableOperationRenderKey",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const result = Function(`
+const state = {
+  currentThreadId: "current-thread",
+  currentThread: { id: "current-object-thread" },
+  renderContextThreadId: "pane-thread",
+};
+function operationGroupKey(item) { return "commandExecution:command:same"; }
+${sources.join("\n")}
+return {
+  first: stableOperationRenderKey({ id: "turn-a" }, { id: "cmd-a", type: "commandExecution" }, 4),
+  second: stableOperationRenderKey({ id: "turn-a" }, { id: "cmd-b", type: "commandExecution" }, 5),
+  indexOnlyFirst: stableOperationRenderKey({ id: "turn-a" }, { type: "commandExecution" }, 4),
+  indexOnlySecond: stableOperationRenderKey({ id: "turn-a" }, { type: "commandExecution" }, 5),
+};
+`)();
+
+  assert.notEqual(result.first, result.second);
+  assert.notEqual(result.indexOnlyFirst, result.indexOnlySecond);
+  assert.equal(result.first, "live-operation|pane-thread|turn-a|commandExecution:command:same|cmd-a|4");
+  assert.equal(result.second, "live-operation|pane-thread|turn-a|commandExecution:command:same|cmd-b|5");
 });
 
 test("live turn helpers use pane render context thread before global current thread", () => {

@@ -213,6 +213,73 @@ function visibleKeyForItem(item) {
   return text(item && (item.mobileVisibleKey || item.renderKey || item.visibleKey || item.id));
 }
 
+function presentText(value) {
+  if (value === undefined || value === null) return "";
+  return String(value).trim();
+}
+
+function clientTurnIdentity(turn = {}) {
+  return presentText(turnId(turn) || turn.startedAt || turn.createdAt || "turn");
+}
+
+function clientItemIdentity(item = {}, index = 0) {
+  return presentText(
+    item.mobileVisibleKey
+    || item.renderKey
+    || item.visibleKey
+    || item.id
+    || item.callId
+    || item.requestId
+    || item.startedAtMs
+    || item.startedAt,
+  ) || `index:${boundedCount(index)}`;
+}
+
+function clientOperationGroupKey(item = {}) {
+  return presentText(
+    item.mobileOperationGroupKey
+    || item.operationGroupKey
+    || item.groupKey
+    || item.tool
+    || item.name
+    || item.command,
+  ) || `${itemType(item)}:operation`;
+}
+
+function clientRenderKeyForItem(thread = {}, turn = {}, item = {}, index = 0) {
+  const ownerThreadId = threadId(thread) || "thread";
+  const ownerTurnId = clientTurnIdentity(turn);
+  if (isOperationItem(item)) {
+    return [
+      "live-operation",
+      ownerThreadId,
+      ownerTurnId,
+      clientOperationGroupKey(item),
+      clientItemIdentity(item, index),
+      String(boundedCount(index)),
+    ].join("|");
+  }
+  const type = itemType(item);
+  const prefix = /context/i.test(type) ? "context" : "item";
+  const identity = clientItemIdentity(item, index) || `${type}-${boundedCount(index)}`;
+  return [prefix, ownerThreadId, ownerTurnId, identity].join("|");
+}
+
+function duplicateInfo(values = []) {
+  const seen = new Set();
+  const duplicates = [];
+  for (const value of values) {
+    const key = text(value);
+    if (!key) continue;
+    if (seen.has(key)) duplicates.push(key);
+    else seen.add(key);
+  }
+  return {
+    count: boundedCount(duplicates.length),
+    firstHash: shortHash(duplicates[0] || ""),
+  };
+}
+
 function hasDuplicate(values) {
   const seen = new Set();
   for (const value of values) {
@@ -301,6 +368,18 @@ function analyzeThreadDetail(detail = {}, options = {}) {
   const itemVisibleKeys = turns.flatMap((turn) => safeArray(turn.items).map(visibleKeyForItem).filter(Boolean));
   if (itemVisibleKeys.length && hasDuplicate(itemVisibleKeys)) {
     pushIssue(issues, "duplicate_item_visible_keys", "H2", "thread-detail", { threadHash });
+  }
+  for (const turn of turns) {
+    const renderKeys = safeArray(turn.items).map((item, index) => clientRenderKeyForItem(thread, turn, item, index));
+    const duplicate = duplicateInfo(renderKeys);
+    if (duplicate.count > 0) {
+      pushIssue(issues, "duplicate_client_render_keys", "H2", "thread-detail", {
+        threadHash,
+        turnHash: shortHash(turnId(turn)),
+        count: duplicate.count,
+        itemHash: duplicate.firstHash,
+      });
+    }
   }
 
   if (latest.turn) {
