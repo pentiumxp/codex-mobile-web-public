@@ -26247,8 +26247,17 @@ The previous full handoff was archived and should be opened only when old proven
     `npm test -- --test-reporter=dot`, and Home AI fallback governance check
     passed.
 - Deployment status:
-  - Pending at handoff write time. This is server-only and does not require a
-    PWA shell/cache bump. Do not push Public unless the user explicitly asks.
+  - Deployed commit `297fd45` through the Home AI central macOS plugin deploy
+    path with reason `codex-mobile-stale-detail-projection-hotfix`.
+  - This was server-only and did not require a PWA shell/cache bump.
+  - Production source/hash readback confirmed parity for
+    `adapters/thread-detail-projection-result-service.js`, `docs/MODULES.md`,
+    and `test/thread-detail-projection-result-service.test.js`.
+  - Production `Home AI Task Intake` recent detail readback returned four turns,
+    including the 2026-06-28 11:17:23 Asia/Shanghai turn, with
+    `readMode=projection-v4-cache`, `returnedTurns=4`, and `threadReadMs=0`
+    after cache repair.
+  - Do not push Public unless the user explicitly asks.
 - Related pending issue:
   - User also reported frequent embedded right-swipe from thread detail going
     directly to the Home AI host instead of the Codex thread list. A subagent
@@ -26288,8 +26297,48 @@ The previous full handoff was archived and should be opened only when old proven
     `npm test -- --test-reporter=dot`, and Home AI fallback governance check
     passed.
 - Deployment status:
+  - Deployed commit `f43d0bc` through the Home AI central macOS plugin deploy
+    path with reason `codex-mobile-embedded-back-swipe-hotfix`.
+  - Production `/api/public-config` reported
+    `clientBuildId=0.1.11|codex-mobile-shell-v561` and
+    `shellCacheName=codex-mobile-shell-v561`.
+  - Source/production SHA parity was confirmed for `public/app.js`,
+    `public/sw.js`, and `test/mobile-viewport.test.js`.
+  - Do not push Public unless the user explicitly asks.
+
+## 2026-06-28 - Embedded Back Swipe Early Host Capture Hotfix
+
+- User-visible incident:
+  - After `v561`, right-swiping in Codex Mobile embedded thread detail still
+    returned directly to the Home AI host instead of the Codex thread list,
+    making thread switching unusable.
+- Root cause / invariant:
+  - `v561` restored iframe ownership of conversation-surface right-swipes, but
+    it still waited until `touchmove` crossed the horizontal threshold before
+    calling `preventDefault()`. In the host WebView, that is too late: the host
+    edge-back gesture can claim the touch sequence at `touchstart`.
+  - The invariant is that the iframe must claim eligible embedded edge-back
+    touch sequences immediately, while still only executing Codex plugin-back
+    after the stricter horizontal gesture threshold is met.
+- Implementation:
+  - `public/app.js` now calls `stopNativeBack(event)` after creating an eligible
+    embedded back-swipe candidate at `touchstart`.
+  - The strict `v560/v561` protections remain: interactive controls are still
+    excluded, vertical-dominant movement cancels the candidate, horizontal ratio
+    and minimum distance are required before `handlePluginBack()`, and
+    velocity-only completion is not restored.
+  - Static shell advanced from `codex-mobile-shell-v561` to
+    `codex-mobile-shell-v562`.
+- Validation:
+  - `node --test test/mobile-viewport.test.js test/hermes-plugin-route.test.js`
+    (`16` tests)
+  - `node --check public/app.js`, `node --check public/sw.js`,
+    `node --check test/mobile-viewport.test.js`, and `git diff --check` passed
+    before deploy.
+- Deployment status:
   - Pending at handoff write time. Deploy with reason
-    `codex-mobile-embedded-back-swipe-hotfix` and verify production
-    `/api/public-config` reports `clientBuildId=0.1.11|codex-mobile-shell-v561`
-    plus `shellCacheName=codex-mobile-shell-v561`.
+    `codex-mobile-embedded-back-swipe-host-capture-hotfix` and verify
+    production `/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v562` plus
+    `shellCacheName=codex-mobile-shell-v562`.
   - Do not push Public unless the user explicitly asks.

@@ -441,6 +441,7 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /pluginEmbedApi\.navigationMessage\(state, pluginNavigationUiState\(\)\)/);
   assert.doesNotMatch(appJs, /function pluginEmbedBackSwipeShouldExitHost\(\)/);
   assert.doesNotMatch(functionBody("pluginEmbedBackSwipeInteractiveTarget"), /#conversation/);
+  assert.match(functionBody("installHermesPluginBackSwipeGuard"), /moved: false,[\s\S]*stopNativeBack\(event\);/);
   assert.match(functionBody("installHermesPluginBackSwipeGuard"), /vertical > 12 && vertical > horizontal/);
   assert.match(functionBody("installHermesPluginBackSwipeGuard"), /horizontal < vertical \* PLUGIN_EMBED_BACK_SWIPE_HORIZONTAL_RATIO/);
   assert.match(functionBody("shouldSuppressPluginBackForRecentConversationScroll"), /plugin_back_suppressed_recent_conversation_scroll/);
