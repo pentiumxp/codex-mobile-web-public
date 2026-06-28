@@ -27177,8 +27177,46 @@ The previous full handoff was archived and should be opened only when old proven
     test/workspace-source-write-guard-service.test.js` passed (`76` tests).
   - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
 - Status:
-  - Local workspace changed but not committed and not deployed.
-  - This module is currently bundled with the earlier local receipt external-link
-    change (`codex-mobile-shell-v570` static bump). If deploying, deploy the
-    whole current workspace state intentionally and read back both the shell
-    build and deploy-lane behavior.
+  - Committed as `986ea25` and deployed with the earlier receipt external-link
+    module (`94afe8d`) through the Home AI central macOS plugin deploy path.
+  - Production readback after deploy returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v570`,
+    `shellCacheName=codex-mobile-shell-v570`, and build id
+    `c0892ee85753997c`.
+  - Authenticated thread-list readback found `Home AI Deploy` as
+    `019f0a0d-c4e0-7ca1-8142-bd06e4f874da`, cwd
+    `/Users/hermes-dev/HermesMobileDev/app`, archived false, status active,
+    and `mobileDeployLane=true`.
+  - Source task card `ttc_1da3d27afb280eeef7` is `replied`; the terminal return
+    card was `ttc_846defc92eee08fbd8`.
+
+## 2026-06-28 - Public v570 Publish
+
+- User explicitly requested `推送public吧。包含private` after private
+  deployment and readback of v570.
+- Private/public release handling:
+  - Added detailed Chinese README release notes for v570 external receipt-link
+    opening and Home AI Deploy lane routing in commit `52d5406`.
+  - Built a temporary public worktree from `public/main`, applied only
+    `main` -> `public/main` product-file diffs, and excluded `.agent-context`.
+  - Public staged path scan found no `.agent-context`, `.codegraph`,
+    `node_modules`, `data`, `logs`, `uploads`, `runtime`, `.env`, `.codex`,
+    or private key/certificate file paths.
+  - Public tree scan confirmed `git ls-files .agent-context` returned 0.
+- Public validation in `/tmp/codex-mobile-public-v570.NhLTz0`:
+  - `npm ci --ignore-scripts` passed.
+  - `npm test` passed (`1442` tests).
+  - `npm run check`, `npm run check:macos`, and
+    `git diff --cached --check` passed.
+- Publication:
+  - Pushed public commit `4818267`
+    (`release: 发布 v570 外部链接与部署通道修复`) to
+    `public/main` (`pentiumxp/codex-mobile-web-public`).
+  - Merged `public/main` back into private `main` with the `ours` strategy in
+    merge commit `7c77e45` so private `.agent-context` stays local to the
+    private branch while public history remains an ancestor.
+  - Verified `git merge-base --is-ancestor public/main main` passed and
+    `git diff --stat public/main..main -- ':!.agent-context'` was empty before
+    adding this handoff note.
+- Pending:
+  - Push private `origin/main` after committing this handoff update.
