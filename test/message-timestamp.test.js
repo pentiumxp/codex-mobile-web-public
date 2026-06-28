@@ -32,6 +32,15 @@ test("conversation cards render compact timestamps in the item header", () => {
   assert.match(stylesCss, /\.item-timestamp\s*{[\s\S]*font-variant-numeric:\s*tabular-nums;/);
 });
 
+test("Usage summaries render as a compact toolbar without a timestamp header", () => {
+  const body = appJs.slice(appJs.indexOf("function renderItem("), appJs.indexOf("function renderInjectedThreadTaskCardItem"));
+  assert.match(body, /if \(item\.type === "turnUsageSummary"\) \{/);
+  const usageBranch = body.slice(body.indexOf('if (item.type === "turnUsageSummary")'), body.indexOf("const injectedTaskCardText"));
+  assert.doesNotMatch(usageBranch, /renderItemTimestampHtml/);
+  assert.doesNotMatch(usageBranch, /item-head/);
+  assert.match(usageBranch, /renderTurnUsageSummary\(item\)/);
+});
+
 test("card timestamps fall back from item time to turn time", () => {
   assert.match(appJs, /function itemTimestampMs\(item,\s*turn = null,\s*thread = null\)/);
   assert.match(appJs, /numericTimestampMs\(item\.startedAtMs\)/);
@@ -47,10 +56,84 @@ test("running turn timestamps do not fall back to stale thread updated time", ()
   assert.match(appJs, /if \(!fallback \|\| \(startedAt && fallback < startedAt\)\) return 0;/);
 });
 
-test("live agent message timestamps do not pretend turn start is item time", () => {
+test("live operational timestamps can use bounded turn-start time", () => {
   const body = appJs.slice(appJs.indexOf("function itemTimestampMs"), appJs.indexOf("function turnStartedAtMs"));
   assert.match(body, /isLiveTurn\(turn, contextThread\) \? 0 : turnStartedAtMs\(turn\)/);
-  assert.match(body, /if \(isLiveTurn\(turn, contextThread\) && isOperationalItem\(item\)\) return 0;/);
+  assert.match(body, /if \(isLiveTurn\(turn, contextThread\) && isOperationalItem\(item\)\) return turnStartedAtMs\(turn\) \|\| 0;/);
+});
+
+test("turn timestamps can fall back to UUIDv7 turn identity", () => {
+  const sources = [
+    "numericTimestampMs",
+    "uuidV7TimestampMs",
+    "turnIdentityTimestampMs",
+    "turnStartedAtMs",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const result = Function(`
+${sources.join("\n")}
+const id = "019f0ca6-a9c9-7753-8224-416f754b6c03";
+return {
+  uuid: uuidV7TimestampMs(id),
+  started: turnStartedAtMs({ id }),
+  invalid: uuidV7TimestampMs("not-a-v7-id"),
+};
+`)();
+
+  assert.deepEqual(result, {
+    uuid: 1782623676873,
+    started: 1782623676873,
+    invalid: 0,
+  });
+});
+
+test("reloaded live operation items use turn-start timestamps without item times", () => {
+  const sources = [
+    "renderContextThread",
+    "itemTimestampMs",
+    "numericTimestampMs",
+    "uuidV7TimestampMs",
+    "turnIdentityTimestampMs",
+    "turnStartedAtMs",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const result = Function(`
+const state = { currentThread: null, renderContextThread: null };
+function isLiveTurn() { return true; }
+function isOperationalItem(item) { return Boolean(item && item.type === "commandExecution"); }
+${sources.join("\n")}
+return itemTimestampMs(
+  { type: "commandExecution" },
+  { id: "019f0ca6-a9c9-7753-8224-416f754b6c03" },
+  { id: "thread" },
+);
+`)();
+
+  assert.equal(result, 1782623676873);
+});
+
+test("UUIDv7 completed turns do not smear thread updated time onto middle receipts", () => {
+  const sources = [
+    "renderContextThread",
+    "itemTimestampMs",
+    "numericTimestampMs",
+    "uuidV7TimestampMs",
+    "turnIdentityTimestampMs",
+    "turnStartedAtMs",
+    "turnCompletedAtMs",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const result = Function(`
+const state = { currentThread: null, renderContextThread: null };
+function isTurnComplete() { return true; }
+function isLiveTurn() { return false; }
+function isOperationalItem() { return false; }
+${sources.join("\n")}
+return itemTimestampMs(
+  { type: "agentMessage" },
+  { id: "019f0ca6-a9c9-7753-8224-416f754b6c03" },
+  { id: "thread", updatedAt: 4102444800000 },
+);
+`)();
+
+  assert.equal(result, 1782623676873);
 });
 
 test("item timestamp fallback uses explicit render context thread", () => {

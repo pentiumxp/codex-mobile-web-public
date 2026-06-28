@@ -116,11 +116,11 @@ function planThreadListAppServerFetch(input = {}) {
     };
   }
 
-  const appServerLimit = boundedOverfetchLimit(requestedLimit, 2, 80, 500);
+  const appServerLimit = boundedOverfetchLimit(requestedLimit, 2, 500, 500);
   return {
     requestedLimit,
     appServerLimit,
-    reason: "default-bounded-overfetch",
+    reason: "default-preserve-visible-entry-window",
     overfetchFactor: appServerLimit / requestedLimit,
     cursor: false,
     archived,

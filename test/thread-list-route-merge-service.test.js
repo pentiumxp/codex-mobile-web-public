@@ -76,16 +76,17 @@ test("thread-list route merge supports threads-array results", () => {
   assert.equal(merged.diagnostics.routeMergeOutputCount, 2);
 });
 
-test("thread-list route merge can drop fallback duplicates already covered by app-server rows", () => {
+test("thread-list route merge drops covered fallback duplicates but preserves fresher fallback evidence", () => {
   const fallbackMerge = fallbackThreadsForRouteMerge([
-    { id: "a" },
-    { id: "b" },
+    { id: "a", updatedAt: 10 },
+    { id: "b", updatedAt: 20 },
   ], [
-    { id: "b", updatedAt: 2 },
+    { id: "b", updatedAt: 19 },
     { id: "c", updatedAt: 3 },
+    { id: "a", updatedAt: 12 },
   ], { dropDuplicateFallbackThreads: true });
 
-  assert.deepEqual(fallbackMerge.fallbackThreads.map((thread) => thread.id), ["c"]);
+  assert.deepEqual(fallbackMerge.fallbackThreads.map((thread) => thread.id), ["c", "a"]);
   assert.equal(fallbackMerge.duplicateDropCount, 1);
 
   const merged = mergeThreadListRouteResult({
@@ -96,11 +97,51 @@ test("thread-list route merge can drop fallback duplicates already covered by ap
     mergeThreadSummaryList: mergeByUpdatedAt,
   });
 
-  assert.deepEqual(merged.result.data.map((thread) => thread.id), ["a", "b", "c"]);
+  assert.deepEqual(merged.result.data.map((thread) => thread.id), ["b", "a", "c"]);
+  assert.equal(merged.result.data[0].updatedAt, 20);
   assert.equal(merged.diagnostics.routeMergeFallbackInputCount, 2);
-  assert.equal(merged.diagnostics.routeMergeFallbackDuplicateDropCount, 1);
-  assert.equal(merged.diagnostics.routeMergeInputCount, 3);
-  assert.equal(merged.diagnostics.routeMergeDuplicateCount, 0);
+  assert.equal(merged.diagnostics.routeMergeFallbackDuplicateDropCount, 0);
+  assert.equal(merged.diagnostics.routeMergeInputCount, 4);
+  assert.equal(merged.diagnostics.routeMergeDuplicateCount, 1);
+});
+
+test("thread-list route merge preserves duplicate fallback when rollout activity is newer than app-server updatedAt", () => {
+  const threadId = "movie-thread";
+  const merged = mergeThreadListRouteResult({
+    result: {
+      data: [{
+        id: threadId,
+        name: "Movie",
+        updatedAt: 1782000000,
+        status: { type: "completed" },
+      }],
+    },
+    fallbackThreads: [{
+      id: threadId,
+      name: "Movie",
+      updatedAt: 1782000000,
+      rolloutSizeUpdatedAtMs: 1782600000000,
+      status: { type: "active" },
+    }],
+    dropDuplicateFallbackThreads: true,
+    limit: 10,
+    mergeThreadSummaryList: (threads) => {
+      const byId = new Map();
+      for (const thread of threads) {
+        const previous = byId.get(thread.id);
+        const previousMs = Math.max(Number(previous && previous.updatedAt || 0) * 1000, Number(previous && previous.rolloutSizeUpdatedAtMs || 0));
+        const threadMs = Math.max(Number(thread.updatedAt || 0) * 1000, Number(thread.rolloutSizeUpdatedAtMs || 0));
+        if (!previous || threadMs >= previousMs) byId.set(thread.id, thread);
+      }
+      return [...byId.values()];
+    },
+  });
+
+  assert.equal(merged.result.data.length, 1);
+  assert.equal(merged.result.data[0].status.type, "active");
+  assert.equal(merged.result.data[0].rolloutSizeUpdatedAtMs, 1782600000000);
+  assert.equal(merged.diagnostics.routeMergeFallbackDuplicateDropCount, 0);
+  assert.equal(merged.diagnostics.routeMergeDuplicateCount, 1);
 });
 
 test("thread-list route merge includes summary-merge diagnostics without private fields", () => {

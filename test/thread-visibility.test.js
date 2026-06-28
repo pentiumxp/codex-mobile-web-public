@@ -29,6 +29,7 @@ const {
   applyLocalActiveThreadStatusToSummary,
   attachRolloutFallbackStatus,
   clearLocalActiveThreadStatus,
+  backfillMissingRolloutCompletionTurnsForDetailResult,
   collectRecentRolloutFiles,
   compactThread,
   filterFallbackThreads,
@@ -1468,7 +1469,181 @@ test("thread detail compaction appends latest rollout completion from final json
     assert.ok(latest);
     assert.equal(latest.mobileSyntheticCompletionTurn, true);
     assert.equal(latest.items[0].text, "latest completed receipt without newline");
+    assert.equal(latest.items[0].completedAtMs, completedAt.getTime());
     assert.equal(compacted.mobileAppendedRolloutCompletionTurn, latestTurnId);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("active thread detail compaction backfills missing just-completed rollout turn before active turn", () => {
+  const threadId = "019e9000-0000-7000-8000-activebackfill";
+  const missingCompletedTurnId = "019e9000-0001-7000-8000-completed001";
+  const activeTurnId = "019e9000-0002-7000-8000-active0001";
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-active-rollout-completion-"));
+  const rolloutPath = path.join(tempDir, `rollout-2099-01-01T00-00-00-${threadId}.jsonl`);
+  try {
+    const completedAt = new Date(Date.now() - 45000);
+    const activeStartedAt = new Date(Date.now() - 10000);
+    fs.writeFileSync(rolloutPath, [
+      JSON.stringify({
+        type: "event_msg",
+        timestamp: new Date(completedAt.getTime() - 60000).toISOString(),
+        payload: {
+          type: "task_started",
+          turn_id: missingCompletedTurnId,
+        },
+      }),
+      JSON.stringify({
+        type: "event_msg",
+        timestamp: completedAt.toISOString(),
+        payload: {
+          type: "exec_command_end",
+          turn_id: missingCompletedTurnId,
+          call_id: "call_active_backfill_command",
+          arguments: { command: "npm test" },
+        },
+      }),
+      JSON.stringify({
+        type: "event_msg",
+        timestamp: new Date(completedAt.getTime() + 1000).toISOString(),
+        payload: {
+          type: "task_complete",
+          turn_id: missingCompletedTurnId,
+          completed_at: new Date(completedAt.getTime() + 1000).toISOString(),
+          duration_ms: 60000,
+          last_agent_message: "completed before active",
+        },
+      }),
+    ].join("\n") + "\n", "utf8");
+
+    const compacted = compactThread({
+      id: threadId,
+      name: "Codex Mobile",
+      path: rolloutPath,
+      updatedAt: Math.floor(activeStartedAt.getTime() / 1000),
+      status: { type: "active" },
+      activeTurnId,
+      turns: [
+        {
+          id: "019e9000-0000-7000-8000-older000001",
+          status: { type: "completed" },
+          startedAt: Math.floor((completedAt.getTime() - 600000) / 1000),
+          completedAt: Math.floor((completedAt.getTime() - 590000) / 1000),
+          items: [{ id: "older-agent", type: "agentMessage", text: "older" }],
+        },
+        {
+          id: activeTurnId,
+          status: { type: "inProgress" },
+          startedAt: Math.floor(activeStartedAt.getTime() / 1000),
+          items: [{ id: "active-agent", type: "agentMessage", text: "active" }],
+        },
+      ],
+    });
+
+    const ids = compacted.turns.map((turn) => turn.id);
+    assert.ok(ids.includes(missingCompletedTurnId));
+    assert.ok(ids.indexOf(missingCompletedTurnId) < ids.indexOf(activeTurnId));
+    const missing = compacted.turns.find((turn) => turn.id === missingCompletedTurnId);
+    assert.equal(missing.status, "completed");
+    assert.equal(missing.mobileSyntheticCompletionTurn, true);
+    assert.ok(missing.items.some((item) => item.type === "commandExecution"));
+    assert.ok(missing.items.some((item) => item.type === "agentMessage" && item.text === "completed before active"));
+    assert.equal(compacted.mobileAppendedRolloutCompletionTurn, missingCompletedTurnId);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("active overlay detail result backfills missing completed turn through response preparation path", () => {
+  const threadId = "019e9000-0000-7000-8000-activeoverlay";
+  const missingCompletedTurnId = "019e9000-0001-7000-8000-overlaydone";
+  const activeTurnId = "019e9000-0002-7000-8000-overlayrun";
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-active-overlay-completion-"));
+  const rolloutPath = path.join(tempDir, `rollout-2099-01-01T00-00-00-${threadId}.jsonl`);
+  try {
+    const completedAt = new Date(Date.now() - 45000);
+    const activeStartedAt = new Date(Date.now() - 10000);
+    fs.writeFileSync(rolloutPath, [
+      JSON.stringify({
+        type: "event_msg",
+        timestamp: new Date(completedAt.getTime() - 60000).toISOString(),
+        payload: {
+          type: "task_started",
+          turn_id: missingCompletedTurnId,
+        },
+      }),
+      JSON.stringify({
+        type: "event_msg",
+        timestamp: completedAt.toISOString(),
+        payload: {
+          type: "agent_message",
+          message: "progress text before active overlay",
+        },
+      }),
+      JSON.stringify({
+        type: "event_msg",
+        timestamp: new Date(completedAt.getTime() + 500).toISOString(),
+        payload: {
+          type: "exec_command_end",
+          turn_id: missingCompletedTurnId,
+          call_id: "call_overlay_command",
+          arguments: { command: "npm test" },
+        },
+      }),
+      JSON.stringify({
+        type: "event_msg",
+        timestamp: new Date(completedAt.getTime() + 1000).toISOString(),
+        payload: {
+          type: "task_complete",
+          turn_id: missingCompletedTurnId,
+          completed_at: new Date(completedAt.getTime() + 1000).toISOString(),
+          duration_ms: 60000,
+          last_agent_message: "completed before active overlay",
+        },
+      }),
+    ].join("\n") + "\n", "utf8");
+
+    const result = backfillMissingRolloutCompletionTurnsForDetailResult({
+      thread: {
+        id: threadId,
+        name: "Codex Mobile",
+        path: rolloutPath,
+        mobileReadMode: "projection-active-overlay",
+        updatedAt: Math.floor(activeStartedAt.getTime() / 1000),
+        status: { type: "active" },
+        activeTurnId,
+        turns: [
+          {
+            id: "019e9000-0000-7000-8000-overlayold",
+            status: { type: "completed" },
+            startedAt: Math.floor((completedAt.getTime() - 600000) / 1000),
+            completedAt: Math.floor((completedAt.getTime() - 590000) / 1000),
+            items: [{ id: "older-agent", type: "agentMessage", text: "older" }],
+          },
+          {
+            id: activeTurnId,
+            status: { type: "inProgress" },
+            startedAt: Math.floor(activeStartedAt.getTime() / 1000),
+            items: [{ id: "active-agent", type: "agentMessage", text: "active" }],
+          },
+        ],
+      },
+    }, { source: "projection-active-overlay" });
+
+    const turns = result.thread.turns || [];
+    const ids = turns.map((turn) => turn.id);
+    assert.equal(result.thread.mobileDetailCompletionBackfilled, true);
+    assert.ok(ids.includes(missingCompletedTurnId));
+    assert.ok(ids.indexOf(missingCompletedTurnId) < ids.indexOf(activeTurnId));
+    const missing = turns.find((turn) => turn.id === missingCompletedTurnId);
+    assert.ok(!missing.items.some((item) => item.type === "commandExecution"));
+    assert.ok(missing.items.some((item) => item.type === "agentMessage"
+      && item.mobileSyntheticProgressMessage === true
+      && item.text === "progress text before active overlay"));
+    assert.ok(missing.items.some((item) => item.type === "agentMessage" && item.text === "completed before active overlay"));
+    const finalReceipt = missing.items.find((item) => item.mobileSyntheticFinalReceipt === true);
+    assert.equal(finalReceipt.completedAtMs, completedAt.getTime() + 1000);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
@@ -1612,6 +1787,27 @@ test("thread list merge still accepts newer rollout active over old completed su
   }], 10);
 
   assert.equal(result.data[0].status.type, "active");
+});
+
+test("thread list merge uses newer rollout activity timestamp for active duplicate summaries", () => {
+  const threadId = "019e9000-0000-7000-8000-000000000008";
+  const result = mergeThreadListFallback({
+    data: [{
+      id: threadId,
+      name: "Movie",
+      updatedAt: 1780720000,
+      status: { type: "completed" },
+    }],
+  }, [{
+    id: threadId,
+    name: "Movie",
+    updatedAt: 1780720000,
+    rolloutSizeUpdatedAtMs: 1782600000000,
+    status: { type: "active" },
+  }], 10);
+
+  assert.equal(result.data[0].status.type, "active");
+  assert.equal(result.data[0].updatedAt, 1782600000);
 });
 
 test("thread list merge removes completed bare-id mobile fallback residues", () => {

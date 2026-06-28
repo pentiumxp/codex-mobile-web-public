@@ -102,6 +102,23 @@ function isActiveTurn(turn, thread) {
   return isActiveStatus(turn && turn.status);
 }
 
+function isStaleActiveCompletionStatus(value) {
+  return Boolean(value && typeof value === "object" && value.mobileStaleActiveTurn === true);
+}
+
+function isLatestCompletedReplayTurn(turn, thread) {
+  if (!turn || !thread || !Array.isArray(thread.turns)) return false;
+  for (let index = thread.turns.length - 1; index >= 0; index -= 1) {
+    const candidate = thread.turns[index];
+    if (isActiveTurn(candidate, thread)) continue;
+    if (isStaleActiveCompletionStatus(candidate && candidate.status)) continue;
+    if (!turnHasItems(candidate)) continue;
+    if (!isCompletedStatus(candidate && candidate.status)) continue;
+    return candidate === turn;
+  }
+  return false;
+}
+
 function isNonCurrentEmptyActivePlaceholderTurn(turn, thread) {
   const id = turnId(turn);
   const activeId = activeTurnId(thread);
@@ -778,7 +795,9 @@ function pruneNonCurrentEmptyActivePlaceholders(thread, stats) {
 function compactTurnWithBudget(turn, thread, options, stats) {
   if (!turn || typeof turn !== "object" || !Array.isArray(turn.items)) return turn;
   const active = isActiveTurn(turn, thread);
-  const maxOperationItems = active ? options.activeOperationItems : options.completedOperationItems;
+  const latestCompletedReplay = isLatestCompletedReplayTurn(turn, thread);
+  const replay = active || latestCompletedReplay;
+  const maxOperationItems = replay ? options.activeOperationItems : options.completedOperationItems;
   const compactTurn = typeof options.compactTurn === "function" ? options.compactTurn : null;
   const beforeItems = turn.items;
   const beforeOperationCount = countBy(beforeItems, isOperationItem);
@@ -792,6 +811,9 @@ function compactTurnWithBudget(turn, thread, options, stats) {
     })
     : cloneJson(turn);
   if (!compacted || !Array.isArray(compacted.items)) return compacted;
+  if (latestCompletedReplay) {
+    compacted.items = compacted.items.filter((item) => !isOperationItem(item));
+  }
   const reasoningLimit = active ? options.activeReasoningItems : options.completedReasoningItems;
   const keepReasoningIndexes = trailingIndexes(
     compacted.items,
@@ -802,7 +824,7 @@ function compactTurnWithBudget(turn, thread, options, stats) {
     if (!isReasoningItem(item)) return true;
     return keepReasoningIndexes.has(index);
   });
-  const assistantLimit = active ? options.activeAssistantItems : options.completedAssistantItems;
+  const assistantLimit = replay ? options.activeAssistantItems : options.completedAssistantItems;
   const keepAssistantIndexes = trailingIndexes(
     compacted.items,
     assistantLimit,
@@ -837,6 +859,10 @@ function compactTurnWithBudget(turn, thread, options, stats) {
   stats.omittedReasoningItems += Math.max(0, beforeReasoningCount - afterReasoningCount);
   stats.omittedAssistantItems += omittedAssistantItems;
   stats.activeTurnCount += active ? 1 : 0;
+  stats.latestCompletedReplayTurnCount += latestCompletedReplay ? 1 : 0;
+  stats.latestCompletedReplayOperationItems += latestCompletedReplay ? afterOperationCount : 0;
+  stats.latestCompletedReplayReasoningItems += latestCompletedReplay ? afterReasoningCount : 0;
+  stats.latestCompletedReplayAssistantItems += latestCompletedReplay ? afterAssistantCount : 0;
   stats.staleActiveTurnCount += !active && isStaleActiveLikeTurn(turn, thread) ? 1 : 0;
   return compacted;
 }
@@ -970,6 +996,10 @@ function compactThreadDetailResponseResult(result, options = {}) {
     completedTextOriginalChars: 0,
     completedTextRetainedChars: 0,
     activeTurnCount: 0,
+    latestCompletedReplayTurnCount: 0,
+    latestCompletedReplayOperationItems: 0,
+    latestCompletedReplayReasoningItems: 0,
+    latestCompletedReplayAssistantItems: 0,
     staleActiveTurnCount: 0,
     completedOperationItems: boundedCount(options.completedOperationItems, DEFAULT_COMPLETED_OPERATION_ITEMS, 100),
     activeOperationItems: effectiveActiveOperationItems,

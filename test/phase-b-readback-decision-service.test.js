@@ -339,7 +339,7 @@ test("phase B readback decision routes high warm list latency to app-server RPC 
       appServerPostProcessMs: 35,
       appServerMeasuredMs: 2015,
       appServerUnattributedMs: 35,
-      appServerRequestLimit: 80,
+      appServerRequestLimit: 500,
       appServerTransportKind: "external-jsonl-tcp",
       appServerEndpointKind: "profile-mux-file",
       appServerEndpointProtocol: "jsonl-tcp",
@@ -437,7 +437,7 @@ test("phase B readback decision routes high RPC latency with unsupported mux met
       appServerPostProcessMs: 87,
       appServerMeasuredMs: 1792,
       appServerUnattributedMs: 0,
-      appServerRequestLimit: 80,
+      appServerRequestLimit: 500,
       appServerTransportKind: "external-jsonl-tcp",
       appServerEndpointKind: "profile-mux-file",
       appServerEndpointProtocol: "jsonl-tcp",
@@ -702,9 +702,9 @@ test("phase B readback decision treats one-time cold rebuild plus warm check as 
       coldPathReason: "miss-rebuild:rollout",
       fallbackCacheDecision: "miss-rebuild",
       appServerRequestedLimit: 40,
-      appServerRequestLimit: 80,
-      appServerRequestReason: "default-bounded-overfetch",
-      appServerOverfetchFactor: 2,
+      appServerRequestLimit: 500,
+      appServerRequestReason: "default-preserve-visible-entry-window",
+      appServerOverfetchFactor: 12.5,
       appServerMs: 130,
       appServerRpcMs: 120,
       appServerVisibleFilterMs: 4,
@@ -736,9 +736,9 @@ test("phase B readback decision treats one-time cold rebuild plus warm check as 
   assert.equal(decision.reason, "cold-start-rebuild-warmed");
   assert.equal(decision.nextAction, "observe-cold-start-first-rebuild-cost");
   assert.equal(decision.evidence.threadListAppServerRequestedLimit, 40);
-  assert.equal(decision.evidence.threadListAppServerRequestLimit, 80);
-  assert.equal(decision.evidence.threadListAppServerRequestReason, "default-bounded-overfetch");
-  assert.equal(decision.evidence.threadListAppServerOverfetchFactor, 2);
+  assert.equal(decision.evidence.threadListAppServerRequestLimit, 500);
+  assert.equal(decision.evidence.threadListAppServerRequestReason, "default-preserve-visible-entry-window");
+  assert.equal(decision.evidence.threadListAppServerOverfetchFactor, 12);
   assert.equal(decision.evidence.threadListAppServerMs, 130);
   assert.equal(decision.evidence.threadListAppServerRpcMs, 120);
   assert.equal(decision.evidence.threadListAppServerVisibleFilterMs, 4);

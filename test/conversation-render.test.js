@@ -1079,6 +1079,9 @@ function evaluatedVisibleItemsForTurn() {
     "shouldHideSupersededLiveUserMessage",
     "isRawThreadReadMode",
     "shouldPreserveRawThreadVisibleEntry",
+    "itemTextValue",
+    "reasoningItemHasVisibleText",
+    "isLatestCompletedProcessTurn",
     "renderContextThread",
     "limitRawThreadVisibleEntries",
     "visibleItemsForTurn",
@@ -1092,6 +1095,14 @@ const state = {
   recentSubmittedUserMessages: new Map(),
 };
 function isLiveTurn(turn) { return Boolean(turn && turn.live); }
+function isTurnComplete(turn) {
+  const text = String(turn && (turn.status && turn.status.type || turn.status) || "").toLowerCase();
+  return Boolean(turn && (turn.completedAt || turn.durationMs || /completed|failed|cancel|error|interrupted/.test(text)));
+}
+function isLatestTurn(turn, thread) {
+  const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+  return Boolean(turn && turns.length && turns[turns.length - 1] === turn);
+}
 function isReasoningItem(item) { return Boolean(item && item.type === "reasoning"); }
 function isOperationalItem(item) { return Boolean(item && item.type === "commandExecution"); }
 function isContextCompactionItem(item) { return Boolean(item && item.type === "contextCompaction"); }
@@ -1634,7 +1645,7 @@ function evaluatedTurnUsageSummaryRenderer() {
 test("context compaction notices update status and collapse repeated turn notices", () => {
   assert.match(functionBody("visibleItemsForTurn"), /const contextEntryByKey = new Map\(\)/);
   assert.match(functionBody("visibleItemsForTurn"), /isContextCompactionItem\(item\)/);
-  assert.match(functionBody("visibleItemsForTurn"), /const notice = contextCompactionNotice\(item, turn, thread\)/);
+  assert.match(functionBody("visibleItemsForTurn"), /const notice = contextCompactionNotice\(item, turn, contextThread\)/);
   assert.match(functionBody("visibleItemsForTurn"), /if \(!notice\) return/);
   assert.match(functionBody("visibleItemsForTurn"), /visible\[existing\.visibleIndex\] = null/);
   assert.match(functionBody("visibleItemsForTurn"), /const filtered = visible\.filter\(Boolean\)/);
@@ -1900,6 +1911,54 @@ test("live turn keeps prompt and responded steering messages while hiding only u
   assert.deepEqual(
     visibleItemsForTurn(completedTurn).map((entry) => entry.item.id),
     ["real-user-prompt", "assistant-progress", "real-user-responded-steer", "assistant-after-steer", "real-user-trailing", "local-user-new"],
+  );
+});
+
+test("latest completed turn shows retained process items after full rerender", () => {
+  const { visibleItemsForTurn } = evaluatedVisibleItemsForTurn();
+  const previous = {
+    id: "previous",
+    status: "completed",
+    items: [
+      { id: "previous-user", type: "userMessage", content: [{ type: "text", text: "old" }] },
+      { id: "previous-reasoning", type: "reasoning", summary: ["old thinking"] },
+      { id: "previous-command", type: "commandExecution", status: "completed" },
+      { id: "previous-final", type: "agentMessage", text: "old done" },
+    ],
+  };
+  const latestCompleted = {
+    id: "latest-completed",
+    status: "completed",
+    items: [
+      { id: "latest-user", type: "userMessage", content: [{ type: "text", text: "new" }] },
+      { id: "latest-empty-reasoning", type: "reasoning", summary: [] },
+      { id: "latest-reasoning", type: "reasoning", summary: ["visible thinking"] },
+      { id: "latest-command", type: "commandExecution", status: "completed" },
+      { id: "latest-final", type: "agentMessage", text: "new done" },
+    ],
+  };
+  const active = {
+    id: "active",
+    live: true,
+    status: "inProgress",
+    items: [
+      { id: "active-user", type: "userMessage", content: [{ type: "text", text: "running" }] },
+      { id: "active-command", type: "commandExecution", status: "running" },
+    ],
+  };
+  const thread = { id: "thread-live", turns: [previous, latestCompleted, active] };
+
+  assert.deepEqual(
+    visibleItemsForTurn(previous, thread).map((entry) => entry.item.id),
+    ["previous-user", "previous-final"],
+  );
+  assert.deepEqual(
+    visibleItemsForTurn(latestCompleted, thread).map((entry) => entry.item.id),
+    ["latest-user", "latest-reasoning", "latest-command", "latest-final"],
+  );
+  assert.deepEqual(
+    visibleItemsForTurn(active, thread).map((entry) => entry.item.id),
+    ["active-user"],
   );
 });
 
@@ -2391,6 +2450,28 @@ test("raw app-server input text upload summaries render as thumbnails", () => {
   assert.doesNotMatch(html, /data-protected-image-src="[^"]*path=/);
   assert.match(html, /IMG_5433\.jpg/);
   assert.doesNotMatch(html, /<code>C:\\Users\\example/);
+});
+
+test("Hermes proxy app-server text upload summaries render png thumbnails without exposing local paths", () => {
+  const renderInputContent = evaluatedInputContentRendererWithKey("test-key", {
+    embedded: true,
+    pathname: "/api/hermes-plugins/codex-mobile/proxy/",
+  });
+  const uploadPath = "/Users/xuxin/.codex-mobile-web/uploads/2026-06-28/019eee6c-a6f5-7b20-bfb4-f96ccb6431b3/1782622603833-d5ac6a1e9f2e-homeai-upload-174E84FB-38DA-4D53-AA6F-9FC6E3CA289C.png";
+  const html = renderInputContent([
+    {
+      type: "text",
+      text: `另外看一下这个回归。\n\nUploaded attachments:\n- homeai-upload-174E84FB-38DA-4D53-AA6F-9FC6E3CA289C.png (image, image/png, 217.3 KB): ${uploadPath}`,
+    },
+  ]);
+
+  assert.match(html, /class="input-text"/);
+  assert.match(html, /class="input-image"/);
+  assert.match(html, /<img src="\/api\/hermes-plugins\/codex-mobile\/proxy\/api\/uploads\/file\?id=2026-06-28%2F019eee6c-a6f5-7b20-bfb4-f96ccb6431b3%2F1782622603833-d5ac6a1e9f2e-homeai-upload-174E84FB-38DA-4D53-AA6F-9FC6E3CA289C\.png&amp;key=test-key"/);
+  assert.match(html, /data-protected-image-src="\/api\/hermes-plugins\/codex-mobile\/proxy\/api\/uploads\/file\?id=2026-06-28%2F019eee6c-a6f5-7b20-bfb4-f96ccb6431b3%2F1782622603833-d5ac6a1e9f2e-homeai-upload-174E84FB-38DA-4D53-AA6F-9FC6E3CA289C\.png&amp;key=test-key"/);
+  assert.match(html, /homeai-upload-174E84FB-38DA-4D53-AA6F-9FC6E3CA289C\.png/);
+  assert.doesNotMatch(html, /<img src="[^"]*(?:\/Users|%2FUsers|\.codex-mobile-web|path=)/);
+  assert.doesNotMatch(html, /Uploaded attachments:/);
 });
 
 test("thread task card request prompts render only the original hash command in user messages", () => {
@@ -3890,6 +3971,9 @@ test("thread tile visible shape uses pane thread context for visible item filter
     "canShowPendingContextCompaction",
     "contextCompactionState",
     "contextCompactionNotice",
+    "itemTextValue",
+    "reasoningItemHasVisibleText",
+    "isLatestCompletedProcessTurn",
     "visibleItemsForTurn",
     "visibleRenderableTurnIds",
     "threadTileVisibleShape",
@@ -3955,6 +4039,9 @@ test("visible conversation shape uses explicit thread context for visible item f
     "canShowPendingContextCompaction",
     "contextCompactionState",
     "contextCompactionNotice",
+    "itemTextValue",
+    "reasoningItemHasVisibleText",
+    "isLatestCompletedProcessTurn",
     "visibleItemsForTurn",
     "visibleConversationShape",
   ].map((name) => functionSourceFrom(appJs, name));
@@ -4014,6 +4101,9 @@ test("visible item patch entries use render context thread for filtering and sig
     "canShowPendingContextCompaction",
     "contextCompactionState",
     "contextCompactionNotice",
+    "itemTextValue",
+    "reasoningItemHasVisibleText",
+    "isLatestCompletedProcessTurn",
     "visibleItemsForTurn",
     "stableItemKey",
     "visibleItemSignature",

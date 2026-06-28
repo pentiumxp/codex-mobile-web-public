@@ -440,11 +440,15 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /function installHermesPluginBackSwipeGuard\(\)/);
   assert.match(appJs, /pluginEmbedApi\.navigationMessage\(state, pluginNavigationUiState\(\)\)/);
   assert.doesNotMatch(appJs, /function pluginEmbedBackSwipeShouldExitHost\(\)/);
-  assert.match(functionBody("pluginEmbedBackSwipeInteractiveTarget"), /#conversation/);
+  assert.doesNotMatch(functionBody("pluginEmbedBackSwipeInteractiveTarget"), /#conversation/);
+  assert.match(functionBody("installHermesPluginBackSwipeGuard"), /moved: false,[\s\S]*stopNativeBack\(event\);/);
   assert.match(functionBody("installHermesPluginBackSwipeGuard"), /vertical > 12 && vertical > horizontal/);
   assert.match(functionBody("installHermesPluginBackSwipeGuard"), /horizontal < vertical \* PLUGIN_EMBED_BACK_SWIPE_HORIZONTAL_RATIO/);
+  assert.match(functionBody("shouldSuppressPluginBackForRecentConversationScroll"), /if \(source !== "plugin-back-swipe"\) return false;/);
   assert.match(functionBody("shouldSuppressPluginBackForRecentConversationScroll"), /plugin_back_suppressed_recent_conversation_scroll/);
   assert.match(functionBody("shouldSuppressPluginBackForRecentConversationScroll"), /PLUGIN_EMBED_BACK_RECENT_SCROLL_SUPPRESS_MS/);
+  assert.match(functionBody("shouldSuppressPluginBackForRecentConversationScroll"), /consumedInIframe: true/);
+  assert.match(functionBody("shouldSuppressPluginBackForRecentConversationScroll"), /postPluginBackResult\(true, "suppressed_recent_conversation_scroll"\)/);
   assert.match(appJs, /document\.addEventListener\("touchstart", startPluginBackSwipe, \{ passive: false, capture: true \}\)/);
   assert.doesNotMatch(appJs, /plugin_root_unhandled/);
   assert.match(appJs, /handlePluginBack\(\{\s*\n\s*preventDefault\(\) \{\},\s*\n\s*stopPropagation\(\) \{\},\s*\n\s*\}, \{ source: "plugin-back-swipe" \}\);/);
@@ -817,7 +821,7 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /function renderWorkspaceStatsDialog\(\)/);
   assert.match(appJs, /data-workspace-token-usage-toggle>统计<\/button>/);
   assert.match(appJs, /function formatTokenMillion\(value\)/);
-  assert.match(appJs, /const THREAD_LIST_PAGE_LIMIT = 40;/);
+  assert.match(appJs, /const THREAD_LIST_PAGE_LIMIT = 200;/);
   assert.match(appJs, /new URLSearchParams\(\{ limit: String\(THREAD_LIST_PAGE_LIMIT\), archived: "false" \}\)/);
   assert.match(appJs, /function hasThreadDetailRequestInFlight\(\)/);
   assert.match(appJs, /state\.threadLoadController[\s\S]*state\.refreshThreadController[\s\S]*state\.currentThread && state\.currentThread\.mobileLoading/);

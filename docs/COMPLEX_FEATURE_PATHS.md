@@ -114,7 +114,7 @@ Implementation path:
 1. Decide whether the behavior belongs in canonical server projection,
    transient browser pending overlay, or rendering only.
 2. Server should compact, enrich, and bound data volume; browser should render stable visible items without broad DOM churn.
-3. Operation cards in the latest live turn should globally show only the newest operation card, with a compact four-line visual budget: one metadata row plus up to three clipped detail lines. Completed turns should not keep operation cards below the final reply; when Usage data exists, the final frame should be `turnUsageSummary`.
+3. Operation cards in the latest live turn should globally show only the newest operation card, with a compact four-line visual budget: one metadata row plus up to three clipped detail lines. Historical completed turns should not keep operation cards below the final reply; when Usage data exists, the final frame should be `turnUsageSummary`. If there is no active turn, the latest completed turn is the replay turn and may keep a bounded recent operation/reasoning/assistant tail so the just-finished work remains inspectable.
 4. Raw operation fallback must respect latest live turn id and completion outputs. Completed fallback is allowed only while the latest turn is still live and the completed operation is tied to that same turn, so older completed operations cannot attach to a newer live turn.
 5. Live reasoning should update the timer/activity label, not insert reasoning rows.
 6. Type-only context compaction markers must not synthesize visible pending/completed notices.

@@ -41,6 +41,28 @@ function threadId(value) {
   return String(value && value.id || "").trim();
 }
 
+function timestampMs(value) {
+  if (value == null || value === "") return 0;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value > 1_000_000_000_000 ? value : value * 1000;
+  }
+  if (/^\d+(?:\.\d+)?$/.test(String(value))) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return numeric > 1_000_000_000_000 ? numeric : numeric * 1000;
+  }
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function threadSummaryTimestampMs(thread) {
+  if (!thread || typeof thread !== "object") return 0;
+  return Math.max(
+    timestampMs(thread.updatedAtMs || thread.updated_at_ms),
+    timestampMs(thread.updatedAt || thread.updated_at),
+    Number(thread.rolloutSizeUpdatedAtMs || 0),
+  );
+}
+
 function countUniqueIds(threads) {
   const ids = new Set();
   for (const thread of safeThreadList(threads)) {
@@ -70,8 +92,13 @@ function fallbackThreadsForRouteMerge(appServerThreads, fallbackThreads, options
       duplicateDropCount: 0,
     };
   }
-  const appServerIds = new Set(safeThreadList(appServerThreads).map(threadId).filter(Boolean));
-  if (!appServerIds.size) {
+  const appServerById = new Map();
+  for (const thread of safeThreadList(appServerThreads)) {
+    const id = threadId(thread);
+    if (!id) continue;
+    appServerById.set(id, thread);
+  }
+  if (!appServerById.size) {
     return {
       fallbackThreads: fallbackInput,
       duplicateDropCount: 0,
@@ -81,7 +108,8 @@ function fallbackThreadsForRouteMerge(appServerThreads, fallbackThreads, options
   let duplicateDropCount = 0;
   for (const thread of fallbackInput) {
     const id = threadId(thread);
-    if (id && appServerIds.has(id)) {
+    const appServerThread = id ? appServerById.get(id) : null;
+    if (appServerThread && threadSummaryTimestampMs(thread) <= threadSummaryTimestampMs(appServerThread) + 1000) {
       duplicateDropCount += 1;
       continue;
     }

@@ -673,6 +673,14 @@ Cause to check:
   items are not enough to suppress this fallback. Existing matching receipts
   must not be replaced, and failed, cancelled, interrupted, active, or
   in-progress turns must not receive this fallback.
+- If only command/file rows appear for the latest completed turn after
+  re-entering a thread, inspect the rollout completion-turn backfill before
+  changing browser rendering. Current server builds retain a bounded tail of
+  scoped `agent_message` / assistant `response_item` progress text for the
+  latest completed turn, attach `task_complete.completed_at` to the synthetic
+  final receipt, and suppress command/file raw-operation rows when progress
+  text exists. Command/file rows are only a degraded replay signal when the
+  rollout has no usable assistant progress text for that completed turn.
 - If rollout has `task_complete` / `task_completed` with an explicit empty
   final assistant message, do not synthesize a normal `agentMessage`. That
   indicates the runtime completed the turn without a response. The detail
@@ -694,6 +702,31 @@ Cause to check:
   when the tail result is missing a target turn. Targeted Usage cache hits must
   also pass this missing-turn check; do not return a target cache entry that
   lacks any currently returned target turn id.
+- If raw rollout has scoped `token_count` and `readRolloutTurnUsageSummaries()`
+  can resolve the latest completed turn, but a `projection-v4-cache` or
+  `projection-v4-dynamic` detail response still omits `turnUsageSummary`, check
+  the projection result assembler rather than the browser. Response-ready v4
+  projection hits intentionally skip `compactThreadReadResult()` for speed, but
+  they must still run the dynamic thread-read result decoration hook before
+  final visible-key normalization and response budgeting. Do not add a frontend
+  Usage fallback over a server projection missing this synthetic item.
+- Latest-completed replay is for user-visible progress receipts after a turn
+  finishes. It may retain bounded assistant/plan progress and final receipt
+  rows, but completed replay must not keep `reasoning` rows from the active
+  budget and should not replay command/file/tool operation rows. If a reloaded
+  completed turn shows Reasoning or command cards instead of user-facing
+  intermediate receipts, inspect `thread-detail-response-budget-service`
+  replay filtering before changing the renderer.
+- For routine self-checks after projection, Usage, timestamp, or thread-list
+  ordering changes, run
+  `node scripts/codex-mobile-thread-self-check.js --server http://127.0.0.1:8787 --json`
+  or pass one or more `--thread-id <id>` values for focused checks. This
+  metadata-only check verifies latest completed turn Usage item presence,
+  assistant/plan timestamps, no completed replay operation/reasoning rows,
+  duplicate turn/item/visible keys, repeated detail-refresh downgrades, and
+  bounded thread-list duplicate/order warnings. It intentionally checks the
+  Usage tool item exists but does not require a separate Usage title/timestamp,
+  because the visible time belongs to the adjacent final assistant receipt.
 - Thread detail should first use app-server `thread/read` even when the rollout
   file is over 32MB, because `thread/turns/list` does not reliably preserve the
   command/tool/file/search operation items expected in Mobile detail. If detail
@@ -1811,6 +1844,15 @@ sequence even though the iframe can still navigate. In that case the iframe must
 handle the gesture locally when its own navigation message would report
 `canGoBack:true`.
 
+After `codex-mobile-shell-v563`, an iframe-owned `plugin-back-swipe` that is
+suppressed by recent conversation scroll protection must still send a handled
+back result to the host. The suppression means "Codex consumed this gesture but
+did not navigate", not "Home AI may perform an outer back". If repeated
+detail/list swipes can still escape directly to the host, inspect whether
+`plugin_back_suppressed_recent_conversation_scroll` reports
+`consumedInIframe:true` and whether the host honors
+`codex-mobile.plugin.back_result.handled=true`.
+
 The validated target behavior after v108 is: Codex's thread-switcher/settings
 surface is the embedded primary page with Hermes bottom tabs visible; a Codex
 thread page is secondary and right-swipe/back returns to that primary page.
@@ -1849,10 +1891,15 @@ Expected behavior after `codex-mobile-shell-v152`:
   `mobile_resume_slow` even though bootstrap is already opening the thread.
 
 If the page is slow before or around the thread detail load, measure
-`/api/threads` by requested limit before changing thread-detail code. The mobile
-frontend should keep its default list page at `THREAD_LIST_PAGE_LIMIT = 40`; on
-this Windows deployment, requesting 60 or 80 rows made the list route roughly
-twice as slow even though the visible list was much smaller.
+`/api/threads` by requested limit before changing thread-detail code. Older
+Windows-era builds kept the mobile default list page at 40 rows for performance,
+but the current Mac/Home AI embedded contract uses a wider All-workspaces entry
+window: the frontend requests `THREAD_LIST_PAGE_LIMIT = 200`, while the server
+uses a bounded 500-row app-server read before visibility/workspace merge. This
+keeps non-archived, non-recent implementation threads visible in All workspaces
+instead of requiring the user to activate a workspace-filtered thread before it
+appears. If this path becomes slow, optimize the authoritative read/merge/cache
+path rather than shrinking the All entry window back to a recent-only slice.
 
 ## First Load Flashes Workspace Home Before Opening A Thread
 

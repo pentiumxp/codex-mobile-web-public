@@ -136,9 +136,9 @@ test("phase B readback smoke collects bounded diagnostics without private fields
             totalMs: 40,
             appServerMs: 12,
             appServerRequestedLimit: 40,
-            appServerRequestLimit: 80,
-            appServerRequestReason: "default-bounded-overfetch",
-            appServerOverfetchFactor: 2,
+            appServerRequestLimit: 500,
+            appServerRequestReason: "default-preserve-visible-entry-window",
+            appServerOverfetchFactor: 12.5,
             appServerRpcMs: 10,
             appServerVisibleFilterMs: 1,
             appServerWorkspaceFilterMs: 1,
@@ -296,9 +296,9 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.threadList.coldPathOwner, "fallback-baseline");
   assert.equal(report.threadList.coldPathReason, "miss-rebuild:rollout");
   assert.equal(report.threadList.appServerRequestedLimit, 40);
-  assert.equal(report.threadList.appServerRequestLimit, 80);
-  assert.equal(report.threadList.appServerRequestReason, "default-bounded-overfetch");
-  assert.equal(report.threadList.appServerOverfetchFactor, 2);
+  assert.equal(report.threadList.appServerRequestLimit, 500);
+  assert.equal(report.threadList.appServerRequestReason, "default-preserve-visible-entry-window");
+  assert.equal(report.threadList.appServerOverfetchFactor, 13);
   assert.equal(report.threadList.appServerRpcMs, 10);
   assert.equal(report.threadList.appServerVisibleFilterMs, 1);
   assert.equal(report.threadList.appServerWorkspaceFilterMs, 1);
@@ -791,9 +791,9 @@ test("phase B readback summary helpers keep only bounded metadata", () => {
         fallbackSessionIndexReuseCount: 1,
         fallbackSessionIndexLineCount: 2500,
         appServerRequestedLimit: 40,
-        appServerRequestLimit: 80,
-        appServerRequestReason: "default-bounded-overfetch",
-        appServerOverfetchFactor: 2,
+        appServerRequestLimit: 500,
+        appServerRequestReason: "default-preserve-visible-entry-window",
+        appServerOverfetchFactor: 12.5,
         appServerRpcMs: 120,
         appServerVisibleFilterMs: 5,
         appServerWorkspaceFilterMs: 7,
@@ -825,9 +825,9 @@ test("phase B readback summary helpers keep only bounded metadata", () => {
   assert.equal(list.coldPathOwner, "fallback-baseline");
   assert.equal(list.fallbackBaselineSourceCount, 100000);
   assert.equal(list.appServerRequestedLimit, 40);
-  assert.equal(list.appServerRequestLimit, 80);
-  assert.equal(list.appServerRequestReason, "default-bounded-overfetch");
-  assert.equal(list.appServerOverfetchFactor, 2);
+  assert.equal(list.appServerRequestLimit, 500);
+  assert.equal(list.appServerRequestReason, "default-preserve-visible-entry-window");
+  assert.equal(list.appServerOverfetchFactor, 13);
   assert.equal(list.appServerRpcMs, 120);
   assert.equal(list.appServerVisibleFilterMs, 5);
   assert.equal(list.appServerWorkspaceFilterMs, 7);

@@ -606,6 +606,126 @@ test("active overlay complete evidence can use a cached partial projection windo
   assert.doesNotMatch(JSON.stringify(response.body.thread.mobileDiagnostics.threadDetailTimings), /private|upload\.png/);
 });
 
+test("active overlay repairs partial window missing latest completed user input from full projection", async () => {
+  const { service, calls } = createHarness({
+    summary: {
+      id: "thread-1",
+      status: { type: "active" },
+      activeTurnId: "active-turn",
+      rolloutPath: "/tmp/rollout.jsonl",
+    },
+    projectedThreadResult: (projection, summary, runtimeSettings, options = {}) => {
+      calls.push(`full-projection:${options.activeOverlay === true}:${options.allowPartial === true}`);
+      if (options.activeOverlay !== true) return null;
+      return {
+        thread: {
+          id: "thread-1",
+          turns: [
+            {
+              id: "completed-turn",
+              status: "completed",
+              items: [
+                { id: "user-1", type: "userMessage" },
+                { id: "agent-1", type: "agentMessage" },
+                { id: "usage-1", type: "turnUsageSummary" },
+              ],
+            },
+          ],
+          mobileReadMode: "projection-v4-dynamic",
+          mobileProjection: {
+            source: "dynamic",
+            version: "v4",
+            revision: 12,
+            updatedAtMs: 12000,
+            ageMs: 4,
+          },
+        },
+      };
+    },
+    activeOverlayProjectionWindowLookup: (input, summary, runtimeSettings, options = {}) => {
+      calls.push(`active-overlay-window-lookup:${options.omitActiveTurnId || ""}`);
+      return {
+        result: {
+          thread: {
+            id: "thread-1",
+            turns: [
+              {
+                id: "completed-turn",
+                status: "completed",
+                items: [
+                  { id: "agent-1", type: "agentMessage" },
+                  { id: "usage-1", type: "turnUsageSummary" },
+                ],
+              },
+            ],
+            mobileReadMode: "projection-active-window",
+            mobileProjection: {
+              source: "partial",
+              version: "active-window",
+              partial: true,
+              partialKind: "turns-list-active-overlay-window",
+              activeOverlayWindow: true,
+              revision: 12,
+              ageMs: 12,
+            },
+          },
+        },
+        missReason: "",
+      };
+    },
+    resolveActiveWindowOverlay: () => ({
+      activeTurnId: "active-turn",
+      overlaySource: "projection-live",
+      operationCoverage: "present",
+      uploadCoverage: "none",
+      assistantDeltaCoverage: "",
+      receiptCoverage: "present",
+      projectionRevision: 12,
+      overlayRevision: 13,
+      overlayTimestampMs: 13000,
+      overlayTurn: {
+        id: "active-turn",
+        status: "running",
+        items: [
+          { id: "cmd-1", type: "commandExecution" },
+          { id: "agent-live", type: "agentMessage" },
+          { id: "usage-live", type: "turnUsageSummary" },
+        ],
+      },
+    }),
+  });
+
+  const response = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: true,
+    threadLog: () => {},
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.mode, "projection-active-overlay");
+  assert.equal(calls.includes("thread-read"), false);
+  assert.deepEqual(calls.filter((call) => call.startsWith("active-overlay-window-lookup:")), [
+    "active-overlay-window-lookup:active-turn",
+  ]);
+  assert.deepEqual(calls.filter((call) => call.startsWith("full-projection:")), [
+    "full-projection:false:false",
+    "full-projection:true:false",
+  ]);
+  const completed = response.body.thread.turns.find((turn) => turn.id === "completed-turn");
+  assert.ok(completed);
+  assert.deepEqual(completed.items.map((item) => item.type), [
+    "userMessage",
+    "agentMessage",
+    "turnUsageSummary",
+  ]);
+  const timings = response.body.thread.mobileDiagnostics.threadDetailTimings;
+  assert.equal(timings.readDecision, "projection-active-overlay");
+  assert.equal(timings.activeOverlayAction, "use-projection-overlay");
+  assert.equal(timings.activeOverlayReason, "overlay-evidence-complete");
+  assert.ok(Object.prototype.hasOwnProperty.call(timings.timings, "activeOverlayFullProjectionMs"));
+});
+
 test("active overlay window projection revision does not force full read when live overlay is older", async () => {
   const { service, calls } = createHarness({
     summary: {

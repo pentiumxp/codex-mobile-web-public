@@ -1,5 +1,58 @@
 "use strict";
 
+const SUMMARY_TURN_STALENESS_GRACE_MS = 2000;
+
+function timestampToMs(value) {
+  if (value === null || value === undefined || value === "") return 0;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || value <= 0) return 0;
+    return value > 1_000_000_000_000 ? Math.trunc(value) : Math.trunc(value * 1000);
+  }
+  if (/^\d+(?:\.\d+)?$/.test(String(value))) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && numeric > 0) {
+      return numeric > 1_000_000_000_000 ? Math.trunc(numeric) : Math.trunc(numeric * 1000);
+    }
+  }
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function summaryUpdatedAtMs(summary) {
+  return timestampToMs(summary && (
+    summary.updatedAt
+    || summary.updated_at
+    || summary.updatedAtMs
+    || summary.updated_at_ms
+  ));
+}
+
+function turnActivityAtMs(turn) {
+  return timestampToMs(turn && (
+    turn.completedAt
+    || turn.completedAtMs
+    || turn.completed_at
+    || turn.completed_at_ms
+    || turn.updatedAt
+    || turn.updatedAtMs
+    || turn.updated_at
+    || turn.updated_at_ms
+    || turn.startedAt
+    || turn.startedAtMs
+    || turn.started_at
+    || turn.started_at_ms
+    || turn.createdAt
+    || turn.createdAtMs
+    || turn.created_at
+    || turn.created_at_ms
+  ));
+}
+
+function latestProjectedTurnActivityAtMs(thread) {
+  const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+  return turns.reduce((max, turn) => Math.max(max, turnActivityAtMs(turn)), 0);
+}
+
 function createThreadDetailProjectionResultService(options = {}) {
   const maxTurns = Math.max(1, Number(options.maxTurns || 1));
   const compactThreadReadResult = typeof options.compactThreadReadResult === "function"
@@ -23,6 +76,9 @@ function createThreadDetailProjectionResultService(options = {}) {
   const publicRuntimeSettings = typeof options.publicRuntimeSettings === "function"
     ? options.publicRuntimeSettings
     : () => ({});
+  const decorateThreadReadResult = typeof options.decorateThreadReadResult === "function"
+    ? options.decorateThreadReadResult
+    : (result) => result;
   const now = typeof options.now === "function" ? options.now : Date.now;
 
   function sessionIndexEntry(threadId) {
@@ -57,6 +113,14 @@ function createThreadDetailProjectionResultService(options = {}) {
     const localActiveTurnId = summaryLocalActiveTurnId(summary);
     if (!localActiveTurnId) return true;
     return projectedThreadHasTurn(cached && cached.result && cached.result.thread, localActiveTurnId);
+  }
+
+  function projectedThreadCoversSummaryUpdatedAt(cached, summary) {
+    const updatedAtMs = summaryUpdatedAtMs(summary);
+    if (!updatedAtMs) return true;
+    const latestTurnAtMs = latestProjectedTurnActivityAtMs(cached && cached.result && cached.result.thread);
+    if (!latestTurnAtMs) return false;
+    return updatedAtMs <= latestTurnAtMs + SUMMARY_TURN_STALENESS_GRACE_MS;
   }
 
   function isResponseReadyV4Projection(cached, result) {
@@ -96,6 +160,7 @@ function createThreadDetailProjectionResultService(options = {}) {
   function prepareProjectedThreadReadResult(cached, summary, runtimeSettings, options = {}) {
     if (!cached || !cached.result || !cached.result.thread) return null;
     if (options.activeOverlay !== true && !projectedThreadSatisfiesLocalActiveSummary(cached, summary)) return null;
+    if (options.activeOverlay !== true && !projectedThreadCoversSummaryUpdatedAt(cached, summary)) return null;
     const mergedResult = Object.assign({}, cached.result, {
       thread: mergeThreadDisplaySummary(cached.result.thread, summary) || cached.result.thread,
     });
@@ -123,7 +188,12 @@ function createThreadDetailProjectionResultService(options = {}) {
       result.thread.mobileProjection.stalePartial = true;
       result.thread.mobileProjection.staleReason = cached.staleReason || "";
     }
-    return result;
+    return decorateThreadReadResult(result, {
+      cached,
+      summary,
+      runtimeSettings,
+      projectionVersion,
+    }) || result;
   }
 
   return {

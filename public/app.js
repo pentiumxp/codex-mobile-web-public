@@ -524,11 +524,11 @@ const MAX_RAW_THREAD_VISIBLE_TURNS = 4;
 const MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24;
 const PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const IMAGE_DIAGNOSTICS_ENABLED = false;
-const THREAD_LIST_PAGE_LIMIT = 40;
+const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v560";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v568";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -5210,6 +5210,33 @@ function shouldPreserveRawThreadVisibleEntry(entry) {
     || isContextCompactionItem(item);
 }
 
+function itemTextValue(value) {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(itemTextValue).join("");
+  return "";
+}
+
+function reasoningItemHasVisibleText(item) {
+  return Boolean(
+    itemTextValue(item && item.text).trim()
+    || itemTextValue(item && item.content).trim()
+    || itemTextValue(item && item.summary).trim()
+  );
+}
+
+function isLatestCompletedProcessTurn(turn, thread = null) {
+  if (!turn || !isTurnComplete(turn)) return false;
+  const contextThread = renderContextThread(thread);
+  const turns = Array.isArray(contextThread && contextThread.turns) ? contextThread.turns : [];
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const candidate = turns[index];
+    if (!candidate || isLiveTurn(candidate, contextThread)) continue;
+    if (!isTurnComplete(candidate)) continue;
+    return candidate === turn;
+  }
+  return isLatestTurn(turn, contextThread);
+}
+
 function limitRawThreadVisibleEntries(entries, thread = null) {
   if (!isRawThreadReadMode(renderContextThread(thread))) return entries;
   if (!Array.isArray(entries) || entries.length <= MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN) return entries;
@@ -5226,12 +5253,19 @@ function limitRawThreadVisibleEntries(entries, thread = null) {
 function visibleItemsForTurn(turn, thread = null) {
   const visible = [];
   const contextEntryByKey = new Map();
+  const contextThread = renderContextThread(thread);
+  const showCompletedProcessItems = isLatestCompletedProcessTurn(turn, contextThread);
   (turn.items || []).forEach((item, index) => {
-    if (!item || isReasoningItem(item)) return;
+    if (!item) return;
+    if (isReasoningItem(item)) {
+      if (!showCompletedProcessItems || !reasoningItemHasVisibleText(item)) return;
+      visible.push({ item, sourceIndex: index });
+      return;
+    }
     if (shouldHideSupersededLiveUserMessage(turn, item)) return;
-    if (shouldHideDurableLiveUserMessage(turn, item, index, thread)) return;
+    if (shouldHideDurableLiveUserMessage(turn, item, index, contextThread)) return;
     if (isContextCompactionItem(item)) {
-      const notice = contextCompactionNotice(item, turn, thread);
+      const notice = contextCompactionNotice(item, turn, contextThread);
       if (!notice) return;
       const groupKey = "context-compaction";
       const existing = contextEntryByKey.get(groupKey);
@@ -5241,6 +5275,7 @@ function visibleItemsForTurn(turn, thread = null) {
       return;
     }
     if (isOperationalItem(item)) {
+      if (showCompletedProcessItems) visible.push({ item, sourceIndex: index });
       return;
     }
     visible.push({ item, sourceIndex: index });
@@ -12378,7 +12413,7 @@ function pluginEmbedBackSwipeCanHandle() {
 
 function pluginEmbedBackSwipeInteractiveTarget(target) {
   return Boolean(target?.closest?.(
-    "#conversation, input, select, textarea, button, a, [role='button'], [contenteditable='true'], .composer, .dialog, .modal, .app-native-dialog, .file-preview-dialog"
+    "input, select, textarea, button, a, [role='button'], [contenteditable='true'], .composer, .dialog, .modal, .app-native-dialog, .file-preview-dialog"
   ));
 }
 
@@ -12418,6 +12453,7 @@ function installHermesPluginBackSwipeGuard() {
       startedAt: performance.now(),
       moved: false,
     };
+    stopNativeBack(event);
   };
   const movePluginBackSwipe = (event) => {
     if (!swipe || !isHermesEmbedMode() || event.touches?.length !== 1) return;
@@ -12462,6 +12498,7 @@ function installHermesPluginBackSwipeGuard() {
 }
 
 function shouldSuppressPluginBackForRecentConversationScroll(source = "") {
+  if (source !== "plugin-back-swipe") return false;
   if (!state.currentThreadId || !state.currentThread) return false;
   const elapsedMs = Date.now() - Number(state.conversationScrollIntentAtMs || 0);
   if (elapsedMs < 0 || elapsedMs > PLUGIN_EMBED_BACK_RECENT_SCROLL_SUPPRESS_MS) return false;
@@ -12469,8 +12506,9 @@ function shouldSuppressPluginBackForRecentConversationScroll(source = "") {
     source: String(source || "").slice(0, 80),
     threadId: state.currentThreadId || "",
     elapsedMs,
+    consumedInIframe: true,
   });
-  postPluginBackResult(false, "suppressed_recent_conversation_scroll");
+  postPluginBackResult(true, "suppressed_recent_conversation_scroll");
   return true;
 }
 
@@ -12479,7 +12517,7 @@ function handlePluginBack(event, options = {}) {
   if (event && typeof event.preventDefault === "function") event.preventDefault();
   if (event && typeof event.stopPropagation === "function") event.stopPropagation();
   const source = String(options.source || "plugin-back");
-  if (shouldSuppressPluginBackForRecentConversationScroll(source)) return false;
+  if (shouldSuppressPluginBackForRecentConversationScroll(source)) return true;
   let handled = false;
   if (imagePreviewOpen()) {
     closeImagePreview();
@@ -17639,7 +17677,7 @@ function itemTimestampMs(item, turn = null, thread = null) {
       || (isLiveTurn(turn, contextThread) ? 0 : turnStartedAtMs(turn))
       || 0;
   }
-  if (isLiveTurn(turn, contextThread) && isOperationalItem(item)) return 0;
+  if (isLiveTurn(turn, contextThread) && isOperationalItem(item)) return turnStartedAtMs(turn) || 0;
   return turnStartedAtMs(turn) || turnCompletedAtMs(turn, contextThread);
 }
 
@@ -17652,7 +17690,8 @@ function turnStartedAtMs(turn) {
     || numericTimestampMs(turn.createdAtMs)
     || numericTimestampMs(turn.createdAt)
     || numericTimestampMs(turn.created_at_ms)
-    || numericTimestampMs(turn.created_at);
+    || numericTimestampMs(turn.created_at)
+    || turnIdentityTimestampMs(turn);
 }
 
 function renderLiveReasoning(item, turn) {
@@ -21309,6 +21348,19 @@ function numericTimestampMs(value) {
   return number > 100000000000 ? number : number * 1000;
 }
 
+function uuidV7TimestampMs(value) {
+  const text = String(value || "").trim();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text)) return 0;
+  const timestampMs = Number.parseInt(text.replace(/-/g, "").slice(0, 12), 16);
+  if (!Number.isFinite(timestampMs)) return 0;
+  if (timestampMs < 946684800000 || timestampMs > 4102444800000) return 0;
+  return timestampMs;
+}
+
+function turnIdentityTimestampMs(turn) {
+  return uuidV7TimestampMs(turn && (turn.id || turn.turnId || turn.turn_id));
+}
+
 function turnCompletedAtMs(turn, thread = null) {
   if (!turn) return 0;
   const explicitCompletedAt = numericTimestampMs(turn.completedAtMs)
@@ -21322,7 +21374,7 @@ function turnCompletedAtMs(turn, thread = null) {
   const startedAt = turnStartedAtMs(turn);
   const fallback = numericTimestampMs(turn.updatedAt)
     || numericTimestampMs(turn.updated_at)
-    || numericTimestampMs(thread && (thread.updatedAt || thread.updated_at));
+    || (turnIdentityTimestampMs(turn) ? 0 : numericTimestampMs(thread && (thread.updatedAt || thread.updated_at)));
   if (!fallback || (startedAt && fallback < startedAt)) return 0;
   return fallback;
 }

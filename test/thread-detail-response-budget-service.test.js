@@ -12,6 +12,10 @@ function compactTurn(turn, options = {}) {
   const operationTypes = new Set(["commandExecution", "collabAgentToolCall", "fileChange", "dynamicToolCall", "mcpToolCall"]);
   const maxOperations = Math.max(0, Number(options.maxOperationItems || 0));
   const keep = new Set();
+  if (maxOperations <= 0) {
+    out.items = out.items.filter((item) => !operationTypes.has(String(item && item.type || "")));
+    return out;
+  }
   for (let index = out.items.length - 1; index >= 0; index -= 1) {
     if (!operationTypes.has(String(out.items[index] && out.items[index].type || ""))) continue;
     keep.add(index);
@@ -21,7 +25,7 @@ function compactTurn(turn, options = {}) {
   return out;
 }
 
-test("thread detail response budget trims operation and reasoning items and rebuilds visible keys", () => {
+test("thread detail response budget trims historical operation and reasoning items and rebuilds visible keys", () => {
   const result = {
     thread: {
       id: "thread-1",
@@ -42,6 +46,15 @@ test("thread detail response budget trims operation and reasoning items and rebu
             { id: "usage", type: "turnUsageSummary" },
           ],
         },
+        {
+          id: "turn-latest",
+          status: "completed",
+          items: [
+            { id: "u2", type: "userMessage", text: "Latest question" },
+            { id: "a2", type: "agentMessage", text: "Latest answer" },
+            { id: "usage2", type: "turnUsageSummary" },
+          ],
+        },
       ],
     },
   };
@@ -60,11 +73,16 @@ test("thread detail response budget trims operation and reasoning items and rebu
     "turnUsageSummary",
   ]);
   assert.equal(items[1].id, "c3");
-  assert.deepEqual(compacted.thread.mobileVisibleItemKeys, items.map((item) => item.mobileVisibleKey));
+  assert.deepEqual(compacted.thread.turns[1].items.map((item) => item.id), ["u2", "a2", "usage2"]);
+  assert.deepEqual(
+    compacted.thread.mobileVisibleItemKeys,
+    compacted.thread.turns.flatMap((turn) => turn.items.map((item) => item.mobileVisibleKey)),
+  );
   assert.equal(compacted.thread.mobileProjectionRevision, 7);
   assert.equal(compacted.thread.mobileDetailResponseBudget.applied, true);
   assert.equal(compacted.thread.mobileDetailResponseBudget.omittedOperationItems, 2);
   assert.equal(compacted.thread.mobileDetailResponseBudget.omittedReasoningItems, 1);
+  assert.equal(compacted.thread.mobileDetailResponseBudget.latestCompletedReplayTurnCount, 1);
 });
 
 test("thread detail response budget keeps bounded active reasoning and operation tail", () => {
@@ -101,6 +119,134 @@ test("thread detail response budget keeps bounded active reasoning and operation
   assert.deepEqual(items.map((item) => item.id), ["u1", "r2", "r3", "c2", "a1"]);
   assert.equal(compacted.thread.mobileDetailResponseBudget.omittedOperationItems, 1);
   assert.equal(compacted.thread.mobileDetailResponseBudget.omittedReasoningItems, 1);
+});
+
+test("thread detail response budget keeps bounded latest completed replay detail when no active turn exists", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      mobileReadMode: "projection-v4-dynamic",
+      mobileProjectionRevision: 8,
+      turns: [
+        {
+          id: "turn-old",
+          status: "completed",
+          items: [
+            { id: "old-u", type: "userMessage", text: "Old question" },
+            { id: "old-r1", type: "reasoning", text: "old reason" },
+            { id: "old-c1", type: "commandExecution", command: "old 1" },
+            { id: "old-c2", type: "commandExecution", command: "old 2" },
+            { id: "old-a1", type: "agentMessage", text: "old progress" },
+            { id: "old-a2", type: "agentMessage", text: "old receipt" },
+            { id: "old-usage", type: "turnUsageSummary" },
+          ],
+        },
+        {
+          id: "turn-latest",
+          status: "completed",
+          items: [
+            { id: "u1", type: "userMessage", text: "Question" },
+            { id: "r1", type: "reasoning", text: "" },
+            { id: "r2", type: "reasoning", text: "" },
+            { id: "r3", type: "reasoning", text: "" },
+            { id: "c1", type: "commandExecution", command: "a" },
+            { id: "c2", type: "commandExecution", command: "b" },
+            { id: "c3", type: "commandExecution", command: "c" },
+            { id: "a1", type: "agentMessage", text: "progress 1" },
+            { id: "plan1", type: "plan", text: "plan progress" },
+            { id: "a2", type: "agentMessage", text: "final receipt" },
+            { id: "usage", type: "turnUsageSummary" },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    completedOperationItems: 1,
+    completedReasoningItems: 0,
+    completedAssistantItems: 1,
+    activeOperationItems: 2,
+    activeReasoningItems: 2,
+    activeAssistantItems: 2,
+  });
+
+  assert.deepEqual(compacted.thread.turns[0].items.map((item) => item.id), ["old-u", "old-c2", "old-a2", "old-usage"]);
+  assert.deepEqual(compacted.thread.turns[1].items.map((item) => item.id), ["u1", "plan1", "a2", "usage"]);
+  const budget = compacted.thread.mobileDetailResponseBudget;
+  assert.equal(budget.latestCompletedReplayTurnCount, 1);
+  assert.equal(budget.latestCompletedReplayOperationItems, 0);
+  assert.equal(budget.latestCompletedReplayReasoningItems, 0);
+  assert.equal(budget.latestCompletedReplayAssistantItems, 2);
+  assert.equal(budget.omittedOperationItems, 4);
+  assert.equal(budget.omittedReasoningItems, 4);
+  assert.equal(budget.omittedAssistantItems, 2);
+  assert.equal(budget.activeTurnCount, 0);
+  assert.equal(compacted.thread.mobileProjectionRevision, 8);
+  assert.deepEqual(
+    compacted.thread.mobileVisibleItemKeys,
+    compacted.thread.turns.flatMap((turn) => turn.items.map((item) => item.mobileVisibleKey)),
+  );
+});
+
+test("thread detail response budget keeps completed replay progress before active turn", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      mobileProjectionRevision: 9,
+      turns: [
+        {
+          id: "turn-completed",
+          status: "completed",
+          items: [
+            { id: "u1", type: "userMessage", text: "Question" },
+            { id: "r1", type: "reasoning", text: "" },
+            { id: "r2", type: "reasoning", text: "" },
+            { id: "c1", type: "commandExecution", command: "old command" },
+            { id: "p1", type: "agentMessage", text: "progress 1", mobileSyntheticProgressMessage: true },
+            { id: "p2", type: "agentMessage", text: "progress 2", mobileSyntheticProgressMessage: true },
+            { id: "p3", type: "agentMessage", text: "progress 3", mobileSyntheticProgressMessage: true },
+            { id: "final", type: "agentMessage", text: "final receipt", mobileSyntheticFinalReceipt: true },
+            { id: "usage", type: "turnUsageSummary" },
+          ],
+        },
+        {
+          id: "turn-active",
+          status: "inProgress",
+          items: [
+            { id: "active-u", type: "userMessage", text: "Next" },
+            { id: "active-a", type: "agentMessage", text: "Working" },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    completedAssistantItems: 1,
+    completedOperationItems: 1,
+    activeAssistantItems: 4,
+    activeOperationItems: 0,
+  });
+
+  const completed = compacted.thread.turns[0];
+  assert.deepEqual(completed.items.map((item) => item.id), ["u1", "p1", "p2", "p3", "final", "usage"]);
+  assert.equal(completed.items.filter((item) => item.mobileSyntheticProgressMessage === true).length, 3);
+  assert.ok(!completed.items.some((item) => item.type === "reasoning"));
+  assert.ok(!completed.items.some((item) => item.type === "commandExecution"));
+  const budget = compacted.thread.mobileDetailResponseBudget;
+  assert.equal(budget.activeTurnCount, 1);
+  assert.equal(budget.latestCompletedReplayTurnCount, 1);
+  assert.equal(budget.latestCompletedReplayOperationItems, 0);
+  assert.equal(budget.latestCompletedReplayAssistantItems, 4);
+  assert.equal(budget.latestCompletedReplayReasoningItems, 0);
+  assert.equal(budget.omittedOperationItems, 1);
+  assert.equal(budget.omittedReasoningItems, 2);
+  assert.equal(budget.omittedAssistantItems, 0);
 });
 
 test("thread detail response budget trims collab agent tool calls as operation items", () => {
@@ -1214,9 +1360,9 @@ test("thread detail response budget applies progressive visible item ceiling aft
 
   const turns = compacted.thread.turns;
   assert.deepEqual(turns[0].items.map((item) => item.id), ["u1", "a1", "usage1"]);
-  assert.deepEqual(turns[1].items.map((item) => item.id), ["u2", "a2", "usage2"]);
-  assert.deepEqual(turns[2].items.map((item) => item.id), ["u3", "a3", "usage3", "c3-3"]);
-  assert.deepEqual(turns[3].items.map((item) => item.id), ["u4", "a4", "usage4", "c4-1", "c4-2", "c4-3"]);
+  assert.deepEqual(turns[1].items.map((item) => item.id), ["u2", "a2", "usage2", "c2-3"]);
+  assert.deepEqual(turns[2].items.map((item) => item.id), ["u3", "a3", "usage3", "c3-1", "c3-2", "c3-3"]);
+  assert.deepEqual(turns[3].items.map((item) => item.id), ["u4", "a4", "usage4"]);
   assert.deepEqual(turns[4].items.map((item) => item.id), ["live-a1", "live-c1", "live-c2", "live-r1"]);
   const totalItems = turns.reduce((sum, turn) => sum + turn.items.length, 0);
   assert.equal(totalItems, 20);
@@ -1225,10 +1371,10 @@ test("thread detail response budget applies progressive visible item ceiling aft
   const budget = compacted.thread.mobileDetailResponseBudget;
   assert.equal(budget.progressiveVisibleItemBudgetApplied, true);
   assert.equal(budget.progressiveVisibleItemBudgetReason, "progressive-visible-item-ceiling");
-  assert.equal(budget.progressiveVisibleItemOriginalCount, 28);
+  assert.equal(budget.progressiveVisibleItemOriginalCount, 25);
   assert.equal(budget.progressiveVisibleItemRetainedCount, 20);
   assert.equal(budget.progressiveVisibleItemCeiling, 20);
-  assert.equal(budget.omittedVisibleItems, 8);
+  assert.equal(budget.omittedVisibleItems, 5);
   assert.equal(budget.omittedOperationItems, 8);
   assert.equal(budget.retainedItemCount, 20);
   assert.deepEqual(compacted.thread.mobileVisibleItemKeys, turns.flatMap((turn) => turn.items.map((item) => item.mobileVisibleKey)));
@@ -1347,20 +1493,30 @@ test("thread detail response budget does not apply visible item ceiling without 
     thread: {
       id: "thread-1",
       mobileReadMode: "projection-v4-dynamic",
-      turns: [{
-        id: "turn-completed",
-        status: "completed",
-        items: [
-          { id: "u1", type: "userMessage", text: "Question" },
-          ...Array.from({ length: 6 }, (_, index) => ({
-            id: `c${index + 1}`,
-            type: "commandExecution",
-            command: `cmd ${index + 1}`,
-          })),
-          { id: "a1", type: "agentMessage", text: "Answer" },
-          { id: "usage", type: "turnUsageSummary" },
-        ],
-      }],
+      turns: [
+        {
+          id: "turn-completed",
+          status: "completed",
+          items: [
+            { id: "u1", type: "userMessage", text: "Question" },
+            ...Array.from({ length: 6 }, (_, index) => ({
+              id: `c${index + 1}`,
+              type: "commandExecution",
+              command: `cmd ${index + 1}`,
+            })),
+            { id: "a1", type: "agentMessage", text: "Answer" },
+            { id: "usage", type: "turnUsageSummary" },
+          ],
+        },
+        {
+          id: "turn-latest",
+          status: "completed",
+          items: [
+            { id: "u2", type: "userMessage", text: "Latest" },
+            { id: "a2", type: "agentMessage", text: "Latest answer" },
+          ],
+        },
+      ],
     },
   };
 
@@ -1374,10 +1530,11 @@ test("thread detail response budget does not apply visible item ceiling without 
   const budget = compacted.thread.mobileDetailResponseBudget;
   assert.equal(budget.progressiveActiveBudgetApplied, false);
   assert.equal(budget.progressiveVisibleItemBudgetApplied, false);
-  assert.equal(budget.progressiveVisibleItemOriginalCount, 6);
-  assert.equal(budget.progressiveVisibleItemRetainedCount, 6);
+  assert.equal(budget.progressiveVisibleItemOriginalCount, 8);
+  assert.equal(budget.progressiveVisibleItemRetainedCount, 8);
   assert.equal(budget.omittedVisibleItems, 0);
   assert.equal(budget.omittedOperationItems, 3);
+  assert.equal(budget.latestCompletedReplayTurnCount, 1);
 });
 
 test("thread detail response budget does not mark progressive active budget without a current active turn", () => {
@@ -1416,10 +1573,12 @@ test("thread detail response budget does not mark progressive active budget with
   assert.equal(budget.progressiveActiveOriginalItemCount, 42);
   assert.equal(budget.progressiveActiveTurnOriginalItemCount, 0);
   assert.equal(budget.activeAssistantItems, 8);
-  assert.equal(budget.omittedAssistantItems, 39);
+  assert.equal(budget.omittedAssistantItems, 32);
+  assert.equal(budget.latestCompletedReplayTurnCount, 1);
+  assert.equal(budget.latestCompletedReplayAssistantItems, 8);
 });
 
-test("thread detail response budget keeps the latest completed assistant receipt", () => {
+test("thread detail response budget keeps historical completed assistant receipt-only detail", () => {
   const result = {
     thread: {
       id: "thread-1",
@@ -1436,6 +1595,15 @@ test("thread detail response budget keeps the latest completed assistant receipt
             { id: "usage", type: "turnUsageSummary" },
           ],
         },
+        {
+          id: "turn-2",
+          status: "completed",
+          items: [
+            { id: "u2", type: "userMessage", text: "Latest question" },
+            { id: "a3", type: "agentMessage", text: "latest progress" },
+            { id: "a4", type: "agentMessage", text: "latest receipt" },
+          ],
+        },
       ],
     },
   };
@@ -1450,6 +1618,8 @@ test("thread detail response budget keeps the latest completed assistant receipt
   assert.equal(turn.mobileOmittedAssistantItemCount, 2);
   assert.equal(compacted.thread.mobileDetailResponseBudget.omittedAssistantItems, 2);
   assert.equal(compacted.thread.mobileDetailResponseBudget.completedAssistantItems, 1);
+  assert.equal(compacted.thread.mobileDetailResponseBudget.latestCompletedReplayTurnCount, 1);
+  assert.equal(compacted.thread.mobileDetailResponseBudget.latestCompletedReplayAssistantItems, 2);
 });
 
 test("thread detail response budget leaves already small details unchanged", () => {

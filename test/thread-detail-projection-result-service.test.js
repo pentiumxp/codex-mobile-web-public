@@ -149,12 +149,33 @@ test("projection result read mode follows cache source and v4 version", () => {
 
 test("projection result skips compaction for response-ready v4 projection hits", () => {
   let compactCalls = 0;
+  let decorateCalls = 0;
   const service = createThreadDetailProjectionResultService({
     maxTurns: 5,
     now: () => 1000,
     compactThreadReadResult() {
       compactCalls += 1;
       throw new Error("response-ready v4 projection should not compact");
+    },
+    decorateThreadReadResult(result, details) {
+      decorateCalls += 1;
+      assert.equal(details.projectionVersion, "v4");
+      return Object.assign({}, result, {
+        thread: Object.assign({}, result.thread, {
+          decorated: true,
+          turns: result.thread.turns.map((turn) => Object.assign({}, turn, {
+            items: [
+              ...turn.items,
+              {
+                id: "usage-1",
+                type: "turnUsageSummary",
+                mobileProjectionVersion: "v4",
+                mobileVisibleKey: "turn-1:turnUsageSummary",
+              },
+            ],
+          })),
+        }),
+      });
     },
   });
 
@@ -184,8 +205,11 @@ test("projection result skips compaction for response-ready v4 projection hits",
   }, {}, {});
 
   assert.equal(compactCalls, 0);
+  assert.equal(decorateCalls, 1);
+  assert.equal(result.thread.decorated, true);
   assert.equal(result.thread.mobileReadMode, "projection-v4-cache");
   assert.equal(result.thread.mobileProjection.version, "v4");
+  assert.equal(result.thread.turns[0].items.some((item) => item.type === "turnUsageSummary"), true);
   assert.deepEqual(result.thread.mobileVisibleItemKeys, ["turn-1:user:user-1"]);
 });
 
@@ -317,6 +341,58 @@ test("projection result rejects cached detail missing the local active turn", ()
 
   assert.ok(current);
   assert.equal(current.thread.turns[0].id, "turn-new");
+});
+
+test("projection result rejects cached detail older than summary update", () => {
+  const service = createThreadDetailProjectionResultService({
+    maxTurns: 5,
+    now: () => 10_000,
+  });
+
+  const stale = service.prepareProjectedThreadReadResult({
+    dynamic: false,
+    version: "v4",
+    cachedAtMs: 9_000,
+    updatedAtMs: 9_000,
+    result: {
+      thread: {
+        id: "thread-1",
+        turns: [{
+          id: "turn-old",
+          completedAt: 1_000,
+          items: [{ id: "agent-old", type: "agentMessage" }],
+        }],
+      },
+    },
+  }, {
+    id: "thread-1",
+    updatedAt: 2_000,
+  }, {});
+
+  assert.equal(stale, null);
+
+  const current = service.prepareProjectedThreadReadResult({
+    dynamic: false,
+    version: "v4",
+    cachedAtMs: 9_000,
+    updatedAtMs: 9_000,
+    result: {
+      thread: {
+        id: "thread-1",
+        turns: [{
+          id: "turn-current",
+          completedAt: 2_000,
+          items: [{ id: "agent-current", type: "agentMessage" }],
+        }],
+      },
+    },
+  }, {
+    id: "thread-1",
+    updatedAt: 2_000,
+  }, {});
+
+  assert.ok(current);
+  assert.equal(current.thread.turns[0].id, "turn-current");
 });
 
 test("projection result allows missing local active turn only for active overlay window assembly", () => {

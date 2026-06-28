@@ -346,7 +346,7 @@ test("conversation HTML update plan invalidates stable signatures when visible t
     renderedDomTurnCount: 0,
   });
 
-  assert.equal(plan.action, "patch-html");
+  assert.equal(plan.action, "set-inner-html");
   assert.equal(plan.changed, true);
   assert.equal(plan.stableSignature, true);
   assert.equal(plan.reason, "stable-signature-dom-empty");
@@ -362,7 +362,7 @@ test("conversation HTML update plan invalidates stable signatures when visible t
     expectedVisibleTurnCount: 3,
     renderedDomTurnCount: 2,
   });
-  assert.equal(partialPlan.action, "patch-html");
+  assert.equal(partialPlan.action, "set-inner-html");
   assert.equal(partialPlan.reason, "stable-signature-dom-turn-mismatch");
 
   const healthyPlan = domPatch.planConversationHtmlUpdate({
@@ -376,31 +376,37 @@ test("conversation HTML update plan invalidates stable signatures when visible t
 });
 
 test("conversation HTML update plan invalidates stable signatures for item/key/order mismatches", () => {
-  assert.equal(domPatch.planConversationHtmlUpdate({
+  const itemMismatch = domPatch.planConversationHtmlUpdate({
     signature: "sig-a",
     renderedConversationSignature: "sig-a",
     expectedVisibleTurnCount: 2,
     renderedDomTurnCount: 2,
     expectedVisibleItemCount: 5,
     renderedDomItemCount: 4,
-  }).reason, "stable-signature-dom-item-mismatch");
+  });
+  assert.equal(itemMismatch.action, "set-inner-html");
+  assert.equal(itemMismatch.reason, "stable-signature-dom-item-mismatch");
 
-  assert.equal(domPatch.planConversationHtmlUpdate({
+  const duplicateKeys = domPatch.planConversationHtmlUpdate({
     signature: "sig-a",
     renderedConversationSignature: "sig-a",
     expectedVisibleTurnCount: 2,
     renderedDomTurnCount: 2,
     duplicateRenderKeyCount: 1,
-  }).reason, "stable-signature-duplicate-render-keys");
+  });
+  assert.equal(duplicateKeys.action, "set-inner-html");
+  assert.equal(duplicateKeys.reason, "stable-signature-duplicate-render-keys");
 
-  assert.equal(domPatch.planConversationHtmlUpdate({
+  const orderMismatch = domPatch.planConversationHtmlUpdate({
     signature: "sig-a",
     renderedConversationSignature: "sig-a",
     expectedVisibleTurnCount: 2,
     renderedDomTurnCount: 2,
     expectedTurnIds: ["a", "b"],
     renderedDomTurnIds: ["b", "a"],
-  }).reason, "stable-signature-turn-order-mismatch");
+  });
+  assert.equal(orderMismatch.action, "set-inner-html");
+  assert.equal(orderMismatch.reason, "stable-signature-turn-order-mismatch");
 });
 
 test("conversation HTML update effects preserve hydrate-existing ordering", () => {
@@ -479,7 +485,7 @@ test("conversation HTML update effects ignore missing or unknown actions", () =>
 test("conversation DOM authority invalidation is planned from stable empty DOM mismatches", () => {
   const plan = domPatch.planConversationDomAuthorityInvalidation({
     updatePlan: {
-      action: "patch-html",
+      action: "set-inner-html",
       reason: "stable-signature-dom-empty",
     },
     source: "conversation-update",
@@ -503,7 +509,7 @@ test("conversation DOM authority invalidation is planned from stable empty DOM m
     action: "refresh",
     routeKind: "single-thread",
     threadHash: "thread-hash",
-    renderMode: "patch-html",
+    renderMode: "set-inner-html",
     currentTurns: 5,
     currentVisibleItems: 9,
     domCount: 0,
@@ -521,14 +527,14 @@ test("conversation DOM authority invalidation is planned from stable empty DOM m
     expectedVisibleItemCount: 6,
     renderedDomItemCount: 0,
     duplicateRenderKeyCount: 0,
-    action: "patch-html",
+    action: "set-inner-html",
   });
 });
 
 test("conversation DOM authority invalidation covers non-empty projection shape mismatches", () => {
   const plan = domPatch.planConversationDomAuthorityInvalidation({
     updatePlan: {
-      action: "patch-html",
+      action: "set-inner-html",
       reason: "stable-signature-dom-turn-mismatch",
     },
     expectedVisibleTurnCount: 4,

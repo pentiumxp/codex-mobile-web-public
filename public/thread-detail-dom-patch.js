@@ -255,7 +255,7 @@
       };
     }
     return {
-      action: input.hasExistingChildren ? "patch-html" : "set-inner-html",
+      action: stableSignatureDomInvalid || !input.hasExistingChildren ? "set-inner-html" : "patch-html",
       fallbackAction: "set-inner-html",
       changed: true,
       stableSignature,
