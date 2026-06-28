@@ -26378,6 +26378,13 @@ The previous full handoff was archived and should be opened only when old proven
     `node --check test/hermes-plugin-route.test.js`, `git diff --check`,
     `npm run check`, and `npm run check:macos` passed.
 - Deployment status:
-  - Pending deploy with reason
+  - Deployed commit `5b2ef96` through the Home AI central macOS plugin deploy
+    path with reason
     `codex-mobile-embedded-back-swipe-consume-suppressed-hotfix`.
+  - Production `/api/public-config` reported
+    `clientBuildId=0.1.11|codex-mobile-shell-v563` and
+    `shellCacheName=codex-mobile-shell-v563`.
+  - Source/production SHA parity was confirmed for `public/app.js`,
+    `public/sw.js`, `docs/TROUBLESHOOTING.md`,
+    `test/mobile-viewport.test.js`, and `test/hermes-plugin-route.test.js`.
   - Do not push Public unless the user explicitly asks.
