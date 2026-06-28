@@ -27332,3 +27332,47 @@ The previous full handoff was archived and should be opened only when old proven
     `latest_completed_user_input_missing` and
     `latest_completed_replay_receipt_only`.
   - Public push is not requested for this module.
+
+## 2026-06-28 - Active Overlay Input Anchor Repair
+
+- Source diagnostics:
+  - Home AI diagnostic task cards `ttc_692da27e08db73e4a9` and
+    `ttc_5411ae7ce96be20f97` reported H2
+    `thread_session_slow_path` / `conversation_projection_mismatch` with
+    `active-thread-window-downgrade`.
+- Root cause:
+  - Receipt-only active-window compaction preserved user messages but dropped
+    non-message visible input anchors such as `contextCompaction`.
+  - Read orchestration correctly treated active-window projections whose latest
+    completed replay had assistant/Usage rows but no input anchor as unsafe and
+    fell back to slow full `thread/read`.
+  - A cached active-window projection with the same gap was not invalidated and
+    rebuilt from bounded `turns-list-active-overlay-window` before falling back
+    to full projection/read.
+- Fix:
+  - Commit `63d2497` adds a separate `isUserVisibleInputItem` policy hook so
+    receipt-only compaction keeps `contextCompaction` as an input anchor without
+    treating it as an ordinary user message.
+  - Commit `6decb83` makes active-overlay orchestration rebuild unsafe cached
+    active windows through bounded `turns-list-active-overlay-window` first, and
+    only try full projection/full read if the rebuilt window still lacks an
+    input anchor.
+  - Updated `docs/TROUBLESHOOTING.md` with the active-window input-anchor
+    diagnostic rule.
+- Validation:
+  - Focused projection/compaction/self-check tests passed.
+  - Full `npm test` passed with `1451` tests.
+  - `npm run check`, `npm run check:macos`, `git diff --check`, fallback
+    governance check, and `codegraph sync && codegraph status` passed.
+  - Deployed through Home AI central macOS plugin deploy with reason
+    `codex-mobile-active-overlay-window-rebuild`.
+  - Production phase-B readback changed from `needs_repair` /
+    `latest-completed-input-missing` and `threadReadMs=6318` to `ready`,
+    `projection-active-overlay`, `activeOverlayGate=ready`, `threadReadMs=0`,
+    and detail total about `132ms`.
+  - Production self-check returned `ok:true`, `blockingIssueCount=0`; one
+    residual H3 `latest_completed_replay_receipt_only` candidate remains for a
+    separate non-blocking slice.
+- Publication:
+  - Private `origin/main` pushed to `6decb83`.
+  - Public was not pushed per user instruction.
