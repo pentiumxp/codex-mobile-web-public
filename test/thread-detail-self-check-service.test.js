@@ -27,6 +27,7 @@ function healthyDetail() {
         latestCompletedReplayOperationItems: 0,
         latestCompletedReplayReasoningItems: 0,
         latestCompletedReplayAssistantItems: 2,
+        latestCompletedReplayOmittedAssistantItems: 0,
       },
       turns: [
         {
@@ -58,6 +59,43 @@ test("thread detail self check accepts healthy latest completed replay", () => {
   assert.equal(report.latestCompleted.usageItems, 1);
   assert.equal(report.budget.latestCompletedReplayOperationItems, 0);
   assert.equal(report.budget.latestCompletedReplayReasoningItems, 0);
+  assert.equal(report.budget.latestCompletedReplayOmittedAssistantItems, 0);
+});
+
+test("thread detail self check accepts naturally short completed replay receipts", () => {
+  const detail = healthyDetail();
+  detail.thread.mobileVisibleItemKeys = ["u1", "a1", "usage1"];
+  detail.thread.mobileDetailResponseBudget.latestCompletedReplayAssistantItems = 1;
+  detail.thread.mobileDetailResponseBudget.latestCompletedReplayOmittedAssistantItems = 0;
+  detail.thread.turns[0].items = [
+    { id: "u1", type: "userMessage" },
+    { id: "a1", type: "agentMessage" },
+    { id: "usage1", type: "turnUsageSummary" },
+  ];
+
+  const report = analyzeThreadDetail(detail);
+
+  assert.equal(report.ok, true);
+  assert.ok(!report.issues.some((issue) => issue.code === "latest_completed_replay_receipt_only"));
+});
+
+test("thread detail self check warns when latest completed replay assistant progress was budgeted away", () => {
+  const detail = healthyDetail();
+  detail.thread.mobileVisibleItemKeys = ["u1", "a1", "usage1"];
+  detail.thread.mobileDetailResponseBudget.latestCompletedReplayAssistantItems = 1;
+  detail.thread.mobileDetailResponseBudget.latestCompletedReplayOmittedAssistantItems = 2;
+  detail.thread.turns[0].items = [
+    { id: "u1", type: "userMessage" },
+    { id: "a1", type: "agentMessage" },
+    { id: "usage1", type: "turnUsageSummary" },
+  ];
+
+  const report = analyzeThreadDetail(detail);
+  const issue = report.issues.find((entry) => entry.code === "latest_completed_replay_receipt_only");
+
+  assert.equal(report.ok, true);
+  assert.equal(issue.severity, "H3");
+  assert.equal(issue.omittedAssistantItems, 2);
 });
 
 test("thread detail self check detects missing usage and timestamp", () => {

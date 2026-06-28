@@ -179,6 +179,7 @@ test("thread detail response budget keeps bounded latest completed replay detail
   assert.equal(budget.latestCompletedReplayOperationItems, 0);
   assert.equal(budget.latestCompletedReplayReasoningItems, 0);
   assert.equal(budget.latestCompletedReplayAssistantItems, 2);
+  assert.equal(budget.latestCompletedReplayOmittedAssistantItems, 1);
   assert.equal(budget.omittedOperationItems, 4);
   assert.equal(budget.omittedReasoningItems, 4);
   assert.equal(budget.omittedAssistantItems, 2);
@@ -244,6 +245,7 @@ test("thread detail response budget keeps completed replay progress before activ
   assert.equal(budget.latestCompletedReplayOperationItems, 0);
   assert.equal(budget.latestCompletedReplayAssistantItems, 4);
   assert.equal(budget.latestCompletedReplayReasoningItems, 0);
+  assert.equal(budget.latestCompletedReplayOmittedAssistantItems, 0);
   assert.equal(budget.omittedOperationItems, 1);
   assert.equal(budget.omittedReasoningItems, 2);
   assert.equal(budget.omittedAssistantItems, 0);
@@ -1576,6 +1578,7 @@ test("thread detail response budget does not mark progressive active budget with
   assert.equal(budget.omittedAssistantItems, 32);
   assert.equal(budget.latestCompletedReplayTurnCount, 1);
   assert.equal(budget.latestCompletedReplayAssistantItems, 8);
+  assert.equal(budget.latestCompletedReplayOmittedAssistantItems, 32);
 });
 
 test("thread detail response budget keeps historical completed assistant receipt-only detail", () => {
@@ -1620,6 +1623,7 @@ test("thread detail response budget keeps historical completed assistant receipt
   assert.equal(compacted.thread.mobileDetailResponseBudget.completedAssistantItems, 1);
   assert.equal(compacted.thread.mobileDetailResponseBudget.latestCompletedReplayTurnCount, 1);
   assert.equal(compacted.thread.mobileDetailResponseBudget.latestCompletedReplayAssistantItems, 2);
+  assert.equal(compacted.thread.mobileDetailResponseBudget.latestCompletedReplayOmittedAssistantItems, 0);
 });
 
 test("thread detail response budget leaves already small details unchanged", () => {

@@ -726,7 +726,11 @@ Cause to check:
   budget and should not replay command/file/tool operation rows. If a reloaded
   completed turn shows Reasoning or command cards instead of user-facing
   intermediate receipts, inspect `thread-detail-response-budget-service`
-  replay filtering before changing the renderer.
+  replay filtering before changing the renderer. A single final assistant
+  receipt is not by itself a `latest_completed_replay_receipt_only` defect; the
+  self-check should only raise that warning when
+  `mobileDetailResponseBudget.latestCompletedReplayOmittedAssistantItems`
+  proves that latest-replay assistant/plan progress was actually budgeted away.
 - For routine self-checks after projection, Usage, timestamp, or thread-list
   ordering changes, run
   `node scripts/codex-mobile-thread-self-check.js --server http://127.0.0.1:8787 --json`

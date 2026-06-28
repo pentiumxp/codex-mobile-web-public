@@ -863,6 +863,7 @@ function compactTurnWithBudget(turn, thread, options, stats) {
   stats.latestCompletedReplayOperationItems += latestCompletedReplay ? afterOperationCount : 0;
   stats.latestCompletedReplayReasoningItems += latestCompletedReplay ? afterReasoningCount : 0;
   stats.latestCompletedReplayAssistantItems += latestCompletedReplay ? afterAssistantCount : 0;
+  stats.latestCompletedReplayOmittedAssistantItems += latestCompletedReplay ? omittedAssistantItems : 0;
   stats.staleActiveTurnCount += !active && isStaleActiveLikeTurn(turn, thread) ? 1 : 0;
   return compacted;
 }
@@ -1000,6 +1001,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
     latestCompletedReplayOperationItems: 0,
     latestCompletedReplayReasoningItems: 0,
     latestCompletedReplayAssistantItems: 0,
+    latestCompletedReplayOmittedAssistantItems: 0,
     staleActiveTurnCount: 0,
     completedOperationItems: boundedCount(options.completedOperationItems, DEFAULT_COMPLETED_OPERATION_ITEMS, 100),
     activeOperationItems: effectiveActiveOperationItems,

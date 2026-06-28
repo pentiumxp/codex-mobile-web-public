@@ -27376,3 +27376,36 @@ The previous full handoff was archived and should be opened only when old proven
 - Publication:
   - Private `origin/main` pushed to `6decb83`.
   - Public was not pushed per user instruction.
+
+## 2026-06-28 - Latest Completed Replay Receipt-Only Self-Check Evidence
+
+- Scope:
+  - Follow-up display-consistency self-check slice after active-overlay repair.
+  - Production self-check still produced repeated H3
+    `latest_completed_replay_receipt_only` candidates even when a latest
+    completed turn naturally had only one assistant/final receipt and no
+    evidence that assistant/plan progress was budgeted away.
+- Root cause / failing layer:
+  - `thread-detail-self-check-service` used the returned assistant count plus
+    `latestCompletedReplayTurnCount` as the entire signal.
+  - That made a naturally short completed turn indistinguishable from a turn
+    where `thread-detail-response-budget-service` actually removed latest
+    replay assistant/plan progress.
+- Fix:
+  - `thread-detail-response-budget-service` now records bounded
+    `mobileDetailResponseBudget.latestCompletedReplayOmittedAssistantItems`.
+  - `thread-detail-self-check-service` only raises
+    `latest_completed_replay_receipt_only` when that per-latest-replay omitted
+    assistant/plan count is greater than zero.
+  - Natural single-receipt completed turns remain valid; truly budgeted-away
+    latest replay progress still produces the H3 diagnostic candidate.
+- Validation:
+  - Focused tests passed:
+    `node --test test/thread-detail-response-budget-service.test.js
+    test/thread-detail-self-check-service.test.js
+    test/thread-self-check-script.test.js`.
+  - `npm run check`, `npm test` (`1453` tests), `npm run check:macos`, and
+    `git diff --check` passed before commit/deploy.
+- Status:
+  - Ready for commit and plugin-owned production deployment.
+  - Public push is not requested.

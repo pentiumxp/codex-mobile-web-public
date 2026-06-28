@@ -309,11 +309,13 @@ function analyzeThreadDetail(detail = {}, options = {}) {
         assistantItems: boundedCount(assistantItems.length),
       });
     }
-    if (assistantItems.length <= 1 && Number(budget.latestCompletedReplayTurnCount || 0) > 0) {
+    const replayOmittedAssistantItems = Number(budget.latestCompletedReplayOmittedAssistantItems || 0);
+    if (assistantItems.length <= 1 && Number(budget.latestCompletedReplayTurnCount || 0) > 0 && replayOmittedAssistantItems > 0) {
       pushIssue(issues, "latest_completed_replay_receipt_only", "H3", "thread-detail", {
         threadHash,
         turnHash,
         assistantItems: boundedCount(assistantItems.length),
+        omittedAssistantItems: boundedCount(replayOmittedAssistantItems),
       });
     }
     const userInputItems = items.filter((item) => USER_INPUT_TYPES.has(itemType(item)));
@@ -373,6 +375,7 @@ function analyzeThreadDetail(detail = {}, options = {}) {
       latestCompletedReplayOperationItems: boundedCount(budget.latestCompletedReplayOperationItems),
       latestCompletedReplayReasoningItems: boundedCount(budget.latestCompletedReplayReasoningItems),
       latestCompletedReplayAssistantItems: boundedCount(budget.latestCompletedReplayAssistantItems),
+      latestCompletedReplayOmittedAssistantItems: boundedCount(budget.latestCompletedReplayOmittedAssistantItems),
       omittedOperationItems: boundedCount(budget.omittedOperationItems),
       omittedReasoningItems: boundedCount(budget.omittedReasoningItems),
       omittedAssistantItems: boundedCount(budget.omittedAssistantItems),
