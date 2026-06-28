@@ -129,8 +129,9 @@ receipts, and the post-item-budget thread JSON still exceeds
 `160KB`), non-current/historical completed assistant/reasoning text is reduced
 to a bounded preview (`CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_COMPLETED_TEXT_CHARS`,
 default `8KB` per item) with `mobileFirstPaintTextBudget` evidence. Resting
-details protect the latest completed turn so the current final answer remains
-visible by default.
+details protect the latest completed turn so the current final answer and a
+bounded recent operation/reasoning/assistant replay tail remain visible by
+default; older completed turns stay receipt-focused.
 
 The v558 visible-budget notice slice closes the UI/diagnostic side of that
 first-paint budgeting contract. Per-turn `mobileVisibleItemBudget` /

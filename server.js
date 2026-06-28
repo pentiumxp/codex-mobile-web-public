@@ -12273,7 +12273,8 @@ function mergeThreadDisplaySummary(base, display, options = {}) {
   const displayUpdatedAtMs = threadListSummaryTimestampMs(display);
   const baseUpdatedAtMs = threadListSummaryTimestampMs(base);
   if (displayUpdatedAtMs && displayUpdatedAtMs >= baseUpdatedAtMs) {
-    next.updatedAt = display.updatedAt || display.updated_at || display.updatedAtMs || display.updated_at_ms;
+    const displayFieldUpdatedAtMs = timestampToMs(display.updatedAt || display.updated_at || display.updatedAtMs || display.updated_at_ms);
+    next.updatedAt = Math.floor(Math.max(displayUpdatedAtMs, displayFieldUpdatedAtMs) / 1000);
   }
   if (shouldReplaceThreadDisplayStatus(base.status, display.status, baseUpdatedAtMs, displayUpdatedAtMs)) {
     next.status = display.status;
@@ -13877,6 +13878,9 @@ function attachRolloutFallbackStatus(thread, options = {}) {
   if (!status) return thread;
   const activeTurnId = statusTurnId(status);
   const out = Object.assign({}, thread, { status });
+  if (isThreadListLiveStatus(status) && stat && Number(stat.mtimeMs || 0) > timestampToMs(out.updatedAt || out.updated_at || out.updatedAtMs || out.updated_at_ms)) {
+    out.updatedAt = Math.floor(Number(stat.mtimeMs || 0) / 1000);
+  }
   if (activeTurnId && isThreadListLiveStatus(status)) out.activeTurnId = activeTurnId;
   return out;
 }

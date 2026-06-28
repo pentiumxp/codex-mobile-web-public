@@ -1614,6 +1614,27 @@ test("thread list merge still accepts newer rollout active over old completed su
   assert.equal(result.data[0].status.type, "active");
 });
 
+test("thread list merge uses newer rollout activity timestamp for active duplicate summaries", () => {
+  const threadId = "019e9000-0000-7000-8000-000000000008";
+  const result = mergeThreadListFallback({
+    data: [{
+      id: threadId,
+      name: "Movie",
+      updatedAt: 1780720000,
+      status: { type: "completed" },
+    }],
+  }, [{
+    id: threadId,
+    name: "Movie",
+    updatedAt: 1780720000,
+    rolloutSizeUpdatedAtMs: 1782600000000,
+    status: { type: "active" },
+  }], 10);
+
+  assert.equal(result.data[0].status.type, "active");
+  assert.equal(result.data[0].updatedAt, 1782600000);
+});
+
 test("thread list merge removes completed bare-id mobile fallback residues", () => {
   const residualThreadId = "019e9000-0000-7000-8000-000000000009";
   const result = mergeThreadListFallback({
