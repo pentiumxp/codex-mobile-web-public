@@ -173,16 +173,17 @@ test("thread detail response budget keeps bounded latest completed replay detail
   });
 
   assert.deepEqual(compacted.thread.turns[0].items.map((item) => item.id), ["old-u", "old-c2", "old-a2", "old-usage"]);
-  assert.deepEqual(compacted.thread.turns[1].items.map((item) => item.id), ["u1", "plan1", "a2", "usage"]);
+  assert.deepEqual(compacted.thread.turns[1].items.map((item) => item.id), ["u1", "a1", "plan1", "a2", "usage"]);
   const budget = compacted.thread.mobileDetailResponseBudget;
   assert.equal(budget.latestCompletedReplayTurnCount, 1);
   assert.equal(budget.latestCompletedReplayOperationItems, 0);
   assert.equal(budget.latestCompletedReplayReasoningItems, 0);
-  assert.equal(budget.latestCompletedReplayAssistantItems, 2);
-  assert.equal(budget.latestCompletedReplayOmittedAssistantItems, 1);
+  assert.equal(budget.latestCompletedReplayAssistantItems, 3);
+  assert.equal(budget.latestCompletedReplayOmittedAssistantItems, 0);
   assert.equal(budget.omittedOperationItems, 4);
   assert.equal(budget.omittedReasoningItems, 4);
-  assert.equal(budget.omittedAssistantItems, 2);
+  assert.equal(budget.omittedAssistantItems, 1);
+  assert.equal(budget.preservedReplayAssistantItems, 1);
   assert.equal(budget.activeTurnCount, 0);
   assert.equal(compacted.thread.mobileProjectionRevision, 8);
   assert.deepEqual(
@@ -284,7 +285,7 @@ test("thread detail response budget trims collab agent tool calls as operation i
   assert.equal(compacted.thread.mobileDetailResponseBudget.omittedOperationItems, 2);
 });
 
-test("thread detail response budget keeps bounded active assistant tail", () => {
+test("thread detail response budget preserves active assistant progress items", () => {
   const result = {
     thread: {
       id: "thread-1",
@@ -313,17 +314,10 @@ test("thread detail response budget keeps bounded active assistant tail", () => 
   });
 
   const turn = compacted.thread.turns[0];
-  assert.deepEqual(turn.items.map((item) => item.id), ["u1", "a3", "a4", "usage"]);
-  assert.equal(turn.mobileOmittedAssistantItemCount, 2);
-  assert.deepEqual(turn.mobileAssistantItemBudget, {
-    version: "thread-detail-assistant-item-budget-v1",
-    omitted: 2,
-    retained: 2,
-    original: 4,
-  });
-  assert.equal(compacted.thread.mobileDetailResponseBudget.omittedAssistantItems, 2);
-  assert.equal(compacted.thread.mobileDetailResponseBudget.activeAssistantItems, 2);
-  assert.deepEqual(compacted.thread.mobileVisibleItemKeys, turn.items.map((item) => item.mobileVisibleKey));
+  assert.deepEqual(turn.items.map((item) => item.id), ["u1", "a1", "a2", "a3", "a4", "usage"]);
+  assert.equal(turn.mobileOmittedAssistantItemCount, undefined);
+  assert.equal(turn.mobileAssistantItemBudget, undefined);
+  assert.equal(compacted.thread.mobileDetailResponseBudget, undefined);
 });
 
 test("thread detail response budget prunes non-current empty active placeholders", () => {
@@ -558,7 +552,7 @@ test("thread detail response budget applies progressive active limits under acti
   });
 
   const itemIds = compacted.thread.turns[0].items.map((item) => item.id);
-  assert.deepEqual(itemIds, ["u1", "a3", "a4", "c2"]);
+  assert.deepEqual(itemIds, ["u1", "a1", "a2", "a3", "a4", "c2"]);
   const budget = compacted.thread.mobileDetailResponseBudget;
   assert.equal(budget.progressiveActiveBudgetApplied, true);
   assert.equal(budget.progressiveActiveBudgetReason, "active-byte-pressure");
@@ -568,6 +562,8 @@ test("thread detail response budget applies progressive active limits under acti
   assert.ok(budget.progressiveActiveOriginalBytes >= budget.progressiveActiveTurnOriginalBytes);
   assert.equal(budget.activeOperationItems, 1);
   assert.equal(budget.activeAssistantItems, 2);
+  assert.equal(budget.omittedAssistantItems, 0);
+  assert.equal(budget.preservedReplayAssistantItems, 2);
 });
 
 test("thread detail response budget truncates oversized retained active assistant text under progressive pressure", () => {
@@ -1286,6 +1282,13 @@ test("thread detail response budget applies progressive active limits under item
   const itemIds = compacted.thread.turns[0].items.map((item) => item.id);
   assert.deepEqual(itemIds, [
     "u1",
+    "a1",
+    "a2",
+    "a3",
+    "a4",
+    "a5",
+    "a6",
+    "a7",
     "a8",
     "a9",
     "a10",
@@ -1301,6 +1304,8 @@ test("thread detail response budget applies progressive active limits under item
   assert.equal(budget.activeOperationItems, 4);
   assert.equal(budget.activeAssistantItems, 3);
   assert.equal(budget.activeReasoningItems, 1);
+  assert.equal(budget.preserveReplayAssistantItems, true);
+  assert.equal(budget.preservedReplayAssistantItems, 7);
   assert.equal(budget.configuredActiveOperationItems, 8);
   assert.equal(budget.configuredActiveAssistantItems, 8);
   assert.equal(budget.configuredActiveReasoningItems, 2);
@@ -1569,16 +1574,9 @@ test("thread detail response budget does not mark progressive active budget with
     progressiveActiveAssistantItems: 2,
   });
 
-  const budget = compacted.thread.mobileDetailResponseBudget;
-  assert.equal(budget.progressiveActiveBudgetApplied, false);
-  assert.equal(budget.progressiveActiveBudgetReason, "");
-  assert.equal(budget.progressiveActiveOriginalItemCount, 42);
-  assert.equal(budget.progressiveActiveTurnOriginalItemCount, 0);
-  assert.equal(budget.activeAssistantItems, 8);
-  assert.equal(budget.omittedAssistantItems, 32);
-  assert.equal(budget.latestCompletedReplayTurnCount, 1);
-  assert.equal(budget.latestCompletedReplayAssistantItems, 8);
-  assert.equal(budget.latestCompletedReplayOmittedAssistantItems, 32);
+  assert.equal(compacted.thread.mobileDetailResponseBudget, undefined);
+  assert.equal(compacted.thread.turns[0].items.length, 42);
+  assert.equal(compacted.thread.turns[0].items.filter((item) => item.type === "agentMessage").length, 40);
 });
 
 test("thread detail response budget keeps historical completed assistant receipt-only detail", () => {

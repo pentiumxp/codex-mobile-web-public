@@ -235,6 +235,7 @@ function summarizeTurn(turn = {}, thread = null) {
     usageItems: boundedCount(usageItems),
     userInputItems: boundedCount(userInputItems),
     timestampMissingVisibleItems: boundedCount(timestampMissingVisibleItems),
+    syntheticCompletionTurn: turn && turn.mobileSyntheticCompletionTurn === true,
     startedAtMs: boundedCount(turnStartedAtMs(turn), Number.MAX_SAFE_INTEGER),
     completedAtMs: boundedCount(turnCompletedAtMs(turn, thread), Number.MAX_SAFE_INTEGER),
   };
@@ -319,7 +320,8 @@ function analyzeThreadDetail(detail = {}, options = {}) {
       });
     }
     const userInputItems = items.filter((item) => USER_INPUT_TYPES.has(itemType(item)));
-    if ((assistantItems.length || usageItems.length) && !userInputItems.length) {
+    const syntheticCompletionTurn = latest.turn && latest.turn.mobileSyntheticCompletionTurn === true;
+    if ((assistantItems.length || usageItems.length) && !userInputItems.length && !syntheticCompletionTurn) {
       pushIssue(issues, "latest_completed_user_input_missing", "H3", "thread-detail", {
         threadHash,
         turnHash,

@@ -143,6 +143,23 @@ test("thread detail self check warns when completed replay loses user input", ()
   assert.ok(codes.includes("latest_completed_user_input_missing"));
 });
 
+test("thread detail self check accepts synthetic rollout completion turns without user input", () => {
+  const detail = healthyDetail();
+  detail.thread.turns[0].mobileSyntheticCompletionTurn = true;
+  detail.thread.turns[0].source = "rollout_task_complete";
+  detail.thread.turns[0].items = [
+    { id: "a1", type: "agentMessage" },
+    { id: "usage1", type: "turnUsageSummary" },
+  ];
+
+  const report = analyzeThreadDetail(detail);
+  const codes = report.issues.map((issue) => issue.code);
+
+  assert.equal(report.ok, true);
+  assert.equal(report.latestCompleted.syntheticCompletionTurn, true);
+  assert.ok(!codes.includes("latest_completed_user_input_missing"));
+});
+
 test("thread detail self check detects operation and reasoning rows in latest completed replay", () => {
   const detail = healthyDetail();
   detail.thread.turns[0].items.push(

@@ -278,11 +278,13 @@ Current acceleration targets:
    recently completed detail responses could still carry dozens of intermediate
    `agentMessage`/`plan` items. That makes the successful response large enough
    to look like a long stall on mobile and increases DOM merge pressure. The
-   response-budget v2 slice keeps retained text intact but removes intermediate
-   assistant/plan items by server-side item budget: completed turns default to
-   the latest assistant/plan receipt, active turns keep a bounded recent tail,
-   and `mobileDetailResponseBudget.omittedAssistantItems` records the bounded
-   evidence. This is a payload-owner fix, not a client-side refresh fallback.
+   response-budget v2 slice originally used a server-side assistant item
+   budget for the current turn. That was corrected after production evidence
+   showed active/latest replay turns could lose user-visible intermediate
+   assistant progress. Current active turns and the latest completed replay now
+   protect assistant/plan progress rows; operation/reasoning rows and oversized
+   text/payload fields remain the first-paint budget owners. This is a
+   payload-owner fix, not a client-side refresh fallback.
    The following projection-hit slice addresses a different warm-path cost:
    repeated `projection-v4-cache` / `projection-v4-dynamic` opens were still
    paying a whole-result v4 visible-item normalization pass even though cached
@@ -2419,7 +2421,8 @@ Deployable scope:
   completed-turn budgets.
 - The same service applies pressure-triggered progressive active limits when
   the detail window crosses the item-count threshold or active/thread byte
-  thresholds, lowering active operation/reasoning/assistant tails. Under that
+  thresholds, lowering active operation/reasoning tails while protecting
+  current active and latest-replay assistant/plan progress rows. Under that
   progressive active pressure only, oversized retained active
   assistant/reasoning text fields are reduced to a bounded first-paint preview
   and marked with `mobileActiveTextBudget` / `mobileTextTruncated`. The text

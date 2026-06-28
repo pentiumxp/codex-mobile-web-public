@@ -27423,3 +27423,55 @@ The previous full handoff was archived and should be opened only when old proven
     `ok:true`, `issueCount=0`, `blockingIssueCount=0`, and
     `diagnosticCandidateCount=0`.
   - Public push is not requested.
+
+## 2026-06-28 - Active/Latest Replay Assistant Progress Protection
+
+- Source report:
+  - User observed active/recent thread details, including Movie, showing only
+    the last few rows of the newest turn while earlier user-visible assistant
+    progress rows were missing.
+- Runtime evidence:
+  - Metadata-only Movie workspace readback against production showed the latest
+    completed replay retained `agentMessage=4` while
+    `mobileDetailResponseBudget.latestCompletedReplayOmittedAssistantItems=7`.
+  - This proved the missing rows were removed by server response budgeting, not
+    by a client DOM refresh or Home AI proxy rewrite.
+- Root cause / failing layer:
+  - `thread-detail-response-budget-service` reused the active progressive
+    assistant item limit (`progressiveActiveAssistantItems`, default `4`) for
+    the current active turn and latest completed replay.
+  - That treated user-visible assistant/plan progress as a first-paint budget
+    owner alongside commands and reasoning, so large or running turns could
+    only show the tail assistant rows.
+- Fix:
+  - Current active turns and the latest completed replay now preserve all
+    assistant/plan items at the item-count layer.
+  - Operation and reasoning rows remain budgeted, and oversized retained
+    assistant/reasoning text can still be reduced through the existing
+    first-paint text preview budget.
+  - Synthetic rollout completion turns (`mobileSyntheticCompletionTurn`) are
+    accepted as completion-receipt backfills without requiring a user-input
+    anchor, so they no longer trigger input-gap rebuilds or self-check warnings.
+- Changed files:
+  - `adapters/thread-detail-response-budget-service.js`
+  - `adapters/thread-detail-read-orchestration-service.js`
+  - `adapters/thread-detail-self-check-service.js`
+  - `test/thread-detail-response-budget-service.test.js`
+  - `test/thread-detail-read-orchestration-service.test.js`
+  - `test/thread-detail-self-check-service.test.js`
+  - `docs/README.md`
+  - `docs/MODULES.md`
+  - `docs/TROUBLESHOOTING.md`
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`
+- Validation before commit/deploy:
+  - Focused:
+    `node --test test/thread-detail-response-budget-service.test.js
+    test/thread-detail-read-orchestration-service.test.js
+    test/thread-detail-self-check-service.test.js test/thread-self-check-script.test.js`
+    passed (`76` tests).
+  - `npm test` passed (`1455` tests).
+  - `npm run check`, `npm run check:macos`, `git diff --check`, Home AI
+    fallback governance check, and `codegraph sync && codegraph status` passed.
+- Status:
+  - Ready for private commit and plugin-owned production deploy.
+  - Runtime/static shell cache is unchanged; no public push requested.

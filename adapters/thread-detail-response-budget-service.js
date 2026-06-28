@@ -824,7 +824,10 @@ function compactTurnWithBudget(turn, thread, options, stats) {
     if (!isReasoningItem(item)) return true;
     return keepReasoningIndexes.has(index);
   });
-  const assistantLimit = replay ? options.activeAssistantItems : options.completedAssistantItems;
+  const preserveReplayAssistantItems = replay && options.preserveReplayAssistantItems === true;
+  const assistantLimit = preserveReplayAssistantItems
+    ? beforeAssistantCount
+    : replay ? options.activeAssistantItems : options.completedAssistantItems;
   const keepAssistantIndexes = trailingIndexes(
     compacted.items,
     assistantLimit,
@@ -864,6 +867,9 @@ function compactTurnWithBudget(turn, thread, options, stats) {
   stats.latestCompletedReplayReasoningItems += latestCompletedReplay ? afterReasoningCount : 0;
   stats.latestCompletedReplayAssistantItems += latestCompletedReplay ? afterAssistantCount : 0;
   stats.latestCompletedReplayOmittedAssistantItems += latestCompletedReplay ? omittedAssistantItems : 0;
+  if (preserveReplayAssistantItems && beforeAssistantCount > Number(options.activeAssistantItems || 0)) {
+    stats.preservedReplayAssistantItems += beforeAssistantCount - Number(options.activeAssistantItems || 0);
+  }
   stats.staleActiveTurnCount += !active && isStaleActiveLikeTurn(turn, thread) ? 1 : 0;
   return compacted;
 }
@@ -1002,6 +1008,8 @@ function compactThreadDetailResponseResult(result, options = {}) {
     latestCompletedReplayReasoningItems: 0,
     latestCompletedReplayAssistantItems: 0,
     latestCompletedReplayOmittedAssistantItems: 0,
+    preserveReplayAssistantItems: true,
+    preservedReplayAssistantItems: 0,
     staleActiveTurnCount: 0,
     completedOperationItems: boundedCount(options.completedOperationItems, DEFAULT_COMPLETED_OPERATION_ITEMS, 100),
     activeOperationItems: effectiveActiveOperationItems,
@@ -1055,6 +1063,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
   pruneNonCurrentEmptyActivePlaceholders(thread, stats);
   reconcileVisibleActiveTurnState(thread, stats);
   const budgetOptions = Object.assign({}, options, stats);
+  budgetOptions.preserveReplayAssistantItems = true;
   thread.turns = thread.turns.map((turn) => compactTurnWithBudget(turn, thread, budgetOptions, stats));
   applyProgressiveVisibleItemCeiling(thread, budgetOptions, stats);
   applyProgressiveCompletedTextBudget(thread, budgetOptions, stats);

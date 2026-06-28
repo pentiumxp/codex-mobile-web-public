@@ -731,6 +731,12 @@ Cause to check:
   self-check should only raise that warning when
   `mobileDetailResponseBudget.latestCompletedReplayOmittedAssistantItems`
   proves that latest-replay assistant/plan progress was actually budgeted away.
+  If the latest completed turn has `mobileSyntheticCompletionTurn=true` /
+  `source=rollout_task_complete`, it is a rollout completion receipt backfill
+  for a turn missing from the app-server detail window. Lack of a user-input
+  item on that synthetic turn is not evidence that the projection dropped the
+  user's message, and the active-overlay input-gap gate should not force a slow
+  rebuild for that shape.
 - For routine self-checks after projection, Usage, timestamp, or thread-list
   ordering changes, run
   `node scripts/codex-mobile-thread-self-check.js --server http://127.0.0.1:8787 --json`
@@ -767,12 +773,14 @@ Cause to check:
   state-relevant set, should be receipt-only: user question items plus the last
   assistant/plan receipt and any `turnUsageSummary` metadata, without old
   assistant progress updates, operation, reasoning, or other diagnostic cards.
-  The HTTP detail response applies the same assistant/plan budget after
-  projection/read orchestration: active turns keep a bounded recent assistant
-  tail, completed turns keep the latest assistant/plan receipt, and
-  `mobileOmittedAssistantItemCount` / `mobileDetailResponseBudget` record the
-  omitted progress-row count. If `progressiveActiveBudgetApplied=true`, retained
-  active assistant/reasoning text fields may also carry
+  The HTTP detail response applies the same display contract after
+  projection/read orchestration: current active turns and the latest completed
+  replay keep assistant/plan progress rows, while command/operation and
+  reasoning rows remain budgeted. Historical completed turns keep the latest
+  assistant/plan receipt, and `mobileOmittedAssistantItemCount` /
+  `mobileDetailResponseBudget` record omitted historical progress-row counts.
+  If `progressiveActiveBudgetApplied=true`, retained active
+  assistant/reasoning text fields may also carry
   `mobileActiveTextBudget`; that is a pressure-triggered first-paint preview.
   If `progressiveCompletedTextBudgetScope=resting-history-first-paint`, the
   server previewed older completed receipts because the resting recent detail

@@ -158,6 +158,7 @@ function latestCompletedTurn(thread) {
 
 function latestCompletedReplayInputGap(thread) {
   const turn = latestCompletedTurn(thread);
+  if (turn && turn.mobileSyntheticCompletionTurn === true) return false;
   const items = Array.isArray(turn && turn.items) ? turn.items : [];
   if (!items.length) return false;
   const hasUsage = items.some((item) => itemType(item) === "turnusagesummary");
