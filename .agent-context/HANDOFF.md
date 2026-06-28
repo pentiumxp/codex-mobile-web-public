@@ -25835,3 +25835,77 @@ The previous full handoff was archived and should be opened only when old proven
     `detailResponseBudgetProgressiveActiveApplied` in the decision evidence,
     and no `responseBudgetTruncatedActiveUserMessageItems` /
     `detailResponseBudgetTruncatedActiveUserMessageItems` field names.
+
+## 2026-06-28 - Active Projection Partial Diagnostic Repair
+
+- Trigger:
+  - Home AI AI Ops opened remediation card `ttc_6e29f8afbd8ea26370`
+    for diagnostic case `diagcase_fb6ad564b80b623c7c05`.
+  - Bounded evidence reported two
+    `conversation_projection_mismatch /
+    thread_detail_response_contract_mismatch` events with
+    `error_code=active-thread-window-downgrade` from embedded iPhone
+    client build `20260628-scroll-user-drag-protect-v965`.
+- Root cause:
+  - Failing layer was the client-side diagnostic planner, not the server
+    projection data path.
+  - `public/thread-performance-metrics.js` treated active
+    `projection-v4-partial` / `projection-partial` read modes as a window
+    downgrade whenever the thread was active.
+  - That was too broad after the response-budget and active/progressive
+    projection work: a partial projection can be the intended first-paint shape
+    when it has active-turn, visible-item, and `mobileDetailResponseBudget`
+    evidence.
+- Fix:
+  - `threadDetailProjectionContractFields()` now carries bounded response-budget
+    evidence into the diagnostic contract.
+  - `planThreadDetailResponseContractDiagnostic()` now suppresses
+    `active-thread-window-downgrade` for legal active partial projection windows
+    with active/visible/response-budget evidence, while preserving reports for
+    true downgrade paths such as `turns-list-large`,
+    `bounded-large-thread-window`, empty projection shells, and projection
+    windows incorrectly marked full.
+  - `public/thread-diagnostic-events.js` now includes bounded
+    `response_budget_*` counters in the Home AI diagnostic payload and
+    breadcrumb fields.
+  - Static client build and service-worker cache advanced from
+    `codex-mobile-shell-v558` to `codex-mobile-shell-v559`.
+- Commits and deployment:
+  - Runtime/docs/test commit: `11e257f`
+    (`fix: suppress active partial projection diagnostic false positives`).
+  - Deployed through Home AI central macOS plugin deploy with reason
+    `codex-mobile-active-partial-diagnostic-repair`.
+  - Deploy backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260628T021741Z-plugin-codex-mobile-web-codex-mobile-active-partial-diagnostic-repair`.
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v559`,
+    `shellCacheName=codex-mobile-shell-v559`.
+  - Source/production SHA parity confirmed for `public/app.js`,
+    `public/sw.js`, `public/thread-performance-metrics.js`,
+    `public/thread-diagnostic-events.js`, `README.md`, `docs/MODULES.md`,
+    and focused tests changed by this slice.
+  - Production markers confirmed `activePartialProjectionOk`,
+    `responseBudgetProgressiveActiveApplied`,
+    `responseBudgetRetainedItemCount`, and
+    `response_budget_retained_item_count`.
+- Validation:
+  - Focused suite passed:
+    `node --test test/thread-performance-metrics.test.js test/thread-diagnostic-events.test.js test/home-ai-diagnostic-reporting.test.js`
+    (`50` tests).
+  - Static route/version related focused suite passed:
+    `node --test test/thread-task-card-route.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js`
+    (`34` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - Full `npm test` passed (`1395` tests).
+  - Home AI fallback governance check passed for changed runtime/test files;
+    classification is closure, not fallback.
+  - `codegraph sync && codegraph status` reported the graph up to date.
+  - Recent bounded runtime log count after v559 load:
+    `v559RefreshEvents=8`,
+    `v559ConversationProjectionMismatch=0`,
+    `v559ActiveWindowDowngrade=0`.
+    Older v558 clients still had projection-mismatch entries until refreshed,
+    so users must refresh/reopen PWA or embedded clients to stop old-client
+    reports.
