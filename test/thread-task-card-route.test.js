@@ -339,7 +339,8 @@ test("server materializes structured task-card drafts from thread detail", () =>
   assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /const completionBackfilled = backfillMissingRolloutCompletionTurnsForDetailResult\(result, details\);/);
   assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /const usageDecorated = attachRolloutUsageSummariesToDetailResult\(completionBackfilled\);/);
   assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /const inputAnchored = appendRolloutUserInputAnchorsToDetailResult\(usageDecorated\);/);
-  assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /const detailResult = appendRolloutActiveAssistantItemsToDetailResult\(inputAnchored\);/);
+  assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /const activeAssistantDecorated = appendRolloutActiveAssistantItemsToDetailResult\(inputAnchored\);/);
+  assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /const detailResult = finalizeActiveAssistantProjectionDetailResult\(activeAssistantDecorated\);/);
   assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /await prepareThreadTaskCardsToResult\(applyLocalActiveThreadStatusToResult\(detailResult, details\)\)/);
   assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /finalizeThreadDetailProjectionResult/);
   assert.match(functionBody(serverJs, "turnsListThreadReadResult"), /return prepareThreadDetailResponseResult\(result/);

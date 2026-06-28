@@ -21,6 +21,9 @@ function usage() {
     "  --server <url>          Codex Mobile server. Default: http://127.0.0.1:8787",
     "  --thread-id <id>        Thread id to target. Repeatable.",
     "  --sample-threads <n>    Browser sample thread count when no id is passed. Default: 3.",
+    "  --browser-rounds <n>    Browser switch/sample rounds. Default: 5.",
+    "  --browser-sample-delays-ms <csv> Browser delays after each switch. Default: 100,350,1200,2800,6000.",
+    "  --browser-min-settled-delay-ms <n> Browser downgrade H2 threshold. Default: 1000.",
     "  --interval-ms <n>       Loop interval. Default: 600000.",
     "  --iterations <n>        Maximum loop iterations. Default: unlimited with --loop, 1 otherwise.",
     "  --loop                  Continue periodically instead of running once.",
@@ -47,6 +50,9 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     server: env.CODEX_MOBILE_BASE_URL || DEFAULT_SERVER,
     threadIds: [],
     sampleThreads: positiveInt(env.CODEX_MOBILE_RUNTIME_SELF_CHECK_SAMPLE_THREADS || "3", 3, 20),
+    browserRounds: positiveInt(env.CODEX_MOBILE_RUNTIME_BROWSER_ROUNDS || "5", 5, 20),
+    browserSampleDelaysMs: String(env.CODEX_MOBILE_RUNTIME_BROWSER_SAMPLE_DELAYS_MS || "100,350,1200,2800,6000"),
+    browserMinSettledDelayMs: positiveInt(env.CODEX_MOBILE_RUNTIME_BROWSER_MIN_SETTLED_DELAY_MS || "1000", 1000, 10000),
     intervalMs: positiveInt(env.CODEX_MOBILE_RUNTIME_SELF_CHECK_INTERVAL_MS || String(DEFAULT_INTERVAL_MS), DEFAULT_INTERVAL_MS),
     iterations: 1,
     loop: false,
@@ -67,6 +73,9 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     else if (arg === "--server") options.server = next();
     else if (arg === "--thread-id") options.threadIds.push(next());
     else if (arg === "--sample-threads") options.sampleThreads = positiveInt(next(), options.sampleThreads, 20);
+    else if (arg === "--browser-rounds") options.browserRounds = positiveInt(next(), options.browserRounds, 20);
+    else if (arg === "--browser-sample-delays-ms") options.browserSampleDelaysMs = next();
+    else if (arg === "--browser-min-settled-delay-ms") options.browserMinSettledDelayMs = positiveInt(next(), options.browserMinSettledDelayMs, 10000);
     else if (arg === "--interval-ms") options.intervalMs = positiveInt(next(), options.intervalMs);
     else if (arg === "--iterations") options.iterations = positiveInt(next(), options.iterations, 1000000);
     else if (arg === "--loop") options.loop = true;
@@ -158,6 +167,12 @@ async function runOnce(options = {}, deps = {}) {
     const browserArgs = baseArgs(options).concat([
       "--sample-threads",
       String(positiveInt(options.sampleThreads, 3, 20)),
+      "--rounds",
+      String(positiveInt(options.browserRounds, 5, 20)),
+      "--sample-delays-ms",
+      String(options.browserSampleDelaysMs || "100,350,1200,2800,6000"),
+      "--min-settled-delay-ms",
+      String(positiveInt(options.browserMinSettledDelayMs, 1000, 10000)),
     ]);
     const result = await runNodeScript(path.join(root, "scripts", "codex-mobile-browser-runtime-self-check.js"), browserArgs, deps);
     checks.push(summarizeCheck("browser-runtime", result));

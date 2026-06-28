@@ -53,6 +53,10 @@ function summarizeSamples(samples = []) {
   const renderKeyCounts = normalized.map((sample) => toNumber(sample.renderKeys));
   const imageFailureCounts = normalized.map((sample) => toNumber(sample.imageFailureCount));
   const timestampMissingCounts = normalized.map((sample) => toNumber(sample.latestTimestampMissingItems));
+  const latestTurnItemCounts = normalized.map((sample) => toNumber(sample.latestTurnItemCount));
+  const latestTurnUserMessageCounts = normalized.map((sample) => toNumber(sample.latestTurnUserMessageCount));
+  const latestTurnAssistantMessageCounts = normalized.map((sample) => toNumber(sample.latestTurnAssistantMessageCount));
+  const latestTurnAssistantTextDuplicateCounts = normalized.map((sample) => toNumber(sample.latestTurnAssistantTextDuplicateCount));
   return {
     sampleCount: normalized.length,
     minTurns: normalized.length ? Math.min(...turnCounts) : 0,
@@ -62,6 +66,10 @@ function summarizeSamples(samples = []) {
     maxRenderKeys: normalized.length ? Math.max(...renderKeyCounts) : 0,
     maxImageFailures: normalized.length ? Math.max(...imageFailureCounts) : 0,
     maxLatestTimestampMissingItems: normalized.length ? Math.max(...timestampMissingCounts) : 0,
+    maxLatestTurnItems: normalized.length ? Math.max(...latestTurnItemCounts) : 0,
+    maxLatestTurnUserMessages: normalized.length ? Math.max(...latestTurnUserMessageCounts) : 0,
+    maxLatestTurnAssistantMessages: normalized.length ? Math.max(...latestTurnAssistantMessageCounts) : 0,
+    maxLatestTurnAssistantTextDuplicates: normalized.length ? Math.max(...latestTurnAssistantTextDuplicateCounts) : 0,
     sparseSampleCount: normalized.filter(isSparseSample).length,
     nonEmptySampleCount: normalized.filter(isNonEmptySample).length,
   };
@@ -123,6 +131,14 @@ function analyzeBrowserRuntimeSamples(input = {}) {
       }));
     }
     if (sampleIsConfirmed(sample)
+      && sample.latestTurnMatchesTarget
+      && toNumber(sample.latestTurnAssistantTextDuplicateCount) > 0) {
+      issues.push(issue("H2", "browser_latest_turn_assistant_text_duplicate", sample, {
+        latestTurnAssistantMessageCount: toNumber(sample.latestTurnAssistantMessageCount),
+        latestTurnAssistantTextDuplicateCount: toNumber(sample.latestTurnAssistantTextDuplicateCount),
+      }));
+    }
+    if (sampleIsConfirmed(sample)
       && sample.expectedLatestUsageRequired
       && sample.latestTurnMatchesTarget
       && toNumber(sample.latestTurnUsageCount) <= 0) {
@@ -143,10 +159,12 @@ function analyzeBrowserRuntimeSamples(input = {}) {
     let maxTurns = 0;
     let maxConfirmedItems = 0;
     let maxConfirmedTurns = 0;
+    const latestTurnWindows = new Map();
     for (const sample of rows) {
       const turns = toNumber(sample.turns);
       const items = toNumber(sample.items);
       const settled = toNumber(sample.delayMs) >= minSettledDelayMs;
+      const latestTurnHash = String(sample.latestTurnHash || "").slice(0, 32);
       maxTurns = Math.max(maxTurns, turns);
       maxItems = Math.max(maxItems, items);
       if (isNonEmptySample(sample)) {
@@ -175,6 +193,45 @@ function analyzeBrowserRuntimeSamples(input = {}) {
           currentTurns: turns,
           contentConfirmed: sample.contentConfirmed !== false,
         }));
+      }
+      if (sampleIsConfirmed(sample) && settled && sample.latestTurnMatchesTarget && latestTurnHash) {
+        const previous = latestTurnWindows.get(latestTurnHash) || {
+          itemCount: 0,
+          userMessageCount: 0,
+          assistantMessageCount: 0,
+        };
+        const currentItems = toNumber(sample.latestTurnItemCount);
+        const currentUsers = toNumber(sample.latestTurnUserMessageCount);
+        const currentAssistants = toNumber(sample.latestTurnAssistantMessageCount);
+        if (previous.itemCount > 0 && currentItems > 0 && currentItems < previous.itemCount) {
+          issues.push(issue("H2", "browser_latest_turn_item_count_downgraded", sample, {
+            threadHash,
+            latestTurnHash,
+            previousLatestTurnItemCount: previous.itemCount,
+            currentLatestTurnItemCount: currentItems,
+          }));
+        }
+        if (previous.userMessageCount > 0 && currentUsers < previous.userMessageCount) {
+          issues.push(issue("H2", "browser_latest_turn_user_message_downgraded", sample, {
+            threadHash,
+            latestTurnHash,
+            previousLatestTurnUserMessageCount: previous.userMessageCount,
+            currentLatestTurnUserMessageCount: currentUsers,
+          }));
+        }
+        if (previous.assistantMessageCount > 0 && currentAssistants < previous.assistantMessageCount) {
+          issues.push(issue("H2", "browser_latest_turn_assistant_message_downgraded", sample, {
+            threadHash,
+            latestTurnHash,
+            previousLatestTurnAssistantMessageCount: previous.assistantMessageCount,
+            currentLatestTurnAssistantMessageCount: currentAssistants,
+          }));
+        }
+        latestTurnWindows.set(latestTurnHash, {
+          itemCount: Math.max(previous.itemCount, currentItems),
+          userMessageCount: Math.max(previous.userMessageCount, currentUsers),
+          assistantMessageCount: Math.max(previous.assistantMessageCount, currentAssistants),
+        });
       }
     }
     const final = rows[rows.length - 1];

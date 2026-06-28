@@ -168,6 +168,74 @@ test("browser runtime self-check catches latest usage timestamp and image failur
   assert.ok(report.issues.some((issue) => issue.code === "browser_image_render_failed"));
 });
 
+test("browser runtime self-check catches latest turn assistant text duplicates", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [{
+      label: "latest-turn-duplicate",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      latestTurnMatchesTarget: true,
+      latestTurnAssistantMessageCount: 4,
+      latestTurnAssistantTextDuplicateCount: 1,
+      turns: 3,
+      items: 12,
+      renderKeys: 12,
+    }],
+  });
+
+  assert.equal(report.ok, false);
+  assert.ok(report.issues.some((issue) => issue.code === "browser_latest_turn_assistant_text_duplicate"));
+  assert.equal(report.sampleSummary.maxLatestTurnAssistantTextDuplicates, 1);
+});
+
+test("browser runtime self-check catches latest turn item and message count downgrades", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [
+      {
+        label: "rich-latest-turn",
+        threadHash: "thread-hash",
+        appVisible: true,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        latestTurnMatchesTarget: true,
+        latestTurnHash: "latest-turn-hash",
+        latestTurnItemCount: 8,
+        latestTurnUserMessageCount: 2,
+        latestTurnAssistantMessageCount: 4,
+        turns: 4,
+        items: 24,
+        delayMs: 1200,
+      },
+      {
+        label: "latest-turn-dropped",
+        threadHash: "thread-hash",
+        appVisible: true,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        latestTurnMatchesTarget: true,
+        latestTurnHash: "latest-turn-hash",
+        latestTurnItemCount: 4,
+        latestTurnUserMessageCount: 1,
+        latestTurnAssistantMessageCount: 2,
+        turns: 4,
+        items: 20,
+        delayMs: 1600,
+      },
+    ],
+  });
+
+  assert.equal(report.ok, false);
+  assert.ok(report.issues.some((issue) => issue.code === "browser_latest_turn_item_count_downgraded"));
+  assert.ok(report.issues.some((issue) => issue.code === "browser_latest_turn_user_message_downgraded"));
+  assert.ok(report.issues.some((issue) => issue.code === "browser_latest_turn_assistant_message_downgraded"));
+  assert.equal(report.sampleSummary.maxLatestTurnItems, 8);
+  assert.equal(report.sampleSummary.maxLatestTurnUserMessages, 2);
+  assert.equal(report.sampleSummary.maxLatestTurnAssistantMessages, 4);
+});
+
 test("browser runtime self-check catches duplicate DOM keys and runtime exceptions", () => {
   const report = service.analyzeBrowserRuntimeSamples({
     samples: [{
@@ -230,13 +298,17 @@ test("browser runtime self-check script exposes bounded browser snapshot fields"
   assert.match(expression, /renderRoot = conversation \|\| document/);
   assert.match(expression, /contentConfirmed/);
   assert.match(expression, /expectedLatestUsageRequired/);
+  assert.match(expression, /latestTurnHash/);
+  assert.match(expression, /latestTurnUserMessageCount/);
+  assert.match(expression, /latestTurnAssistantMessageCount/);
+  assert.match(expression, /latestTurnAssistantTextDuplicateCount/);
   assert.match(expression, /latestTimestampMissingItems/);
   assert.match(expression, /imageFailureCount/);
   assert.match(expression, /brokenCompleteImageCount/);
   assert.match(expression, /loadingNote/);
   assert.match(expression, /emptyState/);
   assert.match(expression, /codexMobileCurrentThreadId/);
-  assert.doesNotMatch(expression, /innerText|textContent|location\.href|document\.cookie|Authorization|Bearer/);
+  assert.doesNotMatch(expression, /innerText|location\.href|document\.cookie|Authorization|Bearer/);
 });
 
 test("browser runtime self-check route and console classifiers are bounded", () => {

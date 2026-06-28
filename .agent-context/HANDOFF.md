@@ -28326,7 +28326,93 @@ The previous full handoff was archived and should be opened only when old proven
     v575 correctly reported H2 `browser_latest_turn_timestamp_missing`, proving
     the prior self-check gap.
 - Deployment:
-  - Not yet deployed in this entry. Next deploy should read back
-    `/api/public-config` as `clientBuildId=0.1.11|codex-mobile-shell-v576` and
-    run `scripts/codex-mobile-runtime-self-check-loop.js --server
-    http://127.0.0.1:8787 --json` after production refresh.
+  - Commit `b1b62d2` (`fix: tighten browser self check and image rendering`)
+    deployed through the central Home AI plugin macOS path with reason
+    `codex-mobile-runtime-self-check-v576`.
+  - Production `/api/public-config` readback confirmed
+    `clientBuildId=0.1.11|codex-mobile-shell-v576` and
+    `shellCacheName=codex-mobile-shell-v576`.
+  - Production runtime self-check one-shot passed against Movie and Codex Mobile
+    target threads: API and browser checks both `ok:true`, `issueCount=0`,
+    `blockingIssueCount=0`, `diagnosticCandidateCount=0`.
+  - Installed local user LaunchAgent
+    `com.hermesmobile.codex-mobile-runtime-self-check` with `StartInterval=600`
+    seconds. It runs the production
+    `scripts/codex-mobile-runtime-self-check-loop.js` one-shot and writes
+    metadata-only JSONL to
+    `/Users/xuxin/.codex-mobile-web/logs/runtime-self-check.jsonl`.
+  - First LaunchAgent run completed with `ok:true`, API/browser checks
+    `ok:true`, and empty stderr.
+
+### 2026-06-29 - Active Reply Projection Tail And Browser Self-Check v577
+
+- Incident:
+  - User reported severe client refresh instability: latest Movie/Home AI/Codex
+    Mobile messages could appear, disappear, and reappear; submitted user
+    messages were temporarily invisible; some latest reply timestamps displayed
+    around the turn start time instead of the real current time.
+- Root cause / invariant:
+  - Server detail could project the same active assistant content through two
+    sources: native app-server assistant items and rollout synthetic progress
+    assistant items. That made the latest turn susceptible to duplicate rows
+    and source replacement churn.
+  - The v576 client timestamp fallback also allowed live assistant/plan items
+    without item-level timestamps to display the turn start/UUIDv7 time. That
+    hid server timestamp gaps and produced stale-looking visible times.
+  - Invariant: a live/latest turn must have one authoritative assistant
+    progress source, live assistant rows must not fabricate stale timestamps,
+    and browser self-checks must detect latest-turn item/user/assistant count
+    downgrades even when the whole conversation still looks nonempty.
+- Implementation:
+  - `server.js` now finalizes active assistant projection responses by enriching
+    live item timestamps from rollout and removing synthetic active assistant
+    progress rows when the same normalized assistant text is already present in
+    native assistant items; duplicate synthetic assistant progress for the same
+    text is also removed.
+  - `public/app.js` now accepts explicit `updatedAt*` item timestamps, but live
+    assistant/plan rows without item/completed timestamps return no timestamp
+    instead of falling back to turn start. The self-check reports that as a
+    contract gap instead of showing a stale time.
+  - `scripts/codex-mobile-browser-runtime-self-check.js` samples latest-turn
+    item count, user-message count, assistant/plan count, and duplicate
+    assistant text count in the browser. It outputs counts only, not message
+    text or text hashes.
+  - `adapters/browser-runtime-self-check-service.js` now raises H2 issues for
+    latest-turn count downgrades and duplicate assistant text:
+    `browser_latest_turn_item_count_downgraded`,
+    `browser_latest_turn_user_message_downgraded`,
+    `browser_latest_turn_assistant_message_downgraded`, and
+    `browser_latest_turn_assistant_text_duplicate`.
+  - `scripts/codex-mobile-runtime-self-check-loop.js` now supports
+    `--browser-rounds`, `--browser-sample-delays-ms`, and
+    `--browser-min-settled-delay-ms`; defaults include `6000ms` sampling to
+    catch delayed DOM/projection regressions.
+  - Static shell/cache bumped to `codex-mobile-shell-v577`.
+- Validation so far:
+  - Focused tests passed:
+    `node --test test/thread-item-timestamp-enrichment.test.js test/message-timestamp.test.js test/browser-runtime-self-check-service.test.js test/runtime-self-check-loop.test.js test/conversation-render.test.js`.
+  - Additional projection tests passed:
+    `node --test test/thread-detail-self-check-service.test.js test/thread-detail-active-window-overlay-policy-service.test.js test/thread-detail-read-orchestration-service.test.js test/thread-detail-projection-service.test.js`.
+  - Full `npm test` passed (`1516` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - Local v577 source server on `127.0.0.1:8790` reported
+    `clientBuildId=0.1.11|codex-mobile-shell-v577` and
+    `shellCacheName=codex-mobile-shell-v577`.
+  - Local API self-check against Movie thread
+    `019efca1-ea69-7292-87b7-025ba023ca87` passed with no H2 projection
+    issues; it still reports the existing H3
+    `thread_list_updated_order_mismatch`.
+  - Local browser self-check against the same Movie thread ran 30 samples
+    across delays `100,350,1200,2800,6000ms`: `ok:true`, `issueCount=0`,
+    `blockingIssueCount=0`, `maxLatestTurnItems=113`,
+    `maxLatestTurnUserMessages=4`, `maxLatestTurnAssistantMessages=107`,
+    `maxLatestTurnAssistantTextDuplicates=0`,
+    `maxLatestTimestampMissingItems=0`.
+  - Local combined runtime self-check loop against the same Movie thread
+    returned `ok:true`; API had only the known H3 thread-list order warning and
+    browser runtime had no issues.
+- Deployment status:
+  - Not deployed yet in this handoff section. Next step is a private production
+    deploy through the central Home AI macOS plugin deploy path, then production
+    `/api/public-config`, API self-check, browser self-check, and LaunchAgent
+    readback. Do not push Public unless explicitly requested by the user.

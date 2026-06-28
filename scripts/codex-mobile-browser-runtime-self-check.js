@@ -585,10 +585,21 @@ function snapshotExpression(input = {}) {
       const latestMatches = Boolean(expectedLatestTurnHash && turnHashes.includes(expectedLatestTurnHash));
       const latestTurnIndex = latestMatches ? turnHashes.indexOf(expectedLatestTurnHash) : turnNodes.length - 1;
       const latestTurnNode = latestTurnIndex >= 0 ? turnNodes[latestTurnIndex] : null;
+      const latestTurnHash = latestTurnIndex >= 0 ? String(turnHashes[latestTurnIndex] || "") : "";
       const timestampExpectedSelector = ".item.userMessage, .item.agentMessage, .item.plan, .item.turnDiagnostic, .item.thread-task-card-injected";
       const timestampExpectedNodes = latestTurnNode ? Array.from(latestTurnNode.querySelectorAll(timestampExpectedSelector)) : [];
       const timestampMissingNodes = timestampExpectedNodes.filter((node) => !node.querySelector(".item-timestamp"));
       const latestUsageCount = latestTurnNode ? latestTurnNode.querySelectorAll(".item.turnUsageSummary").length : 0;
+      const latestItemNodes = latestTurnNode ? Array.from(latestTurnNode.querySelectorAll("[data-item]")) : [];
+      const latestUserNodes = latestTurnNode ? Array.from(latestTurnNode.querySelectorAll(".item.userMessage")) : [];
+      const latestAssistantNodes = latestTurnNode ? Array.from(latestTurnNode.querySelectorAll(".item.agentMessage, .item.plan")) : [];
+      const latestAssistantTextHashes = latestAssistantNodes
+        .map((node) => {
+          const body = node.querySelector(".item-body") || node;
+          return String(body.textContent || "").replace(/\\s+/g, " ").trim();
+        })
+        .filter(Boolean)
+        .map(stableHash);
       const imageNodes = Array.from(renderRoot.querySelectorAll(".input-image img, .image-view img, .markdown-image img"));
       const failedFigures = Array.from(renderRoot.querySelectorAll(".input-image.image-load-failed, .image-view.image-load-failed, .markdown-image.image-load-failed"));
       const brokenCompleteImages = imageNodes.filter((image) => {
@@ -616,6 +627,11 @@ function snapshotExpression(input = {}) {
         expectedTurnHashCount: expectedTurnHashes.size,
         latestTurnMatchesTarget: latestMatches,
         expectedLatestUsageRequired,
+        latestTurnHash,
+        latestTurnItemCount: latestItemNodes.length,
+        latestTurnUserMessageCount: latestUserNodes.length,
+        latestTurnAssistantMessageCount: latestAssistantNodes.length,
+        latestTurnAssistantTextDuplicateCount: duplicateCount(latestAssistantTextHashes),
         latestTurnUsageCount: latestUsageCount,
         latestTimestampExpectedItems: timestampExpectedNodes.length,
         latestTimestampMissingItems: timestampMissingNodes.length,

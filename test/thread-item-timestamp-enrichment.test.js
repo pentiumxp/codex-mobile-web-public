@@ -8,6 +8,7 @@ const { test } = require("node:test");
 
 const {
   compactThread,
+  dedupeSyntheticActiveAssistantMessagesInThread,
   enrichThreadItemTimestampsFromRollout,
 } = require("../server");
 
@@ -55,6 +56,32 @@ test("thread detail items receive per-item timestamps from rollout events", () =
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("active synthetic assistant progress duplicates native assistant text are removed", () => {
+  const thread = {
+    id: "thread-active-dedupe",
+    turns: [{
+      id: "turn-active",
+      status: { type: "running" },
+      items: [
+        { id: "native-1", type: "agentMessage", text: "Same visible reply" },
+        { id: "mobile-progress-message-1", type: "agentMessage", text: "Same visible reply", mobileSyntheticProgressMessage: true },
+        { id: "mobile-progress-message-2", type: "agentMessage", text: "Only rollout reply", mobileSyntheticProgressMessage: true },
+        { id: "mobile-progress-message-3", type: "agentMessage", text: "Only rollout reply", mobileSyntheticProgressMessage: true },
+      ],
+    }],
+  };
+
+  const result = dedupeSyntheticActiveAssistantMessagesInThread(thread);
+
+  assert.equal(result.removed, 2);
+  assert.deepEqual(
+    thread.turns[0].items.map((item) => item.id),
+    ["native-1", "mobile-progress-message-2"],
+  );
+  assert.equal(thread.turns[0].mobileSyntheticActiveAssistantDeduped, 2);
+  assert.equal(thread.mobileSyntheticActiveAssistantDeduped, 2);
 });
 
 test("compacted live operation items keep rollout-derived timestamps", () => {

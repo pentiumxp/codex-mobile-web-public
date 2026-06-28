@@ -16,10 +16,25 @@ test("runtime self-check loop parses one-shot and periodic options", () => {
   assert.equal(once.iterations, 1);
   assert.equal(once.skipBrowser, true);
 
-  const loop = runtimeLoop.parseArgs(["--loop", "--interval-ms", "600000", "--iterations", "2"]);
+  const loop = runtimeLoop.parseArgs([
+    "--loop",
+    "--interval-ms",
+    "600000",
+    "--iterations",
+    "2",
+    "--browser-rounds",
+    "7",
+    "--browser-sample-delays-ms",
+    "100,500,1500",
+    "--browser-min-settled-delay-ms",
+    "1500",
+  ]);
   assert.equal(loop.loop, true);
   assert.equal(loop.intervalMs, 600000);
   assert.equal(loop.iterations, 2);
+  assert.equal(loop.browserRounds, 7);
+  assert.equal(loop.browserSampleDelaysMs, "100,500,1500");
+  assert.equal(loop.browserMinSettledDelayMs, 1500);
 });
 
 test("runtime self-check summary keeps only bounded metadata", () => {
@@ -58,6 +73,9 @@ test("runtime self-check one-shot writes metadata-only JSONL", async () => {
     server: "http://127.0.0.1:8790",
     threadIds: ["private-thread-id"],
     sampleThreads: 1,
+    browserRounds: 6,
+    browserSampleDelaysMs: "100,350,1200,2800,6000",
+    browserMinSettledDelayMs: 1200,
     skipApi: false,
     skipBrowser: false,
     output,
@@ -65,6 +83,14 @@ test("runtime self-check one-shot writes metadata-only JSONL", async () => {
     execFile(_node, args, _options, callback) {
       const script = String(args[0] || "");
       const isBrowser = script.includes("browser-runtime");
+      if (isBrowser) {
+        assert.ok(args.includes("--rounds"));
+        assert.equal(args[args.indexOf("--rounds") + 1], "6");
+        assert.ok(args.includes("--sample-delays-ms"));
+        assert.equal(args[args.indexOf("--sample-delays-ms") + 1], "100,350,1200,2800,6000");
+        assert.ok(args.includes("--min-settled-delay-ms"));
+        assert.equal(args[args.indexOf("--min-settled-delay-ms") + 1], "1200");
+      }
       const payload = isBrowser
         ? {
             ok: true,

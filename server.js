@@ -5239,6 +5239,65 @@ function appendRolloutActiveAssistantItemsToDetailResult(result) {
   return out;
 }
 
+function syntheticActiveAssistantMessage(item) {
+  return Boolean(item && isAssistantReceiptItem(item) && (
+    item.mobileSyntheticProgressMessage === true
+    || item.mobileSyntheticActiveAssistant === true
+    || /^rollout_/i.test(String(item.source || ""))
+    || /^mobile-progress-message-/.test(String(item.id || ""))
+  ));
+}
+
+function dedupeSyntheticActiveAssistantMessagesInThread(thread) {
+  if (!thread || typeof thread !== "object" || !Array.isArray(thread.turns)) return { thread, removed: 0 };
+  let removed = 0;
+  for (const turn of thread.turns) {
+    if (!turn || !isLiveTurn(turn) || !Array.isArray(turn.items) || turn.items.length < 2) continue;
+    const nativeAssistantTexts = new Set();
+    const syntheticAssistantTexts = new Set();
+    for (const item of turn.items) {
+      if (!isAssistantReceiptItem(item)) continue;
+      const normalized = normalizeFinalReceiptText(assistantReceiptText(item));
+      if (!normalized) continue;
+      if (syntheticActiveAssistantMessage(item)) continue;
+      nativeAssistantTexts.add(normalized);
+    }
+    const nextItems = [];
+    for (const item of turn.items) {
+      if (syntheticActiveAssistantMessage(item)) {
+        const normalized = normalizeFinalReceiptText(assistantReceiptText(item));
+        if (normalized && nativeAssistantTexts.has(normalized)) {
+          removed += 1;
+          continue;
+        }
+        if (normalized && syntheticAssistantTexts.has(normalized)) {
+          removed += 1;
+          continue;
+        }
+        if (normalized) syntheticAssistantTexts.add(normalized);
+      }
+      nextItems.push(item);
+    }
+    if (nextItems.length !== turn.items.length) {
+      const turnRemoved = turn.items.length - nextItems.length;
+      turn.items = nextItems;
+      turn.mobileSyntheticActiveAssistantDeduped = (turn.mobileSyntheticActiveAssistantDeduped || 0) + turnRemoved;
+    }
+  }
+  if (removed) thread.mobileSyntheticActiveAssistantDeduped = (thread.mobileSyntheticActiveAssistantDeduped || 0) + removed;
+  return { thread, removed };
+}
+
+function finalizeActiveAssistantProjectionDetailResult(result) {
+  if (!result || typeof result !== "object" || !result.thread) return result;
+  const sourceThread = result.thread;
+  if (!Array.isArray(sourceThread.turns) || !sourceThread.turns.some((turn) => turn && isLiveTurn(turn))) return result;
+  const thread = clonePlainJson(result.thread);
+  enrichThreadItemTimestampsFromRollout(thread);
+  const deduped = dedupeSyntheticActiveAssistantMessagesInThread(thread);
+  return Object.assign({}, result, { thread: deduped.thread || thread });
+}
+
 function orderTurnItemsByDisplayTimestamp(turn) {
   if (!turn || !Array.isArray(turn.items) || turn.items.length < 2) return turn;
   turn.items = turn.items
@@ -13629,7 +13688,8 @@ async function prepareThreadDetailResponseResult(result, details = {}) {
   const completionBackfilled = backfillMissingRolloutCompletionTurnsForDetailResult(result, details);
   const usageDecorated = attachRolloutUsageSummariesToDetailResult(completionBackfilled);
   const inputAnchored = appendRolloutUserInputAnchorsToDetailResult(usageDecorated);
-  const detailResult = appendRolloutActiveAssistantItemsToDetailResult(inputAnchored);
+  const activeAssistantDecorated = appendRolloutActiveAssistantItemsToDetailResult(inputAnchored);
+  const detailResult = finalizeActiveAssistantProjectionDetailResult(activeAssistantDecorated);
   const prepared = applyLocalActiveThreadStatusToResult(
     await prepareThreadTaskCardsToResult(applyLocalActiveThreadStatusToResult(detailResult, details)),
     details,
@@ -16577,6 +16637,7 @@ module.exports = {
   clearLocalActiveThreadStatus,
   collectRecentRolloutFiles,
   compactThread,
+  dedupeSyntheticActiveAssistantMessagesInThread,
   enrichThreadItemTimestampsFromRollout,
   filterFallbackThreads,
   filePreviewContentDisposition,

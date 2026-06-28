@@ -16,6 +16,29 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-29 Active Reply Projection / Runtime Self-Check Hotfix（v577）
+
+本次私有生产修复升级到 `codex-mobile-shell-v577`，目标是解决最新 turn
+里用户消息或 assistant 回执一会出现、一会消失、偶尔重复，以及 live 回执
+时间显示成 turn 开始时间的问题。
+
+- 服务端 detail 响应在 active assistant 回填后会做一次根因级收束：同一
+  live turn 里，如果 Codex app-server 已经给出原生 assistant/plan 消息，
+  rollout synthetic progress 里相同正文的临时 assistant 消息会被移除；
+  synthetic 自身重复也会被移除。这样不会靠浏览器去重掩盖问题，而是在
+  投影边界只保留一个权威 assistant 进度源。
+- live assistant/plan item 没有 item-level timestamp 时，不再回退到 turn
+  start / UUIDv7 时间。缺失时间会被 runtime self-check 报成缺口，避免用户
+  看到旧的“00:40”之类假时间。
+- 浏览器 self-check 增加最新 turn 内部不变量：最新 turn 的 item 数、用户
+  消息数、assistant/plan 数不能在同一 turn 内回退；最新 turn 内重复
+  assistant 文本会作为 H2 `browser_latest_turn_assistant_text_duplicate`
+  报告。报告只包含计数和 hash，不输出消息正文。
+- 周期 runner 支持更长的真实浏览器采样窗口：
+  `--browser-rounds`、`--browser-sample-delays-ms` 和
+  `--browser-min-settled-delay-ms`。默认采样覆盖 `100,350,1200,2800,6000ms`，
+  用于抓“几秒后被旧投影覆盖”的客户端问题。
+
 ## 2026-06-29 Runtime Self-Check / Image Caption Hotfix（v576）
 
 本次私有生产修复升级到 `codex-mobile-shell-v576`，集中处理三个用户可见问题：

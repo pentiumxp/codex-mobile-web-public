@@ -755,7 +755,7 @@ Cause to check:
 - If the API self-check is clean but the real client still flickers, clears a
   thread detail to `No visible turns.`, shows duplicate DOM items, or loses a
   just-visible thread after reopening, run the browser-runtime check:
-  `node scripts/codex-mobile-browser-runtime-self-check.js --server http://127.0.0.1:8787 --sample-threads 3 --rounds 2 --sample-delays-ms 350,1200,2800 --json`.
+  `node scripts/codex-mobile-browser-runtime-self-check.js --server http://127.0.0.1:8787 --sample-threads 3 --rounds 5 --sample-delays-ms 100,350,1200,2800,6000 --json`.
   The script drives a temporary Chrome profile through the real UI and samples
   only bounded `#conversation` metadata. `browser_dom_sparse_after_nonempty`
   means the browser had already shown confirmed nonempty content for that
@@ -765,6 +765,13 @@ Cause to check:
   `browser_dom_visible_items_downgraded_after_nonempty`,
   `browser_latest_turn_timestamp_missing`,
   `browser_latest_turn_usage_missing`, and `browser_image_render_failed`.
+  Clients after `codex-mobile-shell-v577` additionally report
+  `browser_latest_turn_item_count_downgraded`,
+  `browser_latest_turn_user_message_downgraded`,
+  `browser_latest_turn_assistant_message_downgraded`, and
+  `browser_latest_turn_assistant_text_duplicate`. These are latest-turn scoped
+  checks: a healthy whole-conversation item total no longer hides the user
+  message or latest assistant rows disappearing inside the active/latest turn.
   The analyzer no longer drops a sparse sample merely because
   `contentConfirmed=false`; such samples cannot establish a healthy baseline,
   but they can prove regression after the same target thread was previously

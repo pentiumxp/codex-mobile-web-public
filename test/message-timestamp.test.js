@@ -44,6 +44,7 @@ test("Usage summaries render as a compact toolbar without a timestamp header", (
 test("card timestamps fall back from item time to turn time", () => {
   assert.match(appJs, /function itemTimestampMs\(item,\s*turn = null,\s*thread = null\)/);
   assert.match(appJs, /numericTimestampMs\(item\.startedAtMs\)/);
+  assert.match(appJs, /numericTimestampMs\(item\.updatedAtMs\)/);
   assert.match(appJs, /const contextThread = renderContextThread\(thread\);/);
   assert.match(appJs, /turnCompletedAtMs\(turn,\s*contextThread\)/);
   assert.match(appJs, /function turnStartedAtMs\(turn\)/);
@@ -56,13 +57,13 @@ test("running turn timestamps do not fall back to stale thread updated time", ()
   assert.match(appJs, /if \(!fallback \|\| \(startedAt && fallback < startedAt\)\) return 0;/);
 });
 
-test("live visible timestamps can use bounded turn-start time", () => {
+test("live assistant timestamps do not fall back to stale turn-start time", () => {
   const body = appJs.slice(appJs.indexOf("function itemTimestampMs"), appJs.indexOf("function turnStartedAtMs"));
-  assert.match(body, /\|\| turnStartedAtMs\(turn\)\r?\n\s*\|\| 0;/);
+  assert.match(body, /\|\| \(isLiveTurn\(turn, contextThread\) \? 0 : turnStartedAtMs\(turn\)\)/);
   assert.match(body, /if \(isLiveTurn\(turn, contextThread\) && isOperationalItem\(item\)\) return turnStartedAtMs\(turn\) \|\| 0;/);
 });
 
-test("live assistant messages use turn-start timestamps without item times", () => {
+test("live assistant messages without item times stay untimestamped for self-check", () => {
   const sources = [
     "renderContextThread",
     "itemTimestampMs",
@@ -84,7 +85,7 @@ return itemTimestampMs(
 );
 `)();
 
-  assert.equal(result, 1782623676873);
+  assert.equal(result, 0);
 });
 
 test("turn timestamps can fall back to UUIDv7 turn identity", () => {
