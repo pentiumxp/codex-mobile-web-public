@@ -27220,3 +27220,51 @@ The previous full handoff was archived and should be opened only when old proven
     adding this handoff note.
 - Pending:
   - Push private `origin/main` after committing this handoff update.
+
+## 2026-06-28 - Client Render Stability Guard v571
+
+- User reported a client-visible refresh regression where typing/sending in the
+  composer and the just-sent user-message card could cause a full-screen/card
+  refresh.
+- Root cause fixed in the client render identity layer:
+  - Local optimistic submitted user-message turns used a temporary local turn id.
+  - The later server projection/reconcile used the durable server turn id.
+  - Existing DOM patching is key-based, so the turn/card key changed and the
+    browser removed/reinserted the submitted card instead of patching it in
+    place.
+- Behavior added:
+  - New `public/client-render-stability-guard.js` gives submitted user-message
+    turns a stable hashed render identity across optimistic insertion and server
+    turn-id reconciliation.
+  - `stableItemKey()` and `stableTurnKey()` now use that stable identity, while
+    ordinary non-submission turns still fall back to durable turn id/startedAt.
+  - The helper does not read or store message bodies, prompts, uploads, private
+    paths, tokens, or long logs.
+  - Static shell/cache bumped to `codex-mobile-shell-v571`.
+- Changed files:
+  - `public/client-render-stability-guard.js`
+  - `public/app.js`
+  - `public/index.html`
+  - `public/sw.js`
+  - `server.js`
+  - `package.json`
+  - `test/client-render-stability-guard.test.js`
+  - `test/conversation-render.test.js`
+  - `test/app-update.test.js`
+  - `test/mobile-viewport.test.js`
+  - `test/plugin-voice-input.test.js`
+  - `docs/MODULES.md`
+- Validation before commit/deploy:
+  - Focused render/static/mobile tests passed:
+    `node --test test/client-render-stability-guard.test.js
+    test/app-update.test.js test/mobile-viewport.test.js
+    test/plugin-voice-input.test.js test/conversation-render.test.js
+    test/thread-detail-dom-patch.test.js
+    test/thread-detail-refresh-dom-harness.test.js` (`220` tests).
+  - `npm run check` passed.
+  - `npm test` passed (`1446` tests).
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Status:
+  - Ready for commit and plugin-owned production deploy. Public push is not
+    requested for this module.

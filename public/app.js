@@ -102,6 +102,10 @@ const threadListStableOrderPolicy = window.CodexThreadListStableOrder;
 if (!threadListStableOrderPolicy) {
   throw new Error("CodexThreadListStableOrder script failed to load");
 }
+const clientRenderStabilityGuard = window.CodexClientRenderStabilityGuard;
+if (!clientRenderStabilityGuard) {
+  throw new Error("CodexClientRenderStabilityGuard script failed to load");
+}
 const liveOperationDockPolicy = window.CodexLiveOperationDockState;
 if (!liveOperationDockPolicy) {
   throw new Error("CodexLiveOperationDockState script failed to load");
@@ -532,7 +536,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v570";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v571";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -588,6 +592,7 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/thread-performance-metrics.js",
   "/thread-list-load-policy.js",
   "/thread-list-stable-order.js",
+  "/client-render-stability-guard.js",
   "/live-operation-dock-state.js",
   "/thread-detail-state.js",
   "/thread-detail-render-plan.js",
@@ -1232,6 +1237,7 @@ function insertLocalSubmittedUserMessage(threadId, text, attachments, clientSubm
     };
     thread.turns.push(turn);
   }
+  clientRenderStabilityGuard.markSubmittedTurn(turn, submissionId);
   turn.items = Array.isArray(turn.items) ? turn.items : [];
   turn.status = isCompletedStatus(turn.status) ? { type: "active" } : (turn.status || { type: "active" });
   turn.items.push(localUserMessageItem(text, attachments || [], submissionId));
@@ -1287,6 +1293,7 @@ function reconcileSubmittedUserMessageTurn(threadId, clientSubmissionId, serverT
     };
     thread.turns.push(targetTurn);
   }
+  clientRenderStabilityGuard.transferSubmittedTurnIdentity(sourceTurn, targetTurn, submissionId);
   const changed = mergeSubmittedUserItemIntoTurn(targetTurn, sourceItem);
   if (sourceTurn && sourceTurn !== targetTurn) {
     sourceTurn.items = (sourceTurn.items || []).filter((item) => item !== sourceItem);
@@ -5049,7 +5056,7 @@ function isLatestTurn(turn, thread = null) {
 
 function stableItemKey(turn, item, index = 0, prefix = "item") {
   const threadId = renderContextThreadId() || "thread";
-  const turnId = turn && (turn.id || turn.startedAt || "turn");
+  const turnId = clientRenderStabilityGuard.stableTurnIdentity(turn);
   const visibleKey = item && item.mobileVisibleKey;
   let itemId = visibleKey || (item && item.id || `${item && item.type || "item"}-${index}`);
   if (item && (item.type === "imageView" || item.type === "imageGeneration")) {
@@ -5082,7 +5089,7 @@ function stableOperationRenderKey(turn, item, index = 0) {
 
 function stableTurnKey(turn, suffix = "") {
   const threadId = renderContextThreadId() || "thread";
-  return ["turn", threadId, turn && (turn.id || turn.startedAt || "turn"), suffix].filter(Boolean).join("|");
+  return ["turn", threadId, clientRenderStabilityGuard.stableTurnIdentity(turn), suffix].filter(Boolean).join("|");
 }
 
 function existingConversationRenderKeys() {

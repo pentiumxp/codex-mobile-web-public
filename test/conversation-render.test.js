@@ -12,6 +12,7 @@ const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8
 const threadDetailMergeStateJs = fs.readFileSync(path.join(root, "public", "thread-detail-merge-state.js"), "utf8");
 const threadDetailPatchPlan = require(path.join(root, "public", "thread-detail-patch-plan.js"));
 const threadDiagnosticEvents = require(path.join(root, "public", "thread-diagnostic-events.js"));
+const clientRenderStabilityGuard = require(path.join(root, "public", "client-render-stability-guard.js"));
 const { createThreadDetailStatePolicy } = require(path.join(root, "public", "thread-detail-state.js"));
 const { createThreadDetailMergePolicy } = require(path.join(root, "public", "thread-detail-merge-state.js"));
 const { createThreadDetailV4MergePolicy } = require(path.join(root, "public", "thread-detail-v4-merge-state.js"));
@@ -1202,7 +1203,7 @@ function evaluatedLocalSubmissionInserter() {
     "mergeSubmittedUserItemIntoTurn",
     "reconcileSubmittedUserMessageTurn",
   ].map((name) => functionSourceFrom(appJs, name));
-  return Function([
+  return Function("clientRenderStabilityGuard", [
     `
 let mergeCount = 0;
 let syncCount = 0;
@@ -1240,7 +1241,7 @@ return {
   counters: () => ({ mergeCount, syncCount }),
 };
 `,
-  ].join("\n"))();
+  ].join("\n"))(clientRenderStabilityGuard);
 }
 
 function evaluatedThreadStatusPaneContext() {
@@ -3825,7 +3826,7 @@ test("stable render keys use pane render context before global current thread", 
     "stableOperationRenderKey",
     "stableTurnKey",
   ].map((name) => functionSourceFrom(appJs, name));
-  const result = Function(`
+  const result = Function("clientRenderStabilityGuard", `
 const state = {
   currentThreadId: "current-thread",
   currentThread: { id: "current-object-thread" },
@@ -3838,7 +3839,7 @@ return {
   operationKey: stableOperationRenderKey({ id: "turn-a" }, { id: "op-a", groupKey: "op-group" }, 0),
   turnKey: stableTurnKey({ id: "turn-a" }),
 };
-`)();
+`)(clientRenderStabilityGuard);
 
   assert.equal(result.itemKey, "item|pane-thread|turn-a|item-a");
   assert.equal(result.operationKey, "live-operation|pane-thread|turn-a|op-group");
@@ -3919,7 +3920,7 @@ test("visible item signatures use explicit pane thread for context compaction st
     "contextCompactionNotice",
     "visibleItemSignature",
   ].map((name) => functionSourceFrom(appJs, name));
-  const result = Function(`
+  const result = Function("clientRenderStabilityGuard", `
 const CONTEXT_COMPACTION_PENDING_NOTICE = "Context compaction pending";
 const CONTEXT_COMPACTION_COMPLETE_NOTICE = "Context compaction complete";
 const state = {
@@ -3978,7 +3979,7 @@ test("thread tile visible shape uses pane thread context for visible item filter
     "visibleRenderableTurnIds",
     "threadTileVisibleShape",
   ].map((name) => functionSourceFrom(appJs, name));
-  const result = Function(`
+  const result = Function("clientRenderStabilityGuard", `
 const CONTEXT_COMPACTION_PENDING_NOTICE = "Context compaction pending";
 const CONTEXT_COMPACTION_COMPLETE_NOTICE = "Context compaction complete";
 const paneTurn = {
@@ -4109,7 +4110,7 @@ test("visible item patch entries use render context thread for filtering and sig
     "visibleItemSignature",
     "visibleItemPatchEntries",
   ].map((name) => functionSourceFrom(appJs, name));
-  const result = Function(`
+  const result = Function("clientRenderStabilityGuard", `
 const CONTEXT_COMPACTION_PENDING_NOTICE = "Context compaction pending";
 const CONTEXT_COMPACTION_COMPLETE_NOTICE = "Context compaction complete";
 const targetTurn = {
@@ -4154,7 +4155,7 @@ function operationCommandText() { return ""; }
 function operationDetailText() { return ""; }
 ${sources.join("\n")}
 return visibleItemPatchEntries(targetTurn);
-`)();
+`)(clientRenderStabilityGuard);
 
   assert.equal(result.length, 1);
   assert.equal(result[0].key, "item|target-thread|target-turn|context-item");
