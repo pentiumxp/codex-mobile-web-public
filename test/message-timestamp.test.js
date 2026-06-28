@@ -32,6 +32,13 @@ test("conversation cards render compact timestamps in the item header", () => {
   assert.match(stylesCss, /\.item-timestamp\s*{[\s\S]*font-variant-numeric:\s*tabular-nums;/);
 });
 
+test("Usage summaries render the same timestamp header after reload", () => {
+  const body = appJs.slice(appJs.indexOf("function renderItem("), appJs.indexOf("function renderInjectedThreadTaskCardItem"));
+  assert.match(body, /if \(item\.type === "turnUsageSummary"\) \{/);
+  assert.match(body, /const timestampHtml = renderItemTimestampHtml\(item,\s*turn,\s*contextThread\);/);
+  assert.match(body, /<span class="item-head-actions">\$\{timestampHtml\}<\/span>/);
+});
+
 test("card timestamps fall back from item time to turn time", () => {
   assert.match(appJs, /function itemTimestampMs\(item,\s*turn = null,\s*thread = null\)/);
   assert.match(appJs, /numericTimestampMs\(item\.startedAtMs\)/);

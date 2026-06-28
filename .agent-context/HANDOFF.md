@@ -26681,5 +26681,41 @@ The previous full handoff was archived and should be opened only when old proven
   - Full `npm test` (`1414` tests), `npm run check`, `npm run check:macos`, and
     `git diff --check` passed.
 - Deployment status:
+  - Commit `ec91b7f` deployed through the Home AI central macOS plugin deploy
+    path with reason `codex-mobile-completed-progress-budget`.
+  - Production `/api/public-config` reported
+    `clientBuildId=0.1.11|codex-mobile-shell-v566` and
+    `shellCacheName=codex-mobile-shell-v566`.
+  - Source/production SHA parity was confirmed for
+    `adapters/thread-detail-response-budget-service.js` and
+    `test/thread-detail-response-budget-service.test.js`.
+  - Metadata-only detail readback on the current Codex Mobile thread showed the
+    completed turn before the active overlay retained assistant/message items
+    with no operation rows dominating, and its final `agentMessage` carried
+    `startedAtMs`.
+  - Public must remain unchanged unless the user explicitly asks for Public.
+
+## 2026-06-28 - Usage Summary Timestamp Header v567
+
+- User-visible incident:
+  - After re-entering a thread, the newest completed turn's assistant message
+    rows carried timestamp fields, but the Usage/summary receipt card still had
+    no visible compact timestamp because it used a special render branch.
+- Root cause / invariant:
+  - `renderItem()` rendered `turnUsageSummary` as body-only and bypassed the
+    common `renderItemTimestampHtml()` item-head path. Live/newly emitted rows
+    could appear to have time labels, while reloaded Usage summaries did not.
+- Implementation:
+  - `turnUsageSummary` now renders the same compact item header action area and
+    timestamp as other conversation cards.
+  - Static shell/cache advanced from `codex-mobile-shell-v566` to
+    `codex-mobile-shell-v567`.
+  - Added a focused timestamp test for reloaded Usage summaries.
+- Validation:
+  - `node --test test/message-timestamp.test.js test/conversation-render.test.js test/thread-detail-response-budget-service.test.js`
+    (`177` tests)
+  - Full `npm test` (`1415` tests), `npm run check`, `npm run check:macos`, and
+    `git diff --check` passed.
+- Deployment status:
   - Pending commit/deploy at the time of this handoff entry.
   - Public must remain unchanged unless the user explicitly asks for Public.

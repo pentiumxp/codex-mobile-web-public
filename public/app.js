@@ -528,7 +528,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v566";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v567";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -17603,7 +17603,12 @@ function renderItem(item, turn = null, previousKeys = new Set(), index = 0, thre
   const type = item.type || "item";
   const key = stableItemKey(turn, item, index);
   if (item.type === "turnUsageSummary") {
+    const timestampHtml = renderItemTimestampHtml(item, turn, contextThread);
     return `<section class="item${entryAnimationClass(key, previousKeys)} turnUsageSummary" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}">
+      <div class="item-head">
+        <span>${escapeHtml(labelForItem(item))}</span>
+        <span class="item-head-actions">${timestampHtml}</span>
+      </div>
       <div class="item-body">${renderTurnUsageSummary(item)}</div>
     </section>`;
   }
