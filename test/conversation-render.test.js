@@ -1079,6 +1079,9 @@ function evaluatedVisibleItemsForTurn() {
     "shouldHideSupersededLiveUserMessage",
     "isRawThreadReadMode",
     "shouldPreserveRawThreadVisibleEntry",
+    "itemTextValue",
+    "reasoningItemHasVisibleText",
+    "isLatestCompletedProcessTurn",
     "renderContextThread",
     "limitRawThreadVisibleEntries",
     "visibleItemsForTurn",
@@ -1092,6 +1095,14 @@ const state = {
   recentSubmittedUserMessages: new Map(),
 };
 function isLiveTurn(turn) { return Boolean(turn && turn.live); }
+function isTurnComplete(turn) {
+  const text = String(turn && (turn.status && turn.status.type || turn.status) || "").toLowerCase();
+  return Boolean(turn && (turn.completedAt || turn.durationMs || /completed|failed|cancel|error|interrupted/.test(text)));
+}
+function isLatestTurn(turn, thread) {
+  const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+  return Boolean(turn && turns.length && turns[turns.length - 1] === turn);
+}
 function isReasoningItem(item) { return Boolean(item && item.type === "reasoning"); }
 function isOperationalItem(item) { return Boolean(item && item.type === "commandExecution"); }
 function isContextCompactionItem(item) { return Boolean(item && item.type === "contextCompaction"); }
@@ -1634,7 +1645,7 @@ function evaluatedTurnUsageSummaryRenderer() {
 test("context compaction notices update status and collapse repeated turn notices", () => {
   assert.match(functionBody("visibleItemsForTurn"), /const contextEntryByKey = new Map\(\)/);
   assert.match(functionBody("visibleItemsForTurn"), /isContextCompactionItem\(item\)/);
-  assert.match(functionBody("visibleItemsForTurn"), /const notice = contextCompactionNotice\(item, turn, thread\)/);
+  assert.match(functionBody("visibleItemsForTurn"), /const notice = contextCompactionNotice\(item, turn, contextThread\)/);
   assert.match(functionBody("visibleItemsForTurn"), /if \(!notice\) return/);
   assert.match(functionBody("visibleItemsForTurn"), /visible\[existing\.visibleIndex\] = null/);
   assert.match(functionBody("visibleItemsForTurn"), /const filtered = visible\.filter\(Boolean\)/);
@@ -1900,6 +1911,54 @@ test("live turn keeps prompt and responded steering messages while hiding only u
   assert.deepEqual(
     visibleItemsForTurn(completedTurn).map((entry) => entry.item.id),
     ["real-user-prompt", "assistant-progress", "real-user-responded-steer", "assistant-after-steer", "real-user-trailing", "local-user-new"],
+  );
+});
+
+test("latest completed turn shows retained process items after full rerender", () => {
+  const { visibleItemsForTurn } = evaluatedVisibleItemsForTurn();
+  const previous = {
+    id: "previous",
+    status: "completed",
+    items: [
+      { id: "previous-user", type: "userMessage", content: [{ type: "text", text: "old" }] },
+      { id: "previous-reasoning", type: "reasoning", summary: ["old thinking"] },
+      { id: "previous-command", type: "commandExecution", status: "completed" },
+      { id: "previous-final", type: "agentMessage", text: "old done" },
+    ],
+  };
+  const latestCompleted = {
+    id: "latest-completed",
+    status: "completed",
+    items: [
+      { id: "latest-user", type: "userMessage", content: [{ type: "text", text: "new" }] },
+      { id: "latest-empty-reasoning", type: "reasoning", summary: [] },
+      { id: "latest-reasoning", type: "reasoning", summary: ["visible thinking"] },
+      { id: "latest-command", type: "commandExecution", status: "completed" },
+      { id: "latest-final", type: "agentMessage", text: "new done" },
+    ],
+  };
+  const active = {
+    id: "active",
+    live: true,
+    status: "inProgress",
+    items: [
+      { id: "active-user", type: "userMessage", content: [{ type: "text", text: "running" }] },
+      { id: "active-command", type: "commandExecution", status: "running" },
+    ],
+  };
+  const thread = { id: "thread-live", turns: [previous, latestCompleted, active] };
+
+  assert.deepEqual(
+    visibleItemsForTurn(previous, thread).map((entry) => entry.item.id),
+    ["previous-user", "previous-final"],
+  );
+  assert.deepEqual(
+    visibleItemsForTurn(latestCompleted, thread).map((entry) => entry.item.id),
+    ["latest-user", "latest-reasoning", "latest-command", "latest-final"],
+  );
+  assert.deepEqual(
+    visibleItemsForTurn(active, thread).map((entry) => entry.item.id),
+    ["active-user"],
   );
 });
 
@@ -3912,6 +3971,9 @@ test("thread tile visible shape uses pane thread context for visible item filter
     "canShowPendingContextCompaction",
     "contextCompactionState",
     "contextCompactionNotice",
+    "itemTextValue",
+    "reasoningItemHasVisibleText",
+    "isLatestCompletedProcessTurn",
     "visibleItemsForTurn",
     "visibleRenderableTurnIds",
     "threadTileVisibleShape",
@@ -3977,6 +4039,9 @@ test("visible conversation shape uses explicit thread context for visible item f
     "canShowPendingContextCompaction",
     "contextCompactionState",
     "contextCompactionNotice",
+    "itemTextValue",
+    "reasoningItemHasVisibleText",
+    "isLatestCompletedProcessTurn",
     "visibleItemsForTurn",
     "visibleConversationShape",
   ].map((name) => functionSourceFrom(appJs, name));
@@ -4036,6 +4101,9 @@ test("visible item patch entries use render context thread for filtering and sig
     "canShowPendingContextCompaction",
     "contextCompactionState",
     "contextCompactionNotice",
+    "itemTextValue",
+    "reasoningItemHasVisibleText",
+    "isLatestCompletedProcessTurn",
     "visibleItemsForTurn",
     "stableItemKey",
     "visibleItemSignature",

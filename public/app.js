@@ -528,7 +528,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v565";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v566";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -5210,6 +5210,33 @@ function shouldPreserveRawThreadVisibleEntry(entry) {
     || isContextCompactionItem(item);
 }
 
+function itemTextValue(value) {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(itemTextValue).join("");
+  return "";
+}
+
+function reasoningItemHasVisibleText(item) {
+  return Boolean(
+    itemTextValue(item && item.text).trim()
+    || itemTextValue(item && item.content).trim()
+    || itemTextValue(item && item.summary).trim()
+  );
+}
+
+function isLatestCompletedProcessTurn(turn, thread = null) {
+  if (!turn || !isTurnComplete(turn)) return false;
+  const contextThread = renderContextThread(thread);
+  const turns = Array.isArray(contextThread && contextThread.turns) ? contextThread.turns : [];
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const candidate = turns[index];
+    if (!candidate || isLiveTurn(candidate, contextThread)) continue;
+    if (!isTurnComplete(candidate)) continue;
+    return candidate === turn;
+  }
+  return isLatestTurn(turn, contextThread);
+}
+
 function limitRawThreadVisibleEntries(entries, thread = null) {
   if (!isRawThreadReadMode(renderContextThread(thread))) return entries;
   if (!Array.isArray(entries) || entries.length <= MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN) return entries;
@@ -5226,12 +5253,19 @@ function limitRawThreadVisibleEntries(entries, thread = null) {
 function visibleItemsForTurn(turn, thread = null) {
   const visible = [];
   const contextEntryByKey = new Map();
+  const contextThread = renderContextThread(thread);
+  const showCompletedProcessItems = isLatestCompletedProcessTurn(turn, contextThread);
   (turn.items || []).forEach((item, index) => {
-    if (!item || isReasoningItem(item)) return;
+    if (!item) return;
+    if (isReasoningItem(item)) {
+      if (!showCompletedProcessItems || !reasoningItemHasVisibleText(item)) return;
+      visible.push({ item, sourceIndex: index });
+      return;
+    }
     if (shouldHideSupersededLiveUserMessage(turn, item)) return;
-    if (shouldHideDurableLiveUserMessage(turn, item, index, thread)) return;
+    if (shouldHideDurableLiveUserMessage(turn, item, index, contextThread)) return;
     if (isContextCompactionItem(item)) {
-      const notice = contextCompactionNotice(item, turn, thread);
+      const notice = contextCompactionNotice(item, turn, contextThread);
       if (!notice) return;
       const groupKey = "context-compaction";
       const existing = contextEntryByKey.get(groupKey);
@@ -5241,6 +5275,7 @@ function visibleItemsForTurn(turn, thread = null) {
       return;
     }
     if (isOperationalItem(item)) {
+      if (showCompletedProcessItems) visible.push({ item, sourceIndex: index });
       return;
     }
     visible.push({ item, sourceIndex: index });
