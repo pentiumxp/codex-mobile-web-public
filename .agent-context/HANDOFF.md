@@ -28488,3 +28488,25 @@ The previous full handoff was archived and should be opened only when old proven
     production API self-check, browser runtime self-check, full runtime loop,
     and LaunchAgent kickstart/readback. Do not push Public unless explicitly
     requested by the user.
+- Deployment/readback:
+  - Committed `66e1970` (`fix: dedupe legacy active assistant overlay rows`)
+    and deployed privately through the central Home AI macOS plugin deploy path
+    with reason `codex-mobile-active-assistant-overlay-dedupe`.
+  - Production `/api/public-config` still reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v577` and
+    `shellCacheName=codex-mobile-shell-v577`; no static shell change was needed.
+  - Bounded production detail readback for the active Codex Mobile thread
+    showed `duplicateGroups=0` for active assistant text after the deploy.
+  - Production browser runtime self-check passed: `ok:true`,
+    `blockingIssueCount=0`, `maxLatestTurnAssistantTextDuplicates=0`,
+    `maxImageFailures=0`, `maxLatestTimestampMissingItems=0` across 75 browser
+    samples.
+  - Production runtime self-check loop passed: API check had only the existing
+    nonblocking H3 thread-list order warning; browser runtime had zero issues.
+  - LaunchAgent `com.hermesmobile.codex-mobile-runtime-self-check` was
+    kickstarted after deploy; the newest JSONL result is `ok:true` with
+    `last exit code = 0`.
+- Residual:
+  - `thread_list_updated_order_mismatch` remains H3/nonblocking. It is still a
+    valid next optimization target, but it no longer blocks the latest-turn
+    projection/browser stability path.
