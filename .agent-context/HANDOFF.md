@@ -28111,5 +28111,37 @@ The previous full handoff was archived and should be opened only when old proven
   - Full `npm test` passed (`1491` tests).
   - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
 - Deployment:
-  - Pending commit/deploy at handoff time. This is server-side only; no static
-    shell/cache bump or Public push is required.
+  - Commit `4265cbf` (`fix: converge projection index user echoes`) was
+    deployed through the central Home AI plugin macOS path with reason
+    `codex-mobile-projection-index-user-echo`.
+  - Production readback confirmed source/prod hash parity for
+    `adapters/thread-user-message-echo-normalizer-service.js` and `server.js`.
+  - Production `/api/public-config` stayed on
+    `clientBuildId=0.1.11|codex-mobile-shell-v572` and
+    `shellCacheName=codex-mobile-shell-v572`; this was server-side only, so no
+    static shell/cache bump or Public push was performed.
+  - Directed Movie/current-thread self-checks passed with no issues, and a
+    bounded duplicate-user-message API probe reported no duplicate same-text
+    `userMessage` groups for Movie or the current Codex Mobile active thread.
+
+### 2026-06-28 - Thread List Slow Path Diagnostic Triage
+
+- Active Home AI diagnostic card:
+  - `ttc_c0a3e577ab02d51b59`, `diagcase_cc586c3efbbf250a9212`,
+    `thread_session_slow_path` / `thread_list_slow_path`.
+- Evidence:
+  - Historical v571 client events included one true cold fallback rebuild
+    (`serverTotalMs` about `5.7s`, `fallbackCacheDecision=miss-rebuild`,
+    `coldPathOwner=fallback-baseline`) and several client/Hermes-visible slow
+    events where plugin server `totalMs` was only about `100-240ms` but client
+    `apiElapsedMs` was `2-7s`.
+  - After v572 deployment, bounded recent logs showed `36` v572 client
+    thread-list events with no event over `1s`; latest samples were roughly
+    `155-505ms` client elapsed with warm-fallback phases.
+  - Direct authenticated `/api/threads?limit=30` probes returned `20/20` under
+    `1s` (`p50` about `153ms`, max about `520ms`).
+- Classification:
+  - Exact diagnostic was not reproducible in the current v572 plugin runtime.
+  - Residual first-request cold fallback rebuild can still be expensive after
+    restart/deploy, but the reported current v572 root-route list slow path did
+    not recur in the bounded evidence window.
