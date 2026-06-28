@@ -178,6 +178,74 @@ test("thread detail response budget keeps bounded active assistant tail", () => 
   assert.deepEqual(compacted.thread.mobileVisibleItemKeys, turn.items.map((item) => item.mobileVisibleKey));
 });
 
+test("thread detail response budget prunes non-current empty active placeholders", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      turns: [
+        {
+          id: "turn-active",
+          status: "inProgress",
+          items: [
+            { id: "u1", type: "userMessage", text: "Question" },
+            { id: "a1", type: "agentMessage", text: "Visible reply" },
+          ],
+        },
+        {
+          id: "empty-placeholder",
+          status: "inProgress",
+          items: [],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeProgressiveItemThreshold: 0,
+  });
+
+  assert.deepEqual(compacted.thread.turns.map((turn) => turn.id), ["turn-active"]);
+  assert.equal(compacted.thread.mobileDetailResponseBudget.prunedEmptyActivePlaceholderTurns, 1);
+  assert.equal(compacted.thread.mobileDetailResponseBudget.applied, true);
+  assert.deepEqual(
+    compacted.thread.mobileVisibleItemKeys,
+    compacted.thread.turns[0].items.map((item) => item.mobileVisibleKey),
+  );
+});
+
+test("thread detail response budget keeps non-current active placeholders with content", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      turns: [
+        {
+          id: "turn-active",
+          status: "inProgress",
+          items: [{ id: "a1", type: "agentMessage", text: "Visible reply" }],
+        },
+        {
+          id: "receipt-placeholder",
+          status: "inProgress",
+          items: [{ id: "a2", type: "agentMessage", text: "Still meaningful" }],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeProgressiveItemThreshold: 0,
+  });
+
+  assert.deepEqual(compacted.thread.turns.map((turn) => turn.id), ["turn-active", "receipt-placeholder"]);
+  assert.equal(compacted.thread.mobileDetailResponseBudget, undefined);
+});
+
 test("thread detail response budget treats non-current active-looking turns as stale when active id is known", () => {
   const result = {
     thread: {

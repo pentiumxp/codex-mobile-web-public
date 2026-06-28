@@ -98,6 +98,14 @@ function isActiveTurn(turn, thread) {
   return isActiveStatus(turn && turn.status);
 }
 
+function isNonCurrentEmptyActivePlaceholderTurn(turn, thread) {
+  const id = turnId(turn);
+  const activeId = activeTurnId(thread);
+  if (!id || !activeId || id === activeId) return false;
+  if (!isActiveStatus(turn && turn.status)) return false;
+  return !Array.isArray(turn && turn.items) || turn.items.length === 0;
+}
+
 function isStaleActiveLikeTurn(turn, thread) {
   const id = turnId(turn);
   const activeId = activeTurnId(thread);
@@ -692,6 +700,14 @@ function applyProgressiveCompletedTextBudget(thread, options, stats) {
   stats.progressiveFirstPaintBytesAfterTextBudget = afterBytes;
 }
 
+function pruneNonCurrentEmptyActivePlaceholders(thread, stats) {
+  if (!thread || !Array.isArray(thread.turns)) return;
+  const beforeCount = thread.turns.length;
+  thread.turns = thread.turns.filter((turn) => !isNonCurrentEmptyActivePlaceholderTurn(turn, thread));
+  const pruned = Math.max(0, beforeCount - thread.turns.length);
+  if (pruned > 0) stats.prunedEmptyActivePlaceholderTurns += pruned;
+}
+
 function compactTurnWithBudget(turn, thread, options, stats) {
   if (!turn || typeof turn !== "object" || !Array.isArray(turn.items)) return turn;
   const active = isActiveTurn(turn, thread);
@@ -869,6 +885,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
     omittedActiveTextChars: 0,
     omittedActiveOperationPayloadChars: 0,
     omittedCompletedTextChars: 0,
+    prunedEmptyActivePlaceholderTurns: 0,
     truncatedActiveUserMessageItems: 0,
     truncatedActiveTextItems: 0,
     truncatedActiveOperationPayloadItems: 0,
@@ -932,6 +949,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
     stats.configuredActiveReasoningItems = configuredActiveReasoningItems;
     stats.configuredActiveAssistantItems = configuredActiveAssistantItems;
   }
+  pruneNonCurrentEmptyActivePlaceholders(thread, stats);
   const budgetOptions = Object.assign({}, options, stats);
   thread.turns = thread.turns.map((turn) => compactTurnWithBudget(turn, thread, budgetOptions, stats));
   applyProgressiveVisibleItemCeiling(thread, budgetOptions, stats);
@@ -941,6 +959,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
     || stats.omittedReasoningItems > 0
     || stats.omittedAssistantItems > 0
     || stats.omittedVisibleItems > 0
+    || stats.prunedEmptyActivePlaceholderTurns > 0
     || stats.truncatedActiveUserMessageItems > 0
     || stats.truncatedActiveTextItems > 0
     || stats.truncatedActiveOperationPayloadItems > 0;

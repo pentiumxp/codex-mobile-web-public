@@ -415,14 +415,18 @@ or near-zero but the user still sees a long wait before content appears, inspect
 the response shape rather than the network timeout. `mobileDetailResponseBudget`
 version `thread-detail-response-budget-v2` should report whether
 `agentMessage`/`plan` progress rows were removed through
-`omittedAssistantItems`. A high assistant-progress count with a large response
-body points at server detail payload size or browser DOM merge pressure; do not
-fix that by repeated client refreshes or by loosening the timeout. The default
-detail response keeps completed turns receipt-only and active turns on a bounded
-recent assistant tail. When a thread has a known current active turn id, only
-that matching turn should use the active budget; if
+`omittedAssistantItems`, and whether contradictory empty live shells were pruned
+through `prunedEmptyActivePlaceholderTurns`. A high assistant-progress count
+with a large response body points at server detail payload size or browser DOM
+merge pressure; do not fix that by repeated client refreshes or by loosening the
+timeout. The default detail response keeps completed turns receipt-only and
+active turns on a bounded recent assistant tail. When a thread has a known
+current active turn id, only that matching turn should use the active budget; if
 `mobileDetailResponseBudget.staleActiveTurnCount` is non-zero, older
-active-looking turns were deliberately downgraded for response shaping. When
+active-looking turns were deliberately downgraded for response shaping. If the
+last returned turn is `inProgress`, has zero items, and does not match
+`activeTurnId`, it should be removed by response budgeting so browser bottom
+anchoring cannot land below the real latest content. When
 `progressiveActiveBudgetApplied=true`, compare
 `progressiveActiveBudgetReason`, `activeProgressiveItemThreshold`,
 `activeProgressiveByteThreshold`,
