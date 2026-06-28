@@ -4861,6 +4861,28 @@ function appendMissingRolloutCompletionTurnsToThread(thread) {
   return thread;
 }
 
+function backfillMissingRolloutCompletionTurnsForDetailResult(result, details = {}) {
+  if (!result || typeof result !== "object" || !result.thread || typeof result.thread !== "object") return result;
+  const thread = result.thread;
+  if (!Array.isArray(thread.turns)) return result;
+  const readMode = String(result.readMode || thread.mobileReadMode || details.readMode || details.source || "");
+  const threadIsLive = isThreadListLiveStatus(thread.status);
+  if (!threadIsLive && readMode !== "projection-active-overlay") return result;
+  const candidate = Object.assign({}, thread, {
+    turns: thread.turns.map((turn) => clonePlainJson(turn)),
+  });
+  const beforeTurnCount = candidate.turns.length;
+  const beforeMarker = candidate.mobileAppendedRolloutCompletionTurn || "";
+  appendMissingRolloutCompletionTurnsToThread(candidate);
+  if (candidate.turns.length === beforeTurnCount
+    && String(candidate.mobileAppendedRolloutCompletionTurn || "") === String(beforeMarker || "")) {
+    return result;
+  }
+  const compacted = compactThread(candidate, { maxTurns: MAX_THREAD_TURNS });
+  compacted.mobileDetailCompletionBackfilled = true;
+  return Object.assign({}, result, { thread: compacted });
+}
+
 function readRolloutFinalReceiptItems(rolloutPath) {
   if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) {
     return { byTurn: new Map(), scopedCount: 0 };
@@ -6165,7 +6187,7 @@ function mergeRecentRawOperationsIntoTurn(thread, turn, options = {}) {
     maxOperations: options.maxOperations || MAX_LIVE_OPERATION_ITEMS,
   });
   if (rawOperations.length === 0) return;
-  const allowNewRawOperations = isLiveTurn(turn);
+  const allowNewRawOperations = isLiveTurn(turn) || options.allowNewOperations === true;
 
   const existingByKey = new Map();
   const existingBySignature = new Map();
@@ -6566,7 +6588,7 @@ function compactThread(thread, options = {}) {
     });
     const operationDetailIndexes = operationDetailTurnIndexes(out.turns);
     for (const index of operationDetailIndexes) {
-      mergeRecentRawOperationsIntoTurn(out, out.turns[index], { maxOperations: 50 });
+      mergeRecentRawOperationsIntoTurn(out, out.turns[index], { maxOperations: 50, allowNewOperations: true });
     }
     const latestIndex = out.turns.length - 1;
     out.turns = out.turns.map((turn, index) => compactTurn(turn, {
@@ -13208,8 +13230,9 @@ async function prepareThreadTaskCardsToResult(result) {
 }
 
 async function prepareThreadDetailResponseResult(result, details = {}) {
+  const detailResult = backfillMissingRolloutCompletionTurnsForDetailResult(result, details);
   const prepared = applyLocalActiveThreadStatusToResult(
-    await prepareThreadTaskCardsToResult(applyLocalActiveThreadStatusToResult(result, details)),
+    await prepareThreadTaskCardsToResult(applyLocalActiveThreadStatusToResult(detailResult, details)),
     details,
   );
   const finalized = applyLocalActiveThreadStatusToResult(
@@ -16140,6 +16163,7 @@ module.exports = {
   anyThreadMatchesVisibleWorkspace,
   attachRolloutFallbackStatus,
   applyLocalActiveThreadStatusToSummary,
+  backfillMissingRolloutCompletionTurnsForDetailResult,
   codeGraphMcpElicitationToolName,
   codeGraphReadOnlyMcpElicitationDecision,
   clearLocalActiveThreadStatus,

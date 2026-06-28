@@ -871,7 +871,7 @@ test("live latest turn rehydrates several recent raw operations", () => {
   }
 });
 
-test("raw operation fallback does not attach a completed operation to a completed latest turn", () => {
+test("raw operation fallback attaches a completed operation to a latest operation-detail completed turn", () => {
   const { dir, rolloutPath } = writeRollout([
     event("2026-05-24T11:10:00.000Z", "event_msg", { type: "task_started", turn_id: "turn-finished" }),
     event("2026-05-24T11:10:02.000Z", "response_item", {
@@ -896,7 +896,10 @@ test("raw operation fallback does not attach a completed operation to a complete
       }],
     });
 
-    assert.equal(compacted.turns[0].items.some((item) => item.type === "commandExecution"), false);
+    const operation = compacted.turns[0].items.find((item) => item.type === "commandExecution");
+    assert.ok(operation);
+    assert.equal(operation.status, "completed");
+    assert.equal(operation.command, "npm.cmd test");
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

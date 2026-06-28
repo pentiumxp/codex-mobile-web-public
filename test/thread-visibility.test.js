@@ -29,6 +29,7 @@ const {
   applyLocalActiveThreadStatusToSummary,
   attachRolloutFallbackStatus,
   clearLocalActiveThreadStatus,
+  backfillMissingRolloutCompletionTurnsForDetailResult,
   collectRecentRolloutFiles,
   compactThread,
   filterFallbackThreads,
@@ -1496,9 +1497,19 @@ test("active thread detail compaction backfills missing just-completed rollout t
         type: "event_msg",
         timestamp: completedAt.toISOString(),
         payload: {
+          type: "exec_command_end",
+          turn_id: missingCompletedTurnId,
+          call_id: "call_active_backfill_command",
+          arguments: { command: "npm test" },
+        },
+      }),
+      JSON.stringify({
+        type: "event_msg",
+        timestamp: new Date(completedAt.getTime() + 1000).toISOString(),
+        payload: {
           type: "task_complete",
           turn_id: missingCompletedTurnId,
-          completed_at: completedAt.toISOString(),
+          completed_at: new Date(completedAt.getTime() + 1000).toISOString(),
           duration_ms: 60000,
           last_agent_message: "completed before active",
         },
@@ -1535,8 +1546,90 @@ test("active thread detail compaction backfills missing just-completed rollout t
     const missing = compacted.turns.find((turn) => turn.id === missingCompletedTurnId);
     assert.equal(missing.status, "completed");
     assert.equal(missing.mobileSyntheticCompletionTurn, true);
-    assert.equal(missing.items[0].text, "completed before active");
+    assert.ok(missing.items.some((item) => item.type === "commandExecution"));
+    assert.ok(missing.items.some((item) => item.type === "agentMessage" && item.text === "completed before active"));
     assert.equal(compacted.mobileAppendedRolloutCompletionTurn, missingCompletedTurnId);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("active overlay detail result backfills missing completed turn through response preparation path", () => {
+  const threadId = "019e9000-0000-7000-8000-activeoverlay";
+  const missingCompletedTurnId = "019e9000-0001-7000-8000-overlaydone";
+  const activeTurnId = "019e9000-0002-7000-8000-overlayrun";
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-active-overlay-completion-"));
+  const rolloutPath = path.join(tempDir, `rollout-2099-01-01T00-00-00-${threadId}.jsonl`);
+  try {
+    const completedAt = new Date(Date.now() - 45000);
+    const activeStartedAt = new Date(Date.now() - 10000);
+    fs.writeFileSync(rolloutPath, [
+      JSON.stringify({
+        type: "event_msg",
+        timestamp: new Date(completedAt.getTime() - 60000).toISOString(),
+        payload: {
+          type: "task_started",
+          turn_id: missingCompletedTurnId,
+        },
+      }),
+      JSON.stringify({
+        type: "event_msg",
+        timestamp: completedAt.toISOString(),
+        payload: {
+          type: "exec_command_end",
+          turn_id: missingCompletedTurnId,
+          call_id: "call_overlay_command",
+          arguments: { command: "npm test" },
+        },
+      }),
+      JSON.stringify({
+        type: "event_msg",
+        timestamp: new Date(completedAt.getTime() + 1000).toISOString(),
+        payload: {
+          type: "task_complete",
+          turn_id: missingCompletedTurnId,
+          completed_at: new Date(completedAt.getTime() + 1000).toISOString(),
+          duration_ms: 60000,
+          last_agent_message: "completed before active overlay",
+        },
+      }),
+    ].join("\n") + "\n", "utf8");
+
+    const result = backfillMissingRolloutCompletionTurnsForDetailResult({
+      thread: {
+        id: threadId,
+        name: "Codex Mobile",
+        path: rolloutPath,
+        mobileReadMode: "projection-active-overlay",
+        updatedAt: Math.floor(activeStartedAt.getTime() / 1000),
+        status: { type: "active" },
+        activeTurnId,
+        turns: [
+          {
+            id: "019e9000-0000-7000-8000-overlayold",
+            status: { type: "completed" },
+            startedAt: Math.floor((completedAt.getTime() - 600000) / 1000),
+            completedAt: Math.floor((completedAt.getTime() - 590000) / 1000),
+            items: [{ id: "older-agent", type: "agentMessage", text: "older" }],
+          },
+          {
+            id: activeTurnId,
+            status: { type: "inProgress" },
+            startedAt: Math.floor(activeStartedAt.getTime() / 1000),
+            items: [{ id: "active-agent", type: "agentMessage", text: "active" }],
+          },
+        ],
+      },
+    }, { source: "projection-active-overlay" });
+
+    const turns = result.thread.turns || [];
+    const ids = turns.map((turn) => turn.id);
+    assert.equal(result.thread.mobileDetailCompletionBackfilled, true);
+    assert.ok(ids.includes(missingCompletedTurnId));
+    assert.ok(ids.indexOf(missingCompletedTurnId) < ids.indexOf(activeTurnId));
+    const missing = turns.find((turn) => turn.id === missingCompletedTurnId);
+    assert.ok(missing.items.some((item) => item.type === "commandExecution"));
+    assert.ok(missing.items.some((item) => item.type === "agentMessage" && item.text === "completed before active overlay"));
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

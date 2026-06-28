@@ -330,7 +330,8 @@ test("server materializes structured task-card drafts from thread detail", () =>
   assert.match(functionBody(serverJs, "prepareThreadTaskCardsToResult"), /attachThreadTaskCardsToResult\(result\)/);
   assert.match(functionBody(serverJs, "prepareThreadTaskCardsToResult"), /attachPendingServerRequestsToResult/);
   assert.doesNotMatch(functionBody(serverJs, "prepareThreadTaskCardsToResult"), /prepareThreadTaskCardsToResult\(result\)/);
-  assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /await prepareThreadTaskCardsToResult\(applyLocalActiveThreadStatusToResult\(result, details\)\)/);
+  assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /const detailResult = backfillMissingRolloutCompletionTurnsForDetailResult\(result, details\);/);
+  assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /await prepareThreadTaskCardsToResult\(applyLocalActiveThreadStatusToResult\(detailResult, details\)\)/);
   assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /finalizeThreadDetailProjectionResult/);
   assert.match(functionBody(serverJs, "turnsListThreadReadResult"), /return prepareThreadDetailResponseResult\(result/);
   assert.match(serverJs, /maybeMaterializeThreadTaskCardDrafts\(msg\.method, msg\.params \|\| null\)/);

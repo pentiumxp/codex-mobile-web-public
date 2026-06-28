@@ -124,7 +124,7 @@ test("server compaction merges rollout operations into operation-detail turns", 
   assert.match(serverJs, /function mergeRecentRawOperationsIntoTurn\(/);
   assert.doesNotMatch(serverJs, /function mergeRecentRawOperationsIntoLiveTurn\(/);
   assert.match(compactThreadBody, /const operationDetailIndexes = operationDetailTurnIndexes\(out\.turns\);/);
-  assert.match(compactThreadBody, /for \(const index of operationDetailIndexes\) \{[\s\S]*mergeRecentRawOperationsIntoTurn\(out, out\.turns\[index\], \{ maxOperations: 50 \}\);[\s\S]*\}/);
+  assert.match(compactThreadBody, /for \(const index of operationDetailIndexes\) \{[\s\S]*mergeRecentRawOperationsIntoTurn\(out, out\.turns\[index\], \{ maxOperations: 50, allowNewOperations: true \}\);[\s\S]*\}/);
   assert.ok(
     compactThreadBody.indexOf("mergeRecentRawOperationsIntoTurn(out, out.turns[index]") <
       compactThreadBody.indexOf("out.turns = out.turns.map"),
