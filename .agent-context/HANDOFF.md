@@ -26439,6 +26439,70 @@ The previous full handoff was archived and should be opened only when old proven
     `default-preserve-visible-entry-window` with request limit `500`.
   - Public was not pushed; keep Public unchanged unless the user explicitly asks.
 
+## 2026-06-28 - Completed Turn Process Visibility v566 + Active Overlay Backfill
+
+- User-visible incident:
+  - Running turns still showed live reasoning/command/file process rows, but
+    after a turn completed and the thread refreshed or entered the next active
+    turn, the just-finished turn could collapse to only user/final rows or
+    disappear from the active-overlay response entirely.
+  - The user clarified the requirement: only the latest completed turn needs
+    retained intermediate process detail; older completed turns should remain
+    compact.
+- Root cause / invariant:
+  - Frontend `visibleItemsForTurn()` still filtered completed reasoning and
+    operational items unconditionally, so even server-retained latest completed
+    process rows were hidden after a full rerender.
+  - Server active-overlay detail responses could skip the just-completed
+    rollout turn when a newer active turn started. The existing rollout
+    completion backfill was only in `compactThread()` full/turns-list paths,
+    not the warm projection active-overlay response path.
+  - Synthetic completion turns created from rollout `task_complete` also needed
+    to be operation-detail turns; otherwise completed raw operations from the
+    same rollout turn were not added back to the response.
+- Implementation:
+  - Static client v566 allows retained reasoning/operation rows for the latest
+    completed process turn while keeping older completed turns compact and live
+    turn operations in the live operation surface.
+  - Server commit `7331b49` let active thread compaction backfill missing recent
+    rollout completion turns and sort them before the active turn.
+  - Server commit `5bd6ccb` moved missing completion backfill into the unified
+    detail response path for active-overlay/projection results and runs
+    `compactThread()` only when a missing completion turn is actually added.
+  - Operation-detail completed turns now explicitly allow same-turn completed
+    raw operations to be reattached, so a synthetic latest completed turn can
+    show command/file process rows plus final receipt/Usage.
+- Validation:
+  - Focused tests:
+    `node --test test/thread-visibility.test.js test/thread-detail-response-budget-service.test.js test/conversation-render.test.js`
+  - Regression tests:
+    `node --test test/thread-item-timestamp-enrichment.test.js test/thread-task-card-route.test.js test/thread-turn-compaction-policy-service.test.js test/thread-visibility.test.js`
+  - Full gate passed:
+    `npm test` (`1413` tests), `npm run check`, `npm run check:macos`,
+    `git diff --check`, and changed-file `node --check` runs.
+- Deployment status:
+  - Static v566 was deployed with reason
+    `codex-mobile-completed-turn-process-items-v566`.
+  - Server commit `7331b49` was deployed with reason
+    `codex-mobile-active-completion-backfill`.
+  - Server commit `5bd6ccb` was deployed with reason
+    `codex-mobile-active-overlay-completion-detail`.
+  - Production `/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v566` and
+    `shellCacheName=codex-mobile-shell-v566`; this is expected because the
+    final backfill fix is server-only.
+  - Source/production SHA parity was confirmed for `server.js`,
+    `test/thread-visibility.test.js`,
+    `test/thread-item-timestamp-enrichment.test.js`,
+    `test/thread-task-card-route.test.js`, and
+    `test/thread-turn-compaction-policy-service.test.js`.
+  - Metadata-only current-thread readback showed the previously missing
+    completed turn was restored before the active turn with `fileChange`
+    process items, final agent receipt, and Usage. No message bodies, upload
+    contents, secrets, keys, cookies, launch tokens, or raw logs were recorded.
+  - Public was not pushed; keep Public unchanged unless the user explicitly
+    asks.
+
 ## 2026-06-28 - Latest Completed Replay Detail And Active List Freshness
 
 - User-visible incident:
