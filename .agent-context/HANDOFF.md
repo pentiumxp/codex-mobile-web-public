@@ -25806,4 +25806,32 @@ The previous full handoff was archived and should be opened only when old proven
     `responseBudgetProgressiveActiveOriginalBytes=422594`, and
     `decision.evidence.detailResponseBudgetApplied=true`.
 - Deployment status:
-  - Pending commit/deploy at this handoff update.
+  - Committed as `64d17b9` (`test: expose active detail budget readback`).
+  - Deployed through the central Home AI macOS plugin deploy path with reason
+    `codex-mobile-active-detail-budget-readback`.
+  - Deployment source ref was clean: `64d17b90903e`.
+  - Production remained `clientBuildId=0.1.11|codex-mobile-shell-v558` and
+    `shellCacheName=codex-mobile-shell-v558`, expected because this slice
+    changed readback/diagnostic tooling and docs, not static client assets.
+  - Production readback after deploy for the current Codex Mobile thread:
+    `ok=true`, `decision=ready`, `readMode=projection-v4-partial`,
+    `totalMs=45`, `threadReadMs=0`, `turnsListInitialMs=0`,
+    `responseBudgetVersion=thread-detail-response-budget-v2`,
+    `responseBudgetApplied=true`,
+    `responseBudgetProgressiveActiveApplied=false`,
+    `responseBudgetOriginalItemCount=30`,
+    `responseBudgetRetainedItemCount=28`,
+    `responseBudgetProgressiveActiveTurnOriginalBytes=24061`,
+    `responseBudgetProgressiveActiveOriginalBytes=60953`,
+    and `decision.evidence.detailResponseBudgetApplied=true`.
+  - Source/production hash parity was confirmed for:
+    `scripts/codex-mobile-phase-b-readback-smoke.js`,
+    `adapters/phase-b-readback-decision-service.js`,
+    `test/phase-b-readback-smoke.test.js`,
+    `test/phase-b-readback-decision-service.test.js`, and
+    `docs/TROUBLESHOOTING.md`.
+  - Production markers confirmed:
+    `responseBudgetProgressiveActiveApplied` in the smoke script,
+    `detailResponseBudgetProgressiveActiveApplied` in the decision evidence,
+    and no `responseBudgetTruncatedActiveUserMessageItems` /
+    `detailResponseBudgetTruncatedActiveUserMessageItems` field names.
