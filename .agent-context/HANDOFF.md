@@ -27029,3 +27029,59 @@ The previous full handoff was archived and should be opened only when old proven
     because this source checkout has no local `playwright` module installed.
     Direct unauthenticated Home AI proxy curl returned `403`, preserving the
     host auth boundary.
+
+## 2026-06-28 - Thread Display Self-Check Repeat Module
+
+- Scope:
+  - This module upgrades the production display-contract self-check path. It
+    does not change projection/read/render authority and does not add a
+    rendering fallback.
+  - `scripts/codex-mobile-thread-self-check.js` now honors the full
+    `--repeat` count for thread-list and thread-detail reads. Any middle-sample
+    list/detail downgrade is retained in the final summary even if the final
+    sample recovers.
+  - `adapters/thread-detail-self-check-service.js` now classifies additional
+    metadata-only issues for latest-completed assistant/Usage/input shape,
+    detail refresh loss of user-input rows, assistant rows, visible timestamps,
+    and turn timestamps, plus thread-list repeat row loss and updated-at
+    downgrade.
+  - Combined self-check summaries deduplicate repeated issue metadata so repeat
+    sampling does not inflate warning/blocking counts.
+- Validation:
+  - Focused:
+    `node --test test/thread-detail-self-check-service.test.js
+    test/thread-self-check-script.test.js
+    test/thread-item-timestamp-enrichment.test.js
+    test/thread-detail-read-orchestration-service.test.js` passed (`57`
+    tests).
+  - Full/local: `npm test` passed (`1434` tests), `npm run check`,
+    `npm run check:macos`, `git diff --check`, and `codegraph sync &&
+    codegraph status` passed.
+  - Pre-deploy live self-check with `--sample-threads 5 --repeat 5` returned
+    `ok:true`, `blockingIssueCount=0`, no repeat downgrade checks, and only a
+    single deduplicated H3 `latest_completed_replay_receipt_only` warning.
+- Deployment:
+  - Commit `ddb1f51` deployed through the Home AI central macOS plugin deploy
+    path with reason `codex-mobile-thread-display-self-check-repeat`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260628T090012Z-plugin-codex-mobile-web-codex-mobile-thread-display-self-check-repeat`.
+  - Production `/api/public-config` readback returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v569`,
+    `shellCacheName=codex-mobile-shell-v569`, and build id `9fc63e338d2178f0`.
+    The shell version did not change because this module is script/service/docs
+    only.
+  - Production script marker readback confirmed
+    `thread_list_repeat_lost_thread_ids`,
+    `thread_detail_refresh_lost_user_input`, and the new script test are
+    present in `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Production self-check from the production script returned `ok:true`,
+    `blockingIssueCount=0`, no list/detail repeat downgrades, and two H3
+    warnings (`latest_completed_replay_receipt_only` and
+    `latest_completed_user_input_missing`).
+- Next optimization order:
+  - Home AI embedded proxy timing is now reported fixed by Home AI commit
+    `d70a2d1b`; continue observing future slow-path diagnostics with the new
+    host timing fields.
+  - Next Codex-owned module should start on thread-list / workspace-index
+    consistency: global list versus workspace-filter visibility, updatedAt
+    freshness for active threads, and stable selection ordering.
