@@ -26109,6 +26109,30 @@ The previous full handoff was archived and should be opened only when old proven
     classification is closure, not fallback.
   - `codegraph sync && codegraph status` reported the graph up to date.
 - Deployment status:
-  - Not yet deployed at this handoff entry. Next step is commit, central macOS
-    plugin deploy, and production readback comparing default and Movie
-    Workspace list timings.
+  - Deployed commit `a70d7bd` through the Home AI central macOS plugin deploy
+    path with reason `codex-mobile-workspace-thread-list-warm-first-paint`.
+  - Production remained `clientBuildId=0.1.11|codex-mobile-shell-v559`,
+    expected because this module changed server/docs/tests only and did not
+    touch static shell assets.
+  - Production readback after deploy:
+    - Default `/api/threads?limit=80`: `rowCount=14`, includes `Movie`,
+      `mobileInitialSource=warm-fallback-cache`,
+      `appServerDeferredReason=warm-fallback-default`, `appServerMs=0`, route
+      elapsed about `76-77ms`.
+    - Movie Workspace
+      `/api/threads?limit=80&cwd=/Users/hermes-dev/HermesMobileDev/Movie`:
+      `rowCount=1`, row name `Movie`,
+      `mobileInitialSource=warm-fallback-cache`,
+      `appServerDeferredReason=warm-fallback-workspace`,
+      `appServerDeferredInitialReason=workspace-warm-cache`,
+      `fallbackCacheDecision=hit`, `appServerMs=0`, route elapsed about
+      `41-73ms`.
+  - Source/production SHA parity confirmed for
+    `adapters/thread-list-app-server-fetch-policy-service.js`,
+    `adapters/thread-list-fallback-cache-service.js`, `server.js`, focused
+    tests, `README.md`, `docs/ARCHITECTURE.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, `docs/MODULES.md`, and
+    `docs/TROUBLESHOOTING.md`.
+  - Production markers confirmed `workspace-warm-cache`,
+    `warm-fallback-workspace`, `workspace-derived-hit`, and
+    `fallbackWorkspaceDerivedCacheHit`.
