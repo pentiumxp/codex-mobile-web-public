@@ -155,6 +155,33 @@ test("thread-list cold path diagnosis distinguishes ttl rebuilds and app-server 
   });
 });
 
+test("thread-list cold path diagnosis attributes dominant token usage decoration", () => {
+  assert.deepEqual(diagnoseThreadListColdPath({
+    totalMs: 120,
+    decorateMs: 92,
+    appServerDeferred: true,
+    appServerDeferredReason: "warm-fallback-default",
+    fallbackCacheDecision: "compatible-hit",
+    fallbackCacheHit: true,
+    tokenUsageQueryCount: 4,
+  }), {
+    owner: "token-usage-decoration",
+    reason: "sqlite-aggregate",
+  });
+
+  assert.deepEqual(diagnoseThreadListColdPath({
+    totalMs: 100,
+    decorateMs: 80,
+    appServerDeferred: true,
+    fallbackCacheDecision: "compatible-hit",
+    tokenUsageQueryCount: 0,
+    tokenUsageStaleCacheHitCount: 2,
+  }), {
+    owner: "token-usage-decoration",
+    reason: "stale-cache",
+  });
+});
+
 test("thread-list cold path diagnosis stays bounded and does not copy private fields", () => {
   const diagnosis = diagnoseThreadListColdPath({
     fallbackCacheDecision: "miss-rebuild",

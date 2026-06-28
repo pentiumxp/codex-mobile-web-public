@@ -140,6 +140,7 @@ test("decorating thread list reuses token query cache and record writes invalida
       exec: () => ({ ok: true }),
       json: (_dbPath, sql) => {
         calls.push(sql);
+        if (/WHERE thread_id =/i.test(sql) && /AND turn_id =/i.test(sql)) return { ok: true, rows: [] };
         if (/GROUP BY thread_id/i.test(sql)) {
           return { ok: true, rows: [{ thread_id: "thread-a", total_tokens: totalTokens, today_tokens: totalTokens, week_tokens: totalTokens, input_tokens: totalTokens, cached_input_tokens: 0, output_tokens: 0, reasoning_output_tokens: 0 }] };
         }
@@ -170,6 +171,91 @@ test("decorating thread list reuses token query cache and record writes invalida
   const result = service.decorateThreadListResult({ data: [{ id: "thread-a" }] }, options);
   assert.ok(calls.length > firstCallCount);
   assert.equal(result.mobileTokenUsage.totalTokens, 9000);
+});
+
+test("decorating thread list can reuse expired token cache for first paint", () => {
+  const dbPath = tempDbPath("decorate-expired-cache");
+  let nowMs = Date.parse("2026-06-01T12:00:00.000Z");
+  const service = createTokenUsageStatsService({
+    dbPath,
+    queryCacheTtlMs: 10,
+    now: () => nowMs,
+  });
+  service.recordTurnUsage({
+    threadId: "thread-a",
+    turnId: "turn-1",
+    cwd: "C:\\repo\\alpha",
+    completedAtMs: Date.parse("2026-06-01T09:00:00.000Z"),
+    usage: { totalTokens: 8000 },
+  });
+
+  const first = service.decorateThreadListResult({ data: [{ id: "thread-a" }] }, {
+    cwd: "C:\\repo\\alpha",
+    nowMs,
+    allowExpiredTokenUsageCache: true,
+  });
+  assert.equal(first.mobileTokenUsageDiagnostics.queryCount > 0, true);
+
+  nowMs += 1000;
+  const second = service.decorateThreadListResult({ data: [{ id: "thread-a" }] }, {
+    cwd: "C:\\repo\\alpha",
+    nowMs,
+    allowExpiredTokenUsageCache: true,
+  });
+  assert.equal(second.mobileTokenUsage.totalTokens, 8000);
+  assert.equal(second.data[0].mobileTokenUsage.totalTokens, 8000);
+  assert.equal(second.mobileTokenUsageDiagnostics.queryCount, 0);
+  assert.equal(second.mobileTokenUsageDiagnostics.staleCacheHitCount >= 2, true);
+  assert.equal(second.mobileTokenUsageDiagnostics.maxCacheAgeMs >= 1000, true);
+});
+
+test("replayed identical turn usage does not invalidate token query cache", () => {
+  const dbPath = tempDbPath("decorate-replay-cache");
+  let nowMs = Date.parse("2026-06-01T12:00:00.000Z");
+  const service = createTokenUsageStatsService({
+    dbPath,
+    queryCacheTtlMs: 60_000,
+    now: () => nowMs,
+  });
+  const usage = { totalTokens: 8000, inputTokens: 7000, cachedInputTokens: 3000, outputTokens: 1000 };
+  assert.equal(service.recordTurnUsage({
+    threadId: "thread-a",
+    turnId: "turn-1",
+    cwd: "C:\\repo\\alpha",
+    completedAtMs: Date.parse("2026-06-01T09:00:00.000Z"),
+    usage,
+  }).ok, true);
+  const options = {
+    cwd: "C:\\repo\\alpha",
+    nowMs,
+  };
+  service.decorateThreadListResult({ data: [{ id: "thread-a" }] }, options);
+
+  const replay = service.recordTurnUsage({
+    threadId: "thread-a",
+    turnId: "turn-1",
+    cwd: "C:\\repo\\alpha",
+    completedAtMs: Date.parse("2026-06-01T09:01:00.000Z"),
+    usage,
+  });
+  assert.equal(replay.ok, true);
+  assert.equal(replay.unchanged, true);
+  const afterReplay = service.decorateThreadListResult({ data: [{ id: "thread-a" }] }, options);
+  assert.equal(afterReplay.mobileTokenUsageDiagnostics.queryCount, 0);
+  assert.equal(afterReplay.mobileTokenUsageDiagnostics.freshCacheHitCount >= 2, true);
+
+  const changed = service.recordTurnUsage({
+    threadId: "thread-a",
+    turnId: "turn-1",
+    cwd: "C:\\repo\\alpha",
+    completedAtMs: Date.parse("2026-06-01T09:02:00.000Z"),
+    usage: { totalTokens: 9000 },
+  });
+  assert.equal(changed.ok, true);
+  assert.equal(changed.unchanged, undefined);
+  const afterChange = service.decorateThreadListResult({ data: [{ id: "thread-a" }] }, options);
+  assert.equal(afterChange.mobileTokenUsage.totalTokens, 9000);
+  assert.equal(afterChange.mobileTokenUsageDiagnostics.queryCount > 0, true);
 });
 
 test("normalizes known mojibake workspace paths for project stats", () => {

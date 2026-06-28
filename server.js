@@ -14095,6 +14095,20 @@ function threadListFallbackBaselineWorkTimingFields(diagnostics = {}) {
   };
 }
 
+function threadListTokenUsageTimingFields(diagnostics = {}) {
+  const source = diagnostics && typeof diagnostics === "object" ? diagnostics : {};
+  return {
+    tokenUsageAllowExpiredCache: source.allowExpiredCache === true,
+    tokenUsageCacheHitCount: Number(source.cacheHitCount || 0),
+    tokenUsageFreshCacheHitCount: Number(source.freshCacheHitCount || 0),
+    tokenUsageStaleCacheHitCount: Number(source.staleCacheHitCount || 0),
+    tokenUsageCacheMissCount: Number(source.cacheMissCount || 0),
+    tokenUsageExpiredMissCount: Number(source.expiredMissCount || 0),
+    tokenUsageQueryCount: Number(source.queryCount || 0),
+    tokenUsageMaxCacheAgeMs: Number(source.maxCacheAgeMs || 0),
+  };
+}
+
 async function listWorkspaces() {
   const globalState = readGlobalState();
   const roots = visibleWorkspaceRoots(globalState);
@@ -15433,8 +15447,9 @@ async function handleApi(req, res) {
           const decorateStartedAtMs = Date.now();
           const decorated = tokenUsageStatsService.decorateThreadListResult(
             attachThreadListStateToResult(result),
-            { cwd, days: 31, workspaceCwds: tokenUsageWorkspaceCwds(globalState) },
+            { cwd, days: 31, workspaceCwds: tokenUsageWorkspaceCwds(globalState), allowExpiredTokenUsageCache: true },
           );
+          Object.assign(timings, threadListTokenUsageTimingFields(decorated.mobileTokenUsageDiagnostics));
           markTiming("decorateMs", decorateStartedAtMs);
           decorated.mobileDeferredAppServer = true;
           decorated.mobileInitialSource = initialFallbackMeta.initialSource;
@@ -15503,8 +15518,9 @@ async function handleApi(req, res) {
         const decorateStartedAtMs = Date.now();
         const decorated = tokenUsageStatsService.decorateThreadListResult(
           attachThreadListStateToResult(indexedResult),
-          { cwd, days: 31, workspaceCwds: tokenUsageWorkspaceCwds(globalState) },
+          { cwd, days: 31, workspaceCwds: tokenUsageWorkspaceCwds(globalState), allowExpiredTokenUsageCache: true },
         );
+        Object.assign(timings, threadListTokenUsageTimingFields(decorated.mobileTokenUsageDiagnostics));
         markTiming("decorateMs", decorateStartedAtMs);
         decorated.mobileDeferredFallback = true;
         attachDiagnostics(decorated);
@@ -15574,8 +15590,9 @@ async function handleApi(req, res) {
       const decorateStartedAtMs = Date.now();
       const decorated = tokenUsageStatsService.decorateThreadListResult(
         attachThreadListStateToResult(result),
-        { cwd, days: 31, workspaceCwds: tokenUsageWorkspaceCwds(globalState) },
+        { cwd, days: 31, workspaceCwds: tokenUsageWorkspaceCwds(globalState), allowExpiredTokenUsageCache: true },
       );
+      Object.assign(timings, threadListTokenUsageTimingFields(decorated.mobileTokenUsageDiagnostics));
       markTiming("decorateMs", decorateStartedAtMs);
       attachDiagnostics(decorated);
       sendThreadListResult("complete", decorated);
@@ -15634,7 +15651,8 @@ async function handleApi(req, res) {
           }).data,
           mobileFallback: true,
           warning: err.message || String(err),
-        }, { cwd, days: 31, workspaceCwds: tokenUsageWorkspaceCwds(globalState) });
+        }, { cwd, days: 31, workspaceCwds: tokenUsageWorkspaceCwds(globalState), allowExpiredTokenUsageCache: true });
+        Object.assign(timings, threadListTokenUsageTimingFields(decorated.mobileTokenUsageDiagnostics));
         markTiming("decorateMs", decorateStartedAtMs);
         attachDiagnostics(decorated, { appServerError: err.message || String(err) });
         sendThreadListResult("fallback_complete", decorated);

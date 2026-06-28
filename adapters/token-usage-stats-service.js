@@ -177,6 +177,18 @@ function publicUsage(row) {
   };
 }
 
+function aggregateUsageMatches(row, input = {}) {
+  if (!row || typeof row !== "object") return false;
+  if (String(row.cwd || "") !== String(input.cwd || "")) return false;
+  if (String(row.day || "") !== String(input.day || "")) return false;
+  const usage = input.usage || {};
+  return sqlNumber(row.total_tokens) === sqlNumber(usage.totalTokens)
+    && sqlNumber(row.input_tokens) === sqlNumber(usage.inputTokens)
+    && sqlNumber(row.cached_input_tokens) === sqlNumber(usage.cachedInputTokens)
+    && sqlNumber(row.output_tokens) === sqlNumber(usage.outputTokens)
+    && sqlNumber(row.reasoning_output_tokens) === sqlNumber(usage.reasoningOutputTokens);
+}
+
 function dailyRows(rows) {
   return (rows || []).map((row) => Object.assign({ date: String(row && row.day || "") }, rowUsage(row)))
     .filter((row) => row.date);
@@ -237,15 +249,45 @@ function createTokenUsageStatsService(options = {}) {
     return value;
   }
 
-  function readQuery(key) {
+  function queryDiagnostics(optionsForQuery = {}) {
+    const diagnostics = optionsForQuery && optionsForQuery._tokenUsageQueryDiagnostics;
+    return diagnostics && typeof diagnostics === "object" ? diagnostics : null;
+  }
+
+  function incrementDiagnostic(diagnostics, key, amount = 1) {
+    if (!diagnostics) return;
+    diagnostics[key] = sqlNumber(diagnostics[key]) + amount;
+  }
+
+  function rememberCacheAge(diagnostics, ageMs) {
+    if (!diagnostics) return;
+    const boundedAge = Math.max(0, Math.min(24 * 60 * 60 * 1000, Math.round(Number(ageMs) || 0)));
+    diagnostics.maxCacheAgeMs = Math.max(sqlNumber(diagnostics.maxCacheAgeMs), boundedAge);
+  }
+
+  function readQuery(key, optionsForQuery = {}) {
+    const diagnostics = queryDiagnostics(optionsForQuery);
     if (!queryCacheTtlMs || !key) return null;
     const entry = queryCache.get(key);
-    if (!entry) return null;
+    if (!entry) {
+      incrementDiagnostic(diagnostics, "cacheMissCount");
+      return null;
+    }
     const ageMs = Math.max(0, now() - Number(entry.cachedAt || 0));
     if (ageMs > queryCacheTtlMs) {
+      if (optionsForQuery.allowExpiredTokenUsageCache === true) {
+        incrementDiagnostic(diagnostics, "cacheHitCount");
+        incrementDiagnostic(diagnostics, "staleCacheHitCount");
+        rememberCacheAge(diagnostics, ageMs);
+        return cloneJson(entry.value);
+      }
+      incrementDiagnostic(diagnostics, "expiredMissCount");
       queryCache.delete(key);
       return null;
     }
+    incrementDiagnostic(diagnostics, "cacheHitCount");
+    incrementDiagnostic(diagnostics, "freshCacheHitCount");
+    rememberCacheAge(diagnostics, ageMs);
     return cloneJson(entry.value);
   }
 
@@ -345,6 +387,11 @@ CREATE INDEX IF NOT EXISTS idx_token_usage_turns_cwd_day ON token_usage_turns(cw
     const cwd = canonicalWorkspaceCwd(input.cwd || "", workspaceAliasMap(input.workspaceCwds || []));
     const model = String(input.model || input.usageSummary && input.usageSummary.model || "").trim();
     const source = String(input.source || "turn_completed").trim() || "turn_completed";
+    const existing = existingUsageRow(threadId, turnId);
+    if (aggregateUsageMatches(existing, { cwd, day, usage })) {
+      lastError = null;
+      return { ok: true, threadId, turnId, day, usage, unchanged: true };
+    }
     const sql = `
 INSERT INTO token_usage_turns (
   thread_id, turn_id, cwd, day, updated_at_ms,
@@ -377,7 +424,8 @@ ON CONFLICT(thread_id, turn_id) DO UPDATE SET
     return { ok: true, threadId, turnId, day, usage };
   }
 
-  function queryRows(sql) {
+  function queryRows(sql, optionsForQuery = {}) {
+    incrementDiagnostic(queryDiagnostics(optionsForQuery), "queryCount");
     if (!init()) return [];
     const result = sqlite.json(dbPath, sql, { timeoutMs: 5000, maxBuffer: 8 * 1024 * 1024 });
     if (!result || !result.ok) {
@@ -386,6 +434,24 @@ ON CONFLICT(thread_id, turn_id) DO UPDATE SET
     }
     lastError = null;
     return Array.isArray(result.rows) ? result.rows : [];
+  }
+
+  function existingUsageRow(threadId, turnId) {
+    const rows = queryRows(`
+SELECT
+  cwd,
+  day,
+  total_tokens,
+  input_tokens,
+  cached_input_tokens,
+  output_tokens,
+  reasoning_output_tokens
+FROM token_usage_turns
+WHERE thread_id = ${sqlString(threadId)}
+  AND turn_id = ${sqlString(turnId)}
+LIMIT 1
+`);
+    return rows[0] || null;
   }
 
   function buildWorkspaceWhere(cwd, optionsForQuery = {}) {
@@ -400,7 +466,7 @@ ON CONFLICT(thread_id, turn_id) DO UPDATE SET
     const ids = [...new Set((threadIds || []).map((id) => String(id || "").trim()).filter(Boolean))];
     if (!ids.length) return { byThreadId: new Map(), workspace: workspaceSummary(optionsForQuery) };
     const cacheKey = threadUsageCacheKey(ids, optionsForQuery);
-    const cachedRows = readQuery(cacheKey);
+    const cachedRows = readQuery(cacheKey, optionsForQuery);
     if (cachedRows) {
       const byThreadId = new Map();
       for (const row of cachedRows) byThreadId.set(String(row.threadId || ""), publicUsage(row));
@@ -422,7 +488,7 @@ SELECT
 FROM token_usage_turns
 WHERE thread_id IN (${quotedIds})
 GROUP BY thread_id
-`);
+`, optionsForQuery);
     const byThreadId = new Map();
     for (const row of rows) byThreadId.set(String(row.thread_id || ""), publicUsage(row));
     rememberQuery(cacheKey, rows.map((row) => ({
@@ -440,7 +506,7 @@ GROUP BY thread_id
 
   function workspaceSummary(optionsForQuery = {}) {
     const cacheKey = workspaceSummaryCacheKey(optionsForQuery);
-    const cached = readQuery(cacheKey);
+    const cached = readQuery(cacheKey, optionsForQuery);
     if (cached) return cached;
     const nowMs = Number(optionsForQuery.nowMs) || now();
     const today = localDateKey(nowMs);
@@ -458,7 +524,7 @@ SELECT
   SUM(reasoning_output_tokens) AS reasoning_output_tokens
 FROM token_usage_turns
 ${where}
-`);
+`, optionsForQuery);
     const daily = dailyRows(queryRows(`
 SELECT
   day,
@@ -472,7 +538,7 @@ ${where}
 GROUP BY day
 ORDER BY day DESC
 LIMIT ${Math.max(1, Math.min(366, Number(optionsForQuery.days || 31)))}
-`));
+`, optionsForQuery));
     const workspaces = workspaceRows(queryRows(`
 SELECT
   cwd,
@@ -488,7 +554,7 @@ WHERE length(trim(cwd)) > 0
 GROUP BY cwd
 ORDER BY total_tokens DESC
 LIMIT ${workspaceLimit}
-`), optionsForQuery).slice(0, workspaceLimit);
+`, optionsForQuery), optionsForQuery).slice(0, workspaceLimit);
     return rememberQuery(cacheKey, Object.assign(publicUsage(rows[0] || {}), {
       todayDate: today,
       weekStartDate: weekStart,
@@ -504,12 +570,35 @@ LIMIT ${workspaceLimit}
       : Array.isArray(result.threads)
         ? result.threads
         : [];
-    const { byThreadId, workspace } = summaryForThreads(threads.map((thread) => thread && thread.id), optionsForQuery);
+    const queryDiagnostic = {
+      allowExpiredCache: optionsForQuery.allowExpiredTokenUsageCache === true,
+      cacheHitCount: 0,
+      freshCacheHitCount: 0,
+      staleCacheHitCount: 0,
+      cacheMissCount: 0,
+      expiredMissCount: 0,
+      queryCount: 0,
+      maxCacheAgeMs: 0,
+    };
+    const scopedOptions = Object.assign({}, optionsForQuery, {
+      _tokenUsageQueryDiagnostics: queryDiagnostic,
+    });
+    const { byThreadId, workspace } = summaryForThreads(threads.map((thread) => thread && thread.id), scopedOptions);
     for (const thread of threads) {
       const usage = byThreadId.get(String(thread && thread.id || ""));
       if (usage) thread.mobileTokenUsage = usage;
     }
     result.mobileTokenUsage = Object.assign({ threadCount: byThreadId.size }, workspace);
+    result.mobileTokenUsageDiagnostics = {
+      allowExpiredCache: queryDiagnostic.allowExpiredCache,
+      cacheHitCount: sqlNumber(queryDiagnostic.cacheHitCount),
+      freshCacheHitCount: sqlNumber(queryDiagnostic.freshCacheHitCount),
+      staleCacheHitCount: sqlNumber(queryDiagnostic.staleCacheHitCount),
+      cacheMissCount: sqlNumber(queryDiagnostic.cacheMissCount),
+      expiredMissCount: sqlNumber(queryDiagnostic.expiredMissCount),
+      queryCount: sqlNumber(queryDiagnostic.queryCount),
+      maxCacheAgeMs: sqlNumber(queryDiagnostic.maxCacheAgeMs),
+    };
     return result;
   }
 

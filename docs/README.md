@@ -142,6 +142,13 @@ local baseline for ordinary default reads; if the warm cache is missing, the
 request continues through the existing app-server path so true cold startup
 cost stays observable. Explicit `initial=warm-fallback` first-paint requests
 keep their existing cold-baseline behavior.
+The token-usage decoration follow-up keeps that warm path from being dominated
+by repeated SQLite aggregate work: replayed identical completed-turn Usage
+events do not invalidate the process query cache, and thread-list first paint
+can reuse an expired in-process Usage aggregate when the date/thread/workspace
+key still matches and no real Usage write has invalidated it. The server also
+reports token usage cache/query counters in thread-list timings so
+`decorateMs` can be diagnosed separately from fallback and app-server latency.
 
 The follow-up client diagnostics slice treats thread-list "slow but eventually
 successful" loads as a first-class slow path. Successful list loads now plan a

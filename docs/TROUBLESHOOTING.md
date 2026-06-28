@@ -476,6 +476,20 @@ output tail in the default first paint.
 On-demand expansion of omitted historical assistant progress is a separate
 route/API feature, not part of the default first paint.
 
+For thread-list loads that are "warm" but still cost tens or hundreds of
+milliseconds, inspect `mobileDiagnostics.threadListTimings.decorateMs` before
+changing fallback or app-server policy. If `decorateMs` dominates `totalMs` and
+`coldPathOwner=token-usage-decoration`, the visible cost is Workspace token
+usage decoration, not `thread/list` RPC or rollout scanning. Current builds add
+`tokenUsageQueryCount`, `tokenUsageCacheHitCount`,
+`tokenUsageFreshCacheHitCount`, `tokenUsageStaleCacheHitCount`,
+`tokenUsageExpiredMissCount`, `tokenUsageAllowExpiredCache`, and
+`tokenUsageMaxCacheAgeMs` to the same timing object. A healthy repeated
+first-paint list should show `tokenUsageQueryCount=0` after the first aggregate
+read unless a real completed-turn Usage write changed the ledger. Replayed
+identical `turn/completed` events should not invalidate the token usage query
+cache.
+
 If `threadReadMs=0`, `projectionState=hit`, and `summaryMs` dominates
 `totalMs`, inspect the thread-detail summary phase before changing projection
 or frontend render policy. A warm detail open should not synchronously run

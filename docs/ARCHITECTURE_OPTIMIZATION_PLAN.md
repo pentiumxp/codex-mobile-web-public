@@ -2588,6 +2588,14 @@ Deployable scope:
   rollout/session metadata.
 - `adapters/token-usage-stats-service.js` adds a bounded in-process query cache
   for thread-list token decoration and invalidates it on completed-turn writes.
+- The follow-up token-decoration peak slice makes that cache replay-aware:
+  duplicate `turn/completed` events whose aggregate Usage row is unchanged no
+  longer clear the query cache, and thread-list first paint may reuse an expired
+  in-process Usage aggregate when the date/thread/workspace key still matches
+  and no real completed-turn write invalidated it. `threadListTimings` now
+  exposes token usage cache/query counters, and cold-path attribution can report
+  `coldPathOwner=token-usage-decoration` when `decorateMs` dominates the list
+  response.
 - The module does not change thread-detail projection authority, visible-item
   ordering, task-card rendering, or fallback-cache data semantics.
 

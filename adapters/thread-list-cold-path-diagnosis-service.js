@@ -59,6 +59,17 @@ function diagnoseThreadListColdPath(input = {}) {
   const source = input && typeof input === "object" ? input : {};
   const decision = lowerLabel(source.fallbackCacheDecision);
   const appServerError = compactLabel(source.appServerError, 80);
+  const decorateMs = numberValue(source.decorateMs);
+  const totalMs = numberValue(source.totalMs);
+
+  if (decorateMs >= 50 && decorateMs >= Math.max(50, totalMs * 0.5)) {
+    const queryCount = numberValue(source.tokenUsageQueryCount);
+    const staleCacheHits = numberValue(source.tokenUsageStaleCacheHitCount);
+    return {
+      owner: "token-usage-decoration",
+      reason: queryCount > 0 ? "sqlite-aggregate" : staleCacheHits > 0 ? "stale-cache" : "decorate",
+    };
+  }
 
   if (booleanFlag(source.fallbackDeferred)) {
     return {

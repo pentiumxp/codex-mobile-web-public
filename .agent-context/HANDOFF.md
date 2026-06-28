@@ -25342,3 +25342,56 @@ The previous full handoff was archived and should be opened only when old proven
 - Source/prod SHA-256 prefixes matched for `server.js`,
   `adapters/thread-detail-response-budget-service.js`, the focused test, and
   updated docs.
+
+## 2026-06-28 - Thread-List Token Usage Decoration Peak Module
+
+- User-visible symptom:
+  - The latest repeated production readback did not reproduce multi-second
+    steady-state detail loads; thread detail remained warm (`threadReadMs=0`,
+    `turnsListInitialMs=0`). However `/api/threads?limit=20` still spent roughly
+    80-100ms in `decorateMs` even while `appServerDeferred=true` and warm
+    fallback cache was hit.
+- Root cause / invariant:
+  - The thread-list route was correctly avoiding app-server and fallback
+    rebuild work, but token usage decoration was still on the first-paint
+    hot path.
+  - `recordTurnUsage()` cleared the token query cache after every accepted
+    completed-turn upsert, including replayed identical completion events whose
+    aggregate Usage row did not change. That made the short token query cache
+    ineffective under notification replay or frequent status refresh.
+  - `thread-list-cold-path-diagnosis-service` also lacked token-usage ownership
+    attribution, so a list response dominated by `decorateMs` could still be
+    labeled as `warm-fallback-cache`.
+- Implementation:
+  - `adapters/token-usage-stats-service.js` now reads the existing Usage row
+    before writing. If the aggregate-affecting fields (`cwd`, local day, and
+    token totals) are unchanged, it returns `unchanged=true` and does not clear
+    the query cache.
+  - Thread-list decoration can reuse an expired in-process token Usage aggregate
+    for first paint when the date/thread/workspace cache key still matches and
+    no real completed-turn Usage write invalidated the process cache.
+  - `decorateThreadListResult()` exposes bounded
+    `mobileTokenUsageDiagnostics` with query/cache hit counts and max cache age.
+  - `server.js` copies those fields into
+    `mobileDiagnostics.threadListTimings` as `tokenUsage*` fields.
+  - `thread-list-cold-path-diagnosis-service` now reports
+    `coldPathOwner=token-usage-decoration` when `decorateMs` dominates
+    `totalMs`.
+  - Updated docs: `docs/README.md`, `docs/ARCHITECTURE.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, `docs/MODULES.md`, and
+    `docs/TROUBLESHOOTING.md`.
+- Local validation:
+  - `node --check adapters/token-usage-stats-service.js`,
+    `node --check adapters/thread-list-cold-path-diagnosis-service.js`, and
+    `node --check server.js` passed.
+  - Focused thread-list/token/diagnostic suite passed (`82` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - Full `npm test` passed (`1391` tests).
+  - Local runtime-token DB benchmark showed first decoration querying SQLite,
+    then expired-cache first-paint reuse at `queryCount=0`.
+- Deployment status:
+  - Not deployed yet at the time of this note. Next step is commit, central
+    macOS plugin deploy, and production readback. Static shell/cache bump is
+    not expected because no browser static files changed.
