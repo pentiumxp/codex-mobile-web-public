@@ -119,6 +119,45 @@ function threadHasTurn(thread, expectedTurnId) {
   return thread.turns.some((turn) => nonEmptyText(turn && (turn.id || turn.turnId || turn.turn_id)) === id);
 }
 
+function activeTurnIdFromThread(thread) {
+  const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    if (!isActiveTurn(turn)) continue;
+    const id = nonEmptyText(turn && (turn.id || turn.turnId || turn.turn_id));
+    if (id) return id;
+  }
+  return "";
+}
+
+function projectionThreadIsPartial(thread) {
+  if (!thread || typeof thread !== "object") return false;
+  const projection = thread.mobileProjection && typeof thread.mobileProjection === "object"
+    ? thread.mobileProjection
+    : {};
+  const mode = nonEmptyText(thread.mobileReadMode).toLowerCase();
+  const source = nonEmptyText(projection.source || thread.mobileProjectionSource).toLowerCase();
+  return projection.partial === true
+    || projection.activeOverlayWindow === true
+    || /partial|active-window/.test(mode)
+    || source === "partial";
+}
+
+function promoteActiveReadPolicy(policy, reason) {
+  return Object.assign({}, policy || {}, {
+    activeFullReadRequired: true,
+    activeFullReadReason: nonEmptyText(reason) || "active-window-detected",
+    allowPartialProjection: false,
+    shouldUseInitialTurnsList: false,
+    initialTurnsListSkipReason: "active-thread-requires-full-read",
+  });
+}
+
+function applyActivePolicyContext(context, policy) {
+  context.activeFullReadRequired = policy && policy.activeFullReadRequired === true;
+  context.activeFullReadReason = policy && policy.activeFullReadReason || "";
+}
+
 function itemType(item) {
   return String(item && (item.type || item.itemType || item.kind) || "").toLowerCase();
 }
@@ -340,9 +379,8 @@ function createThreadDetailReadOrchestrationService(options = {}) {
     timer.mark("summaryMs", summaryStartedAtMs);
     const summary = summaryResult && summaryResult.summary || null;
     context.summarySource = summaryResult && summaryResult.source || "";
-    const activeReadPolicy = planActiveThreadDetailReadPolicy({ summary, preferRecentTurns });
-    context.activeFullReadRequired = activeReadPolicy.activeFullReadRequired;
-    context.activeFullReadReason = activeReadPolicy.activeFullReadReason || "";
+    let activeReadPolicy = planActiveThreadDetailReadPolicy({ summary, preferRecentTurns });
+    applyActivePolicyContext(context, activeReadPolicy);
     const runtimeSettings = threadRuntimeSettings(threadId, summary);
     if (summary && isHiddenThread(summary, visibility)) {
       threadLog("hidden", { status: 404 });
@@ -438,7 +476,16 @@ function createThreadDetailReadOrchestrationService(options = {}) {
         returnedTurns: Array.isArray(projectedThread.turns) ? projectedThread.turns.length : null,
         omittedTurns: projectedThread.mobileOmittedTurnCount || 0,
       });
-      if (!activeReadPolicy.activeFullReadRequired || !resolveActiveWindowOverlay) {
+      const projectedActiveTurnId = activeTurnIdFromThread(projectedThread);
+      if (projectedActiveTurnId && projectionThreadIsPartial(projectedThread) && !activeReadPolicy.activeFullReadRequired) {
+        activeReadPolicy = promoteActiveReadPolicy(activeReadPolicy, "projection-window-active-turn");
+        applyActivePolicyContext(context, activeReadPolicy);
+        threadLog("projection_active_turn_detected", {
+          action: "require-full-read",
+          source: "projection-window",
+        });
+      }
+      if (!activeReadPolicy.activeFullReadRequired) {
         if (stalePartialHit && scheduleProjectionRefresh) {
           try {
             scheduleProjectionRefresh({
@@ -828,7 +875,16 @@ function createThreadDetailReadOrchestrationService(options = {}) {
           return hiddenResponse();
         }
         timer.mark("turnsListInitialMs", turnsStartedAtMs);
-        if (projection && result && result.thread) {
+        const initialActiveTurnId = activeTurnIdFromThread(result && result.thread);
+        if (initialActiveTurnId && !activeReadPolicy.activeFullReadRequired) {
+          activeReadPolicy = promoteActiveReadPolicy(activeReadPolicy, "initial-window-active-turn");
+          applyActivePolicyContext(context, activeReadPolicy);
+          context.projectionSeedStatus = "skipped";
+          context.projectionSeedSource = "initial-active-window";
+          threadLog("turns_list_initial_active_turn_detected", {
+            action: "require-full-read",
+          });
+        } else if (projection && result && result.thread) {
           try {
             const seeded = seedProjection(projection, result, {
               partial: true,
@@ -849,15 +905,17 @@ function createThreadDetailReadOrchestrationService(options = {}) {
           context.projectionSeedStatus = "skipped";
           context.projectionSeedSource = projection ? "turns-list-initial" : "no-projection-input";
         }
-        return {
-          status: 200,
-          mode: "turns-list-initial",
-          body: attachDetailDiagnostics(result, context, {
-            threadId,
-            source: "turns-list-initial",
-            readDecision: "initial-turns-list",
-          }),
-        };
+        if (!activeReadPolicy.activeFullReadRequired) {
+          return {
+            status: 200,
+            mode: "turns-list-initial",
+            body: attachDetailDiagnostics(result, context, {
+              threadId,
+              source: "turns-list-initial",
+              readDecision: "initial-turns-list",
+            }),
+          };
+        }
       } catch (err) {
         threadLog("turns_list_initial_error", {
           durationMs: now() - turnsStartedAtMs,
@@ -961,15 +1019,17 @@ function createThreadDetailReadOrchestrationService(options = {}) {
         omittedTurns: result && result.thread && result.thread.mobileOmittedTurnCount ? result.thread.mobileOmittedTurnCount : 0,
       });
       timer.mark("threadReadMs", readStartedAtMs);
-      if (projection && result && result.thread && !activeReadPolicy.activeFullReadRequired) {
+      if (projection && result && result.thread) {
         try {
           seedProjection(projection, result);
-          result.thread.mobileProjection = Object.assign({}, result.thread.mobileProjection || {}, { source: "seeded" });
+          result.thread.mobileProjection = Object.assign({}, result.thread.mobileProjection || {}, {
+            source: activeReadPolicy.activeFullReadRequired ? "active-thread-read" : "seeded",
+          });
           context.projectionSeedStatus = "seeded";
-          context.projectionSeedSource = "thread-read";
+          context.projectionSeedSource = activeReadPolicy.activeFullReadRequired ? "active-thread-read" : "thread-read";
         } catch (err) {
           context.projectionSeedStatus = "failed";
-          context.projectionSeedSource = "thread-read";
+          context.projectionSeedSource = activeReadPolicy.activeFullReadRequired ? "active-thread-read" : "thread-read";
           threadLog("projection_seed_error", { error: safeErrorMessage(err) });
         }
       } else if (activeReadPolicy.activeFullReadRequired) {

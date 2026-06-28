@@ -27671,3 +27671,84 @@ The previous full handoff was archived and should be opened only when old proven
   - Existing H3 `latest_completed_user_input_missing` remains for a Codex
     Mobile assistant-only completed turn and should be classified/fixed as a
     separate completed-turn provenance issue.
+
+## 2026-06-28 - Recent Rich Replay And User-Input Anchor Repair
+
+- Source report:
+  - User observed Movie/recent detail views where a recently important turn only
+    displayed the latest few rows while earlier same-turn user-visible receipts
+    were absent. A bounded Movie readback showed the newest completed turn was
+    a short one-assistant receipt, while the immediately previous rich turn had
+    many raw assistant receipts but detail budget retained only one.
+- Root cause / invariant:
+  - `thread-detail-response-budget-service` protected only the final completed
+    replay turn. When a short follow-up turn became latest, the previous rich
+    turn fell back to historical receipt-only budget and lost intermediate
+    user-visible assistant receipts.
+  - Separately, latest completed detail windows could contain assistant/Usage
+    rows but no user input item even when the raw rollout turn had user input.
+- Fix:
+  - `thread-detail-response-budget-service` now protects the latest completed
+    replay plus the nearest previous multi-assistant completed turn only when
+    the latest completed turn is a short one-assistant receipt. Protected
+    completed replay turns still drop command/reasoning rows.
+  - Added `adapters/thread-detail-user-input-anchor-service.js` to build
+    bounded synthetic user-input anchors from rollout enrichment entries and
+    insert them only into the latest completed non-synthetic replay turn when
+    assistant/Usage rows exist without user/context input.
+  - `prepareThreadDetailResponseResult()` now runs user-input anchor insertion
+    after Usage/final-receipt enrichment and before task-card/finalize/budget.
+  - `scripts/codex-mobile-thread-self-check.js` now uses detail `activeTurnId`
+    before thread-list `activeTurnId` for raw active-turn comparison so stale
+    list fields do not suppress active projection-gap detection.
+- Changed files:
+  - `adapters/thread-detail-response-budget-service.js`
+  - `adapters/thread-detail-self-check-service.js`
+  - `adapters/thread-detail-user-input-anchor-service.js`
+  - `scripts/codex-mobile-thread-self-check.js`
+  - `server.js`
+  - `test/thread-detail-response-budget-service.test.js`
+  - `test/thread-detail-user-input-anchor-service.test.js`
+  - `test/thread-self-check-script.test.js`
+  - `test/thread-task-card-route.test.js`
+  - `docs/MODULES.md`
+  - `package.json`
+- Validation before commit/deploy:
+  - `node --check adapters/thread-detail-response-budget-service.js
+    adapters/thread-detail-user-input-anchor-service.js
+    adapters/thread-detail-self-check-service.js
+    scripts/codex-mobile-thread-self-check.js server.js` passed.
+  - `node --test test/thread-detail-response-budget-service.test.js
+    test/thread-detail-user-input-anchor-service.test.js
+    test/thread-self-check-script.test.js
+    test/thread-detail-self-check-service.test.js` passed (`64` tests).
+  - `npm run check`, `npm run check:macos`, `npm test` (`1469` tests), and
+    `git diff --check` passed.
+  - Production v571 pre-deploy Movie readback still showed the target symptom:
+    recent rich turn `019f0e29-bad0...` retained only one assistant item while
+    response budget reported `omittedAssistantItems=182`. This is the readback
+    baseline for the deployment fix.
+- Post-deploy active-turn follow-up:
+  - Production self-check after commit `f06787a` confirmed the completed-rich
+    Movie case was fixed (`richCompletedReplayAssistantItems=31`,
+    `richCompletedReplayOmittedAssistantItems=0`), but found a separate H2
+    active-turn projection gap: one active turn had `rawAssistantItems=86` and
+    `detailAssistantItems=1`.
+  - Root cause: the detail summary can miss active state while the returned
+    projection or initial recent `turns/list` window contains an active turn.
+    Orchestration then treated that partial active window as final detail.
+  - `thread-detail-read-orchestration-service` now detects active turns inside
+    projection hits and initial recent windows. If summary policy missed active
+    state, it promotes the read to an active full-read path with bounded reason
+    `projection-window-active-turn` or `initial-window-active-turn`, skips
+    partial seeding from the incomplete active window, and avoids returning it
+    to the client.
+  - A second production self-check showed the first full read retained 102
+    active assistant rows, but the repeat read downgraded through a stale
+    `projection-active-overlay` with only 4 assistant rows. Active full reads
+    now seed the projection cache from the complete result, and non-partial full
+    projection hits are allowed to return even when the summary missed active
+    state. Only partial/active-window projections with active turns are promoted
+    to full read.
+  - Added focused orchestration tests for both missed-active cases, active full
+    read cache seeding, and safe return of full active projections.

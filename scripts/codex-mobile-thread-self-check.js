@@ -12,6 +12,7 @@ const {
   combineSelfCheck,
   compareDetailReadbacks,
   compareThreadListReadbacks,
+  latestCompletedTurn,
   shortHash,
   summarizeTurn,
   threadRows,
@@ -242,10 +243,40 @@ function turnIdFromTurnContextPayload(payload = {}) {
   return text(payload.turn_id || payload.turnId || payload.id || payload.turn);
 }
 
-async function readRawActiveTurnCounts(row = {}, options = {}) {
-  const activeTurnId = activeTurnIdFromThreadRow(row);
+function turnIdFromDetailTurn(turn = {}) {
+  return text(turn && (turn.id || turn.turnId || turn.turn_id));
+}
+
+function rawPayloadType(payload = {}) {
+  return text(payload.type || payload.item_type || payload.kind);
+}
+
+function rawPayloadRole(payload = {}) {
+  return text(payload.role || payload.authorRole || payload.author);
+}
+
+function isRawUserInputPayload(eventType = "", payload = {}) {
+  const type = rawPayloadType(payload).toLowerCase();
+  const role = rawPayloadRole(payload).toLowerCase();
+  if (eventType === "response_item" && type === "message" && role === "user") return true;
+  if (eventType === "event_msg" && /^(user_message|user_input|input_message|submitted_user_message)$/.test(type)) return true;
+  if (type === "message" && role === "user") return true;
+  return false;
+}
+
+function isRawAssistantPayload(eventType = "", payload = {}) {
+  const type = rawPayloadType(payload).toLowerCase();
+  const role = rawPayloadRole(payload).toLowerCase();
+  if (eventType === "response_item" && type === "message" && role === "assistant") return true;
+  if (eventType === "event_msg" && type === "agent_message") return true;
+  if (type === "message" && role === "assistant") return true;
+  return false;
+}
+
+async function readRawTurnCounts(row = {}, turnId = "", options = {}) {
+  const expectedTurnId = text(turnId);
   const rolloutPath = rolloutPathFromThreadRow(row);
-  if (!activeTurnId || !rolloutPath) return null;
+  if (!expectedTurnId || !rolloutPath) return null;
   let stat = null;
   try {
     stat = fs.statSync(rolloutPath);
@@ -255,21 +286,23 @@ async function readRawActiveTurnCounts(row = {}, options = {}) {
   if (!stat || !stat.isFile()) return null;
   const maxBytes = Number(options.rawActiveMaxBytes) || 0;
   if (maxBytes > 0 && stat.size > maxBytes) return {
-    checked: false,
-    skippedReason: "rollout_too_large",
-    threadHash: shortHash(threadId(row)),
-    turnHash: shortHash(activeTurnId),
-    rolloutSizeBytes: stat.size,
-  };
+      checked: false,
+      skippedReason: "rollout_too_large",
+      threadHash: shortHash(threadId(row)),
+      turnHash: shortHash(expectedTurnId),
+      rolloutSizeBytes: stat.size,
+    };
 
   const counts = {
     checked: true,
     found: false,
     threadHash: shortHash(threadId(row)),
-    turnHash: shortHash(activeTurnId),
+    turnHash: shortHash(expectedTurnId),
+    rawLineCount: 0,
     rawAssistantItems: 0,
     rawAgentMessageEvents: 0,
     rawUserItems: 0,
+    rawUserLikeEvents: 0,
   };
   let currentTurnId = "";
   const input = fs.createReadStream(rolloutPath, { encoding: "utf8" });
@@ -288,15 +321,19 @@ async function readRawActiveTurnCounts(row = {}, options = {}) {
       if (eventType === "turn_context") {
         currentTurnId = turnIdFromTurnContextPayload(payload);
       }
-      if (currentTurnId !== activeTurnId) continue;
+      if (currentTurnId !== expectedTurnId) continue;
       counts.found = true;
-      if (eventType === "response_item" && payload.type === "message" && payload.role === "assistant") {
+      counts.rawLineCount += 1;
+      const payloadType = rawPayloadType(payload).toLowerCase();
+      const payloadRole = rawPayloadRole(payload).toLowerCase();
+      if (eventType === "response_item" && payloadType === "message" && payloadRole === "assistant") {
         counts.rawAssistantItems += 1;
-      } else if (eventType === "response_item" && payload.type === "message" && payload.role === "user") {
+      } else if (eventType === "response_item" && payloadType === "message" && payloadRole === "user") {
         counts.rawUserItems += 1;
-      } else if (eventType === "event_msg" && payload.type === "agent_message") {
+      } else if (eventType === "event_msg" && payloadType === "agent_message") {
         counts.rawAgentMessageEvents += 1;
       }
+      if (isRawUserInputPayload(eventType, payload)) counts.rawUserLikeEvents += 1;
     }
   } finally {
     lines.close();
@@ -304,12 +341,27 @@ async function readRawActiveTurnCounts(row = {}, options = {}) {
   return counts;
 }
 
+async function readRawActiveTurnCounts(row = {}, options = {}) {
+  return readRawTurnCounts(row, activeTurnIdFromThreadRow(row), options);
+}
+
 function rawActiveCountSource(row = {}, detail = {}) {
+  const thread = detailThread(detail);
+  const detailActiveTurnId = activeTurnIdFromThreadRow(thread);
+  const rowActiveTurnId = activeTurnIdFromThreadRow(row);
+  return Object.assign({}, row || {}, {
+    id: threadId(row) || threadId(thread),
+    activeTurnId: detailActiveTurnId || rowActiveTurnId,
+    active_turn_id: detailActiveTurnId || rowActiveTurnId,
+    path: rolloutPathFromThreadRow(row) || rolloutPathFromThreadRow(thread),
+    rolloutPath: rolloutPathFromThreadRow(row) || rolloutPathFromThreadRow(thread),
+  });
+}
+
+function rawLatestCompletedCountSource(row = {}, detail = {}) {
   const thread = detailThread(detail);
   return Object.assign({}, row || {}, {
     id: threadId(row) || threadId(thread),
-    activeTurnId: activeTurnIdFromThreadRow(row) || activeTurnIdFromThreadRow(thread),
-    active_turn_id: activeTurnIdFromThreadRow(row) || activeTurnIdFromThreadRow(thread),
     path: rolloutPathFromThreadRow(row) || rolloutPathFromThreadRow(thread),
     rolloutPath: rolloutPathFromThreadRow(row) || rolloutPathFromThreadRow(thread),
   });
@@ -327,9 +379,9 @@ function findTurnById(thread = {}, expectedTurnId = "") {
 
 function analyzeActiveTurnRawProjection(row = {}, detail = {}, rawCounts = null) {
   if (!rawCounts || rawCounts.checked !== true || rawCounts.found !== true) return null;
-  const activeTurnId = activeTurnIdFromThreadRow(row) || activeTurnIdFromThreadRow(detailThread(detail));
-  if (!activeTurnId || rawCounts.rawAssistantItems <= 0) return null;
   const thread = detailThread(detail);
+  const activeTurnId = activeTurnIdFromThreadRow(thread) || activeTurnIdFromThreadRow(row);
+  if (!activeTurnId || rawCounts.rawAssistantItems <= 0) return null;
   const turn = findTurnById(thread, activeTurnId);
   if (!turn || !isActiveStatus(turn && turn.status)) return null;
   const summary = turn ? summarizeTurn(turn, thread) : null;
@@ -354,6 +406,63 @@ function analyzeActiveTurnRawProjection(row = {}, detail = {}, rawCounts = null)
     detailAssistantItems,
     issues,
   };
+}
+
+async function readRawLatestCompletedTurnCounts(row = {}, detail = {}, options = {}) {
+  const thread = detailThread(detail);
+  const latest = latestCompletedTurn(thread);
+  const turnId = turnIdFromDetailTurn(latest && latest.turn);
+  if (!turnId) return null;
+  return readRawTurnCounts(rawLatestCompletedCountSource(row, detail), turnId, options);
+}
+
+function suppressRawProvenSystemInputMissingIssue(analysis = {}, rawCounts = null) {
+  if (!analysis || !rawCounts || rawCounts.checked !== true || rawCounts.found !== true) return analysis;
+  if (Number(rawCounts.rawUserItems || 0) > 0 || Number(rawCounts.rawUserLikeEvents || 0) > 0) return analysis;
+  const issues = Array.isArray(analysis.issues) ? analysis.issues : [];
+  const suppressed = [];
+  const kept = issues.filter((issue) => {
+    if (!issue || issue.code !== "latest_completed_user_input_missing") return true;
+    if (text(issue.turnHash) !== text(rawCounts.turnHash)) return true;
+    suppressed.push(Object.assign({}, issue, {
+      suppressedReason: "raw_completed_turn_has_no_user_input",
+      rawLineCount: rawCounts.rawLineCount || 0,
+    }));
+    return false;
+  });
+  if (!suppressed.length) return analysis;
+  return Object.assign({}, analysis, {
+    issues: kept,
+    suppressedIssues: [
+      ...(Array.isArray(analysis.suppressedIssues) ? analysis.suppressedIssues : []),
+      ...suppressed,
+    ],
+    rawLatestCompletedInputEvidence: {
+      checked: true,
+      found: true,
+      threadHash: rawCounts.threadHash,
+      turnHash: rawCounts.turnHash,
+      rawLineCount: rawCounts.rawLineCount || 0,
+      rawUserItems: rawCounts.rawUserItems || 0,
+      rawUserLikeEvents: rawCounts.rawUserLikeEvents || 0,
+    },
+  });
+}
+
+function rawLatestCompletedInputEvidence(rawCounts = null) {
+  if (!rawCounts || typeof rawCounts !== "object") return null;
+  const evidence = {
+    checked: rawCounts.checked === true,
+    found: rawCounts.found === true,
+    threadHash: text(rawCounts.threadHash),
+    turnHash: text(rawCounts.turnHash),
+    rawLineCount: rawCounts.rawLineCount || 0,
+    rawUserItems: rawCounts.rawUserItems || 0,
+    rawUserLikeEvents: rawCounts.rawUserLikeEvents || 0,
+  };
+  if (rawCounts.skippedReason) evidence.skippedReason = text(rawCounts.skippedReason).slice(0, 80);
+  if (rawCounts.rolloutSizeBytes) evidence.rolloutSizeBytes = rawCounts.rolloutSizeBytes;
+  return evidence;
 }
 
 async function run(options = {}, env = process.env) {
@@ -407,12 +516,18 @@ async function run(options = {}, env = process.env) {
   for (const { id: threadId, row } of selectedThreadRefs) {
     const firstDetail = await fetchThreadDetail(options, key, threadId, 0);
     const rawCountsBeforeFirstDetail = await readRawActiveTurnCounts(rawActiveCountSource(row, firstDetail), options);
-    const firstAnalysis = analyzeThreadDetail(firstDetail, { threadId });
+    const rawLatestCompletedCountsBeforeFirstDetail = await readRawLatestCompletedTurnCounts(row, firstDetail, options);
+    const firstAnalysis = suppressRawProvenSystemInputMissingIssue(
+      analyzeThreadDetail(firstDetail, { threadId }),
+      rawLatestCompletedCountsBeforeFirstDetail,
+    );
     const firstActiveRawProjection = analyzeActiveTurnRawProjection(row, firstDetail, rawCountsBeforeFirstDetail);
     const detailReport = {
       threadHash: shortHash(threadId),
       first: firstAnalysis,
       activeTurnRawProjection: firstActiveRawProjection,
+      rawLatestCompletedInputEvidence: firstAnalysis.rawLatestCompletedInputEvidence
+        || rawLatestCompletedInputEvidence(rawLatestCompletedCountsBeforeFirstDetail),
       repeat: null,
     };
     if (options.repeat > 1) {
@@ -424,8 +539,12 @@ async function run(options = {}, env = process.env) {
         await sleep(options.repeatDelayMs);
         const nextDetail = await fetchThreadDetail(options, key, threadId, index);
         const rawCountsBeforeNextDetail = await readRawActiveTurnCounts(rawActiveCountSource(row, nextDetail), options);
+        const rawLatestCompletedCountsBeforeNextDetail = await readRawLatestCompletedTurnCounts(row, nextDetail, options);
         detailReads.push(nextDetail);
-        const nextAnalysis = analyzeThreadDetail(nextDetail, { threadId });
+        const nextAnalysis = suppressRawProvenSystemInputMissingIssue(
+          analyzeThreadDetail(nextDetail, { threadId }),
+          rawLatestCompletedCountsBeforeNextDetail,
+        );
         const nextActiveRawProjection = analyzeActiveTurnRawProjection(row, nextDetail, rawCountsBeforeNextDetail);
         if (nextActiveRawProjection && nextActiveRawProjection.issues.length) {
           repeatChecks.push(Object.assign({ index, baseline: "raw-active-turn" }, nextActiveRawProjection));

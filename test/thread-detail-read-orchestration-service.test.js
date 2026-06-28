@@ -328,6 +328,172 @@ test("large projection miss can use bounded turns/list before full thread/read",
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedSource, "turns-list-large");
 });
 
+test("initial turns-list active window upgrades to full read when summary missed active state", async () => {
+  const { service, calls } = createHarness({
+    turnsListThreadReadResult: async ({ mode }) => {
+      calls.push(`turns-list:${mode}`);
+      return {
+        thread: {
+          id: "thread-1",
+          turns: [
+            {
+              id: "active-turn",
+              status: { type: "running" },
+              items: [{ id: "agent-tail", type: "agentMessage" }],
+            },
+          ],
+          mobileReadMode: mode,
+        },
+      };
+    },
+    readFullThread: async () => {
+      calls.push("thread-read");
+      return {
+        thread: {
+          id: "thread-1",
+          turns: [
+            {
+              id: "active-turn",
+              status: { type: "running" },
+              items: [
+                { id: "agent-1", type: "agentMessage" },
+                { id: "agent-2", type: "agentMessage" },
+              ],
+            },
+          ],
+          mobileReadMode: "thread-read",
+        },
+      };
+    },
+  });
+
+  const response = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: true,
+    threadLog: () => {},
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.mode, "thread-read");
+  assert.deepEqual(calls.filter((call) => call.startsWith("turns-list:")), ["turns-list:turns-list-initial"]);
+  assert.equal(calls.includes("seed:partial"), false);
+  assert.ok(calls.includes("thread-read"));
+  assert.ok(calls.includes("seed"));
+  assert.equal(response.body.thread.turns[0].items.length, 2);
+  const timings = response.body.thread.mobileDiagnostics.threadDetailTimings;
+  assert.equal(timings.activeFullReadRequired, true);
+  assert.equal(timings.activeFullReadReason, "initial-window-active-turn");
+  assert.equal(timings.readDecision, "full-thread-read");
+  assert.equal(timings.projectionSeedStatus, "seeded");
+  assert.equal(timings.projectionSeedSource, "active-thread-read");
+});
+
+test("projection hit active window upgrades to full read when summary missed active state", async () => {
+  const { service, calls } = createHarness({
+    projectedThreadResult: () => {
+      calls.push("projection-hit-active");
+      return {
+        thread: {
+          id: "thread-1",
+          turns: [
+            {
+              id: "active-turn",
+              status: { type: "running" },
+              items: [{ id: "agent-tail", type: "agentMessage" }],
+            },
+          ],
+          mobileReadMode: "projection-v4-partial",
+          mobileProjection: { source: "partial", version: "v4", partial: true },
+        },
+      };
+    },
+    readFullThread: async () => {
+      calls.push("thread-read");
+      return {
+        thread: {
+          id: "thread-1",
+          turns: [
+            {
+              id: "active-turn",
+              status: { type: "running" },
+              items: [
+                { id: "agent-1", type: "agentMessage" },
+                { id: "agent-2", type: "agentMessage" },
+              ],
+            },
+          ],
+          mobileReadMode: "thread-read",
+        },
+      };
+    },
+  });
+
+  const response = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: true,
+    threadLog: () => {},
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.mode, "thread-read");
+  assert.equal(calls.includes("turns-list:turns-list-initial"), false);
+  assert.equal(calls.includes("remember"), false);
+  assert.ok(calls.includes("thread-read"));
+  assert.ok(calls.includes("seed"));
+  assert.equal(response.body.thread.turns[0].items.length, 2);
+  const timings = response.body.thread.mobileDiagnostics.threadDetailTimings;
+  assert.equal(timings.activeFullReadRequired, true);
+  assert.equal(timings.activeFullReadReason, "projection-window-active-turn");
+  assert.equal(timings.activeOverlayAction, "require-full-read");
+  assert.equal(timings.activeOverlayReason, "overlay-provider-unavailable");
+  assert.equal(timings.readDecision, "full-thread-read");
+  assert.equal(timings.projectionSeedStatus, "seeded");
+  assert.equal(timings.projectionSeedSource, "active-thread-read");
+});
+
+test("full projection active window can return when summary missed active state", async () => {
+  const { service, calls } = createHarness({
+    projectedThreadResult: () => {
+      calls.push("projection-hit-full-active");
+      return {
+        thread: {
+          id: "thread-1",
+          turns: [
+            {
+              id: "active-turn",
+              status: { type: "running" },
+              items: [
+                { id: "agent-1", type: "agentMessage" },
+                { id: "agent-2", type: "agentMessage" },
+              ],
+            },
+          ],
+          mobileReadMode: "projection-v4-cache",
+          mobileProjection: { source: "cache", version: "v4", partial: false },
+        },
+      };
+    },
+  });
+
+  const response = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: true,
+    threadLog: () => {},
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.mode, "projection-v4-cache");
+  assert.equal(calls.includes("thread-read"), false);
+  assert.ok(calls.includes("remember"));
+  assert.equal(response.body.thread.turns[0].items.length, 2);
+  const timings = response.body.thread.mobileDiagnostics.threadDetailTimings;
+  assert.equal(timings.activeFullReadRequired, false);
+  assert.equal(timings.readDecision, "projection-hit");
+});
+
 test("large summary read uses bounded turns/list even when projection input is unavailable", async () => {
   const { service, calls } = createHarness({
     projectionInput: () => {
@@ -406,13 +572,13 @@ test("active recent thread detail skips partial windows and bounded turns/list",
   assert.equal(calls.includes("turns-list:turns-list-initial"), false);
   assert.equal(calls.includes("turns-list:turns-list-large"), false);
   assert.ok(calls.includes("thread-read"));
-  assert.equal(calls.includes("seed"), false);
+  assert.equal(calls.includes("seed"), true);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "full-thread-read");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeFullReadRequired, true);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeFullReadReason, "active-turn-id");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayAction, "require-full-read");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayReason, "overlay-provider-unavailable");
-  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedStatus, "skipped");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedStatus, "seeded");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedSource, "active-thread-read");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadProtected, false);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadReason, "active-thread-requires-full-read");
@@ -489,7 +655,7 @@ test("active overlay incomplete evidence still falls through to full thread/read
   assert.ok(calls.includes("active-overlay-window-lookup:"));
   assert.ok(calls.indexOf("overlay-provider") < calls.indexOf("active-overlay-window-lookup:"));
   assert.ok(calls.includes("thread-read"));
-  assert.equal(calls.includes("seed"), false);
+  assert.equal(calls.includes("seed"), true);
   assert.equal(calls.includes("turns-list:turns-list-initial"), false);
   assert.equal(calls.includes("turns-list:turns-list-large"), false);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "full-thread-read");
@@ -498,7 +664,7 @@ test("active overlay incomplete evidence still falls through to full thread/read
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlaySource, "app-server-notification");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayAssistantItems, 1);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeOverlayWindowFirst, true);
-  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedStatus, "skipped");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedStatus, "seeded");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedSource, "active-thread-read");
 });
 
@@ -1597,12 +1763,12 @@ test("active full thread detail skips bounded turns/list", async () => {
   assert.equal(response.mode, "thread-read");
   assert.equal(calls.includes("turns-list:turns-list-large"), false);
   assert.ok(calls.includes("thread-read"));
-  assert.equal(calls.includes("seed"), false);
+  assert.equal(calls.includes("seed"), true);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "full-thread-read");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeFullReadRequired, true);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeFullReadReason, "status-active");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.largeReadReason, "active-thread-requires-full-read");
-  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedStatus, "skipped");
+  assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedStatus, "seeded");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.projectionSeedSource, "active-thread-read");
 });
 

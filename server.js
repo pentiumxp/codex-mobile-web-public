@@ -89,6 +89,10 @@ const { createThreadDetailProjectionResultService } = require("./adapters/thread
 const { createThreadDetailProjectionService } = require("./adapters/thread-detail-projection-service");
 const { createThreadDetailProjectionV4Service } = require("./adapters/thread-detail-projection-v4-service");
 const { compactThreadDetailResponseResult } = require("./adapters/thread-detail-response-budget-service");
+const {
+  appendLatestCompletedUserInputAnchors,
+  collectRolloutUserInputAnchors,
+} = require("./adapters/thread-detail-user-input-anchor-service");
 const { createThreadDetailSummaryService } = require("./adapters/thread-detail-summary-service");
 const { createThreadDetailBoundedReadPolicyService } = require("./adapters/thread-detail-bounded-read-policy-service");
 const { createThreadDetailActiveOverlayProviderService } = require("./adapters/thread-detail-active-overlay-provider-service");
@@ -1186,6 +1190,7 @@ const latestRuntimeContextByPath = new Map();
 const latestItemTimestampsByPath = new Map();
 const latestTurnUsageSummariesByPath = new Map();
 const latestFinalReceiptsByPath = new Map();
+const latestUserInputAnchorsByPath = new Map();
 const latestToolOutputImagesByPath = new Map();
 const rolloutEnrichmentIndexService = createRolloutEnrichmentIndexService({
   maxIndexes: RUNTIME_CONTEXT_CACHE_MAX,
@@ -4198,6 +4203,29 @@ function rememberRolloutFinalReceipts(key, payload) {
   }
 }
 
+function cloneRolloutUserInputAnchorPayload(payload) {
+  const byTurn = new Map();
+  const sourceByTurn = payload && payload.byTurn instanceof Map ? payload.byTurn : new Map();
+  for (const [turnId, items] of sourceByTurn.entries()) {
+    byTurn.set(turnId, Array.isArray(items) ? items.map(clonePlainJson) : []);
+  }
+  return {
+    byTurn,
+    scopedCount: Number(payload && payload.scopedCount) || 0,
+  };
+}
+
+function rememberRolloutUserInputAnchors(key, payload) {
+  latestUserInputAnchorsByPath.set(key, {
+    cachedAt: Date.now(),
+    payload: cloneRolloutUserInputAnchorPayload(payload),
+  });
+  while (latestUserInputAnchorsByPath.size > RUNTIME_CONTEXT_CACHE_MAX) {
+    const firstKey = latestUserInputAnchorsByPath.keys().next().value;
+    latestUserInputAnchorsByPath.delete(firstKey);
+  }
+}
+
 function rememberToolOutputImages(key, payload) {
   latestToolOutputImagesByPath.set(key, {
     cachedAt: Date.now(),
@@ -5055,6 +5083,45 @@ function appendRolloutFinalReceiptsToThread(thread) {
     insertProjectedItemByTimestamp(turn.items, Object.assign({}, item));
   }
   return thread;
+}
+
+function readRolloutUserInputAnchorItems(rolloutPath) {
+  if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) {
+    return { byTurn: new Map(), scopedCount: 0 };
+  }
+  let cacheKey = "";
+  try {
+    const stat = fs.statSync(rolloutPath);
+    cacheKey = `${runtimeContextCacheKey(rolloutPath, stat)}:user-input-anchors`;
+    const cached = latestUserInputAnchorsByPath.get(cacheKey);
+    if (cached && Date.now() - cached.cachedAt <= RUNTIME_CONTEXT_CACHE_TTL_MS) {
+      return cloneRolloutUserInputAnchorPayload(cached.payload);
+    }
+  } catch (_) {
+    return { byTurn: new Map(), scopedCount: 0 };
+  }
+  const payload = collectRolloutUserInputAnchors(readRolloutEnrichmentEntries(rolloutPath), {
+    textLimit: THREAD_DETAIL_PROGRESSIVE_ACTIVE_USER_TEXT_CHARS,
+    maxPerTurn: 4,
+  });
+  if (cacheKey) rememberRolloutUserInputAnchors(cacheKey, payload);
+  return cloneRolloutUserInputAnchorPayload(payload);
+}
+
+function appendRolloutUserInputAnchorsToDetailResult(result) {
+  const thread = result && result.thread;
+  if (!thread || !Array.isArray(thread.turns) || !thread.turns.length) return result;
+  const rolloutPath = rolloutPathForThread(thread);
+  if (!rolloutPath) return result;
+  const payload = readRolloutUserInputAnchorItems(rolloutPath);
+  if (!payload || !(payload.byTurn instanceof Map) || !payload.byTurn.size) return result;
+  const out = Object.assign({}, result, {
+    thread: cloneThreadForUsageDecoration(thread),
+  });
+  const backfilled = appendLatestCompletedUserInputAnchors(out.thread, payload);
+  if (!backfilled || backfilled.changed !== true) return result;
+  out.thread = backfilled.thread;
+  return out;
 }
 
 function orderTurnItemsByDisplayTimestamp(turn) {
@@ -13444,7 +13511,8 @@ function attachRolloutUsageSummariesToDetailResult(result) {
 
 async function prepareThreadDetailResponseResult(result, details = {}) {
   const completionBackfilled = backfillMissingRolloutCompletionTurnsForDetailResult(result, details);
-  const detailResult = attachRolloutUsageSummariesToDetailResult(completionBackfilled);
+  const usageDecorated = attachRolloutUsageSummariesToDetailResult(completionBackfilled);
+  const detailResult = appendRolloutUserInputAnchorsToDetailResult(usageDecorated);
   const prepared = applyLocalActiveThreadStatusToResult(
     await prepareThreadTaskCardsToResult(applyLocalActiveThreadStatusToResult(detailResult, details)),
     details,

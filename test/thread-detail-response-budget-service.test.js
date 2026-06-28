@@ -192,6 +192,69 @@ test("thread detail response budget keeps bounded latest completed replay detail
   );
 });
 
+test("thread detail response budget preserves the most recent rich completed reply before a short latest turn", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      mobileReadMode: "projection-v4-dynamic",
+      mobileProjectionRevision: 12,
+      turns: [
+        {
+          id: "turn-rich",
+          status: "completed",
+          items: [
+            { id: "u-rich", type: "userMessage", text: "Long task" },
+            { id: "r-rich", type: "reasoning", text: "private reasoning" },
+            { id: "c-rich-1", type: "commandExecution", command: "cmd 1" },
+            { id: "c-rich-2", type: "commandExecution", command: "cmd 2" },
+            { id: "a-rich-1", type: "agentMessage", text: "progress 1" },
+            { id: "a-rich-2", type: "agentMessage", text: "progress 2" },
+            { id: "a-rich-3", type: "agentMessage", text: "final" },
+            { id: "usage-rich", type: "turnUsageSummary" },
+          ],
+        },
+        {
+          id: "turn-short",
+          status: "completed",
+          items: [
+            { id: "u-short", type: "userMessage", text: "Done?" },
+            { id: "a-short", type: "agentMessage", text: "Done." },
+            { id: "usage-short", type: "turnUsageSummary" },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    completedOperationItems: 1,
+    completedReasoningItems: 0,
+    completedAssistantItems: 1,
+    activeOperationItems: 1,
+    activeAssistantItems: 1,
+  });
+
+  assert.deepEqual(compacted.thread.turns[0].items.map((item) => item.id), [
+    "u-rich",
+    "a-rich-1",
+    "a-rich-2",
+    "a-rich-3",
+    "usage-rich",
+  ]);
+  assert.deepEqual(compacted.thread.turns[1].items.map((item) => item.id), ["u-short", "a-short", "usage-short"]);
+  const budget = compacted.thread.mobileDetailResponseBudget;
+  assert.equal(budget.latestCompletedReplayTurnCount, 1);
+  assert.equal(budget.latestCompletedReplayAssistantItems, 1);
+  assert.equal(budget.richCompletedReplayTurnCount, 1);
+  assert.equal(budget.richCompletedReplayAssistantItems, 3);
+  assert.equal(budget.richCompletedReplayOmittedAssistantItems, 0);
+  assert.equal(budget.protectedCompletedReplayTurnCount, 2);
+  assert.equal(budget.protectedCompletedReplayOmittedAssistantItems, 0);
+  assert.equal(budget.omittedOperationItems, 2);
+  assert.equal(budget.omittedReasoningItems, 1);
+});
+
 test("thread detail response budget keeps completed replay progress before active turn", () => {
   const result = {
     thread: {
@@ -1058,20 +1121,19 @@ test("thread detail response budget applies completed receipt previews when firs
   const firstReceipt = compacted.thread.turns[0].items[1];
   const secondReceipt = compacted.thread.turns[1].items[1];
   assert.equal(firstReceipt.mobileTextTruncated, true);
-  assert.equal(secondReceipt.mobileTextTruncated, true);
+  assert.equal(secondReceipt.mobileTextTruncated, undefined);
   assert.match(firstReceipt.text, /first-paint preview truncated/);
-  assert.match(secondReceipt.text, /first-paint preview truncated/);
   assert.ok(firstReceipt.text.length <= 300);
-  assert.ok(secondReceipt.text.length <= 300);
+  assert.equal(secondReceipt.text, longReceipt("B"));
   assert.equal(firstReceipt.mobileFirstPaintTextBudget.scope, "completed");
-  assert.equal(secondReceipt.mobileFirstPaintTextBudget.scope, "completed");
+  assert.equal(secondReceipt.mobileFirstPaintTextBudget, undefined);
   const budget = compacted.thread.mobileDetailResponseBudget;
   assert.equal(budget.progressiveActiveBudgetApplied, true);
   assert.equal(budget.progressiveActiveBudgetReason, "thread-byte-pressure");
   assert.equal(budget.progressiveCompletedTextBudgetApplied, true);
   assert.equal(budget.progressiveFirstPaintThreadByteCeiling, 1600);
   assert.equal(budget.progressiveCompletedTextChars, 300);
-  assert.equal(budget.truncatedCompletedTextItems, 2);
+  assert.equal(budget.truncatedCompletedTextItems, 1);
   assert.ok(budget.omittedCompletedTextChars > 0);
   assert.ok(budget.progressiveFirstPaintBytesBeforeTextBudget >= originalThreadBytes - 1000);
   assert.ok(budget.progressiveFirstPaintBytesAfterTextBudget < budget.progressiveFirstPaintBytesBeforeTextBudget);
