@@ -40,9 +40,25 @@ function isSyntheticUserMessage(item) {
       || /^local-user-/.test(id)));
 }
 
+function isProjectionIndexUserMessage(item) {
+  const id = itemId(item);
+  return Boolean(isUserMessage(item)
+    && /^item-\d+$/.test(id)
+    && !text(item && item.clientSubmissionId));
+}
+
+function hasDurableNonIndexId(item) {
+  const id = itemId(item);
+  return Boolean(isUserMessage(item)
+    && id
+    && !/^item-\d+$/.test(id)
+    && !/^mux-user-/.test(id)
+    && !/^local-user-/.test(id));
+}
+
 function userMessagePreferenceScore(item) {
   if (!isUserMessage(item)) return 0;
-  let score = isSyntheticUserMessage(item) ? 0 : 100;
+  let score = isSyntheticUserMessage(item) ? 0 : isProjectionIndexUserMessage(item) ? 20 : 100;
   if (item.clientSubmissionId) score += 10;
   if (itemId(item)) score += 2;
   if (item.mobileVisibleKey || item.visibleKey) score += 1;
@@ -58,6 +74,11 @@ function sameClientSubmission(left, right) {
 function userMessagesAreSameEvent(left, right) {
   if (!isUserMessage(left) || !isUserMessage(right)) return false;
   if (!sameUserMessageContent(left, right)) return false;
+  const leftProjectionIndex = isProjectionIndexUserMessage(left);
+  const rightProjectionIndex = isProjectionIndexUserMessage(right);
+  if (leftProjectionIndex !== rightProjectionIndex) {
+    return leftProjectionIndex ? hasDurableNonIndexId(right) : hasDurableNonIndexId(left);
+  }
   return sameClientSubmission(left, right)
     || isSyntheticUserMessage(left)
     || isSyntheticUserMessage(right);
@@ -135,6 +156,7 @@ module.exports = {
   dedupeUserMessageEchoesInItems,
   dedupeUserMessageEchoesInThread,
   dedupeUserMessageEchoesInTurn,
+  isProjectionIndexUserMessage,
   isSyntheticUserMessage,
   userMessagesAreSameEvent,
 };

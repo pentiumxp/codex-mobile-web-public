@@ -7,6 +7,7 @@ const {
   dedupeUserMessageEchoesInItems,
   dedupeUserMessageEchoesInThread,
   dedupeUserMessageEchoesInTurn,
+  isProjectionIndexUserMessage,
   isSyntheticUserMessage,
   userMessagesAreSameEvent,
 } = require("../adapters/thread-user-message-echo-normalizer-service");
@@ -20,6 +21,43 @@ test("user message echo normalizer keeps repeated durable messages without share
 
   assert.equal(result.removed, 0);
   assert.deepEqual(result.items.map((item) => item.id), ["user-1", "assistant-1", "user-2"]);
+});
+
+test("user message echo normalizer converges active projection index and durable user echo", () => {
+  const result = dedupeUserMessageEchoesInItems([
+    {
+      id: "item-1",
+      type: "userMessage",
+      content: [{ type: "text", text: "sync production database" }],
+    },
+    { id: "assistant-1", type: "agentMessage", text: "working" },
+    {
+      id: "919b799b-1977-495d-b8db-000000000001",
+      type: "userMessage",
+      content: [{ type: "input_text", text: "sync production database" }],
+    },
+  ]);
+
+  assert.equal(result.removed, 1);
+  assert.deepEqual(result.items.map((item) => item.id), [
+    "919b799b-1977-495d-b8db-000000000001",
+    "assistant-1",
+  ]);
+  assert.equal(isProjectionIndexUserMessage({ id: "item-1", type: "userMessage", text: "x" }), true);
+  assert.equal(userMessagesAreSameEvent(
+    { id: "item-1", type: "userMessage", text: "x" },
+    { id: "919b799b-1977-495d-b8db-000000000001", type: "userMessage", text: "x" },
+  ), true);
+});
+
+test("user message echo normalizer does not collapse two projection index messages", () => {
+  const result = dedupeUserMessageEchoesInItems([
+    { id: "item-1", type: "userMessage", text: "repeat" },
+    { id: "item-2", type: "userMessage", text: "repeat" },
+  ]);
+
+  assert.equal(result.removed, 0);
+  assert.deepEqual(result.items.map((item) => item.id), ["item-1", "item-2"]);
 });
 
 test("user message echo normalizer removes duplicate durable user messages with shared submission identity", () => {

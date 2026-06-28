@@ -28068,7 +28068,48 @@ The previous full handoff was archived and should be opened only when old proven
   - Full `npm test` passed (`1489` tests).
   - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
 - Deployment / readback:
-  - Pending commit/deploy at handoff time. Deploy with the central Home AI
-    plugin macOS path and read back `/api/public-config` for
-    `codex-mobile-shell-v572`, then run directed Movie/current-thread
-    self-checks.
+  - Commit `82acd95` (`fix: converge active turn user message echoes`) was
+    deployed through the central Home AI plugin macOS path with reason
+    `codex-mobile-active-turn-user-message-echo-v572`.
+  - Production readback confirmed
+    `clientBuildId=0.1.11|codex-mobile-shell-v572` and
+    `shellCacheName=codex-mobile-shell-v572`.
+  - Production source/prod hash parity matched for `server.js`,
+    `public/app.js`, `public/sw.js`,
+    `adapters/thread-user-message-echo-normalizer-service.js`, and
+    `adapters/thread-detail-active-window-overlay-policy-service.js`.
+  - Directed Movie/current-thread and global 20-thread self-checks passed with
+    no H1/H2 issues.
+
+### 2026-06-28 - Active Overlay Projection Index User Echo Repair
+
+- Incident:
+  - After v572, Movie active turns could still briefly show the same user input
+    twice while the turn was running.
+  - Bounded runtime evidence showed the server detail response itself had two
+    same-content `userMessage` items in the active turn: one projection-index
+    item with id shape `item-<n>` and one app-server UUID item. The duplicate
+    disappeared after completion when the thread returned to `projection-v4-*`.
+- Root cause / invariant:
+  - v572 correctly converged client-submission, pending, mux, and local echoes,
+    but intentionally did not collapse two durable same-text user messages.
+  - The active overlay merge exposed a narrower source pair: a projection-index
+    user item and the app-server durable UUID item represented the same active
+    input but had no `clientSubmissionId`.
+  - Invariant: an active-turn projection-index user item and a non-index
+    durable user item with the same bounded content are one display event; two
+    non-index durable messages or two projection-index messages remain separate.
+- Fix:
+  - `thread-user-message-echo-normalizer-service` now recognizes
+    projection-index user items (`item-<n>`) and converges them only with a
+    non-index durable user item carrying the same content.
+  - The preference order keeps the app-server durable UUID item over the
+    projection-index item.
+- Validation:
+  - Focused normalizer/active-overlay tests passed (`27` tests).
+  - Broader projection/active-overlay/self-check suite passed (`143` tests).
+  - Full `npm test` passed (`1491` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Pending commit/deploy at handoff time. This is server-side only; no static
+    shell/cache bump or Public push is required.
