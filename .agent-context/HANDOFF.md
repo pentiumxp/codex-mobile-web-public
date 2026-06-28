@@ -25318,3 +25318,27 @@ The previous full handoff was archived and should be opened only when old proven
   - Not deployed yet at the time of this note. Next step is commit, central
     macOS plugin deploy, and production readback. Static shell/cache bump is
     not expected because no browser static files changed.
+
+### Deployment Update - Active User Input First-Paint Budget Module
+
+- Commit `2da11fd` `fix: budget active user input first paint` was deployed
+  through the Home AI central macOS plugin path with reason
+  `codex-mobile-active-user-input-budget`.
+- Production backup:
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260628T003525Z-plugin-codex-mobile-web-codex-mobile-active-user-input-budget`.
+- Production public config remained `clientBuildId=0.1.11|codex-mobile-shell-v556`
+  and `shellCacheName=codex-mobile-shell-v556`, expected because no browser
+  static files changed.
+- General Phase-B readback passed with thread list
+  `coldPathOwner=warm-fallback-cache`, `fallbackCacheDecision=compatible-hit`,
+  `muxMetrics.supported=true`, and detail `projection-v4-partial`,
+  `turnsListInitialMs=0`, `threadReadMs=0`, `totalMs=47`.
+- Codex Mobile thread `019eee6c-a6f5-7b20-bfb4-f96ccb6431b3` readback passed
+  with `projection-v4-partial`, `turnsListInitialMs=0`, `threadReadMs=0`, and
+  `totalMs=40`.
+- Home AI thread `019eed86-2002-7cc2-b0b7-937eb5355f36` readback passed with
+  `projection-v4-dynamic`, `turnsListInitialMs=0`, `threadReadMs=0`, `totalMs=59`,
+  and `omittedTurns=263`.
+- Source/prod SHA-256 prefixes matched for `server.js`,
+  `adapters/thread-detail-response-budget-service.js`, the focused test, and
+  updated docs.
