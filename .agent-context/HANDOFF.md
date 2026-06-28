@@ -26253,6 +26253,43 @@ The previous full handoff was archived and should be opened only when old proven
   - User also reported frequent embedded right-swipe from thread detail going
     directly to the Home AI host instead of the Codex thread list. A subagent
     was requested but could not be spawned because the current thread had
-    reached the subagent limit. Treat this as the next mobile embedded back
-    boundary investigation; likely surfaces are `installHermesPluginBackSwipeGuard`,
-    `handlePluginBack`, `postPluginBackResult`, and `public/plugin-embed.js`.
+    reached the subagent limit.
+
+## 2026-06-28 - Embedded Conversation Right-Swipe Host Escape Hotfix
+
+- User-visible incident:
+  - In Home AI embedded mode, right-swiping from a Codex thread detail sometimes
+    skipped the Codex thread list and returned directly to the Home AI host,
+    forcing the user to reload/re-enter the plugin.
+- Root cause / invariant:
+  - The previous `v560` flicker fix fully excluded `#conversation` from
+    iframe-owned embedded back-swipe handling. That stopped accidental
+    conversation scrolls from clearing the thread, but it also let intentional
+    right-swipes on the conversation surface fall through to the host.
+  - The invariant is that ordinary vertical reading/scrolling must not trigger
+    plugin-back, while a clear horizontal right-swipe in the Codex conversation
+    surface must still be consumed by the iframe and return to the Codex thread
+    list/primary page rather than the host.
+- Implementation:
+  - `public/app.js` removes `#conversation` from
+    `pluginEmbedBackSwipeInteractiveTarget()` so the iframe can handle explicit
+    horizontal right-swipes in the conversation surface again.
+  - The stricter `v560` protections remain: no edge `touchstart` cancellation,
+    vertical-dominant movement clears the gesture, horizontal/vertical ratio
+    must satisfy `PLUGIN_EMBED_BACK_SWIPE_HORIZONTAL_RATIO`, velocity-only
+    completion remains removed, and recent conversation scroll intent still
+    suppresses plugin-back.
+  - Static shell advanced from `codex-mobile-shell-v560` to
+    `codex-mobile-shell-v561`.
+- Validation:
+  - `node --test test/mobile-viewport.test.js test/hermes-plugin-route.test.js`
+    (`16` tests)
+  - `git diff --check`, `npm run check`, `npm run check:macos`, full
+    `npm test -- --test-reporter=dot`, and Home AI fallback governance check
+    passed.
+- Deployment status:
+  - Pending at handoff write time. Deploy with reason
+    `codex-mobile-embedded-back-swipe-hotfix` and verify production
+    `/api/public-config` reports `clientBuildId=0.1.11|codex-mobile-shell-v561`
+    plus `shellCacheName=codex-mobile-shell-v561`.
+  - Do not push Public unless the user explicitly asks.
