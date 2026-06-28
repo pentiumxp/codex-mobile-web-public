@@ -721,12 +721,16 @@ Cause to check:
   ordering changes, run
   `node scripts/codex-mobile-thread-self-check.js --server http://127.0.0.1:8787 --json`
   or pass one or more `--thread-id <id>` values for focused checks. This
-  metadata-only check verifies latest completed turn Usage item presence,
-  assistant/plan timestamps, no completed replay operation/reasoning rows,
-  duplicate turn/item/visible keys, repeated detail-refresh downgrades, and
-  bounded thread-list duplicate/order warnings. It intentionally checks the
-  Usage tool item exists but does not require a separate Usage title/timestamp,
-  because the visible time belongs to the adjacent final assistant receipt.
+  metadata-only check verifies latest completed turn Usage and assistant
+  presence, user-input presence warnings, assistant/plan timestamps, no
+  completed replay operation/reasoning rows, duplicate turn/item/visible keys,
+  repeated detail-refresh downgrades, transient repeat-sample detail/list
+  losses, and bounded thread-list duplicate/order/update warnings. Use
+  `--repeat <n>` when checking intermittent refresh faults: every sample is
+  analyzed and any middle-sample downgrade remains in the summary even if the
+  final sample recovers. It intentionally checks the Usage tool item exists but
+  does not require a separate Usage title/timestamp, because the visible time
+  belongs to the adjacent final assistant receipt.
 - Thread detail should first use app-server `thread/read` even when the rollout
   file is over 32MB, because `thread/turns/list` does not reliably preserve the
   command/tool/file/search operation items expected in Mobile detail. If detail

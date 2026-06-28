@@ -64,6 +64,11 @@ const {
 const { createHermesPluginService } = require("./adapters/hermes-plugin-service");
 const { createThreadTaskCardService } = require("./adapters/thread-task-card-service");
 const { createThreadTaskCardRoutingService } = require("./adapters/thread-task-card-routing-service");
+const {
+  normalizeHomeAiDeployLaneSummary,
+  planHomeAiDeployLaneRouting,
+  prioritizeDelegationTargetHints,
+} = require("./adapters/thread-task-card-deploy-lane-policy-service");
 const { createThreadSideChatService } = require("./adapters/thread-side-chat-service");
 const {
   continuationGoalMigrationPlan,
@@ -7528,8 +7533,7 @@ function workspaceDelegationTargetHints() {
     return workspaceDelegationTargetHintsCache.text || "";
   }
   try {
-    const threads = [...threadTaskCardVisibleTargetThreads()]
-      .sort((a, b) => threadTaskCardTargetUpdatedAt(b) - threadTaskCardTargetUpdatedAt(a))
+    const threads = prioritizeDelegationTargetHints([...threadTaskCardVisibleTargetThreads()])
       .slice(0, 80);
     const lines = [];
     for (const thread of threads) {
@@ -7627,6 +7631,14 @@ function workspaceDelegationDynamicToolSpec() {
           type: "string",
           enum: REASONING_EFFORT_OPTIONS,
           description: "Optional target turn reasoning effort for this injected task card, for example xhigh for deep audits.",
+        },
+        cardKind: {
+          type: "string",
+          description: "Optional bounded task-card kind, for example plugin_deployment for routine plugin deploy cards.",
+        },
+        category: {
+          type: "string",
+          description: "Optional bounded task-card category.",
         },
         requestId: {
           type: "string",
@@ -10528,7 +10540,7 @@ function rowToFallbackThread(row) {
     mobileFallback: true,
   };
   if (activeTurnId && isThreadListLiveStatus(status)) summary.activeTurnId = activeTurnId;
-  return attachThreadTaskCardCountsToSummary(annotateThreadRolloutStats(summary));
+  return attachThreadTaskCardCountsToSummary(annotateThreadRolloutStats(normalizeHomeAiDeployLaneSummary(summary)));
 }
 
 function sqlString(value) {
@@ -12340,7 +12352,7 @@ function applyLocalActiveThreadStatusToResult(result, options = {}) {
 }
 
 function normalizeThreadSummaryLiveStatus(thread, options = {}) {
-  return applyLocalActiveThreadStatusToSummary(normalizeStaleContextOnlyActiveThread(thread), options);
+  return normalizeHomeAiDeployLaneSummary(applyLocalActiveThreadStatusToSummary(normalizeStaleContextOnlyActiveThread(thread), options));
 }
 
 function readStateDbThread(threadId) {
@@ -12753,6 +12765,66 @@ function readThreadTaskCardTargetSummary(threadId, options = {}) {
   return readStateDbThread(threadId) || readStartedThread(threadId) || readRolloutSessionFallbackThread(threadId);
 }
 
+function taskCardPayloadTargetThreads(targetThreadIds = [], readThreadSummary = readThreadTaskCardTargetSummary) {
+  return (Array.isArray(targetThreadIds) ? targetThreadIds : [])
+    .map((threadId) => {
+      const id = String(threadId || "").trim();
+      if (!id) return null;
+      return readThreadSummary(id) || { id };
+    })
+    .filter(Boolean);
+}
+
+function applyHomeAiDeployLaneRoutingPolicy(payload = {}, sourceSummary = null, options = {}) {
+  const readThreadSummary = typeof options.readThreadSummary === "function"
+    ? options.readThreadSummary
+    : readThreadTaskCardTargetSummary;
+  const sourceThread = Object.assign({}, sourceSummary || {}, {
+    cwd: (sourceSummary && sourceSummary.cwd)
+      || payload.sourceWorkspaceId
+      || payload.sourceWorkspace
+      || "",
+  });
+  const targetThreadIds = uniqueThreadTaskCardTargetIds(payload.targetThreadIds, payload.targetThreadId);
+  const targetThreads = taskCardPayloadTargetThreads(targetThreadIds, readThreadSummary);
+  const plan = planHomeAiDeployLaneRouting({
+    body: payload,
+    sourceThread,
+    targetThreads,
+    visibleThreads: threadTaskCardVisibleTargetThreads(),
+  });
+  if (plan.action === "reject") {
+    throw threadTaskCardTargetError(
+      plan.code || "deploy_lane_required",
+      plan.message || "Routine plugin deployment cards must target the Home AI Deploy lane.",
+      {
+        reason: plan.reason || "deploy_lane_required",
+        sourceThreadId: payload.sourceThreadId || "",
+        targetThreadIds,
+        deployLane: plan.deployLane ? publicThreadTaskCardTarget(plan.deployLane) : undefined,
+      },
+      409,
+    );
+  }
+  if (plan.action !== "retarget") return payload;
+  const nextTargetThreadIds = uniqueThreadTaskCardTargetIds(plan.targetThreadIds);
+  const targetWorkspaceIds = Object.assign({}, payload.targetWorkspaceIds && typeof payload.targetWorkspaceIds === "object" ? payload.targetWorkspaceIds : {});
+  const deployLaneCwd = plan.deployLane && plan.deployLane.cwd || "";
+  for (const id of nextTargetThreadIds) {
+    if (id && !targetWorkspaceIds[id]) targetWorkspaceIds[id] = deployLaneCwd || payload.targetWorkspaceId || payload.targetWorkspace || "";
+  }
+  return Object.assign({}, payload, {
+    targetThreadId: nextTargetThreadIds[0] || payload.targetThreadId,
+    targetThreadIds: nextTargetThreadIds,
+    targetWorkspaceIds,
+    mobileDeployLaneRouting: {
+      reason: plan.reason,
+      targetThreadId: plan.deployLane && plan.deployLane.id || "",
+      targetThreadTitle: plan.deployLane ? threadDisplayTitle(plan.deployLane) : "",
+    },
+  });
+}
+
 function assertThreadTaskCardTargetDeliverable(thread, details = {}, options = {}) {
   return threadTaskCardRoutingService.assertTargetDeliverable(thread, details, options);
 }
@@ -12792,7 +12864,7 @@ function buildThreadTaskCardCreatePayload(body = {}, sourceThreadId = "", option
   const sourceSummary = hydrateThreadTitleFromSessionIndex(
     readThreadSummary(sourceId) || (sourceId ? { id: sourceId } : null),
   );
-  const targetThreadIds = resolvedThreadTaskCardTargetIds(body, sourceId, options);
+  let targetThreadIds = resolvedThreadTaskCardTargetIds(body, sourceId, options);
   if (!targetThreadIds.length) {
     throw threadTaskCardTargetError(
       "target_thread_required",
@@ -12801,7 +12873,14 @@ function buildThreadTaskCardCreatePayload(body = {}, sourceThreadId = "", option
       400,
     );
   }
+  const routingPayload = applyHomeAiDeployLaneRoutingPolicy(Object.assign({}, body, {
+    sourceThreadId: sourceId,
+    sourceWorkspaceId: body.sourceWorkspaceId || body.sourceWorkspace || (sourceSummary && sourceSummary.cwd) || "",
+    targetThreadIds,
+  }), sourceSummary, { readThreadSummary });
+  targetThreadIds = uniqueThreadTaskCardTargetIds(routingPayload.targetThreadIds, routingPayload.targetThreadId);
   const targetWorkspaceIds = Object.assign({}, body.targetWorkspaceIds && typeof body.targetWorkspaceIds === "object" ? body.targetWorkspaceIds : {});
+  Object.assign(targetWorkspaceIds, routingPayload.targetWorkspaceIds && typeof routingPayload.targetWorkspaceIds === "object" ? routingPayload.targetWorkspaceIds : {});
   for (const targetThreadId of targetThreadIds) {
     if (!targetThreadId || targetWorkspaceIds[targetThreadId]) continue;
     const targetSummary = readThreadSummary(targetThreadId);
@@ -12826,6 +12905,7 @@ function buildThreadTaskCardCreatePayload(body = {}, sourceThreadId = "", option
     summary: body.summary || summarizeTaskCardText(cardBody),
     body: cardBody,
     reasoningEffort,
+    mobileDeployLaneRouting: routingPayload.mobileDeployLaneRouting,
   });
 }
 
@@ -15073,17 +15153,25 @@ async function handleApi(req, res) {
       const requestedTargetIds = Array.isArray(body.targetThreadIds) && body.targetThreadIds.length
         ? body.targetThreadIds
         : [body.targetThreadId];
-      const targetWorkspaceIds = Object.assign({}, body.targetWorkspaceIds && typeof body.targetWorkspaceIds === "object" ? body.targetWorkspaceIds : {});
-      for (const targetThreadId of requestedTargetIds) {
+      const routedBody = applyHomeAiDeployLaneRoutingPolicy(Object.assign({}, body, {
+        sourceWorkspaceId: body.sourceWorkspaceId || body.sourceWorkspace || (sourceSummary && sourceSummary.cwd) || "",
+        targetThreadIds: requestedTargetIds,
+      }), sourceSummary);
+      const routedTargetIds = Array.isArray(routedBody.targetThreadIds) && routedBody.targetThreadIds.length
+        ? routedBody.targetThreadIds
+        : [routedBody.targetThreadId];
+      const targetWorkspaceIds = Object.assign({}, routedBody.targetWorkspaceIds && typeof routedBody.targetWorkspaceIds === "object" ? routedBody.targetWorkspaceIds : {});
+      for (const targetThreadId of routedTargetIds) {
         const id = String(targetThreadId || "").trim();
         if (!id || targetWorkspaceIds[id]) continue;
         const targetSummary = readStateDbThread(id) || readStartedThread(id);
-        targetWorkspaceIds[id] = body.targetWorkspaceId || body.targetWorkspace || (targetSummary && targetSummary.cwd) || "";
+        targetWorkspaceIds[id] = routedBody.targetWorkspaceId || routedBody.targetWorkspace || (targetSummary && targetSummary.cwd) || "";
       }
-      const cards = await threadTaskCardService.createMany(Object.assign({}, body, {
-        sourceWorkspaceId: body.sourceWorkspaceId || body.sourceWorkspace || (sourceSummary && sourceSummary.cwd) || "",
+      const cards = await threadTaskCardService.createMany(Object.assign({}, routedBody, {
+        sourceWorkspaceId: routedBody.sourceWorkspaceId || routedBody.sourceWorkspace || (sourceSummary && sourceSummary.cwd) || "",
+        targetThreadIds: routedTargetIds,
         targetWorkspaceIds,
-        sourceThreadTitle: taskCardSourceThreadTitle(body.sourceThreadId, body.sourceThreadTitle, sourceSummary),
+        sourceThreadTitle: taskCardSourceThreadTitle(routedBody.sourceThreadId, routedBody.sourceThreadTitle, sourceSummary),
       }));
       sendJson(res, 200, {
         ok: true,

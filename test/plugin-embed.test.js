@@ -192,6 +192,23 @@ test("recognizes Hermes plugin back messages and internal URLs", () => {
   assert.equal(pluginEmbed.isInternalUrl("https://external.example.test/", "http://127.0.0.1:8787"), false);
 });
 
+test("builds bounded external-link messages only for browser-safe links", () => {
+  const message = pluginEmbed.externalLinkMessage({
+    href: "https://download.example.test/report.zip?sig=bounded",
+    source: "receipt-link",
+  });
+
+  assert.equal(message.type, "codex-mobile.plugin.external_link");
+  assert.equal(message.version, 1);
+  assert.equal(message.href, "https://download.example.test/report.zip?sig=bounded");
+  assert.equal(message.source, "receipt-link");
+  assert.equal(pluginEmbed.externalBrowserUrl("mailto:owner@example.test"), "mailto:owner@example.test");
+  assert.equal(pluginEmbed.externalBrowserUrl("/api/files/preview/content?path=/tmp/a.zip", "https://codex.example.test"), "");
+  assert.equal(pluginEmbed.externalBrowserUrl("file:///Users/xuxin/private.txt"), "");
+  assert.equal(pluginEmbed.externalBrowserUrl("javascript:alert(1)"), "");
+  assert.equal(pluginEmbed.externalLinkMessage({ href: "javascript:alert(1)" }), null);
+});
+
 test("builds bounded Hermes refresh-required messages without sensitive payloads", () => {
   const message = pluginEmbed.refreshRequiredMessage({
     reason: "auth_state_changed",

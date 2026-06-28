@@ -11,6 +11,7 @@
   const NAVIGATION_TYPE = "codex-mobile.plugin.navigation";
   const BACK_RESULT_TYPE = "codex-mobile.plugin.back_result";
   const REFRESH_REQUIRED_TYPE = "codex-mobile.plugin.refresh_required";
+  const EXTERNAL_LINK_TYPE = "codex-mobile.plugin.external_link";
   const BACK_TYPE = "hermes.plugin.back";
   const THEME_VALUES = new Set(["system", "dark", "light"]);
   const FONT_SIZE_VALUES = new Set(["small", "default", "large", "xlarge", "xxlarge"]);
@@ -327,6 +328,39 @@
     return message;
   }
 
+  function externalBrowserUrl(value, origin) {
+    const text = stringValue(value);
+    if (!text) return "";
+    if (!/^(https?:|mailto:)/i.test(text)) return "";
+    try {
+      const baseOrigin = origin || (root.location && root.location.origin) || "http://127.0.0.1";
+      const url = new URL(text, baseOrigin);
+      if (url.protocol === "http:" || url.protocol === "https:" || url.protocol === "mailto:") {
+        return url.toString();
+      }
+    } catch (_) {}
+    return "";
+  }
+
+  function externalLinkMessage(input = {}) {
+    const href = externalBrowserUrl(input.href || input.url || "", input.origin || "");
+    if (!href) return null;
+    return {
+      type: EXTERNAL_LINK_TYPE,
+      version: 1,
+      href: boundedString(href, 2000),
+      source: boundedString(input.source || "receipt-link", 80) || "receipt-link",
+    };
+  }
+
+  function postExternalLink(parentWindow, input = {}, options = {}) {
+    if (!parentWindow || parentWindow === root) return null;
+    const message = externalLinkMessage(input);
+    if (!message) return null;
+    parentWindow.postMessage(message, options.targetOrigin || "*");
+    return message;
+  }
+
   function isBackMessage(event) {
     const data = event && event.data;
     return Boolean(data && data.type === BACK_TYPE && data.version === 1);
@@ -347,12 +381,15 @@
   return {
     BACK_TYPE,
     BACK_RESULT_TYPE,
+    EXTERNAL_LINK_TYPE,
     REFRESH_REQUIRED_TYPE,
     NAVIGATION_TYPE,
     appearanceFromState,
     backResultMessage,
     canGoBack,
     detect,
+    externalBrowserUrl,
+    externalLinkMessage,
     findRouteHintTargetNode,
     isBackMessage,
     isInternalUrl,
@@ -360,6 +397,7 @@
     normalizeRouteHint,
     parentOriginFromReferrer,
     postBackResult,
+    postExternalLink,
     postRefreshRequired,
     postNavigation,
     refreshRequiredMessage,

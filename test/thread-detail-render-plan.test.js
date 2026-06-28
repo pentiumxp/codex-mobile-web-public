@@ -68,6 +68,50 @@ test("thread detail refresh request plan handles full mode and missing thread", 
   });
 });
 
+test("thread detail refresh request plan defers hidden and first-paint competing refreshes", () => {
+  assert.deepEqual(renderPlan.planThreadDetailRefreshRequest({
+    threadId: "thread-1",
+    threadLoadSeq: 9,
+    options: { source: "live-poll" },
+    documentHidden: true,
+  }), {
+    shouldRefresh: false,
+    threadId: "thread-1",
+    seq: 9,
+    source: "live-poll",
+    requestedMode: "",
+    query: {},
+    timeoutMs: 20000,
+    abortActiveRefresh: false,
+    reason: "document-hidden",
+  });
+
+  assert.deepEqual(renderPlan.planThreadDetailRefreshRequest({
+    threadId: "thread-1",
+    threadLoadSeq: 9,
+    options: { source: "resume" },
+    hasActiveThreadLoadController: true,
+  }), {
+    shouldRefresh: false,
+    threadId: "thread-1",
+    seq: 9,
+    source: "resume",
+    requestedMode: "",
+    query: {},
+    timeoutMs: 20000,
+    abortActiveRefresh: false,
+    reason: "thread-load-in-flight",
+  });
+
+  assert.equal(renderPlan.planThreadDetailRefreshRequest({
+    threadId: "thread-1",
+    threadLoadSeq: 9,
+    options: { source: "manual", force: true },
+    hasActiveThreadLoadController: true,
+    documentHidden: true,
+  }).shouldRefresh, true);
+});
+
 test("thread detail refresh response effects apply only to current thread sequence", () => {
   assert.deepEqual(renderPlan.planThreadDetailRefreshResponseEffects({
     threadId: "thread-1",

@@ -23,7 +23,7 @@ test("thread-list load policy uses warm fallback for first default list paint", 
   });
 });
 
-test("thread-list load policy keeps active-detail defer behavior", () => {
+test("thread-list load policy defers silent list loads while detail is in flight", () => {
   const plan = policy.planThreadListLoadRequest({
     silent: true,
     selectedCwd: "",
@@ -32,6 +32,9 @@ test("thread-list load policy keeps active-detail defer behavior", () => {
     threadListLoadedAtMs: 1000,
   });
 
+  assert.equal(plan.shouldLoad, false);
+  assert.equal(plan.skipReason, "detail-in-flight");
+  assert.equal(plan.retryDelayMs, 700);
   assert.equal(plan.shouldDeferFallback, true);
   assert.equal(plan.shouldUseWarmFallbackInitial, true);
   assert.deepEqual(plan.params, {
@@ -55,4 +58,32 @@ test("thread-list load policy does not warm fallback for search, workspace, or e
     deferFallback: false,
     threadListLoadedAtMs: 0,
   }).params.initial, "");
+});
+
+test("thread-list load policy skips hidden silent refreshes", () => {
+  const plan = policy.planThreadListLoadRequest({
+    silent: true,
+    documentHidden: true,
+    threadListLoadedAtMs: 1000,
+  });
+
+  assert.equal(plan.shouldLoad, false);
+  assert.equal(plan.skipReason, "hidden-silent");
+  assert.equal(plan.retryDelayMs, 0);
+});
+
+test("thread-list load policy allows explicit foreground or detail-safe loads", () => {
+  assert.equal(policy.planThreadListLoadRequest({
+    silent: true,
+    threadDetailOpening: true,
+    allowDuringDetail: true,
+    threadListLoadedAtMs: 1000,
+  }).shouldLoad, true);
+
+  assert.equal(policy.planThreadListLoadRequest({
+    silent: true,
+    documentHidden: true,
+    allowHidden: true,
+    threadListLoadedAtMs: 1000,
+  }).shouldLoad, true);
 });
