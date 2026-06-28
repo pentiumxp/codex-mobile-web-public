@@ -26731,3 +26731,61 @@ The previous full handoff was archived and should be opened only when old proven
     `renderItemTimestampHtml(item, turn, contextThread)` and the
     `item-head-actions` timestamp slot.
   - Public must remain unchanged unless the user explicitly asks for Public.
+
+## 2026-06-28 - Projected Usage And Completed Replay Reasoning Fix
+
+- User-visible incident:
+  - In the `Movie` thread after re-entry, the latest completed turn showed no
+    `Usage` row and scrolling upward exposed `Reasoning` rows. The desired
+    completed-turn replay is user-facing intermediate assistant receipts, not
+    model reasoning/internal process rows.
+- Root cause / invariant:
+  - Response-ready v4 projection hits intentionally skipped
+    `compactThreadReadResult()` to avoid re-running raw compaction. That also
+    skipped the dynamic rollout Usage decoration in `compactThread()`, so a
+    projection cache could return completed turns without `turnUsageSummary`
+    even when scoped rollout `token_count` data existed.
+  - `thread-detail-response-budget-service` treated the newest completed replay
+    turn as `replay` for reasoning as well as assistant progress, so completed
+    turns inherited the active reasoning budget. Completed replay should retain
+    bounded assistant/plan progress but keep reasoning on the completed budget.
+- Implementation:
+  - `adapters/thread-detail-projection-result-service.js` now supports a
+    `decorateThreadReadResult` hook. `server.js` uses it to attach rollout
+    Usage summaries to projection-result detail responses before final
+    visible-key normalization and response budgeting.
+  - `adapters/thread-detail-response-budget-service.js` now applies the active
+    reasoning budget only to the active turn. Latest completed replay keeps the
+    active/replay assistant budget but uses completed reasoning limits.
+  - `docs/MODULES.md` and `docs/TROUBLESHOOTING.md` record the projection
+    Usage decoration and completed replay reasoning boundary.
+- Validation:
+  - Focused: `node --test test/thread-detail-projection-result-service.test.js
+    test/thread-detail-response-budget-service.test.js
+    test/turn-usage-summary-service.test.js` (`54` tests).
+  - Related detail/render/projection: `node --test
+    test/thread-detail-projection-result-service.test.js
+    test/thread-detail-response-budget-service.test.js
+    test/turn-usage-summary-service.test.js
+    test/thread-detail-projection-v4-service.test.js
+    test/thread-detail-read-orchestration-service.test.js
+    test/thread-visibility.test.js test/conversation-render.test.js
+    test/message-timestamp.test.js` (`283` tests).
+  - Full/local: `npm test` (`1415` tests), `npm run check`,
+    `npm run check:macos`, and `git diff --check` passed.
+- Deployment status:
+  - Commit `6c05f5d` deployed through the Home AI central macOS plugin deploy
+    path with reason `codex-mobile-projected-usage-completed-replay`.
+  - Production `/api/public-config` reported
+    `clientBuildId=0.1.11|codex-mobile-shell-v567` and
+    `shellCacheName=codex-mobile-shell-v567`; this was expected because no
+    static frontend files changed.
+  - Production Movie metadata readback returned
+    `mobileReadMode=projection-v4-dynamic`, latest completed turn item counts:
+    `agentMessage=8`, `turnUsageSummary=1`, `reasoning=0`; Usage timestamp was
+    present and bounded response-budget evidence reported
+    `latestCompletedReplayReasoningItems=0`.
+  - Source/production SHA parity was confirmed for changed runtime, test, and
+    docs files. Phase-B readback smoke returned `ok:true` for the Movie thread.
+  - Public was not pushed and must remain unchanged unless the user explicitly
+    asks for Public.
