@@ -25647,13 +25647,33 @@ The previous full handoff was archived and should be opened only when old proven
   - Updated docs: `docs/README.md`, `docs/ARCHITECTURE.md`,
     `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, `docs/MODULES.md`, and
     `docs/TROUBLESHOOTING.md`.
-- Local validation so far:
+- Local validation:
   - Focused coalescer/read-orchestration/prewarm/Phase-B/performance suite
     passed (`79` tests).
   - `npm run check` passed.
+  - `npm run check:macos` passed.
   - `git diff --check` passed.
+  - Full `npm test` passed (`1394` tests).
 - Deployment status:
-  - Not committed or deployed yet at the time of this note. Next step is full
-    `npm test`, `npm run check:macos`, commit, central macOS plugin deploy, and
-    production readback. Static shell/cache bump is not expected because this is
-    server-only.
+  - Committed as `15fe6a6` (`fix: coalesce thread detail turns-list reads`).
+  - Deployed through the central Home AI macOS plugin deploy path with reason
+    `codex-mobile-turns-list-read-coalescing`.
+  - Production `/api/public-config` readback remained
+    `clientBuildId=0.1.11|codex-mobile-shell-v558` and
+    `shellCacheName=codex-mobile-shell-v558`, as expected for a server-only
+    module.
+  - Source/production hash parity was confirmed for `server.js`,
+    `package.json`, `adapters/thread-detail-turns-list-read-coalescer-service.js`,
+    and the updated docs.
+  - Production markers confirmed `createThreadDetailTurnsListReadCoalescer`,
+    `turns-list-initial`, `turns-list-large`, `cloneJson`, and
+    `turns_list_coalesced`; the old
+    `thread-detail-active-window-read-coalescer-service.js` file is absent from
+    production.
+  - Readback smoke after deploy:
+    - Codex Mobile thread `019eee6c-a6f5-7b20-bfb4-f96ccb6431b3`:
+      `projection-v4-partial`, warm path, `44ms`, `threadReadMs=0`,
+      `turnsListInitialMs=0`.
+    - Home AI thread `019eed86-2002-7cc2-b0b7-937eb5355f36`:
+      `projection-v4-dynamic`, warm path, `60ms`, `threadReadMs=0`,
+      `turnsListInitialMs=0`.
