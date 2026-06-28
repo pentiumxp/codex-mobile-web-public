@@ -519,6 +519,7 @@ const threadDetailStatePolicy = threadDetailStateApi.createThreadDetailStatePoli
 });
 const threadListSummaryFromDetailThread = threadDetailStateApi.threadListSummaryFromDetailThread;
 const planThreadOpenCacheReuse = threadDetailStateApi.planThreadOpenCacheReuse;
+const threadHasReusableLoadedDetailState = threadDetailStateApi.threadHasReusableLoadedDetailState;
 
 function setAuthKey(value) {
   const next = String(value || "");
@@ -541,7 +542,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v574";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v575";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -6016,6 +6017,13 @@ function mergeThreadPreservingVisibleItems(existingThread, incomingThread) {
   });
 }
 
+function rememberReusableThreadDetail(thread) {
+  const id = String(thread && thread.id || "").trim();
+  if (!id || !state.threadTileDetails || !threadHasReusableLoadedDetailState(thread)) return false;
+  state.threadTileDetails.set(id, thread);
+  return true;
+}
+
 function turnOrderMs(turn) {
   if (!turn) return 0;
   return numericTimestampMs(turn.startedAtMs)
@@ -9372,7 +9380,15 @@ async function loadThread(threadId, options = {}) {
   clearTimeout(state.pollTimer);
   markThreadViewed(threadId);
   const summary = state.threads.find((thread) => thread.id === threadId);
-  const loadingShellPlan = threadDetailStateApi.planThreadOpenLoadingShell({ threadId, summaryThread: summary });
+  const cachedThread = state.threadTileDetails && state.threadTileDetails.get(threadId);
+  const cachedDetailOpenPlan = planThreadOpenCacheReuse({
+    requestedThreadId: threadId,
+    currentThreadId: threadId,
+    currentThread: cachedThread,
+  });
+  const loadingShellPlan = cachedDetailOpenPlan.shouldUseCachedCurrent
+    ? { currentThreadId: threadId, thread: cachedThread, reason: "cached-detail-first-paint" }
+    : threadDetailStateApi.planThreadOpenLoadingShell({ threadId, summaryThread: summary });
   state.currentThreadId = loadingShellPlan.currentThreadId || threadId;
   state.startupThreadOpenPending = false;
   state.currentThread = loadingShellPlan.thread || {
@@ -9383,11 +9399,37 @@ async function loadThread(threadId, options = {}) {
     mobileLoading: true,
     mobileLoadError: "",
   };
-  const loadingShellPostStatePlan = threadDetailRenderPlanApi.planThreadDetailLoadingShellPostStateEffects({
-    threadId,
-    source,
-  });
-  applyThreadDetailPostRenderEffectsPlan(loadingShellPostStatePlan, { thread: state.currentThread });
+  if (cachedDetailOpenPlan.shouldUseCachedCurrent) {
+    const cachedPreRenderPlan = threadDetailRenderPlanApi.planThreadDetailFirstPaintPreRenderEffects({
+      threadId,
+      hasEvents: Boolean(state.events),
+    });
+    applyThreadDetailPostRenderEffectsPlan(cachedPreRenderPlan, { thread: state.currentThread });
+    const cachedDraftRestorePlan = threadDetailRenderPlanApi.planThreadDetailFirstPaintDraftRestoreEffects();
+    applyThreadDetailPostRenderEffectsPlan(cachedDraftRestorePlan, { thread: state.currentThread });
+    syncActiveTurnFromThread();
+    renderThreads();
+    renderCurrentThread({ stickToBottom: true });
+    const cachedCurrentPostRenderPlan = threadDetailRenderPlanApi.planThreadDetailCachedCurrentPostRenderEffects({
+      threadId,
+      seq,
+      source: "cached-detail-first-paint",
+      replacedTilePane: replacedTilePaneForThreadListOpen,
+      hasSideChat: state.threadSideChats.has(threadId),
+    });
+    applyThreadDetailPostRenderEffectsPlan(cachedCurrentPostRenderPlan, { thread: state.currentThread });
+    updateComposerControls();
+    publishPluginNavigationState({ force: true });
+    $("connectionState").classList.remove("error");
+    $("connectionState").textContent = "Refreshing thread";
+    markActivity("刷新线程");
+  } else {
+    const loadingShellPostStatePlan = threadDetailRenderPlanApi.planThreadDetailLoadingShellPostStateEffects({
+      threadId,
+      source,
+    });
+    applyThreadDetailPostRenderEffectsPlan(loadingShellPostStatePlan, { thread: state.currentThread });
+  }
   let result;
   const apiStartedAt = nowPerfMs();
   try {
@@ -9896,6 +9938,7 @@ function applyThreadDetailRefreshResponseEffect(effect, context = {}) {
   }
   if (type === "merge-current-thread") {
     state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, thread);
+    rememberReusableThreadDetail(state.currentThread);
     return true;
   }
   throw new Error(`Unknown thread detail refresh response effect: ${type || "empty"}`);

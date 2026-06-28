@@ -186,6 +186,17 @@ volatile fields remain in the bounded report payload as evidence, but they no
 longer prevent repeated cold peaks from reaching the Home AI Owner-gated
 diagnostic loop.
 
+The browser-runtime self-check slice closes the gap between clean API
+projection checks and user-visible DOM failures. `scripts/codex-mobile-browser-runtime-self-check.js`
+opens a temporary Chrome profile against the real shell, samples bounded
+`#conversation` metadata, and detects sparse-after-nonempty thread detail
+regressions, duplicate DOM keys, runtime exceptions, and console errors without
+printing private thread titles, message text, task-card bodies, uploads, query
+strings, cookies, tokens, screenshots, or logs. Clients after
+`codex-mobile-shell-v575` also paint a reusable cached thread detail before the
+background refresh when reopening an already-loaded thread, preventing the
+empty/loading shell from replacing valid visible content during refresh.
+
 The active-window coalescing slice targets the "long spinner, then eventual
 success" shape seen on active large sessions. That shape is not a network/RPC
 timeout: the request completes after synchronously building

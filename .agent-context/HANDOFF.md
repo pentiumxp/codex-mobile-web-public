@@ -28234,3 +28234,44 @@ The previous full handoff was archived and should be opened only when old proven
   - Production thread self-check repeated two samples across three recent
     threads with `issueCount=0`, `blockingIssueCount=0`, and
     `diagnosticCandidateCount=0`.
+
+### 2026-06-29 - Browser Runtime Self-Check And Cached Detail First Paint
+
+- Incident:
+  - User reported that single-thread detail views could still flicker or
+    temporarily lose visible messages even when server/API self-checks were
+    clean. This included reopening a thread and seeing an empty/sparse detail
+    before the correct content returned.
+- Root cause / invariant:
+  - Server detail projection could be stable while the browser first-paint path
+    replaced a previously loaded thread detail with a loading/empty shell during
+    refresh. API-only self-checks cannot detect that DOM-layer regression.
+  - Invariant: after a target thread has displayed confirmed nonempty content,
+    reopening or refreshing that thread must not downgrade the visible
+    conversation DOM to a sparse/empty shell while waiting for the next API
+    response.
+- Implementation:
+  - Added `adapters/browser-runtime-self-check-service.js` plus
+    `scripts/codex-mobile-browser-runtime-self-check.js`.
+  - The script opens a temporary Chrome profile against the real shell, samples
+    bounded `#conversation` DOM metadata, and detects:
+    `browser_dom_sparse_after_nonempty`, duplicate DOM render/item keys,
+    app/login visibility failures, runtime exceptions, console errors, and
+    bounded route/status counts.
+  - The script reports only hashes, counts, route/status families, delays, and
+    issue codes. It does not output thread titles, message text, task-card
+    bodies, uploads, query strings, cookies, access keys, tokens, screenshots,
+    or logs.
+  - `public/app.js` now stores reusable loaded detail states in
+    `state.threadTileDetails`; `loadThread()` paints that cached detail first
+    for an already-loaded thread and refreshes in the background instead of
+    replacing the conversation with a loading/empty shell.
+  - Static shell/cache bumped to `codex-mobile-shell-v575`.
+- Validation so far:
+  - Before the fix, browser runtime self-check against production v574
+    reproduced `browser_dom_sparse_after_nonempty` for a sampled thread.
+  - Local source server on `127.0.0.1:8790` with the fix returned `ok:true`,
+    `issueCount=0`, `blockingIssueCount=0` across 18 browser samples.
+  - Focused browser/runtime/render tests and `npm run check` passed locally
+    before this handoff update. Final deploy/readback still pending in the
+    current turn.

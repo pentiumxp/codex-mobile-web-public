@@ -2267,11 +2267,17 @@ test("loading and thread-list state preserve locally visible live turns", () => 
   assert.match(appJs, /function threadIsLoadingWithoutVisibleTurns\(/);
   assert.match(functionBody("conversationRenderSignature"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) return `loading\\|/);
   assert.match(functionBody("conversationRootSignature"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) return `loading\\|/);
-  assert.match(functionBody("loadThread"), /const loadingShellPlan = threadDetailStateApi\.planThreadOpenLoadingShell\(\{ threadId, summaryThread: summary \}\);/);
+  assert.match(functionBody("loadThread"), /const cachedThread = state\.threadTileDetails && state\.threadTileDetails\.get\(threadId\);/);
+  assert.match(functionBody("loadThread"), /const cachedDetailOpenPlan = planThreadOpenCacheReuse\(\{[\s\S]*requestedThreadId: threadId,[\s\S]*currentThreadId: threadId,[\s\S]*currentThread: cachedThread,[\s\S]*\}\);/);
+  assert.match(functionBody("loadThread"), /const loadingShellPlan = cachedDetailOpenPlan\.shouldUseCachedCurrent[\s\S]*\? \{ currentThreadId: threadId, thread: cachedThread, reason: "cached-detail-first-paint" \}[\s\S]*: threadDetailStateApi\.planThreadOpenLoadingShell\(\{ threadId, summaryThread: summary \}\);/);
   assert.match(functionBody("loadThread"), /state\.currentThreadId = loadingShellPlan\.currentThreadId \|\| threadId;/);
   assert.match(functionBody("loadThread"), /state\.currentThread = loadingShellPlan\.thread \|\| \{[\s\S]*id: threadId,[\s\S]*name: threadId,[\s\S]*preview: threadId,[\s\S]*turns: \[\],[\s\S]*mobileLoading: true,[\s\S]*mobileLoadError: "",[\s\S]*\};/);
   assert.match(functionBody("loadThread"), /const loadingShellPostStatePlan = threadDetailRenderPlanApi\.planThreadDetailLoadingShellPostStateEffects\(\{[\s\S]*threadId,[\s\S]*source,[\s\S]*\}\);/);
   assert.match(functionBody("loadThread"), /applyThreadDetailPostRenderEffectsPlan\(loadingShellPostStatePlan, \{ thread: state\.currentThread \}\);/);
+  assert.match(functionBody("loadThread"), /if \(cachedDetailOpenPlan\.shouldUseCachedCurrent\) \{/);
+  assert.match(functionBody("loadThread"), /source: "cached-detail-first-paint"/);
+  assert.match(functionBody("loadThread"), /renderCurrentThread\(\{ stickToBottom: true \}\);/);
+  assert.match(functionBody("applyThreadDetailRefreshResponseEffect"), /rememberReusableThreadDetail\(state\.currentThread\)/);
   assert.doesNotMatch(functionBody("loadThread"), /followThreadOpenToBottom\(threadId\);\s*\n\s*restoreDraftForCurrentTarget\(\);\s*\n\s*renderComposerSettings\(\);\s*\n\s*syncActiveTurnFromThread\(\);\s*\n\s*renderThreads\(\);\s*\n\s*renderCurrentThread\(\{ stickToBottom: true \}\);/);
   assert.doesNotMatch(functionBody("loadThread"), /Object\.assign\(\{\}, threadListSummaryFromDetailThread\(summary\) \|\| summary/);
   assert.match(functionBody("loadThread"), /const cacheReusePlan = planThreadOpenCacheReuse\(\{/);

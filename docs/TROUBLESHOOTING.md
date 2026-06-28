@@ -44,6 +44,7 @@ Interpretation:
 | Active large thread still uses full `thread/read` | Inspect `thread_detail_first_paint.serverTimings.activeFullReadRequired`, `activeFullReadReason`, `activeOverlayAction`, and `activeOverlayReason`. `overlay-provider-unavailable` means the safe orchestration seam is present but no authoritative provider is wired yet. Other `require-full-read` reasons such as `assistant-delta-unknown`, `receipt-evidence-unknown`, `active-turn-mismatch`, or `non-authoritative-overlay-source` are intentional fail-closed outcomes and should not be bypassed with a client refresh or UI dedupe layer. |
 | Running-thread indicator disappears | `/api/threads` row `status` and `rolloutSizeUpdatedAtMs`, rollout tail `task_started` / `task_complete`, `runningThreadIds`, stale browser shell |
 | Thread detail shakes during streaming output | Client shell version v317+, `/api/client-events` `conversation_render_ms`, `thread_refresh_ms.skippedDetailRender`, `thread_refresh_ms.locallyPatchedDetail`, compact Command dock height, stale PWA shell |
+| Thread detail reopens and temporarily loses already-visible messages | First run API self-check, then browser-runtime self-check. If `/api/threads/:id?mode=recent` is stable but Chrome samples report `browser_dom_sparse_after_nonempty`, the failing layer is client first-paint/DOM state rather than server projection. |
 | Listener/app-server update interrupts a running turn | Browser shell `codex-mobile-shell-v280+`, `/api/status.ready` recovery, bounded `auto_turn_recovery_result` client event, `/api/threads/:id/auto-recover` route |
 | macOS shows frequent `重连` or refresh prompts | 8787 listener PID, loopback and LAN `/api/public-config`, `/api/events` keepalive, `mobile-web.log` `EADDRINUSE`, stale `launchctl submit` labels |
 | Hermes host says plugin workspace access key file is missing | Host `com.hermesmobile.listener` env `HERMES_MOBILE_CODEX_PLUGIN_ACCESS_KEY_PATH`, readable key file under Hermes secrets, plugin manifest `tokenStatus` |
@@ -751,6 +752,25 @@ Cause to check:
   final sample recovers. It intentionally checks the Usage tool item exists but
   does not require a separate Usage title/timestamp, because the visible time
   belongs to the adjacent final assistant receipt.
+- If the API self-check is clean but the real client still flickers, clears a
+  thread detail to `No visible turns.`, shows duplicate DOM items, or loses a
+  just-visible thread after reopening, run the browser-runtime check:
+  `node scripts/codex-mobile-browser-runtime-self-check.js --server http://127.0.0.1:8787 --sample-threads 3 --rounds 2 --sample-delays-ms 350,1200,2800 --json`.
+  The script drives a temporary Chrome profile through the real UI and samples
+  only bounded `#conversation` metadata. `browser_dom_sparse_after_nonempty`
+  means the browser had already shown confirmed nonempty content for that
+  target thread, then rendered a sparse/empty shell; this should be fixed at
+  the client state/first-paint boundary instead of hidden with UI dedupe. It
+  also reports duplicate render/item keys, login/app visibility failures,
+  runtime exceptions, console errors, and route/status counts without printing
+  thread titles, message text, task-card bodies, uploads, query strings,
+  cookies, access keys, tokens, screenshots, or logs.
+- Clients after `codex-mobile-shell-v575` keep a reusable in-memory thread
+  detail snapshot in `state.threadTileDetails`. When reopening a thread that
+  already has loaded detail state, `loadThread()` paints that cached detail
+  first and refreshes in the background, rather than replacing the conversation
+  with a loading/empty shell. If this regresses, check the
+  `cached-detail-first-paint` branch before adding render-layer filtering.
 - Thread detail should first use app-server `thread/read` even when the rollout
   file is over 32MB, because `thread/turns/list` does not reliably preserve the
   command/tool/file/search operation items expected in Mobile detail. If detail
