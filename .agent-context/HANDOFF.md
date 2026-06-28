@@ -26487,3 +26487,52 @@ The previous full handoff was archived and should be opened only when old proven
   - Authenticated metadata-only thread-list check showed Movie visible in All as
     `active` with a current `updatedAt` and active turn id.
   - Public was not pushed; keep Public unchanged unless the user explicitly asks.
+
+## 2026-06-28 - Process Item Timestamp Labels v565
+
+- User-visible incident:
+  - After re-entering a thread, user messages and final assistant/Usage receipt
+    rows still showed time labels, but retained latest-turn intermediate
+    process rows such as command/tool/reasoning cards could lose their compact
+    timestamp labels. Newly emitted live process rows could still show labels
+    because the browser assigned `Date.now()` during local live merge.
+- Root cause / invariant:
+  - The timestamp renderer still existed; this was not a performance-driven UI
+    removal.
+  - Reloaded active/projection operational items often carry no item-level
+    `startedAtMs`/`completedAtMs`. `itemTimestampMs()` explicitly returned no
+    timestamp for live operational rows without item-level time to avoid
+    pretending to have precise item start times. After latest-completed replay
+    started retaining intermediate process rows, that protection became too
+    strict for the user-visible "rough time for comparison" requirement.
+- Implementation:
+  - Live operational rows without item-level time now display the containing
+    turn start time as a bounded approximate label.
+  - `turnStartedAtMs()` can derive a stable O(1) fallback from UUIDv7 turn ids
+    when explicit turn timestamp fields are missing.
+  - Completed UUIDv7 turns no longer smear the thread's latest `updatedAt` onto
+    historical assistant rows when the turn itself has no own completion/update
+    timestamp.
+  - Static shell advanced from `codex-mobile-shell-v564` to
+    `codex-mobile-shell-v565`.
+- Validation:
+  - `node --test test/message-timestamp.test.js`
+  - `node --test test/message-timestamp.test.js test/conversation-render.test.js test/thread-item-timestamp-enrichment.test.js`
+    (`163` tests)
+  - `npm test` (`1410` tests), `npm run check`, `npm run check:macos`,
+    `git diff --check`, and `node --check` for changed static/test files all
+    passed.
+- Deployment status:
+  - Deployed commit `29153fc` through the Home AI central macOS plugin deploy
+    path with reason `codex-mobile-process-item-timestamps-v565`.
+  - Production `/api/public-config` reported
+    `clientBuildId=0.1.11|codex-mobile-shell-v565` and
+    `shellCacheName=codex-mobile-shell-v565`.
+  - Phase-B readback smoke returned `ok:true`, warm active-overlay detail, and
+    mux metrics supported.
+  - Source/production SHA parity was confirmed for `public/app.js`,
+    `public/sw.js`, and `test/message-timestamp.test.js`.
+  - Metadata-only detail verification showed the current active turn had
+    `middle=7`, `explicitMiddleTimes=0`, and `computedMiddleTimes=7` after the
+    new turn-start fallback.
+  - Public was not pushed; keep Public unchanged unless the user explicitly asks.
