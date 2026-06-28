@@ -25552,3 +25552,42 @@ The previous full handoff was archived and should be opened only when old proven
   - Not deployed yet at the time of this note. Next step is commit, central
     macOS plugin deploy, and production readback confirming v557 shell plus
     normal warm list/detail timings.
+
+## 2026-06-28 - Active Detail Visible Budget Notice Module
+
+- User-visible symptom / remaining module gap:
+  - Server-side active detail response budgeting could intentionally omit older
+    operation/reasoning visible rows under first-paint pressure, but the browser
+    did not explicitly render that budget state. To users and diagnostics, this
+    could look like missing messages rather than an intentional server response
+    budget.
+- Root-cause boundary:
+  - Budget policy remains owned by `adapters/thread-detail-response-budget-service.js`.
+  - Browser rendering must treat `mobileVisibleItemBudget` /
+    `mobileOmittedVisibleItemCount` as bounded response-budget evidence, not as
+    an untracked DOM fallback.
+- Implementation:
+  - `public/app.js` now derives a bounded `visibleItemBudget` signature per turn
+    for `conversationRenderSignature()`.
+  - Single-thread and tiled-pane turn renderers show a compact
+    `.turn-visible-budget-note` when per-turn visible items were omitted for
+    first paint.
+  - The note has a stable `data-render-key` and `data-visible-item-budget`, but
+    intentionally does not have `data-item`, so projection diagnostics can
+    distinguish server-budgeted omitted rows from client-side lost item DOM.
+  - Static shell/cache bumped to `codex-mobile-shell-v558`.
+  - Updated docs: `docs/README.md`, `docs/MODULES.md`,
+    `docs/TROUBLESHOOTING.md`, and `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Local validation:
+  - `node --check public/app.js && node --check public/sw.js` passed.
+  - Focused conversation/static tests passed (`165` tests).
+  - Focused response-budget/render-plan/DOM/diagnostic suite passed (`263`
+    tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - Full `npm test` passed (`1395` tests).
+- Deployment status:
+  - Not deployed at the time of this note. Next step is commit, central macOS
+    plugin deploy, and production readback confirming v558 shell/cache plus
+    normal warm list/detail timings.

@@ -1477,6 +1477,8 @@ function evaluatedInTurnApprovalRenderer() {
     "approvalStatusLabel",
     "isApprovalSettled",
     "renderApprovalRequest",
+    "visibleItemBudgetForTurn",
+    "renderTurnVisibleItemBudgetNotice",
     "renderTurn",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
@@ -1543,6 +1545,9 @@ function evaluatedThreadTileApprovalRenderer() {
     "approvalStatusLabel",
     "renderApprovalRequest",
     "renderPendingApprovals",
+    "stableTurnKey",
+    "visibleItemBudgetForTurn",
+    "renderTurnVisibleItemBudgetNotice",
     "renderThreadTileTurn",
     "renderThreadTilePane",
   ].map((name) => functionSourceFrom(appJs, name));
@@ -1642,7 +1647,13 @@ test("context compaction notices update status and collapse repeated turn notice
   assert.match(functionBody("visibleItemSignature"), /if \(!notice\) return null/);
   assert.match(functionBody("visibleItemSignature"), /mobileCompactionStatus: item\.mobileCompactionStatus/);
   assert.match(functionBody("visibleItemSignature"), /notice,/);
+  assert.match(appJs, /function visibleItemBudgetForTurn\(/);
+  assert.match(appJs, /function renderTurnVisibleItemBudgetNotice\(/);
+  assert.match(stylesCss, /\.turn-visible-budget-note/);
+  assert.match(functionBody("conversationRenderSignature"), /visibleItemBudget: visibleItemBudgetSignature\(turn\)/);
   assert.match(functionBody("conversationRenderSignature"), /visibleItemSignature\(entry\.item, turn, thread\)/);
+  assert.match(functionBody("renderTurn"), /const budgetNoticeHtml = renderTurnVisibleItemBudgetNotice\(turn, previousKeys\)/);
+  assert.match(functionBody("renderThreadTileTurn"), /const budgetNoticeHtml = renderTurnVisibleItemBudgetNotice\(turn, previousKeys\)/);
 });
 
 test("raw thread read mode limits visible items per turn while preserving user images", () => {
@@ -5245,6 +5256,31 @@ test("in-turn approval controls keep render pane thread context when request omi
   assert.match(html, /data-approval-id="approval-pane"/);
   assert.match(html, /data-approval-thread-id="thread-pane"/);
   assert.doesNotMatch(html, /data-approval-thread-id="thread-current"/);
+});
+
+test("turn visible item budget renders first-paint omission notice outside item counts", () => {
+  const harness = evaluatedInTurnApprovalRenderer();
+  const html = harness.renderTurn({
+    id: "turn-budget",
+    status: "in_progress",
+    mobileOmittedVisibleItemCount: 3,
+    mobileVisibleItemBudget: {
+      reason: "progressive-visible-item-ceiling",
+      omitted: 3,
+      retained: 20,
+      original: 28,
+      ceiling: 20,
+    },
+    items: [{ id: "visible-item", type: "agentMessage" }],
+  });
+
+  assert.match(html, /class="turn-visible-budget-note/);
+  assert.match(html, /data-visible-item-budget="3"/);
+  assert.match(html, /已折叠 3 条首屏操作细节/);
+  assert.match(html, /保留 20 \/ 原始 28 \/ 上限 20/);
+  const note = html.match(/<div class="turn-visible-budget-note[\s\S]*?<\/div>/);
+  assert.ok(note);
+  assert.doesNotMatch(note[0], /data-item=/);
 });
 
 test("thread tile turns render in-turn approval controls with pane thread context", () => {

@@ -123,6 +123,12 @@ Add new service modules when logic has independent inputs/outputs, state rules, 
 | `public/build-refresh-policy.js` | Pure app-shell build comparison policy so browser refresh prompts only fire for recoverable newer-server shell changes. |
 
 `public/app.js` is large. For new frontend behavior, first check whether the change belongs in an existing helper module or can be extracted into a new public helper with focused tests.
+Current render-only exceptions include the first-paint visible budget notice:
+`public/app.js` renders `mobileVisibleItemBudget` / `mobileOmittedVisibleItemCount`
+as a compact non-`data-item` notice in single-thread and tiled panes, and adds
+the bounded budget summary to the conversation signature so server-budgeted
+omissions are not diagnosed as client-side lost messages. The budget policy
+itself remains in `adapters/thread-detail-response-budget-service.js`.
 
 ## Test Map
 

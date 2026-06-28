@@ -2445,6 +2445,11 @@ Deployable scope:
   `progressiveVisibleItemBudgetApplied`, `omittedVisibleItems`, and per-turn
   `mobileVisibleItemBudget`; user messages, images, Usage rows, diagnostics,
   and retained final assistant/plan receipts remain protected.
+- The v558 browser slice renders per-turn `mobileVisibleItemBudget` as a compact
+  first-paint omission notice in both single-thread and tiled panes. The notice
+  enters the conversation render signature but is not a real `data-item`, so
+  DOM/projection diagnostics can distinguish intentional server response
+  budgeting from client-side lost messages.
 - A follow-up first-paint byte ceiling now handles the residual case where the
   visible item count is bounded but retained completed receipts still make the
   detail body heavy. Under active progressive pressure, or on resting recent

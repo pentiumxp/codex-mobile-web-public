@@ -4258,6 +4258,34 @@ html.keyboard-open .side-chat-form textarea {
   padding-top: 10px;
 }
 
+.turn-visible-budget-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  width: fit-content;
+  max-width: 100%;
+  color: var(--muted);
+  background: var(--pill-bg);
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  padding: 5px 8px;
+  font-size: var(--content-small-font-size);
+  line-height: 1.35;
+}
+
+.turn-visible-budget-note span,
+.turn-visible-budget-note small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.turn-visible-budget-note small {
+  opacity: 0.78;
+}
+
 .history-note {
   max-width: 980px;
   margin: 0 auto 14px;

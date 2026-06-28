@@ -132,6 +132,14 @@ default `8KB` per item) with `mobileFirstPaintTextBudget` evidence. Resting
 details protect the latest completed turn so the current final answer remains
 visible by default.
 
+The v558 visible-budget notice slice closes the UI/diagnostic side of that
+first-paint budgeting contract. Per-turn `mobileVisibleItemBudget` /
+`mobileOmittedVisibleItemCount` now render as a compact omission notice in both
+single-thread and tiled panes, and the same bounded budget signature is part of
+the conversation render signature. The notice intentionally is not a real
+`data-item`, so projection diagnostics can distinguish server-budgeted omitted
+operation/reasoning rows from client-side lost messages.
+
 The latest thread-list slice targets the ordinary default list read after a
 process warm cache already exists. A no-search, no-workspace, no-cursor,
 non-archived `/api/threads` request can now return the process warm fallback

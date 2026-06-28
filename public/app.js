@@ -528,7 +528,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v557";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v558";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -5352,6 +5352,28 @@ function visibleItemSignature(item, turn = null, thread = null) {
   };
 }
 
+function visibleItemBudgetForTurn(turn) {
+  if (!turn || typeof turn !== "object") return null;
+  const budget = turn.mobileVisibleItemBudget && typeof turn.mobileVisibleItemBudget === "object"
+    ? turn.mobileVisibleItemBudget
+    : {};
+  const omitted = Math.max(0, Math.trunc(Number(turn.mobileOmittedVisibleItemCount || budget.omitted || 0)));
+  if (!omitted) return null;
+  return {
+    omitted,
+    retained: Math.max(0, Math.trunc(Number(budget.retained || 0))),
+    original: Math.max(0, Math.trunc(Number(budget.original || 0))),
+    ceiling: Math.max(0, Math.trunc(Number(budget.ceiling || 0))),
+    reason: String(budget.reason || "response-budget"),
+  };
+}
+
+function visibleItemBudgetSignature(turn) {
+  const budget = visibleItemBudgetForTurn(turn);
+  if (!budget) return null;
+  return budget;
+}
+
 function inputContentSignature(content) {
   return (content || []).map((part) => {
     if (!part || typeof part !== "object") return String(part || "");
@@ -6196,6 +6218,7 @@ function conversationRenderSignature(thread) {
         const timerShowsStatus = isLatestTurn(turn, thread) && (isLiveTurn(turn, thread) || turnFinalSeconds(turn) != null);
         return {
           id: turn.id || "",
+          visibleItemBudget: visibleItemBudgetSignature(turn),
           statusLine: timerShowsStatus ? "" : displayTurnStatus(turn),
           durationMs: timerShowsStatus ? "" : (turn.durationMs || ""),
           items: visibleItemsForTurn(turn, thread).map((entry) => ({
@@ -13924,14 +13947,15 @@ function renderThreadTileTurn(thread, turn, previousKeys = new Set()) {
       const sourceIndex = Number.isInteger(entry && entry.sourceIndex) && entry.sourceIndex >= 0 ? entry.sourceIndex : index;
       return renderVisibleItemPatchHtml(turn, item, previousKeys, sourceIndex, thread);
     }).filter(Boolean).join("");
+    const budgetNoticeHtml = renderTurnVisibleItemBudgetNotice(turn, previousKeys);
     const turnApprovals = approvalsForTurn(threadId, turn && turn.id);
     const approvalsHtml = turnApprovals.length
       ? `<div class="approval-stack in-turn">${turnApprovals.map((request) => renderApprovalRequest(request, previousKeys, threadId)).join("")}</div>`
       : "";
-    if (!renderedItems.trim() && !approvalsHtml.trim()) return "";
+    if (!budgetNoticeHtml.trim() && !renderedItems.trim() && !approvalsHtml.trim()) return "";
     const turnId = String(turn && (turn.id || turn.startedAt || "turn") || "turn");
     return `<article class="turn thread-tile-turn" data-thread-tile-turn="${escapeHtml(turnId)}" data-render-key="${escapeHtml(`tile-turn|${threadId}|${turnId}`)}">
-      ${renderedItems}${approvalsHtml}
+      ${budgetNoticeHtml}${renderedItems}${approvalsHtml}
     </article>`;
   });
 }
@@ -17229,6 +17253,24 @@ function renderLiveOperationDock(thread, previousKeys = new Set()) {
   </div>`;
 }
 
+function renderTurnVisibleItemBudgetNotice(turn, previousKeys = new Set()) {
+  const budget = visibleItemBudgetForTurn(turn);
+  if (!budget) return "";
+  const key = stableTurnKey(turn, "visible-budget");
+  const label = budget.omitted === 1
+    ? "已折叠 1 条首屏操作细节"
+    : `已折叠 ${budget.omitted} 条首屏操作细节`;
+  const detailParts = [];
+  if (budget.retained) detailParts.push(`保留 ${budget.retained}`);
+  if (budget.original) detailParts.push(`原始 ${budget.original}`);
+  if (budget.ceiling) detailParts.push(`上限 ${budget.ceiling}`);
+  const detail = detailParts.join(" / ");
+  return `<div class="turn-visible-budget-note${entryAnimationClass(key, previousKeys)}" data-render-key="${escapeHtml(key)}" data-visible-item-budget="${escapeHtml(String(budget.omitted))}">
+    <span>${escapeHtml(label)}</span>
+    ${detail ? `<small>${escapeHtml(detail)}</small>` : ""}
+  </div>`;
+}
+
 function renderTurn(turn, previousKeys = new Set()) {
   const thread = renderContextThread();
   const visibleEntries = visibleItemsForTurn(turn, thread);
@@ -17239,6 +17281,7 @@ function renderTurn(turn, previousKeys = new Set()) {
     html = renderVisibleItemPatchHtml(turn, item, previousKeys, sourceIndex, thread);
     return { html, sourceIndex, order: 1 };
   }).filter((entry) => entry && entry.html);
+  const budgetNoticeHtml = renderTurnVisibleItemBudgetNotice(turn, previousKeys);
   const items = renderedItems
     .sort((a, b) => (a.sourceIndex - b.sourceIndex) || (a.order - b.order))
     .map((entry) => entry.html)
@@ -17252,14 +17295,14 @@ function renderTurn(turn, previousKeys = new Set()) {
   const pendingDraftHtml = !draftHtml && !turnHasThreadTaskCardDraftResponse(turn) && isLatestTurn(turn, thread) && isLiveTurn(turn, thread) && turnHasThreadTaskCardRequest(turn)
     ? renderPendingThreadTaskCardDraft("Generating cross-thread task card draft...", "Generating")
     : "";
-  if (!items.trim() && !approvalsHtml.trim() && !draftHtml.trim() && !pendingDraftHtml.trim()) return "";
+  if (!budgetNoticeHtml.trim() && !items.trim() && !approvalsHtml.trim() && !draftHtml.trim() && !pendingDraftHtml.trim()) return "";
   const turnKey = stableTurnKey(turn);
   const statusKey = stableTurnKey(turn, "status");
   const duration = turn.durationMs ? ` | ${formatElapsedTime(Math.round(turn.durationMs / 1000))}` : "";
   const timerShowsStatus = isLatestTurn(turn, thread) && (isLiveTurn(turn, thread) || turnFinalSeconds(turn) != null);
   const showStatusLine = !timerShowsStatus;
   return `<article class="turn" data-turn="${escapeHtml(turn.id)}" data-render-key="${escapeHtml(turnKey)}">
-    ${items}${approvalsHtml}
+    ${budgetNoticeHtml}${items}${approvalsHtml}
     ${showStatusLine ? `<div class="turn-status${entryAnimationClass(statusKey, previousKeys)}" data-render-key="${escapeHtml(statusKey)}">${escapeHtml(displayTurnStatus(turn))}${duration}</div>` : ""}
     ${draftHtml}${pendingDraftHtml}
   </article>`;

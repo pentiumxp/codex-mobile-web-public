@@ -451,6 +451,11 @@ compaction. That ceiling should remove older operation/reasoning rows first;
 user messages, images, Usage rows, diagnostics, and retained final receipts
 should stay visible. Reasons ending in `-byte-pressure` mean the request was
 successful but too large, not that the network or app-server RPC timed out.
+On v558+ clients, a per-turn `mobileVisibleItemBudget` also renders as a small
+first-paint omission notice in the conversation. That notice has a
+`data-render-key` and enters the conversation signature, but intentionally does
+not have `data-item`; treat it as proof of server-side response budgeting, not
+as a projection mismatch or missing DOM item.
 If item counts are already bounded but the payload remains heavy, inspect the
 second-stage first-paint byte fields:
 `progressiveFirstPaintThreadByteCeiling`,
