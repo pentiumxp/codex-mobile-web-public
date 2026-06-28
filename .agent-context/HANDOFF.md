@@ -28009,7 +28009,22 @@ The previous full handoff was archived and should be opened only when old proven
     tests), and full rerun passed (`1481` tests).
   - `codegraph sync && codegraph status` reported the index up to date.
 - Deployment / readback:
-  - Pending amend/deploy under the same module reason
-    `codex-mobile-active-overlay-completeness`.
-  - Required post-deploy closure: production marker readback plus Movie/current
-    thread/global self-checks showing no H1/H2 projection gaps.
+  - Amended module commit `40a6fca` (`fix: require complete active overlay
+    turns`) and deployed through the central Home AI plugin macOS path with
+    reason `codex-mobile-active-overlay-completeness`.
+  - Production deploy result was `ok=true`, source ref
+    `40a6fca61aa4`, dirty false. Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260628T142454Z-plugin-codex-mobile-web-codex-mobile-active-overlay-completeness`.
+  - Production readback confirmed:
+    `active_overlay_projection_live_requires_fresh_window`,
+    `active_overlay_history_baseline_repaired`,
+    `readRolloutActiveAssistantItems`,
+    `appendRolloutActiveAssistantItemsToDetailResult`, and
+    `mobileSyntheticActiveAssistant`.
+  - `/api/public-config` stayed on `clientBuildId=0.1.11|codex-mobile-shell-v571`
+    and `shellCacheName=codex-mobile-shell-v571`; this was server-only, so no
+    static shell/cache bump or Public push was performed.
+  - Production self-checks passed with no issues:
+    - Movie workspace directed self-check: `ok=true`, issues `[]`.
+    - Current Codex Mobile thread directed self-check: `ok=true`, issues `[]`.
+    - Global 20-thread sampling self-check: `ok=true`, issues `[]`.
