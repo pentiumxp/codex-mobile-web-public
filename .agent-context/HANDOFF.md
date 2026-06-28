@@ -27407,5 +27407,19 @@ The previous full handoff was archived and should be opened only when old proven
   - `npm run check`, `npm test` (`1453` tests), `npm run check:macos`, and
     `git diff --check` passed before commit/deploy.
 - Status:
-  - Ready for commit and plugin-owned production deployment.
+  - Committed as `9dc9902` and deployed through the Home AI central macOS
+    plugin deploy path with reason
+    `codex-mobile-latest-replay-receipt-diagnostic`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260628T111354Z-plugin-codex-mobile-web-codex-mobile-latest-replay-receipt-diagnostic`.
+  - Production `/api/public-config` remained
+    `clientBuildId=0.1.11|codex-mobile-shell-v571`,
+    `shellCacheName=codex-mobile-shell-v571`, and build id
+    `ea68b50ee73958c0`; shell/cache did not change because this is a
+    server/script/docs-only slice.
+  - Production hash readback matched source for the two changed services,
+    focused tests, and docs.
+  - Production self-check with `--sample-threads 5 --repeat 5` returned
+    `ok:true`, `issueCount=0`, `blockingIssueCount=0`, and
+    `diagnosticCandidateCount=0`.
   - Public push is not requested.
