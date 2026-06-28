@@ -28028,3 +28028,47 @@ The previous full handoff was archived and should be opened only when old proven
     - Movie workspace directed self-check: `ok=true`, issues `[]`.
     - Current Codex Mobile thread directed self-check: `ok=true`, issues `[]`.
     - Global 20-thread sampling self-check: `ok=true`, issues `[]`.
+
+### 2026-06-28 - Active Turn User Message Echo Convergence
+
+- Incident:
+  - After the active-overlay completeness deployment, active Movie/Codex Mobile
+    turns could show duplicated user messages or temporarily lose the newly
+    submitted user message until a later refresh.
+  - Bounded evidence showed `message-submit` refreshes returning
+    `projection-active-overlay` with `activeOverlaySource=projection-live` while
+    the same user input was still converging between local pending echo,
+    mux `userMessage` echo, and durable app-server projection.
+- Root cause / invariant:
+  - The active-window backfill merge used item identity only. That was
+    insufficient after the `projection-live + fresh active-window backfill`
+    path became authoritative, because the same user input can legitimately
+    have different ids while steering is still active.
+  - Tiled pane detail loads also wrote `state.threadTileDetails.set(id, thread)`
+    directly instead of reusing the single-thread visible-item merge policy,
+    so a partial refresh could overwrite a locally submitted pending message.
+  - Invariant: active detail refreshes must treat client-submission/mux/local
+    echoes as one user-input event without collapsing two unrelated durable
+    user messages that happen to have the same text.
+- Fix:
+  - Added `adapters/thread-user-message-echo-normalizer-service.js` to converge
+    user-message echoes only when they share `clientSubmissionId` or one side is
+    a synthetic pending/mux/local echo.
+  - Active-overlay backfill now runs this event-level convergence before
+    returning the merged active turn and records bounded
+    `dedupedUserMessageEchoes` metadata.
+  - Final server `compactThread` output applies the same convergence as a
+    projection boundary guard.
+  - Tiled pane detail success now uses `mergeThreadPreservingVisibleItems` so
+    tile refreshes preserve local visible/pending messages like single-thread
+    refreshes.
+  - Static shell/cache bumped to `codex-mobile-shell-v572`.
+- Validation before deployment:
+  - Focused active-overlay/projection/tile/render suite passed (`241` tests).
+  - Full `npm test` passed (`1489` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment / readback:
+  - Pending commit/deploy at handoff time. Deploy with the central Home AI
+    plugin macOS path and read back `/api/public-config` for
+    `codex-mobile-shell-v572`, then run directed Movie/current-thread
+    self-checks.

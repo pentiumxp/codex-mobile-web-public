@@ -536,7 +536,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v571";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v572";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -14047,7 +14047,10 @@ function applyThreadTileDetailLoadSuccessEffects(effect, thread) {
   if (!effect || effect.action !== "detail-load-success-effects" || !thread) return false;
   const id = String(effect.id || "");
   if (!id) return false;
-  if (effect.setDetail) state.threadTileDetails.set(id, thread);
+  if (effect.setDetail) {
+    const existing = state.threadTileDetails.get(id);
+    state.threadTileDetails.set(id, mergeThreadPreservingVisibleItems(existing, thread));
+  }
   if (effect.setLoadedAt) state.threadTileLoadedAtById.set(id, Number(effect.loadedAtMs || Date.now()));
   if (effect.clearError) state.threadTileErrors.delete(id);
   if (effect.mergeThread) mergeThreadIntoThreadList(thread);

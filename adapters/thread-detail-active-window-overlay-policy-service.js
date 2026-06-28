@@ -3,6 +3,9 @@
 const {
   summaryActiveTurnId,
 } = require("./thread-detail-active-read-policy-service");
+const {
+  dedupeUserMessageEchoesInItems,
+} = require("./thread-user-message-echo-normalizer-service");
 
 function text(value) {
   return String(value || "").trim();
@@ -438,13 +441,15 @@ function mergeActiveOverlayTurnWithWindowBackfill(overlayTurn, windowThreadOrTur
     if (identity) indexByIdentity.set(identity, mergedItems.length);
     mergedItems.push(item);
   }
+  const deduped = dedupeUserMessageEchoesInItems(mergedItems);
   return Object.assign({}, windowTurn, overlayTurn, {
-    items: mergedItems,
+    items: deduped.items,
     mobileActiveOverlayBackfill: {
       version: "active-overlay-window-backfill-v1",
       sourceItems: windowItems.length,
       overlayItems: overlayItems.length,
-      mergedItems: mergedItems.length,
+      mergedItems: deduped.items.length,
+      dedupedUserMessageEchoes: deduped.removed,
     },
   });
 }

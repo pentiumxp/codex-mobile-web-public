@@ -30,6 +30,9 @@ const {
   detectStaleActiveTurnForSubmission,
 } = require("./adapters/active-turn-staleness-service");
 const {
+  dedupeUserMessageEchoesInThread,
+} = require("./adapters/thread-user-message-echo-normalizer-service");
+const {
   attachTurnUsageSummaries,
   collectTurnUsageSummariesFromEntries,
   collectTurnUsageSummariesFromRolloutText,
@@ -6883,6 +6886,7 @@ function compactThread(thread, options = {}) {
       const rawOperation = readLatestRawOperation(out, latest.id, { includeCompleted: true });
       if (rawOperation) latest.items.push(rawOperation);
     }
+    dedupeUserMessageEchoesInThread(out);
   }
   return normalizeStaleContextOnlyActiveThread(annotateThreadRolloutStats(out), options);
 }

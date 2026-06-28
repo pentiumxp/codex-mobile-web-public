@@ -414,6 +414,43 @@ test("active overlay turn backfill preserves earlier assistant items from active
   assert.equal(merged.mobileActiveOverlayBackfill.mergedItems, 4);
 });
 
+test("active overlay turn backfill dedupes matching user message echoes", () => {
+  const merged = mergeActiveOverlayTurnWithWindowBackfill({
+    id: "active-turn",
+    status: "inProgress",
+    items: [
+      {
+        id: "mux-user-thread-turn-client-1",
+        type: "userMessage",
+        mobilePendingSubmission: true,
+        clientSubmissionId: "client-1",
+        content: [{ type: "text", text: "please process once" }],
+      },
+      { id: "agent-2", type: "agentMessage", text: "newer delta" },
+    ],
+  }, {
+    id: "thread-1",
+    turns: [{
+      id: "active-turn",
+      status: "inProgress",
+      items: [
+        {
+          id: "durable-user-1",
+          type: "userMessage",
+          content: [{ type: "text", text: "please process once" }],
+        },
+        { id: "agent-1", type: "agentMessage", text: "early assistant" },
+      ],
+    }],
+  });
+
+  assert.deepEqual(merged.items.map((item) => item.id), ["durable-user-1", "agent-1", "agent-2"]);
+  assert.equal(merged.mobileActiveOverlayBackfill.sourceItems, 2);
+  assert.equal(merged.mobileActiveOverlayBackfill.overlayItems, 2);
+  assert.equal(merged.mobileActiveOverlayBackfill.mergedItems, 3);
+  assert.equal(merged.mobileActiveOverlayBackfill.dedupedUserMessageEchoes, 1);
+});
+
 test("active window overlay merge compacts overlay turn before response merge", () => {
   const projected = projectionThread();
   const overlay = overlayTurn({
