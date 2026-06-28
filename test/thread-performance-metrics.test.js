@@ -567,9 +567,9 @@ test("thread performance metrics plan slow thread-list diagnostics only at thres
       coldPathOwner: "app-server",
       coldPathReason: "default-list-refresh",
       fallbackCacheDecision: "miss-rebuild",
-      appServerRequestReason: "default-bounded-overfetch",
+      appServerRequestReason: "default-preserve-visible-entry-window",
       fallbackRolloutFileStatCount: 0,
-      appServerRequestLimit: 80,
+      appServerRequestLimit: 500,
       appServerResponsePayloadBytes: 420000,
     },
   }, {
@@ -586,7 +586,7 @@ test("thread performance metrics plan slow thread-list diagnostics only at thres
   assert.equal(planned.coldPathOwner, "app-server");
   assert.equal(planned.coldPathReason, "default-list-refresh");
   assert.equal(planned.fallbackCacheDecision, "miss-rebuild");
-  assert.equal(planned.appServerRequestReason, "default-bounded-overfetch");
+  assert.equal(planned.appServerRequestReason, "default-preserve-visible-entry-window");
   assert.equal(planned.totalMs, 5050);
   assert.equal(planned.appServerRpcMs, 4300);
   assert.equal(planned.appServerResponsePayloadKb, 411);

@@ -813,7 +813,7 @@ test("thread diagnostic events build bounded thread-list slow path payloads", ()
     coldPathOwner: "app-server",
     coldPathReason: "default-list-refresh",
     fallbackCacheDecision: "miss-rebuild",
-    appServerRequestReason: "default-bounded-overfetch",
+    appServerRequestReason: "default-preserve-visible-entry-window",
     durationBucket: "3_10s",
     elapsedMs: 6400,
     apiElapsedMs: 5100,
@@ -827,7 +827,7 @@ test("thread diagnostic events build bounded thread-list slow path payloads", ()
     fallbackMs: 0,
     mergeMs: 40,
     summaryMergeTotalMs: 60,
-    appServerRequestLimit: 80,
+    appServerRequestLimit: 500,
     appServerResponsePayloadKb: 411,
     body: "private body ignored",
     prompt: "private prompt ignored",
@@ -842,7 +842,7 @@ test("thread diagnostic events build bounded thread-list slow path payloads", ()
   assert.equal(event.context.cold_path_owner, "app-server");
   assert.equal(event.context.cold_path_reason, "default-list-refresh");
   assert.equal(event.context.fallback_cache_decision, "miss-rebuild");
-  assert.equal(event.context.app_server_request_reason, "default-bounded-overfetch");
+  assert.equal(event.context.app_server_request_reason, "default-preserve-visible-entry-window");
   assert.equal(event.counts.elapsed_ms, 6400);
   assert.equal(event.counts.api_elapsed_ms, 5100);
   assert.equal(event.counts.threshold_ms, 1500);

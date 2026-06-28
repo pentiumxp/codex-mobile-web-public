@@ -821,7 +821,7 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /function renderWorkspaceStatsDialog\(\)/);
   assert.match(appJs, /data-workspace-token-usage-toggle>统计<\/button>/);
   assert.match(appJs, /function formatTokenMillion\(value\)/);
-  assert.match(appJs, /const THREAD_LIST_PAGE_LIMIT = 40;/);
+  assert.match(appJs, /const THREAD_LIST_PAGE_LIMIT = 200;/);
   assert.match(appJs, /new URLSearchParams\(\{ limit: String\(THREAD_LIST_PAGE_LIMIT\), archived: "false" \}\)/);
   assert.match(appJs, /function hasThreadDetailRequestInFlight\(\)/);
   assert.match(appJs, /state\.threadLoadController[\s\S]*state\.refreshThreadController[\s\S]*state\.currentThread && state\.currentThread\.mobileLoading/);

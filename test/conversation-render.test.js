@@ -2393,6 +2393,28 @@ test("raw app-server input text upload summaries render as thumbnails", () => {
   assert.doesNotMatch(html, /<code>C:\\Users\\example/);
 });
 
+test("Hermes proxy app-server text upload summaries render png thumbnails without exposing local paths", () => {
+  const renderInputContent = evaluatedInputContentRendererWithKey("test-key", {
+    embedded: true,
+    pathname: "/api/hermes-plugins/codex-mobile/proxy/",
+  });
+  const uploadPath = "/Users/xuxin/.codex-mobile-web/uploads/2026-06-28/019eee6c-a6f5-7b20-bfb4-f96ccb6431b3/1782622603833-d5ac6a1e9f2e-homeai-upload-174E84FB-38DA-4D53-AA6F-9FC6E3CA289C.png";
+  const html = renderInputContent([
+    {
+      type: "text",
+      text: `另外看一下这个回归。\n\nUploaded attachments:\n- homeai-upload-174E84FB-38DA-4D53-AA6F-9FC6E3CA289C.png (image, image/png, 217.3 KB): ${uploadPath}`,
+    },
+  ]);
+
+  assert.match(html, /class="input-text"/);
+  assert.match(html, /class="input-image"/);
+  assert.match(html, /<img src="\/api\/hermes-plugins\/codex-mobile\/proxy\/api\/uploads\/file\?id=2026-06-28%2F019eee6c-a6f5-7b20-bfb4-f96ccb6431b3%2F1782622603833-d5ac6a1e9f2e-homeai-upload-174E84FB-38DA-4D53-AA6F-9FC6E3CA289C\.png&amp;key=test-key"/);
+  assert.match(html, /data-protected-image-src="\/api\/hermes-plugins\/codex-mobile\/proxy\/api\/uploads\/file\?id=2026-06-28%2F019eee6c-a6f5-7b20-bfb4-f96ccb6431b3%2F1782622603833-d5ac6a1e9f2e-homeai-upload-174E84FB-38DA-4D53-AA6F-9FC6E3CA289C\.png&amp;key=test-key"/);
+  assert.match(html, /homeai-upload-174E84FB-38DA-4D53-AA6F-9FC6E3CA289C\.png/);
+  assert.doesNotMatch(html, /<img src="[^"]*(?:\/Users|%2FUsers|\.codex-mobile-web|path=)/);
+  assert.doesNotMatch(html, /Uploaded attachments:/);
+});
+
 test("thread task card request prompts render only the original hash command in user messages", () => {
   const renderInputContent = evaluatedInputContentRenderer();
   const html = renderInputContent([

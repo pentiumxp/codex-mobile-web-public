@@ -1858,10 +1858,15 @@ Expected behavior after `codex-mobile-shell-v152`:
   `mobile_resume_slow` even though bootstrap is already opening the thread.
 
 If the page is slow before or around the thread detail load, measure
-`/api/threads` by requested limit before changing thread-detail code. The mobile
-frontend should keep its default list page at `THREAD_LIST_PAGE_LIMIT = 40`; on
-this Windows deployment, requesting 60 or 80 rows made the list route roughly
-twice as slow even though the visible list was much smaller.
+`/api/threads` by requested limit before changing thread-detail code. Older
+Windows-era builds kept the mobile default list page at 40 rows for performance,
+but the current Mac/Home AI embedded contract uses a wider All-workspaces entry
+window: the frontend requests `THREAD_LIST_PAGE_LIMIT = 200`, while the server
+uses a bounded 500-row app-server read before visibility/workspace merge. This
+keeps non-archived, non-recent implementation threads visible in All workspaces
+instead of requiring the user to activate a workspace-filtered thread before it
+appears. If this path becomes slow, optimize the authoritative read/merge/cache
+path rather than shrinking the All entry window back to a recent-only slice.
 
 ## First Load Flashes Workspace Home Before Opening A Thread
 
