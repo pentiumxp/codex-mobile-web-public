@@ -71,6 +71,47 @@ test("thread performance metrics classify thread detail cold and warm phases fro
   assert.equal(metrics.classifyThreadDetailPhase(null), "unknown");
 });
 
+test("thread performance metrics treat 1.5s detail first paint as slow by default", () => {
+  assert.deepEqual(metrics.planThreadDetailSlowPathDiagnostic({
+    elapsedMs: 1400,
+    apiElapsedMs: 1400,
+    renderElapsedMs: 0,
+    performancePhase: "cold-turns-list-initial",
+  }), {
+    shouldReport: false,
+    reason: "below-threshold",
+    thresholdMs: 1500,
+    elapsedMs: 1400,
+    apiElapsedMs: 1400,
+    renderElapsedMs: 0,
+  });
+
+  const plan = metrics.planThreadDetailSlowPathDiagnostic({
+    elapsedMs: 1600,
+    apiElapsedMs: 1550,
+    renderElapsedMs: 20,
+    performancePhase: "cold-turns-list-initial",
+    readMode: "turns-list-initial",
+    turns: 10,
+    omittedTurns: 2,
+  }, {
+    action: "thread-detail-load",
+    threadHash: "thread_hash",
+    durationBucket: "1_3s",
+  });
+
+  assert.equal(plan.shouldReport, true);
+  assert.equal(plan.reason, "api-slow");
+  assert.equal(plan.thresholdMs, 1500);
+  assert.equal(plan.performancePhase, "cold-turns-list-initial");
+  assert.equal(plan.readMode, "turns-list-initial");
+  assert.equal(plan.action, "thread-detail-load");
+  assert.equal(plan.threadHash, "thread_hash");
+  assert.equal(plan.durationBucket, "1_3s");
+  assert.equal(plan.turns, 10);
+  assert.equal(plan.omittedTurns, 2);
+});
+
 test("thread performance metrics return null server timings when response has none", () => {
   assert.deepEqual(metrics.threadDetailEventFields({}), {
     serverTimings: null,

@@ -518,6 +518,14 @@ bounded Home AI diagnostic as `thread_detail_slow_path` with reason
 `api-pending`, the thread hash, the stall threshold, and elapsed duration. A
 single stall remains local/retry behavior; repeated matching stalls cross the
 diagnostic-report threshold and can enter the Owner repair-card loop.
+On v557+ clients, successful thread-detail loads also plan
+`thread_detail_slow_path` when first-paint elapsed/API/render time crosses the
+default 1.5s threshold. Slow-path repeat counting is intentionally stable across
+client build id, read mode, render mode, and source kind so repeated
+user-visible slow opens such as `turns-list-initial` ->
+`projection-active-overlay` do not stay below the reporting threshold merely
+because the implementation path changed. Those volatile fields remain in the
+bounded report payload for root-cause attribution.
 For the thread list, v556+ clients also plan `thread_list_slow_path` from
 successful `thread_list_rendered` evidence when elapsed/API/render time crosses
 the list slow threshold. That report includes only bounded phase labels and

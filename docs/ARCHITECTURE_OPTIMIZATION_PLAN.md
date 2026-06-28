@@ -2854,9 +2854,39 @@ Required validation:
   app wiring.
 - Full `npm test`, `npm run check`, `npm run check:macos`, and
   `git diff --check`.
-- Production readback should confirm the v556 shell and still show fast warm
+- Production readback should confirm the v556+ shell and still show fast warm
   list/detail paths; future repeated slow list cases should surface as Home AI
   `thread_list_slow_path` diagnostics.
+
+### 2026-06-28 Thread Detail Slow-Success Diagnostic Aggregation module
+
+Production and client logs showed the user-visible shape where a thread can
+keep loading for 1-3 seconds, then eventually render normally. This is not the
+old timeout path: recent samples showed `turns-list-initial` detail reads around
+1.2-2.3s followed by warm projection reads around tens of milliseconds. The
+existing slow-path reporter recorded some of these cases, but the repeat
+signature included volatile client build id, read mode, render mode, and source
+kind, so repeated user-visible slow opens could stay below the Home AI reporting
+threshold while builds and projection paths changed.
+
+Deployable scope:
+
+- `public/thread-performance-metrics.js` lowers the default successful
+  thread-detail slow threshold from 8s to 1.5s while keeping explicit caller
+  thresholds supported.
+- `public/home-ai-diagnostic-reporting.js` aggregates slow-path repeated
+  failures by stable surface/action/thread/error identity. Build id, read mode,
+  render mode, and source kind remain in the bounded report payload for
+  attribution, but no longer split the repeat counter.
+- The diagnostic sanitizer preserves safe cold-path labels such as
+  `cold_path_owner` and `cold_path_reason` while still stripping raw paths,
+  URLs, prompts, message bodies, task bodies, uploads, cookies, tokens, and
+  long logs.
+
+Required validation:
+
+- Focused diagnostic-reporting, thread-performance, and diagnostic-event tests.
+- Full local checks and a central deploy/readback if this module is released.
 
 ## Release Rule
 

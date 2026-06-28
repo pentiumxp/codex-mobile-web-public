@@ -284,7 +284,7 @@
   function planThreadDetailSlowPathDiagnostic(event = {}, input = {}) {
     const fields = objectOrNull(event) || {};
     const source = objectOrNull(input) || {};
-    const thresholdMs = boundedTiming(source.thresholdMs) || 8000;
+    const thresholdMs = boundedTiming(source.thresholdMs) || 1500;
     const elapsedMs = boundedTiming(fields.elapsedMs || fields.clientTimings && fields.clientTimings.elapsedMs) || 0;
     const apiElapsedMs = boundedTiming(fields.apiElapsedMs || fields.clientTimings && fields.clientTimings.apiElapsedMs) || 0;
     const renderElapsedMs = boundedTiming(fields.renderElapsedMs || fields.clientTimings && fields.clientTimings.renderElapsedMs) || 0;

@@ -14,11 +14,17 @@
   const PLUGIN_ID = "codex-mobile";
   const SAFE_CONTEXT_KEYS = new Set([
     "action",
+    "app_server_deferred_reason",
+    "app_server_request_reason",
     "build_id",
     "cache_id",
     "client_visibility",
+    "cold_path_owner",
+    "cold_path_reason",
     "diagnostic_source",
     "embedded",
+    "fallback_cache_decision",
+    "fallback_deferred_reason",
     "item_hash",
     "pluginId",
     "pwa",
@@ -41,7 +47,11 @@
   ]);
   const SAFE_FIELD_KEYS = new Set([
     "action",
+    "app_server_deferred_reason",
+    "app_server_request_reason",
     "api_status",
+    "cold_path_owner",
+    "cold_path_reason",
     "dom_count",
     "duplicate_count",
     "elapsed_ms",
@@ -63,6 +73,8 @@
     "render_elapsed_ms",
     "render_mode",
     "render_plan_reason",
+    "fallback_cache_decision",
+    "fallback_deferred_reason",
     "repeated_failures",
     "route_kind",
     "server_count",
@@ -77,6 +89,10 @@
     "newer_cursor",
     "omitted_turns",
     "visible_count",
+  ]);
+  const SAFE_PATH_LABEL_KEYS = new Set([
+    "cold_path_owner",
+    "cold_path_reason",
   ]);
   const UNSAFE_KEY_PATTERN = /(body|content|cookie|file|href|key|launch|log|message|path|payload|prompt|raw|secret|text|title|token|url)/i;
 
@@ -141,7 +157,7 @@
     const out = {};
     if (!fields || typeof fields !== "object" || Array.isArray(fields)) return out;
     for (const [key, value] of Object.entries(fields)) {
-      if (!allowedKeys.has(key) || UNSAFE_KEY_PATTERN.test(key)) continue;
+      if (!allowedKeys.has(key) || (UNSAFE_KEY_PATTERN.test(key) && !SAFE_PATH_LABEL_KEYS.has(key))) continue;
       if (typeof value === "boolean") {
         out[key] = value;
       } else if (Number.isFinite(Number(value)) && !/_hash$/.test(key)) {
@@ -162,7 +178,7 @@
     const out = Object.assign({}, base);
     const input = context && typeof context === "object" && !Array.isArray(context) ? context : {};
     for (const [key, value] of Object.entries(input)) {
-      if (!SAFE_CONTEXT_KEYS.has(key) || UNSAFE_KEY_PATTERN.test(key)) continue;
+      if (!SAFE_CONTEXT_KEYS.has(key) || (UNSAFE_KEY_PATTERN.test(key) && !SAFE_PATH_LABEL_KEYS.has(key))) continue;
       if (typeof value === "boolean") {
         out[key] = value;
       } else if (Number.isFinite(Number(value)) && !/_hash$/.test(key)) {
@@ -240,6 +256,14 @@
   }
 
   function signatureFor(event) {
+    const isSlowPath = event.category === "thread_session_slow_path"
+      && /_slow_path$/.test(event.diagnostic_type || "");
+    if (isSlowPath) {
+      return [
+        clearKeyFor(event),
+        event.error_code,
+      ].join("|");
+    }
     return [
       clearKeyFor(event),
       event.error_code,

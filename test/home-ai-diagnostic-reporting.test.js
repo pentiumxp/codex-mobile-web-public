@@ -104,6 +104,73 @@ test("repeated thread route failure creates bounded diagnostic report", () => {
   assert.equal(result.report.context.route_kind, "plugin-route");
 });
 
+test("slow-path failures aggregate across build and render mode changes", () => {
+  const reporter = diagnostics.createDiagnosticReporter({ threshold: 3, throttleMs: 60000, now: () => 1 });
+  const base = {
+    category: "thread_session_slow_path",
+    diagnostic_type: "thread_detail_slow_path",
+    error_code: "api-slow",
+    severity_hint: "H3",
+    evidence_confidence: 0.7,
+    context: {
+      surface: "thread-session",
+      action: "thread-detail-load",
+      thread_hash: diagnostics.hashIdentifier("thread-secret"),
+      read_mode: "turns-list-initial",
+      render_mode: "first-paint",
+      build_id: "0.1.11|codex-mobile-shell-v556",
+      cold_path_owner: "app-server",
+      cold_path_reason: "cold-turns-list-initial",
+    },
+    counts: {
+      elapsed_ms: 2100,
+      api_elapsed_ms: 1900,
+      threshold_ms: 1500,
+    },
+    breadcrumbs: [{
+      kind: "thread-session",
+      code: "thread-detail-slow-path",
+      status: "slow",
+      fields: {
+        read_mode: "turns-list-initial",
+        render_mode: "first-paint",
+        cold_path_owner: "app-server",
+        cold_path_reason: "cold-turns-list-initial",
+        elapsed_ms: 2100,
+        api_elapsed_ms: 1900,
+        threshold_ms: 1500,
+      },
+    }],
+  };
+
+  assert.equal(reporter.recordFailure(base).eligible, false);
+  assert.equal(reporter.recordFailure(Object.assign({}, base, {
+    context: Object.assign({}, base.context, {
+      read_mode: "projection-active-overlay",
+      render_mode: "full-render",
+      build_id: "0.1.11|codex-mobile-shell-v557",
+    }),
+  })).eligible, false);
+  const third = reporter.recordFailure(Object.assign({}, base, {
+    context: Object.assign({}, base.context, {
+      read_mode: "projection-v4-dynamic",
+      render_mode: "metadata-only",
+      build_id: "0.1.11|codex-mobile-shell-v558",
+    }),
+  }));
+
+  assert.equal(third.eligible, true);
+  assert.equal(third.repeatedFailures, 3);
+  assert.match(third.signature, /thread_session_slow_path\\|thread_detail_slow_path/);
+  assert.doesNotMatch(third.signature, /shell-v55|projection|first-paint|full-render|metadata-only/);
+  assert.equal(third.report.context.build_id, "0.1.11_codex-mobile-shell-v558");
+  assert.equal(third.report.context.read_mode, "projection-v4-dynamic");
+  assert.equal(third.report.context.render_mode, "metadata-only");
+  assert.equal(third.report.context.cold_path_owner, "app-server");
+  assert.equal(third.report.context.cold_path_reason, "cold-turns-list-initial");
+  assert.equal(third.report.breadcrumbs[0].fields.cold_path_owner, "app-server");
+});
+
 test("repeated projection mismatch reports at threshold and success clears", () => {
   let now = 1000;
   const reporter = diagnostics.createDiagnosticReporter({ threshold: 3, throttleMs: 60000, now: () => now });

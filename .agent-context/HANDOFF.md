@@ -25502,3 +25502,53 @@ The previous full handoff was archived and should be opened only when old proven
   - Not deployed yet at the time of this note. Next step is commit, central
     macOS plugin deploy, and production readback. Static shell/cache bump is
     not expected because no browser static files changed.
+
+## 2026-06-28 - Thread Detail Slow-Success Diagnostic Aggregation Module
+
+- User-visible symptom:
+  - The user reported a newer loading shape: the thread can appear stuck for a
+    long time but eventually loads, unlike older hard timeout/network failure
+    cases.
+  - Local production samples at the time of investigation were fast
+    (`Codex Mobile` detail around `45ms`, `Home AI` detail around `61ms`), but
+    bounded log scan found recent intermittent `turns-list-initial` detail reads
+    around `1.2-2.3s`, followed by warm projection reads around tens of
+    milliseconds.
+- Root cause / invariant:
+  - Slow-success detail loads are first-class product incidents even when HTTP
+    succeeds. They must be observable and able to enter the Home AI diagnostic
+    loop instead of depending on user screenshots.
+  - The client slow-path reporter already recorded some `thread_detail_slow_path`
+    failures, but repeat signatures included volatile client build id, read
+    mode, render mode, and source kind. Frequent shell bumps or path changes
+    could keep repeated user-visible slow opens below the report threshold.
+  - The successful detail slow threshold default was `8s`, which missed the
+    1-3s first-paint cold peaks reported by the user and observed in logs.
+- Implementation:
+  - `public/thread-performance-metrics.js` now treats successful thread-detail
+    first-paint loads above `1.5s` as slow by default while preserving explicit
+    caller thresholds.
+  - `public/home-ai-diagnostic-reporting.js` aggregates `_slow_path` signatures
+    by stable surface/action/thread/error identity. Build id, read mode, render
+    mode, and source kind remain in the bounded report payload as evidence, but
+    do not split the repeat counter.
+  - The diagnostic sanitizer now preserves safe `cold_path_owner` and
+    `cold_path_reason` enum labels while continuing to strip raw paths, URLs,
+    prompts, message bodies, task bodies, upload data, cookies, tokens, and long
+    logs.
+  - Static shell/cache bumped to `codex-mobile-shell-v557`.
+  - Updated docs: `docs/README.md`, `docs/TROUBLESHOOTING.md`,
+    `docs/MODULES.md`, and `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Local validation:
+  - `node --check public/home-ai-diagnostic-reporting.js`,
+    `public/thread-performance-metrics.js`, `public/app.js`, and `public/sw.js`
+    passed.
+  - Focused diagnostic/static suite passed (`93` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - Full `npm test` passed (`1394` tests).
+- Deployment status:
+  - Not deployed yet at the time of this note. Next step is commit, central
+    macOS plugin deploy, and production readback confirming v557 shell plus
+    normal warm list/detail timings.

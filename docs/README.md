@@ -162,6 +162,15 @@ app-server request reason, and bounded source/app-server counters. Repeated
 matching stalls can enter Home AI's Owner-gated diagnostic loop instead of
 being cleared as ordinary success.
 
+The v557 diagnostics slice applies the same "slow success is observable"
+contract to thread detail first paint. Successful detail loads that cross the
+default 1.5s threshold now plan `thread_detail_slow_path`, and slow-path repeat
+counting aggregates by stable surface/action/thread/error identity instead of
+splitting on client build id, read mode, render mode, or source kind. Those
+volatile fields remain in the bounded report payload as evidence, but they no
+longer prevent repeated cold peaks from reaching the Home AI Owner-gated
+diagnostic loop.
+
 The active-window coalescing slice targets the "long spinner, then eventual
 success" shape seen on active large sessions. That shape is not a network/RPC
 timeout: the request completes after synchronously building
