@@ -25730,4 +25730,24 @@ The previous full handoff was archived and should be opened only when old proven
     baseline and can serve the list first-paint path without app-server work in
     the sampled state.
 - Deployment status:
-  - Pending commit/deploy at this handoff update.
+  - Committed as `2ea96c8`
+    (`test: expose persistent fallback cache readback`).
+  - Deployed through the central Home AI macOS plugin deploy path with reason
+    `codex-mobile-persistent-fallback-readback`.
+  - Deployment source ref was clean: `2ea96c8e97d7`.
+  - Production remained `clientBuildId=0.1.11|codex-mobile-shell-v558` and
+    `shellCacheName=codex-mobile-shell-v558`, expected because this slice
+    changed readback/test/context only, not static client assets.
+  - Production readback after deploy:
+    - `ok=true`, `listTotalMs=34`, `coldPathOwner=warm-fallback-cache`,
+      `fallbackCacheDecision=compatible-hit`,
+      `fallbackCacheHit=true`,
+      `fallbackCompatibleCacheHit=true`,
+      `fallbackCachePersistentRestored=true`,
+      `fallbackMs=0`, `appServerMs=0`.
+    - `muxRuntime.muxMetricsRpc=true`, `muxMetrics.supported=true`.
+  - Source/production hash parity was confirmed for:
+    `scripts/codex-mobile-phase-b-readback-smoke.js` and
+    `test/phase-b-readback-smoke.test.js`.
+  - Production script marker confirmed `fallbackCachePersistentRestored` is now
+    part of the readback report.
