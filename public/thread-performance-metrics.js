@@ -414,12 +414,17 @@
   function threadDetailProjectionContractFields(thread) {
     const projection = objectOrNull(thread && thread.mobileProjection) || {};
     const timings = threadDetailTimings(thread) || {};
+    const responseBudget = objectOrNull(thread && thread.mobileDetailResponseBudget) || {};
     const readMode = compactLabel(thread && thread.mobileReadMode, 80);
     return {
       readMode,
       projectionSource: compactLabel(projection.source || thread && thread.mobileProjectionSource || timings.projectionSource, 80),
       projectionPartial: booleanFlag(projection.partial) || /projection-v?\d*-partial|projection-partial/.test(readMode),
       projectionPartialKind: compactLabel(projection.partialKind || timings.projectionPartialKind, 80),
+      responseBudgetApplied: responseBudget.applied === true,
+      responseBudgetProgressiveActiveApplied: responseBudget.progressiveActiveBudgetApplied === true,
+      responseBudgetActiveTurnCount: boundedCount(responseBudget.activeTurnCount),
+      responseBudgetRetainedItemCount: boundedCount(responseBudget.retainedItemCount),
       olderCursor: hasCursor(thread && thread.mobileOlderTurnsCursor),
       newerCursor: hasCursor(thread && thread.mobileNewerTurnsCursor),
       status: statusText(thread && thread.status),
@@ -449,6 +454,10 @@
     const projectionSource = compactLabel(contract.projectionSource || source.projectionSource, 80);
     const projectionPartialKind = compactLabel(contract.projectionPartialKind || source.projectionPartialKind, 80);
     const projectionPartial = Boolean(contract.projectionPartial || source.projectionPartial);
+    const responseBudgetApplied = Boolean(contract.responseBudgetApplied || source.responseBudgetApplied);
+    const responseBudgetProgressiveActiveApplied = Boolean(contract.responseBudgetProgressiveActiveApplied || source.responseBudgetProgressiveActiveApplied);
+    const responseBudgetActiveTurnCount = boundedCount(contract.responseBudgetActiveTurnCount || source.responseBudgetActiveTurnCount);
+    const responseBudgetRetainedItemCount = boundedCount(contract.responseBudgetRetainedItemCount || source.responseBudgetRetainedItemCount);
     const olderCursor = Boolean(contract.olderCursor || source.olderCursor);
     const newerCursor = Boolean(contract.newerCursor || source.newerCursor);
     const turns = boundedCount(fields.turns || contract.turns || detailShape.turns);
@@ -461,6 +470,18 @@
     const activeLike = Boolean(source.expectedActiveFullRead) || activeTurns > 0 || activeLikeStatus(status);
     const windowedMode = /turns-list|projection-v?\d*-partial|projection-partial|summary-timeout|unmaterialized|fallback/.test(readMode)
       || /bounded-large|turns-list|partial|fallback/.test(performancePhase);
+    const partialProjectionMode = projectionPartial || /projection-v?\d*-partial|projection-partial/.test(readMode);
+    const hasActiveProjectionEvidence = activeTurns > 0 || responseBudgetActiveTurnCount > 0;
+    const hasVisibleProjectionEvidence = visibleItems > 0 || responseBudgetRetainedItemCount > 0;
+    const activePartialProjectionOk = !source.expectedActiveFullRead
+      && partialProjectionMode
+      && hasActiveProjectionEvidence
+      && hasVisibleProjectionEvidence
+      && (
+        responseBudgetApplied
+        || responseBudgetProgressiveActiveApplied
+        || /warm-projection-partial|projection-partial/.test(performancePhase)
+      );
     const projectionModeMarkedFull = /projection-v?\d*-(cache|dynamic)|projection-(cache|dynamic)/.test(readMode)
       && !projectionPartial;
     let reason = "";
@@ -471,7 +492,7 @@
     } else if (turns > 0 && visibleItems === 0 && (items === 0 || projectionPartial || projectionPartialKind === "notification-shell")) {
       reason = "empty-projection-shell";
       severityHint = "H2";
-    } else if (activeLike && windowedMode) {
+    } else if (activeLike && windowedMode && !activePartialProjectionOk) {
       reason = "active-thread-window-downgrade";
       severityHint = "H2";
     }
@@ -489,6 +510,10 @@
       projectionSource,
       projectionPartialKind,
       projectionPartial,
+      responseBudgetApplied,
+      responseBudgetProgressiveActiveApplied,
+      responseBudgetActiveTurnCount,
+      responseBudgetRetainedItemCount,
       olderCursor,
       newerCursor,
       turns,

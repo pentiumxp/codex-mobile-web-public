@@ -918,6 +918,10 @@
       older_cursor: source.olderCursor || source.older_cursor ? 1 : 0,
       newer_cursor: source.newerCursor || source.newer_cursor ? 1 : 0,
       projection_partial: source.projectionPartial || source.projection_partial ? 1 : 0,
+      response_budget_applied: source.responseBudgetApplied || source.response_budget_applied ? 1 : 0,
+      response_budget_progressive_active: source.responseBudgetProgressiveActiveApplied || source.response_budget_progressive_active ? 1 : 0,
+      response_budget_active_turn_count: boundedCount(source.responseBudgetActiveTurnCount || source.response_budget_active_turn_count),
+      response_budget_retained_item_count: boundedCount(source.responseBudgetRetainedItemCount || source.response_budget_retained_item_count),
     };
     const rolloutMb = boundedRolloutMb(source.rolloutSizeBytes || source.rollout_size_bytes);
     if (rolloutMb) out.rollout_mb = rolloutMb;
@@ -955,6 +959,10 @@
           older_cursor: counts.older_cursor,
           newer_cursor: counts.newer_cursor,
           projection_partial: counts.projection_partial,
+          response_budget_applied: counts.response_budget_applied,
+          response_budget_progressive_active: counts.response_budget_progressive_active,
+          response_budget_active_turn_count: counts.response_budget_active_turn_count,
+          response_budget_retained_item_count: counts.response_budget_retained_item_count,
           thread_hash: context.thread_hash || "",
         },
       }],

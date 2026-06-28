@@ -651,6 +651,42 @@ test("thread performance metrics detect active thread window downgrades", () => 
   assert.equal(planned.activeTurns, 1);
 });
 
+test("thread performance metrics accept active projection partials with budget evidence", () => {
+  const planned = metrics.planThreadDetailResponseContractDiagnostic({
+    source: "thread-tile",
+    readMode: "projection-v4-partial",
+    performancePhase: "warm-projection-partial",
+    status: "running",
+    detailShape: {
+      turns: 4,
+      items: 35,
+      visibleItems: 35,
+      activeTurns: 1,
+      completedTurns: 3,
+    },
+    turns: 4,
+  }, {
+    action: "thread-detail-refresh",
+    threadHash: "h_codex",
+    contract: {
+      projectionPartial: true,
+      projectionSource: "dynamic",
+      responseBudgetApplied: true,
+      responseBudgetProgressiveActiveApplied: true,
+      responseBudgetActiveTurnCount: 1,
+      responseBudgetRetainedItemCount: 35,
+    },
+  });
+
+  assert.equal(planned.shouldReport, false);
+  assert.equal(planned.reason, "ok");
+  assert.equal(planned.projectionPartial, true);
+  assert.equal(planned.responseBudgetApplied, true);
+  assert.equal(planned.responseBudgetProgressiveActiveApplied, true);
+  assert.equal(planned.responseBudgetActiveTurnCount, 1);
+  assert.equal(planned.responseBudgetRetainedItemCount, 35);
+});
+
 test("thread performance metrics detect projection windows marked as full cache", () => {
   const planned = metrics.planThreadDetailResponseContractDiagnostic({
     source: "thread-list",

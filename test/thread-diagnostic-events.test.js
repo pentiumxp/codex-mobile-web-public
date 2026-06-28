@@ -889,6 +889,10 @@ test("thread diagnostic events build bounded detail response contract payloads",
     olderCursor: false,
     newerCursor: false,
     projectionPartial: true,
+    responseBudgetApplied: true,
+    responseBudgetProgressiveActiveApplied: false,
+    responseBudgetActiveTurnCount: 0,
+    responseBudgetRetainedItemCount: 12,
     body: "private body ignored",
     url: "https://example.invalid/private",
   });
@@ -917,8 +921,14 @@ test("thread diagnostic events build bounded detail response contract payloads",
     older_cursor: 0,
     newer_cursor: 0,
     projection_partial: 1,
+    response_budget_applied: 1,
+    response_budget_progressive_active: 0,
+    response_budget_active_turn_count: 0,
+    response_budget_retained_item_count: 12,
   });
   assert.equal(event.breadcrumbs[0].fields.projection_partial, 1);
+  assert.equal(event.breadcrumbs[0].fields.response_budget_applied, 1);
+  assert.equal(event.breadcrumbs[0].fields.response_budget_retained_item_count, 12);
   assert.equal(event.breadcrumbs[0].fields.thread_hash, "thread_hash");
   assert.equal(JSON.stringify(event).includes("private"), false);
   assert.deepEqual(diagnostics.threadDetailResponseContractDiagnosticSuccess({

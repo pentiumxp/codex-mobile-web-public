@@ -16,6 +16,29 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-28 Active Projection Partial 诊断误报修复
+
+Home AI AI Ops 上报了 Codex Mobile embedded iPhone 端连续
+`conversation_projection_mismatch / thread_detail_response_contract_mismatch`
+事件，错误码为 `active-thread-window-downgrade`。本次修复确认根因在前端
+诊断规划层：`public/thread-performance-metrics.js` 把 active 线程中的
+`projection-v4-partial` 一律视为 window downgrade，即使服务端已经返回了
+合法的 active/progressive projection partial、可见 item 和
+`mobileDetailResponseBudget` 证据。
+
+本次修复不增加客户端刷新兜底，也不吞掉真实降级。现在只有退回
+`turns-list-large` / `bounded-large-thread-window` 等非 projection partial
+路径时才继续报 `active-thread-window-downgrade`；合法的
+`projection-v4-partial` 在同时具备 active/visible content 和 response-budget
+证据时会作为正常渐进首屏处理。诊断 payload 也补充了 bounded
+`response_budget_*` 计数，Home AI 后续收到类似事件时可以直接判断是否有预算
+和 active-turn 证据，不需要读取私有线程正文。
+
+这次是前端静态行为变化，`CLIENT_BUILD_ID` 和 PWA service worker cache 从
+`codex-mobile-shell-v558` 升级到 `codex-mobile-shell-v559`。已经打开的
+iPhone / iPad / Home AI embedded PWA 需要接受刷新提示、硬刷新或关闭重开后
+才能停止旧客户端继续上报该误报。
+
 ## 2026-06-28 线程详情响应体预算和任务卡按需正文
 
 这次模块处理“线程最终能加载出来，但进入 Home AI / Movie 等线程时明显卡很久”的
