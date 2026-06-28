@@ -2904,6 +2904,40 @@ Required validation:
 - Focused diagnostic-reporting, thread-performance, and diagnostic-event tests.
 - Full local checks and a central deploy/readback if this module is released.
 
+### 2026-06-28 Thread Display Self-Check Repeat Module
+
+This module expands the production self-check path so projection/list display
+regressions can be found by tooling instead of waiting for a user screenshot.
+It is diagnostic/verification code only; it does not add a rendering fallback or
+change thread-detail projection authority.
+
+Root cause addressed: `scripts/codex-mobile-thread-self-check.js` exposed
+`--repeat`, but only performed one second read for list/detail checks. A
+transient middle-sample failure could recover before the final read and escape
+the summary, which made intermittent missing-message, stale-list, or timestamp
+loss reports harder to reproduce.
+
+Scope:
+
+- `scripts/codex-mobile-thread-self-check.js` now samples list/detail reads for
+  the full repeat count. It records only repeat comparisons with issues, while
+  keeping the existing first/final compatibility fields.
+- `adapters/thread-detail-self-check-service.js` now classifies additional
+  metadata-only display-contract issues: latest completed Usage without an
+  assistant response, latest completed replay without user-input rows as an H3
+  warning, refresh loss of user-input rows, assistant rows, visible timestamps,
+  and turn start/completion timestamps, plus thread-list repeat lost rows and
+  updated-at downgrades.
+- Combined summaries deduplicate identical issue metadata so repeated samples
+  do not inflate the blocking/warning counts.
+
+Required validation:
+
+- Focused self-check service/script tests.
+- Live self-check with `--sample-threads 5 --repeat 5` should return no H1/H2
+  blockers before using the result as a deployment gate.
+- Full local checks and central deploy/readback when this module is released.
+
 ## Release Rule
 
 Follow the current release order:

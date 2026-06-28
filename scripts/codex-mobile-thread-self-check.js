@@ -184,6 +184,7 @@ async function run(options = {}, env = process.env) {
     checkedThreads: [],
     threadList: null,
     threadListRepeat: null,
+    threadListRepeatChecks: [],
     threadDetails: [],
     summary: null,
   };
@@ -192,17 +193,31 @@ async function run(options = {}, env = process.env) {
 
   const listParams = { limit: options.listLimit };
   if (options.workspaceCwd) listParams.cwd = options.workspaceCwd;
+  const listReads = [];
   const listFirst = await fetchJson(requestUrl(options, "/api/threads", listParams), options, key);
+  listReads.push(listFirst);
   report.threadList = analyzeThreadList(listFirst);
 
-  let listSecond = null;
-  if (options.repeat > 1) {
+  const listRepeatChecks = [];
+  for (let index = 1; index < options.repeat; index += 1) {
     await sleep(options.repeatDelayMs);
-    listSecond = await fetchJson(requestUrl(options, "/api/threads", listParams), options, key);
-    report.threadListRepeat = compareThreadListReadbacks(listFirst, listSecond);
+    const nextList = await fetchJson(requestUrl(options, "/api/threads", listParams), options, key);
+    listReads.push(nextList);
+    const previousComparison = compareThreadListReadbacks(listReads[index - 1], nextList);
+    if (previousComparison.issues.length) {
+      listRepeatChecks.push(Object.assign({ index, baseline: "previous" }, previousComparison));
+    }
+    const firstComparison = compareThreadListReadbacks(listFirst, nextList);
+    if (firstComparison.issues.length) {
+      listRepeatChecks.push(Object.assign({ index, baseline: "first" }, firstComparison));
+    }
+  }
+  if (options.repeat > 1) {
+    report.threadListRepeat = compareThreadListReadbacks(listFirst, listReads[listReads.length - 1]);
+    report.threadListRepeatChecks = listRepeatChecks;
   }
 
-  const selectedThreadIds = selectThreadIds(options, listSecond || listFirst);
+  const selectedThreadIds = selectThreadIds(options, listReads[listReads.length - 1] || listFirst);
   report.checkedThreads = safeThreadIds(selectedThreadIds);
 
   for (const threadId of selectedThreadIds) {
@@ -214,12 +229,29 @@ async function run(options = {}, env = process.env) {
       repeat: null,
     };
     if (options.repeat > 1) {
-      await sleep(options.repeatDelayMs);
-      const secondDetail = await fetchThreadDetail(options, key, threadId, 1);
-      const secondAnalysis = analyzeThreadDetail(secondDetail, { threadId });
-      const comparison = compareDetailReadbacks(firstDetail, secondDetail, { threadId });
-      detailReport.second = secondAnalysis;
-      detailReport.repeat = comparison;
+      const detailReads = [firstDetail];
+      const repeatChecks = [];
+      let lastDetail = firstDetail;
+      let lastAnalysis = firstAnalysis;
+      for (let index = 1; index < options.repeat; index += 1) {
+        await sleep(options.repeatDelayMs);
+        const nextDetail = await fetchThreadDetail(options, key, threadId, index);
+        detailReads.push(nextDetail);
+        const nextAnalysis = analyzeThreadDetail(nextDetail, { threadId });
+        const previousComparison = compareDetailReadbacks(lastDetail, nextDetail, { threadId });
+        if (previousComparison.issues.length) {
+          repeatChecks.push(Object.assign({ index, baseline: "previous" }, previousComparison));
+        }
+        const firstComparison = compareDetailReadbacks(firstDetail, nextDetail, { threadId });
+        if (firstComparison.issues.length) {
+          repeatChecks.push(Object.assign({ index, baseline: "first" }, firstComparison));
+        }
+        lastDetail = nextDetail;
+        lastAnalysis = nextAnalysis;
+      }
+      detailReport.second = lastAnalysis;
+      detailReport.repeat = compareDetailReadbacks(firstDetail, lastDetail, { threadId });
+      detailReport.repeatChecks = repeatChecks;
     }
     report.threadDetails.push(detailReport);
   }
@@ -229,10 +261,12 @@ async function run(options = {}, env = process.env) {
     if (detail.first) detailParts.push(detail.first);
     if (detail.second) detailParts.push(detail.second);
     if (detail.repeat) detailParts.push(detail.repeat);
+    if (Array.isArray(detail.repeatChecks)) detailParts.push(...detail.repeatChecks);
   }
   report.summary = combineSelfCheck({
     threadList: report.threadList,
     threadListRepeat: report.threadListRepeat,
+    threadListRepeatChecks: report.threadListRepeatChecks,
     details: detailParts,
   });
   report.ok = report.summary.ok;

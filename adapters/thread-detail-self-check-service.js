@@ -14,6 +14,14 @@ const USER_VISIBLE_TIMESTAMP_TYPES = new Set([
   "turnDiagnostic",
 ]);
 
+const USER_INPUT_TYPES = new Set([
+  "userMessage",
+  "contextCompaction",
+  "imageView",
+  "imageGeneration",
+  "filePreview",
+]);
+
 function text(value) {
   return String(value || "").trim();
 }
@@ -201,6 +209,11 @@ function summarizeTurn(turn = {}, thread = null) {
   const reasoningItems = items.filter(isReasoningItem).length;
   const assistantItems = items.filter(isAssistantItem).length;
   const usageItems = items.filter((item) => itemType(item) === "turnUsageSummary").length;
+  const userInputItems = items.filter((item) => USER_INPUT_TYPES.has(itemType(item))).length;
+  const timestampMissingVisibleItems = items.filter((item) => {
+    const type = itemType(item);
+    return USER_VISIBLE_TIMESTAMP_TYPES.has(type) && !itemTimestampMs(item, turn, thread);
+  }).length;
   return {
     turnHash: shortHash(turnId(turn)),
     status: text(statusText(turn.status)).slice(0, 40),
@@ -210,6 +223,8 @@ function summarizeTurn(turn = {}, thread = null) {
     reasoningItems: boundedCount(reasoningItems),
     assistantItems: boundedCount(assistantItems),
     usageItems: boundedCount(usageItems),
+    userInputItems: boundedCount(userInputItems),
+    timestampMissingVisibleItems: boundedCount(timestampMissingVisibleItems),
     startedAtMs: boundedCount(turnStartedAtMs(turn), Number.MAX_SAFE_INTEGER),
     completedAtMs: boundedCount(turnCompletedAtMs(turn, thread), Number.MAX_SAFE_INTEGER),
   };
@@ -289,6 +304,22 @@ function analyzeThreadDetail(detail = {}, options = {}) {
         threadHash,
         turnHash,
         assistantItems: boundedCount(assistantItems.length),
+      });
+    }
+    const userInputItems = items.filter((item) => USER_INPUT_TYPES.has(itemType(item)));
+    if ((assistantItems.length || usageItems.length) && !userInputItems.length) {
+      pushIssue(issues, "latest_completed_user_input_missing", "H3", "thread-detail", {
+        threadHash,
+        turnHash,
+        assistantItems: boundedCount(assistantItems.length),
+        usageItems: boundedCount(usageItems.length),
+      });
+    }
+    if (usageItems.length && !assistantItems.length) {
+      pushIssue(issues, "latest_completed_assistant_missing", "H2", "thread-detail", {
+        threadHash,
+        turnHash,
+        usageItems: boundedCount(usageItems.length),
       });
     }
     for (const item of items) {
@@ -390,6 +421,22 @@ function compareDetailReadbacks(firstDetail = {}, secondDetail = {}, options = {
         afterItems: secondSummary.itemCount,
       });
     }
+    if (secondSummary.userInputItems < firstSummary.userInputItems) {
+      pushIssue(issues, "thread_detail_refresh_lost_user_input", "H2", "thread-detail-refresh", {
+        threadHash,
+        turnHash: secondSummary.turnHash,
+        beforeItems: firstSummary.userInputItems,
+        afterItems: secondSummary.userInputItems,
+      });
+    }
+    if (secondSummary.assistantItems < firstSummary.assistantItems) {
+      pushIssue(issues, "thread_detail_refresh_lost_assistant_items", "H2", "thread-detail-refresh", {
+        threadHash,
+        turnHash: secondSummary.turnHash,
+        beforeItems: firstSummary.assistantItems,
+        afterItems: secondSummary.assistantItems,
+      });
+    }
     if (firstSummary.usageItems > 0 && secondSummary.usageItems === 0) {
       pushIssue(issues, "thread_detail_refresh_lost_usage", "H2", "thread-detail-refresh", {
         threadHash,
@@ -410,6 +457,25 @@ function compareDetailReadbacks(firstDetail = {}, secondDetail = {}, options = {
         count: secondSummary.operationItems,
       });
     }
+    if (firstSummary.timestampMissingVisibleItems === 0 && secondSummary.timestampMissingVisibleItems > 0) {
+      pushIssue(issues, "thread_detail_refresh_lost_visible_timestamps", "H2", "thread-detail-refresh", {
+        threadHash,
+        turnHash: secondSummary.turnHash,
+        count: secondSummary.timestampMissingVisibleItems,
+      });
+    }
+    if (firstSummary.startedAtMs > 0 && secondSummary.startedAtMs === 0) {
+      pushIssue(issues, "thread_detail_refresh_lost_turn_start_timestamp", "H2", "thread-detail-refresh", {
+        threadHash,
+        turnHash: secondSummary.turnHash,
+      });
+    }
+    if (firstSummary.completedAtMs > 0 && secondSummary.completedAtMs === 0) {
+      pushIssue(issues, "thread_detail_refresh_lost_turn_completion_timestamp", "H2", "thread-detail-refresh", {
+        threadHash,
+        turnHash: secondSummary.turnHash,
+      });
+    }
   }
   return {
     ok: issues.length === 0,
@@ -426,6 +492,35 @@ function compareThreadListReadbacks(first = {}, second = {}) {
   const firstSummary = analyzeThreadList(first);
   const secondSummary = analyzeThreadList(second);
   const issues = [...firstSummary.issues, ...secondSummary.issues];
+  const firstIds = threadRows(first).map(threadId).filter(Boolean);
+  const secondIds = threadRows(second).map(threadId).filter(Boolean);
+  const secondIdSet = new Set(secondIds);
+  const lostIds = firstIds.filter((id) => !secondIdSet.has(id));
+  if (lostIds.length) {
+    pushIssue(issues, "thread_list_repeat_lost_thread_ids", "H2", "thread-list-refresh", {
+      count: boundedCount(lostIds.length),
+    });
+  }
+  if (secondSummary.resultCount < firstSummary.resultCount) {
+    pushIssue(issues, "thread_list_repeat_row_count_downgrade", "H2", "thread-list-refresh", {
+      beforeCount: firstSummary.resultCount,
+      afterCount: secondSummary.resultCount,
+    });
+  }
+  const firstById = new Map(threadRows(first).map((row) => [threadId(row), threadUpdatedAtMs(row)]).filter(([id]) => id));
+  for (const row of threadRows(second)) {
+    const id = threadId(row);
+    if (!id || !firstById.has(id)) continue;
+    const beforeUpdatedAt = firstById.get(id);
+    const afterUpdatedAt = threadUpdatedAtMs(row);
+    if (beforeUpdatedAt && afterUpdatedAt && afterUpdatedAt < beforeUpdatedAt - 1000) {
+      pushIssue(issues, "thread_list_repeat_updated_at_downgrade", "H2", "thread-list-refresh", {
+        threadHash: shortHash(id),
+        beforeUpdatedAtMs: boundedCount(beforeUpdatedAt, Number.MAX_SAFE_INTEGER),
+        afterUpdatedAtMs: boundedCount(afterUpdatedAt, Number.MAX_SAFE_INTEGER),
+      });
+    }
+  }
   if (firstSummary.resultCount === secondSummary.resultCount && firstSummary.orderHash !== secondSummary.orderHash) {
     pushIssue(issues, "thread_list_repeat_order_changed", "H3", "thread-list-refresh", {
       beforeHash: firstSummary.orderHash,
@@ -440,17 +535,36 @@ function compareThreadListReadbacks(first = {}, second = {}) {
   };
 }
 
+function issueDedupKey(issue = {}) {
+  return [
+    text(issue.code),
+    text(issue.severity),
+    text(issue.surface),
+    text(issue.threadHash),
+    text(issue.turnHash),
+    text(issue.itemHash),
+  ].join("|");
+}
+
 function combineSelfCheck(parts = {}) {
   const issues = [];
+  const seen = new Set();
+  const pushUnique = (issue) => {
+    if (!issue || typeof issue !== "object") return;
+    const key = issueDedupKey(issue);
+    if (seen.has(key)) return;
+    seen.add(key);
+    issues.push(issue);
+  };
   for (const value of Object.values(parts)) {
     if (!value) continue;
     if (Array.isArray(value)) {
       for (const item of value) {
-        if (item && Array.isArray(item.issues)) issues.push(...item.issues);
+        if (item && Array.isArray(item.issues)) item.issues.forEach(pushUnique);
       }
       continue;
     }
-    if (Array.isArray(value.issues)) issues.push(...value.issues);
+    if (Array.isArray(value.issues)) value.issues.forEach(pushUnique);
   }
   const h2Count = issues.filter((issue) => issue.severity === "H1" || issue.severity === "H2").length;
   return {

@@ -76,6 +76,34 @@ test("thread detail self check detects missing usage and timestamp", () => {
   assert.ok(codes.includes("visible_item_timestamp_missing"));
 });
 
+test("thread detail self check detects missing assistant behind usage", () => {
+  const detail = healthyDetail();
+  detail.thread.turns[0].items = [
+    { id: "u1", type: "userMessage" },
+    { id: "usage1", type: "turnUsageSummary" },
+  ];
+
+  const report = analyzeThreadDetail(detail);
+  const codes = report.issues.map((issue) => issue.code);
+
+  assert.equal(report.ok, false);
+  assert.ok(codes.includes("latest_completed_assistant_missing"));
+});
+
+test("thread detail self check warns when completed replay loses user input", () => {
+  const detail = healthyDetail();
+  detail.thread.turns[0].items = [
+    { id: "a1", type: "agentMessage" },
+    { id: "usage1", type: "turnUsageSummary" },
+  ];
+
+  const report = analyzeThreadDetail(detail);
+  const codes = report.issues.map((issue) => issue.code);
+
+  assert.equal(report.ok, true);
+  assert.ok(codes.includes("latest_completed_user_input_missing"));
+});
+
 test("thread detail self check detects operation and reasoning rows in latest completed replay", () => {
   const detail = healthyDetail();
   detail.thread.turns[0].items.push(
@@ -107,6 +135,28 @@ test("thread detail self check detects refresh downgrade", () => {
   assert.ok(codes.includes("thread_detail_refresh_lost_usage"));
 });
 
+test("thread detail self check names user and assistant refresh downgrades", () => {
+  const first = healthyDetail();
+  first.thread.turns[0].items = [
+    { id: "u1", type: "userMessage" },
+    { id: "a1", type: "agentMessage" },
+    { id: "a2", type: "agentMessage" },
+    { id: "usage1", type: "turnUsageSummary" },
+  ];
+  const second = healthyDetail();
+  second.thread.turns[0].items = [
+    { id: "a1", type: "agentMessage" },
+    { id: "usage1", type: "turnUsageSummary" },
+  ];
+
+  const report = compareDetailReadbacks(first, second);
+  const codes = report.issues.map((issue) => issue.code);
+
+  assert.equal(report.ok, false);
+  assert.ok(codes.includes("thread_detail_refresh_lost_user_input"));
+  assert.ok(codes.includes("thread_detail_refresh_lost_assistant_items"));
+});
+
 test("thread list self check detects duplicate ids and order mismatch", () => {
   const report = analyzeThreadList({
     data: [
@@ -120,6 +170,19 @@ test("thread list self check detects duplicate ids and order mismatch", () => {
   assert.equal(report.ok, false);
   assert.ok(codes.includes("thread_list_duplicate_ids"));
   assert.ok(codes.includes("thread_list_updated_order_mismatch"));
+});
+
+test("thread list repeat detects lost rows and timestamp downgrade", () => {
+  const report = compareThreadListReadbacks(
+    { data: [{ id: "thread-a", updatedAt: 2000 }, { id: "thread-b", updatedAt: 1500 }] },
+    { data: [{ id: "thread-a", updatedAt: 1000 }] },
+  );
+  const codes = report.issues.map((issue) => issue.code);
+
+  assert.equal(report.ok, false);
+  assert.ok(codes.includes("thread_list_repeat_lost_thread_ids"));
+  assert.ok(codes.includes("thread_list_repeat_row_count_downgrade"));
+  assert.ok(codes.includes("thread_list_repeat_updated_at_downgrade"));
 });
 
 test("thread list repeat order change is warning-only", () => {
@@ -149,6 +212,23 @@ test("self check summary fails only on H1/H2 issues", () => {
   assert.equal(warningOnly.blockingIssueCount, 0);
   assert.equal(blocking.ok, false);
   assert.equal(blocking.blockingIssueCount, 1);
+});
+
+test("self check summary deduplicates repeated issue metadata", () => {
+  const issue = {
+    code: "latest_completed_replay_receipt_only",
+    severity: "H3",
+    surface: "thread-detail",
+    threadHash: "thread-hash",
+    turnHash: "turn-hash",
+  };
+  const summary = combineSelfCheck({
+    first: { issues: [issue] },
+    second: { issues: [Object.assign({}, issue)] },
+  });
+
+  assert.equal(summary.issueCount, 1);
+  assert.equal(summary.blockingIssueCount, 0);
 });
 
 test("timestamp self check uses UUIDv7 turn fallback", () => {
