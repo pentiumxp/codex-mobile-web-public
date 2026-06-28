@@ -2477,6 +2477,8 @@ test("Hermes proxy app-server text upload summaries render png thumbnails withou
   assert.match(html, /<img src="\/api\/hermes-plugins\/codex-mobile\/proxy\/api\/uploads\/file\?id=2026-06-28%2F019eee6c-a6f5-7b20-bfb4-f96ccb6431b3%2F1782622603833-d5ac6a1e9f2e-homeai-upload-174E84FB-38DA-4D53-AA6F-9FC6E3CA289C\.png&amp;key=test-key"/);
   assert.match(html, /data-protected-image-src="\/api\/hermes-plugins\/codex-mobile\/proxy\/api\/uploads\/file\?id=2026-06-28%2F019eee6c-a6f5-7b20-bfb4-f96ccb6431b3%2F1782622603833-d5ac6a1e9f2e-homeai-upload-174E84FB-38DA-4D53-AA6F-9FC6E3CA289C\.png&amp;key=test-key"/);
   assert.match(html, /homeai-upload-174E84FB-38DA-4D53-AA6F-9FC6E3CA289C\.png/);
+  assert.doesNotMatch(html, /<figcaption>/);
+  assert.doesNotMatch(html, />homeai-upload-174E84FB-38DA-4D53-AA6F-9FC6E3CA289C\.png</);
   assert.doesNotMatch(html, /<img src="[^"]*(?:\/Users|%2FUsers|\.codex-mobile-web|path=)/);
   assert.doesNotMatch(html, /Uploaded attachments:/);
 });
@@ -2645,7 +2647,8 @@ test("generated image content urls render bounded image cards", () => {
   assert.match(html, /class="image-view"/);
   assert.match(html, /<img src="data:image\/gif;base64,R0lGODlhAQABAIAAAAAAAP\/\/\/ywAAAAAAQABAAACAUwAOw=="/);
   assert.match(html, /data-protected-image-src="\/api\/generated-images\/file\?id=thread%2Ftool-output\.png&amp;key=test-key"/);
-  assert.match(html, /<figcaption>tool-output\.png<\/figcaption>/);
+  assert.doesNotMatch(html, /<figcaption>/);
+  assert.doesNotMatch(html, />tool-output\.png</);
   assert.doesNotMatch(html, /\/api\/files\/preview\/content/);
 });
 
@@ -2752,7 +2755,8 @@ test("unavailable generated images render a bounded failure card without img src
   });
 
   assert.match(html, /class="image-view image-load-failed"/);
-  assert.match(html, /1782210953458-homeai-upload\.jpg/);
+  assert.doesNotMatch(html, /1782210953458-homeai-upload\.jpg/);
+  assert.doesNotMatch(html, /<figcaption\b/);
   assert.doesNotMatch(html, /<img\b/);
   assert.doesNotMatch(html, /src=/);
 });

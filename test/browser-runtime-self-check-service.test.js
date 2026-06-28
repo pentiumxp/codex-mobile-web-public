@@ -41,6 +41,71 @@ test("browser runtime self-check catches sparse DOM after confirmed nonempty tar
   assert.ok(report.issues.some((issue) => issue.code === "browser_dom_final_sparse_after_nonempty"));
 });
 
+test("browser runtime self-check catches unconfirmed sparse downgrade after confirmed target content", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [
+      {
+        label: "confirmed-content",
+        threadHash: "thread-hash",
+        appVisible: true,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        turns: 8,
+        items: 40,
+        renderKeys: 45,
+      },
+      {
+        label: "current-thread-dropped",
+        threadHash: "thread-hash",
+        appVisible: true,
+        targetConfirmed: true,
+        contentConfirmed: false,
+        turns: 0,
+        items: 0,
+        renderKeys: 1,
+        delayMs: 1200,
+        emptyState: true,
+      },
+    ],
+  });
+
+  assert.equal(report.ok, false);
+  assert.ok(report.issues.some((issue) => issue.code === "browser_dom_sparse_after_nonempty" && issue.severity === "H2"));
+});
+
+test("browser runtime self-check catches visible item downgrade after confirmed target content", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [
+      {
+        label: "confirmed-rich-content",
+        threadHash: "thread-hash",
+        appVisible: true,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        turns: 10,
+        items: 80,
+        renderKeys: 85,
+      },
+      {
+        label: "dropped-middle-items",
+        threadHash: "thread-hash",
+        appVisible: true,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        turns: 4,
+        items: 25,
+        renderKeys: 30,
+        delayMs: 1600,
+      },
+    ],
+  });
+
+  assert.equal(report.ok, false);
+  assert.ok(report.issues.some((issue) => issue.code === "browser_dom_visible_items_downgraded_after_nonempty"));
+});
+
 test("browser runtime self-check ignores previous-thread residue as nonempty baseline", () => {
   const report = service.analyzeBrowserRuntimeSamples({
     minSettledDelayMs: 1000,
@@ -72,6 +137,35 @@ test("browser runtime self-check ignores previous-thread residue as nonempty bas
 
   assert.equal(report.ok, true);
   assert.equal(report.issueCount, 0);
+});
+
+test("browser runtime self-check catches latest usage timestamp and image failures", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [{
+      label: "dom-contract",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      latestTurnMatchesTarget: true,
+      expectedLatestUsageRequired: true,
+      latestTurnUsageCount: 0,
+      latestTimestampExpectedItems: 2,
+      latestTimestampMissingItems: 1,
+      imageCount: 2,
+      imageFailedFigureCount: 1,
+      brokenCompleteImageCount: 1,
+      imageFailureCount: 2,
+      turns: 3,
+      items: 9,
+      renderKeys: 12,
+    }],
+  });
+
+  assert.equal(report.ok, false);
+  assert.ok(report.issues.some((issue) => issue.code === "browser_latest_turn_usage_missing"));
+  assert.ok(report.issues.some((issue) => issue.code === "browser_latest_turn_timestamp_missing"));
+  assert.ok(report.issues.some((issue) => issue.code === "browser_image_render_failed"));
 });
 
 test("browser runtime self-check catches duplicate DOM keys and runtime exceptions", () => {
@@ -135,6 +229,10 @@ test("browser runtime self-check script exposes bounded browser snapshot fields"
   assert.match(expression, /duplicateItemIds/);
   assert.match(expression, /renderRoot = conversation \|\| document/);
   assert.match(expression, /contentConfirmed/);
+  assert.match(expression, /expectedLatestUsageRequired/);
+  assert.match(expression, /latestTimestampMissingItems/);
+  assert.match(expression, /imageFailureCount/);
+  assert.match(expression, /brokenCompleteImageCount/);
   assert.match(expression, /loadingNote/);
   assert.match(expression, /emptyState/);
   assert.match(expression, /codexMobileCurrentThreadId/);

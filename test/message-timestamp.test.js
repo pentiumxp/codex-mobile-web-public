@@ -56,10 +56,35 @@ test("running turn timestamps do not fall back to stale thread updated time", ()
   assert.match(appJs, /if \(!fallback \|\| \(startedAt && fallback < startedAt\)\) return 0;/);
 });
 
-test("live operational timestamps can use bounded turn-start time", () => {
+test("live visible timestamps can use bounded turn-start time", () => {
   const body = appJs.slice(appJs.indexOf("function itemTimestampMs"), appJs.indexOf("function turnStartedAtMs"));
-  assert.match(body, /isLiveTurn\(turn, contextThread\) \? 0 : turnStartedAtMs\(turn\)/);
+  assert.match(body, /\|\| turnStartedAtMs\(turn\)\r?\n\s*\|\| 0;/);
   assert.match(body, /if \(isLiveTurn\(turn, contextThread\) && isOperationalItem\(item\)\) return turnStartedAtMs\(turn\) \|\| 0;/);
+});
+
+test("live assistant messages use turn-start timestamps without item times", () => {
+  const sources = [
+    "renderContextThread",
+    "itemTimestampMs",
+    "numericTimestampMs",
+    "uuidV7TimestampMs",
+    "turnIdentityTimestampMs",
+    "turnStartedAtMs",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const result = Function(`
+const state = { currentThread: null, renderContextThread: null };
+function turnCompletedAtMs() { return 0; }
+function isLiveTurn() { return true; }
+function isOperationalItem() { return false; }
+${sources.join("\n")}
+return itemTimestampMs(
+  { type: "agentMessage" },
+  { id: "019f0ca6-a9c9-7753-8224-416f754b6c03" },
+  { id: "thread" },
+);
+`)();
+
+  assert.equal(result, 1782623676873);
 });
 
 test("turn timestamps can fall back to UUIDv7 turn identity", () => {

@@ -196,6 +196,12 @@ strings, cookies, tokens, screenshots, or logs. Clients after
 `codex-mobile-shell-v575` also paint a reusable cached thread detail before the
 background refresh when reopening an already-loaded thread, preventing the
 empty/loading shell from replacing valid visible content during refresh.
+Clients after `codex-mobile-shell-v576` extend the same browser self-check to
+visible-item downgrades, latest-turn timestamp/Usage gaps, and visible image
+load failures. `scripts/codex-mobile-runtime-self-check-loop.js` wraps the API
+self-check plus browser self-check for deploy-time one-shot checks and periodic
+metadata-only JSONL monitoring, while Home AI remains responsible for
+Owner-approved repair-card dispatch.
 
 The active-window coalescing slice targets the "long spinner, then eventual
 success" shape seen on active large sessions. That shape is not a network/RPC

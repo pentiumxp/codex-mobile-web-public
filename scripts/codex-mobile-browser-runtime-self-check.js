@@ -201,6 +201,32 @@ function visibleTurnIds(detail = {}) {
   return turns.map((turn) => String(turn && turn.id || "")).filter(Boolean);
 }
 
+function statusText(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object" && value.type) return String(value.type || "");
+  return String(value || "");
+}
+
+function completedStatus(value) {
+  return /completed|failed|cancel|error|interrupted/i.test(statusText(value));
+}
+
+function latestTurnExpectation(detail = {}) {
+  const thread = detail && (detail.thread || detail.data || detail);
+  const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+  const latest = turns.length ? turns[turns.length - 1] : null;
+  const items = Array.isArray(latest && latest.items) ? latest.items : [];
+  const itemTypes = items
+    .map((item) => String(item && item.type || "unknown").trim() || "unknown")
+    .slice(0, 80);
+  return {
+    expectedLatestUsageRequired: Boolean(latest && completedStatus(latest.status) && itemTypes.includes("turnUsageSummary")),
+    expectedLatestItemCount: items.length,
+    expectedLatestTimestampItemCount: itemTypes.filter((type) => /^(userMessage|agentMessage|plan|turnDiagnostic)$/i.test(type)).length,
+  };
+}
+
 function safeThreadPlan(ids = []) {
   return ids.map((id) => ({
     threadHash: shortHash(id),
@@ -213,9 +239,11 @@ async function loadThreadPlan(options, key, ids) {
   const plan = [];
   for (const id of ids) {
     let expectedTurnHashes = [];
+    let expectation = latestTurnExpectation();
     try {
       const detail = await fetchJson(requestUrl(options, `/api/threads/${encodeURIComponent(id)}`, { mode: "recent" }), options, key);
       expectedTurnHashes = visibleTurnIds(detail).map(browserStableHash);
+      expectation = latestTurnExpectation(detail);
     } catch (_) {
       expectedTurnHashes = [];
     }
@@ -225,6 +253,9 @@ async function loadThreadPlan(options, key, ids) {
       expectedTurnHashes,
       expectedLatestTurnHash: expectedTurnHashes[expectedTurnHashes.length - 1] || "",
       expectedTurnHashCount: expectedTurnHashes.length,
+      expectedLatestUsageRequired: expectation.expectedLatestUsageRequired,
+      expectedLatestItemCount: expectation.expectedLatestItemCount,
+      expectedLatestTimestampItemCount: expectation.expectedLatestTimestampItemCount,
     });
   }
   return plan;
@@ -501,6 +532,7 @@ function snapshotExpression(input = {}) {
   const threadHash = String(input.threadHash || "");
   const expectedTurnHashes = Array.isArray(input.expectedTurnHashes) ? input.expectedTurnHashes : [];
   const expectedLatestTurnHash = String(input.expectedLatestTurnHash || "");
+  const expectedLatestUsageRequired = Boolean(input.expectedLatestUsageRequired);
   const label = String(input.label || "");
   const delayMs = Math.max(0, Number(input.delayMs || 0) || 0);
   return `
@@ -509,6 +541,7 @@ function snapshotExpression(input = {}) {
       const threadHash = ${JSON.stringify(threadHash)};
       const expectedTurnHashes = new Set(${JSON.stringify(expectedTurnHashes)});
       const expectedLatestTurnHash = ${JSON.stringify(expectedLatestTurnHash)};
+      const expectedLatestUsageRequired = ${JSON.stringify(expectedLatestUsageRequired)};
       const label = ${JSON.stringify(label)};
       const delayMs = ${JSON.stringify(delayMs)};
       const stableHash = (value) => {
@@ -550,6 +583,18 @@ function snapshotExpression(input = {}) {
       const turnHashes = turnNodes.map((node) => stableHash(node.getAttribute("data-turn") || node.getAttribute("data-thread-tile-turn") || ""));
       const expectedMatches = turnHashes.filter((hash) => expectedTurnHashes.has(hash)).length;
       const latestMatches = Boolean(expectedLatestTurnHash && turnHashes.includes(expectedLatestTurnHash));
+      const latestTurnIndex = latestMatches ? turnHashes.indexOf(expectedLatestTurnHash) : turnNodes.length - 1;
+      const latestTurnNode = latestTurnIndex >= 0 ? turnNodes[latestTurnIndex] : null;
+      const timestampExpectedSelector = ".item.userMessage, .item.agentMessage, .item.plan, .item.turnDiagnostic, .item.thread-task-card-injected";
+      const timestampExpectedNodes = latestTurnNode ? Array.from(latestTurnNode.querySelectorAll(timestampExpectedSelector)) : [];
+      const timestampMissingNodes = timestampExpectedNodes.filter((node) => !node.querySelector(".item-timestamp"));
+      const latestUsageCount = latestTurnNode ? latestTurnNode.querySelectorAll(".item.turnUsageSummary").length : 0;
+      const imageNodes = Array.from(renderRoot.querySelectorAll(".input-image img, .image-view img, .markdown-image img"));
+      const failedFigures = Array.from(renderRoot.querySelectorAll(".input-image.image-load-failed, .image-view.image-load-failed, .markdown-image.image-load-failed"));
+      const brokenCompleteImages = imageNodes.filter((image) => {
+        if (!image || image.loading === "lazy" && !image.complete) return false;
+        return image.complete && Number(image.naturalWidth || 0) === 0 && Number(image.naturalHeight || 0) === 0;
+      });
       const storageMatchesTarget = (() => {
         try { return localStorage.getItem("codexMobileCurrentThreadId") === threadId; } catch (_) { return false; }
       })();
@@ -570,6 +615,14 @@ function snapshotExpression(input = {}) {
         expectedTurnMatchCount: expectedMatches,
         expectedTurnHashCount: expectedTurnHashes.size,
         latestTurnMatchesTarget: latestMatches,
+        expectedLatestUsageRequired,
+        latestTurnUsageCount: latestUsageCount,
+        latestTimestampExpectedItems: timestampExpectedNodes.length,
+        latestTimestampMissingItems: timestampMissingNodes.length,
+        imageCount: imageNodes.length,
+        imageFailedFigureCount: failedFigures.length,
+        brokenCompleteImageCount: brokenCompleteImages.length,
+        imageFailureCount: failedFigures.length + brokenCompleteImages.length,
         threadCards: document.querySelectorAll("[data-thread]").length,
         turns: turnNodes.length,
         items: itemNodes.length,
@@ -615,6 +668,9 @@ async function run(options = parseArgs(), deps = {}) {
       threadHash: entry.threadHash,
       expectedTurnHashCount: entry.expectedTurnHashCount,
       expectedLatestTurnHash: entry.expectedLatestTurnHash,
+      expectedLatestUsageRequired: Boolean(entry.expectedLatestUsageRequired),
+      expectedLatestItemCount: entry.expectedLatestItemCount,
+      expectedLatestTimestampItemCount: entry.expectedLatestTimestampItemCount,
     })),
     browserReport: null,
   };
@@ -699,6 +755,7 @@ async function run(options = parseArgs(), deps = {}) {
             threadHash: entry.threadHash,
             expectedTurnHashes: entry.expectedTurnHashes,
             expectedLatestTurnHash: entry.expectedLatestTurnHash,
+            expectedLatestUsageRequired: entry.expectedLatestUsageRequired,
             label: `round-${round + 1}-delay-${delayMs}`,
             delayMs,
           }), options.timeoutMs).catch((err) => ({

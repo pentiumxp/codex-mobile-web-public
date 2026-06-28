@@ -28287,3 +28287,46 @@ The previous full handoff was archived and should be opened only when old proven
   - Production browser-runtime self-check returned `ok:true`, `issueCount=0`,
     `blockingIssueCount=0`, `consoleWarningOrErrorCount=0`, and
     `exceptionCount=0` across 18 real browser DOM samples.
+
+### 2026-06-29 - Image Caption Hiding And Browser Runtime Self-Check v576
+
+- Scope:
+  - User asked that uploaded and system-generated images no longer show link
+    addresses, filenames, or captions; only the image/failure placeholder should
+    remain visible.
+  - User also reported that client runtime self-checks were still missing
+    visible client issues such as fresh reply timestamps and intermittent
+    message flicker.
+- Implementation:
+  - `public/app.js` and `public/markdown-renderer.js` now render upload,
+    generated/imageView, markdown, data-image, and unavailable-image figures
+    without visible filename/link captions. Image `alt` text is generic.
+  - Live `agentMessage` / `plan` items without item-level timestamps now fall
+    back to bounded turn-start / UUIDv7 time instead of rendering with no
+    timestamp. Usage cards still intentionally have no separate timestamp/header.
+  - `adapters/browser-runtime-self-check-service.js` now treats
+    `contentConfirmed=false` sparse samples as possible regression evidence
+    after a same-thread confirmed nonempty baseline, while still preventing them
+    from becoming the healthy baseline.
+  - Browser self-checks now classify visible-item downgrades, latest-turn
+    timestamp/Usage gaps, and visible image load failures.
+  - Added `scripts/codex-mobile-runtime-self-check-loop.js` for one-shot
+    deploy-time self-checks and optional `--loop --interval-ms 600000`
+    metadata-only periodic JSONL monitoring.
+  - Static shell/cache bumped to `codex-mobile-shell-v576`.
+- Validation:
+  - Focused image/timestamp/self-check tests passed (`178` tests).
+  - Full `npm test` passed (`1513` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - Local v576 source server on `127.0.0.1:8790` passed API self-check and
+    browser-runtime self-check against Movie and Codex Mobile target threads:
+    `ok:true`, `issueCount=0`, `blockingIssueCount=0`,
+    `maxLatestTimestampMissingItems=0`, `maxImageFailures=0`.
+  - Before the timestamp fix, the stricter source self-check against production
+    v575 correctly reported H2 `browser_latest_turn_timestamp_missing`, proving
+    the prior self-check gap.
+- Deployment:
+  - Not yet deployed in this entry. Next deploy should read back
+    `/api/public-config` as `clientBuildId=0.1.11|codex-mobile-shell-v576` and
+    run `scripts/codex-mobile-runtime-self-check-loop.js --server
+    http://127.0.0.1:8787 --json` after production refresh.

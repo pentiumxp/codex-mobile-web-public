@@ -51,6 +51,8 @@ function summarizeSamples(samples = []) {
   const turnCounts = normalized.map((sample) => toNumber(sample.turns));
   const itemCounts = normalized.map((sample) => toNumber(sample.items));
   const renderKeyCounts = normalized.map((sample) => toNumber(sample.renderKeys));
+  const imageFailureCounts = normalized.map((sample) => toNumber(sample.imageFailureCount));
+  const timestampMissingCounts = normalized.map((sample) => toNumber(sample.latestTimestampMissingItems));
   return {
     sampleCount: normalized.length,
     minTurns: normalized.length ? Math.min(...turnCounts) : 0,
@@ -58,6 +60,8 @@ function summarizeSamples(samples = []) {
     minItems: normalized.length ? Math.min(...itemCounts) : 0,
     maxItems: normalized.length ? Math.max(...itemCounts) : 0,
     maxRenderKeys: normalized.length ? Math.max(...renderKeyCounts) : 0,
+    maxImageFailures: normalized.length ? Math.max(...imageFailureCounts) : 0,
+    maxLatestTimestampMissingItems: normalized.length ? Math.max(...timestampMissingCounts) : 0,
     sparseSampleCount: normalized.filter(isSparseSample).length,
     nonEmptySampleCount: normalized.filter(isNonEmptySample).length,
   };
@@ -102,6 +106,31 @@ function analyzeBrowserRuntimeSamples(input = {}) {
         duplicateItemIds: toNumber(sample.duplicateItemIds),
       }));
     }
+    if (sampleIsConfirmed(sample) && toNumber(sample.imageFailureCount) > 0) {
+      issues.push(issue("H2", "browser_image_render_failed", sample, {
+        imageCount: toNumber(sample.imageCount),
+        imageFailureCount: toNumber(sample.imageFailureCount),
+        failedFigureCount: toNumber(sample.imageFailedFigureCount),
+        brokenCompleteImageCount: toNumber(sample.brokenCompleteImageCount),
+      }));
+    }
+    if (sampleIsConfirmed(sample)
+      && sample.latestTurnMatchesTarget
+      && toNumber(sample.latestTimestampMissingItems) > 0) {
+      issues.push(issue("H2", "browser_latest_turn_timestamp_missing", sample, {
+        latestTimestampExpectedItems: toNumber(sample.latestTimestampExpectedItems),
+        latestTimestampMissingItems: toNumber(sample.latestTimestampMissingItems),
+      }));
+    }
+    if (sampleIsConfirmed(sample)
+      && sample.expectedLatestUsageRequired
+      && sample.latestTurnMatchesTarget
+      && toNumber(sample.latestTurnUsageCount) <= 0) {
+      issues.push(issue("H2", "browser_latest_turn_usage_missing", sample, {
+        expectedLatestUsageRequired: true,
+        latestTurnUsageCount: toNumber(sample.latestTurnUsageCount),
+      }));
+    }
     const hash = sampleThreadHash(sample);
     if (!hash || !sampleIsConfirmed(sample)) continue;
     if (!samplesByThread.has(hash)) samplesByThread.set(hash, []);
@@ -117,6 +146,7 @@ function analyzeBrowserRuntimeSamples(input = {}) {
     for (const sample of rows) {
       const turns = toNumber(sample.turns);
       const items = toNumber(sample.items);
+      const settled = toNumber(sample.delayMs) >= minSettledDelayMs;
       maxTurns = Math.max(maxTurns, turns);
       maxItems = Math.max(maxItems, items);
       if (isNonEmptySample(sample)) {
@@ -127,7 +157,6 @@ function analyzeBrowserRuntimeSamples(input = {}) {
         }
       }
       else if (seenNonEmpty && isSparseSample(sample)) {
-        const settled = toNumber(sample.delayMs) >= minSettledDelayMs;
         issues.push(issue(settled ? "H2" : "H3", "browser_dom_sparse_after_nonempty", sample, {
           threadHash,
           previousMaxTurns: maxConfirmedTurns,
@@ -135,6 +164,16 @@ function analyzeBrowserRuntimeSamples(input = {}) {
           loadingNote: Boolean(sample.loadingNote),
           emptyState: Boolean(sample.emptyState),
           settled,
+        }));
+      }
+      if (seenNonEmpty && settled && items > 0 && maxConfirmedItems > 0 && items < Math.max(3, Math.floor(maxConfirmedItems * 0.55))) {
+        issues.push(issue("H2", "browser_dom_visible_items_downgraded_after_nonempty", sample, {
+          threadHash,
+          previousMaxItems: maxConfirmedItems,
+          currentItems: items,
+          previousMaxTurns: maxConfirmedTurns,
+          currentTurns: turns,
+          contentConfirmed: sample.contentConfirmed !== false,
         }));
       }
     }

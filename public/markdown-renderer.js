@@ -121,8 +121,7 @@
     const target = stripMarkdownLinkTarget(rawUrl);
     const safeUrl = safeMarkdownImageUrl(String(target || "").replaceAll("&amp;", "&"));
     if (!safeUrl) return null;
-    const label = String(rawLabel || "image").trim() || "image";
-    return `<figure class="markdown-image"><img src="${escapeHtml(safeUrl)}" alt="${escapeHtml(label)}" loading="lazy"><figcaption>${escapeHtml(label)}</figcaption></figure>`;
+    return `<figure class="markdown-image"><img src="${escapeHtml(safeUrl)}" alt="Image" loading="lazy"></figure>`;
   }
 
   function renderAutolinkUrl(rawUrl) {
@@ -341,7 +340,7 @@
   function renderBareDataImage(value) {
     const safeUrl = safeMarkdownDataImageUrl(value);
     if (!safeUrl) return "";
-    return `<figure class="markdown-image"><img src="${escapeHtml(safeUrl)}" alt="Generated image" loading="lazy"><figcaption>Generated image</figcaption></figure>`;
+    return `<figure class="markdown-image"><img src="${escapeHtml(safeUrl)}" alt="Image" loading="lazy"></figure>`;
   }
 
   function renderMarkdown(value, options = {}) {

@@ -16,6 +16,35 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-29 Runtime Self-Check / Image Caption Hotfix（v576）
+
+本次私有生产修复升级到 `codex-mobile-shell-v576`，集中处理三个用户可见问题：
+
+- 用户上传图片、系统生成图片、Markdown/data 图片和不可用图片占位都不再显示文件名、
+  本地路径或链接标题；消息流只显示图片本身或中性的失败占位。图片加载路径仍保留
+  `/api/uploads/file` / `/api/generated-images/file` 的同源/proxy-safe `src`，
+  不把本地绝对路径暴露成浏览器可见文本。
+- 进行中的 live assistant/plan 回执如果缺少逐条 timestamp，会回退到 turn start /
+  UUIDv7 时间；不会再因为 active turn 而显示空时间，也不会用线程 `updatedAt` 污染
+  中间回执时间。
+- 浏览器 runtime self-check 扩展为真实 DOM 契约检查：同一线程已经确认非空后，
+  后续采样变稀疏、visible item 明显下降、最新 turn 时间戳缺失、最新 turn Usage
+  缺失、图片加载失败都会成为 H2 metadata-only issue。此前 `contentConfirmed=false`
+  的稀疏样本会被跳过，导致用户看见“消息一会消失一会出现”但自检仍 `ok:true`；
+  现在只禁止它作为健康 baseline，不再禁止它作为回退证据。
+
+新增统一 runner：
+
+```sh
+node scripts/codex-mobile-runtime-self-check-loop.js --server http://127.0.0.1:8787 --json
+node scripts/codex-mobile-runtime-self-check-loop.js --server http://127.0.0.1:8787 --loop --interval-ms 600000 --json
+```
+
+第一条用于每次部署后的 one-shot 检查；第二条用于 10 分钟周期巡检并写入
+`~/.codex-mobile-web/logs/runtime-self-check.jsonl`。输出只包含 build/cache id、
+短 hash、issue 计数和 bounded error code，不包含消息正文、任务卡正文、上传内容、
+线程标题、cookie、token、access key、私有路径或长日志。
+
 ## 2026-06-28 Public 发布说明（v570 外部链接和 Home AI Deploy 通道）
 
 本次 Public 同步 `codex-mobile-shell-v570` 以及同批私有生产验证过的

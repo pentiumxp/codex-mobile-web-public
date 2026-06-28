@@ -760,11 +760,26 @@ Cause to check:
   only bounded `#conversation` metadata. `browser_dom_sparse_after_nonempty`
   means the browser had already shown confirmed nonempty content for that
   target thread, then rendered a sparse/empty shell; this should be fixed at
-  the client state/first-paint boundary instead of hidden with UI dedupe. It
-  also reports duplicate render/item keys, login/app visibility failures,
-  runtime exceptions, console errors, and route/status counts without printing
-  thread titles, message text, task-card bodies, uploads, query strings,
-  cookies, access keys, tokens, screenshots, or logs.
+  the client state/first-paint boundary instead of hidden with UI dedupe.
+  Clients after `codex-mobile-shell-v576` also report
+  `browser_dom_visible_items_downgraded_after_nonempty`,
+  `browser_latest_turn_timestamp_missing`,
+  `browser_latest_turn_usage_missing`, and `browser_image_render_failed`.
+  The analyzer no longer drops a sparse sample merely because
+  `contentConfirmed=false`; such samples cannot establish a healthy baseline,
+  but they can prove regression after the same target thread was previously
+  confirmed nonempty. It also reports duplicate render/item keys, login/app
+  visibility failures, runtime exceptions, console errors, and route/status
+  counts without printing thread titles, message text, task-card bodies,
+  uploads, query strings, cookies, access keys, tokens, screenshots, or logs.
+- After each deployment that changes thread-detail, projection, image rendering,
+  timestamps, or client refresh behavior, run the combined one-shot self-check:
+  `node scripts/codex-mobile-runtime-self-check-loop.js --server http://127.0.0.1:8787 --json`.
+  For periodic local monitoring, run the same script with
+  `--loop --interval-ms 600000`; it appends metadata-only JSONL records to
+  `~/.codex-mobile-web/logs/runtime-self-check.jsonl`. The loop records issue
+  counts and build/cache ids only and must not directly dispatch repair cards;
+  Home AI diagnostic intake and Owner approval own the repair-card step.
 - Clients after `codex-mobile-shell-v575` keep a reusable in-memory thread
   detail snapshot in `state.threadTileDetails`. When reopening a thread that
   already has loaded detail state, `loadThread()` paints that cached detail
