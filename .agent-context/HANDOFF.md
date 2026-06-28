@@ -27473,5 +27473,25 @@ The previous full handoff was archived and should be opened only when old proven
   - `npm run check`, `npm run check:macos`, `git diff --check`, Home AI
     fallback governance check, and `codegraph sync && codegraph status` passed.
 - Status:
-  - Ready for private commit and plugin-owned production deploy.
+  - Committed as `7bb5b63` and deployed through the Home AI central macOS
+    plugin deploy path with reason
+    `codex-mobile-active-replay-assistant-progress`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260628T112859Z-plugin-codex-mobile-web-codex-mobile-active-replay-assistant-progress`.
+  - Production `/api/public-config` remained
+    `clientBuildId=0.1.11|codex-mobile-shell-v571`,
+    `shellCacheName=codex-mobile-shell-v571`, and build id
+    `ea68b50ee73958c0`; shell/cache did not change because this is a
+    server/docs-only slice.
+  - Production file hash readback matched source for the changed services,
+    tests, and docs.
+  - Movie workspace production self-check changed the latest completed replay
+    from the pre-fix shape `agentMessage=4` /
+    `latestCompletedReplayOmittedAssistantItems=7` to `agentMessage=11` /
+    `latestCompletedReplayOmittedAssistantItems=0`, with repeat reads stable
+    and no Movie diagnostic candidates.
+  - Production sample self-check with eight threads returned `ok:true`,
+    `blockingIssueCount=0`; one independent H3
+    `latest_completed_user_input_missing` diagnostic candidate remains for a
+    separate slice.
   - Runtime/static shell cache is unchanged; no public push requested.
