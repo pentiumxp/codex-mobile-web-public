@@ -130,6 +130,10 @@ test("embedded plugin mode hides standalone chrome and installs navigation/windo
   assert.match(appJs, /function showCompletionAlert\(threadId, threadName\) \{\s*if \(isHermesEmbedMode\(\)\) return;/);
   assert.match(appJs, /installPluginWindowingGuards\(\)/);
   assert.match(appJs, /window\.open = function guardedPluginOpen/);
+  assert.match(appJs, /function openPluginExternalBrowserLink\(rawHref, options = \{\}\)/);
+  assert.match(appJs, /pluginEmbedApi\.postExternalLink\(window\.parent, \{/);
+  assert.match(appJs, /plugin_external_link_opened/);
+  assert.doesNotMatch(appJs, /plugin_external_link_blocked", \{ href:/);
   assert.match(appJs, /function requestHermesPluginRefresh\(reason, options = \{\}\)/);
   assert.match(appJs, /if \(!isHermesEmbedMode\(\) \|\| !pluginEmbedApi\.postRefreshRequired\) return false;/);
   assert.match(appJs, /appearance: currentPluginAppearanceForHost\(\)/);

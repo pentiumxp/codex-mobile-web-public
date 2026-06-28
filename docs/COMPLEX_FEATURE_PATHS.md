@@ -497,7 +497,11 @@ Implementation path:
    the short summary field with the long receipt body. In `/?embed=hermes`,
    browser Web Push registration should be disabled so Hermes owns the Inbox and
    Web Push delivery path.
-11. Add service tests for manifest/registration/token behavior, route tests for
+11. In embedded mode, receipt Markdown links may request an external browser
+    open only for user-clicked `http`, `https`, or `mailto` URLs. Keep local
+    paths on the in-app file preview path, reject unsafe schemes, and do not log
+    raw link URLs in client events.
+12. Add service tests for manifest/registration/token behavior, route tests for
    the public/authenticated paths, frontend embed harness tests for
    navigation/back/windowing, and bump the PWA shell cache if frontend launch
    behavior changes.

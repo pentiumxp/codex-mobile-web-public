@@ -11,12 +11,15 @@ function initialPluginLaunchKeyFromUrl() {
 
 const pluginEmbedApi = window.CodexPluginEmbed || {
   detect: () => ({ embedded: false, launchKey: initialPluginLaunchKeyFromUrl(), workspaceId: "", routeHint: null, appearance: {} }),
+  externalBrowserUrl: () => "",
+  externalLinkMessage: () => null,
   findRouteHintTargetNode: () => null,
   isBackMessage: () => false,
   navigationMessage: () => null,
   normalizeRouteHint: () => null,
   parentOriginFromReferrer: () => "",
   postBackResult: () => null,
+  postExternalLink: () => null,
   postNavigation: () => null,
   routeHintFocusPlan: () => ({ action: "ignore" }),
   routeHintFromUrl: () => null,
@@ -529,7 +532,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v569";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v570";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -12449,6 +12452,57 @@ function postPluginBackResult(handled, reason) {
   });
 }
 
+function externalLinkDiagnostics(href, source = "receipt-link", opened = false) {
+  const details = {
+    source: String(source || "receipt-link").slice(0, 80),
+    opened: Boolean(opened),
+  };
+  try {
+    const url = new URL(href, window.location.origin);
+    details.protocol = String(url.protocol || "").replace(/:$/, "").slice(0, 16);
+    details.hostHash = diagnosticHash(`external-link-host:${url.host}`);
+  } catch (_) {
+    details.protocol = "unknown";
+  }
+  return details;
+}
+
+function postPluginExternalLink(href, source = "receipt-link") {
+  if (!isHermesEmbedMode() || !pluginEmbedApi.postExternalLink) return null;
+  const targetOrigin = normalizePluginParentOrigin(state.pluginParentOrigin);
+  if (targetOrigin) state.pluginParentOrigin = targetOrigin;
+  return pluginEmbedApi.postExternalLink(window.parent, {
+    href,
+    origin: window.location.origin,
+    source,
+  }, {
+    targetOrigin: targetOrigin || "*",
+  });
+}
+
+function openPluginExternalBrowserLink(rawHref, options = {}) {
+  const href = pluginEmbedApi.externalBrowserUrl
+    ? pluginEmbedApi.externalBrowserUrl(rawHref, window.location.origin)
+    : "";
+  if (!href) return null;
+  const source = String(options.source || "receipt-link").slice(0, 80) || "receipt-link";
+  postPluginExternalLink(href, source);
+  const opener = options.openWindow || null;
+  let opened = null;
+  if (typeof opener === "function") {
+    try {
+      opened = opener.call(window, href, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      postClientEvent("plugin_external_link_open_failed", Object.assign(externalLinkDiagnostics(href, source, false), {
+        message: String(err && err.message || err || "").slice(0, 160),
+      }));
+      return null;
+    }
+  }
+  postClientEvent("plugin_external_link_opened", externalLinkDiagnostics(href, source, Boolean(opened)));
+  return opened;
+}
+
 function pluginEmbedBackSwipeCanHandle() {
   if (!isHermesEmbedMode() || !pluginEmbedApi.navigationMessage) return false;
   const message = pluginEmbedApi.navigationMessage(state, pluginNavigationUiState());
@@ -12613,10 +12667,16 @@ function installPluginWindowingGuards() {
       window.location.assign(value);
       return window;
     }
+    if (pluginEmbedApi.externalBrowserUrl && pluginEmbedApi.externalBrowserUrl(value, window.location.origin)) {
+      return openPluginExternalBrowserLink(value, {
+        source: "window-open",
+        openWindow: originalOpen,
+      });
+    }
     postClientEvent("plugin_window_blocked", {
-      url: value.slice(0, 240),
       target: String(target || "").slice(0, 80),
       features: String(features || "").slice(0, 160),
+      reason: "unsupported_external_window",
     });
     return null;
   };
@@ -12631,7 +12691,18 @@ function installPluginWindowingGuards() {
       event.preventDefault();
       event.stopPropagation();
       if (internal) window.location.assign(new URL(href, window.location.origin).toString());
-      else postClientEvent("plugin_external_link_blocked", { href: href.slice(0, 240) });
+      else {
+        if (pluginEmbedApi.externalBrowserUrl && pluginEmbedApi.externalBrowserUrl(href, window.location.origin)) {
+          openPluginExternalBrowserLink(href, {
+            source: "receipt-link",
+            openWindow: originalOpen,
+          });
+        } else {
+          postClientEvent("plugin_external_link_blocked", Object.assign(externalLinkDiagnostics(href, "receipt-link", false), {
+            reason: "unsupported_external_link",
+          }));
+        }
+      }
     }
   }, true);
 }
