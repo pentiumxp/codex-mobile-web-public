@@ -505,11 +505,17 @@ boundary. `adapters/thread-detail-active-window-prewarm-service.js` and the
 foreground thread-detail orchestrator can both build the same
 `turns-list-active-overlay-window` history window when a large active thread
 has live overlay evidence but no usable projection window yet. They share
-`adapters/thread-detail-active-window-read-coalescer-service.js`, so only one
-app-server turns-list read runs at a time for the same thread and mode; later
-callers join the existing promise and log bounded `turns_list_coalesced`
-metadata. This is process-local duplicate suppression, not a persistent cache
-or an alternate projection authority.
+`adapters/thread-detail-turns-list-read-coalescer-service.js`, so only one
+bounded app-server turns-list window read runs at a time for the same
+thread/mode/limit; later callers join the existing promise and log bounded
+`turns_list_coalesced` metadata. The same coalescer also covers cold
+`turns-list-initial` and large-session `turns-list-large` detail windows, which
+prevents repeated foreground opens or startup refreshes from launching duplicate
+1-3s app-server window reads for the same thread. Each caller receives a cloned
+JSON result before projection seeding or diagnostics are attached, so shared
+read suppression does not create shared mutable response state. This is
+process-local duplicate suppression, not a persistent cache or an alternate
+projection authority.
 Startup fallback prewarm feeds the same path: after
 `adapters/thread-list-fallback-prewarm-service.js` builds the process fallback
 baseline, server glue can schedule active-window prewarm for active rows from

@@ -1,5 +1,13 @@
 "use strict";
 
+const crypto = require("node:crypto");
+
+const COALESCED_TURNS_LIST_MODES = new Set([
+  "turns-list-active-overlay-window",
+  "turns-list-initial",
+  "turns-list-large",
+]);
+
 function text(value) {
   return String(value || "").trim();
 }
@@ -16,22 +24,42 @@ function boundedMs(value) {
   return Math.min(Number.MAX_SAFE_INTEGER, Math.trunc(number));
 }
 
-function activeWindowKey(input = {}) {
-  const threadId = text(input.threadId);
-  const mode = text(input.mode);
-  if (!threadId || mode !== "turns-list-active-overlay-window") return "";
-  return `${threadId}:${mode}`;
+function shortHash(value) {
+  const raw = text(value);
+  if (!raw) return "";
+  return crypto.createHash("sha256").update(raw).digest("hex").slice(0, 12);
 }
 
-function createThreadDetailActiveWindowReadCoalescer(options = {}) {
+function cloneJson(value) {
+  if (value === undefined) return undefined;
+  return JSON.parse(JSON.stringify(value));
+}
+
+function coalescedTurnsListKey(input = {}) {
+  const threadId = text(input.threadId);
+  const mode = text(input.mode);
+  if (!threadId || !COALESCED_TURNS_LIST_MODES.has(mode)) return "";
+  const warning = text(input.warning);
+  if (warning) return "";
+  const limit = boundedCount(input.limit || input.maxTurns || input.maxThreadTurns);
+  const settingsHash = shortHash(JSON.stringify(input.runtimeSettings || {}));
+  return [
+    threadId,
+    mode,
+    limit ? `limit:${limit}` : "limit:default",
+    settingsHash ? `settings:${settingsHash}` : "settings:default",
+  ].join(":");
+}
+
+function createThreadDetailTurnsListReadCoalescer(options = {}) {
   const now = typeof options.now === "function" ? options.now : () => Date.now();
   const inFlight = new Map();
 
   async function read(input = {}, reader) {
     if (typeof reader !== "function") {
-      throw new Error("active window reader is required");
+      throw new Error("turns-list reader is required");
     }
-    const key = activeWindowKey(input);
+    const key = coalescedTurnsListKey(input);
     if (!key) return reader(input);
     const existing = inFlight.get(key);
     if (existing && existing.promise) {
@@ -44,7 +72,7 @@ function createThreadDetailActiveWindowReadCoalescer(options = {}) {
           joinCount: boundedCount(existing.joinCount),
         });
       }
-      return existing.promise;
+      return existing.promise.then(cloneJson);
     }
     const entry = {
       startedAtMs: now(),
@@ -57,7 +85,7 @@ function createThreadDetailActiveWindowReadCoalescer(options = {}) {
         if (inFlight.get(key) === entry) inFlight.delete(key);
       });
     inFlight.set(key, entry);
-    return entry.promise;
+    return entry.promise.then(cloneJson);
   }
 
   function status() {
@@ -77,6 +105,7 @@ function createThreadDetailActiveWindowReadCoalescer(options = {}) {
 }
 
 module.exports = {
-  activeWindowKey,
-  createThreadDetailActiveWindowReadCoalescer,
+  COALESCED_TURNS_LIST_MODES,
+  coalescedTurnsListKey,
+  createThreadDetailTurnsListReadCoalescer,
 };

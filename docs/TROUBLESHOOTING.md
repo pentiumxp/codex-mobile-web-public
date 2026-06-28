@@ -371,11 +371,13 @@ turn/status notifications and thread-list refreshes through
 `thread-detail-active-window-prewarm-service`, so the preferred closure is to
 verify prewarm scheduling and cache reuse rather than increasing the detail
 timeout or adding a client loading fallback. Current servers also coalesce
-foreground detail and background prewarm reads for the same thread/mode through
-`thread-detail-active-window-read-coalescer-service`. If logs show
+foreground detail and background prewarm reads for the same thread/mode/limit
+through `thread-detail-turns-list-read-coalescer-service`. This covers
+`turns-list-active-overlay-window`, ordinary cold `turns-list-initial`, and
+large-session `turns-list-large` no-warning windows. If logs show
 `turns_list_coalesced`, duplicate app-server work has been suppressed and the
-remaining wait belongs to the single authoritative
-`turns-list-active-overlay-window` read or earlier prewarm readiness. After
+remaining wait belongs to the single authoritative app-server window read or
+earlier prewarm/projection readiness. After
 restart, the thread-list fallback prewarm should also schedule active-window
 prewarm for active rows when it completes; if the first active detail open is
 still cold after the fallback baseline has completed, inspect whether

@@ -25588,6 +25588,72 @@ The previous full handoff was archived and should be opened only when old proven
   - `git diff --check` passed.
   - Full `npm test` passed (`1395` tests).
 - Deployment status:
-  - Not deployed at the time of this note. Next step is commit, central macOS
-    plugin deploy, and production readback confirming v558 shell/cache plus
-    normal warm list/detail timings.
+  - Committed as `a64d2de` (`fix: show active detail budget omissions`) and
+    deployed through the central Home AI macOS plugin deploy path with reason
+    `codex-mobile-v558-visible-budget-notice`.
+  - Production `/api/public-config` readback confirmed
+    `clientBuildId=0.1.11|codex-mobile-shell-v558` and
+    `shellCacheName=codex-mobile-shell-v558`.
+  - Source/production hash parity was confirmed for `public/app.js`,
+    `public/styles.css`, `public/sw.js`, and the updated docs.
+  - Production markers confirmed `visibleItemBudgetForTurn`,
+    `renderTurnVisibleItemBudgetNotice`, `visibleItemBudgetSignature`, and
+    `.turn-visible-budget-note`.
+  - Readback smoke after deploy:
+    - Codex Mobile thread `019eee6c-a6f5-7b20-bfb4-f96ccb6431b3`:
+      `projection-v4-partial`, warm path, `40ms`.
+    - Home AI thread `019eed86-2002-7cc2-b0b7-937eb5355f36`:
+      `projection-v4-dynamic`, warm path, `60ms`, with historical omitted turns
+      reported as expected for recent-mode detail.
+  - No browser automation package (`playwright`, `puppeteer`, `jsdom`, or
+    `happy-dom`) is installed in this workspace, so no live browser screenshot
+    was captured for this slice. Executable render tests and production
+    readback are the closure evidence.
+
+## 2026-06-28 - Thread Detail Turns-List Window Coalescing Module
+
+- User-visible symptom:
+  - After the v558 warm readback, the user reported a different loading shape:
+    a thread can wait for a long time without the old timeout UI and then
+    eventually render. This is a slow-success path, not an RPC hard failure.
+- Runtime evidence:
+  - Bounded log scan found the current Codex Mobile thread
+    `019eee6c-a6f5-7b20-bfb4-f96ccb6431b3` repeatedly entering
+    `turns-list-initial` for `mode=recent` after a cold/projection-miss path.
+    Several same-thread reads spent roughly `1.5-2.5s` each in app-server
+    `thread/turns/list` before projection warmed.
+  - Concurrent/repeated startup or foreground refreshes could therefore launch
+    duplicate bounded app-server window reads for the same thread/mode instead
+    of joining the first in-flight read.
+- Root cause / invariant:
+  - The existing in-flight coalescer covered only
+    `turns-list-active-overlay-window`. Ordinary cold `turns-list-initial` and
+    large-session `turns-list-large` detail windows had no same-thread in-flight
+    suppression.
+  - The fix must be service-side duplicate-work suppression, not a client retry,
+    timeout increase, or projection fallback.
+- Implementation:
+  - Replaced the active-window-only coalescer with
+    `adapters/thread-detail-turns-list-read-coalescer-service.js`.
+  - The new service coalesces no-warning `turns-list-active-overlay-window`,
+    `turns-list-initial`, and `turns-list-large` reads by thread/mode/limit and
+    a bounded runtime-settings hash.
+  - Joiners log `turns_list_coalesced` with bounded mode, elapsed time, and
+    join count.
+  - Each waiter receives a cloned JSON result, so later projection seeding or
+    diagnostic attachment cannot share mutable response state between callers.
+  - `server.js` wires both active-window prewarm and foreground detail
+    orchestration through the same generic coalescer.
+  - Updated docs: `docs/README.md`, `docs/ARCHITECTURE.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, `docs/MODULES.md`, and
+    `docs/TROUBLESHOOTING.md`.
+- Local validation so far:
+  - Focused coalescer/read-orchestration/prewarm/Phase-B/performance suite
+    passed (`79` tests).
+  - `npm run check` passed.
+  - `git diff --check` passed.
+- Deployment status:
+  - Not committed or deployed yet at the time of this note. Next step is full
+    `npm test`, `npm run check:macos`, commit, central macOS plugin deploy, and
+    production readback. Static shell/cache bump is not expected because this is
+    server-only.

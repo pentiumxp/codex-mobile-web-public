@@ -238,13 +238,19 @@ Current acceleration targets:
    and the foreground first detail open could race and both start the same
    `turns-list-active-overlay-window` app-server read for one active thread.
    The coalescing slice adds
-   `thread-detail-active-window-read-coalescer-service`, injected into both the
+   `thread-detail-turns-list-read-coalescer-service`, injected into both the
    prewarm coordinator and the detail orchestrator. It shares only in-flight
-   reads for the same thread/mode, logs `turns_list_coalesced` for joiners, and
-   clears failures so retries are normal. This removes duplicate cold work
-   without changing active-overlay proof gates, projection cache semantics, or
+   reads for the same thread/mode/limit, logs `turns_list_coalesced` for
+   joiners, returns cloned JSON results to each caller, and clears failures so
+   retries are normal. Runtime evidence later showed the same slow-success
+   shape for ordinary cold `turns-list-initial` reads on the current Codex
+   Mobile thread, where repeated foreground refreshes each spent roughly
+   `1.5-2.5s` in app-server window reads before the projection warmed. The
+   generic coalescer therefore also covers `turns-list-initial` and
+   `turns-list-large` no-warning reads. This removes duplicate cold work without
+   changing active-overlay proof gates, projection cache semantics, or
    cross-thread concurrency. Residual latency after this slice is the single
-   authoritative app-server active-window read or a prewarm-readiness issue.
+   authoritative app-server window read or a prewarm/projection-readiness issue.
    The startup-readiness follow-up connects `thread-list-fallback-prewarm` to
    this path: when the process fallback baseline completes, its already-read
    active thread summaries are passed through an internal hook to schedule

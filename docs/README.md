@@ -189,6 +189,19 @@ does not duplicate the same app-server turns-list work. Residual latency after
 this slice belongs to the single authoritative app-server active-window read or
 earlier prewarm readiness, not duplicate frontend refreshes.
 
+The follow-up detail-window coalescing slice generalizes that duplicate-work
+guard to bounded `thread/turns/list` detail windows. Runtime logs showed the
+same slow-success shape on ordinary cold `turns-list-initial` reads for the
+Codex Mobile thread: several foreground refreshes each spent roughly
+`1.5-2.5s` in app-server window reads before the projection warmed. The server
+now uses `thread-detail-turns-list-read-coalescer-service` for
+`turns-list-active-overlay-window`, `turns-list-initial`, and
+`turns-list-large` no-warning windows. Joiners log bounded
+`turns_list_coalesced` metadata, and each caller receives a cloned JSON result
+before projection seeding or diagnostics attach. This reduces duplicate cold
+work without changing projection authority, response-budget policy, or client
+fallback behavior.
+
 The same module also links startup thread-list fallback prewarm to
 active-window prewarm. When the process-lifetime fallback baseline finishes, the
 server inspects only the already-returned active thread summaries and schedules
