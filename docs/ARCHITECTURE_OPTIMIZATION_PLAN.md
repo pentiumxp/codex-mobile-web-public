@@ -2946,6 +2946,41 @@ Required validation:
   blockers before using the result as a deployment gate.
 - Full local checks and central deploy/readback when this module is released.
 
+### 2026-06-28 Initial Active Window Overlay Module
+
+Production readback after the recent rich-replay repair showed a remaining
+slow-success active-detail path:
+
+- `turns-list-initial` discovered an active turn that the summary had missed;
+- correctness protection promoted the request to active full read;
+- the detail response was correct, but one sample still spent several seconds
+  in `thread/read`.
+
+This module keeps the same fail-closed projection authority but removes that
+unnecessary full-read step when evidence is already sufficient. If the initial
+recent `turns/list` response contains an active turn, read orchestration upgrades
+that window into a `turns-list-active-overlay-window` proof input and asks the
+server-owned active-overlay provider for live overlay evidence. Only a complete
+`thread-detail-active-window-overlay-policy-service` proof may return
+`projection-active-overlay`; missing, stale, mismatched, non-authoritative, or
+incomplete evidence still falls through to full `thread/read`.
+
+The module does not add a client fallback, does not relax the active-overlay
+proof gate, and does not persist raw live turn payloads. It moves an already
+available bounded initial window into the existing server-side overlay proof
+path.
+
+Required validation:
+
+- focused `thread-detail-read-orchestration-service` coverage proving a
+  summary-missed active initial window can return `projection-active-overlay`
+  without full `thread/read`;
+- focused projection/active-overlay related suite;
+- full local checks and central deploy/readback when released;
+- Phase-B readback should no longer classify the same sample as
+  `activeFullReadReason=initial-window-active-turn` with
+  `activeOverlayGate=needs_repair` when overlay evidence is complete.
+
 ## Release Rule
 
 Follow the current release order:

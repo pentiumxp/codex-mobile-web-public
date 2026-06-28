@@ -387,6 +387,157 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       return hiddenResponse();
     }
 
+    async function tryActiveOverlayFromInitialWindow(activeWindowResult) {
+      if (!projection || !resolveActiveWindowOverlay || !activeWindowResult || !activeWindowResult.thread) return null;
+      const activeOverlayStartedAtMs = now();
+      let activeOverlayProjectionThread = asActiveOverlayProjectionWindow(activeWindowResult, {});
+      if (!activeOverlayProjectionThread) return null;
+      let activeOverlayProjectionResult = Object.assign({}, activeWindowResult || {}, {
+        thread: activeOverlayProjectionThread,
+      });
+      if (projection && activeOverlayProjectionThread) {
+        if (latestCompletedReplayInputGap(activeOverlayProjectionThread)) {
+          context.projectionSeedStatus = "skipped";
+          context.projectionSeedSource = "initial-active-window-input-gap";
+          threadLog("projection_seed_skipped", { reason: "initial_active_window_input_gap" });
+        } else {
+          try {
+            const seeded = seedProjection(projection, activeOverlayProjectionResult, {
+              partial: true,
+              partialKind: "turns-list-active-overlay-window",
+            });
+            context.projectionSeedStatus = seeded && seeded.skipped
+              ? "skipped"
+              : seeded && seeded.partial
+                ? "seeded-partial"
+                : "seeded";
+            context.projectionSeedSource = seeded && seeded.reason || "turns-list-initial-active-window";
+          } catch (err) {
+            context.projectionSeedStatus = "failed";
+            context.projectionSeedSource = "turns-list-initial-active-window";
+            threadLog("projection_seed_error", { error: safeErrorMessage(err) });
+          }
+        }
+      }
+
+      let overlayInput = null;
+      try {
+        const activeOverlayResolveStartedAtMs = now();
+        const overlayResult = resolveActiveWindowOverlay({
+          threadId,
+          summary,
+          projection,
+          runtimeSettings,
+          projectionThread: activeOverlayProjectionThread,
+          projectionLookup: null,
+        });
+        overlayInput = isPromiseLike(overlayResult) ? await overlayResult : overlayResult;
+        timer.mark("activeOverlayResolveMs", activeOverlayResolveStartedAtMs);
+      } catch (err) {
+        if (!timer.timings.activeOverlayResolveMs) timer.mark("activeOverlayResolveMs", activeOverlayStartedAtMs);
+        overlayInput = { reason: "resolver-error", error: safeErrorMessage(err) };
+        threadLog("active_overlay_resolve_error", { error: safeErrorMessage(err) });
+      }
+      overlayInput = mergeActiveOverlayProjectionFields(overlayInput, activeOverlayProjectionThread);
+      let activeOverlayPlanStartedAtMs = now();
+      let activeOverlayPlan = planActiveWindowOverlay(Object.assign({}, overlayInput || {}, {
+        summary,
+        projectionThread: activeOverlayProjectionThread,
+      }));
+      timer.mark("activeOverlayPlanMs", activeOverlayPlanStartedAtMs);
+
+      if (activeOverlayPlan.action === "use-projection-overlay"
+        && overlayInput
+        && overlayInput.overlayTurn) {
+        const backfillStartedAtMs = now();
+        const mergedOverlayTurn = mergeActiveOverlayTurnWithWindowBackfill(
+          overlayInput.overlayTurn,
+          activeOverlayProjectionThread,
+        );
+        if (mergedOverlayTurn && mergedOverlayTurn !== overlayInput.overlayTurn) {
+          overlayInput = Object.assign({}, overlayInput, {
+            overlayTurn: mergedOverlayTurn,
+            overlayEvidence: summarizeActiveOverlayTurnEvidence(mergedOverlayTurn),
+            overlayBackfillSource: "turns-list-initial-active-window",
+          });
+          activeOverlayPlanStartedAtMs = now();
+          activeOverlayPlan = planActiveWindowOverlay(Object.assign({}, overlayInput, {
+            summary,
+            projectionThread: activeOverlayProjectionThread,
+          }));
+          timer.mark("activeOverlayPlanMs", activeOverlayPlanStartedAtMs);
+          threadLog("active_overlay_backfilled", {
+            source: "turns-list-initial-active-window",
+            assistantItems: activeOverlayPlan.counts && activeOverlayPlan.counts.assistantItems || 0,
+          });
+        }
+        timer.mark("activeOverlayBackfillWindowMs", backfillStartedAtMs);
+      }
+
+      timer.mark("activeOverlayMs", activeOverlayStartedAtMs);
+      context.activeOverlayAction = activeOverlayPlan.action || "require-full-read";
+      context.activeOverlayReason = activeOverlayPlan.reason || "";
+      context.activeOverlaySource = activeOverlayPlan.overlaySource || "";
+      context.activeOverlayItems = activeOverlayPlan.counts && activeOverlayPlan.counts.items || 0;
+      context.activeOverlayOperationItems = activeOverlayPlan.counts && activeOverlayPlan.counts.operationItems || 0;
+      context.activeOverlayUploadItems = activeOverlayPlan.counts && activeOverlayPlan.counts.uploadItems || 0;
+      context.activeOverlayAssistantItems = activeOverlayPlan.counts && activeOverlayPlan.counts.assistantItems || 0;
+      context.activeOverlayReceiptItems = activeOverlayPlan.counts && activeOverlayPlan.counts.receiptItems || 0;
+      threadLog("active_overlay_initial_window_plan", {
+        action: context.activeOverlayAction,
+        reason: context.activeOverlayReason,
+        source: context.activeOverlaySource,
+      });
+      if (activeOverlayPlan.action !== "use-projection-overlay" || !overlayInput || !overlayInput.overlayTurn) {
+        return null;
+      }
+
+      const activeOverlayMergeStartedAtMs = now();
+      const mergedThread = mergeProjectionThreadWithActiveOverlay(
+        activeOverlayProjectionThread,
+        overlayInput.overlayTurn,
+        {
+          readMode: "projection-active-overlay",
+          overlaySource: activeOverlayPlan.overlaySource,
+          reason: activeOverlayPlan.reason,
+          counts: activeOverlayPlan.counts,
+          compactOverlayTurn: compactActiveOverlayTurn
+            ? (turn, compactDetails = {}) => compactActiveOverlayTurn(turn, Object.assign({}, compactDetails, {
+              threadId,
+              summary,
+              runtimeSettings,
+              projectionThread: activeOverlayProjectionThread,
+            }))
+            : null,
+        },
+      );
+      timer.mark("activeOverlayMergeMs", activeOverlayMergeStartedAtMs);
+      const result = Object.assign({}, activeOverlayProjectionResult || {}, { thread: mergedThread });
+      if (isHiddenThread(result && result.thread, visibility)) {
+        threadLog("active_overlay_initial_window_hidden", {
+          durationMs: now() - activeOverlayStartedAtMs,
+          status: 404,
+        });
+        return hiddenResponse();
+      }
+      context.projectionState = "hit";
+      context.projectionMissReason = "";
+      const projectionInfo = projectionDiagnosticsFromThread(result.thread);
+      context.projectionSource = projectionInfo.source || "partial";
+      context.projectionVersion = projectionInfo.version;
+      context.projectionAgeMs = projectionInfo.ageMs;
+      rememberThreadSummary(result.thread);
+      return {
+        status: 200,
+        mode: "projection-active-overlay",
+        body: await prepareAndAttach(result, context, {
+          threadId,
+          source: "projection-active-overlay",
+          readDecision: "projection-active-overlay",
+        }),
+      };
+    }
+
     if (rawAllEnabled()) {
       const readStartedAtMs = now();
       threadLog("thread_read_raw_start", { timeoutMs: readTimeoutMs });
@@ -882,8 +1033,10 @@ function createThreadDetailReadOrchestrationService(options = {}) {
           context.projectionSeedStatus = "skipped";
           context.projectionSeedSource = "initial-active-window";
           threadLog("turns_list_initial_active_turn_detected", {
-            action: "require-full-read",
+            action: projection && resolveActiveWindowOverlay ? "try-active-overlay" : "require-full-read",
           });
+          const overlayResponse = await tryActiveOverlayFromInitialWindow(result);
+          if (overlayResponse) return overlayResponse;
         } else if (projection && result && result.thread) {
           try {
             const seeded = seedProjection(projection, result, {

@@ -27752,3 +27752,95 @@ The previous full handoff was archived and should be opened only when old proven
     to full read.
   - Added focused orchestration tests for both missed-active cases, active full
     read cache seeding, and safe return of full active projections.
+- Final deploy / readback:
+  - Final committed fix: `ba7f8cf` (`fix: preserve recent rich thread replay`).
+  - Production deploy completed through Home AI central macOS plugin deploy path
+    with reason `codex-mobile-rich-replay-active-cache`; production public config
+    readback reported `clientBuildId=0.1.11|codex-mobile-shell-v571`.
+  - Focused + broad validation before deploy passed:
+    - focused projection/read-orchestration suite (`73` tests);
+    - combined projection/budget/user-input/self-check suite (`137` tests);
+    - `npm test` (`1472` tests);
+    - `npm run check`;
+    - `npm run check:macos`;
+    - `git diff --check`.
+  - Production self-check after final deploy:
+    - `ok=true`, `issueCount=0`, `blockingIssueCount=0`,
+      `diagnosticCandidateCount=0`;
+    - active raw/detail comparison matched (`rawAssistantItems=117`,
+      `detailAssistantItems=117`);
+    - rich replay samples retained protected assistant rows with
+      `richCompletedReplayOmittedAssistantItems=0`.
+  - Production Movie direct readback after final deploy:
+    - read mode `projection-v4-dynamic`;
+    - latest short turn retained `userMessage`, `agentMessage`, and `Usage`;
+    - previous rich turn retained `31` assistant items and
+      `richCompletedReplayOmittedAssistantItems=0`.
+  - Residual performance note: Phase-B smoke still reports an H1 active-overlay
+    performance gap when it must promote to full `thread-read` for an active
+    thread (`activeFullReadReason=initial-window-active-turn`, ~7s sample).
+    This is now a performance/overlay-coverage follow-up, not a confirmed
+    projection-loss issue in the final self-check.
+
+## 2026-06-28 - Initial Active Window Overlay Repair
+
+- Source report / evidence:
+  - After `ba7f8cf` production deploy, projection correctness self-check passed,
+    but Phase-B smoke still found an active-detail slow path:
+    `readMode=thread-read`, `activeFullReadReason=initial-window-active-turn`,
+    `turnsListInitialMs=2824`, `threadReadMs=4327`, `totalMs=7216`, and
+    `activeOverlayGate=needs_repair`.
+- Root cause / invariant:
+  - `thread-detail-read-orchestration-service` already detected when an initial
+    recent `turns/list` window contained an active turn that the summary missed.
+    The correctness fix promoted that request to full active read, but the
+    active-overlay proof seam had already been skipped earlier in the function.
+  - Invariant: an incomplete active initial window must not be returned as final
+    detail, but if server-owned live overlay evidence is complete, it should be
+    used as an active-overlay proof input before falling through to full
+    `thread/read`.
+- Fix:
+  - Added `tryActiveOverlayFromInitialWindow()` inside read orchestration. It
+    upgrades the already-read initial window into a
+    `turns-list-active-overlay-window` projection input, seeds that bounded
+    partial window, asks the existing active-overlay provider for live evidence,
+    runs the existing active-window proof gate, backfills early active-window
+    assistant items, and returns `projection-active-overlay` only if proof is
+    complete.
+  - Provider-missing, stale, mismatched, non-authoritative, incomplete, or
+    input-gap evidence still falls through to full `thread/read`.
+  - No client fallback was added and the active-overlay proof gate was not
+    relaxed.
+- Changed files:
+  - `adapters/thread-detail-read-orchestration-service.js`
+  - `test/thread-detail-read-orchestration-service.test.js`
+  - `docs/MODULES.md`
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`
+- Validation before commit:
+  - `node --test test/thread-detail-read-orchestration-service.test.js` passed
+    (`29` tests).
+  - Focused active-overlay/projection/Phase-B suite passed (`118` tests).
+  - `npm test` passed (`1473` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - `codegraph sync && codegraph status` reported the index up to date.
+- Commit / deploy / readback:
+  - Committed `1db2b46` (`fix: reuse initial active window overlay`).
+  - Deployed through Home AI central macOS plugin deploy path with reason
+    `codex-mobile-initial-active-window-overlay`; production source ref was
+    `1db2b4675c57`, dirty false.
+  - Production marker readback found
+    `tryActiveOverlayFromInitialWindow`,
+    `turns-list-initial-active-window`, and
+    `active_overlay_initial_window_plan` in the deployed orchestration service.
+  - Phase-B readback changed the target path from H1/full-read to ready overlay:
+    `readMode=projection-active-overlay`, `readDecision=projection-active-overlay`,
+    `activeOverlayGate=ready`, `activeOverlayReason=overlay-evidence-complete`,
+    `threadReadMs=0`, `activeOverlayMs=2`, `totalMs=2946` on the first sample.
+    A repeat sample stayed ready with `threadReadMs=0`, `activeOverlayMs=2`,
+    `totalMs=2008`.
+  - The remaining cost in those samples was the already-started
+    `turns-list-initial` window (`~1.9-2.9s`). That is the next performance
+    owner if the user wants to continue reducing active detail first-open
+    latency; this module removed the avoidable full `thread/read` fallback.
+  - Production thread self-check after deploy returned `ok=true`,
+    `issueCount=0`, `blockingIssueCount=0`, `diagnosticCandidateCount=0`.

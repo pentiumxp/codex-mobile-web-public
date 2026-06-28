@@ -389,6 +389,94 @@ test("initial turns-list active window upgrades to full read when summary missed
   assert.equal(timings.projectionSeedSource, "active-thread-read");
 });
 
+test("initial turns-list active window uses active overlay when summary missed active state", async () => {
+  const { service, calls } = createHarness({
+    turnsListThreadReadResult: async ({ mode }) => {
+      calls.push(`turns-list:${mode}`);
+      return {
+        thread: {
+          id: "thread-1",
+          turns: [
+            { id: "older-turn", items: [{ id: "agent-old", type: "agentMessage" }] },
+            {
+              id: "active-turn",
+              status: { type: "running" },
+              items: [
+                { id: "user-1", type: "userMessage" },
+                { id: "agent-early", type: "agentMessage", text: "early assistant" },
+                { id: "agent-live", type: "agentMessage", text: "stale live assistant" },
+              ],
+            },
+          ],
+          mobileReadMode: mode,
+        },
+      };
+    },
+    resolveActiveWindowOverlay: ({ projectionThread }) => {
+      calls.push(`overlay-provider:${projectionThread && projectionThread.mobileReadMode}`);
+      return {
+        activeTurnId: "active-turn",
+        overlaySource: "projection-live",
+        operationCoverage: "present",
+        uploadCoverage: "none",
+        assistantDeltaCoverage: "",
+        receiptCoverage: "present",
+        overlayRevision: 9,
+        overlayTimestampMs: 9000,
+        overlayTurn: {
+          id: "active-turn",
+          status: { type: "running" },
+          items: [
+            { id: "cmd-1", type: "commandExecution" },
+            { id: "agent-live", type: "agentMessage", text: "fresh assistant" },
+            { id: "usage-1", type: "turnUsageSummary" },
+          ],
+        },
+      };
+    },
+  });
+
+  const response = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: true,
+    threadLog: () => {},
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.mode, "projection-active-overlay");
+  assert.deepEqual(calls.filter((call) => call.startsWith("turns-list:")), ["turns-list:turns-list-initial"]);
+  assert.ok(calls.includes("overlay-provider:projection-active-window"));
+  assert.equal(calls.includes("thread-read"), false);
+  assert.ok(calls.includes("seed:partial"));
+  assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["older-turn", "active-turn"]);
+  const activeTurn = response.body.thread.turns.find((turn) => turn.id === "active-turn");
+  assert.deepEqual(activeTurn.items.map((item) => item.id || item.type), [
+    "user-1",
+    "agent-early",
+    "agent-live",
+    "cmd-1",
+    "usage-1",
+  ]);
+  assert.equal(activeTurn.items[2].text, "fresh assistant");
+  const timings = response.body.thread.mobileDiagnostics.threadDetailTimings;
+  assert.equal(timings.activeFullReadRequired, true);
+  assert.equal(timings.activeFullReadReason, "initial-window-active-turn");
+  assert.equal(timings.readDecision, "projection-active-overlay");
+  assert.equal(timings.projectionState, "hit");
+  assert.equal(timings.projectionSource, "partial");
+  assert.equal(timings.projectionSeedStatus, "seeded-partial");
+  assert.equal(timings.projectionSeedSource, "turns-list-initial-active-window");
+  assert.equal(timings.activeOverlayAction, "use-projection-overlay");
+  assert.equal(timings.activeOverlayReason, "overlay-evidence-complete");
+  assert.equal(timings.activeOverlayItems, 5);
+  assert.equal(timings.activeOverlayOperationItems, 1);
+  assert.equal(timings.activeOverlayAssistantItems, 2);
+  assert.equal(timings.activeOverlayReceiptItems, 1);
+  assert.equal(timings.activeOverlayWindowFirst, false);
+  assert.doesNotMatch(JSON.stringify(timings), /fresh assistant|early assistant|stale live assistant/);
+});
+
 test("projection hit active window upgrades to full read when summary missed active state", async () => {
   const { service, calls } = createHarness({
     projectedThreadResult: () => {
