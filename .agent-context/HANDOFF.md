@@ -26024,8 +26024,38 @@ The previous full handoff was archived and should be opened only when old proven
   - Home AI fallback governance check passed for changed runtime/test files;
     classification is closure, not fallback.
   - `codegraph sync && codegraph status` reported the graph up to date.
-- Deployment status:
-  - Not yet deployed at this handoff entry. Next step is commit, central
-    macOS plugin deploy, and production readback proving the new fields are
-    present and active detail responses report the first-paint item budget
-    correctly.
+- Commit and deployment:
+  - Committed as `41e37e5`
+    (`fix: budget active first paint visible items`).
+  - Deployed through Home AI central macOS plugin deploy with reason
+    `codex-mobile-active-first-paint-visible-item-budget`.
+  - Deploy source ref was clean: `41e37e584e60`, dirty false.
+  - Deploy backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260628T023755Z-plugin-codex-mobile-web-codex-mobile-active-first-paint-visible-item-budget`.
+  - Production remained `clientBuildId=0.1.11|codex-mobile-shell-v559`,
+    expected because this was a server/readback/docs module and did not change
+    static shell assets.
+- Production readback:
+  - Phase-B readback for the current Codex Mobile thread returned `ok=true`,
+    `decision=ready`, `readMode=projection-v4-partial`, `totalMs=42`,
+    `threadReadMs=0`, and `turnsListInitialMs=0`.
+  - The new first-paint byte fields were present:
+    `responseBudgetProgressiveActiveFirstPaintThreadByteCeiling=98304`,
+    `responseBudgetProgressiveActiveFirstPaintBytesBeforeItemBudget=82631`,
+    `responseBudgetProgressiveActiveFirstPaintBytesAfterItemBudget=82631`,
+    and matching decision evidence.
+  - The current detail body was below the 96KB threshold, so
+    `responseBudgetProgressiveActiveFirstPaintItemBudgetApplied=false` and no
+    visible rows were omitted in that readback. The focused unit test covers
+    the over-threshold path and verifies actual-byte iterative convergence.
+  - Source/production SHA parity confirmed for:
+    `adapters/thread-detail-response-budget-service.js`,
+    `scripts/codex-mobile-phase-b-readback-smoke.js`,
+    `adapters/phase-b-readback-decision-service.js`,
+    focused tests, `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, and
+    `README.md`.
+  - Production markers confirmed
+    `progressiveActiveFirstPaintThreadByteCeiling`,
+    `progressive-active-first-paint-byte-ceiling`,
+    `responseBudgetProgressiveActiveFirstPaintBytesAfterItemBudget`, and
+    `detailResponseBudgetProgressiveActiveFirstPaintBytesAfterItemBudget`.
