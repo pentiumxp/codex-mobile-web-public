@@ -16,6 +16,50 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-28 Public 发布说明（v570 外部链接和 Home AI Deploy 通道）
+
+本次 Public 同步 `codex-mobile-shell-v570` 以及同批私有生产验证过的
+任务卡部署通道修复。它包含两个面向实际使用的变化：
+
+- 回执里的外部下载链接可以在用户点击后交给默认浏览器打开。
+- 常规插件部署任务卡不再投递到普通 Home AI 实现线程，而是进入专用
+  `Home AI Deploy` 通道。
+
+外部链接修复只允许用户主动点击的绝对 `http`、`https` 和 `mailto`
+链接打开；`/api/...`、本地文件路径和不安全 scheme 继续留在既有的
+内部预览/拒绝路径。Home AI embedded 模式下，Codex Mobile 仍会向宿主
+发送 bounded `codex-mobile.plugin.external_link` 事件用于观测，但不会把
+原始链接、私有路径、token、cookie 或上传内容写入诊断。
+
+部署通道修复新增
+`adapters/thread-task-card-deploy-lane-policy-service.js`。Codex Mobile 会把
+Home AI app 工作区内精确命名为 `Home AI Deploy` 的未归档线程识别为 durable
+部署 lane；即使该线程在 app-server 状态上处于 resting `completed`，路由层也会
+把它作为可投递的 idle deployment lane 暴露。常规插件部署卡如果误指向普通
+Home AI 线程，会在部署 lane 可用时重定向到 `Home AI Deploy`；如果部署 lane
+缺失或不可用，则 fail closed 为 `deploy_lane_required`。Home AI host/platform
+修复、deploy-contract、proxy、LaunchD、Gateway、schema 和部署 lane 自身修复
+仍然保留普通 Home AI 实现线程路由。
+
+私有生产读回已确认：
+
+- `clientBuildId=0.1.11|codex-mobile-shell-v570`
+- `shellCacheName=codex-mobile-shell-v570`
+- `Home AI Deploy` lane 可见，`mobileDeployLane=true`
+
+验证范围：
+
+```sh
+node --test test/thread-task-card-deploy-lane-policy-service.test.js test/thread-task-card-routing-service.test.js test/thread-task-card-route.test.js test/thread-task-card-service.test.js test/codex-mobile-mcp-server.test.js test/home-ai-autonomous-delivery-return-service.test.js test/workspace-source-write-guard-service.test.js
+npm run check
+npm run check:macos
+git diff --check
+```
+
+Public 仓库只同步公开源码、README、docs、scripts 和测试；不包含
+`.agent-context`、runtime state、本地密钥、访问 key、launch token、上传内容、
+完整 rollout 或私有日志。
+
 ## 2026-06-28 Public 发布说明（线程详情自检、Usage 工具条和 completed replay 稳定性）
 
 本次 Public 同步的是 `codex-mobile-shell-v568` 前后的线程详情稳定性修复。它覆盖了
