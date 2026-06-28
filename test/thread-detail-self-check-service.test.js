@@ -208,6 +208,43 @@ test("thread detail self check fails when active assistant items were budgeted a
   assert.ok(codes.includes("active_overlay_assistant_projection_gap"));
 });
 
+test("thread detail self check accepts active assistant overlay explained by synthetic dedupe", () => {
+  const detail = healthyDetail();
+  detail.thread.activeTurnId = "turn-active";
+  detail.thread.mobileSyntheticActiveAssistantDeduped = 2;
+  detail.thread.mobileActiveOverlay = {
+    reason: "overlay-evidence-complete",
+    source: "projection-live",
+    counts: {
+      items: 6,
+      assistantItems: 4,
+      operationItems: 0,
+      uploadItems: 0,
+      receiptItems: 0,
+      otherItems: 2,
+      unknownItems: 0,
+    },
+  };
+  detail.thread.turns.push({
+    id: "turn-active",
+    status: "inProgress",
+    mobileSyntheticActiveAssistantDeduped: 2,
+    items: [
+      { id: "u-live", type: "userMessage" },
+      { id: "a-live-1", type: "agentMessage" },
+      { id: "a-live-2", type: "agentMessage" },
+    ],
+  });
+  detail.thread.mobileDetailResponseBudget.activeTurnCount = 1;
+
+  const report = analyzeThreadDetail(detail);
+  const codes = report.issues.map((issue) => issue.code);
+
+  assert.equal(report.ok, true);
+  assert.equal(report.budget.syntheticActiveAssistantDeduped, 2);
+  assert.ok(!codes.includes("active_overlay_assistant_projection_gap"));
+});
+
 test("thread detail self check ignores stale active completion shell as latest completed replay", () => {
   const detail = healthyDetail();
   detail.thread.turns.push({

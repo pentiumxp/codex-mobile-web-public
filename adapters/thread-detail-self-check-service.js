@@ -458,6 +458,11 @@ function analyzeThreadDetail(detail = {}, options = {}) {
     const activeOmittedAssistantItems = boundedCount(budget.activeOmittedAssistantItems);
     const overlayCounts = objectOrNull(objectOrNull(thread.mobileActiveOverlay) && thread.mobileActiveOverlay.counts) || {};
     const overlayAssistantItems = boundedCount(overlayCounts.assistantItems);
+    const syntheticAssistantDeduped = boundedCount(Math.max(
+      boundedCount(thread.mobileSyntheticActiveAssistantDeduped),
+      boundedCount(active.turn && active.turn.mobileSyntheticActiveAssistantDeduped),
+    ));
+    const effectiveOverlayAssistantItems = boundedCount(Math.max(0, overlayAssistantItems - syntheticAssistantDeduped));
     if (activeOmittedAssistantItems > 0) {
       pushIssue(issues, "active_turn_assistant_budget", "H2", "thread-detail", {
         threadHash,
@@ -466,11 +471,13 @@ function analyzeThreadDetail(detail = {}, options = {}) {
         retainedAssistantItems: boundedCount(activeAssistantItems),
       });
     }
-    if (overlayAssistantItems > activeAssistantItems) {
+    if (effectiveOverlayAssistantItems > activeAssistantItems) {
       pushIssue(issues, "active_overlay_assistant_projection_gap", "H2", "thread-detail", {
         threadHash,
         turnHash: shortHash(turnId(active.turn)),
         overlayAssistantItems,
+        effectiveOverlayAssistantItems,
+        syntheticAssistantDeduped,
         detailAssistantItems: boundedCount(activeAssistantItems),
       });
     }
@@ -527,6 +534,7 @@ function analyzeThreadDetail(detail = {}, options = {}) {
       activeOmittedAssistantItems: boundedCount(budget.activeOmittedAssistantItems),
       activeAssistantItemsBefore: boundedCount(budget.activeAssistantItemsBefore),
       activeAssistantItemsAfter: boundedCount(budget.activeAssistantItemsAfter),
+      syntheticActiveAssistantDeduped: boundedCount(thread.mobileSyntheticActiveAssistantDeduped),
       omittedVisibleItems: boundedCount(budget.omittedVisibleItems),
       progressiveActiveFirstPaintOmittedVisibleItems: boundedCount(budget.progressiveActiveFirstPaintOmittedVisibleItems),
     },

@@ -28416,3 +28416,35 @@ The previous full handoff was archived and should be opened only when old proven
     deploy through the central Home AI macOS plugin deploy path, then production
     `/api/public-config`, API self-check, browser self-check, and LaunchAgent
     readback. Do not push Public unless explicitly requested by the user.
+
+### 2026-06-29 - Runtime Self-Check Dedupe-Aware Overlay Accounting
+
+- Follow-up after v577 deploy:
+  - Production runtime self-check sampled an active thread whose detail carried
+    `mobileSyntheticActiveAssistantDeduped`. API self-check still compared raw
+    overlay assistant count against post-dedupe detail assistant count, so it
+    reported `active_overlay_assistant_projection_gap` even though the
+    effective overlay count matched detail after subtracting deduped synthetic
+    assistant rows.
+- Implementation:
+  - `adapters/thread-detail-self-check-service.js` now treats
+    `mobileSyntheticActiveAssistantDeduped` as explicit projection accounting
+    evidence. It subtracts that bounded count from active overlay assistant
+    evidence before raising `active_overlay_assistant_projection_gap`.
+  - The self-check budget summary includes
+    `syntheticActiveAssistantDeduped` so future diagnostics can explain whether
+    an overlay/detail difference is a real projection gap or expected
+    synthetic-source dedupe.
+  - `test/thread-detail-self-check-service.test.js` covers the dedupe-explained
+    active overlay case while retaining existing failures for real active
+    assistant budget/projection gaps.
+- Validation:
+  - `node --test test/thread-detail-self-check-service.test.js` passed.
+  - Focused projection/self-check/browser/timestamp tests passed:
+    `node --test test/thread-detail-self-check-service.test.js test/thread-item-timestamp-enrichment.test.js test/browser-runtime-self-check-service.test.js test/runtime-self-check-loop.test.js test/conversation-render.test.js test/message-timestamp.test.js test/thread-detail-active-window-overlay-policy-service.test.js test/thread-detail-read-orchestration-service.test.js test/thread-detail-projection-service.test.js`.
+  - Full `npm test` passed (`1517` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Next:
+  - Commit this self-check accounting patch, deploy privately, then run
+    production API/browser/runtime self-check and LaunchAgent readback. Do not
+    push Public unless explicitly requested by the user.
