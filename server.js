@@ -3262,6 +3262,25 @@ function normalizeThreadListResultStatuses(result) {
   return stripThreadListResultDetailFields(out);
 }
 
+function threadListRowsFromResult(result) {
+  if (!result || typeof result !== "object") return [];
+  const rows = [];
+  if (Array.isArray(result.data)) rows.push(...result.data);
+  if (Array.isArray(result.threads) && result.threads !== result.data) rows.push(...result.threads);
+  return rows;
+}
+
+function upsertThreadListFallbackCacheThreads(resultOrThreads, options = {}) {
+  const rows = Array.isArray(resultOrThreads)
+    ? resultOrThreads
+    : threadListRowsFromResult(resultOrThreads);
+  let changed = 0;
+  for (const thread of rows) {
+    if (upsertThreadListFallbackCacheThread(thread, options)) changed += 1;
+  }
+  return changed;
+}
+
 function threadListSummaryTimestampMs(thread) {
   if (!thread || typeof thread !== "object") return 0;
   return Math.max(
@@ -15526,6 +15545,7 @@ async function handleApi(req, res) {
           appServerResult,
           deferredMergeOptions.sessionIndexEntries,
         ));
+        timings.fallbackCacheFreshRowUpsertCount = upsertThreadListFallbackCacheThreads(indexedResult, { addIfMissing: true });
         timings.fallbackSessionIndexMs = Math.max(0, Date.now() - sessionIndexStartedAtMs);
         threadDisplaySummaryCache.rememberList(indexedResult);
         if (Array.isArray(indexedResult.data)) indexedResult.data = indexedResult.data.slice(0, limit);
@@ -15601,6 +15621,7 @@ async function handleApi(req, res) {
       });
       Object.assign(timings, routeMerge.diagnostics);
       const result = normalizeThreadListResultStatuses(routeMerge.result);
+      timings.fallbackCacheFreshRowUpsertCount = upsertThreadListFallbackCacheThreads(result, { addIfMissing: true });
       threadDisplaySummaryCache.rememberList(result);
       if (Array.isArray(result.data)) result.data = result.data.slice(0, limit);
       if (Array.isArray(result.threads)) result.threads = result.threads.slice(0, limit);
@@ -15666,6 +15687,7 @@ async function handleApi(req, res) {
       if (fallback.length) {
         const stateAttachStartedAtMs = Date.now();
         const normalizedFallback = fallback.map((thread) => normalizeThreadSummaryLiveStatus(thread));
+        timings.fallbackCacheFreshRowUpsertCount = upsertThreadListFallbackCacheThreads(normalizedFallback, { addIfMissing: true });
         const stateAttachedFallback = attachThreadListStateToResult({
           data: normalizedFallback,
         });

@@ -1038,6 +1038,9 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(functionBody(serverJs, "startServer"), /scheduleThreadListFallbackPrewarm\(\);/);
   assert.match(serverJs, /function clearThreadListFallbackCache\(\)/);
   assert.match(serverJs, /function upsertThreadListFallbackCacheThread\(thread, options = \{\}\)/);
+  assert.match(serverJs, /function threadListRowsFromResult\(result\)/);
+  assert.match(serverJs, /function upsertThreadListFallbackCacheThreads\(resultOrThreads, options = \{\}\)/);
+  assert.match(serverJs, /upsertThreadListFallbackCacheThread\(thread, options\)/);
   assert.match(serverJs, /function removeThreadFromThreadListFallbackCache\(threadId\)/);
   assert.match(serverJs, /function updateThreadListFallbackCacheStatus\(threadId, status, meta = \{\}\)/);
   assert.match(serverJs, /let activeThreadDetailRequestCount = 0;/);
@@ -1137,6 +1140,9 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeBody, /decorated\.mobileDeferredFallback = true/);
   assert.match(routeBody, /sendThreadListResult\("deferred_complete"/);
   assert.match(routeBody, /sendThreadListResult\("complete"/);
+  assert.match(routeBody, /fallbackCacheFreshRowUpsertCount = upsertThreadListFallbackCacheThreads\(indexedResult, \{ addIfMissing: true \}\)/);
+  assert.match(routeBody, /fallbackCacheFreshRowUpsertCount = upsertThreadListFallbackCacheThreads\(result, \{ addIfMissing: true \}\)/);
+  assert.match(routeBody, /fallbackCacheFreshRowUpsertCount = upsertThreadListFallbackCacheThreads\(normalizedFallback, \{ addIfMissing: true \}\)/);
   assert.match(routeBody, /const fullMergeOptions = getMergeThreadSummaryListOptions\(\)/);
   assert.match(routeBody, /const fallback = readThreadListFallback\(limit, \{[\s\S]*cwd,[\s\S]*searchTerm,[\s\S]*globalState,[\s\S]*diagnostics: fallbackDiagnostics,[\s\S]*archivedIds: fullMergeOptions\.archivedIds,[\s\S]*mergeThreadSummaryListOptions: fullMergeOptions,[\s\S]*\}\);/);
   assert.match(routeBody, /const routeMerge = mergeThreadListRouteResult\(\{[\s\S]*result: appServerResult,[\s\S]*fallbackThreads: fallback,[\s\S]*limit,[\s\S]*mergeThreadSummaryList: mergeThreadSummaryListWithDiagnostics,[\s\S]*mergeThreadSummaryListOptions: fullMergeOptions,[\s\S]*\}\);/);

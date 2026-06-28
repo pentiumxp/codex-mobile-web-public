@@ -531,6 +531,34 @@ test("upsert and remove keep filtered cached lists incrementally current", () =>
   assert.deepEqual(service.readFallback(10, { searchTerm: "alpha" }), []);
 });
 
+test("fresh scoped thread rows backfill the default warm fallback cache", () => {
+  const { service } = createService({
+    readStateDbFallback: () => [{ id: "thread-1", name: "Home", updatedAt: 100 }],
+    readRolloutSessionFallback: () => [],
+    readSessionIndexFallback: () => [],
+  });
+  const defaultBuildDiagnostics = {};
+  assert.deepEqual(service.readFallback(10, { diagnostics: defaultBuildDiagnostics }).map((thread) => thread.id), ["thread-1"]);
+  assert.equal(defaultBuildDiagnostics.cacheDecision, "miss-rebuild");
+
+  const movieThread = {
+    id: "thread-movie",
+    name: "Movie",
+    cwd: "/workspace/default",
+    updatedAt: 400,
+  };
+  assert.equal(service.upsertThread(movieThread, { addIfMissing: true }), true);
+
+  const defaultHitDiagnostics = {};
+  assert.deepEqual(service.readCachedFallback(10, { diagnostics: defaultHitDiagnostics }).map((thread) => thread.id), [
+    "thread-movie",
+    "thread-1",
+  ]);
+  assert.equal(defaultHitDiagnostics.cacheHit, true);
+  assert.equal(defaultHitDiagnostics.cacheDecision, "hit");
+  assert.equal(defaultHitDiagnostics.cacheIncrementalUpdates, 1);
+});
+
 test("fallback cache restores persisted warm entries after a service restart", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-thread-list-cache-"));
   const filePath = path.join(dir, "thread-list-fallback-cache.json");
