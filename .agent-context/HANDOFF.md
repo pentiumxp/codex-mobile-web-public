@@ -28267,11 +28267,23 @@ The previous full handoff was archived and should be opened only when old proven
     for an already-loaded thread and refreshes in the background instead of
     replacing the conversation with a loading/empty shell.
   - Static shell/cache bumped to `codex-mobile-shell-v575`.
-- Validation so far:
+- Validation / deployment:
   - Before the fix, browser runtime self-check against production v574
     reproduced `browser_dom_sparse_after_nonempty` for a sampled thread.
   - Local source server on `127.0.0.1:8790` with the fix returned `ok:true`,
     `issueCount=0`, `blockingIssueCount=0` across 18 browser samples.
-  - Focused browser/runtime/render tests and `npm run check` passed locally
-    before this handoff update. Final deploy/readback still pending in the
-    current turn.
+  - Focused browser/runtime/render tests passed (`161` tests).
+  - Full `npm test` passed (`1506` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - Commit `a799a06` (`fix: add browser runtime self check`) deployed through
+    the central Home AI plugin macOS path with reason
+    `codex-mobile-browser-runtime-self-check-v575`.
+  - Production `/api/public-config` readback confirmed
+    `clientBuildId=0.1.11|codex-mobile-shell-v575` and
+    `shellCacheName=codex-mobile-shell-v575`.
+  - Production API self-check with five sampled threads and repeat reads
+    returned `ok:true`, `issueCount=0`, `blockingIssueCount=0`, and
+    `diagnosticCandidateCount=0`.
+  - Production browser-runtime self-check returned `ok:true`, `issueCount=0`,
+    `blockingIssueCount=0`, `consoleWarningOrErrorCount=0`, and
+    `exceptionCount=0` across 18 real browser DOM samples.
