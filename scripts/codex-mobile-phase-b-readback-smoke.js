@@ -477,6 +477,69 @@ function detailTurns(thread) {
   return Array.isArray(thread && thread.turns) ? thread.turns : [];
 }
 
+function summarizeDetailResponseBudget(budget = {}) {
+  const source = objectOrNull(budget) || {};
+  return {
+    responseBudgetVersion: compactLabel(source.version, 80),
+    responseBudgetApplied: source.applied === true,
+    responseBudgetProgressiveActiveApplied: source.progressiveActiveBudgetApplied === true,
+    responseBudgetProgressiveActiveReason: compactLabel(source.progressiveActiveBudgetReason, 100),
+    responseBudgetOriginalItemCount: boundedCount(source.originalItemCount),
+    responseBudgetRetainedItemCount: boundedCount(source.retainedItemCount),
+    responseBudgetOmittedOperationItems: boundedCount(source.omittedOperationItems),
+    responseBudgetOmittedReasoningItems: boundedCount(source.omittedReasoningItems),
+    responseBudgetOmittedAssistantItems: boundedCount(source.omittedAssistantItems),
+    responseBudgetOmittedVisibleItems: boundedCount(source.omittedVisibleItems),
+    responseBudgetActiveTurnCount: boundedCount(source.activeTurnCount),
+    responseBudgetStaleActiveTurnCount: boundedCount(source.staleActiveTurnCount),
+    responseBudgetActiveOperationItems: boundedCount(source.activeOperationItems),
+    responseBudgetActiveReasoningItems: boundedCount(source.activeReasoningItems),
+    responseBudgetActiveAssistantItems: boundedCount(source.activeAssistantItems),
+    responseBudgetConfiguredActiveOperationItems: boundedCount(source.configuredActiveOperationItems),
+    responseBudgetConfiguredActiveReasoningItems: boundedCount(source.configuredActiveReasoningItems),
+    responseBudgetConfiguredActiveAssistantItems: boundedCount(source.configuredActiveAssistantItems),
+    responseBudgetProgressiveActiveOriginalBytes: boundedBytes(source.progressiveActiveOriginalBytes),
+    responseBudgetProgressiveActiveTurnOriginalBytes: boundedBytes(source.progressiveActiveTurnOriginalBytes),
+    responseBudgetProgressiveActiveOriginalItemCount: boundedCount(source.progressiveActiveOriginalItemCount),
+    responseBudgetProgressiveActiveTurnOriginalItemCount: boundedCount(source.progressiveActiveTurnOriginalItemCount),
+    responseBudgetActiveProgressiveItemThreshold: boundedCount(source.activeProgressiveItemThreshold),
+    responseBudgetActiveProgressiveByteThreshold: boundedBytes(source.activeProgressiveByteThreshold),
+    responseBudgetActiveProgressiveThreadByteThreshold: boundedBytes(source.activeProgressiveThreadByteThreshold),
+    responseBudgetProgressiveActiveUserTextChars: boundedCount(source.progressiveActiveUserTextChars),
+    responseBudgetTruncatedActiveUserInputItems: boundedCount(source.truncatedActiveUserMessageItems),
+    responseBudgetActiveUserInputOriginalChars: boundedCount(source.activeUserInputOriginalChars),
+    responseBudgetActiveUserInputRetainedChars: boundedCount(source.activeUserInputRetainedChars),
+    responseBudgetOmittedActiveUserInputChars: boundedCount(source.omittedActiveUserInputChars),
+    responseBudgetProgressiveActiveTextChars: boundedCount(source.progressiveActiveTextChars),
+    responseBudgetTruncatedActiveTextItems: boundedCount(source.truncatedActiveTextItems),
+    responseBudgetActiveTextOriginalChars: boundedCount(source.activeTextOriginalChars),
+    responseBudgetActiveTextRetainedChars: boundedCount(source.activeTextRetainedChars),
+    responseBudgetOmittedActiveTextChars: boundedCount(source.omittedActiveTextChars),
+    responseBudgetProgressiveActiveOperationPayloadChars: boundedCount(source.progressiveActiveOperationPayloadChars),
+    responseBudgetTruncatedActiveOperationPayloadItems: boundedCount(source.truncatedActiveOperationPayloadItems),
+    responseBudgetActiveOperationPayloadOriginalChars: boundedCount(source.activeOperationPayloadOriginalChars),
+    responseBudgetActiveOperationPayloadRetainedChars: boundedCount(source.activeOperationPayloadRetainedChars),
+    responseBudgetOmittedActiveOperationPayloadChars: boundedCount(source.omittedActiveOperationPayloadChars),
+    responseBudgetProgressiveVisibleItemBudgetApplied: source.progressiveVisibleItemBudgetApplied === true,
+    responseBudgetProgressiveVisibleItemBudgetReason: compactLabel(source.progressiveVisibleItemBudgetReason, 100),
+    responseBudgetProgressiveVisibleItemCeiling: boundedCount(source.progressiveVisibleItemCeiling),
+    responseBudgetProgressiveVisibleItemOriginalCount: boundedCount(source.progressiveVisibleItemOriginalCount),
+    responseBudgetProgressiveVisibleItemRetainedCount: boundedCount(source.progressiveVisibleItemRetainedCount),
+    responseBudgetProgressiveCompletedTextBudgetApplied: source.progressiveCompletedTextBudgetApplied === true,
+    responseBudgetProgressiveCompletedTextBudgetReason: compactLabel(source.progressiveCompletedTextBudgetReason, 100),
+    responseBudgetProgressiveCompletedTextBudgetScope: compactLabel(source.progressiveCompletedTextBudgetScope, 80),
+    responseBudgetProgressiveCompletedTextBudgetProtectedLatestTurn: source.progressiveCompletedTextBudgetProtectedLatestTurn === true,
+    responseBudgetProgressiveCompletedTextBudgetSkippedLatestTurnCount: boundedCount(source.progressiveCompletedTextBudgetSkippedLatestTurnCount),
+    responseBudgetProgressiveCompletedTextChars: boundedCount(source.progressiveCompletedTextChars),
+    responseBudgetCompletedTextOriginalChars: boundedCount(source.completedTextOriginalChars),
+    responseBudgetCompletedTextRetainedChars: boundedCount(source.completedTextRetainedChars),
+    responseBudgetOmittedCompletedTextChars: boundedCount(source.omittedCompletedTextChars),
+    responseBudgetProgressiveFirstPaintThreadByteCeiling: boundedBytes(source.progressiveFirstPaintThreadByteCeiling),
+    responseBudgetProgressiveFirstPaintBytesBeforeTextBudget: boundedBytes(source.progressiveFirstPaintBytesBeforeTextBudget),
+    responseBudgetProgressiveFirstPaintBytesAfterTextBudget: boundedBytes(source.progressiveFirstPaintBytesAfterTextBudget),
+  };
+}
+
 function activeOverlayNextAction(reason) {
   const normalized = lowerLabel(reason, 100);
   if (!normalized) return "observe-active-overlay-readback";
@@ -558,6 +621,7 @@ function classifyActiveOverlayGate(detail = {}) {
 function summarizeThreadDetail(result = {}, requestedThreadId = "") {
   const thread = objectOrNull(result.thread) || {};
   const timings = objectOrNull(thread.mobileDiagnostics && thread.mobileDiagnostics.threadDetailTimings);
+  const responseBudget = summarizeDetailResponseBudget(thread.mobileDetailResponseBudget);
   const detail = {
     requestedThreadHash: shortHash(requestedThreadId),
     responseThreadHash: shortHash(thread.id),
@@ -593,6 +657,7 @@ function summarizeThreadDetail(result = {}, requestedThreadId = "") {
     turnsListInitialMs: boundedNumber(timings && timings.turnsListInitialMs),
     turnCount: boundedCount(detailTurns(thread).length),
     omittedTurns: boundedCount(thread.mobileOmittedTurnCount),
+    ...responseBudget,
   };
   const gate = classifyActiveOverlayGate(detail);
   return Object.assign(detail, {

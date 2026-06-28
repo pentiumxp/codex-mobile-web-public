@@ -186,6 +186,66 @@ test("phase B readback smoke collects bounded diagnostics without private fields
           id: "thread-private-1",
           name: "PRIVATE DETAIL TITLE SHOULD NOT LEAK",
           mobileReadMode: "projection-active-overlay",
+          mobileDetailResponseBudget: {
+            version: "thread-detail-response-budget-v2",
+            applied: true,
+            progressiveActiveBudgetApplied: true,
+            progressiveActiveBudgetReason: "active-byte-pressure",
+            originalItemCount: 96,
+            retainedItemCount: 31,
+            omittedOperationItems: 14,
+            omittedReasoningItems: 3,
+            omittedAssistantItems: 7,
+            omittedVisibleItems: 2,
+            activeTurnCount: 1,
+            staleActiveTurnCount: 1,
+            activeOperationItems: 6,
+            activeReasoningItems: 1,
+            activeAssistantItems: 4,
+            configuredActiveOperationItems: 12,
+            configuredActiveReasoningItems: 2,
+            configuredActiveAssistantItems: 8,
+            progressiveActiveOriginalBytes: 240000,
+            progressiveActiveTurnOriginalBytes: 86000,
+            progressiveActiveOriginalItemCount: 96,
+            progressiveActiveTurnOriginalItemCount: 63,
+            activeProgressiveItemThreshold: 50,
+            activeProgressiveByteThreshold: 49152,
+            activeProgressiveThreadByteThreshold: 163840,
+            progressiveActiveUserTextChars: 10000,
+            truncatedActiveUserMessageItems: 1,
+            activeUserInputOriginalChars: 25000,
+            activeUserInputRetainedChars: 9000,
+            omittedActiveUserInputChars: 16000,
+            progressiveActiveTextChars: 12000,
+            truncatedActiveTextItems: 2,
+            activeTextOriginalChars: 58000,
+            activeTextRetainedChars: 19000,
+            omittedActiveTextChars: 39000,
+            progressiveActiveOperationPayloadChars: 6000,
+            truncatedActiveOperationPayloadItems: 3,
+            activeOperationPayloadOriginalChars: 44000,
+            activeOperationPayloadRetainedChars: 14000,
+            omittedActiveOperationPayloadChars: 30000,
+            progressiveVisibleItemBudgetApplied: true,
+            progressiveVisibleItemBudgetReason: "progressive-visible-item-ceiling",
+            progressiveVisibleItemCeiling: 48,
+            progressiveVisibleItemOriginalCount: 96,
+            progressiveVisibleItemRetainedCount: 48,
+            progressiveCompletedTextBudgetApplied: true,
+            progressiveCompletedTextBudgetReason: "first-paint-byte-ceiling",
+            progressiveCompletedTextBudgetScope: "active-first-paint",
+            progressiveCompletedTextBudgetProtectedLatestTurn: false,
+            progressiveCompletedTextBudgetSkippedLatestTurnCount: 0,
+            progressiveCompletedTextChars: 8192,
+            completedTextOriginalChars: 45000,
+            completedTextRetainedChars: 12000,
+            omittedCompletedTextChars: 33000,
+            progressiveFirstPaintThreadByteCeiling: 163840,
+            progressiveFirstPaintBytesBeforeTextBudget: 210000,
+            progressiveFirstPaintBytesAfterTextBudget: 150000,
+            privatePrompt: "SHOULD NOT LEAK",
+          },
           turns: [{
             id: "turn-private",
             items: [{ text: "PRIVATE MESSAGE BODY SHOULD NOT LEAK" }],
@@ -288,6 +348,36 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.detail.activeOverlayProjectionLookupMs, 2);
   assert.equal(report.detail.prepareResponseMs, 6);
   assert.equal(report.detail.threadReadMs, 0);
+  assert.equal(report.detail.responseBudgetVersion, "thread-detail-response-budget-v2");
+  assert.equal(report.detail.responseBudgetApplied, true);
+  assert.equal(report.detail.responseBudgetProgressiveActiveApplied, true);
+  assert.equal(report.detail.responseBudgetProgressiveActiveReason, "active-byte-pressure");
+  assert.equal(report.detail.responseBudgetOriginalItemCount, 96);
+  assert.equal(report.detail.responseBudgetRetainedItemCount, 31);
+  assert.equal(report.detail.responseBudgetOmittedOperationItems, 14);
+  assert.equal(report.detail.responseBudgetOmittedReasoningItems, 3);
+  assert.equal(report.detail.responseBudgetOmittedAssistantItems, 7);
+  assert.equal(report.detail.responseBudgetOmittedVisibleItems, 2);
+  assert.equal(report.detail.responseBudgetActiveTurnCount, 1);
+  assert.equal(report.detail.responseBudgetStaleActiveTurnCount, 1);
+  assert.equal(report.detail.responseBudgetActiveOperationItems, 6);
+  assert.equal(report.detail.responseBudgetConfiguredActiveOperationItems, 12);
+  assert.equal(report.detail.responseBudgetProgressiveActiveOriginalBytes, 240000);
+  assert.equal(report.detail.responseBudgetProgressiveActiveTurnOriginalBytes, 86000);
+  assert.equal(report.detail.responseBudgetTruncatedActiveUserInputItems, 1);
+  assert.equal(report.detail.responseBudgetOmittedActiveUserInputChars, 16000);
+  assert.equal(report.detail.responseBudgetTruncatedActiveTextItems, 2);
+  assert.equal(report.detail.responseBudgetOmittedActiveTextChars, 39000);
+  assert.equal(report.detail.responseBudgetTruncatedActiveOperationPayloadItems, 3);
+  assert.equal(report.detail.responseBudgetOmittedActiveOperationPayloadChars, 30000);
+  assert.equal(report.detail.responseBudgetProgressiveVisibleItemBudgetApplied, true);
+  assert.equal(report.detail.responseBudgetProgressiveVisibleItemBudgetReason, "progressive-visible-item-ceiling");
+  assert.equal(report.detail.responseBudgetProgressiveCompletedTextBudgetApplied, true);
+  assert.equal(report.detail.responseBudgetProgressiveCompletedTextBudgetScope, "active-first-paint");
+  assert.equal(report.detail.responseBudgetProgressiveFirstPaintBytesBeforeTextBudget, 210000);
+  assert.equal(report.detail.responseBudgetProgressiveFirstPaintBytesAfterTextBudget, 150000);
+  assert.equal(report.decision.evidence.detailResponseBudgetProgressiveActiveApplied, true);
+  assert.equal(report.decision.evidence.detailResponseBudgetOmittedActiveTextChars, 39000);
   assert.match(report.threadList.firstThreadHash, /^[a-f0-9]{16}$/);
   assert.match(report.detail.requestedThreadHash, /^[a-f0-9]{16}$/);
   assert.deepEqual(seen.map((item) => item.path), [

@@ -444,7 +444,11 @@ action/request/response payloads. Affected active user-message rows expose
 `mobileUserInputBudget` / `mobileUserInputTruncated` when task-card/bootstrap
 text or inline `data:image` input parts are reduced for first paint; this should
 happen only under progressive active pressure and does not mutate the persisted
-rollout. Current servers also expose
+rollout. The same bounded budget evidence appears in Phase-B readback smoke
+under `detail.responseBudget*` and
+`decision.evidence.detailResponseBudget*`, so operators can diagnose active
+payload pressure without inspecting private thread bodies. Current servers also
+expose
 `progressiveVisibleItemCeiling`, `progressiveVisibleItemBudgetApplied`,
 `progressiveVisibleItemOriginalCount`, `progressiveVisibleItemRetainedCount`,
 `omittedVisibleItems`, and per-turn `mobileVisibleItemBudget` when progressive

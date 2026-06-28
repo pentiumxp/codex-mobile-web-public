@@ -187,6 +187,63 @@ test("phase B readback decision returns ready for warm or bounded paths", () => 
       activeOverlayMergeMs: 3,
       prepareResponseMs: 11,
       threadReadMs: 0,
+      responseBudgetVersion: "thread-detail-response-budget-v2",
+      responseBudgetApplied: true,
+      responseBudgetProgressiveActiveApplied: true,
+      responseBudgetProgressiveActiveReason: "thread-byte-pressure",
+      responseBudgetOriginalItemCount: 100,
+      responseBudgetRetainedItemCount: 42,
+      responseBudgetOmittedOperationItems: 12,
+      responseBudgetOmittedReasoningItems: 2,
+      responseBudgetOmittedAssistantItems: 8,
+      responseBudgetOmittedVisibleItems: 4,
+      responseBudgetActiveTurnCount: 1,
+      responseBudgetStaleActiveTurnCount: 1,
+      responseBudgetActiveOperationItems: 6,
+      responseBudgetActiveReasoningItems: 1,
+      responseBudgetActiveAssistantItems: 4,
+      responseBudgetConfiguredActiveOperationItems: 12,
+      responseBudgetConfiguredActiveReasoningItems: 2,
+      responseBudgetConfiguredActiveAssistantItems: 8,
+      responseBudgetProgressiveActiveOriginalBytes: 250000,
+      responseBudgetProgressiveActiveTurnOriginalBytes: 90000,
+      responseBudgetProgressiveActiveOriginalItemCount: 100,
+      responseBudgetProgressiveActiveTurnOriginalItemCount: 64,
+      responseBudgetActiveProgressiveItemThreshold: 50,
+      responseBudgetActiveProgressiveByteThreshold: 49152,
+      responseBudgetActiveProgressiveThreadByteThreshold: 163840,
+      responseBudgetProgressiveActiveUserTextChars: 10000,
+      responseBudgetTruncatedActiveUserInputItems: 1,
+      responseBudgetActiveUserInputOriginalChars: 26000,
+      responseBudgetActiveUserInputRetainedChars: 9000,
+      responseBudgetOmittedActiveUserInputChars: 17000,
+      responseBudgetProgressiveActiveTextChars: 12000,
+      responseBudgetTruncatedActiveTextItems: 2,
+      responseBudgetActiveTextOriginalChars: 54000,
+      responseBudgetActiveTextRetainedChars: 18000,
+      responseBudgetOmittedActiveTextChars: 36000,
+      responseBudgetProgressiveActiveOperationPayloadChars: 6000,
+      responseBudgetTruncatedActiveOperationPayloadItems: 3,
+      responseBudgetActiveOperationPayloadOriginalChars: 42000,
+      responseBudgetActiveOperationPayloadRetainedChars: 12000,
+      responseBudgetOmittedActiveOperationPayloadChars: 30000,
+      responseBudgetProgressiveVisibleItemBudgetApplied: true,
+      responseBudgetProgressiveVisibleItemBudgetReason: "progressive-visible-item-ceiling",
+      responseBudgetProgressiveVisibleItemCeiling: 48,
+      responseBudgetProgressiveVisibleItemOriginalCount: 100,
+      responseBudgetProgressiveVisibleItemRetainedCount: 48,
+      responseBudgetProgressiveCompletedTextBudgetApplied: true,
+      responseBudgetProgressiveCompletedTextBudgetReason: "first-paint-byte-pressure",
+      responseBudgetProgressiveCompletedTextBudgetScope: "active-first-paint",
+      responseBudgetProgressiveCompletedTextBudgetProtectedLatestTurn: false,
+      responseBudgetProgressiveCompletedTextBudgetSkippedLatestTurnCount: 0,
+      responseBudgetProgressiveCompletedTextChars: 8192,
+      responseBudgetCompletedTextOriginalChars: 40000,
+      responseBudgetCompletedTextRetainedChars: 11000,
+      responseBudgetOmittedCompletedTextChars: 29000,
+      responseBudgetProgressiveFirstPaintThreadByteCeiling: 163840,
+      responseBudgetProgressiveFirstPaintBytesBeforeTextBudget: 220000,
+      responseBudgetProgressiveFirstPaintBytesAfterTextBudget: 155000,
     },
   });
 
@@ -201,6 +258,37 @@ test("phase B readback decision returns ready for warm or bounded paths", () => 
   assert.equal(decision.evidence.detailActiveOverlayMergeMs, 3);
   assert.equal(decision.evidence.detailPrepareResponseMs, 11);
   assert.equal(decision.evidence.detailThreadReadMs, 0);
+  assert.equal(decision.evidence.detailResponseBudgetVersion, "thread-detail-response-budget-v2");
+  assert.equal(decision.evidence.detailResponseBudgetApplied, true);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveActiveApplied, true);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveActiveReason, "thread-byte-pressure");
+  assert.equal(decision.evidence.detailResponseBudgetOriginalItemCount, 100);
+  assert.equal(decision.evidence.detailResponseBudgetRetainedItemCount, 42);
+  assert.equal(decision.evidence.detailResponseBudgetOmittedOperationItems, 12);
+  assert.equal(decision.evidence.detailResponseBudgetOmittedReasoningItems, 2);
+  assert.equal(decision.evidence.detailResponseBudgetOmittedAssistantItems, 8);
+  assert.equal(decision.evidence.detailResponseBudgetOmittedVisibleItems, 4);
+  assert.equal(decision.evidence.detailResponseBudgetActiveTurnCount, 1);
+  assert.equal(decision.evidence.detailResponseBudgetStaleActiveTurnCount, 1);
+  assert.equal(decision.evidence.detailResponseBudgetActiveOperationItems, 6);
+  assert.equal(decision.evidence.detailResponseBudgetConfiguredActiveOperationItems, 12);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveActiveOriginalBytes, 250000);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveActiveTurnOriginalBytes, 90000);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveActiveOriginalItemCount, 100);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveActiveTurnOriginalItemCount, 64);
+  assert.equal(decision.evidence.detailResponseBudgetActiveProgressiveByteThreshold, 49152);
+  assert.equal(decision.evidence.detailResponseBudgetTruncatedActiveUserInputItems, 1);
+  assert.equal(decision.evidence.detailResponseBudgetOmittedActiveUserInputChars, 17000);
+  assert.equal(decision.evidence.detailResponseBudgetTruncatedActiveTextItems, 2);
+  assert.equal(decision.evidence.detailResponseBudgetOmittedActiveTextChars, 36000);
+  assert.equal(decision.evidence.detailResponseBudgetTruncatedActiveOperationPayloadItems, 3);
+  assert.equal(decision.evidence.detailResponseBudgetOmittedActiveOperationPayloadChars, 30000);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveVisibleItemBudgetApplied, true);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveVisibleItemBudgetReason, "progressive-visible-item-ceiling");
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedTextBudgetApplied, true);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedTextBudgetReason, "first-paint-byte-pressure");
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveFirstPaintBytesBeforeTextBudget, 220000);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveFirstPaintBytesAfterTextBudget, 155000);
 });
 
 test("phase B readback decision treats source snapshot hits as ready evidence", () => {

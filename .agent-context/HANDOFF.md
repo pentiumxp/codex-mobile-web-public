@@ -25751,3 +25751,59 @@ The previous full handoff was archived and should be opened only when old proven
     `test/phase-b-readback-smoke.test.js`.
   - Production script marker confirmed `fallbackCachePersistentRestored` is now
     part of the readback report.
+
+## 2026-06-28 - Active Detail Response Budget Readback Evidence Module
+
+- User-visible symptom:
+  - The remaining "slow but eventually loads" shape can come from a successful
+    detail response whose current active turn is very large, even after
+    `threadReadMs` and `turnsListInitialMs` are already zero.
+- Current evidence:
+  - `adapters/thread-detail-response-budget-service.js` already owns the
+    active/progressive detail budget: item/byte-pressure detection, active
+    operation/reasoning/assistant item limits, active assistant/reasoning text
+    previews, active user-input previews, operation payload previews, visible
+    item ceiling, and first-paint completed-text preview evidence.
+  - The missing closure surface was the Phase-B readback report: it showed
+    detail timing and active-overlay gate status but not the bounded
+    `mobileDetailResponseBudget` fields needed to diagnose whether large active
+    turns were compressed and by how much.
+- Implementation:
+  - `scripts/codex-mobile-phase-b-readback-smoke.js` now summarizes
+    `thread.mobileDetailResponseBudget` into bounded
+    `detail.responseBudget*` fields only: booleans, counters, byte/char counts,
+    thresholds, budget reason labels, and before/after first-paint byte counts.
+  - `adapters/phase-b-readback-decision-service.js` now carries the same
+    bounded fields into `decision.evidence.detailResponseBudget*`.
+  - Field names avoid raw `message`/`prompt` terms; the privacy test still
+    rejects those strings in serialized evidence.
+  - `docs/TROUBLESHOOTING.md` now states that operators can inspect these
+    budget fields through Phase-B readback instead of opening private thread
+    bodies.
+- Local validation:
+  - Focused suite passed:
+    `node --test test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js test/thread-detail-response-budget-service.test.js`
+    (`57` tests).
+  - `node --check scripts/codex-mobile-phase-b-readback-smoke.js` and
+    `node --check adapters/phase-b-readback-decision-service.js` passed.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - Full `npm test` passed (`1394` tests).
+  - `codegraph sync && codegraph status` reported the graph up to date.
+- Pre-deploy production readback using the updated local smoke script:
+  - Current Codex Mobile thread returned `ok=true`, `decision=ready`,
+    `readMode=projection-v4-partial`, `totalMs=57`, `threadReadMs=0`,
+    `turnsListInitialMs=0`.
+  - Budget evidence was visible without private content:
+    `responseBudgetVersion=thread-detail-response-budget-v2`,
+    `responseBudgetApplied=true`,
+    `responseBudgetProgressiveActiveApplied=true`,
+    `responseBudgetProgressiveActiveReason=active-item-pressure`,
+    `responseBudgetOriginalItemCount=126`,
+    `responseBudgetRetainedItemCount=35`,
+    `responseBudgetProgressiveActiveTurnOriginalBytes=331602`,
+    `responseBudgetProgressiveActiveOriginalBytes=422594`, and
+    `decision.evidence.detailResponseBudgetApplied=true`.
+- Deployment status:
+  - Pending commit/deploy at this handoff update.
