@@ -27314,5 +27314,21 @@ The previous full handoff was archived and should be opened only when old proven
     `blockingIssueCount=0`, and one metadata-only diagnostic candidate for
     repeated H3 `latest_completed_replay_receipt_only`.
 - Status:
-  - Ready for local commit and plugin-owned production deploy. Public push is
-    not requested for this module.
+  - Committed as `6d85700` and deployed through the Home AI central macOS plugin
+    deploy path with reason `codex-mobile-self-check-diagnostic-candidates`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260628T104359Z-plugin-codex-mobile-web-codex-mobile-self-check-diagnostic-candidates`.
+  - Production `/api/public-config` readback remained
+    `clientBuildId=0.1.11|codex-mobile-shell-v571`,
+    `shellCacheName=codex-mobile-shell-v571`, and build id
+    `ea68b50ee73958c0`; shell/cache did not change because this is
+    service/script/docs only.
+  - Production file hash readback matched source for
+    `adapters/thread-detail-self-check-service.js` and
+    `scripts/codex-mobile-thread-self-check.js`.
+  - Production self-check with `--sample-threads 5 --repeat 5` returned
+    `ok:true`, `blockingIssueCount=0`, and two metadata-only repeated H3
+    diagnostic candidates:
+    `latest_completed_user_input_missing` and
+    `latest_completed_replay_receipt_only`.
+  - Public push is not requested for this module.
