@@ -26183,7 +26183,76 @@ The previous full handoff was archived and should be opened only when old proven
     fallback governance check passed. Classification is root-cause closure, not
     a fallback.
 - Deployment status:
-  - Pending at handoff write time. Deploy with reason
-    `codex-mobile-embedded-thread-flicker-hotfix` and verify production
-    `/api/public-config` reports `clientBuildId=0.1.11|codex-mobile-shell-v560`
-    plus `shellCacheName=codex-mobile-shell-v560`.
+  - Deployed commit `c468b01` through the Home AI central macOS plugin deploy
+    path with reason `codex-mobile-embedded-thread-flicker-hotfix`.
+  - Production `/api/public-config` reported
+    `clientBuildId=0.1.11|codex-mobile-shell-v560` and
+    `shellCacheName=codex-mobile-shell-v560`.
+  - Source/production SHA parity was confirmed for
+    `adapters/thread-detail-response-budget-service.js`, `public/app.js`,
+    `public/sw.js`, focused tests, and `docs/MODULES.md`.
+  - Bounded production detail readback for Codex Mobile and Home AI active
+    threads showed exactly one active turn in each response. Home AI also showed
+    `prunedEmptyActivePlaceholderTurns=2`.
+  - Recent v560 client log sampling showed
+    `v560PrimaryForcePluginBackCount=0`.
+- Public publish:
+  - Public README release note added in commit `90fe0ae`.
+  - `origin/main` and `public/main` were pushed to
+    `90fe0ae2c73ff8c5f0e813a412676e4117fa21e1`.
+  - User rule after this publish: do not push Public again unless the user
+    explicitly instructs it. Local/private commits and production deploys remain
+    allowed when requested, but Public requires an explicit future request.
+
+## 2026-06-28 - Home AI Task Intake Recent Projection Staleness
+
+- User-visible incident:
+  - `Home AI Task Intake` sorted near the top and showed a current updated time,
+    but entering the thread initially showed the final visible receipt from the
+    previous evening.
+- Bounded evidence:
+  - Thread id: `019f091a-6ce0-7932-97b2-a5ba38556f51`.
+  - The rollout file contained four completed turns, including assistant
+    messages at 2026-06-28 11:00:51 and 11:17:23 Asia/Shanghai.
+  - Initial `mode=recent` detail returned only two older turns while a full
+    detail read returned all four turns. The full read then reseeded projection,
+    after which `mode=recent` also returned four turns.
+  - List rows were not hallucinating the update: the thread list reported
+    `updatedAt=1782616644` and a latest active/local turn id corresponding to
+    the 11:17 turn.
+- Root cause / invariant:
+  - Projection-result assembly could accept a cached projection window after
+    merging newer summary/list metadata into it, even when the returned turn
+    window did not cover the summary's latest update time. That lets the list
+    sort correctly while the opened detail window shows an older cached subset.
+  - The invariant is that ordinary projection hits must cover both the local
+    active turn, when present, and the summary's latest update time with a
+    returned turn. Otherwise the hit must fail closed so orchestration uses the
+    authoritative read/reseed path.
+- Implementation:
+  - `adapters/thread-detail-projection-result-service.js` now rejects ordinary
+    projection hits when `summary.updatedAt*` is newer than the latest returned
+    turn activity timestamp, with a small 2s timestamp-format grace window.
+  - `activeOverlay` assembly remains exempt because its live overlay provider
+    separately supplies and proof-gates the active turn.
+  - `test/thread-detail-projection-result-service.test.js` covers stale cached
+    detail older than summary update, and the current-window positive case.
+  - `docs/MODULES.md` records that projection-result ownership includes
+    summary update coverage, not only local active-turn coverage.
+- Validation:
+  - `node --test test/thread-detail-projection-result-service.test.js`
+  - `node --test test/thread-detail-projection-result-service.test.js test/thread-detail-projection-service.test.js test/thread-detail-projection-v4-service.test.js test/thread-detail-read-orchestration-service.test.js test/thread-detail-route-service.test.js`
+    (`77` tests)
+  - `git diff --check`, `npm run check`, `npm run check:macos`, full
+    `npm test -- --test-reporter=dot`, and Home AI fallback governance check
+    passed.
+- Deployment status:
+  - Pending at handoff write time. This is server-only and does not require a
+    PWA shell/cache bump. Do not push Public unless the user explicitly asks.
+- Related pending issue:
+  - User also reported frequent embedded right-swipe from thread detail going
+    directly to the Home AI host instead of the Codex thread list. A subagent
+    was requested but could not be spawned because the current thread had
+    reached the subagent limit. Treat this as the next mobile embedded back
+    boundary investigation; likely surfaces are `installHermesPluginBackSwipeGuard`,
+    `handlePluginBack`, `postPluginBackResult`, and `public/plugin-embed.js`.

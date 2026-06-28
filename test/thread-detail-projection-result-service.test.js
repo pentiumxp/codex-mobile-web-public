@@ -319,6 +319,58 @@ test("projection result rejects cached detail missing the local active turn", ()
   assert.equal(current.thread.turns[0].id, "turn-new");
 });
 
+test("projection result rejects cached detail older than summary update", () => {
+  const service = createThreadDetailProjectionResultService({
+    maxTurns: 5,
+    now: () => 10_000,
+  });
+
+  const stale = service.prepareProjectedThreadReadResult({
+    dynamic: false,
+    version: "v4",
+    cachedAtMs: 9_000,
+    updatedAtMs: 9_000,
+    result: {
+      thread: {
+        id: "thread-1",
+        turns: [{
+          id: "turn-old",
+          completedAt: 1_000,
+          items: [{ id: "agent-old", type: "agentMessage" }],
+        }],
+      },
+    },
+  }, {
+    id: "thread-1",
+    updatedAt: 2_000,
+  }, {});
+
+  assert.equal(stale, null);
+
+  const current = service.prepareProjectedThreadReadResult({
+    dynamic: false,
+    version: "v4",
+    cachedAtMs: 9_000,
+    updatedAtMs: 9_000,
+    result: {
+      thread: {
+        id: "thread-1",
+        turns: [{
+          id: "turn-current",
+          completedAt: 2_000,
+          items: [{ id: "agent-current", type: "agentMessage" }],
+        }],
+      },
+    },
+  }, {
+    id: "thread-1",
+    updatedAt: 2_000,
+  }, {});
+
+  assert.ok(current);
+  assert.equal(current.thread.turns[0].id, "turn-current");
+});
+
 test("projection result allows missing local active turn only for active overlay window assembly", () => {
   const service = createThreadDetailProjectionResultService({
     maxTurns: 5,
