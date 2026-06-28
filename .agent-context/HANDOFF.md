@@ -27011,10 +27011,10 @@ The previous full handoff was archived and should be opened only when old proven
   - Full/local: `npm test` passed (`1428` tests), `npm run check`,
     `npm run check:macos`, and `git diff --check` passed.
 - Deployment:
-  - Commit `8d29af4` deployed through the Home AI central macOS plugin deploy
+  - Commit `f3b9a89` deployed through the Home AI central macOS plugin deploy
     path with reason `codex-mobile-thread-detail-backpressure-v569`.
   - Backup:
-    `/Users/hermes-host/HermesMobile/backups/deploy/20260628T082344Z-plugin-codex-mobile-web-codex-mobile-thread-detail-backpressure-v569`.
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260628T082540Z-plugin-codex-mobile-web-codex-mobile-thread-detail-backpressure-v569`.
   - Production `/api/public-config` readback returned
     `clientBuildId=0.1.11|codex-mobile-shell-v569` and
     `shellCacheName=codex-mobile-shell-v569`.
