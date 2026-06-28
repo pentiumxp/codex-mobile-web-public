@@ -1387,7 +1387,7 @@ test("thread detail response budget applies progressive visible item ceiling aft
   assert.deepEqual(compacted.thread.mobileVisibleItemKeys, turns.flatMap((turn) => turn.items.map((item) => item.mobileVisibleKey)));
 });
 
-test("thread detail response budget uses active items only after older operations for visible item ceiling", () => {
+test("thread detail response budget protects active turn visible items from visible item ceiling", () => {
   const result = {
     thread: {
       id: "thread-1",
@@ -1425,17 +1425,17 @@ test("thread detail response budget uses active items only after older operation
   });
 
   const items = compacted.thread.turns[0].items;
-  assert.deepEqual(items.map((item) => item.id), ["u1", "c5", "c6", "r1", "r2", "a1", "a2"]);
+  assert.deepEqual(items.map((item) => item.id), ["u1", "c1", "c2", "c3", "c4", "c5", "c6", "r1", "r2", "a1", "a2"]);
   const budget = compacted.thread.mobileDetailResponseBudget;
-  assert.equal(budget.progressiveVisibleItemBudgetApplied, true);
+  assert.equal(budget.progressiveVisibleItemBudgetApplied, false);
   assert.equal(budget.progressiveVisibleItemOriginalCount, 11);
-  assert.equal(budget.progressiveVisibleItemRetainedCount, 7);
-  assert.equal(budget.omittedVisibleItems, 4);
-  assert.equal(budget.omittedOperationItems, 4);
-  assert.equal(compacted.thread.turns[0].mobileOmittedVisibleItemCount, 4);
+  assert.equal(budget.progressiveVisibleItemRetainedCount, 11);
+  assert.equal(budget.omittedVisibleItems, 0);
+  assert.equal(budget.omittedOperationItems, 0);
+  assert.equal(compacted.thread.turns[0].mobileOmittedVisibleItemCount, undefined);
 });
 
-test("thread detail response budget applies active first-paint byte item budget after normal compaction", () => {
+test("thread detail response budget does not delete active turn visible items for first-paint byte ceiling", () => {
   const result = {
     thread: {
       id: "thread-1",
@@ -1480,17 +1480,16 @@ test("thread detail response budget applies active first-paint byte item budget 
   assert.equal(items.some((item) => item.id === "u1"), true);
   assert.equal(items.some((item) => item.id === "a1"), true);
   assert.equal(items.some((item) => item.id === "usage"), true);
-  assert.equal(items.filter((item) => item.type === "commandExecution").length < 10, true);
-  assert.equal(items.filter((item) => item.type === "reasoning").length <= 2, true);
+  assert.equal(items.filter((item) => item.type === "commandExecution").length, 10);
+  assert.equal(items.filter((item) => item.type === "reasoning").length, 2);
   const budget = compacted.thread.mobileDetailResponseBudget;
   assert.equal(budget.progressiveActiveBudgetApplied, true);
   assert.equal(budget.progressiveActiveFirstPaintThreadByteCeiling, 3000);
-  assert.equal(budget.progressiveActiveFirstPaintItemBudgetApplied, true);
-  assert.equal(budget.progressiveActiveFirstPaintItemBudgetReason, "progressive-active-first-paint-byte-ceiling");
-  assert.equal(budget.progressiveActiveFirstPaintOmittedVisibleItems > 0, true);
-  assert.equal(budget.progressiveActiveFirstPaintBytesBeforeItemBudget > budget.progressiveActiveFirstPaintBytesAfterItemBudget, true);
-  assert.equal(budget.progressiveActiveFirstPaintBytesAfterItemBudget <= 3000, true);
-  assert.equal(compacted.thread.turns[0].mobileVisibleItemBudget.reason, "progressive-active-first-paint-byte-ceiling");
+  assert.equal(budget.progressiveActiveFirstPaintItemBudgetApplied, false);
+  assert.equal(budget.progressiveActiveFirstPaintItemBudgetReason, "no-removable-visible-items");
+  assert.equal(budget.progressiveActiveFirstPaintOmittedVisibleItems, 0);
+  assert.equal(budget.progressiveActiveFirstPaintBytesBeforeItemBudget, budget.progressiveActiveFirstPaintBytesAfterItemBudget);
+  assert.equal(compacted.thread.turns[0].mobileVisibleItemBudget, undefined);
   assert.deepEqual(compacted.thread.mobileVisibleItemKeys, items.map((item) => item.mobileVisibleKey));
   assert.equal(compacted.thread.mobileProjectionRevision, 31);
 });

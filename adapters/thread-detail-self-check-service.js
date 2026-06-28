@@ -190,6 +190,20 @@ function latestCompletedTurn(thread = {}) {
   return { turn: null, index: -1 };
 }
 
+function activeTurn(thread = {}) {
+  const turns = safeArray(thread.turns);
+  const activeId = text(thread.activeTurnId || thread.mobileActiveTurnId || thread.mobileRolloutActiveTurn);
+  if (activeId) {
+    const index = turns.findIndex((turn) => text(turnId(turn)) === activeId);
+    if (index >= 0) return { turn: turns[index], index };
+  }
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    if (isActiveStatus(turn && turn.status)) return { turn, index };
+  }
+  return { turn: null, index: -1 };
+}
+
 function visibleKeyForItem(item) {
   return text(item && (item.mobileVisibleKey || item.renderKey || item.visibleKey || item.id));
 }
@@ -256,7 +270,9 @@ function analyzeThreadDetail(detail = {}, options = {}) {
   const turns = safeArray(thread.turns);
   const budget = objectOrNull(thread.mobileDetailResponseBudget) || {};
   const latest = latestCompletedTurn(thread);
+  const active = activeTurn(thread);
   const latestSummary = latest.turn ? summarizeTurn(latest.turn, thread) : null;
+  const activeSummary = active.turn ? summarizeTurn(active.turn, thread) : null;
   const threadHash = shortHash(threadId(thread) || options.threadId);
 
   if (!turns.length) {
@@ -350,6 +366,21 @@ function analyzeThreadDetail(detail = {}, options = {}) {
     }
   }
 
+  if (active.turn) {
+    const activeItems = safeArray(active.turn.items);
+    const activeBudget = objectOrNull(active.turn.mobileVisibleItemBudget) || {};
+    const reason = text(activeBudget.reason).slice(0, 80);
+    if (reason === "progressive-active-first-paint-byte-ceiling") {
+      pushIssue(issues, "active_turn_visible_item_budget", "H2", "thread-detail", {
+        threadHash,
+        turnHash: shortHash(turnId(active.turn)),
+        reason,
+        omittedVisibleItems: boundedCount(activeBudget.omitted),
+        retainedVisibleItems: boundedCount(activeBudget.retained || activeItems.length),
+      });
+    }
+  }
+
   for (let index = 0; index < turns.length; index += 1) {
     if (index === latest.index) continue;
     const turn = turns[index];
@@ -372,6 +403,7 @@ function analyzeThreadDetail(detail = {}, options = {}) {
     turnCount: boundedCount(turns.length),
     visibleKeyCount: boundedCount(visibleKeys.length || itemVisibleKeys.length),
     latestCompleted: latestSummary,
+    activeTurn: activeSummary,
     budget: {
       latestCompletedReplayTurnCount: boundedCount(budget.latestCompletedReplayTurnCount),
       latestCompletedReplayOperationItems: boundedCount(budget.latestCompletedReplayOperationItems),
@@ -381,6 +413,9 @@ function analyzeThreadDetail(detail = {}, options = {}) {
       omittedOperationItems: boundedCount(budget.omittedOperationItems),
       omittedReasoningItems: boundedCount(budget.omittedReasoningItems),
       omittedAssistantItems: boundedCount(budget.omittedAssistantItems),
+      activeTurnCount: boundedCount(budget.activeTurnCount),
+      omittedVisibleItems: boundedCount(budget.omittedVisibleItems),
+      progressiveActiveFirstPaintOmittedVisibleItems: boundedCount(budget.progressiveActiveFirstPaintOmittedVisibleItems),
     },
     issues,
   };

@@ -27567,3 +27567,48 @@ The previous full handoff was archived and should be opened only when old proven
     `issueCount=0`, `blockingIssueCount=0`, and
     `diagnosticCandidateCount=0`.
   - Public push is not requested.
+
+## 2026-06-28 - Active Turn First-Paint Budget Protection
+
+- Source report:
+  - User observed currently-running recent turns, including Movie/Codex Mobile
+    style details, sometimes rendering only the latest few rows while earlier
+    same-turn progress rows were unavailable until later refreshes.
+- Runtime evidence:
+  - Metadata-only production detail read for the active Codex Mobile thread
+    showed `mobileReadMode=turns-list-initial`, `activeTurnId` present, and the
+    active turn carrying `mobileVisibleItemBudget.reason=
+    progressive-active-first-paint-byte-ceiling` with `omitted=6`,
+    `retained=1`, `original=7`.
+  - Movie was resting at the time of the bounded probe and its latest completed
+    turn retained 58 `agentMessage` items with no assistant omission; the live
+    truncation was therefore isolated to active-turn first-paint budgeting.
+- Root cause / failing layer:
+  - `thread-detail-response-budget-service` allowed progressive first-paint
+    visible-item deletion to remove active turn items after older removable
+    items were exhausted. That is invalid for current live turns: first-paint
+    byte pressure may compact text/payloads and limit operation tails, but it
+    must not delete active turn visible rows and make the live transcript appear
+    incomplete.
+- Fix:
+  - `removableVisibleItemCandidates()` now skips active turns by default, so
+    progressive visible-item ceilings and active first-paint byte ceilings do
+    not delete active turn visible items.
+  - Active turn byte pressure still uses the existing bounded controls:
+    operation/reasoning item limits, active text truncation, user input
+    truncation, and operation payload truncation.
+  - `thread-detail-self-check-service` now summarizes the active turn and emits
+    H2 `active_turn_visible_item_budget` if an active turn still carries
+    `progressive-active-first-paint-byte-ceiling` visible-item omission.
+- Changed files:
+  - `adapters/thread-detail-response-budget-service.js`
+  - `adapters/thread-detail-self-check-service.js`
+  - `test/thread-detail-response-budget-service.test.js`
+  - `test/thread-detail-self-check-service.test.js`
+- Validation before commit/deploy:
+  - `node --test test/thread-detail-response-budget-service.test.js` passed
+    (`34` tests).
+  - `node --test test/thread-detail-self-check-service.test.js` passed (`18`
+    tests).
+  - Active overlay/read orchestration focused suite passed (`46` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.

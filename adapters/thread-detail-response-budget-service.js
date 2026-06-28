@@ -604,12 +604,14 @@ function compactCompletedTextItemForFirstPaint(item, options, stats) {
   return out;
 }
 
-function removableVisibleItemCandidates(turns, thread) {
+function removableVisibleItemCandidates(turns, thread, options = {}) {
   const entries = [];
+  const includeActive = options.includeActive === true;
   for (let turnIndex = 0; turnIndex < turns.length; turnIndex += 1) {
     const turn = turns[turnIndex];
     if (!turn || !Array.isArray(turn.items)) continue;
     const active = isActiveTurn(turn, thread);
+    if (active && !includeActive) continue;
     for (let itemIndex = 0; itemIndex < turn.items.length; itemIndex += 1) {
       const item = turn.items[itemIndex];
       const kind = budgetableVisibleItemKind(item);

@@ -98,6 +98,36 @@ test("thread detail self check warns when latest completed replay assistant prog
   assert.equal(issue.omittedAssistantItems, 2);
 });
 
+test("thread detail self check fails when active turn visible items were budgeted away", () => {
+  const detail = healthyDetail();
+  detail.thread.activeTurnId = "turn-active";
+  detail.thread.turns.push({
+    id: "turn-active",
+    status: "inProgress",
+    mobileVisibleItemBudget: {
+      reason: "progressive-active-first-paint-byte-ceiling",
+      omitted: 6,
+      retained: 1,
+      original: 7,
+    },
+    items: [
+      { id: "a-live", type: "agentMessage" },
+    ],
+  });
+  detail.thread.mobileDetailResponseBudget.activeTurnCount = 1;
+  detail.thread.mobileDetailResponseBudget.omittedVisibleItems = 6;
+  detail.thread.mobileDetailResponseBudget.progressiveActiveFirstPaintOmittedVisibleItems = 6;
+
+  const report = analyzeThreadDetail(detail);
+  const issue = report.issues.find((entry) => entry.code === "active_turn_visible_item_budget");
+
+  assert.equal(report.ok, false);
+  assert.equal(report.activeTurn.itemCount, 1);
+  assert.equal(report.budget.progressiveActiveFirstPaintOmittedVisibleItems, 6);
+  assert.equal(issue.severity, "H2");
+  assert.equal(issue.omittedVisibleItems, 6);
+});
+
 test("thread detail self check detects missing usage and timestamp", () => {
   const detail = healthyDetail();
   detail.thread.turns[0].id = "not-a-v7-id";
