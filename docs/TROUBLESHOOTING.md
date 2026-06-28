@@ -713,9 +713,10 @@ Cause to check:
 - Latest-completed replay is for user-visible progress receipts after a turn
   finishes. It may retain bounded assistant/plan progress and final receipt
   rows, but completed replay must not keep `reasoning` rows from the active
-  budget. If a reloaded completed turn shows Reasoning but not user-facing
+  budget and should not replay command/file/tool operation rows. If a reloaded
+  completed turn shows Reasoning or command cards instead of user-facing
   intermediate receipts, inspect `thread-detail-response-budget-service`
-  reasoning limits before changing the renderer.
+  replay filtering before changing the renderer.
 - Thread detail should first use app-server `thread/read` even when the rollout
   file is over 32MB, because `thread/turns/list` does not reliably preserve the
   command/tool/file/search operation items expected in Mobile detail. If detail

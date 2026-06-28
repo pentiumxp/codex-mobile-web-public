@@ -173,13 +173,13 @@ test("thread detail response budget keeps bounded latest completed replay detail
   });
 
   assert.deepEqual(compacted.thread.turns[0].items.map((item) => item.id), ["old-u", "old-c2", "old-a2", "old-usage"]);
-  assert.deepEqual(compacted.thread.turns[1].items.map((item) => item.id), ["u1", "c2", "c3", "plan1", "a2", "usage"]);
+  assert.deepEqual(compacted.thread.turns[1].items.map((item) => item.id), ["u1", "plan1", "a2", "usage"]);
   const budget = compacted.thread.mobileDetailResponseBudget;
   assert.equal(budget.latestCompletedReplayTurnCount, 1);
-  assert.equal(budget.latestCompletedReplayOperationItems, 2);
+  assert.equal(budget.latestCompletedReplayOperationItems, 0);
   assert.equal(budget.latestCompletedReplayReasoningItems, 0);
   assert.equal(budget.latestCompletedReplayAssistantItems, 2);
-  assert.equal(budget.omittedOperationItems, 2);
+  assert.equal(budget.omittedOperationItems, 4);
   assert.equal(budget.omittedReasoningItems, 4);
   assert.equal(budget.omittedAssistantItems, 2);
   assert.equal(budget.activeTurnCount, 0);
@@ -241,6 +241,7 @@ test("thread detail response budget keeps completed replay progress before activ
   const budget = compacted.thread.mobileDetailResponseBudget;
   assert.equal(budget.activeTurnCount, 1);
   assert.equal(budget.latestCompletedReplayTurnCount, 1);
+  assert.equal(budget.latestCompletedReplayOperationItems, 0);
   assert.equal(budget.latestCompletedReplayAssistantItems, 4);
   assert.equal(budget.latestCompletedReplayReasoningItems, 0);
   assert.equal(budget.omittedOperationItems, 1);
@@ -1359,9 +1360,9 @@ test("thread detail response budget applies progressive visible item ceiling aft
 
   const turns = compacted.thread.turns;
   assert.deepEqual(turns[0].items.map((item) => item.id), ["u1", "a1", "usage1"]);
-  assert.deepEqual(turns[1].items.map((item) => item.id), ["u2", "a2", "usage2"]);
-  assert.deepEqual(turns[2].items.map((item) => item.id), ["u3", "a3", "usage3", "c3-2", "c3-3"]);
-  assert.deepEqual(turns[3].items.map((item) => item.id), ["u4", "a4", "usage4", "c4-2", "c4-3"]);
+  assert.deepEqual(turns[1].items.map((item) => item.id), ["u2", "a2", "usage2", "c2-3"]);
+  assert.deepEqual(turns[2].items.map((item) => item.id), ["u3", "a3", "usage3", "c3-1", "c3-2", "c3-3"]);
+  assert.deepEqual(turns[3].items.map((item) => item.id), ["u4", "a4", "usage4"]);
   assert.deepEqual(turns[4].items.map((item) => item.id), ["live-a1", "live-c1", "live-c2", "live-r1"]);
   const totalItems = turns.reduce((sum, turn) => sum + turn.items.length, 0);
   assert.equal(totalItems, 20);
@@ -1370,10 +1371,10 @@ test("thread detail response budget applies progressive visible item ceiling aft
   const budget = compacted.thread.mobileDetailResponseBudget;
   assert.equal(budget.progressiveVisibleItemBudgetApplied, true);
   assert.equal(budget.progressiveVisibleItemBudgetReason, "progressive-visible-item-ceiling");
-  assert.equal(budget.progressiveVisibleItemOriginalCount, 27);
+  assert.equal(budget.progressiveVisibleItemOriginalCount, 25);
   assert.equal(budget.progressiveVisibleItemRetainedCount, 20);
   assert.equal(budget.progressiveVisibleItemCeiling, 20);
-  assert.equal(budget.omittedVisibleItems, 7);
+  assert.equal(budget.omittedVisibleItems, 5);
   assert.equal(budget.omittedOperationItems, 8);
   assert.equal(budget.retainedItemCount, 20);
   assert.deepEqual(compacted.thread.mobileVisibleItemKeys, turns.flatMap((turn) => turn.items.map((item) => item.mobileVisibleKey)));

@@ -811,6 +811,9 @@ function compactTurnWithBudget(turn, thread, options, stats) {
     })
     : cloneJson(turn);
   if (!compacted || !Array.isArray(compacted.items)) return compacted;
+  if (latestCompletedReplay) {
+    compacted.items = compacted.items.filter((item) => !isOperationItem(item));
+  }
   const reasoningLimit = active ? options.activeReasoningItems : options.completedReasoningItems;
   const keepReasoningIndexes = trailingIndexes(
     compacted.items,
