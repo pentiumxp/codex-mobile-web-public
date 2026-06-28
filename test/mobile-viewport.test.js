@@ -444,8 +444,11 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(functionBody("installHermesPluginBackSwipeGuard"), /moved: false,[\s\S]*stopNativeBack\(event\);/);
   assert.match(functionBody("installHermesPluginBackSwipeGuard"), /vertical > 12 && vertical > horizontal/);
   assert.match(functionBody("installHermesPluginBackSwipeGuard"), /horizontal < vertical \* PLUGIN_EMBED_BACK_SWIPE_HORIZONTAL_RATIO/);
+  assert.match(functionBody("shouldSuppressPluginBackForRecentConversationScroll"), /if \(source !== "plugin-back-swipe"\) return false;/);
   assert.match(functionBody("shouldSuppressPluginBackForRecentConversationScroll"), /plugin_back_suppressed_recent_conversation_scroll/);
   assert.match(functionBody("shouldSuppressPluginBackForRecentConversationScroll"), /PLUGIN_EMBED_BACK_RECENT_SCROLL_SUPPRESS_MS/);
+  assert.match(functionBody("shouldSuppressPluginBackForRecentConversationScroll"), /consumedInIframe: true/);
+  assert.match(functionBody("shouldSuppressPluginBackForRecentConversationScroll"), /postPluginBackResult\(true, "suppressed_recent_conversation_scroll"\)/);
   assert.match(appJs, /document\.addEventListener\("touchstart", startPluginBackSwipe, \{ passive: false, capture: true \}\)/);
   assert.doesNotMatch(appJs, /plugin_root_unhandled/);
   assert.match(appJs, /handlePluginBack\(\{\s*\n\s*preventDefault\(\) \{\},\s*\n\s*stopPropagation\(\) \{\},\s*\n\s*\}, \{ source: "plugin-back-swipe" \}\);/);

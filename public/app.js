@@ -528,7 +528,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v562";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v563";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -12463,6 +12463,7 @@ function installHermesPluginBackSwipeGuard() {
 }
 
 function shouldSuppressPluginBackForRecentConversationScroll(source = "") {
+  if (source !== "plugin-back-swipe") return false;
   if (!state.currentThreadId || !state.currentThread) return false;
   const elapsedMs = Date.now() - Number(state.conversationScrollIntentAtMs || 0);
   if (elapsedMs < 0 || elapsedMs > PLUGIN_EMBED_BACK_RECENT_SCROLL_SUPPRESS_MS) return false;
@@ -12470,8 +12471,9 @@ function shouldSuppressPluginBackForRecentConversationScroll(source = "") {
     source: String(source || "").slice(0, 80),
     threadId: state.currentThreadId || "",
     elapsedMs,
+    consumedInIframe: true,
   });
-  postPluginBackResult(false, "suppressed_recent_conversation_scroll");
+  postPluginBackResult(true, "suppressed_recent_conversation_scroll");
   return true;
 }
 
@@ -12480,7 +12482,7 @@ function handlePluginBack(event, options = {}) {
   if (event && typeof event.preventDefault === "function") event.preventDefault();
   if (event && typeof event.stopPropagation === "function") event.stopPropagation();
   const source = String(options.source || "plugin-back");
-  if (shouldSuppressPluginBackForRecentConversationScroll(source)) return false;
+  if (shouldSuppressPluginBackForRecentConversationScroll(source)) return true;
   let handled = false;
   if (imagePreviewOpen()) {
     closeImagePreview();

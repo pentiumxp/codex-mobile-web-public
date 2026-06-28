@@ -26336,9 +26336,48 @@ The previous full handoff was archived and should be opened only when old proven
     `node --check test/mobile-viewport.test.js`, and `git diff --check` passed
     before deploy.
 - Deployment status:
-  - Pending at handoff write time. Deploy with reason
-    `codex-mobile-embedded-back-swipe-host-capture-hotfix` and verify
-    production `/api/public-config` reports
-    `clientBuildId=0.1.11|codex-mobile-shell-v562` plus
+  - Deployed commit `4ffa37f` through the Home AI central macOS plugin deploy
+    path with reason `codex-mobile-embedded-back-swipe-host-capture-hotfix`.
+  - Production `/api/public-config` reported
+    `clientBuildId=0.1.11|codex-mobile-shell-v562` and
     `shellCacheName=codex-mobile-shell-v562`.
+  - Source/production SHA parity was confirmed for `public/app.js`,
+    `public/sw.js`, and `test/mobile-viewport.test.js`.
+  - Do not push Public unless the user explicitly asks.
+
+## 2026-06-28 - Embedded Back Swipe Suppression Consumption Hotfix
+
+- User-visible incident:
+  - After `v562`, repeated Home AI embedded thread detail/list switching could
+    still occasionally right-swipe out to the Home AI host. The user also saw
+    return-to-list stalls during frequent detail/list cycling.
+- Root cause / invariant:
+  - `v562` correctly let the iframe claim eligible edge-swipe touch sequences at
+    `touchstart`, but the recent-conversation-scroll suppression path still sent
+    `codex-mobile.plugin.back_result` with `handled:false`.
+  - Once the iframe has claimed `plugin-back-swipe`, suppression means "consume
+    this gesture but do not navigate". It must not tell the host that the back
+    was unhandled, otherwise Home AI can perform an outer back and leave the
+    Codex thread list unreachable.
+- Implementation:
+  - `public/app.js` now applies recent-scroll suppression only to
+    `source === "plugin-back-swipe"`.
+  - Suppressed iframe-owned back swipes now post
+    `handled:true, reason:"suppressed_recent_conversation_scroll"` plus bounded
+    client evidence `consumedInIframe:true`, and `handlePluginBack()` returns
+    `true` for that consumed gesture.
+  - Host-origin `hermes.plugin.back` messages are not blocked by the
+    conversation-scroll suppression gate.
+  - Static shell advanced from `codex-mobile-shell-v562` to
+    `codex-mobile-shell-v563`.
+- Validation:
+  - `node --test test/mobile-viewport.test.js test/hermes-plugin-route.test.js`
+    (`16` tests)
+  - `node --check public/app.js`, `node --check public/sw.js`,
+    `node --check test/mobile-viewport.test.js`,
+    `node --check test/hermes-plugin-route.test.js`, `git diff --check`,
+    `npm run check`, and `npm run check:macos` passed.
+- Deployment status:
+  - Pending deploy with reason
+    `codex-mobile-embedded-back-swipe-consume-suppressed-hotfix`.
   - Do not push Public unless the user explicitly asks.

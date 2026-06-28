@@ -1811,6 +1811,15 @@ sequence even though the iframe can still navigate. In that case the iframe must
 handle the gesture locally when its own navigation message would report
 `canGoBack:true`.
 
+After `codex-mobile-shell-v563`, an iframe-owned `plugin-back-swipe` that is
+suppressed by recent conversation scroll protection must still send a handled
+back result to the host. The suppression means "Codex consumed this gesture but
+did not navigate", not "Home AI may perform an outer back". If repeated
+detail/list swipes can still escape directly to the host, inspect whether
+`plugin_back_suppressed_recent_conversation_scroll` reports
+`consumedInIframe:true` and whether the host honors
+`codex-mobile.plugin.back_result.handled=true`.
+
 The validated target behavior after v108 is: Codex's thread-switcher/settings
 surface is the embedded primary page with Hermes bottom tabs visible; a Codex
 thread page is secondary and right-swipe/back returns to that primary page.

@@ -117,7 +117,7 @@ test("embedded plugin mode hides standalone chrome and installs navigation/windo
   assert.doesNotMatch(appJs, /function isPluginRootSwipeTarget/);
   assert.match(appJs, /function isHermesPluginPrimaryPage\(\)/);
   assert.match(appJs, /function showHermesPluginPrimaryPage\(options = \{\}\)/);
-  assert.match(appJs, /function handlePluginBack\(event, options = \{\}\) \{[\s\S]*shouldSuppressPluginBackForRecentConversationScroll\(source\)/);
+  assert.match(appJs, /function handlePluginBack\(event, options = \{\}\) \{[\s\S]*if \(shouldSuppressPluginBackForRecentConversationScroll\(source\)\) return true;/);
   assert.match(appJs, /function beginSidebarEdgeSwipe\(event\) \{\s*if \(!isMobileViewport\(\) \|\| isHermesEmbedMode\(\)/);
   assert.match(appJs, /else if \(state\.currentThreadId \|\| state\.newThreadDraft \|\| state\.selectedCwd\) \{[\s\S]*handled = showHermesPluginPrimaryPage\(\{ force: true, source \}\);/);
   assert.doesNotMatch(appJs, /host_back_from_settings/);
