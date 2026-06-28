@@ -13356,7 +13356,8 @@ function attachRolloutUsageSummariesToDetailResult(result) {
 }
 
 async function prepareThreadDetailResponseResult(result, details = {}) {
-  const detailResult = backfillMissingRolloutCompletionTurnsForDetailResult(result, details);
+  const completionBackfilled = backfillMissingRolloutCompletionTurnsForDetailResult(result, details);
+  const detailResult = attachRolloutUsageSummariesToDetailResult(completionBackfilled);
   const prepared = applyLocalActiveThreadStatusToResult(
     await prepareThreadTaskCardsToResult(applyLocalActiveThreadStatusToResult(detailResult, details)),
     details,
