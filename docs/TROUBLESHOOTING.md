@@ -484,11 +484,17 @@ usage decoration, not `thread/list` RPC or rollout scanning. Current builds add
 `tokenUsageQueryCount`, `tokenUsageCacheHitCount`,
 `tokenUsageFreshCacheHitCount`, `tokenUsageStaleCacheHitCount`,
 `tokenUsageExpiredMissCount`, `tokenUsageAllowExpiredCache`, and
-`tokenUsageMaxCacheAgeMs` to the same timing object. A healthy repeated
-first-paint list should show `tokenUsageQueryCount=0` after the first aggregate
-read unless a real completed-turn Usage write changed the ledger. Replayed
-identical `turn/completed` events should not invalidate the token usage query
-cache.
+`tokenUsageMaxCacheAgeMs` to the same timing object. It also exposes bounded
+phase counters: `tokenUsageWorkspaceCwdCount`,
+`tokenUsageWorkspaceSnapshotBuildMs`,
+`tokenUsageWorkspaceSnapshotCacheHitCount`,
+`tokenUsageWorkspaceSnapshotCacheMissCount`, `tokenUsageCacheCloneMs`,
+`tokenUsageDecorateSummaryMs`, and `tokenUsageDecorateAttachMs`. A healthy
+repeated first-paint list should show `tokenUsageQueryCount=0` after the first
+aggregate read unless a real completed-turn Usage write changed the ledger, and
+the Workspace snapshot should be a cache hit for the same visible Workspace set.
+Replayed identical `turn/completed` events should not invalidate the token usage
+query cache.
 
 If `threadReadMs=0`, `projectionState=hit`, and `summaryMs` dominates
 `totalMs`, inspect the thread-detail summary phase before changing projection

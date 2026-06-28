@@ -209,6 +209,50 @@ test("decorating thread list can reuse expired token cache for first paint", () 
   assert.equal(second.mobileTokenUsageDiagnostics.maxCacheAgeMs >= 1000, true);
 });
 
+test("decorating thread list reuses compiled workspace snapshot", () => {
+  const dbPath = tempDbPath("decorate-workspace-snapshot-cache");
+  const nowMs = Date.parse("2026-06-01T12:00:00.000Z");
+  const service = createTokenUsageStatsService({
+    dbPath,
+    queryCacheTtlMs: 60_000,
+    now: () => nowMs,
+  });
+  const workspaceCwds = [
+    "C:\\Users\\xuxin\\Documents\\系统工具",
+    "C:\\Users\\xuxin\\Documents\\ϵͳ¹¤¾ß",
+    "C:\\Users\\xuxin\\Documents\\Music",
+  ];
+  assert.equal(service.recordTurnUsage({
+    threadId: "thread-a",
+    turnId: "turn-1",
+    cwd: "C:\\Users\\xuxin\\Documents\\系统工具",
+    completedAtMs: Date.parse("2026-06-01T09:00:00.000Z"),
+    usage: { totalTokens: 8000 },
+  }).ok, true);
+
+  const first = service.decorateThreadListResult({ data: [{ id: "thread-a" }] }, {
+    cwd: "C:\\Users\\xuxin\\Documents\\系统工具",
+    nowMs,
+    workspaceCwds,
+  });
+  assert.equal(first.mobileTokenUsageDiagnostics.workspaceCwdCount, 3);
+  assert.equal(first.mobileTokenUsageDiagnostics.workspaceSnapshotCacheMissCount, 1);
+  assert.equal(first.mobileTokenUsageDiagnostics.workspaceSnapshotCacheHitCount, 0);
+  assert.equal(first.mobileTokenUsageDiagnostics.queryCount > 0, true);
+
+  const second = service.decorateThreadListResult({ data: [{ id: "thread-a" }] }, {
+    cwd: "C:\\Users\\xuxin\\Documents\\系统工具",
+    nowMs,
+    workspaceCwds,
+  });
+  assert.equal(second.mobileTokenUsageDiagnostics.workspaceCwdCount, 3);
+  assert.equal(second.mobileTokenUsageDiagnostics.workspaceSnapshotCacheHitCount, 1);
+  assert.equal(second.mobileTokenUsageDiagnostics.workspaceSnapshotCacheMissCount, 0);
+  assert.equal(second.mobileTokenUsageDiagnostics.queryCount, 0);
+  assert.equal(second.mobileTokenUsageDiagnostics.decorateSummaryMs >= 0, true);
+  assert.equal(second.mobileTokenUsageDiagnostics.decorateAttachMs >= 0, true);
+});
+
 test("replayed identical turn usage does not invalidate token query cache", () => {
   const dbPath = tempDbPath("decorate-replay-cache");
   let nowMs = Date.parse("2026-06-01T12:00:00.000Z");

@@ -25,6 +25,7 @@ const MOJIBAKE_CODEPOINT_BYTES = new Map([
   [0x03f5, [0xcf, 0xb5]],
   [0x05f0, [0xd7, 0xb0]],
 ]);
+const WORKSPACE_SNAPSHOT_CACHE_MAX_ENTRIES = 40;
 
 function sqlString(value) {
   return `'${String(value ?? "").replace(/'/g, "''")}'`;
@@ -201,7 +202,9 @@ function addUsage(target, row) {
 }
 
 function workspaceRows(rows, options = {}) {
-  const aliases = workspaceAliasMap(options.workspaceCwds || []);
+  const aliases = options && options._tokenUsageWorkspaceSnapshot
+    ? options._tokenUsageWorkspaceSnapshot.aliases
+    : workspaceAliasMap(options.workspaceCwds || []);
   const byCwd = new Map();
   for (const row of rows || []) {
     const cwd = canonicalWorkspaceCwd(row && row.cwd, aliases);
@@ -232,6 +235,7 @@ function createTokenUsageStatsService(options = {}) {
   let initialized = false;
   let lastError = null;
   const queryCache = new Map();
+  const workspaceSnapshotCache = new Map();
 
   function cloneJson(value) {
     if (value === null || value === undefined) return value;
@@ -259,10 +263,56 @@ function createTokenUsageStatsService(options = {}) {
     diagnostics[key] = sqlNumber(diagnostics[key]) + amount;
   }
 
+  function addElapsedDiagnostic(diagnostics, key, startedAtMs) {
+    if (!diagnostics) return;
+    const elapsedMs = Math.max(0, Math.round(Date.now() - Number(startedAtMs || Date.now())));
+    diagnostics[key] = sqlNumber(diagnostics[key]) + elapsedMs;
+  }
+
   function rememberCacheAge(diagnostics, ageMs) {
     if (!diagnostics) return;
     const boundedAge = Math.max(0, Math.min(24 * 60 * 60 * 1000, Math.round(Number(ageMs) || 0)));
     diagnostics.maxCacheAgeMs = Math.max(sqlNumber(diagnostics.maxCacheAgeMs), boundedAge);
+  }
+
+  function workspaceSnapshot(values = [], optionsForQuery = {}) {
+    const diagnostics = queryDiagnostics(optionsForQuery);
+    const cleaned = (values || []).map((value) => String(value || "").trim()).filter(Boolean);
+    const signature = cleaned.join("\u001e");
+    if (!signature) {
+      if (diagnostics) diagnostics.workspaceCwdCount = 0;
+      return { count: 0, stableKey: "", aliases: new Map() };
+    }
+    const cached = workspaceSnapshotCache.get(signature);
+    if (cached) {
+      incrementDiagnostic(diagnostics, "workspaceSnapshotCacheHitCount");
+      if (diagnostics) diagnostics.workspaceCwdCount = Math.max(sqlNumber(diagnostics.workspaceCwdCount), cached.count);
+      return cached;
+    }
+    const startedAtMs = Date.now();
+    const unique = [...new Set(cleaned)];
+    const snapshot = {
+      count: unique.length,
+      stableKey: [...unique].sort().join("\u001f"),
+      aliases: workspaceAliasMap(unique),
+    };
+    workspaceSnapshotCache.set(signature, snapshot);
+    while (workspaceSnapshotCache.size > WORKSPACE_SNAPSHOT_CACHE_MAX_ENTRIES) {
+      const firstKey = workspaceSnapshotCache.keys().next().value;
+      if (!firstKey) break;
+      workspaceSnapshotCache.delete(firstKey);
+    }
+    incrementDiagnostic(diagnostics, "workspaceSnapshotCacheMissCount");
+    if (diagnostics) diagnostics.workspaceCwdCount = Math.max(sqlNumber(diagnostics.workspaceCwdCount), snapshot.count);
+    addElapsedDiagnostic(diagnostics, "workspaceSnapshotBuildMs", startedAtMs);
+    return snapshot;
+  }
+
+  function workspaceSnapshotForOptions(optionsForQuery = {}) {
+    if (optionsForQuery && optionsForQuery._tokenUsageWorkspaceSnapshot) {
+      return optionsForQuery._tokenUsageWorkspaceSnapshot;
+    }
+    return workspaceSnapshot(optionsForQuery.workspaceCwds || [], optionsForQuery);
   }
 
   function readQuery(key, optionsForQuery = {}) {
@@ -279,7 +329,10 @@ function createTokenUsageStatsService(options = {}) {
         incrementDiagnostic(diagnostics, "cacheHitCount");
         incrementDiagnostic(diagnostics, "staleCacheHitCount");
         rememberCacheAge(diagnostics, ageMs);
-        return cloneJson(entry.value);
+        const cloneStartedAtMs = Date.now();
+        const cloned = cloneJson(entry.value);
+        addElapsedDiagnostic(diagnostics, "cacheCloneMs", cloneStartedAtMs);
+        return cloned;
       }
       incrementDiagnostic(diagnostics, "expiredMissCount");
       queryCache.delete(key);
@@ -288,17 +341,21 @@ function createTokenUsageStatsService(options = {}) {
     incrementDiagnostic(diagnostics, "cacheHitCount");
     incrementDiagnostic(diagnostics, "freshCacheHitCount");
     rememberCacheAge(diagnostics, ageMs);
-    return cloneJson(entry.value);
+    const cloneStartedAtMs = Date.now();
+    const cloned = cloneJson(entry.value);
+    addElapsedDiagnostic(diagnostics, "cacheCloneMs", cloneStartedAtMs);
+    return cloned;
   }
 
   function clearQueryCache() {
     queryCache.clear();
   }
 
-  function stableWorkspaceKey(values = []) {
-    return [...new Set((values || []).map((value) => String(value || "").trim()).filter(Boolean))]
-      .sort()
-      .join("\u001f");
+  function stableWorkspaceKey(values = [], optionsForQuery = {}) {
+    if (optionsForQuery && optionsForQuery._tokenUsageWorkspaceSnapshot) {
+      return optionsForQuery._tokenUsageWorkspaceSnapshot.stableKey || "";
+    }
+    return workspaceSnapshot(values, optionsForQuery).stableKey;
   }
 
   function usageDateScope(optionsForQuery = {}) {
@@ -326,7 +383,7 @@ function createTokenUsageStatsService(options = {}) {
       cwd: String(optionsForQuery.cwd || "").trim(),
       days: Math.max(1, Math.min(366, Number(optionsForQuery.days || 31))),
       workspaceLimit: Math.max(1, Math.min(200, Number(optionsForQuery.workspaceLimit || 50))),
-      workspaceCwds: stableWorkspaceKey(optionsForQuery.workspaceCwds || []),
+      workspaceCwds: stableWorkspaceKey(optionsForQuery.workspaceCwds || [], optionsForQuery),
       today: date.today,
       weekStart: date.weekStart,
     });
@@ -455,7 +512,8 @@ LIMIT 1
   }
 
   function buildWorkspaceWhere(cwd, optionsForQuery = {}) {
-    const canonical = canonicalWorkspaceCwd(cwd, workspaceAliasMap(optionsForQuery.workspaceCwds || []));
+    const snapshot = workspaceSnapshotForOptions(optionsForQuery);
+    const canonical = canonicalWorkspaceCwd(cwd, snapshot.aliases);
     const variants = knownMojibakeVariants(canonical || cwd);
     const values = [...new Set(variants.map((value) => String(value || "").trim()).filter(Boolean))];
     if (!values.length) return "";
@@ -579,16 +637,31 @@ LIMIT ${workspaceLimit}
       expiredMissCount: 0,
       queryCount: 0,
       maxCacheAgeMs: 0,
+      cacheCloneMs: 0,
+      workspaceCwdCount: 0,
+      workspaceSnapshotBuildMs: 0,
+      workspaceSnapshotCacheHitCount: 0,
+      workspaceSnapshotCacheMissCount: 0,
+      decorateSummaryMs: 0,
+      decorateAttachMs: 0,
     };
-    const scopedOptions = Object.assign({}, optionsForQuery, {
+    const workspaceSnapshotValue = workspaceSnapshot(optionsForQuery.workspaceCwds || [], {
       _tokenUsageQueryDiagnostics: queryDiagnostic,
     });
+    const scopedOptions = Object.assign({}, optionsForQuery, {
+      _tokenUsageQueryDiagnostics: queryDiagnostic,
+      _tokenUsageWorkspaceSnapshot: workspaceSnapshotValue,
+    });
+    const summaryStartedAtMs = Date.now();
     const { byThreadId, workspace } = summaryForThreads(threads.map((thread) => thread && thread.id), scopedOptions);
+    addElapsedDiagnostic(queryDiagnostic, "decorateSummaryMs", summaryStartedAtMs);
+    const attachStartedAtMs = Date.now();
     for (const thread of threads) {
       const usage = byThreadId.get(String(thread && thread.id || ""));
       if (usage) thread.mobileTokenUsage = usage;
     }
     result.mobileTokenUsage = Object.assign({ threadCount: byThreadId.size }, workspace);
+    addElapsedDiagnostic(queryDiagnostic, "decorateAttachMs", attachStartedAtMs);
     result.mobileTokenUsageDiagnostics = {
       allowExpiredCache: queryDiagnostic.allowExpiredCache,
       cacheHitCount: sqlNumber(queryDiagnostic.cacheHitCount),
@@ -598,6 +671,13 @@ LIMIT ${workspaceLimit}
       expiredMissCount: sqlNumber(queryDiagnostic.expiredMissCount),
       queryCount: sqlNumber(queryDiagnostic.queryCount),
       maxCacheAgeMs: sqlNumber(queryDiagnostic.maxCacheAgeMs),
+      cacheCloneMs: sqlNumber(queryDiagnostic.cacheCloneMs),
+      workspaceCwdCount: sqlNumber(queryDiagnostic.workspaceCwdCount),
+      workspaceSnapshotBuildMs: sqlNumber(queryDiagnostic.workspaceSnapshotBuildMs),
+      workspaceSnapshotCacheHitCount: sqlNumber(queryDiagnostic.workspaceSnapshotCacheHitCount),
+      workspaceSnapshotCacheMissCount: sqlNumber(queryDiagnostic.workspaceSnapshotCacheMissCount),
+      decorateSummaryMs: sqlNumber(queryDiagnostic.decorateSummaryMs),
+      decorateAttachMs: sqlNumber(queryDiagnostic.decorateAttachMs),
     };
     return result;
   }

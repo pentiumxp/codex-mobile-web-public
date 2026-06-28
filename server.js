@@ -14106,6 +14106,13 @@ function threadListTokenUsageTimingFields(diagnostics = {}) {
     tokenUsageExpiredMissCount: Number(source.expiredMissCount || 0),
     tokenUsageQueryCount: Number(source.queryCount || 0),
     tokenUsageMaxCacheAgeMs: Number(source.maxCacheAgeMs || 0),
+    tokenUsageCacheCloneMs: Number(source.cacheCloneMs || 0),
+    tokenUsageWorkspaceCwdCount: Number(source.workspaceCwdCount || 0),
+    tokenUsageWorkspaceSnapshotBuildMs: Number(source.workspaceSnapshotBuildMs || 0),
+    tokenUsageWorkspaceSnapshotCacheHitCount: Number(source.workspaceSnapshotCacheHitCount || 0),
+    tokenUsageWorkspaceSnapshotCacheMissCount: Number(source.workspaceSnapshotCacheMissCount || 0),
+    tokenUsageDecorateSummaryMs: Number(source.decorateSummaryMs || 0),
+    tokenUsageDecorateAttachMs: Number(source.decorateAttachMs || 0),
   };
 }
 

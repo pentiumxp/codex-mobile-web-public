@@ -25315,6 +25315,54 @@ The previous full handoff was archived and should be opened only when old proven
   - `npm run check:macos` passed.
   - Full `npm test` passed (`1388` tests).
 - Deployment status:
+  - Commit `a384091` `fix: reuse token usage cache for thread lists` was
+    deployed through the central macOS plugin path with reason
+    `codex-mobile-token-usage-thread-list-cache`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260628T004951Z-plugin-codex-mobile-web-codex-mobile-token-usage-thread-list-cache`.
+  - Production public config remained `clientBuildId=0.1.11|codex-mobile-shell-v556`
+    and `shellCacheName=codex-mobile-shell-v556`, expected because no browser
+    static files changed.
+  - Follow-up production sampling showed `tokenUsageQueryCount=0` on repeated
+    list reads, so SQLite aggregate reads were removed from steady-state first
+    paint. However `decorateMs` still measured roughly 80-120ms with
+    `coldPathOwner=token-usage-decoration`, so the next root-cause slice moved
+    to synchronous decoration CPU/clone/key work rather than DB query work.
+
+### Follow-up - Workspace Snapshot Reuse For Token Decoration
+
+- Root cause / invariant:
+  - The DB aggregate query was no longer on the repeated warm path, but token
+    usage decoration still rebuilt visible Workspace path aliases/cache keys and
+    cloned cached aggregate payloads inside the synchronous first-paint route.
+  - This matters because `/api/public-config`, `/api/status`, and `/api/threads`
+    can appear "not timed out but still waiting" when the Node process is alive
+    and eventually returns, yet synchronous decoration/status work holds the
+    event loop long enough for the UI to look stuck.
+- Implementation:
+  - `adapters/token-usage-stats-service.js` now compiles the visible Workspace
+    cwd set into a bounded in-process snapshot (`stableKey` plus alias map) and
+    reuses it for repeated thread-list decoration with the same Workspace set.
+  - `mobileTokenUsageDiagnostics` now includes bounded phase counters:
+    `workspaceCwdCount`, `workspaceSnapshotBuildMs`,
+    `workspaceSnapshotCacheHitCount`, `workspaceSnapshotCacheMissCount`,
+    `cacheCloneMs`, `decorateSummaryMs`, and `decorateAttachMs`.
+  - `server.js` forwards those counters into
+    `mobileDiagnostics.threadListTimings` as `tokenUsage*` fields.
+  - Updated docs: `docs/README.md`, `docs/ARCHITECTURE.md`,
+    `docs/MODULES.md`, and `docs/TROUBLESHOOTING.md`.
+- Local validation:
+  - Focused token/cold-path tests passed (`15` tests).
+  - Wider thread-list/token/diagnostic suite passed (`83` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - Full `npm test` passed (`1392` tests) after the code change; later changes
+    were documentation only.
+  - Local benchmark with 1000 Workspace paths showed first snapshot build around
+    3ms and repeated stale-cache list decoration at `queryCount=0`,
+    `workspaceSnapshotBuildMs=0`, and `workspaceSnapshotCacheHitCount=1`.
+- Deployment status:
   - Not deployed yet at the time of this note. Next step is commit, central
     macOS plugin deploy, and production readback. Static shell/cache bump is
     not expected because no browser static files changed.

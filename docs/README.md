@@ -146,9 +146,12 @@ The token-usage decoration follow-up keeps that warm path from being dominated
 by repeated SQLite aggregate work: replayed identical completed-turn Usage
 events do not invalidate the process query cache, and thread-list first paint
 can reuse an expired in-process Usage aggregate when the date/thread/workspace
-key still matches and no real Usage write has invalidated it. The server also
-reports token usage cache/query counters in thread-list timings so
-`decorateMs` can be diagnosed separately from fallback and app-server latency.
+key still matches and no real Usage write has invalidated it. Repeated list
+paints also reuse a compiled visible-Workspace snapshot so Chinese/mojibake path
+aliases and stable Workspace cache keys are not rebuilt for the same Workspace
+set. The server also reports token usage cache/query/snapshot counters in
+thread-list timings so `decorateMs` can be diagnosed separately from fallback
+and app-server latency.
 
 The follow-up client diagnostics slice treats thread-list "slow but eventually
 successful" loads as a first-class slow path. Successful list loads now plan a
