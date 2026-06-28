@@ -177,10 +177,17 @@ function createActiveOverlayHarness(options = {}) {
       return {
         thread: {
           id: "thread-1",
-          turns: [{
-            id: "turn-window",
-            items: [{ id: "agent-window", type: "agentMessage", text: "older visible receipt" }],
-          }],
+          turns: [
+            {
+              id: "turn-window",
+              items: [{ id: "agent-window", type: "agentMessage", text: "older visible receipt" }],
+            },
+            {
+              id: "turn-live",
+              status: { type: "active" },
+              items: [{ id: "user-window", type: "userMessage" }],
+            },
+          ],
           mobileReadMode: "turns-list",
         },
       };
@@ -229,7 +236,7 @@ test("read orchestration uses live projection provider for active overlay withou
   assert.equal(response.mode, "projection-active-overlay");
   assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["turn-window", "turn-live"]);
   assert.equal(calls.includes("thread-read"), false);
-  assert.equal(calls.includes("turns-list"), false);
+  assert.equal(calls.includes("turns-list"), true);
   assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), []);
   assert.deepEqual(calls.filter((call) => call.startsWith("active-overlay-window-lookup:")), [
     "active-overlay-window-lookup:hit",
@@ -283,7 +290,7 @@ test("read orchestration uses projection-inferred active turn when summary lacks
   assert.equal(response.mode, "projection-active-overlay");
   assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["turn-window", "turn-live"]);
   assert.equal(calls.includes("thread-read"), false);
-  assert.equal(calls.includes("turns-list"), false);
+  assert.equal(calls.includes("turns-list"), true);
   const timings = response.body.thread.mobileDiagnostics.threadDetailTimings;
   assert.equal(timings.activeFullReadRequired, true);
   assert.equal(timings.activeFullReadReason, "status-active");
@@ -352,7 +359,7 @@ test("thread detail route smoke returns active overlay from mode=recent without 
   assert.equal(sent[0].body.thread.mobileReadMode, "projection-active-overlay");
   assert.deepEqual(sent[0].body.thread.turns.map((turn) => turn.id), ["turn-window", "turn-live"]);
   assert.equal(calls.includes("thread-read"), false);
-  assert.equal(calls.includes("turns-list"), false);
+  assert.equal(calls.includes("turns-list"), true);
   assert.ok(calls.includes("route-read-prefer-recent:true"));
   assert.deepEqual(calls.filter((call) => call.startsWith("projection-lookup:")), []);
   assert.deepEqual(calls.filter((call) => call.startsWith("active-overlay-window-lookup:")), [

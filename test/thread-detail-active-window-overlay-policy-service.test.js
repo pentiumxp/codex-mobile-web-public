@@ -163,6 +163,40 @@ test("active window overlay plan rejects unknown item kinds", () => {
   assert.equal(plan.reason, "unknown-overlay-item-kind");
 });
 
+test("active window overlay plan rejects partial live snapshot until it is backfilled", () => {
+  const partial = planActiveWindowOverlay({
+    summary: { activeTurnId: "active-turn" },
+    projectionThread: projectionThread(),
+    overlaySource: "projection-live",
+    overlayTurn: overlayTurn(),
+    overlayCompleteness: "partial",
+    operationCoverage: "present",
+    uploadCoverage: "present",
+    receiptCoverage: "present",
+    projectionRevision: 4,
+    overlayRevision: 5,
+  });
+
+  assert.equal(partial.action, "require-full-read");
+  assert.equal(partial.reason, "active-overlay-turn-incomplete");
+
+  const backfilled = planActiveWindowOverlay({
+    summary: { activeTurnId: "active-turn" },
+    projectionThread: projectionThread(),
+    overlaySource: "projection-live",
+    overlayTurn: overlayTurn(),
+    overlayCompleteness: "backfilled",
+    operationCoverage: "present",
+    uploadCoverage: "present",
+    receiptCoverage: "present",
+    projectionRevision: 4,
+    overlayRevision: 5,
+  });
+
+  assert.equal(backfilled.action, "use-projection-overlay");
+  assert.equal(backfilled.reason, "overlay-evidence-complete");
+});
+
 test("active window overlay plan requires explicit none coverage for absent categories", () => {
   const plan = planActiveWindowOverlay({
     summary: { activeTurnId: "active-turn" },
@@ -214,6 +248,8 @@ test("active window overlay plan falls back to timestamps when only one revision
     summary: { activeTurnId: "active-turn" },
     projectionThread: projectionThread(),
     overlaySource: "projection-live",
+        overlayCompleteness: "full",
+        overlayPartial: false,
     overlayTurn: {
       id: "active-turn",
       items: [{ type: "agentMessage", updatedAtMs: 260 }],
@@ -221,6 +257,7 @@ test("active window overlay plan falls back to timestamps when only one revision
     operationCoverage: "none",
     uploadCoverage: "none",
     receiptCoverage: "none",
+    overlayCompleteness: "full",
     projectionRevision: 12,
     projectionTimestampMs: 200,
     overlayTimestampMs: 260,
@@ -234,6 +271,8 @@ test("active window overlay plan falls back to timestamps when only one revision
     summary: { activeTurnId: "active-turn" },
     projectionThread: projectionThread(),
     overlaySource: "projection-live",
+        overlayCompleteness: "full",
+        overlayPartial: false,
     overlayTurn: {
       id: "active-turn",
       items: [{ type: "agentMessage", updatedAtMs: 180 }],
@@ -241,6 +280,7 @@ test("active window overlay plan falls back to timestamps when only one revision
     operationCoverage: "none",
     uploadCoverage: "none",
     receiptCoverage: "none",
+    overlayCompleteness: "full",
     overlayRevision: 12,
     projectionTimestampMs: 200,
     overlayTimestampMs: 180,
@@ -256,7 +296,10 @@ test("active window overlay plan rejects stale assistant deltas", () => {
     summary: { activeTurnId: "active-turn" },
     projectionThread: projectionThread(),
     overlaySource: "projection-live",
+        overlayCompleteness: "full",
+        overlayPartial: false,
     overlayTurn: overlayTurn(),
+    overlayCompleteness: "full",
     projectionRevision: 10,
     overlayRevision: 9,
   });
@@ -281,7 +324,10 @@ test("active overlay window projection revision does not make live overlay stale
       },
     }),
     overlaySource: "projection-live",
+        overlayCompleteness: "full",
+        overlayPartial: false,
     overlayTurn: overlayTurn(),
+    overlayCompleteness: "full",
     projectionRevision: 10,
     overlayRevision: 9,
   });
@@ -380,6 +426,8 @@ test("active window overlay merge compacts overlay turn before response merge", 
   const compactedOverlayIds = [];
   const merged = mergeProjectionThreadWithActiveOverlay(projected, overlay, {
     overlaySource: "projection-live",
+        overlayCompleteness: "full",
+        overlayPartial: false,
     compactOverlayTurn: (turn) => Object.assign({}, turn, {
       items: turn.items
         .filter((item) => item.type !== "mcpToolCall" || item.id === "tool-new")

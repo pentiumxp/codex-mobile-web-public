@@ -4809,6 +4809,13 @@ function rolloutProgressItem(entry, turnId, text, index) {
   };
 }
 
+function rolloutActiveAssistantItem(entry, turnId, text, index) {
+  return Object.assign({}, rolloutProgressItem(entry, turnId, text, index), {
+    source: "rollout_active_assistant",
+    mobileSyntheticActiveAssistant: true,
+  });
+}
+
 function appendRolloutProgressMessage(progressByTurn, entry, turnId) {
   if (!turnId || THREAD_DETAIL_COMPLETED_PROGRESS_MESSAGES <= 0) return;
   const text = rolloutProgressTextFromEntry(entry);
@@ -4881,6 +4888,18 @@ function cloneRolloutCompletionTurnPayload(payload) {
   };
 }
 
+function cloneRolloutAssistantItemsPayload(payload) {
+  const byTurn = new Map();
+  const sourceByTurn = payload && payload.byTurn instanceof Map ? payload.byTurn : new Map();
+  for (const [turnId, items] of sourceByTurn.entries()) {
+    byTurn.set(turnId, Array.isArray(items) ? items.map(clonePlainJson) : []);
+  }
+  return {
+    byTurn,
+    scopedCount: Number(payload && payload.scopedCount) || 0,
+  };
+}
+
 function readRolloutCompletionTurns(rolloutPath) {
   if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) {
     return { byTurn: new Map(), scopedCount: 0 };
@@ -4918,6 +4937,55 @@ function readRolloutCompletionTurns(rolloutPath) {
   const payload = { byTurn, scopedCount };
   if (cacheKey) rememberRolloutFinalReceipts(cacheKey, payload);
   return cloneRolloutCompletionTurnPayload(payload);
+}
+
+function readRolloutActiveAssistantItems(rolloutPath, options = {}) {
+  const targetTurnIds = Array.isArray(options.targetTurnIds)
+    ? options.targetTurnIds.map((id) => String(id || "").trim()).filter(Boolean)
+    : [];
+  const targetSet = new Set(targetTurnIds);
+  if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath) || !targetSet.size) {
+    return { byTurn: new Map(), scopedCount: 0 };
+  }
+  let cacheKey = "";
+  try {
+    const stat = fs.statSync(rolloutPath);
+    cacheKey = `${runtimeContextCacheKey(rolloutPath, stat)}:active-assistant:${targetTurnIds.sort().join(",")}`;
+    const cached = latestFinalReceiptsByPath.get(cacheKey);
+    if (cached && Date.now() - cached.cachedAt <= RUNTIME_CONTEXT_CACHE_TTL_MS) {
+      return cloneRolloutAssistantItemsPayload(cached.payload);
+    }
+  } catch (_) {
+    return { byTurn: new Map(), scopedCount: 0 };
+  }
+
+  const byTurn = new Map();
+  let scopedCount = 0;
+  let currentTurnId = "";
+  for (const entry of readRolloutEnrichmentEntries(rolloutPath)) {
+    if (!entry || !entry.type) continue;
+    const payload = entry.payload || {};
+    const explicitTurnId = rolloutEntryTurnId(entry);
+    if (entry.type === "turn_context" && explicitTurnId) currentTurnId = explicitTurnId;
+    if (entry.type === "event_msg" && payload.type === "task_started" && explicitTurnId) currentTurnId = explicitTurnId;
+    const turnId = explicitTurnId || currentTurnId;
+    if (!turnId || !targetSet.has(turnId)) continue;
+    const payloadType = String(payload.type || "").toLowerCase();
+    const payloadRole = String(payload.role || payload.author || "").toLowerCase();
+    if (entry.type !== "response_item" || payloadType !== "message" || payloadRole !== "assistant") continue;
+    const text = rolloutProgressTextFromEntry(entry);
+    if (!text) continue;
+    let items = byTurn.get(turnId);
+    if (!items) {
+      items = [];
+      byTurn.set(turnId, items);
+    }
+    items.push(rolloutActiveAssistantItem(entry, turnId, text, items.length));
+    scopedCount += 1;
+  }
+  const payload = { byTurn, scopedCount };
+  if (cacheKey) rememberRolloutFinalReceipts(cacheKey, payload);
+  return cloneRolloutAssistantItemsPayload(payload);
 }
 
 function threadUpdatedAtOnlyMs(thread) {
@@ -5121,6 +5189,49 @@ function appendRolloutUserInputAnchorsToDetailResult(result) {
   const backfilled = appendLatestCompletedUserInputAnchors(out.thread, payload);
   if (!backfilled || backfilled.changed !== true) return result;
   out.thread = backfilled.thread;
+  return out;
+}
+
+function appendRolloutActiveAssistantItemsToDetailResult(result) {
+  const thread = result && result.thread;
+  if (!thread || !Array.isArray(thread.turns) || !thread.turns.length) return result;
+  const rolloutPath = rolloutPathForThread(thread);
+  if (!rolloutPath) return result;
+  const activeTurnIds = thread.turns
+    .filter((turn) => turn && isLiveTurn(turn))
+    .map(turnIdentifier)
+    .filter(Boolean);
+  if (!activeTurnIds.length) return result;
+  const payload = readRolloutActiveAssistantItems(rolloutPath, { targetTurnIds: activeTurnIds });
+  if (!payload || !(payload.byTurn instanceof Map) || !payload.byTurn.size) return result;
+  const out = Object.assign({}, result, {
+    thread: cloneThreadForUsageDecoration(thread),
+  });
+  let changed = false;
+  for (const turn of out.thread.turns) {
+    if (!turn || !isLiveTurn(turn)) continue;
+    const turnId = turnIdentifier(turn);
+    const rolloutItems = turnId ? payload.byTurn.get(turnId) : null;
+    if (!Array.isArray(rolloutItems) || !rolloutItems.length) continue;
+    turn.items = Array.isArray(turn.items) ? turn.items : [];
+    const existingIds = new Set(turn.items.map(visibleItemId).filter(Boolean));
+    const existingTexts = new Set(turn.items
+      .filter(isAssistantReceiptItem)
+      .map((item) => normalizeFinalReceiptText(assistantReceiptText(item)))
+      .filter(Boolean));
+    for (const item of rolloutItems) {
+      const id = visibleItemId(item);
+      const normalized = normalizeFinalReceiptText(assistantReceiptText(item));
+      if ((id && existingIds.has(id)) || (normalized && existingTexts.has(normalized))) continue;
+      insertProjectedItemByTimestamp(turn.items, clonePlainJson(item));
+      if (id) existingIds.add(id);
+      if (normalized) existingTexts.add(normalized);
+      changed = true;
+    }
+    if (changed) orderTurnItemsByDisplayTimestamp(turn);
+  }
+  if (!changed) return result;
+  out.thread.mobileActiveRolloutAssistantBackfilled = true;
   return out;
 }
 
@@ -13512,7 +13623,8 @@ function attachRolloutUsageSummariesToDetailResult(result) {
 async function prepareThreadDetailResponseResult(result, details = {}) {
   const completionBackfilled = backfillMissingRolloutCompletionTurnsForDetailResult(result, details);
   const usageDecorated = attachRolloutUsageSummariesToDetailResult(completionBackfilled);
-  const detailResult = appendRolloutUserInputAnchorsToDetailResult(usageDecorated);
+  const inputAnchored = appendRolloutUserInputAnchorsToDetailResult(usageDecorated);
+  const detailResult = appendRolloutActiveAssistantItemsToDetailResult(inputAnchored);
   const prepared = applyLocalActiveThreadStatusToResult(
     await prepareThreadTaskCardsToResult(applyLocalActiveThreadStatusToResult(detailResult, details)),
     details,
@@ -16452,6 +16564,7 @@ module.exports = {
   approvalResponsePayload,
   anyThreadMatchesVisibleWorkspace,
   attachRolloutFallbackStatus,
+  appendRolloutActiveAssistantItemsToDetailResult,
   applyLocalActiveThreadStatusToSummary,
   backfillMissingRolloutCompletionTurnsForDetailResult,
   codeGraphMcpElicitationToolName,

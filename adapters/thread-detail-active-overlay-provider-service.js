@@ -71,6 +71,14 @@ function projectionTimestampFromThread(thread) {
   );
 }
 
+function overlayCompletenessForSnapshot(snapshot = {}) {
+  const partialKind = boundedReason(snapshot.partialKind);
+  if (snapshot.partial === true) return "partial";
+  if (partialKind === "notification-shell") return "partial";
+  if (snapshot.signatureHashPresent === false) return "partial";
+  return "full";
+}
+
 function unavailableOverlayInput(activeTurnId, reason) {
   return {
     activeTurnId,
@@ -126,6 +134,10 @@ function createThreadDetailActiveOverlayProviderService(options = {}) {
       overlaySource: snapshot.overlaySource || "projection-live",
       overlayTurn: snapshot.overlayTurn,
       overlayEvidence: evidence,
+      overlayCompleteness: overlayCompletenessForSnapshot(snapshot),
+      overlayPartial: snapshot.partial === true,
+      overlayPartialKind: boundedReason(snapshot.partialKind),
+      overlaySignatureHashPresent: snapshot.signatureHashPresent === true,
       operationCoverage: coverageForCount(evidence.operationItems),
       uploadCoverage: coverageForCount(evidence.uploadItems),
       assistantDeltaCoverage,

@@ -194,7 +194,7 @@ function shouldUseStaleFullAsActiveOverlayWindow(entry, signature, input = {}, o
       && entry.partial !== true
       && entry.result
       && entry.result.thread
-      && isActiveLikeStatus(input.summaryStatus)
+      && (isActiveLikeStatus(input.summaryStatus) || optionsForGet.activeOverlayStatusProven === true)
       && activeOverlayHistorySignatureMatches(entry.signature, signature),
   );
 }
@@ -949,7 +949,7 @@ function createThreadDetailProjectionService(options = {}) {
     } else if (entry.dynamic) {
       const allowActiveOverlaySummaryStaleWindow = optionsForGet.activeOverlay === true
         && optionsForGet.allowPartial === true
-        && isActiveLikeStatus(input.summaryStatus);
+        && (isActiveLikeStatus(input.summaryStatus) || optionsForGet.activeOverlayStatusProven === true);
       const backingSignatureChanged = dynamicBackingSignatureChanged(entry.signature, signature);
       if (!allowActiveOverlaySummaryStaleWindow
         && summaryUpdatedAtMs

@@ -2981,6 +2981,45 @@ Required validation:
   `activeFullReadReason=initial-window-active-turn` with
   `activeOverlayGate=needs_repair` when overlay evidence is complete.
 
+### 2026-06-28 Active Overlay Completeness Gate Module
+
+User reports after the initial active-window overlay repair showed a separate
+correctness risk: an in-progress turn could display only the latest few
+assistant items when the process had only a notification-tail live snapshot.
+That snapshot was useful evidence that a turn was active, but it was not proof
+that the active turn body was complete.
+
+Deployable scope:
+
+- `thread-detail-active-overlay-provider-service` now labels live projection
+  snapshots with bounded completeness metadata. Notification-shell snapshots,
+  explicit partial snapshots, and snapshots without signature evidence are
+  treated as partial.
+- `thread-detail-active-window-overlay-policy-service` requires complete active
+  overlay evidence. A `projection-live` overlay must be `full`, `backfilled`, or
+  `preserved`; partial live evidence fails closed with
+  `active-overlay-turn-incomplete`.
+- `thread-detail-read-orchestration-service` may still use the pre-initial
+  active-overlay hot path, but a live overlay must first be backfilled from an
+  active-window projection and re-proven as `backfilled` before this preprobe is
+  allowed to return a detail response. If backfill is unavailable, the route
+  continues to the initial active-window/full-read path rather than returning a
+  stale or truncated live snapshot.
+- `thread-detail-projection-service` allows stale full active-window history to
+  be used only when the live overlay already proves active status, preserving
+  the server-side proof boundary without promoting notification shells.
+
+Required validation:
+
+- focused active-overlay provider, policy, projection, and read-orchestration
+  tests proving notification-shell snapshots are rejected, full snapshots can
+  use the fast path, and partial snapshots are backfilled before return;
+- broader detail/projection/self-check suite;
+- `npm test`, `npm run check`, `npm run check:macos`, and `git diff --check`;
+- central plugin deployment and production self-check/readback proving active
+  raw/detail assistant counts match and `projection-active-overlay` responses
+  report `activeOverlayCompleteness=full` or `backfilled`, not `partial`.
+
 ## Release Rule
 
 Follow the current release order:

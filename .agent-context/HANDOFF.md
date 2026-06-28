@@ -27844,3 +27844,172 @@ The previous full handoff was archived and should be opened only when old proven
     latency; this module removed the avoidable full `thread/read` fallback.
   - Production thread self-check after deploy returned `ok=true`,
     `issueCount=0`, `blockingIssueCount=0`, `diagnosticCandidateCount=0`.
+
+## 2026-06-28 - Active Overlay Completeness Gate Repair
+
+- Source report / evidence:
+  - User reported that in active threads such as Movie and the current Codex
+    Mobile thread, an in-progress turn could show only the latest few items and
+    miss earlier same-turn assistant receipts while the turn was still running.
+  - Pre-fix production samples could return `projection-active-overlay` based
+    on live projection evidence, but the code did not distinguish a complete
+    active-turn snapshot from a notification-tail-only snapshot.
+- Root cause / invariant:
+  - `activeOverlaySnapshot()` can expose a memory-only `projection-live`
+    snapshot created from notification shells after process restart or before a
+    full projection signature exists.
+  - The active-overlay proof gate treated that live snapshot as display-ready
+    evidence. A partial live turn could therefore replace or append the active
+    turn in the detail response and hide earlier visible assistant receipts.
+  - Invariant: active-overlay responses may avoid foreground `thread/read` only
+    when the active turn is proven complete enough for display, or when the
+    partial live snapshot has been backfilled from a bounded active-window
+    history window and re-proven.
+- Fix:
+  - `adapters/thread-detail-active-overlay-provider-service.js` now emits
+    bounded completeness metadata. Notification-shell snapshots, explicit
+    partial snapshots, and snapshots without signature evidence are partial.
+  - `adapters/thread-detail-active-window-overlay-policy-service.js` rejects
+    partial `projection-live` evidence with `active-overlay-turn-incomplete`.
+    Accepted live overlays must be `full`, `backfilled`, or `preserved`.
+  - `adapters/thread-detail-read-orchestration-service.js` can still use the
+    pre-initial active-overlay hot path, but partial live snapshots must be
+    backfilled from an active-window projection and re-planned as
+    `backfilled`; otherwise the route keeps the full-read path.
+  - `adapters/thread-detail-projection-service.js` permits stale full
+    active-window history reuse only when the live overlay has already proven
+    active status.
+  - No client fallback was added and the server-side active-overlay proof
+    boundary was tightened rather than relaxed.
+- Changed files:
+  - `adapters/thread-detail-active-overlay-provider-service.js`
+  - `adapters/thread-detail-active-window-overlay-policy-service.js`
+  - `adapters/thread-detail-projection-service.js`
+  - `adapters/thread-detail-read-orchestration-service.js`
+  - `test/thread-detail-active-overlay-provider-service.test.js`
+  - `test/thread-detail-active-window-overlay-policy-service.test.js`
+  - `test/thread-detail-projection-service.test.js`
+  - `test/thread-detail-read-orchestration-service.test.js`
+  - `docs/MODULES.md`
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`
+- Validation before commit:
+  - Focused active-overlay/provider/policy/projection/read-orchestration suite
+    passed (`88` tests).
+  - Broader detail/projection/self-check suite passed (`147` tests).
+  - `node --check` for changed adapter files passed.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `npm test` passed (`1478` tests).
+  - `git diff --check` passed.
+- Follow-up self-check sampling repair:
+  - First production readback after deploy showed Movie active detail was
+    already `projection-active-overlay` with `mobileActiveOverlay.completeness`
+    set to `backfilled`, and a repeat detail read caught up from 47 to 51
+    active assistant rows as the active turn continued to stream.
+  - The self-check H2 was therefore a sampling-window issue for still-running
+    active turns: the script fetched detail first, then read the raw rollout,
+    so newly appended assistant messages after the detail response were counted
+    as if they had been missing from that response.
+  - `scripts/codex-mobile-thread-self-check.js` now reads the raw active-turn
+    baseline before each detail request when it has row/previous-detail active
+    metadata. It still falls back to post-detail raw counts when no pre-detail
+    active baseline is available, preserving true projection-gap detection.
+  - `test/thread-self-check-script.test.js` now covers both true raw/detail
+    assistant gaps and the growth-race case that must not create an H2.
+  - The corrected self-check then exposed a true gap: a pure
+    `active-overlay-projection-window` preprobe could return a `projection-live`
+    snapshot that was marked full/backfilled by projection metadata but still
+    lagged the raw rollout by two assistant messages. This was the unsafe part
+    of the latency optimization.
+  - `thread-detail-read-orchestration-service.js` now requires the
+    `active-overlay-projection-window` preprobe to re-plan as `backfilled`
+    before it can return a `projection-active-overlay` response. A pure live
+    projection snapshot can still inform the hot path, but it cannot skip the
+    initial active-window/full-read path unless an active-window backfill has
+    proven the visible active turn.
+  - `test/thread-detail-read-orchestration-service.test.js` now covers that a
+    full-looking live preprobe must continue to initial `turns-list` and
+    backfill before returning.
+  - Final production pre-readback found Movie still had a true active-turn
+    H2: raw rollout had 93 assistant items while detail returned 91 for the
+    same active turn across three samples. Root cause was narrower than the
+    first fix: `projection-live` can be full-looking but still lag raw rollout,
+    and the route could backfill from the same stale projection/cache window
+    instead of a fresh active-window read.
+  - `thread-detail-read-orchestration-service.js` now treats
+    `overlaySource=projection-live` as requiring a fresh bounded active-window
+    backfill. It may still use app-server notification overlays and cached
+    windows when the overlay source is not `projection-live`, but projection
+    live snapshots cannot prove active-turn completeness on their own.
+  - `test/thread-detail-read-orchestration-service.test.js` adds the regression
+    where cached active-window and projection-live are both stale and the route
+    must return the fresh active-window assistant rows. Integration tests now
+    assert projection-live reads one bounded active-window and still avoids
+    full thread/read.
+  - Follow-up validation passed:
+    - `node --test test/thread-self-check-script.test.js
+      test/thread-detail-self-check-service.test.js` (`25` tests).
+    - Broader active-overlay/projection/self-check suite (`149` tests).
+    - `npm run check`, `npm run check:macos`, `git diff --check`, and
+      `npm test` (`1480` tests).
+- Deployment / readback:
+  - First deploy of commit `5053919` completed through the central Home AI
+    plugin macOS path with reason `codex-mobile-active-overlay-completeness`.
+    The self-check sampling repair will be amended and redeployed under the
+    same module before final closure.
+  - Post-deploy readback should prove active raw/detail assistant counts match
+    and `projection-active-overlay` diagnostics report
+    `activeOverlayCompleteness=full` or `backfilled`, never `partial`.
+
+### 2026-06-28 - Active Overlay Raw Rollout Assistant Backfill
+
+- Residual production self-check after the first completeness repair still
+  found H2 gaps on the current Codex Mobile active thread:
+  - `active_turn_assistant_projection_gap`: raw rollout assistant rows exceeded
+    detail assistant rows for the same live turn.
+  - `thread_detail_refresh_item_downgrade` /
+    `thread_detail_refresh_lost_assistant_items`: a later detail refresh could
+    replace a rich completed turn replay with a shorter active-window history
+    base.
+- Root cause / invariant:
+  - The fresh active-window read comes from the app-server `thread/turns/list`
+    path, which can still lag the raw rollout by a few assistant
+    `response_item` rows while a turn is streaming.
+  - When `projection-live` forces a fresh active-window backfill, the bounded
+    active-window history can be partial for completed turns. Merging that
+    partial history directly could downgrade the completed replay even though a
+    full projection baseline was already available.
+  - Invariant: active detail may use a bounded fast path only when it preserves
+    the current live turn's assistant progress and does not downgrade already
+    visible completed-turn replay detail.
+- Fix:
+  - `server.js` now appends missing live assistant message rows from the raw
+    rollout for active turns in the final thread-detail response preparation
+    path. It targets only live turn ids already present in the detail result,
+    dedupes by visible item id and normalized assistant text, and marks the
+    bounded repair with `mobileActiveRolloutAssistantBackfilled`.
+  - `thread-detail-read-orchestration-service.js` now repairs partial
+    active-window history with a full projection/history baseline before
+    final active-overlay merge when `projection-live` required fresh
+    active-window evidence.
+  - No client-side fallback or silent masking was added; this is a server-side
+    projection assembly closure with explicit metadata and tests.
+- Changed files in this follow-up slice:
+  - `server.js`
+  - `adapters/thread-detail-read-orchestration-service.js`
+  - `test/thread-detail-read-orchestration-service.test.js`
+  - `test/thread-visibility.test.js`
+  - `test/thread-task-card-route.test.js`
+- Validation before commit/deploy:
+  - Focused follow-up suite passed (`106` tests).
+  - Broader active-overlay/projection/self-check suite passed (`218` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - First full `npm test` had one transient temp-directory cleanup
+    `ENOTEMPTY` in `test/protocol.test.js`; single-test rerun passed (`18`
+    tests), and full rerun passed (`1481` tests).
+  - `codegraph sync && codegraph status` reported the index up to date.
+- Deployment / readback:
+  - Pending amend/deploy under the same module reason
+    `codex-mobile-active-overlay-completeness`.
+  - Required post-deploy closure: production marker readback plus Movie/current
+    thread/global self-checks showing no H1/H2 projection gaps.

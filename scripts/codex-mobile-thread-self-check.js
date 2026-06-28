@@ -358,6 +358,20 @@ function rawActiveCountSource(row = {}, detail = {}) {
   });
 }
 
+function rawCountsForDetailComparison(beforeDetail = null, afterDetail = null) {
+  const beforeUsable = beforeDetail && beforeDetail.checked === true && beforeDetail.found === true;
+  const afterUsable = afterDetail && afterDetail.checked === true && afterDetail.found === true;
+  const selected = beforeUsable ? beforeDetail : afterDetail;
+  if (!selected || typeof selected !== "object") return selected;
+  const result = Object.assign({}, selected);
+  if (beforeUsable && afterUsable) {
+    result.rawAssistantItemsBeforeDetail = beforeDetail.rawAssistantItems || 0;
+    result.rawAssistantItemsAfterDetail = afterDetail.rawAssistantItems || 0;
+    result.rawActiveGrewDuringDetailRead = result.rawAssistantItemsAfterDetail > result.rawAssistantItemsBeforeDetail;
+  }
+  return result;
+}
+
 function rawLatestCompletedCountSource(row = {}, detail = {}) {
   const thread = detailThread(detail);
   return Object.assign({}, row || {}, {
@@ -514,14 +528,16 @@ async function run(options = {}, env = process.env) {
   report.checkedThreads = safeThreadIds(selectedThreadIds);
 
   for (const { id: threadId, row } of selectedThreadRefs) {
+    const rawCountsBeforeFirstDetail = await readRawActiveTurnCounts(row, options);
     const firstDetail = await fetchThreadDetail(options, key, threadId, 0);
-    const rawCountsBeforeFirstDetail = await readRawActiveTurnCounts(rawActiveCountSource(row, firstDetail), options);
+    const rawCountsAfterFirstDetail = await readRawActiveTurnCounts(rawActiveCountSource(row, firstDetail), options);
+    const rawCountsForFirstDetail = rawCountsForDetailComparison(rawCountsBeforeFirstDetail, rawCountsAfterFirstDetail);
     const rawLatestCompletedCountsBeforeFirstDetail = await readRawLatestCompletedTurnCounts(row, firstDetail, options);
     const firstAnalysis = suppressRawProvenSystemInputMissingIssue(
       analyzeThreadDetail(firstDetail, { threadId }),
       rawLatestCompletedCountsBeforeFirstDetail,
     );
-    const firstActiveRawProjection = analyzeActiveTurnRawProjection(row, firstDetail, rawCountsBeforeFirstDetail);
+    const firstActiveRawProjection = analyzeActiveTurnRawProjection(row, firstDetail, rawCountsForFirstDetail);
     const detailReport = {
       threadHash: shortHash(threadId),
       first: firstAnalysis,
@@ -537,15 +553,17 @@ async function run(options = {}, env = process.env) {
       let lastAnalysis = firstAnalysis;
       for (let index = 1; index < options.repeat; index += 1) {
         await sleep(options.repeatDelayMs);
+        const rawCountsBeforeNextDetail = await readRawActiveTurnCounts(rawActiveCountSource(row, lastDetail), options);
         const nextDetail = await fetchThreadDetail(options, key, threadId, index);
-        const rawCountsBeforeNextDetail = await readRawActiveTurnCounts(rawActiveCountSource(row, nextDetail), options);
+        const rawCountsAfterNextDetail = await readRawActiveTurnCounts(rawActiveCountSource(row, nextDetail), options);
+        const rawCountsForNextDetail = rawCountsForDetailComparison(rawCountsBeforeNextDetail, rawCountsAfterNextDetail);
         const rawLatestCompletedCountsBeforeNextDetail = await readRawLatestCompletedTurnCounts(row, nextDetail, options);
         detailReads.push(nextDetail);
         const nextAnalysis = suppressRawProvenSystemInputMissingIssue(
           analyzeThreadDetail(nextDetail, { threadId }),
           rawLatestCompletedCountsBeforeNextDetail,
         );
-        const nextActiveRawProjection = analyzeActiveTurnRawProjection(row, nextDetail, rawCountsBeforeNextDetail);
+        const nextActiveRawProjection = analyzeActiveTurnRawProjection(row, nextDetail, rawCountsForNextDetail);
         if (nextActiveRawProjection && nextActiveRawProjection.issues.length) {
           repeatChecks.push(Object.assign({ index, baseline: "raw-active-turn" }, nextActiveRawProjection));
         }
