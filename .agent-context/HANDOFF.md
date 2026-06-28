@@ -26839,3 +26839,108 @@ The previous full handoff was archived and should be opened only when old proven
     for the Movie thread.
   - Public was not pushed and must remain unchanged unless the user explicitly
     asks for Public.
+
+## 2026-06-28 - Thread Display Self Check And Usage Toolbar Cleanup
+
+- User-visible incident / request:
+  - Recent projection fixes repeatedly regressed user-visible thread display
+    contracts: latest turn Usage could be missing, timestamps could disappear,
+    completed replay could include the wrong row types, and list/detail refresh
+    could silently diverge. The user asked for a self-check flow so these issues
+    are caught by the system instead of by manual report.
+  - The user also asked to remove the visible `Usage` label and Usage timestamp
+    from the final Usage row; Usage always appears with the final receipt, so
+    only the compact Usage toolbar should remain.
+- Implementation:
+  - Added metadata-only display self-check service
+    `adapters/thread-detail-self-check-service.js` and CLI
+    `scripts/codex-mobile-thread-self-check.js`.
+  - The self-check verifies thread-list stability, detail refresh stability,
+    latest completed turn Usage, timestamps, duplicate visible keys,
+    latest-completed replay budget evidence, and completed replay row hygiene
+    without printing message text, task-card bodies, upload contents, raw paths,
+    cookies, keys, or long logs.
+  - `public/app.js` renders Usage items as body-only toolbar rows without the
+    `Usage` label/timestamp header; `public/sw.js` and `CLIENT_BUILD_ID` were
+    bumped to `codex-mobile-shell-v568`.
+  - `server.js` now attaches rollout Usage summaries after missing completed
+    rollout turns are backfilled in the detail response preparation path, so
+    active-overlay and turns-list responses use the same Usage attachment
+    invariant as the full projection path.
+  - Tests/docs updated in `test/thread-detail-self-check-service.test.js`,
+    `test/message-timestamp.test.js`, `test/thread-task-card-route.test.js`,
+    `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, and `package.json`.
+- Validation:
+  - Focused: `node --test test/thread-detail-self-check-service.test.js
+    test/message-timestamp.test.js test/thread-task-card-route.test.js
+    test/turn-usage-summary-service.test.js
+    test/thread-detail-projection-service.test.js
+    test/conversation-render.test.js` (`209` tests).
+  - Full/local: `npm test` (`1423` tests), `npm run check`,
+    `npm run check:macos`, and `git diff --check` passed.
+- Deployment status:
+  - Commit `12ddfa7` deployed through the Home AI central macOS plugin deploy
+    path with reason `codex-mobile-thread-display-self-check-v568`.
+  - Production `/api/public-config` reported
+    `clientBuildId=0.1.11|codex-mobile-shell-v568` and
+    `shellCacheName=codex-mobile-shell-v568`.
+  - Focused Movie production self-check returned `ok:true` with latest
+    completed counts including `userMessage=1`, `contextCompaction=1`,
+    `agentMessage=8`, `turnUsageSummary=1`, and no operation/reasoning replay.
+  - The first default sample after deployment found a real active-overlay
+    refresh downgrade on the current Codex Mobile thread, recorded below as the
+    follow-up root-cause fix.
+
+## 2026-06-28 - Active Overlay Completed Turn Input Gap Fix
+
+- User-visible incident / diagnostic:
+  - The new self-check caught `thread_detail_refresh_item_downgrade` on the
+    current Codex Mobile thread: the first detail read preserved the latest
+    completed turn's user-visible input/context and final Usage, while the
+    forced refresh active-overlay path returned only assistant/Usage rows.
+  - This matched the user's repeated reports where re-entering a thread could
+    show the final receipt but hide surrounding user-visible rows.
+- Root cause / invariant:
+  - Active-overlay partial window projection could be seeded and returned even
+    when the latest completed replay window contained assistant/Usage rows but
+    had lost the corresponding user-visible input/context rows.
+  - The violated invariant: refresh/detail modes may optimize read cost, but
+    they must not downgrade the visible shape of the latest completed turn.
+- Implementation:
+  - `adapters/thread-detail-read-orchestration-service.js` now detects
+    latest-completed replay input gaps before seeding partial projection cache.
+  - If a partial active-overlay window has that gap, the route first attempts
+    the full/dynamic projection cache. If that still cannot repair the shape,
+    the active-overlay plan falls through to a full read instead of returning a
+    degraded partial response.
+  - Added bounded timing/source fields for the repair path and kept the change
+    inside the read-orchestration boundary; no client fallback was added.
+  - Regression coverage added in
+    `test/thread-detail-read-orchestration-service.test.js`.
+- Validation:
+  - Focused: `node --test test/thread-detail-read-orchestration-service.test.js
+    test/thread-detail-active-overlay-integration.test.js
+    test/thread-detail-active-overlay-provider-service.test.js
+    test/thread-detail-self-check-service.test.js
+    test/thread-task-card-route.test.js` (`55` tests).
+  - Full/local: `npm test` (`1424` tests), `npm run check`,
+    `npm run check:macos`, and `git diff --check` passed.
+  - Note: one earlier full run hit a transient temporary-directory cleanup
+    failure in `test/protocol.test.js`; the isolated protocol test and the
+    subsequent full `npm test` both passed.
+- Deployment status:
+  - Commit `b48585f` deployed through the Home AI central macOS plugin deploy
+    path with reason `codex-mobile-active-overlay-input-gap-v568`.
+  - Production `/api/public-config` still reported
+    `clientBuildId=0.1.11|codex-mobile-shell-v568` and
+    `shellCacheName=codex-mobile-shell-v568`; this was expected because the
+    follow-up change was server-only.
+  - Production self-check:
+    `node scripts/codex-mobile-thread-self-check.js --server
+    http://127.0.0.1:8787 --sample-threads 3 --json` returned `ok:true`,
+    `issueCount=0`, stable thread-list `orderHash`, and no detail refresh
+    downgrade.
+  - Focused production self-checks for the current Codex Mobile thread and the
+    Movie thread both returned `ok:true`.
+  - Public was not pushed and must remain unchanged unless the user explicitly
+    asks for Public.
