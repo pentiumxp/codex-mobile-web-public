@@ -28448,3 +28448,43 @@ The previous full handoff was archived and should be opened only when old proven
   - Commit this self-check accounting patch, deploy privately, then run
     production API/browser/runtime self-check and LaunchAgent readback. Do not
     push Public unless explicitly requested by the user.
+
+### 2026-06-29 - Browser-Caught Active Assistant Duplicate Source Fix
+
+- Runtime evidence:
+  - After the dedupe-aware API self-check deploy, production browser runtime
+    self-check still failed with H2
+    `browser_latest_turn_assistant_text_duplicate` on the active Codex Mobile
+    thread. The duplicate count increased across browser samples, matching the
+    user's report that latest replies could appear/disappear or duplicate while
+    a turn was running.
+  - A bounded detail probe showed the duplicate already existed in the server
+    detail response, so the owning layer was server projection/finalization, not
+    client DOM patching. The duplicate pair was an active-turn assistant
+    receipt with a legacy `item-N` id and a same-text native `msg_*` id.
+- Root cause / invariant:
+  - v577 removed explicitly marked synthetic active assistant rows, but one
+    active overlay path emitted unmarked legacy `item-N` assistant receipt rows.
+    When the app-server later exposed the same assistant content as `msg_*`,
+    both rows survived into the response.
+  - Invariant: an active live turn must not expose both a legacy projection
+    `item-N` assistant receipt and same-text native `msg_*` assistant receipt.
+- Implementation:
+  - `server.js` now classifies active assistant `msg_*` rows as native message
+    receipts and legacy `item-N` assistant rows as removable only when the same
+    normalized assistant text is already present in a native message receipt in
+    the same live turn.
+  - The removal is server-side, before the response reaches the client; no
+    client-side duplicate hiding fallback was added.
+  - `test/thread-item-timestamp-enrichment.test.js` covers the `item-N` plus
+    `msg_*` same-text active assistant case.
+- Validation:
+  - Focused tests passed:
+    `node --test test/thread-item-timestamp-enrichment.test.js test/thread-detail-self-check-service.test.js test/browser-runtime-self-check-service.test.js test/conversation-render.test.js`.
+  - Full `npm test` passed (`1518` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Next:
+  - Commit and privately deploy this server projection fix, then re-run
+    production API self-check, browser runtime self-check, full runtime loop,
+    and LaunchAgent kickstart/readback. Do not push Public unless explicitly
+    requested by the user.

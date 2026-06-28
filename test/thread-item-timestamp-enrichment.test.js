@@ -84,6 +84,31 @@ test("active synthetic assistant progress duplicates native assistant text are r
   assert.equal(thread.mobileSyntheticActiveAssistantDeduped, 2);
 });
 
+test("active legacy item assistant progress duplicate is removed when native message exists", () => {
+  const thread = {
+    id: "thread-active-legacy-dedupe",
+    turns: [{
+      id: "turn-active",
+      status: { type: "running" },
+      items: [
+        { id: "item-313", type: "agentMessage", text: "Same overlay reply" },
+        { id: "msg_native", type: "agentMessage", text: "Same overlay reply" },
+        { id: "item-314", type: "agentMessage", text: "Distinct overlay reply" },
+      ],
+    }],
+  };
+
+  const result = dedupeSyntheticActiveAssistantMessagesInThread(thread);
+
+  assert.equal(result.removed, 1);
+  assert.deepEqual(
+    thread.turns[0].items.map((item) => item.id),
+    ["msg_native", "item-314"],
+  );
+  assert.equal(thread.turns[0].mobileSyntheticActiveAssistantDeduped, 1);
+  assert.equal(thread.mobileSyntheticActiveAssistantDeduped, 1);
+});
+
 test("compacted live operation items keep rollout-derived timestamps", () => {
   const { dir, rolloutPath } = writeRollout([
     event("2026-05-24T10:10:00.000Z", "event_msg", { type: "task_started", turn_id: "turn-2" }),

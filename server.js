@@ -5248,12 +5248,25 @@ function syntheticActiveAssistantMessage(item) {
   ));
 }
 
+function nativeActiveAssistantMessage(item) {
+  if (!item || !isAssistantReceiptItem(item)) return false;
+  const id = String(item.id || item.itemId || item.messageId || "").trim();
+  return /^msg_/i.test(id);
+}
+
+function legacySyntheticActiveAssistantMessage(item) {
+  if (!item || !isAssistantReceiptItem(item)) return false;
+  const id = String(item.id || item.itemId || "").trim();
+  return /^item-\d+$/i.test(id);
+}
+
 function dedupeSyntheticActiveAssistantMessagesInThread(thread) {
   if (!thread || typeof thread !== "object" || !Array.isArray(thread.turns)) return { thread, removed: 0 };
   let removed = 0;
   for (const turn of thread.turns) {
     if (!turn || !isLiveTurn(turn) || !Array.isArray(turn.items) || turn.items.length < 2) continue;
     const nativeAssistantTexts = new Set();
+    const nativeMessageAssistantTexts = new Set();
     const syntheticAssistantTexts = new Set();
     for (const item of turn.items) {
       if (!isAssistantReceiptItem(item)) continue;
@@ -5261,6 +5274,7 @@ function dedupeSyntheticActiveAssistantMessagesInThread(thread) {
       if (!normalized) continue;
       if (syntheticActiveAssistantMessage(item)) continue;
       nativeAssistantTexts.add(normalized);
+      if (nativeActiveAssistantMessage(item)) nativeMessageAssistantTexts.add(normalized);
     }
     const nextItems = [];
     for (const item of turn.items) {
@@ -5275,6 +5289,12 @@ function dedupeSyntheticActiveAssistantMessagesInThread(thread) {
           continue;
         }
         if (normalized) syntheticAssistantTexts.add(normalized);
+      } else if (legacySyntheticActiveAssistantMessage(item)) {
+        const normalized = normalizeFinalReceiptText(assistantReceiptText(item));
+        if (normalized && nativeMessageAssistantTexts.has(normalized)) {
+          removed += 1;
+          continue;
+        }
       }
       nextItems.push(item);
     }
