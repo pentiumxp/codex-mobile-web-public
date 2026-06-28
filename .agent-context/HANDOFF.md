@@ -28145,3 +28145,82 @@ The previous full handoff was archived and should be opened only when old proven
   - Residual first-request cold fallback rebuild can still be expensive after
     restart/deploy, but the reported current v572 root-route list slow path did
     not recur in the bounded evidence window.
+
+### 2026-06-28 - Operation Render Key Collision Hotfix
+
+- Incident:
+  - After the active-overlay/user-echo repairs, single-thread Home AI/Movie/
+    Codex Mobile detail pages could still show messages appearing, disappearing,
+    or duplicating while a turn was active. The user clarified this also
+    happened outside tiled/pane mode.
+  - Bounded server/API sampling showed stable thread detail responses, but
+    client events showed `post-apply-duplicate-render-keys` and
+    `detail_patch_rejected` before full DOM rerenders.
+- Root cause / invariant:
+  - `stableOperationRenderKey()` used only thread id, turn id, and operation
+    group. Repeated command/tool operations in one turn can share the same
+    operation group, so different visible operation rows produced the same DOM
+    render key.
+  - Invariant: every visible item in a turn must have a unique client render key
+    before DOM patching; this applies to single-thread and tiled rendering.
+- Fix:
+  - Operation render keys now include item identity (`mobileVisibleKey`, item
+    id/call/request/start time, or index fallback) plus the source index.
+  - `thread-detail-self-check-service` now simulates client render-key
+    generation and reports H2 `duplicate_client_render_keys` if a thread detail
+    response would collide in the browser.
+  - Static shell/cache bumped to `codex-mobile-shell-v573`; README documents the
+    hotfix and why older API-only self-check did not catch this class.
+- Validation / deployment:
+  - Focused render/self-check suite passed (`228` tests).
+  - Full `npm test` passed (`1494` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - Commit `21dc3ad` (`fix: prevent duplicate operation render keys`) deployed
+    through the central Home AI plugin macOS path with reason
+    `codex-mobile-operation-render-key-v573`.
+  - Production `/api/public-config` readback confirmed
+    `clientBuildId=0.1.11|codex-mobile-shell-v573` and
+    `shellCacheName=codex-mobile-shell-v573`.
+  - Production directed self-checks for Movie, Home AI, and Codex Mobile passed
+    twice with no `duplicate_client_render_keys` or other H1/H2 issues.
+  - Existing v572 WebViews may still emit old client events until refreshed or
+    reopened; do not treat those as v573 regressions without checking
+    `clientBuildId`.
+
+### 2026-06-28 - Frontend Runtime Health Instrumentation
+
+- Scope:
+  - Added browser-owned user-operation/render-layer instrumentation so refresh
+    flicker, submitted user messages disappearing from DOM, DOM sparse drops,
+    and repeated full-render / patch-fallback churn can be reported through the
+    Home AI Owner-gated diagnostic loop.
+  - This is diagnostic instrumentation, not a UI dedupe or fallback layer. It
+    does not change thread-detail authority or suppress/merge messages.
+- Implementation:
+  - New pure helper `public/frontend-runtime-health.js` plans metadata-only
+    diagnostic effects:
+    - `frontend_runtime_mismatch / submitted_message_dom_missing`
+    - `frontend_runtime_mismatch / render_dom_drop`
+    - `frontend_runtime_mismatch / render_churn`
+  - `public/app.js` loads the helper, creates a monitor, tags locally submitted
+    user-message DOM nodes with short submission hashes, probes existing-thread
+    and new-thread submissions at `350ms`, `1200ms`, and `2800ms`, and records
+    render health after real `updateConversationHtml()` applications.
+  - Static shell/cache bumped to `codex-mobile-shell-v574`. `public/index.html`,
+    `public/sw.js`, `server.js`, `package.json`, README, and module docs were
+    updated.
+- Privacy:
+  - Diagnostic payloads include only build id, route/read/render modes, short
+    hashes, bounded counts, and reason codes.
+  - They do not include message text, prompts, task-card bodies, uploads,
+    private paths, cookies, tokens, access keys, provider payloads, or long logs.
+- Validation:
+  - Focused tests passed:
+    `node --test test/frontend-runtime-health.test.js test/home-ai-diagnostic-reporting.test.js test/thread-diagnostic-events.test.js test/app-update.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/plugin-voice-input.test.js`
+    (`196` tests).
+  - Full `npm test` passed (`1500` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Not deployed at the time of this handoff entry. Deploy this module through
+    the central Home AI plugin macOS path after committing, then require
+    `/api/public-config` readback for `codex-mobile-shell-v574`.

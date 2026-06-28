@@ -76,6 +76,32 @@ render-key 规则扫描 thread detail，发现重复会报 `duplicate_client_ren
 这次变化会升级静态 shell/cache 到 `codex-mobile-shell-v573`。部署后需要浏览器、PWA 或
 Home AI embedded WebView 加载新 shell 才能消除旧客户端已缓存的重复 key 行为。
 
+## 2026-06-28 Frontend Runtime Health 布点（v574）
+
+本模块把自检从服务端/thread-detail 扩展到前端用户操作层和真实 DOM 渲染层。新增
+`public/frontend-runtime-health.js`，并接入 `public/app.js` 的现有线程发送和
+conversation patch 路径。
+
+首批覆盖三个用户可见失败面：
+
+- 用户在现有线程发送消息后，客户端本地已登记该 `clientSubmissionId`，但当前线程 DOM
+  在 0.35s / 1.2s / 2.8s 探测点看不到对应短 hash 标记，会记录
+  `frontend_runtime_mismatch / submitted_message_dom_missing`。
+- 线程详情从非空 DOM 突然退化到 0/1 个可见节点，会记录
+  `frontend_runtime_mismatch / render_dom_drop`。
+- 短时间内连续 full render 或 patch fallback，会记录
+  `frontend_runtime_mismatch / render_churn`。
+
+这些事件仍走 Home AI diagnostic reporter 的重复失败阈值和节流机制：单次瞬时刷新不会
+直接打扰 Owner，连续同签名失败才会通过 `homeai.diagnostic.report` 进入 Home AI
+Owner-gated 诊断闭环。上报内容只包含 build id、route kind、read/render mode、短 hash、
+DOM/visible/count 计数和 bounded reason code；不包含消息正文、任务卡正文、上传内容、
+原始线程 id、cookie、token、access key、私有路径或长日志。
+
+这不是前端兜底去重逻辑，也不改变投影 authority。它的作用是把“用户消息发出后消失、
+刷新后又出现、整页重绘抖动”这类浏览器层问题变成可复现、可归类、可由 Home AI 自动
+生成修复卡的 metadata-only 证据。
+
 ## 2026-06-28 Public 发布说明（线程详情自检、Usage 工具条和 completed replay 稳定性）
 
 本次 Public 同步的是 `codex-mobile-shell-v568` 前后的线程详情稳定性修复。它覆盖了

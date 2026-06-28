@@ -75,6 +75,10 @@ const threadDiagnosticEventsApi = window.CodexThreadDiagnosticEvents;
 if (!threadDiagnosticEventsApi) {
   throw new Error("CodexThreadDiagnosticEvents script failed to load");
 }
+const frontendRuntimeHealthApi = window.CodexFrontendRuntimeHealth;
+if (!frontendRuntimeHealthApi) {
+  throw new Error("CodexFrontendRuntimeHealth script failed to load");
+}
 const buildRefreshPolicy = window.CodexBuildRefreshPolicy || {
   shouldPromptForServerBuildChange(serverBuildId, clientBuildId) {
     const server = String(serverBuildId || "").trim();
@@ -496,6 +500,7 @@ const state = {
     threshold: homeAiDiagnosticReportingApi.DEFAULT_THRESHOLD,
     throttleMs: homeAiDiagnosticReportingApi.DEFAULT_THROTTLE_MS,
   }),
+  frontendRuntimeHealthMonitor: frontendRuntimeHealthApi.createMonitor(),
   lastThreadDetailRenderEvidence: null,
   shellLoadedReported: false,
 };
@@ -536,7 +541,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v573";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v574";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -588,6 +593,7 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/plugin-voice-input.js",
   "/home-ai-diagnostic-reporting.js",
   "/thread-diagnostic-events.js",
+  "/frontend-runtime-health.js",
   "/thread-status-hints.js",
   "/thread-performance-metrics.js",
   "/thread-list-load-policy.js",
@@ -6762,6 +6768,16 @@ function diagnosticItemHash(itemId) {
   return id ? diagnosticHash(`item:${id}`) : "";
 }
 
+function clientSubmissionDiagnosticHash(clientSubmissionId) {
+  const id = String(clientSubmissionId || "").trim();
+  return id ? diagnosticHash(`submission:${id}`) : "";
+}
+
+function clientSubmissionDataAttr(item) {
+  const hash = clientSubmissionDiagnosticHash(item && item.clientSubmissionId);
+  return hash ? ` data-client-submission-hash="${escapeHtml(hash)}"` : "";
+}
+
 function diagnosticRouteKind() {
   if (state.newThreadDraft) return "new-thread";
   if (isHermesEmbedMode() && isHermesPluginPrimaryPage()) return "embedded-primary";
@@ -6855,6 +6871,74 @@ function recordHomeAiDiagnosticSuccess(input = {}) {
   return state.homeAiDiagnosticReporter.recordSuccess(Object.assign({}, input, {
     context: currentHomeAiDiagnosticContext(input.context || {}),
   }));
+}
+
+function applyFrontendRuntimeHealthEffect(effect) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  if (!item.type) return;
+  if (item.type === "diagnostic-failure") {
+    recordHomeAiDiagnosticFailure(item.diagnostic || {});
+    return;
+  }
+  if (item.type === "diagnostic-success") {
+    recordHomeAiDiagnosticSuccess(item.diagnostic || {});
+    return;
+  }
+  throw new Error(`Unknown frontend runtime health effect: ${item.type}`);
+}
+
+function applyFrontendRuntimeHealthEffectsPlan(plan) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applyFrontendRuntimeHealthEffect(effect);
+}
+
+function conversationHasClientSubmissionHash(submissionHash) {
+  const hash = String(submissionHash || "").trim();
+  const conversation = $("conversation");
+  if (!hash || !conversation) return false;
+  return Array.from(conversation.querySelectorAll("[data-client-submission-hash]"))
+    .some((node) => String(node && node.getAttribute && node.getAttribute("data-client-submission-hash") || "") === hash);
+}
+
+function frontendHealthThreadForSubmission(threadId) {
+  const id = String(threadId || "").trim();
+  if (!id) return null;
+  if (state.currentThread && String(state.currentThread.id || "") === id) return state.currentThread;
+  return state.threadTileDetails && state.threadTileDetails.get(id) || null;
+}
+
+function probeSubmittedMessageDom(threadId, clientSubmissionId, action = "message-submit", startedAtMs = Date.now()) {
+  const id = String(threadId || "").trim();
+  const submissionId = String(clientSubmissionId || "").trim();
+  const submissionHash = clientSubmissionDiagnosticHash(submissionId);
+  if (!id || !submissionId || !submissionHash) return;
+  const thread = frontendHealthThreadForSubmission(id);
+  const domShape = conversationDomShape();
+  const visibleShape = thread ? visibleConversationShape(thread) : { visibleItemCount: 0 };
+  const plan = frontendRuntimeHealthApi.submittedMessageDomProbeEffects({
+    elapsedMs: Date.now() - Number(startedAtMs || Date.now()),
+    action,
+    routeKind: diagnosticRouteKind(),
+    threadHash: diagnosticThreadHash(id),
+    itemHash: submissionHash,
+    currentThreadMatch: !state.threadTileMode && String(state.currentThreadId || "") === id,
+    hasThreadSubmission: threadHasClientSubmission(thread, submissionId),
+    domHasSubmission: conversationHasClientSubmissionHash(submissionHash),
+    visibleCount: visibleShape.visibleItemCount,
+    domCount: domShape.itemCount,
+    composerBusy: state.composerBusy,
+  });
+  applyFrontendRuntimeHealthEffectsPlan(plan);
+}
+
+function scheduleSubmittedMessageDomProbe(threadId, clientSubmissionId, action = "message-submit") {
+  const id = String(threadId || "").trim();
+  const submissionId = String(clientSubmissionId || "").trim();
+  if (!id || !submissionId) return;
+  const startedAtMs = Date.now();
+  [350, 1200, 2800].forEach((delayMs) => {
+    setTimeout(() => probeSubmittedMessageDom(id, submissionId, action, startedAtMs), delayMs);
+  });
 }
 
 function applyThreadDetailResponseDiagnosticEffect(effect) {
@@ -13105,6 +13189,23 @@ function updateConversationHtml(html, signature, options = {}) {
     minIntervalMs: PERF_EVENT_THROTTLE_MS,
   });
   postPerformanceEvent(performancePlan.eventName, performancePlan.payload, performancePlan.options);
+  applyFrontendRuntimeHealthEffectsPlan(state.frontendRuntimeHealthMonitor.recordRender({
+    action: options.source || "conversation-update",
+    routeKind: options.routeKind || diagnosticRouteKind(),
+    threadHash: options.threadHash || diagnosticThreadHash(state.currentThreadId),
+    readMode: state.currentThread && state.currentThread.mobileReadMode || "",
+    renderMode: String(options.renderMode || applicationPlan.finalAction || updatePlan.action || ""),
+    finalAction: String(applicationPlan.finalAction || updatePlan.action || ""),
+    renderPlanReason: String(updatePlan.reason || applicationPlan.reason || ""),
+    patchRejectReason: String(applicationPlan.patchRejectReason || postApplyConsistencyPlan.reason || ""),
+    fallbackApplied: Boolean(applicationPlan.fallbackApplied),
+    fullRender: String(applicationPlan.finalAction || updatePlan.action || "") === "set-inner-html",
+    previousCount: previousChildCount,
+    domCount: conversation ? conversation.childNodes.length : 0,
+    visibleCount: expectedVisibleItemCount,
+    duplicateCount: postDomShape.duplicateRenderKeyCount,
+    renderElapsedMs,
+  }));
   checkPrimaryShellSelectionConflictAfterRender({
     childCount: conversation ? conversation.childNodes.length : 0,
     previousChildCount,
@@ -17736,7 +17837,7 @@ function renderItem(item, turn = null, previousKeys = new Set(), index = 0, thre
   const type = item.type || "item";
   const key = stableItemKey(turn, item, index);
   if (item.type === "turnUsageSummary") {
-    return `<section class="item${entryAnimationClass(key, previousKeys)} turnUsageSummary" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}">
+    return `<section class="item${entryAnimationClass(key, previousKeys)} turnUsageSummary" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}"${clientSubmissionDataAttr(item)}>
       <div class="item-body">${renderTurnUsageSummary(item)}</div>
     </section>`;
   }
@@ -17745,7 +17846,7 @@ function renderItem(item, turn = null, previousKeys = new Set(), index = 0, thre
   const itemCopyKey = rememberCopyText(copyTextForItem(item));
   const itemCopyButton = copyButtonHtml(itemCopyKey, "复制全文", "item-copy-button");
   const timestampHtml = renderItemTimestampHtml(item, turn, contextThread);
-  return `<section class="item${entryAnimationClass(key, previousKeys)} ${escapeHtml(type)}" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}">
+  return `<section class="item${entryAnimationClass(key, previousKeys)} ${escapeHtml(type)}" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}"${clientSubmissionDataAttr(item)}>
     <div class="item-head">
       <span>${escapeHtml(labelForItem(item))}</span>
       <span class="item-head-actions">${timestampHtml}<span>${escapeHtml(item.status ? statusText(item.status) : "")}</span>${itemCopyButton}</span>
@@ -23159,6 +23260,7 @@ async function sendThreadTaskCardCommand(commandText, options = {}) {
     markThreadOptimisticallyActive(targetThreadId);
     renderThreads();
     if (insertedLocalMessage) renderCurrentThread({ stickToBottom: true });
+    scheduleSubmittedMessageDomProbe(targetThreadId, clientSubmissionId, "task-card-submit");
     followSubmittedMessageToBottom(targetThreadId, clientSubmissionId);
     const result = await api(`/api/threads/${encodeURIComponent(targetThreadId)}/messages`, {
       method: "POST",
@@ -23337,6 +23439,7 @@ async function sendMessage(event) {
       renderThreads();
     }
     if (insertedLocalMessage) renderCurrentThread({ stickToBottom: true });
+    scheduleSubmittedMessageDomProbe(targetThreadId, clientSubmissionId, steering ? "message-steer" : "message-submit");
     followSubmittedMessageToBottom(targetThreadId, clientSubmissionId);
     const result = await api(`/api/threads/${encodeURIComponent(targetThreadId)}/messages`, {
       method: "POST",
@@ -23486,6 +23589,7 @@ async function sendNewThreadMessage(text, hasContent, input) {
     renderComposerSettings();
     renderThreads();
     renderCurrentThread({ stickToBottom: true });
+    scheduleSubmittedMessageDomProbe(threadId, clientSubmissionId, "new-thread-submit");
     try {
       await loadThread(threadId, { source: "new-thread" });
     } catch (err) {

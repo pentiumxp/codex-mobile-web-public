@@ -1292,6 +1292,7 @@ function appShellBuildId(cacheName = readServiceWorkerCacheName()) {
     "plugin-voice-input.js",
     "home-ai-diagnostic-reporting.js",
     "thread-diagnostic-events.js",
+    "frontend-runtime-health.js",
     "build-refresh-policy.js",
     "thread-performance-metrics.js",
     "thread-list-load-policy.js",
