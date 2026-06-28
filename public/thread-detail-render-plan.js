@@ -202,6 +202,7 @@
   function planThreadDetailRefreshRequest(input = {}) {
     const options = objectOrEmpty(input.options);
     const threadId = input.threadId || input.currentThreadId || "";
+    const source = String(options.source || "refresh").slice(0, 40);
     if (!threadId) {
       return {
         shouldRefresh: false,
@@ -215,6 +216,32 @@
         reason: "missing-thread-id",
       };
     }
+    if (input.documentHidden === true && options.force !== true) {
+      return {
+        shouldRefresh: false,
+        threadId,
+        seq: input.threadLoadSeq,
+        source,
+        requestedMode: "",
+        query: {},
+        timeoutMs: 20000,
+        abortActiveRefresh: false,
+        reason: "document-hidden",
+      };
+    }
+    if (input.hasActiveThreadLoadController === true && options.force !== true) {
+      return {
+        shouldRefresh: false,
+        threadId,
+        seq: input.threadLoadSeq,
+        source,
+        requestedMode: "",
+        query: {},
+        timeoutMs: 20000,
+        abortActiveRefresh: false,
+        reason: "thread-load-in-flight",
+      };
+    }
     const requestedMode = options.full === true || String(options.mode || "").toLowerCase() === "full"
       ? "full"
       : "recent";
@@ -222,7 +249,7 @@
       shouldRefresh: true,
       threadId,
       seq: input.threadLoadSeq,
-      source: String(options.source || "refresh").slice(0, 40),
+      source,
       requestedMode,
       query: requestedMode === "recent" ? { mode: "recent" } : {},
       timeoutMs: 20000,

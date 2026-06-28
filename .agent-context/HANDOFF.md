@@ -26972,3 +26972,60 @@ The previous full handoff was archived and should be opened only when old proven
     `git merge-base --is-ancestor public/main main` passed, and
     `git diff --stat public/main..main -- ':!.agent-context'` was empty before
     this handoff-only note.
+
+## 2026-06-28 - v569 Thread Detail Request Backpressure
+
+- User-visible symptom:
+  - In Home AI embedded iPhone use, opening thread detail could be very fast
+    (~100-200 ms) or jitter into multi-second waits. Bounded log evidence showed
+    many slow client `apiElapsedMs` samples while Codex Mobile server
+    `thread-detail` / `thread-list` timings for the same samples were commonly
+    tens to hundreds of milliseconds.
+  - The main current failing layer was therefore client/proxy request pressure
+    and diagnostics aggregation, not thread projection computation itself.
+- Implementation:
+  - `public/thread-list-load-policy.js` now gives list loads an explicit
+    `shouldLoad` / `skipReason` plan. Hidden-page silent list refreshes are
+    skipped, and silent list refreshes during a detail first-paint or refresh
+    request are delayed rather than competing with the detail request.
+  - `public/app.js` added one deferred silent list timer and wires the new list
+    policy. It also passes active first-paint / hidden-page state into
+    `thread-detail-render-plan`.
+  - `public/thread-detail-render-plan.js` now suppresses ordinary detail
+    refreshes while the first-paint thread load is in flight, scheduling one
+    delayed refresh instead of issuing a concurrent live-poll/resume refresh.
+  - `public/home-ai-diagnostic-reporting.js` now aggregates slow-path
+    diagnostics across build/render/thread/action differences and does not let
+    a single fast sample clear the rolling slow-path failure count. This is to
+    make intermittent repeated `api-slow` detail/list delays reportable through
+    Home AI diagnostics.
+  - Static shell bumped to `codex-mobile-shell-v569` in `public/app.js` and
+    `public/sw.js`.
+- Validation:
+  - Focused:
+    `node --test test/thread-list-load-policy.test.js
+    test/thread-detail-render-plan.test.js
+    test/home-ai-diagnostic-reporting.test.js test/mobile-viewport.test.js
+    test/thread-performance-metrics.test.js test/thread-diagnostic-events.test.js`
+    passed (`157` tests).
+  - Full/local: `npm test` passed (`1428` tests), `npm run check`,
+    `npm run check:macos`, and `git diff --check` passed.
+- Deployment:
+  - Commit `8d29af4` deployed through the Home AI central macOS plugin deploy
+    path with reason `codex-mobile-thread-detail-backpressure-v569`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260628T082344Z-plugin-codex-mobile-web-codex-mobile-thread-detail-backpressure-v569`.
+  - Production `/api/public-config` readback returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v569` and
+    `shellCacheName=codex-mobile-shell-v569`.
+  - Production self-check:
+    `node scripts/codex-mobile-thread-self-check.js --server
+    http://127.0.0.1:8787 --sample-threads 5 --repeat 5 --repeat-delay-ms
+    200 --json` returned `ok:true`, stable thread-list order, and
+    `issueCount=0`.
+  - Current Codex Mobile thread phase-B readback returned `ok:true`,
+    `readMode=projection-active-overlay`, `detailTotalMs=108`, and
+    warm active-overlay evidence. Browser-level Playwright smoke was not run
+    because this source checkout has no local `playwright` module installed.
+    Direct unauthenticated Home AI proxy curl returned `403`, preserving the
+    host auth boundary.

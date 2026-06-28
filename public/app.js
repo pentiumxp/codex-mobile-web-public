@@ -294,6 +294,7 @@ const state = {
   threadListLoadController: null,
   threadListLoadedAtMs: 0,
   threadListDeferredFallbackTimer: null,
+  threadListDeferredSilentTimer: null,
   threadActionMenuId: "",
   threadLongPress: null,
   renameThreadId: "",
@@ -528,7 +529,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v568";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v569";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -8939,6 +8940,12 @@ function clearThreadListDeferredFallbackTimer() {
   state.threadListDeferredFallbackTimer = null;
 }
 
+function clearThreadListDeferredSilentTimer() {
+  if (!state.threadListDeferredSilentTimer) return;
+  clearTimeout(state.threadListDeferredSilentTimer);
+  state.threadListDeferredSilentTimer = null;
+}
+
 function hasThreadDetailRequestInFlight() {
   return Boolean(
     state.threadLoadController
@@ -8962,16 +8969,28 @@ function scheduleThreadListDeferredFallback(delayMs = THREAD_LIST_DEFERRED_FALLB
   }, delay);
 }
 
+function scheduleThreadListDeferredSilentRefresh(delayMs = 700, options = {}) {
+  clearThreadListDeferredSilentTimer();
+  const delay = Math.max(250, Number(delayMs) || 700);
+  state.threadListDeferredSilentTimer = setTimeout(() => {
+    state.threadListDeferredSilentTimer = null;
+    if (document.visibilityState === "hidden") return;
+    if (state.threadListLoadController || hasThreadDetailRequestInFlight()) {
+      scheduleThreadListDeferredSilentRefresh(900, options);
+      return;
+    }
+    loadThreads(Object.assign({}, options, {
+      silent: true,
+      allowDuringDetail: true,
+      allowHidden: false,
+    })).catch(showError);
+  }, delay);
+}
+
 async function loadThreads(options = {}) {
   const silent = options.silent === true;
   if (silent && state.threadListLoadController) return null;
   if (options.deferFallback !== true) clearThreadListDeferredFallbackTimer();
-  const loadStartedAt = nowPerfMs();
-  const seq = state.threadListLoadSeq + 1;
-  state.threadListLoadSeq = seq;
-  if (state.threadListLoadController) state.threadListLoadController.abort();
-  const controller = new AbortController();
-  state.threadListLoadController = controller;
   const params = new URLSearchParams({ limit: String(THREAD_LIST_PAGE_LIMIT), archived: "false" });
   if (state.selectedCwd) params.set("cwd", state.selectedCwd);
   const search = $("threadSearch").value.trim();
@@ -8984,13 +9003,31 @@ async function loadThreads(options = {}) {
     silent,
     threadDetailOpening,
     threadListLoadedAtMs: state.threadListLoadedAtMs,
+    documentHidden: document.visibilityState === "hidden",
+    allowDuringDetail: options.allowDuringDetail === true,
+    allowHidden: options.allowHidden === true,
   });
+  if (!loadPlan.shouldLoad) {
+    if (loadPlan.skipReason === "detail-in-flight") {
+      scheduleThreadListDeferredSilentRefresh(loadPlan.retryDelayMs, {
+        deferFallback: options.deferFallback,
+      });
+    }
+    return null;
+  }
   if (loadPlan.params && loadPlan.params.fallback) {
     params.set("fallback", "defer");
   }
   if (loadPlan.params && loadPlan.params.initial) {
     params.set("initial", "warm-fallback");
   }
+  clearThreadListDeferredSilentTimer();
+  const loadStartedAt = nowPerfMs();
+  const seq = state.threadListLoadSeq + 1;
+  state.threadListLoadSeq = seq;
+  if (state.threadListLoadController) state.threadListLoadController.abort();
+  const controller = new AbortController();
+  state.threadListLoadController = controller;
   if (!silent) renderThreadListLoading();
   try {
     const apiStartedAt = nowPerfMs();
@@ -9979,8 +10016,15 @@ async function refreshCurrentThread(options = {}) {
     threadLoadSeq: state.threadLoadSeq,
     options,
     hasActiveRefreshController: Boolean(state.refreshThreadController),
+    hasActiveThreadLoadController: Boolean(state.threadLoadController),
+    documentHidden: document.visibilityState === "hidden",
   });
-  if (!requestPlan.shouldRefresh) return;
+  if (!requestPlan.shouldRefresh) {
+    if (requestPlan.reason === "thread-load-in-flight") {
+      scheduleCurrentThreadRefresh(700, requestPlan.source || "deferred-refresh");
+    }
+    return;
+  }
   markIdleActivity("同步");
   const threadId = requestPlan.threadId;
   const seq = requestPlan.seq;

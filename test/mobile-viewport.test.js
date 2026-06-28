@@ -494,8 +494,8 @@ test("public app shell cache advances with static frontend changes", () => {
   assert.match(appJs, /api\(threadDetailApiPath\(threadId, \{ mode: "recent" \}\)/);
   assert.match(appJs, /async function refreshCurrentThread\(options = \{\}\)/);
   assert.match(functionBody("refreshCurrentThread"), /const requestPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshRequest\(\{/);
-  assert.match(functionBody("refreshCurrentThread"), /threadId: state\.currentThreadId,[\s\S]*threadLoadSeq: state\.threadLoadSeq,[\s\S]*options,[\s\S]*hasActiveRefreshController: Boolean\(state\.refreshThreadController\),/);
-  assert.match(functionBody("refreshCurrentThread"), /if \(!requestPlan\.shouldRefresh\) return;/);
+  assert.match(functionBody("refreshCurrentThread"), /threadId: state\.currentThreadId,[\s\S]*threadLoadSeq: state\.threadLoadSeq,[\s\S]*options,[\s\S]*hasActiveRefreshController: Boolean\(state\.refreshThreadController\),[\s\S]*hasActiveThreadLoadController: Boolean\(state\.threadLoadController\),[\s\S]*documentHidden: document\.visibilityState === "hidden",/);
+  assert.match(functionBody("refreshCurrentThread"), /if \(!requestPlan\.shouldRefresh\) \{[\s\S]*requestPlan\.reason === "thread-load-in-flight"[\s\S]*scheduleCurrentThreadRefresh\(700, requestPlan\.source \|\| "deferred-refresh"\);[\s\S]*return;[\s\S]*\}/);
   assert.match(functionBody("refreshCurrentThread"), /const requestedMode = requestPlan\.requestedMode;/);
   assert.match(functionBody("refreshCurrentThread"), /if \(requestPlan\.abortActiveRefresh && state\.refreshThreadController\) state\.refreshThreadController\.abort\(\);/);
   assert.match(functionBody("refreshCurrentThread"), /api\(threadDetailApiPath\(threadId, requestPlan\.query\), \{[\s\S]*timeoutMs: requestPlan\.timeoutMs,/);

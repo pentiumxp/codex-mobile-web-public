@@ -171,6 +171,56 @@ test("slow-path failures aggregate across build and render mode changes", () => 
   assert.equal(third.report.breadcrumbs[0].fields.cold_path_owner, "app-server");
 });
 
+test("slow-path failures aggregate across threads and are not cleared by one fast sample", () => {
+  let now = 1000;
+  const reporter = diagnostics.createDiagnosticReporter({ threshold: 3, throttleMs: 60000, now: () => now });
+  const slow = {
+    category: "thread_session_slow_path",
+    diagnostic_type: "thread_detail_slow_path",
+    error_code: "api-slow",
+    context: {
+      surface: "thread-session",
+      action: "thread-detail-load",
+      route_kind: "thread-tile",
+      thread_hash: diagnostics.hashIdentifier("thread-a"),
+    },
+    counts: { elapsed_ms: 5200, api_elapsed_ms: 5100, threshold_ms: 1500 },
+  };
+  const success = {
+    category: "thread_session_slow_path",
+    diagnostic_type: "thread_detail_slow_path",
+    error_code: "thread_detail_slow_path",
+    context: {
+      surface: "thread-session",
+      action: "thread-detail-load",
+      route_kind: "thread-tile",
+      thread_hash: diagnostics.hashIdentifier("thread-a"),
+    },
+  };
+
+  assert.equal(reporter.recordFailure(slow).eligible, false);
+  assert.equal(reporter.recordSuccess(success).cleared, 0);
+  assert.equal(reporter.recordFailure(Object.assign({}, slow, {
+    context: Object.assign({}, slow.context, {
+      action: "thread-detail-refresh",
+      thread_hash: diagnostics.hashIdentifier("thread-b"),
+    }),
+  })).eligible, false);
+  const third = reporter.recordFailure(Object.assign({}, slow, {
+    context: Object.assign({}, slow.context, {
+      action: "thread-detail-refresh",
+      thread_hash: diagnostics.hashIdentifier("thread-c"),
+    }),
+  }));
+
+  assert.equal(third.eligible, true);
+  assert.equal(third.repeatedFailures, 3);
+  assert.doesNotMatch(third.signature, /thread-a|thread-b|thread-c|thread-detail-load|thread-detail-refresh/);
+  assert.equal(third.report.context.thread_hash.startsWith("h_"), true);
+  now += 1000;
+  assert.equal(reporter.recordFailure(slow).eligible, false);
+});
+
 test("repeated projection mismatch reports at threshold and success clears", () => {
   let now = 1000;
   const reporter = diagnostics.createDiagnosticReporter({ threshold: 3, throttleMs: 60000, now: () => now });

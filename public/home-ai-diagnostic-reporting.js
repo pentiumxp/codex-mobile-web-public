@@ -243,6 +243,16 @@
   }
 
   function clearKeyFor(event) {
+    const isSlowPath = event.category === "thread_session_slow_path"
+      && /_slow_path$/.test(event.diagnostic_type || "");
+    if (isSlowPath) {
+      return [
+        event.category,
+        event.diagnostic_type,
+        event.context.surface || "",
+        event.context.route_kind || "",
+      ].join("|");
+    }
     return [
       event.category,
       event.diagnostic_type,
@@ -346,6 +356,9 @@
 
     function recordSuccess(input) {
       const event = sanitizeInput(input || {});
+      if (event.category === "thread_session_slow_path" && /_slow_path$/.test(event.diagnostic_type || "")) {
+        return { cleared: 0, clearKey: clearKeyFor(event), reason: "slow-path-rolling-window" };
+      }
       const clearKey = clearKeyFor(event);
       let cleared = 0;
       for (const [signature, entry] of failures.entries()) {
