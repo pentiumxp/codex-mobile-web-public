@@ -26717,5 +26717,17 @@ The previous full handoff was archived and should be opened only when old proven
   - Full `npm test` (`1415` tests), `npm run check`, `npm run check:macos`, and
     `git diff --check` passed.
 - Deployment status:
-  - Pending commit/deploy at the time of this handoff entry.
+  - Commit `cb86d0e` deployed through the Home AI central macOS plugin deploy
+    path with reason `codex-mobile-usage-summary-timestamps-v567`.
+  - Production `/api/public-config` reported
+    `clientBuildId=0.1.11|codex-mobile-shell-v567` and
+    `shellCacheName=codex-mobile-shell-v567`.
+  - Phase-B readback smoke returned `ok:true`, warm active-overlay detail, and
+    mux metrics supported.
+  - Source/production SHA parity was confirmed for `public/app.js`,
+    `public/sw.js`, `test/message-timestamp.test.js`, and the completed-progress
+    budget service/test files.
+  - Production marker readback confirmed the Usage summary branch contains
+    `renderItemTimestampHtml(item, turn, contextThread)` and the
+    `item-head-actions` timestamp slot.
   - Public must remain unchanged unless the user explicitly asks for Public.
