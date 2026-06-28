@@ -232,6 +232,12 @@ test("phase B readback smoke collects bounded diagnostics without private fields
             progressiveVisibleItemCeiling: 48,
             progressiveVisibleItemOriginalCount: 96,
             progressiveVisibleItemRetainedCount: 48,
+            progressiveActiveFirstPaintThreadByteCeiling: 98304,
+            progressiveActiveFirstPaintItemBudgetApplied: true,
+            progressiveActiveFirstPaintItemBudgetReason: "progressive-active-first-paint-byte-ceiling",
+            progressiveActiveFirstPaintBytesBeforeItemBudget: 150000,
+            progressiveActiveFirstPaintBytesAfterItemBudget: 92000,
+            progressiveActiveFirstPaintOmittedVisibleItems: 6,
             progressiveCompletedTextBudgetApplied: true,
             progressiveCompletedTextBudgetReason: "first-paint-byte-ceiling",
             progressiveCompletedTextBudgetScope: "active-first-paint",
@@ -372,12 +378,20 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.detail.responseBudgetOmittedActiveOperationPayloadChars, 30000);
   assert.equal(report.detail.responseBudgetProgressiveVisibleItemBudgetApplied, true);
   assert.equal(report.detail.responseBudgetProgressiveVisibleItemBudgetReason, "progressive-visible-item-ceiling");
+  assert.equal(report.detail.responseBudgetProgressiveActiveFirstPaintThreadByteCeiling, 98304);
+  assert.equal(report.detail.responseBudgetProgressiveActiveFirstPaintItemBudgetApplied, true);
+  assert.equal(report.detail.responseBudgetProgressiveActiveFirstPaintItemBudgetReason, "progressive-active-first-paint-byte-ceiling");
+  assert.equal(report.detail.responseBudgetProgressiveActiveFirstPaintBytesBeforeItemBudget, 150000);
+  assert.equal(report.detail.responseBudgetProgressiveActiveFirstPaintBytesAfterItemBudget, 92000);
+  assert.equal(report.detail.responseBudgetProgressiveActiveFirstPaintOmittedVisibleItems, 6);
   assert.equal(report.detail.responseBudgetProgressiveCompletedTextBudgetApplied, true);
   assert.equal(report.detail.responseBudgetProgressiveCompletedTextBudgetScope, "active-first-paint");
   assert.equal(report.detail.responseBudgetProgressiveFirstPaintBytesBeforeTextBudget, 210000);
   assert.equal(report.detail.responseBudgetProgressiveFirstPaintBytesAfterTextBudget, 150000);
   assert.equal(report.decision.evidence.detailResponseBudgetProgressiveActiveApplied, true);
   assert.equal(report.decision.evidence.detailResponseBudgetOmittedActiveTextChars, 39000);
+  assert.equal(report.decision.evidence.detailResponseBudgetProgressiveActiveFirstPaintItemBudgetApplied, true);
+  assert.equal(report.decision.evidence.detailResponseBudgetProgressiveActiveFirstPaintBytesAfterItemBudget, 92000);
   assert.match(report.threadList.firstThreadHash, /^[a-f0-9]{16}$/);
   assert.match(report.detail.requestedThreadHash, /^[a-f0-9]{16}$/);
   assert.deepEqual(seen.map((item) => item.path), [

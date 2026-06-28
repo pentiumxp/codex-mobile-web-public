@@ -25909,3 +25909,123 @@ The previous full handoff was archived and should be opened only when old proven
     Older v558 clients still had projection-mismatch entries until refreshed,
     so users must refresh/reopen PWA or embedded clients to stop old-client
     reports.
+
+## 2026-06-28 - Movie Thread Missing From Default Workspace List Hotfix
+
+- User-visible symptom:
+  - Selecting the Movie workspace could show the `Movie` thread, but the
+    ordinary/default Workspace thread list did not show that same thread.
+- Live reproduction before the fix:
+  - Authenticated `GET /api/threads?limit=80` returned a warm fallback cache
+    hit with `resultCount=13`, `appServerMs=0`, and no Movie row.
+  - Authenticated `GET /api/threads?limit=80&search=Movie` returned the Movie
+    row (`cwd=/Users/hermes-dev/HermesMobileDev/Movie`) through the fresh
+    app-server/fallback path.
+- Root cause:
+  - The default list optimization can return a restored/in-process warm
+    fallback cache without consulting app-server.
+  - Fresh rows discovered by scoped paths such as search or workspace-filtered
+    list reads were remembered by the display-summary cache, but were not
+    incrementally written back into the fallback cache entries used by the
+    default list.
+  - This made an old default warm cache fast but stale.
+- Fix:
+  - Added `threadListRowsFromResult()` and
+    `upsertThreadListFallbackCacheThreads()` in `server.js`.
+  - `/api/threads` now backfills fallback cache entries from fresh
+    app-server/deferred/merged/fallback rows before returning them.
+  - The backfill uses existing fallback-cache filtering and `addIfMissing:true`,
+    so workspace/search-specific rows only enter compatible cache scopes where
+    they are visible and pass that cache entry's filters.
+- Validation:
+  - Focused checks passed:
+    `node --check server.js`.
+  - Focused tests passed:
+    `node --test test/thread-list-fallback-cache-service.test.js test/thread-visibility.test.js`
+    (`65` tests).
+  - `git diff --check`, `npm run check`, and `npm run check:macos` passed.
+- Commit and deploy:
+  - Committed as `701f87c`
+    (`fix: backfill warm thread list cache from fresh rows`).
+  - Deployed through Home AI central macOS plugin deploy with reason
+    `codex-mobile-movie-thread-warm-cache-backfill`.
+  - Deploy source ref was clean: `701f87c2c612`, dirty false.
+  - Deploy backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260628T023347Z-plugin-codex-mobile-web-codex-mobile-movie-thread-warm-cache-backfill`.
+  - Production remained `clientBuildId=0.1.11|codex-mobile-shell-v559`,
+    expected because this was a server hotfix and did not change static shell
+    assets.
+- Production readback:
+  - Before scoped refresh, default list still showed the stale restored warm
+    cache: `resultCount=13`, no Movie row.
+  - `search=Movie` returned Movie and reported
+    `fallbackCacheFreshRowUpsertCount=1`.
+  - `cwd=/Users/hermes-dev/HermesMobileDev/Movie` returned Movie and reported
+    `fallbackCacheFreshRowUpsertCount=1`.
+  - After that scoped fresh read, default list returned `resultCount=14` and
+    included the Movie row from warm fallback cache.
+  - Source/production SHA parity confirmed for `server.js`,
+    `test/thread-list-fallback-cache-service.test.js`, and
+    `test/thread-visibility.test.js`.
+- Worktree boundary:
+  - The unfinished active first-paint item-budget module was temporarily stashed
+    before deployment and restored after production readback, so it was not
+    included in this hotfix deploy.
+
+## 2026-06-28 - Active First-Paint Visible Item Byte Budget Module
+
+- User-visible target:
+  - Continue reducing the remaining large-thread first-entry cost after the
+    full `thread/read` loop and active overlay paths are already mostly closed.
+  - The remaining shape is a successful detail response that still carries too
+    many current-turn operation/reasoning visible rows; the browser can render
+    late even though `threadReadMs=0`.
+- Root cause / invariant:
+  - Existing progressive active budgets covered active operation/reasoning/
+    assistant item tails, active text previews, operation payload previews,
+    visible item count ceilings, and completed receipt text previews.
+  - A small item count can still exceed the desired first-paint byte target
+    when retained operation/reasoning rows are individually large.
+  - First paint should stay server-bounded by byte budget while preserving
+    protected user messages, latest assistant receipts, Usage rows, images,
+    diagnostics, and other non-low-value visible content.
+- Implementation:
+  - `adapters/thread-detail-response-budget-service.js` now adds
+    `progressiveActiveFirstPaintThreadByteCeiling` with default `96KB`.
+  - When progressive active pressure is present and the already-compacted
+    detail JSON still exceeds that ceiling, the service removes additional
+    low-value operation/reasoning visible rows.
+  - The byte pass now iterates against actual serialized JSON size, not only
+    a one-pass item-size estimate, so budget metadata overhead cannot leave
+    the response above the target without being reported.
+  - If removable rows are exhausted, the reason is explicitly
+    `protected-visible-items`; if none can be removed, the reason is
+    `no-removable-visible-items`.
+  - Phase-B readback now exposes bounded
+    `responseBudgetProgressiveActiveFirstPaint*` fields and carries the same
+    fields into decision evidence.
+- Docs:
+  - `docs/MODULES.md` records ownership/readback fields for the new budget.
+  - `docs/TROUBLESHOOTING.md` documents how to interpret before/after byte
+    evidence and `protected-visible-items`.
+  - `README.md` has a concise 2026-06-28 module note.
+- Local validation:
+  - Focused syntax checks passed:
+    `node --check adapters/thread-detail-response-budget-service.js`,
+    `node --check scripts/codex-mobile-phase-b-readback-smoke.js`,
+    `node --check adapters/phase-b-readback-decision-service.js`.
+  - Focused suite passed:
+    `node --test test/thread-detail-response-budget-service.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js`
+    (`58` tests).
+  - `git diff --check` passed.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - Full `npm test -- --test-reporter=dot` passed.
+  - Home AI fallback governance check passed for changed runtime/test files;
+    classification is closure, not fallback.
+  - `codegraph sync && codegraph status` reported the graph up to date.
+- Deployment status:
+  - Not yet deployed at this handoff entry. Next step is commit, central
+    macOS plugin deploy, and production readback proving the new fields are
+    present and active detail responses report the first-paint item budget
+    correctly.

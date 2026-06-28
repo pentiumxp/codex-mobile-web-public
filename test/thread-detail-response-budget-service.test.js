@@ -1143,6 +1143,66 @@ test("thread detail response budget uses active items only after older operation
   assert.equal(compacted.thread.turns[0].mobileOmittedVisibleItemCount, 4);
 });
 
+test("thread detail response budget applies active first-paint byte item budget after normal compaction", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      mobileProjectionRevision: 31,
+      turns: [{
+        id: "turn-active",
+        status: "inProgress",
+        items: [
+          { id: "u1", type: "userMessage", text: "Question" },
+          ...Array.from({ length: 10 }, (_, index) => ({
+            id: `c${index + 1}`,
+            type: "commandExecution",
+            command: `cmd ${index + 1}`,
+            aggregatedOutput: `output ${index + 1} ${"x".repeat(420)}`,
+          })),
+          { id: "r1", type: "reasoning", text: "reason 1" },
+          { id: "r2", type: "reasoning", text: "reason 2" },
+          { id: "a1", type: "agentMessage", text: "latest progress" },
+          { id: "usage", type: "turnUsageSummary" },
+        ],
+      }],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeOperationItems: 10,
+    activeReasoningItems: 2,
+    activeAssistantItems: 1,
+    activeProgressiveItemThreshold: 1,
+    progressiveActiveOperationItems: 10,
+    progressiveActiveReasoningItems: 2,
+    progressiveActiveAssistantItems: 1,
+    progressiveActiveOperationPayloadChars: 1000,
+    progressiveVisibleItemCeiling: 100,
+    progressiveActiveFirstPaintThreadByteCeiling: 3000,
+  });
+
+  const items = compacted.thread.turns[0].items;
+  assert.equal(items.some((item) => item.id === "u1"), true);
+  assert.equal(items.some((item) => item.id === "a1"), true);
+  assert.equal(items.some((item) => item.id === "usage"), true);
+  assert.equal(items.filter((item) => item.type === "commandExecution").length < 10, true);
+  assert.equal(items.filter((item) => item.type === "reasoning").length <= 2, true);
+  const budget = compacted.thread.mobileDetailResponseBudget;
+  assert.equal(budget.progressiveActiveBudgetApplied, true);
+  assert.equal(budget.progressiveActiveFirstPaintThreadByteCeiling, 3000);
+  assert.equal(budget.progressiveActiveFirstPaintItemBudgetApplied, true);
+  assert.equal(budget.progressiveActiveFirstPaintItemBudgetReason, "progressive-active-first-paint-byte-ceiling");
+  assert.equal(budget.progressiveActiveFirstPaintOmittedVisibleItems > 0, true);
+  assert.equal(budget.progressiveActiveFirstPaintBytesBeforeItemBudget > budget.progressiveActiveFirstPaintBytesAfterItemBudget, true);
+  assert.equal(budget.progressiveActiveFirstPaintBytesAfterItemBudget <= 3000, true);
+  assert.equal(compacted.thread.turns[0].mobileVisibleItemBudget.reason, "progressive-active-first-paint-byte-ceiling");
+  assert.deepEqual(compacted.thread.mobileVisibleItemKeys, items.map((item) => item.mobileVisibleKey));
+  assert.equal(compacted.thread.mobileProjectionRevision, 31);
+});
+
 test("thread detail response budget does not apply visible item ceiling without progressive active pressure", () => {
   const result = {
     thread: {

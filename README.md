@@ -16,6 +16,24 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-28 Active First-Paint Item Budget
+
+当前大 session 进入速度已经主要走 `projection-v4-partial` /
+`projection-active-overlay`，`threadReadMs=0` 的场景越来越多。剩余风险不再是
+full `thread/read`，而是 active turn 本身仍可能携带很多 operation/reasoning
+可见 item，导致首屏响应体和 DOM patch 压力偏高。
+
+本模块在 `adapters/thread-detail-response-budget-service.js` 增加 active
+first-paint byte item budget：普通 progressive active budget 完成后，如果
+实际 detail body 仍超过 active first-paint byte ceiling，服务端会继续从低价值
+operation/reasoning visible item 中移除旧项，同时保护 user message、assistant
+progress/receipt、Usage、image 和 diagnostic item。Phase-B readback 现在也暴露
+`responseBudgetProgressiveActiveFirstPaint*` 字段，用于读回压缩前后 byte、
+是否触发二阶段 item budget、移除 visible item 数量和保护原因。
+
+这是服务端响应预算闭环，不是客户端刷新兜底；本模块不需要 bump PWA shell
+cache，部署时重启 Codex Mobile plugin host 即可。
+
 ## 2026-06-28 Active Projection Partial 诊断误报修复
 
 Home AI AI Ops 上报了 Codex Mobile embedded iPhone 端连续

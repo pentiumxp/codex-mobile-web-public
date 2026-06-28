@@ -19,6 +19,7 @@ const DEFAULT_PROGRESSIVE_ACTIVE_OPERATION_PAYLOAD_CHARS = 6 * 1024;
 const DEFAULT_PROGRESSIVE_ACTIVE_USER_TEXT_CHARS = 10 * 1024;
 const DEFAULT_PROGRESSIVE_VISIBLE_ITEM_CEILING = 48;
 const DEFAULT_PROGRESSIVE_FIRST_PAINT_THREAD_BYTES = 160 * 1024;
+const DEFAULT_PROGRESSIVE_ACTIVE_FIRST_PAINT_THREAD_BYTES = 96 * 1024;
 const DEFAULT_PROGRESSIVE_COMPLETED_TEXT_CHARS = 8 * 1024;
 const ACTIVE_TEXT_BUDGET_MARKER = "\n\n[active item preview truncated]\n\n";
 const OPERATION_PAYLOAD_BUDGET_MARKER = "\n\n[operation payload preview truncated]\n\n";
@@ -534,22 +535,9 @@ function removableVisibleItemCandidates(turns, thread) {
   });
 }
 
-function applyProgressiveVisibleItemCeiling(thread, options, stats) {
-  const maxItems = Math.max(0, Math.trunc(Number(options.progressiveVisibleItemCeiling || 0)));
-  if (!maxItems || !thread || !Array.isArray(thread.turns)) return;
-  const originalCount = itemCountForTurns(thread.turns);
-  stats.progressiveVisibleItemCeiling = maxItems;
-  stats.progressiveVisibleItemOriginalCount = originalCount;
-  stats.progressiveVisibleItemRetainedCount = originalCount;
-  if (!stats.progressiveActiveBudgetApplied || originalCount <= maxItems) return;
-  let removeCount = originalCount - maxItems;
-  const removedIndexesByTurn = new Map();
-  for (const entry of removableVisibleItemCandidates(thread.turns, thread)) {
-    if (removeCount <= 0) break;
-    if (!removedIndexesByTurn.has(entry.turnIndex)) removedIndexesByTurn.set(entry.turnIndex, new Set());
-    removedIndexesByTurn.get(entry.turnIndex).add(entry.itemIndex);
-    removeCount -= 1;
-  }
+function removeVisibleItemIndexes(thread, removedIndexesByTurn, stats, input = {}) {
+  const reason = String(input.reason || "progressive-visible-item-budget");
+  const ceiling = Math.max(0, Math.trunc(Number(input.ceiling || 0)));
   let omitted = 0;
   for (const [turnIndex, indexes] of removedIndexesByTurn.entries()) {
     const turn = thread.turns[turnIndex];
@@ -567,26 +555,93 @@ function applyProgressiveVisibleItemCeiling(thread, options, stats) {
     omitted += turnOmitted;
     const budget = Object.assign({}, turn.mobileVisibleItemBudget || {}, {
       version: "thread-detail-visible-item-budget-v1",
-      reason: "progressive-visible-item-ceiling",
+      reason,
       omitted: Math.max(0, Number(turn.mobileVisibleItemBudget && turn.mobileVisibleItemBudget.omitted || 0)) + turnOmitted,
       retained: turn.items.length,
       original: beforeCount,
-      ceiling: maxItems,
     });
+    if (ceiling) budget.ceiling = ceiling;
     turn.mobileVisibleItemBudget = budget;
     turn.mobileOmittedVisibleItemCount = budget.omitted;
     stats.omittedOperationItems += Math.max(0, beforeOperationCount - afterOperationCount);
     stats.omittedReasoningItems += Math.max(0, beforeReasoningCount - afterReasoningCount);
     stats.omittedAssistantItems += Math.max(0, beforeAssistantCount - afterAssistantCount);
   }
-  if (!omitted) return;
+  if (!omitted) return 0;
   stats.omittedVisibleItems += omitted;
   stats.retainedItemCount = Math.max(0, stats.retainedItemCount - omitted);
+  return omitted;
+}
+
+function applyProgressiveVisibleItemCeiling(thread, options, stats) {
+  const maxItems = Math.max(0, Math.trunc(Number(options.progressiveVisibleItemCeiling || 0)));
+  if (!maxItems || !thread || !Array.isArray(thread.turns)) return;
+  const originalCount = itemCountForTurns(thread.turns);
+  stats.progressiveVisibleItemCeiling = maxItems;
+  stats.progressiveVisibleItemOriginalCount = originalCount;
+  stats.progressiveVisibleItemRetainedCount = originalCount;
+  if (!stats.progressiveActiveBudgetApplied || originalCount <= maxItems) return;
+  let removeCount = originalCount - maxItems;
+  const removedIndexesByTurn = new Map();
+  for (const entry of removableVisibleItemCandidates(thread.turns, thread)) {
+    if (removeCount <= 0) break;
+    if (!removedIndexesByTurn.has(entry.turnIndex)) removedIndexesByTurn.set(entry.turnIndex, new Set());
+    removedIndexesByTurn.get(entry.turnIndex).add(entry.itemIndex);
+    removeCount -= 1;
+  }
+  const omitted = removeVisibleItemIndexes(thread, removedIndexesByTurn, stats, {
+    reason: "progressive-visible-item-ceiling",
+    ceiling: maxItems,
+  });
+  if (!omitted) return;
   stats.progressiveVisibleItemBudgetApplied = true;
   stats.progressiveVisibleItemRetainedCount = Math.max(0, originalCount - omitted);
   stats.progressiveVisibleItemBudgetReason = removeCount > 0
     ? "protected-visible-items"
     : "progressive-visible-item-ceiling";
+}
+
+function applyProgressiveActiveFirstPaintItemBudget(thread, options, stats) {
+  const ceiling = Math.max(0, Math.trunc(Number(options.progressiveActiveFirstPaintThreadByteCeiling || 0)));
+  const beforeBytes = jsonByteLength(thread);
+  stats.progressiveActiveFirstPaintThreadByteCeiling = ceiling;
+  stats.progressiveActiveFirstPaintBytesBeforeItemBudget = beforeBytes;
+  stats.progressiveActiveFirstPaintBytesAfterItemBudget = beforeBytes;
+  if (!stats.progressiveActiveBudgetApplied || !ceiling || beforeBytes <= ceiling) return;
+  let totalOmitted = 0;
+  let afterBytes = beforeBytes;
+  for (let pass = 0; pass < 20 && afterBytes > ceiling; pass += 1) {
+    const removedIndexesByTurn = new Map();
+    let estimatedBytes = afterBytes;
+    for (const entry of removableVisibleItemCandidates(thread.turns, thread)) {
+      if (estimatedBytes <= ceiling && removedIndexesByTurn.size) break;
+      const turn = thread.turns[entry.turnIndex];
+      const item = turn && Array.isArray(turn.items) ? turn.items[entry.itemIndex] : null;
+      if (!item) continue;
+      if (!removedIndexesByTurn.has(entry.turnIndex)) removedIndexesByTurn.set(entry.turnIndex, new Set());
+      const indexes = removedIndexesByTurn.get(entry.turnIndex);
+      if (indexes.has(entry.itemIndex)) continue;
+      indexes.add(entry.itemIndex);
+      estimatedBytes -= Math.max(1, jsonByteLength(item));
+    }
+    const omitted = removeVisibleItemIndexes(thread, removedIndexesByTurn, stats, {
+      reason: "progressive-active-first-paint-byte-ceiling",
+      ceiling,
+    });
+    if (!omitted) break;
+    totalOmitted += omitted;
+    afterBytes = jsonByteLength(thread);
+  }
+  stats.progressiveActiveFirstPaintBytesAfterItemBudget = afterBytes;
+  if (!totalOmitted) {
+    stats.progressiveActiveFirstPaintItemBudgetReason = "no-removable-visible-items";
+    return;
+  }
+  stats.progressiveActiveFirstPaintItemBudgetApplied = true;
+  stats.progressiveActiveFirstPaintItemBudgetReason = afterBytes > ceiling
+    ? "protected-visible-items"
+    : "progressive-active-first-paint-byte-ceiling";
+  stats.progressiveActiveFirstPaintOmittedVisibleItems = totalOmitted;
 }
 
 function applyProgressiveCompletedTextBudget(thread, options, stats) {
@@ -782,6 +837,11 @@ function compactThreadDetailResponseResult(result, options = {}) {
     DEFAULT_PROGRESSIVE_FIRST_PAINT_THREAD_BYTES,
     50 * 1024 * 1024,
   );
+  const progressiveActiveFirstPaintThreadByteCeiling = boundedCount(
+    options.progressiveActiveFirstPaintThreadByteCeiling,
+    DEFAULT_PROGRESSIVE_ACTIVE_FIRST_PAINT_THREAD_BYTES,
+    50 * 1024 * 1024,
+  );
   const progressiveCompletedTextChars = boundedCount(
     options.progressiveCompletedTextChars,
     DEFAULT_PROGRESSIVE_COMPLETED_TEXT_CHARS,
@@ -836,6 +896,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
     progressiveActiveTextChars,
     progressiveActiveOperationPayloadChars,
     progressiveFirstPaintThreadByteCeiling,
+    progressiveActiveFirstPaintThreadByteCeiling,
     progressiveCompletedTextChars,
     progressiveCompletedTextBudgetApplied: false,
     progressiveCompletedTextBudgetReason: "",
@@ -853,6 +914,12 @@ function compactThreadDetailResponseResult(result, options = {}) {
     progressiveVisibleItemBudgetReason: "",
     progressiveVisibleItemOriginalCount: 0,
     progressiveVisibleItemRetainedCount: 0,
+    progressiveActiveFirstPaintThreadByteCeiling,
+    progressiveActiveFirstPaintItemBudgetApplied: false,
+    progressiveActiveFirstPaintItemBudgetReason: "",
+    progressiveActiveFirstPaintBytesBeforeItemBudget: 0,
+    progressiveActiveFirstPaintBytesAfterItemBudget: 0,
+    progressiveActiveFirstPaintOmittedVisibleItems: 0,
     progressiveActiveBudgetApplied,
     progressiveActiveBudgetReason,
     progressiveActiveOriginalItemCount: pressureOriginalItemCount,
@@ -869,6 +936,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
   thread.turns = thread.turns.map((turn) => compactTurnWithBudget(turn, thread, budgetOptions, stats));
   applyProgressiveVisibleItemCeiling(thread, budgetOptions, stats);
   applyProgressiveCompletedTextBudget(thread, budgetOptions, stats);
+  applyProgressiveActiveFirstPaintItemBudget(thread, budgetOptions, stats);
   stats.applied = stats.omittedOperationItems > 0
     || stats.omittedReasoningItems > 0
     || stats.omittedAssistantItems > 0

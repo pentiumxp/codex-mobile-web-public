@@ -457,6 +457,20 @@ compaction. That ceiling should remove older operation/reasoning rows first;
 user messages, images, Usage rows, diagnostics, and retained final receipts
 should stay visible. Reasons ending in `-byte-pressure` mean the request was
 successful but too large, not that the network or app-server RPC timed out.
+On server builds after the active first-paint item-budget module, inspect
+`progressiveActiveFirstPaintThreadByteCeiling`,
+`progressiveActiveFirstPaintBytesBeforeItemBudget`,
+`progressiveActiveFirstPaintBytesAfterItemBudget`,
+`progressiveActiveFirstPaintItemBudgetApplied`,
+`progressiveActiveFirstPaintItemBudgetReason`, and
+`progressiveActiveFirstPaintOmittedVisibleItems` when an active thread is still
+slow after ordinary progressive compaction. This second pass is byte-driven:
+it can remove more low-value operation/reasoning visible items, but it must not
+remove user messages, assistant receipts/progress, Usage rows, images, or
+diagnostic rows just to hit the byte ceiling. A reason of
+`protected-visible-items` means the remaining payload is protected visible
+content and should be handled by a more specific content-budget rule, not by
+client refresh retries.
 On v558+ clients, a per-turn `mobileVisibleItemBudget` also renders as a small
 first-paint omission notice in the conversation. That notice has a
 `data-render-key` and enters the conversation signature, but intentionally does
