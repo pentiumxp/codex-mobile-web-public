@@ -382,6 +382,19 @@ foreign source root, including local Playwright / Chromium validation and
 diagnostics that write bounded artifacts to temporary paths. Inline JavaScript
 `=>` is not treated as shell redirection.
 
+Routine plugin production-deployment cards use a dedicated Home AI deployment
+lane instead of the ordinary Home AI implementation thread. Codex Mobile treats
+the exact `Home AI Deploy` thread in the Home AI control-plane cwd as a durable
+deployment lane and normalizes its resting thread-list status to `idle`, so it
+does not look like a completed one-shot target. The delegation target hints
+prioritize this lane even when other Home AI threads in the same cwd are newer.
+When a plugin source thread sends a routine plugin deploy card to an ordinary
+Home AI app-cwd thread, the creation path retargets the card to the deployment
+lane if that lane is available; if no lane is available it fails closed with
+`deploy_lane_required`. Home AI host/platform repair cards, deploy-script
+repairs, proxy/LaunchDaemon/Gateway/schema work, and deploy-lane repair work
+continue to route to the ordinary Home AI implementation thread.
+
 The old `danger-full-access` approval-proxy-only compatibility mode is available
 only when `CODEX_MOBILE_WORKSPACE_DELEGATION_APPROVAL_PROXY_ONLY=1` is set and
 `CODEX_MOBILE_WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD` is not set. That mode

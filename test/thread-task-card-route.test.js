@@ -134,6 +134,12 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.doesNotMatch(routingServiceJs, /return raw;/);
   assert.match(functionBody(serverJs, "buildThreadTaskCardCreatePayload"), /if \(!targetThreadIds\.length\)/);
   assert.match(functionBody(serverJs, "buildThreadTaskCardCreatePayload"), /target_thread_required/);
+  assert.match(serverJs, /thread-task-card-deploy-lane-policy-service/);
+  assert.match(functionBody(serverJs, "workspaceDelegationTargetHints"), /prioritizeDelegationTargetHints/);
+  assert.match(functionBody(serverJs, "normalizeThreadSummaryLiveStatus"), /normalizeHomeAiDeployLaneSummary/);
+  assert.match(functionBody(serverJs, "buildThreadTaskCardCreatePayload"), /applyHomeAiDeployLaneRoutingPolicy/);
+  assert.match(functionBody(serverJs, "applyHomeAiDeployLaneRoutingPolicy"), /planHomeAiDeployLaneRouting/);
+  assert.match(functionBody(serverJs, "applyHomeAiDeployLaneRoutingPolicy"), /deploy_lane_required/);
   assert.match(functionBody(serverJs, "createThreadTaskCardsFromSourceThread"), /workspaceDelegationPublicSettings\(\)/);
   assert.match(functionBody(serverJs, "createThreadTaskCardsFromSourceThread"), /workspaceDelegation\.enabled[\s\S]*body\.autoApprove !== false[\s\S]*body\.direct !== false[\s\S]*body\.pending !== true/);
   assert.match(functionBody(serverJs, "threadTaskCardThreadCallIdempotencyKey"), /body\.requestId \|\| body\.request_id/);

@@ -26,6 +26,8 @@ function usage() {
     "  --workflow-mode <mode>     manual or autonomous.",
     "  --workflow-id <id>         Optional workflow id.",
     "  --reasoning-effort <value> Optional target turn reasoning effort: low, medium, high, or xhigh.",
+    "  --card-kind <value>        Optional bounded task-card kind, e.g. plugin_deployment.",
+    "  --category <value>         Optional bounded task-card category.",
     "  --pending                  Create a normal pending card instead of requesting source-thread direct approval.",
     "  --auto-approve <bool>      Request direct auto-approval; honored only when Settings -> 跨工作区委派 is enabled.",
     "  --json-file <path>         Read request JSON from file. Use '-' for stdin.",
@@ -106,6 +108,10 @@ function parseArgs(argv) {
       options.request.workflowId = next();
     } else if (arg === "--reasoning-effort" || arg === "--reasoning_effort") {
       options.request.reasoningEffort = next();
+    } else if (arg === "--card-kind" || arg === "--card_kind" || arg === "--task-card-kind") {
+      options.request.cardKind = next();
+    } else if (arg === "--category") {
+      options.request.category = next();
     } else if (arg === "--pending") {
       options.request.pending = true;
       options.request.autoApprove = false;

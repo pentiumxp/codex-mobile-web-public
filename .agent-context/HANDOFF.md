@@ -27085,3 +27085,100 @@ The previous full handoff was archived and should be opened only when old proven
   - Next Codex-owned module should start on thread-list / workspace-index
     consistency: global list versus workspace-filter visibility, updatedAt
     freshness for active threads, and stable selection ordering.
+
+## 2026-06-28 - Receipt External Download Link Opening
+
+- Scope:
+  - Small frontend behavior change for Markdown links inside Codex Mobile
+    receipts, especially Home AI embedded mode.
+  - `public/markdown-renderer.js` already rendered safe `http` / `https` /
+    `mailto` Markdown and bare URLs as anchors. The failing layer was the
+    Hermes embed windowing guard in `public/app.js`, which previously blocked
+    all non-internal anchors and posted `plugin_external_link_blocked`.
+  - `public/plugin-embed.js` now owns a pure external-link policy/message:
+    only user-clicked absolute `http`, `https`, and `mailto` URLs are eligible
+    for browser opening; root-relative `/api/...`, local/file paths, and unsafe
+    schemes remain rejected or on the existing local-file preview path.
+  - In embedded mode, safe external receipt links call the original browser
+    `window.open` with `noopener,noreferrer` and also post a bounded
+    `codex-mobile.plugin.external_link` message to the parent for host-side
+    observability/future handling. Client-event diagnostics record protocol and
+    host hash only, not raw hrefs.
+  - Static shell/cache bumped to `codex-mobile-shell-v570` in `public/app.js`
+    and `public/sw.js`.
+- Changed files:
+  - `public/plugin-embed.js`
+  - `public/app.js`
+  - `public/sw.js`
+  - `test/plugin-embed.test.js`
+  - `test/hermes-plugin-route.test.js`
+  - `docs/COMPLEX_FEATURE_PATHS.md`
+- Validation:
+  - `node --check public/plugin-embed.js && node --check public/app.js &&
+    node --check public/sw.js` passed.
+  - `node --test test/markdown-render.test.js test/plugin-embed.test.js
+    test/hermes-plugin-route.test.js test/file-preview-ui.test.js` passed
+    (`40` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Status:
+  - Local workspace changed but not committed, not deployed, and not pushed
+    Public. Deploy only when explicitly requested or when bundled into the next
+    approved module deployment.
+
+## 2026-06-28 - Home AI Deploy Lane Task-Card Routing
+
+- Scope:
+  - Repair task-card routing for routine plugin deployments after Home AI added
+    the dedicated `Home AI Deploy` lane and began failing closed when that lane
+    appeared as a completed one-shot thread.
+  - New service:
+    `adapters/thread-task-card-deploy-lane-policy-service.js`.
+- Root cause / failing layer:
+  - Task-card target hints and create paths treated every Home AI app-cwd thread
+    uniformly. A dedicated deploy lane could be hidden by newer same-cwd
+    ordinary threads, and routine plugin deploy cards could still target
+    ordinary Home AI.
+  - The `Home AI Deploy` thread can rest with app-server status `completed`,
+    but as a durable lane it should be exposed to Codex Mobile routing as idle,
+    not as a completed one-shot.
+- Behavior:
+  - Exact `Home AI Deploy` in `/Users/hermes-dev/HermesMobileDev/app` is
+    normalized to `status.type=idle` with `mobileDeployLane=true` when it is not
+    archived/deleted.
+  - Dynamic delegation hints prioritize the deploy lane ahead of newer same-cwd
+    Home AI threads.
+  - Routine plugin deployment cards from plugin source threads to ordinary Home
+    AI app-cwd targets are retargeted to `Home AI Deploy` when the lane is
+    visible; if no lane is available the create path fails closed with
+    `deploy_lane_required`.
+  - Home AI host/platform repair cards, deploy-contract/script/proxy/LaunchD/
+    Gateway/schema work, and deploy-lane repair work still route to ordinary
+    Home AI.
+  - `cardKind` / `category` are now accepted by the dynamic tool, MCP server,
+    and `scripts/create-thread-task-card.js`; `cardKind=plugin_deployment`
+    gives source systems a structured way to mark routine deploy cards.
+- Changed files:
+  - `adapters/thread-task-card-deploy-lane-policy-service.js`
+  - `server.js`
+  - `scripts/codex-mobile-mcp-server.js`
+  - `scripts/create-thread-task-card.js`
+  - `test/thread-task-card-deploy-lane-policy-service.test.js`
+  - `test/thread-task-card-route.test.js`
+  - `package.json`
+  - `docs/CROSS_THREAD_TASK_CARDS_IMPLEMENTATION.md`
+  - `docs/MODULES.md`
+- Validation:
+  - Focused task-card regression:
+    `node --test test/thread-task-card-deploy-lane-policy-service.test.js
+    test/thread-task-card-routing-service.test.js
+    test/thread-task-card-route.test.js test/thread-task-card-service.test.js
+    test/codex-mobile-mcp-server.test.js
+    test/home-ai-autonomous-delivery-return-service.test.js
+    test/workspace-source-write-guard-service.test.js` passed (`76` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Status:
+  - Local workspace changed but not committed and not deployed.
+  - This module is currently bundled with the earlier local receipt external-link
+    change (`codex-mobile-shell-v570` static bump). If deploying, deploy the
+    whole current workspace state intentionally and read back both the shell
+    build and deploy-lane behavior.
