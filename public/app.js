@@ -528,7 +528,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v559";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v560";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -760,6 +760,8 @@ const SIDEBAR_EDGE_SWIPE_PX = 34;
 const ANDROID_SIDEBAR_EDGE_SWIPE_PX = 44;
 const PLUGIN_EMBED_BACK_EDGE_SWIPE_PX = 44;
 const PLUGIN_EMBED_BACK_SWIPE_MIN_PX = 58;
+const PLUGIN_EMBED_BACK_SWIPE_HORIZONTAL_RATIO = 2.2;
+const PLUGIN_EMBED_BACK_RECENT_SCROLL_SUPPRESS_MS = 1200;
 const ANDROID_BACK_SIDEBAR_STATE = "codexMobileAndroidBackSidebar";
 const ANDROID_BACK_SIDEBAR_BASE = "base";
 const ANDROID_BACK_SIDEBAR_TOP = "top";
@@ -12376,7 +12378,7 @@ function pluginEmbedBackSwipeCanHandle() {
 
 function pluginEmbedBackSwipeInteractiveTarget(target) {
   return Boolean(target?.closest?.(
-    "input, select, textarea, button, a, [role='button'], [contenteditable='true'], .composer, .dialog, .modal, .app-native-dialog, .file-preview-dialog"
+    "#conversation, input, select, textarea, button, a, [role='button'], [contenteditable='true'], .composer, .dialog, .modal, .app-native-dialog, .file-preview-dialog"
   ));
 }
 
@@ -12412,10 +12414,10 @@ function installHermesPluginBackSwipeGuard() {
       startX: point.clientX,
       startY: point.clientY,
       lastX: point.clientX,
+      lastY: point.clientY,
       startedAt: performance.now(),
       moved: false,
     };
-    stopNativeBack(event);
   };
   const movePluginBackSwipe = (event) => {
     if (!swipe || !isHermesEmbedMode() || event.touches?.length !== 1) return;
@@ -12424,29 +12426,33 @@ function installHermesPluginBackSwipeGuard() {
     const dy = point.clientY - swipe.startY;
     const horizontal = Math.abs(dx);
     const vertical = Math.abs(dy);
-    if (dx <= 0 || horizontal < 10 || horizontal < vertical * 1.1) {
-      stopNativeBack(event);
+    swipe.lastX = point.clientX;
+    swipe.lastY = point.clientY;
+    if (vertical > 12 && vertical > horizontal) {
+      clear();
       return;
     }
+    if (dx <= 0 || horizontal < 10 || horizontal < vertical * PLUGIN_EMBED_BACK_SWIPE_HORIZONTAL_RATIO) return;
     swipe.moved = true;
-    swipe.lastX = point.clientX;
     stopNativeBack(event);
   };
   const finishPluginBackSwipe = (event) => {
     const current = swipe;
     clear();
     if (!current || !isHermesEmbedMode()) return;
-    stopNativeBack(event);
     const point = event.changedTouches?.[0];
     const dx = (point ? point.clientX : current.lastX) - current.startX;
-    const elapsed = Math.max(1, performance.now() - (current.startedAt || performance.now()));
-    const velocity = dx / elapsed;
-    if (!current.moved && dx < 12) return;
-    if (dx >= PLUGIN_EMBED_BACK_SWIPE_MIN_PX || velocity > 0.55) {
+    const dy = (point ? point.clientY : current.lastY) - current.startY;
+    const horizontal = Math.abs(dx);
+    const vertical = Math.abs(dy);
+    if (!current.moved) return;
+    if (dx >= PLUGIN_EMBED_BACK_SWIPE_MIN_PX
+      && horizontal >= vertical * PLUGIN_EMBED_BACK_SWIPE_HORIZONTAL_RATIO) {
+      stopNativeBack(event);
       handlePluginBack({
         preventDefault() {},
         stopPropagation() {},
-      });
+      }, { source: "plugin-back-swipe" });
     }
   };
   document.addEventListener("touchstart", startPluginBackSwipe, { passive: false, capture: true });
@@ -12455,10 +12461,25 @@ function installHermesPluginBackSwipeGuard() {
   document.addEventListener("touchcancel", clear, { passive: true, capture: true });
 }
 
-function handlePluginBack(event) {
+function shouldSuppressPluginBackForRecentConversationScroll(source = "") {
+  if (!state.currentThreadId || !state.currentThread) return false;
+  const elapsedMs = Date.now() - Number(state.conversationScrollIntentAtMs || 0);
+  if (elapsedMs < 0 || elapsedMs > PLUGIN_EMBED_BACK_RECENT_SCROLL_SUPPRESS_MS) return false;
+  postClientEvent("plugin_back_suppressed_recent_conversation_scroll", {
+    source: String(source || "").slice(0, 80),
+    threadId: state.currentThreadId || "",
+    elapsedMs,
+  });
+  postPluginBackResult(false, "suppressed_recent_conversation_scroll");
+  return true;
+}
+
+function handlePluginBack(event, options = {}) {
   if (!isHermesEmbedMode()) return;
   if (event && typeof event.preventDefault === "function") event.preventDefault();
   if (event && typeof event.stopPropagation === "function") event.stopPropagation();
+  const source = String(options.source || "plugin-back");
+  if (shouldSuppressPluginBackForRecentConversationScroll(source)) return false;
   let handled = false;
   if (imagePreviewOpen()) {
     closeImagePreview();
@@ -12491,13 +12512,13 @@ function handlePluginBack(event) {
     renderCurrentThread();
     handled = true;
   } else if (state.currentThreadId || state.newThreadDraft || state.selectedCwd) {
-    handled = showHermesPluginPrimaryPage({ force: true, source: "plugin-back" });
+    handled = showHermesPluginPrimaryPage({ force: true, source });
   } else if (isSidebarOpen()) {
     closeSidebarMenu();
     handled = true;
   }
   publishPluginNavigationState({ force: true });
-  if (handled) postPluginBackResult(true, "handled_in_iframe");
+  if (handled) postPluginBackResult(true, source || "handled_in_iframe");
   return handled;
 }
 
@@ -24261,7 +24282,9 @@ function wireUi() {
   window.addEventListener("message", (event) => {
     if (handlePluginVoiceInputMessage(event)) return;
     if (handleHermesPluginViewportMessage(event && event.data)) return;
-    if (pluginEmbedApi.isBackMessage && pluginEmbedApi.isBackMessage(event)) handlePluginBack(event);
+    if (pluginEmbedApi.isBackMessage && pluginEmbedApi.isBackMessage(event)) {
+      handlePluginBack(event, { source: "plugin-back-message" });
+    }
   });
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.addEventListener("message", handleServiceWorkerMessage);

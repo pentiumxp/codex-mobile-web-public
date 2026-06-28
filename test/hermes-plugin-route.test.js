@@ -112,12 +112,14 @@ test("embedded plugin mode hides standalone chrome and installs navigation/windo
   assert.match(appJs, /codex-mobile\.plugin\.navigation|pluginEmbedApi\.navigationMessage/);
   assert.match(appJs, /codex-mobile\.plugin\.back_result|postPluginBackResult|pluginEmbedApi\.postBackResult/);
   assert.match(appJs, /hermes\.plugin\.back|pluginEmbedApi\.isBackMessage/);
+  assert.match(appJs, /handlePluginBack\(event, \{ source: "plugin-back-message" \}\)/);
   assert.doesNotMatch(appJs, /openEmbedSettingsPanel/);
   assert.doesNotMatch(appJs, /function isPluginRootSwipeTarget/);
   assert.match(appJs, /function isHermesPluginPrimaryPage\(\)/);
   assert.match(appJs, /function showHermesPluginPrimaryPage\(options = \{\}\)/);
+  assert.match(appJs, /function handlePluginBack\(event, options = \{\}\) \{[\s\S]*shouldSuppressPluginBackForRecentConversationScroll\(source\)/);
   assert.match(appJs, /function beginSidebarEdgeSwipe\(event\) \{\s*if \(!isMobileViewport\(\) \|\| isHermesEmbedMode\(\)/);
-  assert.match(appJs, /else if \(state\.currentThreadId \|\| state\.newThreadDraft \|\| state\.selectedCwd\) \{[\s\S]*handled = showHermesPluginPrimaryPage\(\{ force: true, source: "plugin-back" \}\);/);
+  assert.match(appJs, /else if \(state\.currentThreadId \|\| state\.newThreadDraft \|\| state\.selectedCwd\) \{[\s\S]*handled = showHermesPluginPrimaryPage\(\{ force: true, source \}\);/);
   assert.doesNotMatch(appJs, /host_back_from_settings/);
   assert.doesNotMatch(appJs, /host_back_from_sidebar/);
   assert.doesNotMatch(appJs, /else if \(\$\("themeSettingsPanel"\)[\s\S]{0,180}closeSidebarMenu\(\);[\s\S]{0,80}handled = true;/);

@@ -216,7 +216,7 @@ test("thread detail response budget prunes non-current empty active placeholders
   );
 });
 
-test("thread detail response budget keeps non-current active placeholders with content", () => {
+test("thread detail response budget keeps non-current active placeholder content but downgrades live semantics", () => {
   const result = {
     thread: {
       id: "thread-1",
@@ -243,7 +243,11 @@ test("thread detail response budget keeps non-current active placeholders with c
   });
 
   assert.deepEqual(compacted.thread.turns.map((turn) => turn.id), ["turn-active", "receipt-placeholder"]);
-  assert.equal(compacted.thread.mobileDetailResponseBudget, undefined);
+  assert.deepEqual(compacted.thread.turns[1].items.map((item) => item.id), ["a2"]);
+  assert.equal(compacted.thread.turns[1].status.type, "completed");
+  assert.equal(compacted.thread.turns[1].status.mobileStaleActiveTurn, true);
+  assert.equal(compacted.thread.mobileDetailResponseBudget.downgradedStaleActiveTurns, 1);
+  assert.equal(compacted.thread.mobileDetailResponseBudget.staleActiveTurnCount, 1);
 });
 
 test("thread detail response budget treats non-current active-looking turns as stale when active id is known", () => {
@@ -294,11 +298,78 @@ test("thread detail response budget treats non-current active-looking turns as s
 
   assert.deepEqual(compacted.thread.turns[0].items.map((item) => item.id), ["u1", "a2", "c3"]);
   assert.deepEqual(compacted.thread.turns[1].items.map((item) => item.id), ["a3", "a4", "c4", "c5", "r2"]);
+  assert.equal(compacted.thread.turns[0].status.type, "completed");
+  assert.equal(compacted.thread.turns[0].status.mobileStaleActiveTurn, true);
   assert.equal(compacted.thread.mobileDetailResponseBudget.activeTurnCount, 1);
   assert.equal(compacted.thread.mobileDetailResponseBudget.staleActiveTurnCount, 1);
+  assert.equal(compacted.thread.mobileDetailResponseBudget.downgradedStaleActiveTurns, 1);
   assert.equal(compacted.thread.mobileDetailResponseBudget.omittedOperationItems, 2);
   assert.equal(compacted.thread.mobileDetailResponseBudget.omittedReasoningItems, 1);
   assert.equal(compacted.thread.mobileDetailResponseBudget.omittedAssistantItems, 1);
+});
+
+test("thread detail response budget remaps missing activeTurnId to latest visible active turn", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "missing-active",
+      mobileReadMode: "projection-active-overlay",
+      turns: [
+        {
+          id: "turn-completed",
+          status: "completed",
+          items: [{ id: "a0", type: "agentMessage", text: "Old reply" }],
+        },
+        {
+          id: "turn-visible-active",
+          status: { type: "active", mobileRuntimeDerived: true },
+          items: [
+            { id: "u1", type: "userMessage", text: "Visible request" },
+            { id: "a1", type: "agentMessage", text: "Visible progress" },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeProgressiveItemThreshold: 0,
+  });
+
+  assert.equal(compacted.thread.activeTurnId, "turn-visible-active");
+  assert.equal(compacted.thread.mobileDetailResponseBudget.remappedMissingActiveTurnId, 1);
+  assert.equal(compacted.thread.mobileDetailResponseBudget.activeTurnCount, 1);
+  assert.equal(compacted.thread.mobileDetailResponseBudget.downgradedStaleActiveTurns, 0);
+});
+
+test("thread detail response budget repairs missing visible active turn status", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      turns: [
+        {
+          id: "turn-active",
+          items: [
+            { id: "a1", type: "agentMessage", text: "Visible progress" },
+            { id: "c1", type: "commandExecution", status: "running", command: "npm test" },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeProgressiveItemThreshold: 0,
+  });
+
+  assert.equal(compacted.thread.turns[0].status.type, "active");
+  assert.equal(compacted.thread.turns[0].status.mobileRuntimeDerived, true);
+  assert.equal(compacted.thread.mobileDetailResponseBudget.repairedVisibleActiveTurnStatus, 1);
+  assert.equal(compacted.thread.mobileDetailResponseBudget.activeTurnCount, 1);
 });
 
 test("thread detail response budget applies progressive active limits under active byte pressure", () => {

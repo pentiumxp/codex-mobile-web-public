@@ -83,6 +83,10 @@ function isActiveStatus(value) {
   return /active|running|started|pending|queued|processing|inprogress|in_progress|in-progress/i.test(statusText(value));
 }
 
+function isCompletedStatus(value) {
+  return /completed|failed|cancel|error|interrupted/i.test(statusText(value));
+}
+
 function turnId(turn) {
   return String(turn && (turn.id || turn.turnId || turn.turn_id) || "").trim();
 }
@@ -110,6 +114,69 @@ function isStaleActiveLikeTurn(turn, thread) {
   const id = turnId(turn);
   const activeId = activeTurnId(thread);
   return Boolean(activeId && id && id !== activeId && isActiveStatus(turn && turn.status));
+}
+
+function turnHasItems(turn) {
+  return Boolean(turn && Array.isArray(turn.items) && turn.items.length > 0);
+}
+
+function activeStatusFromVisibleRuntime(value) {
+  if (isActiveStatus(value)) return value;
+  return {
+    type: "active",
+    mobileRuntimeDerived: true,
+    previousType: statusText(value),
+  };
+}
+
+function staleCompletedStatusFromActive(value) {
+  if (isCompletedStatus(value)) return value;
+  return {
+    type: "completed",
+    mobileStaleActiveTurn: true,
+    previousType: statusText(value),
+  };
+}
+
+function reconcileVisibleActiveTurnState(thread, stats) {
+  if (!thread || !Array.isArray(thread.turns)) return;
+  let activeId = activeTurnId(thread);
+  let activeIndex = activeId
+    ? thread.turns.findIndex((turn) => turnId(turn) === activeId)
+    : -1;
+  if (activeId && activeIndex < 0) {
+    for (let index = thread.turns.length - 1; index >= 0; index -= 1) {
+      const turn = thread.turns[index];
+      if (!turnHasItems(turn) || !isActiveStatus(turn && turn.status)) continue;
+      activeId = turnId(turn);
+      activeIndex = index;
+      thread.activeTurnId = activeId;
+      stats.remappedMissingActiveTurnId += 1;
+      break;
+    }
+    if (activeIndex < 0) {
+      delete thread.activeTurnId;
+      stats.clearedMissingActiveTurnId += 1;
+      activeId = "";
+    }
+  }
+  if (activeIndex >= 0) {
+    const activeTurn = thread.turns[activeIndex];
+    if (activeTurn && !isCompletedStatus(activeTurn.status) && !isActiveStatus(activeTurn.status)) {
+      activeTurn.status = activeStatusFromVisibleRuntime(activeTurn.status);
+      stats.repairedVisibleActiveTurnStatus += 1;
+    }
+  }
+  const currentActiveId = activeTurnId(thread);
+  if (!currentActiveId) return;
+  for (const turn of thread.turns) {
+    const id = turnId(turn);
+    if (!id || id === currentActiveId) continue;
+    if (!isActiveStatus(turn && turn.status)) continue;
+    turn.status = staleCompletedStatusFromActive(turn.status);
+    stats.downgradedStaleActiveTurns += 1;
+    stats.staleActiveTurnCount += 1;
+  }
 }
 
 function isOperationItem(item) {
@@ -886,6 +953,10 @@ function compactThreadDetailResponseResult(result, options = {}) {
     omittedActiveOperationPayloadChars: 0,
     omittedCompletedTextChars: 0,
     prunedEmptyActivePlaceholderTurns: 0,
+    remappedMissingActiveTurnId: 0,
+    clearedMissingActiveTurnId: 0,
+    repairedVisibleActiveTurnStatus: 0,
+    downgradedStaleActiveTurns: 0,
     truncatedActiveUserMessageItems: 0,
     truncatedActiveTextItems: 0,
     truncatedActiveOperationPayloadItems: 0,
@@ -950,6 +1021,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
     stats.configuredActiveAssistantItems = configuredActiveAssistantItems;
   }
   pruneNonCurrentEmptyActivePlaceholders(thread, stats);
+  reconcileVisibleActiveTurnState(thread, stats);
   const budgetOptions = Object.assign({}, options, stats);
   thread.turns = thread.turns.map((turn) => compactTurnWithBudget(turn, thread, budgetOptions, stats));
   applyProgressiveVisibleItemCeiling(thread, budgetOptions, stats);
@@ -960,6 +1032,10 @@ function compactThreadDetailResponseResult(result, options = {}) {
     || stats.omittedAssistantItems > 0
     || stats.omittedVisibleItems > 0
     || stats.prunedEmptyActivePlaceholderTurns > 0
+    || stats.remappedMissingActiveTurnId > 0
+    || stats.clearedMissingActiveTurnId > 0
+    || stats.repairedVisibleActiveTurnStatus > 0
+    || stats.downgradedStaleActiveTurns > 0
     || stats.truncatedActiveUserMessageItems > 0
     || stats.truncatedActiveTextItems > 0
     || stats.truncatedActiveOperationPayloadItems > 0;

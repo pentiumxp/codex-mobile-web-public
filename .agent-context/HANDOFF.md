@@ -26136,3 +26136,54 @@ The previous full handoff was archived and should be opened only when old proven
   - Production markers confirmed `workspace-warm-cache`,
     `warm-fallback-workspace`, `workspace-derived-hit`, and
     `fallbackWorkspaceDerivedCacheHit`.
+
+## 2026-06-28 - Embedded Thread Flicker / Missing Current Replies Hotfix
+
+- User-visible incident:
+  - In Home AI embedded mode, reopening active Codex Mobile threads could show
+    only an old reply, hide current user/reply content, and visibly flicker as
+    the conversation surface repeatedly cleared and repainted.
+- Root cause / invariant:
+  - Client evidence showed repeated `thread_detail_render_evidence_cleared`
+    events with reason `primary-force:plugin-back`, followed by
+    `conversation_render_ms` rows for `threadId:""` and `childCount:1`.
+    This means the embedded client was clearing the selected thread into the
+    plugin primary page while the user was still reading a thread.
+  - The embedded back-swipe guard was too permissive: it could start from the
+    conversation surface, stopped native handling on edge `touchstart`, and
+    accepted a velocity-only horizontal finish. Ordinary scroll/reading gestures
+    near the edge could therefore become plugin-back navigation.
+  - Bounded API readback also showed a detail response contract mismatch:
+    a stale previous turn still looked active while the real current active
+    turn lacked an active status. The invariant is that a detail response must
+    expose one current visible active turn, with older active-looking turns
+    downgraded before the client merges/renders.
+- Implementation:
+  - `public/app.js` now excludes `#conversation` from embedded back-swipe start,
+    requires a strong horizontal/vertical ratio, removes the velocity-only
+    finish path, and suppresses plugin-back handling shortly after explicit
+    conversation scroll intent. Suppression emits bounded
+    `plugin_back_suppressed_recent_conversation_scroll` evidence.
+  - `adapters/thread-detail-response-budget-service.js` now reconciles visible
+    active-turn state after placeholder pruning: missing `activeTurnId` is
+    remapped or cleared, the visible active turn gets an active status when
+    runtime evidence requires it, and non-current active-looking turns are
+    downgraded to completed semantics.
+  - Static shell advanced from `codex-mobile-shell-v559` to
+    `codex-mobile-shell-v560`.
+- Local validation:
+  - Focused tests passed:
+    `node --test test/thread-detail-response-budget-service.test.js test/mobile-viewport.test.js test/hermes-plugin-route.test.js`
+    (`48` tests).
+  - Projection/DOM related tests passed:
+    `node --test test/conversation-render.test.js test/thread-detail-state.test.js test/thread-detail-dom-patch.test.js`
+    (`207` tests).
+  - Full `npm test -- --test-reporter=dot` passed.
+  - `git diff --check`, `npm run check`, `npm run check:macos`, and Home AI
+    fallback governance check passed. Classification is root-cause closure, not
+    a fallback.
+- Deployment status:
+  - Pending at handoff write time. Deploy with reason
+    `codex-mobile-embedded-thread-flicker-hotfix` and verify production
+    `/api/public-config` reports `clientBuildId=0.1.11|codex-mobile-shell-v560`
+    plus `shellCacheName=codex-mobile-shell-v560`.
