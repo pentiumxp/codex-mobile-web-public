@@ -702,6 +702,20 @@ Cause to check:
   when the tail result is missing a target turn. Targeted Usage cache hits must
   also pass this missing-turn check; do not return a target cache entry that
   lacks any currently returned target turn id.
+- If raw rollout has scoped `token_count` and `readRolloutTurnUsageSummaries()`
+  can resolve the latest completed turn, but a `projection-v4-cache` or
+  `projection-v4-dynamic` detail response still omits `turnUsageSummary`, check
+  the projection result assembler rather than the browser. Response-ready v4
+  projection hits intentionally skip `compactThreadReadResult()` for speed, but
+  they must still run the dynamic thread-read result decoration hook before
+  final visible-key normalization and response budgeting. Do not add a frontend
+  Usage fallback over a server projection missing this synthetic item.
+- Latest-completed replay is for user-visible progress receipts after a turn
+  finishes. It may retain bounded assistant/plan progress and final receipt
+  rows, but completed replay must not keep `reasoning` rows from the active
+  budget. If a reloaded completed turn shows Reasoning but not user-facing
+  intermediate receipts, inspect `thread-detail-response-budget-service`
+  reasoning limits before changing the renderer.
 - Thread detail should first use app-server `thread/read` even when the rollout
   file is over 32MB, because `thread/turns/list` does not reliably preserve the
   command/tool/file/search operation items expected in Mobile detail. If detail

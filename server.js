@@ -5424,6 +5424,7 @@ const threadDetailProjectionInputService = createThreadDetailProjectionInputServ
 const threadDetailProjectionResultService = createThreadDetailProjectionResultService({
   maxTurns: MAX_FULL_THREAD_TURNS,
   compactThreadReadResult,
+  decorateThreadReadResult: attachRolloutUsageSummariesToDetailResult,
   mergeThreadDisplaySummary,
   applySessionIndexTitleToThread,
   readSessionIndexEntries,
@@ -13313,6 +13314,45 @@ async function prepareThreadTaskCardsToResult(result) {
   if (!result || typeof result !== "object" || !result.thread) return result;
   await materializeThreadTaskCardDraftsForThread(result.thread);
   return attachPendingServerRequestsToResult(attachThreadTaskCardsToResult(result));
+}
+
+function hasTurnUsageSummaryPayload(summaries) {
+  return Boolean(summaries && (
+    summaries.byTurnId instanceof Map && summaries.byTurnId.size > 0
+    || Array.isArray(summaries.unscoped) && summaries.unscoped.length > 0
+  ));
+}
+
+function cloneThreadForUsageDecoration(thread) {
+  return Object.assign({}, thread, {
+    turns: (Array.isArray(thread && thread.turns) ? thread.turns : []).map((turn) => {
+      if (!turn || typeof turn !== "object") return turn;
+      return Object.assign({}, turn, {
+        items: Array.isArray(turn.items) ? turn.items.slice() : turn.items,
+      });
+    }),
+  });
+}
+
+function attachRolloutUsageSummariesToDetailResult(result) {
+  const thread = result && result.thread;
+  if (!thread || !Array.isArray(thread.turns)) return result;
+  const rolloutPath = rolloutPathForThread(thread);
+  if (!rolloutPath) return result;
+  const targetTurnIds = thread.turns
+    .map((turn) => turn && (turn.id || turn.turnId || turn.turn_id))
+    .filter(Boolean);
+  if (!targetTurnIds.length) return result;
+  const summaries = readRolloutTurnUsageSummaries(rolloutPath, { targetTurnIds });
+  if (!hasTurnUsageSummaryPayload(summaries)) return result;
+  const out = Object.assign({}, result, {
+    thread: cloneThreadForUsageDecoration(thread),
+  });
+  attachTurnUsageSummaries(out.thread, summaries, {
+    rolloutStats: rolloutStatsForPath(rolloutPath),
+    workspaceContextStats: workspaceContextStatsForCwd(out.thread.cwd),
+  });
+  return out;
 }
 
 async function prepareThreadDetailResponseResult(result, details = {}) {

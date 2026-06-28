@@ -173,14 +173,14 @@ test("thread detail response budget keeps bounded latest completed replay detail
   });
 
   assert.deepEqual(compacted.thread.turns[0].items.map((item) => item.id), ["old-u", "old-c2", "old-a2", "old-usage"]);
-  assert.deepEqual(compacted.thread.turns[1].items.map((item) => item.id), ["u1", "r2", "r3", "c2", "c3", "plan1", "a2", "usage"]);
+  assert.deepEqual(compacted.thread.turns[1].items.map((item) => item.id), ["u1", "c2", "c3", "plan1", "a2", "usage"]);
   const budget = compacted.thread.mobileDetailResponseBudget;
   assert.equal(budget.latestCompletedReplayTurnCount, 1);
   assert.equal(budget.latestCompletedReplayOperationItems, 2);
-  assert.equal(budget.latestCompletedReplayReasoningItems, 2);
+  assert.equal(budget.latestCompletedReplayReasoningItems, 0);
   assert.equal(budget.latestCompletedReplayAssistantItems, 2);
   assert.equal(budget.omittedOperationItems, 2);
-  assert.equal(budget.omittedReasoningItems, 2);
+  assert.equal(budget.omittedReasoningItems, 4);
   assert.equal(budget.omittedAssistantItems, 2);
   assert.equal(budget.activeTurnCount, 0);
   assert.equal(compacted.thread.mobileProjectionRevision, 8);
@@ -203,6 +203,8 @@ test("thread detail response budget keeps completed replay progress before activ
           status: "completed",
           items: [
             { id: "u1", type: "userMessage", text: "Question" },
+            { id: "r1", type: "reasoning", text: "" },
+            { id: "r2", type: "reasoning", text: "" },
             { id: "c1", type: "commandExecution", command: "old command" },
             { id: "p1", type: "agentMessage", text: "progress 1", mobileSyntheticProgressMessage: true },
             { id: "p2", type: "agentMessage", text: "progress 2", mobileSyntheticProgressMessage: true },
@@ -234,12 +236,15 @@ test("thread detail response budget keeps completed replay progress before activ
   const completed = compacted.thread.turns[0];
   assert.deepEqual(completed.items.map((item) => item.id), ["u1", "p1", "p2", "p3", "final", "usage"]);
   assert.equal(completed.items.filter((item) => item.mobileSyntheticProgressMessage === true).length, 3);
+  assert.ok(!completed.items.some((item) => item.type === "reasoning"));
   assert.ok(!completed.items.some((item) => item.type === "commandExecution"));
   const budget = compacted.thread.mobileDetailResponseBudget;
   assert.equal(budget.activeTurnCount, 1);
   assert.equal(budget.latestCompletedReplayTurnCount, 1);
   assert.equal(budget.latestCompletedReplayAssistantItems, 4);
+  assert.equal(budget.latestCompletedReplayReasoningItems, 0);
   assert.equal(budget.omittedOperationItems, 1);
+  assert.equal(budget.omittedReasoningItems, 2);
   assert.equal(budget.omittedAssistantItems, 0);
 });
 

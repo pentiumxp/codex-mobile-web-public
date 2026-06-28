@@ -149,12 +149,33 @@ test("projection result read mode follows cache source and v4 version", () => {
 
 test("projection result skips compaction for response-ready v4 projection hits", () => {
   let compactCalls = 0;
+  let decorateCalls = 0;
   const service = createThreadDetailProjectionResultService({
     maxTurns: 5,
     now: () => 1000,
     compactThreadReadResult() {
       compactCalls += 1;
       throw new Error("response-ready v4 projection should not compact");
+    },
+    decorateThreadReadResult(result, details) {
+      decorateCalls += 1;
+      assert.equal(details.projectionVersion, "v4");
+      return Object.assign({}, result, {
+        thread: Object.assign({}, result.thread, {
+          decorated: true,
+          turns: result.thread.turns.map((turn) => Object.assign({}, turn, {
+            items: [
+              ...turn.items,
+              {
+                id: "usage-1",
+                type: "turnUsageSummary",
+                mobileProjectionVersion: "v4",
+                mobileVisibleKey: "turn-1:turnUsageSummary",
+              },
+            ],
+          })),
+        }),
+      });
     },
   });
 
@@ -184,8 +205,11 @@ test("projection result skips compaction for response-ready v4 projection hits",
   }, {}, {});
 
   assert.equal(compactCalls, 0);
+  assert.equal(decorateCalls, 1);
+  assert.equal(result.thread.decorated, true);
   assert.equal(result.thread.mobileReadMode, "projection-v4-cache");
   assert.equal(result.thread.mobileProjection.version, "v4");
+  assert.equal(result.thread.turns[0].items.some((item) => item.type === "turnUsageSummary"), true);
   assert.deepEqual(result.thread.mobileVisibleItemKeys, ["turn-1:user:user-1"]);
 });
 

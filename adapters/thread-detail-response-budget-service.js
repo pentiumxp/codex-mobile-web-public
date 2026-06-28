@@ -811,11 +811,11 @@ function compactTurnWithBudget(turn, thread, options, stats) {
     })
     : cloneJson(turn);
   if (!compacted || !Array.isArray(compacted.items)) return compacted;
-  const reasoningLimit = replay ? options.activeReasoningItems : options.completedReasoningItems;
+  const reasoningLimit = active ? options.activeReasoningItems : options.completedReasoningItems;
   const keepReasoningIndexes = trailingIndexes(
     compacted.items,
     reasoningLimit,
-    (item) => isReasoningItem(item) && (replay || reasoningHasVisibleText(item)),
+    (item) => isReasoningItem(item) && (active || reasoningHasVisibleText(item)),
   );
   compacted.items = compacted.items.filter((item, index) => {
     if (!isReasoningItem(item)) return true;

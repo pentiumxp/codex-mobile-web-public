@@ -76,6 +76,9 @@ function createThreadDetailProjectionResultService(options = {}) {
   const publicRuntimeSettings = typeof options.publicRuntimeSettings === "function"
     ? options.publicRuntimeSettings
     : () => ({});
+  const decorateThreadReadResult = typeof options.decorateThreadReadResult === "function"
+    ? options.decorateThreadReadResult
+    : (result) => result;
   const now = typeof options.now === "function" ? options.now : Date.now;
 
   function sessionIndexEntry(threadId) {
@@ -185,7 +188,12 @@ function createThreadDetailProjectionResultService(options = {}) {
       result.thread.mobileProjection.stalePartial = true;
       result.thread.mobileProjection.staleReason = cached.staleReason || "";
     }
-    return result;
+    return decorateThreadReadResult(result, {
+      cached,
+      summary,
+      runtimeSettings,
+      projectionVersion,
+    }) || result;
   }
 
   return {

@@ -301,7 +301,9 @@ test("thread detail usage read targets returned turns beyond the rollout tail", 
   assert.match(serverJs, /if \(missingUsageTurnIds\(payload, targetTurnIds\)\.length > 0\) \{\s*payload = collectTurnUsageSummariesFromEntries\(readRolloutEnrichmentEntries\(rolloutPath\)\);/);
   assert.match(serverJs, /readRolloutTurnUsageSummaries\(rolloutPath, \{\s*targetTurnIds: out\.turns\.map\(\(turn\) => turn && turn\.id\)\.filter\(Boolean\),\s*\}\)/);
   assert.match(serverJs, /createThreadDetailProjectionResultService/);
-  assert.match(serverJs, /const threadDetailProjectionResultService = createThreadDetailProjectionResultService\(\{\s*maxTurns: MAX_FULL_THREAD_TURNS,\s*compactThreadReadResult,\s*mergeThreadDisplaySummary,/);
+  assert.match(serverJs, /const threadDetailProjectionResultService = createThreadDetailProjectionResultService\(\{\s*maxTurns: MAX_FULL_THREAD_TURNS,\s*compactThreadReadResult,\s*decorateThreadReadResult: attachRolloutUsageSummariesToDetailResult,\s*mergeThreadDisplaySummary,/);
+  assert.match(serverJs, /decorateThreadReadResult: attachRolloutUsageSummariesToDetailResult/);
+  assert.match(serverJs, /function attachRolloutUsageSummariesToDetailResult\(result\) \{/);
   assert.match(serverJs, /function prepareProjectedThreadReadResult\(cached, summary, runtimeSettings, options = \{\}\) \{/);
   assert.match(serverJs, /return threadDetailProjectionResultService\.prepareProjectedThreadReadResult\(cached, summary, runtimeSettings, options\);/);
 });
