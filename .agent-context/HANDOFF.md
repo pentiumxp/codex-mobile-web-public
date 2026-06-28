@@ -26789,3 +26789,53 @@ The previous full handoff was archived and should be opened only when old proven
     docs files. Phase-B readback smoke returned `ok:true` for the Movie thread.
   - Public was not pushed and must remain unchanged unless the user explicitly
     asks for Public.
+
+## 2026-06-28 - Completed Replay Operation Cleanup
+
+- User-visible incident:
+  - After the projected Usage/reasoning fix, the `Movie` thread latest completed
+    turn correctly showed user-facing assistant progress and Usage, but still
+    replayed command/file/tool operation rows. The desired completed replay is
+    final/user-visible assistant progress only; commands belong to live active
+    turns, not completed replay after re-entry.
+- Root cause / invariant:
+  - `thread-detail-response-budget-service` intentionally treated latest
+    completed replay like active replay for assistant progress, but operation
+    retention also followed the replay path. Setting the max operation count to
+    zero is not a safe fix because the lower server compactor treats falsy
+    operation limits as default limits.
+- Implementation:
+  - `compactTurnWithBudget()` now explicitly filters operation items from
+    latest-completed replay turns after raw compaction and before reasoning /
+    assistant retention accounting.
+  - Historical completed turns and live active turns keep their existing
+    operation-budget behavior; this cleanup only changes latest completed replay.
+  - `docs/MODULES.md` and `docs/TROUBLESHOOTING.md` now record that completed
+    replay retains bounded assistant/plan progress while dropping operation and
+    reasoning rows.
+- Validation:
+  - Focused: `node --test test/thread-detail-response-budget-service.test.js
+    test/thread-detail-projection-result-service.test.js
+    test/conversation-render.test.js test/message-timestamp.test.js`
+    (`186` tests).
+  - Full/local: `npm test` (`1415` tests), `npm run check`,
+    `npm run check:macos`, and `git diff --check` passed.
+- Deployment status:
+  - Commit `a91f4c3` deployed through the Home AI central macOS plugin deploy
+    path with reason `codex-mobile-hide-completed-replay-operations`.
+  - Production `/api/public-config` still reported
+    `clientBuildId=0.1.11|codex-mobile-shell-v567` and
+    `shellCacheName=codex-mobile-shell-v567`, as expected for a server-only
+    change.
+  - Production Movie metadata readback returned
+    `mobileReadMode=projection-v4-dynamic`, latest completed turn item counts:
+    `userMessage=1`, `contextCompaction=1`, `agentMessage=8`,
+    `turnUsageSummary=1`; `latestCompletedReplayOperationItems=0`,
+    `latestCompletedReplayReasoningItems=0`, and Usage was present.
+  - Source/production SHA parity was confirmed for
+    `adapters/thread-detail-response-budget-service.js`,
+    `test/thread-detail-response-budget-service.test.js`, `docs/MODULES.md`,
+    and `docs/TROUBLESHOOTING.md`. Phase-B readback smoke returned `ok:true`
+    for the Movie thread.
+  - Public was not pushed and must remain unchanged unless the user explicitly
+    asks for Public.
