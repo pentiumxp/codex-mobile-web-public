@@ -600,7 +600,15 @@ pressure, the service reduces those operation payload fields to bounded previews
 (default `6KB`, `0` disables) and marks affected items with
 `mobileOperationPayloadBudget` / `mobilePayloadTruncated`; command output keeps
 the latest visible tail through the existing `outputTruncated` /
-`outputTotalChars` UI contract. When the same
+`outputTotalChars` UI contract. Oversized active user input can also dominate
+the first-paint response when the active turn is a task card, continuation
+bootstrap, or inline-image upload echo. Under progressive active pressure only,
+the same service previews active `userMessage` text through
+`CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_ACTIVE_USER_TEXT_CHARS` (default `10KB`,
+`0` disables), replaces inline `data:image` input URLs with metadata-only
+truncation markers, and records `mobileUserInputBudget` /
+`mobileUserInputTruncated` on the affected user item. This is response shaping
+only; the rollout/session source remains unchanged. When the same
 progressive pressure still leaves too many visible first-paint items after
 per-type compaction, the service applies
 `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_VISIBLE_ITEM_CEILING` (default `48`,
@@ -620,9 +628,9 @@ while protecting the latest completed turn. Affected items carry
 turn keeps the separate active text budget described above. The operation budget includes command, file,
 dynamic tool, MCP, and collab-agent tool-call items. The response records the
 item and byte thresholds, trigger reason, configured limits, effective limits,
-active/completed text-budget counters, active operation-payload counters,
-visible-item ceiling counters, and original/final first-paint byte counts in
-`mobileDetailResponseBudget`.
+active/completed text-budget counters, active user-input counters, active
+operation-payload counters, visible-item ceiling counters, and original/final
+first-paint byte counts in `mobileDetailResponseBudget`.
 
 `HANDOFF.md` has a separate 200KB Usage prompt threshold so recently compacted handoffs near 100KB do not immediately ask for another continuation.
 

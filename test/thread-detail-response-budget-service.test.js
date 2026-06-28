@@ -334,6 +334,158 @@ test("thread detail response budget truncates oversized retained active assistan
   assert.deepEqual(compacted.thread.mobileVisibleItemKeys, compacted.thread.turns[0].items.map((item) => item.mobileVisibleKey));
 });
 
+test("thread detail response budget truncates oversized active user input under progressive pressure", () => {
+  const taskCardText = [
+    "[Cross-thread task card sent by source thread]",
+    "",
+    "Source workspace: /workspace",
+    "Source thread: Home AI",
+    "Title: Large diagnostic task",
+    "",
+    "# Task",
+    "Investigate the issue.",
+    "A".repeat(5000),
+  ].join("\n");
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      mobileProjectionRevision: 12,
+      turns: [
+        {
+          id: "turn-active",
+          status: "inProgress",
+          items: [
+            {
+              id: "u1",
+              type: "userMessage",
+              content: [{ type: "input_text", text: taskCardText }],
+            },
+            { id: "a1", type: "agentMessage", text: "Working" },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeProgressiveItemThreshold: 100,
+    activeProgressiveByteThreshold: 1000,
+    activeProgressiveThreadByteThreshold: 0,
+    progressiveActiveUserTextChars: 900,
+  });
+
+  const user = compacted.thread.turns[0].items[0];
+  assert.equal(user.mobileUserInputTruncated, true);
+  assert.match(user.content[0].text, /^\[Cross-thread task card sent by source thread\]/);
+  assert.match(user.content[0].text, /active user input preview truncated/);
+  assert.ok(user.content[0].text.length <= 900);
+  assert.deepEqual(user.mobileUserInputBudget.fields, ["content.text"]);
+  assert.equal(user.mobileUserInputBudget.originalChars, taskCardText.length);
+  assert.equal(user.mobileUserInputBudget.maxChars, 900);
+  assert.ok(user.mobileUserInputBudget.omittedChars > 0);
+  const budget = compacted.thread.mobileDetailResponseBudget;
+  assert.equal(budget.applied, true);
+  assert.equal(budget.progressiveActiveBudgetApplied, true);
+  assert.equal(budget.progressiveActiveUserTextChars, 900);
+  assert.equal(budget.truncatedActiveUserMessageItems, 1);
+  assert.equal(budget.activeUserInputOriginalChars, taskCardText.length);
+  assert.ok(budget.activeUserInputRetainedChars <= 900);
+  assert.ok(budget.omittedActiveUserInputChars > 0);
+  assert.equal(JSON.stringify(compacted).includes("A".repeat(1000)), false);
+  assert.equal(compacted.thread.mobileProjectionRevision, 12);
+  assert.deepEqual(compacted.thread.mobileVisibleItemKeys, compacted.thread.turns[0].items.map((item) => item.mobileVisibleKey));
+});
+
+test("thread detail response budget drops active inline image data under progressive pressure", () => {
+  const dataUrl = `data:image/png;base64,${"A".repeat(4200)}`;
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      turns: [
+        {
+          id: "turn-active",
+          status: "inProgress",
+          items: [
+            {
+              id: "u1",
+              type: "userMessage",
+              content: [
+                { type: "text", text: "Look at this image" },
+                { type: "input_image", image_url: { url: dataUrl }, fileName: "screen.png" },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeProgressiveItemThreshold: 100,
+    activeProgressiveByteThreshold: 1000,
+    activeProgressiveThreadByteThreshold: 0,
+    progressiveActiveUserTextChars: 800,
+  });
+
+  const user = compacted.thread.turns[0].items[0];
+  const imagePart = user.content[1];
+  assert.equal(user.mobileUserInputTruncated, true);
+  assert.equal(imagePart.mobileImagePayloadTruncated, true);
+  assert.deepEqual(imagePart.image_url, {
+    truncated: true,
+    contentType: "image/png",
+    totalChars: dataUrl.length,
+    retainedChars: 0,
+    omittedChars: dataUrl.length,
+  });
+  assert.equal(imagePart.fileName, "screen.png");
+  assert.deepEqual(user.mobileUserInputBudget.fields, ["content.text", "content.image_url"]);
+  assert.equal(JSON.stringify(compacted).includes("data:image/png;base64"), false);
+  const budget = compacted.thread.mobileDetailResponseBudget;
+  assert.equal(budget.truncatedActiveUserMessageItems, 1);
+  assert.equal(budget.activeUserInputOriginalChars, "Look at this image".length + dataUrl.length);
+  assert.ok(budget.omittedActiveUserInputChars >= dataUrl.length);
+});
+
+test("thread detail response budget keeps large user input unchanged without progressive pressure", () => {
+  const longText = "B".repeat(5000);
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      turns: [
+        {
+          id: "turn-active",
+          status: "inProgress",
+          items: [
+            { id: "u1", type: "userMessage", content: [{ type: "text", text: longText }] },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeProgressiveItemThreshold: 100,
+    activeProgressiveByteThreshold: 0,
+    activeProgressiveThreadByteThreshold: 0,
+    progressiveActiveUserTextChars: 800,
+  });
+
+  const user = compacted.thread.turns[0].items[0];
+  assert.equal(user.content[0].text, longText);
+  assert.equal(user.mobileUserInputTruncated, undefined);
+  assert.equal(compacted.thread.mobileDetailResponseBudget, undefined);
+});
+
 test("thread detail response budget truncates retained active command output payload under progressive pressure", () => {
   const result = {
     thread: {

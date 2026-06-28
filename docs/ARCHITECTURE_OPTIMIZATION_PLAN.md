@@ -2429,6 +2429,14 @@ Deployable scope:
   uses the existing `outputTruncated` / `outputTotalChars` UI path so the
   default first paint keeps the latest output tail without shipping the full
   payload.
+- Retained active user-input items now have a matching pressure-gated first-paint
+  budget for the cases that are not ordinary short prompts: large injected task
+  cards, continuation/bootstrap text, and inline `data:image` input echoes.
+  `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_ACTIVE_USER_TEXT_CHARS` (default
+  `10KB`, `0` disables) bounds text previews, inline image data is replaced with
+  metadata-only truncation markers, and affected user rows carry
+  `mobileUserInputBudget` / `mobileUserInputTruncated`. This is HTTP response
+  shaping only; the session/rollout source remains unchanged.
 - After those per-type budgets, the same pressure condition can apply a
   first-paint visible item ceiling
   (`CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_VISIBLE_ITEM_CEILING`, default `48`,

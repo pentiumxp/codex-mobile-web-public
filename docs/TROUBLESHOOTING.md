@@ -425,6 +425,8 @@ active-looking turns were deliberately downgraded for response shaping. When
 `progressiveActiveBudgetReason`, `activeProgressiveItemThreshold`,
 `activeProgressiveByteThreshold`,
 `activeProgressiveThreadByteThreshold`,
+`progressiveActiveUserTextChars`, `truncatedActiveUserMessageItems`,
+`omittedActiveUserInputChars`,
 `progressiveActiveTextChars`, `truncatedActiveTextItems`,
 `omittedActiveTextChars`,
 `progressiveActiveOperationPayloadChars`,
@@ -436,7 +438,11 @@ changing visible-item policy. Affected operation rows expose
 `mobileOperationPayloadBudget.fields`; that set can include command output,
 operation display text such as collab-agent task/prompt text, file-change
 `changes`, tool arguments/results/content items, and bounded
-action/request/response payloads. Current servers also expose
+action/request/response payloads. Affected active user-message rows expose
+`mobileUserInputBudget` / `mobileUserInputTruncated` when task-card/bootstrap
+text or inline `data:image` input parts are reduced for first paint; this should
+happen only under progressive active pressure and does not mutate the persisted
+rollout. Current servers also expose
 `progressiveVisibleItemCeiling`, `progressiveVisibleItemBudgetApplied`,
 `progressiveVisibleItemOriginalCount`, `progressiveVisibleItemRetainedCount`,
 `omittedVisibleItems`, and per-turn `mobileVisibleItemBudget` when progressive

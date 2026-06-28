@@ -16,11 +16,13 @@ const DEFAULT_PROGRESSIVE_ACTIVE_REASONING_ITEMS = 1;
 const DEFAULT_PROGRESSIVE_ACTIVE_ASSISTANT_ITEMS = 4;
 const DEFAULT_PROGRESSIVE_ACTIVE_TEXT_CHARS = 12 * 1024;
 const DEFAULT_PROGRESSIVE_ACTIVE_OPERATION_PAYLOAD_CHARS = 6 * 1024;
+const DEFAULT_PROGRESSIVE_ACTIVE_USER_TEXT_CHARS = 10 * 1024;
 const DEFAULT_PROGRESSIVE_VISIBLE_ITEM_CEILING = 48;
 const DEFAULT_PROGRESSIVE_FIRST_PAINT_THREAD_BYTES = 160 * 1024;
 const DEFAULT_PROGRESSIVE_COMPLETED_TEXT_CHARS = 8 * 1024;
 const ACTIVE_TEXT_BUDGET_MARKER = "\n\n[active item preview truncated]\n\n";
 const OPERATION_PAYLOAD_BUDGET_MARKER = "\n\n[operation payload preview truncated]\n\n";
+const USER_INPUT_BUDGET_MARKER = "\n\n[active user input preview truncated]\n\n";
 const FIRST_PAINT_TEXT_BUDGET_MARKER = "\n\n[first-paint preview truncated]\n\n";
 
 const OPERATION_ITEM_TYPES = new Set([
@@ -111,6 +113,10 @@ function isReasoningItem(item) {
 
 function isAssistantItem(item) {
   return ASSISTANT_ITEM_TYPES.has(String(item && item.type || ""));
+}
+
+function isUserMessageItem(item) {
+  return String(item && item.type || "") === "userMessage";
 }
 
 function textValue(value) {
@@ -257,6 +263,100 @@ function compactActiveTextItem(item, options, stats) {
   stats.activeTextOriginalChars += budget.originalChars;
   stats.activeTextRetainedChars += budget.retainedChars;
   stats.omittedActiveTextChars += budget.omittedChars;
+  return out;
+}
+
+function compactImageDataUrlPartForUserInput(part, maxChars) {
+  if (!part || typeof part !== "object") return { part, originalChars: 0, retainedChars: 0, omittedChars: 0, truncated: false, field: "" };
+  const candidates = [
+    ["url", part.url],
+    ["image_url", part.image_url],
+    ["imageUrl", part.imageUrl],
+  ];
+  for (const [field, raw] of candidates) {
+    const url = raw && typeof raw === "object"
+      ? String(raw.url || raw.uri || raw.href || "")
+      : String(raw || "");
+    if (!/^data:image\//i.test(url) || url.length <= maxChars) continue;
+    const contentTypeMatch = /^data:([^;,]+)/i.exec(url);
+    const next = Object.assign({}, part);
+    const replacement = {
+      truncated: true,
+      contentType: contentTypeMatch ? contentTypeMatch[1].toLowerCase() : "image/*",
+      totalChars: url.length,
+      retainedChars: 0,
+      omittedChars: url.length,
+    };
+    next[field] = replacement;
+    next.mobileImagePayloadTruncated = true;
+    return {
+      part: next,
+      originalChars: url.length,
+      retainedChars: 0,
+      omittedChars: url.length,
+      truncated: true,
+      field,
+    };
+  }
+  return { part, originalChars: 0, retainedChars: 0, omittedChars: 0, truncated: false, field: "" };
+}
+
+function compactTextFieldForUserInput(out, field, budget) {
+  if (!(field in out) || typeof out[field] !== "string") return false;
+  const beforeOriginal = budget.originalChars;
+  out[field] = compactValueForTextBudget(out[field], budget, USER_INPUT_BUDGET_MARKER);
+  return budget.originalChars > beforeOriginal;
+}
+
+function compactActiveUserMessageItem(item, options, stats) {
+  if (!item || typeof item !== "object" || !isUserMessageItem(item)) return item;
+  const maxChars = Math.max(0, Math.trunc(Number(options.progressiveActiveUserTextChars || 0)));
+  if (!maxChars) return item;
+  const out = cloneJson(item);
+  const budget = {
+    maxChars,
+    originalChars: 0,
+    retainedChars: 0,
+    omittedChars: 0,
+    truncated: false,
+    fields: [],
+  };
+  for (const field of ["text", "message"]) {
+    if (compactTextFieldForUserInput(out, field, budget)) budget.fields.push(field);
+  }
+  if (Array.isArray(out.content)) {
+    out.content = out.content.map((entry, index) => {
+      if (!entry || typeof entry !== "object") return entry;
+      const next = Object.assign({}, entry);
+      for (const field of ["text", "input_text", "content"]) {
+        if (compactTextFieldForUserInput(next, field, budget)) budget.fields.push(`content.${field}`);
+      }
+      const imageResult = compactImageDataUrlPartForUserInput(next, maxChars);
+      if (imageResult.truncated) {
+        budget.originalChars += imageResult.originalChars;
+        budget.retainedChars += imageResult.retainedChars;
+        budget.omittedChars += imageResult.omittedChars;
+        budget.truncated = true;
+        budget.fields.push(`content.${imageResult.field}`);
+        return imageResult.part;
+      }
+      return next;
+    });
+  }
+  if (!budget.truncated) return item;
+  out.mobileUserInputBudget = {
+    version: "thread-detail-active-user-input-budget-v1",
+    maxChars,
+    originalChars: budget.originalChars,
+    retainedChars: budget.retainedChars,
+    omittedChars: budget.omittedChars,
+    fields: [...new Set(budget.fields)],
+  };
+  out.mobileUserInputTruncated = true;
+  stats.truncatedActiveUserMessageItems += 1;
+  stats.activeUserInputOriginalChars += budget.originalChars;
+  stats.activeUserInputRetainedChars += budget.retainedChars;
+  stats.omittedActiveUserInputChars += budget.omittedChars;
   return out;
 }
 
@@ -575,7 +675,7 @@ function compactTurnWithBudget(turn, thread, options, stats) {
     return keepAssistantIndexes.has(index);
   });
   if (active && options.progressiveActiveBudgetApplied) {
-    compacted.items = compacted.items.map((item) => compactActiveOperationPayloadItem(compactActiveTextItem(item, options, stats), options, stats));
+    compacted.items = compacted.items.map((item) => compactActiveOperationPayloadItem(compactActiveTextItem(compactActiveUserMessageItem(item, options, stats), options, stats), options, stats));
   }
   const afterOperationCount = countBy(compacted.items, isOperationItem);
   const afterReasoningCount = countBy(compacted.items, isReasoningItem);
@@ -672,6 +772,11 @@ function compactThreadDetailResponseResult(result, options = {}) {
     DEFAULT_PROGRESSIVE_ACTIVE_OPERATION_PAYLOAD_CHARS,
     200 * 1024,
   );
+  const progressiveActiveUserTextChars = boundedCount(
+    options.progressiveActiveUserTextChars,
+    DEFAULT_PROGRESSIVE_ACTIVE_USER_TEXT_CHARS,
+    200 * 1024,
+  );
   const progressiveFirstPaintThreadByteCeiling = boundedCount(
     options.progressiveFirstPaintThreadByteCeiling,
     DEFAULT_PROGRESSIVE_FIRST_PAINT_THREAD_BYTES,
@@ -700,12 +805,16 @@ function compactThreadDetailResponseResult(result, options = {}) {
     omittedReasoningItems: 0,
     omittedAssistantItems: 0,
     omittedVisibleItems: 0,
+    omittedActiveUserInputChars: 0,
     omittedActiveTextChars: 0,
     omittedActiveOperationPayloadChars: 0,
     omittedCompletedTextChars: 0,
+    truncatedActiveUserMessageItems: 0,
     truncatedActiveTextItems: 0,
     truncatedActiveOperationPayloadItems: 0,
     truncatedCompletedTextItems: 0,
+    activeUserInputOriginalChars: 0,
+    activeUserInputRetainedChars: 0,
     activeTextOriginalChars: 0,
     activeTextRetainedChars: 0,
     activeOperationPayloadOriginalChars: 0,
@@ -723,6 +832,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
     activeProgressiveItemThreshold,
     activeProgressiveByteThreshold,
     activeProgressiveThreadByteThreshold,
+    progressiveActiveUserTextChars,
     progressiveActiveTextChars,
     progressiveActiveOperationPayloadChars,
     progressiveFirstPaintThreadByteCeiling,
@@ -763,6 +873,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
     || stats.omittedReasoningItems > 0
     || stats.omittedAssistantItems > 0
     || stats.omittedVisibleItems > 0
+    || stats.truncatedActiveUserMessageItems > 0
     || stats.truncatedActiveTextItems > 0
     || stats.truncatedActiveOperationPayloadItems > 0;
   stats.applied = stats.applied || stats.truncatedCompletedTextItems > 0;

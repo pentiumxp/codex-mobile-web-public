@@ -113,7 +113,13 @@ Active operation payload budgeting also covers retained operation display and
 structured fields used by command/file/tool/MCP/collab-agent cards, including
 file-change `changes`, collab-agent task/prompt text, and bounded
 action/request/response payloads, so these rows cannot bypass first-paint
-budgets just because their item count is already small.
+budgets just because their item count is already small. The next server-side
+budget slice also brings oversized active `userMessage` payloads into the same
+progressive pressure boundary: long task-card/bootstrap text is reduced to a
+bounded first-paint preview, and inline `data:image` input parts are replaced by
+metadata-only placeholders before the HTTP detail response is sent. This does
+not change the persisted session and does not affect ordinary short user input
+when progressive active pressure is absent.
 The follow-up first-paint byte slice closes the remaining case where the item
 count is already small but retained completed assistant/plan receipts still
 make the detail body heavy. When active progressive pressure is present, or

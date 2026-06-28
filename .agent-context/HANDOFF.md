@@ -25271,3 +25271,50 @@ The previous full handoff was archived and should be opened only when old proven
   `totalMs=58`.
 - Source/prod SHA-256 prefixes matched for the changed runtime files, focused
   tests, and updated docs.
+
+## 2026-06-28 - Active User Input First-Paint Budget Module
+
+- User-visible symptom:
+  - Large active turns can still have unstable first-paint latency even after
+    operation/reasoning/assistant payload budgeting, especially when the active
+    turn starts from an injected task card, continuation/bootstrap text, or a
+    user image echo represented as inline `data:image` input.
+- Root cause / invariant:
+  - `thread-detail-response-budget-service` retained active `userMessage` items
+    in full while applying budgets to other active item classes. The visible
+    item ceiling could bound item count, but a single retained user input item
+    could still dominate the HTTP detail body.
+  - The fix belongs in server-side response shaping after projection/read
+    orchestration and before the HTTP response, with bounded diagnostics. It
+    must not mutate the session/rollout source and must not hide ordinary short
+    user prompts.
+- Implementation:
+  - `adapters/thread-detail-response-budget-service.js` now applies a
+    pressure-gated active user-input budget under progressive active pressure.
+  - Text fields on active `userMessage` rows are previewed through
+    `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_ACTIVE_USER_TEXT_CHARS` (default
+    `10KB`, `0` disables).
+  - Inline `data:image` input URLs are replaced with metadata-only truncation
+    markers instead of shipping base64 in the first-paint detail response.
+  - Affected rows carry `mobileUserInputBudget` /
+    `mobileUserInputTruncated`; aggregate counters are recorded in
+    `mobileDetailResponseBudget`.
+  - `server.js` only wires the new env-configured budget into the existing
+    response-budget service.
+  - Updated docs: `docs/README.md`, `docs/ARCHITECTURE.md`,
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`, `docs/MODULES.md`, and
+    `docs/TROUBLESHOOTING.md`.
+- Local validation:
+  - `node --check server.js` passed.
+  - `node --check adapters/thread-detail-response-budget-service.js` passed.
+  - `node --test test/thread-detail-response-budget-service.test.js` passed
+    (`27` tests).
+  - Focused detail/projection suite passed (`70` tests).
+  - `git diff --check` passed.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - Full `npm test` passed (`1388` tests).
+- Deployment status:
+  - Not deployed yet at the time of this note. Next step is commit, central
+    macOS plugin deploy, and production readback. Static shell/cache bump is
+    not expected because no browser static files changed.
