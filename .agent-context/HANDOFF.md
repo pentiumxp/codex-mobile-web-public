@@ -25185,7 +25185,23 @@ The previous full handoff was archived and should be opened only when old proven
   - `npm run check:macos` passed.
   - `git diff --check` passed.
   - `codegraph sync && codegraph status` reported the index up to date.
-- Deployment status:
-  - Not deployed yet at the time of this note. Next step is commit, central
-    macOS plugin deploy, and production readback. No static shell bump is
-    needed because this slice does not change `public/app.js` or `public/sw.js`.
+- Deployment:
+  - Commit `81825be` `fix: budget active operation display payloads` was
+    deployed through the Home AI central macOS plugin path with reason
+    `codex-mobile-active-operation-payload-budget`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260628T000658Z-plugin-codex-mobile-web-codex-mobile-active-operation-payload-budget`.
+  - Production public config remained
+    `clientBuildId=0.1.11|codex-mobile-shell-v555` /
+    `shellCacheName=codex-mobile-shell-v555`, which is expected because this
+    slice changed server-side response budgeting and docs/tests, not static
+    client files.
+  - General Phase-B readback passed with thread list on warm fallback cache
+    (`totalMs=99`) and detail `projection-v4-partial`,
+    `projection-partial-hit`, `turnsListInitialMs=0`, `totalMs=45`.
+  - Codex Mobile thread `019eee6c-a6f5-7b20-bfb4-f96ccb6431b3` readback passed
+    with `projection-v4-partial`, `turnsListInitialMs=0`, `totalMs=41`.
+  - Home AI thread `019eed86-2002-7cc2-b0b7-937eb5355f36` readback passed with
+    `projection-v4-dynamic`, `turnsListInitialMs=0`, `totalMs=58`.
+  - Source/prod SHA-256 prefixes matched for the response-budget service,
+    focused test, and updated docs.
