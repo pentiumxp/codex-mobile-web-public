@@ -12424,13 +12424,13 @@ function attachThreadGoalToThread(thread) {
   return threadGoalService.attachGoalToThread(thread);
 }
 
-function attachThreadTaskCardCountsToSummary(thread) {
+function attachThreadTaskCardCountsToSummary(thread, taskCardCounts = null) {
   if (!thread || typeof thread !== "object" || !thread.id) return thread;
   const summary = stripThreadListDetailFields(thread);
-  const taskCardCounts = threadTaskCardService.pendingCountsForThread(thread.id);
-  summary.pendingTaskCardCount = taskCardCounts.pendingTotal;
-  summary.pendingIncomingTaskCardCount = taskCardCounts.pendingIncoming;
-  summary.pendingOutgoingTaskCardCount = taskCardCounts.pendingOutgoing;
+  const counts = taskCardCounts || threadTaskCardService.pendingCountsForThread(thread.id);
+  summary.pendingTaskCardCount = counts.pendingTotal;
+  summary.pendingIncomingTaskCardCount = counts.pendingIncoming;
+  summary.pendingOutgoingTaskCardCount = counts.pendingOutgoing;
   return summary;
 }
 
@@ -12440,8 +12440,13 @@ function attachThreadGoalsToThreadListResult(result) {
 
 function attachThreadTaskCardCountsToThreadListResult(result) {
   if (!result || typeof result !== "object") return result;
-  if (Array.isArray(result.data)) result.data = result.data.map(attachThreadTaskCardCountsToSummary);
-  if (Array.isArray(result.threads)) result.threads = result.threads.map(attachThreadTaskCardCountsToSummary);
+  const threads = [];
+  if (Array.isArray(result.data)) threads.push(...result.data);
+  if (Array.isArray(result.threads) && result.threads !== result.data) threads.push(...result.threads);
+  const countsByThreadId = threadTaskCardService.pendingCountsForThreads(threads.map((thread) => thread && thread.id));
+  const attach = (thread) => attachThreadTaskCardCountsToSummary(thread, countsByThreadId.get(String(thread && thread.id || "")));
+  if (Array.isArray(result.data)) result.data = result.data.map(attach);
+  if (Array.isArray(result.threads)) result.threads = result.threads.map(attach);
   return result;
 }
 
@@ -15451,9 +15456,12 @@ async function handleApi(req, res) {
           });
           threadDisplaySummaryCache.rememberList(result);
           markTiming("mergeMs", mergeStartedAtMs);
+          const stateAttachStartedAtMs = Date.now();
+          const stateAttachedResult = attachThreadListStateToResult(result);
+          markTiming("stateAttachMs", stateAttachStartedAtMs);
           const decorateStartedAtMs = Date.now();
           const decorated = tokenUsageStatsService.decorateThreadListResult(
-            attachThreadListStateToResult(result),
+            stateAttachedResult,
             { cwd, days: 31, workspaceCwds: tokenUsageWorkspaceCwds(globalState), allowExpiredTokenUsageCache: true },
           );
           Object.assign(timings, threadListTokenUsageTimingFields(decorated.mobileTokenUsageDiagnostics));
@@ -15522,9 +15530,12 @@ async function handleApi(req, res) {
         threadDisplaySummaryCache.rememberList(indexedResult);
         if (Array.isArray(indexedResult.data)) indexedResult.data = indexedResult.data.slice(0, limit);
         if (Array.isArray(indexedResult.threads)) indexedResult.threads = indexedResult.threads.slice(0, limit);
+        const stateAttachStartedAtMs = Date.now();
+        const stateAttachedResult = attachThreadListStateToResult(indexedResult);
+        markTiming("stateAttachMs", stateAttachStartedAtMs);
         const decorateStartedAtMs = Date.now();
         const decorated = tokenUsageStatsService.decorateThreadListResult(
-          attachThreadListStateToResult(indexedResult),
+          stateAttachedResult,
           { cwd, days: 31, workspaceCwds: tokenUsageWorkspaceCwds(globalState), allowExpiredTokenUsageCache: true },
         );
         Object.assign(timings, threadListTokenUsageTimingFields(decorated.mobileTokenUsageDiagnostics));
@@ -15594,9 +15605,12 @@ async function handleApi(req, res) {
       if (Array.isArray(result.data)) result.data = result.data.slice(0, limit);
       if (Array.isArray(result.threads)) result.threads = result.threads.slice(0, limit);
       markTiming("mergeMs", mergeStartedAtMs);
+      const stateAttachStartedAtMs = Date.now();
+      const stateAttachedResult = attachThreadListStateToResult(result);
+      markTiming("stateAttachMs", stateAttachStartedAtMs);
       const decorateStartedAtMs = Date.now();
       const decorated = tokenUsageStatsService.decorateThreadListResult(
-        attachThreadListStateToResult(result),
+        stateAttachedResult,
         { cwd, days: 31, workspaceCwds: tokenUsageWorkspaceCwds(globalState), allowExpiredTokenUsageCache: true },
       );
       Object.assign(timings, threadListTokenUsageTimingFields(decorated.mobileTokenUsageDiagnostics));
@@ -15650,12 +15664,15 @@ async function handleApi(req, res) {
         ...threadListFallbackSourceDiagnosticTimingFields(fallbackDiagnostics),
       });
       if (fallback.length) {
+        const stateAttachStartedAtMs = Date.now();
+        const normalizedFallback = fallback.map((thread) => normalizeThreadSummaryLiveStatus(thread));
+        const stateAttachedFallback = attachThreadListStateToResult({
+          data: normalizedFallback,
+        });
+        markTiming("stateAttachMs", stateAttachStartedAtMs);
         const decorateStartedAtMs = Date.now();
-        const normalizedFallback = fallback.map((thread) => normalizeThreadSummaryLiveStatus(attachThreadTaskCardCountsToSummary(thread)));
         const decorated = tokenUsageStatsService.decorateThreadListResult({
-          data: attachThreadGoalsToThreadListResult({
-            data: normalizedFallback,
-          }).data,
+          data: stateAttachedFallback.data,
           mobileFallback: true,
           warning: err.message || String(err),
         }, { cwd, days: 31, workspaceCwds: tokenUsageWorkspaceCwds(globalState), allowExpiredTokenUsageCache: true });

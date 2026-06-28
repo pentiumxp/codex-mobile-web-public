@@ -25363,6 +25363,51 @@ The previous full handoff was archived and should be opened only when old proven
     3ms and repeated stale-cache list decoration at `queryCount=0`,
     `workspaceSnapshotBuildMs=0`, and `workspaceSnapshotCacheHitCount=1`.
 - Deployment status:
+  - Commit `a384091` `fix: reuse token usage cache for thread lists` was
+    deployed through the central macOS plugin path with reason
+    `codex-mobile-token-usage-thread-list-cache`.
+  - A follow-up commit `2650793` `fix: cache token usage workspace snapshots`
+    added bounded Workspace snapshot reuse and more token-usage phase counters.
+    It was deployed with reason `codex-mobile-token-usage-workspace-snapshot`.
+  - Production public config remained `clientBuildId=0.1.11|codex-mobile-shell-v556`
+    and `shellCacheName=codex-mobile-shell-v556`, expected because no browser
+    static files changed.
+  - Production sampling after `2650793` showed token usage DB work was no
+    longer the repeated steady-state bottleneck (`tokenUsageQueryCount=0`,
+    `tokenUsageWorkspaceSnapshotCacheHitCount=1`, token subphase counters near
+    zero), but outer `decorateMs` still included `attachThreadListStateToResult`
+    and stayed around 75-120ms. The next slice split that phase and batched
+    task-card pending counts.
+
+### Follow-up - Thread-List State Attach Batch Counts
+
+- Root cause / invariant:
+  - The previous production readback proved `decorateMs` was misattributed:
+    the outer timing started before `attachThreadListStateToResult(result)`, so
+    task-card/Goal state decoration was counted as token usage decoration.
+  - `attachThreadTaskCardCountsToThreadListResult()` called
+    `pendingCountsForThread()` per row, causing repeated task-card store reads
+    for one thread-list response.
+- Implementation:
+  - `adapters/thread-task-card-service.js` now exposes
+    `pendingCountsForThreads(threadIds)` which reads the task-card store once
+    and returns counts for all requested thread ids.
+  - `server.js` uses the batch counts path for thread-list state decoration,
+    and splits route timings into `stateAttachMs` and token-only `decorateMs`.
+  - `adapters/thread-list-cold-path-diagnosis-service.js` now attributes a
+    dominant `stateAttachMs` to `coldPathOwner=thread-list-state-attach` with
+    `coldPathReason=task-card-goal-state`.
+  - Updated docs: `docs/MODULES.md` and `docs/TROUBLESHOOTING.md`.
+- Local validation:
+  - `node --check adapters/thread-task-card-service.js`,
+    `node --check adapters/thread-list-cold-path-diagnosis-service.js`, and
+    `node --check server.js` passed.
+  - Focused task-card/thread-list/cold-path suite passed (`116` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - Full `npm test` passed (`1392` tests).
+- Deployment status:
   - Not deployed yet at the time of this note. Next step is commit, central
     macOS plugin deploy, and production readback. Static shell/cache bump is
     not expected because no browser static files changed.

@@ -1573,6 +1573,15 @@ function createThreadTaskCardService(options = {}) {
     return countsForThreadFromStore(store, threadId);
   }
 
+  function pendingCountsForThreads(threadIds = []) {
+    const ids = [...new Set(safeArray(threadIds).map(stringValue).filter(Boolean))];
+    const counts = new Map();
+    if (!ids.length) return counts;
+    const store = loadStore(storageFile);
+    for (const id of ids) counts.set(id, countsForThreadFromStore(store, id));
+    return counts;
+  }
+
   return {
     approve,
     approveFromSource,
@@ -1587,6 +1596,7 @@ function createThreadTaskCardService(options = {}) {
     maybeResumeInterruptedTaskCard,
     pendingCountForThread,
     pendingCountsForThread,
+    pendingCountsForThreads,
     pauseExecution,
     reply,
     revoke,

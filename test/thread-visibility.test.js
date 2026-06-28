@@ -1143,7 +1143,9 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeBody, /dropDuplicateFallbackThreads: true/);
   assert.match(routeBody, /Object\.assign\(timings, routeMerge\.diagnostics\)/);
   assert.match(routeBody, /normalizeThreadListResultStatuses\(routeMerge\.result\)/);
-  assert.match(routeBody, /normalizeThreadSummaryLiveStatus\(attachThreadTaskCardCountsToSummary\(thread\)\)/);
+  assert.match(routeBody, /const stateAttachStartedAtMs = Date\.now\(\)/);
+  assert.match(routeBody, /markTiming\("stateAttachMs", stateAttachStartedAtMs\)/);
+  assert.match(routeBody, /attachThreadListStateToResult\(\{\s*data: normalizedFallback,\s*\}\)/);
   const threadReadIndex = serverJs.indexOf('const threadRead = url.pathname.match(/^\\/api\\/threads\\/([^/]+)$/);');
   const threadReadBody = serverJs.slice(threadReadIndex, serverJs.indexOf('const threadTurns = url.pathname.match', threadReadIndex));
   assert.match(threadReadBody, /trackThreadDetailRequestLifecycle\(res\);/);

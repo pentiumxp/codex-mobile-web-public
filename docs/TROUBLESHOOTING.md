@@ -477,10 +477,13 @@ On-demand expansion of omitted historical assistant progress is a separate
 route/API feature, not part of the default first paint.
 
 For thread-list loads that are "warm" but still cost tens or hundreds of
-milliseconds, inspect `mobileDiagnostics.threadListTimings.decorateMs` before
-changing fallback or app-server policy. If `decorateMs` dominates `totalMs` and
+milliseconds, inspect `mobileDiagnostics.threadListTimings.stateAttachMs` and
+`decorateMs` before changing fallback or app-server policy. If `stateAttachMs`
+dominates `totalMs` and `coldPathOwner=thread-list-state-attach`, the visible
+cost is thread-list state decoration such as task-card/Goal metadata, not
+`thread/list` RPC or rollout scanning. If `decorateMs` dominates `totalMs` and
 `coldPathOwner=token-usage-decoration`, the visible cost is Workspace token
-usage decoration, not `thread/list` RPC or rollout scanning. Current builds add
+usage decoration. Current builds add
 `tokenUsageQueryCount`, `tokenUsageCacheHitCount`,
 `tokenUsageFreshCacheHitCount`, `tokenUsageStaleCacheHitCount`,
 `tokenUsageExpiredMissCount`, `tokenUsageAllowExpiredCache`, and

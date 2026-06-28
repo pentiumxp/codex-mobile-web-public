@@ -106,6 +106,17 @@ test("create persists a pending task card and lists it for source and target thr
     pendingIncoming: 1,
     pendingOutgoing: 0,
   });
+  const batchedCounts = service.pendingCountsForThreads(["thread-src", "thread-dst", "thread-src"]);
+  assert.deepEqual(batchedCounts.get("thread-src"), {
+    pendingTotal: 1,
+    pendingIncoming: 0,
+    pendingOutgoing: 1,
+  });
+  assert.deepEqual(batchedCounts.get("thread-dst"), {
+    pendingTotal: 1,
+    pendingIncoming: 1,
+    pendingOutgoing: 0,
+  });
 });
 
 test("listForThread returns bounded summary cards while get keeps full task-card detail", async () => {

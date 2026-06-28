@@ -158,6 +158,17 @@ test("thread-list cold path diagnosis distinguishes ttl rebuilds and app-server 
 test("thread-list cold path diagnosis attributes dominant token usage decoration", () => {
   assert.deepEqual(diagnoseThreadListColdPath({
     totalMs: 120,
+    stateAttachMs: 90,
+    decorateMs: 0,
+    appServerDeferred: true,
+    fallbackCacheDecision: "compatible-hit",
+  }), {
+    owner: "thread-list-state-attach",
+    reason: "task-card-goal-state",
+  });
+
+  assert.deepEqual(diagnoseThreadListColdPath({
+    totalMs: 120,
     decorateMs: 92,
     appServerDeferred: true,
     appServerDeferredReason: "warm-fallback-default",

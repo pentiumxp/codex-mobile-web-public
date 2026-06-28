@@ -60,7 +60,15 @@ function diagnoseThreadListColdPath(input = {}) {
   const decision = lowerLabel(source.fallbackCacheDecision);
   const appServerError = compactLabel(source.appServerError, 80);
   const decorateMs = numberValue(source.decorateMs);
+  const stateAttachMs = numberValue(source.stateAttachMs);
   const totalMs = numberValue(source.totalMs);
+
+  if (stateAttachMs >= 50 && stateAttachMs >= Math.max(50, totalMs * 0.5)) {
+    return {
+      owner: "thread-list-state-attach",
+      reason: "task-card-goal-state",
+    };
+  }
 
   if (decorateMs >= 50 && decorateMs >= Math.max(50, totalMs * 0.5)) {
     const queryCount = numberValue(source.tokenUsageQueryCount);
