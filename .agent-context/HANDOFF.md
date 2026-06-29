@@ -30626,3 +30626,62 @@ The previous full handoff was archived and should be opened only when old proven
   - API-thread and browser-runtime checks both returned `ok=true` with zero
     issues.
   - Return status for task card `ttc_67e45967d430545fdf` was `completed`.
+
+### 2026-06-29 - Fast-Start Active Window Prewarm Deploy
+
+- Scope:
+  - After the active overlay window preprobe deploy, repeated production Phase B
+    samples showed `turnsListInitialMs=0`, but the first active detail read
+    after cache movement could still pay `activeOverlayWindowMs` around 2.2s.
+  - Root cause: notification handling scheduled background active-window
+    prewarm before broadcasting, but the prewarm service still used its default
+    25ms delay and recent-attempt throttle. The embedded client can refetch
+    thread detail immediately after the same turn/status notification and win
+    that race, making the foreground request build the active window.
+- Source changes:
+  - `adapters/thread-detail-active-window-prewarm-service.js` supports per-job
+    `delayMs` and `bypassMinInterval` overrides.
+  - `server.js` uses `delayMs=0` and `bypassMinInterval=true` only for
+    turn/status notification-triggered active-window prewarm.
+  - Thread-list batch prewarm keeps the default delay and min-interval guard.
+  - Tests updated in `test/thread-detail-active-window-prewarm-service.test.js`.
+  - Docs updated in `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Validation passed locally before deploy:
+  - `node --test test/thread-detail-active-window-prewarm-service.test.js test/thread-detail-turns-list-read-coalescer-service.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js`
+  - `node --check adapters/thread-detail-active-window-prewarm-service.js && node --check server.js && node --check test/thread-detail-active-window-prewarm-service.test.js`
+  - `git diff --check`
+  - `node /Users/hermes-dev/HermesMobileDev/app/scripts/fallback-governance-check.js --changed-file adapters/thread-detail-active-window-prewarm-service.js --changed-file server.js --changed-file test/thread-detail-active-window-prewarm-service.test.js --changed-file docs/MODULES.md --changed-file docs/TROUBLESHOOTING.md --changed-file docs/ARCHITECTURE_OPTIMIZATION_PLAN.md --json`
+  - `npm test` (`1592` tests passed)
+  - `npm run check`
+  - `npm run check:macos`
+- Deployment status:
+  - Source commit `0c5c63e` (`fix: fast-start active window prewarm`).
+  - Private deploy requested through Home AI Deploy task card
+    `ttc_6aa0f4ec9f84d62638` with reason
+    `codex-mobile-fast-start-active-window-prewarm`.
+  - Source/production hash parity matched for all changed files after deploy.
+  - Public deploy was not run.
+  - Backup path should be taken from the Home AI Deploy return card when it
+    arrives.
+- Production readback:
+  - `/api/public-config` returned status `200`, version `0.1.11`, build id
+    `804792d85bd686d1`, client build id
+    `0.1.11|codex-mobile-shell-v591`, shell cache
+    `codex-mobile-shell-v591`, and `authRequired=true`. Static shell remained
+    v591 because this was a server/docs/test deploy.
+  - Three bounded Phase B samples after deploy returned `ok=true` with
+    `turnsListInitialMs=0`, `activeOverlayWindowMs=0`,
+    `activeOverlayWindowFirst=true`, read mode `projection-active-overlay`, and
+    decision `ready` / owner `phase-b-readback`.
+  - Sample timings:
+    - totalMs `535`, activeOverlayMs `4`, prepareResponseMs `470`.
+    - totalMs `157`, activeOverlayMs `3`, prepareResponseMs `98`.
+    - totalMs `165`, activeOverlayMs `3`, prepareResponseMs `99`.
+- Runtime gate:
+  - Deploy-mode runtime self-check returned `ok=true`, `deployPass=true`,
+    `periodicHealthy=true`, issueCount `0`, blockingIssueCount `0`,
+    reportableIssueCount `0`, observeOnlyIssueCount `0`, advisoryIssueCount
+    `0`, executionFailureCount `0`, and zero diagnostic candidates.
+  - API-thread and browser-runtime checks both returned `ok=true` with zero
+    issues.
