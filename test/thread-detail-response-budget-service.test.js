@@ -1141,7 +1141,7 @@ test("thread detail response budget does not truncate operation payloads without
   assert.deepEqual(compacted, result);
 });
 
-test("thread detail response budget applies completed receipt previews when first paint remains too large", () => {
+test("thread detail response budget previews protected completed replay text under active first-paint pressure", () => {
   const longReceipt = (letter) => `${letter}`.repeat(2400);
   const result = {
     thread: {
@@ -1193,19 +1193,22 @@ test("thread detail response budget applies completed receipt previews when firs
   const firstReceipt = compacted.thread.turns[0].items[1];
   const secondReceipt = compacted.thread.turns[1].items[1];
   assert.equal(firstReceipt.mobileTextTruncated, true);
-  assert.equal(secondReceipt.mobileTextTruncated, undefined);
+  assert.equal(secondReceipt.mobileTextTruncated, true);
   assert.match(firstReceipt.text, /first-paint preview truncated/);
+  assert.match(secondReceipt.text, /first-paint preview truncated/);
   assert.ok(firstReceipt.text.length <= 300);
-  assert.equal(secondReceipt.text, longReceipt("B"));
+  assert.ok(secondReceipt.text.length <= 300);
   assert.equal(firstReceipt.mobileFirstPaintTextBudget.scope, "completed");
-  assert.equal(secondReceipt.mobileFirstPaintTextBudget, undefined);
+  assert.equal(secondReceipt.mobileFirstPaintTextBudget.scope, "completed");
   const budget = compacted.thread.mobileDetailResponseBudget;
   assert.equal(budget.progressiveActiveBudgetApplied, true);
   assert.equal(budget.progressiveActiveBudgetReason, "thread-byte-pressure");
+  assert.equal(budget.progressiveCompletedTextBudgetScope, "active-first-paint");
   assert.equal(budget.progressiveCompletedTextBudgetApplied, true);
   assert.equal(budget.progressiveFirstPaintThreadByteCeiling, 1600);
   assert.equal(budget.progressiveCompletedTextChars, 300);
-  assert.equal(budget.truncatedCompletedTextItems, 1);
+  assert.equal(budget.progressiveCompletedTextBudgetSkippedLatestTurnCount, 0);
+  assert.equal(budget.truncatedCompletedTextItems, 2);
   assert.ok(budget.omittedCompletedTextChars > 0);
   assert.ok(budget.progressiveFirstPaintBytesBeforeTextBudget >= originalThreadBytes - 1000);
   assert.ok(budget.progressiveFirstPaintBytesAfterTextBudget < budget.progressiveFirstPaintBytesBeforeTextBudget);

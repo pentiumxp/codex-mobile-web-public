@@ -818,8 +818,10 @@ function applyProgressiveCompletedTextBudget(thread, options, stats) {
   for (let turnIndex = 0; turnIndex < thread.turns.length; turnIndex += 1) {
     const turn = thread.turns[turnIndex];
     if (!turn || !Array.isArray(turn.items) || isActiveTurn(turn, thread)) continue;
+    const protectedCompletedReplay = Boolean(options.protectedCompletedReplayTurnIds
+      && options.protectedCompletedReplayTurnIds.has(turnId(turn)));
     if (turnIndex === protectedLatestTurnIndex
-      || options.protectedCompletedReplayTurnIds && options.protectedCompletedReplayTurnIds.has(turnId(turn))) {
+      || protectedCompletedReplay && !activeFirstPaintBudget) {
       stats.progressiveCompletedTextBudgetSkippedLatestTurnCount += 1;
       continue;
     }

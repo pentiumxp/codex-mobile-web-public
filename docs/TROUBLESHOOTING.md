@@ -508,7 +508,9 @@ second-stage first-paint byte fields:
 `omittedCompletedTextChars`. Those fields mean non-current completed
 assistant/reasoning receipts were reduced to first-paint previews marked with
 `mobileFirstPaintTextBudget`; the current active turn still uses
-`mobileActiveTextBudget`. In resting recent detail, scope
+`mobileActiveTextBudget`. In active first-paint scope, protected completed
+replay text can also be previewed because the live active turn owns the current
+reading state. In resting recent detail, scope
 `resting-history-first-paint` means historical completed receipts were previewed
 while the latest completed turn stayed protected. If those completed receipts
 are not the cause, inspect

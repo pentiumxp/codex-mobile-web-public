@@ -2494,10 +2494,12 @@ Deployable scope:
   `160KB`), non-current/historical completed assistant/reasoning receipts are
   reduced to bounded previews using
   `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_COMPLETED_TEXT_CHARS` (default `8KB`
-  per item). Resting responses protect the latest completed turn. Items carry
-  `mobileFirstPaintTextBudget`; the response records before/after first-paint
-  byte counts, scope, skipped-latest count, and completed-text counters in
-  `mobileDetailResponseBudget`.
+  per item). Under active first-paint pressure this preview rule can include the
+  protected latest completed replay turn because the live active turn is the
+  current reading target; resting responses still protect the latest completed
+  turn. Items carry `mobileFirstPaintTextBudget`; the response records
+  before/after first-paint byte counts, scope, skipped-latest count, and
+  completed-text counters in `mobileDetailResponseBudget`.
 - A later summary-phase slice targets warm projection hits whose `summaryMs`
   dominates `totalMs` even though `threadReadMs=0`. Detail summary resolution
   now merges the existing display-summary cache for local summaries and skips
