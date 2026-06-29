@@ -31485,7 +31485,7 @@ The previous full handoff was archived and should be opened only when old proven
     when it arrives.
   - No Public deploy requested or run.
 
-### 2026-06-30 - Browser Runtime Active Timestamp Advisory Pending Deploy
+### 2026-06-30 - Browser Runtime Active Timestamp Advisory Deployed
 
 - Scope:
   - Follow-up to the timestamped client-event gate deploy residual.
@@ -31525,5 +31525,31 @@ The previous full handoff was archived and should be opened only when old proven
     files.
   - `codegraph sync && codegraph status` reported the index up to date.
 - Deployment status:
-  - Ready to commit and send to Home AI Deploy.
+  - Source commit `dedc032` (`fix: keep active timestamp gaps advisory`) was
+    sent to Home AI Deploy with card `ttc_b264e28d4cdd07cd42` and deploy
+    reason `codex-mobile-active-timestamp-advisory`.
+  - Production `/api/public-config` returned status `200`, version `0.1.11`,
+    build id `6509897d34f15c02`, client build id
+    `0.1.11|codex-mobile-shell-v597`, shell cache
+    `codex-mobile-shell-v597`, and `authRequired=true`.
+  - Production hash parity matched for:
+    - `adapters/browser-runtime-self-check-service.js`
+    - `test/browser-runtime-self-check-service.test.js`
+    - `docs/MODULES.md`
+    - `docs/TROUBLESHOOTING.md`
+  - Production marker readback found `activeProgressiveTurnShape`,
+    `activeProgressive`, the focused test marker
+    `keeps active progressive timestamp gaps advisory`, and the
+    troubleshooting marker `active progressive timestamp gap advisory`.
+  - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` read back as
+    `state = running`.
+  - Production deploy-mode runtime gate against Movie and Codex Mobile source
+    threads returned `ok=true`, `deployPass=true`, `periodicHealthy=true`,
+    `blockingIssueCount=0`, `reportableIssueCount=0`, and
+    `executionFailureCount=0`. Browser runtime reported only H3 advisory
+    `browser_latest_turn_assistant_text_duplicate`; no H2 timestamp gap
+    recurred. Client-events found no recent thread-list stall rows.
+  - Backup path was not readable locally by keyword scan in this thread; use
+    the Home AI Deploy terminal return card as the authoritative backup path
+    when it arrives.
   - No Public deploy requested or run.
