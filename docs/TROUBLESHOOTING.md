@@ -839,12 +839,18 @@ Cause to check:
   uploads, query strings, cookies, access keys, tokens, screenshots, or logs.
 - After each deployment that changes thread-detail, projection, image rendering,
   timestamps, or client refresh behavior, run the combined one-shot self-check:
-  `node scripts/codex-mobile-runtime-self-check-loop.js --server http://127.0.0.1:8787 --json`.
+  `node scripts/codex-mobile-runtime-self-check-loop.js --server http://127.0.0.1:8787 --gate-mode deploy --json`.
   For periodic local monitoring, run the same script with
   `--loop --interval-ms 600000`; it appends metadata-only JSONL records to
-  `~/.codex-mobile-web/logs/runtime-self-check.jsonl`. The loop records issue
-  counts and build/cache ids only and must not directly dispatch repair cards;
-  Home AI diagnostic intake and Owner approval own the repair-card step.
+  `~/.codex-mobile-web/logs/runtime-self-check.jsonl`. Read the top-level
+  `gate` object before treating a sample as blocking. `gate.deployPass=false`
+  means a user-visible H1/H2 projection, duplicate-message, image, timestamp,
+  submit, list/detail, or child execution issue remains actionable. Slow but
+  eventually successful `thread_session_slow_path` samples remain
+  `observeOnlyIssueCodes` by default; keep them as performance evidence rather
+  than creating repeated repair cards. The loop records issue counts and
+  build/cache ids only and must not directly dispatch repair cards; Home AI
+  diagnostic intake and Owner approval own the repair-card step.
 - If opening a thread takes 1-2s before latest detail appears, run Phase-B
   readback against that thread:
   `node scripts/codex-mobile-phase-b-readback-smoke.js --server http://127.0.0.1:8787 --thread-id <id> --json`.

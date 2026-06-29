@@ -218,7 +218,12 @@ external URLs as `<img src>`; generated image cards should use
 self-check image failures include source-kind metadata. `scripts/codex-mobile-runtime-self-check-loop.js` wraps the API
 self-check plus browser self-check for deploy-time one-shot checks and periodic
 metadata-only JSONL monitoring, while Home AI remains responsible for
-Owner-approved repair-card dispatch.
+Owner-approved repair-card dispatch. Runtime self-check results now pass
+through `adapters/runtime-self-check-gate-service.js`: user-visible H1/H2
+projection, image, duplicate-message, timestamp, list/detail, submit, and
+browser execution failures remain deploy-blocking/reportable, while
+`thread_session_slow_path` / detail-list slow-success evidence is observe-only
+by default so repeated performance samples do not create repair-card noise.
 
 The active-window coalescing slice targets the "long spinner, then eventual
 success" shape seen on active large sessions. That shape is not a network/RPC

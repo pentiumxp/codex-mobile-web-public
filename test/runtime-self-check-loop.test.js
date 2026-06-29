@@ -35,6 +35,8 @@ test("runtime self-check loop parses one-shot and periodic options", () => {
     "Reply OK only",
     "--browser-submit-sample-delays-ms",
     "100,600,1600",
+    "--gate-mode",
+    "deploy",
   ]);
   assert.equal(loop.loop, true);
   assert.equal(loop.intervalMs, 600000);
@@ -46,6 +48,7 @@ test("runtime self-check loop parses one-shot and periodic options", () => {
   assert.equal(loop.browserSubmitThreadId, "submit-thread");
   assert.equal(loop.browserSubmitMessage, "Reply OK only");
   assert.equal(loop.browserSubmitSampleDelaysMs, "100,600,1600");
+  assert.equal(loop.gateMode, "deploy");
 });
 
 test("runtime self-check summary keeps only bounded metadata", () => {
@@ -73,6 +76,8 @@ test("runtime self-check summary keeps only bounded metadata", () => {
     clientBuildId: "0.1.11|codex-mobile-shell-v576",
     shellCacheName: "codex-mobile-shell-v576",
     errorCode: "",
+    issues: [],
+    diagnosticCandidates: [],
   });
   assert.doesNotMatch(JSON.stringify(summary), /raw prompt text|cookie|token|Authorization/i);
 });
@@ -131,6 +136,81 @@ test("runtime self-check one-shot writes metadata-only JSONL", async () => {
   assert.equal(result.ok, true);
   const line = fs.readFileSync(output, "utf8").trim();
   assert.match(line, /"privacy":"metadata_only"/);
+  assert.match(line, /"gate":/);
+  assert.match(line, /"deployPass":true/);
   assert.doesNotMatch(line, /private-thread-id|raw prompt|cookie|token|Authorization/i);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("runtime self-check gate lets slow-path observations remain nonblocking", async () => {
+  const result = await runtimeLoop.runOnce({
+    server: "http://127.0.0.1:8790",
+    threadIds: ["private-thread-id"],
+    sampleThreads: 1,
+    browserRounds: 1,
+    browserSampleDelaysMs: "100",
+    browserMinSettledDelayMs: 1000,
+    skipApi: false,
+    skipBrowser: true,
+    output: "",
+    gateMode: "deploy",
+  }, {
+    execFile(_node, _args, _options, callback) {
+      callback(null, JSON.stringify({
+        ok: false,
+        publicConfig: { clientBuildId: "build", shellCacheName: "shell" },
+        summary: {
+          issueCount: 1,
+          blockingIssueCount: 1,
+          diagnosticCandidateCount: 1,
+          diagnosticCandidates: [{
+            category: "thread_session_slow_path",
+            diagnostic_type: "thread_detail_slow_path",
+            error_code: "thread_detail_slow_path",
+            severity_hint: "H2",
+          }],
+          issues: [],
+        },
+      }), "");
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.gate.deployPass, true);
+  assert.equal(result.gate.observeOnlyIssueCount, 1);
+  assert.deepEqual(result.gate.observeOnlyIssueCodes, ["thread_detail_slow_path"]);
+});
+
+test("runtime self-check gate blocks actionable browser regressions", async () => {
+  const result = await runtimeLoop.runOnce({
+    server: "http://127.0.0.1:8790",
+    threadIds: ["private-thread-id"],
+    sampleThreads: 1,
+    browserRounds: 1,
+    browserSampleDelaysMs: "100",
+    browserMinSettledDelayMs: 1000,
+    skipApi: true,
+    skipBrowser: false,
+    output: "",
+    gateMode: "deploy",
+  }, {
+    execFile(_node, _args, _options, callback) {
+      callback(null, JSON.stringify({
+        ok: false,
+        publicConfig: { clientBuildId: "build", shellCacheName: "shell" },
+        browserReport: {
+          issueCount: 1,
+          blockingIssueCount: 1,
+          issues: [{
+            severity: "H2",
+            code: "browser_pending_user_message_disappeared",
+          }],
+        },
+      }), "");
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.gate.deployPass, false);
+  assert.deepEqual(result.gate.actionableIssueCodes, ["browser_pending_user_message_disappeared"]);
 });

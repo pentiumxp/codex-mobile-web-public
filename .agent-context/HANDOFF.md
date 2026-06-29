@@ -29098,3 +29098,51 @@ The previous full handoff was archived and should be opened only when old proven
   - No raw secrets, cookies, launch tokens, private thread bodies, image bytes,
     raw image URLs, local paths, filenames, provider payloads, screenshots, or
     long logs were recorded.
+
+### 2026-06-29 - Runtime Self-Check Gate v2
+
+- User direction:
+  - Continue the optimization plan by large modules, validating and privately
+    deploying each completed module before moving to the next one.
+  - Keep slow-success thread-session performance samples from repeatedly
+    creating Owner repair-card noise unless they become actionable through a
+    separate performance project.
+- Root cause / invariant:
+  - The self-check loop combined API and browser runtime checks, but deployment
+    and periodic readers still had to infer policy from raw child-check `ok`
+    fields.
+  - After slow-path diagnostics became observable, a slow-but-eventually
+    successful detail/list load could look like an H2 failure while not being a
+    user-visible correctness regression. Conversely, message loss, duplicate
+    user cards, image render failures, timestamp gaps, submit disappearance,
+    list/detail inconsistency, and child execution failures must remain
+    blocking/reportable.
+- Implementation:
+  - Added `adapters/runtime-self-check-gate-service.js`, a pure policy service
+    that normalizes bounded child-check issues and diagnostic candidates.
+  - Slow-success `thread_session_slow_path` / detail-list slow-path findings
+    are classified as observe-only by default.
+  - H1/H2 user-visible projection/render/submit/list-detail regressions and
+    self-check execution failures are deploy-blocking/reportable.
+  - `scripts/codex-mobile-runtime-self-check-loop.js` now emits a top-level
+    metadata-only `gate` object with `deployPass`, reportable/observe-only/
+    advisory counts, issue-code groups, and `--gate-mode`.
+  - `package.json` `npm run check` now syntax-checks the new service.
+  - `docs/README.md`, `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` document the gate boundary.
+- Validation before deployment:
+  - Focused tests passed:
+    `node --test test/runtime-self-check-gate-service.test.js test/runtime-self-check-loop.test.js test/browser-runtime-self-check-service.test.js test/thread-detail-self-check-service.test.js`.
+  - Full `npm test` passed: `1553` tests.
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - Home AI fallback governance check passed with no issues for the changed
+    runtime/test files.
+- Deploy state:
+  - Not yet deployed at the time of this entry.
+  - Next step: commit locally, send a Home AI Deploy lane card for private
+    deployment, then run production runtime self-check with `--gate-mode
+    deploy`.
+- Privacy:
+  - No raw secrets, cookies, launch tokens, private message bodies, task-card
+    bodies, upload contents, screenshots, provider payloads, endpoint files, or
+    long logs were recorded.

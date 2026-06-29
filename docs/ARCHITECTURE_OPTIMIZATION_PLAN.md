@@ -2946,6 +2946,39 @@ Required validation:
   blockers before using the result as a deployment gate.
 - Full local checks and central deploy/readback when this module is released.
 
+### 2026-06-29 Runtime Self-Check Gate v2
+
+This module turns the production self-check loop into an explicit deployment
+and periodic-health gate instead of leaving callers to infer policy from raw
+child-check `ok` flags.
+
+Root cause addressed: after slow-path diagnostics were added, repeated
+`thread_session_slow_path` samples could look like H2 failures even when the
+thread eventually loaded correctly. At the same time, user-visible projection,
+image, duplicate-message, timestamp, submit, and list/detail failures must
+still block deploys and remain reportable.
+
+Scope:
+
+- `adapters/runtime-self-check-gate-service.js` owns the deterministic policy:
+  H1/H2 user-visible runtime regressions and self-check execution failures are
+  deploy-blocking/reportable; slow-success thread-session timing findings are
+  observe-only; lower severity nonblocking findings are advisory.
+- `scripts/codex-mobile-runtime-self-check-loop.js` emits the service result as
+  `gate` with `deployPass`, reportable/observe-only/advisory counts, and
+  bounded issue-code groups. `--gate-mode deploy` labels deploy-time runs while
+  periodic loop output stays metadata-only JSONL.
+- The gate does not dispatch repair cards and does not alter thread projection
+  or browser rendering. Home AI diagnostic intake and Owner approval still own
+  remediation-card creation.
+
+Required validation:
+
+- Focused tests for the gate service and runtime loop policy.
+- Full local checks and `git diff --check`.
+- Private deployment through the Home AI Deploy lane, followed by production
+  runtime self-check with `--gate-mode deploy`.
+
 ### 2026-06-28 Initial Active Window Overlay Module
 
 Production readback after the recent rich-replay repair showed a remaining

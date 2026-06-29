@@ -5,6 +5,9 @@ const childProcess = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const {
+  classifyRuntimeSelfCheckGate,
+} = require("../adapters/runtime-self-check-gate-service");
 
 const DEFAULT_SERVER = "http://127.0.0.1:8787";
 const DEFAULT_INTERVAL_MS = 10 * 60 * 1000;
@@ -28,6 +31,7 @@ function usage() {
     "  --browser-submit-thread-id <id> Optional target thread for submit exercise. Defaults to first selected thread.",
     "  --browser-submit-message <text> Submit exercise message. Default asks for OK only.",
     "  --browser-submit-sample-delays-ms <csv> Submit exercise sample delays. Default: 100,350,900,1600,2800,6000.",
+    "  --gate-mode <mode>     Gate mode label for output. Default: periodic.",
     "  --interval-ms <n>       Loop interval. Default: 600000.",
     "  --iterations <n>        Maximum loop iterations. Default: unlimited with --loop, 1 otherwise.",
     "  --loop                  Continue periodically instead of running once.",
@@ -61,6 +65,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     browserSubmitThreadId: String(env.CODEX_MOBILE_RUNTIME_BROWSER_SUBMIT_THREAD_ID || "").trim(),
     browserSubmitMessage: String(env.CODEX_MOBILE_RUNTIME_BROWSER_SUBMIT_MESSAGE || "").slice(0, 500),
     browserSubmitSampleDelaysMs: String(env.CODEX_MOBILE_RUNTIME_BROWSER_SUBMIT_SAMPLE_DELAYS_MS || "100,350,900,1600,2800,6000"),
+    gateMode: String(env.CODEX_MOBILE_RUNTIME_SELF_CHECK_GATE_MODE || "periodic").trim() || "periodic",
     intervalMs: positiveInt(env.CODEX_MOBILE_RUNTIME_SELF_CHECK_INTERVAL_MS || String(DEFAULT_INTERVAL_MS), DEFAULT_INTERVAL_MS),
     iterations: 1,
     loop: false,
@@ -88,6 +93,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     else if (arg === "--browser-submit-thread-id") options.browserSubmitThreadId = next();
     else if (arg === "--browser-submit-message") options.browserSubmitMessage = next().slice(0, 500);
     else if (arg === "--browser-submit-sample-delays-ms") options.browserSubmitSampleDelaysMs = next();
+    else if (arg === "--gate-mode") options.gateMode = next();
     else if (arg === "--interval-ms") options.intervalMs = positiveInt(next(), options.intervalMs);
     else if (arg === "--iterations") options.iterations = positiveInt(next(), options.iterations, 1000000);
     else if (arg === "--loop") options.loop = true;
@@ -140,6 +146,12 @@ function summarizeCheck(name, result = {}) {
   const browserReport = report.browserReport || {};
   const summary = report.summary || browserReport || {};
   const config = publicConfigFromReport(report);
+  const issues = Array.isArray(summary.issues)
+    ? summary.issues
+    : (Array.isArray(browserReport.issues) ? browserReport.issues : []);
+  const diagnosticCandidates = Array.isArray(summary.diagnosticCandidates)
+    ? summary.diagnosticCandidates
+    : [];
   return {
     name,
     ok: Boolean(result.ok),
@@ -149,6 +161,8 @@ function summarizeCheck(name, result = {}) {
     clientBuildId: String(config.clientBuildId || "").slice(0, 120),
     shellCacheName: String(config.shellCacheName || "").slice(0, 120),
     errorCode: result.errorCode || "",
+    issues: issues.slice(0, 50),
+    diagnosticCandidates: diagnosticCandidates.slice(0, 50),
   };
 }
 
@@ -194,7 +208,6 @@ async function runOnce(options = {}, deps = {}) {
     checks.push(summarizeCheck("browser-runtime", result));
   }
   const event = {
-    ok: checks.every((check) => check.ok && check.blockingIssueCount === 0),
     privacy: "metadata_only",
     startedAt,
     completedAt: new Date().toISOString(),
@@ -203,6 +216,8 @@ async function runOnce(options = {}, deps = {}) {
   event.issueCount = checks.reduce((total, check) => total + check.issueCount, 0);
   event.blockingIssueCount = checks.reduce((total, check) => total + check.blockingIssueCount, 0);
   event.diagnosticCandidateCount = checks.reduce((total, check) => total + check.diagnosticCandidateCount, 0);
+  event.gate = classifyRuntimeSelfCheckGate({ checks, mode: options.gateMode });
+  event.ok = event.gate.ok;
   if (options.output) appendJsonLine(options.output, event);
   return event;
 }
