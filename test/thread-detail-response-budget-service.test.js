@@ -1874,8 +1874,6 @@ test("thread detail response budget applies progressive active limits under item
   const itemIds = compacted.thread.turns[0].items.map((item) => item.id);
   assert.deepEqual(itemIds, [
     "u1",
-    "a1",
-    "a2",
     "a3",
     "a4",
     "a5",
@@ -1897,12 +1895,15 @@ test("thread detail response budget applies progressive active limits under item
   assert.equal(budget.activeAssistantItems, 3);
   assert.equal(budget.activeReasoningItems, 1);
   assert.equal(budget.preserveReplayAssistantItems, true);
-  assert.equal(budget.preservedReplayAssistantItems, 7);
+  assert.equal(budget.preservedReplayAssistantItems, 5);
   assert.equal(budget.configuredActiveOperationItems, 8);
   assert.equal(budget.configuredActiveAssistantItems, 8);
   assert.equal(budget.configuredActiveReasoningItems, 2);
   assert.equal(budget.progressiveActiveOriginalItemCount, 24);
   assert.equal(budget.progressiveActiveTurnOriginalItemCount, 24);
+  assert.equal(budget.activeAssistantItemsAfter, 8);
+  assert.equal(budget.omittedAssistantItems, 2);
+  assert.equal(budget.limitedReplayAssistantItems, 2);
 });
 
 test("thread detail response budget bounds completed replay assistant first-paint budget under active pressure", () => {

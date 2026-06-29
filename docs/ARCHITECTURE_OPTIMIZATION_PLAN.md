@@ -2476,7 +2476,7 @@ Deployable scope:
   protection is bounded under progressive active pressure: active turns keep a
   trailing assistant/plan tail controlled by
   `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_REPLAY_ASSISTANT_ITEMS` (default
-  `24`), while protected completed replay turns keep a separate tail controlled
+  `8`), while protected completed replay turns keep a separate tail controlled
   by `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_COMPLETED_REPLAY_ASSISTANT_ITEMS`
   (default `12`). The response records `progressiveReplayAssistantItems`,
   `progressiveCompletedReplayAssistantItems`, `limitedReplayAssistantItems`,

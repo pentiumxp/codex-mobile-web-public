@@ -33237,3 +33237,117 @@ The previous full handoff was archived and should be opened only when old proven
   - Local repair is ready for private production deploy with reason
     `codex-mobile-completed-user-input-visible-placeholder`. No Public deploy
     requested or run.
+
+### 2026-06-30 - Completed User Input Visible Placeholder Deployed
+
+- Source/deploy:
+  - Private production deployed source ref `549a33ea2b60`
+    (`fix: keep budgeted completed user input visible`) through the Home AI
+    deploy lane with reason
+    `codex-mobile-completed-user-input-visible-placeholder`.
+  - Deploy backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T224407Z-plugin-codex-mobile-web-codex-mobile-completed-user-input-visible-placeholder`.
+  - No Public deploy was run.
+- Production parity / markers:
+  - Source/production parity matched for
+    `adapters/thread-detail-response-budget-service.js`,
+    `test/thread-detail-response-budget-service.test.js`,
+    `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+  - Production deploy excludes `.agent-context/`, so the plugin handoff file
+    was not synced to the production plugin root.
+  - Production markers were present for
+    `ensureCompletedUserInputVisiblePlaceholder`,
+    `completedUserInputPlaceholderText`,
+    `first-paint user input preview truncated`, and the focused test marker
+    `shares completed user input first-paint budget newest first`.
+- Production Phase-B readback:
+  - Codex Mobile source thread sample returned `ok=true`,
+    `readMode=projection-active-overlay`, `turnsListInitialMs=0`,
+    `activeOverlayWindowMs=0`, `activeOverlayBackfillWindowMs=1`,
+    `activeOverlayMergeMs=3`, `totalMs=651`, and `prepareResponseMs=564`.
+  - Completed-user shared budget remained active with visible-placeholder
+    repair: reason `first-paint-byte-pressure`, scope `active-first-paint`,
+    mode `shared-newest-first`, bytes before budget `245433`, bytes after
+    budget `162824`, truncated completed user input items `15`, original chars
+    `85673`, retained chars `1612`, and omitted chars `84061`.
+  - Retained user-input bytes by turn state were `completed=10954` and
+    `active=7238`; retained completed user-input shape bytes were
+    `itemAuxiliary=8626`, `contentText=1612`, and `contentAuxiliary=716`.
+  - The same sample reported
+    `progressiveActiveFirstPaintOverCeilingBytes=44903`. Phase-B decision was
+    `ready`, priority `H3`, owner `phase-b-readback`, reason
+    `warm-or-bounded-paths`, next action
+    `proceed-to-next-phase-b-root-cause-target`. The active overlay/window
+    latency residual did not recur in this sample.
+- Runtime validation:
+  - Deploy-mode runtime self-check returned `ok=true`, `deployPass=true`,
+    `periodicHealthy=true`, `issueCount=8`, `blockingIssueCount=0`,
+    `advisoryIssueCount=8`, and `executionFailureCount=0`; child checks
+    `api-thread`, `browser-runtime`, and `client-events` were all OK.
+  - Target H2 `browser_turn_user_message_below_api_expectation` did not recur.
+    Remaining advisory issue codes were
+    `browser_latest_turn_timestamp_missing` and `browser_turn_timestamp_missing`
+    at H3 only.
+  - LaunchAgent readback after the deploy-mode gate returned `ok=true`, latest
+    event gate mode `deploy`, `deployPass=true`, `periodicHealthy=true`,
+    `issueCount=8`, `blockingIssueCount=0`, advisory issue count `8`, and
+    execution failure count `0`. Historical launchctl `lastExitCode=1`
+    remained in metadata, but the selected full-check event was healthy.
+- Next investigation direction:
+  - The visible-placeholder repair closed the specific DOM/API user-input
+    below-expectation gate residual in this deploy sample. Remaining work is
+    again payload slicing for the active first-paint over-ceiling sample and
+    monitoring independent active-overlay/window warmness.
+
+### 2026-06-30 - Active Replay Assistant First-Paint Budget Ready For Deploy
+
+- Root-cause target:
+  - The completed-user visible-placeholder deploy closed the target
+    `browser_turn_user_message_below_api_expectation` H2, but the same source
+    thread continued to show active first-paint over-ceiling bytes in bounded
+    Phase-B samples.
+  - Repeated production readback after the placeholder deploy had
+    `activeOverlayWindowMs=0` and decision `ready/H3`, while the remaining
+    payload pressure was concentrated in retained visible assistant/user/usage
+    bytes. One five-sample loop showed stable over-ceiling bytes around
+    `16287-16288`, retained assistant bytes `31964`, retained user-message
+    bytes `17811`, and retained Usage bytes `10873`.
+- Change:
+  - Tightened the progressive active replay assistant/plan tail default from
+    `24` to `8` in both the response-budget service default and server env
+    fallback for `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_REPLAY_ASSISTANT_ITEMS`.
+  - Updated architecture docs and focused tests so budget telemetry now expects
+    active replay assistant tails to preserve the latest `8` rows under
+    progressive active pressure. The active/current assistant lower bound
+    remains separate from completed replay assistant budgeting.
+- Bounded local estimate:
+  - A read-only production detail sample before this deploy had current
+    production budget `progressiveReplayAssistantItems=24`,
+    `activeAssistantItemsAfter=24`, `afterTaskCard=104209`,
+    and `overCeiling=5905`.
+  - Reapplying the local `8` default in memory against that same sample yielded
+    `activeAssistantItemsAfter=8`, `limitedReplayAssistantItems=16`,
+    `afterTaskCard=87021`, `overCeiling=0`, retained assistant bytes `16886`,
+    retained user-message bytes `13219`, and retained Usage bytes `10873`.
+  - More aggressive local variants (`6` and `4`) also reached zero over-ceiling,
+    but `8` was sufficient for the sampled production shape and preserves more
+    live progress context.
+- Validation:
+  - Focused validation passed:
+    `node --check server.js`,
+    `node --check adapters/thread-detail-response-budget-service.js`, and
+    `node --test test/thread-detail-response-budget-service.test.js test/phase-b-readback-smoke.test.js test/thread-detail-self-check-service.test.js test/thread-self-check-script.test.js`
+    (`90` tests).
+  - Full validation passed: `npm test -- --test-reporter=dot`,
+    `npm run check`, `npm run check:macos`, and `git diff --check`.
+  - `codegraph sync && codegraph status` reported the index up to date.
+- Deployment status:
+  - Ready for private production deploy with reason
+    `codex-mobile-active-replay-assistant-first-paint-budget`.
+  - No Public deploy is requested. Production readback should verify source/prod
+    parity for the changed service/server/tests/docs, markers/defaults for
+    `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_REPLAY_ASSISTANT_ITEMS || "8"` and
+    `DEFAULT_PROGRESSIVE_REPLAY_ASSISTANT_ITEMS = 8`, Phase-B
+    `progressiveReplayAssistantItems=8`, `activeAssistantItemsAfter <= 8`, and
+    deploy-mode runtime gate with zero H1/H2 blockers.

@@ -596,7 +596,7 @@ active turn's operation, reasoning, and assistant/plan tails. Under that
 progressive active pressure only, replay assistant/plan progress is no longer
 unbounded: active and protected latest-completed replay turns keep a trailing
 assistant/plan tail controlled by
-`CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_REPLAY_ASSISTANT_ITEMS` (default `24`)
+`CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_REPLAY_ASSISTANT_ITEMS` (default `8`)
 before any lower-value process rows are considered. This keeps the latest
 user-visible progress readable without making a large active overlay ship every
 historical assistant fragment on first paint. Under the same pressure, oversized

@@ -196,7 +196,7 @@ test("phase B readback smoke collects bounded diagnostics without private fields
             omittedOperationItems: 14,
             omittedReasoningItems: 3,
             omittedAssistantItems: 7,
-            progressiveReplayAssistantItems: 24,
+            progressiveReplayAssistantItems: 8,
             limitedReplayAssistantItems: 7,
             progressiveCompletedReplayAssistantItems: 12,
             progressiveCompletedReplayAssistantBudgetApplied: true,
@@ -460,7 +460,7 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.detail.responseBudgetOmittedOperationItems, 14);
   assert.equal(report.detail.responseBudgetOmittedReasoningItems, 3);
   assert.equal(report.detail.responseBudgetOmittedAssistantItems, 7);
-  assert.equal(report.detail.responseBudgetProgressiveReplayAssistantItems, 24);
+  assert.equal(report.detail.responseBudgetProgressiveReplayAssistantItems, 8);
   assert.equal(report.detail.responseBudgetLimitedReplayAssistantItems, 7);
   assert.equal(report.detail.responseBudgetProgressiveCompletedReplayAssistantItems, 12);
   assert.equal(report.detail.responseBudgetProgressiveCompletedReplayAssistantBudgetApplied, true);

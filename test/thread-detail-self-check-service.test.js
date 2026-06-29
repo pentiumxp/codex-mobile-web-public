@@ -328,8 +328,8 @@ test("thread detail self check accepts active assistant gap explained by progres
     reason: "overlay-evidence-complete",
     source: "projection-live",
     counts: {
-      items: 105,
-      assistantItems: 104,
+      items: 89,
+      assistantItems: 88,
       operationItems: 0,
       uploadItems: 0,
       receiptItems: 0,
@@ -342,18 +342,18 @@ test("thread detail self check accepts active assistant gap explained by progres
     status: "inProgress",
     items: [
       { id: "u-live", type: "userMessage" },
-      ...Array.from({ length: 24 }, (_, index) => ({
+      ...Array.from({ length: 8 }, (_, index) => ({
         id: `a-live-${index}`,
         type: "agentMessage",
       })),
     ],
   });
   detail.thread.mobileDetailResponseBudget.activeTurnCount = 1;
-  detail.thread.mobileDetailResponseBudget.activeAssistantItemsBefore = 104;
-  detail.thread.mobileDetailResponseBudget.activeAssistantItemsAfter = 24;
+  detail.thread.mobileDetailResponseBudget.activeAssistantItemsBefore = 88;
+  detail.thread.mobileDetailResponseBudget.activeAssistantItemsAfter = 8;
   detail.thread.mobileDetailResponseBudget.activeOmittedAssistantItems = 80;
   detail.thread.mobileDetailResponseBudget.progressiveActiveBudgetApplied = true;
-  detail.thread.mobileDetailResponseBudget.progressiveReplayAssistantItems = 24;
+  detail.thread.mobileDetailResponseBudget.progressiveReplayAssistantItems = 8;
   detail.thread.mobileDetailResponseBudget.limitedReplayAssistantItems = 80;
 
   const report = analyzeThreadDetail(detail);
@@ -361,7 +361,7 @@ test("thread detail self check accepts active assistant gap explained by progres
 
   assert.equal(report.ok, true);
   assert.equal(report.budget.progressiveActiveBudgetApplied, true);
-  assert.equal(report.budget.progressiveReplayAssistantItems, 24);
+  assert.equal(report.budget.progressiveReplayAssistantItems, 8);
   assert.equal(report.budget.limitedReplayAssistantItems, 80);
   assert.ok(!codes.includes("active_turn_assistant_budget"));
   assert.ok(!codes.includes("active_overlay_assistant_projection_gap"));
