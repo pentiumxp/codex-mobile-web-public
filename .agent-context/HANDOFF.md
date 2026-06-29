@@ -31346,7 +31346,7 @@ The previous full handoff was archived and should be opened only when old proven
     `executionFailureCount=0`.
   - No Public deploy requested or run.
 
-### 2026-06-30 - Client-Event Stall Self-Check Integration Pending Deploy
+### 2026-06-30 - Client-Event Stall Self-Check Integration Deployed
 
 - Scope:
   - Follow-up to v597 live thread-list freeze telemetry.
@@ -31383,5 +31383,30 @@ The previous full handoff was archived and should be opened only when old proven
     parsed client events from the current log tail, found `stallEventCount=0`,
     and returned `deployPass=true`.
 - Deployment status:
-  - Ready to commit and send to Home AI Deploy.
+  - Source commit `2cbe05b` (`feat: gate live client event stalls`) was sent to
+    Home AI Deploy with card `ttc_f8d634858b296d803f` and deploy reason
+    `codex-mobile-live-client-event-stall-gate`.
+  - Production `/api/public-config` returned status `200`, version `0.1.11`,
+    build id `6509897d34f15c02`, client build id
+    `0.1.11|codex-mobile-shell-v597`, shell cache
+    `codex-mobile-shell-v597`, and `authRequired=true`.
+  - Production hash parity matched for:
+    - `adapters/client-event-stall-self-check-service.js`
+    - `scripts/codex-mobile-runtime-self-check-loop.js`
+    - `test/client-event-stall-self-check-service.test.js`
+    - `test/runtime-self-check-loop.test.js`
+    - `docs/MODULES.md`
+    - `docs/TROUBLESHOOTING.md`
+    - `package.json`
+  - Production marker readback found `summarizeClientEventLog`,
+    `thread_list_runtime_stall`, `--skip-client-events`,
+    `--client-event-log`, and `client_event_log_unavailable`.
+  - Production client-events-only runtime gate read the current log tail,
+    parsed 437 client events, found `stallEventCount=0`, and returned
+    `deployPass=true`.
+  - Production full deploy-mode runtime gate against Movie and Codex Mobile
+    source threads returned `ok=true`, `deployPass=true`,
+    `periodicHealthy=true`, `issueCount=0`, `blockingIssueCount=0`, and
+    `executionFailureCount=0`. It included API, browser-runtime, and
+    client-events child checks.
   - No Public deploy requested or run.
