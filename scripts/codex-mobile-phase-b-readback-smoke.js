@@ -47,6 +47,23 @@ function readPositiveInt(value, fallback) {
   return Math.floor(number);
 }
 
+function boundedNumberMap(value = {}, limit = 12, maxValue = 100 * 1024 * 1024) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const entries = Object.entries(source)
+    .map(([key, raw]) => {
+      const number = Number(raw);
+      if (!Number.isFinite(number) || number <= 0) return null;
+      return [
+        String(key || "unknown").slice(0, 40),
+        Math.max(0, Math.min(maxValue, Math.trunc(number))),
+      ];
+    })
+    .filter(Boolean)
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, Math.max(1, Math.trunc(Number(limit) || 12)));
+  return Object.fromEntries(entries);
+}
+
 function normalizeBaseUrl(value) {
   const url = new URL(value || "http://127.0.0.1:8787");
   if (!url.pathname.endsWith("/")) url.pathname += "/";
@@ -531,6 +548,13 @@ function summarizeDetailResponseBudget(budget = {}) {
     responseBudgetProgressiveActiveFirstPaintBytesBeforeItemBudget: boundedBytes(source.progressiveActiveFirstPaintBytesBeforeItemBudget),
     responseBudgetProgressiveActiveFirstPaintBytesAfterItemBudget: boundedBytes(source.progressiveActiveFirstPaintBytesAfterItemBudget),
     responseBudgetProgressiveActiveFirstPaintOmittedVisibleItems: boundedCount(source.progressiveActiveFirstPaintOmittedVisibleItems),
+    responseBudgetProgressiveActiveFirstPaintOverCeilingBytes: boundedBytes(source.progressiveActiveFirstPaintOverCeilingBytes),
+    responseBudgetRetainedVisibleItemCountByKind: boundedNumberMap(source.retainedVisibleItemCountByKind, 12, 100000),
+    responseBudgetRetainedVisibleItemBytesByKind: boundedNumberMap(source.retainedVisibleItemBytesByKind, 12),
+    responseBudgetRetainedVisibleItemCountForByteStats: boundedCount(source.retainedVisibleItemCountForByteStats),
+    responseBudgetRetainedVisibleItemBytesForByteStats: boundedBytes(source.retainedVisibleItemBytesForByteStats),
+    responseBudgetRetainedVisibleItemLargestKind: compactLabel(source.retainedVisibleItemLargestKind, 40),
+    responseBudgetRetainedVisibleItemLargestBytes: boundedBytes(source.retainedVisibleItemLargestBytes),
     responseBudgetProgressiveCompletedTextBudgetApplied: source.progressiveCompletedTextBudgetApplied === true,
     responseBudgetProgressiveCompletedTextBudgetReason: compactLabel(source.progressiveCompletedTextBudgetReason, 100),
     responseBudgetProgressiveCompletedTextBudgetScope: compactLabel(source.progressiveCompletedTextBudgetScope, 80),

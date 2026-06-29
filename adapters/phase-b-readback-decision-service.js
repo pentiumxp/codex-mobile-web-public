@@ -20,6 +20,23 @@ function boundedBytes(value) {
   return Number.isFinite(Number(value)) ? Math.max(0, Math.min(100 * 1024 * 1024, Math.trunc(Number(value)))) : 0;
 }
 
+function boundedNumberMap(value = {}, limit = 12, maxValue = 100 * 1024 * 1024) {
+  const source = objectOrNull(value) || {};
+  const entries = Object.entries(source)
+    .map(([key, raw]) => {
+      const number = Number(raw);
+      if (!Number.isFinite(number) || number <= 0) return null;
+      return [
+        compactLabel(key || "unknown", 40),
+        Math.max(0, Math.min(maxValue, Math.trunc(number))),
+      ];
+    })
+    .filter(Boolean)
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, Math.max(1, Math.trunc(Number(limit) || 12)));
+  return Object.fromEntries(entries);
+}
+
 function buildEvidence(report = {}) {
   const publicConfig = objectOrNull(report.publicConfig) || {};
   const prewarm = objectOrNull(publicConfig.threadListFallbackPrewarm) || {};
@@ -240,6 +257,13 @@ function buildEvidence(report = {}) {
     detailResponseBudgetProgressiveActiveFirstPaintBytesBeforeItemBudget: boundedBytes(detail.responseBudgetProgressiveActiveFirstPaintBytesBeforeItemBudget),
     detailResponseBudgetProgressiveActiveFirstPaintBytesAfterItemBudget: boundedBytes(detail.responseBudgetProgressiveActiveFirstPaintBytesAfterItemBudget),
     detailResponseBudgetProgressiveActiveFirstPaintOmittedVisibleItems: boundedCount(detail.responseBudgetProgressiveActiveFirstPaintOmittedVisibleItems),
+    detailResponseBudgetProgressiveActiveFirstPaintOverCeilingBytes: boundedBytes(detail.responseBudgetProgressiveActiveFirstPaintOverCeilingBytes),
+    detailResponseBudgetRetainedVisibleItemCountByKind: boundedNumberMap(detail.responseBudgetRetainedVisibleItemCountByKind, 12, 100000),
+    detailResponseBudgetRetainedVisibleItemBytesByKind: boundedNumberMap(detail.responseBudgetRetainedVisibleItemBytesByKind, 12),
+    detailResponseBudgetRetainedVisibleItemCountForByteStats: boundedCount(detail.responseBudgetRetainedVisibleItemCountForByteStats),
+    detailResponseBudgetRetainedVisibleItemBytesForByteStats: boundedBytes(detail.responseBudgetRetainedVisibleItemBytesForByteStats),
+    detailResponseBudgetRetainedVisibleItemLargestKind: compactLabel(detail.responseBudgetRetainedVisibleItemLargestKind, 40),
+    detailResponseBudgetRetainedVisibleItemLargestBytes: boundedBytes(detail.responseBudgetRetainedVisibleItemLargestBytes),
     detailResponseBudgetProgressiveCompletedTextBudgetApplied: detail.responseBudgetProgressiveCompletedTextBudgetApplied === true,
     detailResponseBudgetProgressiveCompletedTextBudgetReason: compactLabel(detail.responseBudgetProgressiveCompletedTextBudgetReason, 100),
     detailResponseBudgetProgressiveCompletedTextBudgetScope: compactLabel(detail.responseBudgetProgressiveCompletedTextBudgetScope, 80),

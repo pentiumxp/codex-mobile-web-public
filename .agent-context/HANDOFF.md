@@ -32105,3 +32105,50 @@ The previous full handoff was archived and should be opened only when old proven
     execution failures.
   - Official Home AI deploy return was not yet received in this thread at the
     time of this handoff update. No Public deploy requested or run.
+
+### 2026-06-30 - Active First-Paint Protected Byte Attribution Ready For Deploy
+
+- Scope:
+  - Follow-up after the active assistant duplicate advisory deploy returned
+    clean. Current production Phase-B readback is healthy for proof/RPC/window
+    work (`projection-active-overlay`, `threadReadMs=0`,
+    `turnsListInitialMs=0`, `activeOverlayWindowMs=0`) but still shows active
+    first-paint body pressure around protected visible items:
+    `progressiveVisibleItemBudgetReason=protected-visible-items`,
+    `progressiveActiveFirstPaintItemBudgetReason=no-removable-visible-items`,
+    and `prepareResponseMs` in the hundreds of milliseconds on the active
+    Codex Mobile source thread.
+- Root cause / invariant:
+  - The remaining residual is not enough evidence for a safe budget-policy
+    change. The current service intentionally protects user input, assistant
+    progress, Usage, media, diagnostics, and retained receipts.
+  - Before changing any protected content budget, production readback needs to
+    identify which protected item kind owns the retained bytes.
+- Source changes:
+  - `adapters/thread-detail-response-budget-service.js` now records bounded
+    retained visible item count/byte attribution by item kind in
+    `mobileDetailResponseBudget`, plus total retained item bytes/count, largest
+    retained item kind/bytes, and active first-paint over-ceiling bytes.
+  - `scripts/codex-mobile-phase-b-readback-smoke.js` and
+    `adapters/phase-b-readback-decision-service.js` propagate those fields as
+    bounded `responseBudget*` / `detailResponseBudget*` readback evidence.
+  - Focused tests cover protected/no-removable active first-paint byte pressure
+    and Phase-B/decision evidence propagation without exposing private message
+    content.
+  - `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` document that this is an
+    attribution layer, not a budget-policy change.
+- Validation before deploy:
+  - `node --check adapters/thread-detail-response-budget-service.js && node --check scripts/codex-mobile-phase-b-readback-smoke.js && node --check adapters/phase-b-readback-decision-service.js`
+    passed.
+  - `node --test test/thread-detail-response-budget-service.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js`
+    passed with 71 tests.
+  - `npm test -- --test-reporter=dot`, `npm run check`, `npm run check:macos`,
+    Home AI fallback governance check, `git diff --check`, and
+    `codegraph sync && codegraph status` passed.
+  - Source Phase-B readback against current production stayed compatible and
+    returned `ok=true`; new attribution fields were empty/zero as expected
+    before production deploy.
+- Deployment status:
+  - Local deploy candidate only at this point. Private production deploy has
+    not yet been sent. No Public deploy requested or run.

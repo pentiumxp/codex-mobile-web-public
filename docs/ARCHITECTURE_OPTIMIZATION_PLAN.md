@@ -2524,6 +2524,14 @@ Deployable scope:
   turn. Items carry `mobileFirstPaintTextBudget`; the response records
   before/after first-paint byte counts, scope, skipped-latest count, and
   completed-text counters in `mobileDetailResponseBudget`.
+- The protected-byte attribution follow-up does not change budget policy. It
+  records bounded retained visible item counts/bytes by kind plus the largest
+  retained item kind/size in `mobileDetailResponseBudget`, Phase-B readback,
+  and decision evidence. This closes the evidence gap when
+  `progressiveActiveFirstPaintItemBudgetReason` is
+  `protected-visible-items` or `no-removable-visible-items`: the next slice can
+  target the dominant protected shape instead of weakening user/assistant/Usage
+  protection generically.
 - A later summary-phase slice targets warm projection hits whose `summaryMs`
   dominates `totalMs` even though `threadReadMs=0`. Detail summary resolution
   now merges the existing display-summary cache for local summaries and skips

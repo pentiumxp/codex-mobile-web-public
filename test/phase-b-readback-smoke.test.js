@@ -238,6 +238,13 @@ test("phase B readback smoke collects bounded diagnostics without private fields
             progressiveActiveFirstPaintBytesBeforeItemBudget: 150000,
             progressiveActiveFirstPaintBytesAfterItemBudget: 92000,
             progressiveActiveFirstPaintOmittedVisibleItems: 6,
+            progressiveActiveFirstPaintOverCeilingBytes: 0,
+            retainedVisibleItemCountByKind: { operation: 12, assistant: 4, userMessage: 1 },
+            retainedVisibleItemBytesByKind: { operation: 52000, assistant: 18000, userMessage: 9000 },
+            retainedVisibleItemCountForByteStats: 31,
+            retainedVisibleItemBytesForByteStats: 88000,
+            retainedVisibleItemLargestKind: "operation",
+            retainedVisibleItemLargestBytes: 13000,
             progressiveCompletedTextBudgetApplied: true,
             progressiveCompletedTextBudgetReason: "first-paint-byte-ceiling",
             progressiveCompletedTextBudgetScope: "active-first-paint",
@@ -390,6 +397,13 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.detail.responseBudgetProgressiveActiveFirstPaintBytesBeforeItemBudget, 150000);
   assert.equal(report.detail.responseBudgetProgressiveActiveFirstPaintBytesAfterItemBudget, 92000);
   assert.equal(report.detail.responseBudgetProgressiveActiveFirstPaintOmittedVisibleItems, 6);
+  assert.equal(report.detail.responseBudgetProgressiveActiveFirstPaintOverCeilingBytes, 0);
+  assert.deepEqual(report.detail.responseBudgetRetainedVisibleItemCountByKind, { operation: 12, assistant: 4, userMessage: 1 });
+  assert.deepEqual(report.detail.responseBudgetRetainedVisibleItemBytesByKind, { operation: 52000, assistant: 18000, userMessage: 9000 });
+  assert.equal(report.detail.responseBudgetRetainedVisibleItemCountForByteStats, 31);
+  assert.equal(report.detail.responseBudgetRetainedVisibleItemBytesForByteStats, 88000);
+  assert.equal(report.detail.responseBudgetRetainedVisibleItemLargestKind, "operation");
+  assert.equal(report.detail.responseBudgetRetainedVisibleItemLargestBytes, 13000);
   assert.equal(report.detail.responseBudgetProgressiveCompletedTextBudgetApplied, true);
   assert.equal(report.detail.responseBudgetProgressiveCompletedTextBudgetScope, "active-first-paint");
   assert.equal(report.detail.responseBudgetProgressiveFirstPaintBytesBeforeTextBudget, 210000);
@@ -398,6 +412,12 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.decision.evidence.detailResponseBudgetOmittedActiveTextChars, 39000);
   assert.equal(report.decision.evidence.detailResponseBudgetProgressiveActiveFirstPaintItemBudgetApplied, true);
   assert.equal(report.decision.evidence.detailResponseBudgetProgressiveActiveFirstPaintBytesAfterItemBudget, 92000);
+  assert.deepEqual(report.decision.evidence.detailResponseBudgetRetainedVisibleItemBytesByKind, {
+    operation: 52000,
+    assistant: 18000,
+    userMessage: 9000,
+  });
+  assert.equal(report.decision.evidence.detailResponseBudgetRetainedVisibleItemLargestKind, "operation");
   assert.match(report.threadList.firstThreadHash, /^[a-f0-9]{16}$/);
   assert.match(report.detail.requestedThreadHash, /^[a-f0-9]{16}$/);
   assert.deepEqual(seen.map((item) => item.path), [

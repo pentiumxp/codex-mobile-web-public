@@ -306,6 +306,60 @@ function jsonByteLength(value) {
   }
 }
 
+function visibleItemByteKind(item) {
+  const type = String(item && item.type || "");
+  if (isUserMessageItem(item)) return "userMessage";
+  if (isAssistantItem(item)) return "assistant";
+  if (isReasoningItem(item)) return "reasoning";
+  if (isOperationItem(item)) return "operation";
+  if (/usage/i.test(type)) return "usage";
+  if (/image|media/i.test(type)) return "media";
+  if (/diagnostic/i.test(type)) return "diagnostic";
+  if (/task.?card/i.test(type)) return "taskCard";
+  return type ? "other" : "unknown";
+}
+
+function addNumericBucket(target, key, amount) {
+  const safeKey = String(key || "unknown").slice(0, 40);
+  const value = Math.max(0, Math.trunc(Number(amount) || 0));
+  if (!value) return;
+  target[safeKey] = Math.max(0, Math.trunc(Number(target[safeKey]) || 0)) + value;
+}
+
+function annotateRetainedVisibleItemByteStats(thread, stats) {
+  const countsByKind = {};
+  const bytesByKind = {};
+  let totalItems = 0;
+  let totalBytes = 0;
+  let largestKind = "";
+  let largestBytes = 0;
+  for (const turn of Array.isArray(thread && thread.turns) ? thread.turns : []) {
+    for (const item of Array.isArray(turn && turn.items) ? turn.items : []) {
+      const kind = visibleItemByteKind(item);
+      const bytes = jsonByteLength(item);
+      totalItems += 1;
+      totalBytes += bytes;
+      addNumericBucket(countsByKind, kind, 1);
+      addNumericBucket(bytesByKind, kind, bytes);
+      if (bytes > largestBytes) {
+        largestBytes = bytes;
+        largestKind = kind;
+      }
+    }
+  }
+  stats.retainedVisibleItemCountByKind = countsByKind;
+  stats.retainedVisibleItemBytesByKind = bytesByKind;
+  stats.retainedVisibleItemCountForByteStats = totalItems;
+  stats.retainedVisibleItemBytesForByteStats = totalBytes;
+  stats.retainedVisibleItemLargestKind = largestKind;
+  stats.retainedVisibleItemLargestBytes = largestBytes;
+  const ceiling = Math.max(0, Math.trunc(Number(stats.progressiveActiveFirstPaintThreadByteCeiling || 0)));
+  const afterBytes = Math.max(0, Math.trunc(Number(stats.progressiveActiveFirstPaintBytesAfterItemBudget || 0)));
+  stats.progressiveActiveFirstPaintOverCeilingBytes = ceiling > 0 && afterBytes > ceiling
+    ? afterBytes - ceiling
+    : 0;
+}
+
 function byteLengthForTurns(turns, predicate = null) {
   let total = 0;
   for (const turn of Array.isArray(turns) ? turns : []) {
@@ -1147,6 +1201,13 @@ function compactThreadDetailResponseResult(result, options = {}) {
     progressiveActiveFirstPaintBytesBeforeItemBudget: 0,
     progressiveActiveFirstPaintBytesAfterItemBudget: 0,
     progressiveActiveFirstPaintOmittedVisibleItems: 0,
+    progressiveActiveFirstPaintOverCeilingBytes: 0,
+    retainedVisibleItemCountByKind: {},
+    retainedVisibleItemBytesByKind: {},
+    retainedVisibleItemCountForByteStats: 0,
+    retainedVisibleItemBytesForByteStats: 0,
+    retainedVisibleItemLargestKind: "",
+    retainedVisibleItemLargestBytes: 0,
     progressiveActiveBudgetApplied,
     progressiveActiveBudgetReason,
     progressiveActiveOriginalItemCount: pressureOriginalItemCount,
@@ -1173,6 +1234,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
   applyProgressiveVisibleItemCeiling(thread, budgetOptions, stats);
   applyProgressiveCompletedTextBudget(thread, budgetOptions, stats);
   applyProgressiveActiveFirstPaintItemBudget(thread, budgetOptions, stats);
+  annotateRetainedVisibleItemByteStats(thread, stats);
   for (const turn of thread.turns) {
     if (!turn || !Array.isArray(turn.items) || turn.items.length < 2) continue;
     turn.items = orderItemsByDisplayTimestamp(turn.items, turn, thread);

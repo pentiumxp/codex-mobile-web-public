@@ -1744,6 +1744,15 @@ test("thread detail response budget does not delete active turn visible items fo
   assert.equal(budget.progressiveActiveFirstPaintItemBudgetReason, "no-removable-visible-items");
   assert.equal(budget.progressiveActiveFirstPaintOmittedVisibleItems, 0);
   assert.equal(budget.progressiveActiveFirstPaintBytesBeforeItemBudget, budget.progressiveActiveFirstPaintBytesAfterItemBudget);
+  assert.ok(budget.progressiveActiveFirstPaintOverCeilingBytes > 0);
+  assert.equal(budget.retainedVisibleItemCountForByteStats, items.length);
+  assert.equal(budget.retainedVisibleItemCountByKind.operation, 10);
+  assert.equal(budget.retainedVisibleItemCountByKind.userMessage, 1);
+  assert.equal(budget.retainedVisibleItemCountByKind.assistant, 1);
+  assert.equal(budget.retainedVisibleItemCountByKind.usage, 1);
+  assert.ok(budget.retainedVisibleItemBytesByKind.operation > budget.retainedVisibleItemBytesByKind.assistant);
+  assert.equal(budget.retainedVisibleItemLargestKind, "operation");
+  assert.ok(budget.retainedVisibleItemLargestBytes > 0);
   assert.equal(compacted.thread.turns[0].mobileVisibleItemBudget, undefined);
   assert.deepEqual(compacted.thread.mobileVisibleItemKeys, items.map((item) => item.mobileVisibleKey));
   assert.equal(compacted.thread.mobileProjectionRevision, 31);

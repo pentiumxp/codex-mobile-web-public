@@ -503,7 +503,14 @@ remove user messages, assistant receipts/progress, Usage rows, images, or
 diagnostic rows just to hit the byte ceiling. A reason of
 `protected-visible-items` means the remaining payload is protected visible
 content and should be handled by a more specific content-budget rule, not by
-client refresh retries.
+client refresh retries. Newer server builds also report
+`progressiveActiveFirstPaintOverCeilingBytes`,
+`retainedVisibleItemCountByKind`, `retainedVisibleItemBytesByKind`,
+`retainedVisibleItemLargestKind`, and `retainedVisibleItemLargestBytes` in
+`mobileDetailResponseBudget` and Phase-B readback. Use those bounded counters
+to decide whether the remaining protected payload is dominated by operation,
+assistant, user-message, Usage, media, diagnostic, or other item shapes before
+adding a new budget rule.
 On v558+ clients, a per-turn `mobileVisibleItemBudget` also renders as a small
 first-paint omission notice in the conversation. That notice has a
 `data-render-key` and enters the conversation signature, but intentionally does
