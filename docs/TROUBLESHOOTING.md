@@ -556,8 +556,12 @@ eventually appears", distinguish it from the old timeout/failure path. The
 client thread-open watchdog fires after `THREAD_LOAD_STALL_MS` and reports a
 bounded Home AI diagnostic as `thread_detail_slow_path` with reason
 `api-pending`, the thread hash, the stall threshold, and elapsed duration. A
-single stall remains local/retry behavior; repeated matching stalls cross the
-diagnostic-report threshold and can enter the Owner repair-card loop.
+single stall remains local/retry behavior. Clients after
+`codex-mobile-shell-v580` treat `thread_session_slow_path` events as
+observe-only by default: counts and bounded client events are kept for
+performance analysis, but they do not post `homeai.diagnostic.report` and
+should not create Owner repair cards unless the reporter is explicitly run in
+controlled `slowPathReportMode: "report"` diagnostics.
 On v557+ clients, successful thread-detail loads also plan
 `thread_detail_slow_path` when first-paint elapsed/API/render time crosses the
 default 1.5s threshold. Slow-path repeat counting is intentionally stable across
@@ -565,14 +569,13 @@ client build id, read mode, render mode, and source kind so repeated
 user-visible slow opens such as `turns-list-initial` ->
 `projection-active-overlay` do not stay below the reporting threshold merely
 because the implementation path changed. Those volatile fields remain in the
-bounded report payload for root-cause attribution.
+bounded local evidence for root-cause attribution.
 For the thread list, v556+ clients also plan `thread_list_slow_path` from
 successful `thread_list_rendered` evidence when elapsed/API/render time crosses
-the list slow threshold. That report includes only bounded phase labels and
-counts such as fallback-cache decision, app-server request reason,
+the list slow threshold. That local evidence includes only bounded phase labels
+and counts such as fallback-cache decision, app-server request reason,
 `appServerRpcMs`, diagnostic `app_server_response_kb`, fallback source counters,
-and result count. A normal fast list load clears that repeated-failure
-signature.
+and result count.
 
 If a newly submitted message briefly shows local input feedback and then the
 right-side turn timer changes to `已结束` while `/api/threads/:id?mode=recent`
@@ -614,6 +617,11 @@ Expected current behavior:
 - Superseded active turns are stale and should fall through to new turn start.
 - Latest durable live turn should be steered, not auto-interrupted.
 - Pending steer echo keeps the user message visible during the wait.
+- Clients after `codex-mobile-shell-v581` must not append local submitted user
+  cards or server pending steer echoes into a completed turn. If a `You` card
+  appears below the final assistant receipt or Usage row, inspect
+  `composerTargetActiveTurnId()`, `insertLocalSubmittedUserMessage()`, and
+  `adapters/message-pending-echo-service.js` before adding UI-side dedupe.
 
 ## Active Goal Output Disappears After Re-entering A Large Thread
 
@@ -772,6 +780,38 @@ Cause to check:
   `browser_latest_turn_assistant_text_duplicate`. These are latest-turn scoped
   checks: a healthy whole-conversation item total no longer hides the user
   message or latest assistant rows disappearing inside the active/latest turn.
+  Clients after `codex-mobile-shell-v578` split ordinary user-message and
+  injected task-card expectations, and also report
+  `browser_latest_turn_user_message_below_api_expectation`,
+  `browser_latest_turn_task_card_below_api_expectation`,
+  `browser_latest_turn_operation_items_visible`, and
+  `browser_latest_turn_reasoning_items_visible`. These checks catch the class
+  where the API has the submitted user input but the DOM latest turn does not,
+  or where command/reasoning process rows leak into the ordinary conversation
+  instead of staying in the operation status surface.
+  Clients after `codex-mobile-shell-v579` preserve a non-bottom user-reading
+  viewport anchor across full conversation renders, local refresh patch
+  transactions, visible item inserts, visible item replacements, and live text
+  patches. If a new reply still makes the screen jump while the user is
+  reading above the bottom, inspect `captureConversationViewportAnchor()` /
+  `restoreConversationViewportAnchor()` before adding throttles or UI dedupe.
+  The browser self-check now also samples visual anchor positions. It reports
+  `browser_visual_anchor_jitter` when the same target thread, same visual frame,
+  same anchor, and unchanged DOM counts still move by a few pixels repeatedly;
+  this is an H3 user-experience signal for small flicker, not a full projection
+  loss. Clients after `codex-mobile-shell-v581` disable conversation-body
+  `entry-animate` / `entry-leave` translation animations because those 6-8px
+  entry transforms are visible as thread-open jitter in the reading surface.
+  If jitter remains after v581, treat it as a scroll-anchor or local-patch
+  sequencing issue, not an animation issue. With explicit `--exercise-submit`, the browser check sends one short
+  Composer message through the real UI path, asking for an OK-only reply, then
+  samples whether the submitted user card becomes visible, disappears, or
+  jitters. Use `--submit-thread-id <id>` to target a dedicated thread, or omit
+  it to exercise the first selected production thread. Do not enable this flag
+  in periodic checks unless a small OK-only model turn is acceptable. If the
+  target thread is busy and Composer is not writable, the self-check reports
+  `browser_submit_exercise_failed` instead of treating the run as a successful
+  client validation.
   The analyzer no longer drops a sparse sample merely because
   `contentConfirmed=false`; such samples cannot establish a healthy baseline,
   but they can prove regression after the same target thread was previously
@@ -787,6 +827,16 @@ Cause to check:
   `~/.codex-mobile-web/logs/runtime-self-check.jsonl`. The loop records issue
   counts and build/cache ids only and must not directly dispatch repair cards;
   Home AI diagnostic intake and Owner approval own the repair-card step.
+- If opening a thread takes 1-2s before latest detail appears, run Phase-B
+  readback against that thread:
+  `node scripts/codex-mobile-phase-b-readback-smoke.js --server http://127.0.0.1:8787 --thread-id <id> --json`.
+  Read the bounded `decision` object first. Clients after
+  `codex-mobile-shell-v579` classify detail `totalMs >= 1000` or
+  `activeOverlayMs >= 800` as a latency finding instead of reporting ready;
+  `totalMs >= 1500` or `activeOverlayMs >= 1000` is H2. If the owner is
+  `active-overlay-latency`, continue in the active-overlay provider/read
+  orchestration path; if the owner is `thread-detail-latency`, split the
+  summary/projection/prepare/transport stages before changing the renderer.
 - Clients after `codex-mobile-shell-v575` keep a reusable in-memory thread
   detail snapshot in `state.threadTileDetails`. When reopening a thread that
   already has loaded detail state, `loadThread()` paints that cached detail

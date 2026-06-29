@@ -1154,6 +1154,44 @@ return { state, latestTurn, syncActiveTurnFromThread, interruptDisabled: () => i
 `)();
 }
 
+function evaluatedComposerTargetActiveTurnId() {
+  const sources = [
+    "latestTurnForThread",
+    "isLiveTurnForThread",
+    "latestLiveTurnForThread",
+    "activeTurnIdForThread",
+    "composerTargetActiveTurnId",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`
+const state = {
+  currentThreadId: "thread-live",
+  activeTurnId: "",
+  currentThread: { id: "thread-live", turns: [] },
+};
+function statusText(status) {
+  if (!status) return "";
+  if (typeof status === "string") return status;
+  return status.type || JSON.stringify(status);
+}
+function isCompletedStatus(status) {
+  return /completed|failed|cancel|error|interrupted/i.test(statusText(status));
+}
+function isTurnComplete(turn) {
+  return Boolean(turn && (turn.completedAt || turn.durationMs || isCompletedStatus(turn.status)));
+}
+function isRunningStatus(status) {
+  const text = statusText(status).toLowerCase();
+  return /(running|active|queued|processing|inprogress|in_progress|in-progress)/.test(text)
+    && !/(completed|failed|cancel|error|interrupted)/.test(text);
+}
+function isIncompleteInterruptedTurn() { return false; }
+function turnHasActiveLiveItems() { return false; }
+function composerTargetThread() { return state.currentThread; }
+${sources.join("\n")}
+return { state, composerTargetActiveTurnId };
+`)();
+}
+
 function evaluatedLocalSubmissionInserter() {
   const sources = [
     "normalizeFsPath",
@@ -1171,6 +1209,7 @@ function evaluatedLocalSubmissionInserter() {
     "localSubmittedTurnId",
     "currentThreadHasClientSubmission",
     "threadHasClientSubmission",
+    "isTurnComplete",
     "mutableThreadForLocalSubmission",
     "syncLocalSubmissionThread",
     "insertLocalSubmittedUserMessage",
@@ -1889,7 +1928,7 @@ test("server projection pruning keeps uploaded image user messages in superseded
   );
 });
 
-test("live turn keeps prompt and responded steering messages while hiding only unanswered trailing durable user bubbles", () => {
+test("live turn keeps durable user messages while hiding operation items", () => {
   const { visibleItemsForTurn } = evaluatedVisibleItemsForTurn();
   const liveTurn = {
     live: true,
@@ -1905,7 +1944,7 @@ test("live turn keeps prompt and responded steering messages while hiding only u
   };
   assert.deepEqual(
     visibleItemsForTurn(liveTurn).map((entry) => entry.item.id),
-    ["real-user-prompt", "assistant-progress", "real-user-responded-steer", "assistant-after-steer", "local-user-new"],
+    ["real-user-prompt", "assistant-progress", "real-user-responded-steer", "assistant-after-steer", "real-user-trailing", "local-user-new"],
   );
 
   const completedTurn = Object.assign({}, liveTurn, { live: false });
@@ -1915,7 +1954,7 @@ test("live turn keeps prompt and responded steering messages while hiding only u
   );
 });
 
-test("latest completed turn shows retained process items after full rerender", () => {
+test("latest completed turn hides process items after full rerender", () => {
   const { visibleItemsForTurn } = evaluatedVisibleItemsForTurn();
   const previous = {
     id: "previous",
@@ -1955,7 +1994,7 @@ test("latest completed turn shows retained process items after full rerender", (
   );
   assert.deepEqual(
     visibleItemsForTurn(latestCompleted, thread).map((entry) => entry.item.id),
-    ["latest-user", "latest-reasoning", "latest-command", "latest-final"],
+    ["latest-user", "latest-final"],
   );
   assert.deepEqual(
     visibleItemsForTurn(active, thread).map((entry) => entry.item.id),
@@ -1986,7 +2025,7 @@ test("live turn keeps uploaded image user messages after progress starts", () =>
 
   assert.deepEqual(
     harness.visibleItemsForTurn(liveTurn).map((entry) => entry.item.id),
-    ["real-user-old", "assistant-progress", "real-user-image"],
+    ["real-user-old", "assistant-progress", "real-user-image", "real-user-trailing"],
   );
 });
 
@@ -2013,6 +2052,32 @@ test("active timer can follow an empty active tail when no display live turn exi
   assert.equal(harness.syncActiveTurnFromThread(), undefined);
   assert.equal(harness.state.activeTurnId, "empty-active-tail");
   assert.equal(harness.interruptDisabled(), false);
+});
+
+test("composer active turn target ignores stale completed activeTurnId", () => {
+  const harness = evaluatedComposerTargetActiveTurnId();
+  harness.state.currentThread.turns = [{
+    id: "completed-turn",
+    status: { type: "completed" },
+    completedAt: 1782704041,
+    items: [{ id: "final", type: "agentMessage", text: "done" }],
+  }];
+  harness.state.activeTurnId = "completed-turn";
+
+  assert.equal(harness.composerTargetActiveTurnId(), "");
+  assert.equal(harness.state.activeTurnId, "");
+});
+
+test("composer active turn target keeps a live activeTurnId", () => {
+  const harness = evaluatedComposerTargetActiveTurnId();
+  harness.state.currentThread.turns = [{
+    id: "active-turn",
+    status: { type: "inProgress" },
+    items: [{ id: "user", type: "userMessage", content: [{ type: "text", text: "go" }] }],
+  }];
+  harness.state.activeTurnId = "active-turn";
+
+  assert.equal(harness.composerTargetActiveTurnId(), "active-turn");
 });
 
 test("live turn keeps this session submitted durable user message after progress starts", () => {
@@ -2087,6 +2152,36 @@ test("existing thread send inserts a local pending user turn before server proje
   assert.deepEqual(harness.counters(), { mergeCount: 1, syncCount: 1 });
   assert.equal(harness.insertLocalSubmittedUserMessage("thread-live", "continue work", [], "submit-123"), false);
   assert.equal(harness.state.currentThread.turns[0].items.length, 1);
+});
+
+test("local pending user message does not append to a completed active turn", () => {
+  const harness = evaluatedLocalSubmissionInserter();
+  harness.state.currentThread.turns = [{
+    id: "completed-turn",
+    status: { type: "completed" },
+    completedAt: 1782704041,
+    items: [
+      { id: "assistant-final", type: "agentMessage", text: "done" },
+      { id: "usage", type: "turnUsageSummary" },
+    ],
+  }];
+
+  const inserted = harness.insertLocalSubmittedUserMessage(
+    "thread-live",
+    "late user text",
+    [],
+    "submit-late",
+    { turnId: "completed-turn" },
+  );
+
+  assert.equal(inserted, true);
+  assert.equal(harness.state.currentThread.turns.length, 2);
+  assert.deepEqual(
+    harness.state.currentThread.turns[0].items.map((item) => item.id),
+    ["assistant-final", "usage"],
+  );
+  assert.equal(harness.state.currentThread.turns[1].id, "local-turn-submit-late");
+  assert.equal(harness.state.currentThread.turns[1].items[0].clientSubmissionId, "submit-late");
 });
 
 test("existing thread send reconciles local pending turn to returned server turn id", () => {
@@ -2315,7 +2410,7 @@ test("loading and thread-list state preserve locally visible live turns", () => 
   assert.match(functionBody("renderCurrentThread"), /loadError: thread\.mobileLoadError/);
   assert.match(functionBody("renderCurrentThread"), /if \(earlyShellPlan\.shouldRender\) \{/);
   assert.match(functionBody("renderCurrentThread"), /threadDetailRenderPlanApi\.planSingleThreadShellConversationUpdate\(\{[\s\S]*shellPlan: earlyShellPlan,/);
-  assert.match(functionBody("renderCurrentThread"), /updateConversationHtml\(\s*earlyUpdatePlan\.html,\s*earlyUpdatePlan\.conversationSignature,\s*earlyUpdatePlan\.options,/);
+  assert.match(functionBody("renderCurrentThread"), /updateConversationHtml\(\s*earlyUpdatePlan\.html,\s*earlyUpdatePlan\.conversationSignature,\s*Object\.assign\(\{\}, earlyUpdatePlan\.options, \{ userReadingCurrentTurn \}\),/);
   assert.match(functionBody("renderCurrentThread"), /threadDetailRenderPlanApi\.planSingleThreadShellPostUpdateEffects\(\{[\s\S]*bindRetry: earlyShellPlan\.bindRetry,/);
   assert.match(functionBody("renderCurrentThread"), /applySingleThreadShellPostUpdateEffectsPlan\(earlyPostUpdateEffectsPlan,/);
   assert.match(functionBody("renderCurrentThread"), /threadDetailRenderPlanApi\.planSingleThreadFullRenderShell/);
@@ -3573,7 +3668,7 @@ test("conversation html update invalidates stable signatures when the DOM has lo
   assert.match(functionBody("renderCurrentThread"), /expectedVisibleItemCount: renderVisibleShape\.visibleItemCount/);
   assert.match(functionBody("renderCurrentThread"), /duplicateRenderKeyCount: renderDomShape\.duplicateRenderKeyCount/);
   assert.match(functionBody("renderCurrentThread"), /checkProjectionConsistency: true/);
-  assert.match(functionBody("renderCurrentThread"), /updateConversationHtml\(shellUpdatePlan\.html, shellUpdatePlan\.conversationSignature, shellUpdatePlan\.options\)/);
+  assert.match(functionBody("renderCurrentThread"), /updateConversationHtml\(\s*shellUpdatePlan\.html,\s*shellUpdatePlan\.conversationSignature,\s*Object\.assign\(\{\}, shellUpdatePlan\.options, \{ userReadingCurrentTurn \}\),\s*\)/);
   assert.match(functionBody("visibleRenderableTurnIds"), /visibleItemsForTurn\(turn, thread\)\.length/);
   assert.match(functionBody("threadTileVisibleShape"), /visibleTurnsForConversation\(thread\)/);
   assert.match(functionBody("threadTileVisibleShape"), /visibleItemsForTurn\(turn, thread\)\.length/);

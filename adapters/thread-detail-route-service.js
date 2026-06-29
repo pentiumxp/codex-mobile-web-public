@@ -15,6 +15,7 @@ async function handleThreadDetailReadRoute(input = {}) {
   const readThreadDetail = typeof input.readThreadDetail === "function" ? input.readThreadDetail : null;
   const sendJson = typeof input.sendJson === "function" ? input.sendJson : null;
   const logThreadDetail = typeof input.logThreadDetail === "function" ? input.logThreadDetail : () => {};
+  const onThreadDetailReadResult = typeof input.onThreadDetailReadResult === "function" ? input.onThreadDetailReadResult : null;
   const now = typeof input.now === "function" ? input.now : () => Date.now();
   const requestStartedAtMs = Number(input.requestStartedAtMs || now());
   if (!threadId || !readThreadDetail || !sendJson) return { handled: false, reason: "invalid-route-input" };
@@ -33,6 +34,21 @@ async function handleThreadDetailReadRoute(input = {}) {
   const status = detailResponse && detailResponse.status || 200;
   const body = detailResponse && detailResponse.body || {};
   sendJson(status, body);
+  if (onThreadDetailReadResult) {
+    try {
+      await onThreadDetailReadResult({
+        threadId,
+        status,
+        body,
+        mode: detailResponse && detailResponse.mode || "",
+        complete: !detailResponse || detailResponse.complete !== false,
+      });
+    } catch (err) {
+      threadLog("post_read_result_sync_failed", {
+        error: String(err && err.message || err).slice(0, 160),
+      });
+    }
+  }
   if (!detailResponse || detailResponse.complete !== false) {
     threadLog("complete", {
       status,

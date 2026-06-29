@@ -11,6 +11,7 @@ const {
   analyzeThreadList,
   combineSelfCheck,
   compareDetailReadbacks,
+  compareThreadListRowToDetail,
   compareThreadListReadbacks,
   latestCompletedTurn,
   shortHash,
@@ -538,10 +539,12 @@ async function run(options = {}, env = process.env) {
       rawLatestCompletedCountsBeforeFirstDetail,
     );
     const firstActiveRawProjection = analyzeActiveTurnRawProjection(row, firstDetail, rawCountsForFirstDetail);
+    const listDetailConsistency = compareThreadListRowToDetail(row, firstDetail);
     const detailReport = {
       threadHash: shortHash(threadId),
       first: firstAnalysis,
       activeTurnRawProjection: firstActiveRawProjection,
+      listDetailConsistency,
       rawLatestCompletedInputEvidence: firstAnalysis.rawLatestCompletedInputEvidence
         || rawLatestCompletedInputEvidence(rawLatestCompletedCountsBeforeFirstDetail),
       repeat: null,
@@ -589,6 +592,7 @@ async function run(options = {}, env = process.env) {
   for (const detail of report.threadDetails) {
     if (detail.first) detailParts.push(detail.first);
     if (detail.activeTurnRawProjection) detailParts.push(detail.activeTurnRawProjection);
+    if (detail.listDetailConsistency) detailParts.push(detail.listDetailConsistency);
     if (detail.second) detailParts.push(detail.second);
     if (detail.repeat) detailParts.push(detail.repeat);
     if (Array.isArray(detail.repeatChecks)) detailParts.push(...detail.repeatChecks);

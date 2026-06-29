@@ -156,6 +156,18 @@ test("manual conversation scroll pauses live auto-stick until the user returns t
   assert.match(functionBody("updateConversationAutoScrollHoldFromScroll"), /const plan = conversationScroll\.planConversationAutoScrollHoldFromScroll\(planInput\);/);
   assert.match(functionBody("updateConversationAutoScrollHoldFromScroll"), /if \(plan\.action === "clear-hold"\) \{\s*clearConversationAutoScrollHold\(\);\s*return;\s*\}/);
   assert.match(functionBody("updateConversationAutoScrollHoldFromScroll"), /if \(plan\.action === "remember-hold"\) rememberConversationAutoScrollHold\(\);/);
+  assert.match(appJs, /function captureConversationViewportAnchor\(options = \{\}\)/);
+  assert.match(appJs, /function restoreConversationViewportAnchor\(anchor\)/);
+  assert.match(functionBody("planConversationViewportPreservation"), /conversationScroll\.planReadingViewportPreservation\(\{/);
+  assert.match(functionBody("captureConversationViewportAnchor"), /conversation\.querySelectorAll\("\[data-render-key\]"\)/);
+  assert.match(functionBody("restoreConversationViewportAnchor"), /conversation\.querySelector\(`\[data-render-key="\$\{escapeSelectorAttr\(anchor\.renderKey\)\}"\]`\)/);
+  assert.match(functionBody("updateConversationHtml"), /const scrollAnchor = options\.stickToBottom[\s\S]*captureConversationViewportAnchor/);
+  assert.match(functionBody("updateConversationHtml"), /restoreConversationViewportAnchor\(scrollAnchor\);/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /const scrollAnchor = captureConversationViewportAnchor\(\{[\s\S]*nearBottom: wasNearBottom,[\s\S]*userReadingCurrentTurn,/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /restoreConversationViewportAnchor\(scrollAnchor\);/);
+  assert.match(functionBody("insertVisibleItemDom"), /const scrollAnchor = captureConversationViewportAnchor\(\{[\s\S]*nearBottom: wasNearBottom,[\s\S]*userReadingCurrentTurn,/);
+  assert.match(functionBody("patchLiveTextItemDom"), /const scrollAnchor = captureConversationViewportAnchor\(\{[\s\S]*nearBottom: wasNearBottom,[\s\S]*userReadingCurrentTurn,/);
+  assert.match(functionBody("completeLocalConversationDomUpdate"), /restoreConversationViewportAnchor\(options\.scrollAnchor \|\| null\);/);
   assert.doesNotMatch(functionBody("updateConversationAutoScrollHoldFromScroll"), /if \(!hasRecentConversationScrollIntent\(\)\) return;/);
   assert.doesNotMatch(functionBody("updateConversationAutoScrollHoldFromScroll"), /if \(turnForConversationAutoScrollHold\(\)\) rememberConversationAutoScrollHold\(\);/);
   assert.doesNotMatch(appJs, /if \(Date\.now\(\) < state\.programmaticScrollUntilMs\) return;\s*if \(isConversationNearBottom\(\)\)/);
@@ -229,7 +241,7 @@ test("live and final message renders stay anchored when the user is at bottom", 
     /viewportFollow: shouldFollowViewportChangeToBottom\(\),/,
     /const shouldStickToBottom = Boolean\(fullRenderScrollPlan\.stickToBottom\);/,
     /const shellUpdatePlan = threadDetailRenderPlanApi\.planSingleThreadShellConversationUpdate\(\{[\s\S]*?patchShellSignature: conversationPatchShellSignature\(thread\),[\s\S]*?stickToBottom: shouldStickToBottom,[\s\S]*?\}\);/,
-    /updateConversationHtml\(shellUpdatePlan\.html, shellUpdatePlan\.conversationSignature, shellUpdatePlan\.options\);/,
+    /updateConversationHtml\(\s*shellUpdatePlan\.html,\s*shellUpdatePlan\.conversationSignature,\s*Object\.assign\(\{\}, shellUpdatePlan\.options, \{ userReadingCurrentTurn \}\),\s*\);/,
     /const postUpdateEffectsPlan = threadDetailRenderPlanApi\.planSingleThreadShellPostUpdateEffects\(\{[\s\S]*?scrollToTurnReceiptStart: options\.scrollToTurnReceiptStart,[\s\S]*?\}\);/,
     /applySingleThreadShellPostUpdateEffectsPlan\(postUpdateEffectsPlan,/,
   ]);
@@ -255,7 +267,7 @@ test("live and final message renders stay anchored when the user is at bottom", 
   assert.match(functionBody("patchLiveTextItemDom"), /threadDetailDomPatchApi\.applyLiveTextItemDomPatch\(\{/);
   assert.match(functionBody("patchLiveTextItemDom"), /renderHtml: \(\) => renderItem\(item, turn, previousKeys, index, renderContextThread\(\)\)/);
   assert.match(functionBody("patchLiveTextItemDom"), /patchElement: \(target, source\) => \{[\s\S]*patchNode\(target, source\);[\s\S]*return target;/);
-  assert.match(functionBody("patchLiveTextItemDom"), /completeLocalConversationDomUpdate\(patchResult\.target, wasNearBottom, userReadingCurrentTurn\)/);
+  assert.match(functionBody("patchLiveTextItemDom"), /completeLocalConversationDomUpdate\(patchResult\.target, wasNearBottom, userReadingCurrentTurn, \{ scrollAnchor \}\)/);
   assert.match(functionBody("completeLocalConversationDomUpdate"), /threadDetailDomPatchApi\.planLocalConversationDomUpdateCompletionSnapshot\(\{/);
   assert.match(functionBody("completeLocalConversationDomUpdate"), /threadDetailDomPatchApi\.planLocalConversationDomUpdateCompletion\(completionSnapshot\)/);
   assert.match(functionBody("completeLocalConversationDomUpdate"), /threadDetailDomPatchApi\.planLocalConversationDomUpdateCompletionEffects\(completionPlan\)/);

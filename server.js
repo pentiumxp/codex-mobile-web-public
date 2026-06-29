@@ -12675,6 +12675,16 @@ function shouldReplaceThreadDisplayStatus(baseStatus, displayStatus, baseUpdated
   return true;
 }
 
+function clearThreadSummaryActiveMarkers(thread) {
+  if (!thread || typeof thread !== "object") return thread;
+  delete thread.activeTurnId;
+  delete thread.active_turn_id;
+  delete thread.mobileLocalActiveStatus;
+  delete thread.mobileRolloutActiveTurn;
+  delete thread.mobileActiveTurnId;
+  return thread;
+}
+
 function mergeThreadWithCachedDisplaySummary(thread, options = {}) {
   if (!thread || typeof thread !== "object" || !thread.id) return thread;
   const cached = threadDisplaySummaryCache.read(thread.id);
@@ -12697,6 +12707,7 @@ function mergeThreadDisplaySummary(base, display, options = {}) {
   }
   if (shouldReplaceThreadDisplayStatus(base.status, display.status, baseUpdatedAtMs, displayUpdatedAtMs)) {
     next.status = display.status;
+    if (isThreadListRestStatus(display.status)) clearThreadSummaryActiveMarkers(next);
   }
   for (const key of ["archived", "archivedAt", "archived_at", "deleted", "deletedAt", "deleted_at", "agentNickname", "agent_nickname", "agentRole", "agent_role"]) {
     const value = display[key];
@@ -14531,6 +14542,33 @@ function upsertThreadListFallbackCacheThread(thread, options = {}) {
   return threadListFallbackCacheService.upsertThread(thread, options);
 }
 
+function detailReadThreadSummaryForFallbackCache(body = {}) {
+  const thread = body && body.thread && typeof body.thread === "object" ? body.thread : null;
+  const id = String(thread && (thread.id || thread.threadId || thread.thread_id) || "").trim();
+  if (!id) return null;
+  const summary = stripThreadListDetailFields(Object.assign({}, thread, { id }));
+  if (isThreadListRestStatus(summary.status)) clearThreadSummaryActiveMarkers(summary);
+  return summary;
+}
+
+function syncThreadDetailReadResultToThreadListFallbackCache(payload = {}) {
+  const status = Number(payload.status || 0);
+  if (status >= 400 || payload.complete === false) return { synced: false, reason: "detail-read-incomplete" };
+  const summary = detailReadThreadSummaryForFallbackCache(payload.body);
+  if (!summary || !summary.id) return { synced: false, reason: "missing-thread-summary" };
+  const restStatus = isThreadListRestStatus(summary.status);
+  if (restStatus) clearLocalActiveThreadStatus(summary.id);
+  const normalized = normalizeThreadSummaryLiveStatus(restStatus
+    ? clearThreadSummaryActiveMarkers(summary)
+    : summary);
+  const upserted = upsertThreadListFallbackCacheThread(normalized, { addIfMissing: true });
+  threadDisplaySummaryCache.remember(normalized);
+  return {
+    synced: Boolean(upserted),
+    restStatus,
+  };
+}
+
 function updateThreadListFallbackCacheStatus(threadId, status, meta = {}) {
   return threadListFallbackCacheService.updateStatus(threadId, status, meta);
 }
@@ -16335,6 +16373,7 @@ async function handleApi(req, res) {
       url,
       readThreadDetail: (request) => threadDetailReadOrchestrationService.readThreadDetail(request),
       sendJson: (status, body) => sendJson(res, status, body),
+      onThreadDetailReadResult: (payload) => syncThreadDetailReadResultToThreadListFallbackCache(payload),
       logThreadDetail,
     });
     return;
@@ -16655,9 +16694,11 @@ module.exports = {
   codeGraphMcpElicitationToolName,
   codeGraphReadOnlyMcpElicitationDecision,
   clearLocalActiveThreadStatus,
+  clearThreadSummaryActiveMarkers,
   collectRecentRolloutFiles,
   compactThread,
   dedupeSyntheticActiveAssistantMessagesInThread,
+  detailReadThreadSummaryForFallbackCache,
   enrichThreadItemTimestampsFromRollout,
   filterFallbackThreads,
   filePreviewContentDisposition,
@@ -16693,6 +16734,7 @@ module.exports = {
   serveStatic,
   serverRequestResponsePayload,
   sortTurnsChronologically,
+  syncThreadDetailReadResultToThreadListFallbackCache,
   staticCompressionCacheStats,
   staticCompressionEncoding,
   stripThreadListDetailFields,

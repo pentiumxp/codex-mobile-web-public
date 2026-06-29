@@ -58,7 +58,7 @@ function normalizeHomeAiDeployLaneSummary(thread, options = {}) {
   const currentStatus = statusText(thread.status);
   const live = /^(active|running|queued|processing|inprogress|in_progress|in-progress)$/i.test(currentStatus);
   if (live) return Object.assign({}, thread, { mobileDeployLane: true });
-  return Object.assign({}, thread, {
+  const normalized = Object.assign({}, thread, {
     mobileDeployLane: true,
     status: {
       type: "idle",
@@ -66,6 +66,12 @@ function normalizeHomeAiDeployLaneSummary(thread, options = {}) {
       previousType: currentStatus || "",
     },
   });
+  delete normalized.activeTurnId;
+  delete normalized.active_turn_id;
+  delete normalized.mobileLocalActiveStatus;
+  delete normalized.mobileRolloutActiveTurn;
+  delete normalized.mobileActiveTurnId;
+  return normalized;
 }
 
 function boundedTaskText(input = {}) {

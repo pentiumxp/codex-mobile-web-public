@@ -24,6 +24,10 @@ function usage() {
     "  --browser-rounds <n>    Browser switch/sample rounds. Default: 5.",
     "  --browser-sample-delays-ms <csv> Browser delays after each switch. Default: 100,350,1200,2800,6000.",
     "  --browser-min-settled-delay-ms <n> Browser downgrade H2 threshold. Default: 1000.",
+    "  --browser-exercise-submit Enable browser Composer submit exercise with a short OK-only prompt.",
+    "  --browser-submit-thread-id <id> Optional target thread for submit exercise. Defaults to first selected thread.",
+    "  --browser-submit-message <text> Submit exercise message. Default asks for OK only.",
+    "  --browser-submit-sample-delays-ms <csv> Submit exercise sample delays. Default: 100,350,900,1600,2800,6000.",
     "  --interval-ms <n>       Loop interval. Default: 600000.",
     "  --iterations <n>        Maximum loop iterations. Default: unlimited with --loop, 1 otherwise.",
     "  --loop                  Continue periodically instead of running once.",
@@ -53,6 +57,10 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     browserRounds: positiveInt(env.CODEX_MOBILE_RUNTIME_BROWSER_ROUNDS || "5", 5, 20),
     browserSampleDelaysMs: String(env.CODEX_MOBILE_RUNTIME_BROWSER_SAMPLE_DELAYS_MS || "100,350,1200,2800,6000"),
     browserMinSettledDelayMs: positiveInt(env.CODEX_MOBILE_RUNTIME_BROWSER_MIN_SETTLED_DELAY_MS || "1000", 1000, 10000),
+    browserExerciseSubmit: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_RUNTIME_BROWSER_EXERCISE_SUBMIT || "")),
+    browserSubmitThreadId: String(env.CODEX_MOBILE_RUNTIME_BROWSER_SUBMIT_THREAD_ID || "").trim(),
+    browserSubmitMessage: String(env.CODEX_MOBILE_RUNTIME_BROWSER_SUBMIT_MESSAGE || "").slice(0, 500),
+    browserSubmitSampleDelaysMs: String(env.CODEX_MOBILE_RUNTIME_BROWSER_SUBMIT_SAMPLE_DELAYS_MS || "100,350,900,1600,2800,6000"),
     intervalMs: positiveInt(env.CODEX_MOBILE_RUNTIME_SELF_CHECK_INTERVAL_MS || String(DEFAULT_INTERVAL_MS), DEFAULT_INTERVAL_MS),
     iterations: 1,
     loop: false,
@@ -76,6 +84,10 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     else if (arg === "--browser-rounds") options.browserRounds = positiveInt(next(), options.browserRounds, 20);
     else if (arg === "--browser-sample-delays-ms") options.browserSampleDelaysMs = next();
     else if (arg === "--browser-min-settled-delay-ms") options.browserMinSettledDelayMs = positiveInt(next(), options.browserMinSettledDelayMs, 10000);
+    else if (arg === "--browser-exercise-submit") options.browserExerciseSubmit = true;
+    else if (arg === "--browser-submit-thread-id") options.browserSubmitThreadId = next();
+    else if (arg === "--browser-submit-message") options.browserSubmitMessage = next().slice(0, 500);
+    else if (arg === "--browser-submit-sample-delays-ms") options.browserSubmitSampleDelaysMs = next();
     else if (arg === "--interval-ms") options.intervalMs = positiveInt(next(), options.intervalMs);
     else if (arg === "--iterations") options.iterations = positiveInt(next(), options.iterations, 1000000);
     else if (arg === "--loop") options.loop = true;
@@ -174,6 +186,10 @@ async function runOnce(options = {}, deps = {}) {
       "--min-settled-delay-ms",
       String(positiveInt(options.browserMinSettledDelayMs, 1000, 10000)),
     ]);
+    if (options.browserExerciseSubmit) browserArgs.push("--exercise-submit");
+    if (options.browserSubmitThreadId) browserArgs.push("--submit-thread-id", options.browserSubmitThreadId);
+    if (options.browserSubmitMessage) browserArgs.push("--submit-message", options.browserSubmitMessage);
+    if (options.browserSubmitSampleDelaysMs) browserArgs.push("--submit-sample-delays-ms", options.browserSubmitSampleDelaysMs);
     const result = await runNodeScript(path.join(root, "scripts", "codex-mobile-browser-runtime-self-check.js"), browserArgs, deps);
     checks.push(summarizeCheck("browser-runtime", result));
   }

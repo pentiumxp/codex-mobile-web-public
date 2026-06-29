@@ -173,18 +173,18 @@ successful" loads as a first-class slow path. Successful list loads now plan a
 bounded `thread_list_slow_path` diagnostic from the same `thread_list_rendered`
 performance evidence, including client elapsed/API/render timings plus safe
 server timing labels such as `performancePhase`, fallback-cache decision,
-app-server request reason, and bounded source/app-server counters. Repeated
-matching stalls can enter Home AI's Owner-gated diagnostic loop instead of
-being cleared as ordinary success.
+app-server request reason, and bounded source/app-server counters. Clients
+after `codex-mobile-shell-v580` keep these slow-success events as local
+observe-only evidence by default; they should guide performance work but should
+not create Home AI Owner repair cards.
 
 The v557 diagnostics slice applies the same "slow success is observable"
 contract to thread detail first paint. Successful detail loads that cross the
 default 1.5s threshold now plan `thread_detail_slow_path`, and slow-path repeat
 counting aggregates by stable surface/action/thread/error identity instead of
 splitting on client build id, read mode, render mode, or source kind. Those
-volatile fields remain in the bounded report payload as evidence, but they no
-longer prevent repeated cold peaks from reaching the Home AI Owner-gated
-diagnostic loop.
+volatile fields remain available as bounded local evidence, but v580 suppresses
+default Home AI `homeai.diagnostic.report` posting for this slow-success class.
 
 The browser-runtime self-check slice closes the gap between clean API
 projection checks and user-visible DOM failures. `scripts/codex-mobile-browser-runtime-self-check.js`
@@ -198,7 +198,15 @@ background refresh when reopening an already-loaded thread, preventing the
 empty/loading shell from replacing valid visible content during refresh.
 Clients after `codex-mobile-shell-v576` extend the same browser self-check to
 visible-item downgrades, latest-turn timestamp/Usage gaps, and visible image
-load failures. `scripts/codex-mobile-runtime-self-check-loop.js` wraps the API
+load failures. The browser self-check now also detects repeated few-pixel
+visual-anchor jitter and can explicitly exercise the real Composer submit path
+with one short OK-only message via `--exercise-submit`, so submitted user-card
+visibility and small send-time layout shifts are testable without printing
+message bodies. Clients after `codex-mobile-shell-v581` also prevent stale
+active-turn identities from steering new user input into already completed
+turns, discard pending steer echoes once their target turn has completed, and
+disable conversation-body entry/leave translation animations so repeated thread
+opens do not create a few-pixel reading jitter. `scripts/codex-mobile-runtime-self-check-loop.js` wraps the API
 self-check plus browser self-check for deploy-time one-shot checks and periodic
 metadata-only JSONL monitoring, while Home AI remains responsible for
 Owner-approved repair-card dispatch.

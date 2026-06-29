@@ -10,6 +10,7 @@
 }(typeof globalThis !== "undefined" ? globalThis : null, function () {
   const DEFAULT_THRESHOLD = 3;
   const DEFAULT_THROTTLE_MS = 5 * 60 * 1000;
+  const DEFAULT_SLOW_PATH_REPORT_MODE = "observe";
   const MAX_BREADCRUMBS = 6;
   const PLUGIN_ID = "codex-mobile";
   const SAFE_CONTEXT_KEYS = new Set([
@@ -242,9 +243,13 @@
     };
   }
 
-  function clearKeyFor(event) {
-    const isSlowPath = event.category === "thread_session_slow_path"
+  function isSlowPathEvent(event) {
+    return event && event.category === "thread_session_slow_path"
       && /_slow_path$/.test(event.diagnostic_type || "");
+  }
+
+  function clearKeyFor(event) {
+    const isSlowPath = isSlowPathEvent(event);
     if (isSlowPath) {
       return [
         event.category,
@@ -266,8 +271,7 @@
   }
 
   function signatureFor(event) {
-    const isSlowPath = event.category === "thread_session_slow_path"
-      && /_slow_path$/.test(event.diagnostic_type || "");
+    const isSlowPath = isSlowPathEvent(event);
     if (isSlowPath) {
       return [
         clearKeyFor(event),
@@ -317,9 +321,18 @@
     };
   }
 
+  function normalizeSlowPathReportMode(options = {}) {
+    const mode = String(options.slowPathReportMode || "").trim().toLowerCase();
+    if (mode === "report" || mode === "post") return "report";
+    if (mode === "observe" || mode === "local" || mode === "off") return "observe";
+    if (options.reportSlowPath === true || options.allowSlowPathReports === true) return "report";
+    return DEFAULT_SLOW_PATH_REPORT_MODE;
+  }
+
   function createDiagnosticReporter(options = {}) {
     const threshold = Math.max(1, Number(options.threshold || DEFAULT_THRESHOLD) || DEFAULT_THRESHOLD);
     const throttleMs = Math.max(0, Number(options.throttleMs || DEFAULT_THROTTLE_MS) || DEFAULT_THROTTLE_MS);
+    const slowPathReportMode = normalizeSlowPathReportMode(options);
     const now = typeof options.now === "function" ? options.now : () => Date.now();
     const failures = new Map();
     const lastReportedAt = new Map();
@@ -331,6 +344,18 @@
       const previous = failures.get(signature);
       const count = (previous && previous.count ? previous.count : 0) + 1;
       failures.set(signature, { count, clearKey, lastAt: now() });
+      if (isSlowPathEvent(event) && slowPathReportMode !== "report") {
+        return {
+          eligible: false,
+          report: null,
+          repeatedFailures: count,
+          signature,
+          clearKey,
+          threshold,
+          observeOnly: true,
+          reason: "slow_path_observe_only",
+        };
+      }
       const lastReportAt = Number(lastReportedAt.get(signature) || 0);
       const eligible = count >= threshold && (!lastReportAt || now() - lastReportAt >= throttleMs);
       if (!eligible) {
@@ -341,6 +366,8 @@
           signature,
           clearKey,
           threshold,
+          observeOnly: false,
+          reason: "below_threshold_or_throttled",
         };
       }
       lastReportedAt.set(signature, now());
@@ -351,12 +378,14 @@
         signature,
         clearKey,
         threshold,
+        observeOnly: false,
+        reason: "eligible",
       };
     }
 
     function recordSuccess(input) {
       const event = sanitizeInput(input || {});
-      if (event.category === "thread_session_slow_path" && /_slow_path$/.test(event.diagnostic_type || "")) {
+      if (isSlowPathEvent(event)) {
         return { cleared: 0, clearKey: clearKeyFor(event), reason: "slow-path-rolling-window" };
       }
       const clearKey = clearKeyFor(event);
@@ -383,6 +412,7 @@
       recordSuccess,
       threshold,
       throttleMs,
+      slowPathReportMode,
     };
   }
 
@@ -404,6 +434,7 @@
   return {
     DEFAULT_THRESHOLD,
     DEFAULT_THROTTLE_MS,
+    DEFAULT_SLOW_PATH_REPORT_MODE,
     boundedToken,
     createDiagnosticReporter,
     durationBucket,

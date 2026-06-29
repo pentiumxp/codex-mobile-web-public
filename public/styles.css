@@ -4251,6 +4251,11 @@ html.keyboard-open .side-chat-form textarea {
   animation: entry-out 180ms ease-in both;
 }
 
+.conversation .entry-animate,
+.conversation .entry-leave {
+  animation: none;
+}
+
 .turn-status {
   color: var(--muted);
   font-size: var(--content-small-font-size);

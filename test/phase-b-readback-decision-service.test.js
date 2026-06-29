@@ -303,6 +303,57 @@ test("phase B readback decision returns ready for warm or bounded paths", () => 
   assert.equal(decision.evidence.detailResponseBudgetProgressiveFirstPaintBytesAfterTextBudget, 155000);
 });
 
+test("phase B readback decision flags slow active overlay detail latency", () => {
+  const decision = classifyPhaseBReadback({
+    ok: true,
+    threadList: {
+      coldPathOwner: "warm-fallback-cache",
+      coldPathReason: "cache-hit-incremental",
+    },
+    detail: {
+      readMode: "projection-active-overlay",
+      readDecision: "projection-active-overlay",
+      coldPathOwner: "warm-path",
+      coldPathReason: "warm-projection-active-overlay",
+      totalMs: 1524,
+      activeOverlayMs: 1182,
+      activeOverlayProjectionLookupMs: 0,
+      activeOverlayMergeMs: 3,
+      prepareResponseMs: 229,
+      threadReadMs: 0,
+      projectionMs: 3,
+    },
+  });
+
+  assert.equal(decision.status, "needs_repair");
+  assert.equal(decision.priority, "H2");
+  assert.equal(decision.owner, "active-overlay-latency");
+  assert.equal(decision.reason, "active-overlay-latency");
+  assert.equal(decision.nextAction, "optimize-active-overlay-first-paint");
+  assert.equal(decision.evidence.detailTotalMs, 1524);
+  assert.equal(decision.evidence.detailActiveOverlayMs, 1182);
+  assert.equal(decision.evidence.detailPrepareResponseMs, 229);
+});
+
+test("phase B readback decision observes sub-H2 warm detail latency", () => {
+  const decision = classifyPhaseBReadback({
+    ok: true,
+    detail: {
+      readMode: "projection-active-overlay",
+      readDecision: "projection-active-overlay",
+      coldPathOwner: "warm-path",
+      coldPathReason: "warm-projection-active-overlay",
+      totalMs: 1100,
+      activeOverlayMs: 780,
+    },
+  });
+
+  assert.equal(decision.status, "needs_repair");
+  assert.equal(decision.priority, "H3");
+  assert.equal(decision.owner, "thread-detail-latency");
+  assert.equal(decision.nextAction, "split-thread-detail-latency");
+});
+
 test("phase B readback decision treats source snapshot hits as ready evidence", () => {
   const decision = classifyPhaseBReadback({
     ok: true,

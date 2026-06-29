@@ -242,6 +242,37 @@
     };
   }
 
+  function planReadingViewportPreservation(options = {}) {
+    if (options.nearBottom) {
+      return {
+        preserve: false,
+        reason: "near-bottom",
+      };
+    }
+    if (options.userReadingCurrentTurn) {
+      return {
+        preserve: true,
+        reason: "user-reading-current-turn",
+      };
+    }
+    if (options.autoScrollHold) {
+      return {
+        preserve: true,
+        reason: "auto-scroll-hold",
+      };
+    }
+    if (options.recentScrollIntent) {
+      return {
+        preserve: true,
+        reason: "recent-scroll-intent",
+      };
+    }
+    return {
+      preserve: false,
+      reason: "no-user-scroll-protection",
+    };
+  }
+
   function planFullRenderScroll(options = {}) {
     const explicitNoStickToBottom = options.stickToBottom === false || Boolean(options.scrollToTurnReceiptStart);
     if (explicitNoStickToBottom) {
@@ -321,6 +352,7 @@
     planConversationJumpButtons,
     planFullRenderScroll,
     planLocalPatchScrollCompletion,
+    planReadingViewportPreservation,
     planUserReadingCurrentTurn,
     shouldFollowViewport,
     shouldFollowSubmittedMessage,
