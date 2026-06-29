@@ -3787,8 +3787,13 @@ function compactItemTimestampFields(item) {
     "completedAt",
     "completed_at_ms",
     "completed_at",
+    "mobileDisplayTimestampMs",
+    "mobileDisplayTimestamp",
   ]) {
     if (item && item[key] !== undefined) fields[key] = item[key];
+  }
+  if (item && item.mobileDisplayTimestampInferred !== undefined) {
+    fields.mobileDisplayTimestampInferred = item.mobileDisplayTimestampInferred === true;
   }
   return fields;
 }
@@ -5507,7 +5512,7 @@ function turnCompletionUsageSummary(threadId, turnId) {
   });
 }
 
-function itemDisplayTimestampMs(item) {
+function itemDirectTimestampMs(item) {
   for (const key of [
     "createdAtMs",
     "createdAt",
@@ -5524,6 +5529,78 @@ function itemDisplayTimestampMs(item) {
     if (timestamp) return timestamp;
   }
   return 0;
+}
+
+function itemDisplayTimestampMs(item) {
+  return itemDirectTimestampMs(item)
+    || timestampToMs(item && (item.mobileDisplayTimestampMs || item.mobileDisplayTimestamp));
+}
+
+const DISPLAY_TIMESTAMP_INFERABLE_TYPES = new Set([
+  "agentMessage",
+  "filePreview",
+  "imageGeneration",
+  "imageView",
+  "plan",
+  "turnDiagnostic",
+  "userMessage",
+]);
+
+function itemCanUseInferredDisplayTimestamp(item) {
+  return Boolean(item && DISPLAY_TIMESTAMP_INFERABLE_TYPES.has(String(item.type || "")));
+}
+
+function turnCompletedDisplayTimestampMs(turn) {
+  return timestampToMs(turn && (
+    turn.completedAtMs
+    || turn.completedAt
+    || turn.completed_at_ms
+    || turn.completed_at
+    || turn.finishedAt
+    || turn.finished_at
+    || turn.updatedAtMs
+    || turn.updatedAt
+  ));
+}
+
+function nearestPreviousItemDisplayTimestampMs(items, index) {
+  for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+    const timestamp = itemDisplayTimestampMs(items[cursor]);
+    if (timestamp) return timestamp;
+  }
+  return 0;
+}
+
+function nearestNextItemDisplayTimestampMs(items, index) {
+  for (let cursor = index + 1; cursor < items.length; cursor += 1) {
+    const timestamp = itemDisplayTimestampMs(items[cursor]);
+    if (timestamp) return timestamp;
+  }
+  return 0;
+}
+
+function inferredDisplayTimestampForItem(items, index, turn) {
+  const previous = nearestPreviousItemDisplayTimestampMs(items, index);
+  const next = nearestNextItemDisplayTimestampMs(items, index);
+  if (previous && next && next >= previous) return Math.min(next, previous + 1);
+  if (previous) return previous + 1;
+  if (next) return Math.max(1, next - 1);
+  if (isCompletedStatus(turn && turn.status)) return turnCompletedDisplayTimestampMs(turn) || turnStartedAtMs(turn);
+  return turnStartedAtMs(turn) || 0;
+}
+
+function inferTurnItemDisplayTimestamps(turn) {
+  if (!turn || !Array.isArray(turn.items) || turn.items.length < 1) return turn;
+  for (let index = 0; index < turn.items.length; index += 1) {
+    const item = turn.items[index];
+    if (!item || itemDisplayTimestampMs(item) || !itemCanUseInferredDisplayTimestamp(item)) continue;
+    const timestamp = inferredDisplayTimestampForItem(turn.items, index, turn);
+    if (!timestamp) continue;
+    item.mobileDisplayTimestampMs = timestamp;
+    item.mobileDisplayTimestamp = new Date(timestamp).toISOString();
+    item.mobileDisplayTimestampInferred = true;
+  }
+  return turn;
 }
 
 function timestampCandidateTypesForItem(item) {
@@ -5580,7 +5657,7 @@ function takeTimestampCandidateForItem(candidates, item, aliases) {
 }
 
 function applyRolloutItemTimestamp(item, candidate) {
-  if (!item || !candidate || !candidate.timestampMs || itemDisplayTimestampMs(item)) return;
+  if (!item || !candidate || !candidate.timestampMs || itemDirectTimestampMs(item)) return;
   item.startedAtMs = candidate.timestampMs;
   item.startedAt = candidate.timestamp || new Date(candidate.timestampMs).toISOString();
 }
@@ -6974,7 +7051,7 @@ function compactThread(thread, options = {}) {
       suppressedUploadViewImageCallIds: toolOutputImagePayload.suppressedUploadViewImageCallIdsByTurn instanceof Map
         ? toolOutputImagePayload.suppressedUploadViewImageCallIdsByTurn.get(String(turn && turn.id || "")) || new Set()
         : new Set(),
-    })).map(orderTurnItemsByDisplayTimestamp);
+    })).map(inferTurnItemDisplayTimestamps).map(orderTurnItemsByDisplayTimestamp);
     const latest = out.turns[latestIndex];
     if (latest && isLiveTurn(latest) && Array.isArray(latest.items)
       && !latest.items.some((item) => isOperationalItem(item))) {

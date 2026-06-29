@@ -146,6 +146,51 @@ test("thread detail self check detects visible item timestamp order mismatch", (
   assert.equal(issue.count, 1);
 });
 
+test("thread detail self check accepts inferred user display timestamps", () => {
+  const detail = healthyDetail();
+  detail.thread.turns[0] = {
+    id: "turn-display-timestamp",
+    status: "completed",
+    startedAt: "2026-06-29T10:26:59.000Z",
+    completedAt: "2026-06-29T11:28:55.000Z",
+    items: [
+      {
+        id: "context-known",
+        type: "contextCompaction",
+        startedAtMs: Date.parse("2026-06-29T10:49:44.058Z"),
+      },
+      {
+        id: "user-inferred",
+        type: "userMessage",
+        mobileDisplayTimestampMs: Date.parse("2026-06-29T10:49:44.058Z") + 1,
+        mobileDisplayTimestampInferred: true,
+      },
+      {
+        id: "user-known",
+        type: "userMessage",
+        startedAtMs: Date.parse("2026-06-29T11:01:31.746Z"),
+      },
+      {
+        id: "assistant-final",
+        type: "agentMessage",
+        startedAtMs: Date.parse("2026-06-29T11:28:55.447Z"),
+      },
+      {
+        id: "usage",
+        type: "turnUsageSummary",
+        startedAtMs: Date.parse("2026-06-29T11:28:55.482Z"),
+      },
+    ],
+  };
+
+  const report = analyzeThreadDetail(detail);
+  const codes = report.issues.map((entry) => entry.code);
+
+  assert.equal(itemTimestampMs(detail.thread.turns[0].items[1], detail.thread.turns[0], detail.thread), Date.parse("2026-06-29T10:49:44.058Z") + 1);
+  assert.equal(codes.includes("visible_item_timestamp_order_mismatch"), false);
+  assert.equal(codes.includes("visible_item_timestamp_missing"), false);
+});
+
 test("thread detail self check accepts naturally short completed replay receipts", () => {
   const detail = healthyDetail();
   detail.thread.mobileVisibleItemKeys = ["u1", "a1", "usage1"];

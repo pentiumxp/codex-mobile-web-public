@@ -266,7 +266,16 @@ function timestampMs(value) {
 }
 
 function itemTimestampMs(item = {}) {
-  return timestampMs(item.startedAtMs || item.startedAt || item.createdAtMs || item.createdAt || item.timestampMs || item.timestamp);
+  return timestampMs(
+    item.startedAtMs
+    || item.startedAt
+    || item.createdAtMs
+    || item.createdAt
+    || item.timestampMs
+    || item.timestamp
+    || item.mobileDisplayTimestampMs
+    || item.mobileDisplayTimestamp,
+  );
 }
 
 function duplicateLatestUserMessageEventCount(userItems = []) {

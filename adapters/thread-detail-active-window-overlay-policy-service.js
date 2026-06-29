@@ -156,6 +156,8 @@ function itemDisplayTimestampMs(item, turn = null, thread = null) {
     || item.updated_at
     || item.timestampMs
     || item.timestamp
+    || item.mobileDisplayTimestampMs
+    || item.mobileDisplayTimestamp
     || item.timeMs
   ));
   if (direct) return direct;
