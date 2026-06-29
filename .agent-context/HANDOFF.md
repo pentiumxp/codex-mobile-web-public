@@ -30105,5 +30105,89 @@ The previous full handoff was archived and should be opened only when old proven
   - `git diff --check`
   - `node /Users/hermes-dev/HermesMobileDev/app/scripts/fallback-governance-check.js --changed-file ... --json`
 - Deployment status:
-  - Not deployed yet.
+  - Deployed privately through the Home AI Deploy lane from source commit
+    `6e571ba9739b` with reason
+    `codex-mobile-v588-projection-user-message-dedupe`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T130747Z-plugin-codex-mobile-web-codex-mobile-v588-projection-user-message-dedupe`.
   - No Public push/deploy has been run for this source fix.
+- Production readback:
+  - `/api/public-config` returned status `200`, build id
+    `b5912cb01738c783`, client build id
+    `0.1.11|codex-mobile-shell-v587`, shell cache
+    `codex-mobile-shell-v587`, and `authRequired=true`. Static shell/cache did
+    not change for v588 because this was a server/diagnostic change.
+  - Source/production hash parity matched for
+    `adapters/thread-user-message-echo-normalizer-service.js`,
+    `adapters/browser-runtime-self-check-service.js`,
+    `scripts/codex-mobile-browser-runtime-self-check.js`,
+    `test/thread-user-message-echo-normalizer-service.test.js`, and
+    `test/browser-runtime-self-check-service.test.js`.
+  - Production marker readback confirmed
+    `PROJECTION_INDEX_DUPLICATE_WINDOW_MS`, `latestTurnUserNodeDetails`,
+    `runtime_evaluate_exception`, and
+    `browser runtime self-check ignores null samples in summary`.
+- Residual gate:
+  - Deploy-mode runtime self-check returned `deployPass=false` and
+    `periodicHealthy=false`.
+  - API-thread check reported H2 `thread_detail_refresh_item_downgrade`,
+    `thread_detail_refresh_lost_user_input`, and
+    `thread_detail_refresh_lost_assistant_items`.
+  - Browser-runtime check still reported H2
+    `browser_latest_turn_user_message_duplicate` (`17` instances in the
+    bounded gate run).
+  - Bounded duplicate details showed durable/durable user-message nodes with
+    the same text hash and client submission hash but different render-key
+    hashes.
+  - Return status for task card `ttc_fe1f554b7860562082` was
+    `partially_completed`.
+
+### 2026-06-29 - v589 Client DOM Duplicate User Message Authority Fix Pending Deploy
+
+- Scope:
+  - Follow-up for active diagnostic task `ttc_b1e01a6fbcdfa70943`
+    (`thread_session_load_failed`, case `diagcase_a638023f3416a2cbb617`) after
+    v588 deployed but browser-runtime still reported
+    `browser_latest_turn_user_message_duplicate`.
+  - Original `thread_detail_load_failed/http_404` remains closed by v583; the
+    active residual is a client projection/DOM authority bug.
+- Root-cause evidence:
+  - Bounded production API recheck of
+    `/api/threads/019eee6c-a6f5-7b20-bfb4-f96ccb6431b3?mode=recent` showed the
+    current active turn had four user-message items with four distinct bounded
+    content hashes and no duplicate text groups.
+  - Browser self-check against the same thread still showed two durable
+    `.item.userMessage` DOM nodes with the same text hash and same
+    `data-client-submission-hash`, but different `data-item` and
+    `data-render-key` hashes.
+  - Failing layer: client stable-signature / DOM authority contract. Existing
+    stable-signature checks invalidated empty/missing DOM, turn-order mismatch,
+    and duplicate render keys, but not same-turn duplicate user-message cards
+    with different render keys.
+- Source changes staged:
+  - `public/app.js` bumps `CLIENT_BUILD_ID` to
+    `0.1.11|codex-mobile-shell-v589`.
+  - `public/sw.js` bumps `CACHE_NAME` to `codex-mobile-shell-v589`.
+  - `conversationDomShape()` now counts same-turn duplicate user-message cards
+    by `data-client-submission-hash` first, then bounded body-text hash.
+  - `visibleConversationShape()` and `threadTileVisibleShape()` now count the
+    duplicate user-message cardinality permitted by the authoritative visible
+    projection.
+  - `updateConversationHtml()` passes DOM and expected duplicate-user-message
+    counts into the DOM patch planner and post-apply consistency checks.
+  - `public/thread-detail-dom-patch.js` invalidates stable signatures with
+    reason `stable-signature-duplicate-user-messages` when the browser DOM has
+    more duplicate user-message cards than the current projection allows, and
+    reports `post-apply-duplicate-user-messages` if a patch leaves that state.
+  - `docs/TROUBLESHOOTING.md` documents the API-clean/browser-duplicate
+    diagnosis path.
+- Source validation passed:
+  - `node --test test/thread-detail-dom-patch.test.js test/conversation-render.test.js test/client-render-stability-guard.test.js test/mobile-viewport.test.js test/browser-runtime-self-check-service.test.js`
+  - `npm test` (`1586` tests passed)
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+  - `node /Users/hermes-dev/HermesMobileDev/app/scripts/fallback-governance-check.js --changed-file ... --json`
+  - `codegraph sync && codegraph status` showed the graph up to date.
+- Deployment status:
+  - Pending commit/deploy. Do not push Public unless explicitly requested.

@@ -542,7 +542,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v587";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v589";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -7045,6 +7045,7 @@ function conversationDomShape() {
     return {
       renderKeyCount: 0,
       duplicateRenderKeyCount: 0,
+      duplicateUserMessageCount: 0,
       turnCount: 0,
       itemCount: 0,
     };
@@ -7057,20 +7058,73 @@ function conversationDomShape() {
     if (seen.has(key)) duplicateRenderKeyCount += 1;
     else seen.add(key);
   }
+  let duplicateUserMessageCount = 0;
+  for (const turnNode of Array.from(conversation.querySelectorAll("article.turn[data-turn], article.thread-tile-turn[data-thread-tile-turn]"))) {
+    duplicateUserMessageCount += duplicateUserMessageSignatureCount(
+      Array.from(turnNode.querySelectorAll(".item.userMessage")),
+      (node) => domUserMessageDuplicateSignature(turnNode, node),
+    );
+  }
   return {
     renderKeyCount: seen.size,
     duplicateRenderKeyCount,
+    duplicateUserMessageCount,
     turnCount: conversation.querySelectorAll("article.turn[data-turn], article.thread-tile-turn[data-thread-tile-turn]").length,
     itemCount: conversation.querySelectorAll("[data-item]").length,
   };
 }
 
+function duplicateUserMessageSignatureCount(entries, signatureForEntry) {
+  const seen = new Set();
+  let duplicates = 0;
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    const signature = String(signatureForEntry(entry) || "").trim();
+    if (!signature) continue;
+    if (seen.has(signature)) duplicates += 1;
+    else seen.add(signature);
+  }
+  return duplicates;
+}
+
+function domUserMessageDuplicateSignature(turnNode, node) {
+  if (!node || !node.getAttribute) return "";
+  const turnId = String(
+    turnNode && turnNode.getAttribute && (turnNode.getAttribute("data-turn") || turnNode.getAttribute("data-thread-tile-turn")) || "",
+  ).trim();
+  const submissionHash = String(node.getAttribute("data-client-submission-hash") || "").trim();
+  if (submissionHash) return `submission:${turnId}:${submissionHash}`;
+  const body = node.querySelector && node.querySelector(".item-body");
+  const text = String((body || node).textContent || "").replace(/\s+/g, " ").trim();
+  return text ? `text:${turnId}:${stableTextHash(text)}` : "";
+}
+
+function visibleUserMessageDuplicateSignature(turn, item) {
+  if (!item || item.type !== "userMessage") return "";
+  const turnId = String(turn && turn.id || turn && turn.mobileVisibleKey || "").trim();
+  const submissionHash = clientSubmissionDiagnosticHash(item && item.clientSubmissionId);
+  if (submissionHash) return `submission:${turnId}:${submissionHash}`;
+  const comparable = userMessageComparableParts(item);
+  const text = String(
+    comparable.text
+    || itemTextValue(item && item.text)
+    || itemTextValue(item && item.message)
+    || itemTextValue(item && item.content)
+    || "",
+  ).replace(/\s+/g, " ").trim();
+  return text ? `text:${turnId}:${stableTextHash(text)}` : "";
+}
+
 function visibleConversationShape(thread) {
   const turns = visibleTurnsForConversation(thread);
   const visibleItemCount = turns.reduce((total, turn) => total + visibleItemsForTurn(turn, thread).length, 0);
+  const duplicateUserMessageCount = turns.reduce((total, turn) => {
+    const userMessages = visibleItemsForTurn(turn, thread).filter((item) => item && item.type === "userMessage");
+    return total + duplicateUserMessageSignatureCount(userMessages, (item) => visibleUserMessageDuplicateSignature(turn, item));
+  }, 0);
   return {
     visibleTurnCount: turns.length,
     visibleItemCount,
+    duplicateUserMessageCount,
   };
 }
 
@@ -7315,14 +7369,19 @@ function threadTileVisibleShape(ids = state.threadTileActiveIds) {
   return (Array.isArray(ids) ? ids : []).reduce((shape, id) => {
     const thread = threadTileDisplayThread(id);
     visibleTurnsForConversation(thread).forEach((turn) => {
-      const itemCount = visibleItemsForTurn(turn, thread).length;
+      const visibleItems = visibleItemsForTurn(turn, thread);
+      const itemCount = visibleItems.length;
       if (itemCount > 0) {
         shape.turnCount += 1;
         shape.visibleItemCount += itemCount;
+        shape.duplicateUserMessageCount += duplicateUserMessageSignatureCount(
+          visibleItems.filter((item) => item && item.type === "userMessage"),
+          (item) => visibleUserMessageDuplicateSignature(turn, item),
+        );
       }
     });
     return shape;
-  }, { turnCount: 0, visibleItemCount: 0 });
+  }, { turnCount: 0, visibleItemCount: 0, duplicateUserMessageCount: 0 });
 }
 
 function threadTileVisibleTurnCount(ids = state.threadTileActiveIds) {
@@ -13160,6 +13219,12 @@ function updateConversationHtml(html, signature, options = {}) {
   const duplicateRenderKeyCount = Object.prototype.hasOwnProperty.call(options, "duplicateRenderKeyCount")
     ? Math.max(0, Number(options.duplicateRenderKeyCount || 0))
     : preDomShape.duplicateRenderKeyCount;
+  const duplicateUserMessageCount = Object.prototype.hasOwnProperty.call(options, "duplicateUserMessageCount")
+    ? Math.max(0, Number(options.duplicateUserMessageCount || 0))
+    : preDomShape.duplicateUserMessageCount;
+  const expectedDuplicateUserMessageCount = Object.prototype.hasOwnProperty.call(options, "expectedDuplicateUserMessageCount")
+    ? Math.max(0, Number(options.expectedDuplicateUserMessageCount || 0))
+    : 0;
   const renderedDomTurnIds = Array.isArray(options.renderedDomTurnIds)
     ? options.renderedDomTurnIds.map(String).filter(Boolean)
     : conversationDomTurnIds(conversation);
@@ -13178,6 +13243,8 @@ function updateConversationHtml(html, signature, options = {}) {
     expectedVisibleItemCount,
     renderedDomItemCount,
     duplicateRenderKeyCount,
+    duplicateUserMessageCount,
+    expectedDuplicateUserMessageCount,
     expectedTurnIds,
     renderedDomTurnIds,
   });
@@ -13208,6 +13275,8 @@ function updateConversationHtml(html, signature, options = {}) {
     expectedVisibleItemCount,
     renderedDomItemCount,
     duplicateRenderKeyCount,
+    duplicateUserMessageCount,
+    expectedDuplicateUserMessageCount,
     previousChildCount,
     threadId: state.currentThreadId || "",
   });
@@ -13244,6 +13313,8 @@ function updateConversationHtml(html, signature, options = {}) {
     expectedVisibleItemCount,
     renderedDomItemCount: postDomShape.itemCount,
     duplicateRenderKeyCount: postDomShape.duplicateRenderKeyCount,
+    duplicateUserMessageCount: postDomShape.duplicateUserMessageCount,
+    expectedDuplicateUserMessageCount,
     expectedTurnIds,
     renderedDomTurnIds: conversationDomTurnIds(conversation),
     readMode: state.currentThread && state.currentThread.mobileReadMode || "",
@@ -14779,6 +14850,8 @@ function renderThreadTileLayout(layout, options = {}) {
     expectedVisibleItemCount: visibleShape.visibleItemCount,
     renderedDomItemCount: renderedDomShape.itemCount,
     duplicateRenderKeyCount: renderedDomShape.duplicateRenderKeyCount,
+    duplicateUserMessageCount: renderedDomShape.duplicateUserMessageCount,
+    expectedDuplicateUserMessageCount: visibleShape.duplicateUserMessageCount,
     action: "thread-tile-empty-state",
     routeKind: "thread-tile",
     threadHash: diagnosticHash(`thread-tile:${ids.join("|")}`),
@@ -16145,6 +16218,8 @@ function renderCurrentThread(options = {}) {
     renderedDomTurnCount: conversationDomTurnIds().length,
     renderedDomItemCount: renderDomShape.itemCount,
     duplicateRenderKeyCount: renderDomShape.duplicateRenderKeyCount,
+    duplicateUserMessageCount: renderDomShape.duplicateUserMessageCount,
+    expectedDuplicateUserMessageCount: renderVisibleShape.duplicateUserMessageCount,
     expectedTurnIds: visibleRenderableTurnIds(thread),
     renderedDomTurnIds: conversationDomTurnIds(),
     source: "single-thread-render",

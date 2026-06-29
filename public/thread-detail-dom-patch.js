@@ -215,6 +215,9 @@
     const expectedVisibleItemCount = boundedCount(input.expectedVisibleItemCount);
     const renderedDomItemCount = boundedCount(input.renderedDomItemCount);
     const duplicateRenderKeyCount = boundedCount(input.duplicateRenderKeyCount);
+    const duplicateUserMessageCount = boundedCount(input.duplicateUserMessageCount);
+    const expectedDuplicateUserMessageCount = boundedCount(input.expectedDuplicateUserMessageCount);
+    const excessiveDuplicateUserMessages = Math.max(0, duplicateUserMessageCount - expectedDuplicateUserMessageCount);
     const stableSignatureButMissingTurns = Boolean(
       stableSignature
       && expectedVisibleTurnCount > 0
@@ -227,13 +230,16 @@
       && renderedDomItemCount < expectedVisibleItemCount
     );
     const stableSignatureButDuplicateKeys = Boolean(stableSignature && duplicateRenderKeyCount > 0);
+    const stableSignatureButDuplicateUserMessages = Boolean(stableSignature && excessiveDuplicateUserMessages > 0);
     const stableSignatureButTurnOrderMismatch = Boolean(stableSignature && visibleTurnOrderMismatch(input));
     const stableSignatureDomInvalid = stableSignatureButMissingTurns
       || stableSignatureButMissingItems
       || stableSignatureButDuplicateKeys
+      || stableSignatureButDuplicateUserMessages
       || stableSignatureButTurnOrderMismatch;
     let invalidationReason = "signature-changed";
     if (stableSignatureButDuplicateKeys) invalidationReason = "stable-signature-duplicate-render-keys";
+    else if (stableSignatureButDuplicateUserMessages) invalidationReason = "stable-signature-duplicate-user-messages";
     else if (stableSignatureButTurnOrderMismatch) invalidationReason = "stable-signature-turn-order-mismatch";
     else if (stableSignatureButMissingItems) invalidationReason = "stable-signature-dom-item-mismatch";
     else if (stableSignatureButMissingTurns) {
@@ -403,6 +409,11 @@
     const expectedVisibleItemCount = boundedCount(input.expectedVisibleItemCount);
     const renderedDomItemCount = boundedCount(input.renderedDomItemCount);
     const duplicateRenderKeyCount = boundedCount(input.duplicateRenderKeyCount);
+    const duplicateUserMessageCount = boundedCount(input.duplicateUserMessageCount);
+    const expectedDuplicateUserMessageCount = boundedCount(input.expectedDuplicateUserMessageCount);
+    if (Math.max(0, duplicateUserMessageCount - expectedDuplicateUserMessageCount) > 0) {
+      return "post-apply-duplicate-user-messages";
+    }
     if (duplicateRenderKeyCount > 0) return "post-apply-duplicate-render-keys";
     if (visibleTurnOrderMismatch(input)) return "post-apply-turn-order-mismatch";
     if (expectedVisibleItemCount > 0
@@ -490,17 +501,25 @@
     const expectedVisibleItemCount = boundedCount(input.expectedVisibleItemCount);
     const renderedDomItemCount = boundedCount(input.renderedDomItemCount);
     const duplicateRenderKeyCount = boundedCount(input.duplicateRenderKeyCount);
+    const duplicateUserMessageCount = boundedCount(input.duplicateUserMessageCount);
+    const expectedDuplicateUserMessageCount = boundedCount(input.expectedDuplicateUserMessageCount);
     const reason = String(updatePlan.reason || "");
     const invalidationReasons = new Set([
       "stable-signature-dom-empty",
       "stable-signature-dom-turn-mismatch",
       "stable-signature-dom-item-mismatch",
       "stable-signature-duplicate-render-keys",
+      "stable-signature-duplicate-user-messages",
       "stable-signature-turn-order-mismatch",
     ]);
     const shouldInvalidate = Boolean(
       invalidationReasons.has(reason)
-      && (expectedVisibleTurnCount > 0 || expectedVisibleItemCount > 0 || duplicateRenderKeyCount > 0)
+      && (
+        expectedVisibleTurnCount > 0
+        || expectedVisibleItemCount > 0
+        || duplicateRenderKeyCount > 0
+        || duplicateUserMessageCount > expectedDuplicateUserMessageCount
+      )
     );
     if (!shouldInvalidate) {
       return {
@@ -524,6 +543,8 @@
       domCount: renderedDomTurnCount,
       domItemCount: renderedDomItemCount,
       duplicateRenderKeyCount,
+      duplicateUserMessageCount,
+      expectedDuplicateUserMessageCount,
       previousCount: boundedCount(input.previousChildCount),
     };
     return {
@@ -540,6 +561,8 @@
         expectedVisibleItemCount,
         renderedDomItemCount,
         duplicateRenderKeyCount,
+        duplicateUserMessageCount,
+        expectedDuplicateUserMessageCount,
         action: String(updatePlan.action || "").slice(0, 40),
       },
       reason,

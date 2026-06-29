@@ -3745,11 +3745,14 @@ test("conversation html update invalidates stable signatures when the DOM has lo
   assert.match(updateBody, /: preDomShape\.turnCount/);
   assert.match(updateBody, /: preDomShape\.itemCount/);
   assert.match(updateBody, /: preDomShape\.duplicateRenderKeyCount/);
+  assert.match(updateBody, /: preDomShape\.duplicateUserMessageCount/);
   assert.match(updateBody, /expectedVisibleTurnCount,/);
   assert.match(updateBody, /renderedDomTurnCount,/);
   assert.match(updateBody, /expectedVisibleItemCount,/);
   assert.match(updateBody, /renderedDomItemCount,/);
   assert.match(updateBody, /duplicateRenderKeyCount,/);
+  assert.match(updateBody, /duplicateUserMessageCount,/);
+  assert.match(updateBody, /expectedDuplicateUserMessageCount,/);
   assert.match(updateBody, /expectedTurnIds,/);
   assert.match(updateBody, /renderedDomTurnIds,/);
   assert.match(updateBody, /threadDetailDomPatchApi\.planConversationDomAuthorityInvalidation\(\{/);
@@ -3771,11 +3774,15 @@ test("conversation html update invalidates stable signatures when the DOM has lo
   assert.match(functionBody("renderCurrentThread"), /expectedVisibleTurnCount: turns\.length/);
   assert.match(functionBody("renderCurrentThread"), /expectedVisibleItemCount: renderVisibleShape\.visibleItemCount/);
   assert.match(functionBody("renderCurrentThread"), /duplicateRenderKeyCount: renderDomShape\.duplicateRenderKeyCount/);
+  assert.match(functionBody("renderCurrentThread"), /duplicateUserMessageCount: renderDomShape\.duplicateUserMessageCount/);
+  assert.match(functionBody("renderCurrentThread"), /expectedDuplicateUserMessageCount: renderVisibleShape\.duplicateUserMessageCount/);
   assert.match(functionBody("renderCurrentThread"), /checkProjectionConsistency: true/);
   assert.match(functionBody("renderCurrentThread"), /updateConversationHtml\(\s*shellUpdatePlan\.html,\s*shellUpdatePlan\.conversationSignature,\s*Object\.assign\(\{\}, shellUpdatePlan\.options, \{ userReadingCurrentTurn \}\),\s*\)/);
   assert.match(functionBody("visibleRenderableTurnIds"), /visibleItemsForTurn\(turn, thread\)\.length/);
   assert.match(functionBody("threadTileVisibleShape"), /visibleTurnsForConversation\(thread\)/);
-  assert.match(functionBody("threadTileVisibleShape"), /visibleItemsForTurn\(turn, thread\)\.length/);
+  assert.match(functionBody("threadTileVisibleShape"), /const visibleItems = visibleItemsForTurn\(turn, thread\);/);
+  assert.match(functionBody("threadTileVisibleShape"), /const itemCount = visibleItems\.length;/);
+  assert.match(functionBody("threadTileVisibleShape"), /duplicateUserMessageSignatureCount/);
   assert.match(functionBody("threadTileVisibleTurnCount"), /threadTileVisibleShape\(ids\)\.turnCount/);
   assert.match(functionBody("threadTileDomTurnCount"), /article\.thread-tile-turn\[data-thread-tile-turn\]/);
   assert.match(functionBody("renderThreadTileLayout"), /const visibleShape = threadTileVisibleShape\(ids\);/);
@@ -3783,6 +3790,8 @@ test("conversation html update invalidates stable signatures when the DOM has lo
   assert.match(functionBody("renderThreadTileLayout"), /const renderedDomTurnCount = threadTileDomTurnCount\(\);/);
   assert.match(functionBody("renderThreadTileLayout"), /const renderedDomShape = conversationDomShape\(\);/);
   assert.match(functionBody("renderThreadTileLayout"), /expectedVisibleItemCount: visibleShape\.visibleItemCount/);
+  assert.match(functionBody("renderThreadTileLayout"), /duplicateUserMessageCount: renderedDomShape\.duplicateUserMessageCount/);
+  assert.match(functionBody("renderThreadTileLayout"), /expectedDuplicateUserMessageCount: visibleShape\.duplicateUserMessageCount/);
   assert.match(functionBody("renderThreadTileLayout"), /routeKind: "thread-tile"/);
   assert.match(functionBody("renderThreadTileLayout"), /currentVisibleItems: visibleShape\.visibleItemCount/);
   assert.match(functionBody("renderThreadTileLayout"), /source: "thread-tile-render"/);
@@ -4214,6 +4223,8 @@ test("thread tile visible shape uses pane thread context for visible item filter
     "itemTextValue",
     "reasoningItemHasVisibleText",
     "isLatestCompletedProcessTurn",
+    "duplicateUserMessageSignatureCount",
+    "visibleUserMessageDuplicateSignature",
     "visibleItemsForTurn",
     "visibleRenderableTurnIds",
     "threadTileVisibleShape",
@@ -4256,6 +4267,9 @@ function isRunningStatus(status) { return Boolean(status && (status === "running
 function isStaleActiveStatus() { return false; }
 function isIncompleteInterruptedTurn() { return false; }
 function turnHasActiveLiveItems() { return false; }
+function clientSubmissionDiagnosticHash() { return ""; }
+function userMessageComparableParts() { return { text: "", paths: [] }; }
+function stableTextHash(value) { return String(value || ""); }
 ${sources.join("\n")}
 return {
   tileShape: threadTileVisibleShape(["pane-thread"]),
@@ -4263,7 +4277,7 @@ return {
 };
 `)();
 
-  assert.deepEqual(result.tileShape, { turnCount: 1, visibleItemCount: 1 });
+  assert.deepEqual(result.tileShape, { turnCount: 1, visibleItemCount: 1, duplicateUserMessageCount: 0 });
   assert.deepEqual(result.paneTurnIds, ["pane-turn"]);
 });
 
@@ -4283,6 +4297,8 @@ test("visible conversation shape uses explicit thread context for visible item f
     "itemTextValue",
     "reasoningItemHasVisibleText",
     "isLatestCompletedProcessTurn",
+    "duplicateUserMessageSignatureCount",
+    "visibleUserMessageDuplicateSignature",
     "visibleItemsForTurn",
     "visibleConversationShape",
   ].map((name) => functionSourceFrom(appJs, name));
@@ -4322,11 +4338,14 @@ function isRunningStatus(status) { return Boolean(status && (status === "running
 function isStaleActiveStatus() { return false; }
 function isIncompleteInterruptedTurn() { return false; }
 function turnHasActiveLiveItems() { return false; }
+function clientSubmissionDiagnosticHash() { return ""; }
+function userMessageComparableParts() { return { text: "", paths: [] }; }
+function stableTextHash(value) { return String(value || ""); }
 ${sources.join("\n")}
 return visibleConversationShape(targetThread);
 `)();
 
-  assert.deepEqual(result, { visibleTurnCount: 1, visibleItemCount: 1 });
+  assert.deepEqual(result, { visibleTurnCount: 1, visibleItemCount: 1, duplicateUserMessageCount: 0 });
 });
 
 test("visible item patch entries use render context thread for filtering and signatures", () => {

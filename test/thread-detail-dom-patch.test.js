@@ -397,6 +397,28 @@ test("conversation HTML update plan invalidates stable signatures for item/key/o
   assert.equal(duplicateKeys.action, "set-inner-html");
   assert.equal(duplicateKeys.reason, "stable-signature-duplicate-render-keys");
 
+  const duplicateUserMessages = domPatch.planConversationHtmlUpdate({
+    signature: "sig-a",
+    renderedConversationSignature: "sig-a",
+    expectedVisibleTurnCount: 2,
+    renderedDomTurnCount: 2,
+    duplicateUserMessageCount: 2,
+    expectedDuplicateUserMessageCount: 1,
+  });
+  assert.equal(duplicateUserMessages.action, "set-inner-html");
+  assert.equal(duplicateUserMessages.reason, "stable-signature-duplicate-user-messages");
+
+  const expectedDuplicateUserMessages = domPatch.planConversationHtmlUpdate({
+    signature: "sig-a",
+    renderedConversationSignature: "sig-a",
+    expectedVisibleTurnCount: 2,
+    renderedDomTurnCount: 2,
+    duplicateUserMessageCount: 1,
+    expectedDuplicateUserMessageCount: 1,
+  });
+  assert.equal(expectedDuplicateUserMessages.action, "hydrate-existing");
+  assert.equal(expectedDuplicateUserMessages.reason, "signature-stable");
+
   const orderMismatch = domPatch.planConversationHtmlUpdate({
     signature: "sig-a",
     renderedConversationSignature: "sig-a",
@@ -515,6 +537,8 @@ test("conversation DOM authority invalidation is planned from stable empty DOM m
     domCount: 0,
     domItemCount: 0,
     duplicateRenderKeyCount: 0,
+    duplicateUserMessageCount: 0,
+    expectedDuplicateUserMessageCount: 0,
     previousCount: 2,
   });
   assert.equal(plan.shouldPostClientEvent, true);
@@ -527,6 +551,8 @@ test("conversation DOM authority invalidation is planned from stable empty DOM m
     expectedVisibleItemCount: 6,
     renderedDomItemCount: 0,
     duplicateRenderKeyCount: 0,
+    duplicateUserMessageCount: 0,
+    expectedDuplicateUserMessageCount: 0,
     action: "set-inner-html",
   });
 });
@@ -685,6 +711,12 @@ test("conversation post-apply DOM consistency requires fallback for partial patc
 });
 
 test("conversation post-apply DOM consistency reports duplicate keys and order mismatches", () => {
+  assert.equal(domPatch.planConversationPostApplyDomConsistency({
+    applicationPlan: { finalAction: "patch-html" },
+    duplicateUserMessageCount: 2,
+    expectedDuplicateUserMessageCount: 1,
+  }).reason, "post-apply-duplicate-user-messages");
+
   assert.equal(domPatch.planConversationPostApplyDomConsistency({
     applicationPlan: { finalAction: "set-inner-html" },
     duplicateRenderKeyCount: 2,
