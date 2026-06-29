@@ -676,6 +676,12 @@ Cause to check:
   changes after the projection seed, completed/idle/error-like threads should
   miss and reseed; active threads only keep the dynamic projection for a short
   stale window while notifications continue arriving.
+- `turns-list-active-overlay-window` is a history-only active-window cache.
+  It intentionally omits the live active turn, so active-turn rollout
+  size/mtime growth must not invalidate that history cache by itself. It should
+  be invalidated by turn-boundary events such as `turn/started` or
+  `turn/completed`, then repaired by notification or thread-list active-window
+  prewarm.
 - On current servers, warm `projection-v4-cache` / `projection-v4-dynamic` hits
   may report `mobileProjection.normalization=reused-visible-metadata` when the
   cached v4 result already has complete visible keys. That is the expected fast

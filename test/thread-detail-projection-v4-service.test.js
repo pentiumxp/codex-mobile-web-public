@@ -311,6 +311,106 @@ test("v4 projection service reuses stale full cache as active overlay history wi
   assert.deepEqual(lookedUp.cached.result.thread.mobileVisibleItemKeys, ["turn-old:receipt:agent-old"]);
 });
 
+test("v4 projection service keeps active overlay history window across active status changes", () => {
+  const service = createThreadDetailProjectionV4Service({
+    cacheDir: "",
+    policyVersion: "test-v4",
+    maxTurns: 3,
+    now: () => 2000,
+  });
+  const input = signatureInput({
+    summaryStatus: "active",
+    summaryUpdatedAtMs: 9000,
+    rolloutStats: { sizeBytes: 8192, mtimeMs: 9000 },
+  });
+  service.seed(input, {
+    thread: {
+      id: "thread-1",
+      turns: [
+        {
+          id: "turn-old",
+          items: [{ id: "agent-old", type: "agentMessage" }],
+        },
+        {
+          id: "turn-active",
+          status: { type: "active" },
+          items: [{ id: "agent-active", type: "agentMessage" }],
+        },
+      ],
+    },
+  }, {
+    partial: true,
+    partialKind: "turns-list-active-overlay-window",
+  });
+
+  service.applyNotification("thread/status/changed", {
+    threadId: "thread-1",
+    status: { type: "active" },
+    activeTurnId: "turn-active",
+  });
+
+  const lookedUp = service.lookup(signatureInput({
+    summaryStatus: "active",
+    summaryUpdatedAtMs: 12000,
+    rolloutStats: { sizeBytes: 8192, mtimeMs: 12000 },
+  }), {
+    allowPartial: true,
+    activeOverlay: true,
+    omitActiveTurnId: "turn-active",
+  });
+
+  assert.ok(lookedUp.cached);
+  assert.equal(lookedUp.missReason, "");
+  assert.equal(lookedUp.cached.partialKind, "turns-list-active-overlay-window");
+  assert.deepEqual(lookedUp.cached.result.thread.turns.map((turn) => turn.id), ["turn-old"]);
+});
+
+test("v4 projection service clears active overlay history window on turn completion", () => {
+  const service = createThreadDetailProjectionV4Service({
+    cacheDir: "",
+    policyVersion: "test-v4",
+    maxTurns: 3,
+    now: () => 2000,
+  });
+  const input = signatureInput({
+    summaryStatus: "active",
+    summaryUpdatedAtMs: 9000,
+    rolloutStats: { sizeBytes: 8192, mtimeMs: 9000 },
+  });
+  service.seed(input, {
+    thread: {
+      id: "thread-1",
+      turns: [
+        {
+          id: "turn-old",
+          items: [{ id: "agent-old", type: "agentMessage" }],
+        },
+      ],
+    },
+  }, {
+    partial: true,
+    partialKind: "turns-list-active-overlay-window",
+  });
+
+  service.applyNotification("turn/completed", {
+    threadId: "thread-1",
+    turnId: "turn-active",
+    turn: { id: "turn-active", status: { type: "completed" } },
+  });
+
+  const lookedUp = service.lookup(signatureInput({
+    summaryStatus: "active",
+    summaryUpdatedAtMs: 12000,
+    rolloutStats: { sizeBytes: 8192, mtimeMs: 12000 },
+  }), {
+    allowPartial: true,
+    activeOverlay: true,
+    omitActiveTurnId: "turn-active",
+  });
+
+  assert.equal(lookedUp.cached, null);
+});
+
 test("v4 projection service restores persisted full history before active notifications", () => {
   const dir = tempDir();
   try {

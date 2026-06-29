@@ -301,6 +301,12 @@ Current acceleration targets:
    full entry into a history-only `turns-list-active-overlay-window`; ordinary
    lookups and resting threads keep rejecting the mismatch and reseed through
    the authoritative app-server path.
+   Once that history-only active-window cache is seeded, its comparable
+   signature also ignores active-turn rollout size/mtime movement after an
+   exact hash miss. The live active turn is supplied by the overlay proof seam,
+   so active growth alone should not force the history window to be rebuilt;
+   `turn/started` and `turn/completed` remain the explicit boundary events that
+   clear and repair that window.
    The history-baseline follow-up handles the related restart race where the
    active notification stream reaches the process before the warm full
    projection has been loaded into memory. The projection service now restores a
