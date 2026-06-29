@@ -562,6 +562,47 @@ test("browser runtime self-check keeps long active assistant progress duplicates
   assert.equal(report.blockingIssueCount, 0);
 });
 
+test("browser runtime self-check keeps active progressive assistant duplicates advisory", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [{
+      label: "latest-turn-active-progress-duplicate",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      latestTurnMatchesTarget: true,
+      latestTurnHash: "turn-a",
+      latestTurnAssistantMessageCount: 8,
+      latestTurnAssistantTextDuplicateCount: 1,
+      expectedTurnShapes: [{
+        turnHash: "turn-a",
+        completed: false,
+        expectedItemCount: 21,
+        expectedAssistantMessageCount: 4,
+        expectedUsageRequired: false,
+      }],
+      domTurnShapes: [{
+        turnHash: "turn-a",
+        completed: false,
+        itemCount: 13,
+        assistantMessageCount: 8,
+        usageCount: 0,
+      }],
+      turns: 3,
+      items: 36,
+      renderKeys: 36,
+    }],
+  });
+
+  assert.equal(report.ok, true);
+  const duplicateIssue = report.issues.find((issue) => issue.code === "browser_latest_turn_assistant_text_duplicate");
+  assert.ok(duplicateIssue);
+  assert.equal(duplicateIssue.severity, "H3");
+  assert.equal(duplicateIssue.activeProgressive, true);
+  assert.equal(duplicateIssue.turnShape.completed, false);
+  assert.equal(report.blockingIssueCount, 0);
+});
+
 test("browser runtime self-check catches latest turn user message duplicates", () => {
   const report = service.analyzeBrowserRuntimeSamples({
     samples: [{

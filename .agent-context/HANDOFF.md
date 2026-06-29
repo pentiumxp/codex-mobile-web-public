@@ -32033,3 +32033,53 @@ The previous full handoff was archived and should be opened only when old proven
 - Deployment status:
   - Local deploy candidate only at this point. Private production deploy has
     not yet been sent. No Public deploy requested or run.
+
+### 2026-06-30 - Browser Runtime Active Assistant Duplicate Advisory Ready For Deploy
+
+- Scope:
+  - Follow-up to the Home AI return for `12ef04e83154`, which confirmed the
+    task-card/user-input visibility fix deployed but left deploy-mode runtime
+    gate blocked by H2 `browser_latest_turn_assistant_text_duplicate`.
+  - Production Phase B readback for the active Codex Mobile source thread showed
+    `readMode=projection-active-overlay`, `activeFullReadReason=status-active`,
+    `responseBudgetProgressiveActiveApplied=true`, and bounded active assistant
+    replay retention. A focused browser probe against the same thread returned
+    clean in that sample, so the remaining failure class is intermittent active
+    streaming/progressive sampling rather than a stable completed-turn DOM
+    duplicate.
+- Root cause / invariant:
+  - The browser analyzer already treats active progressive timestamp gaps as
+    advisory when the DOM has newer assistant progress than the API plan and the
+    active response is intentionally budgeted.
+  - `browser_latest_turn_assistant_text_duplicate` still used only a coarse
+    `latestTurnAssistantMessageCount > 8` threshold, so active progressive
+    samples with eight or fewer assistant/plan progress rows could be reported
+    as blocking H2 even when the matched latest turn shape proved incomplete
+    budgeted progress.
+  - Completed/resting assistant text duplicates remain H2; the change only
+    reuses the existing active-progressive turn-shape contract for active
+    streaming duplicates.
+- Source changes:
+  - `adapters/browser-runtime-self-check-service.js` now calls
+    `matchedLatestTurnShape()` / `activeProgressiveTurnShape()` for latest-turn
+    assistant text duplicates and keeps active progressive duplicates as H3
+    with bounded `activeProgressive` / `turnShape` evidence.
+  - `test/browser-runtime-self-check-service.test.js` adds focused coverage for
+    an eight-assistant active progressive duplicate staying advisory while the
+    existing completed/resting duplicate test remains blocking.
+  - `docs/MODULES.md` and `docs/TROUBLESHOOTING.md` document the analyzer
+    contract: active progressive assistant text duplicates are advisory,
+    completed/resting duplicates remain blocking.
+- Validation before deploy:
+  - `node --check adapters/browser-runtime-self-check-service.js && node --test test/browser-runtime-self-check-service.test.js test/runtime-self-check-gate-service.test.js`
+    passed with 43 tests.
+  - Deploy-mode runtime self-check against Movie and Codex Mobile source
+    threads returned `ok=true`, `deployPass=true`, zero issues, zero blocking
+    issues, and zero execution failures across `api-thread`,
+    `browser-runtime`, and `client-events`.
+  - `npm test -- --test-reporter=dot`, `npm run check`, `npm run check:macos`,
+    Home AI fallback governance check, `git diff --check`, and
+    `codegraph sync && codegraph status` passed.
+- Deployment status:
+  - Local deploy candidate only at this point. Private production deploy has
+    not yet been sent. No Public deploy requested or run.

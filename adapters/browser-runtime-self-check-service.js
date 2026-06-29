@@ -323,10 +323,14 @@ function analyzeBrowserRuntimeSamples(input = {}) {
       && sample.latestTurnMatchesTarget
       && toNumber(sample.latestTurnAssistantTextDuplicateCount) > 0) {
       const latestTurnAssistantMessageCount = toNumber(sample.latestTurnAssistantMessageCount);
-      const severity = latestTurnAssistantMessageCount > 8 ? "H3" : "H2";
+      const latestShape = matchedLatestTurnShape(sample);
+      const activeProgressive = activeProgressiveTurnShape(latestShape);
+      const severity = activeProgressive || latestTurnAssistantMessageCount > 8 ? "H3" : "H2";
       issues.push(issue(severity, "browser_latest_turn_assistant_text_duplicate", sample, {
         latestTurnAssistantMessageCount,
         latestTurnAssistantTextDuplicateCount: toNumber(sample.latestTurnAssistantTextDuplicateCount),
+        activeProgressive,
+        turnShape: activeProgressive ? safeTurnShape(latestShape) : undefined,
       }));
     }
     if (sampleIsConfirmed(sample)
