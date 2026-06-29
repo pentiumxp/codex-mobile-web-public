@@ -30488,3 +30488,73 @@ The previous full handoff was archived and should be opened only when old proven
     `periodicHealthy=true`, zero API/browser runtime issues, and zero
     diagnostic candidates.
   - Return status for task card `ttc_f633be29abfbb949c5` was `completed`.
+
+### 2026-06-29 - Active First-Paint Replay Text Budget Deploy
+
+- Scope:
+  - Production Phase B readback showed active detail already using
+    `projection-active-overlay` with cheap overlay work, but `prepareResponseMs`
+    and first-paint thread JSON remained high.
+  - Previous response-budget evidence showed active first-paint byte pressure
+    with scope `active-first-paint`, but protected completed replay text was
+    skipped because the latest completed turn was still protected.
+- Source changes:
+  - `adapters/thread-detail-response-budget-service.js` narrows the protected
+    latest-completed skip rule: resting detail still protects completed replay
+    turns, but under active first-paint pressure completed assistant/reasoning
+    text can be reduced to `mobileFirstPaintTextBudget` previews.
+  - The current live active turn remains owned by `mobileActiveTextBudget`.
+  - Docs updated in `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Validation passed locally before deploy:
+  - `node --test test/thread-detail-response-budget-service.test.js test/thread-detail-self-check-service.test.js test/phase-b-readback-smoke.test.js`
+  - `node --check adapters/thread-detail-response-budget-service.js && node --check test/thread-detail-response-budget-service.test.js`
+  - `npm test` (`1590` tests passed)
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+  - `node /Users/hermes-dev/HermesMobileDev/app/scripts/fallback-governance-check.js --changed-file adapters/thread-detail-response-budget-service.js --changed-file test/thread-detail-response-budget-service.test.js --changed-file docs/MODULES.md --changed-file docs/TROUBLESHOOTING.md --changed-file docs/ARCHITECTURE_OPTIMIZATION_PLAN.md --json`
+- Deployment status:
+  - Deployed privately through the Home AI Deploy lane from source commit
+    `b4ff1a9e975f` with reason
+    `codex-mobile-active-first-paint-replay-text-budget`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T142303Z-plugin-codex-mobile-web-codex-mobile-active-first-paint-replay-text-budget`.
+  - Public deploy was not run.
+- Production readback:
+  - `/api/public-config` returned status `200`, build id
+    `804792d85bd686d1`, client build id
+    `0.1.11|codex-mobile-shell-v591`, shell cache
+    `codex-mobile-shell-v591`, and `authRequired=true`. Static shell remained
+    v591 because this was a server/docs/test deploy.
+  - Source/production hash parity matched for
+    `adapters/thread-detail-response-budget-service.js`,
+    `test/thread-detail-response-budget-service.test.js`,
+    `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+  - Production marker readback confirmed `active-first-paint`,
+    `progressiveCompletedTextBudgetSkippedLatestTurnCount`, and
+    `mobileFirstPaintTextBudget`.
+- Phase B:
+  - Production Phase B readback returned `ok=true`.
+  - Detail timing: totalMs `1501`, prepareResponseMs `1438`,
+    readMode `projection-active-overlay`, activeOverlayMs `3`,
+    activeOverlayBackfillWindowMs `1`, activeOverlayMergeMs `3`,
+    activeOverlayItems `112`.
+  - Response-budget evidence: progressive active budget applied `true`,
+    completed text budget scope `active-first-paint`,
+    protectedLatestTurn `false`, skippedLatestTurnCount `0`.
+  - The sampled thread had no completed replay text to truncate:
+    completedTextOriginalChars `0`, completedTextRetainedChars `0`,
+    omittedCompletedTextChars `0`; therefore completed text budget applied
+    `false` and before/after first-paint bytes remained `244637`.
+  - Decision still classified owner `thread-detail-latency` with nextAction
+    `split-thread-detail-latency`, so remaining latency is separate from this
+    deployed replay-text skip-rule repair.
+- Runtime gate:
+  - Deploy-mode runtime self-check returned `deployPass=true`,
+    `periodicHealthy=true`, issueCount `0`, blockingIssueCount `0`,
+    reportableIssueCount `0`, executionFailureCount `0`.
+  - API-thread and browser-runtime checks both returned `ok=true` with zero
+    issues.
+  - Return status for task card `ttc_8ed14fbb6f9c805b85` was `completed`.
