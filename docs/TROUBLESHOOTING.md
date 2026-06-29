@@ -556,8 +556,12 @@ eventually appears", distinguish it from the old timeout/failure path. The
 client thread-open watchdog fires after `THREAD_LOAD_STALL_MS` and reports a
 bounded Home AI diagnostic as `thread_detail_slow_path` with reason
 `api-pending`, the thread hash, the stall threshold, and elapsed duration. A
-single stall remains local/retry behavior; repeated matching stalls cross the
-diagnostic-report threshold and can enter the Owner repair-card loop.
+single stall remains local/retry behavior. Clients after
+`codex-mobile-shell-v580` treat `thread_session_slow_path` events as
+observe-only by default: counts and bounded client events are kept for
+performance analysis, but they do not post `homeai.diagnostic.report` and
+should not create Owner repair cards unless the reporter is explicitly run in
+controlled `slowPathReportMode: "report"` diagnostics.
 On v557+ clients, successful thread-detail loads also plan
 `thread_detail_slow_path` when first-paint elapsed/API/render time crosses the
 default 1.5s threshold. Slow-path repeat counting is intentionally stable across
@@ -565,14 +569,13 @@ client build id, read mode, render mode, and source kind so repeated
 user-visible slow opens such as `turns-list-initial` ->
 `projection-active-overlay` do not stay below the reporting threshold merely
 because the implementation path changed. Those volatile fields remain in the
-bounded report payload for root-cause attribution.
+bounded local evidence for root-cause attribution.
 For the thread list, v556+ clients also plan `thread_list_slow_path` from
 successful `thread_list_rendered` evidence when elapsed/API/render time crosses
-the list slow threshold. That report includes only bounded phase labels and
-counts such as fallback-cache decision, app-server request reason,
+the list slow threshold. That local evidence includes only bounded phase labels
+and counts such as fallback-cache decision, app-server request reason,
 `appServerRpcMs`, diagnostic `app_server_response_kb`, fallback source counters,
-and result count. A normal fast list load clears that repeated-failure
-signature.
+and result count.
 
 If a newly submitted message briefly shows local input feedback and then the
 right-side turn timer changes to `已结束` while `/api/threads/:id?mode=recent`

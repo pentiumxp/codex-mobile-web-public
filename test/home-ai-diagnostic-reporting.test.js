@@ -104,7 +104,7 @@ test("repeated thread route failure creates bounded diagnostic report", () => {
   assert.equal(result.report.context.route_kind, "plugin-route");
 });
 
-test("slow-path failures aggregate across build and render mode changes", () => {
+test("slow-path failures default to observe-only across build and render mode changes", () => {
   const reporter = diagnostics.createDiagnosticReporter({ threshold: 3, throttleMs: 60000, now: () => 1 });
   const base = {
     category: "thread_session_slow_path",
@@ -159,10 +159,79 @@ test("slow-path failures aggregate across build and render mode changes", () => 
     }),
   }));
 
-  assert.equal(third.eligible, true);
+  assert.equal(third.eligible, false);
+  assert.equal(third.observeOnly, true);
+  assert.equal(third.reason, "slow_path_observe_only");
   assert.equal(third.repeatedFailures, 3);
+  assert.equal(third.report, null);
   assert.match(third.signature, /thread_session_slow_path\\|thread_detail_slow_path/);
   assert.doesNotMatch(third.signature, /shell-v55|projection|first-paint|full-render|metadata-only/);
+  assert.equal(reporter.failureCount(base), 3);
+});
+
+test("slow-path reporting can be explicitly enabled for controlled diagnostics", () => {
+  const reporter = diagnostics.createDiagnosticReporter({
+    threshold: 3,
+    throttleMs: 60000,
+    now: () => 1,
+    slowPathReportMode: "report",
+  });
+  const base = {
+    category: "thread_session_slow_path",
+    diagnostic_type: "thread_detail_slow_path",
+    error_code: "api-slow",
+    severity_hint: "H3",
+    evidence_confidence: 0.7,
+    context: {
+      surface: "thread-session",
+      action: "thread-detail-load",
+      thread_hash: diagnostics.hashIdentifier("thread-secret"),
+      read_mode: "turns-list-initial",
+      render_mode: "first-paint",
+      build_id: "0.1.11|codex-mobile-shell-v556",
+      cold_path_owner: "app-server",
+      cold_path_reason: "cold-turns-list-initial",
+    },
+    counts: {
+      elapsed_ms: 2100,
+      api_elapsed_ms: 1900,
+      threshold_ms: 1500,
+    },
+    breadcrumbs: [{
+      kind: "thread-session",
+      code: "thread-detail-slow-path",
+      status: "slow",
+      fields: {
+        read_mode: "turns-list-initial",
+        render_mode: "first-paint",
+        cold_path_owner: "app-server",
+        cold_path_reason: "cold-turns-list-initial",
+        elapsed_ms: 2100,
+        api_elapsed_ms: 1900,
+        threshold_ms: 1500,
+      },
+    }],
+  };
+
+  reporter.recordFailure(base);
+  reporter.recordFailure(Object.assign({}, base, {
+    context: Object.assign({}, base.context, {
+      read_mode: "projection-active-overlay",
+      render_mode: "full-render",
+      build_id: "0.1.11|codex-mobile-shell-v557",
+    }),
+  }));
+  const third = reporter.recordFailure(Object.assign({}, base, {
+    context: Object.assign({}, base.context, {
+      read_mode: "projection-v4-dynamic",
+      render_mode: "metadata-only",
+      build_id: "0.1.11|codex-mobile-shell-v558",
+    }),
+  }));
+
+  assert.equal(third.eligible, true);
+  assert.equal(third.observeOnly, false);
+  assert.equal(third.repeatedFailures, 3);
   assert.equal(third.report.context.build_id, "0.1.11_codex-mobile-shell-v558");
   assert.equal(third.report.context.read_mode, "projection-v4-dynamic");
   assert.equal(third.report.context.render_mode, "metadata-only");
@@ -171,7 +240,7 @@ test("slow-path failures aggregate across build and render mode changes", () => 
   assert.equal(third.report.breadcrumbs[0].fields.cold_path_owner, "app-server");
 });
 
-test("slow-path failures aggregate across threads and are not cleared by one fast sample", () => {
+test("slow-path failures observe across threads and are not cleared by one fast sample", () => {
   let now = 1000;
   const reporter = diagnostics.createDiagnosticReporter({ threshold: 3, throttleMs: 60000, now: () => now });
   const slow = {
@@ -213,10 +282,11 @@ test("slow-path failures aggregate across threads and are not cleared by one fas
     }),
   }));
 
-  assert.equal(third.eligible, true);
+  assert.equal(third.eligible, false);
+  assert.equal(third.observeOnly, true);
   assert.equal(third.repeatedFailures, 3);
+  assert.equal(third.report, null);
   assert.doesNotMatch(third.signature, /thread-a|thread-b|thread-c|thread-detail-load|thread-detail-refresh/);
-  assert.equal(third.report.context.thread_hash.startsWith("h_"), true);
   now += 1000;
   assert.equal(reporter.recordFailure(slow).eligible, false);
 });

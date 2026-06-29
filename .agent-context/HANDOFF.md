@@ -28744,3 +28744,48 @@ The previous full handoff was archived and should be opened only when old proven
   - No raw secrets, sudo password contents, cookies, launch tokens, thread
     bodies, upload contents, screenshots, provider payloads, endpoint file
     contents, or long logs were recorded.
+
+### 2026-06-29 - Slow-Path Diagnostics Observe-Only v580
+
+- User report:
+  - Home AI Owner was repeatedly receiving repair-card candidates for
+    `codex-mobile thread_session_slow_path`.
+  - The same performance class had already produced several remediation cards;
+    the desired behavior is root-cause repair when actionable, otherwise keep
+    slow-success evidence in the background instead of notifying Owner.
+- Root cause:
+  - `public/home-ai-diagnostic-reporting.js` treated repeated slow-success
+    thread list/detail events as reportable Home AI diagnostics after the normal
+    repeated-failure threshold.
+  - Slow-success samples are useful performance evidence, but are not by
+    themselves a closure-critical user-visible failure. Sending them to the
+    Owner repair-card loop created noisy duplicate work.
+- Implementation:
+  - `public/home-ai-diagnostic-reporting.js` now defaults
+    `thread_session_slow_path` events with `_slow_path` diagnostic types to
+    observe-only mode.
+  - Observe-only slow-path events still increment local repeat counters and
+    keep bounded signatures/evidence, but return `reason=slow_path_observe_only`
+    and do not produce a `homeai.diagnostic.report` payload.
+  - Controlled diagnostics can still opt back into posting with
+    `slowPathReportMode: "report"` or the explicit legacy boolean opts.
+  - `public/app.js` logs bounded client diagnostic events with `observeOnly` and
+    `reason` fields.
+  - Static shell/cache bumped to `codex-mobile-shell-v580`.
+  - `docs/README.md`, `docs/TROUBLESHOOTING.md`, and `docs/MODULES.md` document
+    that slow-success thread session paths are observe-only by default after
+    v580; projection mismatches, disappearing messages, task-card failures, and
+    other actionable failures remain reportable.
+- Validation:
+  - Focused tests passed:
+    `node --test test/home-ai-diagnostic-reporting.test.js test/thread-diagnostic-events.test.js test/thread-performance-metrics.test.js test/mobile-viewport.test.js test/client-render-stability-guard.test.js`
+    (`67` tests).
+  - Full `npm test` passed (`1532` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deploy state:
+  - Source is ready to commit and request private deployment through the
+    Home AI Deploy lane.
+  - Expected production readback after deploy:
+    `clientBuildId=0.1.11|codex-mobile-shell-v580` and
+    `shellCacheName=codex-mobile-shell-v580`.
+  - No Public push has been performed or requested for this v580 change.
