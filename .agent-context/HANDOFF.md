@@ -28783,9 +28783,20 @@ The previous full handoff was archived and should be opened only when old proven
   - Full `npm test` passed (`1532` tests).
   - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
 - Deploy state:
-  - Source is ready to commit and request private deployment through the
-    Home AI Deploy lane.
-  - Expected production readback after deploy:
-    `clientBuildId=0.1.11|codex-mobile-shell-v580` and
-    `shellCacheName=codex-mobile-shell-v580`.
-  - No Public push has been performed or requested for this v580 change.
+  - Local commit: `39d840a48342`
+    (`fix: keep slow path diagnostics observe-only`).
+  - Home AI Deploy task card: `ttc_cc01154f6508b72869`.
+  - Home AI Deploy returned completion card `ttc_fbc776cda346f7bedf`.
+  - Private production deploy completed with `ok=true`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T030516Z-plugin-codex-mobile-web-codex-mobile-v580-slow-path-observe-only`.
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v580`,
+    `shellCacheName=codex-mobile-shell-v580`,
+    `buildId=7571dd9bed983c26`.
+  - Source/prod SHA-256 parity passed for `public/app.js`,
+    `public/home-ai-diagnostic-reporting.js`, and `public/sw.js`.
+  - Home AI Deploy focused behavior tests against deployed source passed:
+    `node --test test/home-ai-diagnostic-reporting.test.js test/thread-diagnostic-events.test.js`
+    (`32` tests).
+  - No Public deploy was run.
