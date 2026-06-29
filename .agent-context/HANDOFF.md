@@ -31411,7 +31411,7 @@ The previous full handoff was archived and should be opened only when old proven
     client-events child checks.
   - No Public deploy requested or run.
 
-### 2026-06-30 - Timestamped Client-Event Stall Window Pending Deploy
+### 2026-06-30 - Timestamped Client-Event Stall Window Deployed
 
 - Scope:
   - Follow-up to the live client-event stall gate.
@@ -31448,5 +31448,39 @@ The previous full handoff was archived and should be opened only when old proven
   - Local production-log dry run with `--skip-api --skip-browser` parsed 426
     current client events, found no stall rows, and returned `deployPass=true`.
 - Deployment status:
-  - Ready to commit and send to Home AI Deploy.
+  - Source commit `9ec2986` (`feat: timestamp client event stall gates`) was
+    sent to Home AI Deploy with card `ttc_230ee63211a0d2c61d` and deploy
+    reason `codex-mobile-timestamped-client-event-stall-gates`.
+  - Production `/api/public-config` returned status `200`, version `0.1.11`,
+    build id `6509897d34f15c02`, client build id
+    `0.1.11|codex-mobile-shell-v597`, shell cache
+    `codex-mobile-shell-v597`, and `authRequired=true`.
+  - Production hash parity matched for:
+    - `server.js`
+    - `adapters/client-event-stall-self-check-service.js`
+    - `scripts/codex-mobile-runtime-self-check-loop.js`
+    - `test/client-event-stall-self-check-service.test.js`
+    - `test/client-event-log-format.test.js`
+    - `test/runtime-self-check-loop.test.js`
+    - `docs/MODULES.md`
+    - `docs/TROUBLESHOOTING.md`
+  - Production marker readback found `ts: new Date().toISOString()`,
+    `--client-event-window-ms`, `CODEX_MOBILE_CLIENT_EVENT_WINDOW_MS`,
+    `untimedStallEventCount`, and `outOfWindowStallEventCount`.
+  - Production client-events-only runtime gate read the current log tail,
+    parsed 434 client events, found `stallEventCount=0`,
+    `untimedStallEventCount=0`, `outOfWindowStallEventCount=0`, and returned
+    `deployPass=true`.
+  - Production full deploy-mode runtime gate against Movie and Codex Mobile
+    source threads returned `ok=true`, `deployPass=true`,
+    `periodicHealthy=true`, `blockingIssueCount=0`, `reportableIssueCount=0`,
+    and `executionFailureCount=0`. It included API, browser-runtime, and
+    client-events child checks. Browser runtime reported only H3 advisory
+    `browser_latest_turn_assistant_text_duplicate` samples, not a deploy
+    blocker and not a thread-list stall signal.
+  - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` read back as
+    `state = running`.
+  - Backup path was not readable locally by keyword scan in this thread; use
+    the Home AI Deploy terminal return card as the authoritative backup path
+    when it arrives.
   - No Public deploy requested or run.
