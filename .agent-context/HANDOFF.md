@@ -29065,10 +29065,35 @@ The previous full handoff was archived and should be opened only when old proven
   - Home AI fallback governance check passed for the changed runtime/test files
     with no issues.
 - Deploy state:
-  - Not yet deployed at this handoff point. Next step is to commit and send a
-    private deploy card to the `Home AI Deploy` lane for v582, then read back
-    production `clientBuildId` / `shellCacheName` and run bounded browser/image
-    self-checks.
+  - Private production deploy completed through the Home AI Deploy lane from
+    source commit `f16dbdbd2326`, reason
+    `codex-mobile-v582-generated-image-preview`.
+  - Deploy result: `ok=true`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T054721Z-plugin-codex-mobile-web-codex-mobile-v582-generated-image-preview`.
+  - Production `/api/public-config` returned build id
+    `9a1b34241edd22b4`, client build id
+    `0.1.11|codex-mobile-shell-v582`, and shell cache
+    `codex-mobile-shell-v582`.
+  - Source/production hash parity matched for `public/app.js`, `public/sw.js`,
+    `scripts/codex-mobile-browser-runtime-self-check.js`,
+    `adapters/browser-runtime-self-check-service.js`, focused tests, and the
+    updated docs.
+  - Production marker readback confirmed `safeImageViewApiUrl`,
+    `data-image-source-kind="unsafe-source"`, `imageFailureKindCounts`, and
+    `codex-mobile-shell-v582`.
+  - Browser runtime self-check against Movie and Codex Mobile source threads
+    passed with `issueCount=0`, `blockingIssueCount=0`, `maxImageFailures=0`,
+    `maxLatestTimestampMissingItems=0`, `maxLatestTurnUserTextDuplicates=0`,
+    and `maxExpectedLatestUserMessageDuplicates=0`.
+  - Additional Home AI live-debug media smoke attempts for the Codex Mobile and
+    Movie threads acquired a bounded debug lease but failed before plugin DOM
+    image inspection with `thread_open_unavailable` / `http_500` in the
+    live-debug open path. Treat this as a debug-lane availability limitation,
+    not as evidence of a v582 image render failure; the real-browser runtime
+    self-check above returned `maxImageFailures=0`.
+  - No active submit exercise was run.
+  - Public deploy was not run.
 - Privacy:
   - No raw secrets, cookies, launch tokens, private thread bodies, image bytes,
     raw image URLs, local paths, filenames, provider payloads, screenshots, or
