@@ -30660,10 +30660,10 @@ The previous full handoff was archived and should be opened only when old proven
   - Private deploy requested through Home AI Deploy task card
     `ttc_6aa0f4ec9f84d62638` with reason
     `codex-mobile-fast-start-active-window-prewarm`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T144639Z-plugin-codex-mobile-web-codex-mobile-fast-start-active-window-prewarm`.
   - Source/production hash parity matched for all changed files after deploy.
   - Public deploy was not run.
-  - Backup path should be taken from the Home AI Deploy return card when it
-    arrives.
 - Production readback:
   - `/api/public-config` returned status `200`, version `0.1.11`, build id
     `804792d85bd686d1`, client build id
@@ -30675,9 +30675,12 @@ The previous full handoff was archived and should be opened only when old proven
     `activeOverlayWindowFirst=true`, read mode `projection-active-overlay`, and
     decision `ready` / owner `phase-b-readback`.
   - Sample timings:
-    - totalMs `535`, activeOverlayMs `4`, prepareResponseMs `470`.
-    - totalMs `157`, activeOverlayMs `3`, prepareResponseMs `98`.
-    - totalMs `165`, activeOverlayMs `3`, prepareResponseMs `99`.
+    - totalMs `168`, activeOverlayMs `6`, activeOverlayBackfillWindowMs `1`,
+      activeOverlayMergeMs `5`, prepareResponseMs `97`.
+    - totalMs `159`, activeOverlayMs `3`, activeOverlayBackfillWindowMs `0`,
+      activeOverlayMergeMs `5`, prepareResponseMs `100`.
+    - totalMs `173`, activeOverlayMs `4`, activeOverlayBackfillWindowMs `1`,
+      activeOverlayMergeMs `4`, prepareResponseMs `99`.
 - Runtime gate:
   - Deploy-mode runtime self-check returned `ok=true`, `deployPass=true`,
     `periodicHealthy=true`, issueCount `0`, blockingIssueCount `0`,
