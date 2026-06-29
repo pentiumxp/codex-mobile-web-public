@@ -32285,15 +32285,17 @@ The previous full handoff was archived and should be opened only when old proven
   - Local candidate in progress. Private production deploy has not yet been
     requested. No Public deploy requested or run.
 
-### 2026-06-30 - Completed Replay Assistant First-Paint Budget Dispatched
+### 2026-06-30 - Completed Replay Assistant First-Paint Budget Deployed
 
-- Source:
-  - Commit `a82b26f` (`fix: bound completed replay assistant budget`) is ready
-    and dispatched to the Home AI central private deploy lane via task card
-    `ttc_3c7ca20a22d0b6194c`.
-  - Deploy reason requested:
+- Source / deploy:
+  - Commit `a82b26fbda72` (`fix: bound completed replay assistant budget`) was
+    privately deployed through the Home AI central plugin deploy lane.
+  - Deploy task card: `ttc_3c7ca20a22d0b6194c`.
+  - Deploy reason:
     `codex-mobile-completed-replay-assistant-first-paint-budget`.
-  - Public deploy was not requested.
+  - Deploy result `ok=true`; restart label
+    `com.hermesmobile.plugin.codex-mobile`; service state `running`.
+  - Public deploy was not run.
 - Root cause / invariant:
   - Attribution proved the assistant residual has separate product contracts:
     current active progress must remain protected, while older completed replay
@@ -32308,7 +32310,7 @@ The previous full handoff was archived and should be opened only when old proven
     `completedReplayOmittedAssistantItems`.
   - Active/current replay still uses `progressiveReplayAssistantItems`; the new
     completed replay budget does not lower current active assistant progress.
-- Local validation before dispatch:
+- Validation:
   - `node --test test/thread-detail-response-budget-service.test.js
     test/phase-b-readback-smoke.test.js
     test/phase-b-readback-decision-service.test.js` passed (`74` tests).
@@ -32317,9 +32319,39 @@ The previous full handoff was archived and should be opened only when old proven
   - Home AI fallback-governance guard returned `ok=true`.
   - `git diff --check` passed.
   - `codegraph sync && codegraph status` reported the index up to date.
-- Awaiting:
-  - Central private deploy return with source/production parity, marker
-    readback, Phase-B readback, runtime gate, and LaunchAgent readback.
+  - Source/production SHA-256 parity matched for `server.js`,
+    `adapters/thread-detail-response-budget-service.js`,
+    `scripts/codex-mobile-phase-b-readback-smoke.js`,
+    `adapters/phase-b-readback-decision-service.js`, focused tests, and docs.
+  - Production markers found the new env name and completed replay assistant
+    budget/readback fields.
+- Phase-B readback:
+  - Codex Mobile source thread returned `ok=true`,
+    `readMode=projection-active-overlay`, `turnsListInitialMs=0`,
+    `activeOverlayWindowMs=0`, and `activeOverlayBackfillWindowMs=1`.
+  - Completed replay assistant budget applied:
+    `progressiveCompletedReplayAssistantItems=12`,
+    `completedReplayAssistantItemsBefore=80`,
+    `completedReplayAssistantItemsAfter=12`, and
+    `completedReplayOmittedAssistantItems=68`.
+  - Active/current assistant progress was not reduced by this completed replay
+    budget: retained assistant count by turn state was `active=24`,
+    `completed=19`.
+  - Retained visible bytes by kind shifted to userMessage `35200`, assistant
+    about `29726`, Usage `9656`, operation about `1694`, reasoning `412`, and
+    other `817`.
+  - Residual: Phase-B decision reported H2 `thread-detail-latency` with owner
+    `thread-detail-latency` / next action `split-thread-detail-latency`.
+    Active overlay/window gates stayed healthy; this residual is separate from
+    the completed replay assistant budget.
+- Runtime:
+  - Deploy-mode runtime gate returned `ok=true`, `deployPass=true`,
+    `periodicHealthy=true`, `blockingIssueCount=0`, and
+    `executionFailureCount=0`.
+  - Child checks `api-thread`, `browser-runtime`, and `client-events` were all
+    OK. Remaining issue codes were H3 active-progressive timestamp advisories.
+  - LaunchAgent readback returned `ok=true` with latest full-check periodic
+    event healthy, zero blockers, and zero execution failures.
 
 ### 2026-06-30 - Active First-Paint Assistant Retained-Byte Attribution Deployed
 
