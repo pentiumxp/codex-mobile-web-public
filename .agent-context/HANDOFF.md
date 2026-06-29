@@ -29428,3 +29428,48 @@ The previous full handoff was archived and should be opened only when old proven
     production active Codex Mobile source thread.
   - No active submit exercise was run.
   - Public deploy was not run.
+
+### 2026-06-29 - Public Config Hot-Path Module
+
+- Context:
+  - After active-overlay closure, repeated production probes showed active
+    thread detail was usually low hundreds or tens of milliseconds, but
+    `/api/public-config` could still take hundreds of milliseconds and
+    occasionally close to one second.
+  - This endpoint is read during startup, refresh, embedded recovery, and
+    self-check entry, so its latency can make thread entry feel unstable even
+    when thread-detail itself is warm.
+- Root cause / invariant:
+  - `public-config` assembled profile/quota state, then called MCP toolset sync,
+    whose helper enumerated profiles again in the same request.
+  - `codex-profile-service.profiles()` legitimately scans account-scoped rollout
+    quota tails for known profile homes, but repeating that scan for immediate
+    startup/refresh probes with unchanged active quota evidence is unnecessary.
+  - App-shell identity remains the hard invariant: `buildId`, `clientBuildId`,
+    and `shellCacheName` must still be read live on every request and are not
+    cached at Node startup.
+- Implementation:
+  - Added `adapters/public-config-runtime-cache-service.js` with a short
+    process-local profile/quota snapshot cache keyed by bounded active quota
+    evidence.
+  - `server.js` now reads the profile state once per public-config request and
+    passes that same state into `syncKnownCodexMobileMcpToolsets()`.
+  - Profile switching invalidates the public-config profile snapshot.
+  - Profile-list and profile-switch routes keep their strongly current behavior.
+  - Added `test/public-config-runtime-cache-service.test.js` and registered the
+    new adapter in `npm run check`.
+  - Updated `docs/ARCHITECTURE.md`, `docs/MODULES.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` with the cache boundary.
+- Validation so far:
+  - Focused tests passed:
+    `node --test test/public-config-runtime-cache-service.test.js test/manual-restart-ui.test.js test/new-thread-route.test.js test/codex-profile-service.test.js`
+    (`46` tests).
+  - Full local validation passed: `npm test` (`1566` tests), `npm run check`,
+    `npm run check:macos`, `git diff --check`, and Home AI fallback governance
+    check for the changed runtime/test/docs files.
+- Deploy / readback:
+  - Pending commit and private deploy through the Home AI Deploy lane.
+  - Required production readback: repeated `/api/public-config` wall-time
+    samples, Phase-B readback on the active Codex Mobile source thread, and
+    runtime self-check loop with `--gate-mode deploy`.
+  - Public deploy was not run.

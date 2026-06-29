@@ -3106,6 +3106,46 @@ Required validation:
   raw/detail assistant counts match and `projection-active-overlay` responses
   report `activeOverlayCompleteness=full` or `backfilled`, not `partial`.
 
+### 2026-06-29 Public Config Hot-Path Module
+
+After the active-overlay fresh-window rule reduced large active-thread detail
+reads to low hundreds or tens of milliseconds, repeated production probes still
+showed `/api/public-config` taking hundreds of milliseconds and occasionally
+close to one second. This request is part of startup, refresh, embedded recovery,
+and self-check entry, so it can make thread entry feel unstable even when
+thread-detail itself is warm.
+
+Root cause boundary:
+
+- `public-config` was assembling profile/quota state and then calling MCP
+  registration with another profile enumeration in the same request;
+- `codex-profile-service.profiles()` scans account-scoped rollout quota tails for
+  each known profile, which is correct profile evidence but unnecessary to repeat
+  for every immediate startup/refresh probe when active quota evidence has not
+  changed;
+- build identity fields (`buildId`, `clientBuildId`, `shellCacheName`) must still
+  be read live on every request and cannot be cached at Node startup.
+
+Deployable scope:
+
+- add `adapters/public-config-runtime-cache-service.js` as the owner of the
+  short process-local profile/quota snapshot cache;
+- key the cache by bounded active quota evidence and expire it quickly;
+- invalidate it when profile switching writes a new active profile;
+- reuse the single profile state for both public response assembly and
+  `syncKnownCodexMobileMcpToolsets()` so one request does not scan profiles
+  twice;
+- keep profile-list and profile-switch routes strongly current.
+
+Required validation:
+
+- focused service tests for cache hit, active-quota signature miss, TTL expiry,
+  and explicit invalidation;
+- existing profile/restart/new-thread route assertions proving quota refresh and
+  MCP toolset registration remain wired;
+- production readback comparing repeated `/api/public-config` wall time before
+  and after deploy, plus Phase-B/runtime self-check gate for regression.
+
 ## Release Rule
 
 Follow the current release order:

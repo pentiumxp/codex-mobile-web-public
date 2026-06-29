@@ -88,9 +88,9 @@ test("profile switch restart passes the selected profile to the shared-chain scr
   assert.match(stylesCss, /\.codex-profile-main \.codex-profile-progress/);
   assert.match(serverJs, /function syncCodexMobileMcpToolset\(codexHome = CODEX_HOME\)/);
   assert.match(serverJs, /function syncKnownCodexMobileMcpToolsets\(profileOptions = \{\}\)/);
-  assert.match(serverJs, /codexProfileService\.profiles\(profileOptions\)/);
+  assert.match(serverJs, /profileOptions\.profileState \|\| codexProfileService\.profiles\(profileOptions\)/);
   assert.match(serverJs, /syncKnownCodexMobileMcpToolsets\(\)/);
-  assert.match(serverJs, /syncKnownCodexMobileMcpToolsets\(\{ activeQuota \}\)/);
+  assert.match(serverJs, /syncKnownCodexMobileMcpToolsets\(\{ activeQuota, profileState \}\)/);
 });
 
 test("shared-chain restart cleans stale bare node server listener on the selected port", () => {

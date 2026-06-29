@@ -85,6 +85,7 @@ const {
   resolveActiveCodexHomeFromStore,
   resolveEffectiveCodexHome,
 } = require("./adapters/codex-profile-service");
+const { createPublicConfigRuntimeCache } = require("./adapters/public-config-runtime-cache-service");
 const { ensureCodexMobileMcpServer } = require("./adapters/codex-mobile-mcp-config-service");
 const { ensureCodexProjectsTrusted } = require("./adapters/codex-project-trust-service");
 const { createThreadDetailProjectionInputService } = require("./adapters/thread-detail-projection-input-service");
@@ -401,6 +402,7 @@ const codexProfileService = createCodexProfileService({
   runtimeRoot: RUNTIME_ROOT,
   activeCodexHome: CODEX_HOME,
 });
+const publicConfigRuntimeCache = createPublicConfigRuntimeCache();
 
 function syncRegisteredWorkspaceTrust(codexHome = CODEX_HOME) {
   try {
@@ -441,7 +443,7 @@ function syncKnownCodexMobileMcpToolsets(profileOptions = {}) {
   const homes = new Set([CODEX_HOME]);
   let profileError = "";
   try {
-    const profileState = codexProfileService.profiles(profileOptions);
+    const profileState = profileOptions.profileState || codexProfileService.profiles(profileOptions);
     for (const profile of profileState.profiles || []) {
       const codexHome = String(profile && profile.codexHome || "").trim();
       if (!codexHome) continue;
@@ -14777,7 +14779,11 @@ async function handleApi(req, res) {
     const buildConfig = currentPublicBuildConfig();
     const workspaceDelegation = workspaceDelegationPublicSettings();
     const activeQuota = liveQuotaSnapshotForProfiles();
-    syncKnownCodexMobileMcpToolsets({ activeQuota });
+    const profileState = publicConfigRuntimeCache.getProfileState({
+      activeQuota,
+      loadProfiles: (options) => codexProfileService.profiles(options),
+    }).value;
+    syncKnownCodexMobileMcpToolsets({ activeQuota, profileState });
     sendJson(res, 200, {
       authRequired: !DISABLE_AUTH,
       title: "Codex Mobile Web",
@@ -14799,9 +14805,7 @@ async function handleApi(req, res) {
       defaultPermissionMode: defaultPermissionModeFromConfigDefaults(),
       rateLimits: activeRateLimits(),
       rateLimitsByModel: rateLimitsByModelObject(),
-      codexProfiles: codexProfileService.profiles({
-        activeQuota,
-      }),
+      codexProfiles: profileState,
       push: pushSubscriptionPublicStatus(),
       update: {
         enabled: !APP_UPDATE_DISABLED,
@@ -14938,6 +14942,7 @@ async function handleApi(req, res) {
         stepIndex: 9,
       });
       const profile = codexProfileService.setActiveProfile(targetProfile.id);
+      publicConfigRuntimeCache.invalidateProfiles();
       setProfileSwitchProgress(requestId, {
         targetProfileId: profile.id,
         targetProfileLabel: profile.label || profile.id,
