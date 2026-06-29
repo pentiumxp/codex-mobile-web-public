@@ -979,6 +979,72 @@ test("thread detail response budget previews completed user input under active f
   assert.equal(compacted.thread.mobileProjectionRevision, 33);
 });
 
+test("thread detail response budget shares completed user input first-paint budget newest first", () => {
+  const older = "Older completed input\n" + "O".repeat(1400);
+  const newer = "Newer completed input\n" + "N".repeat(360);
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      turns: [
+        {
+          id: "turn-old",
+          status: "completed",
+          items: [
+            { id: "u-old", type: "userMessage", content: [{ type: "input_text", text: older }] },
+            { id: "a-old", type: "agentMessage", text: "Old receipt" },
+          ],
+        },
+        {
+          id: "turn-newer",
+          status: "completed",
+          items: [
+            { id: "u-newer", type: "userMessage", content: [{ type: "input_text", text: newer }] },
+            { id: "a-newer", type: "agentMessage", text: "Newer receipt" },
+          ],
+        },
+        {
+          id: "turn-active",
+          status: "inProgress",
+          items: [
+            { id: "active-u", type: "userMessage", text: "Current input remains outside completed budget" },
+            { id: "active-a", type: "agentMessage", text: "Working" },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeProgressiveItemThreshold: 1,
+    progressiveCompletedUserTextChars: 520,
+    progressiveActiveUserTextChars: 5000,
+    progressiveActiveFirstPaintThreadByteCeiling: 1200,
+    progressiveFirstPaintThreadByteCeiling: 1200,
+  });
+
+  const oldUser = compacted.thread.turns[0].items[0];
+  const newerUser = compacted.thread.turns[1].items[0];
+  const activeUser = compacted.thread.turns[2].items[0];
+  assert.equal(newerUser.content[0].text, newer);
+  assert.equal(newerUser.mobileFirstPaintUserInputBudget, undefined);
+  assert.equal(oldUser.mobileUserInputTruncated, true);
+  assert.match(oldUser.content[0].text, /first-paint user input preview truncated/);
+  assert.equal(JSON.stringify(compacted).includes("O".repeat(400)), false);
+  assert.equal(activeUser.text, "Current input remains outside completed budget");
+
+  const budget = compacted.thread.mobileDetailResponseBudget;
+  assert.equal(budget.progressiveCompletedUserInputBudgetMode, "shared-newest-first");
+  assert.equal(budget.progressiveCompletedUserTextChars, 520);
+  assert.equal(budget.truncatedCompletedUserInputItems, 1);
+  assert.equal(budget.completedUserInputOriginalChars, older.length + newer.length);
+  assert.ok(budget.completedUserInputRetainedChars <= 520);
+  assert.ok(budget.omittedCompletedUserInputChars > 0);
+  assert.ok(budget.retainedCompletedUserInputItemBytesByShape.contentText <= 520);
+});
+
 test("thread detail response budget compacts completed Usage summaries under active first-paint byte pressure", () => {
   const usageSummary = {
     turnId: "turn-completed",

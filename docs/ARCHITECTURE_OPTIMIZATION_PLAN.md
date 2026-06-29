@@ -2552,8 +2552,10 @@ Deployable scope:
   historical/completed user input under active first-paint byte pressure using
   `mobileFirstPaintUserInputBudget` and
   `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_COMPLETED_USER_TEXT_CHARS` (default
-  1024 chars). It preserves active/current user input and does not mutate the
-  stored rollout/session data.
+  1024 chars). Later tightening makes that completed-user-input limit a shared
+  newest-first first-paint budget across retained historical inputs instead of
+  a per-row budget. It preserves active/current user input and does not mutate
+  the stored rollout/session data.
 - The next protected-payload slice handles completed `turnUsageSummary` rows
   under the same active first-paint byte pressure. It preserves the Usage row
   and the fields consumed by the UI, but drops repeated internal summary

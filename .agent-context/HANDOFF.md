@@ -33001,3 +33001,117 @@ The previous full handoff was archived and should be opened only when old proven
     settled non-actionable `threadTaskCards` before evaluating net savings.
     Separately, the active overlay window rebuild recurred once and should be
     tracked independently from payload shaping.
+
+### 2026-06-30 - Action-Safe Task-Card First-Paint Budget Deployed
+
+- Source/deploy:
+  - Private production deployed source ref `1aca90861302`
+    (`fix: compact actionable task card metadata`) through the Home AI deploy
+    lane with reason `codex-mobile-action-safe-task-card-first-paint-budget`.
+  - Deploy backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T221916Z-plugin-codex-mobile-web-codex-mobile-action-safe-task-card-first-paint-budget`.
+  - No Public deploy was run.
+- Production parity / markers:
+  - Source/production parity matched for
+    `adapters/thread-detail-response-budget-service.js`,
+    `scripts/codex-mobile-phase-b-readback-smoke.js`,
+    `adapters/phase-b-readback-decision-service.js`,
+    `test/thread-detail-response-budget-service.test.js`,
+    `test/phase-b-readback-smoke.test.js`,
+    `test/phase-b-readback-decision-service.test.js`, `docs/MODULES.md`,
+    `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+  - Production markers were present for
+    `compactTaskCardWorkflowForFirstPaint`,
+    `progressiveThreadTaskCardIneligibleCount`, `mobileTaskCardCompacted`,
+    `canApprove`, and the focused test marker `compacts task-card metadata
+    under active first-paint byte pressure`.
+- Production Phase-B readback:
+  - Codex Mobile source thread sample returned `ok=true`,
+    `readMode=projection-active-overlay`, `turnsListInitialMs=0`,
+    `activeOverlayWindowMs=0`, `activeOverlayBackfillWindowMs=0`,
+    `activeOverlayMergeMs=5`, `totalMs=176`, and `prepareResponseMs=106`.
+  - Action-safe task-card budget applied: reason `first-paint-byte-pressure`,
+    scope `active-first-paint`, original count `24`, compacted count `24`,
+    actionable count `0`, ineligible count `0`, original bytes `36322`,
+    retained bytes `19479`, omitted bytes `16843`, bytes before budget
+    `191174`, bytes after budget `174331`, and
+    `progressiveActiveFirstPaintBytesAfterTaskCardBudget=174331`.
+  - Active first-paint over-ceiling bytes were `76027`. Retained visible bytes
+    by kind were `assistant=31944`, `userMessage=27844`, `usage=9665`,
+    `operation=1674`, `other=1069`, and `reasoning=412`.
+  - Phase-B decision in this sample was `status=ready`, priority `H3`, owner
+    `phase-b-readback`, reason `warm-or-bounded-paths`, next action
+    `proceed-to-next-phase-b-root-cause-target`. The prior active
+    overlay/window latency residual did not recur in this sample.
+- Runtime validation:
+  - Deploy-mode runtime self-check returned `ok=true`, `deployPass=true`,
+    `periodicHealthy=true`, `issueCount=19`, `blockingIssueCount=0`,
+    `advisoryIssueCount=19`, and `executionFailureCount=0`; child checks
+    `api-thread`, `browser-runtime`, and `client-events` were all OK. Advisory
+    issue codes were `browser_latest_turn_assistant_text_duplicate`,
+    `browser_latest_turn_timestamp_missing`, and
+    `browser_turn_timestamp_missing`.
+  - LaunchAgent readback after the deploy-mode gate returned `ok=true`, latest
+    event gate mode `deploy`, `deployPass=true`, `periodicHealthy=true`,
+    `issueCount=19`, `blockingIssueCount=0`, and `executionFailureCount=0`.
+    Historical launchctl `lastExitCode=1` remained in metadata, but the
+    selected full-check event was healthy.
+- Next optimization direction:
+  - The action-safe task-card pass is proven net-reducing for the current
+    task-card-heavy source-thread shape, but the sampled response remains above
+    the active first-paint byte ceiling. Continue root-cause slicing from the
+    retained visible-byte evidence instead of treating task-card compaction as
+    full Phase-B closure.
+
+### 2026-06-30 - Completed User Input Shared First-Paint Budget Ready For Deploy
+
+- Scope:
+  - Follow-up payload slice after action-safe task-card compaction. Repeated
+    Phase-B samples after `1aca90861302` were warm/bounded
+    (`activeOverlayWindowMs=0`) but still over the active first-paint byte
+    ceiling by roughly `32865-32866` bytes.
+  - Stable retained visible-byte evidence in those samples was dominated by
+    protected `userMessage` and `assistant` bytes: `userMessage=34756`,
+    `assistant=30611`, `usage=10872`, and task-card retained bytes `19562`.
+    Completed user input accounted for `23268` user-message bytes while active
+    user input accounted for `11488`.
+- Root-cause boundary:
+  - Failing layer: server `thread-detail-response-budget-service`.
+  - Violated invariant: active first-paint detail responses should not spend a
+    per-row 1024-character preview budget on every historical completed user
+    input when the current/active user input is already protected separately.
+  - This is not a renderer fallback and does not mutate rollout/session data.
+- Local source changes:
+  - `compactCompletedUserMessageItemForFirstPaint()` now accepts the same
+    shared text-budget object pattern used by active user input.
+  - `applyProgressiveCompletedUserInputBudget()` allocates
+    `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_COMPLETED_USER_TEXT_CHARS` as a
+    shared newest-first budget across retained historical completed user inputs
+    while skipping active/current turns. It reports
+    `progressiveCompletedUserInputBudgetMode=shared-newest-first`.
+  - Phase-B readback script and decision service now propagate
+    `responseBudgetProgressiveCompletedUserInputBudgetMode` /
+    `detailResponseBudgetProgressiveCompletedUserInputBudgetMode`.
+  - Docs now describe the completed-user-input budget as shared newest-first
+    under active first-paint byte pressure.
+- Local bounded estimate:
+  - Applying the local budget function to the current production detail shape
+    reduced the already-budgeted response from `130917` bytes to `116946`
+    bytes, a `13971` byte reduction.
+  - Completed user input text changed from `14336` original chars to `1024`
+    retained chars, with `13312` omitted chars; estimated over-ceiling bytes
+    dropped to `18661`.
+- Validation:
+  - `node --check adapters/thread-detail-response-budget-service.js` passed.
+  - `node --check scripts/codex-mobile-phase-b-readback-smoke.js` passed.
+  - Focused tests passed:
+    `node --test test/thread-detail-response-budget-service.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js`
+    (`78` tests).
+  - Full `npm test -- --test-reporter=dot` passed.
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - `codegraph sync && codegraph status` reported the index up to date.
+- Deployment status:
+  - Local candidate ready. Private production deploy has not yet been
+    requested for this completed-user shared-budget slice. No Public deploy
+    requested or run.

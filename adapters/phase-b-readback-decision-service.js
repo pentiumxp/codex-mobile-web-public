@@ -250,6 +250,7 @@ function buildEvidence(report = {}) {
     detailResponseBudgetProgressiveCompletedUserInputBudgetApplied: detail.responseBudgetProgressiveCompletedUserInputBudgetApplied === true,
     detailResponseBudgetProgressiveCompletedUserInputBudgetReason: compactLabel(detail.responseBudgetProgressiveCompletedUserInputBudgetReason, 100),
     detailResponseBudgetProgressiveCompletedUserInputBudgetScope: compactLabel(detail.responseBudgetProgressiveCompletedUserInputBudgetScope, 80),
+    detailResponseBudgetProgressiveCompletedUserInputBudgetMode: compactLabel(detail.responseBudgetProgressiveCompletedUserInputBudgetMode, 80),
     detailResponseBudgetProgressiveCompletedUserInputBytesBeforeBudget: boundedBytes(detail.responseBudgetProgressiveCompletedUserInputBytesBeforeBudget),
     detailResponseBudgetProgressiveCompletedUserInputBytesAfterBudget: boundedBytes(detail.responseBudgetProgressiveCompletedUserInputBytesAfterBudget),
     detailResponseBudgetTruncatedCompletedUserInputItems: boundedCount(detail.responseBudgetTruncatedCompletedUserInputItems),

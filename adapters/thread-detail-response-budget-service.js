@@ -790,24 +790,21 @@ function compactActiveUserMessageItem(item, options, stats, sharedBudget = null)
   return out;
 }
 
-function compactCompletedUserMessageItemForFirstPaint(item, options, stats) {
+function compactCompletedUserMessageItemForFirstPaint(item, options, stats, sharedBudget = null) {
   if (!item || typeof item !== "object" || !isUserMessageItem(item)) return item;
   const maxChars = Math.max(0, Math.trunc(Number(options.progressiveCompletedUserTextChars || 0)));
   if (!maxChars) return item;
   const out = cloneJson(item);
-  const budget = {
-    maxChars,
-    originalChars: 0,
-    retainedChars: 0,
-    omittedChars: 0,
-    truncated: false,
-    fields: [],
-  };
+  const budget = sharedBudget || createTextBudget(maxChars);
+  const beforeOriginal = budget.originalChars;
+  const beforeRetained = budget.retainedChars;
+  const beforeOmitted = budget.omittedChars;
+  const fields = [];
   for (const field of ["text", "message"]) {
     if (!(field in out) || typeof out[field] !== "string") continue;
     const beforeOriginal = budget.originalChars;
     out[field] = compactValueForTextBudget(out[field], budget, FIRST_PAINT_USER_INPUT_BUDGET_MARKER);
-    if (budget.originalChars > beforeOriginal) budget.fields.push(field);
+    if (budget.originalChars > beforeOriginal) fields.push(field);
   }
   if (Array.isArray(out.content)) {
     out.content = out.content.map((entry) => {
@@ -817,26 +814,31 @@ function compactCompletedUserMessageItemForFirstPaint(item, options, stats) {
         if (!(field in next) || typeof next[field] !== "string") continue;
         const beforeOriginal = budget.originalChars;
         next[field] = compactValueForTextBudget(next[field], budget, FIRST_PAINT_USER_INPUT_BUDGET_MARKER);
-        if (budget.originalChars > beforeOriginal) budget.fields.push(`content.${field}`);
+        if (budget.originalChars > beforeOriginal) fields.push(`content.${field}`);
       }
       return next;
     });
   }
-  if (!budget.truncated) return item;
+  const originalDelta = Math.max(0, budget.originalChars - beforeOriginal);
+  const retainedDelta = Math.max(0, budget.retainedChars - beforeRetained);
+  const omittedDelta = Math.max(0, budget.omittedChars - beforeOmitted);
+  if (!omittedDelta) return item;
   out.mobileFirstPaintUserInputBudget = {
     version: "thread-detail-first-paint-user-input-budget-v1",
     scope: "completed",
     maxChars,
-    originalChars: budget.originalChars,
-    retainedChars: budget.retainedChars,
-    omittedChars: budget.omittedChars,
-    fields: [...new Set(budget.fields)],
+    originalChars: originalDelta,
+    retainedChars: retainedDelta,
+    omittedChars: omittedDelta,
+    fields: [...new Set(fields)],
   };
   out.mobileUserInputTruncated = true;
   stats.truncatedCompletedUserInputItems += 1;
-  stats.completedUserInputOriginalChars += budget.originalChars;
-  stats.completedUserInputRetainedChars += budget.retainedChars;
-  stats.omittedCompletedUserInputChars += budget.omittedChars;
+  if (!sharedBudget) {
+    stats.completedUserInputOriginalChars += originalDelta;
+    stats.completedUserInputRetainedChars += retainedDelta;
+    stats.omittedCompletedUserInputChars += omittedDelta;
+  }
   return out;
 }
 
@@ -1299,15 +1301,22 @@ function applyProgressiveCompletedUserInputBudget(thread, options, stats) {
     stats.progressiveCompletedUserInputBudgetReason = "disabled";
     return;
   }
+  stats.progressiveCompletedUserInputBudgetMode = "shared-newest-first";
+  const completedUserInputBudget = createTextBudget(maxChars);
   let changed = false;
-  for (const turn of thread.turns) {
+  for (let turnIndex = thread.turns.length - 1; turnIndex >= 0; turnIndex -= 1) {
+    const turn = thread.turns[turnIndex];
     if (!turn || !Array.isArray(turn.items) || isActiveTurn(turn, thread)) continue;
-    turn.items = turn.items.map((item) => {
-      const compacted = compactCompletedUserMessageItemForFirstPaint(item, options, stats);
+    for (let itemIndex = turn.items.length - 1; itemIndex >= 0; itemIndex -= 1) {
+      const item = turn.items[itemIndex];
+      const compacted = compactCompletedUserMessageItemForFirstPaint(item, options, stats, completedUserInputBudget);
       if (compacted !== item) changed = true;
-      return compacted;
-    });
+      turn.items[itemIndex] = compacted;
+    }
   }
+  stats.completedUserInputOriginalChars = completedUserInputBudget.originalChars;
+  stats.completedUserInputRetainedChars = completedUserInputBudget.retainedChars;
+  stats.omittedCompletedUserInputChars = completedUserInputBudget.omittedChars;
   if (!changed) return;
   const afterBytes = jsonByteLength(thread);
   stats.progressiveCompletedUserInputBudgetApplied = true;
@@ -1682,6 +1691,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
     progressiveCompletedUserInputBudgetApplied: false,
     progressiveCompletedUserInputBudgetReason: "",
     progressiveCompletedUserInputBudgetScope: "",
+    progressiveCompletedUserInputBudgetMode: "",
     progressiveCompletedUserInputBytesBeforeBudget: 0,
     progressiveCompletedUserInputBytesAfterBudget: 0,
     progressiveCompletedUsageBudgetApplied: false,

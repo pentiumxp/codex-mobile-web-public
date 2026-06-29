@@ -231,6 +231,7 @@ test("phase B readback smoke collects bounded diagnostics without private fields
             progressiveCompletedUserInputBudgetApplied: true,
             progressiveCompletedUserInputBudgetReason: "first-paint-byte-pressure",
             progressiveCompletedUserInputBudgetScope: "active-first-paint",
+            progressiveCompletedUserInputBudgetMode: "shared-newest-first",
             progressiveCompletedUserInputBytesBeforeBudget: 185000,
             progressiveCompletedUserInputBytesAfterBudget: 158000,
             truncatedCompletedUserInputItems: 8,
@@ -482,6 +483,7 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.detail.responseBudgetProgressiveCompletedUserInputBudgetApplied, true);
   assert.equal(report.detail.responseBudgetProgressiveCompletedUserInputBudgetReason, "first-paint-byte-pressure");
   assert.equal(report.detail.responseBudgetProgressiveCompletedUserInputBudgetScope, "active-first-paint");
+  assert.equal(report.detail.responseBudgetProgressiveCompletedUserInputBudgetMode, "shared-newest-first");
   assert.equal(report.detail.responseBudgetProgressiveCompletedUserInputBytesBeforeBudget, 185000);
   assert.equal(report.detail.responseBudgetProgressiveCompletedUserInputBytesAfterBudget, 158000);
   assert.equal(report.detail.responseBudgetTruncatedCompletedUserInputItems, 8);

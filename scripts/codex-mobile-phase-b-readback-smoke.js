@@ -541,6 +541,7 @@ function summarizeDetailResponseBudget(budget = {}) {
     responseBudgetProgressiveCompletedUserInputBudgetApplied: source.progressiveCompletedUserInputBudgetApplied === true,
     responseBudgetProgressiveCompletedUserInputBudgetReason: compactLabel(source.progressiveCompletedUserInputBudgetReason, 100),
     responseBudgetProgressiveCompletedUserInputBudgetScope: compactLabel(source.progressiveCompletedUserInputBudgetScope, 80),
+    responseBudgetProgressiveCompletedUserInputBudgetMode: compactLabel(source.progressiveCompletedUserInputBudgetMode, 80),
     responseBudgetProgressiveCompletedUserInputBytesBeforeBudget: boundedBytes(source.progressiveCompletedUserInputBytesBeforeBudget),
     responseBudgetProgressiveCompletedUserInputBytesAfterBudget: boundedBytes(source.progressiveCompletedUserInputBytesAfterBudget),
     responseBudgetTruncatedCompletedUserInputItems: boundedCount(source.truncatedCompletedUserInputItems),

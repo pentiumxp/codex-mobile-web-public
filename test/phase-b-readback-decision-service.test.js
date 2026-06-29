@@ -293,6 +293,7 @@ test("phase B readback decision returns ready for warm or bounded paths", () => 
       responseBudgetProgressiveCompletedUserInputBudgetApplied: true,
       responseBudgetProgressiveCompletedUserInputBudgetReason: "first-paint-byte-pressure",
       responseBudgetProgressiveCompletedUserInputBudgetScope: "active-first-paint",
+      responseBudgetProgressiveCompletedUserInputBudgetMode: "shared-newest-first",
       responseBudgetProgressiveCompletedUserInputBytesBeforeBudget: 184000,
       responseBudgetProgressiveCompletedUserInputBytesAfterBudget: 150000,
       responseBudgetTruncatedCompletedUserInputItems: 7,
@@ -434,6 +435,7 @@ test("phase B readback decision returns ready for warm or bounded paths", () => 
   assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUserInputBudgetApplied, true);
   assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUserInputBudgetReason, "first-paint-byte-pressure");
   assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUserInputBudgetScope, "active-first-paint");
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUserInputBudgetMode, "shared-newest-first");
   assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUserInputBytesBeforeBudget, 184000);
   assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUserInputBytesAfterBudget, 150000);
   assert.equal(decision.evidence.detailResponseBudgetTruncatedCompletedUserInputItems, 7);
