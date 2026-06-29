@@ -28850,6 +28850,9 @@ The previous full handoff was archived and should be opened only when old proven
   - Local commit: `38c1f0b`
     (`test: detect browser jitter and submit visibility`).
   - Home AI Deploy task card: `ttc_1bd4b5ea4f0036cebe`.
+  - Home AI Deploy completion card: `ttc_f7b8a180235e249876`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T032335Z-plugin-codex-mobile-web-codex-mobile-browser-self-check-jitter-submit`.
   - Private deployment through the Home AI Deploy lane synced the production
     scripts/adapters; source/prod hashes matched for
     `scripts/codex-mobile-browser-runtime-self-check.js`,
@@ -28865,10 +28868,11 @@ The previous full handoff was archived and should be opened only when old proven
     `clientBuildId=0.1.11|codex-mobile-shell-v580`,
     `shellCacheName=codex-mobile-shell-v580`, and
     `buildId=7571dd9bed983c26`.
-  - Production non-submit browser self-check against Movie
-    `019efca1-ea69-7292-87b7-025ba023ca87` passed with zero browser issues,
-    zero image failures, zero timestamp gaps, zero process-item leaks, and
-    zero visual/submitted-card jitter counts.
+  - Home AI Deploy reported a production non-submit browser runtime self-check
+    against Movie and Codex Mobile passed with zero browser issues, zero image
+    failures, zero timestamp gaps, zero process-item leaks, zero visual-anchor
+    jitter counts, zero submitted-card jitter counts, no console warnings/errors,
+    no browser exceptions, and `submitExercise=null`.
   - This change does not modify `public/app.js` or `public/sw.js`; expected
     `/api/public-config` remains `codex-mobile-shell-v580` unless another
     runtime change is deployed.
