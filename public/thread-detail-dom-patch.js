@@ -67,6 +67,12 @@
       : "";
   }
 
+  function visibleItemRenderKeyForNode(node) {
+    if (!node || node.nodeType !== ELEMENT_NODE || typeof node.getAttribute !== "function") return "";
+    if (node.getAttribute("data-item") == null) return "";
+    return renderKeyForNode(node);
+  }
+
   function canPatchNode(target, source) {
     if (!target || !source || target.nodeType !== source.nodeType) return false;
     if (target.nodeType !== ELEMENT_NODE) return true;
@@ -879,6 +885,15 @@
       article.insertBefore(source, anchor || null);
       lastPatchedNode = source;
       counts.inserted += 1;
+    }
+    const nextKeys = new Set(patchPlan.operations
+      .map((operation) => normalizeOperation(operation))
+      .filter(Boolean)
+      .map((operation) => operation.key));
+    for (const child of Array.from(article.childNodes || [])) {
+      const key = visibleItemRenderKeyForNode(child);
+      if (!key || nextKeys.has(key)) continue;
+      if (typeof child.remove === "function") child.remove();
     }
     return result(true, "applied", counts);
   }

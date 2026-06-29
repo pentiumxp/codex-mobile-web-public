@@ -29986,6 +29986,37 @@ The previous full handoff was archived and should be opened only when old proven
     `visible_item_timestamp_order_mismatch` and a bounded command-failure code.
   - Return status for task card `ttc_fa88deab30483275c3` was
     `partially_completed`.
+
+### 2026-06-29 - v586 Duplicate User Echo Production Deploy
+
+- Deployment:
+  - Source commit `9dd722323395`
+    (`fix: hide durable-submitted user echoes`) was deployed privately through
+    the Home AI Deploy lane.
+  - Deploy reason: `codex-mobile-v586-duplicate-user-echo`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T123313Z-plugin-codex-mobile-web-codex-mobile-v586-duplicate-user-echo`.
+  - Public deploy was not run.
+- Production readback:
+  - `/api/public-config` returned status `200`, build id
+    `ad301479aa61aa20`, client build id
+    `0.1.11|codex-mobile-shell-v586`, shell cache
+    `codex-mobile-shell-v586`, and `authRequired=true`.
+  - Source/production hash parity matched for `public/app.js`,
+    `public/sw.js`, `test/conversation-render.test.js`, and
+    `test/client-render-stability-guard.test.js`.
+  - Production marker readback confirmed `codex-mobile-shell-v586`,
+    `userMessagesCanShadow`, durable/submitted echo filtering markers, and the
+    focused conversation-render test names.
+- Residual gate:
+  - Deploy-mode runtime self-check returned `deployPass=false` and
+    `periodicHealthy=false`.
+  - API-thread check was `ok=true` with zero issues.
+  - Browser-runtime check still reported H2
+    `browser_latest_turn_user_message_duplicate` (`16` instances in the
+    bounded gate run) plus a bounded command-failure code.
+  - Return status for task card `ttc_5e0cead86fb9f90dec` was
+    `partially_completed`.
 - Final follow-up readback:
   - The same production thread-detail response was rechecked with the deployed
     production self-check adapter and returned `ok=true` with zero issues,

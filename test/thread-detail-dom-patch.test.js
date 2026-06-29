@@ -1262,6 +1262,47 @@ test("visible item dom patch inserts before the first child when no previous nod
   assert.deepEqual(article.nodes.map((node) => node.key), ["a", "b"]);
 });
 
+test("visible item dom patch removes stale visible item nodes after filtering", () => {
+  const stalePending = createDomElement("section", {
+    "data-render-key": "item|thread|turn|local-user-submit",
+    "data-item": "local-user-submit",
+  }, [createDomText("pending")]);
+  const durable = createDomElement("section", {
+    "data-render-key": "item|thread|turn|durable-user",
+    "data-item": "durable-user",
+  }, [createDomText("durable")]);
+  const status = createDomElement("div", {
+    "data-render-key": "status|thread|turn",
+  }, [createDomText("running")]);
+  const article = createDomElement("article", {}, [stalePending, durable, status]);
+  const findElementByKey = (key) => article.childNodes
+    .find((node) => node.getAttribute && node.getAttribute("data-render-key") === key) || null;
+
+  const result = domPatch.applyVisibleItemRefreshDomPatch({
+    article,
+    patchPlan: {
+      canPatch: true,
+      operations: [
+        {
+          type: "reuse",
+          key: "item|thread|turn|durable-user",
+          nextEntry: { key: "item|thread|turn|durable-user" },
+        },
+      ],
+    },
+    findElementByKey,
+    renderElement: (entry) => createDomElement("section", { "data-render-key": entry.key, "data-item": entry.key }),
+    patchElement: (node) => node,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(stalePending.parentNode, null);
+  assert.deepEqual(
+    article.childNodes.map((node) => node.getAttribute("data-render-key")),
+    ["item|thread|turn|durable-user", "status|thread|turn"],
+  );
+});
+
 test("visible item dom patch returns bounded failure reasons", () => {
   const article = createArticle([createNode("a")]);
 
