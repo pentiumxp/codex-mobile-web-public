@@ -858,6 +858,59 @@ test("thread detail response budget truncates oversized active user input under 
   assert.deepEqual(compacted.thread.mobileVisibleItemKeys, compacted.thread.turns[0].items.map((item) => item.mobileVisibleKey));
 });
 
+test("thread detail response budget shares active user input budget across retained items", () => {
+  const olderOne = "O".repeat(800);
+  const olderTwo = "T".repeat(800);
+  const latest = "Latest input stays visible. ".repeat(20);
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      mobileProjectionRevision: 36,
+      turns: [
+        {
+          id: "turn-active",
+          status: "inProgress",
+          items: [
+            { id: "u-old-1", type: "userMessage", content: [{ type: "input_text", text: olderOne }] },
+            { id: "u-old-2", type: "userMessage", content: [{ type: "input_text", text: olderTwo }] },
+            { id: "u-latest", type: "userMessage", content: [{ type: "input_text", text: latest }] },
+            { id: "a1", type: "agentMessage", text: "Working" },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeProgressiveItemThreshold: 1,
+    progressiveActiveUserTextChars: 900,
+  });
+
+  const items = compacted.thread.turns[0].items;
+  const oldestUser = items.find((item) => item.id === "u-old-1");
+  const olderUser = items.find((item) => item.id === "u-old-2");
+  const latestUser = items.find((item) => item.id === "u-latest");
+  assert.equal(latestUser.content[0].text, latest);
+  assert.equal(latestUser.mobileUserInputBudget, undefined);
+  assert.equal(oldestUser.mobileUserInputTruncated, true);
+  assert.equal(olderUser.mobileUserInputTruncated, true);
+  assert.equal(oldestUser.content[0].text, "");
+  assert.match(olderUser.content[0].text, /active user input preview truncated/);
+  assert.equal(JSON.stringify(compacted).includes("O".repeat(100)), false);
+  assert.equal(JSON.stringify(compacted).includes("T".repeat(500)), false);
+
+  const budget = compacted.thread.mobileDetailResponseBudget;
+  assert.equal(budget.truncatedActiveUserMessageItems, 2);
+  assert.equal(budget.activeUserInputOriginalChars, olderOne.length + olderTwo.length);
+  assert.ok(budget.activeUserInputRetainedChars <= 900 - latest.length);
+  assert.ok(budget.omittedActiveUserInputChars > 0);
+  assert.equal(budget.retainedUserInputItemCountByTurnState.active, 3);
+  assert.ok(budget.retainedActiveUserInputItemBytesByShape.contentText <= 900);
+});
+
 test("thread detail response budget previews completed user input under active first-paint byte pressure", () => {
   const completedUserText = [
     "Historical task card",

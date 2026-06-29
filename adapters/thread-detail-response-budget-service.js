@@ -504,7 +504,7 @@ function compactStringForTextBudget(value, budget, marker = ACTIVE_TEXT_BUDGET_M
     budget.retainedChars += originalChars;
     return value;
   }
-  const compacted = truncateMiddleText(value, remaining, marker);
+  const compacted = remaining > 0 ? truncateMiddleText(value, remaining, marker) : "";
   const retainedChars = textCharLength(compacted);
   budget.retainedChars += retainedChars;
   budget.omittedChars += Math.max(0, originalChars - retainedChars);
@@ -603,12 +603,8 @@ function compactTextFieldForUserInput(out, field, budget) {
   return budget.originalChars > beforeOriginal;
 }
 
-function compactActiveUserMessageItem(item, options, stats) {
-  if (!item || typeof item !== "object" || !isUserMessageItem(item)) return item;
-  const maxChars = Math.max(0, Math.trunc(Number(options.progressiveActiveUserTextChars || 0)));
-  if (!maxChars) return item;
-  const out = cloneJson(item);
-  const budget = {
+function createTextBudget(maxChars) {
+  return {
     maxChars,
     originalChars: 0,
     retainedChars: 0,
@@ -616,15 +612,27 @@ function compactActiveUserMessageItem(item, options, stats) {
     truncated: false,
     fields: [],
   };
+}
+
+function compactActiveUserMessageItem(item, options, stats, sharedBudget = null) {
+  if (!item || typeof item !== "object" || !isUserMessageItem(item)) return item;
+  const maxChars = Math.max(0, Math.trunc(Number(options.progressiveActiveUserTextChars || 0)));
+  if (!maxChars) return item;
+  const out = cloneJson(item);
+  const budget = sharedBudget || createTextBudget(maxChars);
+  const beforeOriginal = budget.originalChars;
+  const beforeRetained = budget.retainedChars;
+  const beforeOmitted = budget.omittedChars;
+  const fields = [];
   for (const field of ["text", "message"]) {
-    if (compactTextFieldForUserInput(out, field, budget)) budget.fields.push(field);
+    if (compactTextFieldForUserInput(out, field, budget)) fields.push(field);
   }
   if (Array.isArray(out.content)) {
     out.content = out.content.map((entry, index) => {
       if (!entry || typeof entry !== "object") return entry;
       const next = Object.assign({}, entry);
       for (const field of ["text", "input_text", "content"]) {
-        if (compactTextFieldForUserInput(next, field, budget)) budget.fields.push(`content.${field}`);
+        if (compactTextFieldForUserInput(next, field, budget)) fields.push(`content.${field}`);
       }
       const imageResult = compactImageDataUrlPartForUserInput(next, maxChars);
       if (imageResult.truncated) {
@@ -632,26 +640,29 @@ function compactActiveUserMessageItem(item, options, stats) {
         budget.retainedChars += imageResult.retainedChars;
         budget.omittedChars += imageResult.omittedChars;
         budget.truncated = true;
-        budget.fields.push(`content.${imageResult.field}`);
+        fields.push(`content.${imageResult.field}`);
         return imageResult.part;
       }
       return next;
     });
   }
-  if (!budget.truncated) return item;
+  const originalDelta = Math.max(0, budget.originalChars - beforeOriginal);
+  const retainedDelta = Math.max(0, budget.retainedChars - beforeRetained);
+  const omittedDelta = Math.max(0, budget.omittedChars - beforeOmitted);
+  if (!omittedDelta) return item;
   out.mobileUserInputBudget = {
     version: "thread-detail-active-user-input-budget-v1",
     maxChars,
-    originalChars: budget.originalChars,
-    retainedChars: budget.retainedChars,
-    omittedChars: budget.omittedChars,
-    fields: [...new Set(budget.fields)],
+    originalChars: originalDelta,
+    retainedChars: retainedDelta,
+    omittedChars: omittedDelta,
+    fields: [...new Set(fields)],
   };
   out.mobileUserInputTruncated = true;
   stats.truncatedActiveUserMessageItems += 1;
-  stats.activeUserInputOriginalChars += budget.originalChars;
-  stats.activeUserInputRetainedChars += budget.retainedChars;
-  stats.omittedActiveUserInputChars += budget.omittedChars;
+  stats.activeUserInputOriginalChars += originalDelta;
+  stats.activeUserInputRetainedChars += retainedDelta;
+  stats.omittedActiveUserInputChars += omittedDelta;
   return out;
 }
 
@@ -1221,7 +1232,11 @@ function compactTurnWithBudget(turn, thread, options, stats) {
     return keepAssistantIndexes.has(index);
   });
   if (active && options.progressiveActiveBudgetApplied) {
-    compacted.items = compacted.items.map((item) => compactActiveOperationPayloadItem(compactActiveTextItem(compactActiveUserMessageItem(item, options, stats), options, stats), options, stats));
+    const activeUserInputBudget = createTextBudget(Math.max(0, Math.trunc(Number(options.progressiveActiveUserTextChars || 0))));
+    for (let index = compacted.items.length - 1; index >= 0; index -= 1) {
+      compacted.items[index] = compactActiveUserMessageItem(compacted.items[index], options, stats, activeUserInputBudget);
+    }
+    compacted.items = compacted.items.map((item) => compactActiveOperationPayloadItem(compactActiveTextItem(item, options, stats), options, stats));
   }
   compacted.items = orderItemsByDisplayTimestamp(compacted.items, compacted, thread);
   const afterOperationCount = countBy(compacted.items, isOperationItem);
