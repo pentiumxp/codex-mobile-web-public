@@ -29356,7 +29356,7 @@ The previous full handoff was archived and should be opened only when old proven
     bodies, upload contents, screenshots, provider payloads, endpoint files,
     raw logs, or long private payloads were recorded.
 
-### 2026-06-29 - Active Overlay Fresh-Window Rule Residual Repair In Progress
+### 2026-06-29 - Active Overlay Fresh-Window Rule Residual Repair
 
 - Context:
   - Production deploys `9eeac7a0bb5e` and `3d29af37d87a` both succeeded, and
@@ -29399,6 +29399,32 @@ The previous full handoff was archived and should be opened only when old proven
   - New orchestration coverage proves incomplete `projection-live` overlays
     still read the fresh active window, while complete signed `projection-live`
     overlays skip `turns-list-active-overlay-window`.
-- Next:
-  - Commit and deploy privately through Home AI Deploy. Do not push Public
-    unless explicitly requested.
+- Deploy / readback:
+  - Private production deploy completed through the Home AI Deploy lane from
+    source commit `968d59a21f8a`, reason
+    `codex-mobile-active-overlay-fresh-window-rule`.
+  - Deploy result: `ok=true`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T102217Z-plugin-codex-mobile-web-codex-mobile-active-overlay-fresh-window-rule`.
+  - Production `/api/public-config` returned build id
+    `9a1b34241edd22b4`, client build id
+    `0.1.11|codex-mobile-shell-v582`, and shell cache
+    `codex-mobile-shell-v582`.
+  - Source/production hash parity matched for the read-orchestration service,
+    focused orchestration test, and updated architecture/troubleshooting docs.
+  - Production marker readback confirmed
+    `overlayCompletenessAllowsCachedActiveWindow` and
+    `projection-live complete active overlay skips fresh active-window backfill`.
+  - Production Phase B readback against the active Codex Mobile source thread
+    showed active-overlay closure in deploy-lane samples and local follow-up
+    samples: `detail.totalMs=89-99`, `activeOverlayBackfillWindowMs=0-1`,
+    `activeOverlayWindowMs=0`, `activeOverlayFullProjectionMs=0`,
+    `activeOverlayHistoryBaselineMs=0`, `activeOverlayMs=1-3`,
+    `activeOverlayMergeMs=3-4`, `prepareResponseMs=39-46`, and read mode
+    `projection-active-overlay`.
+  - Production runtime self-check loop with `--gate-mode deploy` passed with
+    `gate.deployPass=true`, `periodicHealthy=true`, and zero issue/code counts.
+  - This closes the active-overlay backfill performance issue for the sampled
+    production active Codex Mobile source thread.
+  - No active submit exercise was run.
+  - Public deploy was not run.
