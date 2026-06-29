@@ -32353,15 +32353,15 @@ The previous full handoff was archived and should be opened only when old proven
   - LaunchAgent readback returned `ok=true` with latest full-check periodic
     event healthy, zero blockers, and zero execution failures.
 
-### 2026-06-30 - Retained User-Input Byte Attribution Dispatched
+### 2026-06-30 - Retained User-Input Byte Attribution Deployed
 
-- Source:
-  - Commit `7afaaf7` (`fix: attribute retained user input bytes`) is ready and
-    dispatched to the Home AI central private deploy lane via task card
-    `ttc_f27107d985355beaba`.
-  - Deploy reason requested:
+- Source / deploy:
+  - Commit `7afaaf7` (`fix: attribute retained user input bytes`) was
+    privately deployed through the Home AI central plugin deploy lane.
+  - Deploy task card: `ttc_f27107d985355beaba`.
+  - Deploy reason:
     `codex-mobile-retained-user-input-byte-attribution`.
-  - Public deploy was not requested.
+  - Public deploy was not run.
 - Root cause / invariant:
   - After completed replay assistant budget deployed, retained visible bytes
     shifted to user input as the largest bucket while active overlay/window
@@ -32379,9 +32379,41 @@ The previous full handoff was archived and should be opened only when old proven
   - Home AI fallback-governance guard returned `ok=true`.
   - `git diff --check` passed.
   - `codegraph sync && codegraph status` reported the index up to date.
-- Awaiting:
-  - Central private deploy return with source/production parity, marker
-    readback, Phase-B readback, runtime gate, and LaunchAgent readback.
+- Production readback:
+  - Source/production SHA-256 parity matched for all changed files.
+  - Production markers found `retainedUserInputItemCountByTurnState`,
+    `retainedUserInputItemBytesByTurnState`,
+    `responseBudgetRetainedUserInputItemCountByTurnState`, and
+    `detailResponseBudgetRetainedUserInputItemBytesByTurnState`.
+  - `/api/public-config` stayed on version `0.1.11`,
+    `clientBuildId=0.1.11|codex-mobile-shell-v598`.
+- Phase-B readback:
+  - Codex Mobile source thread returned `ok=true`,
+    `readMode=projection-active-overlay`, `totalMs=144`,
+    `prepareResponseMs=47`, `activeOverlayWindowMs=0`, and
+    `activeOverlayBackfillWindowMs=0`.
+  - User-input attribution showed retained user input `15` items / about
+    `43KB`, split as active `4` items / about `25KB` and completed `11` items /
+    about `18KB`.
+  - Retained assistant split was active `24` items / about `12.8KB` and
+    completed `20` items / about `15.6KB`.
+  - Completed replay assistant budget remained applied:
+    `completedReplayAssistantItemsBefore=80`,
+    `completedReplayAssistantItemsAfter=12`, and
+    `completedReplayOmittedAssistantItems=68`.
+  - Decision readback was `phase-b-readback` / `warm-or-bounded-paths`, with no
+    active-overlay/window residual in this sample.
+- Runtime:
+  - Deploy-mode runtime gate returned `ok=true`, `deployPass=true`,
+    `periodicHealthy=true`, `issueCount=0`, `blockingIssueCount=0`, and
+    `executionFailureCount=0`.
+  - LaunchAgent readback selected the fresh deploy full-check event and returned
+    `ok=true`, zero issues, zero blockers, and zero execution failures.
+- Next target:
+  - The largest residual is current active user input, not completed history.
+    Existing active user-input text stats stayed at zero, so the next slice
+    should attribute active user-input subshape/field bytes before adding any
+    budget.
 
 ### 2026-06-30 - Active First-Paint Assistant Retained-Byte Attribution Deployed
 
