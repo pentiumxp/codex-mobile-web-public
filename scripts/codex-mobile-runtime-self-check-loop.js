@@ -45,6 +45,7 @@ function usage() {
     "  --client-event-log <path> Client-event log path. Default: known runtime log candidates.",
     "  --client-event-tail-bytes <n> Bytes to read from the end of the client-event log. Default: 524288.",
     "  --client-event-max-lines <n> Max client-event log lines to inspect. Default: 5000.",
+    "  --client-event-window-ms <n> Max age for timestamped client-event stalls. Default: 1800000.",
     "  --output <path>         JSONL output path. Default: ~/.codex-mobile-web/logs/runtime-self-check.jsonl",
     "  --json                  Print the final/latest event as JSON.",
     "  --help                  Show this help.",
@@ -83,6 +84,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     clientEventLog: String(env.CODEX_MOBILE_CLIENT_EVENT_LOG || "").trim(),
     clientEventTailBytes: positiveInt(env.CODEX_MOBILE_CLIENT_EVENT_TAIL_BYTES || "524288", 512 * 1024, 64 * 1024 * 1024),
     clientEventMaxLines: positiveInt(env.CODEX_MOBILE_CLIENT_EVENT_MAX_LINES || "5000", 5000, 100000),
+    clientEventWindowMs: positiveInt(env.CODEX_MOBILE_CLIENT_EVENT_WINDOW_MS || "1800000", 30 * 60 * 1000, 30 * 24 * 60 * 60 * 1000),
     output: env.CODEX_MOBILE_RUNTIME_SELF_CHECK_LOG || defaultOutputPath(),
     json: false,
     help: false,
@@ -115,6 +117,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     else if (arg === "--client-event-log") options.clientEventLog = next();
     else if (arg === "--client-event-tail-bytes") options.clientEventTailBytes = positiveInt(next(), options.clientEventTailBytes, 64 * 1024 * 1024);
     else if (arg === "--client-event-max-lines") options.clientEventMaxLines = positiveInt(next(), options.clientEventMaxLines, 100000);
+    else if (arg === "--client-event-window-ms") options.clientEventWindowMs = positiveInt(next(), options.clientEventWindowMs, 30 * 24 * 60 * 60 * 1000);
     else if (arg === "--output") options.output = next();
     else if (arg === "--json") options.json = true;
     else throw new Error(`unknown option: ${arg}`);
@@ -228,6 +231,7 @@ async function runOnce(options = {}, deps = {}) {
       logCandidates: options.clientEventLog ? [options.clientEventLog] : null,
       tailBytes: options.clientEventTailBytes,
       maxLines: options.clientEventMaxLines,
+      windowMs: options.clientEventWindowMs,
     });
     checks.push(runtimeCheckFromClientEventSummary(clientEventSummary));
   }

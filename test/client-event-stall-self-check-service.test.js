@@ -14,21 +14,29 @@ const {
 } = require("../adapters/client-event-stall-self-check-service");
 
 test("client-event stall self-check parses bounded client-event lines", () => {
-  const line = '[client-event] thread_list_runtime_stall {"threadId":"private-thread","path":"/private/path","details":{"maxRafDelayMs":3200,"maxScrollApplyMs":8,"maxLongTaskMs":0,"threadListCount":22},"userAgent":"private UA"}';
+  const line = '[client-event] thread_list_runtime_stall {"ts":"2026-06-29T17:40:00.000Z","threadId":"private-thread","path":"/private/path","details":{"maxRafDelayMs":3200,"maxScrollApplyMs":8,"maxLongTaskMs":0,"threadListCount":22},"userAgent":"private UA"}';
   const parsed = parseClientEventLine(line);
 
   assert.equal(parsed.event, "thread_list_runtime_stall");
+  assert.equal(parsed.ts, "2026-06-29T17:40:00.000Z");
   assert.equal(parsed.details.maxRafDelayMs, 3200);
-  assert.doesNotMatch(JSON.stringify(runtimeCheckFromClientEventSummary(summarizeClientEventText(line))), /private-thread|private UA|private\/path/);
+  assert.doesNotMatch(JSON.stringify(runtimeCheckFromClientEventSummary(summarizeClientEventText(line, {
+    nowMs: Date.parse("2026-06-29T17:40:10.000Z"),
+  }))), /private-thread|private UA|private\/path/);
 });
 
 test("client-event stall self-check reports H2 for recent severe thread-list stalls", () => {
   const text = [
     '[client-event] shell_loaded {"details":{"clientBuildId":"0.1.11|private"}}',
-    '[client-event] thread_list_runtime_stall {"threadId":"thread-secret","details":{"maxRafDelayMs":3400,"maxScrollApplyMs":140,"maxLongTaskMs":0,"longTaskCount":0,"threadListCount":18}}',
+    '[client-event] thread_list_runtime_stall {"ts":"2026-06-29T17:40:00.000Z","threadId":"thread-secret","details":{"maxRafDelayMs":3400,"maxScrollApplyMs":140,"maxLongTaskMs":0,"longTaskCount":0,"threadListCount":18}}',
   ].join("\n");
 
-  const summary = summarizeClientEventText(text, { minStallMs: 1000, h2ThresholdMs: 3000 });
+  const summary = summarizeClientEventText(text, {
+    minStallMs: 1000,
+    h2ThresholdMs: 3000,
+    nowMs: Date.parse("2026-06-29T17:40:10.000Z"),
+    windowMs: 30 * 60 * 1000,
+  });
 
   assert.equal(summary.ok, false);
   assert.equal(summary.issueCount, 1);
@@ -40,8 +48,12 @@ test("client-event stall self-check reports H2 for recent severe thread-list sta
 });
 
 test("client-event stall self-check keeps sub-H2 stalls advisory", () => {
-  const text = '[client-event] thread_list_runtime_stall {"details":{"maxRafDelayMs":1200,"maxScrollApplyMs":1100,"maxLongTaskMs":0,"threadListCount":5}}';
-  const summary = summarizeClientEventText(text, { minStallMs: 1000, h2ThresholdMs: 3000 });
+  const text = '[client-event] thread_list_runtime_stall {"ts":"2026-06-29T17:40:00.000Z","details":{"maxRafDelayMs":1200,"maxScrollApplyMs":1100,"maxLongTaskMs":0,"threadListCount":5}}';
+  const summary = summarizeClientEventText(text, {
+    minStallMs: 1000,
+    h2ThresholdMs: 3000,
+    nowMs: Date.parse("2026-06-29T17:40:10.000Z"),
+  });
 
   assert.equal(summary.ok, true);
   assert.equal(summary.issueCount, 1);
@@ -49,18 +61,39 @@ test("client-event stall self-check keeps sub-H2 stalls advisory", () => {
   assert.equal(summary.issues[0].severity, "H3");
 });
 
+test("client-event stall self-check ignores stale or untimed severe stalls for blocking gates", () => {
+  const text = [
+    '[client-event] thread_list_runtime_stall {"ts":"2026-06-29T16:00:00.000Z","details":{"maxRafDelayMs":5000}}',
+    '[client-event] thread_list_runtime_stall {"details":{"maxRafDelayMs":6000}}',
+    '[client-event] thread_list_runtime_stall {"ts":"2026-06-29T17:39:30.000Z","details":{"maxRafDelayMs":2800}}',
+  ].join("\n");
+
+  const summary = summarizeClientEventText(text, {
+    nowMs: Date.parse("2026-06-29T17:40:00.000Z"),
+    windowMs: 30 * 60 * 1000,
+  });
+
+  assert.equal(summary.ok, true);
+  assert.equal(summary.blockingIssueCount, 0);
+  assert.equal(summary.issueCount, 1);
+  assert.equal(summary.sampleSummary.stallEventCount, 1);
+  assert.equal(summary.sampleSummary.outOfWindowStallEventCount, 1);
+  assert.equal(summary.sampleSummary.untimedStallEventCount, 1);
+});
+
 test("client-event stall self-check reads only configured log tail", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-client-events-"));
   const logPath = path.join(dir, "events.log");
   fs.writeFileSync(logPath, [
-    '[client-event] thread_list_runtime_stall {"details":{"maxRafDelayMs":4000}}',
-    '[client-event] thread_list_runtime_stall {"details":{"maxLongTaskMs":4100,"longTaskCount":1}}',
+    '[client-event] thread_list_runtime_stall {"ts":"2026-06-29T17:40:00.000Z","details":{"maxRafDelayMs":4000}}',
+    '[client-event] thread_list_runtime_stall {"ts":"2026-06-29T17:40:01.000Z","details":{"maxLongTaskMs":4100,"longTaskCount":1}}',
   ].join("\n"), "utf8");
 
   const summary = summarizeClientEventLog({
     logCandidates: [logPath],
     tailBytes: 1024,
     maxLines: 10,
+    nowMs: Date.parse("2026-06-29T17:40:10.000Z"),
   });
 
   assert.equal(summary.logAvailable, true);

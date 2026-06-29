@@ -8,6 +8,7 @@ const DEFAULT_TAIL_BYTES = 512 * 1024;
 const DEFAULT_MAX_LINES = 5000;
 const DEFAULT_MIN_STALL_MS = 1000;
 const DEFAULT_H2_STALL_MS = 3000;
+const DEFAULT_WINDOW_MS = 30 * 60 * 1000;
 const STALL_EVENT_NAMES = new Set([
   "thread_list_runtime_stall",
   "thread_list_interaction_stall",
@@ -70,8 +71,24 @@ function parseClientEventLine(line = "") {
   const details = payload && payload.details && typeof payload.details === "object" ? payload.details : {};
   return {
     event: safeLabel(match[1], "event", 120),
+    ts: String(payload.ts || payload.time || payload.createdAt || "").slice(0, 80),
     details,
   };
+}
+
+function eventTimestampMs(entry = {}) {
+  const ts = String(entry.ts || "").trim();
+  if (!ts) return 0;
+  const value = Date.parse(ts);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function isEntryInWindow(entry = {}, options = {}) {
+  const timestampMs = eventTimestampMs(entry);
+  if (!timestampMs) return false;
+  const nowMs = Number.isFinite(Number(options.nowMs)) ? Number(options.nowMs) : Date.now();
+  const windowMs = boundedCount(options.windowMs || DEFAULT_WINDOW_MS, 30 * 24 * 60 * 60 * 1000) || DEFAULT_WINDOW_MS;
+  return timestampMs <= nowMs + 60_000 && nowMs - timestampMs <= windowMs;
 }
 
 function maxDelayForDetails(details = {}) {
@@ -119,12 +136,22 @@ function summarizeClientEventText(text = "", options = {}) {
   const lines = String(text || "").split(/\r?\n/).filter(Boolean).slice(-maxLines);
   const parsed = [];
   const stalls = [];
+  let untimedStallEventCount = 0;
+  let outOfWindowStallEventCount = 0;
   for (const line of lines) {
     const entry = parseClientEventLine(line);
     if (!entry) continue;
     parsed.push(entry);
     if (!STALL_EVENT_NAMES.has(entry.event)) continue;
     if (maxDelayForDetails(entry.details) < minStallMs) continue;
+    if (!eventTimestampMs(entry)) {
+      untimedStallEventCount += 1;
+      continue;
+    }
+    if (!isEntryInWindow(entry, options)) {
+      outOfWindowStallEventCount += 1;
+      continue;
+    }
     stalls.push(entry);
   }
   const issues = stalls.map((entry) => stallIssueFromEvent(entry, options));
@@ -142,6 +169,8 @@ function summarizeClientEventText(text = "", options = {}) {
       scannedLineCount: boundedCount(lines.length),
       parsedClientEventCount: boundedCount(parsed.length),
       stallEventCount: boundedCount(stalls.length),
+      untimedStallEventCount: boundedCount(untimedStallEventCount),
+      outOfWindowStallEventCount: boundedCount(outOfWindowStallEventCount),
       h2StallEventCount: boundedCount(h2Count),
       maxDelayMs,
       maxRafDelayMs,
@@ -174,6 +203,8 @@ function summarizeClientEventLog(options = {}) {
         scannedLineCount: 0,
         parsedClientEventCount: 0,
         stallEventCount: 0,
+        untimedStallEventCount: 0,
+        outOfWindowStallEventCount: 0,
         h2StallEventCount: 0,
         maxDelayMs: 0,
         maxRafDelayMs: 0,
@@ -213,7 +244,10 @@ module.exports = {
   DEFAULT_MAX_LINES,
   DEFAULT_MIN_STALL_MS,
   DEFAULT_TAIL_BYTES,
+  DEFAULT_WINDOW_MS,
   defaultLogCandidates,
+  eventTimestampMs,
+  isEntryInWindow,
   parseClientEventLine,
   runtimeCheckFromClientEventSummary,
   summarizeClientEventLog,

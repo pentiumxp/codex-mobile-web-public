@@ -31410,3 +31410,43 @@ The previous full handoff was archived and should be opened only when old proven
     `executionFailureCount=0`. It included API, browser-runtime, and
     client-events child checks.
   - No Public deploy requested or run.
+
+### 2026-06-30 - Timestamped Client-Event Stall Window Pending Deploy
+
+- Scope:
+  - Follow-up to the live client-event stall gate.
+  - The first client-event gate could only treat the runtime log tail as
+    "recent" because `[client-event]` rows had no server timestamp. A severe
+    historical stall that remained in the log tail could therefore block a
+    deploy/periodic gate even after the user-visible incident was old.
+- Source changes:
+  - `server.js` now adds a bounded ISO `ts` field to new `[client-event]` log
+    rows before `safeLogDetails(details)` is serialized.
+  - `adapters/client-event-stall-self-check-service.js` now parses `ts`,
+    filters blocking stall candidates by a configurable recent window, and
+    tracks stale/untimed stall rows as bounded metadata only.
+  - `scripts/codex-mobile-runtime-self-check-loop.js` exposes
+    `--client-event-window-ms` / `CODEX_MOBILE_CLIENT_EVENT_WINDOW_MS`; default
+    window is 30 minutes.
+  - `test/client-event-log-format.test.js` guards the server timestamp marker.
+  - `docs/MODULES.md` and `docs/TROUBLESHOOTING.md` document the windowed
+    semantics and new summary fields.
+- Classification:
+  - Timestamped >=3s live thread-list stalls inside the configured window remain
+    H2.
+  - Timestamp-less historical rows and out-of-window rows are counted as
+    `untimedStallEventCount` / `outOfWindowStallEventCount` but do not block.
+- Validation before deploy:
+  - `node --check server.js adapters/client-event-stall-self-check-service.js scripts/codex-mobile-runtime-self-check-loop.js`
+  - `node --test test/client-event-stall-self-check-service.test.js test/client-event-log-format.test.js test/runtime-self-check-loop.test.js test/runtime-self-check-gate-service.test.js`
+    passed with 18 tests.
+  - `npm test` passed with 1619 tests.
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - Home AI fallback governance check passed for the changed source/test/doc
+    files.
+  - `codegraph sync && codegraph status` reported the index up to date.
+  - Local production-log dry run with `--skip-api --skip-browser` parsed 426
+    current client events, found no stall rows, and returned `deployPass=true`.
+- Deployment status:
+  - Ready to commit and send to Home AI Deploy.
+  - No Public deploy requested or run.

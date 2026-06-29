@@ -42,6 +42,8 @@ test("runtime self-check loop parses one-shot and periodic options", () => {
     "4096",
     "--client-event-max-lines",
     "50",
+    "--client-event-window-ms",
+    "120000",
     "--gate-mode",
     "deploy",
   ]);
@@ -59,6 +61,7 @@ test("runtime self-check loop parses one-shot and periodic options", () => {
   assert.equal(loop.clientEventLog, "/tmp/client-events.log");
   assert.equal(loop.clientEventTailBytes, 4096);
   assert.equal(loop.clientEventMaxLines, 50);
+  assert.equal(loop.clientEventWindowMs, 120000);
   assert.equal(loop.gateMode, "deploy");
 });
 
@@ -233,25 +236,33 @@ test("runtime self-check loop includes recent client-event stall summary", async
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-runtime-client-events-"));
   const clientEventLog = path.join(dir, "client-events.log");
   fs.writeFileSync(clientEventLog, [
-    '[client-event] thread_list_runtime_stall {"threadId":"private-thread","path":"/private","details":{"maxRafDelayMs":3200,"maxScrollApplyMs":7,"threadListCount":12},"userAgent":"private UA"}',
+    '[client-event] thread_list_runtime_stall {"ts":"2026-06-29T17:40:00.000Z","threadId":"private-thread","path":"/private","details":{"maxRafDelayMs":3200,"maxScrollApplyMs":7,"threadListCount":12},"userAgent":"private UA"}',
   ].join("\n"), "utf8");
+  const realDateNow = Date.now;
+  Date.now = () => Date.parse("2026-06-29T17:40:10.000Z");
 
-  const result = await runtimeLoop.runOnce({
-    server: "http://127.0.0.1:8790",
-    threadIds: [],
-    sampleThreads: 1,
-    browserRounds: 1,
-    browserSampleDelaysMs: "100",
-    browserMinSettledDelayMs: 1000,
-    skipApi: true,
-    skipBrowser: true,
-    skipClientEvents: false,
-    clientEventLog,
-    clientEventTailBytes: 4096,
-    clientEventMaxLines: 20,
-    output: "",
-    gateMode: "deploy",
-  });
+  let result;
+  try {
+    result = await runtimeLoop.runOnce({
+      server: "http://127.0.0.1:8790",
+      threadIds: [],
+      sampleThreads: 1,
+      browserRounds: 1,
+      browserSampleDelaysMs: "100",
+      browserMinSettledDelayMs: 1000,
+      skipApi: true,
+      skipBrowser: true,
+      skipClientEvents: false,
+      clientEventLog,
+      clientEventTailBytes: 4096,
+      clientEventMaxLines: 20,
+      clientEventWindowMs: 30 * 60 * 1000,
+      output: "",
+      gateMode: "deploy",
+    });
+  } finally {
+    Date.now = realDateNow;
+  }
 
   assert.equal(result.ok, false);
   assert.equal(result.gate.deployPass, false);

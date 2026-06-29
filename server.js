@@ -2294,7 +2294,9 @@ async function staleActiveTurnPreflight(codexClient, threadId, activeTurnId) {
 
 function logClientEvent(event, details = {}) {
   trimRuntimeLogs();
-  console.log(`[client-event] ${event} ${JSON.stringify(safeLogDetails(details))}`);
+  console.log(`[client-event] ${event} ${JSON.stringify(Object.assign({
+    ts: new Date().toISOString(),
+  }, safeLogDetails(details)))}`);
 }
 
 function truncateMiddle(value, maxChars, label) {
