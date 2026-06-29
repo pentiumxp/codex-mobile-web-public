@@ -259,6 +259,10 @@ Current acceleration targets:
    status metadata. This does not loosen the active-overlay proof gate; it
    moves the expected window build out of the user-visible first-detail request
    whenever the notification/list path has enough time to prewarm it. The
+   notification-triggered prewarm path now starts with zero delay and bypasses
+   the recent-attempt throttle, because the client often refetches detail
+   immediately after receiving the same turn/status notification; thread-list
+   batch prewarm remains delayed and throttled. The
    follow-up active-overlay policy fix treats that preseeded window as
    history-only evidence: its projection revision cannot mark the separately
    supplied live active-turn overlay stale, while ordinary projection windows

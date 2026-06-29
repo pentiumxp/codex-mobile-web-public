@@ -164,3 +164,66 @@ test("schedule deduplicates pending work", () => {
   });
   assert.equal(calls.length, 1);
 });
+
+test("schedule keeps default delay and recently-attempted throttle for ordinary work", async () => {
+  const timers = [];
+  let nowMs = 1_000;
+  const service = createThreadDetailActiveWindowPrewarmService({
+    now: () => nowMs,
+    delayMs: 25,
+    minIntervalMs: 1_000,
+    setTimeout: (fn, delayMs) => {
+      timers.push(delayMs);
+      fn();
+      return { unref() {} };
+    },
+    resolveSummary: async () => ({ summary: { id: "thread-1", status: { type: "idle" } } }),
+  });
+
+  assert.deepEqual(service.schedule({ threadId: "thread-1", reason: "thread-list-active" }), {
+    scheduled: true,
+    reason: "scheduled",
+  });
+  assert.deepEqual(timers, [25]);
+  await Promise.resolve();
+  await Promise.resolve();
+  nowMs += 50;
+  assert.deepEqual(service.schedule({ threadId: "thread-1", reason: "thread-list-active" }), {
+    scheduled: false,
+    reason: "recently-attempted",
+  });
+});
+
+test("schedule can fast-start notification prewarm despite recent ordinary attempt", async () => {
+  const timers = [];
+  let nowMs = 1_000;
+  const service = createThreadDetailActiveWindowPrewarmService({
+    now: () => nowMs,
+    delayMs: 25,
+    minIntervalMs: 1_000,
+    setTimeout: (fn, delayMs) => {
+      timers.push(delayMs);
+      fn();
+      return { unref() {} };
+    },
+    resolveSummary: async () => ({ summary: { id: "thread-1", status: { type: "idle" } } }),
+  });
+
+  assert.deepEqual(service.schedule({ threadId: "thread-1", reason: "thread-list-active" }), {
+    scheduled: true,
+    reason: "scheduled",
+  });
+  await Promise.resolve();
+  await Promise.resolve();
+  nowMs += 50;
+  assert.deepEqual(service.schedule({
+    threadId: "thread-1",
+    reason: "turn/started",
+    delayMs: 0,
+    bypassMinInterval: true,
+  }), {
+    scheduled: true,
+    reason: "scheduled",
+  });
+  assert.deepEqual(timers, [25, 0]);
+});

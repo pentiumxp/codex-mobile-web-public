@@ -9384,7 +9384,7 @@ function threadSummaryLooksActive(summary) {
     .test(String(statusValue || "").trim());
 }
 
-function scheduleActiveWindowPrewarm(threadId, summary = null, reason = "") {
+function scheduleActiveWindowPrewarm(threadId, summary = null, reason = "", options = {}) {
   const id = String(threadId || summary && (summary.id || summary.threadId || summary.thread_id) || "").trim();
   if (!id) return { scheduled: false, reason: "missing-thread-id" };
   return threadDetailActiveWindowPrewarmService.schedule({
@@ -9392,6 +9392,8 @@ function scheduleActiveWindowPrewarm(threadId, summary = null, reason = "") {
     threadId: id,
     summary,
     reason,
+    delayMs: options.delayMs,
+    bypassMinInterval: options.bypassMinInterval === true,
     threadLog: (event, details = {}) => logThreadDetail(`active_window_prewarm_${event}`, Object.assign({ threadId: id }, details)),
   });
 }
@@ -9456,7 +9458,10 @@ function scheduleActiveWindowPrewarmFromNotification(payload) {
   const threadId = notificationThreadId(payload);
   if (!threadId) return;
   if (method === "thread/status/changed" && !threadSummaryLooksActive(payload.params)) return;
-  scheduleActiveWindowPrewarm(threadId, null, method);
+  scheduleActiveWindowPrewarm(threadId, null, method, {
+    delayMs: 0,
+    bypassMinInterval: true,
+  });
 }
 
 function scheduleActiveWindowPrewarmFromThreadListResult(result, reason = "") {

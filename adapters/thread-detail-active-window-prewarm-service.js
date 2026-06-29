@@ -17,6 +17,13 @@ function boundedReason(value) {
   return text(value).slice(0, 80);
 }
 
+function boundedDelayMs(value, fallback) {
+  if (value === undefined || value === null || value === "") return fallback;
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(0, number);
+}
+
 function turnId(turn) {
   return text(turn && (turn.id || turn.turnId || turn.turn_id));
 }
@@ -138,12 +145,14 @@ function createThreadDetailActiveWindowPrewarmService(options = {}) {
     if (pending.has(threadId)) return { scheduled: false, reason: "already-pending" };
     const current = now();
     const lastAttemptAtMs = Number(lastAttemptAtByThread.get(threadId) || 0);
-    if (minIntervalMs && lastAttemptAtMs && current - lastAttemptAtMs < minIntervalMs) {
+    const bypassMinInterval = input.bypassMinInterval === true;
+    if (!bypassMinInterval && minIntervalMs && lastAttemptAtMs && current - lastAttemptAtMs < minIntervalMs) {
       return { scheduled: false, reason: "recently-attempted" };
     }
     lastAttemptAtByThread.set(threadId, current);
     const job = Object.assign({}, input, { threadId });
     pending.set(threadId, { scheduledAtMs: current, reason: boundedReason(input.reason) });
+    const jobDelayMs = boundedDelayMs(input.delayMs, delayMs);
     const timer = scheduleTimer(() => {
       prewarmNow(job)
         .then((result) => {
@@ -155,7 +164,7 @@ function createThreadDetailActiveWindowPrewarmService(options = {}) {
           finish(threadId, result);
           log("active_window_prewarm_failed", { threadId, trigger: boundedReason(job.reason), reason: result.reason });
         });
-    }, delayMs);
+    }, jobDelayMs);
     if (timer && typeof timer.unref === "function") timer.unref();
     return { scheduled: true, reason: "scheduled" };
   }

@@ -397,6 +397,13 @@ prewarm for active rows when it completes; if the first active detail open is
 still cold after the fallback baseline has completed, inspect whether
 `thread-list-prewarm:completed` produced an active-window prewarm result before
 the detail request arrived.
+Turn/status notification-triggered prewarm should fast-start with zero delay
+and bypass the ordinary recent-attempt throttle, because the client can refetch
+the thread detail immediately after receiving the same notification. Thread-list
+batch prewarm still uses the normal delay/min-interval guard. If a first detail
+open still wins the race and pays `activeOverlayWindowMs`, compare the
+notification timestamp to the `active_window_prewarm_*` bounded log event before
+changing active-overlay proof policy.
 If the active thread has a stale full projection whose stable identity still
 matches, current servers can downgrade that full cache to a history-only
 `turns-list-active-overlay-window` by omitting the currently growing active
