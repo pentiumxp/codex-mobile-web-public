@@ -250,6 +250,23 @@ test("phase B readback decision returns ready for warm or bounded paths", () => 
       responseBudgetProgressiveActiveFirstPaintOmittedVisibleItems: 5,
       responseBudgetRetainedAssistantItemCountByTurnState: { active: 3, completed: 9 },
       responseBudgetRetainedAssistantItemBytesByTurnState: { active: 7400, completed: 19000 },
+      responseBudgetRetainedAssistantItemBytesByShape: {
+        directText: 9000,
+        contentText: 14000,
+        contentAuxiliary: 1200,
+        itemAuxiliary: 2200,
+      },
+      responseBudgetRetainedActiveAssistantItemBytesByShape: {
+        directText: 3000,
+        contentText: 3500,
+        itemAuxiliary: 900,
+      },
+      responseBudgetRetainedCompletedAssistantItemBytesByShape: {
+        directText: 6000,
+        contentText: 10500,
+        contentAuxiliary: 1200,
+        itemAuxiliary: 1300,
+      },
       responseBudgetRetainedUserInputItemCountByTurnState: { completed: 4, active: 1 },
       responseBudgetRetainedUserInputItemBytesByTurnState: { completed: 32000, active: 9000 },
       responseBudgetRetainedUserInputItemBytesByShape: {
@@ -361,6 +378,23 @@ test("phase B readback decision returns ready for warm or bounded paths", () => 
   assert.equal(decision.evidence.detailResponseBudgetProgressiveActiveFirstPaintOmittedVisibleItems, 5);
   assert.deepEqual(decision.evidence.detailResponseBudgetRetainedAssistantItemCountByTurnState, { active: 3, completed: 9 });
   assert.deepEqual(decision.evidence.detailResponseBudgetRetainedAssistantItemBytesByTurnState, { active: 7400, completed: 19000 });
+  assert.deepEqual(decision.evidence.detailResponseBudgetRetainedAssistantItemBytesByShape, {
+    directText: 9000,
+    contentText: 14000,
+    contentAuxiliary: 1200,
+    itemAuxiliary: 2200,
+  });
+  assert.deepEqual(decision.evidence.detailResponseBudgetRetainedActiveAssistantItemBytesByShape, {
+    directText: 3000,
+    contentText: 3500,
+    itemAuxiliary: 900,
+  });
+  assert.deepEqual(decision.evidence.detailResponseBudgetRetainedCompletedAssistantItemBytesByShape, {
+    directText: 6000,
+    contentText: 10500,
+    contentAuxiliary: 1200,
+    itemAuxiliary: 1300,
+  });
   assert.deepEqual(decision.evidence.detailResponseBudgetRetainedUserInputItemCountByTurnState, { completed: 4, active: 1 });
   assert.deepEqual(decision.evidence.detailResponseBudgetRetainedUserInputItemBytesByTurnState, { completed: 32000, active: 9000 });
   assert.deepEqual(decision.evidence.detailResponseBudgetRetainedUserInputItemBytesByShape, {

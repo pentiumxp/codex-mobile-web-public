@@ -513,7 +513,8 @@ assistant, user-message, Usage, media, diagnostic, or other item shapes before
 adding a new budget rule.
 When `assistant` is the dominant retained kind, inspect
 `retainedAssistantItemCountByTurnState` and
-`retainedAssistantItemBytesByTurnState` before changing assistant budgets.
+`retainedAssistantItemBytesByTurnState`, then inspect the metadata-only
+`retainedAssistantItemBytesByShape` buckets before changing assistant budgets.
 `active` bytes belong to the current live assistant/plan progress and should
 not be reduced with the same rule as historical replay. `completed` bytes point
 at retained completed/replay assistant rows and are the candidate for a

@@ -272,6 +272,23 @@ test("phase B readback smoke collects bounded diagnostics without private fields
             retainedVisibleItemBytesByKind: { operation: 52000, assistant: 18000, userMessage: 9000 },
             retainedAssistantItemCountByTurnState: { active: 2, completed: 2 },
             retainedAssistantItemBytesByTurnState: { active: 7000, completed: 11000 },
+            retainedAssistantItemBytesByShape: {
+              directText: 6000,
+              contentText: 9000,
+              contentAuxiliary: 1000,
+              itemAuxiliary: 2000,
+            },
+            retainedActiveAssistantItemBytesByShape: {
+              directText: 2500,
+              contentText: 3500,
+              itemAuxiliary: 1000,
+            },
+            retainedCompletedAssistantItemBytesByShape: {
+              directText: 3500,
+              contentText: 5500,
+              contentAuxiliary: 1000,
+              itemAuxiliary: 1000,
+            },
             retainedUserInputItemCountByTurnState: { completed: 2, active: 1 },
             retainedUserInputItemBytesByTurnState: { completed: 12000, active: 3000 },
             retainedUserInputItemBytesByShape: {
@@ -484,6 +501,23 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.deepEqual(report.detail.responseBudgetRetainedVisibleItemBytesByKind, { operation: 52000, assistant: 18000, userMessage: 9000 });
   assert.deepEqual(report.detail.responseBudgetRetainedAssistantItemCountByTurnState, { active: 2, completed: 2 });
   assert.deepEqual(report.detail.responseBudgetRetainedAssistantItemBytesByTurnState, { active: 7000, completed: 11000 });
+  assert.deepEqual(report.detail.responseBudgetRetainedAssistantItemBytesByShape, {
+    directText: 6000,
+    contentText: 9000,
+    contentAuxiliary: 1000,
+    itemAuxiliary: 2000,
+  });
+  assert.deepEqual(report.detail.responseBudgetRetainedActiveAssistantItemBytesByShape, {
+    directText: 2500,
+    contentText: 3500,
+    itemAuxiliary: 1000,
+  });
+  assert.deepEqual(report.detail.responseBudgetRetainedCompletedAssistantItemBytesByShape, {
+    directText: 3500,
+    contentText: 5500,
+    contentAuxiliary: 1000,
+    itemAuxiliary: 1000,
+  });
   assert.deepEqual(report.detail.responseBudgetRetainedUserInputItemCountByTurnState, { completed: 2, active: 1 });
   assert.deepEqual(report.detail.responseBudgetRetainedUserInputItemBytesByTurnState, { completed: 12000, active: 3000 });
   assert.deepEqual(report.detail.responseBudgetRetainedUserInputItemBytesByShape, {
@@ -532,6 +566,23 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.deepEqual(report.decision.evidence.detailResponseBudgetRetainedAssistantItemBytesByTurnState, {
     active: 7000,
     completed: 11000,
+  });
+  assert.deepEqual(report.decision.evidence.detailResponseBudgetRetainedAssistantItemBytesByShape, {
+    directText: 6000,
+    contentText: 9000,
+    contentAuxiliary: 1000,
+    itemAuxiliary: 2000,
+  });
+  assert.deepEqual(report.decision.evidence.detailResponseBudgetRetainedActiveAssistantItemBytesByShape, {
+    directText: 2500,
+    contentText: 3500,
+    itemAuxiliary: 1000,
+  });
+  assert.deepEqual(report.decision.evidence.detailResponseBudgetRetainedCompletedAssistantItemBytesByShape, {
+    directText: 3500,
+    contentText: 5500,
+    contentAuxiliary: 1000,
+    itemAuxiliary: 1000,
   });
   assert.deepEqual(report.decision.evidence.detailResponseBudgetRetainedUserInputItemBytesByShape, {
     directText: 9000,

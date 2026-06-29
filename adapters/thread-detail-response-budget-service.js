@@ -355,6 +355,42 @@ function retainedUserInputShapeBytes(item) {
   return out;
 }
 
+function retainedAssistantShapeBytes(item) {
+  const out = {};
+  if (!item || typeof item !== "object") return out;
+  const itemBytes = jsonByteLength(item);
+  let directTextBytes = 0;
+  for (const field of ["text", "message", "summary"]) {
+    directTextBytes += stringByteLength(item[field]);
+  }
+  let contentBytes = 0;
+  let contentTextBytes = 0;
+  let inlineImageBytes = 0;
+  if (Array.isArray(item.content)) {
+    contentBytes = jsonByteLength(item.content);
+    for (const entry of item.content) {
+      if (!entry || typeof entry !== "object") continue;
+      for (const field of ["text", "input_text", "content", "message", "summary"]) {
+        contentTextBytes += stringByteLength(entry[field]);
+      }
+      for (const field of ["url", "image_url", "imageUrl"]) {
+        inlineImageBytes += dataImageStringBytes(entry[field]);
+      }
+    }
+  } else if (typeof item.content === "string") {
+    contentBytes = jsonByteLength(item.content);
+    contentTextBytes += stringByteLength(item.content);
+  }
+  const contentAuxiliaryBytes = Math.max(0, contentBytes - contentTextBytes - inlineImageBytes);
+  const itemAuxiliaryBytes = Math.max(0, itemBytes - directTextBytes - contentBytes);
+  addNumericBucket(out, "directText", directTextBytes);
+  addNumericBucket(out, "contentText", contentTextBytes);
+  addNumericBucket(out, "inlineImageData", inlineImageBytes);
+  addNumericBucket(out, "contentAuxiliary", contentAuxiliaryBytes);
+  addNumericBucket(out, "itemAuxiliary", itemAuxiliaryBytes);
+  return out;
+}
+
 function addNumberMapBuckets(target, source) {
   if (!target || !source || typeof source !== "object") return;
   for (const [key, value] of Object.entries(source)) {
@@ -394,6 +430,11 @@ function annotateRetainedVisibleItemByteStats(thread, stats) {
   const bytesByKind = {};
   const assistantCountByTurnState = {};
   const assistantBytesByTurnState = {};
+  const assistantBytesByShape = {};
+  const activeAssistantBytesByShape = {};
+  const completedAssistantBytesByShape = {};
+  const staleActiveAssistantBytesByShape = {};
+  const otherAssistantBytesByShape = {};
   const userMessageCountByTurnState = {};
   const userMessageBytesByTurnState = {};
   const userInputBytesByShape = {};
@@ -417,6 +458,12 @@ function annotateRetainedVisibleItemByteStats(thread, stats) {
         const turnState = retainedVisibleTurnState(turn, thread);
         addNumericBucket(assistantCountByTurnState, turnState, 1);
         addNumericBucket(assistantBytesByTurnState, turnState, bytes);
+        const shapeBytes = retainedAssistantShapeBytes(item);
+        addNumberMapBuckets(assistantBytesByShape, shapeBytes);
+        if (turnState === "active") addNumberMapBuckets(activeAssistantBytesByShape, shapeBytes);
+        else if (turnState === "completed") addNumberMapBuckets(completedAssistantBytesByShape, shapeBytes);
+        else if (turnState === "staleActive") addNumberMapBuckets(staleActiveAssistantBytesByShape, shapeBytes);
+        else addNumberMapBuckets(otherAssistantBytesByShape, shapeBytes);
       }
       if (isUserMessageItem(item)) {
         const turnState = retainedVisibleTurnState(turn, thread);
@@ -439,6 +486,11 @@ function annotateRetainedVisibleItemByteStats(thread, stats) {
   stats.retainedVisibleItemBytesByKind = bytesByKind;
   stats.retainedAssistantItemCountByTurnState = assistantCountByTurnState;
   stats.retainedAssistantItemBytesByTurnState = assistantBytesByTurnState;
+  stats.retainedAssistantItemBytesByShape = assistantBytesByShape;
+  stats.retainedActiveAssistantItemBytesByShape = activeAssistantBytesByShape;
+  stats.retainedCompletedAssistantItemBytesByShape = completedAssistantBytesByShape;
+  stats.retainedStaleActiveAssistantItemBytesByShape = staleActiveAssistantBytesByShape;
+  stats.retainedOtherAssistantItemBytesByShape = otherAssistantBytesByShape;
   stats.retainedUserInputItemCountByTurnState = userMessageCountByTurnState;
   stats.retainedUserInputItemBytesByTurnState = userMessageBytesByTurnState;
   stats.retainedUserInputItemBytesByShape = userInputBytesByShape;
@@ -1526,6 +1578,11 @@ function compactThreadDetailResponseResult(result, options = {}) {
     retainedVisibleItemBytesByKind: {},
     retainedAssistantItemCountByTurnState: {},
     retainedAssistantItemBytesByTurnState: {},
+    retainedAssistantItemBytesByShape: {},
+    retainedActiveAssistantItemBytesByShape: {},
+    retainedCompletedAssistantItemBytesByShape: {},
+    retainedStaleActiveAssistantItemBytesByShape: {},
+    retainedOtherAssistantItemBytesByShape: {},
     retainedUserInputItemCountByTurnState: {},
     retainedUserInputItemBytesByTurnState: {},
     retainedUserInputItemBytesByShape: {},

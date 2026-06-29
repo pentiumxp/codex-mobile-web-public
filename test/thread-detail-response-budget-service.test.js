@@ -1132,7 +1132,13 @@ test("thread detail response budget attributes retained user input bytes by shap
           status: "completed",
           items: [
             { id: "completed-u", type: "userMessage", text: "Completed input text" },
-            { id: "completed-a", type: "agentMessage", text: "Receipt" },
+            {
+              id: "completed-a",
+              type: "agentMessage",
+              text: "Receipt direct text",
+              content: "Receipt content text",
+              summary: "Receipt summary text",
+            },
           ],
         },
         {
@@ -1149,7 +1155,16 @@ test("thread detail response budget attributes retained user input bytes by shap
                 { type: "input_meta", flags: ["one", "two"], nested: { ok: true } },
               ],
             },
-            { id: "active-a", type: "agentMessage", text: "Working" },
+            {
+              id: "active-a",
+              type: "agentMessage",
+              text: "Working direct text",
+              content: [
+                { type: "output_text", text: "Working content text" },
+                { type: "assistant_meta", nested: { status: "running" } },
+              ],
+              summary: "Working summary text",
+            },
           ],
         },
       ],
@@ -1175,6 +1190,17 @@ test("thread detail response budget attributes retained user input bytes by shap
   assert.ok(budget.retainedActiveUserInputItemBytesByShape.inlineImageData > 0);
   assert.ok(budget.retainedCompletedUserInputItemBytesByShape.directText > 0);
   assert.equal(budget.retainedCompletedUserInputItemBytesByShape.inlineImageData, undefined);
+  assert.equal(budget.retainedAssistantItemCountByTurnState.active, 1);
+  assert.equal(budget.retainedAssistantItemCountByTurnState.completed, 1);
+  assert.ok(budget.retainedAssistantItemBytesByShape.directText > 0);
+  assert.ok(budget.retainedAssistantItemBytesByShape.contentText > 0);
+  assert.ok(budget.retainedAssistantItemBytesByShape.contentAuxiliary > 0);
+  assert.ok(budget.retainedAssistantItemBytesByShape.itemAuxiliary > 0);
+  assert.ok(budget.retainedActiveAssistantItemBytesByShape.directText > 0);
+  assert.ok(budget.retainedActiveAssistantItemBytesByShape.contentText > 0);
+  assert.ok(budget.retainedActiveAssistantItemBytesByShape.contentAuxiliary > 0);
+  assert.ok(budget.retainedCompletedAssistantItemBytesByShape.directText > 0);
+  assert.ok(budget.retainedCompletedAssistantItemBytesByShape.contentText > 0);
 });
 
 test("thread detail response budget drops active inline image data under progressive pressure", () => {
