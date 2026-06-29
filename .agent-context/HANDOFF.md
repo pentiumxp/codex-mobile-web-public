@@ -31644,3 +31644,52 @@ The previous full handoff was archived and should be opened only when old proven
   - Local deploy candidate only; private production deploy not yet sent in this
     handoff entry.
   - No Public deploy requested or run.
+
+### 2026-06-30 - Browser Runtime Plan Refresh Cost Follow-up In Progress
+
+- Scope:
+  - Follow-up to source commit `22e8f60` (`fix: refresh browser self-check
+    thread plans`) after private production sync/readback.
+  - Source/production hash parity matched for the changed browser/runtime
+    self-check source, focused tests, and docs, and production markers
+    `refreshThreadPlanEntry`, `snapshotInputForPlanEntry`, and
+    `CHILD_SELF_CHECK_TIMEOUT_MS` were present.
+- Production residual:
+  - Manual production periodic-shaped runtime loop returned `ok=false` only
+    because the browser-runtime child exceeded the new 300s parent timeout and
+    emitted no parseable JSON before termination.
+  - API-thread and client-events child checks were clean in that run.
+  - The failing shape was an execution-cost issue, not a projection/render H2:
+    `browser-runtime.errorCode` was a bounded command-failure prefix and no
+    browser issues were parsed.
+- Root cause:
+  - Runtime loop browser defaults sample `5 rounds x 3 threads x 5 delays`.
+  - The first plan-refresh patch refreshed `/api/threads/:id?mode=recent` before
+    every delay snapshot, multiplying detail reads to roughly 75 per browser
+    child before submit-exercise paths.
+  - Fixed-delay sleeps already account for about 156s in that default shape, so
+    per-delay API refresh pushed the child past 300s on production cycles.
+- Source changes in progress:
+  - `scripts/codex-mobile-browser-runtime-self-check.js` now refreshes the
+    authenticated API plan once after each sampled thread is opened and reuses
+    that current plan for the delayed snapshots in the same thread sample
+    group.
+  - `test/browser-runtime-self-check-service.test.js` asserts the refresh stays
+    outside the delay loop.
+  - `docs/MODULES.md` and `docs/TROUBLESHOOTING.md` document the group-level
+    current-plan contract.
+- Validation status:
+  - `node --check scripts/codex-mobile-browser-runtime-self-check.js scripts/codex-mobile-runtime-self-check-loop.js`
+    passed.
+  - `node --test test/browser-runtime-self-check-service.test.js test/runtime-self-check-loop.test.js test/runtime-self-check-gate-service.test.js`
+    passed with 46 tests.
+  - Source runtime loop against production server with a temporary output file
+    returned `ok=true`, `deployPass=true`, `periodicHealthy=true`,
+    `issueCount=25`, `blockingIssueCount=0`, `executionFailureCount=0`, and
+    only H3 advisory `browser_latest_turn_assistant_text_duplicate`.
+  - `npm test` passed with 1624 tests.
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - Home AI fallback governance check passed for changed source/test/doc files.
+  - `codegraph sync && codegraph status` reported the index up to date.
+  - Local deploy candidate only; no commit, deploy card, or Public deploy has
+    been made for this follow-up yet.

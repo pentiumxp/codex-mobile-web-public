@@ -914,8 +914,10 @@ Cause to check:
   opening Chrome, switching threads, and sampling delayed DOM states; the
   parent loop allows a bounded 300s child timeout, still below the 10-minute
   periodic interval. Newer browser-runtime checks refresh the API thread plan
-  immediately before each DOM snapshot so active-thread window movement is not
-  compared against a stale startup plan.
+  once after each sampled thread is opened, then reuse that current plan for
+  the delayed snapshots in the same thread sample group. This avoids comparing
+  active-thread DOM samples against a stale startup plan without multiplying
+  detail reads by every delay bucket.
 - To verify the 10-minute macOS periodic checker itself, run:
   `node scripts/codex-mobile-runtime-self-check-launchagent-readback.js --json`.
   A healthy result has `ok=true`, `launchctl.loaded=true`,

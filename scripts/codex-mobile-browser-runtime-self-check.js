@@ -1353,9 +1353,9 @@ async function run(options = parseArgs(), deps = {}) {
     for (let round = 0; round < options.rounds; round += 1) {
       for (const entry of threadPlan) {
         await evaluate(cdp, openThreadExpression(entry.id), options.timeoutMs).catch(() => null);
+        const snapshotPlan = await refreshThreadPlanEntry(options, key, entry);
         for (const delayMs of options.sampleDelaysMs) {
           await sleep(delayMs);
-          const snapshotPlan = await refreshThreadPlanEntry(options, key, entry);
           const sample = await evaluate(cdp, snapshotExpression(snapshotInputForPlanEntry(snapshotPlan, {
             label: `round-${round + 1}-delay-${delayMs}`,
             delayMs,
