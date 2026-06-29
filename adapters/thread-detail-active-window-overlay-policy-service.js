@@ -20,6 +20,17 @@ function numberOrZero(value) {
   return Number.isFinite(number) && number > 0 ? number : 0;
 }
 
+function timestampMs(value) {
+  if (!value) return 0;
+  const number = Number(value);
+  if (Number.isFinite(number) && number > 0) {
+    return number > 100000000000 ? number : number * 1000;
+  }
+  if (typeof value !== "string") return 0;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
 function lower(value) {
   return text(value).toLowerCase();
 }
@@ -61,11 +72,21 @@ function itemType(item) {
 }
 
 function itemTimestampMs(item) {
-  return numberOrZero(item && (
-    item.startedAtMs
-    || item.createdAtMs
+  return timestampMs(item && (
+    item.createdAtMs
+    || item.createdAt
+    || item.created_at_ms
+    || item.created_at
+    || item.startedAtMs
+    || item.startedAt
+    || item.started_at_ms
+    || item.started_at
     || item.updatedAtMs
+    || item.updatedAt
+    || item.updated_at_ms
+    || item.updated_at
     || item.timestampMs
+    || item.timestamp
     || item.timeMs
   ));
 }
@@ -448,22 +469,37 @@ function mergeActiveOverlayTurnWithWindowBackfill(overlayTurn, windowThreadOrTur
     mergedItems.push(item);
   }
   const deduped = dedupeUserMessageEchoesInItems(mergedItems);
+  const sortedItems = orderItemsByDisplayTimestamp(deduped.items);
   return Object.assign({}, windowTurn, overlayTurn, {
-    items: deduped.items,
+    items: sortedItems,
     mobileActiveOverlayBackfill: {
       version: "active-overlay-window-backfill-v1",
       sourceItems: windowItems.length,
       overlayItems: overlayItems.length,
-      mergedItems: deduped.items.length,
+      mergedItems: sortedItems.length,
       dedupedUserMessageEchoes: deduped.removed,
     },
   });
+}
+
+function orderItemsByDisplayTimestamp(items) {
+  if (!Array.isArray(items) || items.length < 2) return items;
+  return items
+    .map((item, index) => ({ item, index, timestampMs: itemTimestampMs(item) }))
+    .sort((left, right) => {
+      if (left.timestampMs && right.timestampMs && left.timestampMs !== right.timestampMs) {
+        return left.timestampMs - right.timestampMs;
+      }
+      return left.index - right.index;
+    })
+    .map((entry) => entry.item);
 }
 
 module.exports = {
   classifyActiveOverlayItem,
   mergeActiveOverlayTurnWithWindowBackfill,
   mergeProjectionThreadWithActiveOverlay,
+  orderItemsByDisplayTimestamp,
   planActiveWindowOverlay,
   summarizeActiveOverlayTurnEvidence,
 };

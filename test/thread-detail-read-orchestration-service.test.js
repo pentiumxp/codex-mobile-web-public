@@ -1068,12 +1068,12 @@ test("active overlay complete evidence backfills active turn from cached active-
   assert.deepEqual(activeTurn.items.map((item) => item.id || item.type), [
     "user-1",
     "agent-early",
-    "agent-live",
     "commandExecution",
     "input_image",
+    "agent-live",
     "turnDiagnostic",
   ]);
-  assert.equal(activeTurn.items[2].text, "private response");
+  assert.equal(activeTurn.items[4].text, "private response");
   assert.equal(response.body.thread.mobileProjection.activeOverlay, true);
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.readDecision, "projection-active-overlay");
   assert.equal(response.body.thread.mobileDiagnostics.threadDetailTimings.activeFullReadRequired, true);

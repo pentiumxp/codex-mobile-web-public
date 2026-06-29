@@ -414,6 +414,28 @@ test("active overlay turn backfill preserves earlier assistant items from active
   assert.equal(merged.mobileActiveOverlayBackfill.mergedItems, 4);
 });
 
+test("active overlay turn backfill orders visible items by display timestamp", () => {
+  const merged = mergeActiveOverlayTurnWithWindowBackfill({
+    id: "active-turn",
+    status: "inProgress",
+    items: [
+      { id: "agent-early", type: "agentMessage", text: "early overlay", createdAt: "2026-06-29T11:03:00.000Z" },
+      { id: "agent-mid", type: "agentMessage", text: "middle overlay", createdAtMs: Date.parse("2026-06-29T11:15:00.000Z") },
+    ],
+  }, {
+    id: "thread-1",
+    turns: [{
+      id: "active-turn",
+      status: "inProgress",
+      items: [
+        { id: "agent-late", type: "agentMessage", text: "late cached window", startedAtMs: Date.parse("2026-06-29T11:20:00.000Z") },
+      ],
+    }],
+  });
+
+  assert.deepEqual(merged.items.map((item) => item.id), ["agent-early", "agent-mid", "agent-late"]);
+});
+
 test("active overlay turn backfill dedupes matching user message echoes", () => {
   const merged = mergeActiveOverlayTurnWithWindowBackfill({
     id: "active-turn",

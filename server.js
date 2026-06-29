@@ -3061,11 +3061,23 @@ function isResidualFallbackThreadSummary(thread) {
   return !isThreadListLiveStatus(thread.status);
 }
 
+function isUnmaterializedThreadListPlaceholder(thread) {
+  if (!thread || typeof thread !== "object") return false;
+  const id = normalizeThreadId(thread.id);
+  if (!id) return false;
+  if (!isThreadListUnknownStatus(thread.status)) return false;
+  if (threadSummaryHasDisplayText(thread)) return false;
+  if (String(thread.cwd || "").trim()) return false;
+  if (Array.isArray(thread.turns) && thread.turns.length) return false;
+  const display = String(thread.name || thread.title || thread.preview || "").trim();
+  return !display || isRecoverableThreadListTitle(display, id);
+}
+
 function shouldHideThreadListSummary(thread, archivedIds = null) {
   if (threadHasArchiveSignal(thread, archivedIds)) return true;
   if (isSubagentThreadSummary(thread)) return true;
   if (isSideChatSidecarThreadSummary(thread)) return true;
-  return isResidualFallbackThreadSummary(thread);
+  return isResidualFallbackThreadSummary(thread) || isUnmaterializedThreadListPlaceholder(thread);
 }
 
 function archivedSessionDirectories() {
@@ -13850,7 +13862,7 @@ function filterFallbackThreads(threads, filters = {}) {
   const shouldFilterByWorkspace = anyThreadMatchesVisibleWorkspace(threads, visibility);
   return threads
     .filter((thread) => {
-      if (threadHasArchiveSignal(thread, archivedIds) || isSubagentThreadSummary(thread)) return false;
+      if (shouldHideThreadListSummary(thread, archivedIds)) return false;
       if (!shouldFilterByWorkspace) return true;
       if (threadProjectlessVisible(thread, visibility)) return true;
       const cwd = String(thread && thread.cwd || "").trim();

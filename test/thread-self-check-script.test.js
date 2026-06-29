@@ -226,6 +226,8 @@ test("thread self-check compares active raw counts before detail to avoid growth
       return responseJson({
         data: [{
           id: "thread-active-growth",
+          name: "Active growth",
+          preview: "Active growth",
           activeTurnId,
           path: rolloutPath,
           updatedAt: 1782624000000,
@@ -292,7 +294,7 @@ test("thread self-check suppresses completed input warning when raw turn has no 
       return responseJson(detail);
     }
     if (target.includes("/api/threads")) {
-      return responseJson({ data: [{ id: "thread-system-complete", updatedAt: 1782624000000 }] });
+      return responseJson({ data: [{ id: "thread-system-complete", name: "System complete", preview: "System complete", updatedAt: 1782624000000 }] });
     }
     throw new Error(`unexpected url: ${target}`);
   };
@@ -354,7 +356,7 @@ test("thread self-check keeps completed input warning when raw turn has user inp
       return responseJson(detail);
     }
     if (target.includes("/api/threads")) {
-      return responseJson({ data: [{ id: "thread-real-gap", updatedAt: 1782624000000 }] });
+      return responseJson({ data: [{ id: "thread-real-gap", name: "Real gap", preview: "Real gap", updatedAt: 1782624000000 }] });
     }
     throw new Error(`unexpected url: ${target}`);
   };

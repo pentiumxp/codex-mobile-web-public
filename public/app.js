@@ -542,7 +542,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v582";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v583";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -8449,7 +8449,7 @@ async function bootstrap() {
     hasPluginRouteThreadId: Boolean(startupPluginRouteHint && startupPluginRouteHint.threadId),
   });
   const earlyRestorePromise = savedThreadId && !startupThreadId
-    ? loadThread(savedThreadId, { source: "restore-startup" }).catch((err) => {
+    ? loadThread(savedThreadId, { source: "restore-startup", suppressLoadFailureDiagnostic: true }).catch((err) => {
       localStorage.removeItem(STORAGE_THREAD_ID);
       showError(err);
       renderCurrentThread();
@@ -8666,7 +8666,10 @@ async function openExternalThreadSelection(threadId, options = {}) {
       // Loading the thread by id can still succeed without refreshing workspace shortcuts.
     }
   }
-  await loadThread(id, { source: "external" });
+  await loadThread(id, {
+    source: String(options.source || "external").slice(0, 40),
+    suppressLoadFailureDiagnostic: options.suppressLoadFailureDiagnostic === true,
+  });
 }
 
 async function openHermesPluginRouteHint(hint) {
@@ -8683,6 +8686,8 @@ async function openHermesPluginRouteHint(hint) {
     state.pendingPluginRouteHint = plan.pendingHint || null;
     await openExternalThreadSelection(plan.threadId, {
       statusMessage: plan.statusMessage,
+      source: "route-hint",
+      suppressLoadFailureDiagnostic: true,
     });
     if (!plan.targetId) {
       setPluginRouteDiagnostic("Opened notification thread", { error: false });
@@ -9305,6 +9310,7 @@ async function loadThread(threadId, options = {}) {
   const switchStartedAt = nowPerfMs();
   const fromThreadId = state.currentThreadId || "";
   const source = String(options.source || "unknown").slice(0, 40);
+  const suppressLoadFailureDiagnostic = options.suppressLoadFailureDiagnostic === true;
   if (threadId !== fromThreadId) resetComposerRuntimeSelection();
   if (threadId !== fromThreadId) {
     state.subagentPanelOpen = false;
@@ -9470,12 +9476,22 @@ async function loadThread(threadId, options = {}) {
       error: err.message || String(err),
     });
     applyThreadDetailSwitchClientEventPlan(errorEventPlan);
-    recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.threadDetailLoadFailedDiagnosticEvent({
-      errorCode: diagnosticErrorCode(err, "thread_detail_load_failed"),
-      durationBucket: diagnosticDurationBucket(roundedDurationMs(switchStartedAt)),
-      statusCode: diagnosticErrorStatus(err),
-      threadHash: diagnosticThreadHash(threadId),
-    }));
+    if (suppressLoadFailureDiagnostic) {
+      postClientEvent("thread_detail_load_failure_diagnostic_suppressed", {
+        source,
+        threadHash: diagnosticThreadHash(threadId),
+        errorCode: diagnosticErrorCode(err, "thread_detail_load_failed"),
+        statusCode: diagnosticErrorStatus(err),
+        durationBucket: diagnosticDurationBucket(roundedDurationMs(switchStartedAt)),
+      });
+    } else {
+      recordHomeAiDiagnosticFailure(threadDiagnosticEventsApi.threadDetailLoadFailedDiagnosticEvent({
+        errorCode: diagnosticErrorCode(err, "thread_detail_load_failed"),
+        durationBucket: diagnosticDurationBucket(roundedDurationMs(switchStartedAt)),
+        statusCode: diagnosticErrorStatus(err),
+        threadHash: diagnosticThreadHash(threadId),
+      }));
+    }
     throw err;
   } finally {
     clearThreadLoadWatchdog();

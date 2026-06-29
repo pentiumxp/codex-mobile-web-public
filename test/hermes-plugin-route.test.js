@@ -77,6 +77,7 @@ test("Hermes plugin launch token is a browser-session key, not local storage log
   assert.match(appJs, /function normalizePluginRouteHint\(value\)/);
   assert.match(appJs, /function applyUrlPluginRouteHint\(options = \{\}\)/);
   assert.match(appJs, /async function openHermesPluginRouteHint\(hint\)/);
+  assert.match(appJs, /openExternalThreadSelection\(plan\.threadId, \{[\s\S]*source: "route-hint",[\s\S]*suppressLoadFailureDiagnostic: true,[\s\S]*\}\)/);
   assert.match(appJs, /pluginRouteHintFromUrl\(window\.location\.href\)/);
   assert.match(appJs, /pluginEmbedApi\.routeHintOpenPlan\(hint\)/);
   assert.match(appJs, /pluginEmbedApi\.routeHintFocusPlan\(hint/);

@@ -178,6 +178,29 @@ test("readCachedFallback returns only warm cache and never builds cold baseline"
   assert.deepEqual(calls, { stateDb: 1, rollout: 1, sessionIndex: 1 });
 });
 
+test("readCachedFallback filters hidden rows from warm cache", () => {
+  const { service } = createService({
+    filterFallbackThreads(threads) {
+      return (threads || []).filter((thread) => thread.hidden !== true);
+    },
+    readStateDbFallback: () => [],
+    readRolloutSessionFallback: () => [],
+    readSessionIndexFallback: () => [],
+  });
+  const key = service.cacheKey(10);
+  service.remember(key, [
+    { id: "bad-placeholder", name: "bad-placeholder", hidden: true, updatedAt: 300 },
+    { id: "good-thread", name: "Good", updatedAt: 200 },
+  ], {}, { limit: 10, filters: {} });
+
+  const diagnostics = {};
+  const warm = service.readCachedFallback(10, { diagnostics });
+
+  assert.deepEqual(warm.map((thread) => thread.id), ["good-thread"]);
+  assert.equal(diagnostics.cacheHit, true);
+  assert.equal(diagnostics.cacheFilteredDropCount, 1);
+});
+
 test("fallback cache reuses wider warm entries for narrower same-scope requests", () => {
   const { calls, service, setNow } = createService({
     readStateDbFallback() {

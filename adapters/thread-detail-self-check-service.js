@@ -103,6 +103,11 @@ function isRestStatus(value) {
   return /^(idle|completed|failed|cancelled|canceled|interrupted|error)$/i.test(statusText(value));
 }
 
+function isThreadListUnknownStatus(value) {
+  const input = statusText(value).toLowerCase();
+  return !input || /^(unknown|notloaded|not_loaded|not-loaded)$/.test(input);
+}
+
 function isTurnComplete(turn) {
   return isCompletedStatus(turn && turn.status);
 }
@@ -128,10 +133,10 @@ function turnCompletedAtMs(turn, thread = null) {
 
 function itemTimestampMs(item, turn = null, thread = null) {
   const direct = numericTimestampMs(item && (
-    item.startedAtMs
-    || item.startedAt
-    || item.createdAtMs
+    item.createdAtMs
     || item.createdAt
+    || item.startedAtMs
+    || item.startedAt
     || item.completedAtMs
     || item.completedAt
     || item.timestampMs
@@ -308,6 +313,29 @@ function duplicateSameTimestampUserMessages(turn = {}, thread = null) {
   };
 }
 
+function visibleItemTimestampOrderIssue(turn = {}, thread = null) {
+  let previousTimestamp = 0;
+  let previousIdentity = "";
+  let count = 0;
+  let firstPair = "";
+  for (const item of safeArray(turn.items)) {
+    if (!item || isOperationItem(item) || isReasoningItem(item)) continue;
+    const timestamp = itemTimestampMs(item, turn, thread);
+    if (!timestamp) continue;
+    const identity = itemId(item) || visibleKeyForItem(item) || itemType(item);
+    if (previousTimestamp && timestamp < previousTimestamp - 1000) {
+      count += 1;
+      if (!firstPair) firstPair = `${previousIdentity}:${previousTimestamp}>${identity}:${timestamp}`;
+    }
+    previousTimestamp = timestamp;
+    previousIdentity = identity;
+  }
+  return {
+    count: boundedCount(count),
+    firstHash: shortHash(firstPair),
+  };
+}
+
 function hasDuplicate(values) {
   const seen = new Set();
   for (const value of values) {
@@ -317,6 +345,36 @@ function hasDuplicate(values) {
     seen.add(key);
   }
   return false;
+}
+
+function isThreadIdLikeTitle(value, threadId = "") {
+  const input = text(value);
+  const id = text(threadId);
+  if (!input) return true;
+  if (id && input === id) return true;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input);
+}
+
+function threadSummaryHasDisplayText(thread) {
+  if (!thread || typeof thread !== "object") return false;
+  const id = threadId(thread);
+  for (const value of [thread.name, thread.title, thread.preview, thread.first_user_message]) {
+    const input = text(value);
+    if (input && !isThreadIdLikeTitle(input, id)) return true;
+  }
+  return false;
+}
+
+function isUnmaterializedThreadListPlaceholder(thread) {
+  if (!thread || typeof thread !== "object") return false;
+  const id = threadId(thread);
+  if (!id) return false;
+  if (!isThreadListUnknownStatus(thread.status)) return false;
+  if (threadSummaryHasDisplayText(thread)) return false;
+  if (text(thread.cwd)) return false;
+  if (Array.isArray(thread.turns) && thread.turns.length) return false;
+  const display = text(thread.name || thread.title || thread.preview);
+  return !display || isThreadIdLikeTitle(display, id);
 }
 
 function compactToken(value, fallback = "", maxLength = 80) {
@@ -417,6 +475,15 @@ function analyzeThreadDetail(detail = {}, options = {}) {
         itemHash: duplicateUserMessages.firstHash,
       });
     }
+    const timestampOrder = visibleItemTimestampOrderIssue(turn, thread);
+    if (timestampOrder.count > 0) {
+      pushIssue(issues, "visible_item_timestamp_order_mismatch", "H2", "thread-detail", {
+        threadHash,
+        turnHash: shortHash(turnId(turn)),
+        count: timestampOrder.count,
+        itemHash: timestampOrder.firstHash,
+      });
+    }
   }
 
   if (latest.turn) {
@@ -493,6 +560,10 @@ function analyzeThreadDetail(detail = {}, options = {}) {
     const reason = text(activeBudget.reason).slice(0, 80);
     const activeAssistantItems = activeItems.filter(isAssistantItem).length;
     const activeOmittedAssistantItems = boundedCount(budget.activeOmittedAssistantItems);
+    const progressiveReplayAssistantItems = boundedCount(budget.progressiveReplayAssistantItems);
+    const limitedReplayAssistantItems = boundedCount(budget.limitedReplayAssistantItems);
+    const progressiveActiveBudgetApplied = budget.progressiveActiveBudgetApplied === true;
+    const activeAssistantItemsAfter = boundedCount(budget.activeAssistantItemsAfter);
     const overlayCounts = objectOrNull(objectOrNull(thread.mobileActiveOverlay) && thread.mobileActiveOverlay.counts) || {};
     const overlayAssistantItems = boundedCount(overlayCounts.assistantItems);
     const syntheticAssistantDeduped = boundedCount(Math.max(
@@ -500,7 +571,15 @@ function analyzeThreadDetail(detail = {}, options = {}) {
       boundedCount(active.turn && active.turn.mobileSyntheticActiveAssistantDeduped),
     ));
     const effectiveOverlayAssistantItems = boundedCount(Math.max(0, overlayAssistantItems - syntheticAssistantDeduped));
-    if (activeOmittedAssistantItems > 0) {
+    const overlayAssistantGap = boundedCount(Math.max(0, effectiveOverlayAssistantItems - activeAssistantItems));
+    const progressiveReplayBudgetExplainsActiveTail = Boolean(
+      progressiveActiveBudgetApplied
+        && progressiveReplayAssistantItems > 0
+        && activeOmittedAssistantItems > 0
+        && (limitedReplayAssistantItems > 0 || activeAssistantItemsAfter > 0)
+        && activeAssistantItems <= Math.max(progressiveReplayAssistantItems, activeAssistantItemsAfter),
+    );
+    if (activeOmittedAssistantItems > 0 && !progressiveReplayBudgetExplainsActiveTail) {
       pushIssue(issues, "active_turn_assistant_budget", "H2", "thread-detail", {
         threadHash,
         turnHash: shortHash(turnId(active.turn)),
@@ -508,7 +587,7 @@ function analyzeThreadDetail(detail = {}, options = {}) {
         retainedAssistantItems: boundedCount(activeAssistantItems),
       });
     }
-    if (effectiveOverlayAssistantItems > activeAssistantItems) {
+    if (overlayAssistantGap > 0 && !(progressiveReplayBudgetExplainsActiveTail && overlayAssistantGap <= activeOmittedAssistantItems)) {
       pushIssue(issues, "active_overlay_assistant_projection_gap", "H2", "thread-detail", {
         threadHash,
         turnHash: shortHash(turnId(active.turn)),
@@ -572,6 +651,9 @@ function analyzeThreadDetail(detail = {}, options = {}) {
       activeAssistantItemsBefore: boundedCount(budget.activeAssistantItemsBefore),
       activeAssistantItemsAfter: boundedCount(budget.activeAssistantItemsAfter),
       syntheticActiveAssistantDeduped: boundedCount(thread.mobileSyntheticActiveAssistantDeduped),
+      progressiveActiveBudgetApplied: budget.progressiveActiveBudgetApplied === true,
+      progressiveReplayAssistantItems: boundedCount(budget.progressiveReplayAssistantItems),
+      limitedReplayAssistantItems: boundedCount(budget.limitedReplayAssistantItems),
       omittedVisibleItems: boundedCount(budget.omittedVisibleItems),
       progressiveActiveFirstPaintOmittedVisibleItems: boundedCount(budget.progressiveActiveFirstPaintOmittedVisibleItems),
     },
@@ -591,6 +673,12 @@ function analyzeThreadList(result = {}) {
   let previousUpdatedAt = Number.POSITIVE_INFINITY;
   let outOfOrderCount = 0;
   for (const row of rows) {
+    if (isUnmaterializedThreadListPlaceholder(row)) {
+      pushIssue(issues, "thread_list_unmaterialized_placeholder", "H2", "thread-list", {
+        threadHash: shortHash(threadId(row)),
+        status: statusText(row.status).slice(0, 40),
+      });
+    }
     const updatedAt = threadUpdatedAtMs(row);
     if (updatedAt && previousUpdatedAt !== Number.POSITIVE_INFINITY && updatedAt > previousUpdatedAt + 1000) {
       outOfOrderCount += 1;

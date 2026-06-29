@@ -29018,6 +29018,121 @@ The previous full handoff was archived and should be opened only when old proven
     hotfix failed.
   - Public deploy was not run.
 
+### 2026-06-29 - v583 Thread Placeholder 404 And Active Item Time Order Fix Ready For Deploy
+
+- Context:
+  - Home AI diagnostic task card `ttc_b1e01a6fbcdfa70943` reported
+    `thread_session_load_failed` with `thread_detail_load_failed` and
+    `http_404`.
+  - Bounded production/list evidence showed a thread-list row whose display
+    title equaled its UUID, status was `notLoaded`, cwd was empty, and opening
+    the detail route returned 404.
+  - User screenshot evidence also showed active assistant cards in one turn
+    rendered out of timestamp order, for example a newer visible card appearing
+    above older visible cards.
+- Root cause / invariant:
+  - Warm fallback-cache thread-list reads could return unmaterialized/id-title
+    placeholder summaries without reapplying final visibility filtering.
+  - Route-hint/startup restore 404s were reported as generic thread-load H2
+    diagnostics even when the stale target already had a bounded route-hint
+    fallback path.
+  - Active overlay/window backfill merge preserved source append order after
+    replacement. When cached active-window and live overlay items arrived with
+    mixed timestamps, the rendered turn could show visible assistant cards out
+    of chronological order.
+  - Invariant: unmaterialized placeholder rows must not be user-selectable in
+    normal thread lists; route-hint/restore stale ids should not create generic
+    repair-card noise; visible items in a turn must keep monotonic display time
+    order when item timestamps are known.
+- Implementation:
+  - `server.js` hides unmaterialized id-title placeholder summaries through
+    `shouldHideThreadListSummary()` and `filterFallbackThreads()`.
+  - `adapters/thread-list-fallback-cache-service.js` now filters warm cached
+    fallback rows before returning them.
+  - `public/app.js` suppresses generic load-failure diagnostics for
+    route-hint/startup restore opens and records only a bounded local
+    suppression event; direct user/list thread opens still report real load
+    failures.
+  - Static shell/cache advanced to `codex-mobile-shell-v583`.
+  - `adapters/thread-detail-self-check-service.js` now reports H2
+    `thread_list_unmaterialized_placeholder` and
+    `visible_item_timestamp_order_mismatch`; it also treats the progressive
+    active replay assistant budget as an intentional budgeted tail instead of
+    an active-overlay projection gap.
+  - `adapters/thread-detail-active-window-overlay-policy-service.js` now orders
+    merged active overlay/backfill items by display timestamp while preserving
+    stable original order for untimestamped ties.
+- Validation:
+  - Focused validation passed:
+    `node --test test/thread-detail-self-check-service.test.js test/thread-list-fallback-cache-service.test.js test/thread-visibility.test.js test/hermes-plugin-route.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/client-render-stability-guard.test.js test/thread-self-check-script.test.js test/thread-detail-active-window-overlay-policy-service.test.js`.
+  - `node --test test/thread-detail-read-orchestration-service.test.js` passed
+    after updating the active-overlay ordering assertion to the new timestamp
+    contract.
+  - Full local validation passed: `npm test` (`1573` tests),
+    `npm run check`, `npm run check:macos`, `git diff --check`, and Home AI
+    fallback governance for the changed runtime/test/static files.
+- Deploy state:
+  - Source is ready for a private production deploy through Home AI Deploy with
+    reason `codex-mobile-v583-thread-placeholder-load-fix`.
+  - Required readback after deploy: `/api/public-config` should report
+    `clientBuildId=0.1.11|codex-mobile-shell-v583` and
+    `shellCacheName=codex-mobile-shell-v583`; thread-list self-check should
+    show no `thread_list_unmaterialized_placeholder`; browser/runtime gate
+    should report no H1/H2 projection/render/submit issue for sampled Movie and
+    Codex Mobile source threads.
+  - Public deploy has not been run.
+
+### 2026-06-29 - Active Replay Assistant Budget Production Deploy
+
+- Context:
+  - Task card `ttc_1f40bd581be0415c22` requested private production deploy of
+    commit `ec6a4d5cf3b0` (`fix: bound active replay assistant budget`).
+  - This is a server/runtime response-budget change, not a static shell change;
+    Public deploy was not requested.
+- Deployment:
+  - Home AI central plugin deploy completed with reason
+    `codex-mobile-active-replay-assistant-budget`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T105625Z-plugin-codex-mobile-web-codex-mobile-active-replay-assistant-budget`.
+  - Production `/api/public-config` remained on
+    `clientBuildId=0.1.11|codex-mobile-shell-v582` and
+    `shellCacheName=codex-mobile-shell-v582`, as expected for a non-static
+    runtime change.
+- Readback:
+  - Source/production hash parity matched for
+    `adapters/thread-detail-response-budget-service.js`, `server.js`,
+    `test/thread-detail-response-budget-service.test.js`,
+    `docs/ARCHITECTURE.md`, `docs/MODULES.md`,
+    `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+  - Production marker readback confirmed
+    `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_REPLAY_ASSISTANT_ITEMS`,
+    `progressiveReplayAssistantItems`, and
+    `limitedReplayAssistantItems`.
+  - Phase-B readback on the active Codex Mobile source thread returned
+    `ok=true`, `readMode=projection-active-overlay`, `totalMs=178`,
+    `activeOverlayBackfillWindowMs=1`, `prepareResponseMs=103`,
+    `responseBudgetProgressiveActiveApplied=true`,
+    `responseBudgetOmittedAssistantItems=191`, and
+    response-budget item evidence showing active assistant retention reduced to
+    a bounded budget.
+- Residual gate:
+  - Deploy-mode runtime self-check did not pass after the deploy:
+    API self-check reported H2 `active_turn_assistant_budget` and
+    `active_overlay_assistant_projection_gap`; browser-runtime reported H2
+    `browser_latest_turn_timestamp_missing`.
+  - The API failures appear to be a self-check/contract follow-up for the new
+    intentional active replay assistant tail budget: the Phase-B response
+    budget evidence shows assistant replay was deliberately limited, but the
+    existing self-check still compares detail assistant count against full
+    active overlay assistant count.
+  - Closure status for the task card was returned as `partially_completed`.
+- Safety:
+  - No Public deploy and no active submit exercise were run. No raw secrets,
+    cookies, launch tokens, private thread bodies, message text, task-card
+    bodies, uploads, screenshots, provider payloads, raw endpoint files, or
+    long logs were stored here.
+
 ### 2026-06-29 - Active Detail Replay Assistant Budget Ready For Deploy
 
 - Context:

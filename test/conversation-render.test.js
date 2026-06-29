@@ -3727,6 +3727,8 @@ test("thread detail refresh failure delegates diagnostic payloads to helper", ()
 
 test("thread detail load failure delegates diagnostic payloads to helper", () => {
   const body = functionBody("loadThread");
+  assert.match(body, /const suppressLoadFailureDiagnostic = options\.suppressLoadFailureDiagnostic === true;/);
+  assert.match(body, /if \(suppressLoadFailureDiagnostic\) \{[\s\S]*postClientEvent\("thread_detail_load_failure_diagnostic_suppressed"/);
   assert.match(body, /recordHomeAiDiagnosticFailure\(threadDiagnosticEventsApi\.threadDetailLoadFailedDiagnosticEvent\(\{/);
   assert.match(body, /errorCode: diagnosticErrorCode\(err, "thread_detail_load_failed"\)/);
   assert.match(body, /durationBucket: diagnosticDurationBucket\(roundedDurationMs\(switchStartedAt\)\)/);
