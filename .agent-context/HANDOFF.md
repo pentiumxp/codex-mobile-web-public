@@ -29205,9 +29205,29 @@ The previous full handoff was archived and should be opened only when old proven
   - Home AI fallback governance check passed with no issues for the changed
     runtime/test files.
 - Deploy state:
-  - Not yet deployed at the time of this entry.
-  - Next step: commit locally, send a Home AI Deploy lane card for private
-    deployment, then run production LaunchAgent readback.
+  - Local commit: `9355860` (`feat: read back runtime self-check scheduler`).
+  - Home AI Deploy lane card sent: `ttc_c2435bf452870c0562`.
+  - Private production deploy completed through the Home AI Deploy lane with
+    reason `codex-mobile-runtime-self-check-scheduler-readback-v2`.
+  - Production `/api/public-config` returned build id
+    `9a1b34241edd22b4`, client build id
+    `0.1.11|codex-mobile-shell-v582`, and shell cache
+    `codex-mobile-shell-v582`. Static shell/cache did not change because this
+    module did not edit `public/app.js` or `public/sw.js`.
+  - Source/production hash parity matched for the LaunchAgent service,
+    readback script, focused test, root README, and updated docs.
+  - Production marker readback confirmed
+    `classifyRuntimeSelfCheckLaunchAgent`, `parseLaunchctlPrint`,
+    `hasGate`, and `periodicHealthy`.
+  - Production LaunchAgent readback passed:
+    `node scripts/codex-mobile-runtime-self-check-launchagent-readback.js --json`.
+  - Readback summary: `ok=true`, LaunchAgent loaded, state `not_running`,
+    runs `81`, last exit code `0`, interval `600`, latest event had gate,
+    `gateMode=periodic`, `periodicHealthy=true`, `issueCount=0`,
+    `blockingIssueCount=0`, `reportableIssueCount=0`,
+    `observeOnlyIssueCount=0`, `advisoryIssueCount=0`, and
+    `executionFailureCount=0`.
+  - Public deploy was not run.
 - Privacy:
   - No raw secrets, cookies, launch tokens, private message bodies, task-card
     bodies, upload contents, screenshots, provider payloads, endpoint files,
