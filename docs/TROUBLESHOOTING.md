@@ -871,7 +871,14 @@ Cause to check:
   `activeOverlayFullProjectionMs` / `activeOverlayHistoryBaselineMs` for local
   active-overlay merge/projection CPU work. If `activeOverlayMs` is high while
   those child fields stay low, repair the diagnostics split before changing
-  runtime behavior. If the owner is `thread-detail-latency`, split the
+  runtime behavior. For live projection overlays, a complete signed
+  `projection-live` snapshot should not perform a fresh
+  `turns-list-active-overlay-window` read on every detail request. Partial,
+  notification-shell, or missing-signature overlays should still force the
+  fresh active-window read. If production shows high
+  `activeOverlayBackfillWindowMs` together with `activeOverlayWindowMs` after
+  this rule, inspect why the overlay was classified incomplete before tuning
+  app-server RPCs. If the owner is `thread-detail-latency`, split the
   summary/projection/prepare/transport stages before changing the renderer.
 - Clients after `codex-mobile-shell-v575` keep a reusable in-memory thread
   detail snapshot in `state.threadTileDetails`. When reopening a thread that

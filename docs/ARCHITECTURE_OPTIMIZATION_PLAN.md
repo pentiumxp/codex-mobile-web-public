@@ -230,7 +230,14 @@ Current acceleration targets:
    `activeOverlayBackfillWindowMs`, `activeOverlayFullProjectionMs`, and
    `activeOverlayHistoryBaselineMs` through detail diagnostics / Phase-B
    readback so future peaks are attributable instead of hidden under
-   `activeOverlayMs`.
+   `activeOverlayMs`. The next residual showed that the remaining peak was not
+   the merge helper itself but the orchestration rule that treated every
+   `projection-live` overlay as requiring a fresh app-server active-window read.
+   The corrected rule only forces that read for partial, notification-shell,
+   missing-signature, or otherwise incomplete live overlays. Complete signed
+   live overlays can reuse the projection cache; partial projection windows
+   still repair history from the local full projection baseline instead of
+   weakening the evidence gate.
    `thread/turns/list`. The follow-up server slice adds
    `thread-detail-active-window-prewarm-service`: turn/status notifications and
    thread-list refreshes now schedule a deduplicated background

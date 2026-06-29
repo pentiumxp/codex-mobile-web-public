@@ -29326,9 +29326,79 @@ The previous full handoff was archived and should be opened only when old proven
     (`71` tests).
   - Local micro-smoke after the residual repair showed 240 long user-message
     rows complete in `5-8ms` instead of `~700-800ms`.
-  - Next step: run full validation, commit the residual repair, and redeploy
-    privately through Home AI Deploy lane.
+  - Private production deploy completed through the Home AI Deploy lane from
+    source commit `3d29af37d87a`, reason
+    `codex-mobile-active-overlay-backfill-residual`.
+  - Deploy result: `ok=true`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T101051Z-plugin-codex-mobile-web-codex-mobile-active-overlay-backfill-residual`.
+  - Production `/api/public-config` returned build id
+    `9a1b34241edd22b4`, client build id
+    `0.1.11|codex-mobile-shell-v582`, and shell cache
+    `codex-mobile-shell-v582`.
+  - Source/production hash parity matched for
+    `adapters/thread-user-message-echo-normalizer-service.js` and
+    `test/thread-user-message-echo-normalizer-service.test.js`.
+  - Production marker readback confirmed `userMessagesMayBeSameEvent` and the
+    residual regression test marker.
+  - Production Phase B readback after deploy returned `ok=true`, but still did
+    not prove latency closure. Two samples showed
+    `activeOverlayBackfillWindowMs` around 3.2 seconds and 2.1 seconds,
+    respectively, with read mode `projection-active-overlay`.
+  - Production runtime self-check loop with `--gate-mode deploy` passed with
+    `gate.deployPass=true`, `periodicHealthy=true`, and zero issue/code counts.
+  - The source residual fix is deployed and correctness gate passed, but
+    production performance closure remains incomplete.
+  - No active submit exercise was run.
+  - Public deploy was not run.
 - Privacy:
   - No raw secrets, cookies, launch tokens, private message bodies, task-card
     bodies, upload contents, screenshots, provider payloads, endpoint files,
     raw logs, or long private payloads were recorded.
+
+### 2026-06-29 - Active Overlay Fresh-Window Rule Residual Repair In Progress
+
+- Context:
+  - Production deploys `9eeac7a0bb5e` and `3d29af37d87a` both succeeded, and
+    the runtime self-check gate passed after the residual echo-normalizer fix,
+    but Phase-B readback still showed `activeOverlayBackfillWindowMs` around
+    2-3 seconds on the active Codex Mobile source thread.
+  - The residual evidence showed `activeOverlayWindowMs=0` in previous samples
+    because the slow fresh active-window read happened inside the
+    backfill branch and was not marked separately.
+- Root cause / invariant:
+  - The read orchestration layer still treated every `projection-live` active
+    overlay as requiring a fresh app-server `turns-list-active-overlay-window`
+    backfill, even when the overlay provider and policy had already proven a
+    complete signed live projection snapshot.
+  - Invariant: complete signed live projection overlays should be able to use
+    the projection cache for first paint; only partial, notification-shell,
+    missing-signature, or otherwise incomplete overlays should force a fresh
+    active-window RPC. Partial projection windows may still need a local full
+    projection history baseline, but that should not imply an app-server
+    turns-list read.
+- Implementation in progress:
+  - `adapters/thread-detail-read-orchestration-service.js` now checks overlay
+    completeness/partial/signature state before requiring a fresh active-window
+    read for `projection-live`.
+  - The backfill branch now records `activeOverlayWindowMs` when it actually
+    invokes `turnsListThreadReadResult`, so future Phase-B evidence can
+    distinguish app-server active-window RPC time from local merge/projection
+    work.
+  - The history-baseline repair for partial projection windows is no longer
+    gated by `requiresFreshActiveWindow`; it remains a local projection repair
+    path for partial history.
+- Validation so far:
+  - Focused tests passed:
+    `node --test test/thread-detail-read-orchestration-service.test.js test/thread-detail-active-window-overlay-policy-service.test.js test/thread-detail-active-overlay-provider-service.test.js test/thread-detail-performance-service.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js`
+    (`99` tests).
+  - Full validation passed:
+    `npm test` (`1562` tests), `npm run check`, `npm run check:macos`,
+    `git diff --check`, Home AI fallback governance check for the changed
+    runtime/test/docs files, and `codegraph sync && codegraph status`.
+  - New orchestration coverage proves incomplete `projection-live` overlays
+    still read the fresh active window, while complete signed `projection-live`
+    overlays skip `turns-list-active-overlay-window`.
+- Next:
+  - Commit and deploy privately through Home AI Deploy. Do not push Public
+    unless explicitly requested.

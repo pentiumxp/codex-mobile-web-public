@@ -147,8 +147,29 @@ function overlaySource(input) {
   return nonEmptyText(input && (input.overlaySource || input.source)).toLowerCase();
 }
 
+function overlayCompletenessAllowsCachedActiveWindow(input) {
+  const completeness = nonEmptyText(input && (
+    input.overlayCompleteness
+    || input.activeOverlayCompleteness
+    || input.snapshotCompleteness
+  )).toLowerCase();
+  if (
+    completeness !== "full"
+    && completeness !== "complete"
+    && completeness !== "backfilled"
+    && completeness !== "preserved"
+  ) {
+    return false;
+  }
+  if (input && input.overlayPartial === true) return false;
+  const partialKind = nonEmptyText(input && (input.overlayPartialKind || input.partialKind)).toLowerCase();
+  if (partialKind === "notification-shell") return false;
+  if (input && input.overlaySignatureHashPresent === false) return false;
+  return true;
+}
+
 function overlayRequiresFreshActiveWindow(input) {
-  return overlaySource(input) === "projection-live";
+  return overlaySource(input) === "projection-live" && !overlayCompletenessAllowsCachedActiveWindow(input);
 }
 
 function promoteActiveReadPolicy(policy, reason) {
@@ -919,6 +940,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
           }
         }
         if (!backfillThread && turnsListThreadReadResult && !activeOverlayWindowReadAttempted) {
+          const activeWindowStartedAtMs = now();
           try {
             activeOverlayWindowReadAttempted = true;
             const activeWindowResult = await turnsListThreadReadResult({
@@ -936,6 +958,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
               });
               return hiddenResponse();
             }
+            timer.mark("activeOverlayWindowMs", activeWindowStartedAtMs);
             backfillThread = asActiveOverlayProjectionWindow(activeWindowResult, overlayInput);
             activeOverlayFreshWindowRead = Boolean(backfillThread);
             backfillSource = "turns-list-active-overlay-window";
@@ -989,8 +1012,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
             });
           }
         }
-        if (requiresFreshActiveWindow
-          && activeOverlayProjectionThread
+        if (activeOverlayProjectionThread
           && projectionThreadIsPartial(activeOverlayProjectionThread)
           && projectedThreadResult) {
           const historyBaselineStartedAtMs = now();
