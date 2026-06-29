@@ -31484,3 +31484,46 @@ The previous full handoff was archived and should be opened only when old proven
     the Home AI Deploy terminal return card as the authoritative backup path
     when it arrives.
   - No Public deploy requested or run.
+
+### 2026-06-30 - Browser Runtime Active Timestamp Advisory Pending Deploy
+
+- Scope:
+  - Follow-up to the timestamped client-event gate deploy residual.
+  - Production full runtime gates intermittently failed on
+    `browser_latest_turn_timestamp_missing` / `browser_turn_timestamp_missing`
+    while the standalone browser self-check could pass moments later.
+- Root cause:
+  - `scripts/codex-mobile-browser-runtime-self-check.js` builds a static API
+    expectation before opening Chrome.
+  - On an active streaming thread, the DOM can legitimately move ahead of that
+    API plan while the first-paint response budget hides older operation/
+    reasoning rows. The failing sample shape had newer DOM assistant progress,
+    fewer visible items than the API plan, and one in-flight assistant item
+    without a timestamp. Treating that active progressive intermediate state as
+    a completed/resting timestamp contract failure caused false H2 deploy gate
+    failures.
+- Source changes:
+  - `adapters/browser-runtime-self-check-service.js` now detects active
+    progressive timestamp gaps by matching the latest turn shape: not completed,
+    DOM assistant count above the API plan, and visible item count below the API
+    plan.
+  - That active progressive timestamp gap remains reported as bounded H3
+    advisory evidence with `activeProgressive=true`.
+  - Completed/resting `browser_latest_turn_timestamp_missing` and
+    `browser_turn_timestamp_missing` remain H2 blockers.
+  - `docs/MODULES.md` and `docs/TROUBLESHOOTING.md` document the distinction.
+- Validation before deploy:
+  - `node --check adapters/browser-runtime-self-check-service.js scripts/codex-mobile-browser-runtime-self-check.js scripts/codex-mobile-runtime-self-check-loop.js`
+  - `node --test test/browser-runtime-self-check-service.test.js test/runtime-self-check-loop.test.js test/runtime-self-check-gate-service.test.js`
+    passed with 43 tests.
+  - Source runtime gate against production server with a temporary output file
+    returned `ok=true`, `deployPass=true`, `periodicHealthy=true`,
+    `issueCount=0`, and `blockingIssueCount=0`.
+  - `npm test` passed with 1621 tests.
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - Home AI fallback governance check passed for the changed source/test/doc
+    files.
+  - `codegraph sync && codegraph status` reported the index up to date.
+- Deployment status:
+  - Ready to commit and send to Home AI Deploy.
+  - No Public deploy requested or run.

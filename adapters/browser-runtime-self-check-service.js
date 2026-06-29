@@ -139,6 +139,7 @@ function safeTurnShape(value = {}) {
   return {
     index: Math.max(0, Math.trunc(toNumber(row.index))),
     turnHash: safeLabel(row.turnHash, ""),
+    completed: row.completed === true,
     expectedItemCount: toNumber(row.expectedItemCount),
     actualItemCount: toNumber(row.itemCount),
     expectedUserMessageCount: toNumber(row.expectedUserMessageCount),
@@ -154,6 +155,15 @@ function safeTurnShape(value = {}) {
   };
 }
 
+function activeProgressiveTurnShape(value = {}) {
+  const row = value && typeof value === "object" ? value : {};
+  return row.completed !== true
+    && toNumber(row.expectedAssistantMessageCount) > 0
+    && toNumber(row.assistantMessageCount) > toNumber(row.expectedAssistantMessageCount)
+    && toNumber(row.expectedItemCount) > 0
+    && toNumber(row.itemCount) < toNumber(row.expectedItemCount);
+}
+
 function matchedTurnShapes(sample = {}) {
   const domByHash = new Map();
   for (const row of toArray(sample.domTurnShapes)) {
@@ -167,6 +177,16 @@ function matchedTurnShapes(sample = {}) {
     rows.push(Object.assign({}, expected, domByHash.get(turnHash), { turnHash }));
   }
   return rows;
+}
+
+function matchedLatestTurnShape(sample = {}) {
+  const latestHash = safeLabel(sample.latestTurnHash, "");
+  const rows = matchedTurnShapes(sample);
+  if (latestHash) {
+    const exact = rows.find((row) => safeLabel(row && row.turnHash, "") === latestHash);
+    if (exact) return exact;
+  }
+  return rows.length ? rows[rows.length - 1] : null;
 }
 
 function issue(severity, code, sample = {}, details = {}) {
@@ -253,9 +273,13 @@ function analyzeBrowserRuntimeSamples(input = {}) {
     if (sampleIsConfirmed(sample)
       && sample.latestTurnMatchesTarget
       && toNumber(sample.latestTimestampMissingItems) > 0) {
-      issues.push(issue("H2", "browser_latest_turn_timestamp_missing", sample, {
+      const latestShape = matchedLatestTurnShape(sample);
+      const activeProgressive = activeProgressiveTurnShape(latestShape);
+      issues.push(issue(activeProgressive ? "H3" : "H2", "browser_latest_turn_timestamp_missing", sample, {
         latestTimestampExpectedItems: toNumber(sample.latestTimestampExpectedItems),
         latestTimestampMissingItems: toNumber(sample.latestTimestampMissingItems),
+        activeProgressive,
+        turnShape: activeProgressive ? safeTurnShape(latestShape) : undefined,
       }));
     }
     if (sampleIsConfirmed(sample)
@@ -329,7 +353,9 @@ function analyzeBrowserRuntimeSamples(input = {}) {
         }));
       }
       if (toNumber(turnShape.expectedTimestampItemCount) > 0 && toNumber(turnShape.timestampMissingItems) > 0) {
-        issues.push(issue("H2", "browser_turn_timestamp_missing", sample, {
+        const activeProgressive = activeProgressiveTurnShape(turnShape);
+        issues.push(issue(activeProgressive ? "H3" : "H2", "browser_turn_timestamp_missing", sample, {
+          activeProgressive,
           turnShape: safeTurnShape(turnShape),
         }));
       }
