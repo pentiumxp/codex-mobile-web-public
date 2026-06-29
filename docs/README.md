@@ -210,7 +210,12 @@ duplicates. Clients after `codex-mobile-shell-v581` also prevent stale
 active-turn identities from steering new user input into already completed
 turns, discard pending steer echoes once their target turn has completed, and
 disable conversation-body entry/leave translation animations so repeated thread
-opens do not create a few-pixel reading jitter. `scripts/codex-mobile-runtime-self-check-loop.js` wraps the API
+opens do not create a few-pixel reading jitter. Clients after
+`codex-mobile-shell-v582` refuse to render uncached/unsafe `imageView` sources
+such as relative filenames, raw `data:image`, stale `blob:`, `file://`, or
+external URLs as `<img src>`; generated image cards should use
+`/api/generated-images/file` content URLs or bounded failed cards, and browser
+self-check image failures include source-kind metadata. `scripts/codex-mobile-runtime-self-check-loop.js` wraps the API
 self-check plus browser self-check for deploy-time one-shot checks and periodic
 metadata-only JSONL monitoring, while Home AI remains responsible for
 Owner-approved repair-card dispatch.

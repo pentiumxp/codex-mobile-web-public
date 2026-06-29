@@ -28990,9 +28990,86 @@ The previous full handoff was archived and should be opened only when old proven
     evidence still showed two user-like events; this is consistent with the
     duplicate presenting during active/live projection and settling later.
 - Deploy state:
-  - Not deployed yet at this handoff entry. Next step is to commit and send a
-    private deploy card to the `Home AI Deploy` lane; do not push Public unless
-    explicitly requested after the private fix is verified.
+  - Private production deploy completed through the Home AI Deploy lane from
+    source commit `4c39d1a04641`, reason
+    `codex-mobile-duplicate-user-message-hotfix`.
+  - Deploy result: `ok=true`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T052730Z-plugin-codex-mobile-web-codex-mobile-duplicate-user-message-hotfix`.
+  - Production `/api/public-config` remained on static shell/cache
+    `0.1.11|codex-mobile-shell-v581` / `codex-mobile-shell-v581`, as expected
+    for this server/projection hotfix.
+  - Source/production hash parity matched for:
+    `adapters/thread-user-message-echo-normalizer-service.js`,
+    `adapters/thread-detail-self-check-service.js`,
+    `adapters/browser-runtime-self-check-service.js`, and
+    `scripts/codex-mobile-browser-runtime-self-check.js`.
+  - Movie thread API self-check passed with `issueCount=0`; latest completed
+    visible user input count was 1 while bounded raw evidence still showed two
+    user-like events, consistent with duplicate projection collapse.
+  - Movie browser runtime self-check passed with `issueCount=0`,
+    `maxLatestTurnUserTextDuplicates=0`, and
+    `maxExpectedLatestUserMessageDuplicates=0`.
+  - Codex Mobile source-thread API self-check passed with `issueCount=0`.
+  - Combined/Codex-only browser runtime checks still reported H2 visibility
+    gaps on the currently active Codex Mobile source thread. Those issues were
+    not duplicate submitted user-message signals and should be treated as a
+    residual browser-runtime risk, not as proof that the duplicate-user-message
+    hotfix failed.
+  - Public deploy was not run.
 - Privacy:
   - No raw access keys, cookies, launch tokens, message text, upload contents,
     screenshots, provider payloads, endpoint files, or long logs were recorded.
+
+### 2026-06-29 - Generated Image Preview Source Contract v582
+
+- Source task:
+  - Home AI card `ttc_387a25cc7ab4e7f2b1` reported that a system-generated
+    Codex `Image` card could render as a broken image under the Home AI embedded
+    Codex proxy.
+- Root cause / strongest evidence:
+  - Home AI had already repaired the host binary proxy path and reported no
+    matching generated-image binary request for the sampled broken inline card.
+  - Direct Codex Mobile detail readback did not show a persisted generated-image
+    item for the visible broken card, making the strongest plugin-side
+    hypothesis a live/overlay/frontend `imageView` source that reached the DOM
+    without first being cached to `/api/generated-images/file`.
+  - `renderImageView()` previously allowed raw `contentUrl` through
+    `authenticatedApiContentUrl()` and raw fallback `url` values into `<img
+    src>`. A relative filename, stale `blob:`, raw `data:image`, `file://`, or
+    external URL can therefore produce a browser broken-image icon without a
+    Home AI proxy image request.
+- Implementation:
+  - `public/app.js` now routes `imageView` / `imageGeneration` `contentUrl`
+    and fallback `url` through a protected API-route allowlist before rendering
+    an `<img>`.
+  - Allowed visible image routes remain the same-origin or Home-AI-proxied
+    generated-image, upload, and file-preview API routes, plus authorized
+    absolute local paths that the server converts to file-preview content.
+  - Uncached/unsafe generated image sources render as a bounded
+    `image-view image-load-failed` card with `data-image-source-kind` metadata
+    instead of putting raw source values into the DOM.
+  - Browser runtime self-check now reports bounded image failure source-kind
+    counts/details so missing `src`, protected-placeholder failures,
+    generated-image route failures, and unsafe-source cards can be separated
+    without raw URLs, paths, filenames, or image bytes.
+  - Static shell/cache bumped to `codex-mobile-shell-v582` in `public/app.js`
+    and `public/sw.js`.
+  - `docs/README.md`, `docs/MODULES.md`, and `docs/TROUBLESHOOTING.md` record
+    the v582 image source/cache contract.
+- Validation:
+  - Focused tests passed:
+    `node --test test/conversation-render.test.js test/browser-runtime-self-check-service.test.js test/media-render-visual-smoke.test.js`.
+  - Full `npm test` passed: `1546` tests.
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - Home AI fallback governance check passed for the changed runtime/test files
+    with no issues.
+- Deploy state:
+  - Not yet deployed at this handoff point. Next step is to commit and send a
+    private deploy card to the `Home AI Deploy` lane for v582, then read back
+    production `clientBuildId` / `shellCacheName` and run bounded browser/image
+    self-checks.
+- Privacy:
+  - No raw secrets, cookies, launch tokens, private thread bodies, image bytes,
+    raw image URLs, local paths, filenames, provider payloads, screenshots, or
+    long logs were recorded.

@@ -52,6 +52,7 @@ function summarizeSamples(samples = []) {
   const itemCounts = normalized.map((sample) => toNumber(sample.items));
   const renderKeyCounts = normalized.map((sample) => toNumber(sample.renderKeys));
   const imageFailureCounts = normalized.map((sample) => toNumber(sample.imageFailureCount));
+  const imageFigureCounts = normalized.map((sample) => toNumber(sample.imageFigureCount));
   const timestampMissingCounts = normalized.map((sample) => toNumber(sample.latestTimestampMissingItems));
   const latestTurnItemCounts = normalized.map((sample) => toNumber(sample.latestTurnItemCount));
   const latestTurnUserMessageCounts = normalized.map((sample) => toNumber(sample.latestTurnUserMessageCount));
@@ -78,6 +79,7 @@ function summarizeSamples(samples = []) {
     maxItems: normalized.length ? Math.max(...itemCounts) : 0,
     maxRenderKeys: normalized.length ? Math.max(...renderKeyCounts) : 0,
     maxImageFailures: normalized.length ? Math.max(...imageFailureCounts) : 0,
+    maxImageFigures: normalized.length ? Math.max(...imageFigureCounts) : 0,
     maxLatestTimestampMissingItems: normalized.length ? Math.max(...timestampMissingCounts) : 0,
     maxLatestTurnItems: normalized.length ? Math.max(...latestTurnItemCounts) : 0,
     maxLatestTurnUserMessages: normalized.length ? Math.max(...latestTurnUserMessageCounts) : 0,
@@ -141,11 +143,21 @@ function analyzeBrowserRuntimeSamples(input = {}) {
       }));
     }
     if (sampleIsConfirmed(sample) && toNumber(sample.imageFailureCount) > 0) {
+      const imageFailureDetails = toArray(sample.imageFailureDetails).slice(0, 4);
+      const imageFailureKindCounts = sample.imageFailureKindCounts && typeof sample.imageFailureKindCounts === "object"
+        ? Object.fromEntries(Object.entries(sample.imageFailureKindCounts).slice(0, 12).map(([key, value]) => [
+          safeLabel(key, "kind"),
+          toNumber(value),
+        ]))
+        : {};
       issues.push(issue("H2", "browser_image_render_failed", sample, {
         imageCount: toNumber(sample.imageCount),
+        imageFigureCount: toNumber(sample.imageFigureCount),
         imageFailureCount: toNumber(sample.imageFailureCount),
         failedFigureCount: toNumber(sample.imageFailedFigureCount),
         brokenCompleteImageCount: toNumber(sample.brokenCompleteImageCount),
+        imageFailureKindCounts,
+        firstImageFailure: imageFailureDetails[0] || null,
       }));
     }
     if (sampleIsConfirmed(sample)

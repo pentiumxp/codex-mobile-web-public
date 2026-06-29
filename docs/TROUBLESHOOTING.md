@@ -800,6 +800,13 @@ Cause to check:
   when the API expectation already contains duplicate same-event user messages,
   and `browser_latest_turn_user_message_duplicate` when the real DOM latest
   turn shows repeated same-text user cards.
+  Current image failure reports include bounded `imageFailureKindCounts` and
+  `firstImageFailure` metadata, such as `generated-image`,
+  `hermes-proxy-generated-image`, `protected-placeholder`, `unsafe-source`,
+  `missingSrc`, natural dimensions, and recovery counters. These fields
+  distinguish missing `src`, unsafe source, failed protected recovery, and
+  missing generated-image cache routes without printing raw URLs, paths, or
+  image bytes.
   Clients after `codex-mobile-shell-v579` preserve a non-bottom user-reading
   viewport anchor across full conversation renders, local refresh patch
   transactions, visible item inserts, visible item replacements, and live text
@@ -1091,6 +1098,17 @@ If the original user upload renders as a thumbnail but a later Codex/plan reply 
 The parser should recognize LF and CRLF summaries, plus Markdown blockquote-style quoted lines such as `> Uploaded attachments:` and `> - IMG_0001.jpg (...)`. It should also treat raw app-server `input_text` parts as text and `input_image` / `image_url` parts as images, including object-shaped `image_url.url`. The saved upload path must still be under `%USERPROFILE%\.codex-mobile-web\uploads`. Current clients should turn default-runtime upload paths into `/api/uploads/file?id=<upload-root-relative-id>` so the browser image `src` does not include a local absolute path; `/api/uploads/file?path=...` remains a compatibility fallback for old clients and non-default upload roots.
 
 If the DOM contains an `<img>` for the saved upload path but the browser still shows a broken or blank thumbnail, check the upload route response headers. Saved `.jpg`, `.jpeg`, `.webp`, `.gif`, and `.png` files must return image MIME types such as `image/jpeg` rather than `application/octet-stream`. In Hermes/Home AI embed mode, the `<img>` should keep the browser-visible same-origin `/api/uploads/file` or `/api/generated-images/file` URL as `src` plus `data-protected-image-src`; when the iframe page is served under `/api/hermes-plugins/<plugin-id>/proxy/`, the browser-visible URL must include that same plugin proxy prefix instead of the Home AI host root `/api`. Scheduled image scans should not proactively convert still-loading embedded direct images into `data:image/...` or `blob:` URLs. If the image actually errors, recovery may fetch with the current session key; embedded/iOS recovery should retry a cache-busted same-origin URL first.
+
+For `Image` cards from `imageView` / `imageGeneration`, the safe render contract
+is stricter than for user uploads. A visible image card should render from a
+server-provided `contentUrl` under `/api/generated-images/file` or from an
+authorized absolute local path that the server can preview. If the item only
+contains a relative filename, raw `data:image`, stale `blob:`, `file://`, or
+external URL, the client must not put that value into `<img src>` because the
+browser will show a broken icon and Home AI proxy logs may never see a generated
+image request. Current clients render those uncached/unsafe sources as bounded
+failed image cards with no raw path/text. The source-side fix is still to cache
+tool output images through the generated-image cache during projection.
 
 If Codex generates an image as Markdown or plain text `data:image/png;base64,...`, inspect `public/markdown-renderer.js`. Current builds render safe bitmap data images (`png`, `jpeg`, `webp`, `gif`) as bounded `<img>` figures and intentionally reject SVG data images.
 

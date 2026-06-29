@@ -659,6 +659,35 @@ function snapshotExpression(input = {}) {
         }
         return duplicates;
       };
+      const imageSourceKind = (value) => {
+        const text = String(value || "").trim();
+        if (!text) return "empty";
+        if (/^(?:[a-zA-Z]:[\\\\/]|\\\\\\\\|\\/Users\\/|\\/private\\/|\\/Volumes\\/)/.test(text)) return "local-path-leak";
+        if (/(?:%2FUsers%2F|\\/Users\\/|\\.codex-mobile-web|[?&]path=)/i.test(text)) return "local-path-leak";
+        if (/^data:image\\/gif;base64,R0lGODlhAQABAIAAAAAAAP\\/\\/\\/ywAAAAAAQABAAACAUwAOw==/i.test(text)) return "protected-placeholder";
+        if (/^data:image\\//i.test(text)) return "data-image";
+        if (/^blob:/i.test(text)) return "blob";
+        if (/^file:\\/\\//i.test(text)) return "file-url";
+        try {
+          const parsed = new URL(text, window.location.origin);
+          const pathname = parsed.pathname || "";
+          if (parsed.origin !== window.location.origin) return "remote";
+          if (/\\/api\\/hermes-plugins\\/[^/]+\\/proxy\\/api\\/generated-images\\/file$/.test(pathname)) return "hermes-proxy-generated-image";
+          if (/\\/api\\/hermes-plugins\\/[^/]+\\/proxy\\/api\\/uploads\\/file$/.test(pathname)) return "hermes-proxy-upload";
+          if (/\\/api\\/hermes-plugins\\/[^/]+\\/proxy\\/api\\/files\\/preview\\/content$/.test(pathname)) return "hermes-proxy-file-preview";
+          if (pathname === "/api/generated-images/file") return "generated-image";
+          if (pathname === "/api/uploads/file") return "upload";
+          if (pathname === "/api/files/preview/content") return "file-preview";
+          if (pathname.startsWith("/api/")) return "api";
+          return "same-origin";
+        } catch (_) {
+          return "unknown";
+        }
+      };
+      const addKindCount = (map, key) => {
+        const safeKey = String(key || "unknown").replace(/[^a-z0-9_.:-]+/gi, "_").slice(0, 80) || "unknown";
+        map[safeKey] = (map[safeKey] || 0) + 1;
+      };
       const visible = (node) => {
         if (!node) return false;
         const style = window.getComputedStyle(node);
@@ -710,11 +739,54 @@ function snapshotExpression(input = {}) {
         })
         .filter(Boolean)
         .map(stableHash);
+      const imageFigures = Array.from(renderRoot.querySelectorAll(".input-image, .image-view, .markdown-image"));
       const imageNodes = Array.from(renderRoot.querySelectorAll(".input-image img, .image-view img, .markdown-image img"));
       const failedFigures = Array.from(renderRoot.querySelectorAll(".input-image.image-load-failed, .image-view.image-load-failed, .markdown-image.image-load-failed"));
       const brokenCompleteImages = imageNodes.filter((image) => {
         if (!image || image.loading === "lazy" && !image.complete) return false;
         return image.complete && Number(image.naturalWidth || 0) === 0 && Number(image.naturalHeight || 0) === 0;
+      });
+      const failedImageDetails = [];
+      const imageFailureKindCounts = {};
+      const collectFailedImage = (figure, reason) => {
+        if (!figure || failedImageDetails.length >= 8) return;
+        const image = figure.querySelector("img");
+        const displayValue = image ? String(image.currentSrc || image.src || image.getAttribute("src") || "") : "";
+        const protectedValue = image && image.dataset ? String(image.dataset.protectedImageSrc || "") : "";
+        const displaySourceKind = imageSourceKind(displayValue);
+        const protectedSourceKind = imageSourceKind(protectedValue);
+        addKindCount(imageFailureKindCounts, reason);
+        addKindCount(imageFailureKindCounts, displaySourceKind);
+        if (protectedSourceKind !== "empty") addKindCount(imageFailureKindCounts, protectedSourceKind);
+        failedImageDetails.push({
+          reason,
+          figureKind: figure.classList && figure.classList.contains("input-image")
+            ? "input-image"
+            : (figure.classList && figure.classList.contains("image-view")
+              ? "image-view"
+              : (figure.classList && figure.classList.contains("markdown-image") ? "markdown-image" : "unknown")),
+          displaySourceKind,
+          protectedSourceKind,
+          sourceHash: stableHash([displaySourceKind, protectedSourceKind, displayValue ? displayValue.length : 0].join("|")),
+          missingSrc: !displayValue && !protectedValue,
+          hasImage: Boolean(image),
+          complete: Boolean(image && image.complete),
+          naturalWidth: image ? Number(image.naturalWidth || 0) : 0,
+          naturalHeight: image ? Number(image.naturalHeight || 0) : 0,
+          failedClass: true,
+          hydrating: Boolean(image && image.dataset && image.dataset.protectedImageHydrating === "1"),
+          hydrated: Boolean(image && image.dataset && image.dataset.protectedImageHydrated === "1"),
+          recoveryCount: Number(image && image.dataset && image.dataset.protectedImageRecoveryCount || 0),
+          unsafeSourceKind: String(figure.getAttribute("data-image-source-kind") || ""),
+        });
+      };
+      const failedFigureSet = new Set(failedFigures);
+      imageFigures.forEach((figure) => {
+        if (failedFigureSet.has(figure)) collectFailedImage(figure, "failed-class");
+      });
+      brokenCompleteImages.forEach((image) => {
+        const figure = image && image.closest ? image.closest(".input-image, .image-view, .markdown-image") : null;
+        if (figure && !failedFigureSet.has(figure)) collectFailedImage(figure, "broken-complete");
       });
       const storageMatchesTarget = (() => {
         try { return localStorage.getItem("codexMobileCurrentThreadId") === threadId; } catch (_) { return false; }
@@ -786,9 +858,12 @@ function snapshotExpression(input = {}) {
         latestTimestampExpectedItems: timestampExpectedNodes.length,
         latestTimestampMissingItems: timestampMissingNodes.length,
         imageCount: imageNodes.length,
+        imageFigureCount: imageFigures.length,
         imageFailedFigureCount: failedFigures.length,
         brokenCompleteImageCount: brokenCompleteImages.length,
         imageFailureCount: failedFigures.length + brokenCompleteImages.length,
+        imageFailureKindCounts,
+        imageFailureDetails: failedImageDetails,
         threadCards: document.querySelectorAll("[data-thread]").length,
         turns: turnNodes.length,
         items: itemNodes.length,

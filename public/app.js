@@ -542,7 +542,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v581";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v582";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -19562,6 +19562,29 @@ function imageViewContentUrl(item) {
   )) || "");
 }
 
+function safeImageViewApiUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    const origin = typeof window !== "undefined" && window.location && window.location.origin
+      ? window.location.origin
+      : "http://127.0.0.1";
+    const parsed = new URL(raw, origin);
+    if (parsed.origin === origin && protectedImageUpstreamPathname(parsed.pathname)) {
+      return authenticatedApiContentUrl(`${parsed.pathname}${parsed.search}${parsed.hash}`);
+    }
+  } catch (_) {}
+  return "";
+}
+
+function safeImageViewFallbackUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (/^(?:data:image\/|blob:|file:\/\/)/i.test(raw)) return "";
+  if (isLikelyAbsoluteLocalPath(raw)) return "";
+  return safeImageViewApiUrl(raw);
+}
+
 function isImageViewUnavailable(item) {
   return Boolean(item && (
     item.imageUnavailable
@@ -19574,11 +19597,16 @@ function renderImageView(item) {
   const filePath = imageViewPath(item);
   const contentUrl = imageViewContentUrl(item);
   const url = imageViewUrl(item);
-  const src = contentUrl ? authenticatedApiContentUrl(contentUrl) : (filePath ? imageContentUrlForPath(filePath, { threadId: renderContextThreadId() }) : url);
+  const src = contentUrl
+    ? safeImageViewApiUrl(contentUrl)
+    : (filePath && isLikelyAbsoluteLocalPath(filePath)
+      ? imageContentUrlForPath(filePath, { threadId: renderContextThreadId() })
+      : safeImageViewFallbackUrl(url));
   const label = shortPath(filePath || item.label || item.fileName || item.file_name || item.caption || url || item.id || "image");
   if (isImageViewUnavailable(item)) {
     return `<figure class="image-view image-load-failed"></figure>`;
   }
+  if (!src && (contentUrl || filePath || url)) return `<figure class="image-view image-load-failed" data-image-source-kind="unsafe-source"></figure>`;
   if (!src) return renderStructuredBlock(item, "Image");
   const displaySrc = protectedImageDisplaySrc(src);
   return `<figure class="image-view">

@@ -153,9 +153,27 @@ test("browser runtime self-check catches latest usage timestamp and image failur
       latestTimestampExpectedItems: 2,
       latestTimestampMissingItems: 1,
       imageCount: 2,
+      imageFigureCount: 2,
       imageFailedFigureCount: 1,
       brokenCompleteImageCount: 1,
       imageFailureCount: 2,
+      imageFailureKindCounts: {
+        "failed-class": 1,
+        "protected-placeholder": 1,
+        "hermes-proxy-generated-image": 1,
+      },
+      imageFailureDetails: [{
+        reason: "failed-class",
+        figureKind: "image-view",
+        displaySourceKind: "protected-placeholder",
+        protectedSourceKind: "hermes-proxy-generated-image",
+        missingSrc: false,
+        hasImage: true,
+        complete: true,
+        naturalWidth: 0,
+        naturalHeight: 0,
+        recoveryCount: 2,
+      }],
       turns: 3,
       items: 9,
       renderKeys: 12,
@@ -165,7 +183,12 @@ test("browser runtime self-check catches latest usage timestamp and image failur
   assert.equal(report.ok, false);
   assert.ok(report.issues.some((issue) => issue.code === "browser_latest_turn_usage_missing"));
   assert.ok(report.issues.some((issue) => issue.code === "browser_latest_turn_timestamp_missing"));
-  assert.ok(report.issues.some((issue) => issue.code === "browser_image_render_failed"));
+  const imageIssue = report.issues.find((issue) => issue.code === "browser_image_render_failed");
+  assert.ok(imageIssue);
+  assert.equal(imageIssue.imageFigureCount, 2);
+  assert.equal(imageIssue.imageFailureKindCounts["protected-placeholder"], 1);
+  assert.equal(imageIssue.firstImageFailure.protectedSourceKind, "hermes-proxy-generated-image");
+  assert.equal(report.sampleSummary.maxImageFigures, 2);
 });
 
 test("browser runtime self-check catches latest turn assistant text duplicates", () => {
@@ -600,6 +623,9 @@ test("browser runtime self-check script exposes bounded browser snapshot fields"
   assert.match(expression, /latestTurnAssistantTextDuplicateCount/);
   assert.match(expression, /latestTimestampMissingItems/);
   assert.match(expression, /imageFailureCount/);
+  assert.match(expression, /imageSourceKind/);
+  assert.match(expression, /imageFailureKindCounts/);
+  assert.match(expression, /imageFailureDetails/);
   assert.match(expression, /brokenCompleteImageCount/);
   assert.match(expression, /data-client-submission-hash/);
   assert.match(expression, /visualAnchorKeyHash/);

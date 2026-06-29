@@ -385,6 +385,9 @@ function evaluatedImageViewRenderer(options = {}) {
     "imageViewPath",
     "imageViewUrl",
     "imageViewContentUrl",
+    "isLikelyAbsoluteLocalPath",
+    "safeImageViewApiUrl",
+    "safeImageViewFallbackUrl",
     "isImageViewUnavailable",
     "renderImageView",
   ].map((name) => functionSourceFrom(appJs, name));
@@ -2776,6 +2779,29 @@ test("Hermes proxy embedded generated image urls render through the plugin proxy
   assert.match(html, /<img src="\/api\/hermes-plugins\/codex-mobile\/proxy\/api\/generated-images\/file\?id=thread%2Fview-image-output\.png&amp;key=test-key"/);
   assert.match(html, /data-protected-image-src="\/api\/hermes-plugins\/codex-mobile\/proxy\/api\/generated-images\/file\?id=thread%2Fview-image-output\.png&amp;key=test-key"/);
   assert.doesNotMatch(html, /<img src="\/api\/generated-images\/file/);
+});
+
+test("imageView unsafe uncached sources render as failed cards instead of broken images", () => {
+  const renderImageView = evaluatedImageViewRenderer({
+    embedded: true,
+    pathname: "/api/hermes-plugins/codex-mobile/proxy/",
+  });
+
+  for (const item of [
+    { type: "imageView", contentUrl: "data:image/png;base64,iVBORw0KGgo=" },
+    { type: "imageView", contentUrl: "blob:http://127.0.0.1:8787/stale-image" },
+    { type: "imageView", contentUrl: "https://example.invalid/generated.png" },
+    { type: "imageView", url: "assistant-output.png", fileName: "assistant-output.png" },
+    { type: "imageView", url: "data:image/png;base64,iVBORw0KGgo=" },
+    { type: "imageView", url: "blob:http://127.0.0.1:8787/stale-image" },
+    { type: "imageView", url: "https://example.invalid/generated.png" },
+  ]) {
+    const html = renderImageView(item);
+    assert.match(html, /class="image-view image-load-failed"/);
+    assert.match(html, /data-image-source-kind="unsafe-source"/);
+    assert.doesNotMatch(html, /<img\b/);
+    assert.doesNotMatch(html, /assistant-output\.png|example\.invalid|base64|blob:/);
+  }
 });
 
 test("Hermes embedded protected images are not proactively converted into data urls", () => {
