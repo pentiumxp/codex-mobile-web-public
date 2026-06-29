@@ -28800,3 +28800,56 @@ The previous full handoff was archived and should be opened only when old proven
     `node --test test/home-ai-diagnostic-reporting.test.js test/thread-diagnostic-events.test.js`
     (`32` tests).
   - No Public deploy was run.
+
+### 2026-06-29 - Browser Runtime Self-Check Visual Jitter And Submit Exercise
+
+- User request:
+  - Extend runtime self-check coverage beyond full refresh/message-loss cases
+    to include subtle user-visible jitter: a few-pixel layout shake, repeated
+    small refreshes, and submitted user-message card shifts.
+  - Allow the self-check to actively send a short test message through the real
+    Composer path. The message should clearly be a self-check and ask for an
+    OK-only reply, so model-token cost stays small.
+- Implementation:
+  - `scripts/codex-mobile-browser-runtime-self-check.js` now samples bounded
+    visual-anchor fields: hashed anchor key, hashed frame signature, anchor
+    top/height, conversation top/height, submitted-message hashed key, and
+    submitted-message top/height.
+  - `adapters/browser-runtime-self-check-service.js` reports H3
+    `browser_visual_anchor_jitter` when the same target thread, same visual
+    frame, same anchor, unchanged item/turn counts, and stable scroll height
+    still move by 2-32 px repeatedly.
+  - The same analyzer reports H3 `browser_submitted_message_card_jitter` when a
+    submitted-message card keeps the same bounded identity but shifts by 2-32
+    px after submit.
+  - Explicit browser submit exercise options were added:
+    `--exercise-submit`, `--submit-thread-id`, `--submit-message`, and
+    `--submit-sample-delays-ms`.
+  - `scripts/codex-mobile-runtime-self-check-loop.js` exposes matching
+    `--browser-exercise-submit`, `--browser-submit-thread-id`,
+    `--browser-submit-message`, and `--browser-submit-sample-delays-ms`
+    options. They default off; without the flag, periodic self-checks remain
+    read-only.
+  - Submit exercise uses the real `#messageInput` + `#composer` UI path. It
+    reports H2 `browser_submit_user_message_not_visible` when a submitted
+    user card never becomes visible, and H2 `browser_submit_exercise_failed`
+    when Composer is disabled or the active exercise did not actually submit.
+  - Active submit visibility uses the actual DOM last turn after submission,
+    not the pre-submit expected latest-turn hash. This prevents false positives
+    when a new turn is created after the API baseline was captured.
+- Validation:
+  - Focused tests passed:
+    `node --test test/browser-runtime-self-check-service.test.js test/runtime-self-check-loop.test.js`
+    (`24` tests).
+  - Full `npm test` passed (`1537` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - A local active-submit browser run against Movie initially exposed the
+    pre-submit latest-turn hash false-positive; that self-check bug was fixed
+    before final validation.
+- Deploy state:
+  - Ready to commit and request private deployment through the Home AI Deploy
+    lane so production scripts/adapters have the new self-check coverage.
+  - This change does not modify `public/app.js` or `public/sw.js`; expected
+    `/api/public-config` remains `codex-mobile-shell-v580` unless another
+    runtime change is deployed.
+  - No Public deploy was requested.

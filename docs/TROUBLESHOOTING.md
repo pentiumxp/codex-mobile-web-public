@@ -790,6 +790,19 @@ Cause to check:
   patches. If a new reply still makes the screen jump while the user is
   reading above the bottom, inspect `captureConversationViewportAnchor()` /
   `restoreConversationViewportAnchor()` before adding throttles or UI dedupe.
+  The browser self-check now also samples visual anchor positions. It reports
+  `browser_visual_anchor_jitter` when the same target thread, same visual frame,
+  same anchor, and unchanged DOM counts still move by a few pixels repeatedly;
+  this is an H3 user-experience signal for small flicker, not a full projection
+  loss. With explicit `--exercise-submit`, the browser check sends one short
+  Composer message through the real UI path, asking for an OK-only reply, then
+  samples whether the submitted user card becomes visible, disappears, or
+  jitters. Use `--submit-thread-id <id>` to target a dedicated thread, or omit
+  it to exercise the first selected production thread. Do not enable this flag
+  in periodic checks unless a small OK-only model turn is acceptable. If the
+  target thread is busy and Composer is not writable, the self-check reports
+  `browser_submit_exercise_failed` instead of treating the run as a successful
+  client validation.
   The analyzer no longer drops a sparse sample merely because
   `contentConfirmed=false`; such samples cannot establish a healthy baseline,
   but they can prove regression after the same target thread was previously

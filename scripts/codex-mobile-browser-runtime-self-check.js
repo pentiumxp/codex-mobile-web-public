@@ -38,6 +38,10 @@ function usage() {
     "  --list-limit <n>           Thread-list limit. Default: 10.",
     "  --rounds <n>               Thread switch rounds. Default: 3.",
     "  --sample-delays-ms <csv>   Delays after each switch. Default: 350,1200,2800.",
+    "  --exercise-submit          Send one short UI message through Composer in the target test thread.",
+    "  --submit-thread-id <id>    Dedicated thread id for --exercise-submit. Defaults to first selected thread.",
+    "  --submit-message <text>    Test message. Default asks for a one-token OK reply.",
+    "  --submit-sample-delays-ms <csv> Delays after submit. Default: 100,350,900,1600,2800,6000.",
     "  --viewport <WxH>           Browser viewport. Default: 390x844.",
     "  --chrome-path <path>       Chrome executable. Default: macOS Google Chrome.",
     "  --headed                   Run visible Chrome instead of headless.",
@@ -87,6 +91,10 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     listLimit: readPositiveInt(env.CODEX_MOBILE_BROWSER_SELF_CHECK_LIST_LIMIT || "10", 10, 100),
     rounds: readPositiveInt(env.CODEX_MOBILE_BROWSER_SELF_CHECK_ROUNDS || "3", 3, 20),
     sampleDelaysMs: parseDelayList(env.CODEX_MOBILE_BROWSER_SELF_CHECK_SAMPLE_DELAYS_MS || ""),
+    exerciseSubmit: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_EXERCISE_SUBMIT || "")),
+    submitThreadId: String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_SUBMIT_THREAD_ID || "").trim(),
+    submitMessage: String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_SUBMIT_MESSAGE || "Codex Mobile self-check test. Reply exactly: OK").slice(0, 500),
+    submitSampleDelaysMs: parseDelayList(env.CODEX_MOBILE_BROWSER_SELF_CHECK_SUBMIT_SAMPLE_DELAYS_MS || "100,350,900,1600,2800,6000", [100, 350, 900, 1600, 2800, 6000]),
     viewport: parseViewport(env.CODEX_MOBILE_BROWSER_SELF_CHECK_VIEWPORT || DEFAULT_VIEWPORT),
     headed: false,
     timeoutMs: readPositiveInt(env.CODEX_MOBILE_BROWSER_SELF_CHECK_TIMEOUT_MS || "20000", 20000, 120000),
@@ -110,6 +118,10 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     else if (arg === "--list-limit") options.listLimit = readPositiveInt(next(), options.listLimit, 100);
     else if (arg === "--rounds") options.rounds = readPositiveInt(next(), options.rounds, 20);
     else if (arg === "--sample-delays-ms") options.sampleDelaysMs = parseDelayList(next(), options.sampleDelaysMs);
+    else if (arg === "--exercise-submit") options.exerciseSubmit = true;
+    else if (arg === "--submit-thread-id") options.submitThreadId = next();
+    else if (arg === "--submit-message") options.submitMessage = next().slice(0, 500);
+    else if (arg === "--submit-sample-delays-ms") options.submitSampleDelaysMs = parseDelayList(next(), options.submitSampleDelaysMs);
     else if (arg === "--viewport") options.viewport = parseViewport(next());
     else if (arg === "--headed") options.headed = true;
     else if (arg === "--timeout-ms") options.timeoutMs = readPositiveInt(next(), options.timeoutMs, 120000);
@@ -119,6 +131,8 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
   }
   options.server = normalizeBaseUrl(options.server);
   options.threadIds = options.threadIds.map((id) => String(id || "").trim()).filter(Boolean);
+  options.submitThreadId = String(options.submitThreadId || "").trim();
+  options.submitMessage = String(options.submitMessage || "Codex Mobile self-check test. Reply exactly: OK").slice(0, 500);
   return options;
 }
 
@@ -564,6 +578,9 @@ function snapshotExpression(input = {}) {
   const expectedLatestTaskCardUserMessageCount = Math.max(0, Number(input.expectedLatestTaskCardUserMessageCount || 0) || 0);
   const label = String(input.label || "");
   const delayMs = Math.max(0, Number(input.delayMs || 0) || 0);
+  const exerciseSubmit = Boolean(input.exerciseSubmit);
+  const submitPhase = String(input.submitPhase || "");
+  const submitOk = input.submitOk === true;
   return `
     (() => {
       const threadId = ${JSON.stringify(threadId)};
@@ -575,6 +592,9 @@ function snapshotExpression(input = {}) {
       const expectedLatestTaskCardUserMessageCount = ${JSON.stringify(expectedLatestTaskCardUserMessageCount)};
       const label = ${JSON.stringify(label)};
       const delayMs = ${JSON.stringify(delayMs)};
+      const exerciseSubmit = ${JSON.stringify(exerciseSubmit)};
+      const submitPhase = ${JSON.stringify(submitPhase)};
+      const submitOk = ${JSON.stringify(submitOk)};
       const stableHash = (value) => {
         const text = String(value || "");
         let hash = 2166136261;
@@ -617,6 +637,10 @@ function snapshotExpression(input = {}) {
       const latestTurnIndex = latestMatches ? turnHashes.indexOf(expectedLatestTurnHash) : turnNodes.length - 1;
       const latestTurnNode = latestTurnIndex >= 0 ? turnNodes[latestTurnIndex] : null;
       const latestTurnHash = latestTurnIndex >= 0 ? String(turnHashes[latestTurnIndex] || "") : "";
+      const actualLatestTurnNode = turnNodes.length ? turnNodes[turnNodes.length - 1] : null;
+      const actualLatestUserNodes = actualLatestTurnNode ? Array.from(actualLatestTurnNode.querySelectorAll(".item.userMessage")) : [];
+      const actualLatestTaskCardNodes = actualLatestTurnNode ? Array.from(actualLatestTurnNode.querySelectorAll(".item.thread-task-card-injected[data-thread-task-card-item]")) : [];
+      const actualLatestAssistantNodes = actualLatestTurnNode ? Array.from(actualLatestTurnNode.querySelectorAll(".item.agentMessage, .item.plan")) : [];
       const timestampExpectedSelector = ".item.userMessage, .item.agentMessage, .item.plan, .item.turnDiagnostic, .item.thread-task-card-injected";
       const timestampExpectedNodes = latestTurnNode ? Array.from(latestTurnNode.querySelectorAll(timestampExpectedSelector)) : [];
       const timestampMissingNodes = timestampExpectedNodes.filter((node) => !node.querySelector(".item-timestamp"));
@@ -647,10 +671,39 @@ function snapshotExpression(input = {}) {
       const loadingNote = Boolean(conversation && conversation.querySelector('[data-render-key^="loading-visible|"]'));
       const emptyState = Boolean(conversation && conversation.querySelector(".empty-state"));
       const appRect = app ? app.getBoundingClientRect() : { width: 0, height: 0 };
+      const conversationRect = conversation ? conversation.getBoundingClientRect() : { top: 0, bottom: 0, height: 0 };
+      const visualTop = Math.max(0, conversationRect.top || 0);
+      const visualBottom = Math.min(window.innerHeight || 0, conversationRect.bottom || 0);
+      const visualCandidates = renderKeyNodes
+        .map((node, index) => {
+          const rect = node.getBoundingClientRect();
+          return {
+            node,
+            index,
+            key: String(node.getAttribute("data-render-key") || ""),
+            rect,
+          };
+        })
+        .filter((entry) => entry.key
+          && entry.rect
+          && entry.rect.width > 0
+          && entry.rect.height > 0
+          && entry.rect.bottom > visualTop + 4
+          && entry.rect.top < visualBottom - 4)
+        .sort((a, b) => Math.abs(a.rect.top - visualTop - 8) - Math.abs(b.rect.top - visualTop - 8));
+      const visualAnchor = visualCandidates[0] || null;
+      const submittedNode = renderRoot.querySelector("[data-client-submission-hash]");
+      const submittedRect = submittedNode ? submittedNode.getBoundingClientRect() : { top: 0, height: 0 };
+      const submittedKey = submittedNode
+        ? String(submittedNode.getAttribute("data-client-submission-hash") || "") + "|" + String(submittedNode.getAttribute("data-render-key") || "")
+        : "";
       return {
         label,
         threadHash,
         delayMs,
+        exerciseSubmit,
+        submitPhase,
+        submitOk,
         appVisible: visible(app),
         loginVisible: visible(login),
         targetConfirmed: Boolean(storageMatchesTarget || activeButtonMatchesTarget || loadingNote || emptyState),
@@ -668,6 +721,10 @@ function snapshotExpression(input = {}) {
         latestTurnUserMessageCount: latestUserNodes.length,
         latestTurnTaskCardItemCount: latestTaskCardNodes.length,
         latestTurnAssistantMessageCount: latestAssistantNodes.length,
+        actualLatestTurnHash: turnHashes.length ? String(turnHashes[turnHashes.length - 1] || "") : "",
+        actualLatestTurnUserMessageCount: actualLatestUserNodes.length,
+        actualLatestTurnTaskCardItemCount: actualLatestTaskCardNodes.length,
+        actualLatestTurnAssistantMessageCount: actualLatestAssistantNodes.length,
         latestTurnOperationItemCount: latestOperationNodes.length,
         latestTurnReasoningItemCount: latestReasoningNodes.length,
         latestTurnAssistantTextDuplicateCount: duplicateCount(latestAssistantTextHashes),
@@ -687,10 +744,49 @@ function snapshotExpression(input = {}) {
         loadingNote,
         emptyState,
         clientSubmissionCount: document.querySelectorAll("[data-client-submission-id], [data-client-submission], [data-client-submission-hash]").length,
+        visualAnchorKeyHash: visualAnchor ? stableHash(visualAnchor.key) : "",
+        visualFrameHash: stableHash(renderKeys.filter(Boolean).join("|")),
+        visualAnchorTopPx: visualAnchor ? Math.round(visualAnchor.rect.top || 0) : 0,
+        visualAnchorHeightPx: visualAnchor ? Math.round(visualAnchor.rect.height || 0) : 0,
+        visualAnchorIndex: visualAnchor ? visualAnchor.index : -1,
+        conversationTopPx: Math.round(conversationRect.top || 0),
+        conversationHeightPx: Math.round(conversationRect.height || 0),
+        submittedMessageKeyHash: submittedKey ? stableHash(submittedKey) : "",
+        submittedMessageTopPx: submittedNode ? Math.round(submittedRect.top || 0) : 0,
+        submittedMessageHeightPx: submittedNode ? Math.round(submittedRect.height || 0) : 0,
         scrollHeight: conversation ? Math.trunc(conversation.scrollHeight || 0) : 0,
         clientHeight: conversation ? Math.trunc(conversation.clientHeight || 0) : 0,
         scrollTop: conversation ? Math.trunc(conversation.scrollTop || 0) : 0,
         appHeight: Math.trunc(appRect.height || 0),
+      };
+    })();
+  `;
+}
+
+function submitComposerExpression(message) {
+  return `
+    (async () => {
+      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const input = document.getElementById("messageInput");
+      const form = document.getElementById("composer");
+      const button = document.getElementById("sendMessage");
+      if (!input || !form || !button) return { ok: false, code: "composer_unavailable" };
+      if (input.getAttribute("contenteditable") === "false" || input.getAttribute("aria-disabled") === "true") {
+        return { ok: false, code: "composer_disabled" };
+      }
+      const message = ${JSON.stringify(String(message || "").slice(0, 500))};
+      input.focus({ preventScroll: true });
+      input.textContent = message;
+      input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: message }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      await wait(80);
+      const disabledBeforeSubmit = Boolean(button.disabled);
+      if (typeof form.requestSubmit === "function") form.requestSubmit(button);
+      else form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      return {
+        ok: true,
+        code: "submitted",
+        disabledBeforeSubmit,
       };
     })();
   `;
@@ -705,6 +801,9 @@ async function run(options = parseArgs(), deps = {}) {
   const ids = options.threadIds.length
     ? options.threadIds
     : rows.map(threadId).filter(Boolean).slice(0, options.sampleThreads);
+  if (options.exerciseSubmit && options.submitThreadId && !ids.includes(options.submitThreadId)) {
+    ids.unshift(options.submitThreadId);
+  }
   const threadPlan = await loadThreadPlan(options, key, ids);
   const report = {
     ok: false,
@@ -732,6 +831,13 @@ async function run(options = parseArgs(), deps = {}) {
       expectedLatestTimestampItemCount: entry.expectedLatestTimestampItemCount,
     })),
     browserReport: null,
+    submitExercise: options.exerciseSubmit ? {
+      attempted: true,
+      ok: false,
+      targetThreadHash: "",
+      messageHash: shortHash(options.submitMessage),
+      code: "not_run",
+    } : null,
   };
   if (!threadPlan.length) {
     report.browserReport = analyzeBrowserRuntimeSamples({ samples: [] });
@@ -830,6 +936,74 @@ async function run(options = parseArgs(), deps = {}) {
         }
       }
     }
+
+    if (options.exerciseSubmit) {
+      const submitTarget = (options.submitThreadId
+        ? threadPlan.find((entry) => entry.id === options.submitThreadId)
+        : null) || threadPlan[0];
+      if (submitTarget) {
+        report.submitExercise.targetThreadHash = submitTarget.threadHash;
+        await evaluate(cdp, openThreadExpression(submitTarget.id), options.timeoutMs).catch(() => null);
+        await sleep(500);
+        samples.push(await evaluate(cdp, snapshotExpression({
+          threadId: submitTarget.id,
+          threadHash: submitTarget.threadHash,
+          expectedTurnHashes: submitTarget.expectedTurnHashes,
+          expectedLatestTurnHash: submitTarget.expectedLatestTurnHash,
+          expectedLatestUsageRequired: submitTarget.expectedLatestUsageRequired,
+          expectedLatestUserMessageCount: submitTarget.expectedLatestUserMessageCount,
+          expectedLatestTaskCardUserMessageCount: submitTarget.expectedLatestTaskCardUserMessageCount,
+          label: "submit-pre",
+          delayMs: 0,
+          exerciseSubmit: true,
+          submitPhase: "pre",
+          submitOk: false,
+        }), options.timeoutMs).catch((err) => ({
+          label: "submit-pre",
+          threadHash: submitTarget.threadHash,
+          delayMs: 0,
+          exerciseSubmit: true,
+          submitPhase: "pre",
+          submitOk: false,
+          appVisible: false,
+          errorCode: boundedToken(err && err.message, "snapshot_failed"),
+        })));
+        const submitResult = await evaluate(cdp, submitComposerExpression(options.submitMessage), options.timeoutMs).catch((err) => ({
+          ok: false,
+          code: boundedToken(err && err.message, "submit_failed"),
+        }));
+        report.submitExercise.ok = Boolean(submitResult && submitResult.ok);
+        report.submitExercise.code = boundedToken(submitResult && submitResult.code, report.submitExercise.ok ? "submitted" : "submit_failed");
+        report.submitExercise.disabledBeforeSubmit = Boolean(submitResult && submitResult.disabledBeforeSubmit);
+        for (const delayMs of options.submitSampleDelaysMs) {
+          await sleep(delayMs);
+          const phase = `post-${delayMs}`;
+          samples.push(await evaluate(cdp, snapshotExpression({
+            threadId: submitTarget.id,
+            threadHash: submitTarget.threadHash,
+            expectedTurnHashes: submitTarget.expectedTurnHashes,
+            expectedLatestTurnHash: submitTarget.expectedLatestTurnHash,
+            expectedLatestUsageRequired: submitTarget.expectedLatestUsageRequired,
+            expectedLatestUserMessageCount: submitTarget.expectedLatestUserMessageCount,
+            expectedLatestTaskCardUserMessageCount: submitTarget.expectedLatestTaskCardUserMessageCount,
+            label: `submit-${phase}`,
+            delayMs,
+            exerciseSubmit: true,
+            submitPhase: phase,
+            submitOk: Boolean(submitResult && submitResult.ok),
+          }), options.timeoutMs).catch((err) => ({
+            label: `submit-${phase}`,
+            threadHash: submitTarget.threadHash,
+            delayMs,
+            exerciseSubmit: true,
+            submitPhase: phase,
+            submitOk: Boolean(submitResult && submitResult.ok),
+            appVisible: false,
+            errorCode: boundedToken(err && err.message, "snapshot_failed"),
+          })));
+        }
+      }
+    }
   } finally {
     if (cdp) cdp.close();
     if (chrome) await chrome.close();
@@ -842,7 +1016,21 @@ async function run(options = parseArgs(), deps = {}) {
     exceptions,
     minSettledDelayMs: options.minSettledDelayMs,
   });
-  report.ok = report.browserReport.ok;
+  if (options.exerciseSubmit && report.submitExercise && !report.submitExercise.ok) {
+    const issues = Array.isArray(report.browserReport.issues) ? report.browserReport.issues : [];
+    issues.push({
+      severity: "H2",
+      code: "browser_submit_exercise_failed",
+      surface: "browser-runtime",
+      threadHash: String(report.submitExercise.targetThreadHash || "").slice(0, 32),
+      reason: boundedToken(report.submitExercise.code, "submit_failed"),
+    });
+    report.browserReport.issues = issues;
+    report.browserReport.issueCount = issues.length;
+    report.browserReport.blockingIssueCount = issues.filter((item) => item && /^(H1|H2)$/i.test(item.severity || "")).length;
+    report.browserReport.ok = false;
+  }
+  report.ok = report.browserReport.ok && (!options.exerciseSubmit || Boolean(report.submitExercise && report.submitExercise.ok));
   return report;
 }
 
@@ -873,5 +1061,6 @@ module.exports = {
   run,
   safeConsoleText,
   snapshotExpression,
+  submitComposerExpression,
   usage,
 };

@@ -28,6 +28,13 @@ test("runtime self-check loop parses one-shot and periodic options", () => {
     "100,500,1500",
     "--browser-min-settled-delay-ms",
     "1500",
+    "--browser-exercise-submit",
+    "--browser-submit-thread-id",
+    "submit-thread",
+    "--browser-submit-message",
+    "Reply OK only",
+    "--browser-submit-sample-delays-ms",
+    "100,600,1600",
   ]);
   assert.equal(loop.loop, true);
   assert.equal(loop.intervalMs, 600000);
@@ -35,6 +42,10 @@ test("runtime self-check loop parses one-shot and periodic options", () => {
   assert.equal(loop.browserRounds, 7);
   assert.equal(loop.browserSampleDelaysMs, "100,500,1500");
   assert.equal(loop.browserMinSettledDelayMs, 1500);
+  assert.equal(loop.browserExerciseSubmit, true);
+  assert.equal(loop.browserSubmitThreadId, "submit-thread");
+  assert.equal(loop.browserSubmitMessage, "Reply OK only");
+  assert.equal(loop.browserSubmitSampleDelaysMs, "100,600,1600");
 });
 
 test("runtime self-check summary keeps only bounded metadata", () => {
@@ -76,6 +87,10 @@ test("runtime self-check one-shot writes metadata-only JSONL", async () => {
     browserRounds: 6,
     browserSampleDelaysMs: "100,350,1200,2800,6000",
     browserMinSettledDelayMs: 1200,
+    browserExerciseSubmit: true,
+    browserSubmitThreadId: "private-submit-thread-id",
+    browserSubmitMessage: "Reply OK only",
+    browserSubmitSampleDelaysMs: "100,900,1600",
     skipApi: false,
     skipBrowser: false,
     output,
@@ -90,6 +105,13 @@ test("runtime self-check one-shot writes metadata-only JSONL", async () => {
         assert.equal(args[args.indexOf("--sample-delays-ms") + 1], "100,350,1200,2800,6000");
         assert.ok(args.includes("--min-settled-delay-ms"));
         assert.equal(args[args.indexOf("--min-settled-delay-ms") + 1], "1200");
+        assert.ok(args.includes("--exercise-submit"));
+        assert.ok(args.includes("--submit-thread-id"));
+        assert.equal(args[args.indexOf("--submit-thread-id") + 1], "private-submit-thread-id");
+        assert.ok(args.includes("--submit-message"));
+        assert.equal(args[args.indexOf("--submit-message") + 1], "Reply OK only");
+        assert.ok(args.includes("--submit-sample-delays-ms"));
+        assert.equal(args[args.indexOf("--submit-sample-delays-ms") + 1], "100,900,1600");
       }
       const payload = isBrowser
         ? {

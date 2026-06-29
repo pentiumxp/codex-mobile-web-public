@@ -57,10 +57,17 @@ function summarizeSamples(samples = []) {
   const latestTurnUserMessageCounts = normalized.map((sample) => toNumber(sample.latestTurnUserMessageCount));
   const latestTurnTaskCardItemCounts = normalized.map((sample) => toNumber(sample.latestTurnTaskCardItemCount));
   const latestTurnAssistantMessageCounts = normalized.map((sample) => toNumber(sample.latestTurnAssistantMessageCount));
+  const actualLatestTurnUserMessageCounts = normalized.map((sample) => toNumber(sample.actualLatestTurnUserMessageCount));
+  const actualLatestTurnTaskCardItemCounts = normalized.map((sample) => toNumber(sample.actualLatestTurnTaskCardItemCount));
+  const actualLatestTurnAssistantMessageCounts = normalized.map((sample) => toNumber(sample.actualLatestTurnAssistantMessageCount));
   const latestTurnOperationItemCounts = normalized.map((sample) => toNumber(sample.latestTurnOperationItemCount));
   const latestTurnReasoningItemCounts = normalized.map((sample) => toNumber(sample.latestTurnReasoningItemCount));
   const latestTurnAssistantTextDuplicateCounts = normalized.map((sample) => toNumber(sample.latestTurnAssistantTextDuplicateCount));
   const clientSubmissionCounts = normalized.map((sample) => toNumber(sample.clientSubmissionCount));
+  const visualAnchorShiftCounts = normalized.map((sample) => toNumber(sample.visualAnchorSmallJitterCount));
+  const visualAnchorShiftPixels = normalized.map((sample) => toNumber(sample.visualAnchorShiftPx));
+  const submittedMessageShiftCounts = normalized.map((sample) => toNumber(sample.submittedMessageSmallJitterCount));
+  const submittedMessageShiftPixels = normalized.map((sample) => toNumber(sample.submittedMessageShiftPx));
   return {
     sampleCount: normalized.length,
     minTurns: normalized.length ? Math.min(...turnCounts) : 0,
@@ -74,10 +81,17 @@ function summarizeSamples(samples = []) {
     maxLatestTurnUserMessages: normalized.length ? Math.max(...latestTurnUserMessageCounts) : 0,
     maxLatestTurnTaskCardItems: normalized.length ? Math.max(...latestTurnTaskCardItemCounts) : 0,
     maxLatestTurnAssistantMessages: normalized.length ? Math.max(...latestTurnAssistantMessageCounts) : 0,
+    maxActualLatestTurnUserMessages: normalized.length ? Math.max(...actualLatestTurnUserMessageCounts) : 0,
+    maxActualLatestTurnTaskCardItems: normalized.length ? Math.max(...actualLatestTurnTaskCardItemCounts) : 0,
+    maxActualLatestTurnAssistantMessages: normalized.length ? Math.max(...actualLatestTurnAssistantMessageCounts) : 0,
     maxLatestTurnOperationItems: normalized.length ? Math.max(...latestTurnOperationItemCounts) : 0,
     maxLatestTurnReasoningItems: normalized.length ? Math.max(...latestTurnReasoningItemCounts) : 0,
     maxLatestTurnAssistantTextDuplicates: normalized.length ? Math.max(...latestTurnAssistantTextDuplicateCounts) : 0,
     maxClientSubmissions: normalized.length ? Math.max(...clientSubmissionCounts) : 0,
+    maxVisualAnchorSmallJitterCount: normalized.length ? Math.max(...visualAnchorShiftCounts) : 0,
+    maxVisualAnchorShiftPx: normalized.length ? Math.max(...visualAnchorShiftPixels) : 0,
+    maxSubmittedMessageSmallJitterCount: normalized.length ? Math.max(...submittedMessageShiftCounts) : 0,
+    maxSubmittedMessageShiftPx: normalized.length ? Math.max(...submittedMessageShiftPixels) : 0,
     sparseSampleCount: normalized.filter(isSparseSample).length,
     nonEmptySampleCount: normalized.filter(isNonEmptySample).length,
   };
@@ -202,6 +216,14 @@ function analyzeBrowserRuntimeSamples(input = {}) {
     let maxClientSubmissions = 0;
     let maxLatestTurnUserMessages = 0;
     const latestTurnWindows = new Map();
+    let previousVisualAnchor = null;
+    let visualAnchorSmallJitterCount = 0;
+    let visualAnchorMaxShiftPx = 0;
+    let visualAnchorIssueSample = null;
+    let previousSubmittedMessage = null;
+    let submittedMessageSmallJitterCount = 0;
+    let submittedMessageMaxShiftPx = 0;
+    let submittedMessageIssueSample = null;
     for (const sample of rows) {
       const turns = toNumber(sample.turns);
       const items = toNumber(sample.items);
@@ -211,6 +233,59 @@ function analyzeBrowserRuntimeSamples(input = {}) {
       maxItems = Math.max(maxItems, items);
       maxClientSubmissions = Math.max(maxClientSubmissions, toNumber(sample.clientSubmissionCount));
       maxLatestTurnUserMessages = Math.max(maxLatestTurnUserMessages, toNumber(sample.latestTurnUserMessageCount));
+      const visualAnchorKey = String(sample.visualAnchorKeyHash || "").slice(0, 32);
+      const visualFrameHash = String(sample.visualFrameHash || "").slice(0, 32);
+      const visualAnchorTopPx = toNumber(sample.visualAnchorTopPx, Number.NaN);
+      const scrollHeight = toNumber(sample.scrollHeight);
+      const visualAnchorComparable = sampleIsConfirmed(sample)
+        && sample.contentConfirmed !== false
+        && visualAnchorKey
+        && Number.isFinite(visualAnchorTopPx);
+      if (visualAnchorComparable && previousVisualAnchor
+        && previousVisualAnchor.key === visualAnchorKey
+        && previousVisualAnchor.frameHash === visualFrameHash
+        && previousVisualAnchor.turns === turns
+        && previousVisualAnchor.items === items
+        && Math.abs(previousVisualAnchor.scrollHeight - scrollHeight) <= 1) {
+        const shiftPx = Math.abs(visualAnchorTopPx - previousVisualAnchor.topPx);
+        if (shiftPx >= 2 && shiftPx <= 32) {
+          visualAnchorSmallJitterCount += 1;
+          visualAnchorMaxShiftPx = Math.max(visualAnchorMaxShiftPx, shiftPx);
+          visualAnchorIssueSample = sample;
+          sample.visualAnchorSmallJitterCount = visualAnchorSmallJitterCount;
+          sample.visualAnchorShiftPx = visualAnchorMaxShiftPx;
+        }
+      }
+      if (visualAnchorComparable) {
+        previousVisualAnchor = {
+          key: visualAnchorKey,
+          frameHash: visualFrameHash,
+          topPx: visualAnchorTopPx,
+          turns,
+          items,
+          scrollHeight,
+        };
+      }
+      const submittedKey = String(sample.submittedMessageKeyHash || "").slice(0, 32);
+      const submittedTopPx = toNumber(sample.submittedMessageTopPx, Number.NaN);
+      if (sampleIsConfirmed(sample)
+        && submittedKey
+        && Number.isFinite(submittedTopPx)) {
+        if (previousSubmittedMessage && previousSubmittedMessage.key === submittedKey) {
+          const shiftPx = Math.abs(submittedTopPx - previousSubmittedMessage.topPx);
+          if (shiftPx >= 2 && shiftPx <= 32) {
+            submittedMessageSmallJitterCount += 1;
+            submittedMessageMaxShiftPx = Math.max(submittedMessageMaxShiftPx, shiftPx);
+            submittedMessageIssueSample = sample;
+            sample.submittedMessageSmallJitterCount = submittedMessageSmallJitterCount;
+            sample.submittedMessageShiftPx = submittedMessageMaxShiftPx;
+          }
+        }
+        previousSubmittedMessage = {
+          key: submittedKey,
+          topPx: submittedTopPx,
+        };
+      }
       if (isNonEmptySample(sample)) {
         if (sample.contentConfirmed !== false) {
           seenNonEmpty = true;
@@ -290,6 +365,36 @@ function analyzeBrowserRuntimeSamples(input = {}) {
           currentLatestTurnUserMessages: toNumber(sample.latestTurnUserMessageCount),
         }));
       }
+      if (sampleIsConfirmed(sample)
+        && settled
+        && sample.exerciseSubmit
+        && sample.submitOk
+        && sample.submitPhase !== "pre"
+        && toNumber(sample.clientSubmissionCount) === 0
+        && toNumber(sample.latestTurnUserMessageCount) === 0
+        && toNumber(sample.actualLatestTurnUserMessageCount) === 0) {
+        issues.push(issue("H2", "browser_submit_user_message_not_visible", sample, {
+          threadHash,
+          submitPhase: safeLabel(sample.submitPhase || "post"),
+          currentClientSubmissions: toNumber(sample.clientSubmissionCount),
+          currentLatestTurnUserMessages: toNumber(sample.latestTurnUserMessageCount),
+          currentActualLatestTurnUserMessages: toNumber(sample.actualLatestTurnUserMessageCount),
+        }));
+      }
+    }
+    if (visualAnchorSmallJitterCount >= 2 && visualAnchorIssueSample) {
+      issues.push(issue("H3", "browser_visual_anchor_jitter", visualAnchorIssueSample, {
+        threadHash,
+        jitterCount: visualAnchorSmallJitterCount,
+        maxShiftPx: visualAnchorMaxShiftPx,
+      }));
+    }
+    if (submittedMessageSmallJitterCount >= 1 && submittedMessageIssueSample) {
+      issues.push(issue("H3", "browser_submitted_message_card_jitter", submittedMessageIssueSample, {
+        threadHash,
+        jitterCount: submittedMessageSmallJitterCount,
+        maxShiftPx: submittedMessageMaxShiftPx,
+      }));
     }
     const final = rows[rows.length - 1];
     if (final && seenNonEmpty && isSparseSample(final) && maxConfirmedItems > 3 && toNumber(final.delayMs) >= minSettledDelayMs) {

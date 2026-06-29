@@ -338,6 +338,73 @@ test("browser runtime self-check catches pending user message disappearing after
   assert.equal(report.sampleSummary.maxClientSubmissions, 1);
 });
 
+test("browser runtime self-check catches submit exercise user message never becoming visible", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [
+      {
+        label: "submit-pre",
+        threadHash: "thread-hash",
+        appVisible: true,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        exerciseSubmit: true,
+        submitPhase: "pre",
+        submitOk: false,
+        turns: 4,
+        items: 20,
+        delayMs: 0,
+      },
+      {
+        label: "submit-post-1600",
+        threadHash: "thread-hash",
+        appVisible: true,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        exerciseSubmit: true,
+        submitPhase: "post-1600",
+        submitOk: true,
+        turns: 4,
+        items: 20,
+        latestTurnUserMessageCount: 0,
+        clientSubmissionCount: 0,
+        delayMs: 1600,
+      },
+    ],
+  });
+
+  assert.equal(report.ok, false);
+  assert.ok(report.issues.some((issue) => issue.code === "browser_submit_user_message_not_visible"));
+});
+
+test("browser runtime self-check accepts submit exercise user message in actual latest DOM turn", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [
+      {
+        label: "submit-post-1600",
+        threadHash: "thread-hash",
+        appVisible: true,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        exerciseSubmit: true,
+        submitPhase: "post-1600",
+        submitOk: true,
+        turns: 5,
+        items: 24,
+        latestTurnUserMessageCount: 0,
+        actualLatestTurnUserMessageCount: 1,
+        clientSubmissionCount: 0,
+        delayMs: 1600,
+      },
+    ],
+  });
+
+  assert.equal(report.ok, true);
+  assert.ok(!report.issues.some((issue) => issue.code === "browser_submit_user_message_not_visible"));
+  assert.equal(report.sampleSummary.maxActualLatestTurnUserMessages, 1);
+});
+
 test("browser runtime self-check accepts pending user message replaced by durable user message", () => {
   const report = service.analyzeBrowserRuntimeSamples({
     minSettledDelayMs: 1000,
@@ -371,6 +438,65 @@ test("browser runtime self-check accepts pending user message replaced by durabl
 
   assert.equal(report.ok, true);
   assert.ok(!report.issues.some((issue) => issue.code === "browser_pending_user_message_disappeared"));
+});
+
+test("browser runtime self-check catches small visual anchor jitter without DOM loss", () => {
+  const base = {
+    threadHash: "thread-hash",
+    appVisible: true,
+    targetConfirmed: true,
+    contentConfirmed: true,
+    turns: 6,
+    items: 24,
+    renderKeys: 30,
+    visualAnchorKeyHash: "anchor-hash",
+    visualFrameHash: "frame-hash",
+    scrollHeight: 2400,
+    delayMs: 1200,
+  };
+  const report = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [
+      Object.assign({}, base, { label: "stable-1", visualAnchorTopPx: 120 }),
+      Object.assign({}, base, { label: "jitter-1", visualAnchorTopPx: 126 }),
+      Object.assign({}, base, { label: "jitter-2", visualAnchorTopPx: 121 }),
+    ],
+  });
+
+  assert.equal(report.ok, true);
+  assert.ok(report.issues.some((issue) => issue.code === "browser_visual_anchor_jitter" && issue.severity === "H3"));
+  assert.equal(report.sampleSummary.maxVisualAnchorSmallJitterCount, 2);
+  assert.equal(report.sampleSummary.maxVisualAnchorShiftPx, 6);
+});
+
+test("browser runtime self-check catches submitted message card jitter", () => {
+  const base = {
+    threadHash: "thread-hash",
+    appVisible: true,
+    targetConfirmed: true,
+    contentConfirmed: true,
+    exerciseSubmit: true,
+    submitOk: true,
+    turns: 5,
+    items: 22,
+    renderKeys: 24,
+    delayMs: 1200,
+    clientSubmissionCount: 1,
+    latestTurnUserMessageCount: 1,
+    submittedMessageKeyHash: "submitted-key",
+  };
+  const report = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [
+      Object.assign({}, base, { label: "submit-post-350", submitPhase: "post-350", submittedMessageTopPx: 640 }),
+      Object.assign({}, base, { label: "submit-post-900", submitPhase: "post-900", submittedMessageTopPx: 648 }),
+    ],
+  });
+
+  assert.equal(report.ok, true);
+  assert.ok(report.issues.some((issue) => issue.code === "browser_submitted_message_card_jitter" && issue.severity === "H3"));
+  assert.equal(report.sampleSummary.maxSubmittedMessageSmallJitterCount, 1);
+  assert.equal(report.sampleSummary.maxSubmittedMessageShiftPx, 8);
 });
 
 test("browser runtime self-check catches duplicate DOM keys and runtime exceptions", () => {
@@ -441,6 +567,8 @@ test("browser runtime self-check script exposes bounded browser snapshot fields"
   assert.match(expression, /latestTurnUserMessageCount/);
   assert.match(expression, /latestTurnTaskCardItemCount/);
   assert.match(expression, /latestTurnAssistantMessageCount/);
+  assert.match(expression, /actualLatestTurnUserMessageCount/);
+  assert.match(expression, /actualLatestTurnAssistantMessageCount/);
   assert.match(expression, /latestTurnOperationItemCount/);
   assert.match(expression, /latestTurnReasoningItemCount/);
   assert.match(expression, /latestTurnAssistantTextDuplicateCount/);
@@ -448,10 +576,24 @@ test("browser runtime self-check script exposes bounded browser snapshot fields"
   assert.match(expression, /imageFailureCount/);
   assert.match(expression, /brokenCompleteImageCount/);
   assert.match(expression, /data-client-submission-hash/);
+  assert.match(expression, /visualAnchorKeyHash/);
+  assert.match(expression, /visualFrameHash/);
+  assert.match(expression, /submittedMessageKeyHash/);
+  assert.match(expression, /conversationTopPx/);
   assert.match(expression, /loadingNote/);
   assert.match(expression, /emptyState/);
   assert.match(expression, /codexMobileCurrentThreadId/);
   assert.doesNotMatch(expression, /innerText|location\.href|document\.cookie|Authorization|Bearer/);
+});
+
+test("browser runtime self-check exposes explicit composer submit exercise", () => {
+  const expression = script.submitComposerExpression("Codex Mobile self-check test. Reply exactly: OK");
+
+  assert.match(expression, /requestSubmit/);
+  assert.match(expression, /messageInput/);
+  assert.match(expression, /sendMessage/);
+  assert.match(expression, /InputEvent/);
+  assert.doesNotMatch(expression, /document\.cookie|Authorization|Bearer/);
 });
 
 test("browser runtime self-check route and console classifiers are bounded", () => {
