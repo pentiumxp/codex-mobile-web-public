@@ -32285,6 +32285,42 @@ The previous full handoff was archived and should be opened only when old proven
   - Local candidate in progress. Private production deploy has not yet been
     requested. No Public deploy requested or run.
 
+### 2026-06-30 - Completed Replay Assistant First-Paint Budget Dispatched
+
+- Source:
+  - Commit `a82b26f` (`fix: bound completed replay assistant budget`) is ready
+    and dispatched to the Home AI central private deploy lane via task card
+    `ttc_3c7ca20a22d0b6194c`.
+  - Deploy reason requested:
+    `codex-mobile-completed-replay-assistant-first-paint-budget`.
+  - Public deploy was not requested.
+- Root cause / invariant:
+  - Attribution proved the assistant residual has separate product contracts:
+    current active progress must remain protected, while older completed replay
+    progress can have its own first-paint tail budget under active pressure.
+  - The new budget introduces
+    `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_COMPLETED_REPLAY_ASSISTANT_ITEMS`
+    (default `12`) and associated bounded evidence
+    `progressiveCompletedReplayAssistantItems`,
+    `limitedCompletedReplayAssistantItems`,
+    `completedReplayAssistantItemsBefore`,
+    `completedReplayAssistantItemsAfter`, and
+    `completedReplayOmittedAssistantItems`.
+  - Active/current replay still uses `progressiveReplayAssistantItems`; the new
+    completed replay budget does not lower current active assistant progress.
+- Local validation before dispatch:
+  - `node --test test/thread-detail-response-budget-service.test.js
+    test/phase-b-readback-smoke.test.js
+    test/phase-b-readback-decision-service.test.js` passed (`74` tests).
+  - `npm test -- --test-reporter=dot`, `npm run check`, and
+    `npm run check:macos` passed.
+  - Home AI fallback-governance guard returned `ok=true`.
+  - `git diff --check` passed.
+  - `codegraph sync && codegraph status` reported the index up to date.
+- Awaiting:
+  - Central private deploy return with source/production parity, marker
+    readback, Phase-B readback, runtime gate, and LaunchAgent readback.
+
 ### 2026-06-30 - Active First-Paint Assistant Retained-Byte Attribution Deployed
 
 - Source commit:
