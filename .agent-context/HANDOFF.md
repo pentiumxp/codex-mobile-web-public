@@ -29082,6 +29082,50 @@ The previous full handoff was archived and should be opened only when old proven
     Codex Mobile source threads.
   - Public deploy has not been run.
 
+### 2026-06-29 - Response Budget Completed Replay Time Order Follow-Up Ready For Deploy
+
+- Context:
+  - After private v583 deployment, production API self-check confirmed the
+    thread-list placeholder/404 class was closed: thread-list repeat was stable
+    and reported no `thread_list_unmaterialized_placeholder` issue.
+  - The same deploy-mode readback exposed a residual H2
+    `visible_item_timestamp_order_mismatch` in the latest completed replay of
+    the active Codex Mobile source thread.
+- Root cause / invariant:
+  - The first v583 patch ordered active overlay/backfill merges, but completed
+    replay response-budget shaping is a separate path.
+  - `adapters/thread-detail-response-budget-service.js` could retain a
+    protected completed assistant replay tail in original/input order after
+    operation/reasoning/assistant budget filters.
+  - Invariant: every response-budgeted turn should leave visible items in
+    monotonic display timestamp order when item timestamps are known.
+- Implementation:
+  - `thread-detail-response-budget-service` now reuses
+    `orderItemsByDisplayTimestamp()` after per-turn budget filters and before
+    normalized visible-key rebuilding.
+  - Added a focused response-budget test proving completed replay items are
+    reordered by timestamp after budget processing.
+- Validation:
+  - Focused validation passed:
+    `node --check adapters/thread-detail-response-budget-service.js` and
+    `node --test test/thread-detail-response-budget-service.test.js test/thread-detail-self-check-service.test.js test/thread-detail-active-window-overlay-policy-service.test.js`
+    (`86` tests).
+  - Full local validation passed: `npm test` (`1574` tests),
+    `npm run check`, `npm run check:macos`, `git diff --check`, and Home AI
+    fallback governance for `adapters/thread-detail-response-budget-service.js`
+    and `test/thread-detail-response-budget-service.test.js`.
+- Deploy state:
+  - Source is ready for a private production deploy through Home AI Deploy with
+    reason `codex-mobile-v583-response-budget-time-order`.
+  - This is a server/runtime follow-up. Static shell/cache should remain
+    `codex-mobile-shell-v583`.
+  - Required readback after deploy: API thread self-check should no longer
+    report `visible_item_timestamp_order_mismatch`; browser/runtime gate should
+    be rerun for Movie and Codex Mobile source threads and any residual
+    `browser_latest_turn_timestamp_missing` should be classified separately if
+    it remains.
+  - Public deploy has not been run.
+
 ### 2026-06-29 - Active Replay Assistant Budget Production Deploy
 
 - Context:

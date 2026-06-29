@@ -192,6 +192,43 @@ test("thread detail response budget keeps bounded latest completed replay detail
   );
 });
 
+test("thread detail response budget orders completed replay items by timestamp", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      mobileReadMode: "projection-v4-dynamic",
+      mobileProjectionRevision: 14,
+      turns: [
+        {
+          id: "turn-latest",
+          status: "completed",
+          items: [
+            { id: "u1", type: "userMessage", text: "Question", createdAt: "2026-06-29T11:00:00.000Z" },
+            { id: "a-late", type: "agentMessage", text: "late", createdAt: "2026-06-29T11:20:00.000Z" },
+            { id: "a-early", type: "agentMessage", text: "early", createdAt: "2026-06-29T11:03:00.000Z" },
+            { id: "a-mid", type: "agentMessage", text: "middle", createdAtMs: Date.parse("2026-06-29T11:15:00.000Z") },
+            { id: "usage", type: "turnUsageSummary", createdAt: "2026-06-29T11:21:00.000Z" },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    completedAssistantItems: 1,
+    activeAssistantItems: 1,
+  });
+
+  assert.deepEqual(compacted.thread.turns[0].items.map((item) => item.id), [
+    "u1",
+    "a-early",
+    "a-mid",
+    "a-late",
+    "usage",
+  ]);
+});
+
 test("thread detail response budget preserves the most recent rich completed reply before a short latest turn", () => {
   const result = {
     thread: {

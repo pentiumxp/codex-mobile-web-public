@@ -1,6 +1,9 @@
 "use strict";
 
 const { normalizeThreadVisibleProjection } = require("./thread-visible-item-normalizer");
+const {
+  orderItemsByDisplayTimestamp,
+} = require("./thread-detail-active-window-overlay-policy-service");
 
 const DEFAULT_COMPLETED_OPERATION_ITEMS = 4;
 const DEFAULT_ACTIVE_OPERATION_ITEMS = 12;
@@ -904,6 +907,7 @@ function compactTurnWithBudget(turn, thread, options, stats) {
   if (active && options.progressiveActiveBudgetApplied) {
     compacted.items = compacted.items.map((item) => compactActiveOperationPayloadItem(compactActiveTextItem(compactActiveUserMessageItem(item, options, stats), options, stats), options, stats));
   }
+  compacted.items = orderItemsByDisplayTimestamp(compacted.items);
   const afterOperationCount = countBy(compacted.items, isOperationItem);
   const afterReasoningCount = countBy(compacted.items, isReasoningItem);
   const afterAssistantCount = countBy(compacted.items, isAssistantItem);
