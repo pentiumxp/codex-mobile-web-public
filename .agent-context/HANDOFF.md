@@ -31101,6 +31101,25 @@ The previous full handoff was archived and should be opened only when old proven
   - `npm test` passed with `1600` tests.
   - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
 - Deployment status:
-  - This self-check enhancement is local/private source work at the time of
-    this note. Deploy through Home AI Deploy before treating periodic/deploy
-    self-checks as covering the new per-turn DOM/API structure class.
+  - Source commit `2e0ea21549b5` (`test: cover per-turn browser DOM structure`)
+    was sent to Home AI Deploy with card `ttc_55282b1f6e318c9fd5`.
+  - Production source/hash parity later matched for:
+    - `adapters/browser-runtime-self-check-service.js`
+    - `scripts/codex-mobile-browser-runtime-self-check.js`
+    - `test/browser-runtime-self-check-service.test.js`
+    - `docs/MODULES.md`
+    - `docs/TROUBLESHOOTING.md`
+  - `/api/public-config` returned status `200`, version `0.1.11`, build id
+    `804792d85bd686d1`, client build id `0.1.11|codex-mobile-shell-v591`,
+    shell cache `codex-mobile-shell-v591`, and `authRequired=true`.
+  - Deploy-mode runtime self-check loop against Movie and Codex Mobile source
+    threads returned `ok=true`, `gate.deployPass=true`,
+    `gate.periodicHealthy=true`, issueCount `0`, blockingIssueCount `0`,
+    reportableIssueCount `0`, and executionFailureCount `0`.
+  - Home AI Deploy return `ttc_314ec3675562e6e282` marked the deploy
+    `completed`; authoritative backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T161336Z-plugin-codex-mobile-web-codex-mobile-v593-per-turn-browser-dom-self-check`.
+  - Home AI Deploy marker readback found `expectedTurnShapes`, `domTurnShapes`,
+    `browser_turn_user_message_after_usage`, and
+    `browser_turn_assistant_below_api_expectation` in production.
+  - Public deploy was not run.
