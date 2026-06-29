@@ -31774,3 +31774,45 @@ The previous full handoff was archived and should be opened only when old proven
 - Deployment status:
   - Local deploy candidate only; no commit, deploy card, or Public deploy has
     been made for this follow-up yet.
+
+### 2026-06-30 - Active Assistant Timestamp Gap Advisory Deployed
+
+- Source commit:
+  - `db445c582274` (`fix: classify active assistant timestamp gaps`).
+- Deploy status:
+  - Private production deploy was requested through Home AI Deploy card
+    `ttc_2c7353d62cfc107c93` with reason
+    `codex-mobile-active-assistant-timestamp-advisory`.
+  - Source/production hash parity matched for:
+    - `adapters/browser-runtime-self-check-service.js`
+    - `scripts/codex-mobile-browser-runtime-self-check.js`
+    - `test/browser-runtime-self-check-service.test.js`
+    - `docs/MODULES.md`
+    - `docs/TROUBLESHOOTING.md`
+  - Production `/api/public-config` returned status `200`, version `0.1.11`,
+    build id `6509897d34f15c02`, client build id
+    `0.1.11|codex-mobile-shell-v597`, shell cache
+    `codex-mobile-shell-v597`, and `authRequired=true`.
+  - Static shell stayed v597 because this deploy changed script/analyzer/test/doc
+    files only.
+  - Production marker readback found `latestTimestampMissingKindCounts`,
+    `timestampMissingKindCounts`, focused test markers for early active
+    assistant advisory and active user H2, plus the module-doc marker
+    `active assistant/plan-only timestamp gaps advisory`.
+- Production runtime readback:
+  - Production periodic-shaped runtime loop returned `ok=true`,
+    `deployPass=true`, `periodicHealthy=true`, `blockingIssueCount=0`,
+    `executionFailureCount=0`, and `diagnosticCandidateCount=0`.
+  - API-thread child was `ok=true` with zero issues.
+  - Browser-runtime child was `ok=true`; it reported H3 advisory
+    `browser_latest_turn_timestamp_missing` / `browser_turn_timestamp_missing`
+    only, with bounded kind evidence showing the missing timestamp kind was
+    `agentMessage`.
+  - Client-events child was `ok=true` with `stallEventCount=0` and
+    `h2StallEventCount=0`.
+  - LaunchAgent readback returned `ok=true`, latest event present/healthy, and
+    gate issue count `0`.
+- Remaining status:
+  - The intermittent browser timestamp H2 residual from the `372d69f9af9c`
+    deploy return is closed in this readback.
+  - No Public deploy requested or run.
