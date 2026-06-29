@@ -32672,3 +32672,217 @@ The previous full handoff was archived and should be opened only when old proven
 - Deployment status:
   - Local candidate in progress. Private production deploy has not yet been
     requested. No Public deploy requested or run.
+
+### 2026-06-30 - Retained User-Input Shape Attribution Deployed
+
+- Source/deploy:
+  - Private production deployed source ref `220d6d443b3c`
+    (`fix: attribute retained user input shape bytes`) through the Home AI
+    deploy lane with reason
+    `codex-mobile-retained-user-input-shape-attribution`.
+  - Deploy backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T213018Z-plugin-codex-mobile-web-codex-mobile-retained-user-input-shape-attribution`.
+  - No Public deploy was run.
+- Production parity / markers:
+  - Source/production parity matched for
+    `adapters/thread-detail-response-budget-service.js`,
+    `scripts/codex-mobile-phase-b-readback-smoke.js`,
+    `adapters/phase-b-readback-decision-service.js`,
+    `test/thread-detail-response-budget-service.test.js`,
+    `test/phase-b-readback-smoke.test.js`,
+    `test/phase-b-readback-decision-service.test.js`, and `docs/MODULES.md`.
+  - Production markers were present for `retainedUserInputItemBytesByShape`,
+    `retainedActiveUserInputItemBytesByShape`,
+    `retainedCompletedUserInputItemBytesByShape`,
+    `retainedStaleActiveUserInputItemBytesByShape`,
+    `retainedOtherUserInputItemBytesByShape`,
+    `responseBudgetRetainedUserInputItemBytesByShape`,
+    `detailResponseBudgetRetainedActiveUserInputItemBytesByShape`, and the
+    focused test marker `attributes retained user input bytes by shape`.
+- Production Phase-B readback:
+  - Codex Mobile source thread sample returned `ok=true`,
+    `readMode=projection-active-overlay`, `turnsListInitialMs=0`,
+    `activeOverlayWindowMs=0`, `activeOverlayBackfillWindowMs=1`, and
+    `activeOverlayMergeMs=4`.
+  - Shape attribution: total user-input bytes by shape
+    `contentText=40096`, `itemAuxiliary=7865`, `contentAuxiliary=1795`;
+    active user-input shape bytes `contentText=28832`,
+    `itemAuxiliary=1595`, `contentAuxiliary=1045`; completed user-input
+    shape bytes `contentText=11264`, `itemAuxiliary=6270`,
+    `contentAuxiliary=750`.
+  - Turn-state attribution: retained user input count `active=5`,
+    `completed=11`, bytes `active=31472`, `completed=18284`; retained
+    assistant bytes `active=12569`, `completed=15614`.
+  - Retained visible bytes by kind were `userMessage=49756`,
+    `assistant=28183`, `usage=10863`, `operation=1752`, `other=1017`, and
+    `reasoning=777`.
+  - The separate Phase-B decision remained H2 `thread-detail-latency` with
+    next action `split-thread-detail-latency`.
+- Runtime validation:
+  - Deploy-mode runtime self-check returned `ok=true`, `deployPass=true`,
+    `periodicHealthy=true`, `issueCount=0`, `blockingIssueCount=0`, and
+    `executionFailureCount=0`; child checks `api-thread`, `browser-runtime`,
+    and `client-events` were all OK.
+  - LaunchAgent full-check readback after the deploy-mode gate returned
+    `ok=true`, latest event gate mode `deploy`, `deployPass=true`,
+    `periodicHealthy=true`, zero issues, zero blocking issues, and zero
+    execution failures.
+- Next optimization direction:
+  - Current evidence says retained user-input bytes are primarily
+    `contentText`, with active user input carrying more retained bytes than
+    completed user input in the latest sample. Do not add a truncation budget
+    without preserving active/current user input semantics and proving the
+    target bucket against repeated Phase-B samples.
+
+### 2026-06-30 - Active User-Input Shared Budget Deployed
+
+- Source/deploy:
+  - Private production deployed source ref `c75100dc7392`
+    (`fix: share active user input budget`) through the Home AI deploy lane
+    with reason `codex-mobile-active-user-input-shared-budget`.
+  - Deploy backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T214031Z-plugin-codex-mobile-web-codex-mobile-active-user-input-shared-budget`.
+  - No Public deploy was run.
+- Production parity / markers:
+  - Source/production parity matched for
+    `adapters/thread-detail-response-budget-service.js`,
+    `test/thread-detail-response-budget-service.test.js`, and
+    `docs/MODULES.md`.
+  - Production markers were present for `createTextBudget`,
+    `shares active user input budget across retained items`, and
+    `active-turn shared text budget`.
+- Production Phase-B readback:
+  - Codex Mobile source thread sample returned `ok=true`,
+    `readMode=projection-active-overlay`, `turnsListInitialMs=0`,
+    `activeOverlayWindowMs=0`, `activeOverlayBackfillWindowMs=0`,
+    `activeOverlayMergeMs=6`, `totalMs=1733`, and
+    `prepareResponseMs=1644`.
+  - Active retained user-input evidence in this sample: count `1`, bytes
+    `7345`, shape bytes `contentText=6758`, `itemAuxiliary=371`, and
+    `contentAuxiliary=216`. Active user-input truncation counters were zero
+    because only one active input was retained in the sampled response.
+  - Completed retained user-input evidence remained: count `14`, bytes
+    `23268`, shape bytes `contentText=14336`, `itemAuxiliary=7980`, and
+    `contentAuxiliary=952`.
+  - Retained assistant bytes by turn state were `active=15920` and
+    `completed=16584`.
+  - The separate Phase-B decision remained H2 `thread-detail-latency` with
+    next action `split-thread-detail-latency`.
+- Runtime validation:
+  - Deploy-mode runtime self-check returned `ok=true`, `deployPass=true`,
+    `periodicHealthy=true`, `issueCount=2`, `blockingIssueCount=0`, and
+    `executionFailureCount=0`; child checks `api-thread`, `browser-runtime`,
+    and `client-events` were all OK. The two issues were H3 active-progressive
+    timestamp advisories only.
+  - LaunchAgent readback after the deploy-mode gate returned `ok=true`, latest
+    event gate mode `deploy`, `deployPass=true`, `periodicHealthy=true`,
+    `issueCount=2`, `blockingIssueCount=0`, and `executionFailureCount=0`.
+- Next optimization direction:
+  - The active shared budget appears to reduce sampled active user input
+    retained bytes when the shape contains multiple active inputs, but this
+    specific production sample retained only one active input. Continue using
+    repeated Phase-B samples before deciding whether the remaining first-paint
+    pressure is dominated by completed user input, assistant, or detail
+    response latency.
+
+### 2026-06-30 - Retained Assistant Shape Attribution Deployed
+
+- Source/deploy:
+  - Private production deployed source ref `c5b9a4f8955a`
+    (`fix: attribute retained assistant shape bytes`) through the Home AI
+    deploy lane with reason `codex-mobile-retained-assistant-shape-attribution`.
+  - Deploy backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T215232Z-plugin-codex-mobile-web-codex-mobile-retained-assistant-shape-attribution`.
+  - No Public deploy was run.
+- Production parity / markers:
+  - Source/production parity matched for
+    `adapters/thread-detail-response-budget-service.js`,
+    `scripts/codex-mobile-phase-b-readback-smoke.js`,
+    `adapters/phase-b-readback-decision-service.js`,
+    `test/thread-detail-response-budget-service.test.js`,
+    `test/phase-b-readback-smoke.test.js`,
+    `test/phase-b-readback-decision-service.test.js`, `docs/MODULES.md`, and
+    `docs/TROUBLESHOOTING.md`.
+  - Production markers were present for `retainedAssistantShapeBytes`,
+    `retainedAssistantItemBytesByShape`,
+    `retainedActiveAssistantItemBytesByShape`,
+    `retainedCompletedAssistantItemBytesByShape`, and
+    `detailResponseBudgetRetainedAssistantItemBytesByShape`.
+- Production Phase-B readback:
+  - Codex Mobile source thread sample returned `ok=true`,
+    `readMode=projection-active-overlay`, `turnsListInitialMs=0`,
+    `activeOverlayWindowMs=0`, `activeOverlayBackfillWindowMs=0`,
+    `activeOverlayMergeMs=5`, `totalMs=180`, and `prepareResponseMs=113`.
+  - Assistant shape attribution: total retained assistant bytes by shape
+    `itemAuxiliary=18582`, `directText=12092`; active assistant shape bytes
+    `itemAuxiliary=10682`, `directText=4335`; completed assistant shape bytes
+    `itemAuxiliary=7900`, `directText=7757`.
+  - Retained assistant turn-state attribution: counts `active=24`,
+    `completed=18`; bytes `active=15017`, `completed=15657`.
+  - Retained visible bytes by kind were `assistant=30674`,
+    `userMessage=29833`, `usage=8451`, `operation=1468`, `reasoning=878`,
+    and `other=817`.
+  - Phase-B decision in this sample improved to `status=ready`, priority `H3`,
+    owner `phase-b-readback`, reason `warm-or-bounded-paths`, next action
+    `proceed-to-next-phase-b-root-cause-target`.
+- Runtime validation:
+  - Deploy-mode runtime self-check returned `ok=true`, `deployPass=true`,
+    `periodicHealthy=true`, `issueCount=2`, `blockingIssueCount=0`, and
+    `executionFailureCount=0`; child checks `api-thread`, `browser-runtime`,
+    and `client-events` were all OK. The two issues were H3 active-progressive
+    timestamp advisories only.
+  - LaunchAgent readback after the deploy-mode gate returned `ok=true`, latest
+    event gate mode `deploy`, `deployPass=true`, `periodicHealthy=true`,
+    `issueCount=2`, `blockingIssueCount=0`, and `executionFailureCount=0`.
+    Historical launchctl `lastExitCode=1` remained in metadata, but the
+    selected full-check event was healthy.
+- Next optimization direction:
+  - Current assistant retained bytes are split between `itemAuxiliary` and
+    `directText`, with active assistant dominated by item auxiliary and
+    completed assistant roughly split. Any future assistant budget should
+    target the proven bucket without weakening current active progress
+    semantics; repeated Phase-B samples should confirm the bucket stability.
+
+### 2026-06-30 - Settled Task-Card First-Paint Budget Ready For Deploy
+
+- Scope:
+  - Follow-up active first-paint payload slice after retained assistant shape
+    attribution. A bounded metadata-only local readback showed the remaining
+    detail JSON can be dominated by top-level `threadTaskCards` metadata after
+    visible-item budgets are already bounded.
+- Root-cause boundary:
+  - Failing layer: server `thread-detail-response-budget-service`.
+  - Violated invariant: active first-paint detail responses should not carry
+    full historical, non-actionable task-card metadata when the same full card
+    remains available from the single-card task-card endpoint.
+  - This is not a frontend refresh/render workaround. Pending/actionable,
+    approved, active/running, or leased task cards remain full in the detail
+    response.
+- Local source changes:
+  - `adapters/thread-detail-response-budget-service.js` now applies a
+    net-reducing active first-paint task-card metadata pass after visible item
+    byte budgeting. Settled non-actionable cards keep id/status/thread role,
+    timestamps, ack/return metadata, compact source/target ids, and
+    title/summary/body-omitted placeholders, and are marked
+    `mobileTaskCardCompacted`.
+  - `mobileDetailResponseBudget` now reports
+    `progressiveThreadTaskCard*` counters and
+    `progressiveActiveFirstPaintBytesAfterTaskCardBudget`.
+  - `scripts/codex-mobile-phase-b-readback-smoke.js` and
+    `adapters/phase-b-readback-decision-service.js` propagate the bounded
+    task-card budget fields for production readback.
+  - `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` document the owner boundary and
+    diagnostic fields.
+- Validation:
+  - `node --check adapters/thread-detail-response-budget-service.js` passed.
+  - `node --check scripts/codex-mobile-phase-b-readback-smoke.js` passed.
+  - Focused tests passed:
+    `node --test test/thread-detail-response-budget-service.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js`
+    (`77` tests).
+  - Full `npm test -- --test-reporter=dot` passed.
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - `codegraph sync && codegraph status` reported the index up to date.
+- Deployment status:
+  - Local candidate ready. Private production deploy has not yet been
+    requested. No Public deploy requested or run.

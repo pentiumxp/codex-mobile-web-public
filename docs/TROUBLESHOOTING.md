@@ -511,6 +511,24 @@ client refresh retries. Newer server builds also report
 to decide whether the remaining protected payload is dominated by operation,
 assistant, user-message, Usage, media, diagnostic, or other item shapes before
 adding a new budget rule.
+If the retained visible item budget is already bounded but the total detail
+JSON remains over the active first-paint byte ceiling, inspect the task-card
+budget fields next:
+`progressiveThreadTaskCardBudgetApplied`,
+`progressiveThreadTaskCardBudgetReason`,
+`progressiveThreadTaskCardOriginalCount`,
+`progressiveThreadTaskCardCompactedCount`,
+`progressiveThreadTaskCardActionableCount`,
+`progressiveThreadTaskCardOriginalBytes`,
+`progressiveThreadTaskCardRetainedBytes`,
+`progressiveThreadTaskCardOmittedBytes`,
+`progressiveThreadTaskCardBytesBeforeBudget`,
+`progressiveThreadTaskCardBytesAfterBudget`, and
+`progressiveActiveFirstPaintBytesAfterTaskCardBudget`. This pass only compacts
+settled, non-actionable thread task-card metadata for first paint. Pending,
+approved, actionable, or leased cards stay full in the detail response, and
+full card details remain available through
+`GET /api/thread-task-cards/:id?threadId=<thread-id>` when a card is opened.
 When `assistant` is the dominant retained kind, inspect
 `retainedAssistantItemCountByTurnState` and
 `retainedAssistantItemBytesByTurnState`, then inspect the metadata-only

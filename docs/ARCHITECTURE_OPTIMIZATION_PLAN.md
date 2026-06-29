@@ -185,7 +185,12 @@ Current acceleration targets:
    `thread-detail-response-budget-service` trims operation/reasoning tails and
    rebuilds v4 visible keys, while task-card lists now carry summary metadata
    only and load full card bodies through `GET /api/thread-task-cards/:id` when
-   the user expands a card.
+   the user expands a card. Later first-paint byte slices keep the same service
+   boundary for task-card metadata: when active progressive response budgeting
+   has already protected all visible items but the detail JSON is still over
+   the active first-paint ceiling, settled non-actionable task cards are reduced
+   to render-safe summary metadata while pending/actionable/leased cards and
+   the single-card detail endpoint remain authoritative.
    The follow-up active-detail hot-path slice keeps that same proof gate but
    changes the common active window source. A naive reuse of the active dynamic
    projection regressed production because the lookup still cloned/normalized

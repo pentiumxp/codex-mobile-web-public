@@ -2263,3 +2263,129 @@ test("thread detail response budget leaves already small details unchanged", () 
   assert.equal(compacted.thread.mobileDetailResponseBudget, undefined);
   assert.deepEqual(compacted, result);
 });
+
+test("thread detail response budget compacts settled task cards under active first-paint byte pressure", () => {
+  const settledCard = {
+    id: "card-completed",
+    status: "completed",
+    threadRole: "target",
+    createdAt: "2026-06-29T10:00:00.000Z",
+    updatedAt: "2026-06-29T10:05:00.000Z",
+    terminal: true,
+    requiresReturn: true,
+    ackPolicy: "terminal",
+    source: {
+      threadId: "source-thread",
+      workspaceId: "source-workspace",
+      cwd: "/private/source/path",
+      title: "Source Thread",
+    },
+    target: {
+      threadId: "target-thread",
+      workspaceId: "target-workspace",
+      cwd: "/private/target/path",
+      title: "Target Thread",
+    },
+    workflow: {
+      id: "workflow-1",
+      mode: "autonomous",
+      authorized: true,
+      grants: Array.from({ length: 12 }, (_, index) => ({ id: `grant-${index}`, text: "x".repeat(120) })),
+    },
+    audit: {
+      events: Array.from({ length: 12 }, (_, index) => ({ id: `event-${index}`, text: "y".repeat(120) })),
+    },
+    delivery: {
+      attempts: Array.from({ length: 10 }, (_, index) => ({ id: `attempt-${index}`, detail: "z".repeat(120) })),
+    },
+    executionLease: {
+      holder: "old-holder",
+      expiresAt: "2026-06-29T10:10:00.000Z",
+      payload: "l".repeat(1200),
+    },
+    injectionRuntime: {
+      detail: "r".repeat(1200),
+    },
+    injectedTurnId: "injected-turn",
+    injectedThreadId: "injected-thread",
+    message: {
+      title: "Completed task",
+      summary: "Completed summary",
+      bodyOmitted: true,
+      bodyChars: 4096,
+      body: "should-not-be-present-on-list",
+    },
+  };
+  const pendingCard = {
+    id: "card-pending",
+    status: "pending",
+    threadRole: "target",
+    canApprove: true,
+    workflow: { id: "workflow-pending", mode: "autonomous", authorized: false },
+    source: { threadId: "source-thread", workspaceId: "source-workspace", cwd: "/private/source/path" },
+    message: {
+      title: "Pending task",
+      summary: "Needs approval",
+      bodyOmitted: true,
+      bodyChars: 1024,
+    },
+  };
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      threadTaskCards: [settledCard, pendingCard],
+      turns: [
+        {
+          id: "turn-active",
+          status: "active",
+          items: [
+            { id: "u1", type: "userMessage", text: "Question" },
+            { id: "a1", type: "agentMessage", text: "Working" },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeProgressiveItemThreshold: 1,
+    progressiveActiveFirstPaintThreadByteCeiling: 1200,
+    activeAssistantItems: 4,
+    progressiveActiveAssistantItems: 4,
+    progressiveReplayAssistantItems: 4,
+  });
+
+  const cards = compacted.thread.threadTaskCards;
+  assert.equal(cards.length, 2);
+  assert.equal(cards[0].id, "card-completed");
+  assert.equal(cards[0].mobileTaskCardCompacted, true);
+  assert.equal(cards[0].message.title, "Completed task");
+  assert.equal(cards[0].message.summary, "Completed summary");
+  assert.equal(cards[0].message.bodyOmitted, true);
+  assert.equal(cards[0].message.bodyChars, 4096);
+  assert.equal(cards[0].workflow, undefined);
+  assert.equal(cards[0].audit, undefined);
+  assert.equal(cards[0].delivery, undefined);
+  assert.equal(cards[0].executionLease, undefined);
+  assert.equal(cards[0].injectionRuntime, undefined);
+  assert.deepEqual(cards[0].source, { threadId: "source-thread", workspaceId: "source-workspace" });
+  assert.deepEqual(cards[0].target, { threadId: "target-thread", workspaceId: "target-workspace" });
+  assert.deepEqual(cards[1], pendingCard);
+
+  const budget = compacted.thread.mobileDetailResponseBudget;
+  assert.equal(budget.progressiveThreadTaskCardBudgetApplied, true);
+  assert.equal(budget.progressiveThreadTaskCardBudgetScope, "active-first-paint");
+  assert.equal(budget.progressiveThreadTaskCardOriginalCount, 2);
+  assert.equal(budget.progressiveThreadTaskCardCompactedCount, 1);
+  assert.equal(budget.progressiveThreadTaskCardActionableCount, 1);
+  assert.ok(budget.progressiveThreadTaskCardOriginalBytes > budget.progressiveThreadTaskCardRetainedBytes);
+  assert.ok(budget.progressiveThreadTaskCardOmittedBytes > 0);
+  assert.ok(budget.progressiveThreadTaskCardBytesAfterBudget < budget.progressiveThreadTaskCardBytesBeforeBudget);
+  assert.equal(
+    budget.progressiveActiveFirstPaintOverCeilingBytes,
+    Math.max(0, budget.progressiveActiveFirstPaintBytesAfterTaskCardBudget - budget.progressiveActiveFirstPaintThreadByteCeiling),
+  );
+});

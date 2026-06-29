@@ -246,6 +246,17 @@ test("phase B readback smoke collects bounded diagnostics without private fields
             completedUsageOriginalBytes: 9300,
             completedUsageRetainedBytes: 3900,
             omittedCompletedUsageBytes: 5400,
+            progressiveThreadTaskCardBudgetApplied: true,
+            progressiveThreadTaskCardBudgetReason: "first-paint-byte-pressure",
+            progressiveThreadTaskCardBudgetScope: "active-first-paint",
+            progressiveThreadTaskCardOriginalCount: 24,
+            progressiveThreadTaskCardCompactedCount: 18,
+            progressiveThreadTaskCardActionableCount: 2,
+            progressiveThreadTaskCardOriginalBytes: 36000,
+            progressiveThreadTaskCardRetainedBytes: 12000,
+            progressiveThreadTaskCardOmittedBytes: 24000,
+            progressiveThreadTaskCardBytesBeforeBudget: 140000,
+            progressiveThreadTaskCardBytesAfterBudget: 116000,
             progressiveActiveTextChars: 12000,
             truncatedActiveTextItems: 2,
             activeTextOriginalChars: 58000,
@@ -266,8 +277,9 @@ test("phase B readback smoke collects bounded diagnostics without private fields
             progressiveActiveFirstPaintItemBudgetReason: "progressive-active-first-paint-byte-ceiling",
             progressiveActiveFirstPaintBytesBeforeItemBudget: 150000,
             progressiveActiveFirstPaintBytesAfterItemBudget: 92000,
+            progressiveActiveFirstPaintBytesAfterTaskCardBudget: 116000,
             progressiveActiveFirstPaintOmittedVisibleItems: 6,
-            progressiveActiveFirstPaintOverCeilingBytes: 0,
+            progressiveActiveFirstPaintOverCeilingBytes: 17696,
             retainedVisibleItemCountByKind: { operation: 12, assistant: 4, userMessage: 1 },
             retainedVisibleItemBytesByKind: { operation: 52000, assistant: 18000, userMessage: 9000 },
             retainedAssistantItemCountByTurnState: { active: 2, completed: 2 },
@@ -484,6 +496,17 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.detail.responseBudgetCompletedUsageOriginalBytes, 9300);
   assert.equal(report.detail.responseBudgetCompletedUsageRetainedBytes, 3900);
   assert.equal(report.detail.responseBudgetOmittedCompletedUsageBytes, 5400);
+  assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardBudgetApplied, true);
+  assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardBudgetReason, "first-paint-byte-pressure");
+  assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardBudgetScope, "active-first-paint");
+  assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardOriginalCount, 24);
+  assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardCompactedCount, 18);
+  assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardActionableCount, 2);
+  assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardOriginalBytes, 36000);
+  assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardRetainedBytes, 12000);
+  assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardOmittedBytes, 24000);
+  assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardBytesBeforeBudget, 140000);
+  assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardBytesAfterBudget, 116000);
   assert.equal(report.detail.responseBudgetTruncatedActiveTextItems, 2);
   assert.equal(report.detail.responseBudgetOmittedActiveTextChars, 39000);
   assert.equal(report.detail.responseBudgetTruncatedActiveOperationPayloadItems, 3);
@@ -495,8 +518,9 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.detail.responseBudgetProgressiveActiveFirstPaintItemBudgetReason, "progressive-active-first-paint-byte-ceiling");
   assert.equal(report.detail.responseBudgetProgressiveActiveFirstPaintBytesBeforeItemBudget, 150000);
   assert.equal(report.detail.responseBudgetProgressiveActiveFirstPaintBytesAfterItemBudget, 92000);
+  assert.equal(report.detail.responseBudgetProgressiveActiveFirstPaintBytesAfterTaskCardBudget, 116000);
   assert.equal(report.detail.responseBudgetProgressiveActiveFirstPaintOmittedVisibleItems, 6);
-  assert.equal(report.detail.responseBudgetProgressiveActiveFirstPaintOverCeilingBytes, 0);
+  assert.equal(report.detail.responseBudgetProgressiveActiveFirstPaintOverCeilingBytes, 17696);
   assert.deepEqual(report.detail.responseBudgetRetainedVisibleItemCountByKind, { operation: 12, assistant: 4, userMessage: 1 });
   assert.deepEqual(report.detail.responseBudgetRetainedVisibleItemBytesByKind, { operation: 52000, assistant: 18000, userMessage: 9000 });
   assert.deepEqual(report.detail.responseBudgetRetainedAssistantItemCountByTurnState, { active: 2, completed: 2 });
@@ -556,8 +580,12 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.decision.evidence.detailResponseBudgetOmittedCompletedUserInputChars, 22808);
   assert.equal(report.decision.evidence.detailResponseBudgetProgressiveCompletedUsageBudgetApplied, true);
   assert.equal(report.decision.evidence.detailResponseBudgetOmittedCompletedUsageBytes, 5400);
+  assert.equal(report.decision.evidence.detailResponseBudgetProgressiveThreadTaskCardBudgetApplied, true);
+  assert.equal(report.decision.evidence.detailResponseBudgetProgressiveThreadTaskCardCompactedCount, 18);
+  assert.equal(report.decision.evidence.detailResponseBudgetProgressiveThreadTaskCardOmittedBytes, 24000);
   assert.equal(report.decision.evidence.detailResponseBudgetProgressiveActiveFirstPaintItemBudgetApplied, true);
   assert.equal(report.decision.evidence.detailResponseBudgetProgressiveActiveFirstPaintBytesAfterItemBudget, 92000);
+  assert.equal(report.decision.evidence.detailResponseBudgetProgressiveActiveFirstPaintBytesAfterTaskCardBudget, 116000);
   assert.deepEqual(report.decision.evidence.detailResponseBudgetRetainedVisibleItemBytesByKind, {
     operation: 52000,
     assistant: 18000,

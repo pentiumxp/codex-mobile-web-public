@@ -33,6 +33,18 @@ const USER_INPUT_BUDGET_MARKER = "\n\n[active user input preview truncated]\n\n"
 const FIRST_PAINT_TEXT_BUDGET_MARKER = "\n\n[first-paint preview truncated]\n\n";
 const FIRST_PAINT_USER_INPUT_BUDGET_MARKER = "\n\n[first-paint user input preview truncated]\n\n";
 
+const ACTIVE_TASK_CARD_STATUSES = new Set([
+  "pending",
+  "approved",
+  "queued",
+  "running",
+  "active",
+  "in_progress",
+  "in-progress",
+  "inprogress",
+  "processing",
+]);
+
 const OPERATION_ITEM_TYPES = new Set([
   "commandExecution",
   "collabAgentToolCall",
@@ -418,6 +430,71 @@ function addNumericBucket(target, key, amount) {
   target[safeKey] = Math.max(0, Math.trunc(Number(target[safeKey]) || 0)) + value;
 }
 
+function compactTaskCardEndpoint(value) {
+  if (!value || typeof value !== "object") return undefined;
+  const out = {};
+  for (const field of ["threadId", "workspaceId"]) {
+    const text = String(value[field] || "").trim();
+    if (text) out[field] = text;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+function taskCardHasAction(card) {
+  return Boolean(card && (
+    card.canApprove === true
+    || card.canDelete === true
+    || card.canReply === true
+    || card.canRevoke === true
+  ));
+}
+
+function taskCardNeedsFirstPaintDetail(card) {
+  if (!card || typeof card !== "object") return true;
+  if (!String(card.id || "").trim()) return true;
+  if (taskCardHasAction(card)) return true;
+  const status = String(card.status || "").trim().toLowerCase();
+  if (ACTIVE_TASK_CARD_STATUSES.has(status)) return true;
+  const lease = card.executionLease && typeof card.executionLease === "object" ? card.executionLease : null;
+  if (lease && card.terminal !== true) return true;
+  return false;
+}
+
+function compactTaskCardMessageForFirstPaint(message) {
+  const source = message && typeof message === "object" ? message : {};
+  const out = {};
+  for (const field of ["title", "summary"]) {
+    const text = String(source[field] || "").trim();
+    if (text) out[field] = text;
+  }
+  if (source.bodyOmitted === true) out.bodyOmitted = true;
+  const bodyChars = Math.max(0, Math.trunc(Number(source.bodyChars) || 0));
+  if (bodyChars > 0) out.bodyChars = bodyChars;
+  return Object.keys(out).length ? out : undefined;
+}
+
+function compactSettledThreadTaskCardForFirstPaint(card) {
+  const out = {
+    id: String(card && card.id || ""),
+    status: String(card && card.status || "completed"),
+    mobileTaskCardCompacted: true,
+  };
+  for (const field of ["threadRole", "createdAt", "updatedAt", "ackPolicy", "replyCardId", "sourceCardId"]) {
+    const value = card && card[field];
+    if (value !== undefined && value !== null && value !== "") out[field] = value;
+  }
+  for (const field of ["terminal", "requiresReturn"]) {
+    if (typeof (card && card[field]) === "boolean") out[field] = card[field];
+  }
+  const message = compactTaskCardMessageForFirstPaint(card && card.message);
+  if (message) out.message = message;
+  const source = compactTaskCardEndpoint(card && card.source);
+  if (source) out.source = source;
+  const target = compactTaskCardEndpoint(card && card.target);
+  if (target) out.target = target;
+  return out;
+}
+
 function retainedVisibleTurnState(turn, thread) {
   if (isActiveTurn(turn, thread)) return "active";
   if (isStaleActiveLikeTurn(turn, thread) || isStaleActiveCompletionStatus(turn && turn.status)) return "staleActive";
@@ -503,7 +580,9 @@ function annotateRetainedVisibleItemByteStats(thread, stats) {
   stats.retainedVisibleItemLargestKind = largestKind;
   stats.retainedVisibleItemLargestBytes = largestBytes;
   const ceiling = Math.max(0, Math.trunc(Number(stats.progressiveActiveFirstPaintThreadByteCeiling || 0)));
-  const afterBytes = Math.max(0, Math.trunc(Number(stats.progressiveActiveFirstPaintBytesAfterItemBudget || 0)));
+  const taskCardAfterBytes = Math.max(0, Math.trunc(Number(stats.progressiveActiveFirstPaintBytesAfterTaskCardBudget || 0)));
+  const itemAfterBytes = Math.max(0, Math.trunc(Number(stats.progressiveActiveFirstPaintBytesAfterItemBudget || 0)));
+  const afterBytes = taskCardAfterBytes || itemAfterBytes;
   stats.progressiveActiveFirstPaintOverCeilingBytes = ceiling > 0 && afterBytes > ceiling
     ? afterBytes - ceiling
     : 0;
@@ -1104,6 +1183,62 @@ function applyProgressiveActiveFirstPaintItemBudget(thread, options, stats) {
   stats.progressiveActiveFirstPaintOmittedVisibleItems = totalOmitted;
 }
 
+function applyProgressiveThreadTaskCardFirstPaintBudget(thread, options, stats) {
+  const ceiling = Math.max(0, Math.trunc(Number(options.progressiveActiveFirstPaintThreadByteCeiling || 0)));
+  const beforeBytes = jsonByteLength(thread);
+  stats.progressiveThreadTaskCardBytesBeforeBudget = beforeBytes;
+  stats.progressiveThreadTaskCardBytesAfterBudget = beforeBytes;
+  stats.progressiveActiveFirstPaintBytesAfterTaskCardBudget = beforeBytes;
+  if (!stats.progressiveActiveBudgetApplied || !ceiling || beforeBytes <= ceiling) return;
+  if (!thread || !Array.isArray(thread.threadTaskCards) || thread.threadTaskCards.length <= 0) return;
+  stats.progressiveThreadTaskCardBudgetScope = "active-first-paint";
+  const nextCards = [];
+  let changed = false;
+  let compactedCount = 0;
+  let originalBytes = 0;
+  let retainedBytes = 0;
+  let actionableCount = 0;
+  for (const card of thread.threadTaskCards) {
+    const cardBytes = jsonByteLength(card);
+    originalBytes += cardBytes;
+    stats.progressiveThreadTaskCardOriginalCount += 1;
+    if (taskCardNeedsFirstPaintDetail(card)) {
+      actionableCount += 1;
+      retainedBytes += cardBytes;
+      nextCards.push(card);
+      continue;
+    }
+    const compacted = compactSettledThreadTaskCardForFirstPaint(card);
+    const compactedBytes = jsonByteLength(compacted);
+    if (compactedBytes > 0 && compactedBytes < cardBytes) {
+      changed = true;
+      compactedCount += 1;
+      retainedBytes += compactedBytes;
+      nextCards.push(compacted);
+    } else {
+      retainedBytes += cardBytes;
+      nextCards.push(card);
+    }
+  }
+  stats.progressiveThreadTaskCardActionableCount = actionableCount;
+  stats.progressiveThreadTaskCardOriginalBytes = originalBytes;
+  stats.progressiveThreadTaskCardRetainedBytes = retainedBytes;
+  stats.progressiveThreadTaskCardOmittedBytes = Math.max(0, originalBytes - retainedBytes);
+  stats.progressiveThreadTaskCardCompactedCount = compactedCount;
+  if (!changed) {
+    stats.progressiveThreadTaskCardBudgetReason = "no-settled-task-cards";
+    return;
+  }
+  thread.threadTaskCards = nextCards;
+  const afterBytes = jsonByteLength(thread);
+  stats.progressiveThreadTaskCardBudgetApplied = true;
+  stats.progressiveThreadTaskCardBudgetReason = afterBytes > ceiling
+    ? "first-paint-byte-pressure"
+    : "first-paint-byte-ceiling";
+  stats.progressiveThreadTaskCardBytesAfterBudget = afterBytes;
+  stats.progressiveActiveFirstPaintBytesAfterTaskCardBudget = afterBytes;
+}
+
 function applyProgressiveCompletedTextBudget(thread, options, stats) {
   const ceiling = Math.max(0, Math.trunc(Number(options.progressiveFirstPaintThreadByteCeiling || 0)));
   const beforeBytes = jsonByteLength(thread);
@@ -1558,6 +1693,17 @@ function compactThreadDetailResponseResult(result, options = {}) {
     progressiveCompletedUsageBudgetScope: "",
     progressiveCompletedUsageBytesBeforeBudget: 0,
     progressiveCompletedUsageBytesAfterBudget: 0,
+    progressiveThreadTaskCardBudgetApplied: false,
+    progressiveThreadTaskCardBudgetReason: "",
+    progressiveThreadTaskCardBudgetScope: "",
+    progressiveThreadTaskCardOriginalCount: 0,
+    progressiveThreadTaskCardCompactedCount: 0,
+    progressiveThreadTaskCardActionableCount: 0,
+    progressiveThreadTaskCardOriginalBytes: 0,
+    progressiveThreadTaskCardRetainedBytes: 0,
+    progressiveThreadTaskCardOmittedBytes: 0,
+    progressiveThreadTaskCardBytesBeforeBudget: 0,
+    progressiveThreadTaskCardBytesAfterBudget: 0,
     progressiveVisibleItemCeiling: boundedCount(
       options.progressiveVisibleItemCeiling,
       DEFAULT_PROGRESSIVE_VISIBLE_ITEM_CEILING,
@@ -1572,6 +1718,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
     progressiveActiveFirstPaintItemBudgetReason: "",
     progressiveActiveFirstPaintBytesBeforeItemBudget: 0,
     progressiveActiveFirstPaintBytesAfterItemBudget: 0,
+    progressiveActiveFirstPaintBytesAfterTaskCardBudget: 0,
     progressiveActiveFirstPaintOmittedVisibleItems: 0,
     progressiveActiveFirstPaintOverCeilingBytes: 0,
     retainedVisibleItemCountByKind: {},
@@ -1622,6 +1769,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
   applyProgressiveCompletedUserInputBudget(thread, budgetOptions, stats);
   applyProgressiveCompletedUsageBudget(thread, budgetOptions, stats);
   applyProgressiveActiveFirstPaintItemBudget(thread, budgetOptions, stats);
+  applyProgressiveThreadTaskCardFirstPaintBudget(thread, budgetOptions, stats);
   annotateRetainedVisibleItemByteStats(thread, stats);
   for (const turn of thread.turns) {
     if (!turn || !Array.isArray(turn.items) || turn.items.length < 2) continue;
@@ -1642,6 +1790,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
   stats.applied = stats.applied || stats.truncatedCompletedTextItems > 0;
   stats.applied = stats.applied || stats.truncatedCompletedUserInputItems > 0;
   stats.applied = stats.applied || stats.truncatedCompletedUsageItems > 0;
+  stats.applied = stats.applied || stats.progressiveThreadTaskCardCompactedCount > 0;
   if (!stats.applied && !stats.progressiveActiveBudgetApplied) return out;
   const revision = thread.mobileProjectionRevision;
   const normalized = normalizeThreadVisibleProjection(out, {
