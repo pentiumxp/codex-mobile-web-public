@@ -29903,3 +29903,50 @@ The previous full handoff was archived and should be opened only when old proven
     `deployPass=false`. Treat the hot-path latency fix as deployed, with a
     residual browser-runtime gate issue for that run.
   - Public deploy was not run.
+
+### 2026-06-29 - v585 Display Timestamp Repair Production Deploy
+
+- Deployment:
+  - Source commit `96a3ae51908d`
+    (`fix: infer display timestamps for projected user messages`) was
+    deployed privately through the Home AI Deploy lane.
+  - Deploy reason: `codex-mobile-v585-display-timestamp-repair`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T121630Z-plugin-codex-mobile-web-codex-mobile-v585-display-timestamp-repair`.
+  - Public deploy was not run.
+- Production readback:
+  - `/api/public-config` returned status `200`, build id
+    `b07f601ed9fbcd1e`, client build id
+    `0.1.11|codex-mobile-shell-v585`, shell cache
+    `codex-mobile-shell-v585`, and `authRequired=true`.
+  - Source/production hash parity matched for `server.js`,
+    `adapters/thread-detail-active-window-overlay-policy-service.js`,
+    `public/app.js`, `public/sw.js`,
+    `scripts/codex-mobile-browser-runtime-self-check.js`,
+    `test/thread-item-timestamp-enrichment.test.js`,
+    `test/thread-detail-self-check-service.test.js`,
+    `test/client-render-stability-guard.test.js`, and
+    `docs/TROUBLESHOOTING.md`.
+  - Production marker readback confirmed `mobileDisplayTimestampMs`,
+    `mobileDisplayTimestampInferred`, and `codex-mobile-shell-v585`.
+- Initial residual gate:
+  - Deploy-mode runtime self-check still returned `deployPass=false` and
+    `periodicHealthy=false`.
+  - Browser-runtime check was `ok=true` with zero issues.
+  - API-thread check still reported one H2
+    `visible_item_timestamp_order_mismatch` and a bounded command-failure code.
+  - Return status for task card `ttc_fa88deab30483275c3` was
+    `partially_completed`.
+- Final follow-up readback:
+  - The same production thread-detail response was rechecked with the deployed
+    production self-check adapter and returned `ok=true` with zero issues,
+    confirming the response now carries display-only `mobileDisplayTimestampMs`
+    / `mobileDisplayTimestampInferred` for the previously unmatched projected
+    user message.
+  - A subsequent deploy-mode runtime self-check loop against Movie and Codex
+    Mobile source threads passed with `deployPass=true`,
+    `periodicHealthy=true`, zero API-thread issues, zero browser-runtime
+    issues, zero reportable issues, and zero advisory issues.
+  - Treat v585 display timestamp repair as closed in production. The earlier
+    `partially_completed` return reflected a deployment/cache transition sample,
+    not the final production state.
