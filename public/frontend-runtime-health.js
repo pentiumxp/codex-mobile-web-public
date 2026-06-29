@@ -233,6 +233,72 @@
     }));
   }
 
+  function threadListInteractionStallEvent(input = {}) {
+    const maxRafDelayMs = boundedCount(input.maxRafDelayMs || input.max_raf_delay_ms);
+    const maxScrollApplyMs = boundedCount(input.maxScrollApplyMs || input.max_scroll_apply_ms);
+    const maxLongTaskMs = boundedCount(input.maxLongTaskMs || input.max_long_task_ms);
+    const elapsedMs = boundedCount(input.elapsedMs || input.elapsed_ms);
+    const maxDelayMs = Math.max(maxRafDelayMs, maxScrollApplyMs, maxLongTaskMs, elapsedMs);
+    const context = baseContext(Object.assign({}, input, {
+      surface: "thread-list-runtime",
+      action: input.action || "thread-list-interaction",
+    }));
+    const errorCode = maxLongTaskMs >= Math.max(maxRafDelayMs, maxScrollApplyMs)
+      ? "browser_main_thread_long_task"
+      : "browser_thread_list_interaction_blocked";
+    return runtimeEvent({
+      diagnosticType: "thread_list_interaction_stall",
+      severityHint: maxDelayMs >= boundedCount(input.h2ThresholdMs || input.h2_threshold_ms || 3000) ? "H2" : "H3",
+      evidenceConfidence: maxDelayMs >= 3000 ? 0.86 : 0.74,
+      errorCode,
+      context,
+      counts: {
+        elapsed_ms: elapsedMs,
+        raf_delay_ms: maxRafDelayMs,
+        scroll_apply_ms: maxScrollApplyMs,
+        long_task_ms: maxLongTaskMs,
+        long_task_count: boundedCount(input.longTaskCount || input.long_task_count),
+        thread_list_count: boundedCount(input.threadListCount || input.thread_list_count),
+        scroll_top: boundedCount(input.scrollTop || input.scroll_top),
+        scroll_height: boundedCount(input.scrollHeight || input.scroll_height),
+      },
+      breadcrumbs: [{
+        kind: "thread-list-runtime",
+        code: errorCode,
+        status: "blocked",
+        fields: {
+          elapsed_ms: elapsedMs,
+          raf_delay_ms: maxRafDelayMs,
+          scroll_apply_ms: maxScrollApplyMs,
+          long_task_ms: maxLongTaskMs,
+          long_task_count: boundedCount(input.longTaskCount || input.long_task_count),
+          thread_list_count: boundedCount(input.threadListCount || input.thread_list_count),
+        },
+      }],
+    });
+  }
+
+  function threadListInteractionStallEffects(input = {}) {
+    const minDelayMs = boundedCount(input.minDelayMs || input.min_delay_ms || 1000) || 1000;
+    const maxDelayMs = Math.max(
+      boundedCount(input.maxRafDelayMs || input.max_raf_delay_ms),
+      boundedCount(input.maxScrollApplyMs || input.max_scroll_apply_ms),
+      boundedCount(input.maxLongTaskMs || input.max_long_task_ms),
+      boundedCount(input.elapsedMs || input.elapsed_ms),
+    );
+    if (!input.threadListVisible) return { effects: [], reason: "thread-list-not-visible" };
+    if (maxDelayMs < minDelayMs) return { effects: [], reason: "below-threshold" };
+    return {
+      effects: [{
+        type: "diagnostic-failure",
+        diagnostic: threadListInteractionStallEvent(input),
+        diagnosticType: "thread_list_interaction_stall",
+        reason: "thread-list-interaction-stall",
+      }],
+      reason: "thread-list-interaction-stall",
+    };
+  }
+
   function createMonitor(options = {}) {
     const now = typeof options.now === "function" ? options.now : () => Date.now();
     const windowMs = boundedCount(options.windowMs || DEFAULT_WINDOW_MS) || DEFAULT_WINDOW_MS;
@@ -333,6 +399,8 @@
     submittedMessageDomMissingEvent,
     submittedMessageDomProbeEffects,
     submittedMessageDomSuccess,
+    threadListInteractionStallEvent,
+    threadListInteractionStallEffects,
     renderChurnEvent,
     domDropEvent,
     runtimeSuccess,

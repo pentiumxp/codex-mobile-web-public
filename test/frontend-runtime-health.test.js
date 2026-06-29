@@ -150,3 +150,68 @@ test("render monitor emits stable success for patch renders without duplicates",
 
   assert.equal(plan.effects.some((effect) => effect.type === "diagnostic-success" && effect.diagnosticType === "render_churn"), true);
 });
+
+test("thread list runtime stall ignores invisible and below-threshold samples", () => {
+  assert.deepEqual(health.threadListInteractionStallEffects({
+    threadListVisible: false,
+    maxRafDelayMs: 6000,
+  }), { effects: [], reason: "thread-list-not-visible" });
+
+  assert.deepEqual(health.threadListInteractionStallEffects({
+    threadListVisible: true,
+    maxRafDelayMs: 240,
+    maxScrollApplyMs: 260,
+    maxLongTaskMs: 0,
+  }), { effects: [], reason: "below-threshold" });
+});
+
+test("thread list runtime stall reports bounded metadata only", () => {
+  const plan = health.threadListInteractionStallEffects({
+    threadListVisible: true,
+    action: "thread-list-scroll",
+    routeKind: "embedded-primary",
+    maxRafDelayMs: 4200,
+    maxScrollApplyMs: 4180,
+    maxLongTaskMs: 0,
+    elapsedMs: 4210,
+    longTaskCount: 0,
+    threadListCount: 42,
+    scrollTop: 120,
+    scrollHeight: 3200,
+    title: "private thread title",
+    message: "private message",
+    url: "https://secret.example/path?token=x",
+  });
+
+  assert.equal(plan.reason, "thread-list-interaction-stall");
+  assert.equal(plan.effects.length, 1);
+  const event = plan.effects[0].diagnostic;
+  assert.equal(event.category, "frontend_runtime_mismatch");
+  assert.equal(event.diagnostic_type, "thread_list_interaction_stall");
+  assert.equal(event.severity_hint, "H2");
+  assert.equal(event.error_code, "browser_thread_list_interaction_blocked");
+  assert.equal(event.context.surface, "thread-list-runtime");
+  assert.equal(event.context.action, "thread-list-scroll");
+  assert.equal(event.context.route_kind, "embedded-primary");
+  assert.equal(event.counts.raf_delay_ms, 4200);
+  assert.equal(event.counts.thread_list_count, 42);
+  assert.equal(JSON.stringify(event).includes("private"), false);
+  assert.equal(JSON.stringify(event).includes("secret"), false);
+});
+
+test("thread list runtime stall reports long task as advisory below H2 threshold", () => {
+  const plan = health.threadListInteractionStallEffects({
+    threadListVisible: true,
+    action: "thread-list-heartbeat",
+    maxRafDelayMs: 0,
+    maxScrollApplyMs: 0,
+    maxLongTaskMs: 1400,
+    longTaskCount: 1,
+    threadListCount: 12,
+  });
+
+  const event = plan.effects[0].diagnostic;
+  assert.equal(event.severity_hint, "H3");
+  assert.equal(event.error_code, "browser_main_thread_long_task");
+  assert.equal(event.counts.long_task_count, 1);
+});

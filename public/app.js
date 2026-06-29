@@ -306,6 +306,10 @@ const state = {
   threadListLoadedAtMs: 0,
   threadListDeferredFallbackTimer: null,
   threadListDeferredSilentTimer: null,
+  threadListRuntimeHeartbeatFrame: null,
+  threadListRuntimeLastFrameAt: 0,
+  threadListRuntimeLastReportAt: 0,
+  threadListRuntimeLongTaskObserver: null,
   threadActionMenuId: "",
   threadLongPress: null,
   renameThreadId: "",
@@ -542,7 +546,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v591";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v597";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -569,6 +573,9 @@ const PUBLIC_CONFIG_TIMEOUT_MS = 8000;
 const PUBLIC_CONFIG_RETRY_DELAYS_MS = [0, 300, 1200];
 const THREAD_LOAD_STALL_MS = 12000;
 const THREAD_LIST_SLOW_PATH_MS = 1500;
+const THREAD_LIST_RUNTIME_STALL_MIN_MS = 1000;
+const THREAD_LIST_RUNTIME_STALL_H2_MS = 3000;
+const THREAD_LIST_RUNTIME_STALL_REPORT_INTERVAL_MS = 15000;
 const PERF_EVENT_THROTTLE_MS = 2000;
 const PERF_RENDER_REPORT_MIN_MS = 16;
 const PERF_SLOW_RENDER_REPORT_MS = 50;
@@ -6972,6 +6979,146 @@ function applyFrontendRuntimeHealthEffect(effect) {
 function applyFrontendRuntimeHealthEffectsPlan(plan) {
   const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
   for (const effect of effects) applyFrontendRuntimeHealthEffect(effect);
+}
+
+function threadListRuntimeMetrics() {
+  const list = $("threadList");
+  if (!list || typeof list.getBoundingClientRect !== "function") {
+    return {
+      visible: false,
+      threadListCount: 0,
+      scrollTop: 0,
+      scrollHeight: 0,
+    };
+  }
+  const rect = list.getBoundingClientRect();
+  const viewportWidth = Math.max(0, window.innerWidth || document.documentElement.clientWidth || 0);
+  const viewportHeight = Math.max(0, window.innerHeight || document.documentElement.clientHeight || 0);
+  const visible = document.visibilityState !== "hidden"
+    && rect.width > 0
+    && rect.height > 0
+    && rect.bottom > 0
+    && rect.right > 0
+    && rect.top < viewportHeight
+    && rect.left < viewportWidth;
+  return {
+    visible,
+    threadListCount: list.querySelectorAll("[data-thread]").length,
+    scrollTop: Math.max(0, Math.round(Number(list.scrollTop || 0))),
+    scrollHeight: Math.max(0, Math.round(Number(list.scrollHeight || 0))),
+  };
+}
+
+function recordThreadListRuntimeStall(input = {}) {
+  const now = Date.now();
+  if (now - Number(state.threadListRuntimeLastReportAt || 0) < THREAD_LIST_RUNTIME_STALL_REPORT_INTERVAL_MS) return false;
+  const metrics = threadListRuntimeMetrics();
+  const plan = frontendRuntimeHealthApi.threadListInteractionStallEffects(Object.assign({
+    threadListVisible: metrics.visible,
+    routeKind: diagnosticRouteKind(),
+    minDelayMs: THREAD_LIST_RUNTIME_STALL_MIN_MS,
+    h2ThresholdMs: THREAD_LIST_RUNTIME_STALL_H2_MS,
+    threadListCount: metrics.threadListCount,
+    scrollTop: metrics.scrollTop,
+    scrollHeight: metrics.scrollHeight,
+  }, input || {}));
+  if (!plan.effects || !plan.effects.length) return false;
+  state.threadListRuntimeLastReportAt = now;
+  applyFrontendRuntimeHealthEffectsPlan(plan);
+  postPerformanceEvent("thread_list_runtime_stall", {
+    action: input.action || "thread-list-runtime",
+    routeKind: diagnosticRouteKind(),
+    maxRafDelayMs: Math.max(0, Math.round(Number(input.maxRafDelayMs || 0))),
+    maxScrollApplyMs: Math.max(0, Math.round(Number(input.maxScrollApplyMs || 0))),
+    maxLongTaskMs: Math.max(0, Math.round(Number(input.maxLongTaskMs || 0))),
+    longTaskCount: Math.max(0, Math.round(Number(input.longTaskCount || 0))),
+    threadListCount: metrics.threadListCount,
+  }, { key: "thread-list-runtime-stall", minIntervalMs: THREAD_LIST_RUNTIME_STALL_REPORT_INTERVAL_MS });
+  return true;
+}
+
+function sampleThreadListInputDelay(action = "thread-list-input") {
+  const metrics = threadListRuntimeMetrics();
+  if (!metrics.visible) return;
+  const list = $("threadList");
+  const startedAt = nowPerfMs();
+  const startScrollTop = list ? Number(list.scrollTop || 0) : 0;
+  requestAnimationFrame(() => {
+    const rafDelayMs = roundedDurationMs(startedAt);
+    requestAnimationFrame(() => {
+      const elapsedMs = roundedDurationMs(startedAt);
+      const nextScrollTop = list ? Number(list.scrollTop || 0) : startScrollTop;
+      const scrollApplyMs = nextScrollTop !== startScrollTop ? elapsedMs : rafDelayMs;
+      recordThreadListRuntimeStall({
+        action,
+        maxRafDelayMs: rafDelayMs,
+        maxScrollApplyMs: scrollApplyMs,
+        elapsedMs,
+      });
+    });
+  });
+}
+
+function startThreadListRuntimeHeartbeat() {
+  if (state.threadListRuntimeHeartbeatFrame) return;
+  const tick = (timestamp) => {
+    const previous = Number(state.threadListRuntimeLastFrameAt || 0);
+    if (previous > 0) {
+      const delayMs = Math.max(0, Math.round(Number(timestamp || 0) - previous));
+      if (delayMs >= THREAD_LIST_RUNTIME_STALL_MIN_MS) {
+        recordThreadListRuntimeStall({
+          action: "thread-list-heartbeat",
+          maxRafDelayMs: delayMs,
+          elapsedMs: delayMs,
+        });
+      }
+    }
+    state.threadListRuntimeLastFrameAt = Number(timestamp || nowPerfMs());
+    state.threadListRuntimeHeartbeatFrame = requestAnimationFrame(tick);
+  };
+  state.threadListRuntimeHeartbeatFrame = requestAnimationFrame(tick);
+}
+
+function startThreadListRuntimeLongTaskObserver() {
+  if (state.threadListRuntimeLongTaskObserver || typeof PerformanceObserver !== "function") return;
+  try {
+    const observer = new PerformanceObserver((list) => {
+      let maxLongTaskMs = 0;
+      let longTaskCount = 0;
+      for (const entry of list.getEntries()) {
+        const duration = Math.max(0, Math.round(Number(entry && entry.duration || 0)));
+        if (duration < THREAD_LIST_RUNTIME_STALL_MIN_MS) continue;
+        maxLongTaskMs = Math.max(maxLongTaskMs, duration);
+        longTaskCount += 1;
+      }
+      if (maxLongTaskMs > 0) {
+        recordThreadListRuntimeStall({
+          action: "thread-list-longtask",
+          maxLongTaskMs,
+          longTaskCount,
+          elapsedMs: maxLongTaskMs,
+        });
+      }
+    });
+    observer.observe({ type: "longtask", buffered: true });
+    state.threadListRuntimeLongTaskObserver = observer;
+  } catch (_) {
+    state.threadListRuntimeLongTaskObserver = null;
+  }
+}
+
+function startThreadListRuntimeStallMonitoring() {
+  const list = $("threadList");
+  if (list) {
+    ["pointerdown", "touchstart", "wheel", "scroll"].forEach((eventName) => {
+      list.addEventListener(eventName, () => sampleThreadListInputDelay(`thread-list-${eventName}`), { passive: true });
+    });
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") state.threadListRuntimeLastFrameAt = 0;
+  });
+  startThreadListRuntimeHeartbeat();
+  startThreadListRuntimeLongTaskObserver();
 }
 
 function conversationHasClientSubmissionHash(submissionHash) {
@@ -25013,6 +25160,7 @@ async function start() {
   const startStartedAt = nowPerfMs();
   state.startupInProgress = true;
   wireUi();
+  startThreadListRuntimeStallMonitoring();
   installCodexMobileVisualHarnessFacade();
   if (isHermesEmbedMode()) showPluginStartupLoading();
   startRelativeTimeTimer();

@@ -31284,3 +31284,37 @@ The previous full handoff was archived and should be opened only when old proven
     directory permissions; use the Home AI Deploy return card as the
     authoritative backup readback when it arrives.
   - No Public deploy requested or run.
+
+### 2026-06-30 - v597 Thread-List Runtime Stall Telemetry Pending Deploy
+
+- Scope:
+  - Follow-up to user reports that the thread list can occasionally freeze for
+    about 10 seconds and cannot scroll.
+  - v594 browser self-check stress can proactively probe the list, but it can
+    miss freezes that occur only in the user's real embedded session.
+- Source changes:
+  - `public/frontend-runtime-health.js` now builds
+    `thread_list_interaction_stall` diagnostics with bounded rAF heartbeat,
+    scroll-apply, long-task, scroll position, and thread-list count evidence.
+    Samples under 1s are ignored; samples at or above 3s are H2, otherwise H3.
+  - `public/app.js` installs live thread-list runtime telemetry after startup:
+    a lightweight rAF heartbeat, visible-list input probes for pointer/touch/
+    wheel/scroll, and a PerformanceObserver long-task probe when the browser
+    supports it. Reporting is locally throttled to one event per 15 seconds and
+    resets heartbeat state on page hide to avoid background false positives.
+  - `public/home-ai-diagnostic-reporting.js` whitelists only bounded numeric
+    fields needed for the new breadcrumb evidence.
+  - Static shell/cache bumped to `codex-mobile-shell-v597` in `public/app.js`
+    and `public/sw.js`.
+  - `docs/MODULES.md` and `docs/TROUBLESHOOTING.md` document live
+    thread-list stall telemetry.
+- Validation before deploy:
+  - `node --check public/frontend-runtime-health.js public/home-ai-diagnostic-reporting.js public/app.js public/sw.js`
+  - `node --test test/client-render-stability-guard.test.js test/frontend-runtime-health.test.js test/app-update.test.js`
+  - `node --test test/frontend-runtime-health.test.js test/app-update.test.js test/conversation-render.test.js test/browser-runtime-self-check-service.test.js test/thread-diagnostic-events.test.js`
+  - `npm test` passed with 1611 tests.
+  - `npm run check`, `npm run check:macos`, `git diff --check`, and Home AI
+    fallback governance check passed.
+- Deployment status:
+  - Ready to commit/deploy through Home AI Deploy.
+  - No Public deploy requested or run.
