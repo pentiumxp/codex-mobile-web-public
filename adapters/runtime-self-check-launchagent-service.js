@@ -166,14 +166,15 @@ function classifyRuntimeSelfCheckLaunchAgent(input = {}) {
   if (plist.present && !plist.hasOutputArg) issues.push(issue("launchagent_output_arg_missing", "H3"));
   if (plist.present && !plist.hasJsonArg) issues.push(issue("launchagent_json_arg_missing", "H3"));
   if (!launchctl.loaded) issues.push(issue("launchagent_not_loaded"));
-  if (launchctl.loaded && launchctl.state !== "running" && launchctl.lastExitCode !== null && launchctl.lastExitCode !== 0) {
-    issues.push(issue(
-      latestEventHealthy ? "launchagent_previous_exit_nonzero_recovered" : "launchagent_last_exit_nonzero",
-      latestEventHealthy ? "H3" : "H2",
-    ));
-  }
-  if (launchctl.loaded && launchctl.state === "running" && launchctl.lastExitCode !== null && launchctl.lastExitCode !== 0) {
-    issues.push(issue("launchagent_running_after_previous_failure", "H3"));
+  if (
+    launchctl.loaded
+    && launchctl.lastExitCode !== null
+    && launchctl.lastExitCode !== 0
+    && !latestEventHealthy
+  ) {
+    issues.push(launchctl.state === "running"
+      ? issue("launchagent_running_after_previous_failure", "H3")
+      : issue("launchagent_last_exit_nonzero", "H2"));
   }
   if (!latestEvent.present) issues.push(issue("runtime_self_check_latest_event_missing"));
   if (latestEvent.present && !latestEvent.hasGate) issues.push(issue("runtime_self_check_latest_event_no_gate"));

@@ -31222,3 +31222,44 @@ The previous full handoff was archived and should be opened only when old proven
 - Deployment status:
   - Local source work is ready to commit/deploy through Home AI Deploy.
   - No Public deploy requested or run.
+
+### 2026-06-30 - v594/v595 Readback And LaunchAgent Recovered-Exit Cleanup
+
+- Home AI Deploy returned v594 completed:
+  - Source commit `7d4f3533784d` (`test: detect thread list interaction stalls`).
+  - Deploy reason `codex-mobile-v594-thread-list-interaction-self-check`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T164739Z-plugin-codex-mobile-web-codex-mobile-v594-thread-list-interaction-self-check`.
+  - Production enhanced browser probe and deploy-mode runtime gate returned
+    `ok=true`; no `browser_thread_list_interaction_blocked` or
+    `browser_main_thread_long_task` recurred in bounded readback.
+- Home AI Deploy returned v595 completed:
+  - Source commit `7744f292ccea`
+    (`test: bound assistant duplicate self-check severity`).
+  - Deploy reason `codex-mobile-v595-self-check-severity-correction`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T165543Z-plugin-codex-mobile-web-codex-mobile-v595-self-check-severity-correction`.
+  - Deploy-mode runtime self-check and enhanced browser probe returned
+    `ok=true`, zero blocking/reportable/advisory issue codes, and no execution
+    failures.
+- New local cleanup:
+  - The LaunchAgent readback classifier no longer reports a historical nonzero
+    `launchctl.lastExitCode` as an issue when the latest fresh gate event is
+    healthy.
+  - It still reports `launchagent_last_exit_nonzero` /
+    `launchagent_running_after_previous_failure` when the latest event is
+    missing, stale, or unhealthy.
+  - Current source-side readback after a healthy periodic run returned
+    `ok=true`, `issueCount=0`, `blockingIssueCount=0`, while preserving
+    metadata-only fields.
+- Validation before deploy:
+  - `node --check adapters/runtime-self-check-launchagent-service.js`
+  - `node --check scripts/codex-mobile-runtime-self-check-launchagent-readback.js`
+  - `node --test test/runtime-self-check-launchagent-service.test.js` passed
+    with 9 tests.
+  - `npm test` passed with 1608 tests.
+  - `npm run check`, `npm run check:macos`, `git diff --check`, and Home AI
+    fallback governance check passed.
+- Deployment status:
+  - LaunchAgent cleanup is ready to commit/deploy through Home AI Deploy.
+  - No Public deploy requested or run.

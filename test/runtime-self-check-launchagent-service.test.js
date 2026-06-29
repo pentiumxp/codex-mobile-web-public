@@ -87,7 +87,7 @@ test("runtime self-check launchagent readback fails old latest events without ga
   assert.deepEqual(result.issues.map((issue) => issue.code), ["runtime_self_check_latest_event_no_gate"]);
 });
 
-test("runtime self-check launchagent readback treats running after previous failure as advisory", () => {
+test("runtime self-check launchagent readback accepts running after previous failure when latest event is healthy", () => {
   const result = service.classifyRuntimeSelfCheckLaunchAgent({
     plist: healthyPlist(),
     launchctl: service.parseLaunchctlPrint(`
@@ -100,7 +100,28 @@ test("runtime self-check launchagent readback treats running after previous fail
   });
 
   assert.equal(result.ok, true);
-  assert.deepEqual(result.issues, [{ code: "launchagent_running_after_previous_failure", severity: "H3" }]);
+  assert.deepEqual(result.issues, []);
+});
+
+test("runtime self-check launchagent readback keeps running previous failure advisory without healthy latest event", () => {
+  const result = service.classifyRuntimeSelfCheckLaunchAgent({
+    plist: healthyPlist(),
+    launchctl: service.parseLaunchctlPrint(`
+      state = running
+      runs = 82
+      last exit code = 1
+      run interval = 600 seconds
+    `),
+    latestEvent: service.summarizeLatestEvent({
+      ok: false,
+      completedAt: "2026-06-29T10:00:00.000Z",
+      gate: { mode: "periodic", deployPass: false, periodicHealthy: false, blockingIssueCount: 1 },
+    }, Date.parse("2026-06-29T10:01:00.000Z")),
+  });
+
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.some((issue) => issue.code === "launchagent_running_after_previous_failure"));
+  assert.ok(result.issues.some((issue) => issue.code === "runtime_self_check_gate_not_healthy"));
 });
 
 test("runtime self-check launchagent readback accepts recovered previous nonzero exit", () => {
@@ -117,7 +138,29 @@ test("runtime self-check launchagent readback accepts recovered previous nonzero
   });
 
   assert.equal(result.ok, true);
-  assert.deepEqual(result.issues, [{ code: "launchagent_previous_exit_nonzero_recovered", severity: "H3" }]);
+  assert.deepEqual(result.issues, []);
+});
+
+test("runtime self-check launchagent readback blocks previous nonzero exit without healthy latest event", () => {
+  const result = service.classifyRuntimeSelfCheckLaunchAgent({
+    expected: { maxEventAgeMs: 20 * 60 * 1000 },
+    plist: healthyPlist(),
+    launchctl: service.parseLaunchctlPrint(`
+      state = not running
+      runs = 101
+      last exit code = 1
+      run interval = 600 seconds
+    `),
+    latestEvent: service.summarizeLatestEvent({
+      ok: false,
+      completedAt: "2026-06-29T10:00:00.000Z",
+      gate: { mode: "periodic", deployPass: false, periodicHealthy: false, blockingIssueCount: 1 },
+    }, Date.parse("2026-06-29T10:01:00.000Z")),
+  });
+
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.some((issue) => issue.code === "launchagent_last_exit_nonzero"));
+  assert.ok(result.issues.some((issue) => issue.code === "runtime_self_check_gate_not_healthy"));
 });
 
 test("runtime self-check launchagent readback blocks missing agent and stale log", () => {

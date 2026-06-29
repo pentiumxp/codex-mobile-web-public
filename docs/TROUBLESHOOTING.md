@@ -909,8 +909,11 @@ Cause to check:
 - To verify the 10-minute macOS periodic checker itself, run:
   `node scripts/codex-mobile-runtime-self-check-launchagent-readback.js --json`.
   A healthy result has `ok=true`, `launchctl.loaded=true`,
-  `launchctl.lastExitCode=0`, `latestEvent.hasGate=true`,
-  `latestEvent.gateMode=periodic`, and `latestEvent.periodicHealthy=true`.
+  `latestEvent.hasGate=true`, `latestEvent.gateMode=periodic`, and
+  `latestEvent.periodicHealthy=true`. A historical nonzero
+  `launchctl.lastExitCode` is not itself a failure when the latest fresh gate
+  event is healthy; it remains actionable only when the latest event is stale,
+  missing, or unhealthy.
   The readback is inspect-only and reports path hashes plus bounded counts; it
   must not be used to install, unload, or kickstart launchd jobs.
 - If opening a thread takes 1-2s before latest detail appears, run Phase-B
