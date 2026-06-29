@@ -106,8 +106,22 @@ function sameProjectionIndexTimestamp(left, right) {
   return Boolean(a && b && a === b);
 }
 
+function userMessagesMayBeSameEvent(left, right) {
+  if (!isUserMessage(left) || !isUserMessage(right)) return false;
+  if (sameClientSubmission(left, right)) return true;
+  if (isSyntheticUserMessage(left) || isSyntheticUserMessage(right)) return true;
+  const leftProjectionIndex = isProjectionIndexUserMessage(left);
+  const rightProjectionIndex = isProjectionIndexUserMessage(right);
+  if (leftProjectionIndex && rightProjectionIndex) return sameProjectionIndexTimestamp(left, right);
+  if (leftProjectionIndex !== rightProjectionIndex) {
+    return leftProjectionIndex ? hasDurableNonIndexId(right) : hasDurableNonIndexId(left);
+  }
+  return false;
+}
+
 function userMessagesAreSameEvent(left, right) {
   if (!isUserMessage(left) || !isUserMessage(right)) return false;
+  if (!userMessagesMayBeSameEvent(left, right)) return false;
   if (!sameUserMessageContent(left, right)) return false;
   const leftProjectionIndex = isProjectionIndexUserMessage(left);
   const rightProjectionIndex = isProjectionIndexUserMessage(right);

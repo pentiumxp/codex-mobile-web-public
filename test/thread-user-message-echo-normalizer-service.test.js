@@ -23,6 +23,24 @@ test("user message echo normalizer keeps repeated durable messages without share
   assert.deepEqual(result.items.map((item) => item.id), ["user-1", "assistant-1", "user-2"]);
 });
 
+test("user message echo normalizer skips long durable content comparisons without echo identity", () => {
+  const longText = "x".repeat(128 * 1024);
+  const items = [];
+  for (let index = 0; index < 120; index += 1) {
+    items.push({
+      id: `user-${index}`,
+      type: "userMessage",
+      content: [{ type: "text", text: `${index}-${longText}` }],
+    });
+  }
+  const startedAt = Date.now();
+  const result = dedupeUserMessageEchoesInItems(items);
+
+  assert.equal(result.removed, 0);
+  assert.equal(result.items.length, 120);
+  assert.ok(Date.now() - startedAt < 100);
+});
+
 test("user message echo normalizer converges active projection index and durable user echo", () => {
   const result = dedupeUserMessageEchoesInItems([
     {

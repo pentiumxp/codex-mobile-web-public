@@ -29283,8 +29283,51 @@ The previous full handoff was archived and should be opened only when old proven
   - Local micro-smoke merging 120 active-overlay items with shared 128KB nested
     payloads completed in `0ms` and preserved shared nested payload references.
 - Deploy state:
-  - Not deployed yet in this handoff section. Next step is to commit and send a
-    Home AI Deploy lane card for private production deploy/readback.
+  - Private production deploy completed through the Home AI Deploy lane from
+    source commit `9eeac7a0bb5e`, reason
+    `codex-mobile-active-overlay-backfill-latency`.
+  - Deploy result: `ok=true`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T100359Z-plugin-codex-mobile-web-codex-mobile-active-overlay-backfill-latency`.
+  - Production `/api/public-config` returned build id
+    `9a1b34241edd22b4`, client build id
+    `0.1.11|codex-mobile-shell-v582`, and shell cache
+    `codex-mobile-shell-v582`.
+  - Source/production hash parity matched for the active-overlay policy,
+    performance, Phase-B decision/smoke, and updated docs.
+  - Production marker readback confirmed `shallowCloneObject`,
+    `activeOverlayBackfillWindowMs`, `activeOverlayFullProjectionMs`, and
+    `activeOverlayHistoryBaselineMs`.
+  - Phase B readback after deploy returned `ok=true`, but did not prove latency
+    closure. Two samples still showed `activeOverlayBackfillWindowMs` around
+    2.2-2.6 seconds with read mode `projection-active-overlay`.
+  - Production runtime self-check loop with `--gate-mode deploy` did not pass:
+    API-thread check passed, but browser-runtime reported H2
+    `browser_latest_turn_timestamp_missing`; gate returned
+    `deployPass=false`, `periodicHealthy=false`, and nonzero reportable/
+    execution-failure counts.
+  - The source fix is deployed, but production performance/gate closure remains
+    incomplete and should be treated as residual work.
+  - No active submit exercise was run.
+  - Public deploy was not run.
+- Residual repair in progress:
+  - Local reproduction after 9eeac7a showed `mergeActiveOverlayTurnWithWindowBackfill`
+    was fast for large non-user nested payloads (`~1ms` for 240 items sharing a
+    128KB nested payload) but still slow for many long durable `userMessage`
+    rows (`~700-800ms`) because echo dedupe compared normalized content before
+    checking whether two durable user messages could be the same event.
+  - `adapters/thread-user-message-echo-normalizer-service.js` now does a cheap
+    same-event prefilter: shared `clientSubmissionId`, synthetic pending echo,
+    projection-index timestamp match, or projection-index/durable pair. Durable
+    user messages without echo identity no longer normalize/compare long text
+    content.
+  - Focused residual tests passed:
+    `node --test test/thread-user-message-echo-normalizer-service.test.js test/thread-detail-active-window-overlay-policy-service.test.js test/thread-detail-performance-service.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js`
+    (`71` tests).
+  - Local micro-smoke after the residual repair showed 240 long user-message
+    rows complete in `5-8ms` instead of `~700-800ms`.
+  - Next step: run full validation, commit the residual repair, and redeploy
+    privately through Home AI Deploy lane.
 - Privacy:
   - No raw secrets, cookies, launch tokens, private message bodies, task-card
     bodies, upload contents, screenshots, provider payloads, endpoint files,
