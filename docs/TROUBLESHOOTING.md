@@ -401,9 +401,11 @@ the detail request arrived.
 notification-triggered prewarm should fast-start with zero delay and bypass the
 ordinary recent-attempt throttle, because the client can refetch the thread
 detail immediately after receiving the same notification. Thread-list batch
-prewarm still uses the normal delay/min-interval guard. If a first detail open
-still wins the race and pays `activeOverlayWindowMs`, compare the notification
-timestamp to the `active_window_prewarm_*` bounded log event before changing
+prewarm still uses the normal delay/min-interval guard, but notification jobs
+can preempt older pending ordinary prewarm so completion-boundary repairs are
+not hidden behind an obsolete pending task. If a first detail open still wins
+the race and pays `activeOverlayWindowMs`, compare the notification timestamp
+to the `active_window_prewarm_*` bounded log event before changing
 active-overlay proof policy.
 If the active thread has a stale full projection whose stable identity still
 matches, current servers can downgrade that full cache to a history-only

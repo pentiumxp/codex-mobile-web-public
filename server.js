@@ -9394,6 +9394,7 @@ function scheduleActiveWindowPrewarm(threadId, summary = null, reason = "", opti
     reason,
     delayMs: options.delayMs,
     bypassMinInterval: options.bypassMinInterval === true,
+    preemptPending: options.preemptPending === true,
     threadLog: (event, details = {}) => logThreadDetail(`active_window_prewarm_${event}`, Object.assign({ threadId: id }, details)),
   });
 }
@@ -9461,6 +9462,7 @@ function scheduleActiveWindowPrewarmFromNotification(payload) {
   scheduleActiveWindowPrewarm(threadId, null, method, {
     delayMs: 0,
     bypassMinInterval: true,
+    preemptPending: true,
   });
 }
 

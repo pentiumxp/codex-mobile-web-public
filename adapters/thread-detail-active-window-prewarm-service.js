@@ -65,6 +65,7 @@ function createThreadDetailActiveWindowPrewarmService(options = {}) {
   const pending = new Map();
   const lastAttemptAtByThread = new Map();
   const lastResultByThread = new Map();
+  let nextJobId = 0;
 
   async function prewarmNow(input = {}) {
     const threadId = text(input.threadId);
@@ -134,15 +135,18 @@ function createThreadDetailActiveWindowPrewarmService(options = {}) {
     };
   }
 
-  function finish(threadId, result) {
-    pending.delete(threadId);
-    lastResultByThread.set(threadId, Object.assign({ updatedAtMs: now() }, result || {}));
+  function finish(threadId, result, jobId = 0) {
+    const current = pending.get(threadId);
+    if (!current || current.jobId === jobId) {
+      pending.delete(threadId);
+      lastResultByThread.set(threadId, Object.assign({ updatedAtMs: now() }, result || {}));
+    }
   }
 
   function schedule(input = {}) {
     const threadId = text(input.threadId);
     if (!threadId) return { scheduled: false, reason: "missing-thread-id" };
-    if (pending.has(threadId)) return { scheduled: false, reason: "already-pending" };
+    if (pending.has(threadId) && input.preemptPending !== true) return { scheduled: false, reason: "already-pending" };
     const current = now();
     const lastAttemptAtMs = Number(lastAttemptAtByThread.get(threadId) || 0);
     const bypassMinInterval = input.bypassMinInterval === true;
@@ -150,18 +154,24 @@ function createThreadDetailActiveWindowPrewarmService(options = {}) {
       return { scheduled: false, reason: "recently-attempted" };
     }
     lastAttemptAtByThread.set(threadId, current);
-    const job = Object.assign({}, input, { threadId });
-    pending.set(threadId, { scheduledAtMs: current, reason: boundedReason(input.reason) });
+    const jobId = ++nextJobId;
+    const job = Object.assign({}, input, { threadId, jobId });
+    pending.set(threadId, {
+      scheduledAtMs: current,
+      reason: boundedReason(input.reason),
+      jobId,
+      preemptedPrevious: input.preemptPending === true,
+    });
     const jobDelayMs = boundedDelayMs(input.delayMs, delayMs);
     const timer = scheduleTimer(() => {
       prewarmNow(job)
         .then((result) => {
-          finish(threadId, result);
+          finish(threadId, result, jobId);
           log("active_window_prewarm_done", Object.assign({ threadId, trigger: boundedReason(job.reason) }, result));
         })
         .catch((err) => {
           const result = { status: "failed", reason: boundedReason(err && err.message || err) || "prewarm-failed" };
-          finish(threadId, result);
+          finish(threadId, result, jobId);
           log("active_window_prewarm_failed", { threadId, trigger: boundedReason(job.reason), reason: result.reason });
         });
     }, jobDelayMs);

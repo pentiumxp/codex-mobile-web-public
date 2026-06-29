@@ -165,6 +165,70 @@ test("schedule deduplicates pending work", () => {
   assert.equal(calls.length, 1);
 });
 
+test("schedule lets notification prewarm preempt older pending work", () => {
+  const timers = [];
+  const service = createThreadDetailActiveWindowPrewarmService({
+    now: () => 1000,
+    delayMs: 5000,
+    minIntervalMs: 0,
+    setTimeout: (fn, delayMs) => {
+      timers.push({ fn, delayMs });
+      return { unref() {} };
+    },
+  });
+
+  assert.deepEqual(service.schedule({ threadId: "thread-1", reason: "thread-list-active" }), {
+    scheduled: true,
+    reason: "scheduled",
+  });
+  assert.deepEqual(service.schedule({
+    threadId: "thread-1",
+    reason: "turn/completed",
+    delayMs: 0,
+    bypassMinInterval: true,
+    preemptPending: true,
+  }), {
+    scheduled: true,
+    reason: "scheduled",
+  });
+  assert.deepEqual(timers.map((timer) => timer.delayMs), [5000, 0]);
+});
+
+test("older preempted prewarm completion does not clear newer pending state", async () => {
+  const timers = [];
+  const service = createThreadDetailActiveWindowPrewarmService({
+    now: () => 1000,
+    delayMs: 5000,
+    minIntervalMs: 0,
+    setTimeout: (fn, delayMs) => {
+      timers.push({ fn, delayMs });
+      return { unref() {} };
+    },
+    resolveSummary: async () => ({ summary: { id: "thread-1", status: { type: "idle" } } }),
+  });
+
+  service.schedule({ threadId: "thread-1", reason: "thread-list-active" });
+  service.schedule({
+    threadId: "thread-1",
+    reason: "turn/completed",
+    delayMs: 0,
+    bypassMinInterval: true,
+    preemptPending: true,
+  });
+
+  timers[0].fn();
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.equal(service.status("thread-1").pending, true);
+
+  timers[1].fn();
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.equal(service.status("thread-1").pending, false);
+});
+
 test("schedule keeps default delay and recently-attempted throttle for ordinary work", async () => {
   const timers = [];
   let nowMs = 1_000;

@@ -262,8 +262,10 @@ Current acceleration targets:
    `turn/started`, `turn/completed`, and active `thread/status/changed`
    notification-triggered prewarm path now starts with zero delay and bypasses
    the recent-attempt throttle, because the client often refetches detail
-   immediately after receiving the same turn/status notification; thread-list
-   batch prewarm remains delayed and throttled. The
+   immediately after receiving the same turn/status notification. Notification
+   jobs can preempt older pending thread-list prewarm so a stale ordinary job
+   cannot block completion-boundary active-window repair; thread-list batch
+   prewarm remains delayed and throttled. The
    follow-up active-overlay policy fix treats that preseeded window as
    history-only evidence: its projection revision cannot mark the separately
    supplied live active-turn overlay stale, while ordinary projection windows
