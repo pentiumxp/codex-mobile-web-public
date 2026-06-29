@@ -28908,3 +28908,41 @@ The previous full handoff was archived and should be opened only when old proven
   - Next step: commit locally, send a private deploy card to `Home AI Deploy`, then run browser runtime self-check against production v581. Do not push Public unless the user explicitly requests it.
 - Privacy:
   - No raw access keys, cookies, launch tokens, private message text, upload contents, screenshots, provider payloads, endpoint files, or long logs were recorded.
+
+### 2026-06-29 - Public v581 Publish
+
+- User explicitly requested Public after confirming the private v581 build felt
+  good.
+- Public README:
+  - Added top-level Chinese Public release notes in private commit `dcbcdd9`
+    (`docs: add v581 public release notes`).
+  - The notes cover v578-v581 submitted-message visibility, reading viewport
+    protection, slow-path observe-only diagnostics, completed-turn pending echo
+    cleanup, small-jitter suppression, and browser self-check coverage.
+- Public sync:
+  - Built a clean public worktree at
+    `/private/tmp/codex-mobile-public-v581.zJGXBQ` from `public/main`.
+  - Applied the `main` -> `public/main` diff excluding `.agent-context`.
+  - Public staged path scan found no `.agent-context`, `.codegraph`,
+    `node_modules`, `data`, `logs`, `uploads`, `runtime`, `.env`, `.codex`, or
+    private key/certificate file paths.
+  - Public tree scan confirmed `git ls-files .agent-context` returned `0`.
+- Validation:
+  - Public worktree `git diff --cached --check` passed.
+  - Source workspace `npm run check` passed.
+  - Source workspace `npm run check:macos` passed.
+  - Source workspace `npm test` passed (`1541` tests).
+- Publication:
+  - Public release commit `5297a5e`
+    (`release: 发布 v581 提交体验与自检修复`) was pushed to
+    `public/main` (`pentiumxp/codex-mobile-web-public`).
+  - Fetched `public/main` and merged it back into private `main` with the
+    `ours` strategy in merge commit `a082e01` so private `.agent-context`
+    remains local while public history stays an ancestor.
+  - Verified `git merge-base --is-ancestor public/main main` passed and
+    `git diff --stat public/main..main -- ':!.agent-context'` was empty before
+    this handoff-only note.
+- Private remote:
+  - `origin/main` was not pushed in this Public-only request. Local private
+    `main` is ahead of `origin/main` and contains the private handoff context
+    plus the public-merge alignment.
