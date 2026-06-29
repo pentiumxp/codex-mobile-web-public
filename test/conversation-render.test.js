@@ -1154,6 +1154,44 @@ return { state, latestTurn, syncActiveTurnFromThread, interruptDisabled: () => i
 `)();
 }
 
+function evaluatedComposerTargetActiveTurnId() {
+  const sources = [
+    "latestTurnForThread",
+    "isLiveTurnForThread",
+    "latestLiveTurnForThread",
+    "activeTurnIdForThread",
+    "composerTargetActiveTurnId",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`
+const state = {
+  currentThreadId: "thread-live",
+  activeTurnId: "",
+  currentThread: { id: "thread-live", turns: [] },
+};
+function statusText(status) {
+  if (!status) return "";
+  if (typeof status === "string") return status;
+  return status.type || JSON.stringify(status);
+}
+function isCompletedStatus(status) {
+  return /completed|failed|cancel|error|interrupted/i.test(statusText(status));
+}
+function isTurnComplete(turn) {
+  return Boolean(turn && (turn.completedAt || turn.durationMs || isCompletedStatus(turn.status)));
+}
+function isRunningStatus(status) {
+  const text = statusText(status).toLowerCase();
+  return /(running|active|queued|processing|inprogress|in_progress|in-progress)/.test(text)
+    && !/(completed|failed|cancel|error|interrupted)/.test(text);
+}
+function isIncompleteInterruptedTurn() { return false; }
+function turnHasActiveLiveItems() { return false; }
+function composerTargetThread() { return state.currentThread; }
+${sources.join("\n")}
+return { state, composerTargetActiveTurnId };
+`)();
+}
+
 function evaluatedLocalSubmissionInserter() {
   const sources = [
     "normalizeFsPath",
@@ -1171,6 +1209,7 @@ function evaluatedLocalSubmissionInserter() {
     "localSubmittedTurnId",
     "currentThreadHasClientSubmission",
     "threadHasClientSubmission",
+    "isTurnComplete",
     "mutableThreadForLocalSubmission",
     "syncLocalSubmissionThread",
     "insertLocalSubmittedUserMessage",
@@ -2015,6 +2054,32 @@ test("active timer can follow an empty active tail when no display live turn exi
   assert.equal(harness.interruptDisabled(), false);
 });
 
+test("composer active turn target ignores stale completed activeTurnId", () => {
+  const harness = evaluatedComposerTargetActiveTurnId();
+  harness.state.currentThread.turns = [{
+    id: "completed-turn",
+    status: { type: "completed" },
+    completedAt: 1782704041,
+    items: [{ id: "final", type: "agentMessage", text: "done" }],
+  }];
+  harness.state.activeTurnId = "completed-turn";
+
+  assert.equal(harness.composerTargetActiveTurnId(), "");
+  assert.equal(harness.state.activeTurnId, "");
+});
+
+test("composer active turn target keeps a live activeTurnId", () => {
+  const harness = evaluatedComposerTargetActiveTurnId();
+  harness.state.currentThread.turns = [{
+    id: "active-turn",
+    status: { type: "inProgress" },
+    items: [{ id: "user", type: "userMessage", content: [{ type: "text", text: "go" }] }],
+  }];
+  harness.state.activeTurnId = "active-turn";
+
+  assert.equal(harness.composerTargetActiveTurnId(), "active-turn");
+});
+
 test("live turn keeps this session submitted durable user message after progress starts", () => {
   const harness = evaluatedVisibleItemsForTurn();
   harness.state.recentSubmittedUserMessages.set("submit-current", {
@@ -2087,6 +2152,36 @@ test("existing thread send inserts a local pending user turn before server proje
   assert.deepEqual(harness.counters(), { mergeCount: 1, syncCount: 1 });
   assert.equal(harness.insertLocalSubmittedUserMessage("thread-live", "continue work", [], "submit-123"), false);
   assert.equal(harness.state.currentThread.turns[0].items.length, 1);
+});
+
+test("local pending user message does not append to a completed active turn", () => {
+  const harness = evaluatedLocalSubmissionInserter();
+  harness.state.currentThread.turns = [{
+    id: "completed-turn",
+    status: { type: "completed" },
+    completedAt: 1782704041,
+    items: [
+      { id: "assistant-final", type: "agentMessage", text: "done" },
+      { id: "usage", type: "turnUsageSummary" },
+    ],
+  }];
+
+  const inserted = harness.insertLocalSubmittedUserMessage(
+    "thread-live",
+    "late user text",
+    [],
+    "submit-late",
+    { turnId: "completed-turn" },
+  );
+
+  assert.equal(inserted, true);
+  assert.equal(harness.state.currentThread.turns.length, 2);
+  assert.deepEqual(
+    harness.state.currentThread.turns[0].items.map((item) => item.id),
+    ["assistant-final", "usage"],
+  );
+  assert.equal(harness.state.currentThread.turns[1].id, "local-turn-submit-late");
+  assert.equal(harness.state.currentThread.turns[1].items[0].clientSubmissionId, "submit-late");
 });
 
 test("existing thread send reconciles local pending turn to returned server turn id", () => {

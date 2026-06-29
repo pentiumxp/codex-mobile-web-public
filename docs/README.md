@@ -202,7 +202,11 @@ load failures. The browser self-check now also detects repeated few-pixel
 visual-anchor jitter and can explicitly exercise the real Composer submit path
 with one short OK-only message via `--exercise-submit`, so submitted user-card
 visibility and small send-time layout shifts are testable without printing
-message bodies. `scripts/codex-mobile-runtime-self-check-loop.js` wraps the API
+message bodies. Clients after `codex-mobile-shell-v581` also prevent stale
+active-turn identities from steering new user input into already completed
+turns, discard pending steer echoes once their target turn has completed, and
+disable conversation-body entry/leave translation animations so repeated thread
+opens do not create a few-pixel reading jitter. `scripts/codex-mobile-runtime-self-check-loop.js` wraps the API
 self-check plus browser self-check for deploy-time one-shot checks and periodic
 metadata-only JSONL monitoring, while Home AI remains responsible for
 Owner-approved repair-card dispatch.

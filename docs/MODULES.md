@@ -32,7 +32,7 @@
 | File | Responsibility |
 | --- | --- |
 | `adapters/active-turn-staleness-service.js` | Stale/superseded active-turn detection before existing-thread message submission. |
-| `adapters/message-pending-echo-service.js` | Short-lived pending user-message echo injection for active-turn steering that is still waiting. |
+| `adapters/message-pending-echo-service.js` | Short-lived pending user-message echo injection for active-turn steering that is still waiting. It removes matching synthetic echoes when durable user history appears and, after v581, discards pending echoes once the target turn has completed so a temporary `You` card cannot appear below a final receipt/Usage row. |
 | `adapters/message-input-service.js` | Upload-aware model input policy, image context mode, and extended-history persistence policy. |
 | `adapters/continuation-handoff-compaction-service.js` | Workspace context compaction before rollout continuation, including `.agent-context/PROJECT_CONTEXT.md` and `.agent-context/HANDOFF.md` archive/rewrite/report behavior, archive ignore guard creation, and compact-handoff current-state guidance. |
 | `adapters/turn-usage-summary-service.js` | Rollout `token_count` parsing and completed-turn context/token usage summary attachment. |

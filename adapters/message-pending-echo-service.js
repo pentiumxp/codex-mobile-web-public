@@ -175,6 +175,21 @@ function isDurableUserMessage(item) {
   return Boolean(item && item.type === "userMessage" && !isSyntheticUserMessage(item));
 }
 
+function statusText(status) {
+  if (!status) return "";
+  if (typeof status === "string") return status;
+  if (typeof status.type === "string") return status.type;
+  return "";
+}
+
+function isCompletedTurn(turn) {
+  return Boolean(turn && (
+    turn.completedAt
+    || turn.durationMs
+    || /completed|failed|cancel|error|interrupted/i.test(statusText(turn.status))
+  ));
+}
+
 function pendingItemId(threadId, turnId, clientSubmissionId, startedAtMs) {
   const suffix = clientSubmissionId
     ? String(clientSubmissionId)
@@ -287,6 +302,14 @@ function createPendingSteerEchoStore(options = {}) {
       }
       const turn = thread.turns.find((candidate) => String(candidate && candidate.id || "") === entry.turnId);
       if (!turn) continue;
+      if (isCompletedTurn(turn)) {
+        const pendingTurnIndex = turnIndexForId(thread, entry.turnId);
+        if (pendingTurnIndex >= 0) {
+          removePendingEchoFromThread(thread, entry.item, entry.turnId, pendingTurnIndex);
+        }
+        entries.delete(entry.key);
+        continue;
+      }
       turn.items = Array.isArray(turn.items) ? turn.items : [];
       if (hasMatchingUserMessage(turn, entry.item)) continue;
       turn.items.push(Object.assign({}, entry.item));

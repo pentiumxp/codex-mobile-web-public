@@ -617,6 +617,11 @@ Expected current behavior:
 - Superseded active turns are stale and should fall through to new turn start.
 - Latest durable live turn should be steered, not auto-interrupted.
 - Pending steer echo keeps the user message visible during the wait.
+- Clients after `codex-mobile-shell-v581` must not append local submitted user
+  cards or server pending steer echoes into a completed turn. If a `You` card
+  appears below the final assistant receipt or Usage row, inspect
+  `composerTargetActiveTurnId()`, `insertLocalSubmittedUserMessage()`, and
+  `adapters/message-pending-echo-service.js` before adding UI-side dedupe.
 
 ## Active Goal Output Disappears After Re-entering A Large Thread
 
@@ -794,7 +799,11 @@ Cause to check:
   `browser_visual_anchor_jitter` when the same target thread, same visual frame,
   same anchor, and unchanged DOM counts still move by a few pixels repeatedly;
   this is an H3 user-experience signal for small flicker, not a full projection
-  loss. With explicit `--exercise-submit`, the browser check sends one short
+  loss. Clients after `codex-mobile-shell-v581` disable conversation-body
+  `entry-animate` / `entry-leave` translation animations because those 6-8px
+  entry transforms are visible as thread-open jitter in the reading surface.
+  If jitter remains after v581, treat it as a scroll-anchor or local-patch
+  sequencing issue, not an animation issue. With explicit `--exercise-submit`, the browser check sends one short
   Composer message through the real UI path, asking for an OK-only reply, then
   samples whether the submitted user card becomes visible, disappears, or
   jitters. Use `--submit-thread-id <id>` to target a dedicated thread, or omit

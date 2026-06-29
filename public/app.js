@@ -542,7 +542,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v580";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v581";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -1231,7 +1231,13 @@ function insertLocalSubmittedUserMessage(threadId, text, attachments, clientSubm
   const submissionId = String(clientSubmissionId || "").trim();
   if (submissionId && threadHasClientSubmission(thread, submissionId)) return false;
   const opts = options || {};
-  const turnId = String(opts.turnId || "").trim() || localSubmittedTurnId(submissionId);
+  const requestedTurnId = String(opts.turnId || "").trim();
+  const requestedTurn = requestedTurnId
+    ? (thread.turns || []).find((entry) => entry && String(entry.id || "") === requestedTurnId)
+    : null;
+  const turnId = requestedTurnId && !isTurnComplete(requestedTurn)
+    ? requestedTurnId
+    : localSubmittedTurnId(submissionId);
   thread.turns = Array.isArray(thread.turns) ? thread.turns : [];
   let turn = thread.turns.find((entry) => entry && String(entry.id || "") === turnId);
   if (!turn) {
@@ -4465,7 +4471,11 @@ function composerTargetActiveTurnId() {
   const target = composerTargetThread();
   if (!target) return "";
   if (state.currentThread && String(state.currentThread.id || "") === String(target.id || "") && state.activeTurnId) {
-    return String(state.activeTurnId);
+    const activeTurnId = String(state.activeTurnId);
+    const activeTurn = (Array.isArray(target.turns) ? target.turns : [])
+      .find((turn) => String(turn && turn.id || "") === activeTurnId);
+    if (activeTurn && isLiveTurnForThread(target, activeTurn)) return activeTurnId;
+    state.activeTurnId = "";
   }
   return activeTurnIdForThread(target);
 }

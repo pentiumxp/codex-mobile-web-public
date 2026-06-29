@@ -28881,3 +28881,30 @@ The previous full handoff was archived and should be opened only when old proven
     submit path is covered by focused tests and will now fail closed with
     `browser_submit_exercise_failed` if Composer is disabled.
   - No Public deploy was requested or run.
+
+### 2026-06-29 - v581 Completed-Turn Pending Echo And Conversation Jitter Fix
+
+- User report:
+  - In the Codex Mobile thread, after opening the thread, a completed assistant receipt and Usage row were followed by a `You` user-message card. That card was expected to belong before the receipt, not below it.
+  - The user also reported repeated small visual jitter when entering and switching thread details.
+- Root cause / strongest evidence:
+  - Direct production API readback for the Codex Mobile thread returned recent completed turns in the correct item order: `userMessage -> agentMessage -> turnUsageSummary`.
+  - The incorrect screenshot shape matched local/submitted pending user-message insertion after a stale `activeTurnId` and server-side pending steer echo appending into a target turn that had already completed.
+  - The browser-runtime self-check previously caught only H3 `browser_visual_anchor_jitter` on multi-thread switching, with 2-7px shifts and unchanged DOM shape. The CSS `entry-in` animation uses `translateY(8px)`, matching that jitter class.
+- Implementation:
+  - `public/app.js` now validates `state.activeTurnId` against the current target thread and only uses it when that turn is still live. Stale completed active-turn ids are cleared and normal sends start a new turn.
+  - `public/app.js` local submitted-message insertion refuses to append to a completed requested turn id; it creates a new local pending turn instead.
+  - `adapters/message-pending-echo-service.js` now removes and forgets pending steer echoes when their target turn has completed, preventing temporary `You` cards below final receipts/Usage rows.
+  - `public/styles.css` disables `.conversation .entry-animate` and `.conversation .entry-leave` animations so chat body first paint/thread switching does not get entry-transform jitter.
+  - Static shell/cache bumped to `codex-mobile-shell-v581` in `public/app.js` and `public/sw.js`.
+  - `docs/README.md`, `docs/MODULES.md`, and `docs/TROUBLESHOOTING.md` document the v581 behavior boundary.
+- Validation:
+  - Focused tests passed:
+    `node --test test/message-pending-echo-service.test.js test/conversation-render.test.js test/browser-runtime-self-check-service.test.js test/collab-agent-render.test.js test/client-render-stability-guard.test.js test/mobile-viewport.test.js`.
+  - Full `npm test` passed: `1541` tests.
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deploy state:
+  - Not yet deployed at the time of this handoff entry.
+  - Next step: commit locally, send a private deploy card to `Home AI Deploy`, then run browser runtime self-check against production v581. Do not push Public unless the user explicitly requests it.
+- Privacy:
+  - No raw access keys, cookies, launch tokens, private message text, upload contents, screenshots, provider payloads, endpoint files, or long logs were recorded.
