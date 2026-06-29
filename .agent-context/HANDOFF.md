@@ -30558,3 +30558,71 @@ The previous full handoff was archived and should be opened only when old proven
   - API-thread and browser-runtime checks both returned `ok=true` with zero
     issues.
   - Return status for task card `ttc_8ed14fbb6f9c805b85` was `completed`.
+
+### 2026-06-29 - Active Overlay Window Preprobe Deploy
+
+- Scope:
+  - Production Phase B after the active first-paint replay text budget showed
+    active detail eventually used `projection-active-overlay`, but only after
+    slow generic `turns-list-initial` discovery in the residual sample.
+  - The active overlay provider already had active-turn evidence, so the route
+    should preprobe the dedicated `turns-list-active-overlay-window` path when
+    summary state misses active status but live overlay evidence proves an
+    active turn.
+- Source changes:
+  - `adapters/thread-detail-read-orchestration-service.js` now prefers the
+    active-overlay window preprobe before the generic initial reads in that
+    shape.
+  - Tests updated in `test/thread-detail-read-orchestration-service.test.js`.
+  - Docs updated in `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Validation passed locally before deploy:
+  - `node --test test/thread-detail-read-orchestration-service.test.js test/thread-detail-active-overlay-integration.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js`
+  - `node --check adapters/thread-detail-read-orchestration-service.js && node --check test/thread-detail-read-orchestration-service.test.js`
+  - `git diff --check`
+  - `node /Users/hermes-dev/HermesMobileDev/app/scripts/fallback-governance-check.js --changed-file adapters/thread-detail-read-orchestration-service.js --changed-file test/thread-detail-read-orchestration-service.test.js --changed-file docs/MODULES.md --changed-file docs/TROUBLESHOOTING.md --changed-file docs/ARCHITECTURE_OPTIMIZATION_PLAN.md --json`
+  - `npm test`
+  - `npm run check`
+  - `npm run check:macos`
+- Deployment status:
+  - Deployed privately through the Home AI Deploy lane from source commit
+    `bcd4cb21dd27` with reason
+    `codex-mobile-active-overlay-window-preprobe`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T143542Z-plugin-codex-mobile-web-codex-mobile-active-overlay-window-preprobe`.
+  - Public deploy was not run.
+- Production readback:
+  - `/api/public-config` returned status `200`, build id
+    `804792d85bd686d1`, client build id
+    `0.1.11|codex-mobile-shell-v591`, shell cache
+    `codex-mobile-shell-v591`, and `authRequired=true`. Static shell remained
+    v591 because this was a server/docs/test deploy.
+  - Source/production hash parity matched for
+    `adapters/thread-detail-read-orchestration-service.js`,
+    `test/thread-detail-read-orchestration-service.test.js`,
+    `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+  - Production marker readback confirmed `activeOverlayWindowFirst`,
+    `projection-live-active-turn`, and `turns-list-active-overlay-window`.
+- Phase B:
+  - Production Phase B readback returned `ok=true`.
+  - Detail timing: totalMs `1511`, turnsListInitialMs `0`,
+    prepareResponseMs `1446`, readMode `projection-active-overlay`,
+    activeOverlayMs `2`, activeOverlayBackfillWindowMs `0`,
+    activeOverlayWindowMs `0`, activeOverlayMergeMs `4`,
+    activeOverlayItems `107`.
+  - Active-overlay evidence: activeFullReadReason `status-active`,
+    activeOverlayAction `use-projection-overlay`, activeOverlayReason
+    `overlay-evidence-complete`, activeOverlayWindowFirst `true`.
+  - Cold-path evidence: owner `warm-path`, reason
+    `warm-projection-active-overlay`.
+  - Decision still classified owner `thread-detail-latency` with nextAction
+    `split-thread-detail-latency`, so remaining latency is separate from the
+    previous generic `turns-list-initial` discovery path.
+- Runtime gate:
+  - Deploy-mode runtime self-check returned `deployPass=true`,
+    `periodicHealthy=true`, issueCount `0`, blockingIssueCount `0`,
+    reportableIssueCount `0`, executionFailureCount `0`.
+  - API-thread and browser-runtime checks both returned `ok=true` with zero
+    issues.
+  - Return status for task card `ttc_67e45967d430545fdf` was `completed`.
