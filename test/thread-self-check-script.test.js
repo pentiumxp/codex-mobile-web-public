@@ -180,6 +180,87 @@ test("thread self-check catches active turn assistant projection gap from raw ro
   }
 });
 
+test("thread self-check accepts active assistant gaps explained by response budget", async () => {
+  const originalFetch = global.fetch;
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-self-check-"));
+  const rolloutPath = path.join(tmpDir, "rollout.jsonl");
+  const activeTurnId = "019f0e0b-bd22-7ac0-8217-e47190b935fa";
+  fs.writeFileSync(rolloutPath, [
+    JSON.stringify({ type: "turn_context", payload: { turn_id: activeTurnId } }),
+    JSON.stringify({ type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "private user text" }] } }),
+    JSON.stringify({ type: "response_item", payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: "private assistant one" }] } }),
+    JSON.stringify({ type: "response_item", payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: "private assistant two" }] } }),
+    JSON.stringify({ type: "response_item", payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: "private assistant three" }] } }),
+    "",
+  ].join("\n"));
+
+  const activeDetail = {
+    thread: {
+      id: "thread-active-budget",
+      activeTurnId,
+      path: rolloutPath,
+      mobileDetailResponseBudget: {
+        progressiveActiveBudgetApplied: true,
+        activeOmittedAssistantItems: 1,
+        progressiveReplayAssistantItems: 2,
+        activeAssistantItemsAfter: 2,
+      },
+      turns: [{
+        id: activeTurnId,
+        status: "active",
+        items: [
+          { id: "u1", type: "userMessage" },
+          { id: "a1", type: "agentMessage" },
+          { id: "a2", type: "agentMessage" },
+        ],
+      }],
+    },
+  };
+  global.fetch = async (url) => {
+    const target = String(url);
+    if (target.includes("/api/public-config")) {
+      return responseJson({ version: "0.1.11", clientBuildId: "test-build", shellCacheName: "test-cache", authRequired: true });
+    }
+    if (target.includes("/api/threads/thread-active-budget")) {
+      return responseJson(activeDetail);
+    }
+    if (target.includes("/api/threads")) {
+      return responseJson({
+        data: [{
+          id: "thread-active-budget",
+          name: "Active budget",
+          preview: "Active budget",
+          activeTurnId,
+          path: rolloutPath,
+          updatedAt: 1782624000000,
+        }],
+      });
+    }
+    throw new Error(`unexpected url: ${target}`);
+  };
+
+  try {
+    const options = selfCheck.parseArgs([
+      "--server", "http://127.0.0.1:8787",
+      "--no-auth",
+      "--sample-threads", "1",
+      "--repeat", "1",
+    ]);
+    const report = await selfCheck.run(options, {});
+    const activeProjection = report.threadDetails[0].activeTurnRawProjection;
+
+    assert.equal(report.ok, true);
+    assert.equal(activeProjection.ok, true);
+    assert.equal(activeProjection.rawAssistantItems, 3);
+    assert.equal(activeProjection.detailAssistantItems, 2);
+    assert.equal(activeProjection.responseBudgetExplainsAssistantGap, true);
+    assert.doesNotMatch(JSON.stringify(report.summary), /private assistant|private user|rollout\\.jsonl|thread-active-budget/);
+  } finally {
+    global.fetch = originalFetch;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
 test("thread self-check compares active raw counts before detail to avoid growth races", async () => {
   const originalFetch = global.fetch;
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-self-check-"));

@@ -1173,6 +1173,10 @@ function compactThreadDetailResponseResult(result, options = {}) {
   applyProgressiveVisibleItemCeiling(thread, budgetOptions, stats);
   applyProgressiveCompletedTextBudget(thread, budgetOptions, stats);
   applyProgressiveActiveFirstPaintItemBudget(thread, budgetOptions, stats);
+  for (const turn of thread.turns) {
+    if (!turn || !Array.isArray(turn.items) || turn.items.length < 2) continue;
+    turn.items = orderItemsByDisplayTimestamp(turn.items, turn, thread);
+  }
   stats.applied = stats.omittedOperationItems > 0
     || stats.omittedReasoningItems > 0
     || stats.omittedAssistantItems > 0

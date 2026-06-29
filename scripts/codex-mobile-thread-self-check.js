@@ -402,7 +402,21 @@ function analyzeActiveTurnRawProjection(row = {}, detail = {}, rawCounts = null)
   const summary = turn ? summarizeTurn(turn, thread) : null;
   const detailAssistantItems = summary ? summary.assistantItems : 0;
   const issues = [];
-  if (detailAssistantItems < rawCounts.rawAssistantItems) {
+  const budget = objectOrNull(thread.mobileDetailResponseBudget) || {};
+  const progressiveBudgetApplied = budget.progressiveActiveBudgetApplied === true;
+  const retainedAssistantBudget = Math.max(
+    Number(budget.progressiveReplayAssistantItems) || 0,
+    Number(budget.activeAssistantItemsAfter) || 0,
+  );
+  const omittedAssistantItems = Number(budget.activeOmittedAssistantItems) || 0;
+  const rawAssistantGap = Math.max(0, rawCounts.rawAssistantItems - detailAssistantItems);
+  const budgetExplainsGap = Boolean(progressiveBudgetApplied
+    && omittedAssistantItems > 0
+    && retainedAssistantBudget > 0
+    && detailAssistantItems >= retainedAssistantBudget
+    && rawAssistantGap <= omittedAssistantItems
+    && rawCounts.rawAssistantItems > detailAssistantItems);
+  if (detailAssistantItems < rawCounts.rawAssistantItems && !budgetExplainsGap) {
     issues.push({
       code: "active_turn_assistant_projection_gap",
       severity: "H2",
@@ -419,6 +433,7 @@ function analyzeActiveTurnRawProjection(row = {}, detail = {}, rawCounts = null)
     turnHash: rawCounts.turnHash,
     rawAssistantItems: rawCounts.rawAssistantItems,
     detailAssistantItems,
+    responseBudgetExplainsAssistantGap: budgetExplainsGap,
     issues,
   };
 }

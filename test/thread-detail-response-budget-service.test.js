@@ -264,6 +264,44 @@ test("thread detail response budget orders completed replay items by client disp
   ]);
 });
 
+test("thread detail response budget orders active replay items after progressive budgeting", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      mobileProjectionRevision: 16,
+      turns: [
+        {
+          id: "turn-active",
+          status: "active",
+          items: [
+            { id: "u-new", type: "userMessage", text: "Newer question", startedAt: "2026-06-29T15:33:47.003Z" },
+            { id: "a1", type: "agentMessage", text: "Progress 1", startedAt: "2026-06-29T15:34:00.000Z" },
+            { id: "u-old", type: "userMessage", text: "Older question", startedAt: "2026-06-29T15:18:58.283Z" },
+            { id: "a2", type: "agentMessage", text: "Progress 2", startedAt: "2026-06-29T15:35:00.000Z" },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeProgressiveItemThreshold: 1,
+    activeAssistantItems: 4,
+    progressiveActiveAssistantItems: 4,
+    progressiveReplayAssistantItems: 4,
+  });
+
+  assert.deepEqual(compacted.thread.turns[0].items.map((item) => item.id), [
+    "u-old",
+    "u-new",
+    "a1",
+    "a2",
+  ]);
+});
+
 test("thread detail response budget preserves the most recent rich completed reply before a short latest turn", () => {
   const result = {
     thread: {
