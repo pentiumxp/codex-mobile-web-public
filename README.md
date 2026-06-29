@@ -16,17 +16,28 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
-## 2026-06-29 Active Reply Projection / Runtime Self-Check Hotfix（v577）
+## 2026-06-29 Public 发布说明（v577 投影一致性和浏览器自检闭环）
 
-本次私有生产修复升级到 `codex-mobile-shell-v577`，目标是解决最新 turn
-里用户消息或 assistant 回执一会出现、一会消失、偶尔重复，以及 live 回执
-时间显示成 turn 开始时间的问题。
+本次 Public 同步 `codex-mobile-shell-v577` 以及同批私有生产验证过的
+投影一致性、浏览器自检和周期巡检修复。它面向的不是单个 UI 细节，而是
+近期用户实际遇到的高风险状态错乱：最新 turn 里用户消息或 assistant 回执
+一会出现、一会消失、偶尔重复，live 回执时间显示成 turn 开始时间，以及
+API 自检通过但真实浏览器 DOM 已经重复或降级。
+
+本次发布的根因修复包括：
 
 - 服务端 detail 响应在 active assistant 回填后会做一次根因级收束：同一
   live turn 里，如果 Codex app-server 已经给出原生 assistant/plan 消息，
   rollout synthetic progress 里相同正文的临时 assistant 消息会被移除；
   synthetic 自身重复也会被移除。这样不会靠浏览器去重掩盖问题，而是在
   投影边界只保留一个权威 assistant 进度源。
+- 对于 active overlay 里没有显式 synthetic 标记的旧式 `item-N` assistant
+  回执，如果同一 live turn 已经有同文本的原生 `msg_*` assistant 回执，
+  服务端会在最终响应前删除旧式投影行。这个修复来自浏览器自检真实抓到的
+  `browser_latest_turn_assistant_text_duplicate` H2，不是客户端兜底。
+- API 自检现在理解 `mobileSyntheticActiveAssistantDeduped` 这类投影会计
+  证据，不再把“已经被服务端去重解释过的 overlay/detail 数量差”误报成
+  active overlay projection gap；真实的 active assistant 丢失仍然会报 H2。
 - live assistant/plan item 没有 item-level timestamp 时，不再回退到 turn
   start / UUIDv7 时间。缺失时间会被 runtime self-check 报成缺口，避免用户
   看到旧的“00:40”之类假时间。
@@ -38,6 +49,34 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
   `--browser-rounds`、`--browser-sample-delays-ms` 和
   `--browser-min-settled-delay-ms`。默认采样覆盖 `100,350,1200,2800,6000ms`，
   用于抓“几秒后被旧投影覆盖”的客户端问题。
+
+生产读回已经确认：
+
+- `clientBuildId=0.1.11|codex-mobile-shell-v577`
+- active Codex Mobile detail readback：active assistant duplicateGroups=`0`
+- browser runtime self-check：75 个浏览器样本，`blockingIssueCount=0`，
+  `maxLatestTurnAssistantTextDuplicates=0`，`maxImageFailures=0`，
+  `maxLatestTimestampMissingItems=0`
+- runtime self-check loop：`ok=true`；API 侧只剩已知非阻塞 H3
+  `thread_list_updated_order_mismatch`
+- LaunchAgent `com.hermesmobile.codex-mobile-runtime-self-check` 最新运行
+  `ok=true`，`last exit code=0`
+
+验证范围：
+
+```sh
+node --test test/thread-detail-self-check-service.test.js
+node --test test/thread-detail-self-check-service.test.js test/thread-item-timestamp-enrichment.test.js test/browser-runtime-self-check-service.test.js test/runtime-self-check-loop.test.js test/conversation-render.test.js test/message-timestamp.test.js test/thread-detail-active-window-overlay-policy-service.test.js test/thread-detail-read-orchestration-service.test.js test/thread-detail-projection-service.test.js
+node --test test/thread-item-timestamp-enrichment.test.js test/thread-detail-self-check-service.test.js test/browser-runtime-self-check-service.test.js test/conversation-render.test.js
+npm test
+npm run check
+npm run check:macos
+git diff --check
+```
+
+Public 仓库只同步公开源码、README、docs、scripts 和测试；不包含
+`.agent-context`、runtime state、本地密钥、访问 key、launch token、上传内容、
+完整 rollout、私有日志或任何 Home AI/Codex 私有运行时数据。
 
 ## 2026-06-29 Runtime Self-Check / Image Caption Hotfix（v576）
 
