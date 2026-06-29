@@ -29221,12 +29221,13 @@ The previous full handoff was archived and should be opened only when old proven
     `hasGate`, and `periodicHealthy`.
   - Production LaunchAgent readback passed:
     `node scripts/codex-mobile-runtime-self-check-launchagent-readback.js --json`.
-  - Readback summary: `ok=true`, LaunchAgent loaded, state `not_running`,
-    runs `81`, last exit code `0`, interval `600`, latest event had gate,
-    `gateMode=periodic`, `periodicHealthy=true`, `issueCount=0`,
-    `blockingIssueCount=0`, `reportableIssueCount=0`,
+  - Readback summary from the Home AI Deploy lane: `ok=true`, LaunchAgent
+    loaded, state `running`, runs `82`, last exit code `0`, interval `600`,
+    latest event had gate, `gateMode=periodic`, `periodicHealthy=true`,
+    `issueCount=0`, `blockingIssueCount=0`, `reportableIssueCount=0`,
     `observeOnlyIssueCount=0`, `advisoryIssueCount=0`, and
     `executionFailureCount=0`.
+  - No launchd mutation command or active submit exercise was run.
   - Public deploy was not run.
 - Privacy:
   - No raw secrets, cookies, launch tokens, private message bodies, task-card
