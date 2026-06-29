@@ -226,6 +226,26 @@ test("browser runtime self-check catches latest turn user message duplicates", (
       expectedLatestUserMessageDuplicateCount: 1,
       latestTurnUserMessageCount: 2,
       latestTurnUserTextDuplicateCount: 1,
+      latestTurnUserNodeDetails: [
+        {
+          index: 0,
+          textHash: "hash-a",
+          dataItemHash: "item-a",
+          renderKeyHash: "render-a",
+          clientSubmissionHash: "",
+          hasTimestamp: true,
+          classKind: "durable",
+        },
+        {
+          index: 1,
+          textHash: "hash-a",
+          dataItemHash: "",
+          renderKeyHash: "",
+          clientSubmissionHash: "submit-a",
+          hasTimestamp: true,
+          classKind: "local-pending",
+        },
+      ],
       turns: 3,
       items: 12,
       renderKeys: 12,
@@ -234,9 +254,34 @@ test("browser runtime self-check catches latest turn user message duplicates", (
 
   assert.equal(report.ok, false);
   assert.ok(report.issues.some((issue) => issue.code === "browser_api_latest_turn_user_message_duplicate"));
-  assert.ok(report.issues.some((issue) => issue.code === "browser_latest_turn_user_message_duplicate"));
+  const duplicateIssue = report.issues.find((issue) => issue.code === "browser_latest_turn_user_message_duplicate");
+  assert.ok(duplicateIssue);
+  assert.equal(duplicateIssue.latestTurnUserNodeDetails.length, 2);
+  assert.equal(duplicateIssue.latestTurnUserNodeDetails[1].classKind, "local-pending");
   assert.equal(report.sampleSummary.maxExpectedLatestUserMessageDuplicates, 1);
   assert.equal(report.sampleSummary.maxLatestTurnUserTextDuplicates, 1);
+});
+
+test("browser runtime self-check ignores null samples in summary", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [
+      null,
+      {
+        label: "healthy",
+        threadHash: "thread-hash",
+        appVisible: true,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        latestTurnMatchesTarget: true,
+        turns: 3,
+        items: 12,
+        renderKeys: 12,
+      },
+    ],
+  });
+
+  assert.equal(report.ok, true);
+  assert.equal(report.sampleSummary.sampleCount, 1);
 });
 
 test("browser runtime self-check catches latest turn item and message count downgrades", () => {

@@ -30017,6 +30017,38 @@ The previous full handoff was archived and should be opened only when old proven
     bounded gate run) plus a bounded command-failure code.
   - Return status for task card `ttc_5e0cead86fb9f90dec` was
     `partially_completed`.
+
+### 2026-06-29 - v587 Stale Visible Item DOM Cleanup Production Deploy
+
+- Deployment:
+  - Source commit `daf0bade60a0`
+    (`fix: remove stale visible item nodes`) was deployed privately through
+    the Home AI Deploy lane.
+  - Deploy reason: `codex-mobile-v587-stale-visible-item-dom-cleanup`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T123924Z-plugin-codex-mobile-web-codex-mobile-v587-stale-visible-item-dom-cleanup`.
+  - Public deploy was not run.
+- Production readback:
+  - `/api/public-config` returned status `200`, build id
+    `b5912cb01738c783`, client build id
+    `0.1.11|codex-mobile-shell-v587`, shell cache
+    `codex-mobile-shell-v587`, and `authRequired=true`.
+  - Source/production hash parity matched for
+    `public/thread-detail-dom-patch.js`, `public/app.js`, `public/sw.js`,
+    `test/thread-detail-dom-patch.test.js`, and
+    `test/client-render-stability-guard.test.js`.
+  - Production marker readback confirmed `codex-mobile-shell-v587`,
+    `data-render-key`, `data-item`, and
+    `visible item dom patch removes stale visible item nodes after filtering`.
+- Residual gate:
+  - Deploy-mode runtime self-check returned `deployPass=false` and
+    `periodicHealthy=false`.
+  - API-thread check was `ok=true` with zero issues.
+  - Browser-runtime check still reported H2
+    `browser_latest_turn_user_message_duplicate` (`22` instances in the
+    bounded gate run) plus a bounded command-failure code.
+  - Return status for task card `ttc_9446d5c1b6825a2c71` was
+    `partially_completed`.
 - Final follow-up readback:
   - The same production thread-detail response was rechecked with the deployed
     production self-check adapter and returned `ok=true` with zero issues,
@@ -30030,3 +30062,48 @@ The previous full handoff was archived and should be opened only when old proven
   - Treat v585 display timestamp repair as closed in production. The earlier
     `partially_completed` return reflected a deployment/cache transition sample,
     not the final production state.
+
+### 2026-06-29 - v588 Duplicate Projection User Message Source Fix Pending Deploy
+
+- Scope:
+  - Continued diagnostic task `ttc_b1e01a6fbcdfa70943`
+    (`thread_session_load_failed`, case `diagcase_a638023f3416a2cbb617`).
+  - Original H2 `thread_detail_load_failed/http_404` root cause was the
+    unmaterialized UUID-title placeholder thread row class fixed by v583; API
+    self-checks no longer report `thread_list_unmaterialized_placeholder` or
+    `thread_session_load_failed`.
+  - v586/v587 production still exposed a separate browser-runtime H2
+    `browser_latest_turn_user_message_duplicate` in deploy gates.
+- Root-cause evidence:
+  - Browser self-check was enhanced locally to include bounded duplicate user
+    node details. The failing deploy-loop sample showed two durable
+    `.item.userMessage` nodes with the same text hash and same client submission
+    hash, but different `data-item` and `data-render-key` hashes.
+  - Bounded `/api/threads/<id>?mode=recent` inspection showed current active
+    overlay user messages are projection-index rows (`item-N`,
+    `mobileProjectionSource=projection-active-overlay`), so the remaining
+    duplicate class is server projection/echo normalization, not stale DOM.
+- Source changes staged in this workspace:
+  - `adapters/thread-user-message-echo-normalizer-service.js` now treats
+    projection-index user messages with the same content and timestamps within
+    a 5 second window as the same event; repeated durable messages without
+    projection-index/echo identity remain preserved.
+  - `scripts/codex-mobile-browser-runtime-self-check.js` now surfaces CDP
+    evaluate exceptions instead of silently returning `null`, and records
+    bounded duplicate user node details.
+  - `adapters/browser-runtime-self-check-service.js` ignores null samples in
+    summary calculations, propagates bounded sample error codes, and attaches
+    duplicate user node details to the duplicate-user-message issue.
+  - Tests updated in
+    `test/thread-user-message-echo-normalizer-service.test.js` and
+    `test/browser-runtime-self-check-service.test.js`.
+- Validation passed in source:
+  - `node --test test/thread-user-message-echo-normalizer-service.test.js test/thread-detail-self-check-service.test.js test/browser-runtime-self-check-service.test.js`
+  - `npm test` (`1586` tests passed)
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+  - `node /Users/hermes-dev/HermesMobileDev/app/scripts/fallback-governance-check.js --changed-file ... --json`
+- Deployment status:
+  - Not deployed yet.
+  - No Public push/deploy has been run for this source fix.

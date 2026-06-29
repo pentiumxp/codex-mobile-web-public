@@ -47,7 +47,7 @@ function sampleIsConfirmed(sample = {}) {
 }
 
 function summarizeSamples(samples = []) {
-  const normalized = toArray(samples);
+  const normalized = toArray(samples).filter((sample) => sample && typeof sample === "object");
   const turnCounts = normalized.map((sample) => toNumber(sample.turns));
   const itemCounts = normalized.map((sample) => toNumber(sample.items));
   const renderKeyCounts = normalized.map((sample) => toNumber(sample.renderKeys));
@@ -107,6 +107,21 @@ function sampleThreadHash(sample = {}) {
   return String(sample.threadHash || "").slice(0, 32);
 }
 
+function safeLatestUserNodeDetails(value) {
+  return toArray(value).slice(0, 6).map((entry, index) => {
+    const row = entry && typeof entry === "object" ? entry : {};
+    return {
+      index: Math.max(0, Math.trunc(toNumber(row.index, index))),
+      textHash: safeLabel(row.textHash, ""),
+      dataItemHash: safeLabel(row.dataItemHash, ""),
+      renderKeyHash: safeLabel(row.renderKeyHash, ""),
+      clientSubmissionHash: safeLabel(row.clientSubmissionHash, ""),
+      hasTimestamp: row.hasTimestamp === true,
+      classKind: safeLabel(row.classKind, "unknown"),
+    };
+  });
+}
+
 function issue(severity, code, sample = {}, details = {}) {
   const item = Object.assign({
     severity,
@@ -116,6 +131,7 @@ function issue(severity, code, sample = {}, details = {}) {
   if (sample.label) item.sample = safeLabel(sample.label);
   if (sample.threadHash) item.threadHash = sampleThreadHash(sample);
   if (sample.delayMs !== undefined) item.delayMs = Math.max(0, Math.trunc(toNumber(sample.delayMs)));
+  if (sample.errorCode) item.errorCode = safeLabel(sample.errorCode, "sample_error");
   return item;
 }
 
@@ -190,6 +206,7 @@ function analyzeBrowserRuntimeSamples(input = {}) {
       issues.push(issue("H2", "browser_latest_turn_user_message_duplicate", sample, {
         latestTurnUserMessageCount: toNumber(sample.latestTurnUserMessageCount),
         latestTurnUserTextDuplicateCount: toNumber(sample.latestTurnUserTextDuplicateCount),
+        latestTurnUserNodeDetails: safeLatestUserNodeDetails(sample.latestTurnUserNodeDetails),
       }));
     }
     if (sampleIsConfirmed(sample)

@@ -4,6 +4,8 @@ const {
   sameUserMessageContent,
 } = require("./message-pending-echo-service");
 
+const PROJECTION_INDEX_DUPLICATE_WINDOW_MS = 5_000;
+
 function text(value) {
   return String(value || "").trim();
 }
@@ -106,13 +108,19 @@ function sameProjectionIndexTimestamp(left, right) {
   return Boolean(a && b && a === b);
 }
 
+function nearProjectionIndexTimestamp(left, right) {
+  const a = itemTimestampMs(left);
+  const b = itemTimestampMs(right);
+  return Boolean(a && b && Math.abs(a - b) <= PROJECTION_INDEX_DUPLICATE_WINDOW_MS);
+}
+
 function userMessagesMayBeSameEvent(left, right) {
   if (!isUserMessage(left) || !isUserMessage(right)) return false;
   if (sameClientSubmission(left, right)) return true;
   if (isSyntheticUserMessage(left) || isSyntheticUserMessage(right)) return true;
   const leftProjectionIndex = isProjectionIndexUserMessage(left);
   const rightProjectionIndex = isProjectionIndexUserMessage(right);
-  if (leftProjectionIndex && rightProjectionIndex) return sameProjectionIndexTimestamp(left, right);
+  if (leftProjectionIndex && rightProjectionIndex) return nearProjectionIndexTimestamp(left, right);
   if (leftProjectionIndex !== rightProjectionIndex) {
     return leftProjectionIndex ? hasDurableNonIndexId(right) : hasDurableNonIndexId(left);
   }
@@ -126,7 +134,7 @@ function userMessagesAreSameEvent(left, right) {
   const leftProjectionIndex = isProjectionIndexUserMessage(left);
   const rightProjectionIndex = isProjectionIndexUserMessage(right);
   if (leftProjectionIndex && rightProjectionIndex) {
-    return sameProjectionIndexTimestamp(left, right);
+    return nearProjectionIndexTimestamp(left, right);
   }
   if (leftProjectionIndex !== rightProjectionIndex) {
     return leftProjectionIndex ? hasDurableNonIndexId(right) : hasDurableNonIndexId(left);

@@ -561,6 +561,11 @@ async function evaluate(cdp, expression, timeoutMs = 10000) {
       returnByValue: true,
       timeout: timeoutMs,
     });
+    if (result && result.exceptionDetails) {
+      const details = result.exceptionDetails || {};
+      const description = details.exception && (details.exception.description || details.exception.value);
+      throw new Error(description || details.text || "runtime_evaluate_exception");
+    }
     return runtimeValue(result);
   } finally {
     clearTimeout(timer);
@@ -748,6 +753,22 @@ function snapshotExpression(input = {}) {
         })
         .filter(Boolean)
         .map(stableHash);
+      const latestUserNodeDetails = latestUserNodes.slice(0, 6).map((node, index) => {
+        const body = node.querySelector(".item-body") || node;
+        const text = String(body.textContent || "").replace(/\\s+/g, " ").trim();
+        const className = String(node.className || "");
+        return {
+          index,
+          textHash: stableHash(text),
+          dataItemHash: stableHash(node.getAttribute("data-item") || ""),
+          renderKeyHash: stableHash(node.getAttribute("data-render-key") || ""),
+          clientSubmissionHash: stableHash(node.getAttribute("data-client-submission-hash") || ""),
+          hasTimestamp: Boolean(node.querySelector(".item-timestamp")),
+          classKind: className.includes("local-pending")
+            ? "local-pending"
+            : (className.includes("failed") ? "failed" : "durable"),
+        };
+      });
       const imageFigures = Array.from(renderRoot.querySelectorAll(".input-image, .image-view, .markdown-image"));
       const imageNodes = Array.from(renderRoot.querySelectorAll(".input-image img, .image-view img, .markdown-image img"));
       const failedFigures = Array.from(renderRoot.querySelectorAll(".input-image.image-load-failed, .image-view.image-load-failed, .markdown-image.image-load-failed"));
@@ -862,6 +883,7 @@ function snapshotExpression(input = {}) {
         latestTurnOperationItemCount: latestOperationNodes.length,
         latestTurnReasoningItemCount: latestReasoningNodes.length,
         latestTurnUserTextDuplicateCount: duplicateCount(latestUserTextHashes),
+        latestTurnUserNodeDetails: latestUserNodeDetails,
         latestTurnAssistantTextDuplicateCount: duplicateCount(latestAssistantTextHashes),
         latestTurnUsageCount: latestUsageCount,
         latestTimestampExpectedItems: timestampExpectedNodes.length,

@@ -89,6 +89,17 @@ test("user message echo normalizer collapses duplicate projection index messages
   assert.deepEqual(result.items.map((item) => item.id), ["item-1", "assistant-1"]);
 });
 
+test("user message echo normalizer collapses near duplicate projection index messages", () => {
+  const result = dedupeUserMessageEchoesInItems([
+    { id: "item-1", type: "userMessage", startedAtMs: 1782710145041, text: "repeat once" },
+    { id: "item-2", type: "userMessage", startedAtMs: 1782710147041, text: "repeat once" },
+    { id: "assistant-1", type: "agentMessage", text: "working" },
+  ]);
+
+  assert.equal(result.removed, 1);
+  assert.deepEqual(result.items.map((item) => item.id), ["item-1", "assistant-1"]);
+});
+
 test("user message echo normalizer keeps repeated projection index messages with different timestamps", () => {
   const result = dedupeUserMessageEchoesInItems([
     { id: "item-1", type: "userMessage", startedAtMs: 1782710145041, text: "repeat later" },
