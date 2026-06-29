@@ -32285,6 +32285,83 @@ The previous full handoff was archived and should be opened only when old proven
   - Local candidate in progress. Private production deploy has not yet been
     requested. No Public deploy requested or run.
 
+### 2026-06-30 - Retained User-Input Attribution Deployed
+
+- Source/deploy status:
+  - Runtime commit `7afaaf7f` (`fix: attribute retained user input bytes`) was
+    deployed through Home AI central private deploy lane. The deployed source
+    ref reported by the return card was `68c90464e017`, including the requested
+    runtime commit.
+  - Deploy reason: `codex-mobile-retained-user-input-byte-attribution`.
+  - Public deploy was not run.
+- Production readback:
+  - `/api/public-config` returned `version=0.1.11`,
+    `buildId=576c30a2eea33b2a`,
+    `clientBuildId=0.1.11|codex-mobile-shell-v598`, and
+    `shellCacheName=codex-mobile-shell-v598`.
+  - Source/production parity matched for the response-budget service,
+    Phase-B smoke script, Phase-B decision service, focused tests, and
+    `docs/MODULES.md`.
+  - Production markers were present for
+    `retainedUserInputItemCountByTurnState`,
+    `retainedUserInputItemBytesByTurnState`,
+    `responseBudgetRetainedUserInputItemCountByTurnState`, and
+    `detailResponseBudgetRetainedUserInputItemBytesByTurnState`.
+- Phase-B readback:
+  - Codex Mobile source thread returned `ok=true`,
+    `readMode=projection-active-overlay`, `activeOverlayWindowMs=0`,
+    and `activeOverlayBackfillWindowMs=1`.
+  - Retained user input attribution showed active `4` items / `25034` bytes and
+    completed `11` items / `18284` bytes.
+  - Retained visible bytes were led by `userMessage=43318`, then
+    `assistant=28238`, `usage=10863`, `operation=1998`, `other=904`, and
+    `reasoning=777`.
+  - Phase-B decision still classified a separate H2 `thread-detail-latency`
+    residual; active overlay/window gates stayed healthy.
+- Runtime readback:
+  - Deploy-mode runtime self-check returned `ok=true`, `deployPass=true`,
+    `periodicHealthy=true`, `issueCount=0`, `blockingIssueCount=0`, and
+    `executionFailureCount=0`.
+  - Latest full-check LaunchAgent readback was healthy despite historical
+    `lastExitCode=1` launchctl metadata.
+
+### 2026-06-30 - Retained User-Input Shape Attribution Dispatched
+
+- Source commit:
+  - `220d6d443b3c` (`fix: attribute retained user input shape bytes`).
+- Purpose:
+  - Attribution-only follow-up for the active user-input residual above. The
+    prior turn-state split showed active user input at about `25KB`, but did not
+    explain whether bytes came from direct text, content text, inline image
+    data, structured content, or item metadata.
+  - This slice does not truncate/remove content, change rendering, or mutate
+    persisted rollout/session data.
+- Source changes:
+  - `adapters/thread-detail-response-budget-service.js` records metadata-only
+    retained user-input shape byte buckets:
+    `directText`, `contentText`, `inlineImageData`, `contentAuxiliary`, and
+    `itemAuxiliary`.
+  - The buckets are also split into active/completed/stale/other retained
+    user-input maps.
+  - `scripts/codex-mobile-phase-b-readback-smoke.js` and
+    `adapters/phase-b-readback-decision-service.js` propagate the shape fields
+    as bounded `responseBudget*` and `detailResponseBudget*` evidence.
+  - Focused tests cover service-level attribution and Phase-B/decision
+    propagation. `docs/MODULES.md` documents the metadata-only shape buckets.
+- Local validation:
+  - `node --check` passed for the touched service/script/decision files.
+  - Focused `node --test` passed 75 tests.
+  - `npm test -- --test-reporter=dot`, `npm run check`,
+    `npm run check:macos`, fallback governance check, and `git diff --check`
+    passed.
+  - `codegraph sync && codegraph status` reported the index up to date.
+- Deployment status:
+  - Home AI central deploy task card `ttc_47d28e9417d467ae88` was sent to
+    source thread `019f0a0d-c4e0-7ca1-8142-bd06e4f874da` with deploy reason
+    `codex-mobile-retained-user-input-shape-attribution`.
+  - Awaiting official production deploy/readback return. No Public deploy was
+    requested.
+
 ### 2026-06-30 - Completed Replay Assistant First-Paint Budget Deployed
 
 - Source / deploy:
