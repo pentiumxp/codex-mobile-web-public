@@ -28700,6 +28700,47 @@ The previous full handoff was archived and should be opened only when old proven
     tool runtime reported invalid sandbox cwd metadata; this was not treated as
     browser verification.
 - Next:
-  - Commit v579 locally.
-  - Deploy privately only after the module is complete and the user approves
-    deployment; do not push Public unless the user explicitly requests it.
+  - See the following private deploy readback section for v579 production
+    deployment status.
+  - Do not push Public unless the user explicitly requests it.
+
+### 2026-06-29 - Private Deploy Readback For v579 Reading Viewport Fix
+
+- Deploy:
+  - Home AI Deploy lane completed private production deployment for
+    `codex-mobile-v579-reading-viewport-self-check`.
+  - Task card: `ttc_f72c6e37923bc8712f`.
+  - Deployed source commit: `022acd7020de`
+    (`fix: preserve reading viewport during live updates`).
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T025105Z-plugin-codex-mobile-web-codex-mobile-v579-reading-viewport-self-check`.
+  - No Public deploy was run.
+- Production public config:
+  - `title=Codex Mobile Web`, `version=0.1.11`.
+  - `buildId=716d79edad127eb7`.
+  - `clientBuildId=0.1.11|codex-mobile-shell-v579`.
+  - `shellCacheName=codex-mobile-shell-v579`.
+  - `workspacePath=/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+- Runtime / browser self-check:
+  - Initial combined browser runtime self-check across Movie and Codex Mobile
+    saw H2 count issues while switching threads on the Codex Mobile target:
+    `browser_latest_turn_user_message_below_api_expectation` and
+    `browser_latest_turn_task_card_below_api_expectation`.
+  - Follow-up per-thread browser runtime self-checks with longer samples passed
+    for both Movie `019efca1-ea69-7292-87b7-025ba023ca87` and Codex Mobile
+    `019eee6c-a6f5-7b20-bfb4-f96ccb6431b3`.
+  - Passing per-thread checks reported zero image failures, zero latest
+    timestamp-missing items, zero visible operation items, zero visible
+    reasoning items, and no blocking sparse/latest-turn downgrade issue. One
+    early sparse Codex Mobile sample occurred before non-empty settle and did
+    not become a self-check issue.
+- Current interpretation:
+  - v579 is privately deployed and the two requested target threads pass
+    per-thread checks.
+  - The combined cross-thread switching H2 result is not closed as root cause;
+    treat it as a follow-up signal for navigation/switching diagnostics if the
+    user reports more cross-thread flicker or latest-turn count loss.
+- Safety / privacy:
+  - No raw secrets, sudo password contents, cookies, launch tokens, thread
+    bodies, upload contents, screenshots, provider payloads, endpoint file
+    contents, or long logs were recorded.
