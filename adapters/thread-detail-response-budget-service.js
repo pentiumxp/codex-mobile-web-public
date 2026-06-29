@@ -647,16 +647,17 @@ function compactCompletedUsageItemForFirstPaint(item, stats) {
   const out = Object.assign({}, cloneJson(item), {
     mobileUsageSummary: nextSummary,
   });
-  const retainedBytes = jsonByteLength(out);
-  if (!originalBytes || retainedBytes >= originalBytes) return item;
+  const compactedBytes = jsonByteLength(out);
+  if (!originalBytes || compactedBytes >= originalBytes) return item;
   out.mobileFirstPaintUsageBudget = {
-    version: "thread-detail-first-paint-usage-budget-v1",
     scope: "completed",
-    originalBytes,
-    retainedBytes,
-    omittedBytes: Math.max(0, originalBytes - retainedBytes),
-    retainedFields: FIRST_PAINT_USAGE_SUMMARY_FIELDS.filter((field) => nextSummary[field] !== undefined),
+    omittedBytes: Math.max(0, originalBytes - compactedBytes),
   };
+  let retainedBytes = jsonByteLength(out);
+  if (retainedBytes >= originalBytes) return item;
+  out.mobileFirstPaintUsageBudget.omittedBytes = Math.max(0, originalBytes - retainedBytes);
+  retainedBytes = jsonByteLength(out);
+  if (retainedBytes >= originalBytes) return item;
   stats.truncatedCompletedUsageItems += 1;
   stats.completedUsageOriginalBytes += originalBytes;
   stats.completedUsageRetainedBytes += retainedBytes;

@@ -32284,3 +32284,34 @@ The previous full handoff was archived and should be opened only when old proven
 - Deployment status:
   - Local candidate in progress. Private production deploy has not yet been
     requested. No Public deploy requested or run.
+
+### 2026-06-30 - Active First-Paint Completed Usage Compact Net-Reduction Follow-Up
+
+- Production readback after `4b5496bb4787`:
+  - Source/production parity matched for the completed Usage compact files, and
+    production markers for `mobileFirstPaintUsageBudget` and
+    `progressiveCompletedUsageBudgetApplied` were present.
+  - Phase-B readback returned `ok=true`, `readMode=projection-active-overlay`,
+    `turnsListInitialMs=0`, and `activeOverlayWindowMs=0`.
+  - Completed Usage compact did apply, but it was not a net payload win in that
+    sample: aggregate Usage summary savings were about `2073` bytes, while the
+    per-item `mobileFirstPaintUsageBudget` marker overhead made full thread
+    bytes grow from `207510` to `208357`.
+- Root cause / invariant:
+  - The compaction target was valid, but per-item evidence was too verbose for
+    small completed Usage rows. Response budgeting must reduce first-paint
+    payload size, not only report omitted subfields.
+  - The Usage row must remain visible, rendered Usage fields must remain
+    present, and the service must not mutate persisted rollout/session data.
+- Source changes in progress:
+  - `adapters/thread-detail-response-budget-service.js` now uses a lightweight
+    `mobileFirstPaintUsageBudget` marker and measures the item again after the
+    marker is attached.
+  - If the final item with marker is not smaller than the original Usage row,
+    the compaction is skipped and no completed-Usage budget counters are
+    incremented.
+  - Focused response-budget coverage now includes a small Usage row where
+    marker overhead would otherwise grow the response.
+- Deployment status:
+  - Local follow-up candidate in progress. Private production deploy has not
+    yet been requested. No Public deploy requested or run.

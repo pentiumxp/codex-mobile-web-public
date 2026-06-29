@@ -2546,7 +2546,10 @@ Deployable scope:
   metadata from the HTTP response with `mobileFirstPaintUsageBudget` and
   `progressiveCompletedUsageBudgetApplied`. This keeps Usage visible while
   avoiding a generic budget that would hide user input, active assistant
-  progress, images, or diagnostics.
+  progress, images, or diagnostics. Production readback of the first version
+  showed the per-row evidence marker could offset the summary savings for small
+  Usage rows, so the follow-up makes that marker lightweight and skips Usage
+  compaction unless the row remains smaller after the marker is attached.
 - A later summary-phase slice targets warm projection hits whose `summaryMs`
   dominates `totalMs` even though `threadReadMs=0`. Detail summary resolution
   now merges the existing display-summary cache for local summaries and skips

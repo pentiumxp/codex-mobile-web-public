@@ -537,7 +537,12 @@ thread budget reports `progressiveCompletedUsageBudgetApplied`,
 HTTP response-shaping rule: the Usage row remains visible, persisted rollout
 data is unchanged, and the budget must preserve rendered fields such as context
 window usage, risk level, last/total token usage, rollout size, and workspace
-context size counters.
+context size counters. The per-row marker is intentionally lightweight and the
+service should skip a Usage compaction when the marker overhead would make the
+row or full thread response larger; verify that
+`progressiveCompletedUsageBytesAfterBudget` is below
+`progressiveCompletedUsageBytesBeforeBudget` before treating the compact as a
+payload win.
 On v558+ clients, a per-turn `mobileVisibleItemBudget` also renders as a small
 first-paint omission notice in the conversation. That notice has a
 `data-render-key` and enters the conversation signature, but intentionally does
