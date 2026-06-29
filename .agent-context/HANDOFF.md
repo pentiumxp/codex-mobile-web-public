@@ -30433,7 +30433,7 @@ The previous full handoff was archived and should be opened only when old proven
     `launchagent_previous_exit_nonzero_recovered`; no H1/H2 issues.
   - Return status for task card `ttc_d9840ec78e36df822d` was `completed`.
 
-### 2026-06-29 - Thread List Raw Reorder Self-Check Noise Pending Deploy
+### 2026-06-29 - Thread List Raw Reorder Self-Check Noise Deploy
 
 - Scope:
   - Follow-up to the clean v591 browser runtime gate. API thread self-check
@@ -30464,6 +30464,27 @@ The previous full handoff was archived and should be opened only when old proven
   - `git diff --check`
   - `node /Users/hermes-dev/HermesMobileDev/app/scripts/fallback-governance-check.js --changed-file adapters/thread-detail-self-check-service.js --changed-file test/thread-detail-self-check-service.test.js --json`
 - Deployment status:
-  - Pending local commit and private deploy through Home AI Deploy lane.
-  - Public deploy was not requested and must not be run unless explicitly
-    requested.
+  - Deployed privately through the Home AI Deploy lane from source commit
+    `3618adec92b1` with reason
+    `codex-mobile-thread-list-raw-reorder-self-check`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T141230Z-plugin-codex-mobile-web-codex-mobile-thread-list-raw-reorder-self-check`.
+  - Public deploy was not run.
+- Production readback:
+  - `/api/public-config` returned status `200`, build id
+    `804792d85bd686d1`, client build id
+    `0.1.11|codex-mobile-shell-v591`, shell cache
+    `codex-mobile-shell-v591`, and `authRequired=true`.
+  - Source/production hash parity matched for
+    `adapters/thread-detail-self-check-service.js` and
+    `test/thread-detail-self-check-service.test.js`.
+  - Production marker readback confirmed `rawOrderChanged` and
+    `thread list repeat raw order change stays metadata-only`.
+  - Production thread self-check for the Codex Mobile source thread with
+    repeat `3` returned `ok=true`, summary issueCount `0`,
+    blockingIssueCount `0`, diagnosticCandidateCount `0`, and no
+    `thread_list_repeat_order_changed` issue.
+  - Deploy-mode runtime self-check gate returned `deployPass=true`,
+    `periodicHealthy=true`, zero API/browser runtime issues, and zero
+    diagnostic candidates.
+  - Return status for task card `ttc_f633be29abfbb949c5` was `completed`.
