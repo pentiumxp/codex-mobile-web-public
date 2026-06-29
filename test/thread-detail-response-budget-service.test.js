@@ -2264,7 +2264,7 @@ test("thread detail response budget leaves already small details unchanged", () 
   assert.deepEqual(compacted, result);
 });
 
-test("thread detail response budget compacts settled task cards under active first-paint byte pressure", () => {
+test("thread detail response budget compacts task-card metadata under active first-paint byte pressure", () => {
   const settledCard = {
     id: "card-completed",
     status: "completed",
@@ -2323,6 +2323,17 @@ test("thread detail response budget compacts settled task cards under active fir
     canApprove: true,
     workflow: { id: "workflow-pending", mode: "autonomous", authorized: false },
     source: { threadId: "source-thread", workspaceId: "source-workspace", cwd: "/private/source/path" },
+    delivery: {
+      attempts: Array.from({ length: 8 }, (_, index) => ({ id: `pending-attempt-${index}`, detail: "p".repeat(120) })),
+    },
+    audit: {
+      events: Array.from({ length: 8 }, (_, index) => ({ id: `pending-event-${index}`, detail: "q".repeat(120) })),
+    },
+    executionLease: {
+      holder: "pending-holder",
+      expiresAt: "2026-06-29T10:20:00.000Z",
+      payload: "m".repeat(1200),
+    },
     message: {
       title: "Pending task",
       summary: "Needs approval",
@@ -2366,21 +2377,32 @@ test("thread detail response budget compacts settled task cards under active fir
   assert.equal(cards[0].message.summary, "Completed summary");
   assert.equal(cards[0].message.bodyOmitted, true);
   assert.equal(cards[0].message.bodyChars, 4096);
-  assert.equal(cards[0].workflow, undefined);
+  assert.deepEqual(cards[0].workflow, { id: "workflow-1", mode: "autonomous", authorized: true });
   assert.equal(cards[0].audit, undefined);
   assert.equal(cards[0].delivery, undefined);
   assert.equal(cards[0].executionLease, undefined);
   assert.equal(cards[0].injectionRuntime, undefined);
   assert.deepEqual(cards[0].source, { threadId: "source-thread", workspaceId: "source-workspace" });
   assert.deepEqual(cards[0].target, { threadId: "target-thread", workspaceId: "target-workspace" });
-  assert.deepEqual(cards[1], pendingCard);
+  assert.equal(cards[1].id, "card-pending");
+  assert.equal(cards[1].mobileTaskCardCompacted, true);
+  assert.equal(cards[1].canApprove, true);
+  assert.equal(cards[1].canReply, undefined);
+  assert.deepEqual(cards[1].workflow, { id: "workflow-pending", mode: "autonomous", authorized: false });
+  assert.deepEqual(cards[1].source, { threadId: "source-thread", workspaceId: "source-workspace" });
+  assert.equal(cards[1].message.title, "Pending task");
+  assert.equal(cards[1].message.summary, "Needs approval");
+  assert.equal(cards[1].message.bodyOmitted, true);
+  assert.equal(cards[1].message.bodyChars, 1024);
+  assert.equal(cards[1].source.cwd, undefined);
 
   const budget = compacted.thread.mobileDetailResponseBudget;
   assert.equal(budget.progressiveThreadTaskCardBudgetApplied, true);
   assert.equal(budget.progressiveThreadTaskCardBudgetScope, "active-first-paint");
   assert.equal(budget.progressiveThreadTaskCardOriginalCount, 2);
-  assert.equal(budget.progressiveThreadTaskCardCompactedCount, 1);
+  assert.equal(budget.progressiveThreadTaskCardCompactedCount, 2);
   assert.equal(budget.progressiveThreadTaskCardActionableCount, 1);
+  assert.equal(budget.progressiveThreadTaskCardIneligibleCount, 0);
   assert.ok(budget.progressiveThreadTaskCardOriginalBytes > budget.progressiveThreadTaskCardRetainedBytes);
   assert.ok(budget.progressiveThreadTaskCardOmittedBytes > 0);
   assert.ok(budget.progressiveThreadTaskCardBytesAfterBudget < budget.progressiveThreadTaskCardBytesBeforeBudget);

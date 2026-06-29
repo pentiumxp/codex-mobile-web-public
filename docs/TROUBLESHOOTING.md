@@ -523,11 +523,12 @@ budget fields next:
 `progressiveThreadTaskCardRetainedBytes`,
 `progressiveThreadTaskCardOmittedBytes`,
 `progressiveThreadTaskCardBytesBeforeBudget`,
+`progressiveThreadTaskCardIneligibleCount`,
 `progressiveThreadTaskCardBytesAfterBudget`, and
-`progressiveActiveFirstPaintBytesAfterTaskCardBudget`. This pass only compacts
-settled, non-actionable thread task-card metadata for first paint. Pending,
-approved, actionable, or leased cards stay full in the detail response, and
-full card details remain available through
+`progressiveActiveFirstPaintBytesAfterTaskCardBudget`. This pass compacts
+task-card metadata to an action-safe first-paint shape. Pending/actionable
+cards keep their action booleans and minimal workflow/source/target/message
+fields needed by the renderer, while full card details remain available through
 `GET /api/thread-task-cards/:id?threadId=<thread-id>` when a card is opened.
 When `assistant` is the dominant retained kind, inspect
 `retainedAssistantItemCountByTurnState` and

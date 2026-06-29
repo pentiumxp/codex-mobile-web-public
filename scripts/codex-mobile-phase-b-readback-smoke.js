@@ -562,6 +562,7 @@ function summarizeDetailResponseBudget(budget = {}) {
     responseBudgetProgressiveThreadTaskCardOriginalCount: boundedCount(source.progressiveThreadTaskCardOriginalCount),
     responseBudgetProgressiveThreadTaskCardCompactedCount: boundedCount(source.progressiveThreadTaskCardCompactedCount),
     responseBudgetProgressiveThreadTaskCardActionableCount: boundedCount(source.progressiveThreadTaskCardActionableCount),
+    responseBudgetProgressiveThreadTaskCardIneligibleCount: boundedCount(source.progressiveThreadTaskCardIneligibleCount),
     responseBudgetProgressiveThreadTaskCardOriginalBytes: boundedBytes(source.progressiveThreadTaskCardOriginalBytes),
     responseBudgetProgressiveThreadTaskCardRetainedBytes: boundedBytes(source.progressiveThreadTaskCardRetainedBytes),
     responseBudgetProgressiveThreadTaskCardOmittedBytes: boundedBytes(source.progressiveThreadTaskCardOmittedBytes),

@@ -188,9 +188,10 @@ Current acceleration targets:
    the user expands a card. Later first-paint byte slices keep the same service
    boundary for task-card metadata: when active progressive response budgeting
    has already protected all visible items but the detail JSON is still over
-   the active first-paint ceiling, settled non-actionable task cards are reduced
-   to render-safe summary metadata while pending/actionable/leased cards and
-   the single-card detail endpoint remain authoritative.
+   the active first-paint ceiling, task cards are reduced to an action-safe
+   first-paint shape that keeps pending-card buttons and minimal
+   workflow/source/target/message metadata while the single-card detail endpoint
+   remains authoritative for full card details.
    The follow-up active-detail hot-path slice keeps that same proof gate but
    changes the common active window source. A naive reuse of the active dynamic
    projection regressed production because the lookup still cloned/normalized

@@ -271,6 +271,7 @@ function buildEvidence(report = {}) {
     detailResponseBudgetProgressiveThreadTaskCardOriginalCount: boundedCount(detail.responseBudgetProgressiveThreadTaskCardOriginalCount),
     detailResponseBudgetProgressiveThreadTaskCardCompactedCount: boundedCount(detail.responseBudgetProgressiveThreadTaskCardCompactedCount),
     detailResponseBudgetProgressiveThreadTaskCardActionableCount: boundedCount(detail.responseBudgetProgressiveThreadTaskCardActionableCount),
+    detailResponseBudgetProgressiveThreadTaskCardIneligibleCount: boundedCount(detail.responseBudgetProgressiveThreadTaskCardIneligibleCount),
     detailResponseBudgetProgressiveThreadTaskCardOriginalBytes: boundedBytes(detail.responseBudgetProgressiveThreadTaskCardOriginalBytes),
     detailResponseBudgetProgressiveThreadTaskCardRetainedBytes: boundedBytes(detail.responseBudgetProgressiveThreadTaskCardRetainedBytes),
     detailResponseBudgetProgressiveThreadTaskCardOmittedBytes: boundedBytes(detail.responseBudgetProgressiveThreadTaskCardOmittedBytes),

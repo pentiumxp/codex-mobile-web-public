@@ -32886,3 +32886,118 @@ The previous full handoff was archived and should be opened only when old proven
 - Deployment status:
   - Local candidate ready. Private production deploy has not yet been
     requested. No Public deploy requested or run.
+
+### 2026-06-30 - Action-Safe Task-Card First-Paint Budget Ready For Deploy
+
+- Production readback after `b20737981e87`:
+  - Source/production parity matched for the settled task-card budget files,
+    and markers were present for `mobileTaskCardCompacted`,
+    `progressiveThreadTaskCardBudgetApplied`, and
+    `progressiveActiveFirstPaintBytesAfterTaskCardBudget`.
+  - Phase-B readback returned `ok=true`, `readMode=projection-active-overlay`,
+    `totalMs=511`, `prepareResponseMs=435`, `activeOverlayWindowMs=0`,
+    `activeOverlayBackfillWindowMs=15`, and `activeOverlayMergeMs=4`.
+  - The task-card budget fields were present but did not compact the sampled
+    response because all `24` returned task cards were actionable:
+    `progressiveThreadTaskCardActionableCount=24`,
+    `progressiveThreadTaskCardCompactedCount=0`,
+    `progressiveThreadTaskCardOmittedBytes=0`.
+  - Remaining first-paint byte evidence in that sample:
+    `progressiveActiveFirstPaintBytesAfterTaskCardBudget=169931`,
+    `progressiveActiveFirstPaintOverCeilingBytes=71627`, task-card bytes
+    `36345`, retained visible bytes by kind `userMessage=23265`,
+    `assistant=22317`, `usage=10869`, `operation=2148`, `other=930`,
+    `reasoning=824`.
+- Root-cause boundary:
+  - The settled-only budget was correct but too conservative for the current
+    source-thread shape. Pending/actionable task cards still carry large
+    audit/delivery/lease/runtime metadata that is not required for first-paint
+    rendering or action dispatch.
+  - The next fix remains in `thread-detail-response-budget-service`: compact
+    task cards to an action-safe first-paint shape while preserving action
+    booleans, minimal workflow metadata, source/target ids, message
+    title/summary/body placeholder, and the single-card detail endpoint as the
+    authority for full card data.
+- Local source changes:
+  - `adapters/thread-detail-response-budget-service.js` now compacts any valid
+    task card when the compact action-safe shape is net-reducing, including
+    pending/actionable cards. Malformed cards are counted as
+    `progressiveThreadTaskCardIneligibleCount` and left unchanged.
+  - `scripts/codex-mobile-phase-b-readback-smoke.js` and
+    `adapters/phase-b-readback-decision-service.js` propagate
+    `progressiveThreadTaskCardIneligibleCount`.
+  - `test/thread-detail-response-budget-service.test.js` now verifies pending
+    actionable card compaction preserves `canApprove` and minimal autonomous
+    workflow fields while removing first-paint-unneeded audit/delivery/lease
+    metadata.
+  - `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` now describe action-safe
+    task-card compaction instead of settled-only compaction.
+- Validation:
+  - `node --check adapters/thread-detail-response-budget-service.js` and
+    `node --check scripts/codex-mobile-phase-b-readback-smoke.js` passed.
+  - Focused tests passed:
+    `node --test test/thread-detail-response-budget-service.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js`
+    (`77` tests).
+  - Full `npm test -- --test-reporter=dot` passed.
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - `codegraph sync && codegraph status` reported the index up to date.
+- Deployment status:
+  - Local candidate ready. Private production deploy has not yet been
+    requested for this action-safe follow-up. No Public deploy requested or
+    run.
+
+### 2026-06-30 - Settled Task-Card First-Paint Budget Deployed
+
+- Source/deploy:
+  - Private production deployed source ref `b20737981e87`
+    (`fix: compact settled task cards for first paint`) through the Home AI
+    deploy lane with reason
+    `codex-mobile-settled-task-card-first-paint-budget`.
+  - Deploy backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T221158Z-plugin-codex-mobile-web-codex-mobile-settled-task-card-first-paint-budget`.
+  - No Public deploy was run.
+- Production parity / markers:
+  - Source/production parity matched for
+    `adapters/thread-detail-response-budget-service.js`,
+    `scripts/codex-mobile-phase-b-readback-smoke.js`,
+    `adapters/phase-b-readback-decision-service.js`,
+    `test/thread-detail-response-budget-service.test.js`,
+    `test/phase-b-readback-smoke.test.js`,
+    `test/phase-b-readback-decision-service.test.js`, `docs/MODULES.md`,
+    `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+  - Production markers were present for `mobileTaskCardCompacted`,
+    `progressiveThreadTaskCardBudgetApplied`,
+    `progressiveActiveFirstPaintBytesAfterTaskCardBudget`, and the focused
+    test marker `compacts settled task cards under active first-paint byte
+    pressure`.
+- Production Phase-B readback:
+  - Codex Mobile source thread sample returned `ok=true`,
+    `readMode=projection-active-overlay`, `turnsListInitialMs=0`,
+    `activeOverlayWindowMs=3670`, `activeOverlayBackfillWindowMs=0`,
+    `activeOverlayMergeMs=0`, `totalMs=3815`, and `prepareResponseMs=41`.
+  - Task-card budget fields were present but did not apply in this sample:
+    `progressiveThreadTaskCardBudgetApplied=false`, original count `0`,
+    compacted count `0`, actionable count `0`, original/retained/omitted bytes
+    all `0`, bytes before/after `101426`, and
+    `progressiveActiveFirstPaintBytesAfterTaskCardBudget=101426`.
+  - First-paint over-ceiling bytes were `3122`.
+  - The Phase-B decision was H2 `thread-detail-latency` because this sample
+    rebuilt the active overlay window (`activeOverlayWindowMs=3670`). Treat
+    this as a separate active-window warmness residual from the task-card
+    budget deployment.
+- Runtime validation:
+  - Deploy-mode runtime self-check returned `ok=true`, `deployPass=true`,
+    `periodicHealthy=true`, `issueCount=0`, `blockingIssueCount=0`, and
+    `executionFailureCount=0`; child checks `api-thread`, `browser-runtime`,
+    and `client-events` were all OK.
+  - LaunchAgent readback after the deploy-mode gate returned `ok=true`, latest
+    event gate mode `deploy`, `deployPass=true`, `periodicHealthy=true`,
+    `issueCount=0`, `blockingIssueCount=0`, and `executionFailureCount=0`.
+- Next optimization direction:
+  - The deployed task-card budget is present, but this production sample had
+    no top-level task-card array to compact. Re-sample a thread shape with
+    settled non-actionable `threadTaskCards` before evaluating net savings.
+    Separately, the active overlay window rebuild recurred once and should be
+    tracked independently from payload shaping.

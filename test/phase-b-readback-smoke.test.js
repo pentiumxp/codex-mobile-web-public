@@ -252,6 +252,7 @@ test("phase B readback smoke collects bounded diagnostics without private fields
             progressiveThreadTaskCardOriginalCount: 24,
             progressiveThreadTaskCardCompactedCount: 18,
             progressiveThreadTaskCardActionableCount: 2,
+            progressiveThreadTaskCardIneligibleCount: 1,
             progressiveThreadTaskCardOriginalBytes: 36000,
             progressiveThreadTaskCardRetainedBytes: 12000,
             progressiveThreadTaskCardOmittedBytes: 24000,
@@ -502,6 +503,7 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardOriginalCount, 24);
   assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardCompactedCount, 18);
   assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardActionableCount, 2);
+  assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardIneligibleCount, 1);
   assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardOriginalBytes, 36000);
   assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardRetainedBytes, 12000);
   assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardOmittedBytes, 24000);
@@ -582,6 +584,7 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.decision.evidence.detailResponseBudgetOmittedCompletedUsageBytes, 5400);
   assert.equal(report.decision.evidence.detailResponseBudgetProgressiveThreadTaskCardBudgetApplied, true);
   assert.equal(report.decision.evidence.detailResponseBudgetProgressiveThreadTaskCardCompactedCount, 18);
+  assert.equal(report.decision.evidence.detailResponseBudgetProgressiveThreadTaskCardIneligibleCount, 1);
   assert.equal(report.decision.evidence.detailResponseBudgetProgressiveThreadTaskCardOmittedBytes, 24000);
   assert.equal(report.decision.evidence.detailResponseBudgetProgressiveActiveFirstPaintItemBudgetApplied, true);
   assert.equal(report.decision.evidence.detailResponseBudgetProgressiveActiveFirstPaintBytesAfterItemBudget, 92000);

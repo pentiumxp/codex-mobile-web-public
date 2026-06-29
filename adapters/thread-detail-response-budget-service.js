@@ -33,18 +33,6 @@ const USER_INPUT_BUDGET_MARKER = "\n\n[active user input preview truncated]\n\n"
 const FIRST_PAINT_TEXT_BUDGET_MARKER = "\n\n[first-paint preview truncated]\n\n";
 const FIRST_PAINT_USER_INPUT_BUDGET_MARKER = "\n\n[first-paint user input preview truncated]\n\n";
 
-const ACTIVE_TASK_CARD_STATUSES = new Set([
-  "pending",
-  "approved",
-  "queued",
-  "running",
-  "active",
-  "in_progress",
-  "in-progress",
-  "inprogress",
-  "processing",
-]);
-
 const OPERATION_ITEM_TYPES = new Set([
   "commandExecution",
   "collabAgentToolCall",
@@ -449,17 +437,6 @@ function taskCardHasAction(card) {
   ));
 }
 
-function taskCardNeedsFirstPaintDetail(card) {
-  if (!card || typeof card !== "object") return true;
-  if (!String(card.id || "").trim()) return true;
-  if (taskCardHasAction(card)) return true;
-  const status = String(card.status || "").trim().toLowerCase();
-  if (ACTIVE_TASK_CARD_STATUSES.has(status)) return true;
-  const lease = card.executionLease && typeof card.executionLease === "object" ? card.executionLease : null;
-  if (lease && card.terminal !== true) return true;
-  return false;
-}
-
 function compactTaskCardMessageForFirstPaint(message) {
   const source = message && typeof message === "object" ? message : {};
   const out = {};
@@ -473,7 +450,18 @@ function compactTaskCardMessageForFirstPaint(message) {
   return Object.keys(out).length ? out : undefined;
 }
 
-function compactSettledThreadTaskCardForFirstPaint(card) {
+function compactTaskCardWorkflowForFirstPaint(workflow) {
+  if (!workflow || typeof workflow !== "object") return undefined;
+  const out = {};
+  for (const field of ["id", "mode"]) {
+    const text = String(workflow[field] || "").trim();
+    if (text) out[field] = text;
+  }
+  if (typeof workflow.authorized === "boolean") out.authorized = workflow.authorized;
+  return Object.keys(out).length ? out : undefined;
+}
+
+function compactThreadTaskCardForFirstPaint(card) {
   const out = {
     id: String(card && card.id || ""),
     status: String(card && card.status || "completed"),
@@ -486,6 +474,11 @@ function compactSettledThreadTaskCardForFirstPaint(card) {
   for (const field of ["terminal", "requiresReturn"]) {
     if (typeof (card && card[field]) === "boolean") out[field] = card[field];
   }
+  for (const field of ["canApprove", "canDelete", "canReply", "canRevoke"]) {
+    if (typeof (card && card[field]) === "boolean") out[field] = card[field];
+  }
+  const workflow = compactTaskCardWorkflowForFirstPaint(card && card.workflow);
+  if (workflow) out.workflow = workflow;
   const message = compactTaskCardMessageForFirstPaint(card && card.message);
   if (message) out.message = message;
   const source = compactTaskCardEndpoint(card && card.source);
@@ -1198,17 +1191,19 @@ function applyProgressiveThreadTaskCardFirstPaintBudget(thread, options, stats) 
   let originalBytes = 0;
   let retainedBytes = 0;
   let actionableCount = 0;
+  let ineligibleCount = 0;
   for (const card of thread.threadTaskCards) {
     const cardBytes = jsonByteLength(card);
     originalBytes += cardBytes;
     stats.progressiveThreadTaskCardOriginalCount += 1;
-    if (taskCardNeedsFirstPaintDetail(card)) {
-      actionableCount += 1;
+    if (!card || typeof card !== "object" || !String(card.id || "").trim()) {
+      ineligibleCount += 1;
       retainedBytes += cardBytes;
       nextCards.push(card);
       continue;
     }
-    const compacted = compactSettledThreadTaskCardForFirstPaint(card);
+    if (taskCardHasAction(card)) actionableCount += 1;
+    const compacted = compactThreadTaskCardForFirstPaint(card);
     const compactedBytes = jsonByteLength(compacted);
     if (compactedBytes > 0 && compactedBytes < cardBytes) {
       changed = true;
@@ -1221,12 +1216,13 @@ function applyProgressiveThreadTaskCardFirstPaintBudget(thread, options, stats) 
     }
   }
   stats.progressiveThreadTaskCardActionableCount = actionableCount;
+  stats.progressiveThreadTaskCardIneligibleCount = ineligibleCount;
   stats.progressiveThreadTaskCardOriginalBytes = originalBytes;
   stats.progressiveThreadTaskCardRetainedBytes = retainedBytes;
   stats.progressiveThreadTaskCardOmittedBytes = Math.max(0, originalBytes - retainedBytes);
   stats.progressiveThreadTaskCardCompactedCount = compactedCount;
   if (!changed) {
-    stats.progressiveThreadTaskCardBudgetReason = "no-settled-task-cards";
+    stats.progressiveThreadTaskCardBudgetReason = "no-net-reducing-task-cards";
     return;
   }
   thread.threadTaskCards = nextCards;
@@ -1699,6 +1695,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
     progressiveThreadTaskCardOriginalCount: 0,
     progressiveThreadTaskCardCompactedCount: 0,
     progressiveThreadTaskCardActionableCount: 0,
+    progressiveThreadTaskCardIneligibleCount: 0,
     progressiveThreadTaskCardOriginalBytes: 0,
     progressiveThreadTaskCardRetainedBytes: 0,
     progressiveThreadTaskCardOmittedBytes: 0,

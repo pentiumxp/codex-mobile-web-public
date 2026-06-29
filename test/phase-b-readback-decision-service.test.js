@@ -314,6 +314,7 @@ test("phase B readback decision returns ready for warm or bounded paths", () => 
       responseBudgetProgressiveThreadTaskCardOriginalCount: 24,
       responseBudgetProgressiveThreadTaskCardCompactedCount: 16,
       responseBudgetProgressiveThreadTaskCardActionableCount: 3,
+      responseBudgetProgressiveThreadTaskCardIneligibleCount: 1,
       responseBudgetProgressiveThreadTaskCardOriginalBytes: 36000,
       responseBudgetProgressiveThreadTaskCardRetainedBytes: 14000,
       responseBudgetProgressiveThreadTaskCardOmittedBytes: 22000,
@@ -454,6 +455,7 @@ test("phase B readback decision returns ready for warm or bounded paths", () => 
   assert.equal(decision.evidence.detailResponseBudgetProgressiveThreadTaskCardOriginalCount, 24);
   assert.equal(decision.evidence.detailResponseBudgetProgressiveThreadTaskCardCompactedCount, 16);
   assert.equal(decision.evidence.detailResponseBudgetProgressiveThreadTaskCardActionableCount, 3);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveThreadTaskCardIneligibleCount, 1);
   assert.equal(decision.evidence.detailResponseBudgetProgressiveThreadTaskCardOriginalBytes, 36000);
   assert.equal(decision.evidence.detailResponseBudgetProgressiveThreadTaskCardRetainedBytes, 14000);
   assert.equal(decision.evidence.detailResponseBudgetProgressiveThreadTaskCardOmittedBytes, 22000);
