@@ -32285,6 +32285,65 @@ The previous full handoff was archived and should be opened only when old proven
   - Local candidate in progress. Private production deploy has not yet been
     requested. No Public deploy requested or run.
 
+### 2026-06-30 - Active First-Paint Assistant Retained-Byte Attribution Deployed
+
+- Source commit:
+  - `fee8dae38f18` (`fix: attribute retained assistant first paint bytes`).
+- Deploy/readback status:
+  - Private production deploy was requested through Home AI Deploy card
+    `ttc_aa44170a011369ad01` with reason
+    `codex-mobile-retained-assistant-first-paint-attribution`.
+  - Local read-only production parity confirmed all changed deployable files
+    matched source:
+    - `adapters/thread-detail-response-budget-service.js`
+      (`85c08dd331906d99`)
+    - `scripts/codex-mobile-phase-b-readback-smoke.js`
+      (`e8a90b1a0a46a23e`)
+    - `adapters/phase-b-readback-decision-service.js`
+      (`30e0ba38ce0a5a98`)
+    - `test/thread-detail-response-budget-service.test.js`
+      (`013eda344ba985a5`)
+    - `test/phase-b-readback-smoke.test.js` (`c1af5bbc50322431`)
+    - `test/phase-b-readback-decision-service.test.js`
+      (`980eaa5c20f61722`)
+    - `docs/MODULES.md` (`0eda40734c92cc02`)
+    - `docs/TROUBLESHOOTING.md` (`43bdc9853b3f474b`)
+    - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`
+      (`75ab00406c2ba0c5`)
+  - Production markers found `retainedAssistantItemCountByTurnState`,
+    `retainedAssistantItemBytesByTurnState`,
+    `responseBudgetRetainedAssistantItemBytesByTurnState`, and
+    `detailResponseBudgetRetainedAssistantItemBytesByTurnState`.
+- Production Phase-B readback:
+  - Codex Mobile source thread returned `ok=true`,
+    `readMode=projection-active-overlay`, `totalMs=481`,
+    `prepareResponseMs=421`, `turnsListInitialMs=0`,
+    `activeOverlayWindowMs=0`, `activeOverlayBackfillWindowMs=1`, and
+    `activeOverlayMergeMs=2`.
+  - Active first-paint over-ceiling bytes: `72437`.
+  - Retained visible bytes by kind: assistant `34678`, userMessage `31047`,
+    usage `10863`, operation `2381`, other `791`, reasoning `745`.
+  - New assistant turn-state attribution: completed assistant `22008` bytes /
+    `32` items, active assistant `12670` bytes / `24` items.
+  - Decision stayed `phase-b-readback` / `warm-or-bounded-paths`, issue codes
+    empty.
+- Runtime readback:
+  - Deploy-mode runtime self-check returned `ok=true`, `deployPass=true`,
+    `periodicHealthy=true`, `issueCount=0`, `blockingIssueCount=0`, and
+    `executionFailureCount=0`.
+  - Child checks `api-thread`, `browser-runtime`, and `client-events` were all
+    OK with zero issues.
+  - LaunchAgent readback returned `ok=true`; latest full-check deploy event had
+    check names `api-thread`, `browser-runtime`, `client-events`,
+    `deployPass=true`, `periodicHealthy=true`, zero issues, zero blocking
+    issues, and zero execution failures.
+- Next optimization target:
+  - Production evidence now proves completed/replay assistant bytes are the
+    larger assistant residual. The next payload slice should target completed
+    assistant/replay first-paint retention separately from current active
+    assistant progress, preserving active progress and latest visible receipt
+    semantics.
+
 ### 2026-06-30 - Active First-Paint Completed Usage Compact Net-Reduction Follow-Up
 
 - Production readback after `4b5496bb4787`:
