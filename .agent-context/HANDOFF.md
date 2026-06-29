@@ -1,3 +1,52 @@
+# 2026-06-29 - v586 duplicate submitted-user echo fix pending deploy
+
+- Scope:
+  - Continued `thread_session_load_failed` remediation closure for task card
+    `ttc_b1e01a6fbcdfa70943`.
+  - The original `http_404`/unmaterialized UUID-title placeholder thread class
+    is no longer present in production readback; the current deploy gate
+    residual was latest-turn duplicate user messages in the browser DOM.
+- Root-cause boundary:
+  - Failing layer: Codex Mobile client visible-item projection.
+  - Violated invariant: once the durable server user message for a submitted
+    message is visible, the local optimistic/pending echo must stop being a
+    visible item, while the durable user message itself remains authoritative.
+  - Root cause: the v578 visibility fix preserved local pending user messages
+    to prevent send-disappear regressions, but `visibleItemsForTurn` did not
+    suppress the synthetic echo after the durable same-turn user message
+    arrived.
+- Source change:
+  - Commit `9dd7223 fix: hide durable-submitted user echoes`.
+  - `public/app.js` adds a narrow visible-layer filter that hides only
+    optimistic `userMessage` echoes when a durable matching user message is
+    present in the same turn, or when a durable message shares the same
+    submission id elsewhere in the thread.
+  - Failed pending sends stay visible; repeated durable user messages stay
+    visible.
+  - Static shell/cache advanced to `codex-mobile-shell-v586` in
+    `public/app.js`, `public/sw.js`, and the static guard test.
+- Validation:
+  - Focused:
+    `node --test test/conversation-render.test.js test/thread-detail-v4-merge-state.test.js test/browser-runtime-self-check-service.test.js test/client-render-stability-guard.test.js`
+    passed (`172` tests).
+  - Full source `npm test` passed (`1583` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - Home AI fallback-governance check passed for changed files.
+  - `codegraph sync && codegraph status` passed; index is up to date.
+- Deployment:
+  - Private Home AI Deploy card `ttc_5e0cead86fb9f90dec` was sent to thread
+    `019f0a0d-c4e0-7ca1-8142-bd06e4f874da`.
+  - Requested deploy reason:
+    `codex-mobile-v586-duplicate-user-echo`.
+  - Public push/deploy was not requested and was not run from this thread.
+- Next:
+  - Wait for the Home AI Deploy return card.
+  - If production `clientBuildId` reads
+    `0.1.11|codex-mobile-shell-v586` and deploy-mode runtime self-check has
+    zero H1/H2 issues, return the original remediation card as completed.
+  - If the gate still reports duplicates, inspect the production browser
+    sample before sending the remediation return.
+
 # 2026-06-26 - local Phase B active read policy extracted
 
 - Scope:
