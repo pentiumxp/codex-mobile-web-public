@@ -196,6 +196,16 @@ test("phase B readback decision returns ready for warm or bounded paths", () => 
       responseBudgetOmittedOperationItems: 12,
       responseBudgetOmittedReasoningItems: 2,
       responseBudgetOmittedAssistantItems: 8,
+      responseBudgetProgressiveReplayAssistantItems: 24,
+      responseBudgetLimitedReplayAssistantItems: 8,
+      responseBudgetProgressiveCompletedReplayAssistantItems: 12,
+      responseBudgetProgressiveCompletedReplayAssistantBudgetApplied: true,
+      responseBudgetProgressiveCompletedReplayAssistantBudgetReason: "thread-byte-pressure",
+      responseBudgetProgressiveCompletedReplayAssistantBudgetScope: "active-first-paint",
+      responseBudgetLimitedCompletedReplayAssistantItems: 6,
+      responseBudgetCompletedReplayAssistantItemsBefore: 20,
+      responseBudgetCompletedReplayAssistantItemsAfter: 14,
+      responseBudgetCompletedReplayOmittedAssistantItems: 6,
       responseBudgetOmittedVisibleItems: 4,
       responseBudgetActiveTurnCount: 1,
       responseBudgetStaleActiveTurnCount: 1,
@@ -294,6 +304,16 @@ test("phase B readback decision returns ready for warm or bounded paths", () => 
   assert.equal(decision.evidence.detailResponseBudgetOmittedOperationItems, 12);
   assert.equal(decision.evidence.detailResponseBudgetOmittedReasoningItems, 2);
   assert.equal(decision.evidence.detailResponseBudgetOmittedAssistantItems, 8);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveReplayAssistantItems, 24);
+  assert.equal(decision.evidence.detailResponseBudgetLimitedReplayAssistantItems, 8);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedReplayAssistantItems, 12);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedReplayAssistantBudgetApplied, true);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedReplayAssistantBudgetReason, "thread-byte-pressure");
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedReplayAssistantBudgetScope, "active-first-paint");
+  assert.equal(decision.evidence.detailResponseBudgetLimitedCompletedReplayAssistantItems, 6);
+  assert.equal(decision.evidence.detailResponseBudgetCompletedReplayAssistantItemsBefore, 20);
+  assert.equal(decision.evidence.detailResponseBudgetCompletedReplayAssistantItemsAfter, 14);
+  assert.equal(decision.evidence.detailResponseBudgetCompletedReplayOmittedAssistantItems, 6);
   assert.equal(decision.evidence.detailResponseBudgetOmittedVisibleItems, 4);
   assert.equal(decision.evidence.detailResponseBudgetActiveTurnCount, 1);
   assert.equal(decision.evidence.detailResponseBudgetStaleActiveTurnCount, 1);

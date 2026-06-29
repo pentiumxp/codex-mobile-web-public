@@ -2467,13 +2467,16 @@ Deployable scope:
   the detail window crosses the item-count threshold or active/thread byte
   thresholds, lowering active operation/reasoning tails while protecting
   current active and latest-replay assistant/plan progress rows. The replay
-  protection is bounded under progressive active pressure: active turns and
-  protected latest-completed replay turns keep a trailing assistant/plan tail
-  controlled by `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_REPLAY_ASSISTANT_ITEMS`
-  (default `24`), and the response records `progressiveReplayAssistantItems`
-  plus `limitedReplayAssistantItems`. This prevents a large active overlay from
-  retaining every assistant fragment while preserving the newest user-visible
-  progress. Under that progressive active pressure only, oversized retained active
+  protection is bounded under progressive active pressure: active turns keep a
+  trailing assistant/plan tail controlled by
+  `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_REPLAY_ASSISTANT_ITEMS` (default
+  `24`), while protected completed replay turns keep a separate tail controlled
+  by `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_COMPLETED_REPLAY_ASSISTANT_ITEMS`
+  (default `12`). The response records `progressiveReplayAssistantItems`,
+  `progressiveCompletedReplayAssistantItems`, `limitedReplayAssistantItems`,
+  and `limitedCompletedReplayAssistantItems`. This prevents a large active
+  overlay from retaining every older completed assistant fragment while
+  preserving the newest active progress. Under that progressive active pressure only, oversized retained active
   assistant/reasoning text fields are reduced to a bounded first-paint preview
   and marked with `mobileActiveTextBudget` / `mobileTextTruncated`. The text
   preview budget can be disabled for diagnostics with
@@ -2534,9 +2537,9 @@ Deployable scope:
   protection generically.
 - When that protected attribution identifies assistant rows, the next evidence
   slice records retained assistant counts/bytes by turn state (`active`,
-  `completed`, `staleActive`, `other`). This separates current live assistant
-  progress from completed/replay assistant receipts before any assistant budget
-  is tightened.
+  `completed`, `staleActive`, `other`). Completed/replay assistant pressure can
+  then be tightened through the completed replay assistant first-paint budget
+  without weakening the current active assistant progress budget.
 - Production readback after that attribution slice showed the protected active
   first-paint over-ceiling payload was dominated by completed `userMessage`
   items, not the current active input. The follow-up budget previews only

@@ -18,6 +18,7 @@ const DEFAULT_PROGRESSIVE_ACTIVE_OPERATION_ITEMS = 6;
 const DEFAULT_PROGRESSIVE_ACTIVE_REASONING_ITEMS = 1;
 const DEFAULT_PROGRESSIVE_ACTIVE_ASSISTANT_ITEMS = 4;
 const DEFAULT_PROGRESSIVE_REPLAY_ASSISTANT_ITEMS = 24;
+const DEFAULT_PROGRESSIVE_COMPLETED_REPLAY_ASSISTANT_ITEMS = 12;
 const DEFAULT_PROGRESSIVE_ACTIVE_TEXT_CHARS = 12 * 1024;
 const DEFAULT_PROGRESSIVE_ACTIVE_OPERATION_PAYLOAD_CHARS = 6 * 1024;
 const DEFAULT_PROGRESSIVE_ACTIVE_USER_TEXT_CHARS = 10 * 1024;
@@ -1127,9 +1128,15 @@ function compactTurnWithBudget(turn, thread, options, stats) {
     Number(options.activeAssistantItems || 0),
     Number(options.progressiveReplayAssistantItems || 0),
   );
+  const completedReplayAssistantLimit = Math.max(
+    Number(options.completedAssistantItems || 0),
+    Number(options.progressiveCompletedReplayAssistantItems || 0),
+  );
   const assistantLimit = preserveReplayAssistantItems && !limitPreservedReplayAssistantItems
     ? beforeAssistantCount
-    : replay ? replayAssistantLimit : options.completedAssistantItems;
+    : active ? replayAssistantLimit
+      : protectedCompletedReplay && limitPreservedReplayAssistantItems ? completedReplayAssistantLimit
+        : replay ? replayAssistantLimit : options.completedAssistantItems;
   const keepAssistantIndexes = trailingIndexes(
     compacted.items,
     assistantLimit,
@@ -1174,6 +1181,9 @@ function compactTurnWithBudget(turn, thread, options, stats) {
   stats.latestCompletedReplayAssistantItems += latestCompletedReplay ? afterAssistantCount : 0;
   stats.latestCompletedReplayOmittedAssistantItems += latestCompletedReplay ? omittedAssistantItems : 0;
   stats.protectedCompletedReplayTurnCount += protectedCompletedReplay ? 1 : 0;
+  stats.completedReplayAssistantItemsBefore += protectedCompletedReplay ? beforeAssistantCount : 0;
+  stats.completedReplayAssistantItemsAfter += protectedCompletedReplay ? afterAssistantCount : 0;
+  stats.completedReplayOmittedAssistantItems += protectedCompletedReplay ? omittedAssistantItems : 0;
   stats.protectedCompletedReplayAssistantItems += protectedCompletedReplay ? afterAssistantCount : 0;
   stats.protectedCompletedReplayOmittedAssistantItems += protectedCompletedReplay ? omittedAssistantItems : 0;
   stats.richCompletedReplayTurnCount += richCompletedReplay ? 1 : 0;
@@ -1184,6 +1194,11 @@ function compactTurnWithBudget(turn, thread, options, stats) {
   }
   if (limitPreservedReplayAssistantItems && omittedAssistantItems > 0) {
     stats.limitedReplayAssistantItems += omittedAssistantItems;
+  }
+  if (!active && protectedCompletedReplay && limitPreservedReplayAssistantItems && omittedAssistantItems > 0) {
+    stats.progressiveCompletedReplayAssistantBudgetApplied = true;
+    stats.progressiveCompletedReplayAssistantBudgetReason = stats.progressiveActiveBudgetReason || "active-first-paint-pressure";
+    stats.limitedCompletedReplayAssistantItems += omittedAssistantItems;
   }
   stats.staleActiveTurnCount += !active && isStaleActiveLikeTurn(turn, thread) ? 1 : 0;
   return compacted;
@@ -1251,6 +1266,11 @@ function compactThreadDetailResponseResult(result, options = {}) {
   const progressiveReplayAssistantItems = Math.max(1, boundedCount(
     options.progressiveReplayAssistantItems,
     DEFAULT_PROGRESSIVE_REPLAY_ASSISTANT_ITEMS,
+    500,
+  ));
+  const progressiveCompletedReplayAssistantItems = Math.max(1, boundedCount(
+    options.progressiveCompletedReplayAssistantItems,
+    DEFAULT_PROGRESSIVE_COMPLETED_REPLAY_ASSISTANT_ITEMS,
     500,
   ));
   const progressiveActiveTextChars = boundedCount(
@@ -1355,6 +1375,14 @@ function compactThreadDetailResponseResult(result, options = {}) {
     preservedReplayAssistantItems: 0,
     progressiveReplayAssistantItems,
     limitedReplayAssistantItems: 0,
+    progressiveCompletedReplayAssistantItems,
+    progressiveCompletedReplayAssistantBudgetApplied: false,
+    progressiveCompletedReplayAssistantBudgetReason: "",
+    progressiveCompletedReplayAssistantBudgetScope: "active-first-paint",
+    limitedCompletedReplayAssistantItems: 0,
+    completedReplayAssistantItemsBefore: 0,
+    completedReplayAssistantItemsAfter: 0,
+    completedReplayOmittedAssistantItems: 0,
     staleActiveTurnCount: 0,
     completedOperationItems: boundedCount(options.completedOperationItems, DEFAULT_COMPLETED_OPERATION_ITEMS, 100),
     activeOperationItems: effectiveActiveOperationItems,

@@ -196,6 +196,16 @@ test("phase B readback smoke collects bounded diagnostics without private fields
             omittedOperationItems: 14,
             omittedReasoningItems: 3,
             omittedAssistantItems: 7,
+            progressiveReplayAssistantItems: 24,
+            limitedReplayAssistantItems: 7,
+            progressiveCompletedReplayAssistantItems: 12,
+            progressiveCompletedReplayAssistantBudgetApplied: true,
+            progressiveCompletedReplayAssistantBudgetReason: "active-byte-pressure",
+            progressiveCompletedReplayAssistantBudgetScope: "active-first-paint",
+            limitedCompletedReplayAssistantItems: 5,
+            completedReplayAssistantItemsBefore: 18,
+            completedReplayAssistantItemsAfter: 13,
+            completedReplayOmittedAssistantItems: 5,
             omittedVisibleItems: 2,
             activeTurnCount: 1,
             staleActiveTurnCount: 1,
@@ -397,6 +407,16 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.detail.responseBudgetOmittedOperationItems, 14);
   assert.equal(report.detail.responseBudgetOmittedReasoningItems, 3);
   assert.equal(report.detail.responseBudgetOmittedAssistantItems, 7);
+  assert.equal(report.detail.responseBudgetProgressiveReplayAssistantItems, 24);
+  assert.equal(report.detail.responseBudgetLimitedReplayAssistantItems, 7);
+  assert.equal(report.detail.responseBudgetProgressiveCompletedReplayAssistantItems, 12);
+  assert.equal(report.detail.responseBudgetProgressiveCompletedReplayAssistantBudgetApplied, true);
+  assert.equal(report.detail.responseBudgetProgressiveCompletedReplayAssistantBudgetReason, "active-byte-pressure");
+  assert.equal(report.detail.responseBudgetProgressiveCompletedReplayAssistantBudgetScope, "active-first-paint");
+  assert.equal(report.detail.responseBudgetLimitedCompletedReplayAssistantItems, 5);
+  assert.equal(report.detail.responseBudgetCompletedReplayAssistantItemsBefore, 18);
+  assert.equal(report.detail.responseBudgetCompletedReplayAssistantItemsAfter, 13);
+  assert.equal(report.detail.responseBudgetCompletedReplayOmittedAssistantItems, 5);
   assert.equal(report.detail.responseBudgetOmittedVisibleItems, 2);
   assert.equal(report.detail.responseBudgetActiveTurnCount, 1);
   assert.equal(report.detail.responseBudgetStaleActiveTurnCount, 1);
@@ -451,6 +471,8 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.detail.responseBudgetProgressiveFirstPaintBytesBeforeTextBudget, 210000);
   assert.equal(report.detail.responseBudgetProgressiveFirstPaintBytesAfterTextBudget, 150000);
   assert.equal(report.decision.evidence.detailResponseBudgetProgressiveActiveApplied, true);
+  assert.equal(report.decision.evidence.detailResponseBudgetProgressiveCompletedReplayAssistantBudgetApplied, true);
+  assert.equal(report.decision.evidence.detailResponseBudgetLimitedCompletedReplayAssistantItems, 5);
   assert.equal(report.decision.evidence.detailResponseBudgetOmittedActiveTextChars, 39000);
   assert.equal(report.decision.evidence.detailResponseBudgetProgressiveCompletedUserInputBudgetApplied, true);
   assert.equal(report.decision.evidence.detailResponseBudgetOmittedCompletedUserInputChars, 22808);

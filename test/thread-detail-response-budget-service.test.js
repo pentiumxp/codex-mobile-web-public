@@ -1697,7 +1697,7 @@ test("thread detail response budget applies progressive active limits under item
   assert.equal(budget.progressiveActiveTurnOriginalItemCount, 24);
 });
 
-test("thread detail response budget bounds preserved replay assistants under active pressure", () => {
+test("thread detail response budget bounds completed replay assistant first-paint budget under active pressure", () => {
   const completedAssistantItems = Array.from({ length: 12 }, (_, index) => ({
     id: `completed-a${index + 1}`,
     type: "agentMessage",
@@ -1741,12 +1741,11 @@ test("thread detail response budget bounds preserved replay assistants under act
     activeProgressiveItemThreshold: 10,
     progressiveActiveAssistantItems: 4,
     progressiveReplayAssistantItems: 6,
+    progressiveCompletedReplayAssistantItems: 4,
   });
 
   assert.deepEqual(compacted.thread.turns[0].items.map((item) => item.id), [
     "completed-u",
-    "completed-a7",
-    "completed-a8",
     "completed-a9",
     "completed-a10",
     "completed-a11",
@@ -1766,12 +1765,19 @@ test("thread detail response budget bounds preserved replay assistants under act
   assert.equal(budget.progressiveActiveBudgetApplied, true);
   assert.equal(budget.activeAssistantItems, 4);
   assert.equal(budget.progressiveReplayAssistantItems, 6);
-  assert.equal(budget.latestCompletedReplayAssistantItems, 6);
-  assert.equal(budget.protectedCompletedReplayAssistantItems, 6);
+  assert.equal(budget.progressiveCompletedReplayAssistantItems, 4);
+  assert.equal(budget.progressiveCompletedReplayAssistantBudgetApplied, true);
+  assert.equal(budget.progressiveCompletedReplayAssistantBudgetScope, "active-first-paint");
+  assert.equal(budget.latestCompletedReplayAssistantItems, 4);
+  assert.equal(budget.protectedCompletedReplayAssistantItems, 4);
+  assert.equal(budget.completedReplayAssistantItemsBefore, 12);
+  assert.equal(budget.completedReplayAssistantItemsAfter, 4);
+  assert.equal(budget.completedReplayOmittedAssistantItems, 8);
   assert.equal(budget.activeAssistantItemsAfter, 6);
-  assert.equal(budget.omittedAssistantItems, 12);
-  assert.equal(budget.limitedReplayAssistantItems, 12);
-  assert.equal(budget.preservedReplayAssistantItems, 4);
+  assert.equal(budget.omittedAssistantItems, 14);
+  assert.equal(budget.limitedReplayAssistantItems, 14);
+  assert.equal(budget.limitedCompletedReplayAssistantItems, 8);
+  assert.equal(budget.preservedReplayAssistantItems, 2);
 });
 
 test("thread detail response budget applies progressive visible item ceiling after per-turn compaction", () => {
