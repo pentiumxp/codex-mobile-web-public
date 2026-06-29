@@ -10,6 +10,7 @@ const {
   compareDetailReadbacks,
   compareThreadListReadbacks,
   itemTimestampMs,
+  selfCheckDiagnosticCandidate,
 } = require("../adapters/thread-detail-self-check-service");
 
 const TURN_ID = "019f0ca6-a9c9-7753-8224-416f754b6c03";
@@ -26,6 +27,7 @@ function healthyDetail() {
         latestCompletedReplayOperationItems: 0,
         latestCompletedReplayReasoningItems: 0,
         latestCompletedReplayAssistantItems: 2,
+        latestCompletedReplayOmittedAssistantItems: 0,
       },
       turns: [
         {
@@ -57,6 +59,220 @@ test("thread detail self check accepts healthy latest completed replay", () => {
   assert.equal(report.latestCompleted.usageItems, 1);
   assert.equal(report.budget.latestCompletedReplayOperationItems, 0);
   assert.equal(report.budget.latestCompletedReplayReasoningItems, 0);
+  assert.equal(report.budget.latestCompletedReplayOmittedAssistantItems, 0);
+});
+
+test("thread detail self check accepts repeated operation groups with unique client render keys", () => {
+  const detail = healthyDetail();
+  detail.thread.activeTurnId = "turn-active";
+  detail.thread.turns.push({
+    id: "turn-active",
+    status: "inProgress",
+    items: [
+      { id: "cmd-a", type: "commandExecution", groupKey: "same-command" },
+      { id: "cmd-b", type: "commandExecution", groupKey: "same-command" },
+    ],
+  });
+
+  const report = analyzeThreadDetail(detail);
+  const codes = report.issues.map((issue) => issue.code);
+
+  assert.equal(report.ok, true);
+  assert.ok(!codes.includes("duplicate_client_render_keys"));
+});
+
+test("thread detail self check detects duplicate client render keys", () => {
+  const detail = healthyDetail();
+  detail.thread.activeTurnId = "turn-active";
+  detail.thread.turns.push({
+    id: "turn-active",
+    status: "inProgress",
+    items: [
+      { id: "agent-a", type: "agentMessage", renderKey: "same-render-key" },
+      { id: "agent-b", type: "plan", renderKey: "same-render-key" },
+    ],
+  });
+
+  const report = analyzeThreadDetail(detail);
+  const issue = report.issues.find((entry) => entry.code === "duplicate_client_render_keys");
+
+  assert.equal(report.ok, false);
+  assert.equal(issue.severity, "H2");
+  assert.equal(issue.surface, "thread-detail");
+  assert.equal(issue.threadHash, "4b0a5fefc328e6b9");
+});
+
+test("thread detail self check accepts naturally short completed replay receipts", () => {
+  const detail = healthyDetail();
+  detail.thread.mobileVisibleItemKeys = ["u1", "a1", "usage1"];
+  detail.thread.mobileDetailResponseBudget.latestCompletedReplayAssistantItems = 1;
+  detail.thread.mobileDetailResponseBudget.latestCompletedReplayOmittedAssistantItems = 0;
+  detail.thread.turns[0].items = [
+    { id: "u1", type: "userMessage" },
+    { id: "a1", type: "agentMessage" },
+    { id: "usage1", type: "turnUsageSummary" },
+  ];
+
+  const report = analyzeThreadDetail(detail);
+
+  assert.equal(report.ok, true);
+  assert.ok(!report.issues.some((issue) => issue.code === "latest_completed_replay_receipt_only"));
+});
+
+test("thread detail self check warns when latest completed replay assistant progress was budgeted away", () => {
+  const detail = healthyDetail();
+  detail.thread.mobileVisibleItemKeys = ["u1", "a1", "usage1"];
+  detail.thread.mobileDetailResponseBudget.latestCompletedReplayAssistantItems = 1;
+  detail.thread.mobileDetailResponseBudget.latestCompletedReplayOmittedAssistantItems = 2;
+  detail.thread.turns[0].items = [
+    { id: "u1", type: "userMessage" },
+    { id: "a1", type: "agentMessage" },
+    { id: "usage1", type: "turnUsageSummary" },
+  ];
+
+  const report = analyzeThreadDetail(detail);
+  const issue = report.issues.find((entry) => entry.code === "latest_completed_replay_receipt_only");
+
+  assert.equal(report.ok, true);
+  assert.equal(issue.severity, "H3");
+  assert.equal(issue.omittedAssistantItems, 2);
+});
+
+test("thread detail self check fails when active turn visible items were budgeted away", () => {
+  const detail = healthyDetail();
+  detail.thread.activeTurnId = "turn-active";
+  detail.thread.turns.push({
+    id: "turn-active",
+    status: "inProgress",
+    mobileVisibleItemBudget: {
+      reason: "progressive-active-first-paint-byte-ceiling",
+      omitted: 6,
+      retained: 1,
+      original: 7,
+    },
+    items: [
+      { id: "a-live", type: "agentMessage" },
+    ],
+  });
+  detail.thread.mobileDetailResponseBudget.activeTurnCount = 1;
+  detail.thread.mobileDetailResponseBudget.omittedVisibleItems = 6;
+  detail.thread.mobileDetailResponseBudget.progressiveActiveFirstPaintOmittedVisibleItems = 6;
+
+  const report = analyzeThreadDetail(detail);
+  const issue = report.issues.find((entry) => entry.code === "active_turn_visible_item_budget");
+
+  assert.equal(report.ok, false);
+  assert.equal(report.activeTurn.itemCount, 1);
+  assert.equal(report.budget.progressiveActiveFirstPaintOmittedVisibleItems, 6);
+  assert.equal(issue.severity, "H2");
+  assert.equal(issue.omittedVisibleItems, 6);
+});
+
+test("thread detail self check fails when active assistant items were budgeted away", () => {
+  const detail = healthyDetail();
+  detail.thread.activeTurnId = "turn-active";
+  detail.thread.mobileActiveOverlay = {
+    reason: "overlay-evidence-complete",
+    source: "projection-live",
+    counts: {
+      items: 4,
+      assistantItems: 3,
+      operationItems: 0,
+      uploadItems: 0,
+      receiptItems: 0,
+      otherItems: 1,
+      unknownItems: 0,
+    },
+  };
+  detail.thread.turns.push({
+    id: "turn-active",
+    status: "inProgress",
+    items: [
+      { id: "u-live", type: "userMessage" },
+      { id: "a-live-3", type: "agentMessage" },
+    ],
+  });
+  detail.thread.mobileDetailResponseBudget.activeTurnCount = 1;
+  detail.thread.mobileDetailResponseBudget.activeAssistantItemsBefore = 3;
+  detail.thread.mobileDetailResponseBudget.activeAssistantItemsAfter = 1;
+  detail.thread.mobileDetailResponseBudget.activeOmittedAssistantItems = 2;
+
+  const report = analyzeThreadDetail(detail);
+  const codes = report.issues.map((issue) => issue.code);
+
+  assert.equal(report.ok, false);
+  assert.equal(report.budget.activeOmittedAssistantItems, 2);
+  assert.equal(report.budget.activeAssistantItemsBefore, 3);
+  assert.equal(report.budget.activeAssistantItemsAfter, 1);
+  assert.ok(codes.includes("active_turn_assistant_budget"));
+  assert.ok(codes.includes("active_overlay_assistant_projection_gap"));
+});
+
+test("thread detail self check accepts active assistant overlay explained by synthetic dedupe", () => {
+  const detail = healthyDetail();
+  detail.thread.activeTurnId = "turn-active";
+  detail.thread.mobileSyntheticActiveAssistantDeduped = 2;
+  detail.thread.mobileActiveOverlay = {
+    reason: "overlay-evidence-complete",
+    source: "projection-live",
+    counts: {
+      items: 6,
+      assistantItems: 4,
+      operationItems: 0,
+      uploadItems: 0,
+      receiptItems: 0,
+      otherItems: 2,
+      unknownItems: 0,
+    },
+  };
+  detail.thread.turns.push({
+    id: "turn-active",
+    status: "inProgress",
+    mobileSyntheticActiveAssistantDeduped: 2,
+    items: [
+      { id: "u-live", type: "userMessage" },
+      { id: "a-live-1", type: "agentMessage" },
+      { id: "a-live-2", type: "agentMessage" },
+    ],
+  });
+  detail.thread.mobileDetailResponseBudget.activeTurnCount = 1;
+
+  const report = analyzeThreadDetail(detail);
+  const codes = report.issues.map((issue) => issue.code);
+
+  assert.equal(report.ok, true);
+  assert.equal(report.budget.syntheticActiveAssistantDeduped, 2);
+  assert.ok(!codes.includes("active_overlay_assistant_projection_gap"));
+});
+
+test("thread detail self check ignores stale active completion shell as latest completed replay", () => {
+  const detail = healthyDetail();
+  detail.thread.turns.push({
+    id: "stale-active-shell",
+    status: {
+      type: "completed",
+      mobileStaleActiveTurn: true,
+      previousType: "active",
+    },
+    items: [
+      { id: "u-stale", type: "userMessage" },
+      { id: "cmd-stale", type: "commandExecution" },
+      { id: "a-stale", type: "agentMessage" },
+    ],
+  });
+
+  const report = analyzeThreadDetail(detail);
+  const codes = report.issues.map((issue) => issue.code);
+
+  assert.equal(report.ok, true);
+  assert.deepEqual(report.latestCompleted.counts, {
+    userMessage: 1,
+    agentMessage: 1,
+    plan: 1,
+    turnUsageSummary: 1,
+  });
+  assert.ok(!codes.includes("latest_completed_replay_has_operation_items"));
+  assert.ok(!codes.includes("latest_completed_usage_missing"));
 });
 
 test("thread detail self check detects missing usage and timestamp", () => {
@@ -102,6 +318,23 @@ test("thread detail self check warns when completed replay loses user input", ()
 
   assert.equal(report.ok, true);
   assert.ok(codes.includes("latest_completed_user_input_missing"));
+});
+
+test("thread detail self check accepts synthetic rollout completion turns without user input", () => {
+  const detail = healthyDetail();
+  detail.thread.turns[0].mobileSyntheticCompletionTurn = true;
+  detail.thread.turns[0].source = "rollout_task_complete";
+  detail.thread.turns[0].items = [
+    { id: "a1", type: "agentMessage" },
+    { id: "usage1", type: "turnUsageSummary" },
+  ];
+
+  const report = analyzeThreadDetail(detail);
+  const codes = report.issues.map((issue) => issue.code);
+
+  assert.equal(report.ok, true);
+  assert.equal(report.latestCompleted.syntheticCompletionTurn, true);
+  assert.ok(!codes.includes("latest_completed_user_input_missing"));
 });
 
 test("thread detail self check detects operation and reasoning rows in latest completed replay", () => {
@@ -210,11 +443,14 @@ test("self check summary fails only on H1/H2 issues", () => {
 
   assert.equal(warningOnly.ok, true);
   assert.equal(warningOnly.blockingIssueCount, 0);
+  assert.equal(warningOnly.diagnosticCandidateCount, 0);
   assert.equal(blocking.ok, false);
   assert.equal(blocking.blockingIssueCount, 1);
+  assert.equal(blocking.diagnosticCandidateCount, 1);
+  assert.equal(blocking.diagnosticCandidates[0].diagnostic_type, "thread_detail_response_contract_mismatch");
 });
 
-test("self check summary deduplicates repeated issue metadata", () => {
+test("self check summary deduplicates repeated issue metadata and keeps occurrence counts", () => {
   const issue = {
     code: "latest_completed_replay_receipt_only",
     severity: "H3",
@@ -229,6 +465,50 @@ test("self check summary deduplicates repeated issue metadata", () => {
 
   assert.equal(summary.issueCount, 1);
   assert.equal(summary.blockingIssueCount, 0);
+  assert.equal(summary.issues[0].occurrenceCount, 2);
+  assert.equal(summary.diagnosticCandidateCount, 1);
+  assert.equal(summary.diagnosticCandidates[0].category, "conversation_projection_mismatch");
+  assert.equal(summary.diagnosticCandidates[0].diagnostic_type, "thread_detail_response_contract_mismatch");
+  assert.equal(summary.diagnosticCandidates[0].error_code, "latest_completed_replay_receipt_only");
+  assert.equal(summary.diagnosticCandidates[0].counts.repeated_failures, 2);
+  assert.equal(summary.diagnosticCandidates[0].context.thread_hash, "thread-hash");
+  assert.equal(summary.diagnosticCandidates[0].context.turn_hash, "turn-hash");
+  assert.deepEqual(Object.keys(summary.diagnosticCandidates[0]).sort(), [
+    "breadcrumbs",
+    "category",
+    "context",
+    "counts",
+    "diagnostic_type",
+    "error_code",
+    "evidence_confidence",
+    "severity_hint",
+  ]);
+});
+
+test("self check diagnostic candidate is metadata-only and skips one-off warnings", () => {
+  const oneOffWarning = selfCheckDiagnosticCandidate({
+    code: "thread_list_repeat_order_changed",
+    severity: "H3",
+    surface: "thread-list-refresh",
+    threadHash: "thread-hash",
+    occurrenceCount: 1,
+  });
+  const blocking = selfCheckDiagnosticCandidate({
+    code: "thread_detail_refresh_lost_usage",
+    severity: "H2",
+    surface: "thread-detail-refresh",
+    threadHash: "thread-hash",
+    turnHash: "turn-hash",
+    title: "private title must not appear",
+    message: "private body must not appear",
+  });
+
+  assert.equal(oneOffWarning, null);
+  assert.equal(blocking.category, "conversation_projection_mismatch");
+  assert.equal(blocking.diagnostic_type, "thread_detail_response_contract_mismatch");
+  assert.equal(blocking.severity_hint, "H2");
+  const serialized = JSON.stringify(blocking);
+  assert.doesNotMatch(serialized, /private title|private body|message|title/i);
 });
 
 test("timestamp self check uses UUIDv7 turn fallback", () => {

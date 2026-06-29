@@ -44,6 +44,7 @@ Interpretation:
 | Active large thread still uses full `thread/read` | Inspect `thread_detail_first_paint.serverTimings.activeFullReadRequired`, `activeFullReadReason`, `activeOverlayAction`, and `activeOverlayReason`. `overlay-provider-unavailable` means the safe orchestration seam is present but no authoritative provider is wired yet. Other `require-full-read` reasons such as `assistant-delta-unknown`, `receipt-evidence-unknown`, `active-turn-mismatch`, or `non-authoritative-overlay-source` are intentional fail-closed outcomes and should not be bypassed with a client refresh or UI dedupe layer. |
 | Running-thread indicator disappears | `/api/threads` row `status` and `rolloutSizeUpdatedAtMs`, rollout tail `task_started` / `task_complete`, `runningThreadIds`, stale browser shell |
 | Thread detail shakes during streaming output | Client shell version v317+, `/api/client-events` `conversation_render_ms`, `thread_refresh_ms.skippedDetailRender`, `thread_refresh_ms.locallyPatchedDetail`, compact Command dock height, stale PWA shell |
+| Thread detail reopens and temporarily loses already-visible messages | First run API self-check, then browser-runtime self-check. If `/api/threads/:id?mode=recent` is stable but Chrome samples report `browser_dom_sparse_after_nonempty`, the failing layer is client first-paint/DOM state rather than server projection. |
 | Listener/app-server update interrupts a running turn | Browser shell `codex-mobile-shell-v280+`, `/api/status.ready` recovery, bounded `auto_turn_recovery_result` client event, `/api/threads/:id/auto-recover` route |
 | macOS shows frequent `重连` or refresh prompts | 8787 listener PID, loopback and LAN `/api/public-config`, `/api/events` keepalive, `mobile-web.log` `EADDRINUSE`, stale `launchctl submit` labels |
 | Hermes host says plugin workspace access key file is missing | Host `com.hermesmobile.listener` env `HERMES_MOBILE_CODEX_PLUGIN_ACCESS_KEY_PATH`, readable key file under Hermes secrets, plugin manifest `tokenStatus` |
@@ -359,6 +360,16 @@ v4 revision metadata. If `mobileDiagnostics.threadDetailTimings` reports
 assistant evidence, unknown item kind, or missing receipt/operation/upload
 coverage all mean the request intentionally failed closed to full `thread/read`
 instead of rendering an unsafe partial live window.
+If the reason is `latest-completed-input-missing`, inspect the receipt-only
+active window before changing the browser renderer. The latest completed replay
+must retain a user-visible input anchor (`userMessage` or `contextCompaction`)
+next to the final assistant/Usage rows; otherwise the active-window projection
+is correctly treated as an unsafe downgrade and the request falls back to a
+slow full read.
+Current orchestration first invalidates that unsafe cached active window and
+rebuilds a bounded `turns-list-active-overlay-window`; only if the rebuilt
+window still lacks the input anchor should it try full projection or full
+`thread/read`.
 
 If an active large thread spins for a long time but eventually renders, inspect
 `mobileDiagnostics.threadDetailTimings.activeOverlayWindowMs`. A high first
@@ -716,7 +727,17 @@ Cause to check:
   budget and should not replay command/file/tool operation rows. If a reloaded
   completed turn shows Reasoning or command cards instead of user-facing
   intermediate receipts, inspect `thread-detail-response-budget-service`
-  replay filtering before changing the renderer.
+  replay filtering before changing the renderer. A single final assistant
+  receipt is not by itself a `latest_completed_replay_receipt_only` defect; the
+  self-check should only raise that warning when
+  `mobileDetailResponseBudget.latestCompletedReplayOmittedAssistantItems`
+  proves that latest-replay assistant/plan progress was actually budgeted away.
+  If the latest completed turn has `mobileSyntheticCompletionTurn=true` /
+  `source=rollout_task_complete`, it is a rollout completion receipt backfill
+  for a turn missing from the app-server detail window. Lack of a user-input
+  item on that synthetic turn is not evidence that the projection dropped the
+  user's message, and the active-overlay input-gap gate should not force a slow
+  rebuild for that shape.
 - For routine self-checks after projection, Usage, timestamp, or thread-list
   ordering changes, run
   `node scripts/codex-mobile-thread-self-check.js --server http://127.0.0.1:8787 --json`
@@ -731,6 +752,47 @@ Cause to check:
   final sample recovers. It intentionally checks the Usage tool item exists but
   does not require a separate Usage title/timestamp, because the visible time
   belongs to the adjacent final assistant receipt.
+- If the API self-check is clean but the real client still flickers, clears a
+  thread detail to `No visible turns.`, shows duplicate DOM items, or loses a
+  just-visible thread after reopening, run the browser-runtime check:
+  `node scripts/codex-mobile-browser-runtime-self-check.js --server http://127.0.0.1:8787 --sample-threads 3 --rounds 5 --sample-delays-ms 100,350,1200,2800,6000 --json`.
+  The script drives a temporary Chrome profile through the real UI and samples
+  only bounded `#conversation` metadata. `browser_dom_sparse_after_nonempty`
+  means the browser had already shown confirmed nonempty content for that
+  target thread, then rendered a sparse/empty shell; this should be fixed at
+  the client state/first-paint boundary instead of hidden with UI dedupe.
+  Clients after `codex-mobile-shell-v576` also report
+  `browser_dom_visible_items_downgraded_after_nonempty`,
+  `browser_latest_turn_timestamp_missing`,
+  `browser_latest_turn_usage_missing`, and `browser_image_render_failed`.
+  Clients after `codex-mobile-shell-v577` additionally report
+  `browser_latest_turn_item_count_downgraded`,
+  `browser_latest_turn_user_message_downgraded`,
+  `browser_latest_turn_assistant_message_downgraded`, and
+  `browser_latest_turn_assistant_text_duplicate`. These are latest-turn scoped
+  checks: a healthy whole-conversation item total no longer hides the user
+  message or latest assistant rows disappearing inside the active/latest turn.
+  The analyzer no longer drops a sparse sample merely because
+  `contentConfirmed=false`; such samples cannot establish a healthy baseline,
+  but they can prove regression after the same target thread was previously
+  confirmed nonempty. It also reports duplicate render/item keys, login/app
+  visibility failures, runtime exceptions, console errors, and route/status
+  counts without printing thread titles, message text, task-card bodies,
+  uploads, query strings, cookies, access keys, tokens, screenshots, or logs.
+- After each deployment that changes thread-detail, projection, image rendering,
+  timestamps, or client refresh behavior, run the combined one-shot self-check:
+  `node scripts/codex-mobile-runtime-self-check-loop.js --server http://127.0.0.1:8787 --json`.
+  For periodic local monitoring, run the same script with
+  `--loop --interval-ms 600000`; it appends metadata-only JSONL records to
+  `~/.codex-mobile-web/logs/runtime-self-check.jsonl`. The loop records issue
+  counts and build/cache ids only and must not directly dispatch repair cards;
+  Home AI diagnostic intake and Owner approval own the repair-card step.
+- Clients after `codex-mobile-shell-v575` keep a reusable in-memory thread
+  detail snapshot in `state.threadTileDetails`. When reopening a thread that
+  already has loaded detail state, `loadThread()` paints that cached detail
+  first and refreshes in the background, rather than replacing the conversation
+  with a loading/empty shell. If this regresses, check the
+  `cached-detail-first-paint` branch before adding render-layer filtering.
 - Thread detail should first use app-server `thread/read` even when the rollout
   file is over 32MB, because `thread/turns/list` does not reliably preserve the
   command/tool/file/search operation items expected in Mobile detail. If detail
@@ -753,12 +815,14 @@ Cause to check:
   state-relevant set, should be receipt-only: user question items plus the last
   assistant/plan receipt and any `turnUsageSummary` metadata, without old
   assistant progress updates, operation, reasoning, or other diagnostic cards.
-  The HTTP detail response applies the same assistant/plan budget after
-  projection/read orchestration: active turns keep a bounded recent assistant
-  tail, completed turns keep the latest assistant/plan receipt, and
-  `mobileOmittedAssistantItemCount` / `mobileDetailResponseBudget` record the
-  omitted progress-row count. If `progressiveActiveBudgetApplied=true`, retained
-  active assistant/reasoning text fields may also carry
+  The HTTP detail response applies the same display contract after
+  projection/read orchestration: current active turns and the latest completed
+  replay keep assistant/plan progress rows, while command/operation and
+  reasoning rows remain budgeted. Historical completed turns keep the latest
+  assistant/plan receipt, and `mobileOmittedAssistantItemCount` /
+  `mobileDetailResponseBudget` record omitted historical progress-row counts.
+  If `progressiveActiveBudgetApplied=true`, retained active
+  assistant/reasoning text fields may also carry
   `mobileActiveTextBudget`; that is a pressure-triggered first-paint preview.
   If `progressiveCompletedTextBudgetScope=resting-history-first-paint`, the
   server previewed older completed receipts because the resting recent detail

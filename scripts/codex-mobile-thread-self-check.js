@@ -4,6 +4,7 @@
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const readline = require("node:readline");
 
 const {
   analyzeThreadDetail,
@@ -11,7 +12,9 @@ const {
   combineSelfCheck,
   compareDetailReadbacks,
   compareThreadListReadbacks,
+  latestCompletedTurn,
   shortHash,
+  summarizeTurn,
   threadRows,
 } = require("../adapters/thread-detail-self-check-service");
 
@@ -25,6 +28,8 @@ function usage() {
     "timestamps, completed replay reasoning/operation rows, duplicate keys, and bounded",
     "response-budget evidence without printing message text, titles, task-card bodies,",
     "uploads, tokens, cookies, raw paths, or long logs.",
+    "Repeated warnings and H1/H2 violations are also summarized as metadata-only",
+    "diagnosticCandidates that can feed the Home AI Owner-gated repair loop.",
     "",
     "Options:",
     "  --server <url>             Codex Mobile server. Default: http://127.0.0.1:8787",
@@ -36,6 +41,7 @@ function usage() {
     "  --repeat <n>               Repeat list/detail reads to catch refresh downgrades. Default: 2.",
     "  --repeat-delay-ms <n>      Delay between repeated reads. Default: 150.",
     "  --timeout-ms <n>           Request timeout. Default: 15000.",
+    "  --raw-active-max-bytes <n> Max local rollout bytes for active-turn raw count checks. Default: 314572800.",
     "  --no-auth                  Do not send an auth key.",
     "  --json                     Print JSON only.",
     "  --help                     Show this help.",
@@ -65,6 +71,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     repeat: readPositiveInt(env.CODEX_MOBILE_SELF_CHECK_REPEAT || "2", 2, 5),
     repeatDelayMs: readPositiveInt(env.CODEX_MOBILE_SELF_CHECK_REPEAT_DELAY_MS || "150", 150, 5000),
     timeoutMs: readPositiveInt(env.CODEX_MOBILE_SELF_CHECK_TIMEOUT_MS || "15000", 15000, 60000),
+    rawActiveMaxBytes: readPositiveInt(env.CODEX_MOBILE_SELF_CHECK_RAW_ACTIVE_MAX_BYTES || "314572800", 314572800, 1073741824),
     noAuth: false,
     json: false,
     help: false,
@@ -86,6 +93,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     else if (arg === "--repeat") options.repeat = readPositiveInt(next(), options.repeat, 5);
     else if (arg === "--repeat-delay-ms") options.repeatDelayMs = readPositiveInt(next(), options.repeatDelayMs, 5000);
     else if (arg === "--timeout-ms") options.timeoutMs = readPositiveInt(next(), options.timeoutMs, 60000);
+    else if (arg === "--raw-active-max-bytes") options.rawActiveMaxBytes = readPositiveInt(next(), options.rawActiveMaxBytes, 1073741824);
     else if (arg === "--no-auth") options.noAuth = true;
     else if (arg === "--json") options.json = true;
     else throw new Error(`unknown option: ${arg}`);
@@ -157,11 +165,61 @@ function safeThreadIds(ids) {
   return ids.map((id) => ({ threadHash: shortHash(id) }));
 }
 
-function selectThreadIds(options, listResult) {
-  if (options.threadIds.length) return options.threadIds;
-  return threadRows(listResult)
-    .map((thread) => String(thread && thread.id || "").trim())
-    .filter(Boolean)
+function text(value) {
+  return String(value || "").trim();
+}
+
+function objectOrNull(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+
+function safeArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function threadId(row) {
+  return text(row && (row.id || row.threadId || row.thread_id));
+}
+
+function statusText(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object" && value.type) return text(value.type);
+  return text(value);
+}
+
+function isActiveStatus(value) {
+  return /active|running|started|pending|queued|processing|inprogress|in_progress|in-progress/i.test(statusText(value));
+}
+
+function activeTurnIdFromThreadRow(row = {}) {
+  const localActive = objectOrNull(row.mobileLocalActiveStatus) || {};
+  const status = objectOrNull(row.status) || {};
+  return text(
+    row.activeTurnId
+    || row.active_turn_id
+    || localActive.turnId
+    || localActive.turn_id
+    || status.turnId
+    || status.turn_id,
+  );
+}
+
+function rolloutPathFromThreadRow(row = {}) {
+  const value = text(row.path || row.rolloutPath || row.rollout_path || row.sessionPath || row.session_path);
+  if (!value || !path.isAbsolute(value)) return "";
+  return value;
+}
+
+function selectThreadRefs(options, listResult) {
+  const rows = threadRows(listResult);
+  const rowsById = new Map(rows.map((row) => [threadId(row), row]).filter(([id]) => id));
+  if (options.threadIds.length) {
+    return options.threadIds.map((id) => ({ id, row: rowsById.get(id) || { id } }));
+  }
+  return rows
+    .map((row) => ({ id: threadId(row), row }))
+    .filter((ref) => ref.id)
     .slice(0, options.sampleThreads);
 }
 
@@ -171,6 +229,254 @@ async function fetchThreadDetail(options, key, threadId, refreshIndex = 0) {
   };
   if (refreshIndex > 0) params.forceRefresh = "1";
   return fetchJson(requestUrl(options, `/api/threads/${encodeURIComponent(threadId)}`, params), options, key);
+}
+
+function payloadOfJsonlEvent(event = {}) {
+  return objectOrNull(event.payload) || event;
+}
+
+function jsonlEventType(event = {}) {
+  return text(event.type || event.item_type || event.kind);
+}
+
+function turnIdFromTurnContextPayload(payload = {}) {
+  return text(payload.turn_id || payload.turnId || payload.id || payload.turn);
+}
+
+function turnIdFromDetailTurn(turn = {}) {
+  return text(turn && (turn.id || turn.turnId || turn.turn_id));
+}
+
+function rawPayloadType(payload = {}) {
+  return text(payload.type || payload.item_type || payload.kind);
+}
+
+function rawPayloadRole(payload = {}) {
+  return text(payload.role || payload.authorRole || payload.author);
+}
+
+function isRawUserInputPayload(eventType = "", payload = {}) {
+  const type = rawPayloadType(payload).toLowerCase();
+  const role = rawPayloadRole(payload).toLowerCase();
+  if (eventType === "response_item" && type === "message" && role === "user") return true;
+  if (eventType === "event_msg" && /^(user_message|user_input|input_message|submitted_user_message)$/.test(type)) return true;
+  if (type === "message" && role === "user") return true;
+  return false;
+}
+
+function isRawAssistantPayload(eventType = "", payload = {}) {
+  const type = rawPayloadType(payload).toLowerCase();
+  const role = rawPayloadRole(payload).toLowerCase();
+  if (eventType === "response_item" && type === "message" && role === "assistant") return true;
+  if (eventType === "event_msg" && type === "agent_message") return true;
+  if (type === "message" && role === "assistant") return true;
+  return false;
+}
+
+async function readRawTurnCounts(row = {}, turnId = "", options = {}) {
+  const expectedTurnId = text(turnId);
+  const rolloutPath = rolloutPathFromThreadRow(row);
+  if (!expectedTurnId || !rolloutPath) return null;
+  let stat = null;
+  try {
+    stat = fs.statSync(rolloutPath);
+  } catch (_) {
+    return null;
+  }
+  if (!stat || !stat.isFile()) return null;
+  const maxBytes = Number(options.rawActiveMaxBytes) || 0;
+  if (maxBytes > 0 && stat.size > maxBytes) return {
+      checked: false,
+      skippedReason: "rollout_too_large",
+      threadHash: shortHash(threadId(row)),
+      turnHash: shortHash(expectedTurnId),
+      rolloutSizeBytes: stat.size,
+    };
+
+  const counts = {
+    checked: true,
+    found: false,
+    threadHash: shortHash(threadId(row)),
+    turnHash: shortHash(expectedTurnId),
+    rawLineCount: 0,
+    rawAssistantItems: 0,
+    rawAgentMessageEvents: 0,
+    rawUserItems: 0,
+    rawUserLikeEvents: 0,
+  };
+  let currentTurnId = "";
+  const input = fs.createReadStream(rolloutPath, { encoding: "utf8" });
+  const lines = readline.createInterface({ input, crlfDelay: Infinity });
+  try {
+    for await (const line of lines) {
+      if (!line || !line.trim()) continue;
+      let event = null;
+      try {
+        event = JSON.parse(line);
+      } catch (_) {
+        continue;
+      }
+      const payload = payloadOfJsonlEvent(event);
+      const eventType = jsonlEventType(event);
+      if (eventType === "turn_context") {
+        currentTurnId = turnIdFromTurnContextPayload(payload);
+      }
+      if (currentTurnId !== expectedTurnId) continue;
+      counts.found = true;
+      counts.rawLineCount += 1;
+      const payloadType = rawPayloadType(payload).toLowerCase();
+      const payloadRole = rawPayloadRole(payload).toLowerCase();
+      if (eventType === "response_item" && payloadType === "message" && payloadRole === "assistant") {
+        counts.rawAssistantItems += 1;
+      } else if (eventType === "response_item" && payloadType === "message" && payloadRole === "user") {
+        counts.rawUserItems += 1;
+      } else if (eventType === "event_msg" && payloadType === "agent_message") {
+        counts.rawAgentMessageEvents += 1;
+      }
+      if (isRawUserInputPayload(eventType, payload)) counts.rawUserLikeEvents += 1;
+    }
+  } finally {
+    lines.close();
+  }
+  return counts;
+}
+
+async function readRawActiveTurnCounts(row = {}, options = {}) {
+  return readRawTurnCounts(row, activeTurnIdFromThreadRow(row), options);
+}
+
+function rawActiveCountSource(row = {}, detail = {}) {
+  const thread = detailThread(detail);
+  const detailActiveTurnId = activeTurnIdFromThreadRow(thread);
+  const rowActiveTurnId = activeTurnIdFromThreadRow(row);
+  return Object.assign({}, row || {}, {
+    id: threadId(row) || threadId(thread),
+    activeTurnId: detailActiveTurnId || rowActiveTurnId,
+    active_turn_id: detailActiveTurnId || rowActiveTurnId,
+    path: rolloutPathFromThreadRow(row) || rolloutPathFromThreadRow(thread),
+    rolloutPath: rolloutPathFromThreadRow(row) || rolloutPathFromThreadRow(thread),
+  });
+}
+
+function rawCountsForDetailComparison(beforeDetail = null, afterDetail = null) {
+  const beforeUsable = beforeDetail && beforeDetail.checked === true && beforeDetail.found === true;
+  const afterUsable = afterDetail && afterDetail.checked === true && afterDetail.found === true;
+  const selected = beforeUsable ? beforeDetail : afterDetail;
+  if (!selected || typeof selected !== "object") return selected;
+  const result = Object.assign({}, selected);
+  if (beforeUsable && afterUsable) {
+    result.rawAssistantItemsBeforeDetail = beforeDetail.rawAssistantItems || 0;
+    result.rawAssistantItemsAfterDetail = afterDetail.rawAssistantItems || 0;
+    result.rawActiveGrewDuringDetailRead = result.rawAssistantItemsAfterDetail > result.rawAssistantItemsBeforeDetail;
+  }
+  return result;
+}
+
+function rawLatestCompletedCountSource(row = {}, detail = {}) {
+  const thread = detailThread(detail);
+  return Object.assign({}, row || {}, {
+    id: threadId(row) || threadId(thread),
+    path: rolloutPathFromThreadRow(row) || rolloutPathFromThreadRow(thread),
+    rolloutPath: rolloutPathFromThreadRow(row) || rolloutPathFromThreadRow(thread),
+  });
+}
+
+function detailThread(detail = {}) {
+  return objectOrNull(detail.thread) || objectOrNull(detail) || {};
+}
+
+function findTurnById(thread = {}, expectedTurnId = "") {
+  const id = text(expectedTurnId);
+  if (!id) return null;
+  return safeArray(thread.turns).find((turn) => text(turn && (turn.id || turn.turnId || turn.turn_id)) === id) || null;
+}
+
+function analyzeActiveTurnRawProjection(row = {}, detail = {}, rawCounts = null) {
+  if (!rawCounts || rawCounts.checked !== true || rawCounts.found !== true) return null;
+  const thread = detailThread(detail);
+  const activeTurnId = activeTurnIdFromThreadRow(thread) || activeTurnIdFromThreadRow(row);
+  if (!activeTurnId || rawCounts.rawAssistantItems <= 0) return null;
+  const turn = findTurnById(thread, activeTurnId);
+  if (!turn || !isActiveStatus(turn && turn.status)) return null;
+  const summary = turn ? summarizeTurn(turn, thread) : null;
+  const detailAssistantItems = summary ? summary.assistantItems : 0;
+  const issues = [];
+  if (detailAssistantItems < rawCounts.rawAssistantItems) {
+    issues.push({
+      code: "active_turn_assistant_projection_gap",
+      severity: "H2",
+      surface: "thread-detail-active-turn",
+      threadHash: rawCounts.threadHash,
+      turnHash: rawCounts.turnHash,
+      rawAssistantItems: rawCounts.rawAssistantItems,
+      detailAssistantItems,
+    });
+  }
+  return {
+    ok: issues.length === 0,
+    threadHash: rawCounts.threadHash,
+    turnHash: rawCounts.turnHash,
+    rawAssistantItems: rawCounts.rawAssistantItems,
+    detailAssistantItems,
+    issues,
+  };
+}
+
+async function readRawLatestCompletedTurnCounts(row = {}, detail = {}, options = {}) {
+  const thread = detailThread(detail);
+  const latest = latestCompletedTurn(thread);
+  const turnId = turnIdFromDetailTurn(latest && latest.turn);
+  if (!turnId) return null;
+  return readRawTurnCounts(rawLatestCompletedCountSource(row, detail), turnId, options);
+}
+
+function suppressRawProvenSystemInputMissingIssue(analysis = {}, rawCounts = null) {
+  if (!analysis || !rawCounts || rawCounts.checked !== true || rawCounts.found !== true) return analysis;
+  if (Number(rawCounts.rawUserItems || 0) > 0 || Number(rawCounts.rawUserLikeEvents || 0) > 0) return analysis;
+  const issues = Array.isArray(analysis.issues) ? analysis.issues : [];
+  const suppressed = [];
+  const kept = issues.filter((issue) => {
+    if (!issue || issue.code !== "latest_completed_user_input_missing") return true;
+    if (text(issue.turnHash) !== text(rawCounts.turnHash)) return true;
+    suppressed.push(Object.assign({}, issue, {
+      suppressedReason: "raw_completed_turn_has_no_user_input",
+      rawLineCount: rawCounts.rawLineCount || 0,
+    }));
+    return false;
+  });
+  if (!suppressed.length) return analysis;
+  return Object.assign({}, analysis, {
+    issues: kept,
+    suppressedIssues: [
+      ...(Array.isArray(analysis.suppressedIssues) ? analysis.suppressedIssues : []),
+      ...suppressed,
+    ],
+    rawLatestCompletedInputEvidence: {
+      checked: true,
+      found: true,
+      threadHash: rawCounts.threadHash,
+      turnHash: rawCounts.turnHash,
+      rawLineCount: rawCounts.rawLineCount || 0,
+      rawUserItems: rawCounts.rawUserItems || 0,
+      rawUserLikeEvents: rawCounts.rawUserLikeEvents || 0,
+    },
+  });
+}
+
+function rawLatestCompletedInputEvidence(rawCounts = null) {
+  if (!rawCounts || typeof rawCounts !== "object") return null;
+  const evidence = {
+    checked: rawCounts.checked === true,
+    found: rawCounts.found === true,
+    threadHash: text(rawCounts.threadHash),
+    turnHash: text(rawCounts.turnHash),
+    rawLineCount: rawCounts.rawLineCount || 0,
+    rawUserItems: rawCounts.rawUserItems || 0,
+    rawUserLikeEvents: rawCounts.rawUserLikeEvents || 0,
+  };
+  if (rawCounts.skippedReason) evidence.skippedReason = text(rawCounts.skippedReason).slice(0, 80);
+  if (rawCounts.rolloutSizeBytes) evidence.rolloutSizeBytes = rawCounts.rolloutSizeBytes;
+  return evidence;
 }
 
 async function run(options = {}, env = process.env) {
@@ -217,15 +523,27 @@ async function run(options = {}, env = process.env) {
     report.threadListRepeatChecks = listRepeatChecks;
   }
 
-  const selectedThreadIds = selectThreadIds(options, listReads[listReads.length - 1] || listFirst);
+  const selectedThreadRefs = selectThreadRefs(options, listReads[listReads.length - 1] || listFirst);
+  const selectedThreadIds = selectedThreadRefs.map((ref) => ref.id);
   report.checkedThreads = safeThreadIds(selectedThreadIds);
 
-  for (const threadId of selectedThreadIds) {
+  for (const { id: threadId, row } of selectedThreadRefs) {
+    const rawCountsBeforeFirstDetail = await readRawActiveTurnCounts(row, options);
     const firstDetail = await fetchThreadDetail(options, key, threadId, 0);
-    const firstAnalysis = analyzeThreadDetail(firstDetail, { threadId });
+    const rawCountsAfterFirstDetail = await readRawActiveTurnCounts(rawActiveCountSource(row, firstDetail), options);
+    const rawCountsForFirstDetail = rawCountsForDetailComparison(rawCountsBeforeFirstDetail, rawCountsAfterFirstDetail);
+    const rawLatestCompletedCountsBeforeFirstDetail = await readRawLatestCompletedTurnCounts(row, firstDetail, options);
+    const firstAnalysis = suppressRawProvenSystemInputMissingIssue(
+      analyzeThreadDetail(firstDetail, { threadId }),
+      rawLatestCompletedCountsBeforeFirstDetail,
+    );
+    const firstActiveRawProjection = analyzeActiveTurnRawProjection(row, firstDetail, rawCountsForFirstDetail);
     const detailReport = {
       threadHash: shortHash(threadId),
       first: firstAnalysis,
+      activeTurnRawProjection: firstActiveRawProjection,
+      rawLatestCompletedInputEvidence: firstAnalysis.rawLatestCompletedInputEvidence
+        || rawLatestCompletedInputEvidence(rawLatestCompletedCountsBeforeFirstDetail),
       repeat: null,
     };
     if (options.repeat > 1) {
@@ -235,9 +553,20 @@ async function run(options = {}, env = process.env) {
       let lastAnalysis = firstAnalysis;
       for (let index = 1; index < options.repeat; index += 1) {
         await sleep(options.repeatDelayMs);
+        const rawCountsBeforeNextDetail = await readRawActiveTurnCounts(rawActiveCountSource(row, lastDetail), options);
         const nextDetail = await fetchThreadDetail(options, key, threadId, index);
+        const rawCountsAfterNextDetail = await readRawActiveTurnCounts(rawActiveCountSource(row, nextDetail), options);
+        const rawCountsForNextDetail = rawCountsForDetailComparison(rawCountsBeforeNextDetail, rawCountsAfterNextDetail);
+        const rawLatestCompletedCountsBeforeNextDetail = await readRawLatestCompletedTurnCounts(row, nextDetail, options);
         detailReads.push(nextDetail);
-        const nextAnalysis = analyzeThreadDetail(nextDetail, { threadId });
+        const nextAnalysis = suppressRawProvenSystemInputMissingIssue(
+          analyzeThreadDetail(nextDetail, { threadId }),
+          rawLatestCompletedCountsBeforeNextDetail,
+        );
+        const nextActiveRawProjection = analyzeActiveTurnRawProjection(row, nextDetail, rawCountsForNextDetail);
+        if (nextActiveRawProjection && nextActiveRawProjection.issues.length) {
+          repeatChecks.push(Object.assign({ index, baseline: "raw-active-turn" }, nextActiveRawProjection));
+        }
         const previousComparison = compareDetailReadbacks(lastDetail, nextDetail, { threadId });
         if (previousComparison.issues.length) {
           repeatChecks.push(Object.assign({ index, baseline: "previous" }, previousComparison));
@@ -259,6 +588,7 @@ async function run(options = {}, env = process.env) {
   const detailParts = [];
   for (const detail of report.threadDetails) {
     if (detail.first) detailParts.push(detail.first);
+    if (detail.activeTurnRawProjection) detailParts.push(detail.activeTurnRawProjection);
     if (detail.second) detailParts.push(detail.second);
     if (detail.repeat) detailParts.push(detail.repeat);
     if (Array.isArray(detail.repeatChecks)) detailParts.push(...detail.repeatChecks);

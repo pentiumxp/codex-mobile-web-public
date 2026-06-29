@@ -3,6 +3,9 @@
 const {
   summaryActiveTurnId,
 } = require("./thread-detail-active-read-policy-service");
+const {
+  dedupeUserMessageEchoesInItems,
+} = require("./thread-user-message-echo-normalizer-service");
 
 function text(value) {
   return String(value || "").trim();
@@ -59,6 +62,24 @@ function itemTimestampMs(item) {
     || item.timestampMs
     || item.timeMs
   ));
+}
+
+function itemIdentity(item) {
+  const id = text(item && (
+    item.id
+    || item.itemId
+    || item.item_id
+    || item.mobileVisibleKey
+    || item.renderKey
+    || item.visibleKey
+  ));
+  return id ? `${itemType(item)}:${id}` : "";
+}
+
+function findTurnById(thread, id) {
+  const expected = text(id);
+  if (!expected || !thread || typeof thread !== "object") return null;
+  return asArray(thread.turns).find((turn) => turnId(turn) === expected) || null;
 }
 
 function classifyActiveOverlayItem(item) {
@@ -219,6 +240,32 @@ function authoritativeSource(value) {
     || source === "server-active-overlay";
 }
 
+function overlayCompletenessReason(input = {}) {
+  const source = lower(input.overlaySource);
+  const explicit = lower(
+    input.overlayCompleteness
+      || input.activeOverlayCompleteness
+      || input.snapshotCompleteness,
+  );
+  if (explicit) {
+    if (
+      explicit === "full"
+      || explicit === "complete"
+      || explicit === "backfilled"
+      || explicit === "preserved"
+    ) {
+      return "";
+    }
+    return "active-overlay-turn-incomplete";
+  }
+  if (bool(input.overlayPartial)) return "active-overlay-turn-incomplete";
+  const partialKind = lower(input.overlayPartialKind || input.partialKind);
+  if (partialKind === "notification-shell") return "active-overlay-turn-incomplete";
+  if (input.overlaySignatureHashPresent === false) return "active-overlay-turn-incomplete";
+  if (source === "projection-live") return "active-overlay-turn-incomplete";
+  return "";
+}
+
 function planActiveWindowOverlay(input = {}) {
   const summary = input.summary || null;
   const expectedTurnId = text(input.activeTurnId || summaryActiveTurnId(summary));
@@ -231,6 +278,11 @@ function planActiveWindowOverlay(input = {}) {
     projectionWindowPresent: false,
     overlayTurnPresent: Boolean(overlayTurn),
     overlaySource: lower(input.overlaySource),
+    overlayCompleteness: lower(
+      input.overlayCompleteness
+        || input.activeOverlayCompleteness
+        || input.snapshotCompleteness,
+    ),
     overlayTurnMatched: false,
     operationCoverage: "unknown",
     uploadCoverage: "unknown",
@@ -271,6 +323,8 @@ function planActiveWindowOverlay(input = {}) {
   resultBase.overlayTurnMatched = true;
   if (evidence.items <= 0) return Object.assign({}, resultBase, { reason: "empty-active-overlay-turn" });
   if (evidence.unknownItems > 0) return Object.assign({}, resultBase, { reason: "unknown-overlay-item-kind" });
+  const completenessReason = overlayCompletenessReason(input);
+  if (completenessReason) return Object.assign({}, resultBase, { reason: completenessReason });
 
   const operationCoverage = normalizeCoverage(input.operationCoverage, evidence.operationItems);
   if (operationCoverage === "unknown") {
@@ -313,6 +367,7 @@ function planActiveWindowOverlay(input = {}) {
   return Object.assign({}, resultBase, {
     action: "use-projection-overlay",
     reason: "overlay-evidence-complete",
+    overlayCompleteness: resultBase.overlayCompleteness || "unspecified",
     operationCoverage,
     uploadCoverage,
     assistantDeltaCoverage,
@@ -332,6 +387,7 @@ function mergeProjectionThreadWithActiveOverlay(projectionThread, overlayTurn, o
       projectionThread,
       overlaySource: options.overlaySource,
       reason: options.reason,
+      completeness: options.completeness,
       counts: options.counts,
     }) || overlayTurn
     : overlayTurn;
@@ -354,13 +410,53 @@ function mergeProjectionThreadWithActiveOverlay(projectionThread, overlayTurn, o
   thread.mobileActiveOverlay = {
     reason: boundedReason(options.reason || "overlay-evidence-complete"),
     source: lower(options.overlaySource),
+    completeness: lower(options.completeness),
     counts: Object.assign({}, options.counts || {}),
   };
   return thread;
 }
 
+function mergeActiveOverlayTurnWithWindowBackfill(overlayTurn, windowThreadOrTurn) {
+  if (!overlayTurn || typeof overlayTurn !== "object") return overlayTurn;
+  const id = turnId(overlayTurn);
+  const windowTurn = turnId(windowThreadOrTurn) === id
+    ? windowThreadOrTurn
+    : findTurnById(windowThreadOrTurn, id);
+  if (!windowTurn || typeof windowTurn !== "object") return overlayTurn;
+  const windowItems = asArray(windowTurn.items).map((item) => cloneJson(item));
+  const overlayItems = asArray(overlayTurn.items).map((item) => cloneJson(item));
+  if (!windowItems.length || !overlayItems.length) return overlayTurn;
+  const mergedItems = windowItems.slice();
+  const indexByIdentity = new Map();
+  mergedItems.forEach((item, index) => {
+    const identity = itemIdentity(item);
+    if (identity && !indexByIdentity.has(identity)) indexByIdentity.set(identity, index);
+  });
+  for (const item of overlayItems) {
+    const identity = itemIdentity(item);
+    if (identity && indexByIdentity.has(identity)) {
+      mergedItems[indexByIdentity.get(identity)] = item;
+      continue;
+    }
+    if (identity) indexByIdentity.set(identity, mergedItems.length);
+    mergedItems.push(item);
+  }
+  const deduped = dedupeUserMessageEchoesInItems(mergedItems);
+  return Object.assign({}, windowTurn, overlayTurn, {
+    items: deduped.items,
+    mobileActiveOverlayBackfill: {
+      version: "active-overlay-window-backfill-v1",
+      sourceItems: windowItems.length,
+      overlayItems: overlayItems.length,
+      mergedItems: deduped.items.length,
+      dedupedUserMessageEchoes: deduped.removed,
+    },
+  });
+}
+
 module.exports = {
   classifyActiveOverlayItem,
+  mergeActiveOverlayTurnWithWindowBackfill,
   mergeProjectionThreadWithActiveOverlay,
   planActiveWindowOverlay,
   summarizeActiveOverlayTurnEvidence,

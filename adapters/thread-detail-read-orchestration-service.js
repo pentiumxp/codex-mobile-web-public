@@ -5,8 +5,10 @@ const {
   planActiveThreadDetailReadPolicy,
 } = require("./thread-detail-active-read-policy-service");
 const {
+  mergeActiveOverlayTurnWithWindowBackfill,
   mergeProjectionThreadWithActiveOverlay,
   planActiveWindowOverlay,
+  summarizeActiveOverlayTurnEvidence,
 } = require("./thread-detail-active-window-overlay-policy-service");
 
 function defaultNow() {
@@ -111,6 +113,59 @@ function mergeActiveOverlayProjectionFields(overlayInput, thread) {
   });
 }
 
+function threadHasTurn(thread, expectedTurnId) {
+  const id = nonEmptyText(expectedTurnId);
+  if (!id || !thread || typeof thread !== "object" || !Array.isArray(thread.turns)) return false;
+  return thread.turns.some((turn) => nonEmptyText(turn && (turn.id || turn.turnId || turn.turn_id)) === id);
+}
+
+function activeTurnIdFromThread(thread) {
+  const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    if (!isActiveTurn(turn)) continue;
+    const id = nonEmptyText(turn && (turn.id || turn.turnId || turn.turn_id));
+    if (id) return id;
+  }
+  return "";
+}
+
+function projectionThreadIsPartial(thread) {
+  if (!thread || typeof thread !== "object") return false;
+  const projection = thread.mobileProjection && typeof thread.mobileProjection === "object"
+    ? thread.mobileProjection
+    : {};
+  const mode = nonEmptyText(thread.mobileReadMode).toLowerCase();
+  const source = nonEmptyText(projection.source || thread.mobileProjectionSource).toLowerCase();
+  return projection.partial === true
+    || projection.activeOverlayWindow === true
+    || /partial|active-window/.test(mode)
+    || source === "partial";
+}
+
+function overlaySource(input) {
+  return nonEmptyText(input && (input.overlaySource || input.source)).toLowerCase();
+}
+
+function overlayRequiresFreshActiveWindow(input) {
+  return overlaySource(input) === "projection-live";
+}
+
+function promoteActiveReadPolicy(policy, reason) {
+  return Object.assign({}, policy || {}, {
+    activeFullReadRequired: true,
+    activeFullReadReason: nonEmptyText(reason) || "active-window-detected",
+    allowPartialProjection: false,
+    shouldUseInitialTurnsList: false,
+    initialTurnsListSkipReason: "active-thread-requires-full-read",
+  });
+}
+
+function applyActivePolicyContext(context, policy) {
+  context.activeFullReadRequired = policy && policy.activeFullReadRequired === true;
+  context.activeFullReadReason = policy && policy.activeFullReadReason || "";
+}
+
 function itemType(item) {
   return String(item && (item.type || item.itemType || item.kind) || "").toLowerCase();
 }
@@ -158,6 +213,7 @@ function latestCompletedTurn(thread) {
 
 function latestCompletedReplayInputGap(thread) {
   const turn = latestCompletedTurn(thread);
+  if (turn && turn.mobileSyntheticCompletionTurn === true) return false;
   const items = Array.isArray(turn && turn.items) ? turn.items : [];
   if (!items.length) return false;
   const hasUsage = items.some((item) => itemType(item) === "turnusagesummary");
@@ -269,6 +325,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       activeOverlayAction: context.activeOverlayAction || "",
       activeOverlayReason: context.activeOverlayReason || "",
       activeOverlaySource: context.activeOverlaySource || "",
+      activeOverlayCompleteness: context.activeOverlayCompleteness || "",
       activeOverlayItems: context.activeOverlayItems || 0,
       activeOverlayOperationItems: context.activeOverlayOperationItems || 0,
       activeOverlayUploadItems: context.activeOverlayUploadItems || 0,
@@ -314,6 +371,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       activeOverlayAction: "",
       activeOverlayReason: "",
       activeOverlaySource: "",
+      activeOverlayCompleteness: "",
       activeOverlayItems: 0,
       activeOverlayOperationItems: 0,
       activeOverlayUploadItems: 0,
@@ -331,13 +389,189 @@ function createThreadDetailReadOrchestrationService(options = {}) {
     timer.mark("summaryMs", summaryStartedAtMs);
     const summary = summaryResult && summaryResult.summary || null;
     context.summarySource = summaryResult && summaryResult.source || "";
-    const activeReadPolicy = planActiveThreadDetailReadPolicy({ summary, preferRecentTurns });
-    context.activeFullReadRequired = activeReadPolicy.activeFullReadRequired;
-    context.activeFullReadReason = activeReadPolicy.activeFullReadReason || "";
+    let activeReadPolicy = planActiveThreadDetailReadPolicy({ summary, preferRecentTurns });
+    applyActivePolicyContext(context, activeReadPolicy);
     const runtimeSettings = threadRuntimeSettings(threadId, summary);
     if (summary && isHiddenThread(summary, visibility)) {
       threadLog("hidden", { status: 404 });
       return hiddenResponse();
+    }
+
+    async function tryActiveOverlayFromInitialWindow(activeWindowResult, options = {}) {
+      if (!projection || !resolveActiveWindowOverlay || !activeWindowResult || !activeWindowResult.thread) return null;
+      const sourceLabel = nonEmptyText(options.source) || "turns-list-initial-active-window";
+      const shouldSeed = options.seed !== false;
+      const activeOverlayStartedAtMs = now();
+      let activeOverlayProjectionThread = asActiveOverlayProjectionWindow(activeWindowResult, {});
+      if (!activeOverlayProjectionThread) return null;
+      let activeOverlayProjectionResult = Object.assign({}, activeWindowResult || {}, {
+        thread: activeOverlayProjectionThread,
+      });
+      if (shouldSeed && projection && activeOverlayProjectionThread) {
+        if (latestCompletedReplayInputGap(activeOverlayProjectionThread)) {
+          context.projectionSeedStatus = "skipped";
+          context.projectionSeedSource = `${sourceLabel}-input-gap`;
+          threadLog("projection_seed_skipped", { reason: "initial_active_window_input_gap" });
+        } else {
+          try {
+            const seeded = seedProjection(projection, activeOverlayProjectionResult, {
+              partial: true,
+              partialKind: "turns-list-active-overlay-window",
+            });
+            context.projectionSeedStatus = seeded && seeded.skipped
+              ? "skipped"
+              : seeded && seeded.partial
+                ? "seeded-partial"
+                : "seeded";
+            context.projectionSeedSource = seeded && seeded.reason || sourceLabel;
+          } catch (err) {
+            context.projectionSeedStatus = "failed";
+            context.projectionSeedSource = sourceLabel;
+            threadLog("projection_seed_error", { error: safeErrorMessage(err) });
+          }
+        }
+      }
+
+      let overlayInput = options.overlayInput && typeof options.overlayInput === "object"
+        ? options.overlayInput
+        : null;
+      if (!overlayInput) try {
+        const activeOverlayResolveStartedAtMs = now();
+        const overlayResult = resolveActiveWindowOverlay({
+          threadId,
+          summary,
+          projection,
+          runtimeSettings,
+          projectionThread: activeOverlayProjectionThread,
+          projectionLookup: null,
+        });
+        overlayInput = isPromiseLike(overlayResult) ? await overlayResult : overlayResult;
+        timer.mark("activeOverlayResolveMs", activeOverlayResolveStartedAtMs);
+      } catch (err) {
+        if (!timer.timings.activeOverlayResolveMs) timer.mark("activeOverlayResolveMs", activeOverlayStartedAtMs);
+        overlayInput = { reason: "resolver-error", error: safeErrorMessage(err) };
+        threadLog("active_overlay_resolve_error", { error: safeErrorMessage(err) });
+      }
+      overlayInput = mergeActiveOverlayProjectionFields(overlayInput, activeOverlayProjectionThread);
+      if (sourceLabel === "active-overlay-projection-window"
+        && overlayRequiresFreshActiveWindow(overlayInput)) {
+        threadLog("active_overlay_projection_live_requires_fresh_window", {
+          source: overlaySource(overlayInput),
+        });
+        return null;
+      }
+      let activeOverlayPlanStartedAtMs = now();
+      let activeOverlayPlan = planActiveWindowOverlay(Object.assign({}, overlayInput || {}, {
+        summary,
+        projectionThread: activeOverlayProjectionThread,
+      }));
+      timer.mark("activeOverlayPlanMs", activeOverlayPlanStartedAtMs);
+
+      if ((activeOverlayPlan.action === "use-projection-overlay"
+        || activeOverlayPlan.reason === "active-overlay-turn-incomplete")
+        && overlayInput
+        && overlayInput.overlayTurn) {
+        const backfillStartedAtMs = now();
+        const mergedOverlayTurn = mergeActiveOverlayTurnWithWindowBackfill(
+          overlayInput.overlayTurn,
+          activeOverlayProjectionThread,
+        );
+        if (mergedOverlayTurn && mergedOverlayTurn !== overlayInput.overlayTurn) {
+          overlayInput = Object.assign({}, overlayInput, {
+            overlayTurn: mergedOverlayTurn,
+            overlayEvidence: summarizeActiveOverlayTurnEvidence(mergedOverlayTurn),
+            overlayCompleteness: "backfilled",
+            overlayPartial: false,
+            overlayBackfillSource: sourceLabel,
+          });
+          activeOverlayPlanStartedAtMs = now();
+          activeOverlayPlan = planActiveWindowOverlay(Object.assign({}, overlayInput, {
+            summary,
+            projectionThread: activeOverlayProjectionThread,
+          }));
+          timer.mark("activeOverlayPlanMs", activeOverlayPlanStartedAtMs);
+          threadLog("active_overlay_backfilled", {
+            source: sourceLabel,
+            assistantItems: activeOverlayPlan.counts && activeOverlayPlan.counts.assistantItems || 0,
+          });
+        }
+        timer.mark("activeOverlayBackfillWindowMs", backfillStartedAtMs);
+      }
+
+      timer.mark("activeOverlayMs", activeOverlayStartedAtMs);
+      context.activeOverlayAction = activeOverlayPlan.action || "require-full-read";
+      context.activeOverlayReason = activeOverlayPlan.reason || "";
+      context.activeOverlaySource = activeOverlayPlan.overlaySource || "";
+      context.activeOverlayCompleteness = activeOverlayPlan.overlayCompleteness || "";
+      context.activeOverlayItems = activeOverlayPlan.counts && activeOverlayPlan.counts.items || 0;
+      context.activeOverlayOperationItems = activeOverlayPlan.counts && activeOverlayPlan.counts.operationItems || 0;
+      context.activeOverlayUploadItems = activeOverlayPlan.counts && activeOverlayPlan.counts.uploadItems || 0;
+      context.activeOverlayAssistantItems = activeOverlayPlan.counts && activeOverlayPlan.counts.assistantItems || 0;
+      context.activeOverlayReceiptItems = activeOverlayPlan.counts && activeOverlayPlan.counts.receiptItems || 0;
+      threadLog("active_overlay_initial_window_plan", {
+        action: context.activeOverlayAction,
+        reason: context.activeOverlayReason,
+        source: context.activeOverlaySource,
+        completeness: context.activeOverlayCompleteness,
+      });
+      if (sourceLabel === "active-overlay-projection-window"
+        && activeOverlayPlan.action === "use-projection-overlay"
+        && activeOverlayPlan.overlayCompleteness !== "backfilled") {
+        threadLog("active_overlay_projection_window_requires_backfill", {
+          source: context.activeOverlaySource,
+          completeness: context.activeOverlayCompleteness,
+        });
+        return null;
+      }
+      if (activeOverlayPlan.action !== "use-projection-overlay" || !overlayInput || !overlayInput.overlayTurn) {
+        return null;
+      }
+
+      const activeOverlayMergeStartedAtMs = now();
+      const mergedThread = mergeProjectionThreadWithActiveOverlay(
+        activeOverlayProjectionThread,
+        overlayInput.overlayTurn,
+        {
+          readMode: "projection-active-overlay",
+          overlaySource: activeOverlayPlan.overlaySource,
+          reason: activeOverlayPlan.reason,
+          completeness: activeOverlayPlan.overlayCompleteness,
+          counts: activeOverlayPlan.counts,
+          compactOverlayTurn: compactActiveOverlayTurn
+            ? (turn, compactDetails = {}) => compactActiveOverlayTurn(turn, Object.assign({}, compactDetails, {
+              threadId,
+              summary,
+              runtimeSettings,
+              projectionThread: activeOverlayProjectionThread,
+            }))
+            : null,
+        },
+      );
+      timer.mark("activeOverlayMergeMs", activeOverlayMergeStartedAtMs);
+      const result = Object.assign({}, activeOverlayProjectionResult || {}, { thread: mergedThread });
+      if (isHiddenThread(result && result.thread, visibility)) {
+        threadLog("active_overlay_initial_window_hidden", {
+          durationMs: now() - activeOverlayStartedAtMs,
+          status: 404,
+        });
+        return hiddenResponse();
+      }
+      context.projectionState = "hit";
+      context.projectionMissReason = "";
+      const projectionInfo = projectionDiagnosticsFromThread(result.thread);
+      context.projectionSource = projectionInfo.source || "partial";
+      context.projectionVersion = projectionInfo.version;
+      context.projectionAgeMs = projectionInfo.ageMs;
+      rememberThreadSummary(result.thread);
+      return {
+        status: 200,
+        mode: "projection-active-overlay",
+        body: await prepareAndAttach(result, context, {
+          threadId,
+          source: "projection-active-overlay",
+          readDecision: "projection-active-overlay",
+        }),
+      };
     }
 
     if (rawAllEnabled()) {
@@ -429,7 +663,16 @@ function createThreadDetailReadOrchestrationService(options = {}) {
         returnedTurns: Array.isArray(projectedThread.turns) ? projectedThread.turns.length : null,
         omittedTurns: projectedThread.mobileOmittedTurnCount || 0,
       });
-      if (!activeReadPolicy.activeFullReadRequired || !resolveActiveWindowOverlay) {
+      const projectedActiveTurnId = activeTurnIdFromThread(projectedThread);
+      if (projectedActiveTurnId && projectionThreadIsPartial(projectedThread) && !activeReadPolicy.activeFullReadRequired) {
+        activeReadPolicy = promoteActiveReadPolicy(activeReadPolicy, "projection-window-active-turn");
+        applyActivePolicyContext(context, activeReadPolicy);
+        threadLog("projection_active_turn_detected", {
+          action: "require-full-read",
+          source: "projection-window",
+        });
+      }
+      if (!activeReadPolicy.activeFullReadRequired) {
         if (stalePartialHit && scheduleProjectionRefresh) {
           try {
             scheduleProjectionRefresh({
@@ -471,6 +714,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       let overlayProjected = projected && projected.thread ? projected : null;
       let projectionThread = overlayProjected && overlayProjected.thread || null;
       let overlayInput = null;
+      let activeOverlayProjectionWindowLookupAttempted = false;
       try {
         const activeOverlayResolveStartedAtMs = now();
         const overlayResult = resolveActiveWindowOverlay({
@@ -490,13 +734,11 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       }
       const overlayWindowLookup = activeOverlayProjectionWindowLookup || projectedThreadLookup;
       if (!projectionThread && overlayInput && overlayInput.overlayTurn && overlayWindowLookup) {
-        const activeOverlayTurnId = nonEmptyText(overlayInput.activeTurnId)
-          || nonEmptyText(overlayInput.overlayTurn && (overlayInput.overlayTurn.id || overlayInput.overlayTurn.turnId || overlayInput.overlayTurn.turn_id));
         const activeOverlayProjectionLookupStartedAtMs = now();
+        activeOverlayProjectionWindowLookupAttempted = true;
         overlayProjectionLookup = overlayWindowLookup(projection, summary, runtimeSettings, {
           allowPartial: true,
           activeOverlay: true,
-          omitActiveTurnId: activeOverlayTurnId,
         });
         if (overlayProjectionLookup && overlayProjectionLookup.missReason) {
           context.projectionMissReason = overlayProjectionLookup.missReason;
@@ -516,11 +758,24 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       timer.mark("activeOverlayPlanMs", activeOverlayPlanStartedAtMs);
       let activeOverlayProjectionThread = projectionThread;
       let activeOverlayProjectionResult = overlayProjected;
-      if (activeOverlayPlan.reason === "missing-projection-window"
+      let activeOverlayWindowReadAttempted = false;
+      let activeOverlayFreshWindowRead = false;
+      const activeOverlayWindowHasInputGap = Boolean(activeOverlayProjectionThread
+        && latestCompletedReplayInputGap(activeOverlayProjectionThread));
+      const activeOverlayWindowRebuildReason = activeOverlayPlan.reason === "missing-projection-window"
+        ? "missing-projection-window"
+        : activeOverlayPlan.action === "use-projection-overlay" && activeOverlayWindowHasInputGap
+          ? "latest-completed-input-missing"
+          : "";
+      if (activeOverlayWindowRebuildReason
         && overlayInput
         && overlayInput.overlayTurn
         && turnsListThreadReadResult) {
+        if (activeOverlayWindowRebuildReason === "latest-completed-input-missing") {
+          threadLog("active_overlay_window_input_gap", { action: "rebuild-window" });
+        }
         const activeWindowStartedAtMs = now();
+        activeOverlayWindowReadAttempted = true;
         try {
           const activeWindowResult = await turnsListThreadReadResult({
             threadId,
@@ -539,6 +794,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
           }
           timer.mark("activeOverlayWindowMs", activeWindowStartedAtMs);
           activeOverlayProjectionThread = asActiveOverlayProjectionWindow(activeWindowResult, overlayInput);
+          activeOverlayFreshWindowRead = Boolean(activeOverlayProjectionThread);
           activeOverlayProjectionResult = activeOverlayProjectionThread
             ? Object.assign({}, activeWindowResult || {}, { thread: activeOverlayProjectionThread })
             : activeWindowResult;
@@ -620,6 +876,147 @@ function createThreadDetailReadOrchestrationService(options = {}) {
           threadLog("active_overlay_window_input_gap_unresolved", { action: "require-full-read" });
         }
       }
+      if ((activeOverlayPlan.action === "use-projection-overlay"
+        || activeOverlayPlan.reason === "active-overlay-turn-incomplete")
+        && overlayInput
+        && overlayInput.overlayTurn) {
+        const backfillStartedAtMs = now();
+        const backfillActiveTurnId = nonEmptyText(overlayInput.activeTurnId)
+          || nonEmptyText(overlayInput.overlayTurn && (overlayInput.overlayTurn.id || overlayInput.overlayTurn.turnId || overlayInput.overlayTurn.turn_id));
+        let backfillThread = null;
+        let backfillSource = "";
+        const requiresFreshActiveWindow = overlayRequiresFreshActiveWindow(overlayInput);
+        const projectionMeta = activeOverlayProjectionThread
+          && activeOverlayProjectionThread.mobileProjection
+          && typeof activeOverlayProjectionThread.mobileProjection === "object"
+          ? activeOverlayProjectionThread.mobileProjection
+          : {};
+        if ((activeOverlayFreshWindowRead || !requiresFreshActiveWindow)
+          && threadHasTurn(activeOverlayProjectionThread, backfillActiveTurnId)) {
+          backfillThread = activeOverlayProjectionThread;
+          backfillSource = activeOverlayFreshWindowRead
+            ? "turns-list-active-overlay-window"
+            : projectionMeta.activeOverlayWindow === true
+              || nonEmptyText(projectionMeta.partialKind).toLowerCase() === "turns-list-active-overlay-window"
+            ? "active-window-projection"
+            : "projection-thread";
+        }
+        if (!backfillThread
+          && !requiresFreshActiveWindow
+          && activeOverlayProjectionWindowLookup
+          && !activeOverlayProjectionWindowLookupAttempted) {
+          const cachedWindow = activeOverlayProjectionWindowLookup(projection, summary, runtimeSettings, {
+            allowPartial: true,
+            activeOverlay: true,
+          });
+          const resolvedCachedWindow = isPromiseLike(cachedWindow) ? await cachedWindow : cachedWindow;
+          const cachedThread = resolvedCachedWindow
+            && resolvedCachedWindow.result
+            && resolvedCachedWindow.result.thread;
+          if (cachedThread && typeof cachedThread === "object" && threadHasTurn(cachedThread, backfillActiveTurnId)) {
+            backfillThread = cachedThread;
+            backfillSource = "cached-active-window";
+          }
+        }
+        if (!backfillThread && turnsListThreadReadResult && !activeOverlayWindowReadAttempted) {
+          try {
+            activeOverlayWindowReadAttempted = true;
+            const activeWindowResult = await turnsListThreadReadResult({
+              threadId,
+              summary,
+              runtimeSettings,
+              warning: "",
+              mode: "turns-list-active-overlay-window",
+              threadLog,
+            });
+            if (isHiddenThread(activeWindowResult && activeWindowResult.thread, visibility)) {
+              threadLog("active_overlay_backfill_window_hidden", {
+                durationMs: now() - backfillStartedAtMs,
+                status: 404,
+              });
+              return hiddenResponse();
+            }
+            backfillThread = asActiveOverlayProjectionWindow(activeWindowResult, overlayInput);
+            activeOverlayFreshWindowRead = Boolean(backfillThread);
+            backfillSource = "turns-list-active-overlay-window";
+            if (projection && backfillThread && !latestCompletedReplayInputGap(backfillThread)) {
+              try {
+                const seeded = seedProjection(projection, Object.assign({}, activeWindowResult || {}, { thread: backfillThread }), {
+                  partial: true,
+                  partialKind: "turns-list-active-overlay-window",
+                  projectionRevision: overlayInput.overlayRevision || overlayInput.projectionRevision,
+                  projectionTimestampMs: overlayInput.overlayTimestampMs || overlayInput.projectionTimestampMs,
+                });
+                context.projectionSeedStatus = context.projectionSeedStatus || (seeded && seeded.skipped
+                  ? "skipped"
+                  : seeded && seeded.partial
+                    ? "seeded-partial"
+                    : "seeded");
+                context.projectionSeedSource = context.projectionSeedSource || seeded && seeded.reason || "turns-list-active-overlay-window";
+              } catch (err) {
+                context.projectionSeedStatus = context.projectionSeedStatus || "failed";
+                context.projectionSeedSource = context.projectionSeedSource || "turns-list-active-overlay-window";
+                threadLog("projection_seed_error", { error: safeErrorMessage(err) });
+              }
+            }
+          } catch (err) {
+            threadLog("active_overlay_backfill_window_error", {
+              durationMs: now() - backfillStartedAtMs,
+              timeout: isReadTimeoutError(err),
+              error: safeErrorMessage(err),
+            });
+          }
+        }
+        if (backfillThread) {
+          const mergedOverlayTurn = mergeActiveOverlayTurnWithWindowBackfill(overlayInput.overlayTurn, backfillThread);
+          if (mergedOverlayTurn && mergedOverlayTurn !== overlayInput.overlayTurn) {
+            overlayInput = Object.assign({}, overlayInput, {
+              overlayTurn: mergedOverlayTurn,
+              overlayEvidence: summarizeActiveOverlayTurnEvidence(mergedOverlayTurn),
+              overlayCompleteness: "backfilled",
+              overlayPartial: false,
+              overlayBackfillSource: backfillSource,
+            });
+            activeOverlayPlanStartedAtMs = now();
+            activeOverlayPlan = planActiveWindowOverlay(Object.assign({}, overlayInput, {
+              summary,
+              projectionThread: activeOverlayProjectionThread,
+            }));
+            timer.mark("activeOverlayPlanMs", activeOverlayPlanStartedAtMs);
+            threadLog("active_overlay_backfilled", {
+              source: backfillSource,
+              assistantItems: activeOverlayPlan.counts && activeOverlayPlan.counts.assistantItems || 0,
+            });
+          }
+        }
+        if (requiresFreshActiveWindow
+          && activeOverlayProjectionThread
+          && projectionThreadIsPartial(activeOverlayProjectionThread)
+          && projectedThreadResult) {
+          const historyBaselineStartedAtMs = now();
+          const historyBaseline = projectedThreadResult(projection, summary, runtimeSettings, {
+            activeOverlay: true,
+            allowPartial: false,
+          });
+          timer.mark("activeOverlayHistoryBaselineMs", historyBaselineStartedAtMs);
+          if (historyBaseline && historyBaseline.thread) {
+            activeOverlayProjectionThread = historyBaseline.thread;
+            activeOverlayProjectionResult = historyBaseline;
+            overlayInput = mergeActiveOverlayProjectionFields(overlayInput, activeOverlayProjectionThread);
+            activeOverlayPlanStartedAtMs = now();
+            activeOverlayPlan = planActiveWindowOverlay(Object.assign({}, overlayInput, {
+              summary,
+              projectionThread: activeOverlayProjectionThread,
+            }));
+            timer.mark("activeOverlayPlanMs", activeOverlayPlanStartedAtMs);
+            threadLog("active_overlay_history_baseline_repaired", {
+              source: "full-projection",
+              action: activeOverlayPlan.action || "require-full-read",
+            });
+          }
+        }
+        timer.mark("activeOverlayBackfillWindowMs", backfillStartedAtMs);
+      }
       timer.mark("activeOverlayMs", activeOverlayStartedAtMs);
       context.activeOverlayAction = activeOverlayPlan.action || "require-full-read";
       context.activeOverlayReason = activeOverlayPlan.reason || "";
@@ -629,10 +1026,12 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       context.activeOverlayUploadItems = activeOverlayPlan.counts && activeOverlayPlan.counts.uploadItems || 0;
       context.activeOverlayAssistantItems = activeOverlayPlan.counts && activeOverlayPlan.counts.assistantItems || 0;
       context.activeOverlayReceiptItems = activeOverlayPlan.counts && activeOverlayPlan.counts.receiptItems || 0;
+      context.activeOverlayCompleteness = activeOverlayPlan.overlayCompleteness || "";
       threadLog("active_overlay_plan", {
         action: context.activeOverlayAction,
         reason: context.activeOverlayReason,
         source: context.activeOverlaySource,
+        completeness: context.activeOverlayCompleteness,
       });
       if (activeOverlayPlan.action === "use-projection-overlay" && activeOverlayProjectionThread) {
         const activeOverlayMergeStartedAtMs = now();
@@ -643,6 +1042,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
             readMode: "projection-active-overlay",
             overlaySource: activeOverlayPlan.overlaySource,
             reason: activeOverlayPlan.reason,
+            completeness: activeOverlayPlan.overlayCompleteness,
             counts: activeOverlayPlan.counts,
             compactOverlayTurn: compactActiveOverlayTurn
               ? (turn, compactDetails = {}) => compactActiveOverlayTurn(turn, Object.assign({}, compactDetails, {
@@ -685,6 +1085,82 @@ function createThreadDetailReadOrchestrationService(options = {}) {
       context.activeOverlayReason = resolveActiveWindowOverlay ? "projection-input-unavailable" : "overlay-provider-unavailable";
     }
 
+    if (!activeReadPolicy.activeFullReadRequired
+      && preferRecentTurns
+      && projection
+      && resolveActiveWindowOverlay
+      && activeOverlayProjectionWindowLookup) {
+      let overlayInput = null;
+      try {
+        const activeOverlayResolveStartedAtMs = now();
+        const overlayResult = resolveActiveWindowOverlay({
+          threadId,
+          summary,
+          projection,
+          runtimeSettings,
+          projectionThread: null,
+          projectionLookup: null,
+        });
+        overlayInput = isPromiseLike(overlayResult) ? await overlayResult : overlayResult;
+        timer.mark("activeOverlayResolveMs", activeOverlayResolveStartedAtMs);
+      } catch (err) {
+        overlayInput = { reason: "resolver-error", error: safeErrorMessage(err) };
+        threadLog("active_overlay_resolve_error", { error: safeErrorMessage(err) });
+      }
+      const overlayTurnId = nonEmptyText(overlayInput && overlayInput.activeTurnId)
+        || nonEmptyText(overlayInput && overlayInput.overlayTurn && (
+          overlayInput.overlayTurn.id
+          || overlayInput.overlayTurn.turnId
+          || overlayInput.overlayTurn.turn_id
+        ));
+      if (overlayInput && overlayInput.overlayTurn && overlayTurnId) {
+        const activeOverlayProjectionLookupStartedAtMs = now();
+        const overlayProjectionLookup = activeOverlayProjectionWindowLookup(projection, summary, runtimeSettings, {
+          allowPartial: true,
+          allowStalePartial: true,
+          activeOverlay: true,
+          activeOverlayStatusProven: true,
+          omitActiveTurnId: overlayTurnId,
+        });
+        const resolvedOverlayProjectionLookup = isPromiseLike(overlayProjectionLookup)
+          ? await overlayProjectionLookup
+          : overlayProjectionLookup;
+        timer.mark("activeOverlayProjectionLookupMs", activeOverlayProjectionLookupStartedAtMs);
+        if (resolvedOverlayProjectionLookup && resolvedOverlayProjectionLookup.missReason) {
+          context.projectionMissReason = resolvedOverlayProjectionLookup.missReason;
+        }
+        const overlayProjectionResult = resolvedOverlayProjectionLookup
+          && resolvedOverlayProjectionLookup.result
+          && resolvedOverlayProjectionLookup.result.thread
+          ? resolvedOverlayProjectionLookup.result
+          : null;
+        if (overlayProjectionResult) {
+          const previousActiveReadPolicy = activeReadPolicy;
+          const previousActiveOverlayAction = context.activeOverlayAction;
+          const previousActiveOverlayReason = context.activeOverlayReason;
+          const previousActiveOverlaySource = context.activeOverlaySource;
+          const previousActiveOverlayCompleteness = context.activeOverlayCompleteness;
+          activeReadPolicy = promoteActiveReadPolicy(activeReadPolicy, "projection-live-active-turn");
+          applyActivePolicyContext(context, activeReadPolicy);
+          threadLog("projection_live_active_turn_detected", {
+            action: "try-active-overlay",
+          });
+          const overlayResponse = await tryActiveOverlayFromInitialWindow(overlayProjectionResult, {
+            source: "active-overlay-projection-window",
+            seed: false,
+            overlayInput,
+          });
+          if (overlayResponse) return overlayResponse;
+          activeReadPolicy = previousActiveReadPolicy;
+          applyActivePolicyContext(context, activeReadPolicy);
+          context.activeOverlayAction = previousActiveOverlayAction;
+          context.activeOverlayReason = previousActiveOverlayReason;
+          context.activeOverlaySource = previousActiveOverlaySource;
+          context.activeOverlayCompleteness = previousActiveOverlayCompleteness;
+        }
+      }
+    }
+
     if (activeReadPolicy.shouldUseInitialTurnsList) {
       const turnsStartedAtMs = now();
       try {
@@ -704,7 +1180,18 @@ function createThreadDetailReadOrchestrationService(options = {}) {
           return hiddenResponse();
         }
         timer.mark("turnsListInitialMs", turnsStartedAtMs);
-        if (projection && result && result.thread) {
+        const initialActiveTurnId = activeTurnIdFromThread(result && result.thread);
+        if (initialActiveTurnId && !activeReadPolicy.activeFullReadRequired) {
+          activeReadPolicy = promoteActiveReadPolicy(activeReadPolicy, "initial-window-active-turn");
+          applyActivePolicyContext(context, activeReadPolicy);
+          context.projectionSeedStatus = "skipped";
+          context.projectionSeedSource = "initial-active-window";
+          threadLog("turns_list_initial_active_turn_detected", {
+            action: projection && resolveActiveWindowOverlay ? "try-active-overlay" : "require-full-read",
+          });
+          const overlayResponse = await tryActiveOverlayFromInitialWindow(result);
+          if (overlayResponse) return overlayResponse;
+        } else if (projection && result && result.thread) {
           try {
             const seeded = seedProjection(projection, result, {
               partial: true,
@@ -725,15 +1212,17 @@ function createThreadDetailReadOrchestrationService(options = {}) {
           context.projectionSeedStatus = "skipped";
           context.projectionSeedSource = projection ? "turns-list-initial" : "no-projection-input";
         }
-        return {
-          status: 200,
-          mode: "turns-list-initial",
-          body: attachDetailDiagnostics(result, context, {
-            threadId,
-            source: "turns-list-initial",
-            readDecision: "initial-turns-list",
-          }),
-        };
+        if (!activeReadPolicy.activeFullReadRequired) {
+          return {
+            status: 200,
+            mode: "turns-list-initial",
+            body: attachDetailDiagnostics(result, context, {
+              threadId,
+              source: "turns-list-initial",
+              readDecision: "initial-turns-list",
+            }),
+          };
+        }
       } catch (err) {
         threadLog("turns_list_initial_error", {
           durationMs: now() - turnsStartedAtMs,
@@ -837,15 +1326,17 @@ function createThreadDetailReadOrchestrationService(options = {}) {
         omittedTurns: result && result.thread && result.thread.mobileOmittedTurnCount ? result.thread.mobileOmittedTurnCount : 0,
       });
       timer.mark("threadReadMs", readStartedAtMs);
-      if (projection && result && result.thread && !activeReadPolicy.activeFullReadRequired) {
+      if (projection && result && result.thread) {
         try {
           seedProjection(projection, result);
-          result.thread.mobileProjection = Object.assign({}, result.thread.mobileProjection || {}, { source: "seeded" });
+          result.thread.mobileProjection = Object.assign({}, result.thread.mobileProjection || {}, {
+            source: activeReadPolicy.activeFullReadRequired ? "active-thread-read" : "seeded",
+          });
           context.projectionSeedStatus = "seeded";
-          context.projectionSeedSource = "thread-read";
+          context.projectionSeedSource = activeReadPolicy.activeFullReadRequired ? "active-thread-read" : "thread-read";
         } catch (err) {
           context.projectionSeedStatus = "failed";
-          context.projectionSeedSource = "thread-read";
+          context.projectionSeedSource = activeReadPolicy.activeFullReadRequired ? "active-thread-read" : "thread-read";
           threadLog("projection_seed_error", { error: safeErrorMessage(err) });
         }
       } else if (activeReadPolicy.activeFullReadRequired) {

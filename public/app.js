@@ -75,6 +75,10 @@ const threadDiagnosticEventsApi = window.CodexThreadDiagnosticEvents;
 if (!threadDiagnosticEventsApi) {
   throw new Error("CodexThreadDiagnosticEvents script failed to load");
 }
+const frontendRuntimeHealthApi = window.CodexFrontendRuntimeHealth;
+if (!frontendRuntimeHealthApi) {
+  throw new Error("CodexFrontendRuntimeHealth script failed to load");
+}
 const buildRefreshPolicy = window.CodexBuildRefreshPolicy || {
   shouldPromptForServerBuildChange(serverBuildId, clientBuildId) {
     const server = String(serverBuildId || "").trim();
@@ -101,6 +105,10 @@ if (!threadListLoadPolicy) {
 const threadListStableOrderPolicy = window.CodexThreadListStableOrder;
 if (!threadListStableOrderPolicy) {
   throw new Error("CodexThreadListStableOrder script failed to load");
+}
+const clientRenderStabilityGuard = window.CodexClientRenderStabilityGuard;
+if (!clientRenderStabilityGuard) {
+  throw new Error("CodexClientRenderStabilityGuard script failed to load");
 }
 const liveOperationDockPolicy = window.CodexLiveOperationDockState;
 if (!liveOperationDockPolicy) {
@@ -492,6 +500,7 @@ const state = {
     threshold: homeAiDiagnosticReportingApi.DEFAULT_THRESHOLD,
     throttleMs: homeAiDiagnosticReportingApi.DEFAULT_THROTTLE_MS,
   }),
+  frontendRuntimeHealthMonitor: frontendRuntimeHealthApi.createMonitor(),
   lastThreadDetailRenderEvidence: null,
   shellLoadedReported: false,
 };
@@ -510,6 +519,7 @@ const threadDetailStatePolicy = threadDetailStateApi.createThreadDetailStatePoli
 });
 const threadListSummaryFromDetailThread = threadDetailStateApi.threadListSummaryFromDetailThread;
 const planThreadOpenCacheReuse = threadDetailStateApi.planThreadOpenCacheReuse;
+const threadHasReusableLoadedDetailState = threadDetailStateApi.threadHasReusableLoadedDetailState;
 
 function setAuthKey(value) {
   const next = String(value || "");
@@ -532,7 +542,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v570";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v577";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -584,10 +594,12 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/plugin-voice-input.js",
   "/home-ai-diagnostic-reporting.js",
   "/thread-diagnostic-events.js",
+  "/frontend-runtime-health.js",
   "/thread-status-hints.js",
   "/thread-performance-metrics.js",
   "/thread-list-load-policy.js",
   "/thread-list-stable-order.js",
+  "/client-render-stability-guard.js",
   "/live-operation-dock-state.js",
   "/thread-detail-state.js",
   "/thread-detail-render-plan.js",
@@ -1232,6 +1244,7 @@ function insertLocalSubmittedUserMessage(threadId, text, attachments, clientSubm
     };
     thread.turns.push(turn);
   }
+  clientRenderStabilityGuard.markSubmittedTurn(turn, submissionId);
   turn.items = Array.isArray(turn.items) ? turn.items : [];
   turn.status = isCompletedStatus(turn.status) ? { type: "active" } : (turn.status || { type: "active" });
   turn.items.push(localUserMessageItem(text, attachments || [], submissionId));
@@ -1287,6 +1300,7 @@ function reconcileSubmittedUserMessageTurn(threadId, clientSubmissionId, serverT
     };
     thread.turns.push(targetTurn);
   }
+  clientRenderStabilityGuard.transferSubmittedTurnIdentity(sourceTurn, targetTurn, submissionId);
   const changed = mergeSubmittedUserItemIntoTurn(targetTurn, sourceItem);
   if (sourceTurn && sourceTurn !== targetTurn) {
     sourceTurn.items = (sourceTurn.items || []).filter((item) => item !== sourceItem);
@@ -5049,7 +5063,7 @@ function isLatestTurn(turn, thread = null) {
 
 function stableItemKey(turn, item, index = 0, prefix = "item") {
   const threadId = renderContextThreadId() || "thread";
-  const turnId = turn && (turn.id || turn.startedAt || "turn");
+  const turnId = clientRenderStabilityGuard.stableTurnIdentity(turn);
   const visibleKey = item && item.mobileVisibleKey;
   let itemId = visibleKey || (item && item.id || `${item && item.type || "item"}-${index}`);
   if (item && (item.type === "imageView" || item.type === "imageGeneration")) {
@@ -5077,12 +5091,20 @@ function stableOperationRenderKey(turn, item, index = 0) {
   const threadId = renderContextThreadId() || "thread";
   const turnId = turn && (turn.id || turn.startedAt || "turn");
   const groupKey = operationGroupKey(item) || `item:${item && (item.id || index)}`;
-  return ["live-operation", threadId, turnId, groupKey].map((part) => String(part || "")).join("|");
+  const itemIdentity = item && (
+    item.mobileVisibleKey
+    || item.id
+    || item.callId
+    || item.requestId
+    || item.startedAtMs
+    || item.startedAt
+  ) || `index:${index}`;
+  return ["live-operation", threadId, turnId, groupKey, itemIdentity, index].map((part) => String(part ?? "")).join("|");
 }
 
 function stableTurnKey(turn, suffix = "") {
   const threadId = renderContextThreadId() || "thread";
-  return ["turn", threadId, turn && (turn.id || turn.startedAt || "turn"), suffix].filter(Boolean).join("|");
+  return ["turn", threadId, clientRenderStabilityGuard.stableTurnIdentity(turn), suffix].filter(Boolean).join("|");
 }
 
 function existingConversationRenderKeys() {
@@ -5995,6 +6017,13 @@ function mergeThreadPreservingVisibleItems(existingThread, incomingThread) {
   });
 }
 
+function rememberReusableThreadDetail(thread) {
+  const id = String(thread && thread.id || "").trim();
+  if (!id || !state.threadTileDetails || !threadHasReusableLoadedDetailState(thread)) return false;
+  state.threadTileDetails.set(id, thread);
+  return true;
+}
+
 function turnOrderMs(turn) {
   if (!turn) return 0;
   return numericTimestampMs(turn.startedAtMs)
@@ -6747,6 +6776,16 @@ function diagnosticItemHash(itemId) {
   return id ? diagnosticHash(`item:${id}`) : "";
 }
 
+function clientSubmissionDiagnosticHash(clientSubmissionId) {
+  const id = String(clientSubmissionId || "").trim();
+  return id ? diagnosticHash(`submission:${id}`) : "";
+}
+
+function clientSubmissionDataAttr(item) {
+  const hash = clientSubmissionDiagnosticHash(item && item.clientSubmissionId);
+  return hash ? ` data-client-submission-hash="${escapeHtml(hash)}"` : "";
+}
+
 function diagnosticRouteKind() {
   if (state.newThreadDraft) return "new-thread";
   if (isHermesEmbedMode() && isHermesPluginPrimaryPage()) return "embedded-primary";
@@ -6840,6 +6879,74 @@ function recordHomeAiDiagnosticSuccess(input = {}) {
   return state.homeAiDiagnosticReporter.recordSuccess(Object.assign({}, input, {
     context: currentHomeAiDiagnosticContext(input.context || {}),
   }));
+}
+
+function applyFrontendRuntimeHealthEffect(effect) {
+  const item = effect && typeof effect === "object" ? effect : {};
+  if (!item.type) return;
+  if (item.type === "diagnostic-failure") {
+    recordHomeAiDiagnosticFailure(item.diagnostic || {});
+    return;
+  }
+  if (item.type === "diagnostic-success") {
+    recordHomeAiDiagnosticSuccess(item.diagnostic || {});
+    return;
+  }
+  throw new Error(`Unknown frontend runtime health effect: ${item.type}`);
+}
+
+function applyFrontendRuntimeHealthEffectsPlan(plan) {
+  const effects = Array.isArray(plan && plan.effects) ? plan.effects : [];
+  for (const effect of effects) applyFrontendRuntimeHealthEffect(effect);
+}
+
+function conversationHasClientSubmissionHash(submissionHash) {
+  const hash = String(submissionHash || "").trim();
+  const conversation = $("conversation");
+  if (!hash || !conversation) return false;
+  return Array.from(conversation.querySelectorAll("[data-client-submission-hash]"))
+    .some((node) => String(node && node.getAttribute && node.getAttribute("data-client-submission-hash") || "") === hash);
+}
+
+function frontendHealthThreadForSubmission(threadId) {
+  const id = String(threadId || "").trim();
+  if (!id) return null;
+  if (state.currentThread && String(state.currentThread.id || "") === id) return state.currentThread;
+  return state.threadTileDetails && state.threadTileDetails.get(id) || null;
+}
+
+function probeSubmittedMessageDom(threadId, clientSubmissionId, action = "message-submit", startedAtMs = Date.now()) {
+  const id = String(threadId || "").trim();
+  const submissionId = String(clientSubmissionId || "").trim();
+  const submissionHash = clientSubmissionDiagnosticHash(submissionId);
+  if (!id || !submissionId || !submissionHash) return;
+  const thread = frontendHealthThreadForSubmission(id);
+  const domShape = conversationDomShape();
+  const visibleShape = thread ? visibleConversationShape(thread) : { visibleItemCount: 0 };
+  const plan = frontendRuntimeHealthApi.submittedMessageDomProbeEffects({
+    elapsedMs: Date.now() - Number(startedAtMs || Date.now()),
+    action,
+    routeKind: diagnosticRouteKind(),
+    threadHash: diagnosticThreadHash(id),
+    itemHash: submissionHash,
+    currentThreadMatch: !state.threadTileMode && String(state.currentThreadId || "") === id,
+    hasThreadSubmission: threadHasClientSubmission(thread, submissionId),
+    domHasSubmission: conversationHasClientSubmissionHash(submissionHash),
+    visibleCount: visibleShape.visibleItemCount,
+    domCount: domShape.itemCount,
+    composerBusy: state.composerBusy,
+  });
+  applyFrontendRuntimeHealthEffectsPlan(plan);
+}
+
+function scheduleSubmittedMessageDomProbe(threadId, clientSubmissionId, action = "message-submit") {
+  const id = String(threadId || "").trim();
+  const submissionId = String(clientSubmissionId || "").trim();
+  if (!id || !submissionId) return;
+  const startedAtMs = Date.now();
+  [350, 1200, 2800].forEach((delayMs) => {
+    setTimeout(() => probeSubmittedMessageDom(id, submissionId, action, startedAtMs), delayMs);
+  });
 }
 
 function applyThreadDetailResponseDiagnosticEffect(effect) {
@@ -9273,7 +9380,15 @@ async function loadThread(threadId, options = {}) {
   clearTimeout(state.pollTimer);
   markThreadViewed(threadId);
   const summary = state.threads.find((thread) => thread.id === threadId);
-  const loadingShellPlan = threadDetailStateApi.planThreadOpenLoadingShell({ threadId, summaryThread: summary });
+  const cachedThread = state.threadTileDetails && state.threadTileDetails.get(threadId);
+  const cachedDetailOpenPlan = planThreadOpenCacheReuse({
+    requestedThreadId: threadId,
+    currentThreadId: threadId,
+    currentThread: cachedThread,
+  });
+  const loadingShellPlan = cachedDetailOpenPlan.shouldUseCachedCurrent
+    ? { currentThreadId: threadId, thread: cachedThread, reason: "cached-detail-first-paint" }
+    : threadDetailStateApi.planThreadOpenLoadingShell({ threadId, summaryThread: summary });
   state.currentThreadId = loadingShellPlan.currentThreadId || threadId;
   state.startupThreadOpenPending = false;
   state.currentThread = loadingShellPlan.thread || {
@@ -9284,11 +9399,37 @@ async function loadThread(threadId, options = {}) {
     mobileLoading: true,
     mobileLoadError: "",
   };
-  const loadingShellPostStatePlan = threadDetailRenderPlanApi.planThreadDetailLoadingShellPostStateEffects({
-    threadId,
-    source,
-  });
-  applyThreadDetailPostRenderEffectsPlan(loadingShellPostStatePlan, { thread: state.currentThread });
+  if (cachedDetailOpenPlan.shouldUseCachedCurrent) {
+    const cachedPreRenderPlan = threadDetailRenderPlanApi.planThreadDetailFirstPaintPreRenderEffects({
+      threadId,
+      hasEvents: Boolean(state.events),
+    });
+    applyThreadDetailPostRenderEffectsPlan(cachedPreRenderPlan, { thread: state.currentThread });
+    const cachedDraftRestorePlan = threadDetailRenderPlanApi.planThreadDetailFirstPaintDraftRestoreEffects();
+    applyThreadDetailPostRenderEffectsPlan(cachedDraftRestorePlan, { thread: state.currentThread });
+    syncActiveTurnFromThread();
+    renderThreads();
+    renderCurrentThread({ stickToBottom: true });
+    const cachedCurrentPostRenderPlan = threadDetailRenderPlanApi.planThreadDetailCachedCurrentPostRenderEffects({
+      threadId,
+      seq,
+      source: "cached-detail-first-paint",
+      replacedTilePane: replacedTilePaneForThreadListOpen,
+      hasSideChat: state.threadSideChats.has(threadId),
+    });
+    applyThreadDetailPostRenderEffectsPlan(cachedCurrentPostRenderPlan, { thread: state.currentThread });
+    updateComposerControls();
+    publishPluginNavigationState({ force: true });
+    $("connectionState").classList.remove("error");
+    $("connectionState").textContent = "Refreshing thread";
+    markActivity("刷新线程");
+  } else {
+    const loadingShellPostStatePlan = threadDetailRenderPlanApi.planThreadDetailLoadingShellPostStateEffects({
+      threadId,
+      source,
+    });
+    applyThreadDetailPostRenderEffectsPlan(loadingShellPostStatePlan, { thread: state.currentThread });
+  }
   let result;
   const apiStartedAt = nowPerfMs();
   try {
@@ -9797,6 +9938,7 @@ function applyThreadDetailRefreshResponseEffect(effect, context = {}) {
   }
   if (type === "merge-current-thread") {
     state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, thread);
+    rememberReusableThreadDetail(state.currentThread);
     return true;
   }
   throw new Error(`Unknown thread detail refresh response effect: ${type || "empty"}`);
@@ -13090,6 +13232,23 @@ function updateConversationHtml(html, signature, options = {}) {
     minIntervalMs: PERF_EVENT_THROTTLE_MS,
   });
   postPerformanceEvent(performancePlan.eventName, performancePlan.payload, performancePlan.options);
+  applyFrontendRuntimeHealthEffectsPlan(state.frontendRuntimeHealthMonitor.recordRender({
+    action: options.source || "conversation-update",
+    routeKind: options.routeKind || diagnosticRouteKind(),
+    threadHash: options.threadHash || diagnosticThreadHash(state.currentThreadId),
+    readMode: state.currentThread && state.currentThread.mobileReadMode || "",
+    renderMode: String(options.renderMode || applicationPlan.finalAction || updatePlan.action || ""),
+    finalAction: String(applicationPlan.finalAction || updatePlan.action || ""),
+    renderPlanReason: String(updatePlan.reason || applicationPlan.reason || ""),
+    patchRejectReason: String(applicationPlan.patchRejectReason || postApplyConsistencyPlan.reason || ""),
+    fallbackApplied: Boolean(applicationPlan.fallbackApplied),
+    fullRender: String(applicationPlan.finalAction || updatePlan.action || "") === "set-inner-html",
+    previousCount: previousChildCount,
+    domCount: conversation ? conversation.childNodes.length : 0,
+    visibleCount: expectedVisibleItemCount,
+    duplicateCount: postDomShape.duplicateRenderKeyCount,
+    renderElapsedMs,
+  }));
   checkPrimaryShellSelectionConflictAfterRender({
     childCount: conversation ? conversation.childNodes.length : 0,
     previousChildCount,
@@ -14040,7 +14199,10 @@ function applyThreadTileDetailLoadSuccessEffects(effect, thread) {
   if (!effect || effect.action !== "detail-load-success-effects" || !thread) return false;
   const id = String(effect.id || "");
   if (!id) return false;
-  if (effect.setDetail) state.threadTileDetails.set(id, thread);
+  if (effect.setDetail) {
+    const existing = state.threadTileDetails.get(id);
+    state.threadTileDetails.set(id, mergeThreadPreservingVisibleItems(existing, thread));
+  }
   if (effect.setLoadedAt) state.threadTileLoadedAtById.set(id, Number(effect.loadedAtMs || Date.now()));
   if (effect.clearError) state.threadTileErrors.delete(id);
   if (effect.mergeThread) mergeThreadIntoThreadList(thread);
@@ -17718,7 +17880,7 @@ function renderItem(item, turn = null, previousKeys = new Set(), index = 0, thre
   const type = item.type || "item";
   const key = stableItemKey(turn, item, index);
   if (item.type === "turnUsageSummary") {
-    return `<section class="item${entryAnimationClass(key, previousKeys)} turnUsageSummary" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}">
+    return `<section class="item${entryAnimationClass(key, previousKeys)} turnUsageSummary" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}"${clientSubmissionDataAttr(item)}>
       <div class="item-body">${renderTurnUsageSummary(item)}</div>
     </section>`;
   }
@@ -17727,7 +17889,7 @@ function renderItem(item, turn = null, previousKeys = new Set(), index = 0, thre
   const itemCopyKey = rememberCopyText(copyTextForItem(item));
   const itemCopyButton = copyButtonHtml(itemCopyKey, "复制全文", "item-copy-button");
   const timestampHtml = renderItemTimestampHtml(item, turn, contextThread);
-  return `<section class="item${entryAnimationClass(key, previousKeys)} ${escapeHtml(type)}" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}">
+  return `<section class="item${entryAnimationClass(key, previousKeys)} ${escapeHtml(type)}" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}"${clientSubmissionDataAttr(item)}>
     <div class="item-head">
       <span>${escapeHtml(labelForItem(item))}</span>
       <span class="item-head-actions">${timestampHtml}<span>${escapeHtml(item.status ? statusText(item.status) : "")}</span>${itemCopyButton}</span>
@@ -17780,6 +17942,10 @@ function itemTimestampMs(item, turn = null, thread = null) {
     || numericTimestampMs(item.startedAt)
     || numericTimestampMs(item.started_at_ms)
     || numericTimestampMs(item.started_at)
+    || numericTimestampMs(item.updatedAtMs)
+    || numericTimestampMs(item.updatedAt)
+    || numericTimestampMs(item.updated_at_ms)
+    || numericTimestampMs(item.updated_at)
     || numericTimestampMs(item.timestampMs)
     || numericTimestampMs(item.timestamp);
   if (itemStarted) return itemStarted;
@@ -18067,8 +18233,7 @@ function renderInputImage(part, attachment = null, index = 0) {
   if (!src) return `<div class="input-attachment">${escapeHtml(label)}</div>`;
   const displaySrc = protectedImageDisplaySrc(src);
   return `<figure class="input-image">
-    <img src="${escapeHtml(displaySrc)}" alt="${escapeHtml(label)}" loading="${imageLoadingModeForSource(src)}"${protectedImageSourceAttribute(src)}>
-    <figcaption>${escapeHtml(label)}</figcaption>
+    <img src="${escapeHtml(displaySrc)}" alt="Image" loading="${imageLoadingModeForSource(src)}"${protectedImageSourceAttribute(src)}>
   </figure>`;
 }
 
@@ -19372,13 +19537,12 @@ function renderImageView(item) {
   const src = contentUrl ? authenticatedApiContentUrl(contentUrl) : (filePath ? imageContentUrlForPath(filePath, { threadId: renderContextThreadId() }) : url);
   const label = shortPath(filePath || item.label || item.fileName || item.file_name || item.caption || url || item.id || "image");
   if (isImageViewUnavailable(item)) {
-    return `<figure class="image-view image-load-failed">${label ? `<figcaption>${escapeHtml(label)}</figcaption>` : ""}</figure>`;
+    return `<figure class="image-view image-load-failed"></figure>`;
   }
   if (!src) return renderStructuredBlock(item, "Image");
   const displaySrc = protectedImageDisplaySrc(src);
   return `<figure class="image-view">
-    <img src="${escapeHtml(displaySrc)}" alt="${escapeHtml(label)}" loading="${imageLoadingModeForSource(src)}"${protectedImageSourceAttribute(src)}>
-    ${label ? `<figcaption>${escapeHtml(label)}</figcaption>` : ""}
+    <img src="${escapeHtml(displaySrc)}" alt="Image" loading="${imageLoadingModeForSource(src)}"${protectedImageSourceAttribute(src)}>
   </figure>`;
 }
 
@@ -23141,6 +23305,7 @@ async function sendThreadTaskCardCommand(commandText, options = {}) {
     markThreadOptimisticallyActive(targetThreadId);
     renderThreads();
     if (insertedLocalMessage) renderCurrentThread({ stickToBottom: true });
+    scheduleSubmittedMessageDomProbe(targetThreadId, clientSubmissionId, "task-card-submit");
     followSubmittedMessageToBottom(targetThreadId, clientSubmissionId);
     const result = await api(`/api/threads/${encodeURIComponent(targetThreadId)}/messages`, {
       method: "POST",
@@ -23319,6 +23484,7 @@ async function sendMessage(event) {
       renderThreads();
     }
     if (insertedLocalMessage) renderCurrentThread({ stickToBottom: true });
+    scheduleSubmittedMessageDomProbe(targetThreadId, clientSubmissionId, steering ? "message-steer" : "message-submit");
     followSubmittedMessageToBottom(targetThreadId, clientSubmissionId);
     const result = await api(`/api/threads/${encodeURIComponent(targetThreadId)}/messages`, {
       method: "POST",
@@ -23468,6 +23634,7 @@ async function sendNewThreadMessage(text, hasContent, input) {
     renderComposerSettings();
     renderThreads();
     renderCurrentThread({ stickToBottom: true });
+    scheduleSubmittedMessageDomProbe(threadId, clientSubmissionId, "new-thread-submit");
     try {
       await loadThread(threadId, { source: "new-thread" });
     } catch (err) {

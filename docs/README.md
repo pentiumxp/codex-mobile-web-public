@@ -79,12 +79,16 @@ scanning rollout tails again.
 
 The latest active-detail payload slice extends the response-budget service from
 item-count pressure to item-count plus byte-pressure decisions. Active turns now
-enter progressive operation/reasoning/assistant budgets when either the active
-turn body or returned detail window is too large, and collab-agent tool calls
-are classified as operation items across server budget, v4 visible keys, and the
-browser activity label. When progressive active pressure is already triggered,
-oversized retained active assistant/reasoning text fields are also reduced to a
-bounded first-paint preview and marked with `mobileActiveTextBudget`. This
+enter progressive operation/reasoning budgets when either the active turn body
+or returned detail window is too large, and collab-agent tool calls are
+classified as operation items across server budget, v4 visible keys, and the
+browser activity label. Current active turns and the latest completed replay
+protect all assistant/plan progress items; pressure budgets compact commands,
+reasoning, oversized payloads, and oversized text rather than dropping
+user-visible assistant progress rows. When progressive active pressure is
+already triggered, oversized retained active assistant/reasoning text fields are
+also reduced to a bounded first-paint preview and marked with
+`mobileActiveTextBudget`. This
 targets the successful-but-heavy state where a thread does not time out but
 still waits too long before first paint. The next performance slice should
 target the remaining cold/deferred app-server and active projection peaks:
@@ -102,13 +106,14 @@ returning the response. The projection-result assembler also skips raw
 metadata, while keeping the compaction path for invalid or legacy cache shapes.
 
 The latest response-budget slice adds a second-stage first-paint visible item
-ceiling for active/progressive pressure. After operation/reasoning/assistant
-tails and active text are compacted, the server can prune older
-operation/reasoning rows until the first-paint detail shape is below the
+ceiling for active/progressive pressure. After operation/reasoning tails and
+active text are compacted, the server can prune older operation/reasoning rows
+until the first-paint detail shape is below the
 configured ceiling (`CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_VISIBLE_ITEM_CEILING`,
 default `48`, `0` disables). User messages, images, Usage rows, diagnostics,
-and retained final assistant/plan receipts remain protected, and the response
-records the omitted visible-item counts in `mobileDetailResponseBudget`.
+current active assistant/plan progress, and retained final assistant/plan
+receipts remain protected, and the response records the omitted visible-item
+counts in `mobileDetailResponseBudget`.
 Active operation payload budgeting also covers retained operation display and
 structured fields used by command/file/tool/MCP/collab-agent cards, including
 file-change `changes`, collab-agent task/prompt text, and bounded
@@ -129,9 +134,10 @@ receipts, and the post-item-budget thread JSON still exceeds
 `160KB`), non-current/historical completed assistant/reasoning text is reduced
 to a bounded preview (`CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_COMPLETED_TEXT_CHARS`,
 default `8KB` per item) with `mobileFirstPaintTextBudget` evidence. Resting
-details protect the latest completed turn so the current final answer and a
-bounded recent operation/reasoning/assistant replay tail remain visible by
-default; older completed turns stay receipt-focused.
+details protect the latest completed turn so the current final answer and
+assistant/plan replay progress remain visible by default while
+operation/reasoning rows stay budgeted; older completed turns stay
+receipt-focused.
 
 The v558 visible-budget notice slice closes the UI/diagnostic side of that
 first-paint budgeting contract. Per-turn `mobileVisibleItemBudget` /
@@ -179,6 +185,23 @@ splitting on client build id, read mode, render mode, or source kind. Those
 volatile fields remain in the bounded report payload as evidence, but they no
 longer prevent repeated cold peaks from reaching the Home AI Owner-gated
 diagnostic loop.
+
+The browser-runtime self-check slice closes the gap between clean API
+projection checks and user-visible DOM failures. `scripts/codex-mobile-browser-runtime-self-check.js`
+opens a temporary Chrome profile against the real shell, samples bounded
+`#conversation` metadata, and detects sparse-after-nonempty thread detail
+regressions, duplicate DOM keys, runtime exceptions, and console errors without
+printing private thread titles, message text, task-card bodies, uploads, query
+strings, cookies, tokens, screenshots, or logs. Clients after
+`codex-mobile-shell-v575` also paint a reusable cached thread detail before the
+background refresh when reopening an already-loaded thread, preventing the
+empty/loading shell from replacing valid visible content during refresh.
+Clients after `codex-mobile-shell-v576` extend the same browser self-check to
+visible-item downgrades, latest-turn timestamp/Usage gaps, and visible image
+load failures. `scripts/codex-mobile-runtime-self-check-loop.js` wraps the API
+self-check plus browser self-check for deploy-time one-shot checks and periodic
+metadata-only JSONL monitoring, while Home AI remains responsible for
+Owner-approved repair-card dispatch.
 
 The active-window coalescing slice targets the "long spinner, then eventual
 success" shape seen on active large sessions. That shape is not a network/RPC

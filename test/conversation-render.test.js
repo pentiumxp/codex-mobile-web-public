@@ -12,6 +12,7 @@ const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8
 const threadDetailMergeStateJs = fs.readFileSync(path.join(root, "public", "thread-detail-merge-state.js"), "utf8");
 const threadDetailPatchPlan = require(path.join(root, "public", "thread-detail-patch-plan.js"));
 const threadDiagnosticEvents = require(path.join(root, "public", "thread-diagnostic-events.js"));
+const clientRenderStabilityGuard = require(path.join(root, "public", "client-render-stability-guard.js"));
 const { createThreadDetailStatePolicy } = require(path.join(root, "public", "thread-detail-state.js"));
 const { createThreadDetailMergePolicy } = require(path.join(root, "public", "thread-detail-merge-state.js"));
 const { createThreadDetailV4MergePolicy } = require(path.join(root, "public", "thread-detail-v4-merge-state.js"));
@@ -1202,7 +1203,7 @@ function evaluatedLocalSubmissionInserter() {
     "mergeSubmittedUserItemIntoTurn",
     "reconcileSubmittedUserMessageTurn",
   ].map((name) => functionSourceFrom(appJs, name));
-  return Function([
+  return Function("clientRenderStabilityGuard", [
     `
 let mergeCount = 0;
 let syncCount = 0;
@@ -1240,7 +1241,7 @@ return {
   counters: () => ({ mergeCount, syncCount }),
 };
 `,
-  ].join("\n"))();
+  ].join("\n"))(clientRenderStabilityGuard);
 }
 
 function evaluatedThreadStatusPaneContext() {
@@ -2266,11 +2267,17 @@ test("loading and thread-list state preserve locally visible live turns", () => 
   assert.match(appJs, /function threadIsLoadingWithoutVisibleTurns\(/);
   assert.match(functionBody("conversationRenderSignature"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) return `loading\\|/);
   assert.match(functionBody("conversationRootSignature"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) return `loading\\|/);
-  assert.match(functionBody("loadThread"), /const loadingShellPlan = threadDetailStateApi\.planThreadOpenLoadingShell\(\{ threadId, summaryThread: summary \}\);/);
+  assert.match(functionBody("loadThread"), /const cachedThread = state\.threadTileDetails && state\.threadTileDetails\.get\(threadId\);/);
+  assert.match(functionBody("loadThread"), /const cachedDetailOpenPlan = planThreadOpenCacheReuse\(\{[\s\S]*requestedThreadId: threadId,[\s\S]*currentThreadId: threadId,[\s\S]*currentThread: cachedThread,[\s\S]*\}\);/);
+  assert.match(functionBody("loadThread"), /const loadingShellPlan = cachedDetailOpenPlan\.shouldUseCachedCurrent[\s\S]*\? \{ currentThreadId: threadId, thread: cachedThread, reason: "cached-detail-first-paint" \}[\s\S]*: threadDetailStateApi\.planThreadOpenLoadingShell\(\{ threadId, summaryThread: summary \}\);/);
   assert.match(functionBody("loadThread"), /state\.currentThreadId = loadingShellPlan\.currentThreadId \|\| threadId;/);
   assert.match(functionBody("loadThread"), /state\.currentThread = loadingShellPlan\.thread \|\| \{[\s\S]*id: threadId,[\s\S]*name: threadId,[\s\S]*preview: threadId,[\s\S]*turns: \[\],[\s\S]*mobileLoading: true,[\s\S]*mobileLoadError: "",[\s\S]*\};/);
   assert.match(functionBody("loadThread"), /const loadingShellPostStatePlan = threadDetailRenderPlanApi\.planThreadDetailLoadingShellPostStateEffects\(\{[\s\S]*threadId,[\s\S]*source,[\s\S]*\}\);/);
   assert.match(functionBody("loadThread"), /applyThreadDetailPostRenderEffectsPlan\(loadingShellPostStatePlan, \{ thread: state\.currentThread \}\);/);
+  assert.match(functionBody("loadThread"), /if \(cachedDetailOpenPlan\.shouldUseCachedCurrent\) \{/);
+  assert.match(functionBody("loadThread"), /source: "cached-detail-first-paint"/);
+  assert.match(functionBody("loadThread"), /renderCurrentThread\(\{ stickToBottom: true \}\);/);
+  assert.match(functionBody("applyThreadDetailRefreshResponseEffect"), /rememberReusableThreadDetail\(state\.currentThread\)/);
   assert.doesNotMatch(functionBody("loadThread"), /followThreadOpenToBottom\(threadId\);\s*\n\s*restoreDraftForCurrentTarget\(\);\s*\n\s*renderComposerSettings\(\);\s*\n\s*syncActiveTurnFromThread\(\);\s*\n\s*renderThreads\(\);\s*\n\s*renderCurrentThread\(\{ stickToBottom: true \}\);/);
   assert.doesNotMatch(functionBody("loadThread"), /Object\.assign\(\{\}, threadListSummaryFromDetailThread\(summary\) \|\| summary/);
   assert.match(functionBody("loadThread"), /const cacheReusePlan = planThreadOpenCacheReuse\(\{/);
@@ -2470,6 +2477,8 @@ test("Hermes proxy app-server text upload summaries render png thumbnails withou
   assert.match(html, /<img src="\/api\/hermes-plugins\/codex-mobile\/proxy\/api\/uploads\/file\?id=2026-06-28%2F019eee6c-a6f5-7b20-bfb4-f96ccb6431b3%2F1782622603833-d5ac6a1e9f2e-homeai-upload-174E84FB-38DA-4D53-AA6F-9FC6E3CA289C\.png&amp;key=test-key"/);
   assert.match(html, /data-protected-image-src="\/api\/hermes-plugins\/codex-mobile\/proxy\/api\/uploads\/file\?id=2026-06-28%2F019eee6c-a6f5-7b20-bfb4-f96ccb6431b3%2F1782622603833-d5ac6a1e9f2e-homeai-upload-174E84FB-38DA-4D53-AA6F-9FC6E3CA289C\.png&amp;key=test-key"/);
   assert.match(html, /homeai-upload-174E84FB-38DA-4D53-AA6F-9FC6E3CA289C\.png/);
+  assert.doesNotMatch(html, /<figcaption>/);
+  assert.doesNotMatch(html, />homeai-upload-174E84FB-38DA-4D53-AA6F-9FC6E3CA289C\.png</);
   assert.doesNotMatch(html, /<img src="[^"]*(?:\/Users|%2FUsers|\.codex-mobile-web|path=)/);
   assert.doesNotMatch(html, /Uploaded attachments:/);
 });
@@ -2638,7 +2647,8 @@ test("generated image content urls render bounded image cards", () => {
   assert.match(html, /class="image-view"/);
   assert.match(html, /<img src="data:image\/gif;base64,R0lGODlhAQABAIAAAAAAAP\/\/\/ywAAAAAAQABAAACAUwAOw=="/);
   assert.match(html, /data-protected-image-src="\/api\/generated-images\/file\?id=thread%2Ftool-output\.png&amp;key=test-key"/);
-  assert.match(html, /<figcaption>tool-output\.png<\/figcaption>/);
+  assert.doesNotMatch(html, /<figcaption>/);
+  assert.doesNotMatch(html, />tool-output\.png</);
   assert.doesNotMatch(html, /\/api\/files\/preview\/content/);
 });
 
@@ -2745,7 +2755,8 @@ test("unavailable generated images render a bounded failure card without img src
   });
 
   assert.match(html, /class="image-view image-load-failed"/);
-  assert.match(html, /1782210953458-homeai-upload\.jpg/);
+  assert.doesNotMatch(html, /1782210953458-homeai-upload\.jpg/);
+  assert.doesNotMatch(html, /<figcaption\b/);
   assert.doesNotMatch(html, /<img\b/);
   assert.doesNotMatch(html, /src=/);
 });
@@ -3825,7 +3836,7 @@ test("stable render keys use pane render context before global current thread", 
     "stableOperationRenderKey",
     "stableTurnKey",
   ].map((name) => functionSourceFrom(appJs, name));
-  const result = Function(`
+  const result = Function("clientRenderStabilityGuard", `
 const state = {
   currentThreadId: "current-thread",
   currentThread: { id: "current-object-thread" },
@@ -3838,11 +3849,39 @@ return {
   operationKey: stableOperationRenderKey({ id: "turn-a" }, { id: "op-a", groupKey: "op-group" }, 0),
   turnKey: stableTurnKey({ id: "turn-a" }),
 };
-`)();
+`)(clientRenderStabilityGuard);
 
   assert.equal(result.itemKey, "item|pane-thread|turn-a|item-a");
-  assert.equal(result.operationKey, "live-operation|pane-thread|turn-a|op-group");
+  assert.equal(result.operationKey, "live-operation|pane-thread|turn-a|op-group|op-a|0");
   assert.equal(result.turnKey, "turn|pane-thread|turn-a");
+});
+
+test("operation render keys stay unique for repeated commands in one turn", () => {
+  const sources = [
+    "renderContextThread",
+    "renderContextThreadId",
+    "stableOperationRenderKey",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const result = Function(`
+const state = {
+  currentThreadId: "current-thread",
+  currentThread: { id: "current-object-thread" },
+  renderContextThreadId: "pane-thread",
+};
+function operationGroupKey(item) { return "commandExecution:command:same"; }
+${sources.join("\n")}
+return {
+  first: stableOperationRenderKey({ id: "turn-a" }, { id: "cmd-a", type: "commandExecution" }, 4),
+  second: stableOperationRenderKey({ id: "turn-a" }, { id: "cmd-b", type: "commandExecution" }, 5),
+  indexOnlyFirst: stableOperationRenderKey({ id: "turn-a" }, { type: "commandExecution" }, 4),
+  indexOnlySecond: stableOperationRenderKey({ id: "turn-a" }, { type: "commandExecution" }, 5),
+};
+`)();
+
+  assert.notEqual(result.first, result.second);
+  assert.notEqual(result.indexOnlyFirst, result.indexOnlySecond);
+  assert.equal(result.first, "live-operation|pane-thread|turn-a|commandExecution:command:same|cmd-a|4");
+  assert.equal(result.second, "live-operation|pane-thread|turn-a|commandExecution:command:same|cmd-b|5");
 });
 
 test("live turn helpers use pane render context thread before global current thread", () => {
@@ -3919,7 +3958,7 @@ test("visible item signatures use explicit pane thread for context compaction st
     "contextCompactionNotice",
     "visibleItemSignature",
   ].map((name) => functionSourceFrom(appJs, name));
-  const result = Function(`
+  const result = Function("clientRenderStabilityGuard", `
 const CONTEXT_COMPACTION_PENDING_NOTICE = "Context compaction pending";
 const CONTEXT_COMPACTION_COMPLETE_NOTICE = "Context compaction complete";
 const state = {
@@ -3978,7 +4017,7 @@ test("thread tile visible shape uses pane thread context for visible item filter
     "visibleRenderableTurnIds",
     "threadTileVisibleShape",
   ].map((name) => functionSourceFrom(appJs, name));
-  const result = Function(`
+  const result = Function("clientRenderStabilityGuard", `
 const CONTEXT_COMPACTION_PENDING_NOTICE = "Context compaction pending";
 const CONTEXT_COMPACTION_COMPLETE_NOTICE = "Context compaction complete";
 const paneTurn = {
@@ -4109,7 +4148,7 @@ test("visible item patch entries use render context thread for filtering and sig
     "visibleItemSignature",
     "visibleItemPatchEntries",
   ].map((name) => functionSourceFrom(appJs, name));
-  const result = Function(`
+  const result = Function("clientRenderStabilityGuard", `
 const CONTEXT_COMPACTION_PENDING_NOTICE = "Context compaction pending";
 const CONTEXT_COMPACTION_COMPLETE_NOTICE = "Context compaction complete";
 const targetTurn = {
@@ -4154,7 +4193,7 @@ function operationCommandText() { return ""; }
 function operationDetailText() { return ""; }
 ${sources.join("\n")}
 return visibleItemPatchEntries(targetTurn);
-`)();
+`)(clientRenderStabilityGuard);
 
   assert.equal(result.length, 1);
   assert.equal(result[0].key, "item|target-thread|target-turn|context-item");

@@ -147,6 +147,64 @@ test("thread detail projection reuses stale full cache as active overlay history
   }
 });
 
+test("thread detail projection reuses stale full cache when live overlay proves active status", () => {
+  const dir = tempDir();
+  try {
+    const service = createThreadDetailProjectionService({
+      cacheDir: dir,
+      policyVersion: "test-v1",
+      maxTurns: 3,
+      now: () => 2000,
+    });
+    service.seed(signatureInput({
+      maxTurns: 3,
+      summaryStatus: "completed",
+      summaryUpdatedAtMs: 1000,
+    }), {
+      thread: {
+        id: "thread-1",
+        turns: [
+          { id: "turn-old", items: [{ id: "agent-old", type: "agentMessage" }] },
+          { id: "turn-active", status: { type: "active" }, items: [{ id: "agent-active", type: "agentMessage" }] },
+        ],
+      },
+    });
+
+    const staleSummaryInput = signatureInput({
+      maxTurns: 3,
+      summaryStatus: "completed",
+      summaryUpdatedAtMs: 8000,
+      rolloutStats: {
+        sizeBytes: 4096,
+        mtimeMs: 8000,
+      },
+    });
+
+    const ordinary = service.lookup(staleSummaryInput, {
+      allowPartial: true,
+      activeOverlay: true,
+      omitActiveTurnId: "turn-active",
+    });
+    assert.equal(ordinary.cached, null);
+    assert.equal(ordinary.missReason, "static-signature-mismatch");
+
+    const overlayWindow = service.lookup(staleSummaryInput, {
+      allowPartial: true,
+      activeOverlay: true,
+      activeOverlayStatusProven: true,
+      omitActiveTurnId: "turn-active",
+    });
+    assert.ok(overlayWindow.cached);
+    assert.equal(overlayWindow.missReason, "");
+    assert.equal(overlayWindow.cached.partial, true);
+    assert.equal(overlayWindow.cached.partialKind, "turns-list-active-overlay-window");
+    assert.equal(overlayWindow.cached.result.thread.mobileReadMode, "projection-active-window");
+    assert.deepEqual(overlayWindow.cached.result.thread.turns.map((turn) => turn.id), ["turn-old"]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("thread detail projection restores persisted full history before active notifications", () => {
   const dir = tempDir();
   try {

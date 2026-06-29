@@ -22,6 +22,8 @@ const USER_INPUT_TYPES = new Set([
   "filePreview",
 ]);
 
+const DEFAULT_WARNING_ACTION_THRESHOLD = 2;
+
 function text(value) {
   return String(value || "").trim();
 }
@@ -96,6 +98,10 @@ function isCompletedStatus(value) {
 
 function isTurnComplete(turn) {
   return isCompletedStatus(turn && turn.status);
+}
+
+function isStaleActiveCompletionStatus(value) {
+  return Boolean(value && typeof value === "object" && value.mobileStaleActiveTurn === true);
 }
 
 function turnCompletedAtMs(turn, thread = null) {
@@ -182,14 +188,96 @@ function latestCompletedTurn(thread = {}) {
     const turn = turns[index];
     if (!safeArray(turn && turn.items).length) continue;
     if (isActiveStatus(turn && turn.status)) continue;
+    if (isStaleActiveCompletionStatus(turn && turn.status)) continue;
     if (!isCompletedStatus(turn && turn.status)) continue;
     return { turn, index };
   }
   return { turn: null, index: -1 };
 }
 
+function activeTurn(thread = {}) {
+  const turns = safeArray(thread.turns);
+  const activeId = text(thread.activeTurnId || thread.mobileActiveTurnId || thread.mobileRolloutActiveTurn);
+  if (activeId) {
+    const index = turns.findIndex((turn) => text(turnId(turn)) === activeId);
+    if (index >= 0) return { turn: turns[index], index };
+  }
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    if (isActiveStatus(turn && turn.status)) return { turn, index };
+  }
+  return { turn: null, index: -1 };
+}
+
 function visibleKeyForItem(item) {
   return text(item && (item.mobileVisibleKey || item.renderKey || item.visibleKey || item.id));
+}
+
+function presentText(value) {
+  if (value === undefined || value === null) return "";
+  return String(value).trim();
+}
+
+function clientTurnIdentity(turn = {}) {
+  return presentText(turnId(turn) || turn.startedAt || turn.createdAt || "turn");
+}
+
+function clientItemIdentity(item = {}, index = 0) {
+  return presentText(
+    item.mobileVisibleKey
+    || item.renderKey
+    || item.visibleKey
+    || item.id
+    || item.callId
+    || item.requestId
+    || item.startedAtMs
+    || item.startedAt,
+  ) || `index:${boundedCount(index)}`;
+}
+
+function clientOperationGroupKey(item = {}) {
+  return presentText(
+    item.mobileOperationGroupKey
+    || item.operationGroupKey
+    || item.groupKey
+    || item.tool
+    || item.name
+    || item.command,
+  ) || `${itemType(item)}:operation`;
+}
+
+function clientRenderKeyForItem(thread = {}, turn = {}, item = {}, index = 0) {
+  const ownerThreadId = threadId(thread) || "thread";
+  const ownerTurnId = clientTurnIdentity(turn);
+  if (isOperationItem(item)) {
+    return [
+      "live-operation",
+      ownerThreadId,
+      ownerTurnId,
+      clientOperationGroupKey(item),
+      clientItemIdentity(item, index),
+      String(boundedCount(index)),
+    ].join("|");
+  }
+  const type = itemType(item);
+  const prefix = /context/i.test(type) ? "context" : "item";
+  const identity = clientItemIdentity(item, index) || `${type}-${boundedCount(index)}`;
+  return [prefix, ownerThreadId, ownerTurnId, identity].join("|");
+}
+
+function duplicateInfo(values = []) {
+  const seen = new Set();
+  const duplicates = [];
+  for (const value of values) {
+    const key = text(value);
+    if (!key) continue;
+    if (seen.has(key)) duplicates.push(key);
+    else seen.add(key);
+  }
+  return {
+    count: boundedCount(duplicates.length),
+    firstHash: shortHash(duplicates[0] || ""),
+  };
 }
 
 function hasDuplicate(values) {
@@ -201,6 +289,14 @@ function hasDuplicate(values) {
     seen.add(key);
   }
   return false;
+}
+
+function compactToken(value, fallback = "", maxLength = 80) {
+  const safe = text(value)
+    .replace(/[^a-zA-Z0-9_.:-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, maxLength);
+  return safe || fallback;
 }
 
 function summarizeTurn(turn = {}, thread = null) {
@@ -225,6 +321,7 @@ function summarizeTurn(turn = {}, thread = null) {
     usageItems: boundedCount(usageItems),
     userInputItems: boundedCount(userInputItems),
     timestampMissingVisibleItems: boundedCount(timestampMissingVisibleItems),
+    syntheticCompletionTurn: turn && turn.mobileSyntheticCompletionTurn === true,
     startedAtMs: boundedCount(turnStartedAtMs(turn), Number.MAX_SAFE_INTEGER),
     completedAtMs: boundedCount(turnCompletedAtMs(turn, thread), Number.MAX_SAFE_INTEGER),
   };
@@ -245,7 +342,9 @@ function analyzeThreadDetail(detail = {}, options = {}) {
   const turns = safeArray(thread.turns);
   const budget = objectOrNull(thread.mobileDetailResponseBudget) || {};
   const latest = latestCompletedTurn(thread);
+  const active = activeTurn(thread);
   const latestSummary = latest.turn ? summarizeTurn(latest.turn, thread) : null;
+  const activeSummary = active.turn ? summarizeTurn(active.turn, thread) : null;
   const threadHash = shortHash(threadId(thread) || options.threadId);
 
   if (!turns.length) {
@@ -269,6 +368,18 @@ function analyzeThreadDetail(detail = {}, options = {}) {
   const itemVisibleKeys = turns.flatMap((turn) => safeArray(turn.items).map(visibleKeyForItem).filter(Boolean));
   if (itemVisibleKeys.length && hasDuplicate(itemVisibleKeys)) {
     pushIssue(issues, "duplicate_item_visible_keys", "H2", "thread-detail", { threadHash });
+  }
+  for (const turn of turns) {
+    const renderKeys = safeArray(turn.items).map((item, index) => clientRenderKeyForItem(thread, turn, item, index));
+    const duplicate = duplicateInfo(renderKeys);
+    if (duplicate.count > 0) {
+      pushIssue(issues, "duplicate_client_render_keys", "H2", "thread-detail", {
+        threadHash,
+        turnHash: shortHash(turnId(turn)),
+        count: duplicate.count,
+        itemHash: duplicate.firstHash,
+      });
+    }
   }
 
   if (latest.turn) {
@@ -299,15 +410,18 @@ function analyzeThreadDetail(detail = {}, options = {}) {
         assistantItems: boundedCount(assistantItems.length),
       });
     }
-    if (assistantItems.length <= 1 && Number(budget.latestCompletedReplayTurnCount || 0) > 0) {
+    const replayOmittedAssistantItems = Number(budget.latestCompletedReplayOmittedAssistantItems || 0);
+    if (assistantItems.length <= 1 && Number(budget.latestCompletedReplayTurnCount || 0) > 0 && replayOmittedAssistantItems > 0) {
       pushIssue(issues, "latest_completed_replay_receipt_only", "H3", "thread-detail", {
         threadHash,
         turnHash,
         assistantItems: boundedCount(assistantItems.length),
+        omittedAssistantItems: boundedCount(replayOmittedAssistantItems),
       });
     }
     const userInputItems = items.filter((item) => USER_INPUT_TYPES.has(itemType(item)));
-    if ((assistantItems.length || usageItems.length) && !userInputItems.length) {
+    const syntheticCompletionTurn = latest.turn && latest.turn.mobileSyntheticCompletionTurn === true;
+    if ((assistantItems.length || usageItems.length) && !userInputItems.length && !syntheticCompletionTurn) {
       pushIssue(issues, "latest_completed_user_input_missing", "H3", "thread-detail", {
         threadHash,
         turnHash,
@@ -336,6 +450,48 @@ function analyzeThreadDetail(detail = {}, options = {}) {
     }
   }
 
+  if (active.turn) {
+    const activeItems = safeArray(active.turn.items);
+    const activeBudget = objectOrNull(active.turn.mobileVisibleItemBudget) || {};
+    const reason = text(activeBudget.reason).slice(0, 80);
+    const activeAssistantItems = activeItems.filter(isAssistantItem).length;
+    const activeOmittedAssistantItems = boundedCount(budget.activeOmittedAssistantItems);
+    const overlayCounts = objectOrNull(objectOrNull(thread.mobileActiveOverlay) && thread.mobileActiveOverlay.counts) || {};
+    const overlayAssistantItems = boundedCount(overlayCounts.assistantItems);
+    const syntheticAssistantDeduped = boundedCount(Math.max(
+      boundedCount(thread.mobileSyntheticActiveAssistantDeduped),
+      boundedCount(active.turn && active.turn.mobileSyntheticActiveAssistantDeduped),
+    ));
+    const effectiveOverlayAssistantItems = boundedCount(Math.max(0, overlayAssistantItems - syntheticAssistantDeduped));
+    if (activeOmittedAssistantItems > 0) {
+      pushIssue(issues, "active_turn_assistant_budget", "H2", "thread-detail", {
+        threadHash,
+        turnHash: shortHash(turnId(active.turn)),
+        omittedAssistantItems: activeOmittedAssistantItems,
+        retainedAssistantItems: boundedCount(activeAssistantItems),
+      });
+    }
+    if (effectiveOverlayAssistantItems > activeAssistantItems) {
+      pushIssue(issues, "active_overlay_assistant_projection_gap", "H2", "thread-detail", {
+        threadHash,
+        turnHash: shortHash(turnId(active.turn)),
+        overlayAssistantItems,
+        effectiveOverlayAssistantItems,
+        syntheticAssistantDeduped,
+        detailAssistantItems: boundedCount(activeAssistantItems),
+      });
+    }
+    if (reason === "progressive-active-first-paint-byte-ceiling") {
+      pushIssue(issues, "active_turn_visible_item_budget", "H2", "thread-detail", {
+        threadHash,
+        turnHash: shortHash(turnId(active.turn)),
+        reason,
+        omittedVisibleItems: boundedCount(activeBudget.omitted),
+        retainedVisibleItems: boundedCount(activeBudget.retained || activeItems.length),
+      });
+    }
+  }
+
   for (let index = 0; index < turns.length; index += 1) {
     if (index === latest.index) continue;
     const turn = turns[index];
@@ -358,14 +514,29 @@ function analyzeThreadDetail(detail = {}, options = {}) {
     turnCount: boundedCount(turns.length),
     visibleKeyCount: boundedCount(visibleKeys.length || itemVisibleKeys.length),
     latestCompleted: latestSummary,
+    activeTurn: activeSummary,
     budget: {
       latestCompletedReplayTurnCount: boundedCount(budget.latestCompletedReplayTurnCount),
       latestCompletedReplayOperationItems: boundedCount(budget.latestCompletedReplayOperationItems),
       latestCompletedReplayReasoningItems: boundedCount(budget.latestCompletedReplayReasoningItems),
       latestCompletedReplayAssistantItems: boundedCount(budget.latestCompletedReplayAssistantItems),
+      latestCompletedReplayOmittedAssistantItems: boundedCount(budget.latestCompletedReplayOmittedAssistantItems),
+      protectedCompletedReplayTurnCount: boundedCount(budget.protectedCompletedReplayTurnCount),
+      protectedCompletedReplayAssistantItems: boundedCount(budget.protectedCompletedReplayAssistantItems),
+      protectedCompletedReplayOmittedAssistantItems: boundedCount(budget.protectedCompletedReplayOmittedAssistantItems),
+      richCompletedReplayTurnCount: boundedCount(budget.richCompletedReplayTurnCount),
+      richCompletedReplayAssistantItems: boundedCount(budget.richCompletedReplayAssistantItems),
+      richCompletedReplayOmittedAssistantItems: boundedCount(budget.richCompletedReplayOmittedAssistantItems),
       omittedOperationItems: boundedCount(budget.omittedOperationItems),
       omittedReasoningItems: boundedCount(budget.omittedReasoningItems),
       omittedAssistantItems: boundedCount(budget.omittedAssistantItems),
+      activeTurnCount: boundedCount(budget.activeTurnCount),
+      activeOmittedAssistantItems: boundedCount(budget.activeOmittedAssistantItems),
+      activeAssistantItemsBefore: boundedCount(budget.activeAssistantItemsBefore),
+      activeAssistantItemsAfter: boundedCount(budget.activeAssistantItemsAfter),
+      syntheticActiveAssistantDeduped: boundedCount(thread.mobileSyntheticActiveAssistantDeduped),
+      omittedVisibleItems: boundedCount(budget.omittedVisibleItems),
+      progressiveActiveFirstPaintOmittedVisibleItems: boundedCount(budget.progressiveActiveFirstPaintOmittedVisibleItems),
     },
     issues,
   };
@@ -546,15 +717,78 @@ function issueDedupKey(issue = {}) {
   ].join("|");
 }
 
-function combineSelfCheck(parts = {}) {
+function issueSeverityBlocks(issue = {}) {
+  const severity = text(issue.severity).toUpperCase();
+  return severity === "H1" || severity === "H2";
+}
+
+function selfCheckDiagnosticType(issue = {}) {
+  const surface = text(issue.surface);
+  if (surface === "thread-list" || surface === "thread-list-refresh") return "thread_list_response_contract_mismatch";
+  return "thread_detail_response_contract_mismatch";
+}
+
+function selfCheckDiagnosticCandidate(issue = {}, options = {}) {
+  const occurrenceCount = boundedCount(issue.occurrenceCount || 1);
+  const warningThreshold = Math.max(1, boundedCount(
+    options.warningActionThreshold,
+    10,
+  ) || DEFAULT_WARNING_ACTION_THRESHOLD);
+  if (!issueSeverityBlocks(issue) && occurrenceCount < warningThreshold) return null;
+  const code = compactToken(issue.code, "thread_display_self_check_failed", 100);
+  const surface = compactToken(issue.surface, "thread-detail", 80);
+  const severity = compactToken(issue.severity, "H2", 8).toUpperCase();
+  const threadHash = compactToken(issue.threadHash, "", 80);
+  const turnHash = compactToken(issue.turnHash, "", 80);
+  const itemHash = compactToken(issue.itemHash, "", 80);
+  const context = {
+    surface,
+    action: "self-check",
+    diagnostic_source: "codex-mobile-thread-self-check",
+  };
+  if (threadHash) context.thread_hash = threadHash;
+  if (turnHash) context.turn_hash = turnHash;
+  if (itemHash) context.item_hash = itemHash;
+  const fields = {
+    repeated_failures: occurrenceCount,
+  };
+  if (threadHash) fields.thread_hash = threadHash;
+  if (turnHash) fields.turn_hash = turnHash;
+  if (itemHash) fields.item_hash = itemHash;
+  return {
+    category: "conversation_projection_mismatch",
+    diagnostic_type: selfCheckDiagnosticType(issue),
+    severity_hint: severity === "H1" ? "H1" : issueSeverityBlocks(issue) ? "H2" : "H3",
+    evidence_confidence: issueSeverityBlocks(issue) ? 0.82 : 0.72,
+    error_code: code,
+    counts: {
+      repeated_failures: occurrenceCount,
+      occurrences: occurrenceCount,
+    },
+    context,
+    breadcrumbs: [{
+      kind: "thread-display-self-check",
+      code,
+      status: "failed",
+      fields,
+    }],
+  };
+}
+
+function combineSelfCheck(parts = {}, options = {}) {
   const issues = [];
-  const seen = new Set();
+  const byKey = new Map();
   const pushUnique = (issue) => {
     if (!issue || typeof issue !== "object") return;
     const key = issueDedupKey(issue);
-    if (seen.has(key)) return;
-    seen.add(key);
-    issues.push(issue);
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.occurrenceCount = boundedCount((existing.occurrenceCount || 1) + 1);
+      return;
+    }
+    const normalized = Object.assign({}, issue, { occurrenceCount: 1 });
+    byKey.set(key, normalized);
+    issues.push(normalized);
   };
   for (const value of Object.values(parts)) {
     if (!value) continue;
@@ -566,11 +800,16 @@ function combineSelfCheck(parts = {}) {
     }
     if (Array.isArray(value.issues)) value.issues.forEach(pushUnique);
   }
-  const h2Count = issues.filter((issue) => issue.severity === "H1" || issue.severity === "H2").length;
+  const diagnosticCandidates = issues
+    .map((issue) => selfCheckDiagnosticCandidate(issue, options))
+    .filter(Boolean);
+  const h2Count = issues.filter(issueSeverityBlocks).length;
   return {
     ok: h2Count === 0,
     issueCount: boundedCount(issues.length),
     blockingIssueCount: boundedCount(h2Count),
+    diagnosticCandidateCount: boundedCount(diagnosticCandidates.length),
+    diagnosticCandidates,
     issues,
   };
 }
@@ -585,6 +824,7 @@ module.exports = {
   itemTimestampMs,
   latestCompletedTurn,
   numericTimestampMs,
+  selfCheckDiagnosticCandidate,
   shortHash,
   summarizeTurn,
   threadRows,

@@ -16,6 +16,97 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-29 Public 发布说明（v577 投影一致性和浏览器自检闭环）
+
+本次 Public 同步 `codex-mobile-shell-v577` 以及同批私有生产验证过的
+投影一致性、浏览器自检和周期巡检修复。它面向的不是单个 UI 细节，而是
+近期用户实际遇到的高风险状态错乱：最新 turn 里用户消息或 assistant 回执
+一会出现、一会消失、偶尔重复，live 回执时间显示成 turn 开始时间，以及
+API 自检通过但真实浏览器 DOM 已经重复或降级。
+
+本次发布的根因修复包括：
+
+- 服务端 detail 响应在 active assistant 回填后会做一次根因级收束：同一
+  live turn 里，如果 Codex app-server 已经给出原生 assistant/plan 消息，
+  rollout synthetic progress 里相同正文的临时 assistant 消息会被移除；
+  synthetic 自身重复也会被移除。这样不会靠浏览器去重掩盖问题，而是在
+  投影边界只保留一个权威 assistant 进度源。
+- 对于 active overlay 里没有显式 synthetic 标记的旧式 `item-N` assistant
+  回执，如果同一 live turn 已经有同文本的原生 `msg_*` assistant 回执，
+  服务端会在最终响应前删除旧式投影行。这个修复来自浏览器自检真实抓到的
+  `browser_latest_turn_assistant_text_duplicate` H2，不是客户端兜底。
+- API 自检现在理解 `mobileSyntheticActiveAssistantDeduped` 这类投影会计
+  证据，不再把“已经被服务端去重解释过的 overlay/detail 数量差”误报成
+  active overlay projection gap；真实的 active assistant 丢失仍然会报 H2。
+- live assistant/plan item 没有 item-level timestamp 时，不再回退到 turn
+  start / UUIDv7 时间。缺失时间会被 runtime self-check 报成缺口，避免用户
+  看到旧的“00:40”之类假时间。
+- 浏览器 self-check 增加最新 turn 内部不变量：最新 turn 的 item 数、用户
+  消息数、assistant/plan 数不能在同一 turn 内回退；最新 turn 内重复
+  assistant 文本会作为 H2 `browser_latest_turn_assistant_text_duplicate`
+  报告。报告只包含计数和 hash，不输出消息正文。
+- 周期 runner 支持更长的真实浏览器采样窗口：
+  `--browser-rounds`、`--browser-sample-delays-ms` 和
+  `--browser-min-settled-delay-ms`。默认采样覆盖 `100,350,1200,2800,6000ms`，
+  用于抓“几秒后被旧投影覆盖”的客户端问题。
+
+生产读回已经确认：
+
+- `clientBuildId=0.1.11|codex-mobile-shell-v577`
+- active Codex Mobile detail readback：active assistant duplicateGroups=`0`
+- browser runtime self-check：75 个浏览器样本，`blockingIssueCount=0`，
+  `maxLatestTurnAssistantTextDuplicates=0`，`maxImageFailures=0`，
+  `maxLatestTimestampMissingItems=0`
+- runtime self-check loop：`ok=true`；API 侧只剩已知非阻塞 H3
+  `thread_list_updated_order_mismatch`
+- LaunchAgent `com.hermesmobile.codex-mobile-runtime-self-check` 最新运行
+  `ok=true`，`last exit code=0`
+
+验证范围：
+
+```sh
+node --test test/thread-detail-self-check-service.test.js
+node --test test/thread-detail-self-check-service.test.js test/thread-item-timestamp-enrichment.test.js test/browser-runtime-self-check-service.test.js test/runtime-self-check-loop.test.js test/conversation-render.test.js test/message-timestamp.test.js test/thread-detail-active-window-overlay-policy-service.test.js test/thread-detail-read-orchestration-service.test.js test/thread-detail-projection-service.test.js
+node --test test/thread-item-timestamp-enrichment.test.js test/thread-detail-self-check-service.test.js test/browser-runtime-self-check-service.test.js test/conversation-render.test.js
+npm test
+npm run check
+npm run check:macos
+git diff --check
+```
+
+Public 仓库只同步公开源码、README、docs、scripts 和测试；不包含
+`.agent-context`、runtime state、本地密钥、访问 key、launch token、上传内容、
+完整 rollout、私有日志或任何 Home AI/Codex 私有运行时数据。
+
+## 2026-06-29 Runtime Self-Check / Image Caption Hotfix（v576）
+
+本次私有生产修复升级到 `codex-mobile-shell-v576`，集中处理三个用户可见问题：
+
+- 用户上传图片、系统生成图片、Markdown/data 图片和不可用图片占位都不再显示文件名、
+  本地路径或链接标题；消息流只显示图片本身或中性的失败占位。图片加载路径仍保留
+  `/api/uploads/file` / `/api/generated-images/file` 的同源/proxy-safe `src`，
+  不把本地绝对路径暴露成浏览器可见文本。
+- 进行中的 live assistant/plan 回执如果缺少逐条 timestamp，会回退到 turn start /
+  UUIDv7 时间；不会再因为 active turn 而显示空时间，也不会用线程 `updatedAt` 污染
+  中间回执时间。
+- 浏览器 runtime self-check 扩展为真实 DOM 契约检查：同一线程已经确认非空后，
+  后续采样变稀疏、visible item 明显下降、最新 turn 时间戳缺失、最新 turn Usage
+  缺失、图片加载失败都会成为 H2 metadata-only issue。此前 `contentConfirmed=false`
+  的稀疏样本会被跳过，导致用户看见“消息一会消失一会出现”但自检仍 `ok:true`；
+  现在只禁止它作为健康 baseline，不再禁止它作为回退证据。
+
+新增统一 runner：
+
+```sh
+node scripts/codex-mobile-runtime-self-check-loop.js --server http://127.0.0.1:8787 --json
+node scripts/codex-mobile-runtime-self-check-loop.js --server http://127.0.0.1:8787 --loop --interval-ms 600000 --json
+```
+
+第一条用于每次部署后的 one-shot 检查；第二条用于 10 分钟周期巡检并写入
+`~/.codex-mobile-web/logs/runtime-self-check.jsonl`。输出只包含 build/cache id、
+短 hash、issue 计数和 bounded error code，不包含消息正文、任务卡正文、上传内容、
+线程标题、cookie、token、access key、私有路径或长日志。
+
 ## 2026-06-28 Public 发布说明（v570 外部链接和 Home AI Deploy 通道）
 
 本次 Public 同步 `codex-mobile-shell-v570` 以及同批私有生产验证过的
@@ -59,6 +150,48 @@ git diff --check
 Public 仓库只同步公开源码、README、docs、scripts 和测试；不包含
 `.agent-context`、runtime state、本地密钥、访问 key、launch token、上传内容、
 完整 rollout 或私有日志。
+
+## 2026-06-28 Operation Render Key Hotfix
+
+本次热修复处理一个客户端单窗口也会触发的投影显示回归：同一个 turn 内出现多条相同
+command/tool operation 时，前端旧的 `stableOperationRenderKey()` 只使用
+thread、turn 和 operation group，导致多条不同 operation 生成同一个 DOM render key。
+浏览器 patch 因 `post-apply-duplicate-render-keys` 被拒绝后会回退整段重绘，用户侧表现为
+用户消息短暂消失、回执忽隐忽现、重复消息、线程详情闪烁。
+
+修复后，operation render key 额外包含 item identity 和原始 index；自检也按客户端同一套
+render-key 规则扫描 thread detail，发现重复会报 `duplicate_client_render_keys`。这样
+服务端/API 投影稳定但浏览器 DOM 身份冲突的情况可以在自检阶段被发现，而不是只依赖用户
+看到画面错乱后上报。
+
+这次变化会升级静态 shell/cache 到 `codex-mobile-shell-v573`。部署后需要浏览器、PWA 或
+Home AI embedded WebView 加载新 shell 才能消除旧客户端已缓存的重复 key 行为。
+
+## 2026-06-28 Frontend Runtime Health 布点（v574）
+
+本模块把自检从服务端/thread-detail 扩展到前端用户操作层和真实 DOM 渲染层。新增
+`public/frontend-runtime-health.js`，并接入 `public/app.js` 的现有线程发送和
+conversation patch 路径。
+
+首批覆盖三个用户可见失败面：
+
+- 用户在现有线程发送消息后，客户端本地已登记该 `clientSubmissionId`，但当前线程 DOM
+  在 0.35s / 1.2s / 2.8s 探测点看不到对应短 hash 标记，会记录
+  `frontend_runtime_mismatch / submitted_message_dom_missing`。
+- 线程详情从非空 DOM 突然退化到 0/1 个可见节点，会记录
+  `frontend_runtime_mismatch / render_dom_drop`。
+- 短时间内连续 full render 或 patch fallback，会记录
+  `frontend_runtime_mismatch / render_churn`。
+
+这些事件仍走 Home AI diagnostic reporter 的重复失败阈值和节流机制：单次瞬时刷新不会
+直接打扰 Owner，连续同签名失败才会通过 `homeai.diagnostic.report` 进入 Home AI
+Owner-gated 诊断闭环。上报内容只包含 build id、route kind、read/render mode、短 hash、
+DOM/visible/count 计数和 bounded reason code；不包含消息正文、任务卡正文、上传内容、
+原始线程 id、cookie、token、access key、私有路径或长日志。
+
+这不是前端兜底去重逻辑，也不改变投影 authority。它的作用是把“用户消息发出后消失、
+刷新后又出现、整页重绘抖动”这类浏览器层问题变成可复现、可归类、可由 Home AI 自动
+生成修复卡的 metadata-only 证据。
 
 ## 2026-06-28 Public 发布说明（线程详情自检、Usage 工具条和 completed replay 稳定性）
 

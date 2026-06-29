@@ -29,6 +29,9 @@ function createThreadTurnCompactionPolicyService(options = {}) {
   const isUserQuestionItem = typeof options.isUserQuestionItem === "function"
     ? options.isUserQuestionItem
     : (item) => defaultItemType(item) === "usermessage";
+  const isUserVisibleInputItem = typeof options.isUserVisibleInputItem === "function"
+    ? options.isUserVisibleInputItem
+    : isUserQuestionItem;
   const isAssistantReceiptItem = typeof options.isAssistantReceiptItem === "function"
     ? options.isAssistantReceiptItem
     : (item) => defaultItemType(item) === "agentmessage" || defaultItemType(item) === "plan";
@@ -63,7 +66,7 @@ function createThreadTurnCompactionPolicyService(options = {}) {
     let receiptIndex = -1;
     for (let index = 0; index < items.length; index += 1) {
       const item = items[index];
-      if (isUserQuestionItem(item)) indexes.add(index);
+      if (isUserVisibleInputItem(item)) indexes.add(index);
       if (isTurnUsageSummaryItem(item)) indexes.add(index);
       if (isVisualReceiptItem(item)) indexes.add(index);
       if (isDiagnosticReceiptItem(item)) indexes.add(index);
@@ -93,7 +96,7 @@ function createThreadTurnCompactionPolicyService(options = {}) {
 
   function turnHasVisibleDetailItems(turn) {
     if (!turn || !Array.isArray(turn.items)) return false;
-    return turn.items.some((item) => isUserQuestionItem(item)
+    return turn.items.some((item) => isUserVisibleInputItem(item)
       || isAssistantReceiptItem(item)
       || isVisualReceiptItem(item)
       || isDiagnosticReceiptItem(item)

@@ -36,7 +36,7 @@ function activeSummary(overrides = {}) {
   }, overrides);
 }
 
-test("active overlay provider converts live projection snapshot into complete policy evidence", () => {
+test("active overlay provider marks notification-only live snapshot incomplete", () => {
   const projectionService = createThreadDetailProjectionV4Service({
     cacheDir: "",
     policyVersion: "test-v4",
@@ -81,6 +81,10 @@ test("active overlay provider converts live projection snapshot into complete po
   assert.equal(input.operationCoverage, "present");
   assert.equal(input.uploadCoverage, "none");
   assert.equal(input.receiptCoverage, "present");
+  assert.equal(input.overlayCompleteness, "partial");
+  assert.equal(input.overlayPartial, true);
+  assert.equal(input.overlayPartialKind, "notification-shell");
+  assert.equal(input.overlaySignatureHashPresent, false);
   assert.equal(input.projectionRevision, 1);
   assert.equal(input.overlayRevision, 4);
   assert.deepEqual(input.overlayEvidence, {
@@ -95,6 +99,49 @@ test("active overlay provider converts live projection snapshot into complete po
     unknownItems: 0,
   });
 
+  const plan = planActiveWindowOverlay(Object.assign({}, input, {
+    summary: activeSummary(),
+    projectionThread: projectionThread(),
+  }));
+  assert.equal(plan.action, "require-full-read");
+  assert.equal(plan.reason, "active-overlay-turn-incomplete");
+});
+
+test("active overlay provider converts full live projection snapshot into complete policy evidence", () => {
+  const projectionService = {
+    activeOverlaySnapshot() {
+      return {
+        found: true,
+        activeTurnId: "turn-1",
+        overlaySource: "projection-live",
+        overlayCompleteness: "full",
+        overlayPartial: false,
+        overlayRevision: 2,
+        updatedAtMs: 1000,
+        partial: false,
+        partialKind: "",
+        signatureHashPresent: true,
+        overlayTurn: {
+          id: "turn-1",
+          items: [
+            { id: "cmd-1", type: "commandExecution" },
+            { id: "agent-1", type: "agentMessage" },
+            { id: "usage-1", type: "turnUsageSummary" },
+          ],
+        },
+      };
+    },
+  };
+  const provider = createThreadDetailActiveOverlayProviderService({ projectionService });
+  const input = provider.resolveActiveWindowOverlay({
+    threadId: "thread-1",
+    summary: activeSummary(),
+    projectionThread: projectionThread(),
+  });
+
+  assert.equal(input.overlayCompleteness, "full");
+  assert.equal(input.overlayPartial, false);
+  assert.equal(input.overlaySignatureHashPresent, true);
   const plan = planActiveWindowOverlay(Object.assign({}, input, {
     summary: activeSummary(),
     projectionThread: projectionThread(),
@@ -142,6 +189,8 @@ test("active overlay provider reuses bounded evidence for repeated active turn s
         found: true,
         activeTurnId: "turn-1",
         overlaySource: "projection-live",
+        overlayCompleteness: "full",
+        overlayPartial: false,
         overlayRevision: 2,
         updatedAtMs: 1000,
         overlayTurn,
@@ -233,13 +282,14 @@ test("active overlay provider derives active turn from live projection when summ
   assert.equal(input.operationCoverage, "present");
   assert.equal(input.uploadCoverage, "none");
   assert.equal(input.receiptCoverage, "present");
+  assert.equal(input.overlayCompleteness, "partial");
 
   const plan = planActiveWindowOverlay(Object.assign({}, input, {
     summary: activeSummary({ activeTurnId: "" }),
     projectionThread: projectionThread(),
   }));
-  assert.equal(plan.action, "use-projection-overlay");
-  assert.equal(plan.reason, "overlay-evidence-complete");
+  assert.equal(plan.action, "require-full-read");
+  assert.equal(plan.reason, "active-overlay-turn-incomplete");
 });
 
 test("active overlay provider fails closed when live snapshot is missing", () => {
@@ -271,6 +321,8 @@ test("active overlay provider cannot prove assistant freshness without v4 revisi
       return {
         found: true,
         overlaySource: "projection-live",
+        overlayCompleteness: "full",
+        overlayPartial: false,
         updatedAtMs: 13000,
         overlayTurn: {
           id: "turn-1",

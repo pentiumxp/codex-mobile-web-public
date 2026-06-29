@@ -26,6 +26,7 @@ try {
 
 const {
   anyThreadMatchesVisibleWorkspace,
+  appendRolloutActiveAssistantItemsToDetailResult,
   applyLocalActiveThreadStatusToSummary,
   attachRolloutFallbackStatus,
   clearLocalActiveThreadStatus,
@@ -1644,6 +1645,65 @@ test("active overlay detail result backfills missing completed turn through resp
     assert.ok(missing.items.some((item) => item.type === "agentMessage" && item.text === "completed before active overlay"));
     const finalReceipt = missing.items.find((item) => item.mobileSyntheticFinalReceipt === true);
     assert.equal(finalReceipt.completedAtMs, completedAt.getTime() + 1000);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("active detail appends missing rollout assistant items for live turns", () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-active-rollout-assistant-"));
+  try {
+    const rolloutPath = path.join(tempDir, "rollout.jsonl");
+    const activeTurnId = "019e9100-0000-7000-8000-active";
+    fs.writeFileSync(rolloutPath, [
+      JSON.stringify({
+        type: "turn_context",
+        timestamp: "2026-06-28T10:00:00.000Z",
+        payload: { turn_id: activeTurnId },
+      }),
+      JSON.stringify({
+        type: "response_item",
+        timestamp: "2026-06-28T10:00:01.000Z",
+        payload: {
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text: "already visible" }],
+        },
+      }),
+      JSON.stringify({
+        type: "response_item",
+        timestamp: "2026-06-28T10:00:02.000Z",
+        payload: {
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text: "missing assistant progress" }],
+        },
+      }),
+    ].join("\n") + "\n", "utf8");
+
+    const result = appendRolloutActiveAssistantItemsToDetailResult({
+      thread: {
+        id: "thread-active",
+        path: rolloutPath,
+        status: { type: "active" },
+        activeTurnId,
+        turns: [{
+          id: activeTurnId,
+          status: { type: "inProgress" },
+          items: [{ id: "existing-agent", type: "agentMessage", text: "already visible" }],
+        }],
+      },
+    });
+
+    const activeTurn = result.thread.turns.find((turn) => turn.id === activeTurnId);
+    assert.equal(result.thread.mobileActiveRolloutAssistantBackfilled, true);
+    assert.deepEqual(activeTurn.items
+      .filter((item) => item.type === "agentMessage")
+      .map((item) => item.text), [
+      "already visible",
+      "missing assistant progress",
+    ]);
+    assert.equal(activeTurn.items.filter((item) => item.mobileSyntheticActiveAssistant === true).length, 1);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

@@ -103,7 +103,8 @@ test("markdown images render safe data png base64 images", () => {
 
   assert.match(html, /class="markdown-image"/);
   assert.match(html, /<img src="data:image\/png;base64,iVBORw0KGgo="/);
-  assert.match(html, /alt="效果图"/);
+  assert.match(html, /alt="Image"/);
+  assert.doesNotMatch(html, /效果图|<figcaption>/);
   assert.doesNotMatch(html, /data:image\/svg\+xml/);
 });
 
@@ -112,7 +113,8 @@ test("bare data png base64 lines render as generated images", () => {
 
   assert.match(html, /class="markdown-image"/);
   assert.match(html, /<img src="data:image\/png;base64,iVBORw0KGgo="/);
-  assert.match(html, /Generated image/);
+  assert.match(html, /alt="Image"/);
+  assert.doesNotMatch(html, /Generated image|<figcaption>/);
   assert.doesNotMatch(html, /<p>data:image/);
 });
 

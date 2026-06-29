@@ -119,6 +119,44 @@ function isLatestCompletedReplayTurn(turn, thread) {
   return false;
 }
 
+function completedReplayProtection(thread) {
+  const protection = {
+    latestCompletedTurnId: "",
+    richCompletedTurnId: "",
+    latestCompletedAssistantItems: 0,
+    protectedIds: new Set(),
+  };
+  if (!thread || !Array.isArray(thread.turns)) return protection;
+  for (let index = thread.turns.length - 1; index >= 0; index -= 1) {
+    const candidate = thread.turns[index];
+    if (isActiveTurn(candidate, thread)) continue;
+    if (isStaleActiveCompletionStatus(candidate && candidate.status)) continue;
+    if (!turnHasItems(candidate)) continue;
+    if (!isCompletedStatus(candidate && candidate.status)) continue;
+    const id = turnId(candidate);
+    if (!id) continue;
+    protection.latestCompletedTurnId = id;
+    protection.latestCompletedAssistantItems = countBy(candidate.items, isAssistantItem);
+    protection.protectedIds.add(id);
+    break;
+  }
+  if (protection.latestCompletedAssistantItems > 1) return protection;
+  for (let index = thread.turns.length - 1; index >= 0; index -= 1) {
+    const candidate = thread.turns[index];
+    const id = turnId(candidate);
+    if (!id || id === protection.latestCompletedTurnId) continue;
+    if (isActiveTurn(candidate, thread)) continue;
+    if (isStaleActiveCompletionStatus(candidate && candidate.status)) continue;
+    if (!turnHasItems(candidate)) continue;
+    if (!isCompletedStatus(candidate && candidate.status)) continue;
+    if (countBy(candidate.items, isAssistantItem) <= 1) continue;
+    protection.richCompletedTurnId = id;
+    protection.protectedIds.add(id);
+    break;
+  }
+  return protection;
+}
+
 function isNonCurrentEmptyActivePlaceholderTurn(turn, thread) {
   const id = turnId(turn);
   const activeId = activeTurnId(thread);
@@ -604,12 +642,14 @@ function compactCompletedTextItemForFirstPaint(item, options, stats) {
   return out;
 }
 
-function removableVisibleItemCandidates(turns, thread) {
+function removableVisibleItemCandidates(turns, thread, options = {}) {
   const entries = [];
+  const includeActive = options.includeActive === true;
   for (let turnIndex = 0; turnIndex < turns.length; turnIndex += 1) {
     const turn = turns[turnIndex];
     if (!turn || !Array.isArray(turn.items)) continue;
     const active = isActiveTurn(turn, thread);
+    if (active && !includeActive) continue;
     for (let itemIndex = 0; itemIndex < turn.items.length; itemIndex += 1) {
       const item = turn.items[itemIndex];
       const kind = budgetableVisibleItemKind(item);
@@ -765,7 +805,8 @@ function applyProgressiveCompletedTextBudget(thread, options, stats) {
   for (let turnIndex = 0; turnIndex < thread.turns.length; turnIndex += 1) {
     const turn = thread.turns[turnIndex];
     if (!turn || !Array.isArray(turn.items) || isActiveTurn(turn, thread)) continue;
-    if (turnIndex === protectedLatestTurnIndex) {
+    if (turnIndex === protectedLatestTurnIndex
+      || options.protectedCompletedReplayTurnIds && options.protectedCompletedReplayTurnIds.has(turnId(turn))) {
       stats.progressiveCompletedTextBudgetSkippedLatestTurnCount += 1;
       continue;
     }
@@ -795,8 +836,15 @@ function pruneNonCurrentEmptyActivePlaceholders(thread, stats) {
 function compactTurnWithBudget(turn, thread, options, stats) {
   if (!turn || typeof turn !== "object" || !Array.isArray(turn.items)) return turn;
   const active = isActiveTurn(turn, thread);
-  const latestCompletedReplay = isLatestCompletedReplayTurn(turn, thread);
-  const replay = active || latestCompletedReplay;
+  const id = turnId(turn);
+  const protectedCompletedReplay = Boolean(options.protectedCompletedReplayTurnIds
+    && options.protectedCompletedReplayTurnIds.has(id));
+  const latestCompletedReplay = Boolean(options.latestCompletedReplayTurnId
+    ? id && id === options.latestCompletedReplayTurnId
+    : isLatestCompletedReplayTurn(turn, thread));
+  const richCompletedReplay = Boolean(options.richCompletedReplayTurnId
+    && id && id === options.richCompletedReplayTurnId);
+  const replay = active || protectedCompletedReplay;
   const maxOperationItems = replay ? options.activeOperationItems : options.completedOperationItems;
   const compactTurn = typeof options.compactTurn === "function" ? options.compactTurn : null;
   const beforeItems = turn.items;
@@ -811,7 +859,7 @@ function compactTurnWithBudget(turn, thread, options, stats) {
     })
     : cloneJson(turn);
   if (!compacted || !Array.isArray(compacted.items)) return compacted;
-  if (latestCompletedReplay) {
+  if (protectedCompletedReplay) {
     compacted.items = compacted.items.filter((item) => !isOperationItem(item));
   }
   const reasoningLimit = active ? options.activeReasoningItems : options.completedReasoningItems;
@@ -824,7 +872,10 @@ function compactTurnWithBudget(turn, thread, options, stats) {
     if (!isReasoningItem(item)) return true;
     return keepReasoningIndexes.has(index);
   });
-  const assistantLimit = replay ? options.activeAssistantItems : options.completedAssistantItems;
+  const preserveReplayAssistantItems = replay && options.preserveReplayAssistantItems === true;
+  const assistantLimit = preserveReplayAssistantItems
+    ? beforeAssistantCount
+    : replay ? options.activeAssistantItems : options.completedAssistantItems;
   const keepAssistantIndexes = trailingIndexes(
     compacted.items,
     assistantLimit,
@@ -858,11 +909,24 @@ function compactTurnWithBudget(turn, thread, options, stats) {
   stats.omittedOperationItems += Math.max(0, beforeOperationCount - afterOperationCount);
   stats.omittedReasoningItems += Math.max(0, beforeReasoningCount - afterReasoningCount);
   stats.omittedAssistantItems += omittedAssistantItems;
+  stats.activeOmittedAssistantItems += active ? omittedAssistantItems : 0;
+  stats.activeAssistantItemsBefore += active ? beforeAssistantCount : 0;
+  stats.activeAssistantItemsAfter += active ? afterAssistantCount : 0;
   stats.activeTurnCount += active ? 1 : 0;
   stats.latestCompletedReplayTurnCount += latestCompletedReplay ? 1 : 0;
   stats.latestCompletedReplayOperationItems += latestCompletedReplay ? afterOperationCount : 0;
   stats.latestCompletedReplayReasoningItems += latestCompletedReplay ? afterReasoningCount : 0;
   stats.latestCompletedReplayAssistantItems += latestCompletedReplay ? afterAssistantCount : 0;
+  stats.latestCompletedReplayOmittedAssistantItems += latestCompletedReplay ? omittedAssistantItems : 0;
+  stats.protectedCompletedReplayTurnCount += protectedCompletedReplay ? 1 : 0;
+  stats.protectedCompletedReplayAssistantItems += protectedCompletedReplay ? afterAssistantCount : 0;
+  stats.protectedCompletedReplayOmittedAssistantItems += protectedCompletedReplay ? omittedAssistantItems : 0;
+  stats.richCompletedReplayTurnCount += richCompletedReplay ? 1 : 0;
+  stats.richCompletedReplayAssistantItems += richCompletedReplay ? afterAssistantCount : 0;
+  stats.richCompletedReplayOmittedAssistantItems += richCompletedReplay ? omittedAssistantItems : 0;
+  if (preserveReplayAssistantItems && beforeAssistantCount > Number(options.activeAssistantItems || 0)) {
+    stats.preservedReplayAssistantItems += beforeAssistantCount - Number(options.activeAssistantItems || 0);
+  }
   stats.staleActiveTurnCount += !active && isStaleActiveLikeTurn(turn, thread) ? 1 : 0;
   return compacted;
 }
@@ -996,10 +1060,23 @@ function compactThreadDetailResponseResult(result, options = {}) {
     completedTextOriginalChars: 0,
     completedTextRetainedChars: 0,
     activeTurnCount: 0,
+    activeOmittedAssistantItems: 0,
+    activeAssistantItemsBefore: 0,
+    activeAssistantItemsAfter: 0,
     latestCompletedReplayTurnCount: 0,
     latestCompletedReplayOperationItems: 0,
     latestCompletedReplayReasoningItems: 0,
     latestCompletedReplayAssistantItems: 0,
+    latestCompletedReplayOmittedAssistantItems: 0,
+    protectedCompletedReplayTurnCount: 0,
+    protectedCompletedReplayAssistantItems: 0,
+    protectedCompletedReplayOmittedAssistantItems: 0,
+    richCompletedReplayTurnCount: 0,
+    richCompletedReplayAssistantItems: 0,
+    richCompletedReplayOmittedAssistantItems: 0,
+    richCompletedReplayTurnProtected: false,
+    preserveReplayAssistantItems: true,
+    preservedReplayAssistantItems: 0,
     staleActiveTurnCount: 0,
     completedOperationItems: boundedCount(options.completedOperationItems, DEFAULT_COMPLETED_OPERATION_ITEMS, 100),
     activeOperationItems: effectiveActiveOperationItems,
@@ -1052,7 +1129,14 @@ function compactThreadDetailResponseResult(result, options = {}) {
   }
   pruneNonCurrentEmptyActivePlaceholders(thread, stats);
   reconcileVisibleActiveTurnState(thread, stats);
-  const budgetOptions = Object.assign({}, options, stats);
+  const replayProtection = completedReplayProtection(thread);
+  stats.richCompletedReplayTurnProtected = Boolean(replayProtection.richCompletedTurnId);
+  const budgetOptions = Object.assign({}, options, stats, {
+    latestCompletedReplayTurnId: replayProtection.latestCompletedTurnId,
+    richCompletedReplayTurnId: replayProtection.richCompletedTurnId,
+    protectedCompletedReplayTurnIds: replayProtection.protectedIds,
+  });
+  budgetOptions.preserveReplayAssistantItems = true;
   thread.turns = thread.turns.map((turn) => compactTurnWithBudget(turn, thread, budgetOptions, stats));
   applyProgressiveVisibleItemCeiling(thread, budgetOptions, stats);
   applyProgressiveCompletedTextBudget(thread, budgetOptions, stats);

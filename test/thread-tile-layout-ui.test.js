@@ -219,6 +219,10 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(loadBody, /threadTileStatePolicy\.detailLoadFinallyEffectsPlan/);
   assert.match(loadBody, /applyThreadTileDetailLoadFinallyEffects/);
   assert.doesNotMatch(loadBody, /state\.threadTileDetails\.set\(id, result\.thread\)/);
+  const loadSuccessBody = functionBody(appJs, "applyThreadTileDetailLoadSuccessEffects");
+  assert.match(loadSuccessBody, /const existing = state\.threadTileDetails\.get\(id\)/);
+  assert.match(loadSuccessBody, /state\.threadTileDetails\.set\(id, mergeThreadPreservingVisibleItems\(existing, thread\)\)/);
+  assert.doesNotMatch(loadSuccessBody, /state\.threadTileDetails\.set\(id, thread\)/);
   const finallyEffectsBody = functionBody(appJs, "applyThreadTileDetailLoadFinallyEffects");
   assert.match(finallyEffectsBody, /effect\.scheduleQueueDrain/);
   assert.match(finallyEffectsBody, /scheduleThreadTileDetailLoadQueueDrain\(\{ force: true \}\)/);
