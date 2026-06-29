@@ -910,6 +910,12 @@ Cause to check:
   self-check CLIs can intentionally exit nonzero when their JSON report has
   `ok=false`; treat the parsed JSON report as the health contract, and treat the
   child as an execution failure only when no parseable JSON report was emitted.
+  Browser-runtime child checks can legitimately take several minutes while
+  opening Chrome, switching threads, and sampling delayed DOM states; the
+  parent loop allows a bounded 300s child timeout, still below the 10-minute
+  periodic interval. Newer browser-runtime checks refresh the API thread plan
+  immediately before each DOM snapshot so active-thread window movement is not
+  compared against a stale startup plan.
 - To verify the 10-minute macOS periodic checker itself, run:
   `node scripts/codex-mobile-runtime-self-check-launchagent-readback.js --json`.
   A healthy result has `ok=true`, `launchctl.loaded=true`,

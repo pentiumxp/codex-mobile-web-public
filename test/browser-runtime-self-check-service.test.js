@@ -955,6 +955,30 @@ test("browser runtime self-check script exposes bounded browser snapshot fields"
   assert.doesNotMatch(expression, /innerText|location\.href|document\.cookie|Authorization|Bearer/);
 });
 
+test("browser runtime self-check refreshes API plan before DOM snapshots", () => {
+  const input = script.snapshotInputForPlanEntry({
+    id: "private-thread-id",
+    threadHash: "thread-hash",
+    expectedTurnHashes: ["turn-a"],
+    expectedLatestTurnHash: "turn-a",
+    expectedLatestUsageRequired: true,
+    expectedLatestUserMessageCount: 1,
+    expectedLatestUserMessageDuplicateCount: 0,
+    expectedLatestTaskCardUserMessageCount: 2,
+    expectedTurnShapes: [{ turnHash: "turn-a" }],
+  }, {
+    label: "sample",
+    delayMs: 100,
+  });
+
+  assert.equal(input.threadId, "private-thread-id");
+  assert.equal(input.expectedLatestTaskCardUserMessageCount, 2);
+  assert.deepEqual(input.expectedTurnShapes, [{ turnHash: "turn-a" }]);
+  assert.match(script.run.toString(), /refreshThreadPlanEntry\(options, key, entry\)/);
+  assert.match(script.run.toString(), /snapshotExpression\(snapshotInputForPlanEntry\(snapshotPlan/);
+  assert.match(script.run.toString(), /snapshotExpression\(snapshotInputForPlanEntry\(submitPostPlan/);
+});
+
 test("browser runtime self-check script exposes thread-list interaction probe", () => {
   const expression = script.threadListInteractionProbeExpression("thread-list-test");
 

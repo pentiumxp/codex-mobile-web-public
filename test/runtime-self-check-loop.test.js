@@ -233,6 +233,7 @@ test("runtime self-check gate blocks actionable browser regressions", async () =
 });
 
 test("runtime self-check loop treats parsed child JSON as contract result", async () => {
+  let childOptions = null;
   const result = await runtimeLoop.runOnce({
     server: "http://127.0.0.1:8790",
     threadIds: ["private-thread-id"],
@@ -246,7 +247,8 @@ test("runtime self-check loop treats parsed child JSON as contract result", asyn
     output: "",
     gateMode: "deploy",
   }, {
-    execFile(_node, _args, _options, callback) {
+    execFile(_node, _args, options, callback) {
+      childOptions = options;
       const error = new Error("Command failed: private command");
       callback(error, JSON.stringify({
         ok: false,
@@ -264,6 +266,7 @@ test("runtime self-check loop treats parsed child JSON as contract result", asyn
   });
 
   assert.equal(result.ok, false);
+  assert.equal(childOptions.timeout, 300000);
   assert.equal(result.gate.executionFailureCount, 0);
   assert.deepEqual(result.gate.actionableIssueCodes, ["browser_pending_user_message_disappeared"]);
   const browserCheck = result.checks.find((check) => check.name === "browser-runtime");

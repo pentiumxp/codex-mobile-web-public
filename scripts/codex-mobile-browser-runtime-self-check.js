@@ -388,6 +388,30 @@ async function loadThreadPlan(options, key, ids) {
   return plan;
 }
 
+async function refreshThreadPlanEntry(options, key, entry) {
+  if (!entry || !entry.id) return entry;
+  try {
+    const plan = await loadThreadPlan(options, key, [entry.id]);
+    return plan[0] || entry;
+  } catch (_) {
+    return entry;
+  }
+}
+
+function snapshotInputForPlanEntry(entry, extra = {}) {
+  return Object.assign({
+    threadId: entry.id,
+    threadHash: entry.threadHash,
+    expectedTurnHashes: entry.expectedTurnHashes,
+    expectedLatestTurnHash: entry.expectedLatestTurnHash,
+    expectedLatestUsageRequired: entry.expectedLatestUsageRequired,
+    expectedLatestUserMessageCount: entry.expectedLatestUserMessageCount,
+    expectedLatestUserMessageDuplicateCount: entry.expectedLatestUserMessageDuplicateCount,
+    expectedLatestTaskCardUserMessageCount: entry.expectedLatestTaskCardUserMessageCount,
+    expectedTurnShapes: entry.expectedTurnShapes,
+  }, extra);
+}
+
 async function getFreePort() {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
@@ -1331,19 +1355,11 @@ async function run(options = parseArgs(), deps = {}) {
         await evaluate(cdp, openThreadExpression(entry.id), options.timeoutMs).catch(() => null);
         for (const delayMs of options.sampleDelaysMs) {
           await sleep(delayMs);
-          const sample = await evaluate(cdp, snapshotExpression({
-            threadId: entry.id,
-            threadHash: entry.threadHash,
-            expectedTurnHashes: entry.expectedTurnHashes,
-            expectedLatestTurnHash: entry.expectedLatestTurnHash,
-            expectedLatestUsageRequired: entry.expectedLatestUsageRequired,
-            expectedLatestUserMessageCount: entry.expectedLatestUserMessageCount,
-            expectedLatestUserMessageDuplicateCount: entry.expectedLatestUserMessageDuplicateCount,
-            expectedLatestTaskCardUserMessageCount: entry.expectedLatestTaskCardUserMessageCount,
-            expectedTurnShapes: entry.expectedTurnShapes,
+          const snapshotPlan = await refreshThreadPlanEntry(options, key, entry);
+          const sample = await evaluate(cdp, snapshotExpression(snapshotInputForPlanEntry(snapshotPlan, {
             label: `round-${round + 1}-delay-${delayMs}`,
             delayMs,
-          }), options.timeoutMs).catch((err) => ({
+          })), options.timeoutMs).catch((err) => ({
             label: `round-${round + 1}-delay-${delayMs}`,
             threadHash: entry.threadHash,
             delayMs,
@@ -1371,22 +1387,14 @@ async function run(options = parseArgs(), deps = {}) {
         report.submitExercise.targetThreadHash = submitTarget.threadHash;
         await evaluate(cdp, openThreadExpression(submitTarget.id), options.timeoutMs).catch(() => null);
         await sleep(500);
-        samples.push(await evaluate(cdp, snapshotExpression({
-          threadId: submitTarget.id,
-          threadHash: submitTarget.threadHash,
-          expectedTurnHashes: submitTarget.expectedTurnHashes,
-          expectedLatestTurnHash: submitTarget.expectedLatestTurnHash,
-          expectedLatestUsageRequired: submitTarget.expectedLatestUsageRequired,
-          expectedLatestUserMessageCount: submitTarget.expectedLatestUserMessageCount,
-          expectedLatestUserMessageDuplicateCount: submitTarget.expectedLatestUserMessageDuplicateCount,
-          expectedLatestTaskCardUserMessageCount: submitTarget.expectedLatestTaskCardUserMessageCount,
-          expectedTurnShapes: submitTarget.expectedTurnShapes,
+        const submitPrePlan = await refreshThreadPlanEntry(options, key, submitTarget);
+        samples.push(await evaluate(cdp, snapshotExpression(snapshotInputForPlanEntry(submitPrePlan, {
           label: "submit-pre",
           delayMs: 0,
           exerciseSubmit: true,
           submitPhase: "pre",
           submitOk: false,
-        }), options.timeoutMs).catch((err) => ({
+        })), options.timeoutMs).catch((err) => ({
           label: "submit-pre",
           threadHash: submitTarget.threadHash,
           delayMs: 0,
@@ -1406,22 +1414,14 @@ async function run(options = parseArgs(), deps = {}) {
         for (const delayMs of options.submitSampleDelaysMs) {
           await sleep(delayMs);
           const phase = `post-${delayMs}`;
-          samples.push(await evaluate(cdp, snapshotExpression({
-            threadId: submitTarget.id,
-            threadHash: submitTarget.threadHash,
-            expectedTurnHashes: submitTarget.expectedTurnHashes,
-            expectedLatestTurnHash: submitTarget.expectedLatestTurnHash,
-            expectedLatestUsageRequired: submitTarget.expectedLatestUsageRequired,
-            expectedLatestUserMessageCount: submitTarget.expectedLatestUserMessageCount,
-            expectedLatestUserMessageDuplicateCount: submitTarget.expectedLatestUserMessageDuplicateCount,
-            expectedLatestTaskCardUserMessageCount: submitTarget.expectedLatestTaskCardUserMessageCount,
-            expectedTurnShapes: submitTarget.expectedTurnShapes,
+          const submitPostPlan = await refreshThreadPlanEntry(options, key, submitTarget);
+          samples.push(await evaluate(cdp, snapshotExpression(snapshotInputForPlanEntry(submitPostPlan, {
             label: `submit-${phase}`,
             delayMs,
             exerciseSubmit: true,
             submitPhase: phase,
             submitOk: Boolean(submitResult && submitResult.ok),
-          }), options.timeoutMs).catch((err) => ({
+          })), options.timeoutMs).catch((err) => ({
             label: `submit-${phase}`,
             threadHash: submitTarget.threadHash,
             delayMs,
@@ -1490,6 +1490,7 @@ module.exports = {
   routeKind,
   run,
   safeConsoleText,
+  snapshotInputForPlanEntry,
   snapshotExpression,
   submitComposerExpression,
   threadListInteractionProbeExpression,

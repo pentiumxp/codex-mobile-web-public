@@ -31596,3 +31596,51 @@ The previous full handoff was archived and should be opened only when old proven
     the Home AI Deploy terminal return card as the authoritative backup path
     when it arrives.
   - No Public deploy requested or run.
+
+### 2026-06-30 - Browser Runtime API Plan Refresh Ready For Deploy
+
+- Scope:
+  - Follow-up to the runtime self-check child-report contract deploy.
+  - A later manual periodic-shaped production runtime loop no longer produced a
+    false child execution failure, but exposed browser-runtime H2 samples on the
+    active Codex Mobile source thread:
+    `browser_turn_user_message_below_api_expectation` and
+    `browser_turn_task_card_below_api_expectation`.
+- Root cause:
+  - `scripts/codex-mobile-browser-runtime-self-check.js` built a static API
+    thread plan once before opening Chrome, then reused it for a multi-minute
+    browser sampling run.
+  - On an active source thread, the recent-window/API shape can move during the
+    run. The stale startup plan was compared against a later DOM state, so old
+    completed workflow/task-card turns could be reported as H2 DOM losses even
+    after the current API readback no longer contained those turn hashes.
+  - After refreshing the plan before DOM snapshots, direct browser-runtime
+    checks returned `ok=true` with only active-progressive timestamp H3 samples.
+  - The parent runtime loop also needed a wider child timeout: the refreshed
+    browser-runtime child can take just over 180s on production-like cycles.
+- Source changes:
+  - `scripts/codex-mobile-browser-runtime-self-check.js` now refreshes the
+    authenticated API plan immediately before each ordinary and submit-exercise
+    DOM snapshot.
+  - `scripts/codex-mobile-runtime-self-check-loop.js` now uses an explicit
+    300s child self-check timeout, still below the 10-minute LaunchAgent
+    interval.
+  - `docs/MODULES.md` and `docs/TROUBLESHOOTING.md` document current-plan
+    snapshot semantics and the 300s child timeout.
+- Validation before deploy:
+  - `node --check scripts/codex-mobile-browser-runtime-self-check.js scripts/codex-mobile-runtime-self-check-loop.js`
+    passed.
+  - `node --test test/browser-runtime-self-check-service.test.js test/runtime-self-check-loop.test.js test/runtime-self-check-gate-service.test.js`
+    passed with 46 tests.
+  - Source runtime loop against production server with a temporary output file
+    returned `ok=true`, `deployPass=true`, `periodicHealthy=true`,
+    `issueCount=0`, `blockingIssueCount=0`, and
+    `executionFailureCount=0`.
+  - `npm test` passed with 1624 tests.
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - Home AI fallback governance check passed for changed source/test/doc files.
+  - `codegraph sync && codegraph status` reported the index up to date.
+- Deployment status:
+  - Local deploy candidate only; private production deploy not yet sent in this
+    handoff entry.
+  - No Public deploy requested or run.

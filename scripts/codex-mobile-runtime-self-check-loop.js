@@ -15,6 +15,7 @@ const {
 
 const DEFAULT_SERVER = "http://127.0.0.1:8787";
 const DEFAULT_INTERVAL_MS = 10 * 60 * 1000;
+const CHILD_SELF_CHECK_TIMEOUT_MS = 300000;
 
 function usage() {
   return [
@@ -138,7 +139,7 @@ function runNodeScript(scriptPath, args = [], deps = {}) {
   return new Promise((resolve) => {
     runner(process.execPath, [scriptPath, ...args], {
       cwd: path.resolve(__dirname, ".."),
-      timeout: 180000,
+      timeout: CHILD_SELF_CHECK_TIMEOUT_MS,
       maxBuffer: 16 * 1024 * 1024,
     }, (error, stdout, stderr) => {
       let parsed = null;
