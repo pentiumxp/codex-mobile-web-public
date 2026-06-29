@@ -191,6 +191,51 @@ test("browser runtime self-check catches latest usage timestamp and image failur
   assert.equal(report.sampleSummary.maxImageFigures, 2);
 });
 
+test("browser runtime self-check catches per-turn DOM/API structure mismatches", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [{
+      label: "turn-structure",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      expectedTurnShapes: [{
+        index: 0,
+        turnHash: "turn-a",
+        completed: true,
+        expectedItemCount: 3,
+        expectedUserMessageCount: 1,
+        expectedAssistantMessageCount: 1,
+        expectedUsageRequired: true,
+        expectedTimestampItemCount: 2,
+      }],
+      domTurnShapes: [{
+        index: 0,
+        turnHash: "turn-a",
+        itemCount: 2,
+        userMessageCount: 1,
+        assistantMessageCount: 0,
+        usageCount: 1,
+        timestampExpectedItems: 1,
+        timestampMissingItems: 1,
+        userAfterUsageCount: 1,
+      }],
+      turns: 1,
+      items: 2,
+      renderKeys: 2,
+    }],
+  });
+
+  assert.equal(report.ok, false);
+  assert.ok(report.issues.some((issue) => issue.code === "browser_turn_assistant_below_api_expectation"));
+  assert.ok(report.issues.some((issue) => issue.code === "browser_turn_user_message_after_usage"));
+  assert.ok(report.issues.some((issue) => issue.code === "browser_turn_timestamp_missing"));
+  const issue = report.issues.find((entry) => entry.code === "browser_turn_user_message_after_usage");
+  assert.equal(issue.turnShape.turnHash, "turn-a");
+  assert.equal(issue.turnShape.actualUserMessageCount, 1);
+  assert.equal(issue.turnShape.actualAssistantMessageCount, 0);
+});
+
 test("browser runtime self-check catches latest turn assistant text duplicates", () => {
   const report = service.analyzeBrowserRuntimeSamples({
     samples: [{
@@ -657,6 +702,9 @@ test("browser runtime self-check script exposes bounded browser snapshot fields"
   assert.match(expression, /expectedLatestUsageRequired/);
   assert.match(expression, /expectedLatestUserMessageCount/);
   assert.match(expression, /expectedLatestTaskCardUserMessageCount/);
+  assert.match(expression, /expectedTurnShapes/);
+  assert.match(expression, /domTurnShapes/);
+  assert.match(expression, /userAfterUsageCount/);
   assert.match(expression, /latestTurnHash/);
   assert.match(expression, /latestTurnUserMessageCount/);
   assert.match(expression, /latestTurnTaskCardItemCount/);

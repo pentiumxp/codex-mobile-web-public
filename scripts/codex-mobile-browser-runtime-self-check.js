@@ -315,6 +315,28 @@ function latestTurnExpectation(detail = {}) {
   };
 }
 
+function turnShapeExpectation(detail = {}) {
+  const thread = detail && (detail.thread || detail.data || detail);
+  const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+  return turns.slice(-20).map((turn, index) => {
+    const items = Array.isArray(turn && turn.items) ? turn.items : [];
+    const userItems = items.filter((item) => item && /^userMessage$/i.test(String(item.type || "")));
+    const injectedTaskCardUserItems = userItems.filter(isInjectedThreadTaskCardItem);
+    const itemTypes = items.map((item) => String(item && item.type || "unknown").trim() || "unknown");
+    return {
+      index,
+      turnHash: browserStableHash(turn && turn.id || ""),
+      completed: completedStatus(turn && turn.status),
+      expectedItemCount: items.length,
+      expectedUserMessageCount: Math.max(0, userItems.length - injectedTaskCardUserItems.length),
+      expectedTaskCardUserMessageCount: injectedTaskCardUserItems.length,
+      expectedAssistantMessageCount: itemTypes.filter((type) => /^(agentMessage|plan)$/i.test(type)).length,
+      expectedUsageRequired: Boolean(completedStatus(turn && turn.status) && itemTypes.includes("turnUsageSummary")),
+      expectedTimestampItemCount: itemTypes.filter((type) => /^(userMessage|agentMessage|plan|turnDiagnostic)$/i.test(type)).length,
+    };
+  });
+}
+
 function safeThreadPlan(ids = []) {
   return ids.map((id) => ({
     threadHash: shortHash(id),
@@ -328,10 +350,12 @@ async function loadThreadPlan(options, key, ids) {
   for (const id of ids) {
     let expectedTurnHashes = [];
     let expectation = latestTurnExpectation();
+    let expectedTurnShapes = [];
     try {
       const detail = await fetchJson(requestUrl(options, `/api/threads/${encodeURIComponent(id)}`, { mode: "recent" }), options, key);
       expectedTurnHashes = visibleTurnIds(detail).map(browserStableHash);
       expectation = latestTurnExpectation(detail);
+      expectedTurnShapes = turnShapeExpectation(detail);
     } catch (_) {
       expectedTurnHashes = [];
     }
@@ -349,6 +373,7 @@ async function loadThreadPlan(options, key, ids) {
       expectedLatestOperationItemCount: expectation.expectedLatestOperationItemCount,
       expectedLatestReasoningItemCount: expectation.expectedLatestReasoningItemCount,
       expectedLatestTimestampItemCount: expectation.expectedLatestTimestampItemCount,
+      expectedTurnShapes,
     });
   }
   return plan;
@@ -634,6 +659,7 @@ function snapshotExpression(input = {}) {
   const expectedLatestUserMessageCount = Math.max(0, Number(input.expectedLatestUserMessageCount || 0) || 0);
   const expectedLatestUserMessageDuplicateCount = Math.max(0, Number(input.expectedLatestUserMessageDuplicateCount || 0) || 0);
   const expectedLatestTaskCardUserMessageCount = Math.max(0, Number(input.expectedLatestTaskCardUserMessageCount || 0) || 0);
+  const expectedTurnShapes = Array.isArray(input.expectedTurnShapes) ? input.expectedTurnShapes.slice(-20) : [];
   const label = String(input.label || "");
   const delayMs = Math.max(0, Number(input.delayMs || 0) || 0);
   const exerciseSubmit = Boolean(input.exerciseSubmit);
@@ -649,6 +675,7 @@ function snapshotExpression(input = {}) {
       const expectedLatestUserMessageCount = ${JSON.stringify(expectedLatestUserMessageCount)};
       const expectedLatestUserMessageDuplicateCount = ${JSON.stringify(expectedLatestUserMessageDuplicateCount)};
       const expectedLatestTaskCardUserMessageCount = ${JSON.stringify(expectedLatestTaskCardUserMessageCount)};
+      const expectedTurnShapes = ${JSON.stringify(expectedTurnShapes)};
       const label = ${JSON.stringify(label)};
       const delayMs = ${JSON.stringify(delayMs)};
       const exerciseSubmit = ${JSON.stringify(exerciseSubmit)};
@@ -769,6 +796,48 @@ function snapshotExpression(input = {}) {
             : (className.includes("failed") ? "failed" : "durable"),
         };
       });
+      const itemNodesForTurn = (turnNode) => Array.from(turnNode.querySelectorAll("[data-item]"))
+        .filter((node) => {
+          const closestTurn = node.closest("article.turn[data-turn], article.thread-tile-turn[data-thread-tile-turn]");
+          return closestTurn === turnNode;
+        });
+      const domTurnShapes = turnNodes.slice(-20).map((turnNode, index) => {
+        const nodes = itemNodesForTurn(turnNode);
+        const usageIndexes = [];
+        const userIndexes = [];
+        let assistantMessageCount = 0;
+        let taskCardUserMessageCount = 0;
+        let timestampExpectedItems = 0;
+        let timestampMissingItems = 0;
+        nodes.forEach((node, itemIndex) => {
+          const className = String(node.className || "");
+          if (className.includes("turnUsageSummary")) usageIndexes.push(itemIndex);
+          if (className.includes("userMessage")) userIndexes.push(itemIndex);
+          if (className.includes("thread-task-card-injected")) taskCardUserMessageCount += 1;
+          if (className.includes("agentMessage") || className.includes("plan")) assistantMessageCount += 1;
+          if (className.includes("userMessage")
+            || className.includes("agentMessage")
+            || className.includes("plan")
+            || className.includes("turnDiagnostic")
+            || className.includes("thread-task-card-injected")) {
+            timestampExpectedItems += 1;
+            if (!node.querySelector(".item-timestamp")) timestampMissingItems += 1;
+          }
+        });
+        const lastUsageIndex = usageIndexes.length ? Math.max(...usageIndexes) : -1;
+        return {
+          index,
+          turnHash: stableHash(turnNode.getAttribute("data-turn") || turnNode.getAttribute("data-thread-tile-turn") || ""),
+          itemCount: nodes.length,
+          userMessageCount: userIndexes.length,
+          taskCardUserMessageCount,
+          assistantMessageCount,
+          usageCount: usageIndexes.length,
+          timestampExpectedItems,
+          timestampMissingItems,
+          userAfterUsageCount: lastUsageIndex >= 0 ? userIndexes.filter((itemIndex) => itemIndex > lastUsageIndex).length : 0,
+        };
+      });
       const imageFigures = Array.from(renderRoot.querySelectorAll(".input-image, .image-view, .markdown-image"));
       const imageNodes = Array.from(renderRoot.querySelectorAll(".input-image img, .image-view img, .markdown-image img"));
       const failedFigures = Array.from(renderRoot.querySelectorAll(".input-image.image-load-failed, .image-view.image-load-failed, .markdown-image.image-load-failed"));
@@ -871,6 +940,8 @@ function snapshotExpression(input = {}) {
         expectedLatestUserMessageCount,
         expectedLatestUserMessageDuplicateCount,
         expectedLatestTaskCardUserMessageCount,
+        expectedTurnShapes,
+        domTurnShapes,
         latestTurnHash,
         latestTurnItemCount: latestItemNodes.length,
         latestTurnUserMessageCount: latestUserNodes.length,
@@ -1085,6 +1156,7 @@ async function run(options = parseArgs(), deps = {}) {
             expectedLatestUserMessageCount: entry.expectedLatestUserMessageCount,
             expectedLatestUserMessageDuplicateCount: entry.expectedLatestUserMessageDuplicateCount,
             expectedLatestTaskCardUserMessageCount: entry.expectedLatestTaskCardUserMessageCount,
+            expectedTurnShapes: entry.expectedTurnShapes,
             label: `round-${round + 1}-delay-${delayMs}`,
             delayMs,
           }), options.timeoutMs).catch((err) => ({
@@ -1116,6 +1188,7 @@ async function run(options = parseArgs(), deps = {}) {
           expectedLatestUserMessageCount: submitTarget.expectedLatestUserMessageCount,
           expectedLatestUserMessageDuplicateCount: submitTarget.expectedLatestUserMessageDuplicateCount,
           expectedLatestTaskCardUserMessageCount: submitTarget.expectedLatestTaskCardUserMessageCount,
+          expectedTurnShapes: submitTarget.expectedTurnShapes,
           label: "submit-pre",
           delayMs: 0,
           exerciseSubmit: true,
@@ -1150,6 +1223,7 @@ async function run(options = parseArgs(), deps = {}) {
             expectedLatestUserMessageCount: submitTarget.expectedLatestUserMessageCount,
             expectedLatestUserMessageDuplicateCount: submitTarget.expectedLatestUserMessageDuplicateCount,
             expectedLatestTaskCardUserMessageCount: submitTarget.expectedLatestTaskCardUserMessageCount,
+            expectedTurnShapes: submitTarget.expectedTurnShapes,
             label: `submit-${phase}`,
             delayMs,
             exerciseSubmit: true,

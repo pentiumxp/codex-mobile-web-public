@@ -832,6 +832,15 @@ Cause to check:
   where the API has the submitted user input but the DOM latest turn does not,
   or where command/reasoning process rows leak into the ordinary conversation
   instead of staying in the operation status surface.
+  Current checks also compare bounded DOM/API structure for every recent
+  visible turn, not only the latest turn. `browser_turn_assistant_below_api_expectation`,
+  `browser_turn_user_message_below_api_expectation`,
+  `browser_turn_task_card_below_api_expectation`,
+  `browser_turn_usage_missing`, `browser_turn_timestamp_missing`, and
+  `browser_turn_user_message_after_usage` catch the class where an ended turn
+  visually shows only user cards, loses assistant/Usage rows, or renders a
+  user-message card after the Usage row even though `/api/threads/:id` returned
+  a complete turn. These reports include only turn hashes and bounded counts.
   Current checks also report `browser_api_latest_turn_user_message_duplicate`
   when the API expectation already contains duplicate same-event user messages,
   and `browser_latest_turn_user_message_duplicate` when the real DOM latest

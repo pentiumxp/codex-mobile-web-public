@@ -122,6 +122,41 @@ function safeLatestUserNodeDetails(value) {
   });
 }
 
+function safeTurnShape(value = {}) {
+  const row = value && typeof value === "object" ? value : {};
+  return {
+    index: Math.max(0, Math.trunc(toNumber(row.index))),
+    turnHash: safeLabel(row.turnHash, ""),
+    expectedItemCount: toNumber(row.expectedItemCount),
+    actualItemCount: toNumber(row.itemCount),
+    expectedUserMessageCount: toNumber(row.expectedUserMessageCount),
+    actualUserMessageCount: toNumber(row.userMessageCount),
+    expectedAssistantMessageCount: toNumber(row.expectedAssistantMessageCount),
+    actualAssistantMessageCount: toNumber(row.assistantMessageCount),
+    expectedTaskCardUserMessageCount: toNumber(row.expectedTaskCardUserMessageCount),
+    actualTaskCardUserMessageCount: toNumber(row.taskCardUserMessageCount),
+    expectedUsageRequired: row.expectedUsageRequired === true,
+    actualUsageCount: toNumber(row.usageCount),
+    timestampMissingItems: toNumber(row.timestampMissingItems),
+    userAfterUsageCount: toNumber(row.userAfterUsageCount),
+  };
+}
+
+function matchedTurnShapes(sample = {}) {
+  const domByHash = new Map();
+  for (const row of toArray(sample.domTurnShapes)) {
+    const turnHash = safeLabel(row && row.turnHash, "");
+    if (turnHash) domByHash.set(turnHash, row);
+  }
+  const rows = [];
+  for (const expected of toArray(sample.expectedTurnShapes)) {
+    const turnHash = safeLabel(expected && expected.turnHash, "");
+    if (!turnHash || !domByHash.has(turnHash)) continue;
+    rows.push(Object.assign({}, expected, domByHash.get(turnHash), { turnHash }));
+  }
+  return rows;
+}
+
 function issue(severity, code, sample = {}, details = {}) {
   const item = Object.assign({
     severity,
@@ -222,6 +257,41 @@ function analyzeBrowserRuntimeSamples(input = {}) {
       issues.push(issue("H2", "browser_latest_turn_reasoning_items_visible", sample, {
         latestTurnReasoningItemCount: toNumber(sample.latestTurnReasoningItemCount),
       }));
+    }
+    for (const turnShape of matchedTurnShapes(sample)) {
+      if (toNumber(turnShape.expectedUserMessageCount) > 0
+        && toNumber(turnShape.userMessageCount) < toNumber(turnShape.expectedUserMessageCount)) {
+        issues.push(issue("H2", "browser_turn_user_message_below_api_expectation", sample, {
+          turnShape: safeTurnShape(turnShape),
+        }));
+      }
+      if (toNumber(turnShape.expectedTaskCardUserMessageCount) > 0
+        && toNumber(turnShape.taskCardUserMessageCount) < toNumber(turnShape.expectedTaskCardUserMessageCount)) {
+        issues.push(issue("H2", "browser_turn_task_card_below_api_expectation", sample, {
+          turnShape: safeTurnShape(turnShape),
+        }));
+      }
+      if (toNumber(turnShape.expectedAssistantMessageCount) > 0
+        && toNumber(turnShape.assistantMessageCount) < toNumber(turnShape.expectedAssistantMessageCount)) {
+        issues.push(issue("H2", "browser_turn_assistant_below_api_expectation", sample, {
+          turnShape: safeTurnShape(turnShape),
+        }));
+      }
+      if (turnShape.expectedUsageRequired === true && toNumber(turnShape.usageCount) <= 0) {
+        issues.push(issue("H2", "browser_turn_usage_missing", sample, {
+          turnShape: safeTurnShape(turnShape),
+        }));
+      }
+      if (toNumber(turnShape.userAfterUsageCount) > 0) {
+        issues.push(issue("H2", "browser_turn_user_message_after_usage", sample, {
+          turnShape: safeTurnShape(turnShape),
+        }));
+      }
+      if (toNumber(turnShape.expectedTimestampItemCount) > 0 && toNumber(turnShape.timestampMissingItems) > 0) {
+        issues.push(issue("H2", "browser_turn_timestamp_missing", sample, {
+          turnShape: safeTurnShape(turnShape),
+        }));
+      }
     }
     if (sampleIsConfirmed(sample)
       && sample.latestTurnMatchesTarget

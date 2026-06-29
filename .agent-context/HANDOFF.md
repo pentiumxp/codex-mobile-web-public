@@ -30898,6 +30898,65 @@ The previous full handoff was archived and should be opened only when old proven
 ### 2026-06-29 - Immediate Startup Active Window Prewarm Deploy
 
 - Scope:
+  - Follow-up for the remaining startup/restart first-sample shape after the
+    live-growth cache fix. The source change starts thread-list fallback
+    prewarm immediately by default so startup can preseed active windows before
+    a foreground detail read.
+- Source changes:
+  - `CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_DELAY_MS` default changed from
+    `1500` to `0`.
+  - `thread-list-fallback-prewarm-service` default `delayMs` changed to `0`.
+  - The existing `active-detail-in-flight` defer/retry guard remains in server
+    wiring.
+  - Prior live-growth cache and preempt-pending notification fixes remain in
+    the deployed source.
+- Deployment status:
+  - Deployed privately through the Home AI Deploy lane from source commit
+    `a46b68f38dde` with reason
+    `codex-mobile-immediate-startup-active-window-prewarm`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T152746Z-plugin-codex-mobile-web-codex-mobile-immediate-startup-active-window-prewarm`.
+  - `com.hermesmobile.plugin.codex-mobile` readback showed `state = running`.
+  - Public deploy was not run.
+- Production readback:
+  - `/api/public-config` returned status `200`, version `0.1.11`, build id
+    `804792d85bd686d1`, client build id
+    `0.1.11|codex-mobile-shell-v591`, shell cache
+    `codex-mobile-shell-v591`, and `authRequired=true`.
+  - `threadListFallbackPrewarm` readback showed `enabled=true`, `delayMs=0`,
+    `scheduled=false`, `running=false`, `completed=true`, and
+    `lastStatus=completed`.
+  - Source/production hash parity matched for all checked runtime/test/docs
+    files.
+  - Production marker readback confirmed the server env default
+    `CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_DELAY_MS || "0"`,
+    `normalizePrewarmConfig` default delay `0`, the
+    `active-detail-in-flight` guard, and prior live-growth cache clear policy
+    with no active cache clear on `thread/status/changed`.
+- Phase B:
+  - Two series of five production Phase B samples against Codex Mobile source
+    thread `019eee6c-a6f5-7b20-bfb4-f96ccb6431b3` all returned `ok=true`,
+    `turnsListInitialMs=0`, `activeOverlayWindowMs=0`, read mode
+    `projection-active-overlay`, decision owner `phase-b-readback`, reason
+    `warm-or-bounded-paths`, and no issue codes.
+  - Summary: sampleCount `10`, max activeOverlayWindowMs `0`, max
+    activeOverlayBackfillWindowMs `23`, max prepareResponseMs `427`, and
+    activeOverlayLatencySamples `0`.
+- Runtime gate:
+  - Deploy-mode runtime self-check returned `deployPass=false`,
+    `periodicHealthy=false`, gate issueCount `3`, blockingIssueCount `3`,
+    executionFailureCount `1`.
+  - Browser-runtime check returned `ok=true` with zero issues.
+  - API-thread check returned `ok=false` with one H2
+    `visible_item_timestamp_order_mismatch` count `2`, one diagnostic
+    candidate, and a bounded command-failure code prefix.
+  - Task-card return status was `partially_completed`: startup active-window
+    Phase B readback succeeded, but deploy-mode runtime gate failed on the
+    separate thread-detail timestamp-order residual.
+
+### 2026-06-29 - Immediate Startup Active Window Prewarm Deploy
+
+- Scope:
   - Follow-up to the live-growth cache deploy. Local post-deploy probing showed
     that the first detail read immediately after restart could still pay a
     multi-second active-window rebuild before later samples settled to the warm
@@ -30953,3 +31012,95 @@ The previous full handoff was archived and should be opened only when old proven
   - Browser-runtime returned `ok=true` with zero issues.
   - Classification: immediate startup active-window prewarm validated; the
     remaining gate blocker is a separate visible-item timestamp/order residual.
+
+### 2026-06-29 - Budgeted Active Turn Timestamp Order Pending Deploy
+
+- Scope:
+  - Follow-up to the user-visible residual where an older user-message card can
+    appear below newer/final assistant content in an active turn after
+    response-budget shaping.
+  - Root cause: response-budget stages can retain/drop active-turn items and
+    leave the final `turn.items` order out of display-timestamp order.
+  - Related self-check gap: `active_turn_assistant_projection_gap` could be
+    reported when the raw/detail assistant count difference was fully explained
+    by intentional response-budget omission.
+- Source changes:
+  - `adapters/thread-detail-response-budget-service.js` now reorders every
+    turn with `orderItemsByDisplayTimestamp(...)` after progressive budget
+    stages and before final visible-key normalization.
+  - `scripts/codex-mobile-thread-self-check.js` now treats assistant gaps as
+    explained when response-budget evidence accounts for the omitted active
+    assistant items.
+  - Focused tests were added in `test/thread-detail-response-budget-service.test.js`
+    and `test/thread-self-check-script.test.js`; `docs/MODULES.md` documents
+    the ordering/self-check contract.
+- Source validation before deploy:
+  - `node --test test/thread-detail-response-budget-service.test.js test/thread-self-check-script.test.js test/thread-detail-self-check-service.test.js`
+    passed.
+  - `npm test` passed with `1599` tests.
+  - `npm run check`, `npm run check:macos`, `git diff --check`, and fallback
+    governance passed.
+- Deployment status:
+  - Source commit `4bf0f7420300` (`fix: order budgeted active turn items`).
+  - Deploy cards sent to Home AI Deploy:
+    - `ttc_d63419e62afdc54fea`
+    - `ttc_fa2a5db15fa708fcdb`
+  - Production did not sync this commit during two bounded readback windows.
+    The latest production hash readback still showed old hashes for:
+    - `adapters/thread-detail-response-budget-service.js`
+    - `scripts/codex-mobile-thread-self-check.js`
+  - Do not treat production runtime gate results as validation of this commit
+    until Home AI Deploy returns or production hash parity is observed.
+- Next steps:
+  - Wait for Home AI Deploy return/readback.
+  - After production hash parity, rerun API self-check and deploy-mode runtime
+    gate against Movie and Codex Mobile source threads.
+  - Expected closure target: no recurrence of
+    `visible_item_timestamp_order_mismatch`,
+    `active_turn_assistant_projection_gap`, or the user-visible stale user-card
+    ordering shape.
+
+### 2026-06-30 - v592 Readback And Browser Per-Turn Self-Check
+
+- v592 deploy readback:
+  - Home AI Deploy returned that source commit `4bf0f7420300` was deployed
+    privately with reason `codex-mobile-v592-budgeted-active-turn-order`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T160147Z-plugin-codex-mobile-web-codex-mobile-v592-budgeted-active-turn-order`.
+  - Source/production hash parity matched for
+    `adapters/thread-detail-response-budget-service.js` and
+    `scripts/codex-mobile-thread-self-check.js`.
+  - `/api/public-config` still reported version `0.1.11`, build id
+    `804792d85bd686d1`, client build id `0.1.11|codex-mobile-shell-v591`,
+    and shell cache `codex-mobile-shell-v591`, as expected for a server/script
+    change.
+- v592 validation rerun from plugin workspace:
+  - API self-check against Movie and Codex Mobile source threads returned
+    `ok=true`, issueCount `0`, blockingIssueCount `0`, diagnosticCandidateCount
+    `0`.
+  - Deploy-mode runtime self-check loop against the same threads returned
+    `ok=true`, `gate.deployPass=true`, `gate.periodicHealthy=true`,
+    issueCount `0`, blockingIssueCount `0`, reportableIssueCount `0`, and
+    executionFailureCount `0`.
+  - Current browser DOM sampling with the enhanced local probe did not reproduce
+    the screenshot shape in Movie or Codex Mobile source threads.
+- New local self-check enhancement:
+  - `scripts/codex-mobile-browser-runtime-self-check.js` now carries
+    per-turn API expectations and samples bounded per-turn DOM structure for up
+    to the last 20 recent visible turns.
+  - `adapters/browser-runtime-self-check-service.js` now reports H2 issues for
+    per-turn DOM/API mismatches, including assistant/user/task-card/Usage gaps,
+    missing per-turn timestamps, and user-message cards rendered after a Usage
+    row.
+  - Focused coverage added in `test/browser-runtime-self-check-service.test.js`;
+    docs updated in `docs/MODULES.md` and `docs/TROUBLESHOOTING.md`.
+- Local validation before deploy:
+  - `node --check scripts/codex-mobile-browser-runtime-self-check.js`
+  - `node --check adapters/browser-runtime-self-check-service.js`
+  - `node --test test/browser-runtime-self-check-service.test.js`
+  - `npm test` passed with `1600` tests.
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Deployment status:
+  - This self-check enhancement is local/private source work at the time of
+    this note. Deploy through Home AI Deploy before treating periodic/deploy
+    self-checks as covering the new per-turn DOM/API structure class.
