@@ -546,7 +546,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v597";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v598";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -6985,6 +6985,7 @@ function threadListRuntimeMetrics() {
   const list = $("threadList");
   if (!list || typeof list.getBoundingClientRect !== "function") {
     return {
+      present: false,
       visible: false,
       threadListCount: 0,
       scrollTop: 0,
@@ -7002,6 +7003,7 @@ function threadListRuntimeMetrics() {
     && rect.top < viewportHeight
     && rect.left < viewportWidth;
   return {
+    present: true,
     visible,
     threadListCount: list.querySelectorAll("[data-thread]").length,
     scrollTop: Math.max(0, Math.round(Number(list.scrollTop || 0))),
@@ -7013,9 +7015,15 @@ function recordThreadListRuntimeStall(input = {}) {
   const now = Date.now();
   if (now - Number(state.threadListRuntimeLastReportAt || 0) < THREAD_LIST_RUNTIME_STALL_REPORT_INTERVAL_MS) return false;
   const metrics = threadListRuntimeMetrics();
+  const routeKind = diagnosticRouteKind();
+  const threadListMonitorable = metrics.visible
+    || (metrics.present && document.visibilityState !== "hidden" && (
+      routeKind === "embedded-primary" || routeKind === "standalone-root"
+    ));
   const plan = frontendRuntimeHealthApi.threadListInteractionStallEffects(Object.assign({
     threadListVisible: metrics.visible,
-    routeKind: diagnosticRouteKind(),
+    threadListMonitorable,
+    routeKind,
     minDelayMs: THREAD_LIST_RUNTIME_STALL_MIN_MS,
     h2ThresholdMs: THREAD_LIST_RUNTIME_STALL_H2_MS,
     threadListCount: metrics.threadListCount,
@@ -7027,12 +7035,14 @@ function recordThreadListRuntimeStall(input = {}) {
   applyFrontendRuntimeHealthEffectsPlan(plan);
   postPerformanceEvent("thread_list_runtime_stall", {
     action: input.action || "thread-list-runtime",
-    routeKind: diagnosticRouteKind(),
+    routeKind,
     maxRafDelayMs: Math.max(0, Math.round(Number(input.maxRafDelayMs || 0))),
     maxScrollApplyMs: Math.max(0, Math.round(Number(input.maxScrollApplyMs || 0))),
     maxLongTaskMs: Math.max(0, Math.round(Number(input.maxLongTaskMs || 0))),
     longTaskCount: Math.max(0, Math.round(Number(input.longTaskCount || 0))),
     threadListCount: metrics.threadListCount,
+    threadListVisible: Boolean(metrics.visible),
+    threadListMonitorable: Boolean(threadListMonitorable),
   }, { key: "thread-list-runtime-stall", minIntervalMs: THREAD_LIST_RUNTIME_STALL_REPORT_INTERVAL_MS });
   return true;
 }

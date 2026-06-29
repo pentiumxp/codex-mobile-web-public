@@ -31816,3 +31816,46 @@ The previous full handoff was archived and should be opened only when old proven
   - The intermittent browser timestamp H2 residual from the `372d69f9af9c`
     deploy return is closed in this readback.
   - No Public deploy requested or run.
+
+### 2026-06-30 - Thread List Pre-visible Stall Telemetry Ready For Deploy
+
+- Scope:
+  - Follow-up to the user's intermittent thread-list freeze reports where the
+    current v597 telemetry and runtime gates did not capture a recent stall.
+  - Current production checks before this patch were healthy: runtime self-check
+    returned zero H1/H2 issues, client-events 24h tail scanned 728 bounded
+    client events with `stallEventCount=0`, and browser thread-list stress had
+    no blocked rAF/scroll/long-task issue.
+- Root cause / strongest hypothesis:
+  - Existing live telemetry only emitted `thread_list_interaction_stall` when
+    `threadListRuntimeMetrics().visible` was true.
+  - A freeze while entering the primary thread-list route or during list render
+    transition can leave the list DOM present but not yet visibly intersecting,
+    so a >=3s heartbeat/long-task stall could be discarded as
+    `thread-list-not-visible` before any bounded evidence is posted.
+- Source changes:
+  - `public/frontend-runtime-health.js` accepts a bounded
+    `threadListMonitorable` flag in addition to `threadListVisible` and records
+    `thread_list_visible` / `thread_list_monitorable` counts in the diagnostic.
+  - `public/app.js` sets `threadListMonitorable` when the list DOM exists on
+    `embedded-primary` or `standalone-root`, even before it is visibly
+    intersecting the viewport, while keeping thread-detail/new-thread surfaces
+    excluded.
+  - Static shell/cache bumped to `codex-mobile-shell-v598` in `public/app.js`
+    and `public/sw.js`.
+  - `docs/MODULES.md` and `docs/TROUBLESHOOTING.md` document the v598
+    pre-visible list-entry/render-transition stall evidence boundary.
+- Validation before deploy:
+  - `node --check public/app.js public/frontend-runtime-health.js public/sw.js`
+    passed.
+  - Focused runtime/browser/client-event/static-shell tests passed with 55
+    tests:
+    `node --test test/frontend-runtime-health.test.js test/client-render-stability-guard.test.js test/browser-runtime-self-check-service.test.js test/client-event-stall-self-check-service.test.js`.
+  - `npm test -- --test-reporter=dot`, `npm run check`, `npm run check:macos`,
+    and `git diff --check` passed.
+  - Home AI fallback governance check returned `ok=true` with no issues for the
+    changed runtime/test/doc files.
+  - `codegraph sync && codegraph status` reported the index up to date.
+- Deployment status:
+  - Local deploy candidate only at this point. Private production deploy has
+    not yet been sent. No Public deploy requested or run.

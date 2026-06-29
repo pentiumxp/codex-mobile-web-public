@@ -165,6 +165,27 @@ test("thread list runtime stall ignores invisible and below-threshold samples", 
   }), { effects: [], reason: "below-threshold" });
 });
 
+test("thread list runtime stall can report monitorable pre-visible list stalls", () => {
+  const plan = health.threadListInteractionStallEffects({
+    threadListVisible: false,
+    threadListMonitorable: true,
+    action: "thread-list-heartbeat",
+    routeKind: "embedded-primary",
+    maxRafDelayMs: 5100,
+    elapsedMs: 5100,
+    threadListCount: 24,
+  });
+
+  assert.equal(plan.reason, "thread-list-interaction-stall");
+  assert.equal(plan.effects.length, 1);
+  const event = plan.effects[0].diagnostic;
+  assert.equal(event.severity_hint, "H2");
+  assert.equal(event.error_code, "browser_thread_list_interaction_blocked");
+  assert.equal(event.counts.thread_list_visible, 0);
+  assert.equal(event.counts.thread_list_monitorable, 1);
+  assert.equal(JSON.stringify(event).includes("embedded-primary"), true);
+});
+
 test("thread list runtime stall reports bounded metadata only", () => {
   const plan = health.threadListInteractionStallEffects({
     threadListVisible: true,
@@ -195,6 +216,8 @@ test("thread list runtime stall reports bounded metadata only", () => {
   assert.equal(event.context.route_kind, "embedded-primary");
   assert.equal(event.counts.raf_delay_ms, 4200);
   assert.equal(event.counts.thread_list_count, 42);
+  assert.equal(event.counts.thread_list_visible, 1);
+  assert.equal(event.counts.thread_list_monitorable, 0);
   assert.equal(JSON.stringify(event).includes("private"), false);
   assert.equal(JSON.stringify(event).includes("secret"), false);
 });

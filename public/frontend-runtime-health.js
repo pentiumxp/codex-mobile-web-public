@@ -259,6 +259,8 @@
         long_task_ms: maxLongTaskMs,
         long_task_count: boundedCount(input.longTaskCount || input.long_task_count),
         thread_list_count: boundedCount(input.threadListCount || input.thread_list_count),
+        thread_list_visible: boolCount(input.threadListVisible || input.thread_list_visible),
+        thread_list_monitorable: boolCount(input.threadListMonitorable || input.thread_list_monitorable),
         scroll_top: boundedCount(input.scrollTop || input.scroll_top),
         scroll_height: boundedCount(input.scrollHeight || input.scroll_height),
       },
@@ -286,7 +288,7 @@
       boundedCount(input.maxLongTaskMs || input.max_long_task_ms),
       boundedCount(input.elapsedMs || input.elapsed_ms),
     );
-    if (!input.threadListVisible) return { effects: [], reason: "thread-list-not-visible" };
+    if (!input.threadListVisible && !input.threadListMonitorable) return { effects: [], reason: "thread-list-not-visible" };
     if (maxDelayMs < minDelayMs) return { effects: [], reason: "below-threshold" };
     return {
       effects: [{
