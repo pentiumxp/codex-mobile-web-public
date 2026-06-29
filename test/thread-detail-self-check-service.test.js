@@ -595,15 +595,16 @@ test("thread list repeat detects lost rows and timestamp downgrade", () => {
   assert.ok(codes.includes("thread_list_repeat_updated_at_downgrade"));
 });
 
-test("thread list repeat order change is warning-only", () => {
+test("thread list repeat raw order change stays metadata-only", () => {
   const report = compareThreadListReadbacks(
     { data: [{ id: "thread-a", name: "Thread A", updatedAt: 2000 }, { id: "thread-b", name: "Thread B", updatedAt: 1000 }] },
     { data: [{ id: "thread-b", name: "Thread B", updatedAt: 1000 }, { id: "thread-a", name: "Thread A", updatedAt: 2000 }] },
   );
 
   assert.equal(report.ok, true);
+  assert.equal(report.rawOrderChanged, true);
   assert.equal(report.issues[0].code, "thread_list_updated_order_mismatch");
-  assert.equal(report.issues.at(-1).code, "thread_list_repeat_order_changed");
+  assert.equal(report.issues.some((issue) => issue.code === "thread_list_repeat_order_changed"), false);
 });
 
 test("self check summary fails only on H1/H2 issues", () => {

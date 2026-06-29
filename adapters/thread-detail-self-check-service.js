@@ -872,16 +872,11 @@ function compareThreadListReadbacks(first = {}, second = {}) {
       });
     }
   }
-  if (firstSummary.resultCount === secondSummary.resultCount && firstSummary.orderHash !== secondSummary.orderHash) {
-    pushIssue(issues, "thread_list_repeat_order_changed", "H3", "thread-list-refresh", {
-      beforeHash: firstSummary.orderHash,
-      afterHash: secondSummary.orderHash,
-    });
-  }
   return {
     ok: issues.filter((issue) => issue.severity === "H1" || issue.severity === "H2").length === 0,
     before: firstSummary,
     after: secondSummary,
+    rawOrderChanged: firstSummary.resultCount === secondSummary.resultCount && firstSummary.orderHash !== secondSummary.orderHash,
     issues,
   };
 }

@@ -30432,3 +30432,38 @@ The previous full handoff was archived and should be opened only when old proven
   - Gate issue summary: one H3 advisory
     `launchagent_previous_exit_nonzero_recovered`; no H1/H2 issues.
   - Return status for task card `ttc_d9840ec78e36df822d` was `completed`.
+
+### 2026-06-29 - Thread List Raw Reorder Self-Check Noise Pending Deploy
+
+- Scope:
+  - Follow-up to the clean v591 browser runtime gate. API thread self-check
+    still generated H3 `thread_list_repeat_order_changed` diagnostic
+    candidates when repeated raw thread-list reads returned the same rows in a
+    different order.
+- Root cause:
+  - The browser-visible list already uses `thread-list-stable-order` to keep
+    rows stable during short refresh windows, so same-ID raw API reorder is not
+    itself a user-visible defect.
+  - `compareThreadListReadbacks()` still treated same-count raw order hash
+    changes as an issue, and repeated H3 occurrences could become diagnostic
+    candidates/noise.
+- Source changes:
+  - `adapters/thread-detail-self-check-service.js` keeps raw reorder as
+    bounded metadata (`rawOrderChanged`) but no longer emits
+    `thread_list_repeat_order_changed` as an issue.
+  - `test/thread-detail-self-check-service.test.js` now proves same-ID raw
+    reorder is metadata-only while real lost rows, row-count downgrades, and
+    timestamp downgrades remain blocking.
+- Validation passed locally:
+  - `node --test test/thread-detail-self-check-service.test.js test/thread-list-stable-order.test.js test/browser-runtime-self-check-service.test.js`
+  - `node scripts/codex-mobile-thread-self-check.js --server http://127.0.0.1:8787 --thread-id 019eee6c-a6f5-7b20-bfb4-f96ccb6431b3 --repeat 3 --json`
+  - `node --check adapters/thread-detail-self-check-service.js && node --check scripts/codex-mobile-thread-self-check.js`
+  - `npm test` (`1590` tests passed)
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+  - `node /Users/hermes-dev/HermesMobileDev/app/scripts/fallback-governance-check.js --changed-file adapters/thread-detail-self-check-service.js --changed-file test/thread-detail-self-check-service.test.js --json`
+- Deployment status:
+  - Pending local commit and private deploy through Home AI Deploy lane.
+  - Public deploy was not requested and must not be run unless explicitly
+    requested.
