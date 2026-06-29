@@ -30688,3 +30688,71 @@ The previous full handoff was archived and should be opened only when old proven
     `0`, executionFailureCount `0`, and zero diagnostic candidates.
   - API-thread and browser-runtime checks both returned `ok=true` with zero
     issues.
+
+### 2026-06-29 - Turn-Completed Active Window Prewarm Deploy
+
+- Scope:
+  - Follow-up to the fast-start active-window prewarm deploy. Later production
+    sampling found a recurring first-sample `activeOverlayWindowMs` around
+    2.2s after completion-boundary state movement.
+  - The deployed fix treats `turn/completed` like `turn/started` for
+    notification-triggered active-window prewarm while preserving the existing
+    active-summary proof checks.
+- Source changes:
+  - `server.js` schedules active-window prewarm for `turn/completed` with
+    `delayMs=0` and `bypassMinInterval=true`.
+  - Existing active `thread/status/changed` behavior remains unchanged.
+  - Tests updated in `test/thread-visibility.test.js`.
+  - Docs updated in `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Validation passed locally before deploy:
+  - `node --test test/thread-visibility.test.js test/thread-detail-active-window-prewarm-service.test.js test/thread-detail-turns-list-read-coalescer-service.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js`
+  - `npm test` (`1593` tests passed)
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+  - `node /Users/hermes-dev/HermesMobileDev/app/scripts/fallback-governance-check.js --changed-file server.js --changed-file test/thread-visibility.test.js --changed-file docs/MODULES.md --changed-file docs/TROUBLESHOOTING.md --changed-file docs/ARCHITECTURE_OPTIMIZATION_PLAN.md --json`
+- Deployment status:
+  - Deployed privately through the Home AI Deploy lane from source commit
+    `57b6d9f5f601` with reason
+    `codex-mobile-turn-completed-active-window-prewarm`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T145638Z-plugin-codex-mobile-web-codex-mobile-turn-completed-active-window-prewarm`.
+  - `com.hermesmobile.plugin.codex-mobile` readback showed `state = running`.
+  - Public deploy was not run.
+- Production readback:
+  - `/api/public-config` returned status `200`, version `0.1.11`, build id
+    `804792d85bd686d1`, client build id
+    `0.1.11|codex-mobile-shell-v591`, shell cache
+    `codex-mobile-shell-v591`, and `authRequired=true`. Static shell remained
+    v591 because this was a server/docs/test deploy.
+  - Source/production hash parity matched for `server.js`,
+    `test/thread-visibility.test.js`, `docs/MODULES.md`,
+    `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+  - Production marker readback confirmed `turn/completed`, `delayMs: 0`,
+    `bypassMinInterval: true`, and docs/test coverage for turn-completed
+    active-window prewarm.
+- Phase B:
+  - Five production Phase B samples against Codex Mobile source thread
+    `019eee6c-a6f5-7b20-bfb4-f96ccb6431b3` all returned `ok=true` with
+    `turnsListInitialMs=0`, `activeOverlayWindowMs=0`,
+    `activeOverlayWindowFirst=true`, read mode `projection-active-overlay`,
+    decision owner `phase-b-readback`, and reason `warm-or-bounded-paths`.
+  - Sample timings:
+    - totalMs `167`, activeOverlayBackfillWindowMs `0`,
+      activeOverlayMergeMs `5`, prepareResponseMs `104`.
+    - totalMs `167`, activeOverlayBackfillWindowMs `0`,
+      activeOverlayMergeMs `5`, prepareResponseMs `105`.
+    - totalMs `528`, activeOverlayBackfillWindowMs `1`,
+      activeOverlayMergeMs `5`, prepareResponseMs `464`.
+    - totalMs `170`, activeOverlayBackfillWindowMs `0`,
+      activeOverlayMergeMs `5`, prepareResponseMs `105`.
+    - totalMs `168`, activeOverlayBackfillWindowMs `0`,
+      activeOverlayMergeMs `5`, prepareResponseMs `104`.
+- Runtime gate:
+  - Deploy-mode runtime self-check returned `ok=true`, `deployPass=true`,
+    `periodicHealthy=true`, issueCount `0`, blockingIssueCount `0`,
+    reportableIssueCount `0`, executionFailureCount `0`.
+  - API-thread and browser-runtime checks both returned `ok=true` with zero
+    issues.
