@@ -28510,3 +28510,65 @@ The previous full handoff was archived and should be opened only when old proven
   - `thread_list_updated_order_mismatch` remains H3/nonblocking. It is still a
     valid next optimization target, but it no longer blocks the latest-turn
     projection/browser stability path.
+
+### 2026-06-29 - List/Detail Terminal State Consistency Fix
+
+- Runtime evidence:
+  - The user clarified that a currently active `Home AI Deploy` row was expected
+    because a new deploy card had arrived, but the earlier bug class was real:
+    thread list showed a row as still running/refreshing while detail had
+    already rendered a completed final receipt.
+  - Bounded production readback before this fix reproduced the class on Movie:
+    list row `status=completed` still had a stale `activeTurnId`, while detail
+    readback was `status=completed` with no active turn id.
+- Root cause / invariant:
+  - `mergeThreadDisplaySummary()` could replace an older active row status with
+    a terminal display status without clearing active markers such as
+    `activeTurnId` and `mobileLocalActiveStatus`.
+  - Successful detail reads did not write the terminal summary back into the
+    thread-list fallback/display cache, so a warm fallback list response could
+    keep serving stale active markers even after detail had fresher terminal
+    evidence.
+  - Invariant: a terminal/resting thread-list row must not carry active turn
+    markers, and a detail read that proves terminal state should advance the
+    list fallback cache instead of leaving list/detail contradictory.
+- Implementation:
+  - `server.js` now clears active markers when terminal/rest status replaces an
+    active display summary.
+  - `server.js` now syncs successful thread-detail read summaries into the
+    thread-list fallback/display cache; terminal detail summaries first clear
+    local active status and strip detail-only fields before cache upsert.
+  - `adapters/thread-detail-route-service.js` has a bounded
+    `onThreadDetailReadResult` hook so the route can observe successful detail
+    reads without blocking the response.
+  - `adapters/thread-task-card-deploy-lane-policy-service.js` test coverage now
+    proves non-live `Home AI Deploy` lane normalization removes stale active
+    markers.
+  - `adapters/thread-detail-self-check-service.js` and
+    `scripts/codex-mobile-thread-self-check.js` now detect list/detail status
+    contradictions such as `completed + activeTurnId`.
+  - `adapters/browser-runtime-self-check-service.js` and
+    `scripts/codex-mobile-browser-runtime-self-check.js` now detect a local
+    pending user message node disappearing when the visible latest-turn user
+    message count also drops. Normal pending-to-durable replacement is accepted.
+- Validation:
+  - Focused tests passed:
+    `node --test test/thread-visibility.test.js test/thread-task-card-deploy-lane-policy-service.test.js test/thread-detail-route-service.test.js test/thread-detail-self-check-service.test.js test/browser-runtime-self-check-service.test.js`.
+  - Extended projection/self-check tests passed:
+    `node --test test/thread-self-check-script.test.js test/conversation-render.test.js test/thread-detail-v4-merge-state.test.js`.
+  - Full `npm test` passed (`1525` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+- Commit/deploy state:
+  - Committed `51719b8` (`fix: sync detail terminal state into thread list`).
+  - Branch is ahead of `origin/main` by one local commit.
+  - No Public push was performed.
+  - A deployment card was sent to `Home AI Deploy`:
+    `ttc_57d4763a94f9cc2157`, target thread
+    `019f0a0d-c4e0-7ca1-8142-bd06e4f874da`.
+- Next:
+  - Wait for the deploy lane return card.
+  - After deploy, verify `/api/public-config` and rerun bounded self-checks,
+    especially Movie `019efca1-ea69-7292-87b7-025ba023ca87`, to confirm the
+    production list row no longer exposes `status=completed` with stale
+    `activeTurnId`.
+  - Do not push Public unless the user explicitly asks.
