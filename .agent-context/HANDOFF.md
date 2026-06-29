@@ -32315,3 +32315,61 @@ The previous full handoff was archived and should be opened only when old proven
 - Deployment status:
   - Local follow-up candidate in progress. Private production deploy has not
     yet been requested. No Public deploy requested or run.
+
+### 2026-06-30 - Active First-Paint Completed Usage Compact Net-Reduction Deployed
+
+- Source commit:
+  - `8d5575e4c0a6` (`fix: keep usage first paint compaction net reducing`).
+- Deploy/readback status:
+  - Private production deploy was requested through Home AI Deploy card
+    `ttc_78307546d230b3a1a0` with reason
+    `codex-mobile-completed-usage-first-paint-net-reduction`.
+  - Local read-only production parity after the deploy request confirmed the
+    changed files were synced:
+    - `adapters/thread-detail-response-budget-service.js`
+      (`a3370aa1f37aac99`)
+    - `test/thread-detail-response-budget-service.test.js`
+      (`14c621a81e6ce139`)
+    - `docs/MODULES.md` (`990e3744cf7f3e96`)
+    - `docs/TROUBLESHOOTING.md` (`98a343d0fb03589e`)
+    - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`
+      (`0facc0ef051d615c`)
+  - Production markers found `mobileFirstPaintUsageBudget`, the focused test
+    marker `compaction when marker overhead would grow the row`, and docs marker
+    `net-reducing active first-paint completed Usage summary compaction`.
+- Production Phase-B readback:
+  - Eight bounded samples against Codex Mobile source thread all returned
+    `ok=true`, `readMode=projection-active-overlay`, `turnsListInitialMs=0`,
+    `activeOverlayWindowMs=0`, and issue codes empty.
+  - Max timings across the eight samples: `totalMs=625`,
+    `activeOverlayWindowMs=0`, `activeOverlayBackfillWindowMs=1`.
+  - Completed Usage compact applied in all samples and was net-reducing:
+    before/after approximately `228165 -> 226791` or `228166 -> 226792`;
+    no sample had completed-Usage net growth.
+  - The active first-paint payload remains above the configured byte ceiling in
+    these samples. Retained visible bytes were dominated by assistant rows
+    (`34276`), then userMessage (`15189`), usage (`4828`), operation (`1845`),
+    other (`417`), and reasoning (`412`).
+  - Decision stayed `phase-b-readback` / `warm-or-bounded-paths`; no
+    active-overlay latency sample recurred in the eight-sample window. The
+    earlier official `4b5496b` return had one unrelated
+    `activeOverlayWindowMs=3483` sample, so active-window intermittent latency
+    remains a watch item but was not reproduced in this follow-up sampling.
+- Runtime readback:
+  - Deploy-mode runtime self-check returned `ok=true`, `deployPass=true`,
+    `periodicHealthy=true`, `issueCount=0`, `blockingIssueCount=0`,
+    `executionFailureCount=0`.
+  - Child checks `api-thread`, `browser-runtime`, and `client-events` were all
+    OK with zero issues.
+  - LaunchAgent readback returned `ok=true`; latest full-check deploy event had
+    check names `api-thread`, `browser-runtime`, `client-events`,
+    `deployPass=true`, `periodicHealthy=true`, zero blocking issues, and zero
+    execution failures.
+- Next optimization target:
+  - The current steady-state residual is active first-paint payload size, now
+    dominated by assistant rows. The next slice should distinguish current
+    active assistant progress that must remain visible from older completed
+    assistant/replay rows before adding any assistant budget. Separately,
+    continue watching for intermittent `activeOverlayWindowMs` peaks; if they
+    recur, prioritize active-window prewarm/cache lifecycle over payload
+    shaping.
