@@ -252,6 +252,25 @@ test("phase B readback decision returns ready for warm or bounded paths", () => 
       responseBudgetRetainedAssistantItemBytesByTurnState: { active: 7400, completed: 19000 },
       responseBudgetRetainedUserInputItemCountByTurnState: { completed: 4, active: 1 },
       responseBudgetRetainedUserInputItemBytesByTurnState: { completed: 32000, active: 9000 },
+      responseBudgetRetainedUserInputItemBytesByShape: {
+        directText: 25000,
+        contentText: 8000,
+        inlineImageData: 5000,
+        contentAuxiliary: 2000,
+        itemAuxiliary: 1000,
+      },
+      responseBudgetRetainedActiveUserInputItemBytesByShape: {
+        directText: 6000,
+        contentText: 2000,
+        inlineImageData: 1000,
+      },
+      responseBudgetRetainedCompletedUserInputItemBytesByShape: {
+        directText: 19000,
+        contentText: 6000,
+        inlineImageData: 4000,
+        contentAuxiliary: 2000,
+        itemAuxiliary: 1000,
+      },
       responseBudgetProgressiveCompletedUserTextChars: 1024,
       responseBudgetProgressiveCompletedUserInputBudgetApplied: true,
       responseBudgetProgressiveCompletedUserInputBudgetReason: "first-paint-byte-pressure",
@@ -344,6 +363,25 @@ test("phase B readback decision returns ready for warm or bounded paths", () => 
   assert.deepEqual(decision.evidence.detailResponseBudgetRetainedAssistantItemBytesByTurnState, { active: 7400, completed: 19000 });
   assert.deepEqual(decision.evidence.detailResponseBudgetRetainedUserInputItemCountByTurnState, { completed: 4, active: 1 });
   assert.deepEqual(decision.evidence.detailResponseBudgetRetainedUserInputItemBytesByTurnState, { completed: 32000, active: 9000 });
+  assert.deepEqual(decision.evidence.detailResponseBudgetRetainedUserInputItemBytesByShape, {
+    directText: 25000,
+    contentText: 8000,
+    inlineImageData: 5000,
+    contentAuxiliary: 2000,
+    itemAuxiliary: 1000,
+  });
+  assert.deepEqual(decision.evidence.detailResponseBudgetRetainedActiveUserInputItemBytesByShape, {
+    directText: 6000,
+    contentText: 2000,
+    inlineImageData: 1000,
+  });
+  assert.deepEqual(decision.evidence.detailResponseBudgetRetainedCompletedUserInputItemBytesByShape, {
+    directText: 19000,
+    contentText: 6000,
+    inlineImageData: 4000,
+    contentAuxiliary: 2000,
+    itemAuxiliary: 1000,
+  });
   assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUserTextChars, 1024);
   assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUserInputBudgetApplied, true);
   assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUserInputBudgetReason, "first-paint-byte-pressure");

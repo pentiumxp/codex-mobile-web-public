@@ -313,6 +313,55 @@ function jsonByteLength(value) {
   }
 }
 
+function stringByteLength(value) {
+  return typeof value === "string" ? Buffer.byteLength(value, "utf8") : 0;
+}
+
+function dataImageStringBytes(value) {
+  if (typeof value !== "string") return 0;
+  return /^data:image\//i.test(value) ? Buffer.byteLength(value, "utf8") : 0;
+}
+
+function retainedUserInputShapeBytes(item) {
+  const out = {};
+  if (!item || typeof item !== "object") return out;
+  const itemBytes = jsonByteLength(item);
+  let directTextBytes = 0;
+  for (const field of ["text", "message"]) {
+    directTextBytes += stringByteLength(item[field]);
+  }
+  let contentBytes = 0;
+  let contentTextBytes = 0;
+  let inlineImageBytes = 0;
+  if (Array.isArray(item.content)) {
+    contentBytes = jsonByteLength(item.content);
+    for (const entry of item.content) {
+      if (!entry || typeof entry !== "object") continue;
+      for (const field of ["text", "input_text", "content"]) {
+        contentTextBytes += stringByteLength(entry[field]);
+      }
+      for (const field of ["url", "image_url", "imageUrl"]) {
+        inlineImageBytes += dataImageStringBytes(entry[field]);
+      }
+    }
+  }
+  const contentAuxiliaryBytes = Math.max(0, contentBytes - contentTextBytes - inlineImageBytes);
+  const itemAuxiliaryBytes = Math.max(0, itemBytes - directTextBytes - contentBytes);
+  addNumericBucket(out, "directText", directTextBytes);
+  addNumericBucket(out, "contentText", contentTextBytes);
+  addNumericBucket(out, "inlineImageData", inlineImageBytes);
+  addNumericBucket(out, "contentAuxiliary", contentAuxiliaryBytes);
+  addNumericBucket(out, "itemAuxiliary", itemAuxiliaryBytes);
+  return out;
+}
+
+function addNumberMapBuckets(target, source) {
+  if (!target || !source || typeof source !== "object") return;
+  for (const [key, value] of Object.entries(source)) {
+    addNumericBucket(target, key, value);
+  }
+}
+
 function visibleItemByteKind(item) {
   const type = String(item && item.type || "");
   if (isUserMessageItem(item)) return "userMessage";
@@ -347,6 +396,11 @@ function annotateRetainedVisibleItemByteStats(thread, stats) {
   const assistantBytesByTurnState = {};
   const userMessageCountByTurnState = {};
   const userMessageBytesByTurnState = {};
+  const userInputBytesByShape = {};
+  const activeUserInputBytesByShape = {};
+  const completedUserInputBytesByShape = {};
+  const staleActiveUserInputBytesByShape = {};
+  const otherUserInputBytesByShape = {};
   let totalItems = 0;
   let totalBytes = 0;
   let largestKind = "";
@@ -368,6 +422,12 @@ function annotateRetainedVisibleItemByteStats(thread, stats) {
         const turnState = retainedVisibleTurnState(turn, thread);
         addNumericBucket(userMessageCountByTurnState, turnState, 1);
         addNumericBucket(userMessageBytesByTurnState, turnState, bytes);
+        const shapeBytes = retainedUserInputShapeBytes(item);
+        addNumberMapBuckets(userInputBytesByShape, shapeBytes);
+        if (turnState === "active") addNumberMapBuckets(activeUserInputBytesByShape, shapeBytes);
+        else if (turnState === "completed") addNumberMapBuckets(completedUserInputBytesByShape, shapeBytes);
+        else if (turnState === "staleActive") addNumberMapBuckets(staleActiveUserInputBytesByShape, shapeBytes);
+        else addNumberMapBuckets(otherUserInputBytesByShape, shapeBytes);
       }
       if (bytes > largestBytes) {
         largestBytes = bytes;
@@ -381,6 +441,11 @@ function annotateRetainedVisibleItemByteStats(thread, stats) {
   stats.retainedAssistantItemBytesByTurnState = assistantBytesByTurnState;
   stats.retainedUserInputItemCountByTurnState = userMessageCountByTurnState;
   stats.retainedUserInputItemBytesByTurnState = userMessageBytesByTurnState;
+  stats.retainedUserInputItemBytesByShape = userInputBytesByShape;
+  stats.retainedActiveUserInputItemBytesByShape = activeUserInputBytesByShape;
+  stats.retainedCompletedUserInputItemBytesByShape = completedUserInputBytesByShape;
+  stats.retainedStaleActiveUserInputItemBytesByShape = staleActiveUserInputBytesByShape;
+  stats.retainedOtherUserInputItemBytesByShape = otherUserInputBytesByShape;
   stats.retainedVisibleItemCountForByteStats = totalItems;
   stats.retainedVisibleItemBytesForByteStats = totalBytes;
   stats.retainedVisibleItemLargestKind = largestKind;
@@ -1448,6 +1513,11 @@ function compactThreadDetailResponseResult(result, options = {}) {
     retainedAssistantItemBytesByTurnState: {},
     retainedUserInputItemCountByTurnState: {},
     retainedUserInputItemBytesByTurnState: {},
+    retainedUserInputItemBytesByShape: {},
+    retainedActiveUserInputItemBytesByShape: {},
+    retainedCompletedUserInputItemBytesByShape: {},
+    retainedStaleActiveUserInputItemBytesByShape: {},
+    retainedOtherUserInputItemBytesByShape: {},
     retainedVisibleItemCountForByteStats: 0,
     retainedVisibleItemBytesForByteStats: 0,
     retainedVisibleItemLargestKind: "",

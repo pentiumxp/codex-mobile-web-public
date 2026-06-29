@@ -1066,6 +1066,64 @@ test("thread detail response budget skips completed Usage compaction when marker
   assert.equal(budget.omittedCompletedUsageBytes, 0);
 });
 
+test("thread detail response budget attributes retained user input bytes by shape", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      mobileProjectionRevision: 35,
+      turns: [
+        {
+          id: "turn-completed",
+          status: "completed",
+          items: [
+            { id: "completed-u", type: "userMessage", text: "Completed input text" },
+            { id: "completed-a", type: "agentMessage", text: "Receipt" },
+          ],
+        },
+        {
+          id: "turn-active",
+          status: "inProgress",
+          items: [
+            {
+              id: "active-u",
+              type: "userMessage",
+              text: "Active direct text",
+              content: [
+                { type: "input_text", text: "Active content text" },
+                { type: "input_image", image_url: `data:image/png;base64,${"a".repeat(48)}` },
+                { type: "input_meta", flags: ["one", "two"], nested: { ok: true } },
+              ],
+            },
+            { id: "active-a", type: "agentMessage", text: "Working" },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeProgressiveItemThreshold: 1,
+    progressiveActiveFirstPaintThreadByteCeiling: 1200,
+  });
+
+  const budget = compacted.thread.mobileDetailResponseBudget;
+  assert.equal(budget.retainedUserInputItemCountByTurnState.active, 1);
+  assert.equal(budget.retainedUserInputItemCountByTurnState.completed, 1);
+  assert.ok(budget.retainedUserInputItemBytesByShape.directText > 0);
+  assert.ok(budget.retainedUserInputItemBytesByShape.contentText > 0);
+  assert.ok(budget.retainedUserInputItemBytesByShape.inlineImageData > 0);
+  assert.ok(budget.retainedUserInputItemBytesByShape.contentAuxiliary > 0);
+  assert.ok(budget.retainedUserInputItemBytesByShape.itemAuxiliary > 0);
+  assert.ok(budget.retainedActiveUserInputItemBytesByShape.directText > 0);
+  assert.ok(budget.retainedActiveUserInputItemBytesByShape.contentText > 0);
+  assert.ok(budget.retainedActiveUserInputItemBytesByShape.inlineImageData > 0);
+  assert.ok(budget.retainedCompletedUserInputItemBytesByShape.directText > 0);
+  assert.equal(budget.retainedCompletedUserInputItemBytesByShape.inlineImageData, undefined);
+});
+
 test("thread detail response budget drops active inline image data under progressive pressure", () => {
   const dataUrl = `data:image/png;base64,${"A".repeat(4200)}`;
   const result = {

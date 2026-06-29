@@ -274,6 +274,26 @@ test("phase B readback smoke collects bounded diagnostics without private fields
             retainedAssistantItemBytesByTurnState: { active: 7000, completed: 11000 },
             retainedUserInputItemCountByTurnState: { completed: 2, active: 1 },
             retainedUserInputItemBytesByTurnState: { completed: 12000, active: 3000 },
+            retainedUserInputItemBytesByShape: {
+              directText: 9000,
+              contentText: 2500,
+              inlineImageData: 1500,
+              contentAuxiliary: 1000,
+              itemAuxiliary: 1000,
+            },
+            retainedActiveUserInputItemBytesByShape: {
+              directText: 2000,
+              contentText: 500,
+              inlineImageData: 400,
+              itemAuxiliary: 100,
+            },
+            retainedCompletedUserInputItemBytesByShape: {
+              directText: 7000,
+              contentText: 2000,
+              inlineImageData: 1100,
+              contentAuxiliary: 1000,
+              itemAuxiliary: 900,
+            },
             retainedVisibleItemCountForByteStats: 31,
             retainedVisibleItemBytesForByteStats: 88000,
             retainedVisibleItemLargestKind: "operation",
@@ -466,6 +486,26 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.deepEqual(report.detail.responseBudgetRetainedAssistantItemBytesByTurnState, { active: 7000, completed: 11000 });
   assert.deepEqual(report.detail.responseBudgetRetainedUserInputItemCountByTurnState, { completed: 2, active: 1 });
   assert.deepEqual(report.detail.responseBudgetRetainedUserInputItemBytesByTurnState, { completed: 12000, active: 3000 });
+  assert.deepEqual(report.detail.responseBudgetRetainedUserInputItemBytesByShape, {
+    directText: 9000,
+    contentText: 2500,
+    inlineImageData: 1500,
+    contentAuxiliary: 1000,
+    itemAuxiliary: 1000,
+  });
+  assert.deepEqual(report.detail.responseBudgetRetainedActiveUserInputItemBytesByShape, {
+    directText: 2000,
+    contentText: 500,
+    inlineImageData: 400,
+    itemAuxiliary: 100,
+  });
+  assert.deepEqual(report.detail.responseBudgetRetainedCompletedUserInputItemBytesByShape, {
+    directText: 7000,
+    contentText: 2000,
+    inlineImageData: 1100,
+    contentAuxiliary: 1000,
+    itemAuxiliary: 900,
+  });
   assert.equal(report.detail.responseBudgetRetainedVisibleItemCountForByteStats, 31);
   assert.equal(report.detail.responseBudgetRetainedVisibleItemBytesForByteStats, 88000);
   assert.equal(report.detail.responseBudgetRetainedVisibleItemLargestKind, "operation");
@@ -492,6 +532,19 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.deepEqual(report.decision.evidence.detailResponseBudgetRetainedAssistantItemBytesByTurnState, {
     active: 7000,
     completed: 11000,
+  });
+  assert.deepEqual(report.decision.evidence.detailResponseBudgetRetainedUserInputItemBytesByShape, {
+    directText: 9000,
+    contentText: 2500,
+    inlineImageData: 1500,
+    contentAuxiliary: 1000,
+    itemAuxiliary: 1000,
+  });
+  assert.deepEqual(report.decision.evidence.detailResponseBudgetRetainedActiveUserInputItemBytesByShape, {
+    directText: 2000,
+    contentText: 500,
+    inlineImageData: 400,
+    itemAuxiliary: 100,
   });
   assert.equal(report.decision.evidence.detailResponseBudgetRetainedVisibleItemLargestKind, "operation");
   assert.match(report.threadList.firstThreadHash, /^[a-f0-9]{16}$/);
