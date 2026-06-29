@@ -260,6 +260,8 @@ test("phase B readback smoke collects bounded diagnostics without private fields
             progressiveActiveFirstPaintOverCeilingBytes: 0,
             retainedVisibleItemCountByKind: { operation: 12, assistant: 4, userMessage: 1 },
             retainedVisibleItemBytesByKind: { operation: 52000, assistant: 18000, userMessage: 9000 },
+            retainedAssistantItemCountByTurnState: { active: 2, completed: 2 },
+            retainedAssistantItemBytesByTurnState: { active: 7000, completed: 11000 },
             retainedVisibleItemCountForByteStats: 31,
             retainedVisibleItemBytesForByteStats: 88000,
             retainedVisibleItemLargestKind: "operation",
@@ -438,6 +440,8 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.detail.responseBudgetProgressiveActiveFirstPaintOverCeilingBytes, 0);
   assert.deepEqual(report.detail.responseBudgetRetainedVisibleItemCountByKind, { operation: 12, assistant: 4, userMessage: 1 });
   assert.deepEqual(report.detail.responseBudgetRetainedVisibleItemBytesByKind, { operation: 52000, assistant: 18000, userMessage: 9000 });
+  assert.deepEqual(report.detail.responseBudgetRetainedAssistantItemCountByTurnState, { active: 2, completed: 2 });
+  assert.deepEqual(report.detail.responseBudgetRetainedAssistantItemBytesByTurnState, { active: 7000, completed: 11000 });
   assert.equal(report.detail.responseBudgetRetainedVisibleItemCountForByteStats, 31);
   assert.equal(report.detail.responseBudgetRetainedVisibleItemBytesForByteStats, 88000);
   assert.equal(report.detail.responseBudgetRetainedVisibleItemLargestKind, "operation");
@@ -458,6 +462,10 @@ test("phase B readback smoke collects bounded diagnostics without private fields
     operation: 52000,
     assistant: 18000,
     userMessage: 9000,
+  });
+  assert.deepEqual(report.decision.evidence.detailResponseBudgetRetainedAssistantItemBytesByTurnState, {
+    active: 7000,
+    completed: 11000,
   });
   assert.equal(report.decision.evidence.detailResponseBudgetRetainedVisibleItemLargestKind, "operation");
   assert.match(report.threadList.firstThreadHash, /^[a-f0-9]{16}$/);

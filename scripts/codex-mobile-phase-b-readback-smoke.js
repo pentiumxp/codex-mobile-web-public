@@ -570,6 +570,8 @@ function summarizeDetailResponseBudget(budget = {}) {
     responseBudgetProgressiveActiveFirstPaintOverCeilingBytes: boundedBytes(source.progressiveActiveFirstPaintOverCeilingBytes),
     responseBudgetRetainedVisibleItemCountByKind: boundedNumberMap(source.retainedVisibleItemCountByKind, 12, 100000),
     responseBudgetRetainedVisibleItemBytesByKind: boundedNumberMap(source.retainedVisibleItemBytesByKind, 12),
+    responseBudgetRetainedAssistantItemCountByTurnState: boundedNumberMap(source.retainedAssistantItemCountByTurnState, 8, 100000),
+    responseBudgetRetainedAssistantItemBytesByTurnState: boundedNumberMap(source.retainedAssistantItemBytesByTurnState, 8),
     responseBudgetRetainedVisibleItemCountForByteStats: boundedCount(source.retainedVisibleItemCountForByteStats),
     responseBudgetRetainedVisibleItemBytesForByteStats: boundedBytes(source.retainedVisibleItemBytesForByteStats),
     responseBudgetRetainedVisibleItemLargestKind: compactLabel(source.retainedVisibleItemLargestKind, 40),

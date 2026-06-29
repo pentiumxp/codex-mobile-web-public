@@ -2532,6 +2532,11 @@ Deployable scope:
   `protected-visible-items` or `no-removable-visible-items`: the next slice can
   target the dominant protected shape instead of weakening user/assistant/Usage
   protection generically.
+- When that protected attribution identifies assistant rows, the next evidence
+  slice records retained assistant counts/bytes by turn state (`active`,
+  `completed`, `staleActive`, `other`). This separates current live assistant
+  progress from completed/replay assistant receipts before any assistant budget
+  is tightened.
 - Production readback after that attribution slice showed the protected active
   first-paint over-ceiling payload was dominated by completed `userMessage`
   items, not the current active input. The follow-up budget previews only

@@ -32373,3 +32373,36 @@ The previous full handoff was archived and should be opened only when old proven
     continue watching for intermittent `activeOverlayWindowMs` peaks; if they
     recur, prioritize active-window prewarm/cache lifecycle over payload
     shaping.
+
+### 2026-06-30 - Active First-Paint Assistant Retained-Byte Attribution Ready For Deploy
+
+- Production evidence:
+  - After `8d5575e4c0a6`, completed Usage compaction is net-reducing and the
+    runtime deploy gate is clean.
+  - Eight Phase-B samples did not reproduce active-window latency; all had
+    `activeOverlayWindowMs=0`.
+  - The remaining active first-paint over-ceiling payload is dominated by
+    assistant rows. A bounded authenticated metadata-only detail sample showed
+    assistant bytes split across current active progress and completed replay:
+    active assistant about `12KB` / `24` items, completed assistant about
+    `21.5KB` / `32` items, with one retained rich completed replay turn holding
+    `24` assistant items and about `12.7KB`.
+- Root cause / invariant:
+  - `retainedVisibleItemBytesByKind.assistant` is not enough to choose a safe
+    budget. Current active assistant progress and completed/replay assistant
+    receipts have different product contracts.
+  - The next change must be attribution-only. It should not remove or truncate
+    assistant content until production readback proves which turn-state bucket
+    owns the residual bytes.
+- Source changes in progress:
+  - `adapters/thread-detail-response-budget-service.js` records retained
+    assistant item counts/bytes by turn state in `mobileDetailResponseBudget`:
+    `active`, `completed`, `staleActive`, and `other`.
+  - `scripts/codex-mobile-phase-b-readback-smoke.js` and
+    `adapters/phase-b-readback-decision-service.js` propagate the new fields as
+    bounded `responseBudget*` / `detailResponseBudget*` evidence.
+  - Focused tests cover service-level active/completed attribution and
+    Phase-B/decision propagation.
+- Deployment status:
+  - Local candidate in progress. Private production deploy has not yet been
+    requested. No Public deploy requested or run.

@@ -1006,6 +1006,10 @@ test("thread detail response budget compacts completed Usage summaries under act
   assert.equal(budget.truncatedCompletedUsageItems, 1);
   assert.ok(budget.completedUsageOriginalBytes > budget.completedUsageRetainedBytes);
   assert.ok(budget.omittedCompletedUsageBytes > 0);
+  assert.equal(budget.retainedAssistantItemCountByTurnState.completed, 1);
+  assert.equal(budget.retainedAssistantItemCountByTurnState.active, 1);
+  assert.ok(budget.retainedAssistantItemBytesByTurnState.completed > 0);
+  assert.ok(budget.retainedAssistantItemBytesByTurnState.active > 0);
   assert.deepEqual(compacted.thread.mobileVisibleItemKeys, compacted.thread.turns.flatMap((turn) => turn.items.map((item) => item.mobileVisibleKey)));
   assert.equal(compacted.thread.mobileProjectionRevision, 34);
 });
@@ -1952,6 +1956,8 @@ test("thread detail response budget does not delete active turn visible items fo
   assert.equal(budget.retainedVisibleItemCountByKind.userMessage, 1);
   assert.equal(budget.retainedVisibleItemCountByKind.assistant, 1);
   assert.equal(budget.retainedVisibleItemCountByKind.usage, 1);
+  assert.equal(budget.retainedAssistantItemCountByTurnState.active, 1);
+  assert.ok(budget.retainedAssistantItemBytesByTurnState.active > 0);
   assert.ok(budget.retainedVisibleItemBytesByKind.operation > budget.retainedVisibleItemBytesByKind.assistant);
   assert.equal(budget.retainedVisibleItemLargestKind, "operation");
   assert.ok(budget.retainedVisibleItemLargestBytes > 0);
