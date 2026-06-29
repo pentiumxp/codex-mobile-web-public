@@ -31693,3 +31693,43 @@ The previous full handoff was archived and should be opened only when old proven
   - `codegraph sync && codegraph status` reported the index up to date.
   - Local deploy candidate only; no commit, deploy card, or Public deploy has
     been made for this follow-up yet.
+
+### 2026-06-30 - Browser Runtime Plan Refresh Cost Fix Deployed
+
+- Source commit:
+  - `372d69f9af9c` (`fix: bound browser self-check plan refresh cost`).
+- Deploy status:
+  - Private production deploy was requested through Home AI Deploy card
+    `ttc_63a431a44e114f64a1` with reason
+    `codex-mobile-browser-self-check-plan-refresh-cost`.
+  - Source/production hash parity matched for:
+    - `scripts/codex-mobile-browser-runtime-self-check.js`
+    - `test/browser-runtime-self-check-service.test.js`
+    - `docs/MODULES.md`
+    - `docs/TROUBLESHOOTING.md`
+  - Production `/api/public-config` returned status `200`, version `0.1.11`,
+    build id `6509897d34f15c02`, client build id
+    `0.1.11|codex-mobile-shell-v597`, shell cache
+    `codex-mobile-shell-v597`, and `authRequired=true`.
+  - Static shell stayed v597 because this deploy changed scripts/tests/docs
+    only.
+  - Production marker readback found `refreshThreadPlanEntry`,
+    `snapshotInputForPlanEntry`, the focused test marker
+    `browser runtime self-check refreshes API plan once per thread sample
+    group`, and troubleshooting text `once after each sampled thread is
+    opened`.
+- Production runtime readback:
+  - Production periodic-shaped runtime loop returned `ok=true`,
+    `deployPass=true`, `periodicHealthy=true`, `blockingIssueCount=0`,
+    `executionFailureCount=0`.
+  - API-thread child was `ok=true` with zero issues.
+  - Browser-runtime child was `ok=true`; it reported only H3 advisory
+    `browser_latest_turn_assistant_text_duplicate`.
+  - Client-events child was `ok=true` with `stallEventCount=0` and
+    `h2StallEventCount=0`.
+  - LaunchAgent readback returned `ok=true`, latest event present/healthy, and
+    gate issue count `0`.
+- Remaining status:
+  - The browser-runtime child timeout residual from the previous `22e8f60`
+    deployment is closed in this readback.
+  - No Public deploy requested or run.
