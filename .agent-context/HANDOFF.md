@@ -29138,10 +29138,26 @@ The previous full handoff was archived and should be opened only when old proven
   - Home AI fallback governance check passed with no issues for the changed
     runtime/test files.
 - Deploy state:
-  - Not yet deployed at the time of this entry.
-  - Next step: commit locally, send a Home AI Deploy lane card for private
-    deployment, then run production runtime self-check with `--gate-mode
-    deploy`.
+  - Private production deploy completed through the Home AI Deploy lane from
+    source commit `c36761c12538`, reason
+    `codex-mobile-runtime-self-check-gate-v2`.
+  - Deploy result: `ok=true`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T093053Z-plugin-codex-mobile-web-codex-mobile-runtime-self-check-gate-v2`.
+  - Production `/api/public-config` returned build id
+    `9a1b34241edd22b4`, client build id
+    `0.1.11|codex-mobile-shell-v582`, and shell cache
+    `codex-mobile-shell-v582`.
+  - Source/production hash parity matched for the gate service, loop script,
+    focused tests, and updated docs.
+  - Production marker readback confirmed `classifyRuntimeSelfCheckGate`,
+    `--gate-mode`, `observeOnlyIssueCount`, and `deployPass`.
+  - Production runtime self-check loop with `--gate-mode deploy` against Movie
+    and Codex Mobile source threads passed with `gate.deployPass=true`,
+    `periodicHealthy=true`, and zero reportable, observe-only, advisory, or
+    execution-failure issues.
+  - No active submit exercise was run.
+  - Public deploy was not run.
 - Privacy:
   - No raw secrets, cookies, launch tokens, private message bodies, task-card
     bodies, upload contents, screenshots, provider payloads, endpoint files, or
