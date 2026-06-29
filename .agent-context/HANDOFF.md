@@ -31285,7 +31285,7 @@ The previous full handoff was archived and should be opened only when old proven
     authoritative backup readback when it arrives.
   - No Public deploy requested or run.
 
-### 2026-06-30 - v597 Thread-List Runtime Stall Telemetry Pending Deploy
+### 2026-06-30 - v597 Thread-List Runtime Stall Telemetry Deployed
 
 - Scope:
   - Follow-up to user reports that the thread list can occasionally freeze for
@@ -31316,5 +31316,32 @@ The previous full handoff was archived and should be opened only when old proven
   - `npm run check`, `npm run check:macos`, `git diff --check`, and Home AI
     fallback governance check passed.
 - Deployment status:
-  - Ready to commit/deploy through Home AI Deploy.
+  - Source commit `4eadb1b` (`feat: capture live thread list stalls`) was sent
+    to Home AI Deploy with card `ttc_4b71871fa1544462fe` and deploy reason
+    `codex-mobile-v597-live-thread-list-stall-telemetry`.
+  - Production hash parity matched for:
+    - `public/app.js`
+    - `public/frontend-runtime-health.js`
+    - `public/home-ai-diagnostic-reporting.js`
+    - `public/sw.js`
+    - `test/frontend-runtime-health.test.js`
+    - `test/client-render-stability-guard.test.js`
+    - `docs/MODULES.md`
+    - `docs/TROUBLESHOOTING.md`
+  - Production `/api/public-config` returned status `200`, version `0.1.11`,
+    build id `6509897d34f15c02`, client build id
+    `0.1.11|codex-mobile-shell-v597`, shell cache
+    `codex-mobile-shell-v597`, and `authRequired=true`.
+  - Production marker readback found `thread_list_interaction_stall`,
+    `THREAD_LIST_RUNTIME_STALL_MIN_MS`,
+    `browser_thread_list_interaction_blocked`,
+    `browser_main_thread_long_task`, and `codex-mobile-shell-v597`.
+  - Production browser runtime self-check with thread-list stress against Movie
+    and Codex Mobile source threads returned `ok=true`, `issueCount=0`, and
+    `blockingIssueCount=0`; max observed thread-list rAF delay and scroll-apply
+    delay were both `144ms`, max long-task duration was `0ms`, and no
+    thread-list interaction blocked issue reproduced.
+  - Production deploy-mode runtime gate returned `ok=true`, `deployPass=true`,
+    `periodicHealthy=true`, `issueCount=0`, `blockingIssueCount=0`, and
+    `executionFailureCount=0`.
   - No Public deploy requested or run.
