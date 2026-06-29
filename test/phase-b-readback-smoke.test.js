@@ -272,6 +272,8 @@ test("phase B readback smoke collects bounded diagnostics without private fields
             retainedVisibleItemBytesByKind: { operation: 52000, assistant: 18000, userMessage: 9000 },
             retainedAssistantItemCountByTurnState: { active: 2, completed: 2 },
             retainedAssistantItemBytesByTurnState: { active: 7000, completed: 11000 },
+            retainedUserInputItemCountByTurnState: { completed: 2, active: 1 },
+            retainedUserInputItemBytesByTurnState: { completed: 12000, active: 3000 },
             retainedVisibleItemCountForByteStats: 31,
             retainedVisibleItemBytesForByteStats: 88000,
             retainedVisibleItemLargestKind: "operation",
@@ -462,6 +464,8 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.deepEqual(report.detail.responseBudgetRetainedVisibleItemBytesByKind, { operation: 52000, assistant: 18000, userMessage: 9000 });
   assert.deepEqual(report.detail.responseBudgetRetainedAssistantItemCountByTurnState, { active: 2, completed: 2 });
   assert.deepEqual(report.detail.responseBudgetRetainedAssistantItemBytesByTurnState, { active: 7000, completed: 11000 });
+  assert.deepEqual(report.detail.responseBudgetRetainedUserInputItemCountByTurnState, { completed: 2, active: 1 });
+  assert.deepEqual(report.detail.responseBudgetRetainedUserInputItemBytesByTurnState, { completed: 12000, active: 3000 });
   assert.equal(report.detail.responseBudgetRetainedVisibleItemCountForByteStats, 31);
   assert.equal(report.detail.responseBudgetRetainedVisibleItemBytesForByteStats, 88000);
   assert.equal(report.detail.responseBudgetRetainedVisibleItemLargestKind, "operation");

@@ -333,7 +333,7 @@ function addNumericBucket(target, key, amount) {
   target[safeKey] = Math.max(0, Math.trunc(Number(target[safeKey]) || 0)) + value;
 }
 
-function retainedAssistantTurnState(turn, thread) {
+function retainedVisibleTurnState(turn, thread) {
   if (isActiveTurn(turn, thread)) return "active";
   if (isStaleActiveLikeTurn(turn, thread) || isStaleActiveCompletionStatus(turn && turn.status)) return "staleActive";
   if (isCompletedStatus(turn && turn.status)) return "completed";
@@ -345,6 +345,8 @@ function annotateRetainedVisibleItemByteStats(thread, stats) {
   const bytesByKind = {};
   const assistantCountByTurnState = {};
   const assistantBytesByTurnState = {};
+  const userMessageCountByTurnState = {};
+  const userMessageBytesByTurnState = {};
   let totalItems = 0;
   let totalBytes = 0;
   let largestKind = "";
@@ -358,9 +360,14 @@ function annotateRetainedVisibleItemByteStats(thread, stats) {
       addNumericBucket(countsByKind, kind, 1);
       addNumericBucket(bytesByKind, kind, bytes);
       if (isAssistantItem(item)) {
-        const turnState = retainedAssistantTurnState(turn, thread);
+        const turnState = retainedVisibleTurnState(turn, thread);
         addNumericBucket(assistantCountByTurnState, turnState, 1);
         addNumericBucket(assistantBytesByTurnState, turnState, bytes);
+      }
+      if (isUserMessageItem(item)) {
+        const turnState = retainedVisibleTurnState(turn, thread);
+        addNumericBucket(userMessageCountByTurnState, turnState, 1);
+        addNumericBucket(userMessageBytesByTurnState, turnState, bytes);
       }
       if (bytes > largestBytes) {
         largestBytes = bytes;
@@ -372,6 +379,8 @@ function annotateRetainedVisibleItemByteStats(thread, stats) {
   stats.retainedVisibleItemBytesByKind = bytesByKind;
   stats.retainedAssistantItemCountByTurnState = assistantCountByTurnState;
   stats.retainedAssistantItemBytesByTurnState = assistantBytesByTurnState;
+  stats.retainedUserInputItemCountByTurnState = userMessageCountByTurnState;
+  stats.retainedUserInputItemBytesByTurnState = userMessageBytesByTurnState;
   stats.retainedVisibleItemCountForByteStats = totalItems;
   stats.retainedVisibleItemBytesForByteStats = totalBytes;
   stats.retainedVisibleItemLargestKind = largestKind;
@@ -1437,6 +1446,8 @@ function compactThreadDetailResponseResult(result, options = {}) {
     retainedVisibleItemBytesByKind: {},
     retainedAssistantItemCountByTurnState: {},
     retainedAssistantItemBytesByTurnState: {},
+    retainedUserInputItemCountByTurnState: {},
+    retainedUserInputItemBytesByTurnState: {},
     retainedVisibleItemCountForByteStats: 0,
     retainedVisibleItemBytesForByteStats: 0,
     retainedVisibleItemLargestKind: "",

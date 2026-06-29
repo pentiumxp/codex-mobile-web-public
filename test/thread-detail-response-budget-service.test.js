@@ -1010,6 +1010,8 @@ test("thread detail response budget compacts completed Usage summaries under act
   assert.equal(budget.retainedAssistantItemCountByTurnState.active, 1);
   assert.ok(budget.retainedAssistantItemBytesByTurnState.completed > 0);
   assert.ok(budget.retainedAssistantItemBytesByTurnState.active > 0);
+  assert.equal(budget.retainedUserInputItemCountByTurnState.completed, 1);
+  assert.ok(budget.retainedUserInputItemBytesByTurnState.completed > 0);
   assert.deepEqual(compacted.thread.mobileVisibleItemKeys, compacted.thread.turns.flatMap((turn) => turn.items.map((item) => item.mobileVisibleKey)));
   assert.equal(compacted.thread.mobileProjectionRevision, 34);
 });

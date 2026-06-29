@@ -291,6 +291,8 @@ function buildEvidence(report = {}) {
     detailResponseBudgetRetainedVisibleItemBytesByKind: boundedNumberMap(detail.responseBudgetRetainedVisibleItemBytesByKind, 12),
     detailResponseBudgetRetainedAssistantItemCountByTurnState: boundedNumberMap(detail.responseBudgetRetainedAssistantItemCountByTurnState, 8, 100000),
     detailResponseBudgetRetainedAssistantItemBytesByTurnState: boundedNumberMap(detail.responseBudgetRetainedAssistantItemBytesByTurnState, 8),
+    detailResponseBudgetRetainedUserInputItemCountByTurnState: boundedNumberMap(detail.responseBudgetRetainedUserInputItemCountByTurnState, 8, 100000),
+    detailResponseBudgetRetainedUserInputItemBytesByTurnState: boundedNumberMap(detail.responseBudgetRetainedUserInputItemBytesByTurnState, 8),
     detailResponseBudgetRetainedVisibleItemCountForByteStats: boundedCount(detail.responseBudgetRetainedVisibleItemCountForByteStats),
     detailResponseBudgetRetainedVisibleItemBytesForByteStats: boundedBytes(detail.responseBudgetRetainedVisibleItemBytesForByteStats),
     detailResponseBudgetRetainedVisibleItemLargestKind: compactLabel(detail.responseBudgetRetainedVisibleItemLargestKind, 40),
