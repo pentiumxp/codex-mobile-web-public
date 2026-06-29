@@ -32171,3 +32171,75 @@ The previous full handoff was archived and should be opened only when old proven
   - `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, and `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` document the behavior and operational fields.
 - Deployment status:
   - Local candidate in progress. Private production deploy has not yet been requested. No Public deploy requested or run.
+
+### 2026-06-30 - Active First-Paint Completed User Input Budget Deployed
+
+- Source commit:
+  - `6227b0b` (`fix: preview completed user input in active first paint`).
+- Deploy status:
+  - Private production deploy was requested through Home AI Deploy card
+    `ttc_07ac40521f29b56b89` with reason
+    `codex-mobile-completed-user-input-first-paint-budget`.
+  - Local read-only production parity after the deploy request confirmed the
+    changed files were synced to production:
+    - `server.js` (`1a7300abb5db69f1`)
+    - `adapters/thread-detail-response-budget-service.js`
+      (`dd5d422cdb4e109e`)
+    - `adapters/phase-b-readback-decision-service.js`
+      (`50a42c05f5b49da1`)
+    - `scripts/codex-mobile-phase-b-readback-smoke.js`
+      (`3908878a152f0c95`)
+    - `test/thread-detail-response-budget-service.test.js`
+      (`c3ef32c8070acd03`)
+    - `test/phase-b-readback-smoke.test.js` (`158176744119a763`)
+    - `test/phase-b-readback-decision-service.test.js`
+      (`b23765ea8023556e`)
+    - `docs/MODULES.md` (`fcf67e5d8cdc3650`)
+    - `docs/TROUBLESHOOTING.md` (`5631abd74f6ec59c`)
+    - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`
+      (`f7c7efa6f4979467`)
+  - Production `/api/public-config` returned status `200`, version `0.1.11`,
+    build id `576c30a2eea33b2a`, client build id
+    `0.1.11|codex-mobile-shell-v598`, shell cache
+    `codex-mobile-shell-v598`, and `authRequired=true`; unchanged static shell
+    is expected for this server/script/docs-only deploy.
+  - Production marker readback found `mobileFirstPaintUserInputBudget`,
+    `progressiveCompletedUserInputBudgetApplied`,
+    `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_COMPLETED_USER_TEXT_CHARS`,
+    `responseBudgetProgressiveCompletedUserInputBudgetApplied`, and the
+    focused test marker `previews completed user input under active first-paint
+    byte pressure`.
+- Production Phase-B readback:
+  - Codex Mobile source thread returned `ok=true`, `readMode=projection-active-overlay`,
+    `totalMs=178`, `prepareResponseMs=106`, `turnsListInitialMs=0`,
+    `activeOverlayWindowMs=0`, `activeOverlayBackfillWindowMs=1`, and
+    `activeOverlayMergeMs=5`.
+  - Completed user-input budget applied:
+    `responseBudgetProgressiveCompletedUserInputBudgetApplied=true`,
+    reason `first-paint-byte-pressure`, scope `active-first-paint`,
+    bytes before/after `209980 -> 192134`, truncated completed user inputs `7`,
+    original/retained/omitted chars `26242 / 7168 / 19074`.
+  - Retained visible user-message bytes dropped from the prior attribution
+    sample's `33119` to `17073` in this sample. The active first-paint body is
+    still over ceiling (`93830` over) and now appears dominated by assistant
+    bytes (`34817`) followed by userMessage (`17073`) and Usage (`9298`).
+  - Active overlay/window remained healthy; the residual is now protected
+    assistant/Usage payload, not active-window rebuild or app-server read.
+- Runtime readback:
+  - Deploy-mode runtime self-check against Movie and Codex Mobile source
+    threads returned `ok=true`, `deployPass=true`, `periodicHealthy=true`, zero
+    issues, zero blocking issues, and zero execution failures across
+    `api-thread`, `browser-runtime`, and `client-events`.
+  - LaunchAgent readback returned `ok=true`; state `running`, latest full-check
+    event age about `5.6s`, check names `api-thread`, `browser-runtime`,
+    `client-events`, `deployPass=true`, `periodicHealthy=true`, and zero issue
+    and execution-failure counts.
+  - Official Home AI deploy return was not yet received in this thread at the
+    time of this handoff update. No Public deploy requested or run.
+- Next optimization target:
+  - Use the new Phase-B attribution after this deploy. In the latest sample,
+    assistant bytes are the largest remaining retained protected class, but
+    assistant items are numerous active/progressive rows. The next slice should
+    distinguish active assistant progress that must remain visible from older
+    completed assistant receipts and Usage rows before adding another content
+    budget.
