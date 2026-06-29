@@ -30289,7 +30289,7 @@ The previous full handoff was archived and should be opened only when old proven
   - Return status for task card `ttc_029078277aa81bd522` was
     `partially_completed`.
 
-### 2026-06-29 - v591 Stale Projection User Echo Replacement Pending Deploy
+### 2026-06-29 - v591 Stale Projection User Echo Replacement Deploy
 
 - Scope:
   - Follow-up to v590 residual where direct API projection was clean but the
@@ -30328,6 +30328,36 @@ The previous full handoff was archived and should be opened only when old proven
   - `git diff --check`
   - `node /Users/hermes-dev/HermesMobileDev/app/scripts/fallback-governance-check.js --changed-file public/app.js --changed-file public/sw.js --changed-file test/conversation-render.test.js --changed-file test/client-render-stability-guard.test.js --json`
 - Deployment status:
-  - Pending local commit and private deploy through Home AI Deploy lane.
-  - Public deploy was not requested and must not be run unless explicitly
-    requested.
+  - Deployed privately through the Home AI Deploy lane from source commit
+    `79cc1e3b4d6d` with reason
+    `codex-mobile-v591-stale-projection-user-echo`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T135342Z-plugin-codex-mobile-web-codex-mobile-v591-stale-projection-user-echo`.
+  - Public deploy was not run.
+- Production readback:
+  - `/api/public-config` returned status `200`, build id
+    `804792d85bd686d1`, client build id
+    `0.1.11|codex-mobile-shell-v591`, shell cache
+    `codex-mobile-shell-v591`, and `authRequired=true`.
+  - Source/production hash parity matched for `public/app.js`,
+    `public/sw.js`, `test/conversation-render.test.js`, and
+    `test/client-render-stability-guard.test.js`.
+  - Production marker readback confirmed `codex-mobile-shell-v591`,
+    `projectionIndexEcho`, `projectionIndex / 1000000`, and focused test name
+    `v4 projection merge replaces stale low-index user item with newer
+    projection authority`.
+- Scope note:
+  - The deployment task requested bounded deploy/readback only; no deploy-mode
+    runtime gate or active submit exercise was run for this card.
+  - Return status for task card `ttc_2d6a13df89147172e1` was `completed`.
+- Plugin-thread post-deploy runtime gate:
+  - Deploy-mode runtime self-check was run after the v591 deploy against Movie
+    and the Codex Mobile source thread.
+  - API-thread check was `ok=true` with zero issues.
+  - Browser-runtime check no longer reported
+    `browser_latest_turn_user_message_duplicate`.
+  - Browser-runtime still reported one H2
+    `browser_latest_turn_timestamp_missing` sample, so the overall deploy gate
+    was `deployPass=false`; that timestamp residual is tracked separately from
+    the original `thread_session_load_failed/http_404` and duplicate user echo
+    closure.
