@@ -29017,6 +29017,50 @@ The previous full handoff was archived and should be opened only when old proven
     residual browser-runtime risk, not as proof that the duplicate-user-message
     hotfix failed.
   - Public deploy was not run.
+
+### 2026-06-29 - Active Detail Replay Assistant Budget Ready For Deploy
+
+- Context:
+  - After active overlay and public-config hot-path fixes, Phase-B readback no
+    longer showed active-window backfill latency, but active source-thread detail
+    still had `prepareResponseMs` around hundreds of milliseconds and response
+    bodies around hundreds of KB.
+  - Bounded response inspection showed active/latest replay assistant rows were
+    preserved without a replay-specific ceiling under progressive active
+    pressure. That protected user-visible progress, but could keep dozens or
+    hundreds of assistant fragments in a large active first-paint response.
+- Root cause / invariant:
+  - `thread-detail-response-budget-service` used
+    `preserveReplayAssistantItems=true` to avoid losing the current active turn
+    and latest completed replay progress, but that protection was unbounded
+    during active pressure.
+  - Correct invariant: current active and protected latest-completed replay
+    turns must keep a readable assistant/plan progress tail, but active-pressure
+    first paint must not ship every historical assistant fragment.
+- Implementation:
+  - Added `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_REPLAY_ASSISTANT_ITEMS`
+    (default `24`, bounded to `1..500`) and wired it through `server.js`.
+  - `adapters/thread-detail-response-budget-service.js` now limits preserved
+    replay assistant/plan rows only when `progressiveActiveBudgetApplied=true`.
+    Resting recent detail and small active turns keep the existing behavior.
+  - `mobileDetailResponseBudget` now records `progressiveReplayAssistantItems`
+    and `limitedReplayAssistantItems` so self-checks and diagnostics can
+    distinguish intentional server response shaping from browser message loss.
+  - Added focused coverage for active + latest-completed replay turns with many
+    assistant fragments, proving both retain their trailing progress tail and
+    report omitted replay assistant counts.
+  - Updated `docs/ARCHITECTURE.md`, `docs/MODULES.md`,
+    `docs/TROUBLESHOOTING.md`, and `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Validation so far:
+  - Focused tests passed:
+    `node --test test/thread-detail-response-budget-service.test.js test/thread-detail-read-orchestration-service.test.js test/phase-b-readback-smoke.test.js test/browser-runtime-self-check-service.test.js`
+    (`99` tests).
+  - Full local validation passed: `npm test` (`1567` tests),
+    `npm run check`, `npm run check:macos`, `git diff --check`, and Home AI
+    fallback governance check for the changed runtime/test/docs files.
+- Deploy / readback:
+  - Ready for private deployment through the Home AI Deploy lane.
+  - Public deploy was not run.
 - Privacy:
   - No raw access keys, cookies, launch tokens, message text, upload contents,
     screenshots, provider payloads, endpoint files, or long logs were recorded.
@@ -29496,4 +29540,13 @@ The previous full handoff was archived and should be opened only when old proven
     `deployPass=true`, `periodicHealthy=true`, browser-runtime issue count `0`.
     API self-check reported only H3 advisory `thread_list_repeat_order_changed`
     with no blocking/reportable issue.
+  - Home AI Deploy lane follow-up readback for task card
+    `ttc_412501209b71cb27c9` deployed the same commit with backup
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T104102Z-plugin-codex-mobile-web-codex-mobile-public-config-hot-path`.
+    It confirmed `/api/public-config` samples `678,2,1,1,1,1ms` for 8605-byte
+    responses and Phase-B `activeOverlayBackfillWindowMs=0`, but a later
+    deploy-mode runtime self-check with the requested thread ids returned H2
+    `browser_latest_turn_timestamp_missing` in browser-runtime and
+    `deployPass=false`. Treat the hot-path latency fix as deployed, with a
+    residual browser-runtime gate issue for that run.
   - Public deploy was not run.

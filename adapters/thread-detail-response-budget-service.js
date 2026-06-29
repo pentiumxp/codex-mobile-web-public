@@ -14,6 +14,7 @@ const DEFAULT_ACTIVE_PROGRESSIVE_THREAD_BYTES = 160 * 1024;
 const DEFAULT_PROGRESSIVE_ACTIVE_OPERATION_ITEMS = 6;
 const DEFAULT_PROGRESSIVE_ACTIVE_REASONING_ITEMS = 1;
 const DEFAULT_PROGRESSIVE_ACTIVE_ASSISTANT_ITEMS = 4;
+const DEFAULT_PROGRESSIVE_REPLAY_ASSISTANT_ITEMS = 24;
 const DEFAULT_PROGRESSIVE_ACTIVE_TEXT_CHARS = 12 * 1024;
 const DEFAULT_PROGRESSIVE_ACTIVE_OPERATION_PAYLOAD_CHARS = 6 * 1024;
 const DEFAULT_PROGRESSIVE_ACTIVE_USER_TEXT_CHARS = 10 * 1024;
@@ -117,6 +118,15 @@ function isLatestCompletedReplayTurn(turn, thread) {
     return candidate === turn;
   }
   return false;
+}
+
+function shouldLimitPreservedReplayAssistants(turn, thread, options) {
+  if (!options || options.progressiveActiveBudgetApplied !== true) return false;
+  if (isActiveTurn(turn, thread)) return true;
+  const id = turnId(turn);
+  return Boolean(id
+    && options.protectedCompletedReplayTurnIds
+    && options.protectedCompletedReplayTurnIds.has(id));
 }
 
 function completedReplayProtection(thread) {
@@ -873,9 +883,15 @@ function compactTurnWithBudget(turn, thread, options, stats) {
     return keepReasoningIndexes.has(index);
   });
   const preserveReplayAssistantItems = replay && options.preserveReplayAssistantItems === true;
-  const assistantLimit = preserveReplayAssistantItems
+  const limitPreservedReplayAssistantItems = preserveReplayAssistantItems
+    && shouldLimitPreservedReplayAssistants(turn, thread, options);
+  const replayAssistantLimit = Math.max(
+    Number(options.activeAssistantItems || 0),
+    Number(options.progressiveReplayAssistantItems || 0),
+  );
+  const assistantLimit = preserveReplayAssistantItems && !limitPreservedReplayAssistantItems
     ? beforeAssistantCount
-    : replay ? options.activeAssistantItems : options.completedAssistantItems;
+    : replay ? replayAssistantLimit : options.completedAssistantItems;
   const keepAssistantIndexes = trailingIndexes(
     compacted.items,
     assistantLimit,
@@ -924,8 +940,11 @@ function compactTurnWithBudget(turn, thread, options, stats) {
   stats.richCompletedReplayTurnCount += richCompletedReplay ? 1 : 0;
   stats.richCompletedReplayAssistantItems += richCompletedReplay ? afterAssistantCount : 0;
   stats.richCompletedReplayOmittedAssistantItems += richCompletedReplay ? omittedAssistantItems : 0;
-  if (preserveReplayAssistantItems && beforeAssistantCount > Number(options.activeAssistantItems || 0)) {
-    stats.preservedReplayAssistantItems += beforeAssistantCount - Number(options.activeAssistantItems || 0);
+  if (preserveReplayAssistantItems && afterAssistantCount > Number(options.activeAssistantItems || 0)) {
+    stats.preservedReplayAssistantItems += afterAssistantCount - Number(options.activeAssistantItems || 0);
+  }
+  if (limitPreservedReplayAssistantItems && omittedAssistantItems > 0) {
+    stats.limitedReplayAssistantItems += omittedAssistantItems;
   }
   stats.staleActiveTurnCount += !active && isStaleActiveLikeTurn(turn, thread) ? 1 : 0;
   return compacted;
@@ -989,6 +1008,11 @@ function compactThreadDetailResponseResult(result, options = {}) {
     options.progressiveActiveAssistantItems,
     DEFAULT_PROGRESSIVE_ACTIVE_ASSISTANT_ITEMS,
     100,
+  ));
+  const progressiveReplayAssistantItems = Math.max(1, boundedCount(
+    options.progressiveReplayAssistantItems,
+    DEFAULT_PROGRESSIVE_REPLAY_ASSISTANT_ITEMS,
+    500,
   ));
   const progressiveActiveTextChars = boundedCount(
     options.progressiveActiveTextChars,
@@ -1077,6 +1101,8 @@ function compactThreadDetailResponseResult(result, options = {}) {
     richCompletedReplayTurnProtected: false,
     preserveReplayAssistantItems: true,
     preservedReplayAssistantItems: 0,
+    progressiveReplayAssistantItems,
+    limitedReplayAssistantItems: 0,
     staleActiveTurnCount: 0,
     completedOperationItems: boundedCount(options.completedOperationItems, DEFAULT_COMPLETED_OPERATION_ITEMS, 100),
     activeOperationItems: effectiveActiveOperationItems,

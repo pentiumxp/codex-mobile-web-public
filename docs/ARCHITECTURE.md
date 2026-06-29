@@ -593,7 +593,14 @@ active-looking turns and receive completed-turn budgets for response shaping.
 When the returned detail window is under high item-count or byte pressure, the
 same response-budget service enables progressive active limits for the current
 active turn's operation, reasoning, and assistant/plan tails. Under that
-progressive active pressure only, oversized retained active assistant/reasoning
+progressive active pressure only, replay assistant/plan progress is no longer
+unbounded: active and protected latest-completed replay turns keep a trailing
+assistant/plan tail controlled by
+`CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_REPLAY_ASSISTANT_ITEMS` (default `24`)
+before any lower-value process rows are considered. This keeps the latest
+user-visible progress readable without making a large active overlay ship every
+historical assistant fragment on first paint. Under the same pressure, oversized
+retained active assistant/reasoning
 text fields may be reduced to a bounded first-paint preview with
 `mobileActiveTextBudget` metadata and `mobileTextTruncated=true`; ordinary
 small active turns and completed-turn receipts keep their existing text

@@ -1378,6 +1378,83 @@ test("thread detail response budget applies progressive active limits under item
   assert.equal(budget.progressiveActiveTurnOriginalItemCount, 24);
 });
 
+test("thread detail response budget bounds preserved replay assistants under active pressure", () => {
+  const completedAssistantItems = Array.from({ length: 12 }, (_, index) => ({
+    id: `completed-a${index + 1}`,
+    type: "agentMessage",
+    text: `completed progress ${index + 1}`,
+  }));
+  const activeAssistantItems = Array.from({ length: 12 }, (_, index) => ({
+    id: `active-a${index + 1}`,
+    type: "agentMessage",
+    text: `active progress ${index + 1}`,
+  }));
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      turns: [
+        {
+          id: "turn-completed",
+          status: "completed",
+          items: [
+            { id: "completed-u", type: "userMessage", text: "Question" },
+            ...completedAssistantItems,
+            { id: "completed-usage", type: "turnUsageSummary" },
+          ],
+        },
+        {
+          id: "turn-active",
+          status: "inProgress",
+          items: [
+            { id: "active-u", type: "userMessage", text: "Next" },
+            ...activeAssistantItems,
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeAssistantItems: 8,
+    activeProgressiveItemThreshold: 10,
+    progressiveActiveAssistantItems: 4,
+    progressiveReplayAssistantItems: 6,
+  });
+
+  assert.deepEqual(compacted.thread.turns[0].items.map((item) => item.id), [
+    "completed-u",
+    "completed-a7",
+    "completed-a8",
+    "completed-a9",
+    "completed-a10",
+    "completed-a11",
+    "completed-a12",
+    "completed-usage",
+  ]);
+  assert.deepEqual(compacted.thread.turns[1].items.map((item) => item.id), [
+    "active-u",
+    "active-a7",
+    "active-a8",
+    "active-a9",
+    "active-a10",
+    "active-a11",
+    "active-a12",
+  ]);
+  const budget = compacted.thread.mobileDetailResponseBudget;
+  assert.equal(budget.progressiveActiveBudgetApplied, true);
+  assert.equal(budget.activeAssistantItems, 4);
+  assert.equal(budget.progressiveReplayAssistantItems, 6);
+  assert.equal(budget.latestCompletedReplayAssistantItems, 6);
+  assert.equal(budget.protectedCompletedReplayAssistantItems, 6);
+  assert.equal(budget.activeAssistantItemsAfter, 6);
+  assert.equal(budget.omittedAssistantItems, 12);
+  assert.equal(budget.limitedReplayAssistantItems, 12);
+  assert.equal(budget.preservedReplayAssistantItems, 4);
+});
+
 test("thread detail response budget applies progressive visible item ceiling after per-turn compaction", () => {
   const completedTurn = (turnIndex) => ({
     id: `turn-${turnIndex}`,

@@ -914,7 +914,12 @@ Cause to check:
   reasoning rows remain budgeted. Historical completed turns keep the latest
   assistant/plan receipt, and `mobileOmittedAssistantItemCount` /
   `mobileDetailResponseBudget` record omitted historical progress-row counts.
-  If `progressiveActiveBudgetApplied=true`, retained active
+  If `progressiveActiveBudgetApplied=true`, active and protected
+  latest-completed replay turns may be bounded by
+  `progressiveReplayAssistantItems`; `limitedReplayAssistantItems` records how
+  many replay assistant/plan rows were intentionally omitted by the server
+  first-paint budget. Treat that as response shaping evidence, not a browser
+  render drop. If `progressiveActiveBudgetApplied=true`, retained active
   assistant/reasoning text fields may also carry
   `mobileActiveTextBudget`; that is a pressure-triggered first-paint preview.
   If `progressiveCompletedTextBudgetScope=resting-history-first-paint`, the

@@ -2442,8 +2442,14 @@ Deployable scope:
 - The same service applies pressure-triggered progressive active limits when
   the detail window crosses the item-count threshold or active/thread byte
   thresholds, lowering active operation/reasoning tails while protecting
-  current active and latest-replay assistant/plan progress rows. Under that
-  progressive active pressure only, oversized retained active
+  current active and latest-replay assistant/plan progress rows. The replay
+  protection is bounded under progressive active pressure: active turns and
+  protected latest-completed replay turns keep a trailing assistant/plan tail
+  controlled by `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_REPLAY_ASSISTANT_ITEMS`
+  (default `24`), and the response records `progressiveReplayAssistantItems`
+  plus `limitedReplayAssistantItems`. This prevents a large active overlay from
+  retaining every assistant fragment while preserving the newest user-visible
+  progress. Under that progressive active pressure only, oversized retained active
   assistant/reasoning text fields are reduced to a bounded first-paint preview
   and marked with `mobileActiveTextBudget` / `mobileTextTruncated`. The text
   preview budget can be disabled for diagnostics with
