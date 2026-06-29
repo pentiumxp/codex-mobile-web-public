@@ -31485,6 +31485,49 @@ The previous full handoff was archived and should be opened only when old proven
     when it arrives.
   - No Public deploy requested or run.
 
+### 2026-06-30 - Runtime Self-Check Child JSON Contract Ready For Deploy
+
+- Scope:
+  - Follow-up to LaunchAgent periodic runtime self-check readback after the
+    active timestamp advisory deploy.
+  - Latest production LaunchAgent readback showed a fresh `periodic` event with
+    `periodicHealthy=false`, `executionFailureCount=1`, and a bounded
+    `Command_failed:_Users_hermes-host_HermesMobile_runtime_node-current_bin_node_Use`
+    code even though the browser child check had emitted a structured JSON
+    report.
+- Root cause:
+  - `scripts/codex-mobile-runtime-self-check-loop.js` treated any child
+    process nonzero exit as a child execution failure before considering
+    parseable child stdout JSON.
+  - Browser/API child CLIs intentionally exit nonzero when their own JSON
+    self-check report has `ok=false`. The parent loop should use the parsed
+    JSON report as the child-check contract and reserve execution failures for
+    cases where no parseable report was emitted.
+- Source changes:
+  - `runNodeScript()` now parses nonempty stdout JSON first.
+  - A child with parseable JSON is summarized by the JSON `ok` and issue codes
+    even if the process exit status is nonzero.
+  - A child with empty or unparseable stdout and a process error still becomes
+    a bounded child execution failure.
+  - `docs/MODULES.md` and `docs/TROUBLESHOOTING.md` document this contract.
+- Validation before deploy:
+  - `node --check scripts/codex-mobile-runtime-self-check-loop.js` passed.
+  - `node --test test/runtime-self-check-loop.test.js test/runtime-self-check-gate-service.test.js`
+    passed with 13 tests.
+  - Source periodic-shaped runtime gate against production server, with no
+    explicit thread ids and a temporary output file, returned `ok=true`,
+    `deployPass=true`, `periodicHealthy=true`, `issueCount=0`,
+    `blockingIssueCount=0`, and `executionFailureCount=0`.
+  - `npm test` passed with 1623 tests.
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - Home AI fallback governance check passed for the changed source/test/doc
+    files.
+  - `codegraph sync && codegraph status` reported the index up to date.
+- Deployment status:
+  - Local deploy candidate only; private production deploy not yet sent in this
+    handoff entry.
+  - No Public deploy requested or run.
+
 ### 2026-06-30 - Browser Runtime Active Timestamp Advisory Deployed
 
 - Scope:

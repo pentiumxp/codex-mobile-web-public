@@ -232,6 +232,71 @@ test("runtime self-check gate blocks actionable browser regressions", async () =
   assert.deepEqual(result.gate.actionableIssueCodes, ["browser_pending_user_message_disappeared"]);
 });
 
+test("runtime self-check loop treats parsed child JSON as contract result", async () => {
+  const result = await runtimeLoop.runOnce({
+    server: "http://127.0.0.1:8790",
+    threadIds: ["private-thread-id"],
+    sampleThreads: 1,
+    browserRounds: 1,
+    browserSampleDelaysMs: "100",
+    browserMinSettledDelayMs: 1000,
+    skipClientEvents: true,
+    skipApi: true,
+    skipBrowser: false,
+    output: "",
+    gateMode: "deploy",
+  }, {
+    execFile(_node, _args, _options, callback) {
+      const error = new Error("Command failed: private command");
+      callback(error, JSON.stringify({
+        ok: false,
+        publicConfig: { clientBuildId: "build", shellCacheName: "shell" },
+        browserReport: {
+          issueCount: 1,
+          blockingIssueCount: 1,
+          issues: [{
+            severity: "H2",
+            code: "browser_pending_user_message_disappeared",
+          }],
+        },
+      }), "private stderr");
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.gate.executionFailureCount, 0);
+  assert.deepEqual(result.gate.actionableIssueCodes, ["browser_pending_user_message_disappeared"]);
+  const browserCheck = result.checks.find((check) => check.name === "browser-runtime");
+  assert.equal(browserCheck.errorCode, "");
+});
+
+test("runtime self-check loop keeps empty child output as execution failure", async () => {
+  const result = await runtimeLoop.runOnce({
+    server: "http://127.0.0.1:8790",
+    threadIds: ["private-thread-id"],
+    sampleThreads: 1,
+    browserRounds: 1,
+    browserSampleDelaysMs: "100",
+    browserMinSettledDelayMs: 1000,
+    skipClientEvents: true,
+    skipApi: true,
+    skipBrowser: false,
+    output: "",
+    gateMode: "deploy",
+  }, {
+    execFile(_node, _args, _options, callback) {
+      callback(new Error("Command failed: private command"), "", "private stderr");
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.gate.executionFailureCount, 1);
+  assert.equal(result.gate.deployPass, false);
+  assert.match(result.gate.actionableIssueCodes[0], /^Command_failed:/);
+  const browserCheck = result.checks.find((check) => check.name === "browser-runtime");
+  assert.match(browserCheck.errorCode, /^Command_failed:/);
+});
+
 test("runtime self-check loop includes recent client-event stall summary", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-runtime-client-events-"));
   const clientEventLog = path.join(dir, "client-events.log");

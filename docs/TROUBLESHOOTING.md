@@ -906,7 +906,10 @@ Cause to check:
   `observeOnlyIssueCodes` by default; keep them as performance evidence rather
   than creating repeated repair cards. The loop records issue counts and
   build/cache ids only and must not directly dispatch repair cards; Home AI
-  diagnostic intake and Owner approval own the repair-card step.
+  diagnostic intake and Owner approval own the repair-card step. Child
+  self-check CLIs can intentionally exit nonzero when their JSON report has
+  `ok=false`; treat the parsed JSON report as the health contract, and treat the
+  child as an execution failure only when no parseable JSON report was emitted.
 - To verify the 10-minute macOS periodic checker itself, run:
   `node scripts/codex-mobile-runtime-self-check-launchagent-readback.js --json`.
   A healthy result has `ok=true`, `launchctl.loaded=true`,

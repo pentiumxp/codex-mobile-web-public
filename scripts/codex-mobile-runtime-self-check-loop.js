@@ -142,14 +142,16 @@ function runNodeScript(scriptPath, args = [], deps = {}) {
       maxBuffer: 16 * 1024 * 1024,
     }, (error, stdout, stderr) => {
       let parsed = null;
+      const stdoutText = String(stdout || "").trim();
       try {
-        parsed = JSON.parse(String(stdout || "{}"));
+        parsed = stdoutText ? JSON.parse(stdoutText) : null;
       } catch (_) {
         parsed = null;
       }
+      const hasReport = Boolean(parsed && typeof parsed === "object");
       resolve({
-        ok: !error && parsed && parsed.ok !== false,
-        errorCode: error ? boundedErrorCode(error.message || stderr) : "",
+        ok: hasReport && parsed.ok !== false,
+        errorCode: error && !hasReport ? boundedErrorCode(error.message || stderr) : "",
         report: parsed,
       });
     });
