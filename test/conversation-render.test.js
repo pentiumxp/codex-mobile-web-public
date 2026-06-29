@@ -2170,6 +2170,40 @@ test("live turn hides local pending echo once durable user message is in the sam
   );
 });
 
+test("normalizer collapses durable submitted user echoes after pending state is cleared", () => {
+  const normalizeThreadVisibleUserMessages = evaluatedNormalizeThreadVisibleUserMessages();
+  const thread = {
+    turns: [{
+      id: "turn-current",
+      items: [
+        {
+          id: "real-user-current",
+          type: "userMessage",
+          content: [{ type: "input_text", text: "current long user message" }],
+        },
+        {
+          id: "echo-user-current",
+          type: "userMessage",
+          clientSubmissionId: "submit-current",
+          content: [{ type: "text", text: "current   long user message" }],
+        },
+        { id: "assistant-progress", type: "agentMessage", text: "working" },
+      ],
+    }],
+  };
+
+  normalizeThreadVisibleUserMessages(thread);
+
+  const userMessages = thread.turns[0].items.filter((item) => item.type === "userMessage");
+  assert.equal(userMessages.length, 1);
+  assert.equal(userMessages[0].id, "real-user-current");
+  assert.equal(userMessages[0].clientSubmissionId, "submit-current");
+  assert.deepEqual(
+    thread.turns[0].items.map((item) => item.id),
+    ["real-user-current", "assistant-progress"],
+  );
+});
+
 test("live turn keeps failed local pending user message visible", () => {
   const harness = evaluatedVisibleItemsForTurn();
   const liveTurn = {
@@ -4346,6 +4380,35 @@ return visibleConversationShape(targetThread);
 `)();
 
   assert.deepEqual(result, { visibleTurnCount: 1, visibleItemCount: 1, duplicateUserMessageCount: 0 });
+});
+
+test("visible conversation shape counts duplicate user entries by entry item", () => {
+  const sources = [
+    "duplicateUserMessageSignatureCount",
+    "visibleUserMessageDuplicateSignature",
+    "visibleConversationShape",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const result = Function(`
+function visibleTurnsForConversation(thread) { return thread && Array.isArray(thread.turns) ? thread.turns : []; }
+function visibleItemsForTurn(turn) { return Array.isArray(turn && turn.entries) ? turn.entries : []; }
+function clientSubmissionDiagnosticHash(value) { return value ? "hash-" + String(value) : ""; }
+function userMessageComparableParts(item) { return { text: String(item && item.text || ""), paths: [] }; }
+function itemTextValue(value) { return String(value || ""); }
+function stableTextHash(value) { return "text-" + String(value || ""); }
+${sources.join("\n")}
+return visibleConversationShape({
+  turns: [{
+    id: "turn-current",
+    entries: [
+      { item: { id: "user-1", type: "userMessage", clientSubmissionId: "submit-current", text: "same" } },
+      { item: { id: "user-2", type: "userMessage", clientSubmissionId: "submit-current", text: "same" } },
+      { item: { id: "assistant-1", type: "agentMessage", text: "working" } },
+    ],
+  }],
+});
+`)();
+
+  assert.deepEqual(result, { visibleTurnCount: 1, visibleItemCount: 3, duplicateUserMessageCount: 1 });
 });
 
 test("visible item patch entries use render context thread for filtering and signatures", () => {

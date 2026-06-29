@@ -30190,4 +30190,74 @@ The previous full handoff was archived and should be opened only when old proven
   - `node /Users/hermes-dev/HermesMobileDev/app/scripts/fallback-governance-check.js --changed-file ... --json`
   - `codegraph sync && codegraph status` showed the graph up to date.
 - Deployment status:
-  - Pending commit/deploy. Do not push Public unless explicitly requested.
+  - Deployed privately through the Home AI Deploy lane from source commit
+    `b1add1e10b69` with reason
+    `codex-mobile-v589-duplicate-user-dom-authority`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T132519Z-plugin-codex-mobile-web-codex-mobile-v589-duplicate-user-dom-authority`.
+  - Public deploy was not run.
+- Production readback:
+  - `/api/public-config` returned status `200`, build id
+    `b987975793ff7df9`, client build id
+    `0.1.11|codex-mobile-shell-v589`, shell cache
+    `codex-mobile-shell-v589`, and `authRequired=true`.
+  - Source/production hash parity matched for `public/app.js`,
+    `public/sw.js`, `public/thread-detail-dom-patch.js`,
+    `test/thread-detail-dom-patch.test.js`,
+    `test/conversation-render.test.js`,
+    `test/client-render-stability-guard.test.js`, and
+    `docs/TROUBLESHOOTING.md`.
+  - Production marker readback confirmed
+    `stable-signature-duplicate-user-messages`,
+    `post-apply-duplicate-user-messages`, `duplicateUserMessageCount`, and
+    `codex-mobile-shell-v589`.
+- Residual gate:
+  - Deploy-mode runtime self-check returned `deployPass=false` and
+    `periodicHealthy=false`.
+  - API-thread check was `ok=true` with zero issues.
+  - Browser-runtime check still reported H2
+    `browser_latest_turn_user_message_duplicate` (`19` instances in the
+    bounded gate run) and H2 `browser_latest_turn_timestamp_missing` (`3`
+    instances).
+  - Return status for task card `ttc_f5caa7d88b9d454cf0` was
+    `partially_completed`.
+
+### 2026-06-29 - v590 Submitted Echo Merge Follow-up Pending Deploy
+
+- Scope:
+  - Follow-up to v589 residual where API-thread self-check was clean but the
+    browser runtime still saw `browser_latest_turn_user_message_duplicate`.
+  - Original `thread_session_load_failed/http_404` remains closed by v583; this
+    slice targets the latest visible duplicate-user-message residual.
+- Root-cause refinement:
+  - v589 correctly added DOM authority detection, but two client-side gaps
+    remained:
+    - `visibleConversationShape()` and `threadTileVisibleShape()` treated
+      `visibleItemsForTurn()` entries as raw items, so the expected duplicate
+      count was computed from the wrong structure.
+    - A user message carrying `clientSubmissionId` after its
+      `mobilePendingSubmission` flag had already been cleared was no longer
+      treated as a submitted echo candidate, so same-turn durable authority and
+      submitted echo could remain as separate visible cards.
+- Source changes:
+  - `public/app.js` bumps `CLIENT_BUILD_ID` to
+    `0.1.11|codex-mobile-shell-v590`.
+  - `public/sw.js` bumps `CACHE_NAME` to `codex-mobile-shell-v590`.
+  - `userMessagesCanShadow()` now treats non-error `clientSubmissionId` user
+    messages as submitted echo candidates even after pending state is cleared.
+  - `userMessageShadowPriority()` prefers non-submission durable user messages
+    over submitted echo messages while preserving the submission id on the
+    merged visible item for submit-probe continuity.
+  - Visible shape duplicate counting now maps `visibleItemsForTurn()` entries
+    through `entry.item`.
+- Validation passed locally:
+  - `node --test test/conversation-render.test.js test/thread-detail-dom-patch.test.js test/client-render-stability-guard.test.js`
+  - `node --test test/conversation-render.test.js test/thread-detail-v4-merge-state.test.js test/browser-runtime-self-check-service.test.js test/client-render-stability-guard.test.js test/mobile-viewport.test.js`
+  - `npm test` (`1588` tests passed)
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+  - `node /Users/hermes-dev/HermesMobileDev/app/scripts/fallback-governance-check.js --changed-file public/app.js --changed-file public/sw.js --changed-file test/conversation-render.test.js --changed-file test/client-render-stability-guard.test.js --json`
+- Deployment status:
+  - Pending local commit/deploy. Public deploy was not requested and must not be
+    run unless explicitly requested.

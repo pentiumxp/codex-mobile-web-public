@@ -542,7 +542,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v589";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v590";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -5725,10 +5725,12 @@ function userMessagesLikelySame(left, right) {
 }
 
 function userMessagesCanShadow(left, right) {
+  const leftSubmittedEcho = Boolean(String(left && left.clientSubmissionId || "").trim() && !(left && left.mobileSendError));
+  const rightSubmittedEcho = Boolean(String(right && right.clientSubmissionId || "").trim() && !(right && right.mobileSendError));
   return Boolean(left && right
     && left.type === "userMessage"
     && right.type === "userMessage"
-    && (isOptimisticUserMessage(left) || isOptimisticUserMessage(right))
+    && (isOptimisticUserMessage(left) || isOptimisticUserMessage(right) || leftSubmittedEcho || rightSubmittedEcho)
     && userMessagesLikelySame(left, right));
 }
 
@@ -5756,7 +5758,7 @@ function removeShadowedMuxUserMessages(items) {
 function userMessageShadowPriority(item) {
   if (!item || item.type !== "userMessage") return 0;
   if (/^local-user-/.test(String(item.id || ""))) return 1;
-  if (isMuxUserMessage(item) || item.mobilePendingSubmission) return 2;
+  if (isMuxUserMessage(item) || item.mobilePendingSubmission || String(item.clientSubmissionId || "").trim()) return 2;
   return 3;
 }
 
@@ -7118,7 +7120,9 @@ function visibleConversationShape(thread) {
   const turns = visibleTurnsForConversation(thread);
   const visibleItemCount = turns.reduce((total, turn) => total + visibleItemsForTurn(turn, thread).length, 0);
   const duplicateUserMessageCount = turns.reduce((total, turn) => {
-    const userMessages = visibleItemsForTurn(turn, thread).filter((item) => item && item.type === "userMessage");
+    const userMessages = visibleItemsForTurn(turn, thread)
+      .map((entry) => entry && entry.item)
+      .filter((item) => item && item.type === "userMessage");
     return total + duplicateUserMessageSignatureCount(userMessages, (item) => visibleUserMessageDuplicateSignature(turn, item));
   }, 0);
   return {
@@ -7374,8 +7378,11 @@ function threadTileVisibleShape(ids = state.threadTileActiveIds) {
       if (itemCount > 0) {
         shape.turnCount += 1;
         shape.visibleItemCount += itemCount;
+        const userMessages = visibleItems
+          .map((entry) => entry && entry.item)
+          .filter((item) => item && item.type === "userMessage");
         shape.duplicateUserMessageCount += duplicateUserMessageSignatureCount(
-          visibleItems.filter((item) => item && item.type === "userMessage"),
+          userMessages,
           (item) => visibleUserMessageDuplicateSignature(turn, item),
         );
       }
