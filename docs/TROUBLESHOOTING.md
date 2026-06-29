@@ -556,7 +556,9 @@ is assigned from newer completed inputs toward older ones. The active/current
 user input remains outside this completed-user budget. When the shared budget
 is exhausted, older completed user inputs keep a short first-paint placeholder
 instead of becoming empty, so API user-message expectations and browser DOM
-visibility stay aligned. The default shared limit is controlled by
+visibility stay aligned. That placeholder carries a short stable token so
+multiple exhausted historical inputs in the same turn do not collapse into one
+browser-visible user card. The default shared limit is controlled by
 `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_COMPLETED_USER_TEXT_CHARS` and defaults
 to 1024 characters. This is an HTTP first-paint preview only; it does not mutate
 the rollout/session record.

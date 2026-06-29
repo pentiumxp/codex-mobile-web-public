@@ -33351,3 +33351,122 @@ The previous full handoff was archived and should be opened only when old proven
     `DEFAULT_PROGRESSIVE_REPLAY_ASSISTANT_ITEMS = 8`, Phase-B
     `progressiveReplayAssistantItems=8`, `activeAssistantItemsAfter <= 8`, and
     deploy-mode runtime gate with zero H1/H2 blockers.
+
+### 2026-06-30 - Active Replay Assistant First-Paint Budget Deployed
+
+- Source/deploy:
+  - Private production deployed source ref `b002f4fea673`
+    (`fix: tighten active replay assistant first paint budget`) through the
+    Home AI deploy lane with reason
+    `codex-mobile-active-replay-assistant-first-paint-budget`.
+  - Deploy backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T230238Z-plugin-codex-mobile-web-codex-mobile-active-replay-assistant-first-paint-budget`.
+  - No Public deploy was run.
+- Production parity / markers:
+  - Source/production parity matched for
+    `adapters/thread-detail-response-budget-service.js`, `server.js`,
+    `test/phase-b-readback-smoke.test.js`,
+    `test/thread-detail-response-budget-service.test.js`,
+    `test/thread-detail-self-check-service.test.js`, `docs/ARCHITECTURE.md`,
+    and `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+  - Production markers/defaults were present for
+    `DEFAULT_PROGRESSIVE_REPLAY_ASSISTANT_ITEMS = 8`,
+    `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_REPLAY_ASSISTANT_ITEMS || "8"`,
+    Phase-B expected `responseBudgetProgressiveReplayAssistantItems` equal to
+    `8`, and self-check fixture assignment/assertion of
+    `progressiveReplayAssistantItems` to `8`.
+- Production Phase-B readback:
+  - Codex Mobile source thread sample returned `ok=true`,
+    `readMode=projection-active-overlay`, `turnsListInitialMs=0`,
+    `activeOverlayWindowMs=0`, `activeOverlayBackfillWindowMs=14`,
+    `activeOverlayMergeMs=3`, `totalMs=531`, and `prepareResponseMs=450`.
+  - Budget evidence showed `progressiveReplayAssistantItems=8`, actual
+    `activeAssistantItems=4`, `limitedReplayAssistantItems=48`,
+    `omittedAssistantItems=73`,
+    `progressiveActiveFirstPaintBytesAfterTaskCardBudget=131305`, and
+    `progressiveActiveFirstPaintOverCeilingBytes=33001`.
+  - The requested `responseBudgetActiveAssistantItemsAfter` alias was not
+    emitted by the readback script; the available bounded field was
+    `responseBudgetActiveAssistantItems`.
+  - Retained visible bytes by kind were `assistant=21378`,
+    `userMessage=11504`, `usage=10875`, `operation=2201`, `other=1043`, and
+    `reasoning=412`. Retained assistant bytes by turn state were
+    `completed=18492` and `active=2886`.
+  - Phase-B decision was `ready`, priority `H3`, owner `phase-b-readback`,
+    reason `warm-or-bounded-paths`, next action
+    `proceed-to-next-phase-b-root-cause-target`. Active overlay/window latency
+    did not recur in this sample.
+- Runtime validation:
+  - First deploy-mode runtime gate attempt had no execution failures and
+    API/client-events were OK, but browser-runtime reported H2
+    `browser_turn_user_message_below_api_expectation` samples. This did not
+    stabilize on rerun.
+  - Second deploy-mode runtime gate returned `ok=true`, `deployPass=true`,
+    `periodicHealthy=true`, issue count `0`, blocking issue count `0`,
+    advisory issue count `0`, execution failure count `0`, and child checks
+    `api-thread`, `browser-runtime`, and `client-events` all OK.
+  - LaunchAgent readback after the passing deploy gate returned `ok=true`,
+    latest event gate mode `deploy`, `deployPass=true`,
+    `periodicHealthy=true`, issue count `0`, blocking issue count `0`,
+    advisory issue count `0`, and execution failure count `0`.
+- Next investigation direction:
+  - The active replay assistant default of `8` is deployed and visible in
+    Phase-B, and runtime gate passed on rerun. The sampled response still had
+    active first-paint over-ceiling bytes, so the next payload-slicing decision
+    should use the current retained visible-byte distribution rather than the
+    earlier local estimate.
+
+### 2026-06-30 - Distinct Completed User Input Placeholders Ready For Deploy
+
+- Production residual after active replay assistant deploy:
+  - Source ref `b002f4fea673` was deployed with reason
+    `codex-mobile-active-replay-assistant-first-paint-budget` and source/prod
+    parity matched for the changed files.
+  - A follow-up deploy-mode runtime self-check in this plugin workspace
+    returned structured JSON with no execution failures. API-thread and
+    client-events children were OK, but browser-runtime reproduced six H2
+    `browser_turn_user_message_below_api_expectation` issues at
+    `round-2-delay-2800` and `round-2-delay-6000` on the Codex Mobile source
+    thread.
+  - The failing completed turn shapes had API `expectedUserMessageCount=2` and
+    browser `actualVisibleUserInputCount=1`; affected turn hashes were bounded
+    as `9f80bc96`, `2f05e094`, and `f111e0c6`.
+- Root-cause evidence:
+  - Metadata-only API detail readback for those turns showed each affected
+    completed turn retained two `userMessage` items, each with
+    `mobileFirstPaintUserInputBudget`, valid visible keys, and timestamps.
+  - In each affected turn, both budgeted user-message rows had the same
+    placeholder text hash because exhausted completed-user shared budget
+    placeholders were the fixed string `first-paint user input preview
+    truncated`.
+  - Browser/client merge policy can shadow durable/projection-index user
+    messages when comparable user text is identical. Therefore the fix belongs
+    in `adapters/thread-detail-response-budget-service.js`: completed-user
+    first-paint placeholders must remain short but item-distinct.
+- Local repair:
+  - Added a short stable FNV token to exhausted completed user-input
+    placeholders. The token is derived from bounded item identity/display
+    metadata and field name, not from raw user text, so multiple exhausted
+    historical inputs in the same turn no longer collapse to the same
+    comparable text.
+  - The repair is scoped to completed user-input first-paint budgeting when a
+    field would otherwise become empty. It does not change active/current user
+    input and does not mutate stored rollout/session data.
+- Validation:
+  - Focused validation passed:
+    `node --check adapters/thread-detail-response-budget-service.js` and
+    `node --test test/thread-detail-response-budget-service.test.js test/browser-runtime-self-check-service.test.js`
+    (`85` tests).
+  - Full validation passed: `npm test -- --test-reporter=dot`,
+    `npm run check`, `npm run check:macos`, and `git diff --check`.
+  - `codegraph sync && codegraph status` reported the index up to date.
+- Deployment status:
+  - Ready for private production deploy with reason
+    `codex-mobile-distinct-completed-user-input-placeholders`.
+  - No Public deploy is requested. Production readback should verify source/prod
+    parity for the response-budget service, focused test, and docs; marker
+    readback for `stableBudgetPlaceholderToken` and the focused test
+    `keeps exhausted completed user input placeholders distinct`; then run
+    deploy-mode runtime self-check against Movie and Codex Mobile source
+    threads. Target residual:
+    `browser_turn_user_message_below_api_expectation` should not recur as H1/H2.

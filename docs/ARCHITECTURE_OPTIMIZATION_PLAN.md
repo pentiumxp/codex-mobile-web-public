@@ -2556,8 +2556,10 @@ Deployable scope:
   newest-first first-paint budget across retained historical inputs instead of
   a per-row budget. Older completed inputs that exceed the shared budget retain
   a short placeholder so API-visible user-message counts still line up with
-  browser-visible DOM rows. It preserves active/current user input and does not
-  mutate the stored rollout/session data.
+  browser-visible DOM rows; the placeholder includes a short stable token so
+  multiple exhausted historical inputs in one turn stay distinct under client
+  user-message shadowing/dedupe rules. It preserves active/current user input
+  and does not mutate the stored rollout/session data.
 - The next protected-payload slice handles completed `turnUsageSummary` rows
   under the same active first-paint byte pressure. It preserves the Usage row
   and the fields consumed by the UI, but drops repeated internal summary

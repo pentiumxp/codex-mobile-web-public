@@ -738,14 +738,33 @@ function createTextBudget(maxChars) {
   };
 }
 
-function completedUserInputPlaceholderText() {
-  return FIRST_PAINT_USER_INPUT_BUDGET_MARKER.trim();
+function stableBudgetPlaceholderToken(item = {}, field = "") {
+  const seed = [
+    item && (item.id || item.itemId || item.item_id),
+    item && item.mobileVisibleKey,
+    item && item.clientSubmissionId,
+    item && (item.startedAtMs || item.startedAt || item.createdAtMs || item.createdAt || item.timestampMs || item.timestamp),
+    field,
+  ].map((value) => String(value || "").trim()).filter(Boolean).join("|");
+  if (!seed) return "";
+  let hash = 2166136261;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash ^= seed.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
-function ensureCompletedUserInputVisiblePlaceholder(value, budget, beforeRetained, beforeOmitted) {
+function completedUserInputPlaceholderText(item = {}, field = "") {
+  const token = stableBudgetPlaceholderToken(item, field);
+  const suffix = token ? ` #${token}` : "";
+  return `${FIRST_PAINT_USER_INPUT_BUDGET_MARKER.trim()}${suffix}`;
+}
+
+function ensureCompletedUserInputVisiblePlaceholder(value, budget, beforeRetained, beforeOmitted, item = {}, field = "") {
   if (typeof value !== "string" || value !== "") return value;
   if (budget.omittedChars <= beforeOmitted || budget.retainedChars > beforeRetained) return value;
-  const placeholder = completedUserInputPlaceholderText();
+  const placeholder = completedUserInputPlaceholderText(item, field);
   const placeholderChars = textCharLength(placeholder);
   if (!placeholderChars) return value;
   budget.retainedChars += placeholderChars;
@@ -821,7 +840,7 @@ function compactCompletedUserMessageItemForFirstPaint(item, options, stats, shar
     const beforeRetained = budget.retainedChars;
     const beforeOmitted = budget.omittedChars;
     out[field] = compactValueForTextBudget(out[field], budget, FIRST_PAINT_USER_INPUT_BUDGET_MARKER);
-    out[field] = ensureCompletedUserInputVisiblePlaceholder(out[field], budget, beforeRetained, beforeOmitted);
+    out[field] = ensureCompletedUserInputVisiblePlaceholder(out[field], budget, beforeRetained, beforeOmitted, out, field);
     if (budget.originalChars > beforeOriginal) fields.push(field);
   }
   if (Array.isArray(out.content)) {
@@ -834,7 +853,7 @@ function compactCompletedUserMessageItemForFirstPaint(item, options, stats, shar
         const beforeRetained = budget.retainedChars;
         const beforeOmitted = budget.omittedChars;
         next[field] = compactValueForTextBudget(next[field], budget, FIRST_PAINT_USER_INPUT_BUDGET_MARKER);
-        next[field] = ensureCompletedUserInputVisiblePlaceholder(next[field], budget, beforeRetained, beforeOmitted);
+        next[field] = ensureCompletedUserInputVisiblePlaceholder(next[field], budget, beforeRetained, beforeOmitted, out, `content.${field}`);
         if (budget.originalChars > beforeOriginal) fields.push(`content.${field}`);
       }
       return next;
