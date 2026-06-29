@@ -30756,3 +30756,200 @@ The previous full handoff was archived and should be opened only when old proven
     reportableIssueCount `0`, executionFailureCount `0`.
   - API-thread and browser-runtime checks both returned `ok=true` with zero
     issues.
+
+### 2026-06-29 - Active Window Prewarm Preemption Deploy
+
+- Scope:
+  - Follow-up to the turn-completed active-window prewarm deploy. Production
+    follow-up still occasionally reproduced a first-sample active-window
+    rebuild with `turnsListInitialMs=0` and multi-second
+    `activeOverlayWindowMs`.
+  - The deployed hypothesis was that a pending ordinary thread-list prewarm
+    could block a more important zero-delay notification prewarm through
+    thread-level pending dedupe.
+- Source changes:
+  - `adapters/thread-detail-active-window-prewarm-service.js` supports
+    `preemptPending` jobs with bounded `jobId` ownership so older preempted
+    completions cannot clear newer pending state.
+  - `server.js` passes `preemptPending=true`, `delayMs=0`, and
+    `bypassMinInterval=true` for `turn/started`, `turn/completed`, and active
+    `thread/status/changed` notification prewarm.
+  - Ordinary thread-list batch prewarm keeps existing pending dedupe, delay,
+    and min-interval behavior.
+  - Tests updated in
+    `test/thread-detail-active-window-prewarm-service.test.js` and
+    `test/thread-visibility.test.js`.
+  - Docs updated in `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Deployment status:
+  - Deployed privately through the Home AI Deploy lane from source commit
+    `44bdd6661eb8` with reason
+    `codex-mobile-preempt-active-window-prewarm-notifications`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T151228Z-plugin-codex-mobile-web-codex-mobile-preempt-active-window-prewarm-notifications`.
+  - `com.hermesmobile.plugin.codex-mobile` readback showed `state = running`.
+  - Public deploy was not run.
+- Production readback:
+  - `/api/public-config` returned status `200`, version `0.1.11`, build id
+    `804792d85bd686d1`, client build id
+    `0.1.11|codex-mobile-shell-v591`, shell cache
+    `codex-mobile-shell-v591`, and `authRequired=true`. Static shell remained
+    v591 because this was a server/docs/test deploy.
+  - Source/production hash parity matched for all changed runtime/test/docs
+    files.
+  - Production marker readback confirmed `preemptPending`, `jobId`,
+    `preemptedPrevious`, `turn/completed`, `delayMs: 0`,
+    `bypassMinInterval: true`, and `preemptPending: true`.
+- Phase B:
+  - Eight production Phase B samples against Codex Mobile source thread
+    `019eee6c-a6f5-7b20-bfb4-f96ccb6431b3` all returned `ok=true`,
+    `turnsListInitialMs=0`, read mode `projection-active-overlay`, and no
+    issue codes.
+  - Five samples were warm/bounded with `activeOverlayWindowMs=0`.
+  - Three samples still reproduced active-window latency:
+    - totalMs `2516`, activeOverlayWindowMs `2309`,
+      activeOverlayBackfillWindowMs `1`, prepareResponseMs `132`.
+    - totalMs `2709`, activeOverlayWindowMs `2434`,
+      activeOverlayBackfillWindowMs `73`, prepareResponseMs `105`.
+    - totalMs `1960`, activeOverlayWindowMs `1723`,
+      activeOverlayBackfillWindowMs `74`, prepareResponseMs `96`.
+  - Those residual samples classified decision owner/reason
+    `active-overlay-latency` and nextAction
+    `optimize-active-overlay-first-paint`.
+- Runtime gate:
+  - Deploy-mode runtime self-check returned `deployPass=false`,
+    `periodicHealthy=false`, issueCount `2`, blockingIssueCount `2`,
+    reportableIssueCount `2`, executionFailureCount `1`.
+  - API-thread check returned `ok=true` with zero issues.
+  - Browser-runtime check returned `ok=false`, one H2
+    `browser_latest_turn_timestamp_missing`, and one bounded execution-failure
+    code prefix
+    `Command_failed:_Users_hermes-dev_HermesMobileDev_runtime_node-v24.14.1-darwin-ar`.
+  - Task-card return status was `partially_completed`: deploy and production
+    parity succeeded, but Phase B and runtime gate show residuals.
+
+### 2026-06-29 - Active Window Live-Growth Cache Deploy
+
+- Scope:
+  - Follow-up to the preempt-pending notification deploy. Production Phase B
+    still showed occasional active-window rebuild spikes while the active
+    overlay item count grew.
+  - Root cause: the active-window history cache compared rollout size/mtime
+    after exact signature mismatch. Live active-turn growth changes those
+    fields even though the active-window history omits the live turn and should
+    remain reusable until a turn-boundary event.
+- Source changes:
+  - `adapters/thread-detail-projection-v4-service.js` now uses an
+    active-window comparable signature that keeps policy/thread/path/window
+    identity but excludes rollout size/mtime after exact hash miss.
+  - Active `thread/status/changed` no longer clears the active-window history
+    cache; `turn/started` and `turn/completed` still clear it.
+  - The deployed source also retained the prior preempt-pending notification
+    job behavior from `44bdd6661eb8`.
+  - Tests updated in `test/thread-detail-projection-v4-service.test.js`.
+  - Docs updated in `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Deployment status:
+  - Deployed privately through the Home AI Deploy lane from source commit
+    `528d51ad6b7a` with reason
+    `codex-mobile-active-window-live-growth-cache`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T151913Z-plugin-codex-mobile-web-codex-mobile-active-window-live-growth-cache`.
+  - `com.hermesmobile.plugin.codex-mobile` readback showed `state = running`.
+  - Public deploy was not run.
+- Production readback:
+  - `/api/public-config` returned status `200`, version `0.1.11`, build id
+    `804792d85bd686d1`, client build id
+    `0.1.11|codex-mobile-shell-v591`, shell cache
+    `codex-mobile-shell-v591`, and `authRequired=true`.
+  - Source/production hash parity matched for all changed runtime/test/docs
+    files, including `adapters/thread-detail-projection-v4-service.js` and
+    `test/thread-detail-projection-v4-service.test.js`.
+  - Production marker readback confirmed the comparable signature helper,
+    absence of `rolloutSizeBytes` / `rolloutMtimeMs` from the projection v4
+    source, `shouldClearActiveOverlayWindowCache`, and prior preempt-pending
+    markers `preemptPending`, `jobId`, and `preemptedPrevious`.
+  - Bounded function readback confirmed `shouldClearActiveOverlayWindowCache`
+    includes `turn/started` and `turn/completed`, and does not include
+    `thread/status/changed`.
+- Phase B:
+  - Ten production Phase B samples against Codex Mobile source thread
+    `019eee6c-a6f5-7b20-bfb4-f96ccb6431b3` all returned `ok=true`,
+    `turnsListInitialMs=0`, `activeOverlayWindowMs=0`, read mode
+    `projection-active-overlay`, `activeOverlayWindowFirst=true`, decision
+    owner `phase-b-readback`, reason `warm-or-bounded-paths`, and no issue
+    codes.
+  - totalMs values were `122`, `114`, `126`, `127`, `115`, `490`, `119`,
+    `483`, `123`, and `114`.
+  - activeOverlayBackfillWindowMs stayed `14-18`; activeOverlayMergeMs stayed
+    `1-2`.
+- Runtime gate:
+  - Deploy-mode runtime self-check returned `deployPass=false`,
+    `periodicHealthy=false`, gate issueCount `3`, blockingIssueCount `3`,
+    executionFailureCount `1`.
+  - Browser-runtime check returned `ok=true` with zero issues.
+  - API-thread check returned `ok=false` with one H2
+    `visible_item_timestamp_order_mismatch`, one diagnostic candidate, and a
+    bounded command-failure code prefix.
+  - Task-card return status was `partially_completed`: active-window Phase B
+    readback succeeded, but deploy-mode runtime gate failed on a separate
+    thread-detail timestamp-order issue.
+
+### 2026-06-29 - Immediate Startup Active Window Prewarm Deploy
+
+- Scope:
+  - Follow-up to the live-growth cache deploy. Local post-deploy probing showed
+    that the first detail read immediately after restart could still pay a
+    multi-second active-window rebuild before later samples settled to the warm
+    path.
+  - The fix moves startup thread-list fallback prewarm from a delayed default
+    to immediate execution while retaining the existing active-detail-in-flight
+    defer/retry guard so a foreground detail read is not contended by startup
+    prewarm.
+- Source changes:
+  - `server.js` changes
+    `CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_DELAY_MS` default from `1500`
+    to `0`.
+  - `adapters/thread-list-fallback-prewarm-service.js` changes normalized
+    default `delayMs` from `1500` to `0`.
+  - Tests updated in `test/thread-list-fallback-prewarm-service.test.js`,
+    `test/phase-b-readback-smoke.test.js`, and `test/thread-visibility.test.js`.
+  - Docs updated in `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Local validation before deploy:
+  - Focused prewarm/Phase B/visibility/projection tests passed.
+  - `npm test` passed with `1597` tests.
+  - `npm run check`, `npm run check:macos`, `git diff --check`, and fallback
+    governance passed.
+- Deployment status:
+  - Source commit `a46b68f38dde` (`fix: start fallback prewarm immediately`).
+  - Deploy card sent to Home AI Deploy: `ttc_bf71b60a7c4abd340e`.
+  - Production source/prod hash parity later matched for all changed
+    runtime/test/docs files.
+  - `com.hermesmobile.plugin.codex-mobile` readback showed `state = running`.
+  - Public deploy was not run.
+- Production readback:
+  - `/api/public-config` returned status `200`, version `0.1.11`, build id
+    `804792d85bd686d1`, client build id
+    `0.1.11|codex-mobile-shell-v591`, shell cache
+    `codex-mobile-shell-v591`, and `authRequired=true`.
+  - Marker readback confirmed the server default
+    `CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_DELAY_MS || "0"`, service
+    default delay `0`, the `active-detail-in-flight` guard, and the prior
+    live-growth active-window cache policy markers.
+- Phase B:
+  - Twelve production Phase B samples against Codex Mobile source thread
+    `019eee6c-a6f5-7b20-bfb4-f96ccb6431b3` all returned `ok=true`,
+    `turnsListInitialMs=0`, `activeOverlayWindowMs=0`, read mode
+    `projection-active-overlay`, decision owner `phase-b-readback`, and no
+    issue codes.
+  - totalMs values included `550`, `141`, `129`, `128`, `154`, `120`, `121`,
+    `116`, `133`, `116`, `187`, and `497`.
+  - No sample classified as `active-overlay-latency`.
+- Runtime gate:
+  - Deploy-mode runtime self-check still returned `deployPass=false` due to
+    API-thread H2 `visible_item_timestamp_order_mismatch` and a bounded
+    command-failure code prefix.
+  - Browser-runtime returned `ok=true` with zero issues.
+  - Classification: immediate startup active-window prewarm validated; the
+    remaining gate blocker is a separate visible-item timestamp/order residual.
