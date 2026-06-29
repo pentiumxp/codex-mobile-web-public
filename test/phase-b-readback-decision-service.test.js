@@ -238,6 +238,16 @@ test("phase B readback decision returns ready for warm or bounded paths", () => 
       responseBudgetProgressiveActiveFirstPaintBytesBeforeItemBudget: 155000,
       responseBudgetProgressiveActiveFirstPaintBytesAfterItemBudget: 93000,
       responseBudgetProgressiveActiveFirstPaintOmittedVisibleItems: 5,
+      responseBudgetProgressiveCompletedUserTextChars: 1024,
+      responseBudgetProgressiveCompletedUserInputBudgetApplied: true,
+      responseBudgetProgressiveCompletedUserInputBudgetReason: "first-paint-byte-pressure",
+      responseBudgetProgressiveCompletedUserInputBudgetScope: "active-first-paint",
+      responseBudgetProgressiveCompletedUserInputBytesBeforeBudget: 184000,
+      responseBudgetProgressiveCompletedUserInputBytesAfterBudget: 150000,
+      responseBudgetTruncatedCompletedUserInputItems: 7,
+      responseBudgetCompletedUserInputOriginalChars: 30000,
+      responseBudgetCompletedUserInputRetainedChars: 7168,
+      responseBudgetOmittedCompletedUserInputChars: 22832,
       responseBudgetProgressiveCompletedTextBudgetApplied: true,
       responseBudgetProgressiveCompletedTextBudgetReason: "first-paint-byte-pressure",
       responseBudgetProgressiveCompletedTextBudgetScope: "active-first-paint",
@@ -297,6 +307,16 @@ test("phase B readback decision returns ready for warm or bounded paths", () => 
   assert.equal(decision.evidence.detailResponseBudgetProgressiveActiveFirstPaintBytesBeforeItemBudget, 155000);
   assert.equal(decision.evidence.detailResponseBudgetProgressiveActiveFirstPaintBytesAfterItemBudget, 93000);
   assert.equal(decision.evidence.detailResponseBudgetProgressiveActiveFirstPaintOmittedVisibleItems, 5);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUserTextChars, 1024);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUserInputBudgetApplied, true);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUserInputBudgetReason, "first-paint-byte-pressure");
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUserInputBudgetScope, "active-first-paint");
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUserInputBytesBeforeBudget, 184000);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUserInputBytesAfterBudget, 150000);
+  assert.equal(decision.evidence.detailResponseBudgetTruncatedCompletedUserInputItems, 7);
+  assert.equal(decision.evidence.detailResponseBudgetCompletedUserInputOriginalChars, 30000);
+  assert.equal(decision.evidence.detailResponseBudgetCompletedUserInputRetainedChars, 7168);
+  assert.equal(decision.evidence.detailResponseBudgetOmittedCompletedUserInputChars, 22832);
   assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedTextBudgetApplied, true);
   assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedTextBudgetReason, "first-paint-byte-pressure");
   assert.equal(decision.evidence.detailResponseBudgetProgressiveFirstPaintBytesBeforeTextBudget, 220000);

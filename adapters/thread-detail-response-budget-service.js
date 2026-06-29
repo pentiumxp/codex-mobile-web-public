@@ -25,10 +25,12 @@ const DEFAULT_PROGRESSIVE_VISIBLE_ITEM_CEILING = 48;
 const DEFAULT_PROGRESSIVE_FIRST_PAINT_THREAD_BYTES = 160 * 1024;
 const DEFAULT_PROGRESSIVE_ACTIVE_FIRST_PAINT_THREAD_BYTES = 96 * 1024;
 const DEFAULT_PROGRESSIVE_COMPLETED_TEXT_CHARS = 8 * 1024;
+const DEFAULT_PROGRESSIVE_COMPLETED_USER_TEXT_CHARS = 1024;
 const ACTIVE_TEXT_BUDGET_MARKER = "\n\n[active item preview truncated]\n\n";
 const OPERATION_PAYLOAD_BUDGET_MARKER = "\n\n[operation payload preview truncated]\n\n";
 const USER_INPUT_BUDGET_MARKER = "\n\n[active user input preview truncated]\n\n";
 const FIRST_PAINT_TEXT_BUDGET_MARKER = "\n\n[first-paint preview truncated]\n\n";
+const FIRST_PAINT_USER_INPUT_BUDGET_MARKER = "\n\n[first-paint user input preview truncated]\n\n";
 
 const OPERATION_ITEM_TYPES = new Set([
   "commandExecution",
@@ -558,6 +560,56 @@ function compactActiveUserMessageItem(item, options, stats) {
   return out;
 }
 
+function compactCompletedUserMessageItemForFirstPaint(item, options, stats) {
+  if (!item || typeof item !== "object" || !isUserMessageItem(item)) return item;
+  const maxChars = Math.max(0, Math.trunc(Number(options.progressiveCompletedUserTextChars || 0)));
+  if (!maxChars) return item;
+  const out = cloneJson(item);
+  const budget = {
+    maxChars,
+    originalChars: 0,
+    retainedChars: 0,
+    omittedChars: 0,
+    truncated: false,
+    fields: [],
+  };
+  for (const field of ["text", "message"]) {
+    if (!(field in out) || typeof out[field] !== "string") continue;
+    const beforeOriginal = budget.originalChars;
+    out[field] = compactValueForTextBudget(out[field], budget, FIRST_PAINT_USER_INPUT_BUDGET_MARKER);
+    if (budget.originalChars > beforeOriginal) budget.fields.push(field);
+  }
+  if (Array.isArray(out.content)) {
+    out.content = out.content.map((entry) => {
+      if (!entry || typeof entry !== "object") return entry;
+      const next = Object.assign({}, entry);
+      for (const field of ["text", "input_text", "content"]) {
+        if (!(field in next) || typeof next[field] !== "string") continue;
+        const beforeOriginal = budget.originalChars;
+        next[field] = compactValueForTextBudget(next[field], budget, FIRST_PAINT_USER_INPUT_BUDGET_MARKER);
+        if (budget.originalChars > beforeOriginal) budget.fields.push(`content.${field}`);
+      }
+      return next;
+    });
+  }
+  if (!budget.truncated) return item;
+  out.mobileFirstPaintUserInputBudget = {
+    version: "thread-detail-first-paint-user-input-budget-v1",
+    scope: "completed",
+    maxChars,
+    originalChars: budget.originalChars,
+    retainedChars: budget.retainedChars,
+    omittedChars: budget.omittedChars,
+    fields: [...new Set(budget.fields)],
+  };
+  out.mobileUserInputTruncated = true;
+  stats.truncatedCompletedUserInputItems += 1;
+  stats.completedUserInputOriginalChars += budget.originalChars;
+  stats.completedUserInputRetainedChars += budget.retainedChars;
+  stats.omittedCompletedUserInputChars += budget.omittedChars;
+  return out;
+}
+
 function compactStructuredValueForOperationPayload(value, maxChars) {
   const raw = JSON.stringify(value, null, 2);
   const original = textCharLength(raw);
@@ -894,6 +946,37 @@ function applyProgressiveCompletedTextBudget(thread, options, stats) {
   stats.progressiveFirstPaintBytesAfterTextBudget = afterBytes;
 }
 
+function applyProgressiveCompletedUserInputBudget(thread, options, stats) {
+  const ceiling = Math.max(0, Math.trunc(Number(options.progressiveActiveFirstPaintThreadByteCeiling || 0)));
+  const beforeBytes = jsonByteLength(thread);
+  stats.progressiveCompletedUserInputBytesBeforeBudget = beforeBytes;
+  stats.progressiveCompletedUserInputBytesAfterBudget = beforeBytes;
+  if (!stats.progressiveActiveBudgetApplied || !ceiling || beforeBytes <= ceiling) return;
+  stats.progressiveCompletedUserInputBudgetScope = "active-first-paint";
+  const maxChars = Math.max(0, Math.trunc(Number(options.progressiveCompletedUserTextChars || 0)));
+  stats.progressiveCompletedUserTextChars = maxChars;
+  if (!maxChars) {
+    stats.progressiveCompletedUserInputBudgetReason = "disabled";
+    return;
+  }
+  let changed = false;
+  for (const turn of thread.turns) {
+    if (!turn || !Array.isArray(turn.items) || isActiveTurn(turn, thread)) continue;
+    turn.items = turn.items.map((item) => {
+      const compacted = compactCompletedUserMessageItemForFirstPaint(item, options, stats);
+      if (compacted !== item) changed = true;
+      return compacted;
+    });
+  }
+  if (!changed) return;
+  const afterBytes = jsonByteLength(thread);
+  stats.progressiveCompletedUserInputBudgetApplied = true;
+  stats.progressiveCompletedUserInputBudgetReason = afterBytes > ceiling
+    ? "first-paint-byte-pressure"
+    : "first-paint-byte-ceiling";
+  stats.progressiveCompletedUserInputBytesAfterBudget = afterBytes;
+}
+
 function pruneNonCurrentEmptyActivePlaceholders(thread, stats) {
   if (!thread || !Array.isArray(thread.turns)) return;
   const beforeCount = thread.turns.length;
@@ -1104,6 +1187,11 @@ function compactThreadDetailResponseResult(result, options = {}) {
     DEFAULT_PROGRESSIVE_COMPLETED_TEXT_CHARS,
     200 * 1024,
   );
+  const progressiveCompletedUserTextChars = boundedCount(
+    options.progressiveCompletedUserTextChars,
+    DEFAULT_PROGRESSIVE_COMPLETED_USER_TEXT_CHARS,
+    200 * 1024,
+  );
   const effectiveActiveOperationItems = progressiveActiveBudgetApplied
     ? Math.min(configuredActiveOperationItems, progressiveActiveOperationItems)
     : configuredActiveOperationItems;
@@ -1126,6 +1214,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
     omittedActiveTextChars: 0,
     omittedActiveOperationPayloadChars: 0,
     omittedCompletedTextChars: 0,
+    omittedCompletedUserInputChars: 0,
     prunedEmptyActivePlaceholderTurns: 0,
     remappedMissingActiveTurnId: 0,
     clearedMissingActiveTurnId: 0,
@@ -1135,6 +1224,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
     truncatedActiveTextItems: 0,
     truncatedActiveOperationPayloadItems: 0,
     truncatedCompletedTextItems: 0,
+    truncatedCompletedUserInputItems: 0,
     activeUserInputOriginalChars: 0,
     activeUserInputRetainedChars: 0,
     activeTextOriginalChars: 0,
@@ -1143,6 +1233,8 @@ function compactThreadDetailResponseResult(result, options = {}) {
     activeOperationPayloadRetainedChars: 0,
     completedTextOriginalChars: 0,
     completedTextRetainedChars: 0,
+    completedUserInputOriginalChars: 0,
+    completedUserInputRetainedChars: 0,
     activeTurnCount: 0,
     activeOmittedAssistantItems: 0,
     activeAssistantItemsBefore: 0,
@@ -1186,6 +1278,12 @@ function compactThreadDetailResponseResult(result, options = {}) {
     progressiveCompletedTextBudgetSkippedLatestTurnCount: 0,
     progressiveFirstPaintBytesBeforeTextBudget: 0,
     progressiveFirstPaintBytesAfterTextBudget: 0,
+    progressiveCompletedUserTextChars,
+    progressiveCompletedUserInputBudgetApplied: false,
+    progressiveCompletedUserInputBudgetReason: "",
+    progressiveCompletedUserInputBudgetScope: "",
+    progressiveCompletedUserInputBytesBeforeBudget: 0,
+    progressiveCompletedUserInputBytesAfterBudget: 0,
     progressiveVisibleItemCeiling: boundedCount(
       options.progressiveVisibleItemCeiling,
       DEFAULT_PROGRESSIVE_VISIBLE_ITEM_CEILING,
@@ -1233,6 +1331,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
   thread.turns = thread.turns.map((turn) => compactTurnWithBudget(turn, thread, budgetOptions, stats));
   applyProgressiveVisibleItemCeiling(thread, budgetOptions, stats);
   applyProgressiveCompletedTextBudget(thread, budgetOptions, stats);
+  applyProgressiveCompletedUserInputBudget(thread, budgetOptions, stats);
   applyProgressiveActiveFirstPaintItemBudget(thread, budgetOptions, stats);
   annotateRetainedVisibleItemByteStats(thread, stats);
   for (const turn of thread.turns) {
@@ -1252,6 +1351,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
     || stats.truncatedActiveTextItems > 0
     || stats.truncatedActiveOperationPayloadItems > 0;
   stats.applied = stats.applied || stats.truncatedCompletedTextItems > 0;
+  stats.applied = stats.applied || stats.truncatedCompletedUserInputItems > 0;
   if (!stats.applied && !stats.progressiveActiveBudgetApplied) return out;
   const revision = thread.mobileProjectionRevision;
   const normalized = normalizeThreadVisibleProjection(out, {

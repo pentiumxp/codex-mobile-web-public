@@ -2532,6 +2532,14 @@ Deployable scope:
   `protected-visible-items` or `no-removable-visible-items`: the next slice can
   target the dominant protected shape instead of weakening user/assistant/Usage
   protection generically.
+- Production readback after that attribution slice showed the protected active
+  first-paint over-ceiling payload was dominated by completed `userMessage`
+  items, not the current active input. The follow-up budget previews only
+  historical/completed user input under active first-paint byte pressure using
+  `mobileFirstPaintUserInputBudget` and
+  `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_COMPLETED_USER_TEXT_CHARS` (default
+  1024 chars). It preserves active/current user input and does not mutate the
+  stored rollout/session data.
 - A later summary-phase slice targets warm projection hits whose `summaryMs`
   dominates `totalMs` even though `threadReadMs=0`. Detail summary resolution
   now merges the existing display-summary cache for local summaries and skips

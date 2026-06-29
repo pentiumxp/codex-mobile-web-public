@@ -511,6 +511,20 @@ client refresh retries. Newer server builds also report
 to decide whether the remaining protected payload is dominated by operation,
 assistant, user-message, Usage, media, diagnostic, or other item shapes before
 adding a new budget rule.
+If active first-paint byte pressure is dominated by completed `userMessage`
+items, newer servers can preview only historical/completed user input through
+`mobileFirstPaintUserInputBudget`; the active/current user input remains outside
+that completed-user budget. Inspect
+`progressiveCompletedUserTextChars`,
+`progressiveCompletedUserInputBudgetApplied`,
+`progressiveCompletedUserInputBudgetReason`,
+`progressiveCompletedUserInputBytesBeforeBudget`,
+`progressiveCompletedUserInputBytesAfterBudget`,
+`truncatedCompletedUserInputItems`, and
+`omittedCompletedUserInputChars`. The default limit is controlled by
+`CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_COMPLETED_USER_TEXT_CHARS` and defaults
+to 1024 characters. This is an HTTP first-paint preview only; it does not mutate
+the rollout/session record.
 On v558+ clients, a per-turn `mobileVisibleItemBudget` also renders as a small
 first-paint omission notice in the conversation. That notice has a
 `data-render-key` and enters the conversation signature, but intentionally does

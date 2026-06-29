@@ -32152,3 +32152,22 @@ The previous full handoff was archived and should be opened only when old proven
 - Deployment status:
   - Local deploy candidate only at this point. Private production deploy has
     not yet been sent. No Public deploy requested or run.
+
+### 2026-06-30 - Active First-Paint Completed User Input Budget Ready For Deploy
+
+- Prior deploy readback:
+  - Home AI deploy return confirmed `197814588b8e` (`fix: attribute protected active detail bytes`) deployed privately with reason `codex-mobile-active-first-paint-byte-attribution`; Public deploy was not run.
+  - Production Phase-B readback for Codex Mobile source thread remained healthy for active overlay/window: `projection-active-overlay`, `turnsListInitialMs=0`, `activeOverlayWindowMs=0`, and deploy/runtime gates had no H1/H2 blockers.
+  - The new attribution fields identified the protected payload owner: `retainedVisibleItemLargestKind=userMessage`, `retainedVisibleItemLargestBytes=4538`, `retainedVisibleItemBytesByKind.userMessage=33119`, followed by assistant and Usage bytes. The active first-paint over-ceiling bytes were about 88KB.
+- Root cause / invariant:
+  - The remaining first-paint pressure is not an active-overlay/read-path problem. It is completed/historical user-input bytes retained in the active first-paint detail window.
+  - Existing `mobileUserInputBudget` only applies to active/current user input. It correctly did not touch the completed `userMessage` items, but that left repeated historical task-card/user inputs in the HTTP first-paint body.
+  - The repair must not mutate persisted rollout/session data and must not preview the current active user input through a completed-history budget.
+- Source changes:
+  - `adapters/thread-detail-response-budget-service.js` adds an active first-paint completed-user-input preview budget. It marks affected historical/completed `userMessage` items with `mobileFirstPaintUserInputBudget`, records bounded counters in `mobileDetailResponseBudget`, and leaves active/current user input outside this completed-user budget.
+  - `server.js` wires `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_COMPLETED_USER_TEXT_CHARS` with default `1024` chars.
+  - `scripts/codex-mobile-phase-b-readback-smoke.js` and `adapters/phase-b-readback-decision-service.js` propagate the new bounded counters as `responseBudget*` / `detailResponseBudget*` evidence.
+  - Focused tests cover completed user input preview, active input preservation, and Phase-B/decision evidence propagation.
+  - `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, and `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` document the behavior and operational fields.
+- Deployment status:
+  - Local candidate in progress. Private production deploy has not yet been requested. No Public deploy requested or run.

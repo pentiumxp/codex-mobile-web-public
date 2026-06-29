@@ -858,6 +858,74 @@ test("thread detail response budget truncates oversized active user input under 
   assert.deepEqual(compacted.thread.mobileVisibleItemKeys, compacted.thread.turns[0].items.map((item) => item.mobileVisibleKey));
 });
 
+test("thread detail response budget previews completed user input under active first-paint byte pressure", () => {
+  const completedUserText = [
+    "Historical task card",
+    "C".repeat(4800),
+  ].join("\n");
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      mobileProjectionRevision: 33,
+      turns: [
+        {
+          id: "turn-completed",
+          status: "completed",
+          items: [
+            { id: "completed-u", type: "userMessage", content: [{ type: "input_text", text: completedUserText }] },
+            { id: "completed-a", type: "agentMessage", text: "Receipt" },
+          ],
+        },
+        {
+          id: "turn-active",
+          status: "inProgress",
+          items: [
+            { id: "active-u", type: "userMessage", text: "Current input stays readable" },
+            { id: "active-a", type: "agentMessage", text: "Working" },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeProgressiveItemThreshold: 1,
+    progressiveCompletedUserTextChars: 600,
+    progressiveActiveUserTextChars: 5000,
+    progressiveActiveFirstPaintThreadByteCeiling: 1200,
+    progressiveFirstPaintThreadByteCeiling: 1200,
+  });
+
+  const completedUser = compacted.thread.turns[0].items[0];
+  const activeUser = compacted.thread.turns[1].items[0];
+  assert.equal(completedUser.mobileUserInputTruncated, true);
+  assert.equal(completedUser.mobileFirstPaintUserInputBudget.scope, "completed");
+  assert.equal(completedUser.mobileFirstPaintUserInputBudget.maxChars, 600);
+  assert.equal(completedUser.mobileFirstPaintUserInputBudget.originalChars, completedUserText.length);
+  assert.ok(completedUser.mobileFirstPaintUserInputBudget.omittedChars > 0);
+  assert.match(completedUser.content[0].text, /first-paint user input preview truncated/);
+  assert.equal(JSON.stringify(compacted).includes("C".repeat(1000)), false);
+  assert.equal(activeUser.text, "Current input stays readable");
+  assert.equal(activeUser.mobileFirstPaintUserInputBudget, undefined);
+  assert.equal(activeUser.mobileUserInputTruncated, undefined);
+
+  const budget = compacted.thread.mobileDetailResponseBudget;
+  assert.equal(budget.progressiveActiveBudgetApplied, true);
+  assert.equal(budget.progressiveCompletedUserTextChars, 600);
+  assert.equal(budget.progressiveCompletedUserInputBudgetApplied, true);
+  assert.equal(budget.progressiveCompletedUserInputBudgetScope, "active-first-paint");
+  assert.equal(budget.truncatedCompletedUserInputItems, 1);
+  assert.equal(budget.completedUserInputOriginalChars, completedUserText.length);
+  assert.ok(budget.completedUserInputRetainedChars <= 600);
+  assert.ok(budget.omittedCompletedUserInputChars > 0);
+  assert.equal(budget.truncatedActiveUserMessageItems, 0);
+  assert.deepEqual(compacted.thread.mobileVisibleItemKeys, compacted.thread.turns.flatMap((turn) => turn.items.map((item) => item.mobileVisibleKey)));
+  assert.equal(compacted.thread.mobileProjectionRevision, 33);
+});
+
 test("thread detail response budget drops active inline image data under progressive pressure", () => {
   const dataUrl = `data:image/png;base64,${"A".repeat(4200)}`;
   const result = {
