@@ -30374,7 +30374,7 @@ The previous full handoff was archived and should be opened only when old proven
   - The prior one-sample `browser_latest_turn_timestamp_missing` did not
     reproduce in this recheck and was not promoted to a code change.
 
-### 2026-06-29 - Runtime Self-Check LaunchAgent Recovered Exit Classification Pending Deploy
+### 2026-06-29 - Runtime Self-Check LaunchAgent Recovered Exit Classification Deploy
 
 - Scope:
   - Follow-up to the v591 clean production gate. The scheduler readback command
@@ -30407,6 +30407,28 @@ The previous full handoff was archived and should be opened only when old proven
   - `git diff --check`
   - `node /Users/hermes-dev/HermesMobileDev/app/scripts/fallback-governance-check.js --changed-file adapters/runtime-self-check-launchagent-service.js --changed-file test/runtime-self-check-launchagent-service.test.js --json`
 - Deployment status:
-  - Pending local commit and private deploy through Home AI Deploy lane.
-  - Public deploy was not requested and must not be run unless explicitly
-    requested.
+  - Deployed privately through the Home AI Deploy lane from source commit
+    `99c699cfd73d` with reason
+    `codex-mobile-self-check-launchagent-recovered-exit`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T140439Z-plugin-codex-mobile-web-codex-mobile-self-check-launchagent-recovered-exit`.
+  - Public deploy was not run.
+- Production readback:
+  - `/api/public-config` returned status `200`, build id
+    `804792d85bd686d1`, client build id
+    `0.1.11|codex-mobile-shell-v591`, shell cache
+    `codex-mobile-shell-v591`, and `authRequired=true`.
+  - Source/production hash parity matched for
+    `adapters/runtime-self-check-launchagent-service.js` and
+    `test/runtime-self-check-launchagent-service.test.js`.
+  - Production marker readback confirmed
+    `launchagent_previous_exit_nonzero_recovered` and `latestEventHealthy`.
+  - Production LaunchAgent readback returned `ok=true`.
+  - LaunchAgent bounded readback: loaded `true`, state `not_running`,
+    runs `101`, lastExitCode `1`, runIntervalSeconds `600`.
+  - Latest event bounded readback: hasGate `true`, gateMode `deploy`,
+    periodicHealthy `true`, issueCount `0`, blockingIssueCount `0`,
+    executionFailureCount `0`.
+  - Gate issue summary: one H3 advisory
+    `launchagent_previous_exit_nonzero_recovered`; no H1/H2 issues.
+  - Return status for task card `ttc_d9840ec78e36df822d` was `completed`.
