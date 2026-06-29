@@ -103,6 +103,23 @@ test("runtime self-check launchagent readback treats running after previous fail
   assert.deepEqual(result.issues, [{ code: "launchagent_running_after_previous_failure", severity: "H3" }]);
 });
 
+test("runtime self-check launchagent readback accepts recovered previous nonzero exit", () => {
+  const result = service.classifyRuntimeSelfCheckLaunchAgent({
+    expected: { maxEventAgeMs: 20 * 60 * 1000 },
+    plist: healthyPlist(),
+    launchctl: service.parseLaunchctlPrint(`
+      state = not running
+      runs = 101
+      last exit code = 1
+      run interval = 600 seconds
+    `),
+    latestEvent: healthyEvent(),
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.issues, [{ code: "launchagent_previous_exit_nonzero_recovered", severity: "H3" }]);
+});
+
 test("runtime self-check launchagent readback blocks missing agent and stale log", () => {
   const latestEvent = service.summarizeLatestEvent({
     ok: true,

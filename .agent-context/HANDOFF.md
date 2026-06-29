@@ -30361,3 +30361,52 @@ The previous full handoff was archived and should be opened only when old proven
     was `deployPass=false`; that timestamp residual is tracked separately from
     the original `thread_session_load_failed/http_404` and duplicate user echo
     closure.
+- Follow-up production health recheck:
+  - A subsequent deploy-mode runtime self-check against the same Movie and
+    Codex Mobile source thread targets passed cleanly.
+  - API-thread check: `ok=true`, zero issues.
+  - Browser-runtime check: `ok=true`, zero issues.
+  - Gate result: `deployPass=true`, `periodicHealthy=true`,
+    `reportableIssueCount=0`, `executionFailureCount=0`.
+  - A separate focused browser-runtime run also passed with zero timestamp
+    missing items, zero duplicate user messages, zero image failures, and zero
+    visual jitter counters.
+  - The prior one-sample `browser_latest_turn_timestamp_missing` did not
+    reproduce in this recheck and was not promoted to a code change.
+
+### 2026-06-29 - Runtime Self-Check LaunchAgent Recovered Exit Classification Pending Deploy
+
+- Scope:
+  - Follow-up to the v591 clean production gate. The scheduler readback command
+    returned `ok=false` solely because `launchctl` still reported
+    `lastExitCode=1`, while the latest runtime self-check JSONL event was fresh
+    and healthy.
+- Root cause:
+  - `classifyRuntimeSelfCheckLaunchAgent()` treated any non-running
+    LaunchAgent with nonzero `last exit code` as H2, even when a later bounded
+    event had already proved `deployPass=true`, `periodicHealthy=true`, zero
+    blocking issues, and zero execution failures.
+  - For this one-shot LaunchAgent, `launchctl` exit code can lag as stale
+    historical state; the latest metadata-only event is the stronger health
+    evidence when fresh and healthy.
+- Source changes:
+  - `adapters/runtime-self-check-launchagent-service.js` now classifies a
+    previous nonzero exit as H3
+    `launchagent_previous_exit_nonzero_recovered` when the latest event is
+    fresh and healthy.
+  - `test/runtime-self-check-launchagent-service.test.js` adds regression
+    coverage for the production shape: `state=not running`, `last exit code=1`,
+    fresh healthy latest event.
+- Validation passed locally:
+  - `node --test test/runtime-self-check-launchagent-service.test.js test/runtime-self-check-loop.test.js`
+  - `node scripts/codex-mobile-runtime-self-check-launchagent-readback.js --json`
+  - `node --check adapters/runtime-self-check-launchagent-service.js && node --check scripts/codex-mobile-runtime-self-check-launchagent-readback.js`
+  - `npm test` (`1590` tests passed)
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+  - `node /Users/hermes-dev/HermesMobileDev/app/scripts/fallback-governance-check.js --changed-file adapters/runtime-self-check-launchagent-service.js --changed-file test/runtime-self-check-launchagent-service.test.js --json`
+- Deployment status:
+  - Pending local commit and private deploy through Home AI Deploy lane.
+  - Public deploy was not requested and must not be run unless explicitly
+    requested.

@@ -150,6 +150,13 @@ function classifyRuntimeSelfCheckLaunchAgent(input = {}) {
   const maxEventAgeMs = boundedMs(expected.maxEventAgeMs || DEFAULT_MAX_EVENT_AGE_MS, 24 * 60 * 60 * 1000)
     || DEFAULT_MAX_EVENT_AGE_MS;
   const issues = [];
+  const latestEventFresh = Boolean(latestEvent.present && latestEvent.ageMs <= maxEventAgeMs);
+  const latestEventHealthy = Boolean(latestEventFresh
+    && latestEvent.ok
+    && latestEvent.hasGate
+    && latestEvent.periodicHealthy
+    && latestEvent.blockingIssueCount === 0
+    && latestEvent.executionFailureCount === 0);
 
   if (!plist.present) issues.push(issue("launchagent_plist_missing"));
   if (plist.present && !plist.labelMatches) issues.push(issue("launchagent_label_mismatch"));
@@ -160,7 +167,10 @@ function classifyRuntimeSelfCheckLaunchAgent(input = {}) {
   if (plist.present && !plist.hasJsonArg) issues.push(issue("launchagent_json_arg_missing", "H3"));
   if (!launchctl.loaded) issues.push(issue("launchagent_not_loaded"));
   if (launchctl.loaded && launchctl.state !== "running" && launchctl.lastExitCode !== null && launchctl.lastExitCode !== 0) {
-    issues.push(issue("launchagent_last_exit_nonzero"));
+    issues.push(issue(
+      latestEventHealthy ? "launchagent_previous_exit_nonzero_recovered" : "launchagent_last_exit_nonzero",
+      latestEventHealthy ? "H3" : "H2",
+    ));
   }
   if (launchctl.loaded && launchctl.state === "running" && launchctl.lastExitCode !== null && launchctl.lastExitCode !== 0) {
     issues.push(issue("launchagent_running_after_previous_failure", "H3"));
