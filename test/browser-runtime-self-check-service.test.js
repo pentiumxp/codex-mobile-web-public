@@ -236,6 +236,72 @@ test("browser runtime self-check catches latest turn item and message count down
   assert.equal(report.sampleSummary.maxLatestTurnAssistantMessages, 4);
 });
 
+test("browser runtime self-check catches latest turn user messages below API expectation", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [{
+      label: "api-dom-user-gap",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      latestTurnMatchesTarget: true,
+      expectedLatestUserMessageCount: 4,
+      latestTurnUserMessageCount: 3,
+      turns: 3,
+      items: 12,
+      renderKeys: 12,
+    }],
+  });
+
+  assert.equal(report.ok, false);
+  assert.ok(report.issues.some((issue) => issue.code === "browser_latest_turn_user_message_below_api_expectation"));
+});
+
+test("browser runtime self-check catches latest turn task card below API expectation", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [{
+      label: "api-dom-task-card-gap",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      latestTurnMatchesTarget: true,
+      expectedLatestTaskCardUserMessageCount: 1,
+      latestTurnTaskCardItemCount: 0,
+      turns: 3,
+      items: 12,
+      renderKeys: 12,
+    }],
+  });
+
+  assert.equal(report.ok, false);
+  assert.ok(report.issues.some((issue) => issue.code === "browser_latest_turn_task_card_below_api_expectation"));
+});
+
+test("browser runtime self-check catches visible process items in latest turn DOM", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [{
+      label: "visible-process-items",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      latestTurnMatchesTarget: true,
+      latestTurnOperationItemCount: 2,
+      latestTurnReasoningItemCount: 1,
+      turns: 3,
+      items: 12,
+      renderKeys: 12,
+    }],
+  });
+
+  assert.equal(report.ok, false);
+  assert.ok(report.issues.some((issue) => issue.code === "browser_latest_turn_operation_items_visible"));
+  assert.ok(report.issues.some((issue) => issue.code === "browser_latest_turn_reasoning_items_visible"));
+  assert.equal(report.sampleSummary.maxLatestTurnOperationItems, 2);
+  assert.equal(report.sampleSummary.maxLatestTurnReasoningItems, 1);
+});
+
 test("browser runtime self-check catches pending user message disappearing after submission", () => {
   const report = service.analyzeBrowserRuntimeSamples({
     minSettledDelayMs: 1000,
@@ -369,9 +435,14 @@ test("browser runtime self-check script exposes bounded browser snapshot fields"
   assert.match(expression, /renderRoot = conversation \|\| document/);
   assert.match(expression, /contentConfirmed/);
   assert.match(expression, /expectedLatestUsageRequired/);
+  assert.match(expression, /expectedLatestUserMessageCount/);
+  assert.match(expression, /expectedLatestTaskCardUserMessageCount/);
   assert.match(expression, /latestTurnHash/);
   assert.match(expression, /latestTurnUserMessageCount/);
+  assert.match(expression, /latestTurnTaskCardItemCount/);
   assert.match(expression, /latestTurnAssistantMessageCount/);
+  assert.match(expression, /latestTurnOperationItemCount/);
+  assert.match(expression, /latestTurnReasoningItemCount/);
   assert.match(expression, /latestTurnAssistantTextDuplicateCount/);
   assert.match(expression, /latestTimestampMissingItems/);
   assert.match(expression, /imageFailureCount/);

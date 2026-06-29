@@ -55,7 +55,10 @@ function summarizeSamples(samples = []) {
   const timestampMissingCounts = normalized.map((sample) => toNumber(sample.latestTimestampMissingItems));
   const latestTurnItemCounts = normalized.map((sample) => toNumber(sample.latestTurnItemCount));
   const latestTurnUserMessageCounts = normalized.map((sample) => toNumber(sample.latestTurnUserMessageCount));
+  const latestTurnTaskCardItemCounts = normalized.map((sample) => toNumber(sample.latestTurnTaskCardItemCount));
   const latestTurnAssistantMessageCounts = normalized.map((sample) => toNumber(sample.latestTurnAssistantMessageCount));
+  const latestTurnOperationItemCounts = normalized.map((sample) => toNumber(sample.latestTurnOperationItemCount));
+  const latestTurnReasoningItemCounts = normalized.map((sample) => toNumber(sample.latestTurnReasoningItemCount));
   const latestTurnAssistantTextDuplicateCounts = normalized.map((sample) => toNumber(sample.latestTurnAssistantTextDuplicateCount));
   const clientSubmissionCounts = normalized.map((sample) => toNumber(sample.clientSubmissionCount));
   return {
@@ -69,7 +72,10 @@ function summarizeSamples(samples = []) {
     maxLatestTimestampMissingItems: normalized.length ? Math.max(...timestampMissingCounts) : 0,
     maxLatestTurnItems: normalized.length ? Math.max(...latestTurnItemCounts) : 0,
     maxLatestTurnUserMessages: normalized.length ? Math.max(...latestTurnUserMessageCounts) : 0,
+    maxLatestTurnTaskCardItems: normalized.length ? Math.max(...latestTurnTaskCardItemCounts) : 0,
     maxLatestTurnAssistantMessages: normalized.length ? Math.max(...latestTurnAssistantMessageCounts) : 0,
+    maxLatestTurnOperationItems: normalized.length ? Math.max(...latestTurnOperationItemCounts) : 0,
+    maxLatestTurnReasoningItems: normalized.length ? Math.max(...latestTurnReasoningItemCounts) : 0,
     maxLatestTurnAssistantTextDuplicates: normalized.length ? Math.max(...latestTurnAssistantTextDuplicateCounts) : 0,
     maxClientSubmissions: normalized.length ? Math.max(...clientSubmissionCounts) : 0,
     sparseSampleCount: normalized.filter(isSparseSample).length,
@@ -138,6 +144,38 @@ function analyzeBrowserRuntimeSamples(input = {}) {
       issues.push(issue("H2", "browser_latest_turn_assistant_text_duplicate", sample, {
         latestTurnAssistantMessageCount: toNumber(sample.latestTurnAssistantMessageCount),
         latestTurnAssistantTextDuplicateCount: toNumber(sample.latestTurnAssistantTextDuplicateCount),
+      }));
+    }
+    if (sampleIsConfirmed(sample)
+      && sample.latestTurnMatchesTarget
+      && toNumber(sample.latestTurnOperationItemCount) > 0) {
+      issues.push(issue("H2", "browser_latest_turn_operation_items_visible", sample, {
+        latestTurnOperationItemCount: toNumber(sample.latestTurnOperationItemCount),
+      }));
+    }
+    if (sampleIsConfirmed(sample)
+      && sample.latestTurnMatchesTarget
+      && toNumber(sample.latestTurnReasoningItemCount) > 0) {
+      issues.push(issue("H2", "browser_latest_turn_reasoning_items_visible", sample, {
+        latestTurnReasoningItemCount: toNumber(sample.latestTurnReasoningItemCount),
+      }));
+    }
+    if (sampleIsConfirmed(sample)
+      && sample.latestTurnMatchesTarget
+      && toNumber(sample.expectedLatestUserMessageCount) > 0
+      && toNumber(sample.latestTurnUserMessageCount) < toNumber(sample.expectedLatestUserMessageCount)) {
+      issues.push(issue("H2", "browser_latest_turn_user_message_below_api_expectation", sample, {
+        expectedLatestUserMessageCount: toNumber(sample.expectedLatestUserMessageCount),
+        latestTurnUserMessageCount: toNumber(sample.latestTurnUserMessageCount),
+      }));
+    }
+    if (sampleIsConfirmed(sample)
+      && sample.latestTurnMatchesTarget
+      && toNumber(sample.expectedLatestTaskCardUserMessageCount) > 0
+      && toNumber(sample.latestTurnTaskCardItemCount) < toNumber(sample.expectedLatestTaskCardUserMessageCount)) {
+      issues.push(issue("H2", "browser_latest_turn_task_card_below_api_expectation", sample, {
+        expectedLatestTaskCardUserMessageCount: toNumber(sample.expectedLatestTaskCardUserMessageCount),
+        latestTurnTaskCardItemCount: toNumber(sample.latestTurnTaskCardItemCount),
       }));
     }
     if (sampleIsConfirmed(sample)

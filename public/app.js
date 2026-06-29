@@ -542,7 +542,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v577";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v578";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -5205,13 +5205,14 @@ function userMessageHasVisualAttachment(item) {
 }
 
 function shouldHideDurableLiveUserMessage(turn, item, index = 0, thread = null) {
-  return Boolean(item
-    && item.type === "userMessage"
-    && !userMessageHasVisualAttachment(item)
-    && liveTurnHasNonUserProgressBefore(turn, index, thread)
-    && !liveTurnHasUserVisibleTextReplyAfter(turn, index, thread)
-    && !isRecentlySubmittedUserMessage(item)
-    && !isOptimisticUserMessage(item));
+  void turn;
+  void item;
+  void index;
+  void thread;
+  // Durable userMessage rows are user-visible evidence. Suppressing them here
+  // hides legitimate just-submitted messages when projection refresh arrives
+  // before the assistant reply. Projection noise must be fixed upstream.
+  return false;
 }
 
 function isSupersededLiveTurn(turn) {
@@ -5280,12 +5281,9 @@ function visibleItemsForTurn(turn, thread = null) {
   const visible = [];
   const contextEntryByKey = new Map();
   const contextThread = renderContextThread(thread);
-  const showCompletedProcessItems = isLatestCompletedProcessTurn(turn, contextThread);
   (turn.items || []).forEach((item, index) => {
     if (!item) return;
     if (isReasoningItem(item)) {
-      if (!showCompletedProcessItems || !reasoningItemHasVisibleText(item)) return;
-      visible.push({ item, sourceIndex: index });
       return;
     }
     if (shouldHideSupersededLiveUserMessage(turn, item)) return;
@@ -5301,7 +5299,6 @@ function visibleItemsForTurn(turn, thread = null) {
       return;
     }
     if (isOperationalItem(item)) {
-      if (showCompletedProcessItems) visible.push({ item, sourceIndex: index });
       return;
     }
     visible.push({ item, sourceIndex: index });

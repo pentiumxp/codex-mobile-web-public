@@ -772,6 +772,15 @@ Cause to check:
   `browser_latest_turn_assistant_text_duplicate`. These are latest-turn scoped
   checks: a healthy whole-conversation item total no longer hides the user
   message or latest assistant rows disappearing inside the active/latest turn.
+  Clients after `codex-mobile-shell-v578` split ordinary user-message and
+  injected task-card expectations, and also report
+  `browser_latest_turn_user_message_below_api_expectation`,
+  `browser_latest_turn_task_card_below_api_expectation`,
+  `browser_latest_turn_operation_items_visible`, and
+  `browser_latest_turn_reasoning_items_visible`. These checks catch the class
+  where the API has the submitted user input but the DOM latest turn does not,
+  or where command/reasoning process rows leak into the ordinary conversation
+  instead of staying in the operation status surface.
   The analyzer no longer drops a sparse sample merely because
   `contentConfirmed=false`; such samples cannot establish a healthy baseline,
   but they can prove regression after the same target thread was previously

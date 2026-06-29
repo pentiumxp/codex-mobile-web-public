@@ -1889,7 +1889,7 @@ test("server projection pruning keeps uploaded image user messages in superseded
   );
 });
 
-test("live turn keeps prompt and responded steering messages while hiding only unanswered trailing durable user bubbles", () => {
+test("live turn keeps durable user messages while hiding operation items", () => {
   const { visibleItemsForTurn } = evaluatedVisibleItemsForTurn();
   const liveTurn = {
     live: true,
@@ -1905,7 +1905,7 @@ test("live turn keeps prompt and responded steering messages while hiding only u
   };
   assert.deepEqual(
     visibleItemsForTurn(liveTurn).map((entry) => entry.item.id),
-    ["real-user-prompt", "assistant-progress", "real-user-responded-steer", "assistant-after-steer", "local-user-new"],
+    ["real-user-prompt", "assistant-progress", "real-user-responded-steer", "assistant-after-steer", "real-user-trailing", "local-user-new"],
   );
 
   const completedTurn = Object.assign({}, liveTurn, { live: false });
@@ -1915,7 +1915,7 @@ test("live turn keeps prompt and responded steering messages while hiding only u
   );
 });
 
-test("latest completed turn shows retained process items after full rerender", () => {
+test("latest completed turn hides process items after full rerender", () => {
   const { visibleItemsForTurn } = evaluatedVisibleItemsForTurn();
   const previous = {
     id: "previous",
@@ -1955,7 +1955,7 @@ test("latest completed turn shows retained process items after full rerender", (
   );
   assert.deepEqual(
     visibleItemsForTurn(latestCompleted, thread).map((entry) => entry.item.id),
-    ["latest-user", "latest-reasoning", "latest-command", "latest-final"],
+    ["latest-user", "latest-final"],
   );
   assert.deepEqual(
     visibleItemsForTurn(active, thread).map((entry) => entry.item.id),
@@ -1986,7 +1986,7 @@ test("live turn keeps uploaded image user messages after progress starts", () =>
 
   assert.deepEqual(
     harness.visibleItemsForTurn(liveTurn).map((entry) => entry.item.id),
-    ["real-user-old", "assistant-progress", "real-user-image"],
+    ["real-user-old", "assistant-progress", "real-user-image", "real-user-trailing"],
   );
 });
 

@@ -28572,3 +28572,92 @@ The previous full handoff was archived and should be opened only when old proven
     production list row no longer exposes `status=completed` with stale
     `activeTurnId`.
   - Do not push Public unless the user explicitly asks.
+
+### 2026-06-29 - Private Deploy Readback For List/Detail Terminal State Fix
+
+- Deploy:
+  - Home AI Deploy lane completed private production deployment for
+    `codex-mobile-list-detail-state-consistency`.
+  - Requested runtime fix commit: `51719b8`
+    (`fix: sync detail terminal state into thread list`).
+  - Deployed source ref: `692f538b591b`; this includes `51719b8` plus a
+    docs-only handoff commit.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T015937Z-plugin-codex-mobile-web-codex-mobile-list-detail-state-consistency`.
+  - No Public push was performed.
+- Production public config:
+  - `title=Codex Mobile Web`, `version=0.1.11`.
+  - `buildId=c8b7f48112fb95d4`.
+  - `clientBuildId=0.1.11|codex-mobile-shell-v577`.
+  - `shellCacheName=codex-mobile-shell-v577`.
+  - `workspacePath=/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+- Movie thread self-check:
+  - Command:
+    `node scripts/codex-mobile-thread-self-check.js --server http://127.0.0.1:8787 --thread-id 019efca1-ea69-7292-87b7-025ba023ca87 --repeat 2 --json`.
+  - Result: `ok=true`, `issueCount=0`, `blockingIssueCount=0`.
+  - Thread list repeat was stable with zero issues.
+  - Current Movie thread state during readback was active because new deploy
+    cards were being processed; list/detail consistency reported
+    `listStatus=active`, `detailStatus=active`, `listHasActiveMarker=true`,
+    `detailSettled=false`, with zero issues.
+  - The previous mismatch class (`completed` list row retaining stale active
+    markers while detail was settled) was not present.
+- Safety / privacy:
+  - No raw secrets, sudo password contents, cookies, launch tokens, thread
+    bodies, upload contents, screenshots, provider payloads, or long logs were
+    recorded.
+
+### 2026-06-29 - User Message Visibility And Process-Item Leak Hotfix v578
+
+- Runtime evidence:
+  - User reported in Movie that submitted messages were received and answered
+    but not visible, and attached a Codex Mobile screenshot where completed
+    `Command completed` process cards appeared below the actual assistant
+    receipt on entry.
+  - Bounded API probe for Movie showed the server detail response retained the
+    latest user/input items; the failure surface was client visible-item
+    rendering/self-check coverage, not message transport.
+  - The existing browser self-check initially missed the screenshot class
+    because it did not compare API-expected latest user/task-card counts against
+    DOM counts and did not flag latest-turn operation/reasoning cards rendered
+    in the ordinary conversation.
+- Root cause / invariant:
+  - `shouldHideDurableLiveUserMessage()` was a client-side hiding heuristic for
+    unanswered live-turn durable user rows after progress. It could suppress a
+    legitimate just-submitted user message when projection refresh arrived
+    before the assistant reply. Durable `userMessage` rows are user-visible
+    evidence and must not be hidden by the browser; projection noise should be
+    fixed upstream.
+  - `visibleItemsForTurn()` also allowed process rows from the latest completed
+    turn to render as normal conversation items. Command/reasoning rows belong
+    in operation/status surfaces, not below the assistant receipt.
+- Implementation:
+  - `public/app.js` no longer hides durable live `userMessage` rows through
+    `shouldHideDurableLiveUserMessage()`.
+  - `public/app.js` no longer renders reasoning or operation items as ordinary
+    conversation items, including latest completed turns.
+  - `scripts/codex-mobile-browser-runtime-self-check.js` now computes bounded
+    API expectations for ordinary user messages, injected task-card user
+    messages, operation items, and reasoning items in the latest turn.
+  - `adapters/browser-runtime-self-check-service.js` now reports H2 issues for
+    ordinary user-message DOM counts below API expectation, injected task-card
+    counts below API expectation, and visible operation/reasoning process-item
+    leaks in ordinary latest-turn DOM.
+  - Static shell/cache bumped to `codex-mobile-shell-v578`.
+- Validation:
+  - Focused tests passed:
+    `node --test test/browser-runtime-self-check-service.test.js test/conversation-render.test.js test/thread-detail-v4-merge-state.test.js`.
+  - Full `npm test` passed (`1528` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - Updated browser self-check run against current production before deploy
+    passed after the task-card/user expectation split; this removed a false
+    positive for injected task-card messages while preserving the new ordinary
+    user-message and process-item leak checks.
+- Deploy state:
+  - Local source is ready to commit and deploy privately. No Public push has
+    been performed or requested for this v578 hotfix.
+  - After deploy, rerun browser/runtime self-check on Movie
+    `019efca1-ea69-7292-87b7-025ba023ca87` and Codex Mobile
+    `019eee6c-a6f5-7b20-bfb4-f96ccb6431b3`, and verify `/api/public-config`
+    reports `clientBuildId=0.1.11|codex-mobile-shell-v578` and
+    `shellCacheName=codex-mobile-shell-v578`.

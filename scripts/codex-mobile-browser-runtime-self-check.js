@@ -212,17 +212,40 @@ function completedStatus(value) {
   return /completed|failed|cancel|error|interrupted/i.test(statusText(value));
 }
 
+function inputTextValue(part = {}) {
+  if (!part || typeof part !== "object") return "";
+  return String(part.text || part.input_text || part.value || part.content || "");
+}
+
+function isInjectedThreadTaskCardText(value) {
+  const text = String(value || "").replace(/\r\n?/g, "\n").trim();
+  return text.startsWith("[Cross-thread task card sent by source thread]")
+    || text.startsWith("[Cross-thread task card approved]");
+}
+
+function isInjectedThreadTaskCardItem(item = {}) {
+  if (!item || item.type !== "userMessage") return false;
+  const parts = Array.isArray(item.content) ? item.content : [];
+  return parts.some((part) => isInjectedThreadTaskCardText(inputTextValue(part)));
+}
+
 function latestTurnExpectation(detail = {}) {
   const thread = detail && (detail.thread || detail.data || detail);
   const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
   const latest = turns.length ? turns[turns.length - 1] : null;
   const items = Array.isArray(latest && latest.items) ? latest.items : [];
+  const userItems = items.filter((item) => item && /^userMessage$/i.test(String(item.type || "")));
+  const injectedTaskCardUserItems = userItems.filter(isInjectedThreadTaskCardItem);
   const itemTypes = items
     .map((item) => String(item && item.type || "unknown").trim() || "unknown")
     .slice(0, 80);
   return {
     expectedLatestUsageRequired: Boolean(latest && completedStatus(latest.status) && itemTypes.includes("turnUsageSummary")),
     expectedLatestItemCount: items.length,
+    expectedLatestUserMessageCount: Math.max(0, userItems.length - injectedTaskCardUserItems.length),
+    expectedLatestTaskCardUserMessageCount: injectedTaskCardUserItems.length,
+    expectedLatestOperationItemCount: itemTypes.filter((type) => /^(commandExecution|fileChange|dynamicToolCall|mcpToolCall|collabAgentToolCall)$/i.test(type)).length,
+    expectedLatestReasoningItemCount: itemTypes.filter((type) => /^reasoning$/i.test(type)).length,
     expectedLatestTimestampItemCount: itemTypes.filter((type) => /^(userMessage|agentMessage|plan|turnDiagnostic)$/i.test(type)).length,
   };
 }
@@ -255,6 +278,10 @@ async function loadThreadPlan(options, key, ids) {
       expectedTurnHashCount: expectedTurnHashes.length,
       expectedLatestUsageRequired: expectation.expectedLatestUsageRequired,
       expectedLatestItemCount: expectation.expectedLatestItemCount,
+      expectedLatestUserMessageCount: expectation.expectedLatestUserMessageCount,
+      expectedLatestTaskCardUserMessageCount: expectation.expectedLatestTaskCardUserMessageCount,
+      expectedLatestOperationItemCount: expectation.expectedLatestOperationItemCount,
+      expectedLatestReasoningItemCount: expectation.expectedLatestReasoningItemCount,
       expectedLatestTimestampItemCount: expectation.expectedLatestTimestampItemCount,
     });
   }
@@ -533,6 +560,8 @@ function snapshotExpression(input = {}) {
   const expectedTurnHashes = Array.isArray(input.expectedTurnHashes) ? input.expectedTurnHashes : [];
   const expectedLatestTurnHash = String(input.expectedLatestTurnHash || "");
   const expectedLatestUsageRequired = Boolean(input.expectedLatestUsageRequired);
+  const expectedLatestUserMessageCount = Math.max(0, Number(input.expectedLatestUserMessageCount || 0) || 0);
+  const expectedLatestTaskCardUserMessageCount = Math.max(0, Number(input.expectedLatestTaskCardUserMessageCount || 0) || 0);
   const label = String(input.label || "");
   const delayMs = Math.max(0, Number(input.delayMs || 0) || 0);
   return `
@@ -542,6 +571,8 @@ function snapshotExpression(input = {}) {
       const expectedTurnHashes = new Set(${JSON.stringify(expectedTurnHashes)});
       const expectedLatestTurnHash = ${JSON.stringify(expectedLatestTurnHash)};
       const expectedLatestUsageRequired = ${JSON.stringify(expectedLatestUsageRequired)};
+      const expectedLatestUserMessageCount = ${JSON.stringify(expectedLatestUserMessageCount)};
+      const expectedLatestTaskCardUserMessageCount = ${JSON.stringify(expectedLatestTaskCardUserMessageCount)};
       const label = ${JSON.stringify(label)};
       const delayMs = ${JSON.stringify(delayMs)};
       const stableHash = (value) => {
@@ -592,7 +623,10 @@ function snapshotExpression(input = {}) {
       const latestUsageCount = latestTurnNode ? latestTurnNode.querySelectorAll(".item.turnUsageSummary").length : 0;
       const latestItemNodes = latestTurnNode ? Array.from(latestTurnNode.querySelectorAll("[data-item]")) : [];
       const latestUserNodes = latestTurnNode ? Array.from(latestTurnNode.querySelectorAll(".item.userMessage")) : [];
+      const latestTaskCardNodes = latestTurnNode ? Array.from(latestTurnNode.querySelectorAll(".item.thread-task-card-injected[data-thread-task-card-item]")) : [];
       const latestAssistantNodes = latestTurnNode ? Array.from(latestTurnNode.querySelectorAll(".item.agentMessage, .item.plan")) : [];
+      const latestOperationNodes = latestTurnNode ? Array.from(latestTurnNode.querySelectorAll(".item.commandExecution, .item.fileChange, .item.dynamicToolCall, .item.mcpToolCall, .item.collabAgentToolCall")) : [];
+      const latestReasoningNodes = latestTurnNode ? Array.from(latestTurnNode.querySelectorAll(".item.reasoning")) : [];
       const latestAssistantTextHashes = latestAssistantNodes
         .map((node) => {
           const body = node.querySelector(".item-body") || node;
@@ -627,10 +661,15 @@ function snapshotExpression(input = {}) {
         expectedTurnHashCount: expectedTurnHashes.size,
         latestTurnMatchesTarget: latestMatches,
         expectedLatestUsageRequired,
+        expectedLatestUserMessageCount,
+        expectedLatestTaskCardUserMessageCount,
         latestTurnHash,
         latestTurnItemCount: latestItemNodes.length,
         latestTurnUserMessageCount: latestUserNodes.length,
+        latestTurnTaskCardItemCount: latestTaskCardNodes.length,
         latestTurnAssistantMessageCount: latestAssistantNodes.length,
+        latestTurnOperationItemCount: latestOperationNodes.length,
+        latestTurnReasoningItemCount: latestReasoningNodes.length,
         latestTurnAssistantTextDuplicateCount: duplicateCount(latestAssistantTextHashes),
         latestTurnUsageCount: latestUsageCount,
         latestTimestampExpectedItems: timestampExpectedNodes.length,
@@ -686,6 +725,10 @@ async function run(options = parseArgs(), deps = {}) {
       expectedLatestTurnHash: entry.expectedLatestTurnHash,
       expectedLatestUsageRequired: Boolean(entry.expectedLatestUsageRequired),
       expectedLatestItemCount: entry.expectedLatestItemCount,
+      expectedLatestUserMessageCount: entry.expectedLatestUserMessageCount,
+      expectedLatestTaskCardUserMessageCount: entry.expectedLatestTaskCardUserMessageCount,
+      expectedLatestOperationItemCount: entry.expectedLatestOperationItemCount,
+      expectedLatestReasoningItemCount: entry.expectedLatestReasoningItemCount,
       expectedLatestTimestampItemCount: entry.expectedLatestTimestampItemCount,
     })),
     browserReport: null,
@@ -772,6 +815,8 @@ async function run(options = parseArgs(), deps = {}) {
             expectedTurnHashes: entry.expectedTurnHashes,
             expectedLatestTurnHash: entry.expectedLatestTurnHash,
             expectedLatestUsageRequired: entry.expectedLatestUsageRequired,
+            expectedLatestUserMessageCount: entry.expectedLatestUserMessageCount,
+            expectedLatestTaskCardUserMessageCount: entry.expectedLatestTaskCardUserMessageCount,
             label: `round-${round + 1}-delay-${delayMs}`,
             delayMs,
           }), options.timeoutMs).catch((err) => ({
