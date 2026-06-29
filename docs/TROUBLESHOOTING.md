@@ -851,6 +851,13 @@ Cause to check:
   than creating repeated repair cards. The loop records issue counts and
   build/cache ids only and must not directly dispatch repair cards; Home AI
   diagnostic intake and Owner approval own the repair-card step.
+- To verify the 10-minute macOS periodic checker itself, run:
+  `node scripts/codex-mobile-runtime-self-check-launchagent-readback.js --json`.
+  A healthy result has `ok=true`, `launchctl.loaded=true`,
+  `launchctl.lastExitCode=0`, `latestEvent.hasGate=true`,
+  `latestEvent.gateMode=periodic`, and `latestEvent.periodicHealthy=true`.
+  The readback is inspect-only and reports path hashes plus bounded counts; it
+  must not be used to install, unload, or kickstart launchd jobs.
 - If opening a thread takes 1-2s before latest detail appears, run Phase-B
   readback against that thread:
   `node scripts/codex-mobile-phase-b-readback-smoke.js --server http://127.0.0.1:8787 --thread-id <id> --json`.

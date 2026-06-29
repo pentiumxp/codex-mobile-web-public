@@ -29162,3 +29162,53 @@ The previous full handoff was archived and should be opened only when old proven
   - No raw secrets, cookies, launch tokens, private message bodies, task-card
     bodies, upload contents, screenshots, provider payloads, endpoint files, or
     long logs were recorded.
+
+### 2026-06-29 - Runtime Self-Check Scheduler Readback v2
+
+- User direction:
+  - Continue one large optimization module at a time, validate it, privately
+    deploy it, and use self-checks before moving to the next module.
+  - Runtime self-check should be able to catch client rendering/user-message
+    regressions without relying on manual user screenshots.
+- Root cause / invariant:
+  - The macOS periodic runtime self-check LaunchAgent already existed and ran
+    every 600 seconds, but its health/readback was not source-controlled.
+  - Operators had to manually inspect `launchctl`, plist shape, and JSONL log
+    tails to prove whether the periodic checker was loaded, fresh,
+    gate-bearing, and healthy.
+  - Invariant: after deploy, Codex Mobile must have a bounded readback command
+    that proves the periodic checker is active and that its latest result is a
+    `periodic` gate result, without printing raw logs or private content.
+- Implementation:
+  - Added `adapters/runtime-self-check-launchagent-service.js`, a pure policy
+    service for LaunchAgent plist summary, `launchctl print` state parsing,
+    latest runtime self-check JSONL event parsing, freshness checks, and health
+    classification.
+  - Added `scripts/codex-mobile-runtime-self-check-launchagent-readback.js`,
+    a read-only CLI. It does not install, unload, kickstart, or mutate launchd.
+  - Missing/unloaded/stale/no-gate/unhealthy periodic checker state is
+    blocking. A checker currently running after a previous nonzero exit is H3
+    advisory so the active run can naturally replace stale failure state.
+  - Updated `package.json` `npm run check`, `README.md`, `docs/README.md`,
+    `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Validation before deployment:
+  - Focused tests passed:
+    `node --test test/runtime-self-check-launchagent-service.test.js test/runtime-self-check-gate-service.test.js test/runtime-self-check-loop.test.js test/browser-runtime-self-check-service.test.js`.
+  - Live readback passed:
+    `node scripts/codex-mobile-runtime-self-check-launchagent-readback.js --json`,
+    with `ok=true`, `launchctl.loaded=true`, `lastExitCode=0`,
+    `latestEvent.hasGate=true`, `latestEvent.gateMode=periodic`, and
+    `latestEvent.periodicHealthy=true`.
+  - Full `npm test` passed: `1559` tests.
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - Home AI fallback governance check passed with no issues for the changed
+    runtime/test files.
+- Deploy state:
+  - Not yet deployed at the time of this entry.
+  - Next step: commit locally, send a Home AI Deploy lane card for private
+    deployment, then run production LaunchAgent readback.
+- Privacy:
+  - No raw secrets, cookies, launch tokens, private message bodies, task-card
+    bodies, upload contents, screenshots, provider payloads, endpoint files,
+    raw plist paths, raw log lines, or long logs were recorded.

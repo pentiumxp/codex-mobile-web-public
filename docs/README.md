@@ -224,6 +224,10 @@ projection, image, duplicate-message, timestamp, list/detail, submit, and
 browser execution failures remain deploy-blocking/reportable, while
 `thread_session_slow_path` / detail-list slow-success evidence is observe-only
 by default so repeated performance samples do not create repair-card noise.
+`scripts/codex-mobile-runtime-self-check-launchagent-readback.js` provides the
+same metadata-only gate readback for the macOS periodic LaunchAgent, verifying
+that the 10-minute checker is loaded, writing fresh gate-bearing JSONL, and
+not stuck on a stale failure.
 
 The active-window coalescing slice targets the "long spinner, then eventual
 success" shape seen on active large sessions. That shape is not a network/RPC

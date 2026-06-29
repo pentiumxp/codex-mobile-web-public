@@ -2979,6 +2979,39 @@ Required validation:
 - Private deployment through the Home AI Deploy lane, followed by production
   runtime self-check with `--gate-mode deploy`.
 
+### 2026-06-29 Runtime Self-Check Scheduler Readback v2
+
+This module makes the existing macOS 10-minute runtime self-check LaunchAgent
+auditable from source-controlled tooling. It does not create a new renderer
+fallback, change projection authority, or dispatch repair cards.
+
+Root cause addressed: the periodic checker existed as a local LaunchAgent, but
+operators still had to inspect `launchctl` and raw JSONL tails manually to know
+whether the checker was loaded, fresh, gate-bearing, and healthy. That made
+post-deploy closure depend on ad hoc shell evidence instead of a repeatable
+bounded readback.
+
+Scope:
+
+- `adapters/runtime-self-check-launchagent-service.js` owns pure readback
+  policy for plist shape, launchctl state, latest JSONL gate event, freshness,
+  and health classification.
+- `scripts/codex-mobile-runtime-self-check-launchagent-readback.js` reads the
+  user LaunchAgent, current launchctl state, and latest runtime self-check JSONL
+  without mutating launchd. It reports only metadata-safe state, counts, path
+  hashes, and issue codes.
+- Missing/unloaded/stale/no-gate/unhealthy periodic self-check state is
+  blocking. A checker that is actively running after a previous nonzero exit is
+  advisory, so natural recovery is not marked failed before the current run can
+  write a fresh result.
+
+Required validation:
+
+- Focused LaunchAgent service/readback tests.
+- Live readback against `com.hermesmobile.codex-mobile-runtime-self-check`.
+- Full local checks and central private deploy/readback when this module is
+  released.
+
 ### 2026-06-28 Initial Active Window Overlay Module
 
 Production readback after the recent rich-replay repair showed a remaining
