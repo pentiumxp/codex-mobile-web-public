@@ -96,6 +96,10 @@ function isCompletedStatus(value) {
   return /completed|failed|cancel|error|interrupted/i.test(statusText(value));
 }
 
+function isRestStatus(value) {
+  return /^(idle|completed|failed|cancelled|canceled|interrupted|error)$/i.test(statusText(value));
+}
+
 function isTurnComplete(turn) {
   return isCompletedStatus(turn && turn.status);
 }
@@ -574,6 +578,69 @@ function analyzeThreadList(result = {}) {
   };
 }
 
+function threadActiveMarker(thread = {}) {
+  if (!thread || typeof thread !== "object") return "";
+  return text(
+    thread.activeTurnId
+    || thread.active_turn_id
+    || thread.mobileActiveTurnId
+    || thread.mobileRolloutActiveTurn
+    || thread.mobile_rollout_active_turn
+    || thread.mobileLocalActiveStatus && (
+      thread.mobileLocalActiveStatus.turnId
+      || thread.mobileLocalActiveStatus.turn_id
+      || thread.mobileLocalActiveStatus.activeTurnId
+    ),
+  );
+}
+
+function detailThreadIsSettled(detail = {}) {
+  const thread = objectOrNull(detail && detail.thread);
+  if (!thread) return false;
+  if (isRestStatus(thread.status)) return true;
+  const active = activeTurn(thread);
+  if (active.turn) return false;
+  return Boolean(latestCompletedTurn(thread).turn);
+}
+
+function compareThreadListRowToDetail(row = {}, detail = {}) {
+  const id = threadId(row) || threadId(detail && detail.thread);
+  const threadHash = shortHash(id);
+  const issues = [];
+  const marker = threadActiveMarker(row);
+  const listStatus = row && row.status;
+  const listHasActiveMarker = Boolean(marker);
+  const listIsActive = isActiveStatus(listStatus) || listHasActiveMarker;
+  const listIsRest = isRestStatus(listStatus);
+  const detailSettled = detailThreadIsSettled(detail);
+  const detailThread = objectOrNull(detail && detail.thread);
+  const detailStatus = statusText(detailThread && detailThread.status);
+  if (listIsRest && listHasActiveMarker) {
+    pushIssue(issues, "thread_list_rest_status_has_active_turn", "H2", "thread-list-detail-consistency", {
+      threadHash,
+      listStatus: statusText(listStatus),
+      activeTurnHash: shortHash(marker),
+    });
+  }
+  if (listIsActive && detailSettled) {
+    pushIssue(issues, "thread_list_active_detail_settled_mismatch", "H2", "thread-list-detail-consistency", {
+      threadHash,
+      listStatus: statusText(listStatus),
+      detailStatus,
+      activeTurnHash: marker ? shortHash(marker) : "",
+    });
+  }
+  return {
+    ok: issues.filter(issueSeverityBlocks).length === 0,
+    threadHash,
+    listStatus: statusText(listStatus),
+    detailStatus,
+    listHasActiveMarker,
+    detailSettled,
+    issues,
+  };
+}
+
 function compareDetailReadbacks(firstDetail = {}, secondDetail = {}, options = {}) {
   const issues = [];
   const firstThread = objectOrNull(firstDetail.thread) || {};
@@ -819,6 +886,7 @@ module.exports = {
   analyzeThreadList,
   combineSelfCheck,
   compareDetailReadbacks,
+  compareThreadListRowToDetail,
   compareThreadListReadbacks,
   detailSignature,
   itemTimestampMs,

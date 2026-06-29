@@ -647,7 +647,7 @@ function snapshotExpression(input = {}) {
         duplicateItemIds: duplicateCount(itemIds),
         loadingNote,
         emptyState,
-        clientSubmissionCount: document.querySelectorAll("[data-client-submission-id], [data-client-submission]").length,
+        clientSubmissionCount: document.querySelectorAll("[data-client-submission-id], [data-client-submission], [data-client-submission-hash]").length,
         scrollHeight: conversation ? Math.trunc(conversation.scrollHeight || 0) : 0,
         clientHeight: conversation ? Math.trunc(conversation.clientHeight || 0) : 0,
         scrollTop: conversation ? Math.trunc(conversation.scrollTop || 0) : 0,

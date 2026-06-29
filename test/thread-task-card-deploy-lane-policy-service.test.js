@@ -22,6 +22,8 @@ function thread(id, name, cwd, extra = {}) {
 test("Home AI Deploy lane completed thread is normalized to durable idle lane metadata", () => {
   const raw = thread("deploy-1", HOME_AI_DEPLOY_LANE_TITLE, homeAiCwd, {
     status: { type: "completed" },
+    activeTurnId: "turn-stale",
+    mobileLocalActiveStatus: { turnId: "turn-stale" },
   });
 
   const normalized = normalizeHomeAiDeployLaneSummary(raw);
@@ -33,6 +35,8 @@ test("Home AI Deploy lane completed thread is normalized to durable idle lane me
     mobileDeployLane: true,
     previousType: "completed",
   });
+  assert.equal(normalized.activeTurnId, undefined);
+  assert.equal(normalized.mobileLocalActiveStatus, undefined);
 });
 
 test("delegation target hints prioritize the Home AI Deploy lane over newer same-cwd Home AI threads", () => {

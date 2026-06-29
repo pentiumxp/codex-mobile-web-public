@@ -236,6 +236,77 @@ test("browser runtime self-check catches latest turn item and message count down
   assert.equal(report.sampleSummary.maxLatestTurnAssistantMessages, 4);
 });
 
+test("browser runtime self-check catches pending user message disappearing after submission", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [
+      {
+        label: "pending-visible",
+        threadHash: "thread-hash",
+        appVisible: true,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        turns: 4,
+        items: 20,
+        latestTurnUserMessageCount: 1,
+        clientSubmissionCount: 1,
+        delayMs: 1200,
+      },
+      {
+        label: "pending-dropped",
+        threadHash: "thread-hash",
+        appVisible: true,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        turns: 4,
+        items: 20,
+        latestTurnUserMessageCount: 0,
+        clientSubmissionCount: 0,
+        delayMs: 1600,
+      },
+    ],
+  });
+
+  assert.equal(report.ok, false);
+  assert.ok(report.issues.some((issue) => issue.code === "browser_pending_user_message_disappeared"));
+  assert.equal(report.sampleSummary.maxClientSubmissions, 1);
+});
+
+test("browser runtime self-check accepts pending user message replaced by durable user message", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [
+      {
+        label: "pending-visible",
+        threadHash: "thread-hash",
+        appVisible: true,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        turns: 4,
+        items: 20,
+        latestTurnUserMessageCount: 1,
+        clientSubmissionCount: 1,
+        delayMs: 1200,
+      },
+      {
+        label: "durable-visible",
+        threadHash: "thread-hash",
+        appVisible: true,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        turns: 4,
+        items: 20,
+        latestTurnUserMessageCount: 1,
+        clientSubmissionCount: 0,
+        delayMs: 1600,
+      },
+    ],
+  });
+
+  assert.equal(report.ok, true);
+  assert.ok(!report.issues.some((issue) => issue.code === "browser_pending_user_message_disappeared"));
+});
+
 test("browser runtime self-check catches duplicate DOM keys and runtime exceptions", () => {
   const report = service.analyzeBrowserRuntimeSamples({
     samples: [{
@@ -305,6 +376,7 @@ test("browser runtime self-check script exposes bounded browser snapshot fields"
   assert.match(expression, /latestTimestampMissingItems/);
   assert.match(expression, /imageFailureCount/);
   assert.match(expression, /brokenCompleteImageCount/);
+  assert.match(expression, /data-client-submission-hash/);
   assert.match(expression, /loadingNote/);
   assert.match(expression, /emptyState/);
   assert.match(expression, /codexMobileCurrentThreadId/);

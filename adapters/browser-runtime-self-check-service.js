@@ -57,6 +57,7 @@ function summarizeSamples(samples = []) {
   const latestTurnUserMessageCounts = normalized.map((sample) => toNumber(sample.latestTurnUserMessageCount));
   const latestTurnAssistantMessageCounts = normalized.map((sample) => toNumber(sample.latestTurnAssistantMessageCount));
   const latestTurnAssistantTextDuplicateCounts = normalized.map((sample) => toNumber(sample.latestTurnAssistantTextDuplicateCount));
+  const clientSubmissionCounts = normalized.map((sample) => toNumber(sample.clientSubmissionCount));
   return {
     sampleCount: normalized.length,
     minTurns: normalized.length ? Math.min(...turnCounts) : 0,
@@ -70,6 +71,7 @@ function summarizeSamples(samples = []) {
     maxLatestTurnUserMessages: normalized.length ? Math.max(...latestTurnUserMessageCounts) : 0,
     maxLatestTurnAssistantMessages: normalized.length ? Math.max(...latestTurnAssistantMessageCounts) : 0,
     maxLatestTurnAssistantTextDuplicates: normalized.length ? Math.max(...latestTurnAssistantTextDuplicateCounts) : 0,
+    maxClientSubmissions: normalized.length ? Math.max(...clientSubmissionCounts) : 0,
     sparseSampleCount: normalized.filter(isSparseSample).length,
     nonEmptySampleCount: normalized.filter(isNonEmptySample).length,
   };
@@ -159,6 +161,8 @@ function analyzeBrowserRuntimeSamples(input = {}) {
     let maxTurns = 0;
     let maxConfirmedItems = 0;
     let maxConfirmedTurns = 0;
+    let maxClientSubmissions = 0;
+    let maxLatestTurnUserMessages = 0;
     const latestTurnWindows = new Map();
     for (const sample of rows) {
       const turns = toNumber(sample.turns);
@@ -167,6 +171,8 @@ function analyzeBrowserRuntimeSamples(input = {}) {
       const latestTurnHash = String(sample.latestTurnHash || "").slice(0, 32);
       maxTurns = Math.max(maxTurns, turns);
       maxItems = Math.max(maxItems, items);
+      maxClientSubmissions = Math.max(maxClientSubmissions, toNumber(sample.clientSubmissionCount));
+      maxLatestTurnUserMessages = Math.max(maxLatestTurnUserMessages, toNumber(sample.latestTurnUserMessageCount));
       if (isNonEmptySample(sample)) {
         if (sample.contentConfirmed !== false) {
           seenNonEmpty = true;
@@ -232,6 +238,19 @@ function analyzeBrowserRuntimeSamples(input = {}) {
           userMessageCount: Math.max(previous.userMessageCount, currentUsers),
           assistantMessageCount: Math.max(previous.assistantMessageCount, currentAssistants),
         });
+      }
+      if (sampleIsConfirmed(sample)
+        && settled
+        && maxClientSubmissions > 0
+        && toNumber(sample.clientSubmissionCount) === 0
+        && toNumber(sample.latestTurnUserMessageCount) < maxLatestTurnUserMessages) {
+        issues.push(issue("H2", "browser_pending_user_message_disappeared", sample, {
+          threadHash,
+          previousMaxClientSubmissions: maxClientSubmissions,
+          currentClientSubmissions: toNumber(sample.clientSubmissionCount),
+          previousMaxLatestTurnUserMessages: maxLatestTurnUserMessages,
+          currentLatestTurnUserMessages: toNumber(sample.latestTurnUserMessageCount),
+        }));
       }
     }
     const final = rows[rows.length - 1];

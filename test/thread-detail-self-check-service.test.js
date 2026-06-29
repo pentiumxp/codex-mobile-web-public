@@ -8,6 +8,7 @@ const {
   analyzeThreadList,
   combineSelfCheck,
   compareDetailReadbacks,
+  compareThreadListRowToDetail,
   compareThreadListReadbacks,
   itemTimestampMs,
   selfCheckDiagnosticCandidate,
@@ -117,6 +118,30 @@ test("thread detail self check accepts naturally short completed replay receipts
 
   assert.equal(report.ok, true);
   assert.ok(!report.issues.some((issue) => issue.code === "latest_completed_replay_receipt_only"));
+});
+
+test("thread detail self check detects list active status when detail is already settled", () => {
+  const detail = healthyDetail();
+  detail.thread.status = { type: "completed" };
+  const report = compareThreadListRowToDetail({
+    id: "thread-1",
+    status: { type: "active" },
+    activeTurnId: "turn-stale",
+  }, detail);
+
+  assert.equal(report.ok, false);
+  assert.ok(report.issues.some((issue) => issue.code === "thread_list_active_detail_settled_mismatch"));
+});
+
+test("thread detail self check detects terminal list rows that still carry active turn markers", () => {
+  const report = compareThreadListRowToDetail({
+    id: "thread-1",
+    status: { type: "completed" },
+    activeTurnId: "turn-stale",
+  }, healthyDetail());
+
+  assert.equal(report.ok, false);
+  assert.ok(report.issues.some((issue) => issue.code === "thread_list_rest_status_has_active_turn"));
 });
 
 test("thread detail self check warns when latest completed replay assistant progress was budgeted away", () => {

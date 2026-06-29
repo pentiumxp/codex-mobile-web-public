@@ -33,6 +33,7 @@ const {
   backfillMissingRolloutCompletionTurnsForDetailResult,
   collectRecentRolloutFiles,
   compactThread,
+  detailReadThreadSummaryForFallbackCache,
   filterFallbackThreads,
   hydrateThreadListResultTitlesFromSessionIndex,
   hydrateThreadListTitlesFromSessionIndex,
@@ -312,6 +313,54 @@ test("thread list keeps app-server time when duplicate fallback is older", () =>
 
   assert.equal(result.data[0].name, "older fallback");
   assert.equal(result.data[0].updatedAt, 300);
+});
+
+test("thread list completed fallback clears stale active markers from older app-server row", () => {
+  const result = mergeThreadListFallback({
+    data: [
+      {
+        id: "thread-active",
+        name: "active row",
+        updatedAt: 100,
+        status: { type: "active" },
+        activeTurnId: "turn-active",
+        mobileLocalActiveStatus: { turnId: "turn-active", source: "test" },
+      },
+    ],
+  }, [
+    {
+      id: "thread-active",
+      name: "completed row",
+      updatedAt: 105,
+      status: { type: "completed" },
+    },
+  ], 10);
+
+  assert.equal(result.data[0].status.type, "completed");
+  assert.equal(result.data[0].activeTurnId, undefined);
+  assert.equal(result.data[0].mobileLocalActiveStatus, undefined);
+});
+
+test("thread detail summary for fallback cache strips detail fields and terminal active markers", () => {
+  const summary = detailReadThreadSummaryForFallbackCache({
+    thread: {
+      id: "thread-completed",
+      name: "Thread",
+      updatedAt: 200,
+      status: { type: "completed" },
+      activeTurnId: "turn-active",
+      mobileLocalActiveStatus: { turnId: "turn-active" },
+      turns: [{ id: "turn-active", status: "completed", items: [] }],
+      mobileDiagnostics: { private: false },
+    },
+  });
+
+  assert.equal(summary.id, "thread-completed");
+  assert.equal(summary.status.type, "completed");
+  assert.equal(summary.activeTurnId, undefined);
+  assert.equal(summary.mobileLocalActiveStatus, undefined);
+  assert.equal(summary.turns, undefined);
+  assert.equal(summary.mobileDiagnostics, undefined);
 });
 
 test("thread list sorts fallback threads before older app-server rows before applying limit", () => {
