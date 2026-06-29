@@ -229,6 +229,41 @@ test("thread detail response budget orders completed replay items by timestamp",
   ]);
 });
 
+test("thread detail response budget orders completed replay items by client display fallback time", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      mobileReadMode: "projection-v4-dynamic",
+      mobileProjectionRevision: 15,
+      turns: [
+        {
+          id: "turn-latest",
+          status: "completed",
+          startedAt: "2026-06-29T11:00:00.000Z",
+          completedAt: "2026-06-29T11:30:00.000Z",
+          items: [
+            { id: "assistant-final", type: "agentMessage", text: "final" },
+            { id: "user", type: "userMessage", text: "Question" },
+            { id: "usage", type: "turnUsageSummary" },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    completedAssistantItems: 1,
+    activeAssistantItems: 1,
+  });
+
+  assert.deepEqual(compacted.thread.turns[0].items.map((item) => item.id), [
+    "user",
+    "assistant-final",
+    "usage",
+  ]);
+});
+
 test("thread detail response budget preserves the most recent rich completed reply before a short latest turn", () => {
   const result = {
     thread: {

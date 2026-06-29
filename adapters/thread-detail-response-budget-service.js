@@ -907,7 +907,7 @@ function compactTurnWithBudget(turn, thread, options, stats) {
   if (active && options.progressiveActiveBudgetApplied) {
     compacted.items = compacted.items.map((item) => compactActiveOperationPayloadItem(compactActiveTextItem(compactActiveUserMessageItem(item, options, stats), options, stats), options, stats));
   }
-  compacted.items = orderItemsByDisplayTimestamp(compacted.items);
+  compacted.items = orderItemsByDisplayTimestamp(compacted.items, compacted, thread);
   const afterOperationCount = countBy(compacted.items, isOperationItem);
   const afterReasoningCount = countBy(compacted.items, isReasoningItem);
   const afterAssistantCount = countBy(compacted.items, isAssistantItem);

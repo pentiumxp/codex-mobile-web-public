@@ -29177,6 +29177,150 @@ The previous full handoff was archived and should be opened only when old proven
     bodies, uploads, screenshots, provider payloads, raw endpoint files, or
     long logs were stored here.
 
+### 2026-06-29 - v583 Thread Placeholder / Load Fix Production Deploy
+
+- Context:
+  - Task card `ttc_c912ed98772705361d` requested private production deploy of
+    commit `be038b191379` (`fix: hide unmaterialized thread placeholders`).
+  - This is a runtime/static fix and bumps the shell/cache to
+    `codex-mobile-shell-v583`; Public deploy was not requested.
+- Deployment:
+  - Home AI central plugin deploy completed with reason
+    `codex-mobile-v583-thread-placeholder-load-fix`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T112847Z-plugin-codex-mobile-web-codex-mobile-v583-thread-placeholder-load-fix`.
+  - Production `/api/public-config` returned build id `3da14c58080a43fd`,
+    `clientBuildId=0.1.11|codex-mobile-shell-v583`, and
+    `shellCacheName=codex-mobile-shell-v583`.
+- Readback:
+  - Source/production hash parity matched for `server.js`, `public/app.js`,
+    `public/sw.js`, `adapters/thread-list-fallback-cache-service.js`,
+    `adapters/thread-detail-self-check-service.js`,
+    `adapters/thread-detail-active-window-overlay-policy-service.js`, and the
+    focused tests included in the deploy readback.
+  - Production marker readback confirmed
+    `thread_list_unmaterialized_placeholder`,
+    `visible_item_timestamp_order_mismatch`, `suppressLoadFailureDiagnostic`,
+    and `codex-mobile-shell-v583`.
+  - Thread-list self-check showed no
+    `thread_list_unmaterialized_placeholder` issue. Authenticated
+    `/api/threads?limit=200` bounded scan returned `resultCount=25` and
+    `suspiciousRows=0` for UUID-title/notLoaded/empty-cwd/no-turn placeholder
+    rows.
+- Residual gate:
+  - API self-check still reported H2
+    `visible_item_timestamp_order_mismatch` on the active Codex Mobile source
+    thread. This is directly related to the new v583 timestamp-order coverage,
+    so the deployment was returned as `partially_completed`.
+  - Runtime/browser self-check gate also reported H2
+    `browser_latest_turn_timestamp_missing`; this appears to be the pre-existing
+    browser timestamp residual from earlier deploys rather than the placeholder
+    filtering fix.
+  - Runtime gate did not report `thread_list_unmaterialized_placeholder`.
+- Safety:
+  - No active submit exercise was run and Public deploy was not run. No raw
+    secrets, sudo password contents, cookies, launch tokens, private thread
+    bodies, message text, task-card bodies, upload contents, screenshots, image
+    bytes, provider payloads, endpoint file contents, raw logs, or long logs
+    were stored here.
+
+### 2026-06-29 - Response-Budget Timestamp-Order Follow-Up Deploy
+
+- Context:
+  - Task card `ttc_6863d5f2c3a6a653df` requested private production deploy of
+    commit `56e7b1ea1064` (`fix: order budgeted replay items by timestamp`).
+  - This was a server/runtime follow-up to the v583
+    `visible_item_timestamp_order_mismatch` residual. Static shell/cache should
+    remain `codex-mobile-shell-v583`.
+- Deployment:
+  - Home AI central plugin deploy completed with reason
+    `codex-mobile-v583-response-budget-time-order`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T113420Z-plugin-codex-mobile-web-codex-mobile-v583-response-budget-time-order`.
+  - Production `/api/public-config` remained on build id `3da14c58080a43fd`,
+    `clientBuildId=0.1.11|codex-mobile-shell-v583`, and
+    `shellCacheName=codex-mobile-shell-v583`.
+- Readback:
+  - Source/production hash parity matched for
+    `adapters/thread-detail-response-budget-service.js` and
+    `test/thread-detail-response-budget-service.test.js`.
+  - Production marker readback confirmed `orderItemsByDisplayTimestamp` and
+    `thread detail response budget orders completed replay items by timestamp`.
+- Residual gate:
+  - API thread self-check still reported H2
+    `visible_item_timestamp_order_mismatch` for the active Codex Mobile source
+    thread after deploy.
+  - Runtime/browser gate still reported H2
+    `visible_item_timestamp_order_mismatch` and
+    `browser_latest_turn_timestamp_missing`; no active submit exercise was run.
+  - This card was returned as `partially_completed`: the code was deployed and
+    marker/hash readback passed, but the intended API self-check closure did
+    not occur.
+- Safety:
+  - No Public deploy and no active submit exercise were run. No raw secrets,
+    sudo password contents, cookies, launch tokens, private thread bodies,
+    message text, task-card bodies, upload contents, screenshots, image bytes,
+    provider payloads, endpoint file contents, raw logs, or long logs were
+    stored here.
+
+### 2026-06-29 - Display Timestamp Semantics Follow-Up Ready For Deploy
+
+- Context:
+  - The private deploy for commit `56e7b1ea1064` completed, but production API
+    self-check still reported H2 `visible_item_timestamp_order_mismatch`.
+  - The placeholder/404 class stayed closed: thread-list readback had no
+    `thread_list_unmaterialized_placeholder` issue.
+- Root cause / invariant:
+  - The response-budget follow-up reused the active-overlay timestamp sorter,
+    but that sorter had incomplete display-time semantics and no turn/thread
+    context.
+  - `turnUsageSummary` and context-compaction rows are special layout rows. They
+    do not render item-head timestamps in `public/app.js`; Usage is expected to
+    stay below the final receipt. Treating those rows as timestamped visible
+    messages can create false timestamp-order failures and can also tempt the
+    server to move the Usage toolbar above the receipt, which would violate the
+    UI contract.
+  - Correct invariant: timestamp-order checks and server ordering should use
+    the same display timestamp semantics as the client for rows that actually
+    show timestamps, while non-timestamped layout rows keep their product
+    position.
+- Implementation:
+  - `adapters/thread-detail-active-window-overlay-policy-service.js` now exports
+    `itemDisplayTimestampMs(item, turn, thread)` and uses turn/thread context
+    for display-time sorting.
+  - The helper treats `turnUsageSummary` and context-compaction rows as
+    non-timestamped layout rows, preserving their layout position.
+  - `adapters/thread-detail-response-budget-service.js` now calls
+    `orderItemsByDisplayTimestamp(compacted.items, compacted, thread)`.
+  - `adapters/thread-detail-self-check-service.js` now delegates its
+    `itemTimestampMs()` calculation to the shared display timestamp helper so
+    self-check and response shaping use the same timestamp semantics.
+  - Added focused tests for completed-turn fallback ordering and response-budget
+    ordering while preserving the trailing Usage toolbar.
+- Validation:
+  - Focused validation passed:
+    `node --check adapters/thread-detail-active-window-overlay-policy-service.js`,
+    `node --check adapters/thread-detail-response-budget-service.js`,
+    `node --check adapters/thread-detail-self-check-service.js`, and
+    `node --test test/thread-detail-active-window-overlay-policy-service.test.js test/thread-detail-response-budget-service.test.js test/thread-detail-self-check-service.test.js`
+    (`88` tests).
+  - Full local validation passed: `npm test` (`1576` tests),
+    `npm run check`, `npm run check:macos`, `git diff --check`, Home AI
+    fallback governance check for the changed runtime/test files, and
+    `codegraph sync && codegraph status`.
+  - Running the local patched self-check logic against current production
+    responses returned `ok=true`, `issueCount=0`, and `blockingIssueCount=0`.
+- Deploy state:
+  - Source is ready for a private production deploy through Home AI Deploy with
+    reason `codex-mobile-v583-display-timestamp-semantics`.
+  - This is a server/runtime follow-up. Static shell/cache should remain
+    `codex-mobile-shell-v583`.
+  - Required readback after deploy: API thread self-check should report no
+    `visible_item_timestamp_order_mismatch`; browser/runtime gate should be
+    rerun and any residual `browser_latest_turn_timestamp_missing` should be
+    classified separately if it remains.
+  - Public deploy has not been run.
+
 ### 2026-06-29 - Active Detail Replay Assistant Budget Ready For Deploy
 
 - Context:

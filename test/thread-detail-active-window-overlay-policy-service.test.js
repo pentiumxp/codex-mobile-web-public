@@ -5,8 +5,10 @@ const { test } = require("node:test");
 
 const {
   classifyActiveOverlayItem,
+  itemDisplayTimestampMs,
   mergeActiveOverlayTurnWithWindowBackfill,
   mergeProjectionThreadWithActiveOverlay,
+  orderItemsByDisplayTimestamp,
   planActiveWindowOverlay,
   summarizeActiveOverlayTurnEvidence,
 } = require("../adapters/thread-detail-active-window-overlay-policy-service");
@@ -434,6 +436,29 @@ test("active overlay turn backfill orders visible items by display timestamp", (
   });
 
   assert.deepEqual(merged.items.map((item) => item.id), ["agent-early", "agent-mid", "agent-late"]);
+});
+
+test("display timestamp order matches client fallback for completed turns", () => {
+  const turn = {
+    id: "turn-completed",
+    status: "completed",
+    startedAt: "2026-06-29T11:00:00.000Z",
+    completedAt: "2026-06-29T11:30:00.000Z",
+  };
+  const thread = { id: "thread-1", turns: [turn] };
+  const items = [
+    { id: "assistant-final", type: "agentMessage", text: "final" },
+    { id: "user", type: "userMessage" },
+    { id: "usage", type: "turnUsageSummary" },
+  ];
+
+  assert.equal(itemDisplayTimestampMs(items[0], turn, thread), Date.parse("2026-06-29T11:30:00.000Z"));
+  assert.equal(itemDisplayTimestampMs(items[2], turn, thread), 0);
+  assert.deepEqual(orderItemsByDisplayTimestamp(items, turn, thread).map((item) => item.id), [
+    "user",
+    "assistant-final",
+    "usage",
+  ]);
 });
 
 test("active overlay turn backfill dedupes matching user message echoes", () => {

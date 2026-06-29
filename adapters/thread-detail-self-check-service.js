@@ -10,6 +10,9 @@ const {
 const {
   sameUserMessageContent,
 } = require("./message-pending-echo-service");
+const {
+  itemDisplayTimestampMs,
+} = require("./thread-detail-active-window-overlay-policy-service");
 
 const USER_VISIBLE_TIMESTAMP_TYPES = new Set([
   "agentMessage",
@@ -132,18 +135,7 @@ function turnCompletedAtMs(turn, thread = null) {
 }
 
 function itemTimestampMs(item, turn = null, thread = null) {
-  const direct = numericTimestampMs(item && (
-    item.createdAtMs
-    || item.createdAt
-    || item.startedAtMs
-    || item.startedAt
-    || item.completedAtMs
-    || item.completedAt
-    || item.timestampMs
-    || item.timestamp
-  ));
-  if (direct) return direct;
-  return turnCompletedAtMs(turn, thread) || turnStartedAtMs(turn);
+  return itemDisplayTimestampMs(item, turn, thread);
 }
 
 function turnId(turn) {

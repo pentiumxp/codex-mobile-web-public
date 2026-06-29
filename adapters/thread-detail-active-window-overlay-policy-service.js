@@ -62,6 +62,72 @@ function turnId(turn) {
   ));
 }
 
+function turnActiveId(thread) {
+  return text(thread && (
+    thread.activeTurnId
+    || thread.active_turn_id
+    || thread.mobileRolloutActiveTurn
+    || thread.mobileActiveTurnId
+  ));
+}
+
+function uuidV7TimestampMs(value) {
+  const input = text(value);
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input)) return 0;
+  const parsed = Number.parseInt(input.replace(/-/g, "").slice(0, 12), 16);
+  return Number.isFinite(parsed) && parsed > 946684800000 && parsed < 4102444800000 ? parsed : 0;
+}
+
+function turnStartedAtMs(turn) {
+  return timestampMs(turn && (
+    turn.startedAtMs
+    || turn.startedAt
+    || turn.started_at_ms
+    || turn.started_at
+    || turn.createdAtMs
+    || turn.createdAt
+    || turn.created_at_ms
+    || turn.created_at
+  )) || uuidV7TimestampMs(turnId(turn));
+}
+
+function isCompletedStatus(value) {
+  return /completed|failed|cancel|error|interrupted/i.test(value && typeof value === "object" && value.type ? value.type : value);
+}
+
+function isRunningStatus(value) {
+  return /active|running|started|pending|queued|processing|inprogress|in_progress|in-progress/i.test(value && typeof value === "object" && value.type ? value.type : value);
+}
+
+function turnCompletedAtMs(turn, thread = null) {
+  if (!isCompletedStatus(turn && turn.status)) return 0;
+  const direct = timestampMs(turn && (
+    turn.completedAtMs
+    || turn.completedAt
+    || turn.completed_at_ms
+    || turn.completed_at
+    || turn.endedAtMs
+    || turn.endedAt
+  ));
+  if (direct) return direct;
+  const fallback = timestampMs(thread && (
+    thread.updatedAtMs
+    || thread.updatedAt
+    || thread.lastActivityAtMs
+    || thread.lastActivityAt
+  ));
+  const started = turnStartedAtMs(turn);
+  if (!fallback || (started && fallback < started)) return 0;
+  return fallback;
+}
+
+function isLiveTurn(turn, thread = null) {
+  if (!turn || isCompletedStatus(turn.status)) return false;
+  const activeId = turnActiveId(thread);
+  if (activeId && turnId(turn) === activeId) return true;
+  return isRunningStatus(turn.status);
+}
+
 function itemType(item) {
   return lower(item && (
     item.type
@@ -71,8 +137,11 @@ function itemType(item) {
   ));
 }
 
-function itemTimestampMs(item) {
-  return timestampMs(item && (
+function itemDisplayTimestampMs(item, turn = null, thread = null) {
+  if (!item || typeof item !== "object") return 0;
+  const type = itemType(item);
+  if (type === "turnusagesummary" || type === "contextcompaction") return 0;
+  const direct = timestampMs(item && (
     item.createdAtMs
     || item.createdAt
     || item.created_at_ms
@@ -89,6 +158,22 @@ function itemTimestampMs(item) {
     || item.timestamp
     || item.timeMs
   ));
+  if (direct) return direct;
+  if (type === "agentmessage" || type === "plan") {
+    return timestampMs(item && (
+      item.completedAtMs
+      || item.completedAt
+      || item.completed_at_ms
+      || item.completed_at
+    ))
+      || turnCompletedAtMs(turn, thread)
+      || (isLiveTurn(turn, thread) ? 0 : turnStartedAtMs(turn))
+      || 0;
+  }
+  if (isLiveTurn(turn, thread) && classifyActiveOverlayItem(item) === "operation") {
+    return turnStartedAtMs(turn) || 0;
+  }
+  return turnStartedAtMs(turn) || turnCompletedAtMs(turn, thread);
 }
 
 function itemIdentity(item) {
@@ -183,7 +268,7 @@ function summarizeActiveOverlayTurnEvidence(turn) {
   };
   let latestItemTimestampMs = 0;
   for (const item of items) {
-    latestItemTimestampMs = Math.max(latestItemTimestampMs, itemTimestampMs(item));
+    latestItemTimestampMs = Math.max(latestItemTimestampMs, itemDisplayTimestampMs(item, turn));
     const kind = classifyActiveOverlayItem(item);
     if (kind === "operation") counts.operationItems += 1;
     else if (kind === "upload") counts.uploadItems += 1;
@@ -469,8 +554,10 @@ function mergeActiveOverlayTurnWithWindowBackfill(overlayTurn, windowThreadOrTur
     mergedItems.push(item);
   }
   const deduped = dedupeUserMessageEchoesInItems(mergedItems);
-  const sortedItems = orderItemsByDisplayTimestamp(deduped.items);
-  return Object.assign({}, windowTurn, overlayTurn, {
+  const ownerThread = turnId(windowThreadOrTurn) === id ? null : windowThreadOrTurn;
+  const mergedTurn = Object.assign({}, windowTurn, overlayTurn);
+  const sortedItems = orderItemsByDisplayTimestamp(deduped.items, mergedTurn, ownerThread);
+  return Object.assign({}, mergedTurn, {
     items: sortedItems,
     mobileActiveOverlayBackfill: {
       version: "active-overlay-window-backfill-v1",
@@ -482,10 +569,10 @@ function mergeActiveOverlayTurnWithWindowBackfill(overlayTurn, windowThreadOrTur
   });
 }
 
-function orderItemsByDisplayTimestamp(items) {
+function orderItemsByDisplayTimestamp(items, turn = null, thread = null) {
   if (!Array.isArray(items) || items.length < 2) return items;
   return items
-    .map((item, index) => ({ item, index, timestampMs: itemTimestampMs(item) }))
+    .map((item, index) => ({ item, index, timestampMs: itemDisplayTimestampMs(item, turn, thread) }))
     .sort((left, right) => {
       if (left.timestampMs && right.timestampMs && left.timestampMs !== right.timestampMs) {
         return left.timestampMs - right.timestampMs;
@@ -497,6 +584,7 @@ function orderItemsByDisplayTimestamp(items) {
 
 module.exports = {
   classifyActiveOverlayItem,
+  itemDisplayTimestampMs,
   mergeActiveOverlayTurnWithWindowBackfill,
   mergeProjectionThreadWithActiveOverlay,
   orderItemsByDisplayTimestamp,
