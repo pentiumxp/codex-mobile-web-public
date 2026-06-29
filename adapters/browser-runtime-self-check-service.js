@@ -261,8 +261,10 @@ function analyzeBrowserRuntimeSamples(input = {}) {
     if (sampleIsConfirmed(sample)
       && sample.latestTurnMatchesTarget
       && toNumber(sample.latestTurnAssistantTextDuplicateCount) > 0) {
-      issues.push(issue("H2", "browser_latest_turn_assistant_text_duplicate", sample, {
-        latestTurnAssistantMessageCount: toNumber(sample.latestTurnAssistantMessageCount),
+      const latestTurnAssistantMessageCount = toNumber(sample.latestTurnAssistantMessageCount);
+      const severity = latestTurnAssistantMessageCount > 8 ? "H3" : "H2";
+      issues.push(issue(severity, "browser_latest_turn_assistant_text_duplicate", sample, {
+        latestTurnAssistantMessageCount,
         latestTurnAssistantTextDuplicateCount: toNumber(sample.latestTurnAssistantTextDuplicateCount),
       }));
     }

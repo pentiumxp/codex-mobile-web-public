@@ -299,6 +299,30 @@ test("browser runtime self-check catches latest turn assistant text duplicates",
   assert.equal(report.sampleSummary.maxLatestTurnAssistantTextDuplicates, 1);
 });
 
+test("browser runtime self-check keeps long active assistant progress duplicates advisory", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [{
+      label: "latest-turn-progress-duplicate",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      latestTurnMatchesTarget: true,
+      latestTurnAssistantMessageCount: 24,
+      latestTurnAssistantTextDuplicateCount: 1,
+      turns: 3,
+      items: 36,
+      renderKeys: 36,
+    }],
+  });
+
+  assert.equal(report.ok, true);
+  const duplicateIssue = report.issues.find((issue) => issue.code === "browser_latest_turn_assistant_text_duplicate");
+  assert.ok(duplicateIssue);
+  assert.equal(duplicateIssue.severity, "H3");
+  assert.equal(report.blockingIssueCount, 0);
+});
+
 test("browser runtime self-check catches latest turn user message duplicates", () => {
   const report = service.analyzeBrowserRuntimeSamples({
     samples: [{

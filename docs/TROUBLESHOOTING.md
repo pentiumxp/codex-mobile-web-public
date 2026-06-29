@@ -824,6 +824,9 @@ Cause to check:
   `browser_latest_turn_assistant_text_duplicate`. These are latest-turn scoped
   checks: a healthy whole-conversation item total no longer hides the user
   message or latest assistant rows disappearing inside the active/latest turn.
+  Assistant text duplicates are H2 for small/final receipt shapes and H3 for
+  long active progress shapes where many assistant/plan rows can legitimately
+  repeat a short status fragment.
   Clients after `codex-mobile-shell-v578` split ordinary user-message and
   injected task-card expectations, and also report
   `browser_latest_turn_user_message_below_api_expectation`,

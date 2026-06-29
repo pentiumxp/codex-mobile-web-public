@@ -31193,3 +31193,32 @@ The previous full handoff was archived and should be opened only when old proven
 - Deployment status:
   - Local source work is ready to commit/deploy through Home AI Deploy.
   - No Public deploy requested or run.
+
+### 2026-06-30 - Browser Self-Check Assistant Duplicate Severity Pending Deploy
+
+- Follow-up:
+  - After v594 production deploy, deploy-mode runtime gate reported repeated
+    `browser_latest_turn_assistant_text_duplicate` on the active Codex Mobile
+    source thread.
+  - Bounded browser evidence showed the latest turn had 24 assistant/plan rows
+    and only one repeated text fragment. This is a long active/progress shape,
+    not a duplicate final-receipt shape.
+- Source correction:
+  - `adapters/browser-runtime-self-check-service.js` now keeps
+    `browser_latest_turn_assistant_text_duplicate` as H2 for small/final receipt
+    shapes, but downgrades it to H3 when the latest turn has more than 8
+    assistant/plan rows.
+  - `test/browser-runtime-self-check-service.test.js` covers the H3 active
+    progress case.
+  - `docs/TROUBLESHOOTING.md` documents the distinction.
+- Validation:
+  - `node --check adapters/browser-runtime-self-check-service.js`
+  - `node --test test/browser-runtime-self-check-service.test.js` passed with
+    30 tests.
+  - `git diff --check` passed.
+  - Enhanced production browser check against Movie and Codex Mobile source
+    threads returned `ok=true`; repeated assistant duplicate samples were H3
+    only, with `blockingIssueCount=0`.
+- Deployment status:
+  - Local source work is ready to commit/deploy through Home AI Deploy.
+  - No Public deploy requested or run.
