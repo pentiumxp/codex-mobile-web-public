@@ -5333,6 +5333,46 @@ test("v4 projection merge removes local pending message after durable user match
   ]);
 });
 
+test("v4 projection merge replaces stale low-index user item with newer projection authority", () => {
+  const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
+  const startedAtMs = 1782735926996;
+  const existingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 30,
+    turns: [{
+      id: "turn-current",
+      status: { type: "active" },
+      items: [{
+        id: "item-3",
+        type: "userMessage",
+        startedAtMs,
+        content: [{ type: "text", text: "same active user message" }],
+      }],
+    }],
+  };
+  const incomingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 31,
+    turns: [{
+      id: "turn-current",
+      status: { type: "active" },
+      items: [{
+        id: "item-28891",
+        type: "userMessage",
+        startedAtMs,
+        content: [{ type: "input_text", text: "same   active user message" }],
+      }],
+    }],
+  };
+
+  const merged = mergeThreadPreservingVisibleItems(existingThread, incomingThread);
+
+  assert.deepEqual(merged.turns.map((turn) => turn.id), ["turn-current"]);
+  assert.deepEqual(merged.turns[0].items.map((item) => item.id), ["item-28891"]);
+});
+
 test("v4 projection merge corrects local SSE user message order from refresh", () => {
   const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
   const existingThread = {

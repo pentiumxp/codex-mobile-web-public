@@ -30222,7 +30222,7 @@ The previous full handoff was archived and should be opened only when old proven
   - Return status for task card `ttc_f5caa7d88b9d454cf0` was
     `partially_completed`.
 
-### 2026-06-29 - v590 Submitted Echo Merge Follow-up Pending Deploy
+### 2026-06-29 - v590 Submitted Echo Merge Follow-up Deploy
 
 - Scope:
   - Follow-up to v589 residual where API-thread self-check was clean but the
@@ -30259,5 +30259,75 @@ The previous full handoff was archived and should be opened only when old proven
   - `git diff --check`
   - `node /Users/hermes-dev/HermesMobileDev/app/scripts/fallback-governance-check.js --changed-file public/app.js --changed-file public/sw.js --changed-file test/conversation-render.test.js --changed-file test/client-render-stability-guard.test.js --json`
 - Deployment status:
-  - Pending local commit/deploy. Public deploy was not requested and must not be
-    run unless explicitly requested.
+  - Deployed privately through the Home AI Deploy lane from source commit
+    `d8374ae5a793` with reason
+    `codex-mobile-v590-submitted-echo-merge`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T133543Z-plugin-codex-mobile-web-codex-mobile-v590-submitted-echo-merge`.
+  - Public deploy was not run.
+- Production readback:
+  - `/api/public-config` returned status `200`, build id
+    `8b0e132ec913375f`, client build id
+    `0.1.11|codex-mobile-shell-v590`, shell cache
+    `codex-mobile-shell-v590`, and `authRequired=true`.
+  - Source/production hash parity matched for `public/app.js`,
+    `public/sw.js`, `test/conversation-render.test.js`, and
+    `test/client-render-stability-guard.test.js`.
+  - Production marker readback confirmed `codex-mobile-shell-v590`,
+    `leftSubmittedEcho`, `entry && entry.item`, and
+    `normalizer collapses durable submitted user echoes after pending state is
+    cleared`.
+- Residual gate:
+  - Deploy-mode runtime self-check returned `deployPass=false` and
+    `periodicHealthy=false`.
+  - API-thread check was `ok=true` with zero issues.
+  - Browser-runtime check still reported H2
+    `browser_latest_turn_user_message_duplicate` (`18` instances in the
+    bounded gate run).
+  - `browser_latest_turn_timestamp_missing` did not recur in this run.
+  - Original `thread_session_load_failed` did not recur in this run.
+  - Return status for task card `ttc_029078277aa81bd522` was
+    `partially_completed`.
+
+### 2026-06-29 - v591 Stale Projection User Echo Replacement Pending Deploy
+
+- Scope:
+  - Follow-up to v590 residual where direct API projection was clean but the
+    browser runtime still reported `browser_latest_turn_user_message_duplicate`
+    after repeated Movie -> Codex Mobile thread switching.
+  - Original `thread_session_load_failed/http_404` remains closed by v583; this
+    slice targets the browser-only duplicate-user-message residual.
+- Root-cause refinement:
+  - A switch-probe reproduced the duplicate as two visible user nodes with the
+    same text hash in the same active turn:
+    - stale projection-index node `item-3`
+    - current API authority node `item-28891`
+  - Direct API detail readback for the Codex Mobile source thread had no
+    duplicate user text groups, so the fault is in client merge/visible state,
+    not server projection output.
+  - Existing DOM cleanup could only remove nodes absent from the client patch
+    plan; because the stale `item-3` remained in the plan, the owning layer is
+    the client-side visible-item merge authority.
+- Source changes:
+  - `public/app.js` bumps `CLIENT_BUILD_ID` to
+    `0.1.11|codex-mobile-shell-v591`.
+  - `public/sw.js` bumps `CACHE_NAME` to `codex-mobile-shell-v591`.
+  - `userMessagesCanShadow()` treats same-turn projection-index `item-N` user
+    messages with matching normalized content and close display timestamps as
+    replaceable projection echoes.
+  - `userMessageShadowPriority()` orders projection-index user messages by
+    numeric item index, so newer authority such as `item-28891` replaces stale
+    low-index projection echoes such as `item-3`.
+  - `test/conversation-render.test.js` adds coverage proving stale low-index
+    projection user items are replaced by the newer projection authority.
+- Validation passed locally before deploy:
+  - `node --test test/conversation-render.test.js test/thread-detail-v4-merge-state.test.js test/client-render-stability-guard.test.js`
+  - `npm test` (`1589` tests passed)
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+  - `node /Users/hermes-dev/HermesMobileDev/app/scripts/fallback-governance-check.js --changed-file public/app.js --changed-file public/sw.js --changed-file test/conversation-render.test.js --changed-file test/client-render-stability-guard.test.js --json`
+- Deployment status:
+  - Pending local commit and private deploy through Home AI Deploy lane.
+  - Public deploy was not requested and must not be run unless explicitly
+    requested.

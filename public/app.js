@@ -542,7 +542,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v590";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v591";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -5727,10 +5727,38 @@ function userMessagesLikelySame(left, right) {
 function userMessagesCanShadow(left, right) {
   const leftSubmittedEcho = Boolean(String(left && left.clientSubmissionId || "").trim() && !(left && left.mobileSendError));
   const rightSubmittedEcho = Boolean(String(right && right.clientSubmissionId || "").trim() && !(right && right.mobileSendError));
+  const projectionIndexId = (item) => String(item && (item.id || item.itemId || item.item_id) || "").trim().match(/^item-(\d+)$/i);
+  const leftProjectionIndex = Boolean(projectionIndexId(left));
+  const rightProjectionIndex = Boolean(projectionIndexId(right));
+  const itemTimeMs = (item) => {
+    const value = item && (
+      item.startedAtMs
+      || item.startedAt
+      || item.createdAtMs
+      || item.createdAt
+      || item.timestampMs
+      || item.timestamp
+      || item.updatedAtMs
+      || item.updatedAt
+    );
+    if (value === null || value === undefined || value === "") return 0;
+    const numberValue = Number(value);
+    if (Number.isFinite(numberValue) && numberValue > 0) {
+      return numberValue > 1_000_000_000_000 ? Math.trunc(numberValue) : Math.trunc(numberValue * 1000);
+    }
+    const parsed = Date.parse(String(value));
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  };
+  const leftProjectionTime = itemTimeMs(left);
+  const rightProjectionTime = itemTimeMs(right);
+  const projectionIndexEcho = Boolean(leftProjectionIndex && rightProjectionIndex
+    && leftProjectionTime
+    && rightProjectionTime
+    && Math.abs(leftProjectionTime - rightProjectionTime) <= 5000);
   return Boolean(left && right
     && left.type === "userMessage"
     && right.type === "userMessage"
-    && (isOptimisticUserMessage(left) || isOptimisticUserMessage(right) || leftSubmittedEcho || rightSubmittedEcho)
+    && (isOptimisticUserMessage(left) || isOptimisticUserMessage(right) || leftSubmittedEcho || rightSubmittedEcho || projectionIndexEcho)
     && userMessagesLikelySame(left, right));
 }
 
@@ -5759,6 +5787,11 @@ function userMessageShadowPriority(item) {
   if (!item || item.type !== "userMessage") return 0;
   if (/^local-user-/.test(String(item.id || ""))) return 1;
   if (isMuxUserMessage(item) || item.mobilePendingSubmission || String(item.clientSubmissionId || "").trim()) return 2;
+  const projectionMatch = String(item.id || item.itemId || item.item_id || "").trim().match(/^item-(\d+)$/i);
+  if (projectionMatch) {
+    const projectionIndex = Math.max(0, Math.min(999999, Number(projectionMatch[1]) || 0));
+    return 2 + (projectionIndex / 1000000);
+  }
   return 3;
 }
 
