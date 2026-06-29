@@ -28847,9 +28847,33 @@ The previous full handoff was archived and should be opened only when old proven
     pre-submit latest-turn hash false-positive; that self-check bug was fixed
     before final validation.
 - Deploy state:
-  - Ready to commit and request private deployment through the Home AI Deploy
-    lane so production scripts/adapters have the new self-check coverage.
+  - Local commit: `38c1f0b`
+    (`test: detect browser jitter and submit visibility`).
+  - Home AI Deploy task card: `ttc_1bd4b5ea4f0036cebe`.
+  - Private deployment through the Home AI Deploy lane synced the production
+    scripts/adapters; source/prod hashes matched for
+    `scripts/codex-mobile-browser-runtime-self-check.js`,
+    `scripts/codex-mobile-runtime-self-check-loop.js`, and
+    `adapters/browser-runtime-self-check-service.js`.
+  - Production marker readback confirmed
+    `browser_visual_anchor_jitter`,
+    `browser_submitted_message_card_jitter`,
+    `browser_submit_user_message_not_visible`,
+    `browser_submit_exercise_failed`, `--exercise-submit`, and
+    `--browser-exercise-submit`.
+  - Production `/api/public-config` remained healthy with
+    `clientBuildId=0.1.11|codex-mobile-shell-v580`,
+    `shellCacheName=codex-mobile-shell-v580`, and
+    `buildId=7571dd9bed983c26`.
+  - Production non-submit browser self-check against Movie
+    `019efca1-ea69-7292-87b7-025ba023ca87` passed with zero browser issues,
+    zero image failures, zero timestamp gaps, zero process-item leaks, and
+    zero visual/submitted-card jitter counts.
   - This change does not modify `public/app.js` or `public/sw.js`; expected
     `/api/public-config` remains `codex-mobile-shell-v580` unless another
     runtime change is deployed.
-  - No Public deploy was requested.
+  - No active-submit production smoke was rerun after deploy to avoid sending
+    another OK message while the target thread might be busy; the explicit
+    submit path is covered by focused tests and will now fail closed with
+    `browser_submit_exercise_failed` if Composer is disabled.
+  - No Public deploy was requested or run.
