@@ -1079,6 +1079,9 @@ function evaluatedVisibleItemsForTurn() {
     "liveTurnHasUserVisibleTextReplyAfter",
     "userMessageHasVisualAttachment",
     "shouldHideDurableLiveUserMessage",
+    "durableUserMessageMatchesOptimisticEcho",
+    "threadHasDurableUserMessageWithSubmissionId",
+    "shouldHideOptimisticUserMessageEcho",
     "isSupersededLiveTurn",
     "shouldHideSupersededLiveUserMessage",
     "isRawThreadReadMode",
@@ -2138,6 +2141,81 @@ test("live turn keeps current submitted durable user message when projection dro
   assert.deepEqual(
     harness.visibleItemsForTurn(liveTurn).map((entry) => entry.item.id),
     ["real-user-old", "assistant-progress", "real-user-current"],
+  );
+});
+
+test("live turn hides local pending echo once durable user message is in the same turn", () => {
+  const harness = evaluatedVisibleItemsForTurn();
+  const liveTurn = {
+    live: true,
+    items: [
+      {
+        id: "local-user-submit-current",
+        type: "userMessage",
+        mobilePendingSubmission: true,
+        clientSubmissionId: "submit-current",
+        content: [{ type: "text", text: "current long user message" }],
+      },
+      {
+        id: "real-user-current",
+        type: "userMessage",
+        content: [{ type: "input_text", text: "current   long user message" }],
+      },
+      { id: "assistant-progress", type: "agentMessage", text: "working" },
+    ],
+  };
+  assert.deepEqual(
+    harness.visibleItemsForTurn(liveTurn).map((entry) => entry.item.id),
+    ["real-user-current", "assistant-progress"],
+  );
+});
+
+test("live turn keeps failed local pending user message visible", () => {
+  const harness = evaluatedVisibleItemsForTurn();
+  const liveTurn = {
+    live: true,
+    items: [
+      {
+        id: "local-user-submit-current",
+        type: "userMessage",
+        mobilePendingSubmission: true,
+        clientSubmissionId: "submit-current",
+        mobileSendError: { message: "send failed" },
+        content: [{ type: "text", text: "current long user message" }],
+      },
+      {
+        id: "real-user-current",
+        type: "userMessage",
+        content: [{ type: "input_text", text: "current long user message" }],
+      },
+    ],
+  };
+  assert.deepEqual(
+    harness.visibleItemsForTurn(liveTurn).map((entry) => entry.item.id),
+    ["local-user-submit-current", "real-user-current"],
+  );
+});
+
+test("live turn keeps repeated durable user messages visible", () => {
+  const harness = evaluatedVisibleItemsForTurn();
+  const liveTurn = {
+    live: true,
+    items: [
+      {
+        id: "real-user-one",
+        type: "userMessage",
+        content: [{ type: "input_text", text: "OK" }],
+      },
+      {
+        id: "real-user-two",
+        type: "userMessage",
+        content: [{ type: "input_text", text: "OK" }],
+      },
+    ],
+  };
+  assert.deepEqual(
+    harness.visibleItemsForTurn(liveTurn).map((entry) => entry.item.id),
+    ["real-user-one", "real-user-two"],
   );
 });
 
@@ -4166,6 +4244,7 @@ function visibleTurnsForConversation(thread) { return thread && Array.isArray(th
 function threadTileDisplayThread(id) { return id === "pane-thread" ? paneThread : null; }
 function isReasoningItem() { return false; }
 function shouldHideSupersededLiveUserMessage() { return false; }
+function shouldHideOptimisticUserMessageEcho() { return false; }
 function shouldHideDurableLiveUserMessage() { return false; }
 function isContextCompactionItem(item) { return Boolean(item && item.type === "contextCompaction"); }
 function isOperationalItem() { return false; }
@@ -4231,6 +4310,7 @@ const state = {
 function visibleTurnsForConversation(thread) { return thread && Array.isArray(thread.turns) ? thread.turns : []; }
 function isReasoningItem() { return false; }
 function shouldHideSupersededLiveUserMessage() { return false; }
+function shouldHideOptimisticUserMessageEcho() { return false; }
 function shouldHideDurableLiveUserMessage() { return false; }
 function isContextCompactionItem(item) { return Boolean(item && item.type === "contextCompaction"); }
 function isOperationalItem() { return false; }
@@ -4295,6 +4375,7 @@ const state = {
 };
 function isReasoningItem() { return false; }
 function shouldHideSupersededLiveUserMessage() { return false; }
+function shouldHideOptimisticUserMessageEcho() { return false; }
 function shouldHideDurableLiveUserMessage() { return false; }
 function isContextCompactionItem(item) { return Boolean(item && item.type === "contextCompaction"); }
 function isOperationalItem() { return false; }

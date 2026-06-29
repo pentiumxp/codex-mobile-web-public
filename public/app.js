@@ -542,7 +542,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v585";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v586";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -5225,6 +5225,35 @@ function shouldHideDurableLiveUserMessage(turn, item, index = 0, thread = null) 
   return false;
 }
 
+function durableUserMessageMatchesOptimisticEcho(durableItem, optimisticItem) {
+  if (!durableItem || !optimisticItem) return false;
+  if (durableItem.type !== "userMessage" || optimisticItem.type !== "userMessage") return false;
+  if (isOptimisticUserMessage(durableItem) || !isOptimisticUserMessage(optimisticItem)) return false;
+  return userMessagesShareSubmissionId(durableItem, optimisticItem)
+    || userMessagesLikelySame(durableItem, optimisticItem);
+}
+
+function threadHasDurableUserMessageWithSubmissionId(thread, optimisticItem) {
+  const submissionIds = userMessageSubmissionIdCandidates(optimisticItem);
+  if (!submissionIds.length || !thread || !Array.isArray(thread.turns)) return false;
+  return thread.turns.some((candidateTurn) => (Array.isArray(candidateTurn && candidateTurn.items) ? candidateTurn.items : [])
+    .some((candidate) => candidate
+      && candidate.type === "userMessage"
+      && !isOptimisticUserMessage(candidate)
+      && submissionIds.some((submissionId) => userMessageHasSubmissionId(candidate, submissionId))));
+}
+
+function shouldHideOptimisticUserMessageEcho(turn, item, index = 0, thread = null) {
+  if (!item || item.type !== "userMessage" || !isOptimisticUserMessage(item)) return false;
+  if (item.mobileSendError) return false;
+  const items = Array.isArray(turn && turn.items) ? turn.items : [];
+  const sameTurnDurableMatch = items.some((candidate, candidateIndex) => (
+    candidateIndex !== index && durableUserMessageMatchesOptimisticEcho(candidate, item)
+  ));
+  if (sameTurnDurableMatch) return true;
+  return threadHasDurableUserMessageWithSubmissionId(renderContextThread(thread), item);
+}
+
 function isSupersededLiveTurn(turn) {
   return Boolean(turn && (turn.mobileSupersededLive || (turn.status && turn.status.mobileSupersededLive)));
 }
@@ -5297,6 +5326,7 @@ function visibleItemsForTurn(turn, thread = null) {
       return;
     }
     if (shouldHideSupersededLiveUserMessage(turn, item)) return;
+    if (shouldHideOptimisticUserMessageEcho(turn, item, index, contextThread)) return;
     if (shouldHideDurableLiveUserMessage(turn, item, index, contextThread)) return;
     if (isContextCompactionItem(item)) {
       const notice = contextCompactionNotice(item, turn, contextThread);
