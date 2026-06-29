@@ -32081,5 +32081,27 @@ The previous full handoff was archived and should be opened only when old proven
     Home AI fallback governance check, `git diff --check`, and
     `codegraph sync && codegraph status` passed.
 - Deployment status:
-  - Local deploy candidate only at this point. Private production deploy has
-    not yet been sent. No Public deploy requested or run.
+  - Private production deploy was requested through Home AI Deploy card
+    `ttc_dcceb4428778fa5a41` with reason
+    `codex-mobile-active-assistant-duplicate-advisory`.
+  - Local read-only production parity after the deploy request confirmed the
+    changed files were synced to production:
+    - `adapters/browser-runtime-self-check-service.js` (`0464107a082fd78d`)
+    - `test/browser-runtime-self-check-service.test.js` (`a6c396c5d9fca227`)
+    - `docs/MODULES.md` (`fac74fe102140876`)
+    - `docs/TROUBLESHOOTING.md` (`db4a02c99f95b9b7`)
+  - Production `/api/public-config` returned status `200`, version `0.1.11`,
+    build id `576c30a2eea33b2a`, client build id
+    `0.1.11|codex-mobile-shell-v598`, shell cache
+    `codex-mobile-shell-v598`, and `authRequired=true`; unchanged static shell
+    is expected for this analyzer/docs-only deploy.
+  - Production deploy-mode runtime self-check against Movie and Codex Mobile
+    source threads returned `ok=true`, `deployPass=true`, zero issues, zero
+    blocking issues, and zero execution failures across `api-thread`,
+    `browser-runtime`, and `client-events`.
+  - Production LaunchAgent readback returned `ok=true`; the latest full-check
+    event had check names `api-thread`, `browser-runtime`, `client-events`,
+    `deployPass=true`, `periodicHealthy=true`, zero issue counts, and zero
+    execution failures.
+  - Official Home AI deploy return was not yet received in this thread at the
+    time of this handoff update. No Public deploy requested or run.
