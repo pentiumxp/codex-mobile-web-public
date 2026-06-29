@@ -32353,6 +32353,36 @@ The previous full handoff was archived and should be opened only when old proven
   - LaunchAgent readback returned `ok=true` with latest full-check periodic
     event healthy, zero blockers, and zero execution failures.
 
+### 2026-06-30 - Retained User-Input Byte Attribution Dispatched
+
+- Source:
+  - Commit `7afaaf7` (`fix: attribute retained user input bytes`) is ready and
+    dispatched to the Home AI central private deploy lane via task card
+    `ttc_f27107d985355beaba`.
+  - Deploy reason requested:
+    `codex-mobile-retained-user-input-byte-attribution`.
+  - Public deploy was not requested.
+- Root cause / invariant:
+  - After completed replay assistant budget deployed, retained visible bytes
+    shifted to user input as the largest bucket while active overlay/window
+    gates remained healthy.
+  - This is attribution-only. It records retained user-input item counts/bytes
+    by active/completed/stale turn state so a later budget can distinguish
+    current active input from completed historical input before trimming.
+  - It does not truncate, remove, or otherwise reshape user input.
+- Local validation before dispatch:
+  - `node --test test/thread-detail-response-budget-service.test.js
+    test/phase-b-readback-smoke.test.js
+    test/phase-b-readback-decision-service.test.js` passed (`74` tests).
+  - `npm test -- --test-reporter=dot`, `npm run check`, and
+    `npm run check:macos` passed.
+  - Home AI fallback-governance guard returned `ok=true`.
+  - `git diff --check` passed.
+  - `codegraph sync && codegraph status` reported the index up to date.
+- Awaiting:
+  - Central private deploy return with source/production parity, marker
+    readback, Phase-B readback, runtime gate, and LaunchAgent readback.
+
 ### 2026-06-30 - Active First-Paint Assistant Retained-Byte Attribution Deployed
 
 - Source commit:
