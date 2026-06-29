@@ -16,6 +16,61 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-29 Public 发布说明（v581 completed-turn 提交和轻微颤动修复）
+
+本次 Public 同步 `codex-mobile-shell-v581` 以及 v578-v581 这一组已经
+私有生产部署并通过浏览器自检的修复。它面向的是近期移动端和 embedded
+场景里最影响使用的几类状态不一致：用户消息发送后短暂消失、完成 turn
+下面残留 pending 用户消息、阅读过程中被 live 更新拉动、轻微几 px 颤动、
+以及 slow-path 诊断反复生成不需要 Owner 处理的维修卡。
+
+本次发布的根因修复包括：
+
+- v578 修正已提交用户消息在 live turn 中被旧投影覆盖的问题。服务端
+  pending echo 会在目标 turn 完成后清理，浏览器自检也加入
+  `browser_pending_user_message_disappeared` / submitted-message 可见性检查。
+- v579 增强用户阅读保护：当用户正在上滑阅读或页面处于非底部阅读状态时，
+  live 更新不再主动改写 viewport；自检覆盖最新 turn 时间戳、图片加载、
+  operation/reasoning 泄露和 sparse 样本回退。
+- v580 把 `thread_session_slow_path` 默认改为 observe-only。线程详情偶发
+  1-3 秒或 3-10 秒慢路径仍会被本地累积为诊断参考，但默认不再自动通知
+  Owner 或生成重复维修卡；真正可行动的投影/渲染错误仍保持可上报。
+- v581 修复 completed turn 下提交新消息时的 stale active-turn 归属问题。
+  已完成回执下方不再残留错误的用户消息 echo，`.conversation .entry-animate`
+  和 `.entry-leave` 动画也被禁用，避免消息卡片插入/替换时出现轻微抖动。
+- 浏览器 self-check 增加可见锚点 jitter 和 submitted-message jitter 检测，
+  既能测全屏刷新，也能测几 px 的轻微颤动；后续部署后可以继续作为
+  用户体验回归的自动检查入口。
+
+私有生产读回已经确认：
+
+- `clientBuildId=0.1.11|codex-mobile-shell-v581`
+- `shellCacheName=codex-mobile-shell-v581`
+- Source/prod hash parity 覆盖 `public/app.js`、`public/styles.css`、
+  `public/sw.js`、`adapters/message-pending-echo-service.js` 和
+  `scripts/codex-mobile-browser-runtime-self-check.js`
+- 浏览器 runtime self-check：36 个样本，`issueCount=0`，
+  `blockingIssueCount=0`，`maxVisualAnchorSmallJitterCount=0`，
+  `maxVisualAnchorShiftPx=0`，`maxSubmittedMessageSmallJitterCount=0`，
+  `maxSubmittedMessageShiftPx=0`，图片、timestamp、operation/reasoning
+  泄露、console warning/error 和 browser exception 都为 0。
+
+验证范围：
+
+```sh
+node --test test/home-ai-diagnostic-reporting.test.js test/thread-diagnostic-events.test.js
+node --test test/browser-runtime-self-check-service.test.js test/runtime-self-check-loop.test.js
+node --test test/message-pending-echo-service.test.js test/conversation-render.test.js test/conversation-scroll.test.js test/turn-scroll-controls.test.js
+npm test
+npm run check
+npm run check:macos
+git diff --check
+```
+
+Public 仓库只同步公开源码、README、docs、scripts 和测试；不包含
+`.agent-context`、runtime state、本地密钥、访问 key、launch token、上传内容、
+完整 rollout、私有日志或任何 Home AI/Codex 私有运行时数据。
+
 ## 2026-06-29 Public 发布说明（v577 投影一致性和浏览器自检闭环）
 
 本次 Public 同步 `codex-mobile-shell-v577` 以及同批私有生产验证过的
