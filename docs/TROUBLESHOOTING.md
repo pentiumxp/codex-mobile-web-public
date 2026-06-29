@@ -836,7 +836,10 @@ Cause to check:
   `browser_latest_turn_reasoning_items_visible`. These checks catch the class
   where the API has the submitted user input but the DOM latest turn does not,
   or where command/reasoning process rows leak into the ordinary conversation
-  instead of staying in the operation status surface.
+  instead of staying in the operation status surface. Task-card injected DOM is
+  a userMessage presentation, so newer analyzer builds count
+  `.thread-task-card-injected` as visible user input for ordinary user-message
+  visibility while still enforcing task-card-specific expectation counts.
   Current checks also compare bounded DOM/API structure for every recent
   visible turn, not only the latest turn. `browser_turn_assistant_missing`,
   `browser_turn_user_message_below_api_expectation`,

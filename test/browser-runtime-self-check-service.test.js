@@ -236,6 +236,47 @@ test("browser runtime self-check catches per-turn DOM/API structure mismatches",
   assert.equal(issue.turnShape.actualAssistantMessageCount, 0);
 });
 
+test("browser runtime self-check counts task-card DOM as visible user input", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [{
+      label: "turn-task-card-user-input",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      expectedTurnShapes: [{
+        index: 0,
+        turnHash: "turn-a",
+        completed: true,
+        expectedItemCount: 3,
+        expectedUserMessageCount: 1,
+        expectedAssistantMessageCount: 1,
+        expectedUsageRequired: true,
+        expectedTimestampItemCount: 2,
+      }],
+      domTurnShapes: [{
+        index: 0,
+        turnHash: "turn-a",
+        itemCount: 26,
+        userMessageCount: 0,
+        taskCardUserMessageCount: 1,
+        assistantMessageCount: 24,
+        usageCount: 1,
+        timestampExpectedItems: 25,
+        timestampMissingItems: 0,
+        userAfterUsageCount: 0,
+      }],
+      turns: 1,
+      items: 26,
+      renderKeys: 26,
+    }],
+  });
+
+  assert.equal(report.ok, true);
+  assert.equal(report.blockingIssueCount, 0);
+  assert.equal(report.issues.some((issue) => issue.code === "browser_turn_user_message_below_api_expectation"), false);
+});
+
 test("browser runtime self-check keeps active progressive timestamp gaps advisory", () => {
   const report = service.analyzeBrowserRuntimeSamples({
     samples: [{
@@ -657,6 +698,29 @@ test("browser runtime self-check catches latest turn user messages below API exp
 
   assert.equal(report.ok, false);
   assert.ok(report.issues.some((issue) => issue.code === "browser_latest_turn_user_message_below_api_expectation"));
+});
+
+test("browser runtime self-check counts latest task-card DOM as visible user input", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [{
+      label: "latest-task-card-user-input",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      latestTurnMatchesTarget: true,
+      expectedLatestUserMessageCount: 1,
+      latestTurnUserMessageCount: 0,
+      latestTurnTaskCardItemCount: 1,
+      turns: 3,
+      items: 12,
+      renderKeys: 12,
+    }],
+  });
+
+  assert.equal(report.ok, true);
+  assert.equal(report.blockingIssueCount, 0);
+  assert.equal(report.issues.some((issue) => issue.code === "browser_latest_turn_user_message_below_api_expectation"), false);
 });
 
 test("browser runtime self-check catches latest turn task card below API expectation", () => {

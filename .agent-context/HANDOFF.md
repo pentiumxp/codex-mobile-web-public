@@ -31956,3 +31956,80 @@ The previous full handoff was archived and should be opened only when old proven
 - Deployment status:
   - Local deploy candidate only at this point. Private production deploy has
     not yet been sent. No Public deploy requested or run.
+
+### 2026-06-30 - LaunchAgent Full-Check Event Readback Deployed
+
+- Source commit:
+  - `03db1743800f` (`fix: read launchagent full self-check events`).
+- Deploy status:
+  - Private production deploy completed through the Home AI deploy lane with
+    reason `codex-mobile-launchagent-full-check-event-readback`.
+  - Deploy backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T194150Z-plugin-codex-mobile-web-codex-mobile-launchagent-full-check-event-readback`.
+  - Public deploy was not run.
+  - Production `/api/public-config` returned status `200`, version `0.1.11`,
+    build id `576c30a2eea33b2a`, client build id
+    `0.1.11|codex-mobile-shell-v598`, shell cache
+    `codex-mobile-shell-v598`, and `authRequired=true`.
+  - Source/production parity matched for:
+    - `adapters/runtime-self-check-launchagent-service.js`
+    - `scripts/codex-mobile-runtime-self-check-launchagent-readback.js`
+    - `test/runtime-self-check-launchagent-service.test.js`
+    - `docs/MODULES.md`
+    - `docs/TROUBLESHOOTING.md`
+  - Production marker readback found `DEFAULT_REQUIRED_CHECK_NAMES`,
+    `eventHasRequiredCheckNames`, `--required-checks`, and the focused test
+    marker `skips manual subset events when full checks are required`.
+- Production readback:
+  - Initial post-deploy LaunchAgent readback proved the new full-check filter by
+    selecting an event whose `latestEvent.checkNames` contained `api-thread`,
+    `browser-runtime`, and `client-events`.
+  - A fresh full periodic-shaped runtime self-check returned `ok=true`,
+    `deployPass=true`, `periodicHealthy=true`, `blockingIssueCount=0`, and
+    `executionFailureCount=0`; it had only H3 timestamp advisories.
+  - Final LaunchAgent readback returned `ok=true`, loaded `true`, state
+    `not_running`, latest event `gateMode=periodic`, `deployPass=true`,
+    `periodicHealthy=true`, and zero blocking/execution-failure counts.
+  - Deploy-mode runtime gate against Movie and Codex Mobile source threads
+    returned `ok=true`, zero issues, zero blocking issues, and zero execution
+    failures.
+
+### 2026-06-30 - Browser Runtime Task-Card User-Input Visibility Ready For Deploy
+
+- Scope:
+  - Follow-up to a fresh periodic runtime gate after v598/vLaunchAgent readback.
+  - The gate reported H2 `browser_turn_user_message_below_api_expectation` on a
+    completed turn where API expected one user input, while DOM had one
+    `thread-task-card-injected` item, no ordinary `.userMessage`, many
+    assistant/plan rows, and Usage present.
+- Root cause / invariant:
+  - Task-card injected DOM is the specialized visible rendering of a
+    `userMessage`.
+  - `adapters/browser-runtime-self-check-service.js` compared ordinary DOM
+    `.userMessage` count alone against API user-message expectations, so a
+    visible task-card user input could look like a lost user message.
+  - Task-card-specific expectations still need a separate check; the repair
+    only changes the ordinary user-input visibility count.
+- Source changes:
+  - `adapters/browser-runtime-self-check-service.js` adds
+    `visibleUserInputCount()` and uses ordinary user-message plus injected
+    task-card counts for user-message visibility checks.
+  - H2 evidence now includes both ordinary user and task-card actual counts via
+    `actualVisibleUserInputCount` / `latestTurnTaskCardItemCount`.
+  - `test/browser-runtime-self-check-service.test.js` covers per-turn and
+    latest-turn task-card DOM satisfying user-input visibility while preserving
+    task-card-specific gap coverage.
+  - `docs/MODULES.md` and `docs/TROUBLESHOOTING.md` document the analyzer
+    contract.
+- Validation:
+  - `node --check adapters/browser-runtime-self-check-service.js && node --test test/browser-runtime-self-check-service.test.js test/runtime-self-check-gate-service.test.js`
+    passed with 42 tests.
+  - A full periodic-shaped runtime self-check using the patched analyzer
+    returned `ok=true`, `deployPass=true`, `periodicHealthy=true`, and zero
+    issues across `api-thread`, `browser-runtime`, and `client-events`.
+  - `npm test -- --test-reporter=dot`, `npm run check`, `npm run check:macos`,
+    Home AI fallback governance check, `git diff --check`, and
+    `codegraph sync && codegraph status` passed.
+- Deployment status:
+  - Local deploy candidate only at this point. Private production deploy has
+    not yet been sent. No Public deploy requested or run.

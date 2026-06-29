@@ -33,6 +33,11 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(number) ? number : fallback;
 }
 
+function visibleUserInputCount(row = {}) {
+  return toNumber(row.userMessageCount || row.latestTurnUserMessageCount)
+    + toNumber(row.taskCardUserMessageCount || row.latestTurnTaskCardItemCount);
+}
+
 function isSparseSample(sample = {}) {
   return toNumber(sample.turns) <= 1 && toNumber(sample.items) <= 3;
 }
@@ -144,6 +149,7 @@ function safeTurnShape(value = {}) {
     actualItemCount: toNumber(row.itemCount),
     expectedUserMessageCount: toNumber(row.expectedUserMessageCount),
     actualUserMessageCount: toNumber(row.userMessageCount),
+    actualVisibleUserInputCount: visibleUserInputCount(row),
     expectedAssistantMessageCount: toNumber(row.expectedAssistantMessageCount),
     actualAssistantMessageCount: toNumber(row.assistantMessageCount),
     expectedTaskCardUserMessageCount: toNumber(row.expectedTaskCardUserMessageCount),
@@ -356,7 +362,7 @@ function analyzeBrowserRuntimeSamples(input = {}) {
     }
     for (const turnShape of matchedTurnShapes(sample)) {
       if (toNumber(turnShape.expectedUserMessageCount) > 0
-        && toNumber(turnShape.userMessageCount) < toNumber(turnShape.expectedUserMessageCount)) {
+        && visibleUserInputCount(turnShape) < toNumber(turnShape.expectedUserMessageCount)) {
         issues.push(issue("H2", "browser_turn_user_message_below_api_expectation", sample, {
           turnShape: safeTurnShape(turnShape),
         }));
@@ -394,10 +400,11 @@ function analyzeBrowserRuntimeSamples(input = {}) {
     if (sampleIsConfirmed(sample)
       && sample.latestTurnMatchesTarget
       && toNumber(sample.expectedLatestUserMessageCount) > 0
-      && toNumber(sample.latestTurnUserMessageCount) < toNumber(sample.expectedLatestUserMessageCount)) {
+      && visibleUserInputCount(sample) < toNumber(sample.expectedLatestUserMessageCount)) {
       issues.push(issue("H2", "browser_latest_turn_user_message_below_api_expectation", sample, {
         expectedLatestUserMessageCount: toNumber(sample.expectedLatestUserMessageCount),
         latestTurnUserMessageCount: toNumber(sample.latestTurnUserMessageCount),
+        latestTurnTaskCardItemCount: toNumber(sample.latestTurnTaskCardItemCount),
       }));
     }
     if (sampleIsConfirmed(sample)
