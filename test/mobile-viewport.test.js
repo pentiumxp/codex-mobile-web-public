@@ -139,7 +139,7 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(platformPointer, /development visual check passes/);
 });
 
-test("Android composer stale focus is released before the native tap", () => {
+test("Android composer focused native tap preserves IME focus", () => {
   const prepareBody = functionBody("prepareMessageInputForNativeGesture");
   const recoverBody = functionBody("recoverMessageInputKeyboardFromGesture");
   const shouldRecoverBody = functionBody("shouldRecoverMessageInputKeyboard");
@@ -149,10 +149,11 @@ test("Android composer stale focus is released before the native tap", () => {
   assert.match(prepareBody, /releaseStaleAndroidMessageInputFocusBeforeNativeTap\(input\)/);
   assert.doesNotMatch(prepareBody, /focusMessageInput|preventDefault/);
   assert.match(releaseBody, /messageInputKeyboardVisible\(\)/);
+  assert.match(releaseBody, /document\.activeElement === input[\s\S]*return false/);
   assert.match(releaseBody, /input\.blur\(\)/);
   assert.match(shouldRecoverBody, /if \(!isAndroidBrowser\(\) && !isHermesEmbedMode\(\)\) return false;/);
   assert.doesNotMatch(shouldRecoverBody, /if \(isAndroidBrowser\(\)\) return false;/);
-  assert.match(recoverBody, /if \(isAndroidBrowser\(\)\) return false;/);
+  assert.doesNotMatch(recoverBody, /if \(isAndroidBrowser\(\)\) return false;/);
   assert.match(recoverBody, /resetActiveFocus: true/);
   assert.match(recoverBody, /allowAndroidActiveFocusReset: true/);
 });

@@ -24,6 +24,83 @@ function functionBody(name) {
   throw new Error(`could not parse function ${name}`);
 }
 
+function functionSource(name) {
+  let start = appJs.indexOf(`function ${name}(`);
+  if (start < 0) start = appJs.indexOf(`async function ${name}(`);
+  assert.notEqual(start, -1, `missing function ${name}`);
+  const body = functionBody(name);
+  const open = appJs.indexOf(") {", start) + 2;
+  assert.notEqual(open, 1, `missing function body ${name}`);
+  return `${appJs.slice(start, open + 1)}${body}}`;
+}
+
+function evaluatedAndroidComposerGestureHarness(options = {}) {
+  const sources = [
+    "messageInputKeyboardVisible",
+    "shouldRecoverMessageInputKeyboard",
+    "recoverMessageInputKeyboardFromGesture",
+    "messageInputCanEnableForNativeGesture",
+    "releaseStaleAndroidMessageInputFocusBeforeNativeTap",
+    "prepareMessageInputForNativeGesture",
+  ].map(functionSource).join("\n");
+  return Function("options", `
+let blurCount = 0;
+let focusCount = 0;
+let disabledCount = 0;
+const state = {
+  composerBusy: false,
+  composerComposing: Boolean(options.composerComposing),
+  attachmentProcessingCount: 0,
+  newThreadDraft: true,
+  currentThreadId: "thread-id",
+  currentThread: { mobileLoading: false, mobileLoadError: false },
+  messageInputPointerWasFocused: false,
+  messageInputKeyboardRecoveryAt: 0,
+};
+const input = {
+  contentEditable: options.disabled ? "false" : "true",
+  tabIndex: 0,
+  attrs: { "aria-disabled": options.disabled ? "true" : "false" },
+  classList: { contains() { return false; } },
+  getAttribute(name) { return this.attrs[name] || ""; },
+  setAttribute(name, value) { this.attrs[name] = String(value); },
+  blur() { blurCount += 1; document.activeElement = null; },
+  focus() { focusCount += 1; document.activeElement = input; },
+  contains(node) { return node === input || Boolean(node && node.insideInput); },
+};
+const document = { activeElement: options.initialFocused === false ? null : input };
+const window = { setTimeout(fn) { fn(); } };
+function $(id) { return id === "messageInput" ? input : null; }
+function isAndroidBrowser() { return options.android !== false; }
+function isHermesEmbedMode() { return Boolean(options.hermes); }
+function viewportState() {
+  return { keyboardShrunk: Boolean(options.keyboardShrunk), hostKeyboardVisible: Boolean(options.hostKeyboardVisible) };
+}
+function isKeyboardEditableElement(el) { return el === input; }
+function setMessageInputDisabled(disabled) {
+  disabledCount += 1;
+  input.contentEditable = disabled ? "false" : "true";
+  input.attrs["aria-disabled"] = disabled ? "true" : "false";
+}
+function focusMessageInput() {
+  input.focus();
+  return true;
+}
+${sources}
+return {
+  input,
+  state,
+  prepare: prepareMessageInputForNativeGesture,
+  recover: recoverMessageInputKeyboardFromGesture,
+  release: () => releaseStaleAndroidMessageInputFocusBeforeNativeTap(input),
+  active: () => document.activeElement === input,
+  blurCount: () => blurCount,
+  focusCount: () => focusCount,
+  disabledCount: () => disabledCount,
+};
+`)(options);
+}
+
 test("new-thread draft renders model, reasoning, and permission controls", () => {
   assert.match(appJs, /id="composerModelControl"|composerModelControl/, "composer should include a model control");
   assert.match(appJs, /id="composerEffortControl"|composerEffortControl/, "composer should include a reasoning control");
@@ -102,8 +179,9 @@ test("composer input preserves Android IME composition connection", () => {
   assert.doesNotMatch(functionBody("shouldRecoverMessageInputKeyboard"), /if \(isAndroidBrowser\(\)\) return false;/);
   assert.match(appJs, /function recoverMessageInputKeyboardFromGesture\(\)/);
   assert.match(functionBody("recoverMessageInputKeyboardFromGesture"), /state\.messageInputPointerWasFocused = false/);
-  assert.match(functionBody("recoverMessageInputKeyboardFromGesture"), /if \(isAndroidBrowser\(\)\) return false;/);
+  assert.doesNotMatch(functionBody("recoverMessageInputKeyboardFromGesture"), /if \(isAndroidBrowser\(\)\) return false;/);
   assert.match(appJs, /function releaseStaleAndroidMessageInputFocusBeforeNativeTap\(input\)/);
+  assert.match(functionBody("releaseStaleAndroidMessageInputFocusBeforeNativeTap"), /document\.activeElement === input[\s\S]*return false/);
   assert.match(functionBody("releaseStaleAndroidMessageInputFocusBeforeNativeTap"), /input\.blur\(\)/);
   assert.match(appJs, /function messageInputCanEnableForNativeGesture\(\)/);
   assert.match(functionBody("messageInputCanEnableForNativeGesture"), /state\.composerBusy \|\| state\.attachmentProcessingCount > 0/);
@@ -117,10 +195,35 @@ test("composer input preserves Android IME composition connection", () => {
   assert.match(appJs, /addEventListener\("pointerdown", prepareMessageInputForNativeGesture\)/);
   assert.match(appJs, /addEventListener\("pointerup", recoverMessageInputKeyboardFromGesture\)/);
   assert.match(appJs, /addEventListener\("click", recoverMessageInputKeyboardFromGesture\)/);
-  assert.match(functionBody("recoverMessageInputKeyboardFromGesture"), /focusMessageInput\(\{[\s\S]*resetActiveFocus: true[\s\S]*allowAndroidActiveFocusReset: true/);
+  assert.match(functionBody("recoverMessageInputKeyboardFromGesture"), /isAndroidBrowser\(\) \? \{[\s\S]*retry: true[\s\S]*\} : \{[\s\S]*resetActiveFocus: true[\s\S]*allowAndroidActiveFocusReset: true/);
   assert.match(appJs, /addEventListener\("compositionstart", \(\) => \{[\s\S]*state\.composerComposing = true;/);
   assert.match(appJs, /addEventListener\("compositionend", \(event\) => \{[\s\S]*state\.composerComposing = false;/);
   assert.match(appJs, /if \(state\.composerComposing \|\| event\.isComposing\) return;/);
+});
+
+test("Android focused composer pointerdown does not blur the native IME connection", () => {
+  const harness = evaluatedAndroidComposerGestureHarness();
+
+  assert.equal(harness.active(), true);
+  harness.prepare({ pointerType: "touch", target: harness.input });
+
+  assert.equal(harness.blurCount(), 0);
+  assert.equal(harness.active(), true);
+  assert.equal(harness.state.messageInputPointerWasFocused, true);
+  assert.equal(harness.recover(), true);
+  assert.equal(harness.blurCount(), 0);
+  assert.equal(harness.focusCount(), 1);
+});
+
+test("Android composer pointerdown keeps focus when host reports keyboard visible", () => {
+  const harness = evaluatedAndroidComposerGestureHarness({ hostKeyboardVisible: true });
+
+  harness.prepare({ pointerType: "touch", target: harness.input });
+
+  assert.equal(harness.blurCount(), 0);
+  assert.equal(harness.active(), true);
+  assert.equal(harness.recover(), false);
+  assert.equal(harness.focusCount(), 0);
 });
 
 test("quota display falls back only to a compatible account quota group", () => {

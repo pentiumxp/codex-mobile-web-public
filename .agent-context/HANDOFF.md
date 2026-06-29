@@ -29018,6 +29018,56 @@ The previous full handoff was archived and should be opened only when old proven
     hotfix failed.
   - Public deploy was not run.
 
+### 2026-06-29 - Android Shell Composer Focus Hotfix
+
+- Task card:
+  - Android source task `ttc_4eaae8e0df609805f5`.
+  - User-visible issue: inside the Android native shell, tapping or long-pressing
+    an already-focused Codex Mobile Composer could blur the input and close the
+    Android IME, preventing caret selection/paste affordances.
+- Root cause / invariant:
+  - Failing layer: Codex Mobile Web frontend Composer gesture handling.
+  - `prepareMessageInputForNativeGesture()` recorded that `#messageInput` was
+    already focused and then `releaseStaleAndroidMessageInputFocusBeforeNativeTap()`
+    could call `input.blur()` on Android while the user was still actively
+    editing.
+  - `recoverMessageInputKeyboardFromGesture()` also returned early on Android,
+    so the pointerup/click recovery path could not restore focus after the
+    plugin-initiated blur.
+  - Invariant: Android WebView/native-shell Composer touch or long-press on an
+    already-focused input must preserve focus/IME connection; stale-focus repair
+    must not run on the active editing path.
+- Implementation:
+  - `public/app.js` now skips stale Android blur when `document.activeElement`
+    is still the Composer input.
+  - Android recovery may retry focus without `resetActiveFocus` instead of
+    returning false; non-Android/Hermes embed recovery keeps the existing
+    reset-active-focus path.
+  - Static shell/cache advanced to `codex-mobile-shell-v584` in `public/app.js`
+    and `public/sw.js`.
+  - Focused executable tests in `test/new-thread-ui.test.js` simulate Android
+    focused `pointerdown` and host-keyboard-visible cases and assert no
+    `blur()` occurs.
+  - Updated `test/mobile-viewport.test.js`,
+    `test/client-render-stability-guard.test.js`, and
+    `docs/TROUBLESHOOTING.md`.
+- Validation:
+  - Focused syntax:
+    `node --check public/app.js && node --check public/sw.js && node --check test/new-thread-ui.test.js && node --check test/mobile-viewport.test.js`.
+  - Focused tests:
+    `node --test test/new-thread-ui.test.js test/mobile-viewport.test.js test/plugin-voice-input.test.js test/composer-quota.test.js`
+    passed (`35` tests).
+  - Full `npm test` passed (`1578` tests).
+  - `npm run check`, `npm run check:macos`, `git diff --check`, Home AI
+    fallback governance check, and `codegraph sync && codegraph status` passed.
+- Deploy state:
+  - Not deployed yet in this handoff section.
+  - Public deploy was not run.
+- Privacy:
+  - No raw secrets, cookies, launch tokens, private thread bodies, upload
+    contents, screenshots, provider payloads, endpoint files, or long logs were
+    recorded.
+
 ### 2026-06-29 - v583 Thread Placeholder 404 And Active Item Time Order Fix Ready For Deploy
 
 - Context:

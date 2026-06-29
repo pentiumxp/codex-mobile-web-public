@@ -542,7 +542,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v583";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v584";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -22247,10 +22247,12 @@ function recoverMessageInputKeyboardFromGesture() {
   const wasFocused = Boolean(state.messageInputPointerWasFocused);
   state.messageInputPointerWasFocused = false;
   if (!wasFocused) return false;
-  if (isAndroidBrowser()) return false;
   if (!shouldRecoverMessageInputKeyboard()) return false;
   state.messageInputKeyboardRecoveryAt = Date.now();
-  return focusMessageInput({
+  return focusMessageInput(isAndroidBrowser() ? {
+    moveCaretToEnd: false,
+    retry: true,
+  } : {
     moveCaretToEnd: false,
     resetActiveFocus: true,
     allowAndroidActiveFocusReset: true,
@@ -22270,6 +22272,7 @@ function messageInputCanEnableForNativeGesture() {
 function releaseStaleAndroidMessageInputFocusBeforeNativeTap(input) {
   if (!input || !isAndroidBrowser()) return false;
   if (!state.messageInputPointerWasFocused) return false;
+  if (document.activeElement === input) return false;
   if (!messageInputCanEnableForNativeGesture()) return false;
   if (state.composerComposing || messageInputKeyboardVisible()) return false;
   const now = Date.now();
