@@ -31859,3 +31859,48 @@ The previous full handoff was archived and should be opened only when old proven
 - Deployment status:
   - Local deploy candidate only at this point. Private production deploy has
     not yet been sent. No Public deploy requested or run.
+
+### 2026-06-30 - Thread List Pre-visible Stall Telemetry Deployed
+
+- Source commit:
+  - `06c107ad9660` (`fix: capture pre-visible thread list stalls`).
+- Deploy status:
+  - Private production deploy was requested through Home AI Deploy card
+    `ttc_dc668bbda98bec4680` with reason
+    `codex-mobile-v598-pre-visible-thread-list-stall-telemetry`.
+  - Independent local production readback confirmed the deploy is live.
+  - Production `/api/public-config` returned status `200`, version `0.1.11`,
+    build id `576c30a2eea33b2a`, client build id
+    `0.1.11|codex-mobile-shell-v598`, shell cache
+    `codex-mobile-shell-v598`, and `authRequired=true`.
+  - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` read back as
+    `state = running`, with `last exit code = 0`.
+- Production hash/marker readback:
+  - Source/production SHA-256 parity matched for:
+    - `public/app.js` (`c70bae8d3b2d6d70`)
+    - `public/frontend-runtime-health.js` (`af420bac5334489a`)
+    - `public/sw.js` (`8819be77d727c520`)
+    - `test/frontend-runtime-health.test.js` (`cfb16ef231f4c44b`)
+    - `test/client-render-stability-guard.test.js` (`a3419d5be74bafd9`)
+    - `docs/MODULES.md` (`2c4924a56d645d0e`)
+    - `docs/TROUBLESHOOTING.md` (`413bc8503df1a414`)
+  - Production marker readback found `threadListMonitorable`,
+    `thread_list_monitorable`, `codex-mobile-shell-v598`, and the focused test
+    marker `thread list runtime stall can report monitorable pre-visible list
+    stalls`.
+- Production runtime readback:
+  - Deploy-mode runtime self-check against Movie and Codex Mobile source
+    threads returned `ok=true`, `deployPass=true`, `periodicHealthy=true`,
+    `issueCount=0`, `blockingIssueCount=0`, and `executionFailureCount=0`.
+  - Child checks `api-thread`, `browser-runtime`, and `client-events` all
+    returned `ok=true` with zero issues.
+  - A 24-hour client-events tail read scanned `3887` lines and parsed `749`
+    bounded client events; `stallEventCount=0`, `h2StallEventCount=0`,
+    `untimedStallEventCount=0`, `outOfWindowStallEventCount=0`, and max
+    recorded stall delays were `0`.
+- Remaining status:
+  - v598 closes the telemetry coverage gap for primary-list DOM-present but
+    pre-visible entry/render-transition freezes. It does not claim to fix an
+    unobserved CPU source yet; the next actual user-visible freeze should now
+    produce bounded owner evidence instead of being dropped as invisible.
+  - No Public deploy requested or run.
