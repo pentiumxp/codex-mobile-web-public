@@ -31261,5 +31261,26 @@ The previous full handoff was archived and should be opened only when old proven
   - `npm run check`, `npm run check:macos`, `git diff --check`, and Home AI
     fallback governance check passed.
 - Deployment status:
-  - LaunchAgent cleanup is ready to commit/deploy through Home AI Deploy.
+  - Source commit `7f68073` (`test: quiet recovered launchagent exits`) was
+    sent to Home AI Deploy with card `ttc_1ad39da8574796fbf7` and deploy
+    reason `codex-mobile-v596-launchagent-recovered-exit-cleanup`.
+  - Production hash parity later matched for:
+    - `adapters/runtime-self-check-launchagent-service.js`
+    - `test/runtime-self-check-launchagent-service.test.js`
+    - `docs/TROUBLESHOOTING.md`
+  - Production `/api/public-config` returned status `200`, version `0.1.11`,
+    build id `804792d85bd686d1`, client build id
+    `0.1.11|codex-mobile-shell-v591`, shell cache
+    `codex-mobile-shell-v591`, and `authRequired=true`.
+  - Production marker readback found `!latestEventHealthy`, the recovered
+    previous nonzero exit test marker, and the `historical nonzero`
+    troubleshooting text.
+  - Production LaunchAgent readback returned `ok=true`, latest periodic gate
+    healthy, `issueCount=0`, and `blockingIssueCount=0`.
+  - Production deploy-mode runtime gate against Movie and Codex Mobile source
+    threads returned `ok=true`, `deployPass=true`, `periodicHealthy=true`,
+    `issueCount=0`, `blockingIssueCount=0`, and `executionFailureCount=0`.
+  - Backup path was not locally readable from this thread due production backup
+    directory permissions; use the Home AI Deploy return card as the
+    authoritative backup readback when it arrives.
   - No Public deploy requested or run.
