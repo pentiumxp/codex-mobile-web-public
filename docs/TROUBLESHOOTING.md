@@ -781,6 +781,12 @@ Cause to check:
   where the API has the submitted user input but the DOM latest turn does not,
   or where command/reasoning process rows leak into the ordinary conversation
   instead of staying in the operation status surface.
+  Clients after `codex-mobile-shell-v579` preserve a non-bottom user-reading
+  viewport anchor across full conversation renders, local refresh patch
+  transactions, visible item inserts, visible item replacements, and live text
+  patches. If a new reply still makes the screen jump while the user is
+  reading above the bottom, inspect `captureConversationViewportAnchor()` /
+  `restoreConversationViewportAnchor()` before adding throttles or UI dedupe.
   The analyzer no longer drops a sparse sample merely because
   `contentConfirmed=false`; such samples cannot establish a healthy baseline,
   but they can prove regression after the same target thread was previously
@@ -796,6 +802,16 @@ Cause to check:
   `~/.codex-mobile-web/logs/runtime-self-check.jsonl`. The loop records issue
   counts and build/cache ids only and must not directly dispatch repair cards;
   Home AI diagnostic intake and Owner approval own the repair-card step.
+- If opening a thread takes 1-2s before latest detail appears, run Phase-B
+  readback against that thread:
+  `node scripts/codex-mobile-phase-b-readback-smoke.js --server http://127.0.0.1:8787 --thread-id <id> --json`.
+  Read the bounded `decision` object first. Clients after
+  `codex-mobile-shell-v579` classify detail `totalMs >= 1000` or
+  `activeOverlayMs >= 800` as a latency finding instead of reporting ready;
+  `totalMs >= 1500` or `activeOverlayMs >= 1000` is H2. If the owner is
+  `active-overlay-latency`, continue in the active-overlay provider/read
+  orchestration path; if the owner is `thread-detail-latency`, split the
+  summary/projection/prepare/transport stages before changing the renderer.
 - Clients after `codex-mobile-shell-v575` keep a reusable in-memory thread
   detail snapshot in `state.threadTileDetails`. When reopening a thread that
   already has loaded detail state, `loadThread()` paints that cached detail

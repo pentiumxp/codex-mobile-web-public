@@ -436,3 +436,45 @@ test("full render scroll planning protects user scroll before bottom follow", ()
     reason: "not-following-bottom",
   });
 });
+
+test("reading viewport preservation follows explicit user reading signals", () => {
+  assert.deepEqual(conversationScroll.planReadingViewportPreservation({
+    nearBottom: true,
+    userReadingCurrentTurn: true,
+    recentScrollIntent: true,
+  }), {
+    preserve: false,
+    reason: "near-bottom",
+  });
+
+  assert.deepEqual(conversationScroll.planReadingViewportPreservation({
+    nearBottom: false,
+    userReadingCurrentTurn: true,
+  }), {
+    preserve: true,
+    reason: "user-reading-current-turn",
+  });
+
+  assert.deepEqual(conversationScroll.planReadingViewportPreservation({
+    nearBottom: false,
+    autoScrollHold: true,
+  }), {
+    preserve: true,
+    reason: "auto-scroll-hold",
+  });
+
+  assert.deepEqual(conversationScroll.planReadingViewportPreservation({
+    nearBottom: false,
+    recentScrollIntent: true,
+  }), {
+    preserve: true,
+    reason: "recent-scroll-intent",
+  });
+
+  assert.deepEqual(conversationScroll.planReadingViewportPreservation({
+    nearBottom: false,
+  }), {
+    preserve: false,
+    reason: "no-user-scroll-protection",
+  });
+});

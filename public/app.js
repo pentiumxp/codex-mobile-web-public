@@ -542,7 +542,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v578";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v579";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -13087,6 +13087,9 @@ function checkPrimaryShellSelectionConflictAfterRender(metrics = {}) {
 
 function updateConversationHtml(html, signature, options = {}) {
   const conversation = $("conversation");
+  const scrollAnchor = options.stickToBottom
+    ? null
+    : captureConversationViewportAnchor({ userReadingCurrentTurn: Boolean(options.userReadingCurrentTurn) });
   const preDomShape = conversationDomShape();
   const expectedVisibleTurnCount = Math.max(0, Number(options.expectedVisibleTurnCount || 0));
   const expectedVisibleItemCount = Math.max(0, Number(options.expectedVisibleItemCount || 0));
@@ -13125,6 +13128,7 @@ function updateConversationHtml(html, signature, options = {}) {
   const projectionConsistencySource = String(options.source || "conversation-update");
   if (updatePlan.action === "hydrate-existing") {
     applyConversationHtmlUpdateEffectsPlan(effectsPlan, { root: conversation });
+    restoreConversationViewportAnchor(scrollAnchor);
     if (shouldCheckProjectionConsistency) {
       checkConversationProjectionConsistency(projectionConsistencySource, {
         renderMode: String(options.renderMode || updatePlan.action || ""),
@@ -13209,6 +13213,7 @@ function updateConversationHtml(html, signature, options = {}) {
   });
   if (fallbackEventPlan.shouldPost) postClientEvent(fallbackEventPlan.eventName, fallbackEventPlan.payload);
   applyConversationHtmlUpdateEffectsPlan(effectsPlan, { root: conversation });
+  restoreConversationViewportAnchor(scrollAnchor);
   if (shouldCheckProjectionConsistency) {
     checkConversationProjectionConsistency(projectionConsistencySource, {
       renderMode: String(options.renderMode || applicationPlan.finalAction || updatePlan.action || ""),
@@ -15275,6 +15280,7 @@ function completeLocalConversationDomUpdate(root, wasNearBottom, userReadingCurr
   if (!completionPlan.complete) return false;
   const effectsPlan = threadDetailDomPatchApi.planLocalConversationDomUpdateCompletionEffects(completionPlan);
   applyLocalConversationDomUpdateCompletionEffectsPlan(effectsPlan, { root });
+  restoreConversationViewportAnchor(options.scrollAnchor || null);
   return true;
 }
 
@@ -15283,8 +15289,12 @@ function updateLiveOperationDockForLocalPatch(previousKeys = existingConversatio
   if (!canPatchSingleThreadConversationDom()) return false;
   const wasNearBottom = isConversationNearBottom();
   const userReadingCurrentTurn = isUserReadingCurrentTurn({ nearBottom: wasNearBottom });
+  const scrollAnchor = captureConversationViewportAnchor({
+    nearBottom: wasNearBottom,
+    userReadingCurrentTurn,
+  });
   updateLiveOperationDockHtml(renderLiveOperationDock(state.currentThread, previousKeys));
-  return completeLocalConversationDomUpdate($("liveOperationDock"), wasNearBottom, userReadingCurrentTurn);
+  return completeLocalConversationDomUpdate($("liveOperationDock"), wasNearBottom, userReadingCurrentTurn, { scrollAnchor });
 }
 
 function turnArticleNode(turn) {
@@ -15332,13 +15342,17 @@ function insertVisibleItemDom(turn, item) {
   if (!conversation) return false;
   const wasNearBottom = isConversationNearBottom();
   const userReadingCurrentTurn = isUserReadingCurrentTurn({ nearBottom: wasNearBottom });
+  const scrollAnchor = captureConversationViewportAnchor({
+    nearBottom: wasNearBottom,
+    userReadingCurrentTurn,
+  });
   const previousKeys = existingConversationRenderKeys();
   let article = turnArticleNode(turn);
   if (!article) {
     article = insertTurnArticleDom(turn, previousKeys);
     if (!article) return false;
     bindCurrentThreadActions();
-    return completeLocalConversationDomUpdate(article, wasNearBottom, userReadingCurrentTurn);
+    return completeLocalConversationDomUpdate(article, wasNearBottom, userReadingCurrentTurn, { scrollAnchor });
   }
   const thread = renderContextThread();
   const entries = visibleItemsForTurn(turn, thread);
@@ -15357,18 +15371,22 @@ function insertVisibleItemDom(turn, item) {
     findElementByKey: (key) => article.querySelector(`[data-render-key="${escapeSelectorAttr(key)}"]`),
   });
   if (!insertResult || !insertResult.ok) return false;
-  return completeLocalConversationDomUpdate(insertResult.target || source, wasNearBottom, userReadingCurrentTurn);
+  return completeLocalConversationDomUpdate(insertResult.target || source, wasNearBottom, userReadingCurrentTurn, { scrollAnchor });
 }
 
 function patchVisibleItemDom(turn, item) {
   if (patchCurrentThreadTilePaneFromState({ preserveScroll: true })) return true;
   if (!canPatchSingleThreadConversationDom()) return false;
   if (isOperationalItem(item)) return updateLiveOperationDockForLocalPatch();
-  const target = patchVisibleItemDomNode(turn, item, existingConversationRenderKeys());
-  if (!target) return false;
   const wasNearBottom = isConversationNearBottom();
   const userReadingCurrentTurn = isUserReadingCurrentTurn({ nearBottom: wasNearBottom });
-  return completeLocalConversationDomUpdate(target, wasNearBottom, userReadingCurrentTurn);
+  const scrollAnchor = captureConversationViewportAnchor({
+    nearBottom: wasNearBottom,
+    userReadingCurrentTurn,
+  });
+  const target = patchVisibleItemDomNode(turn, item, existingConversationRenderKeys());
+  if (!target) return false;
+  return completeLocalConversationDomUpdate(target, wasNearBottom, userReadingCurrentTurn, { scrollAnchor });
 }
 
 function patchVisibleItemDomNode(turn, item, previousKeys, sourceIndex = null) {
@@ -15461,6 +15479,10 @@ function patchLiveTextItemDom(turn, item) {
   const key = stableItemKey(turn, item, index);
   const wasNearBottom = isConversationNearBottom();
   const userReadingCurrentTurn = isUserReadingCurrentTurn({ nearBottom: wasNearBottom });
+  const scrollAnchor = captureConversationViewportAnchor({
+    nearBottom: wasNearBottom,
+    userReadingCurrentTurn,
+  });
   const previousKeys = existingConversationRenderKeys();
   const patchResult = threadDetailDomPatchApi.applyLiveTextItemDomPatch({
     conversation,
@@ -15474,7 +15496,7 @@ function patchLiveTextItemDom(turn, item) {
     },
   });
   if (!patchResult || !patchResult.ok || !patchResult.target) return false;
-  return completeLocalConversationDomUpdate(patchResult.target, wasNearBottom, userReadingCurrentTurn);
+  return completeLocalConversationDomUpdate(patchResult.target, wasNearBottom, userReadingCurrentTurn, { scrollAnchor });
 }
 
 function threadDetailRefreshLocalPatchTransactionCallback(effect, context = {}) {
@@ -15612,6 +15634,10 @@ function patchCurrentThreadDetailFromRefresh(previousThread, nextThread, previou
   const transactionEffectsPlan = threadDetailDomPatchApi.planThreadDetailRefreshLocalPatchTransactionEffects({
     completionSnapshot,
   });
+  const scrollAnchor = captureConversationViewportAnchor({
+    nearBottom: wasNearBottom,
+    userReadingCurrentTurn,
+  });
   const transactionCallbacks = threadDetailRefreshLocalPatchTransactionCallbacks(transactionEffectsPlan, {
     conversation,
     wasNearBottom,
@@ -15648,6 +15674,7 @@ function patchCurrentThreadDetailFromRefresh(previousThread, nextThread, previou
     commitEffects: transactionCallbacks.commitEffects,
     afterSuccess: transactionCallbacks.afterSuccess,
   });
+  restoreConversationViewportAnchor(scrollAnchor);
   if (!applyResult.ok) return rejectThreadDetailPatch(applyResult.reason || "turn-patch-apply-failed");
   return acceptThreadDetailPatch("patched");
 }
@@ -15989,7 +16016,7 @@ function renderCurrentThread(options = {}) {
     updateConversationHtml(
       earlyUpdatePlan.html,
       earlyUpdatePlan.conversationSignature,
-      earlyUpdatePlan.options,
+      Object.assign({}, earlyUpdatePlan.options, { userReadingCurrentTurn }),
     );
     const earlyPostUpdateEffectsPlan = threadDetailRenderPlanApi.planSingleThreadShellPostUpdateEffects({
       shellPlan: earlyShellPlan,
@@ -16065,7 +16092,11 @@ function renderCurrentThread(options = {}) {
     source: "single-thread-render",
     checkProjectionConsistency: true,
   });
-  updateConversationHtml(shellUpdatePlan.html, shellUpdatePlan.conversationSignature, shellUpdatePlan.options);
+  updateConversationHtml(
+    shellUpdatePlan.html,
+    shellUpdatePlan.conversationSignature,
+    Object.assign({}, shellUpdatePlan.options, { userReadingCurrentTurn }),
+  );
   const postUpdateEffectsPlan = threadDetailRenderPlanApi.planSingleThreadShellPostUpdateEffects({
     shellPlan,
     source: "single-thread-render",
@@ -21324,6 +21355,76 @@ function scrollConversationToBottom() {
   el.scrollTop = target;
   syncConversationScrollPosition();
   scheduleScrollToBottomButtonUpdate();
+}
+
+function planConversationViewportPreservation(options = {}) {
+  const nearBottom = Object.prototype.hasOwnProperty.call(options, "nearBottom")
+    ? Boolean(options.nearBottom)
+    : isConversationNearBottom();
+  return conversationScroll.planReadingViewportPreservation({
+    nearBottom,
+    userReadingCurrentTurn: Boolean(options.userReadingCurrentTurn),
+    autoScrollHold: shouldHoldAutoScrollForCurrentTurn(),
+    recentScrollIntent: hasRecentConversationScrollIntent(),
+  });
+}
+
+function captureConversationViewportAnchor(options = {}) {
+  const conversation = $("conversation");
+  if (!conversation) return null;
+  const plan = planConversationViewportPreservation(options);
+  if (!plan.preserve) return null;
+  const viewport = conversation.getBoundingClientRect();
+  const nodes = Array.from(conversation.querySelectorAll("[data-render-key]"));
+  for (const node of nodes) {
+    if (!node || typeof node.getBoundingClientRect !== "function") continue;
+    const key = String(node.getAttribute && node.getAttribute("data-render-key") || "");
+    if (!key) continue;
+    const rect = node.getBoundingClientRect();
+    if (rect.bottom <= viewport.top + 1 || rect.top >= viewport.bottom - 1) continue;
+    return {
+      threadId: state.currentThreadId || (state.currentThread && state.currentThread.id) || "",
+      renderKey: key,
+      topOffset: rect.top - viewport.top,
+      scrollTop: conversation.scrollTop,
+      reason: plan.reason,
+    };
+  }
+  return {
+    threadId: state.currentThreadId || (state.currentThread && state.currentThread.id) || "",
+    renderKey: "",
+    topOffset: 0,
+    scrollTop: conversation.scrollTop,
+    reason: plan.reason,
+  };
+}
+
+function restoreConversationViewportAnchor(anchor) {
+  if (!anchor) return false;
+  const conversation = $("conversation");
+  if (!conversation) return false;
+  const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
+  if (String(anchor.threadId || "") !== String(threadId || "")) return false;
+  let nextScrollTop = Number(anchor.scrollTop || 0);
+  if (anchor.renderKey) {
+    const target = conversation.querySelector(`[data-render-key="${escapeSelectorAttr(anchor.renderKey)}"]`);
+    if (target && typeof target.getBoundingClientRect === "function") {
+      const viewport = conversation.getBoundingClientRect();
+      const rect = target.getBoundingClientRect();
+      nextScrollTop = conversation.scrollTop + (rect.top - viewport.top - Number(anchor.topOffset || 0));
+    }
+  }
+  const maxScrollTop = Math.max(0, conversation.scrollHeight - conversation.clientHeight);
+  nextScrollTop = Math.max(0, Math.min(maxScrollTop, nextScrollTop));
+  if (Math.abs(conversation.scrollTop - nextScrollTop) < 1) {
+    scheduleScrollToBottomButtonUpdate();
+    return false;
+  }
+  markProgrammaticConversationScroll();
+  conversation.scrollTop = nextScrollTop;
+  syncConversationScrollPosition();
+  scheduleScrollToBottomButtonUpdate();
+  return true;
 }
 
 function scheduleConversationToBottom() {

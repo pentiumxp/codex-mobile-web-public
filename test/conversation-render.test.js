@@ -2315,7 +2315,7 @@ test("loading and thread-list state preserve locally visible live turns", () => 
   assert.match(functionBody("renderCurrentThread"), /loadError: thread\.mobileLoadError/);
   assert.match(functionBody("renderCurrentThread"), /if \(earlyShellPlan\.shouldRender\) \{/);
   assert.match(functionBody("renderCurrentThread"), /threadDetailRenderPlanApi\.planSingleThreadShellConversationUpdate\(\{[\s\S]*shellPlan: earlyShellPlan,/);
-  assert.match(functionBody("renderCurrentThread"), /updateConversationHtml\(\s*earlyUpdatePlan\.html,\s*earlyUpdatePlan\.conversationSignature,\s*earlyUpdatePlan\.options,/);
+  assert.match(functionBody("renderCurrentThread"), /updateConversationHtml\(\s*earlyUpdatePlan\.html,\s*earlyUpdatePlan\.conversationSignature,\s*Object\.assign\(\{\}, earlyUpdatePlan\.options, \{ userReadingCurrentTurn \}\),/);
   assert.match(functionBody("renderCurrentThread"), /threadDetailRenderPlanApi\.planSingleThreadShellPostUpdateEffects\(\{[\s\S]*bindRetry: earlyShellPlan\.bindRetry,/);
   assert.match(functionBody("renderCurrentThread"), /applySingleThreadShellPostUpdateEffectsPlan\(earlyPostUpdateEffectsPlan,/);
   assert.match(functionBody("renderCurrentThread"), /threadDetailRenderPlanApi\.planSingleThreadFullRenderShell/);
@@ -3573,7 +3573,7 @@ test("conversation html update invalidates stable signatures when the DOM has lo
   assert.match(functionBody("renderCurrentThread"), /expectedVisibleItemCount: renderVisibleShape\.visibleItemCount/);
   assert.match(functionBody("renderCurrentThread"), /duplicateRenderKeyCount: renderDomShape\.duplicateRenderKeyCount/);
   assert.match(functionBody("renderCurrentThread"), /checkProjectionConsistency: true/);
-  assert.match(functionBody("renderCurrentThread"), /updateConversationHtml\(shellUpdatePlan\.html, shellUpdatePlan\.conversationSignature, shellUpdatePlan\.options\)/);
+  assert.match(functionBody("renderCurrentThread"), /updateConversationHtml\(\s*shellUpdatePlan\.html,\s*shellUpdatePlan\.conversationSignature,\s*Object\.assign\(\{\}, shellUpdatePlan\.options, \{ userReadingCurrentTurn \}\),\s*\)/);
   assert.match(functionBody("visibleRenderableTurnIds"), /visibleItemsForTurn\(turn, thread\)\.length/);
   assert.match(functionBody("threadTileVisibleShape"), /visibleTurnsForConversation\(thread\)/);
   assert.match(functionBody("threadTileVisibleShape"), /visibleItemsForTurn\(turn, thread\)\.length/);

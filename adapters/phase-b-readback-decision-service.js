@@ -280,8 +280,21 @@ function detailDecision(detail = {}) {
   const activeFullReadRequired = detail.activeFullReadRequired === true;
   const readMode = lowerLabel(detail.readMode, 100);
   const readDecision = lowerLabel(detail.readDecision, 100);
+  const totalMs = boundedCount(detail.totalMs);
+  const activeOverlayMs = boundedCount(detail.activeOverlayMs);
 
   if (!owner && !readMode && !readDecision) return null;
+  if (totalMs >= 1000 || activeOverlayMs >= 800) {
+    const activeOverlayDominates = activeOverlayMs >= 800 && activeOverlayMs >= Math.max(500, Math.trunc(totalMs * 0.5));
+    const highLatency = totalMs >= 1500 || activeOverlayMs >= 1000;
+    return {
+      status: "needs_repair",
+      priority: highLatency ? "H2" : "H3",
+      owner: activeOverlayDominates ? "active-overlay-latency" : "thread-detail-latency",
+      reason: activeOverlayDominates ? "active-overlay-latency" : "thread-detail-latency",
+      nextAction: activeOverlayDominates ? "optimize-active-overlay-first-paint" : "split-thread-detail-latency",
+    };
+  }
   if (owner === "warm-path" || readMode === "projection-active-overlay" || readDecision === "projection-active-overlay") {
     return null;
   }

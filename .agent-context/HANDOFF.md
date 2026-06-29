@@ -28661,3 +28661,45 @@ The previous full handoff was archived and should be opened only when old proven
     `019eee6c-a6f5-7b20-bfb4-f96ccb6431b3`, and verify `/api/public-config`
     reports `clientBuildId=0.1.11|codex-mobile-shell-v578` and
     `shellCacheName=codex-mobile-shell-v578`.
+
+### 2026-06-29 - Reading Viewport Anchor And Phase-B Slow Detail Self-Check v579
+
+- Runtime evidence:
+  - Home AI Deploy returned that v578 was deployed privately with
+    `clientBuildId=0.1.11|codex-mobile-shell-v578` and browser-runtime
+    self-check `ok=true` against Movie and Codex Mobile.
+  - User then reported that opening a thread detail can still take 1-2 seconds
+    before the latest state appears, and that while reading above the bottom,
+    new assistant updates can still cause visible screen jitter.
+  - Bounded Phase-B readback against the active Codex Mobile thread on v578
+    reported `readMode=projection-active-overlay`, `totalMs=2386`,
+    `activeOverlayMs=2280`, `threadReadMs=0`, and `prepareResponseMs=42`.
+    The latency was in active-overlay assembly/readback, not a foreground
+    `thread/read` path.
+- Implementation:
+  - `adapters/phase-b-readback-decision-service.js` now classifies detail
+    `totalMs >= 1000` or `activeOverlayMs >= 800` as a latency finding instead
+    of reporting ready; `totalMs >= 1500` or `activeOverlayMs >= 1000` is H2.
+  - `public/conversation-scroll.js` owns `planReadingViewportPreservation()`.
+  - `public/app.js` now captures a non-bottom user-reading `data-render-key`
+    viewport anchor and restores it across full conversation renders, local
+    refresh patch transactions, visible item inserts, visible item replacements,
+    live text patches, and live operation dock patch completion.
+  - Static shell/cache bumped to `codex-mobile-shell-v579`.
+  - `docs/MODULES.md` and `docs/TROUBLESHOOTING.md` document the v579
+    self-check and reading-anchor behavior.
+- Validation:
+  - Focused tests passed:
+    `node --test test/conversation-scroll.test.js test/turn-scroll-controls.test.js test/phase-b-readback-decision-service.test.js test/thread-detail-dom-patch.test.js test/client-render-stability-guard.test.js`.
+  - Full `npm test` passed (`1531` tests).
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - Local Phase-B readback against current production v578 now classifies the
+    active Codex Mobile thread as `needs_repair`, `priority=H2`,
+    `owner=active-overlay-latency`, `reason=active-overlay-latency`.
+  - In-app Browser plugin setup failed before page navigation because the
+    tool runtime reported invalid sandbox cwd metadata; this was not treated as
+    browser verification.
+- Next:
+  - Commit v579 locally.
+  - Deploy privately only after the module is complete and the user approves
+    deployment; do not push Public unless the user explicitly requests it.
