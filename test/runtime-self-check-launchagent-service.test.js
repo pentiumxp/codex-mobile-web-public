@@ -47,9 +47,9 @@ function healthyEvent() {
       observeOnlyIssueCount: 0,
       advisoryIssueCount: 0,
       executionFailureCount: 0,
-      checkNames: ["api-thread", "browser-runtime"],
+      checkNames: ["api-thread", "browser-runtime", "client-events"],
     },
-    checks: [{ name: "api-thread" }, { name: "browser-runtime" }],
+    checks: [{ name: "api-thread" }, { name: "browser-runtime" }, { name: "client-events" }],
   }, Date.parse("2026-06-29T09:40:00.000Z"));
 }
 
@@ -194,6 +194,33 @@ test("runtime self-check launchagent readback parses latest valid JSONL line", (
   assert.equal(event.completedAt, "new");
 });
 
+test("runtime self-check launchagent readback skips manual subset events when full checks are required", () => {
+  const event = service.parseLatestRuntimeSelfCheckEvent([
+    JSON.stringify({
+      ok: true,
+      completedAt: "full",
+      gate: {
+        mode: "periodic",
+        checkNames: ["api-thread", "browser-runtime", "client-events"],
+      },
+    }),
+    JSON.stringify({
+      ok: true,
+      completedAt: "manual-subset",
+      gate: {
+        mode: "periodic",
+        checkNames: ["client-events"],
+      },
+    }),
+  ].join("\n"), {
+    requiredCheckNames: ["api-thread", "browser-runtime", "client-events"],
+  });
+
+  assert.equal(event.ok, true);
+  assert.equal(event.completedAt, "full");
+  assert.equal(service.eventHasRequiredCheckNames(event, ["api-thread", "browser-runtime", "client-events"]), true);
+});
+
 test("runtime self-check launchagent CLI readback is metadata-only", () => {
   const result = readback.buildReadback({
     label: service.DEFAULT_LABEL,
@@ -204,6 +231,7 @@ test("runtime self-check launchagent CLI readback is metadata-only", () => {
     server: "http://127.0.0.1:8787",
     intervalSeconds: 600,
     maxAgeMs: 20 * 60 * 1000,
+    requiredCheckNames: ["api-thread", "browser-runtime", "client-events"],
     domain: "gui/501",
   }, {
     nowMs: Date.parse("2026-06-29T09:40:00.000Z"),
@@ -220,8 +248,13 @@ test("runtime self-check launchagent CLI readback is metadata-only", () => {
           periodicHealthy: true,
           issueCount: 0,
           blockingIssueCount: 0,
+          checkNames: ["api-thread", "browser-runtime", "client-events"],
         },
-        checks: [{ name: "api-thread", errorCode: "" }],
+        checks: [
+          { name: "api-thread", errorCode: "" },
+          { name: "browser-runtime", errorCode: "" },
+          { name: "client-events", errorCode: "" },
+        ],
       });
     },
     execFileSync(command, args) {
@@ -244,4 +277,76 @@ test("runtime self-check launchagent CLI readback is metadata-only", () => {
 
   assert.equal(result.ok, true);
   assert.doesNotMatch(JSON.stringify(result), /private\/path|ignored|raw prompt|cookie|token/i);
+});
+
+test("runtime self-check launchagent CLI readback selects latest full periodic event", () => {
+  const result = readback.buildReadback({
+    label: service.DEFAULT_LABEL,
+    plistPath: "/ignored/plist",
+    logPath: "/ignored/log",
+    expectedOutputPath: OUTPUT_PATH,
+    scriptPath: SCRIPT_PATH,
+    server: "http://127.0.0.1:8787",
+    intervalSeconds: 600,
+    maxAgeMs: 20 * 60 * 1000,
+    requiredCheckNames: ["api-thread", "browser-runtime", "client-events"],
+    domain: "gui/501",
+  }, {
+    nowMs: Date.parse("2026-06-29T09:42:00.000Z"),
+    existsSync() {
+      return true;
+    },
+    readTailText() {
+      return [
+        JSON.stringify({
+          ok: true,
+          completedAt: "2026-06-29T09:40:00.000Z",
+          gate: {
+            mode: "periodic",
+            deployPass: true,
+            periodicHealthy: true,
+            issueCount: 0,
+            blockingIssueCount: 0,
+            executionFailureCount: 0,
+            checkNames: ["api-thread", "browser-runtime", "client-events"],
+          },
+          checks: [{ name: "api-thread" }, { name: "browser-runtime" }, { name: "client-events" }],
+        }),
+        JSON.stringify({
+          ok: true,
+          completedAt: "2026-06-29T09:41:00.000Z",
+          gate: {
+            mode: "periodic",
+            deployPass: true,
+            periodicHealthy: true,
+            issueCount: 0,
+            blockingIssueCount: 0,
+            executionFailureCount: 0,
+            checkNames: ["client-events"],
+          },
+          checks: [{ name: "client-events" }],
+        }),
+      ].join("\n");
+    },
+    execFileSync(command, args) {
+      const joined = [command].concat(args).join(" ");
+      if (joined.includes("plutil")) {
+        return JSON.stringify({
+          Label: service.DEFAULT_LABEL,
+          ProgramArguments: ["/node", SCRIPT_PATH, "--server", "http://127.0.0.1:8787", "--output", OUTPUT_PATH, "--json"],
+          StartInterval: 600,
+          RunAtLoad: true,
+          WorkingDirectory: "/private/path",
+        });
+      }
+      if (joined.includes("launchctl")) {
+        return "state = not running\nruns = 81\nlast exit code = 0\nrun interval = 600 seconds\n";
+      }
+      throw new Error("unexpected command");
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.latestEvent.checkNames, ["api-thread", "browser-runtime", "client-events"]);
+  assert.equal(result.latestEvent.ageMs, 120000);
 });

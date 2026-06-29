@@ -31913,3 +31913,46 @@ The previous full handoff was archived and should be opened only when old proven
     unobserved CPU source yet; the next actual user-visible freeze should now
     produce bounded owner evidence instead of being dropped as invisible.
   - No Public deploy requested or run.
+
+### 2026-06-30 - LaunchAgent Full-Check Event Readback Ready For Deploy
+
+- Scope:
+  - Follow-up found while refreshing v598 health. A manual
+    `--skip-api --skip-browser` client-events-only self-check can append to the
+    same runtime self-check JSONL path as the scheduled LaunchAgent.
+  - Before this patch, `codex-mobile-runtime-self-check-launchagent-readback.js`
+    used the last parseable JSONL event as `latestEvent`, so a manual subset
+    run could briefly replace the scheduled full periodic health evidence.
+- Root cause / invariant:
+  - LaunchAgent readback is supposed to summarize the scheduled periodic
+    contract, not arbitrary manual diagnostic subsets written to the same log.
+  - The readback layer had no required-check-set filter before choosing the
+    latest event.
+- Source changes:
+  - `adapters/runtime-self-check-launchagent-service.js` adds
+    `DEFAULT_REQUIRED_CHECK_NAMES` (`api-thread`, `browser-runtime`,
+    `client-events`) plus bounded check-name matching helpers.
+  - `parseLatestRuntimeSelfCheckEvent()` can now walk backward to the newest
+    event containing the required check set.
+  - `scripts/codex-mobile-runtime-self-check-launchagent-readback.js` passes
+    the required check set by default and exposes `--required-checks` /
+    `CODEX_MOBILE_RUNTIME_SELF_CHECK_REQUIRED_CHECKS` for intentionally
+    different scheduled shapes.
+  - `test/runtime-self-check-launchagent-service.test.js` covers skipping a
+    later manual subset event and selecting the latest full periodic event.
+  - `docs/MODULES.md` and `docs/TROUBLESHOOTING.md` document the readback
+    boundary.
+- Validation:
+  - `node --check adapters/runtime-self-check-launchagent-service.js && node --check scripts/codex-mobile-runtime-self-check-launchagent-readback.js`
+    passed.
+  - `node --test test/runtime-self-check-launchagent-service.test.js test/runtime-self-check-loop.test.js`
+    passed with 19 tests.
+  - Production readback with the patched script returned `ok=true`; selected
+    latest event check names were `api-thread`, `browser-runtime`, and
+    `client-events`.
+  - `npm test -- --test-reporter=dot`, `npm run check`, `npm run check:macos`,
+    Home AI fallback governance check, `git diff --check`, and
+    `codegraph sync && codegraph status` passed.
+- Deployment status:
+  - Local deploy candidate only at this point. Private production deploy has
+    not yet been sent. No Public deploy requested or run.

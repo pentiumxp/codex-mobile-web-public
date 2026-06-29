@@ -926,6 +926,12 @@ Cause to check:
   `launchctl.lastExitCode` is not itself a failure when the latest fresh gate
   event is healthy; it remains actionable only when the latest event is stale,
   missing, or unhealthy.
+  The readback selects the latest JSONL event that contains the expected full
+  periodic check set (`api-thread`, `browser-runtime`, and `client-events` by
+  default). Manual diagnostic runs such as `--skip-api --skip-browser` may write
+  to the same JSONL file, but they must not replace the LaunchAgent health
+  evidence. Use `--required-checks` only when the scheduled plist intentionally
+  runs a different check set.
   The readback is inspect-only and reports path hashes plus bounded counts; it
   must not be used to install, unload, or kickstart launchd jobs.
 - If opening a thread takes 1-2s before latest detail appears, run Phase-B

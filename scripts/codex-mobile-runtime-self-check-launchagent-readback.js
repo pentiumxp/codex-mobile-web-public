@@ -9,6 +9,7 @@ const {
   DEFAULT_INTERVAL_SECONDS,
   DEFAULT_LABEL,
   DEFAULT_MAX_EVENT_AGE_MS,
+  DEFAULT_REQUIRED_CHECK_NAMES,
   classifyRuntimeSelfCheckLaunchAgent,
   parseLaunchctlPrint,
   parseLatestRuntimeSelfCheckEvent,
@@ -33,6 +34,7 @@ function usage() {
     "  --server <url>              Expected server arg. Default: http://127.0.0.1:8787",
     "  --interval-seconds <n>      Expected StartInterval. Default: 600.",
     "  --max-age-ms <n>            Latest event age threshold. Default: 1200000.",
+    "  --required-checks <list>    Comma-separated check names expected in the latest event.",
     "  --domain <domain>           launchctl domain. Default: gui/<uid>.",
     "  --json                      Print JSON only.",
     "  --help                      Show this help.",
@@ -43,6 +45,14 @@ function positiveInt(value, fallback, max = 2147483647) {
   const number = Number(value);
   if (!Number.isFinite(number) || number <= 0) return fallback;
   return Math.min(max, Math.trunc(number));
+}
+
+function parseCheckNames(value, fallback = DEFAULT_REQUIRED_CHECK_NAMES) {
+  const items = String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return items.length ? items : fallback.slice();
 }
 
 function defaultProductionRoot() {
@@ -70,6 +80,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     server: env.CODEX_MOBILE_BASE_URL || "http://127.0.0.1:8787",
     intervalSeconds: positiveInt(env.CODEX_MOBILE_RUNTIME_SELF_CHECK_INTERVAL_SECONDS || String(DEFAULT_INTERVAL_SECONDS), DEFAULT_INTERVAL_SECONDS, 86400),
     maxAgeMs: positiveInt(env.CODEX_MOBILE_RUNTIME_SELF_CHECK_MAX_AGE_MS || String(DEFAULT_MAX_EVENT_AGE_MS), DEFAULT_MAX_EVENT_AGE_MS, 24 * 60 * 60 * 1000),
+    requiredCheckNames: parseCheckNames(env.CODEX_MOBILE_RUNTIME_SELF_CHECK_REQUIRED_CHECKS),
     domain: env.CODEX_MOBILE_RUNTIME_SELF_CHECK_LAUNCHD_DOMAIN || `gui/${process.getuid ? process.getuid() : ""}`,
     json: false,
     help: false,
@@ -94,6 +105,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     else if (arg === "--server") options.server = next();
     else if (arg === "--interval-seconds") options.intervalSeconds = positiveInt(next(), options.intervalSeconds, 86400);
     else if (arg === "--max-age-ms") options.maxAgeMs = positiveInt(next(), options.maxAgeMs, 24 * 60 * 60 * 1000);
+    else if (arg === "--required-checks") options.requiredCheckNames = parseCheckNames(next(), []);
     else if (arg === "--domain") options.domain = next();
     else if (arg === "--json") options.json = true;
     else throw new Error(`unknown option: ${arg}`);
@@ -150,7 +162,9 @@ function buildReadback(options = {}, deps = {}) {
   const plistRaw = readPlist(options.plistPath, deps);
   const launchctlRaw = readLaunchctl(options.domain, options.label, deps);
   const logTail = deps.readTailText ? deps.readTailText(options.logPath) : readTailText(options.logPath);
-  const latestRaw = parseLatestRuntimeSelfCheckEvent(logTail);
+  const latestRaw = parseLatestRuntimeSelfCheckEvent(logTail, {
+    requiredCheckNames: options.requiredCheckNames,
+  });
   const expected = {
     label: options.label,
     scriptPath: options.scriptPath,

@@ -5,6 +5,7 @@ const crypto = require("node:crypto");
 const DEFAULT_LABEL = "com.hermesmobile.codex-mobile-runtime-self-check";
 const DEFAULT_INTERVAL_SECONDS = 600;
 const DEFAULT_MAX_EVENT_AGE_MS = 20 * 60 * 1000;
+const DEFAULT_REQUIRED_CHECK_NAMES = ["api-thread", "browser-runtime", "client-events"];
 
 function safeToken(value, fallback = "", maxLength = 120) {
   const text = String(value || "").trim();
@@ -80,12 +81,35 @@ function parseLaunchctlPrint(text = "") {
   };
 }
 
-function parseLatestRuntimeSelfCheckEvent(logText = "") {
+function normalizeCheckNames(values = []) {
+  return Array.isArray(values)
+    ? values.map((name) => safeToken(name, "", 80)).filter(Boolean)
+    : [];
+}
+
+function eventCheckNames(event = {}) {
+  const gate = event && event.gate && typeof event.gate === "object" ? event.gate : {};
+  if (Array.isArray(gate.checkNames)) return normalizeCheckNames(gate.checkNames);
+  const checks = Array.isArray(event && event.checks) ? event.checks : [];
+  return normalizeCheckNames(checks.map((check) => check && check.name));
+}
+
+function eventHasRequiredCheckNames(event = {}, requiredCheckNames = []) {
+  const required = normalizeCheckNames(requiredCheckNames);
+  if (!required.length) return true;
+  const present = new Set(eventCheckNames(event));
+  return required.every((name) => present.has(name));
+}
+
+function parseLatestRuntimeSelfCheckEvent(logText = "", options = {}) {
+  const requiredCheckNames = normalizeCheckNames(options.requiredCheckNames);
   const lines = String(logText || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   for (let index = lines.length - 1; index >= 0; index -= 1) {
     try {
       const parsed = JSON.parse(lines[index]);
-      if (parsed && typeof parsed === "object") return parsed;
+      if (parsed && typeof parsed === "object" && eventHasRequiredCheckNames(parsed, requiredCheckNames)) {
+        return parsed;
+      }
     } catch (_) {
       // Keep walking backward; old log fragments can contain partial lines.
     }
@@ -198,7 +222,9 @@ module.exports = {
   DEFAULT_INTERVAL_SECONDS,
   DEFAULT_LABEL,
   DEFAULT_MAX_EVENT_AGE_MS,
+  DEFAULT_REQUIRED_CHECK_NAMES,
   classifyRuntimeSelfCheckLaunchAgent,
+  eventHasRequiredCheckNames,
   parseLaunchctlPrint,
   parseLatestRuntimeSelfCheckEvent,
   summarizeLatestEvent,
