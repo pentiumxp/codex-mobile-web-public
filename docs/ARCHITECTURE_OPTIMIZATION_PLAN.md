@@ -2540,6 +2540,13 @@ Deployable scope:
   `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_COMPLETED_USER_TEXT_CHARS` (default
   1024 chars). It preserves active/current user input and does not mutate the
   stored rollout/session data.
+- The next protected-payload slice handles completed `turnUsageSummary` rows
+  under the same active first-paint byte pressure. It preserves the Usage row
+  and the fields consumed by the UI, but drops repeated internal summary
+  metadata from the HTTP response with `mobileFirstPaintUsageBudget` and
+  `progressiveCompletedUsageBudgetApplied`. This keeps Usage visible while
+  avoiding a generic budget that would hide user input, active assistant
+  progress, images, or diagnostics.
 - A later summary-phase slice targets warm projection hits whose `summaryMs`
   dominates `totalMs` even though `threadReadMs=0`. Detail summary resolution
   now merges the existing display-summary cache for local summaries and skips

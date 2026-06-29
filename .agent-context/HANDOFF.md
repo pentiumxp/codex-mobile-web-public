@@ -32243,3 +32243,44 @@ The previous full handoff was archived and should be opened only when old proven
     distinguish active assistant progress that must remain visible from older
     completed assistant receipts and Usage rows before adding another content
     budget.
+
+### 2026-06-30 - Active First-Paint Completed Usage Compact Ready For Deploy
+
+- Prior deploy readback:
+  - Home AI deploy return confirmed `6227b0b2087d` (`fix: preview completed
+    user input in active first paint`) deployed privately with reason
+    `codex-mobile-completed-user-input-first-paint-budget`; Public deploy was
+    not run.
+  - Production Phase-B readback stayed healthy for active overlay/window:
+    `projection-active-overlay`, `turnsListInitialMs=0`,
+    `activeOverlayWindowMs=0`, and deploy/runtime gates had no H1/H2 blockers.
+  - Completed user-input previews reduced retained user-message bytes, but the
+    active first-paint response remained over ceiling. The latest bounded
+    attribution showed remaining protected bytes in assistant, userMessage, and
+    Usage classes, with Usage still carrying completed summary metadata.
+- Root cause / invariant:
+  - Completed `turnUsageSummary` rows are protected visible rows and should not
+    be removed from first paint, but their full internal `mobileUsageSummary`
+    object contains fields not consumed by the Usage UI.
+  - The repair must keep Usage visible, preserve rendered Usage fields, avoid
+    touching the active/current turn, and avoid mutating rollout/session data.
+- Source changes:
+  - `adapters/thread-detail-response-budget-service.js` adds completed Usage
+    first-paint compaction. Affected Usage rows keep the UI fields and carry
+    `mobileFirstPaintUsageBudget`; `mobileDetailResponseBudget` records
+    `progressiveCompletedUsageBudgetApplied`, before/after bytes,
+    truncated-item count, and omitted bytes.
+  - The compactor maps legacy `finalTokenUsage` into rendered
+    `lastTokenUsage` when needed, then omits the redundant original field from
+    the HTTP response.
+  - `scripts/codex-mobile-phase-b-readback-smoke.js` and
+    `adapters/phase-b-readback-decision-service.js` propagate the new bounded
+    counters as `responseBudget*` / `detailResponseBudget*` evidence.
+  - Focused tests cover completed Usage compaction under active first-paint
+    pressure and Phase-B/decision evidence propagation.
+  - `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` document the behavior and
+    operational fields.
+- Deployment status:
+  - Local candidate in progress. Private production deploy has not yet been
+    requested. No Public deploy requested or run.

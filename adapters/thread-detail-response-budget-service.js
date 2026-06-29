@@ -265,6 +265,10 @@ function isUserMessageItem(item) {
   return String(item && item.type || "") === "userMessage";
 }
 
+function isUsageItem(item) {
+  return String(item && item.type || "") === "turnUsageSummary";
+}
+
 function textValue(value) {
   if (typeof value === "string") return value;
   if (Array.isArray(value)) return value.map(textValue).join("");
@@ -607,6 +611,56 @@ function compactCompletedUserMessageItemForFirstPaint(item, options, stats) {
   stats.completedUserInputOriginalChars += budget.originalChars;
   stats.completedUserInputRetainedChars += budget.retainedChars;
   stats.omittedCompletedUserInputChars += budget.omittedChars;
+  return out;
+}
+
+const FIRST_PAINT_USAGE_SUMMARY_FIELDS = [
+  "contextWindowUsedTokens",
+  "modelContextWindow",
+  "contextWindowUsedPercent",
+  "contextRiskLevel",
+  "lastTokenUsage",
+  "totalTokenUsage",
+  "rolloutSizeBytes",
+  "rolloutWarningThresholdBytes",
+  "rolloutOverWarningThreshold",
+  "projectContextSizeBytes",
+  "handoffSizeBytes",
+  "workspaceContextPairSizeBytes",
+  "workspaceContextFileThresholdBytes",
+  "workspaceHandoffPromptThresholdBytes",
+  "workspaceContextPairThresholdBytes",
+];
+
+function compactCompletedUsageItemForFirstPaint(item, stats) {
+  if (!item || typeof item !== "object" || !isUsageItem(item)) return item;
+  const summary = item.mobileUsageSummary;
+  if (!summary || typeof summary !== "object" || Array.isArray(summary)) return item;
+  const originalBytes = jsonByteLength(item);
+  const nextSummary = {};
+  for (const field of FIRST_PAINT_USAGE_SUMMARY_FIELDS) {
+    if (summary[field] !== undefined) nextSummary[field] = cloneJson(summary[field]);
+  }
+  if (nextSummary.lastTokenUsage === undefined && summary.finalTokenUsage !== undefined) {
+    nextSummary.lastTokenUsage = cloneJson(summary.finalTokenUsage);
+  }
+  const out = Object.assign({}, cloneJson(item), {
+    mobileUsageSummary: nextSummary,
+  });
+  const retainedBytes = jsonByteLength(out);
+  if (!originalBytes || retainedBytes >= originalBytes) return item;
+  out.mobileFirstPaintUsageBudget = {
+    version: "thread-detail-first-paint-usage-budget-v1",
+    scope: "completed",
+    originalBytes,
+    retainedBytes,
+    omittedBytes: Math.max(0, originalBytes - retainedBytes),
+    retainedFields: FIRST_PAINT_USAGE_SUMMARY_FIELDS.filter((field) => nextSummary[field] !== undefined),
+  };
+  stats.truncatedCompletedUsageItems += 1;
+  stats.completedUsageOriginalBytes += originalBytes;
+  stats.completedUsageRetainedBytes += retainedBytes;
+  stats.omittedCompletedUsageBytes += Math.max(0, originalBytes - retainedBytes);
   return out;
 }
 
@@ -977,6 +1031,31 @@ function applyProgressiveCompletedUserInputBudget(thread, options, stats) {
   stats.progressiveCompletedUserInputBytesAfterBudget = afterBytes;
 }
 
+function applyProgressiveCompletedUsageBudget(thread, options, stats) {
+  const ceiling = Math.max(0, Math.trunc(Number(options.progressiveActiveFirstPaintThreadByteCeiling || 0)));
+  const beforeBytes = jsonByteLength(thread);
+  stats.progressiveCompletedUsageBytesBeforeBudget = beforeBytes;
+  stats.progressiveCompletedUsageBytesAfterBudget = beforeBytes;
+  if (!stats.progressiveActiveBudgetApplied || !ceiling || beforeBytes <= ceiling) return;
+  stats.progressiveCompletedUsageBudgetScope = "active-first-paint";
+  let changed = false;
+  for (const turn of thread.turns) {
+    if (!turn || !Array.isArray(turn.items) || isActiveTurn(turn, thread)) continue;
+    turn.items = turn.items.map((item) => {
+      const compacted = compactCompletedUsageItemForFirstPaint(item, stats);
+      if (compacted !== item) changed = true;
+      return compacted;
+    });
+  }
+  if (!changed) return;
+  const afterBytes = jsonByteLength(thread);
+  stats.progressiveCompletedUsageBudgetApplied = true;
+  stats.progressiveCompletedUsageBudgetReason = afterBytes > ceiling
+    ? "first-paint-byte-pressure"
+    : "first-paint-byte-ceiling";
+  stats.progressiveCompletedUsageBytesAfterBudget = afterBytes;
+}
+
 function pruneNonCurrentEmptyActivePlaceholders(thread, stats) {
   if (!thread || !Array.isArray(thread.turns)) return;
   const beforeCount = thread.turns.length;
@@ -1215,6 +1294,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
     omittedActiveOperationPayloadChars: 0,
     omittedCompletedTextChars: 0,
     omittedCompletedUserInputChars: 0,
+    omittedCompletedUsageBytes: 0,
     prunedEmptyActivePlaceholderTurns: 0,
     remappedMissingActiveTurnId: 0,
     clearedMissingActiveTurnId: 0,
@@ -1225,6 +1305,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
     truncatedActiveOperationPayloadItems: 0,
     truncatedCompletedTextItems: 0,
     truncatedCompletedUserInputItems: 0,
+    truncatedCompletedUsageItems: 0,
     activeUserInputOriginalChars: 0,
     activeUserInputRetainedChars: 0,
     activeTextOriginalChars: 0,
@@ -1235,6 +1316,8 @@ function compactThreadDetailResponseResult(result, options = {}) {
     completedTextRetainedChars: 0,
     completedUserInputOriginalChars: 0,
     completedUserInputRetainedChars: 0,
+    completedUsageOriginalBytes: 0,
+    completedUsageRetainedBytes: 0,
     activeTurnCount: 0,
     activeOmittedAssistantItems: 0,
     activeAssistantItemsBefore: 0,
@@ -1284,6 +1367,11 @@ function compactThreadDetailResponseResult(result, options = {}) {
     progressiveCompletedUserInputBudgetScope: "",
     progressiveCompletedUserInputBytesBeforeBudget: 0,
     progressiveCompletedUserInputBytesAfterBudget: 0,
+    progressiveCompletedUsageBudgetApplied: false,
+    progressiveCompletedUsageBudgetReason: "",
+    progressiveCompletedUsageBudgetScope: "",
+    progressiveCompletedUsageBytesBeforeBudget: 0,
+    progressiveCompletedUsageBytesAfterBudget: 0,
     progressiveVisibleItemCeiling: boundedCount(
       options.progressiveVisibleItemCeiling,
       DEFAULT_PROGRESSIVE_VISIBLE_ITEM_CEILING,
@@ -1332,6 +1420,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
   applyProgressiveVisibleItemCeiling(thread, budgetOptions, stats);
   applyProgressiveCompletedTextBudget(thread, budgetOptions, stats);
   applyProgressiveCompletedUserInputBudget(thread, budgetOptions, stats);
+  applyProgressiveCompletedUsageBudget(thread, budgetOptions, stats);
   applyProgressiveActiveFirstPaintItemBudget(thread, budgetOptions, stats);
   annotateRetainedVisibleItemByteStats(thread, stats);
   for (const turn of thread.turns) {
@@ -1352,6 +1441,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
     || stats.truncatedActiveOperationPayloadItems > 0;
   stats.applied = stats.applied || stats.truncatedCompletedTextItems > 0;
   stats.applied = stats.applied || stats.truncatedCompletedUserInputItems > 0;
+  stats.applied = stats.applied || stats.truncatedCompletedUsageItems > 0;
   if (!stats.applied && !stats.progressiveActiveBudgetApplied) return out;
   const revision = thread.mobileProjectionRevision;
   const normalized = normalizeThreadVisibleProjection(out, {

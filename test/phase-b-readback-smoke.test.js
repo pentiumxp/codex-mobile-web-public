@@ -227,6 +227,15 @@ test("phase B readback smoke collects bounded diagnostics without private fields
             completedUserInputOriginalChars: 31000,
             completedUserInputRetainedChars: 8192,
             omittedCompletedUserInputChars: 22808,
+            progressiveCompletedUsageBudgetApplied: true,
+            progressiveCompletedUsageBudgetReason: "first-paint-byte-pressure",
+            progressiveCompletedUsageBudgetScope: "active-first-paint",
+            progressiveCompletedUsageBytesBeforeBudget: 158000,
+            progressiveCompletedUsageBytesAfterBudget: 149000,
+            truncatedCompletedUsageItems: 6,
+            completedUsageOriginalBytes: 9300,
+            completedUsageRetainedBytes: 3900,
+            omittedCompletedUsageBytes: 5400,
             progressiveActiveTextChars: 12000,
             truncatedActiveTextItems: 2,
             activeTextOriginalChars: 58000,
@@ -405,6 +414,15 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.detail.responseBudgetCompletedUserInputOriginalChars, 31000);
   assert.equal(report.detail.responseBudgetCompletedUserInputRetainedChars, 8192);
   assert.equal(report.detail.responseBudgetOmittedCompletedUserInputChars, 22808);
+  assert.equal(report.detail.responseBudgetProgressiveCompletedUsageBudgetApplied, true);
+  assert.equal(report.detail.responseBudgetProgressiveCompletedUsageBudgetReason, "first-paint-byte-pressure");
+  assert.equal(report.detail.responseBudgetProgressiveCompletedUsageBudgetScope, "active-first-paint");
+  assert.equal(report.detail.responseBudgetProgressiveCompletedUsageBytesBeforeBudget, 158000);
+  assert.equal(report.detail.responseBudgetProgressiveCompletedUsageBytesAfterBudget, 149000);
+  assert.equal(report.detail.responseBudgetTruncatedCompletedUsageItems, 6);
+  assert.equal(report.detail.responseBudgetCompletedUsageOriginalBytes, 9300);
+  assert.equal(report.detail.responseBudgetCompletedUsageRetainedBytes, 3900);
+  assert.equal(report.detail.responseBudgetOmittedCompletedUsageBytes, 5400);
   assert.equal(report.detail.responseBudgetTruncatedActiveTextItems, 2);
   assert.equal(report.detail.responseBudgetOmittedActiveTextChars, 39000);
   assert.equal(report.detail.responseBudgetTruncatedActiveOperationPayloadItems, 3);
@@ -432,6 +450,8 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.decision.evidence.detailResponseBudgetOmittedActiveTextChars, 39000);
   assert.equal(report.decision.evidence.detailResponseBudgetProgressiveCompletedUserInputBudgetApplied, true);
   assert.equal(report.decision.evidence.detailResponseBudgetOmittedCompletedUserInputChars, 22808);
+  assert.equal(report.decision.evidence.detailResponseBudgetProgressiveCompletedUsageBudgetApplied, true);
+  assert.equal(report.decision.evidence.detailResponseBudgetOmittedCompletedUsageBytes, 5400);
   assert.equal(report.decision.evidence.detailResponseBudgetProgressiveActiveFirstPaintItemBudgetApplied, true);
   assert.equal(report.decision.evidence.detailResponseBudgetProgressiveActiveFirstPaintBytesAfterItemBudget, 92000);
   assert.deepEqual(report.decision.evidence.detailResponseBudgetRetainedVisibleItemBytesByKind, {

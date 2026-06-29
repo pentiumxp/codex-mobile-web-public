@@ -926,6 +926,91 @@ test("thread detail response budget previews completed user input under active f
   assert.equal(compacted.thread.mobileProjectionRevision, 33);
 });
 
+test("thread detail response budget compacts completed Usage summaries under active first-paint byte pressure", () => {
+  const usageSummary = {
+    turnId: "turn-completed",
+    timestamp: "2026-06-30T01:02:03.000Z",
+    timestampMs: 1782781323000,
+    contextWindowUsedTokens: 123456,
+    modelContextWindow: 200000,
+    contextWindowUsedPercent: 61.7,
+    contextRiskLevel: "normal",
+    finalTokenUsage: { inputTokens: 1000, outputTokens: 200, cachedInputTokens: 500 },
+    turnTokenUsage: { inputTokens: 1500, outputTokens: 300, totalTokens: 1800 },
+    totalTokenUsage: { inputTokens: 50000, outputTokens: 10000, totalTokens: 60000 },
+    rolloutSizeBytes: 120000,
+    rolloutWarningThresholdBytes: 200000,
+    rolloutOverWarningThreshold: false,
+    projectContextSizeBytes: 10000,
+    handoffSizeBytes: 20000,
+    workspaceContextPairSizeBytes: 30000,
+    workspaceContextFileThresholdBytes: 100000,
+    workspaceHandoffPromptThresholdBytes: 120000,
+    workspaceContextPairThresholdBytes: 200000,
+    agentsSizeBytes: 444,
+    workspaceContextPairThresholdLabel: "internal debug label",
+  };
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      mobileProjectionRevision: 34,
+      turns: [
+        {
+          id: "turn-completed",
+          status: "completed",
+          items: [
+            { id: "completed-u", type: "userMessage", text: "Question" },
+            { id: "completed-a", type: "agentMessage", text: "Receipt" },
+            { id: "usage", type: "turnUsageSummary", mobileUsageSummary: usageSummary },
+          ],
+        },
+        {
+          id: "turn-active",
+          status: "inProgress",
+          items: [
+            { id: "active-a", type: "agentMessage", text: "Working" },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeProgressiveItemThreshold: 1,
+    progressiveActiveFirstPaintThreadByteCeiling: 1200,
+    progressiveFirstPaintThreadByteCeiling: 1200,
+  });
+
+  const usage = compacted.thread.turns[0].items.find((item) => item.type === "turnUsageSummary");
+  assert.equal(usage.mobileFirstPaintUsageBudget.scope, "completed");
+  assert.ok(usage.mobileFirstPaintUsageBudget.originalBytes > usage.mobileFirstPaintUsageBudget.retainedBytes);
+  assert.ok(usage.mobileFirstPaintUsageBudget.omittedBytes > 0);
+  assert.equal(usage.mobileUsageSummary.contextWindowUsedTokens, 123456);
+  assert.equal(usage.mobileUsageSummary.modelContextWindow, 200000);
+  assert.equal(usage.mobileUsageSummary.contextWindowUsedPercent, 61.7);
+  assert.deepEqual(usage.mobileUsageSummary.lastTokenUsage, { inputTokens: 1000, outputTokens: 200, cachedInputTokens: 500 });
+  assert.deepEqual(usage.mobileUsageSummary.totalTokenUsage, { inputTokens: 50000, outputTokens: 10000, totalTokens: 60000 });
+  assert.equal(usage.mobileUsageSummary.rolloutSizeBytes, 120000);
+  assert.equal(usage.mobileUsageSummary.projectContextSizeBytes, 10000);
+  assert.equal(usage.mobileUsageSummary.turnId, undefined);
+  assert.equal(usage.mobileUsageSummary.timestamp, undefined);
+  assert.equal(usage.mobileUsageSummary.finalTokenUsage, undefined);
+  assert.equal(usage.mobileUsageSummary.turnTokenUsage, undefined);
+  assert.equal(usage.mobileUsageSummary.agentsSizeBytes, undefined);
+
+  const budget = compacted.thread.mobileDetailResponseBudget;
+  assert.equal(budget.progressiveCompletedUsageBudgetApplied, true);
+  assert.equal(budget.progressiveCompletedUsageBudgetScope, "active-first-paint");
+  assert.equal(budget.truncatedCompletedUsageItems, 1);
+  assert.ok(budget.completedUsageOriginalBytes > budget.completedUsageRetainedBytes);
+  assert.ok(budget.omittedCompletedUsageBytes > 0);
+  assert.deepEqual(compacted.thread.mobileVisibleItemKeys, compacted.thread.turns.flatMap((turn) => turn.items.map((item) => item.mobileVisibleKey)));
+  assert.equal(compacted.thread.mobileProjectionRevision, 34);
+});
+
 test("thread detail response budget drops active inline image data under progressive pressure", () => {
   const dataUrl = `data:image/png;base64,${"A".repeat(4200)}`;
   const result = {

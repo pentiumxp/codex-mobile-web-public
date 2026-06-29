@@ -525,6 +525,19 @@ that completed-user budget. Inspect
 `CODEX_MOBILE_THREAD_DETAIL_PROGRESSIVE_COMPLETED_USER_TEXT_CHARS` and defaults
 to 1024 characters. This is an HTTP first-paint preview only; it does not mutate
 the rollout/session record.
+If the same active first-paint response remains over budget because completed
+`turnUsageSummary` rows still carry full internal summary metadata, newer
+servers compact only the completed Usage summary payload to fields consumed by
+the Usage UI. Affected rows carry `mobileFirstPaintUsageBudget`, and the
+thread budget reports `progressiveCompletedUsageBudgetApplied`,
+`progressiveCompletedUsageBudgetReason`,
+`progressiveCompletedUsageBytesBeforeBudget`,
+`progressiveCompletedUsageBytesAfterBudget`,
+`truncatedCompletedUsageItems`, and `omittedCompletedUsageBytes`. This is an
+HTTP response-shaping rule: the Usage row remains visible, persisted rollout
+data is unchanged, and the budget must preserve rendered fields such as context
+window usage, risk level, last/total token usage, rollout size, and workspace
+context size counters.
 On v558+ clients, a per-turn `mobileVisibleItemBudget` also renders as a small
 first-paint omission notice in the conversation. That notice has a
 `data-render-key` and enters the conversation signature, but intentionally does

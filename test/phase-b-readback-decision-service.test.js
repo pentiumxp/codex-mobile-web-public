@@ -248,6 +248,15 @@ test("phase B readback decision returns ready for warm or bounded paths", () => 
       responseBudgetCompletedUserInputOriginalChars: 30000,
       responseBudgetCompletedUserInputRetainedChars: 7168,
       responseBudgetOmittedCompletedUserInputChars: 22832,
+      responseBudgetProgressiveCompletedUsageBudgetApplied: true,
+      responseBudgetProgressiveCompletedUsageBudgetReason: "first-paint-byte-pressure",
+      responseBudgetProgressiveCompletedUsageBudgetScope: "active-first-paint",
+      responseBudgetProgressiveCompletedUsageBytesBeforeBudget: 150000,
+      responseBudgetProgressiveCompletedUsageBytesAfterBudget: 142000,
+      responseBudgetTruncatedCompletedUsageItems: 5,
+      responseBudgetCompletedUsageOriginalBytes: 8000,
+      responseBudgetCompletedUsageRetainedBytes: 3500,
+      responseBudgetOmittedCompletedUsageBytes: 4500,
       responseBudgetProgressiveCompletedTextBudgetApplied: true,
       responseBudgetProgressiveCompletedTextBudgetReason: "first-paint-byte-pressure",
       responseBudgetProgressiveCompletedTextBudgetScope: "active-first-paint",
@@ -317,6 +326,15 @@ test("phase B readback decision returns ready for warm or bounded paths", () => 
   assert.equal(decision.evidence.detailResponseBudgetCompletedUserInputOriginalChars, 30000);
   assert.equal(decision.evidence.detailResponseBudgetCompletedUserInputRetainedChars, 7168);
   assert.equal(decision.evidence.detailResponseBudgetOmittedCompletedUserInputChars, 22832);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUsageBudgetApplied, true);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUsageBudgetReason, "first-paint-byte-pressure");
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUsageBudgetScope, "active-first-paint");
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUsageBytesBeforeBudget, 150000);
+  assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedUsageBytesAfterBudget, 142000);
+  assert.equal(decision.evidence.detailResponseBudgetTruncatedCompletedUsageItems, 5);
+  assert.equal(decision.evidence.detailResponseBudgetCompletedUsageOriginalBytes, 8000);
+  assert.equal(decision.evidence.detailResponseBudgetCompletedUsageRetainedBytes, 3500);
+  assert.equal(decision.evidence.detailResponseBudgetOmittedCompletedUsageBytes, 4500);
   assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedTextBudgetApplied, true);
   assert.equal(decision.evidence.detailResponseBudgetProgressiveCompletedTextBudgetReason, "first-paint-byte-pressure");
   assert.equal(decision.evidence.detailResponseBudgetProgressiveFirstPaintBytesBeforeTextBudget, 220000);
