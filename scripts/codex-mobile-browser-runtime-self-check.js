@@ -943,6 +943,23 @@ function snapshotExpression(input = {}) {
       const timestampExpectedSelector = ".item.userMessage, .item.agentMessage, .item.plan, .item.turnDiagnostic, .item.thread-task-card-injected";
       const timestampExpectedNodes = latestTurnNode ? Array.from(latestTurnNode.querySelectorAll(timestampExpectedSelector)) : [];
       const timestampMissingNodes = timestampExpectedNodes.filter((node) => !node.querySelector(".item-timestamp"));
+      const timestampMissingKind = (node) => {
+        const className = String(node && node.className || "");
+        if (className.includes("thread-task-card-injected")) return "threadTaskCard";
+        if (className.includes("userMessage")) return "userMessage";
+        if (className.includes("agentMessage")) return "agentMessage";
+        if (className.includes("plan")) return "plan";
+        if (className.includes("turnDiagnostic")) return "turnDiagnostic";
+        return "unknown";
+      };
+      const countTimestampMissingKinds = (nodes) => {
+        const counts = {};
+        nodes.forEach((node) => {
+          const kind = timestampMissingKind(node);
+          counts[kind] = (counts[kind] || 0) + 1;
+        });
+        return counts;
+      };
       const latestUsageCount = latestTurnNode ? latestTurnNode.querySelectorAll(".item.turnUsageSummary").length : 0;
       const latestItemNodes = latestTurnNode ? Array.from(latestTurnNode.querySelectorAll("[data-item]")) : [];
       const latestUserNodes = latestTurnNode ? Array.from(latestTurnNode.querySelectorAll(".item.userMessage")) : [];
@@ -993,6 +1010,7 @@ function snapshotExpression(input = {}) {
         let taskCardUserMessageCount = 0;
         let timestampExpectedItems = 0;
         let timestampMissingItems = 0;
+        const timestampMissingKindCounts = {};
         nodes.forEach((node, itemIndex) => {
           const className = String(node.className || "");
           if (className.includes("turnUsageSummary")) usageIndexes.push(itemIndex);
@@ -1005,7 +1023,11 @@ function snapshotExpression(input = {}) {
             || className.includes("turnDiagnostic")
             || className.includes("thread-task-card-injected")) {
             timestampExpectedItems += 1;
-            if (!node.querySelector(".item-timestamp")) timestampMissingItems += 1;
+            if (!node.querySelector(".item-timestamp")) {
+              timestampMissingItems += 1;
+              const kind = timestampMissingKind(node);
+              timestampMissingKindCounts[kind] = (timestampMissingKindCounts[kind] || 0) + 1;
+            }
           }
         });
         const lastUsageIndex = usageIndexes.length ? Math.max(...usageIndexes) : -1;
@@ -1019,6 +1041,7 @@ function snapshotExpression(input = {}) {
           usageCount: usageIndexes.length,
           timestampExpectedItems,
           timestampMissingItems,
+          timestampMissingKindCounts,
           userAfterUsageCount: lastUsageIndex >= 0 ? userIndexes.filter((itemIndex) => itemIndex > lastUsageIndex).length : 0,
         };
       });
@@ -1145,6 +1168,7 @@ function snapshotExpression(input = {}) {
         latestTurnUsageCount: latestUsageCount,
         latestTimestampExpectedItems: timestampExpectedNodes.length,
         latestTimestampMissingItems: timestampMissingNodes.length,
+        latestTimestampMissingKindCounts: countTimestampMissingKinds(timestampMissingNodes),
         imageCount: imageNodes.length,
         imageFigureCount: imageFigures.length,
         imageFailedFigureCount: failedFigures.length,

@@ -289,6 +289,106 @@ test("browser runtime self-check keeps active progressive timestamp gaps advisor
   assert.equal(turnIssue.turnShape.completed, false);
 });
 
+test("browser runtime self-check keeps early active assistant timestamp gaps advisory", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [{
+      label: "active-assistant-gap",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      latestTurnMatchesTarget: true,
+      latestTurnHash: "turn-active",
+      latestTimestampExpectedItems: 27,
+      latestTimestampMissingItems: 1,
+      latestTimestampMissingKindCounts: { agentMessage: 1 },
+      expectedTurnShapes: [{
+        index: 0,
+        turnHash: "turn-active",
+        completed: false,
+        expectedItemCount: 34,
+        expectedUserMessageCount: 0,
+        expectedTaskCardUserMessageCount: 2,
+        expectedAssistantMessageCount: 24,
+        expectedUsageRequired: false,
+        expectedTimestampItemCount: 27,
+      }],
+      domTurnShapes: [{
+        index: 0,
+        turnHash: "turn-active",
+        itemCount: 34,
+        userMessageCount: 0,
+        taskCardUserMessageCount: 2,
+        assistantMessageCount: 24,
+        usageCount: 0,
+        timestampExpectedItems: 27,
+        timestampMissingItems: 1,
+        timestampMissingKindCounts: { agentMessage: 1 },
+        userAfterUsageCount: 0,
+      }],
+      turns: 1,
+      items: 34,
+      renderKeys: 34,
+    }],
+  });
+
+  assert.equal(report.ok, true);
+  assert.equal(report.blockingIssueCount, 0);
+  const latestIssue = report.issues.find((entry) => entry.code === "browser_latest_turn_timestamp_missing");
+  assert.equal(latestIssue.severity, "H3");
+  assert.equal(latestIssue.latestTimestampMissingKindCounts.agentMessage, 1);
+  const turnIssue = report.issues.find((entry) => entry.code === "browser_turn_timestamp_missing");
+  assert.equal(turnIssue.severity, "H3");
+  assert.equal(turnIssue.turnShape.timestampMissingKindCounts.agentMessage, 1);
+});
+
+test("browser runtime self-check still blocks active user timestamp gaps", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [{
+      label: "active-user-gap",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      latestTurnMatchesTarget: true,
+      latestTurnHash: "turn-active",
+      latestTimestampExpectedItems: 3,
+      latestTimestampMissingItems: 1,
+      latestTimestampMissingKindCounts: { userMessage: 1 },
+      expectedTurnShapes: [{
+        index: 0,
+        turnHash: "turn-active",
+        completed: false,
+        expectedItemCount: 4,
+        expectedUserMessageCount: 1,
+        expectedAssistantMessageCount: 1,
+        expectedUsageRequired: false,
+        expectedTimestampItemCount: 3,
+      }],
+      domTurnShapes: [{
+        index: 0,
+        turnHash: "turn-active",
+        itemCount: 4,
+        userMessageCount: 1,
+        assistantMessageCount: 1,
+        usageCount: 0,
+        timestampExpectedItems: 3,
+        timestampMissingItems: 1,
+        timestampMissingKindCounts: { userMessage: 1 },
+        userAfterUsageCount: 0,
+      }],
+      turns: 1,
+      items: 4,
+      renderKeys: 4,
+    }],
+  });
+
+  assert.equal(report.ok, false);
+  assert.equal(report.blockingIssueCount, 2);
+  assert.ok(report.issues.some((entry) => entry.code === "browser_latest_turn_timestamp_missing" && entry.severity === "H2"));
+  assert.ok(report.issues.some((entry) => entry.code === "browser_turn_timestamp_missing" && entry.severity === "H2"));
+});
+
 test("browser runtime self-check still blocks completed timestamp gaps", () => {
   const report = service.analyzeBrowserRuntimeSamples({
     samples: [{

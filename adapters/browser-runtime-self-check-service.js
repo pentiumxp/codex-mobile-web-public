@@ -151,17 +151,47 @@ function safeTurnShape(value = {}) {
     expectedUsageRequired: row.expectedUsageRequired === true,
     actualUsageCount: toNumber(row.usageCount),
     timestampMissingItems: toNumber(row.timestampMissingItems),
+    timestampMissingKindCounts: safeTimestampKindCounts(row.timestampMissingKindCounts),
     userAfterUsageCount: toNumber(row.userAfterUsageCount),
   };
 }
 
+function safeTimestampKindCounts(value = {}) {
+  const source = value && typeof value === "object" ? value : {};
+  const result = {};
+  for (const kind of ["agentMessage", "plan", "userMessage", "threadTaskCard", "turnDiagnostic", "unknown"]) {
+    const count = toNumber(source[kind]);
+    if (count > 0) result[kind] = count;
+  }
+  return result;
+}
+
+function hasTimestampKindCounts(value = {}) {
+  return Object.keys(safeTimestampKindCounts(value)).length > 0;
+}
+
 function activeProgressiveTurnShape(value = {}) {
   const row = value && typeof value === "object" ? value : {};
-  return row.completed !== true
+  const kindCounts = safeTimestampKindCounts(row.timestampMissingKindCounts);
+  const hasKinds = hasTimestampKindCounts(kindCounts);
+  const assistantTimestampGap = toNumber(kindCounts.agentMessage) + toNumber(kindCounts.plan);
+  const nonAssistantTimestampGap = toNumber(kindCounts.userMessage)
+    + toNumber(kindCounts.threadTaskCard)
+    + toNumber(kindCounts.turnDiagnostic)
+    + toNumber(kindCounts.unknown);
+  const activeAssistantTimestampGap = row.completed !== true
+    && hasKinds
+    && assistantTimestampGap > 0
+    && nonAssistantTimestampGap <= 0
+    && row.expectedUsageRequired !== true
+    && toNumber(row.expectedAssistantMessageCount) > 0
+    && toNumber(row.assistantMessageCount) >= toNumber(row.expectedAssistantMessageCount);
+  const activeBudgetedProgress = row.completed !== true
     && toNumber(row.expectedAssistantMessageCount) > 0
     && toNumber(row.assistantMessageCount) > toNumber(row.expectedAssistantMessageCount)
     && toNumber(row.expectedItemCount) > 0
     && toNumber(row.itemCount) < toNumber(row.expectedItemCount);
+  return activeAssistantTimestampGap || activeBudgetedProgress;
 }
 
 function matchedTurnShapes(sample = {}) {
@@ -278,6 +308,7 @@ function analyzeBrowserRuntimeSamples(input = {}) {
       issues.push(issue(activeProgressive ? "H3" : "H2", "browser_latest_turn_timestamp_missing", sample, {
         latestTimestampExpectedItems: toNumber(sample.latestTimestampExpectedItems),
         latestTimestampMissingItems: toNumber(sample.latestTimestampMissingItems),
+        latestTimestampMissingKindCounts: safeTimestampKindCounts(sample.latestTimestampMissingKindCounts),
         activeProgressive,
         turnShape: activeProgressive ? safeTurnShape(latestShape) : undefined,
       }));

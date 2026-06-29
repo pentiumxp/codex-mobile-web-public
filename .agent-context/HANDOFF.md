@@ -31733,3 +31733,44 @@ The previous full handoff was archived and should be opened only when old proven
   - The browser-runtime child timeout residual from the previous `22e8f60`
     deployment is closed in this readback.
   - No Public deploy requested or run.
+
+### 2026-06-30 - Active Assistant Timestamp Gap Advisory Ready For Deploy
+
+- Scope:
+  - Follow-up to the Home AI Deploy return for `372d69f9af9c`, which confirmed
+    the browser-runtime child timeout was closed but reported intermittent H2
+    `browser_latest_turn_timestamp_missing` / `browser_turn_timestamp_missing`
+    samples.
+- Root cause / classification:
+  - The failing production samples occurred in early active-thread delay buckets
+    (`100ms` / `350ms`) while the same thread later classified similar
+    timestamp gaps as active-progressive H3.
+  - The browser self-check previously only knew the missing timestamp count,
+    not which item class was missing. That made early active assistant/plan
+    timestamp races indistinguishable from real user/task-card/diagnostic or
+    completed-turn timestamp contract failures.
+- Source changes:
+  - `scripts/codex-mobile-browser-runtime-self-check.js` now records bounded
+    `latestTimestampMissingKindCounts` and per-turn
+    `timestampMissingKindCounts` by item class.
+  - `adapters/browser-runtime-self-check-service.js` keeps active
+    assistant/plan-only timestamp gaps advisory while leaving active
+    user/task-card/diagnostic gaps and completed/resting timestamp gaps as H2.
+  - `test/browser-runtime-self-check-service.test.js` covers both the early
+    active assistant advisory case and the active user timestamp H2 case.
+  - `docs/MODULES.md` and `docs/TROUBLESHOOTING.md` document the item-kind
+    distinction.
+- Validation before deploy:
+  - `node --check adapters/browser-runtime-self-check-service.js scripts/codex-mobile-browser-runtime-self-check.js`
+    passed.
+  - `node --test test/browser-runtime-self-check-service.test.js test/runtime-self-check-gate-service.test.js`
+    passed with 40 tests.
+  - Source runtime loop against production server with a temporary output file
+    returned `ok=true`, `deployPass=true`, `periodicHealthy=true`,
+    `issueCount=0`, `blockingIssueCount=0`, and `executionFailureCount=0`.
+  - `npm test` passed with 1626 tests.
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - Home AI fallback governance check passed for changed source/test/doc files.
+- Deployment status:
+  - Local deploy candidate only; no commit, deploy card, or Public deploy has
+    been made for this follow-up yet.
