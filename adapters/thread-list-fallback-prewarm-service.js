@@ -27,7 +27,7 @@ function normalizePrewarmConfig(config = {}) {
   const limit = boundedNumber(config.limit, 40, 1, 200);
   return {
     enabled: normalizeEnabled(config.enabled, true),
-    delayMs: boundedNumber(config.delayMs, 1500, 0, 10 * 60 * 1000),
+    delayMs: boundedNumber(config.delayMs, 0, 0, 10 * 60 * 1000),
     retryDelayMs: boundedNumber(config.retryDelayMs, 2500, 100, 10 * 60 * 1000),
     maxDeferrals: boundedNumber(config.maxDeferrals, 5, 0, 100),
     limit,

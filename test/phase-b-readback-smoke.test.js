@@ -110,7 +110,7 @@ test("phase B readback smoke collects bounded diagnostics without private fields
           running: false,
           completed: true,
           deferralCount: 0,
-          delayMs: 1500,
+          delayMs: 0,
           retryDelayMs: 2500,
           maxDeferrals: 5,
           limit: 40,

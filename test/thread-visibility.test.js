@@ -1110,6 +1110,7 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(threadListSummaryServiceJs, /"mobileDetailLoaded"/);
   assert.match(serverJs, /const threadListFallbackCacheService = createThreadListFallbackCacheService\(\{\s*ttlMs: THREAD_LIST_FALLBACK_CACHE_TTL_MS,/);
   assert.match(serverJs, /const THREAD_LIST_FALLBACK_PREWARM_ENABLED = !\/\^\(0\|false\|no\|off\)\$\/i\.test\(process\.env\.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM \|\| "1"\)/);
+  assert.match(serverJs, /process\.env\.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_DELAY_MS \|\| "0"/);
   assert.match(serverJs, /const THREAD_LIST_FALLBACK_PREWARM_RETRY_MS = Math\.max\([\s\S]*process\.env\.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_RETRY_MS \|\| "2500"/);
   assert.match(serverJs, /const THREAD_LIST_FALLBACK_PREWARM_MAX_DEFERRALS = Math\.max\([\s\S]*process\.env\.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_MAX_DEFERRALS \|\| "5"/);
   assert.match(serverJs, /const THREAD_LIST_FALLBACK_PREWARM_LIMIT = Math\.max\([\s\S]*process\.env\.CODEX_MOBILE_THREAD_LIST_FALLBACK_PREWARM_LIMIT \|\| "40"/);

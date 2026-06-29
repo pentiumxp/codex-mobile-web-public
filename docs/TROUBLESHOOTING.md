@@ -396,7 +396,10 @@ restart, the thread-list fallback prewarm should also schedule active-window
 prewarm for active rows when it completes; if the first active detail open is
 still cold after the fallback baseline has completed, inspect whether
 `thread-list-prewarm:completed` produced an active-window prewarm result before
-the detail request arrived.
+the detail request arrived. Startup fallback prewarm defaults to zero delay
+after listener start; if a detail request is already in flight, it should
+defer through `active-detail-in-flight` and retry instead of competing with the
+foreground detail request.
 `turn/started`, `turn/completed`, and active `thread/status/changed`
 notification-triggered prewarm should fast-start with zero delay and bypass the
 ordinary recent-attempt throttle, because the client can refetch the thread

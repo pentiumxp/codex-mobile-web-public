@@ -292,7 +292,9 @@ Current acceleration targets:
    active thread summaries are passed through an internal hook to schedule
    active-window prewarm. The hook does not alter public fallback status or
    expose private row data; it only starts the existing bounded active-window
-   prewarm earlier after restart.
+   prewarm earlier after restart. Startup fallback prewarm now defaults to
+   zero delay after listener start while retaining the active-detail-in-flight
+   defer/retry guard.
    The stale-full-history follow-up handles a remaining successful-but-slow
    case after process restart or active-turn growth: a full projection may still
    contain a valid history window, but the ordinary signature check rejects it
