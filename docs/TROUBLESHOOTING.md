@@ -519,6 +519,7 @@ budget fields next:
 `progressiveThreadTaskCardOriginalCount`,
 `progressiveThreadTaskCardCompactedCount`,
 `progressiveThreadTaskCardActionableCount`,
+`progressiveThreadTaskCardSettledCompactedCount`,
 `progressiveThreadTaskCardOriginalBytes`,
 `progressiveThreadTaskCardRetainedBytes`,
 `progressiveThreadTaskCardOmittedBytes`,
@@ -530,6 +531,10 @@ task-card metadata to an action-safe first-paint shape. Pending/actionable
 cards keep their action booleans and minimal workflow/source/target/message
 fields needed by the renderer, while full card details remain available through
 `GET /api/thread-task-cards/:id?threadId=<thread-id>` when a card is opened.
+Settled non-actionable cards can be reduced further to id/status/thread-role
+placeholders with `mobileTaskCardSettledCompacted`; use
+`progressiveThreadTaskCardSettledCompactedCount` to confirm that this
+placeholder path is active.
 When `assistant` is the dominant retained kind, inspect
 `retainedAssistantItemCountByTurnState` and
 `retainedAssistantItemBytesByTurnState`, then inspect the metadata-only

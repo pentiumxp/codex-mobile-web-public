@@ -437,6 +437,23 @@ function taskCardHasAction(card) {
   ));
 }
 
+function taskCardNeedsFirstPaintActionShape(card) {
+  if (taskCardHasAction(card)) return true;
+  const status = String(card && card.status || "").trim();
+  const threadRole = String(card && card.threadRole || "").trim();
+  return status === "pending" && threadRole === "target";
+}
+
+function compactSettledThreadTaskCardForFirstPaint(card) {
+  return {
+    id: String(card && card.id || ""),
+    status: String(card && card.status || "completed"),
+    threadRole: String(card && card.threadRole || ""),
+    mobileTaskCardCompacted: true,
+    mobileTaskCardSettledCompacted: true,
+  };
+}
+
 function compactTaskCardMessageForFirstPaint(message) {
   const source = message && typeof message === "object" ? message : {};
   const out = {};
@@ -462,6 +479,9 @@ function compactTaskCardWorkflowForFirstPaint(workflow) {
 }
 
 function compactThreadTaskCardForFirstPaint(card) {
+  if (!taskCardNeedsFirstPaintActionShape(card)) {
+    return compactSettledThreadTaskCardForFirstPaint(card);
+  }
   const out = {
     id: String(card && card.id || ""),
     status: String(card && card.status || "completed"),
@@ -1234,6 +1254,7 @@ function applyProgressiveThreadTaskCardFirstPaintBudget(thread, options, stats) 
   let retainedBytes = 0;
   let actionableCount = 0;
   let ineligibleCount = 0;
+  let settledCompactedCount = 0;
   for (const card of thread.threadTaskCards) {
     const cardBytes = jsonByteLength(card);
     originalBytes += cardBytes;
@@ -1250,6 +1271,7 @@ function applyProgressiveThreadTaskCardFirstPaintBudget(thread, options, stats) 
     if (compactedBytes > 0 && compactedBytes < cardBytes) {
       changed = true;
       compactedCount += 1;
+      if (compacted && compacted.mobileTaskCardSettledCompacted === true) settledCompactedCount += 1;
       retainedBytes += compactedBytes;
       nextCards.push(compacted);
     } else {
@@ -1259,6 +1281,7 @@ function applyProgressiveThreadTaskCardFirstPaintBudget(thread, options, stats) 
   }
   stats.progressiveThreadTaskCardActionableCount = actionableCount;
   stats.progressiveThreadTaskCardIneligibleCount = ineligibleCount;
+  stats.progressiveThreadTaskCardSettledCompactedCount = settledCompactedCount;
   stats.progressiveThreadTaskCardOriginalBytes = originalBytes;
   stats.progressiveThreadTaskCardRetainedBytes = retainedBytes;
   stats.progressiveThreadTaskCardOmittedBytes = Math.max(0, originalBytes - retainedBytes);
@@ -1746,6 +1769,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
     progressiveThreadTaskCardCompactedCount: 0,
     progressiveThreadTaskCardActionableCount: 0,
     progressiveThreadTaskCardIneligibleCount: 0,
+    progressiveThreadTaskCardSettledCompactedCount: 0,
     progressiveThreadTaskCardOriginalBytes: 0,
     progressiveThreadTaskCardRetainedBytes: 0,
     progressiveThreadTaskCardOmittedBytes: 0,

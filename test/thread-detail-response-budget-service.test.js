@@ -2402,7 +2402,7 @@ test("thread detail response budget leaves already small details unchanged", () 
   assert.deepEqual(compacted, result);
 });
 
-test("thread detail response budget compacts task-card metadata under active first-paint byte pressure", () => {
+test("thread detail response budget compacts settled task cards to first-paint placeholders", () => {
   const settledCard = {
     id: "card-completed",
     status: "completed",
@@ -2511,19 +2511,19 @@ test("thread detail response budget compacts task-card metadata under active fir
   assert.equal(cards.length, 2);
   assert.equal(cards[0].id, "card-completed");
   assert.equal(cards[0].mobileTaskCardCompacted, true);
-  assert.equal(cards[0].message.title, "Completed task");
-  assert.equal(cards[0].message.summary, "Completed summary");
-  assert.equal(cards[0].message.bodyOmitted, true);
-  assert.equal(cards[0].message.bodyChars, 4096);
-  assert.deepEqual(cards[0].workflow, { id: "workflow-1", mode: "autonomous", authorized: true });
+  assert.equal(cards[0].mobileTaskCardSettledCompacted, true);
+  assert.equal(cards[0].threadRole, "target");
+  assert.equal(cards[0].message, undefined);
+  assert.equal(cards[0].workflow, undefined);
   assert.equal(cards[0].audit, undefined);
   assert.equal(cards[0].delivery, undefined);
   assert.equal(cards[0].executionLease, undefined);
   assert.equal(cards[0].injectionRuntime, undefined);
-  assert.deepEqual(cards[0].source, { threadId: "source-thread", workspaceId: "source-workspace" });
-  assert.deepEqual(cards[0].target, { threadId: "target-thread", workspaceId: "target-workspace" });
+  assert.equal(cards[0].source, undefined);
+  assert.equal(cards[0].target, undefined);
   assert.equal(cards[1].id, "card-pending");
   assert.equal(cards[1].mobileTaskCardCompacted, true);
+  assert.equal(cards[1].mobileTaskCardSettledCompacted, undefined);
   assert.equal(cards[1].canApprove, true);
   assert.equal(cards[1].canReply, undefined);
   assert.deepEqual(cards[1].workflow, { id: "workflow-pending", mode: "autonomous", authorized: false });
@@ -2541,6 +2541,7 @@ test("thread detail response budget compacts task-card metadata under active fir
   assert.equal(budget.progressiveThreadTaskCardCompactedCount, 2);
   assert.equal(budget.progressiveThreadTaskCardActionableCount, 1);
   assert.equal(budget.progressiveThreadTaskCardIneligibleCount, 0);
+  assert.equal(budget.progressiveThreadTaskCardSettledCompactedCount, 1);
   assert.ok(budget.progressiveThreadTaskCardOriginalBytes > budget.progressiveThreadTaskCardRetainedBytes);
   assert.ok(budget.progressiveThreadTaskCardOmittedBytes > 0);
   assert.ok(budget.progressiveThreadTaskCardBytesAfterBudget < budget.progressiveThreadTaskCardBytesBeforeBudget);

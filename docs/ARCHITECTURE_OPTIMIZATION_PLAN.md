@@ -191,7 +191,9 @@ Current acceleration targets:
    the active first-paint ceiling, task cards are reduced to an action-safe
    first-paint shape that keeps pending-card buttons and minimal
    workflow/source/target/message metadata while the single-card detail endpoint
-   remains authoritative for full card details.
+   remains authoritative for full card details. Settled non-actionable cards
+   can be reduced further to id/status/thread-role placeholders because the
+   thread-detail renderer only exposes pending target cards for action.
    The follow-up active-detail hot-path slice keeps that same proof gate but
    changes the common active window source. A naive reuse of the active dynamic
    projection regressed production because the lookup still cloned/normalized

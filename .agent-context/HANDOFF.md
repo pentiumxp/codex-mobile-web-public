@@ -1,3 +1,64 @@
+# 2026-06-30 - settled task-card first-paint placeholder source slice ready
+
+- Scope:
+  - Continued active first-paint payload slicing after
+    `ba0242b0 fix: distinguish completed user input placeholders` deployed
+    cleanly.
+  - Metadata-only production attribution for source thread
+    `019eee6c-a6f5-7b20-bfb4-f96ccb6431b3` showed the current detail body can
+    fluctuate around the active first-paint ceiling. One sampled shape was
+    below ceiling; an earlier bounded sample still showed a small over-ceiling
+    class. The largest remaining non-turn payload contributor in the bounded
+    sample was top-level `threadTaskCards`.
+- Root-cause boundary:
+  - Failing layer: server thread-detail response budget for top-level task-card
+    metadata under active first-paint byte pressure.
+  - Violated invariant: first-paint detail payload should not carry full
+    historical task-card metadata when the thread-detail renderer only exposes
+    pending target cards for action and full card details remain available via
+    the single-card endpoint.
+  - Current production sample had `24` top-level task cards, all settled and
+    non-actionable: `12` `approved|target` and `12` `replied|source`, about
+    `19588` JSON bytes after the previous action-safe compaction pass.
+- Source change:
+  - `adapters/thread-detail-response-budget-service.js` now distinguishes
+    first-paint task-card shapes:
+    pending target cards or cards with action booleans keep the previous
+    action-safe metadata shape, while settled non-actionable cards compact to
+    id/status/thread-role placeholders marked
+    `mobileTaskCardSettledCompacted`.
+  - The task-card budget stats now include
+    `progressiveThreadTaskCardSettledCompactedCount`.
+  - Focused test coverage in
+    `test/thread-detail-response-budget-service.test.js` proves a settled card
+    drops message/workflow/source/target metadata while a pending actionable
+    card still keeps its action-safe fields.
+  - Updated `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Metadata-only estimate:
+  - Applying this rule under forced active first-paint pressure to the current
+    production task-card shape reduces `threadTaskCards` from about `19588`
+    bytes to about `3421` bytes, a net reduction of about `16167` bytes, with
+    `settledCompactedCount=24` and `actionableCount=0`.
+  - No raw message text, task-card body text, endpoint URL, token, cookie, or
+    log line was printed.
+- Validation:
+  - `node --check adapters/thread-detail-response-budget-service.js` passed.
+  - Focused:
+    `node --test test/thread-detail-response-budget-service.test.js` passed
+    (`47` tests).
+  - Related:
+    `node --test test/thread-detail-response-budget-service.test.js test/browser-runtime-self-check-service.test.js test/thread-detail-self-check-service.test.js`
+    passed (`115` tests).
+  - Full source `npm test -- --test-reporter=dot` passed.
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - `codegraph sync && codegraph status` passed; index is up to date.
+- Deployment:
+  - Not yet deployed from this source thread.
+  - Recommended deploy reason:
+    `codex-mobile-settled-task-card-first-paint-placeholder`.
+  - Public deploy is not requested.
+
 # 2026-06-29 - v586 duplicate submitted-user echo fix pending deploy
 
 - Scope:
@@ -33470,3 +33531,117 @@ The previous full handoff was archived and should be opened only when old proven
     deploy-mode runtime self-check against Movie and Codex Mobile source
     threads. Target residual:
     `browser_turn_user_message_below_api_expectation` should not recur as H1/H2.
+
+### 2026-06-30 - Distinct Completed User Input Placeholders Deployed
+
+- Source/deploy:
+  - Private production deployed source ref `ba0242b0b988`
+    (`fix: distinguish completed user input placeholders`) through the Home AI
+    deploy lane with reason
+    `codex-mobile-distinct-completed-user-input-placeholders`.
+  - Deploy backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T231213Z-plugin-codex-mobile-web-codex-mobile-distinct-completed-user-input-placeholders`.
+  - No Public deploy was run.
+- Production parity / markers:
+  - Source/production parity matched for
+    `adapters/thread-detail-response-budget-service.js`,
+    `test/thread-detail-response-budget-service.test.js`, `docs/MODULES.md`,
+    `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+  - Production markers were present for `stableBudgetPlaceholderToken`,
+    `first-paint user input preview truncated`, and the focused test marker
+    `keeps exhausted completed user input placeholders distinct`.
+  - Production docs mention that exhausted placeholders carry a short stable
+    token.
+- Metadata-only detail / Phase-B readback:
+  - Authenticated metadata-only detail check for the Codex Mobile source thread
+    returned `ok=true`, HTTP `200`, and `turnCount=9`, but the exact multi
+    budgeted completed-user placeholder shape was absent in that direct detail
+    sample: budgeted completed user inputs `0`, placeholder inputs `0`,
+    tokenized placeholder inputs `0`, and duplicate placeholder-hash turns `0`.
+  - Phase-B sample returned `ok=true`, `readMode=projection-active-overlay`,
+    `turnsListInitialMs=0`, `activeOverlayWindowMs=0`,
+    `activeOverlayBackfillWindowMs=0`, `activeOverlayMergeMs=5`, `totalMs=258`,
+    and `prepareResponseMs=179`.
+  - Completed-user budget remained active: reason `first-paint-byte-pressure`,
+    scope `active-first-paint`, mode `shared-newest-first`, bytes before budget
+    `258347`, bytes after budget `177953`, truncated completed user input
+    items `14`, original chars `83395`, retained chars `1700`, and omitted
+    chars `81695`.
+  - Retained completed user-input shape bytes were `itemAuxiliary=8006`,
+    `contentText=1700`, and `contentAuxiliary=670`. Retained visible bytes by
+    kind were `assistant=21645`, `userMessage=16549`, `usage=9665`,
+    `operation=2542`, `other=817`, and `reasoning=412`.
+  - The sample still had `progressiveActiveFirstPaintOverCeilingBytes=60029`,
+    but the Phase-B decision was `ready`, priority `H3`, owner
+    `phase-b-readback`, reason `warm-or-bounded-paths`, next action
+    `proceed-to-next-phase-b-root-cause-target`; active overlay/window latency
+    did not recur.
+- Runtime validation:
+  - Deploy-mode runtime self-check returned `ok=true`, `deployPass=true`,
+    `periodicHealthy=true`, issue count `0`, blocking issue count `0`,
+    advisory issue count `0`, execution failure count `0`, and child checks
+    `api-thread`, `browser-runtime`, and `client-events` all OK.
+  - Target H2 `browser_turn_user_message_below_api_expectation` did not recur.
+  - LaunchAgent readback after the deploy-mode gate returned `ok=true`, latest
+    event gate mode `deploy`, `deployPass=true`, `periodicHealthy=true`,
+    issue count `0`, blocking issue count `0`, advisory issue count `0`, and
+    execution failure count `0`. Historical launchctl `lastExitCode=1`
+    remained in metadata, but the selected full-check event was healthy.
+- Next investigation direction:
+  - The distinct-placeholder repair deployed and the target browser-runtime H2
+    did not recur in the deploy gate. Remaining evidence is payload-slicing:
+    current Phase-B still has active first-paint over-ceiling bytes, with
+    retained assistant and user-message bytes still the largest visible kinds.
+
+### 2026-06-30 - Distinct Completed User Input Placeholders Deployed
+
+- Source/deploy:
+  - Private production has source/prod parity for source ref
+    `ba0242b0b988` (`fix: distinguish completed user input placeholders`).
+  - `/api/public-config` returned status `200`, version `0.1.11`, build id
+    `576c30a2eea33b2a`, client build `0.1.11|codex-mobile-shell-v598`,
+    shell cache `codex-mobile-shell-v598`, and `authRequired=true`.
+  - Static shell stayed v598 as expected for this server/docs/test deploy.
+- Production parity / markers:
+  - Source/production SHA-256 parity matched for
+    `adapters/thread-detail-response-budget-service.js`,
+    `test/thread-detail-response-budget-service.test.js`, `docs/MODULES.md`,
+    `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+  - Production markers were present for `stableBudgetPlaceholderToken`,
+    `first-paint user input preview truncated`, the focused test marker
+    `keeps exhausted completed user input placeholders distinct`, and docs
+    wording that exhausted placeholders carry a short stable token.
+- Metadata-only detail readback:
+  - Codex Mobile source thread detail returned `readMode=projection-active-overlay`.
+  - Previously affected completed turns still had two budgeted `userMessage`
+    rows, but each exhausted placeholder now had a short token suffix and
+    distinct text hashes. Bounded rows:
+    - turn hash `2f05e094`: user item count `2`, budgeted count `2`,
+      token-suffix count `2`, distinct text-hash count `2`.
+    - turn hash `f111e0c6`: user item count `2`, budgeted count `2`,
+      token-suffix count `2`, distinct text-hash count `2`.
+  - Budget fields showed completed-user shared budget still applied with mode
+    `shared-newest-first`, truncated completed user-input items `14`, retained
+    completed user-input chars `1700`, omitted chars `81695`, and current
+    `progressiveActiveFirstPaintOverCeilingBytes=57344`.
+- Runtime validation:
+  - Deploy-mode runtime self-check against Movie and Codex Mobile source
+    threads returned `ok=true`, `deployPass=true`, `periodicHealthy=true`,
+    issue count `0`, blocking issue count `0`, diagnostic candidate count `0`,
+    and execution failure count `0`.
+  - Child checks `api-thread`, `browser-runtime`, and `client-events` all
+    returned `ok=true`; the target H2
+    `browser_turn_user_message_below_api_expectation` did not recur.
+  - Client-events child parsed `173` events with stall event count `0`,
+    H2 stall event count `0`, max rAF delay `0`, max scroll apply delay `0`,
+    and max long task `0`.
+  - LaunchAgent full-check readback returned `ok=true`; latest full-check event
+    was a deploy gate with `deployPass=true`, `periodicHealthy=true`, issue
+    count `0`, blocking issue count `0`, and execution failure count `0`.
+- Next investigation direction:
+  - The completed-user DOM/API visibility residual is closed in current
+    production readback. Remaining payload work should target the current
+    active first-paint over-ceiling shape (`57344` bytes in this detail sample)
+    without weakening the completed user-input visibility contract.
