@@ -198,6 +198,15 @@ test("turn completion status broadcasts carry fresh event time for thread-list h
   assert.equal(payload.params.eventAtMs, 1_782_300_000_123);
 });
 
+test("active-window prewarm follows turn notifications that can move projection state", () => {
+  const body = functionBody(serverJs, "scheduleActiveWindowPrewarmFromNotification");
+
+  assert.match(body, /method !== "turn\/started" && method !== "turn\/completed" && method !== "thread\/status\/changed"/);
+  assert.match(body, /method === "thread\/status\/changed" && !threadSummaryLooksActive\(payload\.params\)/);
+  assert.match(body, /delayMs:\s*0/);
+  assert.match(body, /bypassMinInterval:\s*true/);
+});
+
 test("replayed turn completion status does not invent a fresh event time", () => {
   const payload = threadStatusChangedPayloadFromTurnNotification({
     type: "notification",

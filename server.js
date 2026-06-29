@@ -9454,7 +9454,7 @@ function scheduleRecentWindowProjectionRefresh(input = {}) {
 function scheduleActiveWindowPrewarmFromNotification(payload) {
   if (!payload || payload.type !== "notification" || !payload.params) return;
   const method = String(payload.method || "");
-  if (method !== "turn/started" && method !== "thread/status/changed") return;
+  if (method !== "turn/started" && method !== "turn/completed" && method !== "thread/status/changed") return;
   const threadId = notificationThreadId(payload);
   if (!threadId) return;
   if (method === "thread/status/changed" && !threadSummaryLooksActive(payload.params)) return;
