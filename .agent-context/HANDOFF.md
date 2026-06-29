@@ -33115,3 +33115,125 @@ The previous full handoff was archived and should be opened only when old proven
   - Local candidate ready. Private production deploy has not yet been
     requested for this completed-user shared-budget slice. No Public deploy
     requested or run.
+
+### 2026-06-30 - Completed User Input Shared First-Paint Budget Deployed With Runtime Gate Residual
+
+- Source/deploy:
+  - Private production deployed source ref `a259e18c1deb`
+    (`fix: share completed user input first paint budget`) through the Home AI
+    deploy lane with reason
+    `codex-mobile-completed-user-input-shared-first-paint-budget`.
+  - Deploy backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T223540Z-plugin-codex-mobile-web-codex-mobile-completed-user-input-shared-first-paint-budget`.
+  - No Public deploy was run.
+- Production parity / markers:
+  - Source/production parity matched for
+    `adapters/thread-detail-response-budget-service.js`,
+    `scripts/codex-mobile-phase-b-readback-smoke.js`,
+    `adapters/phase-b-readback-decision-service.js`,
+    `test/thread-detail-response-budget-service.test.js`,
+    `test/phase-b-readback-smoke.test.js`,
+    `test/phase-b-readback-decision-service.test.js`, `docs/MODULES.md`,
+    `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+  - Production markers were present for `shared-newest-first`,
+    `progressiveCompletedUserInputBudgetMode`, and the focused test marker
+    `shares completed user input first-paint budget newest first`.
+- Production Phase-B readback:
+  - Codex Mobile source thread sample returned `ok=true`,
+    `readMode=projection-active-overlay`, `turnsListInitialMs=0`,
+    `activeOverlayWindowMs=3686`, `activeOverlayBackfillWindowMs=0`,
+    `activeOverlayMergeMs=0`, `totalMs=3921`, and `prepareResponseMs=164`.
+  - Completed-user shared budget applied: text chars `1024`, reason
+    `first-paint-byte-ceiling`, scope `active-first-paint`, mode
+    `shared-newest-first`, bytes before budget `135253`, bytes after budget
+    `90613`, truncated completed user input items `9`, original chars `46678`,
+    retained chars `1024`, and omitted chars `45654`.
+  - Retained user-input bytes by turn state were `completed=6627`; retained
+    completed user-input shape bytes were `itemAuxiliary=5169`,
+    `contentText=1024`, and `contentAuxiliary=434`.
+  - The same sample reported
+    `progressiveActiveFirstPaintBytesAfterTaskCardBudget=90613` and
+    `progressiveActiveFirstPaintOverCeilingBytes=0`, so this budget slice
+    closed the sampled active first-paint byte ceiling pressure.
+  - Phase-B decision remained H2 `thread-detail-latency` because the active
+    overlay window rebuilt in this sample (`activeOverlayWindowMs=3686`).
+    Treat that as a separate active-window warmness/latency residual.
+- Runtime validation:
+  - Deploy-mode runtime self-check did not pass after two attempts.
+  - Attempt 1: API and client-events OK; browser-runtime returned two H2
+    `browser_turn_user_message_below_api_expectation` issues at `6000ms`.
+  - Attempt 2: browser-runtime and client-events OK; API-thread returned H2
+    `thread_detail_refresh_item_downgrade`,
+    `thread_detail_refresh_lost_user_input`, and
+    `thread_detail_refresh_lost_assistant_items`.
+  - Both attempts had `executionFailureCount=0`; failures were structured
+    API/browser consistency evidence, not child command execution failures.
+  - LaunchAgent readback after the failed deploy gate selected the latest
+    full-check event and returned `ok=false`, gate mode `deploy`,
+    `deployPass=false`, `periodicHealthy=false`, issue count `6`, blocking
+    issue count `6`, advisory issue count `0`, and execution failure count
+    `0`.
+- Next investigation direction:
+  - The completed-user shared budget deployed and proved its first-paint byte
+    effect in Phase-B, but the deploy lane should report partial completion
+    because the runtime gate remains blocked. The residuals are in active
+    detail refresh/browser visible-user-input consistency and active overlay
+    window warmness, not in source/prod parity or marker deployment.
+
+### 2026-06-30 - Completed User Input Visible Placeholder Repair Ready For Deploy
+
+- Production readback for shared-budget slice:
+  - Source ref `a259e18c1deb` (`fix: share completed user input first paint
+    budget`) is deployed in private production. `/api/public-config` returned
+    version `0.1.11`, build id `576c30a2eea33b2a`, client build
+    `0.1.11|codex-mobile-shell-v598`, shell cache
+    `codex-mobile-shell-v598`, and `authRequired=true`.
+  - Source/production parity matched for the response-budget service,
+    Phase-B readback script, Phase-B decision service, focused tests, and
+    touched docs. Production markers were present for
+    `shared-newest-first`, `progressiveCompletedUserInputBudgetMode`, and the
+    focused test marker `shares completed user input first-paint budget newest
+    first`.
+- Production Phase-B evidence:
+  - Codex Mobile source-thread readback returned `ok=true`,
+    `readMode=projection-active-overlay`, `turnsListInitialMs=0`,
+    `prepareResponseMs=87`, `activeOverlayWindowMs=1758`,
+    `activeOverlayBackfillWindowMs=0`, and `activeOverlayMergeMs=1`.
+  - Completed-user shared budget applied with reason
+    `first-paint-byte-ceiling`, scope `active-first-paint`, mode
+    `shared-newest-first`, bytes `135253 -> 90613`,
+    `truncatedCompletedUserInputItems=9`,
+    `completedUserInputOriginalChars=46678`,
+    `completedUserInputRetainedChars=1024`, and
+    `omittedCompletedUserInputChars=45654`.
+  - `progressiveActiveFirstPaintOverCeilingBytes=0`, so the payload ceiling
+    target closed in this sample. Phase-B still classified an independent
+    `thread-detail-latency` residual because `activeOverlayWindowMs=1758`.
+- Runtime residual after deploy:
+  - Deploy-mode runtime gate returned a browser-runtime H2
+    `browser_turn_user_message_below_api_expectation` count `2`.
+  - API-thread and client-events children were clean. The failing DOM/API
+    contract shape had completed turns where API expected two user-message
+    rows but browser DOM saw one visible user-input row.
+- Root-cause repair:
+  - Local follow-up keeps completed user inputs visible when the shared
+    first-paint text budget is exhausted. If a non-empty completed user input
+    would become an empty string after budgeting, the service inserts the
+    existing first-paint user-input truncation marker as a short placeholder
+    and adjusts retained/omitted character stats.
+  - The helper is scoped to completed user-input first-paint budgeting. It
+    does not change active/current user input and does not mutate stored
+    rollout/session data.
+- Validation:
+  - Focused validation passed:
+    `node --check adapters/thread-detail-response-budget-service.js` and
+    `node --test test/thread-detail-response-budget-service.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js`
+    (`78` tests).
+  - Full validation passed: `npm test -- --test-reporter=dot`,
+    `npm run check`, `npm run check:macos`, and `git diff --check`.
+  - `codegraph sync && codegraph status` reported the index up to date.
+- Deployment status:
+  - Local repair is ready for private production deploy with reason
+    `codex-mobile-completed-user-input-visible-placeholder`. No Public deploy
+    requested or run.

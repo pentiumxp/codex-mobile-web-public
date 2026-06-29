@@ -738,6 +738,21 @@ function createTextBudget(maxChars) {
   };
 }
 
+function completedUserInputPlaceholderText() {
+  return FIRST_PAINT_USER_INPUT_BUDGET_MARKER.trim();
+}
+
+function ensureCompletedUserInputVisiblePlaceholder(value, budget, beforeRetained, beforeOmitted) {
+  if (typeof value !== "string" || value !== "") return value;
+  if (budget.omittedChars <= beforeOmitted || budget.retainedChars > beforeRetained) return value;
+  const placeholder = completedUserInputPlaceholderText();
+  const placeholderChars = textCharLength(placeholder);
+  if (!placeholderChars) return value;
+  budget.retainedChars += placeholderChars;
+  budget.omittedChars = Math.max(0, budget.omittedChars - placeholderChars);
+  return placeholder;
+}
+
 function compactActiveUserMessageItem(item, options, stats, sharedBudget = null) {
   if (!item || typeof item !== "object" || !isUserMessageItem(item)) return item;
   const maxChars = Math.max(0, Math.trunc(Number(options.progressiveActiveUserTextChars || 0)));
@@ -803,7 +818,10 @@ function compactCompletedUserMessageItemForFirstPaint(item, options, stats, shar
   for (const field of ["text", "message"]) {
     if (!(field in out) || typeof out[field] !== "string") continue;
     const beforeOriginal = budget.originalChars;
+    const beforeRetained = budget.retainedChars;
+    const beforeOmitted = budget.omittedChars;
     out[field] = compactValueForTextBudget(out[field], budget, FIRST_PAINT_USER_INPUT_BUDGET_MARKER);
+    out[field] = ensureCompletedUserInputVisiblePlaceholder(out[field], budget, beforeRetained, beforeOmitted);
     if (budget.originalChars > beforeOriginal) fields.push(field);
   }
   if (Array.isArray(out.content)) {
@@ -813,7 +831,10 @@ function compactCompletedUserMessageItemForFirstPaint(item, options, stats, shar
       for (const field of ["text", "input_text", "content"]) {
         if (!(field in next) || typeof next[field] !== "string") continue;
         const beforeOriginal = budget.originalChars;
+        const beforeRetained = budget.retainedChars;
+        const beforeOmitted = budget.omittedChars;
         next[field] = compactValueForTextBudget(next[field], budget, FIRST_PAINT_USER_INPUT_BUDGET_MARKER);
+        next[field] = ensureCompletedUserInputVisiblePlaceholder(next[field], budget, beforeRetained, beforeOmitted);
         if (budget.originalChars > beforeOriginal) fields.push(`content.${field}`);
       }
       return next;

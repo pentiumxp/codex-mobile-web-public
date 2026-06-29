@@ -981,7 +981,7 @@ test("thread detail response budget previews completed user input under active f
 
 test("thread detail response budget shares completed user input first-paint budget newest first", () => {
   const older = "Older completed input\n" + "O".repeat(1400);
-  const newer = "Newer completed input\n" + "N".repeat(360);
+  const newer = "N".repeat(520);
   const result = {
     thread: {
       id: "thread-1",
@@ -1032,6 +1032,7 @@ test("thread detail response budget shares completed user input first-paint budg
   assert.equal(newerUser.mobileFirstPaintUserInputBudget, undefined);
   assert.equal(oldUser.mobileUserInputTruncated, true);
   assert.match(oldUser.content[0].text, /first-paint user input preview truncated/);
+  assert.notEqual(oldUser.content[0].text, "");
   assert.equal(JSON.stringify(compacted).includes("O".repeat(400)), false);
   assert.equal(activeUser.text, "Current input remains outside completed budget");
 
@@ -1040,9 +1041,11 @@ test("thread detail response budget shares completed user input first-paint budg
   assert.equal(budget.progressiveCompletedUserTextChars, 520);
   assert.equal(budget.truncatedCompletedUserInputItems, 1);
   assert.equal(budget.completedUserInputOriginalChars, older.length + newer.length);
-  assert.ok(budget.completedUserInputRetainedChars <= 520);
+  assert.ok(budget.completedUserInputRetainedChars > 520);
+  assert.ok(budget.completedUserInputRetainedChars <= 600);
   assert.ok(budget.omittedCompletedUserInputChars > 0);
-  assert.ok(budget.retainedCompletedUserInputItemBytesByShape.contentText <= 520);
+  assert.ok(budget.retainedCompletedUserInputItemBytesByShape.contentText > 520);
+  assert.ok(budget.retainedCompletedUserInputItemBytesByShape.contentText <= 600);
 });
 
 test("thread detail response budget compacts completed Usage summaries under active first-paint byte pressure", () => {
