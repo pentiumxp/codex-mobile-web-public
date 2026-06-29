@@ -35,6 +35,13 @@ test("runtime self-check loop parses one-shot and periodic options", () => {
     "Reply OK only",
     "--browser-submit-sample-delays-ms",
     "100,600,1600",
+    "--skip-client-events",
+    "--client-event-log",
+    "/tmp/client-events.log",
+    "--client-event-tail-bytes",
+    "4096",
+    "--client-event-max-lines",
+    "50",
     "--gate-mode",
     "deploy",
   ]);
@@ -48,6 +55,10 @@ test("runtime self-check loop parses one-shot and periodic options", () => {
   assert.equal(loop.browserSubmitThreadId, "submit-thread");
   assert.equal(loop.browserSubmitMessage, "Reply OK only");
   assert.equal(loop.browserSubmitSampleDelaysMs, "100,600,1600");
+  assert.equal(loop.skipClientEvents, true);
+  assert.equal(loop.clientEventLog, "/tmp/client-events.log");
+  assert.equal(loop.clientEventTailBytes, 4096);
+  assert.equal(loop.clientEventMaxLines, 50);
   assert.equal(loop.gateMode, "deploy");
 });
 
@@ -96,6 +107,7 @@ test("runtime self-check one-shot writes metadata-only JSONL", async () => {
     browserSubmitThreadId: "private-submit-thread-id",
     browserSubmitMessage: "Reply OK only",
     browserSubmitSampleDelaysMs: "100,900,1600",
+    skipClientEvents: true,
     skipApi: false,
     skipBrowser: false,
     output,
@@ -150,6 +162,7 @@ test("runtime self-check gate lets slow-path observations remain nonblocking", a
     browserRounds: 1,
     browserSampleDelaysMs: "100",
     browserMinSettledDelayMs: 1000,
+    skipClientEvents: true,
     skipApi: false,
     skipBrowser: true,
     output: "",
@@ -189,6 +202,7 @@ test("runtime self-check gate blocks actionable browser regressions", async () =
     browserRounds: 1,
     browserSampleDelaysMs: "100",
     browserMinSettledDelayMs: 1000,
+    skipClientEvents: true,
     skipApi: true,
     skipBrowser: false,
     output: "",
@@ -213,4 +227,38 @@ test("runtime self-check gate blocks actionable browser regressions", async () =
   assert.equal(result.ok, false);
   assert.equal(result.gate.deployPass, false);
   assert.deepEqual(result.gate.actionableIssueCodes, ["browser_pending_user_message_disappeared"]);
+});
+
+test("runtime self-check loop includes recent client-event stall summary", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-runtime-client-events-"));
+  const clientEventLog = path.join(dir, "client-events.log");
+  fs.writeFileSync(clientEventLog, [
+    '[client-event] thread_list_runtime_stall {"threadId":"private-thread","path":"/private","details":{"maxRafDelayMs":3200,"maxScrollApplyMs":7,"threadListCount":12},"userAgent":"private UA"}',
+  ].join("\n"), "utf8");
+
+  const result = await runtimeLoop.runOnce({
+    server: "http://127.0.0.1:8790",
+    threadIds: [],
+    sampleThreads: 1,
+    browserRounds: 1,
+    browserSampleDelaysMs: "100",
+    browserMinSettledDelayMs: 1000,
+    skipApi: true,
+    skipBrowser: true,
+    skipClientEvents: false,
+    clientEventLog,
+    clientEventTailBytes: 4096,
+    clientEventMaxLines: 20,
+    output: "",
+    gateMode: "deploy",
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.gate.deployPass, false);
+  assert.deepEqual(result.gate.actionableIssueCodes, ["browser_thread_list_interaction_blocked"]);
+  const clientEventsCheck = result.checks.find((check) => check.name === "client-events");
+  assert.equal(clientEventsCheck.blockingIssueCount, 1);
+  assert.equal(clientEventsCheck.sampleSummary.maxRafDelayMs, 3200);
+  assert.doesNotMatch(JSON.stringify(result), /private-thread|private UA|\/private/);
+  fs.rmSync(dir, { recursive: true, force: true });
 });

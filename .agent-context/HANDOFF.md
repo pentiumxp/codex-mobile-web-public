@@ -31345,3 +31345,43 @@ The previous full handoff was archived and should be opened only when old proven
     `periodicHealthy=true`, `issueCount=0`, `blockingIssueCount=0`, and
     `executionFailureCount=0`.
   - No Public deploy requested or run.
+
+### 2026-06-30 - Client-Event Stall Self-Check Integration Pending Deploy
+
+- Scope:
+  - Follow-up to v597 live thread-list freeze telemetry.
+  - v597 records real visible thread-list interaction stalls from user sessions,
+    but the periodic runtime self-check previously only ran synthetic API/browser
+    probes and did not summarize recent live `[client-event]` stall rows.
+- Source changes:
+  - Added `adapters/client-event-stall-self-check-service.js`, a pure parser and
+    classifier for runtime log tail lines. It extracts only bounded counters from
+    `thread_list_runtime_stall` / `thread_list_interaction_stall` events.
+  - `scripts/codex-mobile-runtime-self-check-loop.js` now includes a
+    `client-events` child check by default. It supports `--skip-client-events`,
+    `--client-event-log`, `--client-event-tail-bytes`, and
+    `--client-event-max-lines`.
+  - `package.json` check coverage now includes the new adapter.
+  - `docs/MODULES.md` and `docs/TROUBLESHOOTING.md` document the live
+    client-event child check and its bounded metadata contract.
+- Classification:
+  - A real user-session stall at or above 3s becomes H2
+    `browser_thread_list_interaction_blocked` or
+    `browser_main_thread_long_task` through the runtime gate.
+  - A 1-3s stall remains H3 advisory.
+  - Missing client-event log coverage is an H3 advisory coverage gap, not a
+    deploy blocker.
+- Validation before deploy:
+  - `node --test test/client-event-stall-self-check-service.test.js test/runtime-self-check-loop.test.js test/runtime-self-check-gate-service.test.js`
+    passed with 16 tests.
+  - `npm test` passed with 1617 tests.
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - Home AI fallback governance check passed for the changed runtime/test/doc
+    files.
+  - `codegraph sync && codegraph status` reported the index up to date.
+  - Local production-log dry run with `--skip-api --skip-browser` read 441
+    parsed client events from the current log tail, found `stallEventCount=0`,
+    and returned `deployPass=true`.
+- Deployment status:
+  - Ready to commit and send to Home AI Deploy.
+  - No Public deploy requested or run.

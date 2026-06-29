@@ -8,6 +8,10 @@ const path = require("node:path");
 const {
   classifyRuntimeSelfCheckGate,
 } = require("../adapters/runtime-self-check-gate-service");
+const {
+  runtimeCheckFromClientEventSummary,
+  summarizeClientEventLog,
+} = require("../adapters/client-event-stall-self-check-service");
 
 const DEFAULT_SERVER = "http://127.0.0.1:8787";
 const DEFAULT_INTERVAL_MS = 10 * 60 * 1000;
@@ -37,6 +41,10 @@ function usage() {
     "  --loop                  Continue periodically instead of running once.",
     "  --skip-api              Skip API/thread detail self-check.",
     "  --skip-browser          Skip real-browser DOM self-check.",
+    "  --skip-client-events    Skip recent client-event stall log self-check.",
+    "  --client-event-log <path> Client-event log path. Default: known runtime log candidates.",
+    "  --client-event-tail-bytes <n> Bytes to read from the end of the client-event log. Default: 524288.",
+    "  --client-event-max-lines <n> Max client-event log lines to inspect. Default: 5000.",
     "  --output <path>         JSONL output path. Default: ~/.codex-mobile-web/logs/runtime-self-check.jsonl",
     "  --json                  Print the final/latest event as JSON.",
     "  --help                  Show this help.",
@@ -71,6 +79,10 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     loop: false,
     skipApi: false,
     skipBrowser: false,
+    skipClientEvents: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_RUNTIME_SELF_CHECK_SKIP_CLIENT_EVENTS || "")),
+    clientEventLog: String(env.CODEX_MOBILE_CLIENT_EVENT_LOG || "").trim(),
+    clientEventTailBytes: positiveInt(env.CODEX_MOBILE_CLIENT_EVENT_TAIL_BYTES || "524288", 512 * 1024, 64 * 1024 * 1024),
+    clientEventMaxLines: positiveInt(env.CODEX_MOBILE_CLIENT_EVENT_MAX_LINES || "5000", 5000, 100000),
     output: env.CODEX_MOBILE_RUNTIME_SELF_CHECK_LOG || defaultOutputPath(),
     json: false,
     help: false,
@@ -99,6 +111,10 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     else if (arg === "--loop") options.loop = true;
     else if (arg === "--skip-api") options.skipApi = true;
     else if (arg === "--skip-browser") options.skipBrowser = true;
+    else if (arg === "--skip-client-events") options.skipClientEvents = true;
+    else if (arg === "--client-event-log") options.clientEventLog = next();
+    else if (arg === "--client-event-tail-bytes") options.clientEventTailBytes = positiveInt(next(), options.clientEventTailBytes, 64 * 1024 * 1024);
+    else if (arg === "--client-event-max-lines") options.clientEventMaxLines = positiveInt(next(), options.clientEventMaxLines, 100000);
     else if (arg === "--output") options.output = next();
     else if (arg === "--json") options.json = true;
     else throw new Error(`unknown option: ${arg}`);
@@ -206,6 +222,14 @@ async function runOnce(options = {}, deps = {}) {
     if (options.browserSubmitSampleDelaysMs) browserArgs.push("--submit-sample-delays-ms", options.browserSubmitSampleDelaysMs);
     const result = await runNodeScript(path.join(root, "scripts", "codex-mobile-browser-runtime-self-check.js"), browserArgs, deps);
     checks.push(summarizeCheck("browser-runtime", result));
+  }
+  if (!options.skipClientEvents) {
+    const clientEventSummary = summarizeClientEventLog({
+      logCandidates: options.clientEventLog ? [options.clientEventLog] : null,
+      tailBytes: options.clientEventTailBytes,
+      maxLines: options.clientEventMaxLines,
+    });
+    checks.push(runtimeCheckFromClientEventSummary(clientEventSummary));
   }
   const event = {
     privacy: "metadata_only",
