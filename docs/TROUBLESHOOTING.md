@@ -866,7 +866,12 @@ Cause to check:
   `activeOverlayMs >= 800` as a latency finding instead of reporting ready;
   `totalMs >= 1500` or `activeOverlayMs >= 1000` is H2. If the owner is
   `active-overlay-latency`, continue in the active-overlay provider/read
-  orchestration path; if the owner is `thread-detail-latency`, split the
+  orchestration path. Check `activeOverlayWindowMs` first for app-server
+  active-window RPC rebuilds, then `activeOverlayBackfillWindowMs` /
+  `activeOverlayFullProjectionMs` / `activeOverlayHistoryBaselineMs` for local
+  active-overlay merge/projection CPU work. If `activeOverlayMs` is high while
+  those child fields stay low, repair the diagnostics split before changing
+  runtime behavior. If the owner is `thread-detail-latency`, split the
   summary/projection/prepare/transport stages before changing the renderer.
 - Clients after `codex-mobile-shell-v575` keep a reusable in-memory thread
   detail snapshot in `state.threadTileDetails`. When reopening a thread that

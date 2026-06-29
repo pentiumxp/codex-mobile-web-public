@@ -218,6 +218,19 @@ Current acceleration targets:
    1.3 seconds in `activeOverlayWindowMs`, while repeated reads immediately
    returned with `activeOverlayWindowMs=0`. That is not the older timeout
    failure; it is a synchronous active-window rebuild from app-server
+   on the first read. A later active Codex Mobile sample showed a different
+   warm-path peak: `activeOverlayWindowMs=0`, `prepareResponseMs` around
+   35-45ms, but `activeOverlayMs` still around 1.8-3.0s. The owning layer was
+   local active-overlay backfill merge, not app-server RPC. The backfill helper
+   was deep-cloning every active-window and live-overlay item with
+   `JSON.stringify` before merging, so large command/assistant payloads paid a
+   repeated CPU serialization cost even when the overlay proof itself was
+   ready. The root-cause fix is to keep top-level result immutability while
+   using shallow item copies for the merge and to expose
+   `activeOverlayBackfillWindowMs`, `activeOverlayFullProjectionMs`, and
+   `activeOverlayHistoryBaselineMs` through detail diagnostics / Phase-B
+   readback so future peaks are attributable instead of hidden under
+   `activeOverlayMs`.
    `thread/turns/list`. The follow-up server slice adds
    `thread-detail-active-window-prewarm-service`: turn/status notifications and
    thread-list refreshes now schedule a deduplicated background

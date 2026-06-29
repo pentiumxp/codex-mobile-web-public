@@ -276,6 +276,9 @@ test("phase B readback smoke collects bounded diagnostics without private fields
               projectionMs: 4,
               activeOverlayMs: 5,
               activeOverlayProjectionLookupMs: 2,
+              activeOverlayBackfillWindowMs: 7,
+              activeOverlayFullProjectionMs: 0,
+              activeOverlayHistoryBaselineMs: 3,
               activeOverlayMergeMs: 1,
               prepareResponseMs: 6,
               threadReadMs: 0,
@@ -352,6 +355,9 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.detail.activeOverlayWindowFirst, true);
   assert.equal(report.detail.projectionMs, 4);
   assert.equal(report.detail.activeOverlayProjectionLookupMs, 2);
+  assert.equal(report.detail.activeOverlayBackfillWindowMs, 7);
+  assert.equal(report.detail.activeOverlayFullProjectionMs, 0);
+  assert.equal(report.detail.activeOverlayHistoryBaselineMs, 3);
   assert.equal(report.detail.prepareResponseMs, 6);
   assert.equal(report.detail.threadReadMs, 0);
   assert.equal(report.detail.responseBudgetVersion, "thread-detail-response-budget-v2");

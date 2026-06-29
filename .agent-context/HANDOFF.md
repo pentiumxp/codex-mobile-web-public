@@ -29233,3 +29233,59 @@ The previous full handoff was archived and should be opened only when old proven
   - No raw secrets, cookies, launch tokens, private message bodies, task-card
     bodies, upload contents, screenshots, provider payloads, endpoint files,
     raw plist paths, raw log lines, or long logs were recorded.
+
+### 2026-06-29 - Active Overlay Backfill Peak Optimization
+
+- User direction:
+  - Continue the large-module optimization cadence after scheduler readback:
+    collect evidence, make a root-cause performance fix, validate, then deploy
+    privately before moving to the next module.
+- Production evidence before the fix:
+  - Movie detail Phase-B readback was stable and warm:
+    `detailTotalMs=65-72`, `activeOverlayMs=0`, list warm fallback cache hit.
+  - The active Codex Mobile source thread repeatedly showed detail peaks:
+    `detailTotalMs=1824-2993`, `readMode=projection-active-overlay`,
+    `activeOverlayMs=1712-2896`, while `summaryMs=17-26`,
+    `projectionMs=1-2`, `activeOverlayWindowMs=0`,
+    `activeOverlayMergeMs=1-3`, and `prepareResponseMs=35-45`.
+  - This isolated the peak to local active-overlay work hidden under
+    `activeOverlayMs`, not thread-list, app-server list, projection lookup,
+    active-window RPC rebuild, or response preparation.
+- Root cause / invariant:
+  - `mergeActiveOverlayTurnWithWindowBackfill()` deep-cloned every active-window
+    and live-overlay item through JSON serialization before merging. Active
+    turns with many command/assistant items and large nested payloads therefore
+    paid repeated synchronous CPU cost even though the overlay proof was already
+    ready.
+  - Invariant: active-overlay first paint should keep top-level response
+    immutability without deep-cloning large nested item payloads in the proof/
+    backfill path.
+- Implementation:
+  - `adapters/thread-detail-active-window-overlay-policy-service.js` now uses
+    shallow item copies in active-overlay backfill merge. Result items are still
+    top-level independent from source items; nested payloads are shared until
+    normal response serialization/budgeting.
+  - `adapters/thread-detail-performance-service.js` now exposes
+    `activeOverlayBackfillWindowMs`, `activeOverlayFullProjectionMs`, and
+    `activeOverlayHistoryBaselineMs`.
+  - `scripts/codex-mobile-phase-b-readback-smoke.js` and
+    `adapters/phase-b-readback-decision-service.js` carry those fields into
+    bounded readback evidence.
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` and `docs/TROUBLESHOOTING.md`
+    document the active-overlay backfill CPU failure mode and diagnosis fields.
+- Validation before deployment:
+  - Focused tests passed:
+    `node --test test/thread-detail-active-window-overlay-policy-service.test.js test/thread-detail-performance-service.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js`.
+  - Full `npm test` passed: `1560` tests.
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - Home AI fallback governance check passed with no issues for the changed
+    runtime/test files.
+  - Local micro-smoke merging 120 active-overlay items with shared 128KB nested
+    payloads completed in `0ms` and preserved shared nested payload references.
+- Deploy state:
+  - Not deployed yet in this handoff section. Next step is to commit and send a
+    Home AI Deploy lane card for private production deploy/readback.
+- Privacy:
+  - No raw secrets, cookies, launch tokens, private message bodies, task-card
+    bodies, upload contents, screenshots, provider payloads, endpoint files,
+    raw logs, or long private payloads were recorded.

@@ -451,6 +451,26 @@ test("active overlay turn backfill dedupes matching user message echoes", () => 
   assert.equal(merged.mobileActiveOverlayBackfill.dedupedUserMessageEchoes, 1);
 });
 
+test("active overlay turn backfill avoids deep cloning large item payloads", () => {
+  const largePayload = { body: "x".repeat(1024) };
+  const windowItem = { id: "agent-1", type: "agentMessage", payload: largePayload };
+  const overlayItem = { id: "agent-2", type: "agentMessage", payload: largePayload };
+  const merged = mergeActiveOverlayTurnWithWindowBackfill({
+    id: "active-turn",
+    items: [overlayItem],
+  }, {
+    id: "active-turn",
+    items: [windowItem],
+  });
+
+  assert.notEqual(merged.items[0], windowItem);
+  assert.notEqual(merged.items[1], overlayItem);
+  assert.equal(merged.items[0].payload, largePayload);
+  assert.equal(merged.items[1].payload, largePayload);
+  merged.items[0].id = "changed-result-id";
+  assert.equal(windowItem.id, "agent-1");
+});
+
 test("active window overlay merge compacts overlay turn before response merge", () => {
   const projected = projectionThread();
   const overlay = overlayTurn({

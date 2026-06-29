@@ -33,6 +33,12 @@ function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function shallowCloneObject(value) {
+  if (!value || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.slice();
+  return Object.assign({}, value);
+}
+
 function boundedReason(value) {
   return lower(value).slice(0, 80);
 }
@@ -423,8 +429,8 @@ function mergeActiveOverlayTurnWithWindowBackfill(overlayTurn, windowThreadOrTur
     ? windowThreadOrTurn
     : findTurnById(windowThreadOrTurn, id);
   if (!windowTurn || typeof windowTurn !== "object") return overlayTurn;
-  const windowItems = asArray(windowTurn.items).map((item) => cloneJson(item));
-  const overlayItems = asArray(overlayTurn.items).map((item) => cloneJson(item));
+  const windowItems = asArray(windowTurn.items).map((item) => shallowCloneObject(item));
+  const overlayItems = asArray(overlayTurn.items).map((item) => shallowCloneObject(item));
   if (!windowItems.length || !overlayItems.length) return overlayTurn;
   const mergedItems = windowItems.slice();
   const indexByIdentity = new Map();
