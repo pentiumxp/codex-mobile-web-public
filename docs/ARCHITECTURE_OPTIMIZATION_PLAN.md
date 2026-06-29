@@ -238,6 +238,15 @@ Current acceleration targets:
    live overlays can reuse the projection cache; partial projection windows
    still repair history from the local full projection baseline instead of
    weakening the evidence gate.
+   A later Phase B sample exposed another active-window ordering gap:
+   `turnsListInitialMs` dominated while the response still ended as
+   `projection-active-overlay` with `activeFullReadReason=initial-window-active-turn`.
+   In that shape, summary state missed active status but the live overlay
+   provider already had a concrete active turn. Read orchestration now uses that
+   live overlay preprobe to try the dedicated `turns-list-active-overlay-window`
+   before generic `turns-list-initial`, so active evidence is proved through the
+   active-window path first and repeated reads can seed/reuse the active-window
+   projection cache.
    `thread/turns/list`. The follow-up server slice adds
    `thread-detail-active-window-prewarm-service`: turn/status notifications and
    thread-list refreshes now schedule a deduplicated background

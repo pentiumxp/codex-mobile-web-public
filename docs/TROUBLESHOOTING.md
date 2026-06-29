@@ -521,6 +521,18 @@ output tail in the default first paint.
 On-demand expansion of omitted historical assistant progress is a separate
 route/API feature, not part of the default first paint.
 
+If `turnsListInitialMs` dominates while the final read still returns
+`projection-active-overlay` and `activeFullReadReason=initial-window-active-turn`,
+the summary missed active state and the route discovered the live turn too late
+through generic `turns-list-initial`. Current builds should use live overlay
+preprobe evidence to try `turns-list-active-overlay-window` before generic
+initial reads; a successful repair reports
+`activeFullReadReason=projection-live-active-turn`,
+`activeOverlayWindowFirst=true`, and `projectionSeedSource` from the active
+overlay projection window. If that still falls back to `turns-list-initial`,
+inspect active-overlay provider completeness and active-window projection lookup
+miss reasons before changing response budgets.
+
 For thread-list loads that are "warm" but still cost tens or hundreds of
 milliseconds, inspect `mobileDiagnostics.threadListTimings.stateAttachMs` and
 `decorateMs` before changing fallback or app-server policy. If `stateAttachMs`

@@ -480,7 +480,7 @@ test("initial turns-list active window uses active overlay when summary missed a
   assert.doesNotMatch(JSON.stringify(timings), /fresh assistant|early assistant|stale live assistant/);
 });
 
-test("live overlay preprobe requires active-window backfill before skipping thread/read", async () => {
+test("live overlay preprobe reads active window before generic initial turns-list", async () => {
   const { service, calls } = createHarness({
     activeOverlayProjectionWindowLookup: (input, summary, runtimeSettings, options = {}) => {
       calls.push(`active-overlay-window-lookup:${options.activeOverlayStatusProven === true}:${options.omitActiveTurnId || ""}`);
@@ -564,7 +564,9 @@ test("live overlay preprobe requires active-window backfill before skipping thre
   assert.deepEqual(calls.filter((call) => call.startsWith("active-overlay-window-lookup:")), [
     "active-overlay-window-lookup:true:active-turn",
   ]);
-  assert.deepEqual(calls.filter((call) => call.startsWith("turns-list:")), ["turns-list:turns-list-initial"]);
+  assert.deepEqual(calls.filter((call) => call.startsWith("turns-list:")), [
+    "turns-list:turns-list-active-overlay-window",
+  ]);
   assert.equal(calls.includes("thread-read"), false);
   assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["older-turn", "active-turn"]);
   const activeTurn = response.body.thread.turns.find((turn) => turn.id === "active-turn");
@@ -576,12 +578,12 @@ test("live overlay preprobe requires active-window backfill before skipping thre
   ]);
   const timings = response.body.thread.mobileDiagnostics.threadDetailTimings;
   assert.equal(timings.activeFullReadRequired, true);
-  assert.equal(timings.activeFullReadReason, "initial-window-active-turn");
+  assert.equal(timings.activeFullReadReason, "projection-live-active-turn");
   assert.equal(timings.readDecision, "projection-active-overlay");
   assert.equal(timings.projectionState, "hit");
   assert.equal(timings.projectionSource, "partial");
   assert.equal(timings.projectionSeedStatus, "seeded-partial");
-  assert.equal(timings.projectionSeedSource, "turns-list-initial-active-window");
+  assert.equal(timings.projectionSeedSource, "active-overlay-projection-window");
   assert.equal(timings.activeOverlayAction, "use-projection-overlay");
   assert.equal(timings.activeOverlayReason, "overlay-evidence-complete");
   assert.equal(response.body.thread.mobileActiveOverlay.completeness, "backfilled");
@@ -589,6 +591,7 @@ test("live overlay preprobe requires active-window backfill before skipping thre
   assert.equal(timings.activeOverlayOperationItems, 1);
   assert.equal(timings.activeOverlayAssistantItems, 2);
   assert.equal(timings.activeOverlayReceiptItems, 1);
+  assert.equal(timings.activeOverlayWindowFirst, true);
   assert.doesNotMatch(JSON.stringify(timings), /live assistant/);
 });
 

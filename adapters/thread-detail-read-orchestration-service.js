@@ -1156,12 +1156,12 @@ function createThreadDetailReadOrchestrationService(options = {}) {
           && resolvedOverlayProjectionLookup.result.thread
           ? resolvedOverlayProjectionLookup.result
           : null;
+        const previousActiveReadPolicy = activeReadPolicy;
+        const previousActiveOverlayAction = context.activeOverlayAction;
+        const previousActiveOverlayReason = context.activeOverlayReason;
+        const previousActiveOverlaySource = context.activeOverlaySource;
+        const previousActiveOverlayCompleteness = context.activeOverlayCompleteness;
         if (overlayProjectionResult) {
-          const previousActiveReadPolicy = activeReadPolicy;
-          const previousActiveOverlayAction = context.activeOverlayAction;
-          const previousActiveOverlayReason = context.activeOverlayReason;
-          const previousActiveOverlaySource = context.activeOverlaySource;
-          const previousActiveOverlayCompleteness = context.activeOverlayCompleteness;
           activeReadPolicy = promoteActiveReadPolicy(activeReadPolicy, "projection-live-active-turn");
           applyActivePolicyContext(context, activeReadPolicy);
           threadLog("projection_live_active_turn_detected", {
@@ -1179,6 +1179,52 @@ function createThreadDetailReadOrchestrationService(options = {}) {
           context.activeOverlayReason = previousActiveOverlayReason;
           context.activeOverlaySource = previousActiveOverlaySource;
           context.activeOverlayCompleteness = previousActiveOverlayCompleteness;
+        }
+        if (turnsListThreadReadResult) {
+          const activeWindowStartedAtMs = now();
+          try {
+            const activeWindowResult = await turnsListThreadReadResult({
+              threadId,
+              summary,
+              runtimeSettings,
+              warning: "",
+              mode: "turns-list-active-overlay-window",
+              threadLog,
+            });
+            if (isHiddenThread(activeWindowResult && activeWindowResult.thread, visibility)) {
+              threadLog("active_overlay_preprobe_window_hidden", {
+                durationMs: now() - activeWindowStartedAtMs,
+                status: 404,
+              });
+              return hiddenResponse();
+            }
+            timer.mark("activeOverlayWindowMs", activeWindowStartedAtMs);
+            activeReadPolicy = promoteActiveReadPolicy(activeReadPolicy, "projection-live-active-turn");
+            applyActivePolicyContext(context, activeReadPolicy);
+            context.activeOverlayWindowFirst = true;
+            threadLog("projection_live_active_turn_detected", {
+              action: "try-active-overlay-window",
+            });
+            const overlayResponse = await tryActiveOverlayFromInitialWindow(activeWindowResult, {
+              source: "active-overlay-projection-window",
+              seed: true,
+              overlayInput,
+            });
+            if (overlayResponse) return overlayResponse;
+          } catch (err) {
+            threadLog("active_overlay_preprobe_window_error", {
+              durationMs: now() - activeWindowStartedAtMs,
+              timeout: isReadTimeoutError(err),
+              error: safeErrorMessage(err),
+            });
+          }
+          activeReadPolicy = previousActiveReadPolicy;
+          applyActivePolicyContext(context, activeReadPolicy);
+          context.activeOverlayAction = previousActiveOverlayAction;
+          context.activeOverlayReason = previousActiveOverlayReason;
+          context.activeOverlaySource = previousActiveOverlaySource;
+          context.activeOverlayCompleteness = previousActiveOverlayCompleteness;
+          context.activeOverlayWindowFirst = false;
         }
       }
     }
