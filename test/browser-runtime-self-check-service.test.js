@@ -227,13 +227,54 @@ test("browser runtime self-check catches per-turn DOM/API structure mismatches",
   });
 
   assert.equal(report.ok, false);
-  assert.ok(report.issues.some((issue) => issue.code === "browser_turn_assistant_below_api_expectation"));
+  assert.ok(report.issues.some((issue) => issue.code === "browser_turn_assistant_missing"));
   assert.ok(report.issues.some((issue) => issue.code === "browser_turn_user_message_after_usage"));
   assert.ok(report.issues.some((issue) => issue.code === "browser_turn_timestamp_missing"));
   const issue = report.issues.find((entry) => entry.code === "browser_turn_user_message_after_usage");
   assert.equal(issue.turnShape.turnHash, "turn-a");
   assert.equal(issue.turnShape.actualUserMessageCount, 1);
   assert.equal(issue.turnShape.actualAssistantMessageCount, 0);
+});
+
+test("browser runtime self-check accepts receipt-only assistant compaction in older turns", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [{
+      label: "receipt-only-history",
+      threadHash: "thread-hash",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      expectedTurnShapes: [{
+        index: 0,
+        turnHash: "turn-a",
+        completed: true,
+        expectedItemCount: 34,
+        expectedUserMessageCount: 1,
+        expectedTaskCardUserMessageCount: 5,
+        expectedAssistantMessageCount: 24,
+        expectedUsageRequired: true,
+        expectedTimestampItemCount: 30,
+      }],
+      domTurnShapes: [{
+        index: 0,
+        turnHash: "turn-a",
+        itemCount: 8,
+        userMessageCount: 1,
+        taskCardUserMessageCount: 5,
+        assistantMessageCount: 1,
+        usageCount: 1,
+        timestampExpectedItems: 7,
+        timestampMissingItems: 0,
+        userAfterUsageCount: 0,
+      }],
+      turns: 1,
+      items: 8,
+      renderKeys: 8,
+    }],
+  });
+
+  assert.equal(report.ok, true);
+  assert.equal(report.issueCount, 0);
 });
 
 test("browser runtime self-check catches latest turn assistant text duplicates", () => {
@@ -638,6 +679,66 @@ test("browser runtime self-check catches submitted message card jitter", () => {
   assert.equal(report.sampleSummary.maxSubmittedMessageShiftPx, 8);
 });
 
+test("browser runtime self-check catches blocked thread list interaction", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [{
+      label: "thread-list-probe",
+      probeKind: "thread-list-interaction",
+      threadHash: "thread-list",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      threadListAvailable: true,
+      threadListScrollable: true,
+      threadListCardCount: 40,
+      threadListProbeElapsedMs: 2200,
+      threadListMaxRafDelayMs: 1300,
+      threadListMaxScrollApplyMs: 1320,
+      longTaskCount: 2,
+      longTaskMaxDurationMs: 1280,
+      longTaskTotalDurationMs: 1800,
+      turns: 0,
+      items: 0,
+      renderKeys: 0,
+    }],
+  });
+
+  assert.equal(report.ok, false);
+  assert.ok(report.issues.some((issue) => issue.code === "browser_thread_list_interaction_blocked"));
+  assert.ok(report.issues.some((issue) => issue.code === "browser_main_thread_long_task"));
+  assert.equal(report.sampleSummary.maxThreadListRafDelayMs, 1300);
+  assert.equal(report.sampleSummary.maxLongTaskDurationMs, 1280);
+});
+
+test("browser runtime self-check ignores expected stress probe elapsed time without per-frame blocking", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    samples: [{
+      label: "thread-list-stress",
+      probeKind: "thread-list-interaction",
+      stressProbe: true,
+      threadHash: "thread-list",
+      appVisible: true,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      threadListAvailable: true,
+      threadListScrollable: true,
+      threadListCardCount: 40,
+      threadListProbeElapsedMs: 4500,
+      threadListMaxRafDelayMs: 150,
+      threadListMaxScrollApplyMs: 150,
+      longTaskCount: 0,
+      longTaskMaxDurationMs: 0,
+      turns: 0,
+      items: 0,
+      renderKeys: 0,
+    }],
+  });
+
+  assert.equal(report.ok, true);
+  assert.equal(report.issueCount, 0);
+  assert.equal(report.sampleSummary.maxThreadListProbeElapsedMs, 4500);
+});
+
 test("browser runtime self-check catches duplicate DOM keys and runtime exceptions", () => {
   const report = service.analyzeBrowserRuntimeSamples({
     samples: [{
@@ -705,6 +806,7 @@ test("browser runtime self-check script exposes bounded browser snapshot fields"
   assert.match(expression, /expectedTurnShapes/);
   assert.match(expression, /domTurnShapes/);
   assert.match(expression, /userAfterUsageCount/);
+  assert.match(expression, /longTaskMaxDurationMs/);
   assert.match(expression, /latestTurnHash/);
   assert.match(expression, /latestTurnUserMessageCount/);
   assert.match(expression, /latestTurnTaskCardItemCount/);
@@ -729,6 +831,26 @@ test("browser runtime self-check script exposes bounded browser snapshot fields"
   assert.match(expression, /emptyState/);
   assert.match(expression, /codexMobileCurrentThreadId/);
   assert.doesNotMatch(expression, /innerText|location\.href|document\.cookie|Authorization|Bearer/);
+});
+
+test("browser runtime self-check script exposes thread-list interaction probe", () => {
+  const expression = script.threadListInteractionProbeExpression("thread-list-test");
+
+  assert.match(expression, /thread-list-interaction/);
+  assert.match(expression, /threadListProbeElapsedMs/);
+  assert.match(expression, /threadListMaxRafDelayMs/);
+  assert.match(expression, /threadListMaxScrollApplyMs/);
+  assert.match(expression, /longTaskMaxDurationMs/);
+});
+
+test("browser runtime self-check script exposes thread-list stress probe", () => {
+  const expression = script.threadListStressProbeExpression("thread-list-stress", 2);
+
+  assert.match(expression, /thread-list-stress/);
+  assert.match(expression, /stressProbe/);
+  assert.match(expression, /openMenu/);
+  assert.match(expression, /data-thread/);
+  assert.match(expression, /threadListMaxRafDelayMs/);
 });
 
 test("browser runtime self-check exposes explicit composer submit exercise", () => {

@@ -38,6 +38,7 @@ function usage() {
     "  --list-limit <n>           Thread-list limit. Default: 10.",
     "  --rounds <n>               Thread switch rounds. Default: 3.",
     "  --sample-delays-ms <csv>   Delays after each switch. Default: 350,1200,2800.",
+    "  --thread-list-stress-rounds <n> Thread-list open/scroll/click stress rounds. Default: 2.",
     "  --exercise-submit          Send one short UI message through Composer in the target test thread.",
     "  --submit-thread-id <id>    Dedicated thread id for --exercise-submit. Defaults to first selected thread.",
     "  --submit-message <text>    Test message. Default asks for a one-token OK reply.",
@@ -55,6 +56,12 @@ function usage() {
 function readPositiveInt(value, fallback, max = 100000) {
   const number = Number(value);
   if (!Number.isFinite(number) || number <= 0) return fallback;
+  return Math.min(max, Math.trunc(number));
+}
+
+function readNonNegativeInt(value, fallback, max = 100000) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) return fallback;
   return Math.min(max, Math.trunc(number));
 }
 
@@ -91,6 +98,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     listLimit: readPositiveInt(env.CODEX_MOBILE_BROWSER_SELF_CHECK_LIST_LIMIT || "10", 10, 100),
     rounds: readPositiveInt(env.CODEX_MOBILE_BROWSER_SELF_CHECK_ROUNDS || "3", 3, 20),
     sampleDelaysMs: parseDelayList(env.CODEX_MOBILE_BROWSER_SELF_CHECK_SAMPLE_DELAYS_MS || ""),
+    threadListStressRounds: readNonNegativeInt(env.CODEX_MOBILE_BROWSER_SELF_CHECK_THREAD_LIST_STRESS_ROUNDS || "2", 2, 20),
     exerciseSubmit: /^(1|true|yes)$/i.test(String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_EXERCISE_SUBMIT || "")),
     submitThreadId: String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_SUBMIT_THREAD_ID || "").trim(),
     submitMessage: String(env.CODEX_MOBILE_BROWSER_SELF_CHECK_SUBMIT_MESSAGE || "Codex Mobile self-check test. Reply exactly: OK").slice(0, 500),
@@ -118,6 +126,7 @@ function parseArgs(argv = process.argv.slice(2), env = process.env) {
     else if (arg === "--list-limit") options.listLimit = readPositiveInt(next(), options.listLimit, 100);
     else if (arg === "--rounds") options.rounds = readPositiveInt(next(), options.rounds, 20);
     else if (arg === "--sample-delays-ms") options.sampleDelaysMs = parseDelayList(next(), options.sampleDelaysMs);
+    else if (arg === "--thread-list-stress-rounds") options.threadListStressRounds = readNonNegativeInt(next(), options.threadListStressRounds, 20);
     else if (arg === "--exercise-submit") options.exerciseSubmit = true;
     else if (arg === "--submit-thread-id") options.submitThreadId = next();
     else if (arg === "--submit-message") options.submitMessage = next().slice(0, 500);
@@ -617,6 +626,157 @@ function browserInitScript(key, initialThreadId = "") {
         }
         localStorage.setItem("codexMobileThreadDisplayMode", "single");
       } catch (_) {}
+      try {
+        window.__codexSelfCheckLongTasks = [];
+        if ("PerformanceObserver" in window) {
+          const observer = new PerformanceObserver((list) => {
+            for (const entry of list.getEntries()) {
+              window.__codexSelfCheckLongTasks.push({
+                startTime: Math.max(0, Math.round(Number(entry.startTime || 0))),
+                duration: Math.max(0, Math.round(Number(entry.duration || 0))),
+              });
+            }
+            if (window.__codexSelfCheckLongTasks.length > 80) {
+              window.__codexSelfCheckLongTasks = window.__codexSelfCheckLongTasks.slice(-80);
+            }
+          });
+          observer.observe({ entryTypes: ["longtask"] });
+        }
+      } catch (_) {}
+    })();
+  `;
+}
+
+function threadListInteractionProbeExpression(label = "thread-list-probe") {
+  return `
+    (async () => {
+      const stableHash = (value) => {
+        const text = String(value || "");
+        let hash = 2166136261;
+        for (let index = 0; index < text.length; index += 1) {
+          hash ^= text.charCodeAt(index);
+          hash = Math.imul(hash, 16777619);
+        }
+        return (hash >>> 0).toString(16).padStart(8, "0");
+      };
+      const raf = () => new Promise((resolve) => {
+        const startedAt = performance.now();
+        const done = () => resolve(Math.max(0, Math.round(performance.now() - startedAt)));
+        if (typeof requestAnimationFrame === "function") requestAnimationFrame(done);
+        else setTimeout(done, 16);
+      });
+      const list = document.getElementById("threadList");
+      const app = document.getElementById("app");
+      const longTasks = Array.isArray(window.__codexSelfCheckLongTasks) ? window.__codexSelfCheckLongTasks.slice(-40) : [];
+      const longTaskDurations = longTasks.map((entry) => Math.max(0, Math.round(Number(entry && entry.duration || 0))));
+      const result = {
+        label: ${JSON.stringify(String(label || "thread-list-probe").slice(0, 80))},
+        probeKind: "thread-list-interaction",
+        threadHash: stableHash("thread-list-interaction"),
+        appVisible: Boolean(app && app.getBoundingClientRect && app.getBoundingClientRect().height > 0),
+        targetConfirmed: true,
+        contentConfirmed: true,
+        turns: 0,
+        items: 0,
+        renderKeys: 0,
+        threadListAvailable: Boolean(list),
+        threadListCardCount: list ? list.querySelectorAll("[data-thread]").length : 0,
+        threadListScrollable: Boolean(list && list.scrollHeight > list.clientHeight + 4),
+        threadListScrollHeight: list ? Math.trunc(list.scrollHeight || 0) : 0,
+        threadListClientHeight: list ? Math.trunc(list.clientHeight || 0) : 0,
+        threadListProbeElapsedMs: 0,
+        threadListMaxRafDelayMs: 0,
+        threadListMaxScrollApplyMs: 0,
+        threadListScrollMovedCount: 0,
+        longTaskCount: longTaskDurations.length,
+        longTaskMaxDurationMs: longTaskDurations.length ? Math.max(...longTaskDurations) : 0,
+        longTaskTotalDurationMs: longTaskDurations.reduce((total, value) => total + value, 0),
+      };
+      if (!list) return result;
+      const startedAt = performance.now();
+      const originalTop = list.scrollTop || 0;
+      const maxTop = Math.max(0, list.scrollHeight - list.clientHeight);
+      const targets = [
+        Math.min(maxTop, originalTop + 96),
+        Math.max(0, originalTop - 48),
+        originalTop,
+      ];
+      for (const target of targets) {
+        const before = performance.now();
+        list.scrollTop = target;
+        const rafDelay = await raf();
+        const elapsed = Math.max(0, Math.round(performance.now() - before));
+        result.threadListMaxRafDelayMs = Math.max(result.threadListMaxRafDelayMs, rafDelay);
+        result.threadListMaxScrollApplyMs = Math.max(result.threadListMaxScrollApplyMs, elapsed);
+        if (Math.abs(Number(list.scrollTop || 0) - target) <= 2) result.threadListScrollMovedCount += 1;
+      }
+      result.threadListProbeElapsedMs = Math.max(0, Math.round(performance.now() - startedAt));
+      list.scrollTop = originalTop;
+      return result;
+    })();
+  `;
+}
+
+function threadListStressProbeExpression(label = "thread-list-stress", rounds = 2) {
+  return `
+    (async () => {
+      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const boundedRounds = Math.max(0, Math.min(20, Math.trunc(Number(${JSON.stringify(rounds)} || 0))));
+      const probe = async () => await ${threadListInteractionProbeExpression("__stress_inner__")};
+      const openList = async () => {
+        const button = document.getElementById("openMenu");
+        if (button && typeof button.click === "function") {
+          button.click();
+          await wait(180);
+        }
+      };
+      const stableHash = (value) => {
+        const text = String(value || "");
+        let hash = 2166136261;
+        for (let index = 0; index < text.length; index += 1) {
+          hash ^= text.charCodeAt(index);
+          hash = Math.imul(hash, 16777619);
+        }
+        return (hash >>> 0).toString(16).padStart(8, "0");
+      };
+      const startedAt = performance.now();
+      const results = [];
+      for (let index = 0; index < boundedRounds; index += 1) {
+        await openList();
+        results.push(await probe());
+        const buttons = Array.from(document.querySelectorAll("[data-thread]"));
+        const target = buttons[index % Math.max(1, buttons.length)];
+        if (target && typeof target.click === "function") {
+          target.click();
+          await wait(260);
+        }
+      }
+      await openList();
+      results.push(await probe());
+      const maxOf = (key) => results.reduce((max, row) => Math.max(max, Math.max(0, Math.round(Number(row && row[key] || 0)))), 0);
+      const list = document.getElementById("threadList");
+      return {
+        label: ${JSON.stringify(String(label || "thread-list-stress").slice(0, 80))},
+        probeKind: "thread-list-interaction",
+        stressProbe: true,
+        threadHash: stableHash("thread-list-interaction"),
+        appVisible: true,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        turns: 0,
+        items: 0,
+        renderKeys: 0,
+        threadListAvailable: Boolean(list),
+        threadListCardCount: list ? list.querySelectorAll("[data-thread]").length : 0,
+        threadListScrollable: Boolean(list && list.scrollHeight > list.clientHeight + 4),
+        threadListProbeElapsedMs: Math.max(0, Math.round(performance.now() - startedAt)),
+        threadListMaxRafDelayMs: maxOf("threadListMaxRafDelayMs"),
+        threadListMaxScrollApplyMs: maxOf("threadListMaxScrollApplyMs"),
+        threadListScrollMovedCount: maxOf("threadListScrollMovedCount"),
+        longTaskCount: maxOf("longTaskCount"),
+        longTaskMaxDurationMs: maxOf("longTaskMaxDurationMs"),
+        longTaskTotalDurationMs: maxOf("longTaskTotalDurationMs"),
+      };
     })();
   `;
 }
@@ -887,6 +1047,8 @@ function snapshotExpression(input = {}) {
         const figure = image && image.closest ? image.closest(".input-image, .image-view, .markdown-image") : null;
         if (figure && !failedFigureSet.has(figure)) collectFailedImage(figure, "broken-complete");
       });
+      const longTasks = Array.isArray(window.__codexSelfCheckLongTasks) ? window.__codexSelfCheckLongTasks.slice(-40) : [];
+      const longTaskDurations = longTasks.map((entry) => Math.max(0, Math.round(Number(entry && entry.duration || 0))));
       const storageMatchesTarget = (() => {
         try { return localStorage.getItem("codexMobileCurrentThreadId") === threadId; } catch (_) { return false; }
       })();
@@ -966,6 +1128,9 @@ function snapshotExpression(input = {}) {
         imageFailureCount: failedFigures.length + brokenCompleteImages.length,
         imageFailureKindCounts,
         imageFailureDetails: failedImageDetails,
+        longTaskCount: longTaskDurations.length,
+        longTaskMaxDurationMs: longTaskDurations.length ? Math.max(...longTaskDurations) : 0,
+        longTaskTotalDurationMs: longTaskDurations.reduce((total, value) => total + value, 0),
         threadCards: document.querySelectorAll("[data-thread]").length,
         turns: turnNodes.length,
         items: itemNodes.length,
@@ -1141,6 +1306,25 @@ async function run(options = parseArgs(), deps = {}) {
     await cdp.send("Page.navigate", { url: options.server });
     await waitForLoad(cdp, options.timeoutMs);
     await sleep(900);
+    samples.push(await evaluate(cdp, threadListInteractionProbeExpression("thread-list-initial"), options.timeoutMs).catch((err) => ({
+      label: "thread-list-initial",
+      probeKind: "thread-list-interaction",
+      appVisible: false,
+      targetConfirmed: true,
+      contentConfirmed: true,
+      errorCode: boundedToken(err && err.message, "thread_list_probe_failed"),
+    })));
+    if (options.threadListStressRounds > 0) {
+      samples.push(await evaluate(cdp, threadListStressProbeExpression("thread-list-stress", options.threadListStressRounds), options.timeoutMs).catch((err) => ({
+        label: "thread-list-stress",
+        probeKind: "thread-list-interaction",
+        stressProbe: true,
+        appVisible: false,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        errorCode: boundedToken(err && err.message, "thread_list_stress_probe_failed"),
+      })));
+    }
 
     for (let round = 0; round < options.rounds; round += 1) {
       for (const entry of threadPlan) {
@@ -1169,6 +1353,14 @@ async function run(options = parseArgs(), deps = {}) {
           samples.push(sample);
         }
       }
+      samples.push(await evaluate(cdp, threadListInteractionProbeExpression(`thread-list-round-${round + 1}`), options.timeoutMs).catch((err) => ({
+        label: `thread-list-round-${round + 1}`,
+        probeKind: "thread-list-interaction",
+        appVisible: false,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        errorCode: boundedToken(err && err.message, "thread_list_probe_failed"),
+      })));
     }
 
     if (options.exerciseSubmit) {
@@ -1300,5 +1492,7 @@ module.exports = {
   safeConsoleText,
   snapshotExpression,
   submitComposerExpression,
+  threadListInteractionProbeExpression,
+  threadListStressProbeExpression,
   usage,
 };

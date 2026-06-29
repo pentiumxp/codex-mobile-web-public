@@ -71,6 +71,12 @@ function summarizeSamples(samples = []) {
   const visualAnchorShiftPixels = normalized.map((sample) => toNumber(sample.visualAnchorShiftPx));
   const submittedMessageShiftCounts = normalized.map((sample) => toNumber(sample.submittedMessageSmallJitterCount));
   const submittedMessageShiftPixels = normalized.map((sample) => toNumber(sample.submittedMessageShiftPx));
+  const longTaskCounts = normalized.map((sample) => toNumber(sample.longTaskCount));
+  const longTaskMaxDurations = normalized.map((sample) => toNumber(sample.longTaskMaxDurationMs));
+  const longTaskTotalDurations = normalized.map((sample) => toNumber(sample.longTaskTotalDurationMs));
+  const threadListProbeElapsedMs = normalized.map((sample) => toNumber(sample.threadListProbeElapsedMs));
+  const threadListMaxRafDelayMs = normalized.map((sample) => toNumber(sample.threadListMaxRafDelayMs));
+  const threadListMaxScrollApplyMs = normalized.map((sample) => toNumber(sample.threadListMaxScrollApplyMs));
   return {
     sampleCount: normalized.length,
     minTurns: normalized.length ? Math.min(...turnCounts) : 0,
@@ -98,6 +104,12 @@ function summarizeSamples(samples = []) {
     maxVisualAnchorShiftPx: normalized.length ? Math.max(...visualAnchorShiftPixels) : 0,
     maxSubmittedMessageSmallJitterCount: normalized.length ? Math.max(...submittedMessageShiftCounts) : 0,
     maxSubmittedMessageShiftPx: normalized.length ? Math.max(...submittedMessageShiftPixels) : 0,
+    maxLongTaskCount: normalized.length ? Math.max(...longTaskCounts) : 0,
+    maxLongTaskDurationMs: normalized.length ? Math.max(...longTaskMaxDurations) : 0,
+    maxLongTaskTotalDurationMs: normalized.length ? Math.max(...longTaskTotalDurations) : 0,
+    maxThreadListProbeElapsedMs: normalized.length ? Math.max(...threadListProbeElapsedMs) : 0,
+    maxThreadListRafDelayMs: normalized.length ? Math.max(...threadListMaxRafDelayMs) : 0,
+    maxThreadListScrollApplyMs: normalized.length ? Math.max(...threadListMaxScrollApplyMs) : 0,
     sparseSampleCount: normalized.filter(isSparseSample).length,
     nonEmptySampleCount: normalized.filter(isNonEmptySample).length,
   };
@@ -183,6 +195,33 @@ function analyzeBrowserRuntimeSamples(input = {}) {
     if (!sample || typeof sample !== "object") continue;
     if (!sample.appVisible) issues.push(issue("H2", "browser_app_not_visible", sample));
     if (sample.loginVisible) issues.push(issue("H2", "browser_login_visible", sample));
+    if (toNumber(sample.longTaskMaxDurationMs) >= 1000) {
+      issues.push(issue("H2", "browser_main_thread_long_task", sample, {
+        longTaskCount: toNumber(sample.longTaskCount),
+        longTaskMaxDurationMs: toNumber(sample.longTaskMaxDurationMs),
+        longTaskTotalDurationMs: toNumber(sample.longTaskTotalDurationMs),
+      }));
+    }
+    if (String(sample.probeKind || "") === "thread-list-interaction") {
+      const threadListProbeElapsedMs = toNumber(sample.threadListProbeElapsedMs);
+      const threadListMaxRafDelayMs = toNumber(sample.threadListMaxRafDelayMs);
+      const threadListMaxScrollApplyMs = toNumber(sample.threadListMaxScrollApplyMs);
+      const stressProbe = sample.stressProbe === true;
+      const elapsedBlocked = !stressProbe && threadListProbeElapsedMs >= 1500;
+      if (elapsedBlocked || threadListMaxRafDelayMs >= 750 || threadListMaxScrollApplyMs >= 750) {
+        issues.push(issue("H2", "browser_thread_list_interaction_blocked", sample, {
+          threadListAvailable: sample.threadListAvailable === true,
+          threadListCardCount: toNumber(sample.threadListCardCount),
+          threadListScrollable: sample.threadListScrollable === true,
+          stressProbe,
+          threadListProbeElapsedMs,
+          threadListMaxRafDelayMs,
+          threadListMaxScrollApplyMs,
+          longTaskCount: toNumber(sample.longTaskCount),
+          longTaskMaxDurationMs: toNumber(sample.longTaskMaxDurationMs),
+        }));
+      }
+    }
     if (toNumber(sample.duplicateRenderKeys) > 0) {
       issues.push(issue("H2", "browser_duplicate_render_keys", sample, {
         duplicateRenderKeys: toNumber(sample.duplicateRenderKeys),
@@ -272,8 +311,8 @@ function analyzeBrowserRuntimeSamples(input = {}) {
         }));
       }
       if (toNumber(turnShape.expectedAssistantMessageCount) > 0
-        && toNumber(turnShape.assistantMessageCount) < toNumber(turnShape.expectedAssistantMessageCount)) {
-        issues.push(issue("H2", "browser_turn_assistant_below_api_expectation", sample, {
+        && toNumber(turnShape.assistantMessageCount) <= 0) {
+        issues.push(issue("H2", "browser_turn_assistant_missing", sample, {
           turnShape: safeTurnShape(turnShape),
         }));
       }

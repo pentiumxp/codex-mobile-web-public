@@ -31123,3 +31123,73 @@ The previous full handoff was archived and should be opened only when old proven
     `browser_turn_user_message_after_usage`, and
     `browser_turn_assistant_below_api_expectation` in production.
   - Public deploy was not run.
+
+### 2026-06-30 - v593 Self-Check Rule Correction Pending Deploy
+
+- Follow-up from production combined browser sampling:
+  - Single-thread long samples for Movie and Codex Mobile source threads passed.
+  - Combined cross-thread sampling reproduced H2 issues. The new
+    `browser_turn_assistant_below_api_expectation` rule fired on an older
+    completed Codex Mobile source-thread turn where API retained 24
+    assistant/plan progress rows but the DOM intentionally rendered a compact
+    receipt-only historical view with one assistant row plus Usage.
+  - This is a self-check false positive, not proof of user-visible data loss:
+    historical completed turns are allowed to compact assistant progress as
+    long as at least one assistant/final receipt remains and Usage/user/task
+    card rows are structurally sane.
+- Local correction:
+  - `adapters/browser-runtime-self-check-service.js` now reports
+    `browser_turn_assistant_missing` only when a matched turn has assistant
+    rows in API but zero assistant/plan rows in DOM.
+  - `test/browser-runtime-self-check-service.test.js` now covers both true
+    missing-assistant structure loss and receipt-only historical compaction.
+  - `docs/TROUBLESHOOTING.md` documents `browser_turn_assistant_missing`.
+- Deployment status:
+  - This correction is local/private source work at the time of this note.
+    Deploy through Home AI Deploy before treating v593 periodic/deploy gate
+    failures for `browser_turn_assistant_below_api_expectation` as actionable.
+
+### 2026-06-30 - Browser Self-Check Thread-List Interaction Stress Pending Deploy
+
+- Scope:
+  - Follow-up to user reports that the thread list can occasionally freeze for
+    about 10 seconds and cannot scroll.
+  - Local production Chrome/CDP stress against Movie and Codex Mobile source
+    threads did not reproduce a blocked list in the sampled window: max
+    thread-list rAF/scroll application delay was about 133ms and Chrome long
+    task count was 0.
+  - Because the reported freeze is intermittent and user-visible, the browser
+    runtime self-check now needs to catch the client interaction layer directly,
+    not only API latency or conversation DOM loss.
+- Source changes:
+  - `scripts/codex-mobile-browser-runtime-self-check.js` now installs a
+    metadata-only PerformanceObserver for Chrome long tasks and runs a bounded
+    thread-list interaction stress by default. The stress opens the list,
+    scroll-probes it, clicks thread cards, returns to the list, and records
+    rAF/scroll/long-task counts only.
+  - `adapters/browser-runtime-self-check-service.js` now reports H2
+    `browser_thread_list_interaction_blocked` for blocked list rAF/scroll paths
+    and H2 `browser_main_thread_long_task` for >=1s browser main-thread long
+    tasks. Stress probe wall-clock time is preserved as trend metadata but does
+    not block by itself because it includes intentional waits.
+  - The v593 false-positive rule for historical receipt-only turns was
+    corrected: per-turn assistant API/DOM comparison now reports
+    `browser_turn_assistant_missing` only when DOM has zero assistant/plan rows,
+    instead of requiring every historical assistant progress row to remain
+    rendered.
+  - `docs/MODULES.md` and `docs/TROUBLESHOOTING.md` document the new list
+    interaction probe and issue codes.
+- Validation before deploy:
+  - `node --check scripts/codex-mobile-browser-runtime-self-check.js`
+  - `node --check adapters/browser-runtime-self-check-service.js`
+  - `node --test test/browser-runtime-self-check-service.test.js` passed with
+    29 tests.
+  - `npm test` passed with 1605 tests.
+  - `npm run check`, `npm run check:macos`, `git diff --check`, and Home AI
+    fallback governance check passed.
+  - Enhanced production browser stress command against Movie and Codex Mobile
+    source threads returned `ok=true`, zero issues, max thread-list rAF/scroll
+    133ms, max long task 0.
+- Deployment status:
+  - Local source work is ready to commit/deploy through Home AI Deploy.
+  - No Public deploy requested or run.
