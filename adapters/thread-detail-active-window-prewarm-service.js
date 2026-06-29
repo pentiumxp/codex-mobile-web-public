@@ -71,7 +71,8 @@ function createThreadDetailActiveWindowPrewarmService(options = {}) {
     const threadId = text(input.threadId);
     if (!threadId) return { status: "skipped", reason: "missing-thread-id" };
     const startedAtMs = now();
-    let summary = input.summary && typeof input.summary === "object" ? input.summary : null;
+    const inputSummary = input.summary && typeof input.summary === "object" ? input.summary : null;
+    let summary = inputSummary;
     if (!summary) {
       const summaryResult = await resolveSummary(input.codex || null, threadId, {
         threadLog: typeof input.threadLog === "function" ? input.threadLog : () => {},
@@ -80,8 +81,19 @@ function createThreadDetailActiveWindowPrewarmService(options = {}) {
     }
     const activeReason = activeFullThreadReadReason(summary);
     if (!activeReason) return { status: "skipped", reason: "not-active" };
-    const runtimeSettings = threadRuntimeSettings(threadId, summary);
-    const projection = projectionInput(threadId, summary);
+    let runtimeSettings = threadRuntimeSettings(threadId, summary);
+    let projection = projectionInput(threadId, summary);
+    if (!projection && inputSummary) {
+      const summaryResult = await resolveSummary(input.codex || null, threadId, {
+        threadLog: typeof input.threadLog === "function" ? input.threadLog : () => {},
+      });
+      const resolvedSummary = summaryResult && summaryResult.summary || null;
+      const resolvedActiveReason = activeFullThreadReadReason(resolvedSummary);
+      if (!resolvedActiveReason) return { status: "skipped", reason: "not-active" };
+      summary = resolvedSummary;
+      runtimeSettings = threadRuntimeSettings(threadId, summary);
+      projection = projectionInput(threadId, summary);
+    }
     if (!projection) return { status: "skipped", reason: "projection-input-unavailable" };
     if (!activeOverlayProjectionWindowLookup) return { status: "skipped", reason: "window-lookup-unavailable" };
     if (!turnsListThreadReadResult) return { status: "skipped", reason: "turns-list-unavailable" };

@@ -402,6 +402,13 @@ the detail request arrived. Startup fallback prewarm defaults to zero delay
 after listener start; if a detail request is already in flight, it should
 defer through `active-detail-in-flight` and retry instead of competing with the
 foreground detail request.
+If bounded logs show `active_window_prewarm_done` with
+`reason=projection-input-unavailable` mostly from
+`thread-list:warm_fallback_*`, the active fallback row likely lacks rollout
+path/stat evidence even though it proves active status. Current prewarm builds
+refresh the canonical thread summary once and retry projection input before
+skipping; if that still fails, inspect summary rollout path/stat availability
+rather than adding another foreground detail fallback.
 `turn/started`, `turn/completed`, and active `thread/status/changed`
 notification-triggered prewarm should fast-start with zero delay and bypass the
 ordinary recent-attempt throttle, because the client can refetch the thread

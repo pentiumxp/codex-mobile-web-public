@@ -105,6 +105,43 @@ test("prewarmNow skips app-server read when active overlay window is already cac
   assert.equal(calls.some((call) => /^seed:/.test(call)), false);
 });
 
+test("prewarmNow refreshes an incomplete active summary before projection lookup fails", async () => {
+  const { calls, service } = createHarness({
+    summary: {
+      id: "thread-1",
+      path: "/tmp/rollout.jsonl",
+      status: { type: "active" },
+      activeTurnId: "turn-active",
+    },
+    service: {
+      projectionInput: (threadId, currentSummary) => {
+        calls.push(`projection-input:${currentSummary && currentSummary.path ? "ready" : "missing-path"}`);
+        if (!currentSummary || !currentSummary.path) return null;
+        return { threadId, rolloutPath: currentSummary.path };
+      },
+    },
+  });
+
+  const result = await service.prewarmNow({
+    threadId: "thread-1",
+    summary: {
+      id: "thread-1",
+      status: { type: "active" },
+      activeTurnId: "turn-active",
+    },
+  });
+
+  assert.equal(result.status, "seeded");
+  assert.deepEqual(calls.filter((call) => /^projection-input:/.test(call)), [
+    "projection-input:missing-path",
+    "projection-input:ready",
+  ]);
+  assert.equal(calls.includes("summary"), true);
+  assert.deepEqual(calls.filter((call) => /^turns-list:/.test(call)), [
+    "turns-list:turns-list-active-overlay-window",
+  ]);
+});
+
 test("prewarmNow can seed the projection window before overlay turn evidence exists", async () => {
   const { calls, service } = createHarness({
     service: {

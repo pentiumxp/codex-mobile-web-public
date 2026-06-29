@@ -33831,3 +33831,116 @@ The previous full handoff was archived and should be opened only when old proven
     readback should include `completed-summary-only`,
     `progressiveCompletedUsageSummaryOnlyBudgetApplied`, and
     `progressiveActiveFirstPaintBytesAfterUsageSummaryOnlyBudget`.
+
+### 2026-06-30 - Completed Usage Summary-Only First-Paint Budget Deployed
+
+- Private Home AI deploy completed for source ref `96d9802fcbea` with reason
+  `codex-mobile-completed-usage-summary-first-paint-budget`.
+- Deploy backup:
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260629T234726Z-plugin-codex-mobile-web-codex-mobile-completed-usage-summary-first-paint-budget`.
+- Production `/api/public-config` returned HTTP `200`, version `0.1.11`,
+  build id `576c30a2eea33b2a`, client build id
+  `0.1.11|codex-mobile-shell-v598`, shell cache `codex-mobile-shell-v598`, and
+  `authRequired=true`.
+- Source/production SHA-256 parity passed for the summary-only Usage service,
+  Phase-B smoke script, decision service, focused tests, and docs.
+- Production markers confirmed `completed-summary-only`,
+  `progressiveCompletedUsageSummaryOnlyBudgetApplied`,
+  `progressiveCompletedUsageSummaryOnlyBytesAfterBudget`,
+  `progressiveActiveFirstPaintBytesAfterUsageSummaryOnlyBudget`, and the
+  focused test marker
+  `compacts completed Usage to summary-only after first-stage pressure`.
+- Phase-B production readback against source thread returned `ok=true`,
+  `readMode=projection-active-overlay`, `totalMs=688`,
+  `prepareResponseMs=546`, `turnsListInitialMs=0`,
+  `activeOverlayWindowMs=0`, `activeOverlayBackfillWindowMs=74`, and
+  `activeOverlayMergeMs=6`.
+- Completed Usage summary-only budget applied with reason
+  `first-paint-byte-pressure`, scope `active-first-paint`, bytes before
+  `140677`, bytes after `136235`, truncated items `8`, original summary-only
+  bytes `9661`, retained summary-only bytes `5219`, omitted summary-only bytes
+  `4442`, and
+  `progressiveActiveFirstPaintBytesAfterUsageSummaryOnlyBudget=136235`.
+- Remaining first-paint over-ceiling was `37931` bytes. Retained visible bytes
+  by kind were `assistant=23990`, `userMessage=7044`, `usage=5219`,
+  `operation=2124`, `other=704`, and `reasoning=345`.
+- Phase-B decision was `ready`, priority `H3`, owner `phase-b-readback`,
+  reason `warm-or-bounded-paths`, next action
+  `proceed-to-next-phase-b-root-cause-target`.
+- Deploy-mode runtime gate returned `ok=true`, `deployPass=true`,
+  `periodicHealthy=true`, issue count `0`, blocking issue count `0`, advisory
+  issue count `0`, execution failure count `0`, and child checks `api-thread`,
+  `browser-runtime`, and `client-events` all OK.
+- LaunchAgent full-check readback returned `ok=true`, latest event gate mode
+  `deploy`, `deployPass=true`, `periodicHealthy=true`, issue count `0`,
+  blocking issue count `0`, advisory issue count `0`, execution failure count
+  `0`, and check names `api-thread`, `browser-runtime`, and `client-events`.
+  Historical launchctl `lastExitCode=1` remained in metadata while the selected
+  full-check event was healthy.
+- No Public deploy was run.
+
+### 2026-06-30 - Active-Window Prewarm Incomplete-Summary Repair Ready
+
+- Scope:
+  - Source-side repair for intermittent active detail latency where production
+    Phase-B or live reads occasionally paid a foreground
+    `turns-list-active-overlay-window` rebuild of about `3.7s`.
+  - Source ref pending commit/deploy from this workspace.
+- Production evidence:
+  - Bounded production log tail showed most `active_window_prewarm_done`
+    skips came from `thread-list:warm_fallback_default` /
+    `thread-list:warm_fallback_initial` with
+    `reason=projection-input-unavailable`.
+  - A current Phase-B sample against source thread
+    `019eee6c-a6f5-7b20-bfb4-f96ccb6431b3` returned `ok=true`,
+    `readMode=projection-active-overlay`, `totalMs=3847`,
+    `activeOverlayWindowMs=3743`, `activeOverlayBackfillWindowMs=1`,
+    `activeOverlayMergeMs=0`, and `prepareResponseMs=44`.
+  - That same sample had active first-paint bytes under the current ceiling,
+    so the residual was an active-window prewarm/projection-readiness issue,
+    not a payload-size issue.
+- Root-cause boundary:
+  - Thread-list fallback rows can prove active/running status but may not carry
+    rollout path/stat data needed by `threadDetailProjectionInput`.
+  - `thread-detail-active-window-prewarm-service` previously skipped whenever a
+    caller supplied any summary object and projection input was unavailable,
+    so fallback-thread-list prewarm did not get the canonical summary refresh
+    path used by notification-triggered jobs with `summary=null`.
+- Source change:
+  - `adapters/thread-detail-active-window-prewarm-service.js` now treats a
+    supplied active summary that cannot produce projection input as an
+    incomplete-summary case: it resolves the canonical thread summary once,
+    revalidates active status, rebuilds runtime settings, and retries
+    projection input before skipping.
+  - Existing complete-summary and no-summary notification fast paths remain
+    unchanged.
+  - Added focused coverage in
+    `test/thread-detail-active-window-prewarm-service.test.js` for a lightweight
+    active summary missing rollout path that refreshes and seeds
+    `turns-list-active-overlay-window`.
+  - Updated `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Validation:
+  - `node --check adapters/thread-detail-active-window-prewarm-service.js`
+    passed.
+  - `node --test test/thread-detail-active-window-prewarm-service.test.js`
+    passed: `11` tests.
+  - `node --test test/thread-detail-active-window-prewarm-service.test.js test/thread-detail-projection-input-service.test.js test/thread-detail-read-orchestration-service.test.js test/phase-b-readback-decision-service.test.js`
+    passed: `72` tests.
+  - `npm test -- --test-reporter=dot` passed.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - `codegraph sync && codegraph status` reported the index up to date.
+- Next deployment step:
+  - Commit source with message
+    `fix: refresh incomplete active prewarm summaries`.
+  - Delegate private Home AI deploy from the app workspace with reason
+    `codex-mobile-active-window-prewarm-summary-refresh`.
+  - Production readback should confirm source/prod parity for the changed
+    prewarm service, focused test, and docs; marker readback should include
+    the focused test marker
+    `prewarmNow refreshes an incomplete active summary before projection lookup fails`.
+  - Phase-B/readback should verify `activeOverlayWindowMs=0` in sampled windows
+    and inspect bounded `active_window_prewarm_done` groups for reduced
+    `thread-list:warm_fallback_*` / `projection-input-unavailable` recurrence.

@@ -278,6 +278,14 @@ Current acceleration targets:
    history-only evidence: its projection revision cannot mark the separately
    supplied live active-turn overlay stale, while ordinary projection windows
    still keep the stale assistant-delta fail-closed rule.
+   A later production log sample showed most background prewarm attempts from
+   `thread-list:warm_fallback_*` skipping with `projection-input-unavailable`:
+   the fallback row proved active status but did not carry enough rollout-path
+   and stat evidence for a projection signature. The prewarm coordinator now
+   treats that as an incomplete-summary case, refreshes the canonical summary
+   once, and retries projection input before skipping. This keeps ownership at
+   the projection-input boundary and avoids moving the same app-server
+   active-window read back into the foreground detail request.
    A later runtime sample showed a remaining cold-path gap: background prewarm
    and the foreground first detail open could race and both start the same
    `turns-list-active-overlay-window` app-server read for one active thread.
