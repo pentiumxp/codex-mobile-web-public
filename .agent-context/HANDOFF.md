@@ -31868,6 +31868,8 @@ The previous full handoff was archived and should be opened only when old proven
   - Private production deploy was requested through Home AI Deploy card
     `ttc_dc668bbda98bec4680` with reason
     `codex-mobile-v598-pre-visible-thread-list-stall-telemetry`.
+  - Home AI deploy return confirmed `ok=true`; backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T192451Z-plugin-codex-mobile-web-codex-mobile-v598-pre-visible-thread-list-stall-telemetry`.
   - Independent local production readback confirmed the deploy is live.
   - Production `/api/public-config` returned status `200`, version `0.1.11`,
     build id `576c30a2eea33b2a`, client build id
@@ -31898,6 +31900,13 @@ The previous full handoff was archived and should be opened only when old proven
     bounded client events; `stallEventCount=0`, `h2StallEventCount=0`,
     `untimedStallEventCount=0`, `outOfWindowStallEventCount=0`, and max
     recorded stall delays were `0`.
+  - Home AI deploy return also recorded a direct browser stress probe with
+    `ok=true`, browser `issueCount=0`, `maxThreadListProbeElapsedMs=3030`,
+    `maxThreadListRafDelayMs=142`, `maxThreadListScrollApplyMs=142`,
+    `maxLongTaskCount=0`, and `maxLongTaskDurationMs=0`.
+  - Production LaunchAgent readback in the deploy return was `ok=true`,
+    loaded/running, latest event `deployPass=true`, `periodicHealthy=true`,
+    and zero issue/execution-failure counts.
 - Remaining status:
   - v598 closes the telemetry coverage gap for primary-list DOM-present but
     pre-visible entry/render-transition freezes. It does not claim to fix an
