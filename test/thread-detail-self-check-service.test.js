@@ -103,6 +103,27 @@ test("thread detail self check detects duplicate client render keys", () => {
   assert.equal(issue.threadHash, "4b0a5fefc328e6b9");
 });
 
+test("thread detail self check detects duplicate user message events in one turn", () => {
+  const detail = healthyDetail();
+  detail.thread.activeTurnId = "turn-active";
+  detail.thread.turns.push({
+    id: "turn-active",
+    status: "inProgress",
+    items: [
+      { id: "item-1", type: "userMessage", startedAtMs: 1782710145041, text: "same user request" },
+      { id: "item-10114", type: "userMessage", startedAt: "2026-06-29T05:15:45.041Z", text: "same   user request" },
+      { id: "agent-live", type: "agentMessage", text: "working" },
+    ],
+  });
+
+  const report = analyzeThreadDetail(detail);
+  const issue = report.issues.find((entry) => entry.code === "duplicate_user_message_events");
+
+  assert.equal(report.ok, false);
+  assert.equal(issue.severity, "H2");
+  assert.equal(issue.count, 1);
+});
+
 test("thread detail self check accepts naturally short completed replay receipts", () => {
   const detail = healthyDetail();
   detail.thread.mobileVisibleItemKeys = ["u1", "a1", "usage1"];

@@ -20,7 +20,7 @@ Interpretation:
 | Mobile Web offline | `GET /api/public-config`, 8787 listener PID, startup log |
 | Messages not visible in Desktop | `/api/status` endpoint vs `endpoint.json`, Desktop launched through shared launcher |
 | Send appears accepted then disappears | active turn id, recent turn history, pending echo, latest rollout growth |
-| Same submitted user message appears twice while the turn is thinking | Inspect whether one item is a browser `local-user-*` echo and the other is a server `mux-user-*` or durable `userMessage` echo for the same `clientSubmissionId`. Clients after `codex-mobile-shell-v396` merge these at the thread-normalization layer using submission id, deterministic mux id suffix, and content signature; if duplication remains, compare `/api/threads/:id?mode=recent` against the open shell before adding render-layer filtering. |
+| Same submitted user message appears twice while the turn is thinking | Inspect whether one item is a browser `local-user-*` echo and the other is a server `mux-user-*` or durable `userMessage` echo for the same `clientSubmissionId`. Clients after `codex-mobile-shell-v396` merge these at the thread-normalization layer using submission id, deterministic mux id suffix, and content signature. If both duplicates are projection-index `item-*` user messages, compare bounded timestamps too: current servers collapse same-content/same-timestamp projection-index duplicates but keep repeated same-text user messages with different timestamps. If duplication remains, compare `/api/threads/:id?mode=recent` against the open shell before adding render-layer filtering. |
 | Thread looks stuck | rollout size/mtime, pending approvals, live command/tool process, latest turn status |
 | Old command appears running | latest turn id vs raw operation fallback call id/turn id, app version includes raw-operation fix |
 | PWA still shows old UI | `/api/public-config.clientBuildId`, browser shell cache, service worker cache name |
@@ -622,6 +622,10 @@ Expected current behavior:
   appears below the final assistant receipt or Usage row, inspect
   `composerTargetActiveTurnId()`, `insertLocalSubmittedUserMessage()`, and
   `adapters/message-pending-echo-service.js` before adding UI-side dedupe.
+- Server builds after the projection-index duplicate fix also fold same-content
+  `item-*` user messages only when their bounded timestamps match. This is a
+  projection-event repair, not text-only dedupe: two same-text user messages
+  sent at different times must still render as two messages.
 
 ## Active Goal Output Disappears After Re-entering A Large Thread
 
@@ -760,6 +764,9 @@ Cause to check:
   final sample recovers. It intentionally checks the Usage tool item exists but
   does not require a separate Usage title/timestamp, because the visible time
   belongs to the adjacent final assistant receipt.
+  Current checks also report `duplicate_user_message_events` when one turn has
+  same-content user messages with the same bounded timestamp, which usually
+  means the projection/live-overlay layer double-counted one submitted event.
 - If the API self-check is clean but the real client still flickers, clears a
   thread detail to `No visible turns.`, shows duplicate DOM items, or loses a
   just-visible thread after reopening, run the browser-runtime check:
@@ -789,6 +796,10 @@ Cause to check:
   where the API has the submitted user input but the DOM latest turn does not,
   or where command/reasoning process rows leak into the ordinary conversation
   instead of staying in the operation status surface.
+  Current checks also report `browser_api_latest_turn_user_message_duplicate`
+  when the API expectation already contains duplicate same-event user messages,
+  and `browser_latest_turn_user_message_duplicate` when the real DOM latest
+  turn shows repeated same-text user cards.
   Clients after `codex-mobile-shell-v579` preserve a non-bottom user-reading
   viewport anchor across full conversation renders, local refresh patch
   transactions, visible item inserts, visible item replacements, and live text

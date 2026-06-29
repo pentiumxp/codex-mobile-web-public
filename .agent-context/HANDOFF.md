@@ -28946,3 +28946,53 @@ The previous full handoff was archived and should be opened only when old proven
   - `origin/main` was not pushed in this Public-only request. Local private
     `main` is ahead of `origin/main` and contains the private handoff context
     plus the public-merge alignment.
+
+### 2026-06-29 - Duplicate Submitted User Message Hotfix
+
+- User report:
+  - After v581, the Movie thread still showed the same submitted user message
+    twice while the turn was active. Screenshot evidence showed two identical
+    `You` cards in one active turn before a single Codex reply.
+- Root cause / strongest evidence:
+  - Bounded direct API readback of Movie thread
+    `019efca1-ea69-7292-87b7-025ba023ca87` during the active window showed two
+    `userMessage` items in the same turn with projection-index ids (`item-1`
+    and `item-10114`), identical bounded timestamp (`1782710145041`), identical
+    content hash, no `clientSubmissionId`, and no `pending` flag.
+  - This proves the duplicate was already in the server/API projection, not
+    just a browser DOM duplicate. The old normalizer deliberately refused to
+    collapse two projection-index user messages to avoid unsafe text-only
+    dedupe; the missing discriminator was bounded same-event timestamp.
+- Implementation:
+  - `adapters/thread-user-message-echo-normalizer-service.js` now collapses
+    same-content projection-index user messages only when both have the same
+    nonzero bounded timestamp. Same-text messages with different timestamps, or
+    projection-index messages without timestamp proof, remain separate.
+  - `adapters/thread-detail-self-check-service.js` now reports H2
+    `duplicate_user_message_events` for same-content/same-timestamp user
+    messages in one turn.
+  - `scripts/codex-mobile-browser-runtime-self-check.js` and
+    `adapters/browser-runtime-self-check-service.js` now track
+    `expectedLatestUserMessageDuplicateCount`,
+    `latestTurnUserTextDuplicateCount`, and H2 issues
+    `browser_api_latest_turn_user_message_duplicate` /
+    `browser_latest_turn_user_message_duplicate`.
+  - `docs/README.md`, `docs/MODULES.md`, and `docs/TROUBLESHOOTING.md` record
+    the new projection-event boundary and self-check signals.
+- Validation:
+  - Focused tests passed:
+    `node --test test/thread-user-message-echo-normalizer-service.test.js test/thread-detail-self-check-service.test.js test/browser-runtime-self-check-service.test.js`.
+  - `node --check scripts/codex-mobile-browser-runtime-self-check.js` passed.
+  - Full `npm test` passed: `1545` tests.
+  - `npm run check`, `npm run check:macos`, and `git diff --check` passed.
+  - Production Movie thread self-check after the turn settled showed the public
+    projection had one visible user input and no H1/H2 issue, while raw bounded
+    evidence still showed two user-like events; this is consistent with the
+    duplicate presenting during active/live projection and settling later.
+- Deploy state:
+  - Not deployed yet at this handoff entry. Next step is to commit and send a
+    private deploy card to the `Home AI Deploy` lane; do not push Public unless
+    explicitly requested after the private fix is verified.
+- Privacy:
+  - No raw access keys, cookies, launch tokens, message text, upload contents,
+    screenshots, provider payloads, endpoint files, or long logs were recorded.

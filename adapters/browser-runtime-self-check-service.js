@@ -57,6 +57,8 @@ function summarizeSamples(samples = []) {
   const latestTurnUserMessageCounts = normalized.map((sample) => toNumber(sample.latestTurnUserMessageCount));
   const latestTurnTaskCardItemCounts = normalized.map((sample) => toNumber(sample.latestTurnTaskCardItemCount));
   const latestTurnAssistantMessageCounts = normalized.map((sample) => toNumber(sample.latestTurnAssistantMessageCount));
+  const latestTurnUserTextDuplicateCounts = normalized.map((sample) => toNumber(sample.latestTurnUserTextDuplicateCount));
+  const expectedLatestUserMessageDuplicateCounts = normalized.map((sample) => toNumber(sample.expectedLatestUserMessageDuplicateCount));
   const actualLatestTurnUserMessageCounts = normalized.map((sample) => toNumber(sample.actualLatestTurnUserMessageCount));
   const actualLatestTurnTaskCardItemCounts = normalized.map((sample) => toNumber(sample.actualLatestTurnTaskCardItemCount));
   const actualLatestTurnAssistantMessageCounts = normalized.map((sample) => toNumber(sample.actualLatestTurnAssistantMessageCount));
@@ -81,6 +83,8 @@ function summarizeSamples(samples = []) {
     maxLatestTurnUserMessages: normalized.length ? Math.max(...latestTurnUserMessageCounts) : 0,
     maxLatestTurnTaskCardItems: normalized.length ? Math.max(...latestTurnTaskCardItemCounts) : 0,
     maxLatestTurnAssistantMessages: normalized.length ? Math.max(...latestTurnAssistantMessageCounts) : 0,
+    maxLatestTurnUserTextDuplicates: normalized.length ? Math.max(...latestTurnUserTextDuplicateCounts) : 0,
+    maxExpectedLatestUserMessageDuplicates: normalized.length ? Math.max(...expectedLatestUserMessageDuplicateCounts) : 0,
     maxActualLatestTurnUserMessages: normalized.length ? Math.max(...actualLatestTurnUserMessageCounts) : 0,
     maxActualLatestTurnTaskCardItems: normalized.length ? Math.max(...actualLatestTurnTaskCardItemCounts) : 0,
     maxActualLatestTurnAssistantMessages: normalized.length ? Math.max(...actualLatestTurnAssistantMessageCounts) : 0,
@@ -158,6 +162,22 @@ function analyzeBrowserRuntimeSamples(input = {}) {
       issues.push(issue("H2", "browser_latest_turn_assistant_text_duplicate", sample, {
         latestTurnAssistantMessageCount: toNumber(sample.latestTurnAssistantMessageCount),
         latestTurnAssistantTextDuplicateCount: toNumber(sample.latestTurnAssistantTextDuplicateCount),
+      }));
+    }
+    if (sampleIsConfirmed(sample)
+      && sample.latestTurnMatchesTarget
+      && toNumber(sample.expectedLatestUserMessageDuplicateCount) > 0) {
+      issues.push(issue("H2", "browser_api_latest_turn_user_message_duplicate", sample, {
+        expectedLatestUserMessageCount: toNumber(sample.expectedLatestUserMessageCount),
+        expectedLatestUserMessageDuplicateCount: toNumber(sample.expectedLatestUserMessageDuplicateCount),
+      }));
+    }
+    if (sampleIsConfirmed(sample)
+      && sample.latestTurnMatchesTarget
+      && toNumber(sample.latestTurnUserTextDuplicateCount) > 0) {
+      issues.push(issue("H2", "browser_latest_turn_user_message_duplicate", sample, {
+        latestTurnUserMessageCount: toNumber(sample.latestTurnUserMessageCount),
+        latestTurnUserTextDuplicateCount: toNumber(sample.latestTurnUserTextDuplicateCount),
       }));
     }
     if (sampleIsConfirmed(sample)

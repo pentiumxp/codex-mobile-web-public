@@ -243,6 +243,46 @@ function isInjectedThreadTaskCardItem(item = {}) {
   return parts.some((part) => isInjectedThreadTaskCardText(inputTextValue(part)));
 }
 
+function userMessageComparableText(item = {}) {
+  const parts = Array.isArray(item.content) ? item.content : [];
+  const values = [];
+  for (const part of parts) {
+    const value = inputTextValue(part);
+    if (value) values.push(value);
+  }
+  if (typeof item.text === "string") values.push(item.text);
+  if (typeof item.message === "string") values.push(item.message);
+  return values.join("\n").replace(/\s+/g, " ").trim();
+}
+
+function timestampMs(value) {
+  if (value === null || value === undefined || value === "") return 0;
+  const number = Number(value);
+  if (Number.isFinite(number) && number > 0) {
+    return number > 1_000_000_000_000 ? Math.trunc(number) : Math.trunc(number * 1000);
+  }
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function itemTimestampMs(item = {}) {
+  return timestampMs(item.startedAtMs || item.startedAt || item.createdAtMs || item.createdAt || item.timestampMs || item.timestamp);
+}
+
+function duplicateLatestUserMessageEventCount(userItems = []) {
+  const seen = new Set();
+  let duplicates = 0;
+  for (const item of userItems) {
+    const textHash = shortHash(userMessageComparableText(item));
+    const time = itemTimestampMs(item);
+    if (!textHash || !time) continue;
+    const key = `${textHash}:${time}`;
+    if (seen.has(key)) duplicates += 1;
+    else seen.add(key);
+  }
+  return duplicates;
+}
+
 function latestTurnExpectation(detail = {}) {
   const thread = detail && (detail.thread || detail.data || detail);
   const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
@@ -250,6 +290,7 @@ function latestTurnExpectation(detail = {}) {
   const items = Array.isArray(latest && latest.items) ? latest.items : [];
   const userItems = items.filter((item) => item && /^userMessage$/i.test(String(item.type || "")));
   const injectedTaskCardUserItems = userItems.filter(isInjectedThreadTaskCardItem);
+  const ordinaryUserItems = userItems.filter((item) => !isInjectedThreadTaskCardItem(item));
   const itemTypes = items
     .map((item) => String(item && item.type || "unknown").trim() || "unknown")
     .slice(0, 80);
@@ -257,6 +298,7 @@ function latestTurnExpectation(detail = {}) {
     expectedLatestUsageRequired: Boolean(latest && completedStatus(latest.status) && itemTypes.includes("turnUsageSummary")),
     expectedLatestItemCount: items.length,
     expectedLatestUserMessageCount: Math.max(0, userItems.length - injectedTaskCardUserItems.length),
+    expectedLatestUserMessageDuplicateCount: duplicateLatestUserMessageEventCount(ordinaryUserItems),
     expectedLatestTaskCardUserMessageCount: injectedTaskCardUserItems.length,
     expectedLatestOperationItemCount: itemTypes.filter((type) => /^(commandExecution|fileChange|dynamicToolCall|mcpToolCall|collabAgentToolCall)$/i.test(type)).length,
     expectedLatestReasoningItemCount: itemTypes.filter((type) => /^reasoning$/i.test(type)).length,
@@ -293,6 +335,7 @@ async function loadThreadPlan(options, key, ids) {
       expectedLatestUsageRequired: expectation.expectedLatestUsageRequired,
       expectedLatestItemCount: expectation.expectedLatestItemCount,
       expectedLatestUserMessageCount: expectation.expectedLatestUserMessageCount,
+      expectedLatestUserMessageDuplicateCount: expectation.expectedLatestUserMessageDuplicateCount,
       expectedLatestTaskCardUserMessageCount: expectation.expectedLatestTaskCardUserMessageCount,
       expectedLatestOperationItemCount: expectation.expectedLatestOperationItemCount,
       expectedLatestReasoningItemCount: expectation.expectedLatestReasoningItemCount,
@@ -575,6 +618,7 @@ function snapshotExpression(input = {}) {
   const expectedLatestTurnHash = String(input.expectedLatestTurnHash || "");
   const expectedLatestUsageRequired = Boolean(input.expectedLatestUsageRequired);
   const expectedLatestUserMessageCount = Math.max(0, Number(input.expectedLatestUserMessageCount || 0) || 0);
+  const expectedLatestUserMessageDuplicateCount = Math.max(0, Number(input.expectedLatestUserMessageDuplicateCount || 0) || 0);
   const expectedLatestTaskCardUserMessageCount = Math.max(0, Number(input.expectedLatestTaskCardUserMessageCount || 0) || 0);
   const label = String(input.label || "");
   const delayMs = Math.max(0, Number(input.delayMs || 0) || 0);
@@ -589,6 +633,7 @@ function snapshotExpression(input = {}) {
       const expectedLatestTurnHash = ${JSON.stringify(expectedLatestTurnHash)};
       const expectedLatestUsageRequired = ${JSON.stringify(expectedLatestUsageRequired)};
       const expectedLatestUserMessageCount = ${JSON.stringify(expectedLatestUserMessageCount)};
+      const expectedLatestUserMessageDuplicateCount = ${JSON.stringify(expectedLatestUserMessageDuplicateCount)};
       const expectedLatestTaskCardUserMessageCount = ${JSON.stringify(expectedLatestTaskCardUserMessageCount)};
       const label = ${JSON.stringify(label)};
       const delayMs = ${JSON.stringify(delayMs)};
@@ -658,6 +703,13 @@ function snapshotExpression(input = {}) {
         })
         .filter(Boolean)
         .map(stableHash);
+      const latestUserTextHashes = latestUserNodes
+        .map((node) => {
+          const body = node.querySelector(".item-body") || node;
+          return String(body.textContent || "").replace(/\\s+/g, " ").trim();
+        })
+        .filter(Boolean)
+        .map(stableHash);
       const imageNodes = Array.from(renderRoot.querySelectorAll(".input-image img, .image-view img, .markdown-image img"));
       const failedFigures = Array.from(renderRoot.querySelectorAll(".input-image.image-load-failed, .image-view.image-load-failed, .markdown-image.image-load-failed"));
       const brokenCompleteImages = imageNodes.filter((image) => {
@@ -715,6 +767,7 @@ function snapshotExpression(input = {}) {
         latestTurnMatchesTarget: latestMatches,
         expectedLatestUsageRequired,
         expectedLatestUserMessageCount,
+        expectedLatestUserMessageDuplicateCount,
         expectedLatestTaskCardUserMessageCount,
         latestTurnHash,
         latestTurnItemCount: latestItemNodes.length,
@@ -727,6 +780,7 @@ function snapshotExpression(input = {}) {
         actualLatestTurnAssistantMessageCount: actualLatestAssistantNodes.length,
         latestTurnOperationItemCount: latestOperationNodes.length,
         latestTurnReasoningItemCount: latestReasoningNodes.length,
+        latestTurnUserTextDuplicateCount: duplicateCount(latestUserTextHashes),
         latestTurnAssistantTextDuplicateCount: duplicateCount(latestAssistantTextHashes),
         latestTurnUsageCount: latestUsageCount,
         latestTimestampExpectedItems: timestampExpectedNodes.length,
@@ -825,6 +879,7 @@ async function run(options = parseArgs(), deps = {}) {
       expectedLatestUsageRequired: Boolean(entry.expectedLatestUsageRequired),
       expectedLatestItemCount: entry.expectedLatestItemCount,
       expectedLatestUserMessageCount: entry.expectedLatestUserMessageCount,
+      expectedLatestUserMessageDuplicateCount: entry.expectedLatestUserMessageDuplicateCount,
       expectedLatestTaskCardUserMessageCount: entry.expectedLatestTaskCardUserMessageCount,
       expectedLatestOperationItemCount: entry.expectedLatestOperationItemCount,
       expectedLatestReasoningItemCount: entry.expectedLatestReasoningItemCount,
@@ -922,6 +977,7 @@ async function run(options = parseArgs(), deps = {}) {
             expectedLatestTurnHash: entry.expectedLatestTurnHash,
             expectedLatestUsageRequired: entry.expectedLatestUsageRequired,
             expectedLatestUserMessageCount: entry.expectedLatestUserMessageCount,
+            expectedLatestUserMessageDuplicateCount: entry.expectedLatestUserMessageDuplicateCount,
             expectedLatestTaskCardUserMessageCount: entry.expectedLatestTaskCardUserMessageCount,
             label: `round-${round + 1}-delay-${delayMs}`,
             delayMs,
@@ -952,6 +1008,7 @@ async function run(options = parseArgs(), deps = {}) {
           expectedLatestTurnHash: submitTarget.expectedLatestTurnHash,
           expectedLatestUsageRequired: submitTarget.expectedLatestUsageRequired,
           expectedLatestUserMessageCount: submitTarget.expectedLatestUserMessageCount,
+          expectedLatestUserMessageDuplicateCount: submitTarget.expectedLatestUserMessageDuplicateCount,
           expectedLatestTaskCardUserMessageCount: submitTarget.expectedLatestTaskCardUserMessageCount,
           label: "submit-pre",
           delayMs: 0,
@@ -985,6 +1042,7 @@ async function run(options = parseArgs(), deps = {}) {
             expectedLatestTurnHash: submitTarget.expectedLatestTurnHash,
             expectedLatestUsageRequired: submitTarget.expectedLatestUsageRequired,
             expectedLatestUserMessageCount: submitTarget.expectedLatestUserMessageCount,
+            expectedLatestUserMessageDuplicateCount: submitTarget.expectedLatestUserMessageDuplicateCount,
             expectedLatestTaskCardUserMessageCount: submitTarget.expectedLatestTaskCardUserMessageCount,
             label: `submit-${phase}`,
             delayMs,

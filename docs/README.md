@@ -202,7 +202,11 @@ load failures. The browser self-check now also detects repeated few-pixel
 visual-anchor jitter and can explicitly exercise the real Composer submit path
 with one short OK-only message via `--exercise-submit`, so submitted user-card
 visibility and small send-time layout shifts are testable without printing
-message bodies. Clients after `codex-mobile-shell-v581` also prevent stale
+message bodies. The API and browser self-checks also flag same-event duplicate
+user cards: the server layer treats same-content projection-index user messages
+as one event only when their bounded timestamps match, while the browser check
+reports latest-turn duplicate user cards separately from assistant-text
+duplicates. Clients after `codex-mobile-shell-v581` also prevent stale
 active-turn identities from steering new user input into already completed
 turns, discard pending steer echoes once their target turn has completed, and
 disable conversation-body entry/leave translation animations so repeated thread

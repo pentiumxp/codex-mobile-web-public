@@ -7,6 +7,9 @@ const {
   isOperationItem,
   isReasoningItem,
 } = require("./thread-detail-response-budget-service");
+const {
+  sameUserMessageContent,
+} = require("./message-pending-echo-service");
 
 const USER_VISIBLE_TIMESTAMP_TYPES = new Set([
   "agentMessage",
@@ -284,6 +287,27 @@ function duplicateInfo(values = []) {
   };
 }
 
+function duplicateSameTimestampUserMessages(turn = {}, thread = null) {
+  const userMessages = safeArray(turn.items).filter((item) => itemType(item) === "userMessage");
+  const duplicates = [];
+  for (let leftIndex = 0; leftIndex < userMessages.length; leftIndex += 1) {
+    const left = userMessages[leftIndex];
+    const leftTimestamp = itemTimestampMs(left, turn, thread);
+    if (!leftTimestamp) continue;
+    for (let rightIndex = leftIndex + 1; rightIndex < userMessages.length; rightIndex += 1) {
+      const right = userMessages[rightIndex];
+      const rightTimestamp = itemTimestampMs(right, turn, thread);
+      if (!rightTimestamp || rightTimestamp !== leftTimestamp) continue;
+      if (!sameUserMessageContent(left, right)) continue;
+      duplicates.push(`${itemId(left) || leftIndex}:${itemId(right) || rightIndex}:${leftTimestamp}`);
+    }
+  }
+  return {
+    count: boundedCount(duplicates.length),
+    firstHash: shortHash(duplicates[0] || ""),
+  };
+}
+
 function hasDuplicate(values) {
   const seen = new Set();
   for (const value of values) {
@@ -382,6 +406,15 @@ function analyzeThreadDetail(detail = {}, options = {}) {
         turnHash: shortHash(turnId(turn)),
         count: duplicate.count,
         itemHash: duplicate.firstHash,
+      });
+    }
+    const duplicateUserMessages = duplicateSameTimestampUserMessages(turn, thread);
+    if (duplicateUserMessages.count > 0) {
+      pushIssue(issues, "duplicate_user_message_events", "H2", "thread-detail", {
+        threadHash,
+        turnHash: shortHash(turnId(turn)),
+        count: duplicateUserMessages.count,
+        itemHash: duplicateUserMessages.firstHash,
       });
     }
   }
