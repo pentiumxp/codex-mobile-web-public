@@ -585,6 +585,22 @@ row or full thread response larger; verify that
 `progressiveCompletedUsageBytesAfterBudget` is below
 `progressiveCompletedUsageBytesBeforeBudget` before treating the compact as a
 payload win.
+If task-card/user-input/first-stage Usage budgets still leave the active
+first-paint response over the byte ceiling, newer servers run a second Usage
+pass that keeps only the summary fields needed for the compact Usage display:
+context percent, risk level, rollout size/over-threshold state, and
+`totalTokenUsage.totalTokens`. Affected rows keep the same
+`mobileFirstPaintUsageBudget` marker with `scope=completed-summary-only` and
+`detailOmitted=true`; thread-level readback reports
+`progressiveCompletedUsageSummaryOnlyBudgetApplied`,
+`progressiveCompletedUsageSummaryOnlyBudgetReason`,
+`progressiveCompletedUsageSummaryOnlyBytesBeforeBudget`,
+`progressiveCompletedUsageSummaryOnlyBytesAfterBudget`,
+`truncatedCompletedUsageSummaryOnlyItems`, and
+`omittedCompletedUsageSummaryOnlyBytes`. `progressiveActiveFirstPaintOverCeilingBytes`
+is computed from
+`progressiveActiveFirstPaintBytesAfterUsageSummaryOnlyBudget` when that pass
+runs.
 On v558+ clients, a per-turn `mobileVisibleItemBudget` also renders as a small
 first-paint omission notice in the conversation. That notice has a
 `data-render-key` and enters the conversation signature, but intentionally does

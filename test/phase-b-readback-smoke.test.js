@@ -247,6 +247,15 @@ test("phase B readback smoke collects bounded diagnostics without private fields
             completedUsageOriginalBytes: 9300,
             completedUsageRetainedBytes: 3900,
             omittedCompletedUsageBytes: 5400,
+            progressiveCompletedUsageSummaryOnlyBudgetApplied: true,
+            progressiveCompletedUsageSummaryOnlyBudgetReason: "first-paint-byte-pressure",
+            progressiveCompletedUsageSummaryOnlyBudgetScope: "active-first-paint",
+            progressiveCompletedUsageSummaryOnlyBytesBeforeBudget: 116000,
+            progressiveCompletedUsageSummaryOnlyBytesAfterBudget: 111000,
+            truncatedCompletedUsageSummaryOnlyItems: 5,
+            completedUsageSummaryOnlyOriginalBytes: 3900,
+            completedUsageSummaryOnlyRetainedBytes: 2100,
+            omittedCompletedUsageSummaryOnlyBytes: 1800,
             progressiveThreadTaskCardBudgetApplied: true,
             progressiveThreadTaskCardBudgetReason: "first-paint-byte-pressure",
             progressiveThreadTaskCardBudgetScope: "active-first-paint",
@@ -280,8 +289,9 @@ test("phase B readback smoke collects bounded diagnostics without private fields
             progressiveActiveFirstPaintBytesBeforeItemBudget: 150000,
             progressiveActiveFirstPaintBytesAfterItemBudget: 92000,
             progressiveActiveFirstPaintBytesAfterTaskCardBudget: 116000,
+            progressiveActiveFirstPaintBytesAfterUsageSummaryOnlyBudget: 111000,
             progressiveActiveFirstPaintOmittedVisibleItems: 6,
-            progressiveActiveFirstPaintOverCeilingBytes: 17696,
+            progressiveActiveFirstPaintOverCeilingBytes: 12696,
             retainedVisibleItemCountByKind: { operation: 12, assistant: 4, userMessage: 1 },
             retainedVisibleItemBytesByKind: { operation: 52000, assistant: 18000, userMessage: 9000 },
             retainedAssistantItemCountByTurnState: { active: 2, completed: 2 },
@@ -499,6 +509,15 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.detail.responseBudgetCompletedUsageOriginalBytes, 9300);
   assert.equal(report.detail.responseBudgetCompletedUsageRetainedBytes, 3900);
   assert.equal(report.detail.responseBudgetOmittedCompletedUsageBytes, 5400);
+  assert.equal(report.detail.responseBudgetProgressiveCompletedUsageSummaryOnlyBudgetApplied, true);
+  assert.equal(report.detail.responseBudgetProgressiveCompletedUsageSummaryOnlyBudgetReason, "first-paint-byte-pressure");
+  assert.equal(report.detail.responseBudgetProgressiveCompletedUsageSummaryOnlyBudgetScope, "active-first-paint");
+  assert.equal(report.detail.responseBudgetProgressiveCompletedUsageSummaryOnlyBytesBeforeBudget, 116000);
+  assert.equal(report.detail.responseBudgetProgressiveCompletedUsageSummaryOnlyBytesAfterBudget, 111000);
+  assert.equal(report.detail.responseBudgetTruncatedCompletedUsageSummaryOnlyItems, 5);
+  assert.equal(report.detail.responseBudgetCompletedUsageSummaryOnlyOriginalBytes, 3900);
+  assert.equal(report.detail.responseBudgetCompletedUsageSummaryOnlyRetainedBytes, 2100);
+  assert.equal(report.detail.responseBudgetOmittedCompletedUsageSummaryOnlyBytes, 1800);
   assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardBudgetApplied, true);
   assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardBudgetReason, "first-paint-byte-pressure");
   assert.equal(report.detail.responseBudgetProgressiveThreadTaskCardBudgetScope, "active-first-paint");
@@ -523,8 +542,9 @@ test("phase B readback smoke collects bounded diagnostics without private fields
   assert.equal(report.detail.responseBudgetProgressiveActiveFirstPaintBytesBeforeItemBudget, 150000);
   assert.equal(report.detail.responseBudgetProgressiveActiveFirstPaintBytesAfterItemBudget, 92000);
   assert.equal(report.detail.responseBudgetProgressiveActiveFirstPaintBytesAfterTaskCardBudget, 116000);
+  assert.equal(report.detail.responseBudgetProgressiveActiveFirstPaintBytesAfterUsageSummaryOnlyBudget, 111000);
   assert.equal(report.detail.responseBudgetProgressiveActiveFirstPaintOmittedVisibleItems, 6);
-  assert.equal(report.detail.responseBudgetProgressiveActiveFirstPaintOverCeilingBytes, 17696);
+  assert.equal(report.detail.responseBudgetProgressiveActiveFirstPaintOverCeilingBytes, 12696);
   assert.deepEqual(report.detail.responseBudgetRetainedVisibleItemCountByKind, { operation: 12, assistant: 4, userMessage: 1 });
   assert.deepEqual(report.detail.responseBudgetRetainedVisibleItemBytesByKind, { operation: 52000, assistant: 18000, userMessage: 9000 });
   assert.deepEqual(report.detail.responseBudgetRetainedAssistantItemCountByTurnState, { active: 2, completed: 2 });

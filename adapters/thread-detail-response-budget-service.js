@@ -594,8 +594,9 @@ function annotateRetainedVisibleItemByteStats(thread, stats) {
   stats.retainedVisibleItemLargestBytes = largestBytes;
   const ceiling = Math.max(0, Math.trunc(Number(stats.progressiveActiveFirstPaintThreadByteCeiling || 0)));
   const taskCardAfterBytes = Math.max(0, Math.trunc(Number(stats.progressiveActiveFirstPaintBytesAfterTaskCardBudget || 0)));
+  const usageSummaryOnlyAfterBytes = Math.max(0, Math.trunc(Number(stats.progressiveActiveFirstPaintBytesAfterUsageSummaryOnlyBudget || 0)));
   const itemAfterBytes = Math.max(0, Math.trunc(Number(stats.progressiveActiveFirstPaintBytesAfterItemBudget || 0)));
-  const afterBytes = taskCardAfterBytes || itemAfterBytes;
+  const afterBytes = usageSummaryOnlyAfterBytes || taskCardAfterBytes || itemAfterBytes;
   stats.progressiveActiveFirstPaintOverCeilingBytes = ceiling > 0 && afterBytes > ceiling
     ? afterBytes - ceiling
     : 0;
@@ -920,18 +921,41 @@ const FIRST_PAINT_USAGE_SUMMARY_FIELDS = [
   "workspaceContextPairThresholdBytes",
 ];
 
+const FIRST_PAINT_USAGE_SUMMARY_ONLY_FIELDS = [
+  "contextWindowUsedPercent",
+  "contextRiskLevel",
+  "rolloutSizeBytes",
+  "rolloutOverWarningThreshold",
+];
+
+function compactUsageSummaryForFirstPaint(summary, summaryOnly = false) {
+  const source = summary && typeof summary === "object" && !Array.isArray(summary) ? summary : {};
+  const out = {};
+  const fields = summaryOnly ? FIRST_PAINT_USAGE_SUMMARY_ONLY_FIELDS : FIRST_PAINT_USAGE_SUMMARY_FIELDS;
+  for (const field of fields) {
+    if (source[field] !== undefined) out[field] = cloneJson(source[field]);
+  }
+  const totalTokenUsage = source.totalTokenUsage && typeof source.totalTokenUsage === "object"
+    ? source.totalTokenUsage
+    : null;
+  if (summaryOnly) {
+    if (totalTokenUsage && totalTokenUsage.totalTokens !== undefined) {
+      out.totalTokenUsage = { totalTokens: cloneJson(totalTokenUsage.totalTokens) };
+    }
+    return out;
+  }
+  if (out.lastTokenUsage === undefined && source.finalTokenUsage !== undefined) {
+    out.lastTokenUsage = cloneJson(source.finalTokenUsage);
+  }
+  return out;
+}
+
 function compactCompletedUsageItemForFirstPaint(item, stats) {
   if (!item || typeof item !== "object" || !isUsageItem(item)) return item;
   const summary = item.mobileUsageSummary;
   if (!summary || typeof summary !== "object" || Array.isArray(summary)) return item;
   const originalBytes = jsonByteLength(item);
-  const nextSummary = {};
-  for (const field of FIRST_PAINT_USAGE_SUMMARY_FIELDS) {
-    if (summary[field] !== undefined) nextSummary[field] = cloneJson(summary[field]);
-  }
-  if (nextSummary.lastTokenUsage === undefined && summary.finalTokenUsage !== undefined) {
-    nextSummary.lastTokenUsage = cloneJson(summary.finalTokenUsage);
-  }
+  const nextSummary = compactUsageSummaryForFirstPaint(summary, false);
   const out = Object.assign({}, cloneJson(item), {
     mobileUsageSummary: nextSummary,
   });
@@ -950,6 +974,32 @@ function compactCompletedUsageItemForFirstPaint(item, stats) {
   stats.completedUsageOriginalBytes += originalBytes;
   stats.completedUsageRetainedBytes += retainedBytes;
   stats.omittedCompletedUsageBytes += Math.max(0, originalBytes - retainedBytes);
+  return out;
+}
+
+function compactCompletedUsageItemToSummaryOnlyForFirstPaint(item, stats) {
+  if (!item || typeof item !== "object" || !isUsageItem(item)) return item;
+  const summary = item.mobileUsageSummary;
+  if (!summary || typeof summary !== "object" || Array.isArray(summary)) return item;
+  const originalBytes = jsonByteLength(item);
+  const nextSummary = compactUsageSummaryForFirstPaint(summary, true);
+  const out = Object.assign({}, cloneJson(item), {
+    mobileUsageSummary: nextSummary,
+    mobileFirstPaintUsageBudget: {
+      scope: "completed-summary-only",
+      detailOmitted: true,
+      omittedBytes: 0,
+    },
+  });
+  let retainedBytes = jsonByteLength(out);
+  if (!originalBytes || retainedBytes >= originalBytes) return item;
+  out.mobileFirstPaintUsageBudget.omittedBytes = Math.max(0, originalBytes - retainedBytes);
+  retainedBytes = jsonByteLength(out);
+  if (retainedBytes >= originalBytes) return item;
+  stats.truncatedCompletedUsageSummaryOnlyItems += 1;
+  stats.completedUsageSummaryOnlyOriginalBytes += originalBytes;
+  stats.completedUsageSummaryOnlyRetainedBytes += retainedBytes;
+  stats.omittedCompletedUsageSummaryOnlyBytes += Math.max(0, originalBytes - retainedBytes);
   return out;
 }
 
@@ -1414,6 +1464,33 @@ function applyProgressiveCompletedUsageBudget(thread, options, stats) {
   stats.progressiveCompletedUsageBytesAfterBudget = afterBytes;
 }
 
+function applyProgressiveCompletedUsageSummaryOnlyBudget(thread, options, stats) {
+  const ceiling = Math.max(0, Math.trunc(Number(options.progressiveActiveFirstPaintThreadByteCeiling || 0)));
+  const beforeBytes = jsonByteLength(thread);
+  stats.progressiveCompletedUsageSummaryOnlyBytesBeforeBudget = beforeBytes;
+  stats.progressiveCompletedUsageSummaryOnlyBytesAfterBudget = beforeBytes;
+  stats.progressiveActiveFirstPaintBytesAfterUsageSummaryOnlyBudget = beforeBytes;
+  if (!stats.progressiveActiveBudgetApplied || !ceiling || beforeBytes <= ceiling) return;
+  stats.progressiveCompletedUsageSummaryOnlyBudgetScope = "active-first-paint";
+  let changed = false;
+  for (const turn of thread.turns) {
+    if (!turn || !Array.isArray(turn.items) || isActiveTurn(turn, thread)) continue;
+    turn.items = turn.items.map((item) => {
+      const compacted = compactCompletedUsageItemToSummaryOnlyForFirstPaint(item, stats);
+      if (compacted !== item) changed = true;
+      return compacted;
+    });
+  }
+  if (!changed) return;
+  const afterBytes = jsonByteLength(thread);
+  stats.progressiveCompletedUsageSummaryOnlyBudgetApplied = true;
+  stats.progressiveCompletedUsageSummaryOnlyBudgetReason = afterBytes > ceiling
+    ? "first-paint-byte-pressure"
+    : "first-paint-byte-ceiling";
+  stats.progressiveCompletedUsageSummaryOnlyBytesAfterBudget = afterBytes;
+  stats.progressiveActiveFirstPaintBytesAfterUsageSummaryOnlyBudget = afterBytes;
+}
+
 function pruneNonCurrentEmptyActivePlaceholders(thread, stats) {
   if (!thread || !Array.isArray(thread.turns)) return;
   const beforeCount = thread.turns.length;
@@ -1762,6 +1839,16 @@ function compactThreadDetailResponseResult(result, options = {}) {
     progressiveCompletedUsageBudgetScope: "",
     progressiveCompletedUsageBytesBeforeBudget: 0,
     progressiveCompletedUsageBytesAfterBudget: 0,
+    progressiveCompletedUsageSummaryOnlyBudgetApplied: false,
+    progressiveCompletedUsageSummaryOnlyBudgetReason: "",
+    progressiveCompletedUsageSummaryOnlyBudgetScope: "",
+    progressiveCompletedUsageSummaryOnlyBytesBeforeBudget: 0,
+    progressiveCompletedUsageSummaryOnlyBytesAfterBudget: 0,
+    progressiveActiveFirstPaintBytesAfterUsageSummaryOnlyBudget: 0,
+    truncatedCompletedUsageSummaryOnlyItems: 0,
+    completedUsageSummaryOnlyOriginalBytes: 0,
+    completedUsageSummaryOnlyRetainedBytes: 0,
+    omittedCompletedUsageSummaryOnlyBytes: 0,
     progressiveThreadTaskCardBudgetApplied: false,
     progressiveThreadTaskCardBudgetReason: "",
     progressiveThreadTaskCardBudgetScope: "",
@@ -1841,6 +1928,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
   applyProgressiveCompletedUsageBudget(thread, budgetOptions, stats);
   applyProgressiveActiveFirstPaintItemBudget(thread, budgetOptions, stats);
   applyProgressiveThreadTaskCardFirstPaintBudget(thread, budgetOptions, stats);
+  applyProgressiveCompletedUsageSummaryOnlyBudget(thread, budgetOptions, stats);
   annotateRetainedVisibleItemByteStats(thread, stats);
   for (const turn of thread.turns) {
     if (!turn || !Array.isArray(turn.items) || turn.items.length < 2) continue;
@@ -1861,6 +1949,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
   stats.applied = stats.applied || stats.truncatedCompletedTextItems > 0;
   stats.applied = stats.applied || stats.truncatedCompletedUserInputItems > 0;
   stats.applied = stats.applied || stats.truncatedCompletedUsageItems > 0;
+  stats.applied = stats.applied || stats.truncatedCompletedUsageSummaryOnlyItems > 0;
   stats.applied = stats.applied || stats.progressiveThreadTaskCardCompactedCount > 0;
   if (!stats.applied && !stats.progressiveActiveBudgetApplied) return out;
   const revision = thread.mobileProjectionRevision;

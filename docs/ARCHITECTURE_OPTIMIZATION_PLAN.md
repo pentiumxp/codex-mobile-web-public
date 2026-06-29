@@ -2572,6 +2572,15 @@ Deployable scope:
   showed the per-row evidence marker could offset the summary savings for small
   Usage rows, so the follow-up makes that marker lightweight and skips Usage
   compaction unless the row remains smaller after the marker is attached.
+  When task-card and user-input budgets leave only a small active first-paint
+  residual, the follow-up Usage pass can compact already-budgeted completed
+  Usage rows to summary-only fields: context percent, risk level, rollout size
+  and threshold state, plus `totalTokenUsage.totalTokens`. That pass is still
+  HTTP response shaping only, keeps the Usage row visible, and reports
+  `progressiveCompletedUsageSummaryOnly*` plus
+  `progressiveActiveFirstPaintBytesAfterUsageSummaryOnlyBudget` so Phase-B can
+  attribute the remaining byte pressure without touching user/assistant text or
+  `mobileVisibleItemKeys`.
 - A later summary-phase slice targets warm projection hits whose `summaryMs`
   dominates `totalMs` even though `threadReadMs=0`. Detail summary resolution
   now merges the existing display-summary cache for local summaries and skips

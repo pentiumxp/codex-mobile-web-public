@@ -1206,6 +1206,97 @@ test("thread detail response budget compacts completed Usage summaries under act
   assert.equal(compacted.thread.mobileProjectionRevision, 34);
 });
 
+test("thread detail response budget compacts completed Usage to summary-only after first-stage pressure", () => {
+  const usageSummary = {
+    contextWindowUsedTokens: 123456,
+    modelContextWindow: 200000,
+    contextWindowUsedPercent: 61.7,
+    contextRiskLevel: "normal",
+    finalTokenUsage: { inputTokens: 1000, outputTokens: 200, cachedInputTokens: 500 },
+    totalTokenUsage: { inputTokens: 50000, outputTokens: 10000, cachedInputTokens: 7000, totalTokens: 60000 },
+    rolloutSizeBytes: 120000,
+    rolloutWarningThresholdBytes: 200000,
+    rolloutOverWarningThreshold: false,
+    projectContextSizeBytes: 10000,
+    handoffSizeBytes: 20000,
+    workspaceContextPairSizeBytes: 30000,
+    workspaceContextFileThresholdBytes: 100000,
+    workspaceHandoffPromptThresholdBytes: 120000,
+    workspaceContextPairThresholdBytes: 200000,
+    debugPayload: "x".repeat(1000),
+  };
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      mobileProjectionRevision: 35,
+      turns: [
+        {
+          id: "turn-completed",
+          status: "completed",
+          items: [
+            { id: "completed-u", type: "userMessage", text: "Question" },
+            { id: "usage-1", type: "turnUsageSummary", mobileUsageSummary: usageSummary },
+            { id: "usage-2", type: "turnUsageSummary", mobileUsageSummary: Object.assign({}, usageSummary, { debugPayload: "y".repeat(1000) }) },
+            { id: "usage-3", type: "turnUsageSummary", mobileUsageSummary: Object.assign({}, usageSummary, { debugPayload: "z".repeat(1000) }) },
+          ],
+        },
+        {
+          id: "turn-active",
+          status: "inProgress",
+          items: [
+            { id: "active-a", type: "agentMessage", text: "Working" },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeProgressiveItemThreshold: 1,
+    progressiveActiveFirstPaintThreadByteCeiling: 1200,
+    progressiveFirstPaintThreadByteCeiling: 1200,
+  });
+
+  const usageItems = compacted.thread.turns[0].items.filter((item) => item.type === "turnUsageSummary");
+  assert.equal(usageItems.length, 3);
+  for (const usage of usageItems) {
+    assert.equal(usage.mobileFirstPaintUsageBudget.scope, "completed-summary-only");
+    assert.equal(usage.mobileFirstPaintUsageBudget.detailOmitted, true);
+    assert.ok(usage.mobileFirstPaintUsageBudget.omittedBytes > 0);
+    assert.equal(usage.mobileUsageSummary.contextWindowUsedPercent, 61.7);
+    assert.equal(usage.mobileUsageSummary.contextRiskLevel, "normal");
+    assert.equal(usage.mobileUsageSummary.rolloutSizeBytes, 120000);
+    assert.equal(usage.mobileUsageSummary.rolloutOverWarningThreshold, false);
+    assert.deepEqual(usage.mobileUsageSummary.totalTokenUsage, { totalTokens: 60000 });
+    assert.equal(usage.mobileUsageSummary.contextWindowUsedTokens, undefined);
+    assert.equal(usage.mobileUsageSummary.modelContextWindow, undefined);
+    assert.equal(usage.mobileUsageSummary.finalTokenUsage, undefined);
+    assert.equal(usage.mobileUsageSummary.projectContextSizeBytes, undefined);
+    assert.equal(usage.mobileUsageSummary.workspaceContextPairThresholdBytes, undefined);
+    assert.equal(usage.mobileUsageSummary.debugPayload, undefined);
+  }
+
+  const budget = compacted.thread.mobileDetailResponseBudget;
+  assert.equal(budget.progressiveCompletedUsageBudgetApplied, true);
+  assert.equal(budget.progressiveCompletedUsageSummaryOnlyBudgetApplied, true);
+  assert.equal(budget.progressiveCompletedUsageSummaryOnlyBudgetScope, "active-first-paint");
+  assert.equal(budget.progressiveCompletedUsageSummaryOnlyBudgetReason, "first-paint-byte-pressure");
+  assert.equal(budget.truncatedCompletedUsageSummaryOnlyItems, 3);
+  assert.ok(budget.progressiveCompletedUsageSummaryOnlyBytesBeforeBudget > budget.progressiveCompletedUsageSummaryOnlyBytesAfterBudget);
+  assert.ok(budget.completedUsageSummaryOnlyOriginalBytes > budget.completedUsageSummaryOnlyRetainedBytes);
+  assert.ok(budget.omittedCompletedUsageSummaryOnlyBytes > 0);
+  assert.equal(
+    budget.progressiveActiveFirstPaintOverCeilingBytes,
+    budget.progressiveActiveFirstPaintBytesAfterUsageSummaryOnlyBudget
+      - budget.progressiveActiveFirstPaintThreadByteCeiling,
+  );
+  assert.deepEqual(compacted.thread.mobileVisibleItemKeys, compacted.thread.turns.flatMap((turn) => turn.items.map((item) => item.mobileVisibleKey)));
+  assert.equal(compacted.thread.mobileProjectionRevision, 35);
+});
+
 test("thread detail response budget skips completed Usage compaction when marker overhead would grow the row", () => {
   const result = {
     thread: {

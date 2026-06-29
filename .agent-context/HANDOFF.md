@@ -1,3 +1,74 @@
+# 2026-06-30 - settled task-card first-paint placeholder deployed
+
+- Scope:
+  - Private production deploy for
+    `codex-mobile-settled-task-card-first-paint-placeholder` is present in
+    production.
+  - Source ref: `adfdae10b7aa84a66816f6ef064d88f4e7cc7cf0`
+    (`fix: compact settled task cards for first paint`).
+  - Public deploy was not run.
+- Production readback:
+  - `/api/public-config` returned status `200`, version `0.1.11`,
+    buildId `576c30a2eea33b2a`,
+    clientBuildId `0.1.11|codex-mobile-shell-v598`,
+    shellCacheName `codex-mobile-shell-v598`, auth required.
+  - Source/production SHA-256 parity matched for:
+    `adapters/thread-detail-response-budget-service.js`,
+    `test/thread-detail-response-budget-service.test.js`,
+    `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+  - Production markers present:
+    `taskCardNeedsFirstPaintActionShape`,
+    `compactSettledThreadTaskCardForFirstPaint`,
+    `mobileTaskCardSettledCompacted`,
+    `progressiveThreadTaskCardSettledCompactedCount`, and focused test marker
+    `compacts settled task cards to first-paint placeholders`.
+- Phase-B production readback:
+  - Thread `019eee6c-a6f5-7b20-bfb4-f96ccb6431b3` returned
+    `readMode=projection-active-overlay`, `totalMs=254`,
+    `prepareResponseMs=114`, `turnsListInitialMs=0`,
+    `activeOverlayWindowMs=0`, `activeOverlayBackfillWindowMs=19`, and
+    `activeOverlayMergeMs=2`.
+  - Task-card budget applied:
+    `progressiveThreadTaskCardOriginalCount=24`,
+    `progressiveThreadTaskCardCompactedCount=24`,
+    `progressiveThreadTaskCardSettledCompactedCount=24`,
+    `progressiveThreadTaskCardActionableCount=0`,
+    `progressiveThreadTaskCardOriginalBytes=36376`,
+    `progressiveThreadTaskCardRetainedBytes=3397`,
+    `progressiveThreadTaskCardOmittedBytes=32979`.
+  - Active first-paint bytes after task-card budget were about `101951` in the
+    Phase-B sample, still about `3647` over the `98304` byte ceiling. A direct
+    detail readback shortly after showed `afterTaskCard=102799` and
+    `overCeiling=4495`; the remaining payload target is now small and volatile,
+    with retained visible bytes dominated by assistant/user/Usage rows rather
+    than task-card metadata.
+  - Phase-B decision was `ready`, priority `H3`, owner `phase-b-readback`,
+    reason `warm-or-bounded-paths`, next action
+    `proceed-to-next-phase-b-root-cause-target`.
+- Runtime gate:
+  - First deploy-mode runtime self-check reproduced a transient browser
+    `browser_turn_user_message_below_api_expectation` H2 on completed turns
+    `2f05e094` and `f111e0c6`; direct API detail immediately after showed the
+    current API shape had one visible user message for those turns, contradicting
+    that stale expectation sample.
+  - Second deploy-mode runtime self-check passed:
+    `ok=true`, `deployPass=true`, `periodicHealthy=true`, `issueCount=0`,
+    `blockingIssueCount=0`, `diagnosticCandidateCount=0`,
+    `executionFailureCount=0`; child checks `api-thread`, `browser-runtime`,
+    and `client-events` were all healthy.
+  - LaunchAgent full-check readback selected the latest deploy event and was
+    healthy: `ok=true`, `deployPass=true`, `periodicHealthy=true`,
+    `issueCount=0`, `blockingIssueCount=0`, `executionFailureCount=0`.
+    Historical launchctl `lastExitCode=1` remains in metadata but the selected
+    latest event has no errors.
+- Privacy:
+  - Readbacks used bounded ids, counts, versions, file names, hash prefixes,
+    issue codes, and timings only. No raw secrets, cookies, launch tokens,
+    private thread/message bodies, task-card bodies, upload contents,
+    screenshots, provider payloads, endpoint files, raw URLs with auth/query
+    strings, raw log lines, or long logs were included.
+
 # 2026-06-30 - settled task-card first-paint placeholder source slice ready
 
 - Scope:
@@ -33645,3 +33716,118 @@ The previous full handoff was archived and should be opened only when old proven
     production readback. Remaining payload work should target the current
     active first-paint over-ceiling shape (`57344` bytes in this detail sample)
     without weakening the completed user-input visibility contract.
+
+### 2026-06-30 - Settled Task-Card First-Paint Placeholder Deployed
+
+- Source/deploy:
+  - Private production deployed source ref `adfdae10b7aa`
+    (`fix: compact settled task cards for first paint`) through the Home AI
+    deploy lane with reason
+    `codex-mobile-settled-task-card-first-paint-placeholder`.
+  - Deploy backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260629T232542Z-plugin-codex-mobile-web-codex-mobile-settled-task-card-first-paint-placeholder`.
+  - No Public deploy was run.
+- Production parity / markers:
+  - Source/production parity matched for
+    `adapters/thread-detail-response-budget-service.js`,
+    `test/thread-detail-response-budget-service.test.js`, `docs/MODULES.md`,
+    `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+  - Production markers were present for `taskCardNeedsFirstPaintActionShape`,
+    `compactSettledThreadTaskCardForFirstPaint`,
+    `mobileTaskCardSettledCompacted`,
+    `progressiveThreadTaskCardSettledCompactedCount`, and the focused test
+    marker `compacts settled task cards to first-paint placeholders`.
+- Phase-B / metadata readback:
+  - Codex Mobile source thread Phase-B sample returned `ok=true`,
+    `readMode=projection-active-overlay`, `turnsListInitialMs=0`,
+    `activeOverlayWindowMs=0`, `activeOverlayBackfillWindowMs=24`,
+    `activeOverlayMergeMs=3`, `totalMs=624`, and `prepareResponseMs=516`.
+  - Phase-B task-card budget fields showed applied `true`, original bytes
+    `36376`, retained bytes `3397`, omitted bytes `32979`,
+    `progressiveActiveFirstPaintBytesAfterTaskCardBudget=100382`,
+    `progressiveActiveFirstPaintOverCeilingBytes=2078`, compacted count `24`,
+    actionable count `0`, and ineligible count `0`.
+  - The Phase-B script did not emit
+    `responseBudgetProgressiveThreadTaskCardSettledCompactedCount` directly,
+    but authenticated metadata-only detail readback confirmed
+    `threadTaskCardCount=24`, `settledCompactedCards=24`,
+    `actionShapeCompactedCards=24`, budget settled compacted count `24`,
+    compacted count `24`, actionable count `0`, original bytes `36376`,
+    retained bytes `3397`, and omitted bytes `32979`.
+  - Phase-B decision was `ready`, priority `H3`, owner `phase-b-readback`,
+    reason `warm-or-bounded-paths`, next action
+    `proceed-to-next-phase-b-root-cause-target`; active overlay/window latency
+    did not recur.
+- Runtime validation:
+  - First deploy-mode runtime gate attempt had no execution failures and
+    API/client-events were OK, but browser-runtime returned two H2
+    `browser_turn_user_message_below_api_expectation` samples at `6000ms`.
+  - Second deploy-mode runtime gate returned `ok=true`, `deployPass=true`,
+    `periodicHealthy=true`, issue count `0`, blocking issue count `0`,
+    advisory issue count `0`, execution failure count `0`, and child checks
+    `api-thread`, `browser-runtime`, and `client-events` all OK.
+  - LaunchAgent readback after the passing deploy gate returned `ok=true`,
+    latest event gate mode `deploy`, `deployPass=true`,
+    `periodicHealthy=true`, issue count `0`, blocking issue count `0`,
+    advisory issue count `0`, and execution failure count `0`. Historical
+    launchctl `lastExitCode=1` remained in metadata, but the selected full-check
+    event was healthy.
+- Next investigation direction:
+  - Settled task-card placeholder compaction sharply reduced top-level
+    task-card bytes in the sampled source-thread shape and brought the active
+    first-paint over-ceiling residual down to `2078` bytes. Remaining payload
+    work should target the small residual without regressing browser-visible
+    user input or task-card action semantics.
+
+### 2026-06-30 - Completed Usage Summary-Only First-Paint Budget Source Ready
+
+- Source implementation:
+  - Added a second-stage completed `turnUsageSummary` first-paint budget in
+    `adapters/thread-detail-response-budget-service.js`.
+  - The new pass runs after completed user-input, first-stage completed Usage,
+    active first-paint item, and task-card budgets. It targets only completed
+    Usage rows when the active first-paint response remains over the byte
+    ceiling.
+  - Rows compacted by this pass keep `mobileFirstPaintUsageBudget` with
+    `scope=completed-summary-only` and `detailOmitted=true`. The retained
+    summary shape is limited to context percent, risk level, rollout size,
+    rollout over-threshold state, and `totalTokenUsage.totalTokens`.
+  - Active/current turns, user input, assistant text, images, diagnostics, and
+    `mobileVisibleItemKeys` are not removed by this slice.
+- Readback / decision evidence:
+  - Phase-B readback now emits
+    `responseBudgetProgressiveCompletedUsageSummaryOnlyBudgetApplied`,
+    `responseBudgetProgressiveCompletedUsageSummaryOnlyBudgetReason`,
+    `responseBudgetProgressiveCompletedUsageSummaryOnlyBudgetScope`,
+    before/after summary-only bytes, truncated item count, original/retained
+    summary-only bytes, omitted summary-only bytes, and
+    `responseBudgetProgressiveActiveFirstPaintBytesAfterUsageSummaryOnlyBudget`.
+  - Phase-B decision evidence maps the same fields with bounded byte/count
+    guards.
+  - `progressiveActiveFirstPaintOverCeilingBytes` now prefers the
+    post-summary-only byte count when present, then task-card after-bytes, then
+    item-budget after-bytes.
+- Tests / checks:
+  - `node --check adapters/thread-detail-response-budget-service.js` passed.
+  - `node --test test/thread-detail-response-budget-service.test.js test/phase-b-readback-smoke.test.js test/phase-b-readback-decision-service.test.js` passed: `80` tests.
+  - `node --test test/browser-runtime-self-check-service.test.js test/thread-detail-self-check-service.test.js` passed: `68` tests.
+  - `npm test -- --test-reporter=dot` passed.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - `codegraph sync && codegraph status` reported the index up to date.
+- Docs:
+  - Updated `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` with the summary-only Usage budget
+    boundary and readback fields.
+- Next deployment step:
+  - Commit source with message
+    `fix: compact completed usage summaries for first paint`.
+  - Delegate private Home AI deploy from the app workspace with reason
+    `codex-mobile-completed-usage-summary-first-paint-budget`.
+  - Deployment readback should confirm source/prod parity for the changed
+    service, Phase-B script, decision service, focused tests, and docs; marker
+    readback should include `completed-summary-only`,
+    `progressiveCompletedUsageSummaryOnlyBudgetApplied`, and
+    `progressiveActiveFirstPaintBytesAfterUsageSummaryOnlyBudget`.
