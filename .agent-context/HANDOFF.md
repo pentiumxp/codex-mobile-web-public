@@ -29468,8 +29468,32 @@ The previous full handoff was archived and should be opened only when old proven
     `npm run check:macos`, `git diff --check`, and Home AI fallback governance
     check for the changed runtime/test/docs files.
 - Deploy / readback:
-  - Pending commit and private deploy through the Home AI Deploy lane.
-  - Required production readback: repeated `/api/public-config` wall-time
-    samples, Phase-B readback on the active Codex Mobile source thread, and
-    runtime self-check loop with `--gate-mode deploy`.
+  - Source commit `8ef3b0b49195` (`fix: cache public config profile snapshot`)
+    was deployed privately through the Home AI Deploy lane.
+  - Production source/prod hash parity matched for `server.js`,
+    `adapters/public-config-runtime-cache-service.js`,
+    `test/public-config-runtime-cache-service.test.js`, `package.json`, and
+    updated docs.
+  - Production marker readback confirmed `createPublicConfigRuntimeCache`,
+    `publicConfigRuntimeCache.getProfileState`,
+    `syncKnownCodexMobileMcpToolsets({ activeQuota, profileState })`, and
+    `publicConfigRuntimeCache.invalidateProfiles()`.
+  - Production `/api/public-config` returned build id
+    `9a1b34241edd22b4`, client build id
+    `0.1.11|codex-mobile-shell-v582`, shell cache
+    `codex-mobile-shell-v582`, and `authRequired=true`. Static shell/cache did
+    not change because this was a server/runtime hot-path fix.
+  - Repeated production `/api/public-config` readback after deploy showed
+    `elapsedMs=16,2,1,1,1,1,1,0,1,1` with status `200` and response bytes
+    around `8605`, down from pre-fix repeated samples around `287-349ms` and
+    earlier spikes around `600-900ms`.
+  - Phase-B readback passed. The active Codex Mobile source thread returned
+    `readMode=projection-active-overlay`, `detail.totalMs=568`,
+    `activeOverlayBackfillWindowMs=1`, `activeOverlayWindowMs=0`, and
+    `prepareResponseMs=481`. That leaves a later response-budget/render payload
+    optimization target, not a public-config or active-window backfill failure.
+  - Runtime self-check loop with `--gate-mode deploy` passed:
+    `deployPass=true`, `periodicHealthy=true`, browser-runtime issue count `0`.
+    API self-check reported only H3 advisory `thread_list_repeat_order_changed`
+    with no blocking/reportable issue.
   - Public deploy was not run.
