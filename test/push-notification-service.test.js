@@ -11,7 +11,10 @@ const {
   resolveThreadTitleForNotification,
   shouldTrackTurnForWebPush,
 } = require("../adapters/push-notification-service");
+const { createWebPushRuntimeService } = require("../adapters/web-push-runtime-service");
 const { sqliteCandidates } = require("../adapters/sqlite-cli");
+
+const webPushRuntimeServiceJs = fs.readFileSync(path.join(__dirname, "..", "adapters", "web-push-runtime-service.js"), "utf8");
 
 test("web push tracks normal thread turn completions", () => {
   const decision = shouldTrackTurnForWebPush({
@@ -255,6 +258,156 @@ test("web push fails closed when thread classification lookup is unavailable", (
   assert.deepEqual(decision, { track: false, reason: "thread-lookup-failed" });
 });
 
+test("web push runtime classifies child threads through injected state db lookup", () => {
+  const queries = [];
+  const service = createWebPushRuntimeService({
+    stateDb: "state.sqlite",
+    userHome: "/tmp/user",
+    fs: { existsSync: () => true },
+    runSqliteJson(db, query, options) {
+      queries.push({ db, query, options });
+      return { ok: true, rows: [{ known: 1, is_child: 1, has_agent_metadata: 0 }] };
+    },
+    sqlString: (value) => `'${String(value).replace(/'/g, "''")}'`,
+  });
+
+  assert.equal(service.classifyThreadId("thread-child"), "subagent");
+  assert.equal(queries.length, 1);
+  assert.equal(queries[0].db, "state.sqlite");
+  assert.match(queries[0].query, /thread_spawn_edges/);
+  assert.match(queries[0].query, /child_thread_id/);
+  assert.equal(queries[0].options.userHome, "/tmp/user");
+});
+
+test("web push runtime handles VAPID and subscription routes", async () => {
+  let subscriptions = [];
+  const writes = [];
+  const setVapidCalls = [];
+  const service = createWebPushRuntimeService({
+    vapidFile: "vapid.json",
+    subscriptionsFile: "subscriptions.json",
+    subject: "mailto:test@example.com",
+    subjectConfigured: true,
+    readJsonFile(file, fallback) {
+      if (file === "subscriptions.json") return subscriptions;
+      return fallback;
+    },
+    writeRuntimeJson(file, value) {
+      writes.push({ file, value });
+      if (file === "subscriptions.json") subscriptions = value;
+    },
+    webPush: {
+      generateVAPIDKeys: () => ({ publicKey: "public-key", privateKey: "private-key" }),
+      setVapidDetails: (...args) => setVapidCalls.push(args),
+      sendNotification: async () => {},
+    },
+  });
+
+  const vapidResponses = [];
+  await service.handleRoute({
+    url: new URL("http://local/api/push/vapid-public-key"),
+    method: "GET",
+    sendJson: (status, body) => vapidResponses.push({ status, body }),
+  });
+
+  assert.equal(vapidResponses[0].status, 200);
+  assert.equal(vapidResponses[0].body.publicKey, "public-key");
+  assert.equal(vapidResponses[0].body.subject, "mailto:test@example.com");
+  assert.equal(setVapidCalls.length, 1);
+
+  const subscribeResponses = [];
+  await service.handleRoute({
+    url: new URL("http://local/api/push/subscribe"),
+    method: "POST",
+    req: { headers: { "user-agent": "test-agent" } },
+    readBody: async () => ({
+      subscription: {
+        endpoint: "https://push.example/sub",
+        keys: { p256dh: "p256dh", auth: "auth" },
+      },
+    }),
+    sendJson: (status, body) => subscribeResponses.push({ status, body }),
+  });
+
+  assert.equal(subscribeResponses[0].status, 200);
+  assert.equal(subscribeResponses[0].body.subscriptionCount, 1);
+  assert.equal(subscriptions[0].endpoint, "https://push.example/sub");
+  assert.equal(subscriptions[0].userAgent, "test-agent");
+  assert.ok(writes.some((entry) => entry.file === "subscriptions.json"));
+
+  const unsubscribeResponses = [];
+  await service.handleRoute({
+    url: new URL("http://local/api/push/unsubscribe"),
+    method: "POST",
+    readBody: async () => ({ endpoint: "https://push.example/sub" }),
+    sendJson: (status, body) => unsubscribeResponses.push({ status, body }),
+  });
+
+  assert.equal(unsubscribeResponses[0].status, 200);
+  assert.equal(unsubscribeResponses[0].body.subscriptionCount, 0);
+  assert.equal(subscriptions.length, 0);
+});
+
+test("web push runtime sends a completed-turn notification once after observed start", async () => {
+  const sent = [];
+  const service = createWebPushRuntimeService({
+    vapidFile: "vapid.json",
+    subscriptionsFile: "subscriptions.json",
+    readJsonFile(file, fallback) {
+      if (file === "vapid.json") return { publicKey: "public-key", privateKey: "private-key", subject: "mailto:test@example.com" };
+      if (file === "subscriptions.json") {
+        return [{
+          endpoint: "https://push.example/sub",
+          keys: { p256dh: "p256dh", auth: "auth" },
+        }];
+      }
+      return fallback;
+    },
+    writeRuntimeJson: () => {},
+    webPush: {
+      generateVAPIDKeys: () => ({ publicKey: "public-key", privateKey: "private-key" }),
+      setVapidDetails: () => {},
+      sendNotification: async (subscription, payload, options) => {
+        sent.push({ subscription, payload: JSON.parse(payload), options });
+      },
+    },
+    fs: { existsSync: () => false },
+    pushTurnId: (params) => params.turnId,
+    pushThreadId: (params) => params.threadId,
+    shouldTrackTurnForWebPush: () => ({ track: true, reason: "" }),
+    completedTurnHasNoFinalAgentMessage: () => false,
+    resolveThreadTitleForNotification: () => "Thread Title",
+    isOldTurnEvent: () => false,
+    turnTimestampMs: (params, field) => Number(params[field] || 0),
+    shortIdentifier: (value) => `short-${value}`,
+    logger: { log: () => {}, error: () => {} },
+  });
+
+  service.maybeSendTurnCompletedPush("turn/started", {
+    turnId: "turn-1",
+    threadId: "thread-1",
+    startedAt: 1,
+  });
+  service.maybeSendTurnCompletedPush("turn/completed", {
+    turnId: "turn-1",
+    threadId: "thread-1",
+    completedAt: 2,
+  });
+  service.maybeSendTurnCompletedPush("turn/completed", {
+    turnId: "turn-1",
+    threadId: "thread-1",
+    completedAt: 2,
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].payload.threadId, "thread-1");
+  assert.equal(sent[0].payload.turnId, "turn-1");
+  assert.equal(sent[0].payload.title, "Thread Title");
+  assert.equal(sent[0].payload.data.threadId, "thread-1");
+  assert.equal(sent[0].options.TTL, 3600);
+});
+
 test("server wires web push filtering to thread spawn edges", () => {
   const serverJs = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
   const pkg = fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8");
@@ -262,18 +415,20 @@ test("server wires web push filtering to thread spawn edges", () => {
   assert.match(serverJs, /shouldTrackTurnForWebPush/);
   assert.match(serverJs, /resolveThreadTitleForNotification/);
   assert.match(serverJs, /classifyWebPushThreadId/);
-  assert.match(serverJs, /classifyThread:\s*classifyWebPushThreadId/);
-  assert.match(serverJs, /runSqliteJson/);
+  assert.match(serverJs, /webPushRuntimeService\.classifyThreadId\(threadId\)/);
+  assert.match(serverJs, /const webPushRuntimeService = createWebPushRuntimeService/);
+  assert.match(serverJs, /runSqliteJson,\s*sqlString,/);
   assert.doesNotMatch(serverJs, /spawnSync\("sqlite3"/);
-  assert.match(serverJs, /thread_spawn_edges/);
-  assert.match(serverJs, /child_thread_id/);
-  assert.match(serverJs, /agent_nickname/);
-  assert.match(serverJs, /agent_role/);
-  assert.match(serverJs, /value = "unknown"/);
-  assert.match(serverJs, /allowMissingThreadId:\s*true/);
+  assert.match(webPushRuntimeServiceJs, /thread_spawn_edges/);
+  assert.match(webPushRuntimeServiceJs, /child_thread_id/);
+  assert.match(webPushRuntimeServiceJs, /agent_nickname/);
+  assert.match(webPushRuntimeServiceJs, /agent_role/);
+  assert.match(webPushRuntimeServiceJs, /value = "unknown"/);
+  assert.match(webPushRuntimeServiceJs, /allowMissingThreadId:\s*true/);
   assert.match(serverJs, /function threadIdFromRolloutPath/);
   assert.match(serverJs, /params && params\.turn && params\.turn\.thread && params\.turn\.thread\.id/);
   assert.match(pkg, /adapters\/sqlite-cli\.js/);
+  assert.match(pkg, /adapters\/web-push-runtime-service\.js/);
 });
 
 test("server caches app-server thread display summaries before sqlite push title fallback", () => {
@@ -285,22 +440,22 @@ test("server caches app-server thread display summaries before sqlite push title
   assert.match(adapterJs, /function createThreadDisplaySummaryCache\(options = \{\}\)/);
   assert.match(serverJs, /createThreadDisplaySummaryCache/);
   assert.match(serverJs, /const threadDisplaySummaryCache = createThreadDisplaySummaryCache/);
-  assert.match(serverJs, /async function resolveCompletedPushThreadTitle\(meta, params\)/);
-  assert.match(serverJs, /threadDisplaySummaryCache\.read\(id\)\s*\|\|\s*readStateDbThread\(id\)\s*\|\|\s*readStartedThread\(id\)/);
-  assert.match(serverJs, /await readThreadSummaryFromAppServer\(codex, threadId\)/);
+  assert.match(webPushRuntimeServiceJs, /async function resolveCompletedPushThreadTitle\(meta, params\)/);
+  assert.match(webPushRuntimeServiceJs, /threadDisplaySummaryCache\.read\(id\)\s*\|\|\s*readStateDbThread\(id\)\s*\|\|\s*readStartedThread\(id\)/);
+  assert.match(webPushRuntimeServiceJs, /await readThreadSummaryFromAppServer\(threadId\)/);
+  assert.match(serverJs, /readThreadSummaryFromAppServer: \(threadId\) => readThreadSummaryFromAppServer\(codex, threadId\)/);
   assert.match(serverJs, /return normalizeStaleContextOnlyActiveThread\(threadDisplaySummaryCache\.remember\(thread\)\s*\|\|\s*annotateThreadRolloutStats\(thread\)\)/);
   assert.match(threadListRouteServiceJs, /threadDisplaySummaryCache\.rememberList\(result\)/);
   assert.match(threadDetailResponsePreparationServiceJs, /threadDisplaySummaryCache\.remember\(result\.thread\)/);
-  assert.match(serverJs, /sendTurnCompletedPush\(meta, turnId, completedAt, params\)/);
+  assert.match(webPushRuntimeServiceJs, /sendTurnCompletedPush\(meta, turnId, completedAt, params\)/);
 });
 
 test("completed web push payload carries thread ids for notification click routing", () => {
-  const serverJs = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
   const swJs = fs.readFileSync(path.join(__dirname, "..", "public", "sw.js"), "utf8");
 
-  assert.match(serverJs, /const payload = \{\s*threadId: meta\.threadId \|\| "",\s*turnId,/);
-  assert.match(serverJs, /url: notificationUrlForThread\(meta\.threadId\),/);
-  assert.match(serverJs, /threadId: meta\.threadId \|\| "",/);
+  assert.match(webPushRuntimeServiceJs, /const payload = \{\s*threadId: meta\.threadId \|\| "",\s*turnId,/);
+  assert.match(webPushRuntimeServiceJs, /url: notificationUrlForThread\(meta\.threadId\),/);
+  assert.match(webPushRuntimeServiceJs, /threadId: meta\.threadId \|\| "",/);
   assert.match(swJs, /if \(!data\.threadId && payload\.threadId\) data\.threadId = payload\.threadId;/);
   assert.match(swJs, /url\.searchParams\.set\("thread", threadId\);/);
   assert.match(swJs, /self\.clients\.openWindow\(target\.url\)/);

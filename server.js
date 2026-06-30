@@ -7,13 +7,13 @@ const crypto = require("node:crypto");
 const zlib = require("node:zlib");
 const { spawn } = require("node:child_process");
 const net = require("node:net");
-const webPush = require("web-push");
 const {
   completedTurnHasNoFinalAgentMessage,
   createThreadDisplaySummaryCache,
   resolveThreadTitleForNotification,
   shouldTrackTurnForWebPush,
 } = require("./adapters/push-notification-service");
+const { createWebPushRuntimeService } = require("./adapters/web-push-runtime-service");
 const { createSharedChainRestartService } = require("./adapters/shared-chain-restart-service");
 const { createHermesNotificationDelegateService } = require("./adapters/hermes-notification-delegate-service");
 const { createHomeAiAutonomousDeliveryReturnService } = require("./adapters/home-ai-autonomous-delivery-return-service");
@@ -705,11 +705,6 @@ const threadTaskCardService = createThreadTaskCardService({
     };
   },
 });
-const PUSH_VAPID_FILE = process.env.CODEX_MOBILE_PUSH_VAPID_FILE || path.join(RUNTIME_ROOT, "web-push-vapid.json");
-const PUSH_SUBSCRIPTIONS_FILE = process.env.CODEX_MOBILE_PUSH_SUBSCRIPTIONS_FILE || path.join(RUNTIME_ROOT, "web-push-subscriptions.json");
-const DEFAULT_PUSH_SUBJECT = "mailto:codex-mobile-web@example.com";
-const PUSH_SUBJECT = normalizePushSubject(process.env.CODEX_MOBILE_PUSH_SUBJECT || DEFAULT_PUSH_SUBJECT);
-const PUSH_TTL_SECONDS = Math.max(30, Number(process.env.CODEX_MOBILE_PUSH_TTL_SECONDS || "3600"));
 const MOBILE_WEB_LOG_FILE = process.env.CODEX_MOBILE_WEB_LOG_FILE || path.join(RUNTIME_ROOT, "logs", "mobile-web.log");
 const MOBILE_WEB_LOG_MAX_BYTES = Math.max(
   1024 * 1024,
@@ -922,8 +917,6 @@ threadSummaryStateService = createThreadSummaryStateService({
   stripThreadListDetailFields,
   upsertThreadListFallbackCacheThread,
 });
-let pushVapidKeys = null;
-let pushSubscriptionsCache = null;
 const continuationThreadService = createContinuationThreadService({
   env: process.env,
   compactWorkspaceContext,
@@ -985,9 +978,6 @@ const {
   publicContinuationJob,
   startThreadFromRequestBody,
 } = continuationThreadService;
-const pushObservedTurns = new Map();
-const pushSentTurns = new Map();
-const pushThreadClassCache = new Map();
 const SERVER_REQUEST_METHODS = new Set([
   "item/commandExecution/requestApproval",
   "item/fileChange/requestApproval",
@@ -7269,6 +7259,38 @@ threadTaskCardRouteService = createThreadTaskCardRouteService({
   createTargetError: (statusCode, code, message, details = {}) => httpStatusErrorWithDetails(statusCode, code, message || code, details),
   logger: console,
 });
+const webPushRuntimeService = createWebPushRuntimeService({
+  fs,
+  readJsonFile,
+  writeRuntimeJson,
+  vapidFile: process.env.CODEX_MOBILE_PUSH_VAPID_FILE || path.join(RUNTIME_ROOT, "web-push-vapid.json"),
+  subscriptionsFile: process.env.CODEX_MOBILE_PUSH_SUBSCRIPTIONS_FILE || path.join(RUNTIME_ROOT, "web-push-subscriptions.json"),
+  defaultSubject: "mailto:codex-mobile-web@example.com",
+  subject: process.env.CODEX_MOBILE_PUSH_SUBJECT || "",
+  subjectConfigured: Boolean(process.env.CODEX_MOBILE_PUSH_SUBJECT),
+  ttlSeconds: process.env.CODEX_MOBILE_PUSH_TTL_SECONDS || "3600",
+  stateDb: STATE_DB,
+  userHome: USER_HOME,
+  runSqliteJson,
+  sqlString,
+  isSidecarThreadId: (threadId) => threadSideChatService.isSidecarThreadId(threadId),
+  shouldTrackTurnForWebPush,
+  completedTurnHasNoFinalAgentMessage,
+  resolveThreadTitleForNotification,
+  threadDisplaySummaryCache,
+  readStateDbThread,
+  readStartedThread,
+  readThreadSummaryFromAppServer: (threadId) => readThreadSummaryFromAppServer(codex, threadId),
+  buildTurnCompletionDetailMessage,
+  turnCompletionUsageSummary,
+  hermesNotificationDelegateService,
+  pushTurnId,
+  pushThreadId,
+  isOldTurnEvent: isOldPushTurnEvent,
+  turnTimestampMs,
+  shortIdentifier,
+  logger: console,
+});
 
 function truncateToolDescriptionText(value, maxChars = 220) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
@@ -7396,156 +7418,12 @@ function setWorkspaceDelegationEnabled(enabled) {
   return workspaceDelegationPublicSettings(readRuntimeSettings());
 }
 
-function normalizePushSubject(value) {
-  const subject = String(value || "").trim();
-  return subject || DEFAULT_PUSH_SUBJECT;
-}
-
-function isLocalhostPushSubject(value) {
-  const subject = String(value || "");
-  if (/\blocalhost\b|127\.0\.0\.1|\[::1\]/i.test(subject)) return true;
-  try {
-    const url = new URL(subject);
-    return url.hostname === "localhost"
-      || url.hostname === "127.0.0.1"
-      || url.hostname === "::1"
-      || url.hostname.endsWith(".localhost");
-  } catch (_) {
-    return false;
-  }
-}
-
-function storedPushSubject(existingSubject) {
-  const existing = normalizePushSubject(existingSubject);
-  if (process.env.CODEX_MOBILE_PUSH_SUBJECT) return PUSH_SUBJECT;
-  return isLocalhostPushSubject(existing) ? PUSH_SUBJECT : existing;
-}
-
-function loadPushVapidKeys() {
-  if (pushVapidKeys) return pushVapidKeys;
-  const existing = readJsonFile(PUSH_VAPID_FILE, null);
-  if (existing && existing.publicKey && existing.privateKey) {
-    const subject = storedPushSubject(existing.subject);
-    pushVapidKeys = {
-      publicKey: String(existing.publicKey),
-      privateKey: String(existing.privateKey),
-      subject,
-    };
-    if (subject !== existing.subject) {
-      writeRuntimeJson(PUSH_VAPID_FILE, Object.assign({}, existing, {
-        subject,
-        updatedAt: new Date().toISOString(),
-      }));
-    }
-  } else {
-    const generated = webPush.generateVAPIDKeys();
-    pushVapidKeys = {
-      publicKey: generated.publicKey,
-      privateKey: generated.privateKey,
-      subject: PUSH_SUBJECT,
-      createdAt: new Date().toISOString(),
-    };
-    writeRuntimeJson(PUSH_VAPID_FILE, pushVapidKeys);
-  }
-  webPush.setVapidDetails(pushVapidKeys.subject || PUSH_SUBJECT, pushVapidKeys.publicKey, pushVapidKeys.privateKey);
-  return pushVapidKeys;
-}
-
-function loadPushSubscriptions() {
-  if (pushSubscriptionsCache) return pushSubscriptionsCache;
-  const raw = readJsonFile(PUSH_SUBSCRIPTIONS_FILE, []);
-  pushSubscriptionsCache = Array.isArray(raw) ? raw.filter((entry) => entry && entry.endpoint) : [];
-  return pushSubscriptionsCache;
-}
-
-function savePushSubscriptions(subscriptions = loadPushSubscriptions()) {
-  pushSubscriptionsCache = subscriptions.filter((entry) => entry && entry.endpoint);
-  writeRuntimeJson(PUSH_SUBSCRIPTIONS_FILE, pushSubscriptionsCache);
-}
-
-function normalizePushSubscription(value) {
-  const sub = value && value.subscription ? value.subscription : value;
-  if (!sub || typeof sub !== "object") throw new Error("Push subscription is required");
-  if (!sub.endpoint || !sub.keys || !sub.keys.p256dh || !sub.keys.auth) {
-    throw new Error("Push subscription is incomplete");
-  }
-  return {
-    endpoint: String(sub.endpoint),
-    expirationTime: sub.expirationTime || null,
-    keys: {
-      p256dh: String(sub.keys.p256dh),
-      auth: String(sub.keys.auth),
-    },
-  };
-}
-
 function pushSubscriptionPublicStatus() {
-  return {
-    supported: true,
-    subscriptionCount: loadPushSubscriptions().length,
-  };
-}
-
-function prunePushSentTurns(now = Date.now()) {
-  const maxAgeMs = 24 * 60 * 60 * 1000;
-  for (const [key, sentAt] of pushSentTurns) {
-    if (now - sentAt > maxAgeMs) pushSentTurns.delete(key);
-  }
-}
-
-function prunePushThreadClassCache(now = Date.now()) {
-  for (const [threadId, entry] of pushThreadClassCache) {
-    const maxAgeMs = entry && entry.value === "unknown" ? 5000 : 24 * 60 * 60 * 1000;
-    if (!entry || now - Number(entry.cachedAt || 0) > maxAgeMs) pushThreadClassCache.delete(threadId);
-  }
-  while (pushThreadClassCache.size > 2000) {
-    const firstKey = pushThreadClassCache.keys().next().value;
-    if (!firstKey) break;
-    pushThreadClassCache.delete(firstKey);
-  }
+  return webPushRuntimeService.publicStatus();
 }
 
 function classifyWebPushThreadId(threadId) {
-  const id = String(threadId || "").trim();
-  if (threadSideChatService.isSidecarThreadId(id)) return "subagent";
-  if (!id || !fs.existsSync(STATE_DB)) return "unknown";
-  const now = Date.now();
-  const cached = pushThreadClassCache.get(id);
-  if (cached) {
-    const maxAgeMs = cached.value === "unknown" ? 5000 : 24 * 60 * 60 * 1000;
-    if (now - Number(cached.cachedAt || 0) <= maxAgeMs) return cached.value;
-  }
-  const query = [
-    "select",
-    "exists(select 1 from threads where id=t.id) as known,",
-    "exists(select 1 from thread_spawn_edges where child_thread_id=t.id) as is_child,",
-    "exists(select 1 from threads where id=t.id and (coalesce(agent_nickname,'') <> '' or coalesce(agent_role,'') <> '')) as has_agent_metadata",
-    `from (select ${sqlString(id)} as id) t;`,
-  ].join(" ");
-  let value = "unknown";
-  try {
-    const result = runSqliteJson(STATE_DB, query, { timeoutMs: 3000, maxBuffer: 1024 * 1024, userHome: USER_HOME });
-    const row = result.ok && Array.isArray(result.rows) ? result.rows[0] : null;
-    if (row && (Number(row.is_child || 0) || Number(row.has_agent_metadata || 0))) value = "subagent";
-    else if (row && Number(row.known || 0)) value = "main";
-  } catch (_) {
-    value = "unknown";
-  }
-  pushThreadClassCache.set(id, { value, cachedAt: now });
-  prunePushThreadClassCache(now);
-  return value;
-}
-
-function prunePushObservedTurns(now = Date.now()) {
-  const maxAgeMs = 24 * 60 * 60 * 1000;
-  for (const [turnId, meta] of pushObservedTurns) {
-    if (!meta || now - Number(meta.observedAt || 0) > maxAgeMs) pushObservedTurns.delete(turnId);
-  }
-  while (pushObservedTurns.size > 1000) {
-    const firstKey = pushObservedTurns.keys().next().value;
-    if (!firstKey) break;
-    pushObservedTurns.delete(firstKey);
-  }
+  return webPushRuntimeService.classifyThreadId(threadId);
 }
 
 function pushTurnId(params) {
@@ -7583,11 +7461,6 @@ function isOldPushTurnEvent(params, fields) {
   return false;
 }
 
-function notificationUrlForThread(threadId) {
-  const id = String(threadId || "");
-  return id ? `/?thread=${encodeURIComponent(id)}` : "/";
-}
-
 function compactOneLine(value, maxChars = 80) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
   if (text.length <= maxChars) return text;
@@ -7598,23 +7471,6 @@ function shortIdentifier(value) {
   const text = String(value || "").trim();
   if (text.length <= 16) return text;
   return `${text.slice(0, 8)}...${text.slice(-4)}`;
-}
-
-function pushTimestamp(ms = Date.now()) {
-  const time = Number.isFinite(ms) && ms > 0 ? ms : Date.now();
-  try {
-    return new Intl.DateTimeFormat("zh-CN", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    }).format(new Date(time)).replace(/\//g, "-");
-  } catch (_) {
-    return new Date(time).toISOString();
-  }
 }
 
 function pushThreadId(params) {
@@ -7677,62 +7533,6 @@ function rememberThreadIdForTurnParams(method, params) {
 function pushThreadSummary(threadId) {
   const id = String(threadId || "");
   return id ? (threadDisplaySummaryCache.read(id) || readStateDbThread(id) || readStartedThread(id) || null) : null;
-}
-
-function pushThreadTitle(params, threadId = "", existingTitle = "") {
-  const id = String(threadId || pushThreadId(params) || "");
-  const summary = pushThreadSummary(id);
-  return resolveThreadTitleForNotification({
-    params,
-    threadId: id,
-    existingTitle,
-    summary,
-    fallbackTitle: shortIdentifier(id) || "Codex Mobile Web",
-  });
-}
-
-function pushThreadAgentMetadataFromParams(params) {
-  const nickname = lastString(
-    params && params.agentNickname,
-    params && params.agent_nickname,
-    params && params.thread && params.thread.agentNickname,
-    params && params.thread && params.thread.agent_nickname,
-    params && params.turn && params.turn.agentNickname,
-    params && params.turn && params.turn.agent_nickname,
-  );
-  const role = lastString(
-    params && params.agentRole,
-    params && params.agent_role,
-    params && params.thread && params.thread.agentRole,
-    params && params.thread && params.thread.agent_role,
-    params && params.turn && params.turn.agentRole,
-    params && params.turn && params.turn.agent_role,
-  );
-  return {
-    agentNickname: nickname,
-    agentRole: role,
-  };
-}
-
-function pushTurnMeta(params, existing = null) {
-  const turnId = pushTurnId(params);
-  const existingThreadId = String((existing && existing.threadId) || "");
-  const paramsThreadId = pushThreadId(params);
-  const threadId = existingThreadId || paramsThreadId;
-  const existingTitle = existingThreadId && existingThreadId === threadId
-    ? String((existing && existing.threadTitle) || "")
-    : "";
-  const agentMetadata = pushThreadAgentMetadataFromParams(params);
-  return {
-    turnId,
-    threadId,
-    threadTitle: pushThreadTitle(params, threadId, existingTitle),
-    agentNickname: (existing && existing.agentNickname) || agentMetadata.agentNickname,
-    agentRole: (existing && existing.agentRole) || agentMetadata.agentRole,
-    observedAt: (existing && existing.observedAt) || Date.now(),
-    startedAt: (existing && existing.startedAt) || turnTimestampMs(params, "startedAt") || turnTimestampMs(params, "createdAt") || 0,
-    completedAt: turnTimestampMs(params, "completedAt") || turnTimestampMs(params, "updatedAt") || 0,
-  };
 }
 
 function maybeRecordTurnTokenUsage(method, params) {
@@ -7808,173 +7608,8 @@ function maybeMaterializeThreadTaskCardDrafts(method, params) {
   if (timer && typeof timer.unref === "function") timer.unref();
 }
 
-function logWebPushDecision(event, decision, meta) {
-  if (decision && decision.track && !decision.reason) return;
-  const reason = String((decision && decision.reason) || "tracked");
-  console.log(`[web push] ${event} ${reason} turn=${shortIdentifier(meta && meta.turnId)} thread=${shortIdentifier(meta && meta.threadId)}`);
-}
-
-function webPushFailureDetails(err) {
-  const statusCode = Number(err && err.statusCode) || null;
-  const body = String((err && err.body) || "").trim();
-  let reason = "";
-  if (body) {
-    try {
-      const parsed = JSON.parse(body);
-      reason = String(parsed.reason || parsed.error || parsed.message || "").trim();
-    } catch (_) {
-      reason = body.slice(0, 160);
-    }
-  }
-  return {
-    statusCode,
-    reason: reason || String((err && err.message) || err || "Web Push send failed"),
-  };
-}
-
-async function sendWebPushToAll(payload) {
-  loadPushVapidKeys();
-  const subscriptions = loadPushSubscriptions();
-  if (!subscriptions.length) return { sent: 0, failed: 0, removed: 0 };
-  let sent = 0;
-  let failed = 0;
-  let lastError = null;
-  const dead = new Set();
-  await Promise.all(subscriptions.map(async (subscription) => {
-    try {
-      await webPush.sendNotification(subscription, JSON.stringify(payload), {
-        TTL: PUSH_TTL_SECONDS,
-        urgency: "normal",
-      });
-      sent += 1;
-    } catch (err) {
-      failed += 1;
-      lastError = webPushFailureDetails(err);
-      const statusCode = Number(err && err.statusCode);
-      if (statusCode === 404 || statusCode === 410) dead.add(subscription.endpoint);
-      else console.error(`[web push] send failed: ${lastError.statusCode || ""} ${lastError.reason}`);
-    }
-  }));
-  if (dead.size) {
-    const kept = subscriptions.filter((subscription) => !dead.has(subscription.endpoint));
-    savePushSubscriptions(kept);
-  }
-  return Object.assign({ sent, failed, removed: dead.size }, lastError ? { lastError } : {});
-}
-
-function delegateTurnCompletedNotification(meta, turnId, completedAt, threadTitle, params = null) {
-  const workspaceId = "owner";
-  if (!hermesNotificationDelegateService.isConfiguredForWorkspace(workspaceId)) return false;
-  const threadId = String(meta && meta.threadId || "");
-  const detailMessage = buildTurnCompletionDetailMessage({
-    threadTitle,
-    completedAt,
-    turnId,
-    params,
-    turnUsageSummary: turnCompletionUsageSummary(threadId, turnId),
-    maxChars: 12_000,
-  });
-  hermesNotificationDelegateService.send({
-    workspaceId,
-    eventId: `codex-mobile:turn-completed:${threadId || "unknown"}:${turnId}`,
-    title: threadTitle || shortIdentifier(threadId || turnId) || "Codex Mobile Web",
-    summary: `This turn 已结束 · ${pushTimestamp(completedAt)}`,
-    itemType: "info",
-    priority: "normal",
-    route: {
-      name: "thread",
-      tab: "codex",
-      itemId: threadId || turnId,
-      threadId: threadId || "",
-      taskId: turnId,
-    },
-    openMode: "plugin",
-    detailMessage,
-  }).catch((err) => {
-    console.error(`[hermes plugin notifications] turn completed delegation failed: ${err.message || String(err)}`);
-  });
-  return true;
-}
-
-async function resolveCompletedPushThreadTitle(meta, params) {
-  const threadId = String(meta && meta.threadId || pushThreadId(params) || "");
-  if (threadId && !threadDisplaySummaryCache.read(threadId)) {
-    try {
-      await readThreadSummaryFromAppServer(codex, threadId);
-    } catch (err) {
-      console.error(`[web push] thread title app-server refresh failed: ${err.message || String(err)}`);
-    }
-  }
-  return pushThreadTitle(params, threadId, meta && meta.threadTitle);
-}
-
-function sendTurnCompletedPush(meta, turnId, completedAt, params) {
-  resolveCompletedPushThreadTitle(meta, params).then((threadTitle) => {
-    if (delegateTurnCompletedNotification(meta, turnId, completedAt, threadTitle, params)) return;
-    const threadMark = shortIdentifier(meta.threadId || turnId);
-    const payload = {
-      threadId: meta.threadId || "",
-      turnId,
-      title: threadTitle || threadMark || "Codex Mobile Web",
-      body: `This turn 已结束 · ${pushTimestamp(completedAt)}`,
-      tag: `codex-turn-${meta.threadId || turnId}`,
-      data: {
-        url: notificationUrlForThread(meta.threadId),
-        threadId: meta.threadId || "",
-        turnId,
-        threadTitle,
-        completedAt,
-      },
-    };
-    sendWebPushToAll(payload).catch((err) => {
-      console.error(`[web push] turn completed send failed: ${err.message || String(err)}`);
-    });
-  }).catch((err) => {
-    console.error(`[web push] turn completed notification failed: ${err.message || String(err)}`);
-  });
-}
-
 function maybeSendTurnCompletedPush(method, params) {
-  if (method === "turn/started") {
-    const id = pushTurnId(params);
-    if (isOldPushTurnEvent(params, ["startedAt", "createdAt"])) return;
-    prunePushObservedTurns();
-    if (id) {
-      const meta = pushTurnMeta(params);
-      const decision = shouldTrackTurnForWebPush(meta, {
-        allowMissingThreadId: true,
-        classifyThread: classifyWebPushThreadId,
-      });
-      logWebPushDecision("turn/started", decision, meta);
-      if (decision.track) pushObservedTurns.set(id, meta);
-      else pushObservedTurns.delete(id);
-    }
-    return;
-  }
-  if (method !== "turn/completed") return;
-  const turnId = pushTurnId(params);
-  if (!turnId || !pushObservedTurns.has(turnId)) return;
-  if (isOldPushTurnEvent(params, ["completedAt", "updatedAt"])) return;
-  const meta = pushTurnMeta(params, pushObservedTurns.get(turnId));
-  pushObservedTurns.delete(turnId);
-  if (completedTurnHasNoFinalAgentMessage(params)) {
-    logWebPushDecision("turn/completed", { track: false, reason: "no-final-agent-message" }, meta);
-    return;
-  }
-  const decision = shouldTrackTurnForWebPush(meta, {
-    classifyThread: classifyWebPushThreadId,
-  });
-  if (!decision.track) {
-    logWebPushDecision("turn/completed", decision, meta);
-    return;
-  }
-  prunePushObservedTurns();
-  prunePushSentTurns();
-  const key = `${meta.threadId || ""}:${turnId}`;
-  if (pushSentTurns.has(key)) return;
-  pushSentTurns.set(key, Date.now());
-  const completedAt = meta.completedAt || Date.now();
-  sendTurnCompletedPush(meta, turnId, completedAt, params);
+  return webPushRuntimeService.maybeSendTurnCompletedPush(method, params);
 }
 
 const STATIC_COMPRESSION_MIN_BYTES = 1024;
@@ -10777,46 +10412,14 @@ async function handleApi(req, res) {
     }
     return;
   }
-  if (url.pathname === "/api/push/vapid-public-key" && req.method === "GET") {
-    const keys = loadPushVapidKeys();
-    sendJson(res, 200, { publicKey: keys.publicKey, subject: keys.subject || PUSH_SUBJECT });
-    return;
-  }
-  if (url.pathname === "/api/push/subscribe" && req.method === "POST") {
-    const body = await readBody(req);
-    const subscription = normalizePushSubscription(body);
-    const subscriptions = loadPushSubscriptions();
-    const next = subscriptions.filter((entry) => entry.endpoint !== subscription.endpoint);
-    next.push(Object.assign({}, subscription, {
-      createdAt: subscriptions.some((entry) => entry.endpoint === subscription.endpoint)
-        ? subscriptions.find((entry) => entry.endpoint === subscription.endpoint).createdAt || new Date().toISOString()
-        : new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      userAgent: String(req.headers["user-agent"] || ""),
-    }));
-    savePushSubscriptions(next);
-    sendJson(res, 200, { ok: true, subscriptionCount: next.length });
-    return;
-  }
-  if (url.pathname === "/api/push/unsubscribe" && req.method === "POST") {
-    const body = await readBody(req);
-    const endpoint = String(body.endpoint || (body.subscription && body.subscription.endpoint) || "");
-    if (!endpoint) {
-      sendJson(res, 400, { error: "Push subscription endpoint is required" });
-      return;
-    }
-    const next = loadPushSubscriptions().filter((entry) => entry.endpoint !== endpoint);
-    savePushSubscriptions(next);
-    sendJson(res, 200, { ok: true, subscriptionCount: next.length });
-    return;
-  }
-  if (url.pathname === "/api/push/test" && req.method === "POST") {
-    const result = await sendWebPushToAll({
-      title: "Codex Mobile Web",
-      body: "Test notification",
-      data: { url: "/" },
-    });
-    sendJson(res, 200, Object.assign({ ok: true }, result));
+  const webPushRouteResult = await webPushRuntimeService.handleRoute({
+    url,
+    method: req.method,
+    req,
+    readBody: () => readBody(req),
+    sendJson: (status, body) => sendJson(res, status, body),
+  });
+  if (webPushRouteResult.handled) {
     return;
   }
   if (url.pathname === "/api/status") {

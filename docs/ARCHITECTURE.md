@@ -1027,6 +1027,12 @@ The mux keeps a replay buffer for recent app-server notifications and unresolved
 ### Web Push Completion Notifications
 
 Turn-ended Web Push notifications are driven by app-server `turn/completed` notifications after Mobile Web has observed the matching `turn/started` event. They must fail closed for unknown thread ids and sub-agent child threads.
+`adapters/web-push-runtime-service.js` owns the runtime part of this flow:
+VAPID key storage/subject repair, subscription persistence and `/api/push/*`
+route handling, started/completed observation, send de-duplication, subagent
+classification cache, direct Web Push sending, and Hermes notification
+delegation fallback. `server.js` injects filesystem/runtime JSON, state DB,
+thread-title/cache helpers, turn id/timestamp helpers, and route response glue.
 
 Standalone Web Push completion payloads must carry the stable Codex thread id
 both at the top level and in `notification.data.threadId`, along with a same
@@ -1049,9 +1055,10 @@ the actual Codex thread name as the payload title: explicit `threadTitle`,
 `turn.thread.title` win over stale started-turn labels, route/plugin names, or
 preview text. Persisted thread `name` is preferred over `preview`; preview is
 only a fallback when no real thread name is available.
-`adapters/push-notification-service.js` owns the bounded in-memory cache of
-app-server `thread/list` and `thread/read` display summaries, and `server.js`
-checks that display cache before the local SQLite fallback. This prevents old continuation threads whose
+`adapters/push-notification-service.js` owns the pure helper policy and bounded
+in-memory cache of app-server `thread/list` and `thread/read` display
+summaries. The Web Push runtime service checks that display cache before the
+local SQLite fallback. This prevents old continuation threads whose
 `state_5.sqlite` title still contains the bootstrap prompt from producing a
 wrong external notification title. If the cache is empty when a completed-turn
 event arrives, the notification path performs a bounded app-server summary

@@ -14,6 +14,7 @@ const threadSummaryStateServiceJs = fs.readFileSync(path.resolve(__dirname, ".."
 const routingServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-task-card-routing-service.js"), "utf8");
 const threadDetailRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-detail-route-service.js"), "utf8");
 const threadDetailResponsePreparationServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-detail-response-preparation-service.js"), "utf8");
+const webPushRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "web-push-runtime-service.js"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
@@ -280,7 +281,7 @@ test("thread task card routes preserve service status codes", () => {
 test("approved task cards inherit target thread model and effort", () => {
   const setupBlock = serverJs.slice(
     serverJs.indexOf("const threadTaskCardService = createThreadTaskCardService"),
-    serverJs.indexOf("const PUSH_VAPID_FILE"),
+    serverJs.indexOf("threadTaskCardRouteService = createThreadTaskCardRouteService"),
   );
   assert.match(setupBlock, /const requestedReasoningEffort = String\(card && card\.delivery && card\.delivery\.reasoningEffort/);
   assert.match(setupBlock, /const inheritedRuntimeSettings = await resolveThreadRuntimeSettings\(card\.target\.threadId\);/);
@@ -299,6 +300,8 @@ test("approved task cards inherit target thread model and effort", () => {
   assert.match(setupBlock, /deployLaneNoApproval: targetIsDeployLane/);
   assert.match(setupBlock, /notifyLocalTurnStarted\(card\.target\.threadId, result, \{/);
   assert.match(setupBlock, /source: "thread-task-card-approval"/);
+  assert.match(serverJs, /const webPushRuntimeService = createWebPushRuntimeService/);
+  assert.match(webPushRuntimeServiceJs, /function maybeSendTurnCompletedPush\(method, params\)/);
   assert.match(functionBody(serverJs, "applyTurnRuntimeSettings"), /if \(settings\.reasoningEffort\) params\.effort = settings\.reasoningEffort;/);
   assert.match(functionBody(serverJs, "applyTurnRuntimeSettings"), /if \(settings\.model\) params\.model = settings\.model;/);
 });

@@ -6,6 +6,7 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+const webPushRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "web-push-runtime-service.js"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
 const pluginEmbedJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "plugin-embed.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
@@ -40,12 +41,13 @@ test("server exposes Hermes plugin manifest, registration, origin, launch, sessi
   assert.match(serverJs, /"\/api\/v1\/hermes\/plugin\/session"/);
   assert.match(serverJs, /"\/api\/v1\/hermes\/plugin\/notifications"/);
   assert.match(serverJs, /createHermesNotificationDelegateService/);
+  assert.match(serverJs, /createWebPushRuntimeService/);
   assert.match(serverJs, /buildTurnCompletionDetailMessage/);
-  assert.match(serverJs, /detailMessage/);
+  assert.match(webPushRuntimeServiceJs, /detailMessage/);
+  assert.match(webPushRuntimeServiceJs, /delegateTurnCompletedNotification/);
   assert.match(serverJs, /CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_BASE_URL/);
   assert.match(serverJs, /CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_KEY_FILE/);
   assert.match(serverJs, /notificationDelegateConfigured/);
-  assert.match(serverJs, /delegateTurnCompletedNotification/);
   assert.match(serverJs, /isAccessKeyAuthorized\(req\)/);
   assert.match(serverJs, /const tokens = requestAuthTokens\(req\);[\s\S]*tokens\.some\(\(token\) => hermesPluginService\.isSessionAuthorized\(token\)\)/);
   assert.match(serverJs, /codex_mobile_plugin_session/);
