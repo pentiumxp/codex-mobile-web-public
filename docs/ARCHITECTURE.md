@@ -501,7 +501,7 @@ the current detail window and preserves the reading position after prepending
 those turns.
 
 Active-window history construction has a separate in-flight coalescing
-boundary. `adapters/thread-detail-active-window-prewarm-service.js` and the
+boundary. `services/thread-detail/thread-detail-active-window-prewarm-service.js` and the
 foreground thread-detail orchestrator can both build the same
 `turns-list-active-overlay-window` history window when a large active thread
 has live overlay evidence but no usable projection window yet. They share

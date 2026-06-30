@@ -7,7 +7,7 @@ const {
   createThreadDetailActiveWindowPrewarmService,
   overlayActiveTurnId,
   threadDetailActiveWindowPrewarmJobPolicy,
-} = require("../adapters/thread-detail-active-window-prewarm-service");
+} = require("../services/thread-detail/thread-detail-active-window-prewarm-service");
 
 const EXPECTED_PREWARM_JOB = {
   name: "thread-detail-active-window-prewarm",

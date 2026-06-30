@@ -287,7 +287,7 @@ Current acceleration targets:
    active-window path first and repeated reads can seed/reuse the active-window
    projection cache.
    `thread/turns/list`. The follow-up server slice adds
-   `thread-detail-active-window-prewarm-service`: turn/status notifications and
+   `services/thread-detail/thread-detail-active-window-prewarm-service.js`: turn/status notifications and
    thread-list refreshes now schedule a deduplicated background
    `turns-list-active-overlay-window` prewarm for active/running threads. The
    prewarm reuses the same projection-window lookup, turns-list read, and

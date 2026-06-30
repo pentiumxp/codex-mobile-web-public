@@ -401,7 +401,7 @@ projection window from app-server `thread/turns/list`; it is different from an
 RPC/network timeout because the request succeeds and then warms the cache.
 The server schedules the same window build in the background after active
 turn/status notifications and thread-list refreshes through
-`thread-detail-active-window-prewarm-service`, so the preferred closure is to
+`services/thread-detail/thread-detail-active-window-prewarm-service.js`, so the preferred closure is to
 verify prewarm scheduling and cache reuse rather than increasing the detail
 timeout or adding a client loading fallback. Current servers also coalesce
 foreground detail and background prewarm reads for the same thread/mode/limit
