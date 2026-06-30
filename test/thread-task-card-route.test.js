@@ -294,7 +294,28 @@ test("approved task-card deploy lane runtime uses visible target metadata when s
   assert.match(helperBody, /Object\.assign\(\{\}, target, visible \|\| \{\}, stored \|\| \{\}\)/);
   assert.match(helperBody, /if \(!String\(merged\.cwd \|\| ""\)\.trim\(\) && targetWorkspace\) merged\.cwd = targetWorkspace;/);
   assert.match(helperBody, /const visibleTitle = String\(visible && \(visible\.name \|\| visible\.title/);
-  assert.match(functionBody(serverJs, "readThreadTaskCardVisibleTargetSummary"), /threadTaskCardVisibleTargetThreads\(\)/);
+  const visibleHelperBody = functionBody(serverJs, "readThreadTaskCardVisibleTargetSummary");
+  assert.match(visibleHelperBody, /threadTaskCardVisibleTargetThreads\(\)/);
+  assert.match(visibleHelperBody, /Array\.isArray\(visibleThreads\) \? visibleThreads : \[\]/);
+});
+
+test("approved task-card visible target summary helper is runtime executable", () => {
+  const visibleTargetSummary = new Function(
+    "threadTaskCardVisibleTargetThreads",
+    `${functionSource(serverJs, "readThreadTaskCardVisibleTargetSummary")}; return readThreadTaskCardVisibleTargetSummary;`,
+  )(() => [
+    { id: "thread-other", name: "Other" },
+    { threadId: "thread-movie", name: "Movie Deploy Lane", cwd: "/Users/hermes-dev/HermesMobileDev/app" },
+  ]);
+
+  assert.equal(visibleTargetSummary("thread-movie").name, "Movie Deploy Lane");
+
+  const emptyVisibleTargetSummary = new Function(
+    "threadTaskCardVisibleTargetThreads",
+    `${functionSource(serverJs, "readThreadTaskCardVisibleTargetSummary")}; return readThreadTaskCardVisibleTargetSummary;`,
+  )(() => null);
+
+  assert.equal(emptyVisibleTargetSummary("thread-movie"), null);
 });
 
 test("server broadcasts lightweight thread status for background turn notifications", () => {

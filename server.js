@@ -13182,7 +13182,8 @@ function readThreadTaskCardTargetSummary(threadId, options = {}) {
 function readThreadTaskCardVisibleTargetSummary(threadId) {
   const id = String(threadId || "").trim();
   if (!id) return null;
-  return safeArray(threadTaskCardVisibleTargetThreads())
+  const visibleThreads = threadTaskCardVisibleTargetThreads();
+  return (Array.isArray(visibleThreads) ? visibleThreads : [])
     .find((thread) => String(thread && (thread.id || thread.threadId || "") || "").trim() === id) || null;
 }
 
