@@ -142,6 +142,8 @@ const { createChatGptProBridgeService } = require("./adapters/chatgpt-pro-bridge
 const { createChatGptProPlannerService } = require("./adapters/chatgpt-pro-planner-service");
 const { createChatGptProMcpService } = require("./adapters/chatgpt-pro-mcp-service");
 const { createWorkspaceSourceWriteGuard } = require("./adapters/workspace-source-write-guard-service");
+const { createThreadSideChatOrchestrationService } = require("./adapters/thread-side-chat-orchestration-service");
+const { handleThreadSideChatRoute } = require("./adapters/thread-side-chat-route-service");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -485,7 +487,6 @@ const threadGoalService = createThreadGoalService({
 });
 const autoTurnRecoveryRecent = new Map();
 const autoTurnRecoveryInflight = new Map();
-const sideChatReplyInflight = new Map();
 const threadSideChatService = createThreadSideChatService({
   storageFile: THREAD_SIDE_CHAT_FILE,
   scopeId: THREAD_SIDE_CHAT_SCOPE_ID,
@@ -516,250 +517,6 @@ const threadSideChatService = createThreadSideChatService({
     };
   },
 });
-
-function sideChatReadOnlyRuntimeSettings(runtimeSettings) {
-  const next = Object.assign({}, runtimeSettings || {});
-  next.approvalPolicy = "on-request";
-  next.permissionProfile = null;
-  next.sandboxPolicy = readOnlySandboxPolicy(next.sandboxPolicy);
-  next.sandboxMode = "read-only";
-  return next;
-}
-
-function sideChatParentSummary(threadId) {
-  return readStateDbThread(threadId) || readStartedThread(threadId) || readRolloutSessionFallbackThread(threadId) || { id: threadId };
-}
-
-function boundedSideChatTranscript(sideChat, maxChars = 12_000) {
-  const messages = Array.isArray(sideChat && sideChat.messages) ? sideChat.messages.slice(-24) : [];
-  const lines = messages.map((message) => {
-    const role = String(message && message.role || "user") === "assistant" ? "Assistant" : "User";
-    return `${role}: ${String(message && message.text || "").trim()}`;
-  }).filter((line) => line.trim());
-  return truncateTail(lines.join("\n\n"), maxChars, "side-chat transcript");
-}
-
-function parentTurnVisibleText(turn) {
-  const items = Array.isArray(turn && turn.items) ? turn.items : [];
-  return items.map((item) => {
-    if (!item || typeof item !== "object") return "";
-    const type = String(item.type || "").toLowerCase();
-    const role = type === "usermessage" || (type === "message" && String(item.role || "").toLowerCase() === "user")
-      ? "User"
-      : isAssistantReceiptItem(item)
-        ? "Assistant"
-        : "";
-    if (!role) return "";
-    const text = itemTimestampMatchText(item);
-    return text ? `${role}: ${text}` : "";
-  }).filter(Boolean).join("\n");
-}
-
-async function parentThreadSideChatContext(parentThreadId) {
-  try {
-    const turnsResult = await codex.request("thread/turns/list", {
-      threadId: parentThreadId,
-      limit: 6,
-      sortDirection: "desc",
-    }, { timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS, retry: false, resetOnTimeout: false });
-    const turns = Array.isArray(turnsResult && turnsResult.data)
-      ? turnsResult.data
-      : Array.isArray(turnsResult && turnsResult.turns)
-        ? turnsResult.turns
-        : [];
-    const lines = turns.slice().reverse().map(parentTurnVisibleText).filter(Boolean);
-    return truncateTail(lines.join("\n\n"), 16_000, "parent thread context");
-  } catch (err) {
-    return `Parent thread context unavailable: ${String(err && err.message || err).slice(0, 300)}`;
-  }
-}
-
-function sideChatDeveloperInstructions(parentThreadId) {
-  return [
-    "You are the private side chat for a Codex Mobile thread.",
-    "Answer the user's planning, status, explanation, and option-comparison questions using the current repository context and tools when useful.",
-    "Do not edit files, apply patches, commit, deploy, restart services, or mutate external state from this side chat.",
-    "If the user asks for an implementation instruction, produce a concise candidate instruction they can explicitly send to the main thread.",
-    "Do not claim that your answer has been injected into the main thread.",
-    `Parent thread id: ${parentThreadId}`,
-  ].join("\n");
-}
-
-function sideChatPrompt({ parentThreadId, parentSummary, parentContext, sideChat, userMessage }) {
-  const title = String(parentSummary && (parentSummary.name || parentSummary.title || parentSummary.preview) || parentThreadId || "").trim();
-  const cwd = String(parentSummary && parentSummary.cwd || "").trim();
-  const model = String(parentSummary && (parentSummary.model || parentSummary.modelName) || "").trim();
-  const transcript = boundedSideChatTranscript(sideChat);
-  return [
-    "Side chat request.",
-    "",
-    "Parent thread context:",
-    `- thread_id: ${parentThreadId}`,
-    title ? `- title: ${title}` : "",
-    cwd ? `- cwd: ${cwd}` : "",
-    model ? `- model: ${model}` : "",
-    "",
-    parentContext ? `Recent parent-thread context:\n${parentContext}` : "Recent parent-thread context: (empty or unavailable)",
-    "",
-    transcript ? `Recent side-chat transcript:\n${transcript}` : "Recent side-chat transcript: (empty)",
-    "",
-    "Current user side-chat message:",
-    String(userMessage && userMessage.text || "").trim(),
-    "",
-    "Reply only in the side chat. Keep code-changing actions as recommendations unless the user later applies a candidate to the main thread.",
-  ].filter((line) => line !== "").join("\n");
-}
-
-async function ensureSideChatSidecarThread(parentThreadId, runtimeSettings, parentSummary) {
-  const existing = threadSideChatService.sidecarThreadIdForThread(parentThreadId);
-  if (existing) return existing;
-  const cwd = String(parentSummary && parentSummary.cwd || "").trim();
-  if (!cwd) throw new Error("side_chat_parent_workspace_missing");
-  const settings = sideChatReadOnlyRuntimeSettings(runtimeSettings);
-  const startParams = applyStartThreadRuntimeSettings({
-    cwd,
-    modelProvider: null,
-    config: {},
-    developerInstructions: [
-      readStartThreadDeveloperInstructions(cwd) || "",
-      sideChatDeveloperInstructions(parentThreadId),
-    ].filter(Boolean).join("\n\n"),
-    personality: null,
-    ephemeral: null,
-    dynamicTools: null,
-    mockExperimentalField: null,
-    experimentalRawEvents: false,
-    persistExtendedHistory: false,
-  }, settings);
-  startParams.sandbox = "read-only";
-  delete startParams.permissionProfile;
-  const startResult = await codex.request("thread/start", startParams, {
-    timeoutMs: MUTATION_RPC_TIMEOUT_MS,
-    retry: false,
-  });
-  const sidecarThreadId = threadIdFromStartResult(startResult);
-  if (!sidecarThreadId) throw new Error("side_chat_sidecar_thread_start_failed");
-  await threadSideChatService.setSidecarThreadId(parentThreadId, sidecarThreadId);
-  rememberStartedThread({
-    id: sidecarThreadId,
-    name: `Side chat for ${shortIdentifier(parentThreadId)}`,
-    preview: "Codex Mobile side chat",
-    cwd,
-    status: { type: "notLoaded" },
-    agentRole: "side_chat",
-    agentNickname: "Side chat",
-  });
-  return sidecarThreadId;
-}
-
-function textFromAssistantItem(item) {
-  if (!isAssistantReceiptItem(item)) return "";
-  const value = item.text || item.message || item.content || item.summary || item.output || "";
-  if (Array.isArray(value)) return value.map((entry) => {
-    if (typeof entry === "string") return entry;
-    if (entry && typeof entry === "object") return String(entry.text || entry.content || entry.value || "");
-    return "";
-  }).filter(Boolean).join("\n").trim();
-  return String(value || "").trim();
-}
-
-async function assistantTextForTurn(threadId, turnId) {
-  const result = await codex.request("thread/turns/list", {
-    threadId,
-    limit: 6,
-    sortDirection: "desc",
-  }, { timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS, retry: false, resetOnTimeout: false });
-  const turns = Array.isArray(result && result.data)
-    ? result.data
-    : Array.isArray(result && result.turns)
-      ? result.turns
-      : [];
-  const turn = turns.find((entry) => entry && String(entry.id || "") === String(turnId || "")) || turns[0];
-  const items = Array.isArray(turn && turn.items) ? turn.items : [];
-  for (let index = items.length - 1; index >= 0; index -= 1) {
-    const text = textFromAssistantItem(items[index]);
-    if (text) return text;
-  }
-  return "";
-}
-
-async function waitForSideChatReply(threadId, turnId) {
-  const deadline = Date.now() + THREAD_SIDE_CHAT_REPLY_TIMEOUT_MS;
-  const id = String(turnId || "").trim();
-  let lastError = "";
-  while (Date.now() < deadline) {
-    try {
-      const result = await codex.request("thread/turns/list", {
-        threadId,
-        limit: 6,
-        sortDirection: "desc",
-      }, { timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS, retry: false, resetOnTimeout: false });
-      const turns = Array.isArray(result && result.data)
-        ? result.data
-        : Array.isArray(result && result.turns)
-          ? result.turns
-          : [];
-      const turn = turns.find((entry) => entry && String(entry.id || "") === id);
-      if (turn && isCompletedStatus(turn.status)) {
-        const text = await assistantTextForTurn(threadId, turnId);
-        if (text) return text;
-      }
-    } catch (err) {
-      lastError = err.message || String(err);
-      if (/no rollout found|not found|not materialized|unmaterialized/i.test(lastError)) {
-        await sleep(1000);
-        continue;
-      }
-    }
-    await sleep(1000);
-  }
-  throw new Error(lastError || "side_chat_reply_timeout");
-}
-
-function startSideChatAssistantReply(parentThreadId, userMessage) {
-  const userMessageId = String(userMessage && userMessage.id || "");
-  if (!parentThreadId || !userMessageId) return;
-  const key = `${parentThreadId}:${userMessageId}`;
-  if (sideChatReplyInflight.has(key)) return;
-  const promise = (async () => {
-    try {
-      const parentSummary = sideChatParentSummary(parentThreadId);
-      const runtimeSettings = await resolveThreadRuntimeSettings(parentThreadId);
-      const sidecarThreadId = await ensureSideChatSidecarThread(parentThreadId, runtimeSettings, parentSummary);
-      await threadSideChatService.markAssistantPending(parentThreadId, userMessageId, { sidecarThreadId });
-      const settings = sideChatReadOnlyRuntimeSettings(runtimeSettings);
-      try {
-        await codex.request("thread/resume", applyResumeRuntimeSettings({
-          threadId: sidecarThreadId,
-          cwd: parentSummary && parentSummary.cwd || null,
-          persistExtendedHistory: false,
-        }, settings), { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
-      } catch (err) {
-        if (!/already|loaded|active|no rollout found|not found|not materialized|unmaterialized/i.test(err.message || "")) throw err;
-      }
-      const sideChat = threadSideChatService.get(parentThreadId);
-      const parentContext = await parentThreadSideChatContext(parentThreadId);
-      const turnParams = applyTurnRuntimeSettings({
-        threadId: sidecarThreadId,
-        input: [{ type: "text", text: sideChatPrompt({ parentThreadId, parentSummary, parentContext, sideChat, userMessage }) }],
-        cwd: parentSummary && parentSummary.cwd || undefined,
-      }, settings);
-      turnParams.sandboxPolicy = readOnlySandboxPolicy(settings.sandboxPolicy);
-      const turnResult = await codex.request("turn/start", turnParams, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
-      const turnId = String((turnResult && turnResult.turnId) || (turnResult && turnResult.turn && turnResult.turn.id) || "");
-      const replyText = await waitForSideChatReply(sidecarThreadId, turnId);
-      await threadSideChatService.markAssistantCompleted(parentThreadId, userMessageId, {
-        text: replyText || "我没有拿到完整回复，请重试。",
-      });
-    } catch (err) {
-      await threadSideChatService.markAssistantFailed(parentThreadId, userMessageId, err).catch(() => {});
-      console.error(`[thread side chat] reply failed thread=${shortIdentifier(parentThreadId)} message=${shortIdentifier(userMessageId)}: ${err.message || String(err)}`);
-    } finally {
-      sideChatReplyInflight.delete(key);
-    }
-  })();
-  sideChatReplyInflight.set(key, promise);
-}
 
 function autoTurnRecoveryKey(threadId) {
   return String(threadId || "");
@@ -8682,14 +8439,7 @@ function maybeAutoReplyThreadTaskCard(method, params) {
 }
 
 function maybeApplyQueuedThreadSideChat(method, params) {
-  if (method !== "turn/completed") return;
-  const turnId = pushTurnId(params);
-  if (!turnId || isOldPushTurnEvent(params, ["completedAt", "updatedAt"])) return;
-  const threadId = pushThreadId(params);
-  if (!threadId) return;
-  threadSideChatService.maybeApplyQueuedCandidate(threadId).catch((err) => {
-    console.error(`[thread side chat] queued apply failed thread=${shortIdentifier(threadId)} turn=${shortIdentifier(turnId)}: ${err.message || String(err)}`);
-  });
+  threadSideChatOrchestrationService.maybeApplyQueuedThreadSideChat(method, params);
 }
 
 function maybeMaterializeThreadTaskCardDrafts(method, params) {
@@ -10792,6 +10542,32 @@ class CodexAppServerClient {
 }
 
 const codex = new CodexAppServerClient();
+const threadSideChatOrchestrationService = createThreadSideChatOrchestrationService({
+  threadSideChatService,
+  codex,
+  replyTimeoutMs: THREAD_SIDE_CHAT_REPLY_TIMEOUT_MS,
+  threadDetailRpcTimeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS,
+  mutationRpcTimeoutMs: MUTATION_RPC_TIMEOUT_MS,
+  readOnlySandboxPolicy,
+  applyStartThreadRuntimeSettings,
+  applyResumeRuntimeSettings,
+  applyTurnRuntimeSettings,
+  resolveThreadRuntimeSettings,
+  readStartThreadDeveloperInstructions,
+  readThreadSummary: (threadId) => readStateDbThread(threadId) || readStartedThread(threadId) || readRolloutSessionFallbackThread(threadId),
+  threadIdFromStartResult,
+  rememberStartedThread,
+  itemText: itemTimestampMatchText,
+  isAssistantReceiptItem,
+  isCompletedStatus,
+  eventThreadId: pushThreadId,
+  eventTurnId: pushTurnId,
+  isOldTurnEvent: isOldPushTurnEvent,
+  truncateTail,
+  shortIdentifier,
+  sleep,
+  logger: console,
+});
 const chatGptProBridgeService = createChatGptProBridgeService({
   runtimeRoot: RUNTIME_ROOT,
   stateFile: CHATGPT_PRO_BRIDGE_FILE,
@@ -15484,122 +15260,15 @@ async function handleApi(req, res) {
     sendJson(res, 200, { ok: true, request });
     return;
   }
-  // GET /api/threads/:threadId/side-chat
-  const threadSideChatRoot = url.pathname.match(/^\/api\/threads\/([^/]+)\/side-chat$/);
-  if (threadSideChatRoot && req.method === "GET") {
-    try {
-      const threadSideChatId = decodeURIComponent(threadSideChatRoot[1]);
-      sendJson(res, 200, {
-        ok: true,
-        sideChat: threadSideChatService.get(threadSideChatId),
-      });
-    } catch (err) {
-      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
-    }
-    return;
-  }
-  if (threadSideChatRoot && req.method === "PUT") {
-    try {
-      const threadSideChatId = decodeURIComponent(threadSideChatRoot[1]);
-      const body = await readBody(req);
-      sendJson(res, 200, {
-        ok: true,
-        sideChat: await threadSideChatService.updateDraft(threadSideChatId, body),
-      });
-    } catch (err) {
-      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
-    }
-    return;
-  }
-  const threadSideChatDraft = url.pathname.match(/^\/api\/threads\/([^/]+)\/side-chat\/draft$/);
-  if (threadSideChatDraft && req.method === "PUT") {
-    try {
-      const threadSideChatId = decodeURIComponent(threadSideChatDraft[1]);
-      const body = await readBody(req);
-      sendJson(res, 200, {
-        ok: true,
-        sideChat: await threadSideChatService.updateDraft(threadSideChatId, body),
-      });
-    } catch (err) {
-      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
-    }
-    return;
-  }
-  const threadSideChatMessages = url.pathname.match(/^\/api\/threads\/([^/]+)\/side-chat\/messages$/);
-  if (threadSideChatMessages && req.method === "POST") {
-    try {
-      const threadSideChatId = decodeURIComponent(threadSideChatMessages[1]);
-      const body = await readBody(req);
-      const result = await threadSideChatService.addMessage(threadSideChatId, body);
-      if (result && result.message && result.message.role === "user" && !result.duplicate) {
-        await threadSideChatService.markAssistantPending(threadSideChatId, result.message.id);
-        startSideChatAssistantReply(threadSideChatId, result.message);
-        sendJson(res, 200, Object.assign({ ok: true }, { state: threadSideChatService.get(threadSideChatId), message: result.message }));
-      } else {
-        sendJson(res, 200, Object.assign({ ok: true }, result));
-      }
-    } catch (err) {
-      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
-    }
-    return;
-  }
-  const threadSideChatCandidates = url.pathname.match(/^\/api\/threads\/([^/]+)\/side-chat\/candidates$/);
-  if (threadSideChatCandidates && req.method === "POST") {
-    try {
-      const threadSideChatId = decodeURIComponent(threadSideChatCandidates[1]);
-      const body = await readBody(req);
-      sendJson(res, 200, Object.assign({ ok: true }, await threadSideChatService.createCandidate(threadSideChatId, body)));
-    } catch (err) {
-      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
-    }
-    return;
-  }
-  const threadSideChatQueue = url.pathname.match(/^\/api\/threads\/([^/]+)\/side-chat\/candidates\/([^/]+)\/queue$/);
-  if (threadSideChatQueue && req.method === "POST") {
-    try {
-      const threadSideChatId = decodeURIComponent(threadSideChatQueue[1]);
-      const candidateId = decodeURIComponent(threadSideChatQueue[2]);
-      const body = await readBody(req);
-      sendJson(res, 200, Object.assign({ ok: true }, await threadSideChatService.queueCandidate(threadSideChatId, candidateId, body)));
-    } catch (err) {
-      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
-    }
-    return;
-  }
-  const threadSideChatApply = url.pathname.match(/^\/api\/threads\/([^/]+)\/side-chat\/candidates\/([^/]+)\/apply$/);
-  if (threadSideChatApply && req.method === "POST") {
-    try {
-      const threadSideChatId = decodeURIComponent(threadSideChatApply[1]);
-      const candidateId = decodeURIComponent(threadSideChatApply[2]);
-      const body = await readBody(req);
-      sendJson(res, 200, Object.assign({ ok: true }, await threadSideChatService.applyCandidate(threadSideChatId, candidateId, body)));
-    } catch (err) {
-      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
-    }
-    return;
-  }
-  const threadSideChatCancel = url.pathname.match(/^\/api\/threads\/([^/]+)\/side-chat\/candidates\/([^/]+)\/cancel$/);
-  if (threadSideChatCancel && req.method === "POST") {
-    try {
-      const threadSideChatId = decodeURIComponent(threadSideChatCancel[1]);
-      const candidateId = decodeURIComponent(threadSideChatCancel[2]);
-      sendJson(res, 200, Object.assign({ ok: true }, await threadSideChatService.cancelCandidate(threadSideChatId, candidateId)));
-    } catch (err) {
-      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
-    }
-    return;
-  }
-  const threadSideChatClear = url.pathname.match(/^\/api\/threads\/([^/]+)\/side-chat\/clear$/);
-  if (threadSideChatClear && req.method === "POST") {
-    try {
-      const threadSideChatId = decodeURIComponent(threadSideChatClear[1]);
-      sendJson(res, 200, {
-        ok: true,
-        sideChat: await threadSideChatService.clear(threadSideChatId),
-      });
-    } catch (err) {
-      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
-    }
+  const threadSideChatRouteResult = await handleThreadSideChatRoute({
+    url,
+    method: req.method,
+    readBody: () => readBody(req),
+    threadSideChatService,
+    orchestrationService: threadSideChatOrchestrationService,
+    sendJson: (status, body) => sendJson(res, status, body),
+  });
+  if (threadSideChatRouteResult.handled) {
     return;
   }
   const sourceThreadWorkspaceDelegation = url.pathname.match(/^\/api\/threads\/([^/]+)\/workspace-delegation$/);

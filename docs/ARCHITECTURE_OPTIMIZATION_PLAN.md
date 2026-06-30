@@ -88,6 +88,21 @@ root-cause-first rule or introducing masking fallbacks.
 
 Current acceleration targets:
 
+0. `server.js` split/refactor must proceed by ownership domain, not by
+   cosmetic line slicing. The working pattern is: first extract an adapter that
+   owns a coherent domain decision or route group, inject all server-local side
+   effects as dependencies, add focused service/route tests, then leave
+   `server.js` as request/auth/context/dependency glue. The first extraction
+   in this sequence moved current-thread side-chat orchestration and
+   `/api/threads/:threadId/side-chat*` route handling into
+   `adapters/thread-side-chat-orchestration-service.js` and
+   `adapters/thread-side-chat-route-service.js`. Future high-yield candidates
+   should follow the same domain boundary: task-card route/execution glue,
+   public/profile config routes, uploads/file-preview routes, and continuation
+   job routes. Avoid moving helper functions only to reduce line count; each
+   extraction must reduce a real `server.js` ownership responsibility and gain
+   focused tests.
+
 1. Active large-thread detail opens still have the highest full-read risk. The
    active-read policy intentionally disables partial projection and bounded
    turns-list shortcuts unless an authoritative active-window overlay can prove
