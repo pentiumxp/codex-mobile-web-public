@@ -112,9 +112,13 @@ Current acceleration targets:
    runtime state, task-card/profile helpers, and logging callbacks. The current
    backend split also moved task-card route execution, message route execution,
    fallback source recovery, summary-state synchronization, and thread-detail
-   response preparation into dedicated adapters. Future high-yield candidates
-   should follow the same domain boundary: public/profile config routes,
-   GitHub/utility routes, remaining thread-detail enrichment helpers, and
+   response preparation into dedicated adapters. The current route-boundary
+   phase has started moving HTTP coordinators out of `adapters/` and into
+   `server-routes/`; `/api/threads/:id` detail routing is owned by
+   `server-routes/thread-detail-route-service.js`, while the old adapter path
+   remains a compatibility export. Future high-yield candidates should follow
+   the same domain boundary: public/profile config routes, GitHub/utility
+   routes, remaining thread-detail enrichment helpers, and
    notification/runtime side-effect groups. Avoid moving helper functions only
    to reduce line count; each extraction must reduce a real `server.js`
    ownership responsibility and gain focused tests.

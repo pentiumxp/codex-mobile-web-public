@@ -18,7 +18,8 @@ const threadMessageRouteServiceJs = fs.readFileSync(path.resolve(__dirname, ".."
 const threadSummaryStateServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-summary-state-service.js"), "utf8");
 const threadEventNotificationServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-event-notification-service.js"), "utf8");
 const routingServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-task-card-routing-service.js"), "utf8");
-const threadDetailRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-detail-route-service.js"), "utf8");
+const threadDetailRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "server-routes", "thread-detail-route-service.js"), "utf8");
+const threadDetailRouteAdapterJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-detail-route-service.js"), "utf8");
 const threadDetailResponsePreparationServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "thread-detail", "thread-detail-response-preparation-service.js"), "utf8");
 const webPushRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "web-push-runtime-service.js"), "utf8");
 const runtimeSettingsServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "runtime-settings-service.js"), "utf8");
@@ -505,6 +506,8 @@ test("server materializes structured task-card drafts from thread detail", () =>
   assert.match(apiDispatchRouteServiceJs, /handleThreadDetailReadRoute\(\{/);
   assert.match(threadDetailRouteServiceJs, /const preferRecentTurns = detailModeFromUrl\(url\) === "recent"/);
   assert.match(threadDetailRouteServiceJs, /sendJson\(status, body\)/);
+  assert.match(serverJs, /require\("\.\/server-routes\/thread-detail-route-service"\)/);
+  assert.match(threadDetailRouteAdapterJs, /require\("\.\.\/server-routes\/thread-detail-route-service"\)/);
 });
 
 test("conversation render includes task card signature, toolbar, and action handlers", () => {

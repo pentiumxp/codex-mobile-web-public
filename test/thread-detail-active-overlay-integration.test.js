@@ -20,7 +20,7 @@ const {
 } = require("../services/thread-detail/thread-detail-read-orchestration-service");
 const {
   handleThreadDetailReadRoute,
-} = require("../adapters/thread-detail-route-service");
+} = require("../server-routes/thread-detail-route-service");
 
 function routeUrl(pathname) {
   return new URL(pathname, "http://127.0.0.1:8787");

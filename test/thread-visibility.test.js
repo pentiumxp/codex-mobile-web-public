@@ -54,6 +54,10 @@ const threadDetailPerformanceServiceJs = fs.readFileSync(
   "utf8",
 );
 const threadDetailRouteServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "server-routes", "thread-detail-route-service.js"),
+  "utf8",
+);
+const threadDetailRouteAdapterJs = fs.readFileSync(
   path.resolve(__dirname, "..", "adapters", "thread-detail-route-service.js"),
   "utf8",
 );
@@ -337,7 +341,9 @@ test("thread detail defaults to ten turns and exposes an older cursor when compa
   assert.match(threadDetailReadOrchestrationServiceJs, /if \(activeReadPolicy\.shouldUseInitialTurnsList\) \{/);
   assert.match(threadDetailReadOrchestrationServiceJs, /"turns-list-initial"/);
   assert.match(serverJs, /require\("\.\/services\/thread-detail\/thread-detail-read-orchestration-service"\)/);
+  assert.match(serverJs, /require\("\.\/server-routes\/thread-detail-route-service"\)/);
   assert.match(threadDetailReadOrchestrationAdapterJs, /require\("\.\.\/services\/thread-detail\/thread-detail-read-orchestration-service"\)/);
+  assert.match(threadDetailRouteAdapterJs, /require\("\.\.\/server-routes\/thread-detail-route-service"\)/);
   assert.match(serverJs, /require\("\.\/services\/thread-detail\/thread-detail-bounded-read-policy-service"\)/);
   assert.match(serverJs, /require\("\.\/services\/thread-detail\/thread-detail-turns-list-read-coalescer-service"\)/);
   assert.match(threadDetailReadOrchestrationServiceJs, /require\("\.\/thread-detail-active-read-policy-service"\)/);

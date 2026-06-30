@@ -5,7 +5,12 @@ const { test } = require("node:test");
 
 const {
   handleThreadDetailReadRoute,
-} = require("../adapters/thread-detail-route-service");
+} = require("../server-routes/thread-detail-route-service");
+const adapter = require("../adapters/thread-detail-route-service");
+
+test("thread detail route adapter re-exports server-routes service", () => {
+  assert.equal(adapter.handleThreadDetailReadRoute, handleThreadDetailReadRoute);
+});
 
 function routeUrl(pathname) {
   return new URL(pathname, "http://127.0.0.1:8787");

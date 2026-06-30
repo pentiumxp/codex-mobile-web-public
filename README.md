@@ -4683,7 +4683,7 @@ Phase B 的活跃大线程读取风险已经从 proof gate 推进到真实 provi
   input/result service、active overlay provider 和 read orchestration 组合验证：普通 projection
   lookup 仍拒绝 partial，active-overlay lookup 可取得 partial window，最终返回
   `projection-active-overlay`，且不调用 full `thread/read` 或 `turns-list`。
-- 新增 `thread-detail-route-service.js`，把 `/api/threads/:id` 的 `mode=recent` 解析、
+- 新增 `server-routes/thread-detail-route-service.js`，把 `/api/threads/:id` 的 `mode=recent` 解析、
   bounded `threadLog`、JSON response 和 `complete=false` 语义从 `server.js` 抽到可测试边界。
   这不改变读取策略，只减少 route glue 对后续 active-overlay/server smoke 的阻力。
 - `test/thread-detail-active-overlay-integration.test.js` 现在额外覆盖 route-level smoke：
