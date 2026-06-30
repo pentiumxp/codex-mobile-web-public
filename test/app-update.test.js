@@ -10,6 +10,7 @@ const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
+const coreApiRouteServiceJs = fs.readFileSync(path.join(root, "adapters", "core-api-route-service.js"), "utf8");
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
 
 function functionBody(source, name) {
@@ -54,10 +55,11 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(serverJs, /const shellCacheName = readServiceWorkerCacheName\(\);/);
   assert.match(serverJs, /const buildId = appShellBuildId\(shellCacheName\);/);
   assert.match(serverJs, /clientBuildId:\s*clientBuildId\(shellCacheName, buildId\)/);
-  assert.match(serverJs, /const buildConfig = currentPublicBuildConfig\(\);/);
-  assert.match(serverJs, /buildId:\s*buildConfig\.buildId/);
-  assert.match(serverJs, /clientBuildId:\s*buildConfig\.clientBuildId/);
-  assert.match(serverJs, /shellCacheName:\s*buildConfig\.shellCacheName/);
+  assert.match(serverJs, /currentPublicBuildConfig/);
+  assert.match(coreApiRouteServiceJs, /const buildConfig = deps\.currentPublicBuildConfig\(\);/);
+  assert.match(coreApiRouteServiceJs, /buildId:\s*buildConfig\.buildId/);
+  assert.match(coreApiRouteServiceJs, /clientBuildId:\s*buildConfig\.clientBuildId/);
+  assert.match(coreApiRouteServiceJs, /shellCacheName:\s*buildConfig\.shellCacheName/);
   assert.match(indexHtml, /id="pageRefreshPrompt"/);
   assert.match(appJs, /const PAGE_SHELL_ASSETS = Object\.freeze\(\[/);
   assert.match(appJs, /"\/styles\.css"/);
@@ -215,9 +217,11 @@ test("public pull request check prompts before public publishing work", () => {
   assert.match(indexHtml, /id="appNativeDialog"/);
   assert.match(stylesCss, /\.public-pr-status/);
   assert.match(stylesCss, /\.app-native-dialog/);
-  assert.match(serverJs, /workspacePath:\s*APP_ROOT/);
-  assert.match(serverJs, /publicPullRequests:/);
-  assert.match(serverJs, /\/api\/public-pull-requests\/status/);
+  assert.match(serverJs, /createCoreApiRouteService/);
+  assert.match(serverJs, /appRoot:\s*APP_ROOT/);
+  assert.match(coreApiRouteServiceJs, /workspacePath:\s*appRoot/);
+  assert.match(coreApiRouteServiceJs, /publicPullRequests:/);
+  assert.match(coreApiRouteServiceJs, /\/api\/public-pull-requests\/status/);
   assert.match(serverJs, /publicPullRequestApiUrl\(PUBLIC_PR_REPOSITORY\)/);
   assert.match(appJs, /function renderPublicPrStatus\(\)/);
   assert.match(appJs, /function maybePromptPublicPrMerge\(status\)/);
@@ -304,8 +308,8 @@ test("version button opens an update panel with Public release status", () => {
   assert.match(indexHtml, /id="updateDialog"/);
   assert.match(indexHtml, /id="appUpdateStatus"/);
   assert.match(stylesCss, /\.update-dialog/);
-  assert.match(serverJs, /publicRelease:/);
-  assert.match(serverJs, /\/api\/public-release\/status/);
+  assert.match(coreApiRouteServiceJs, /publicRelease:/);
+  assert.match(coreApiRouteServiceJs, /\/api\/public-release\/status/);
   assert.match(serverJs, /function publicRepositoryCommitApiUrl\(/);
   assert.match(serverJs, /currentCheckoutUsesPublicRelease/);
   assert.match(appJs, /function renderUpdatePanel\(\)/);

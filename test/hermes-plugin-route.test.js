@@ -6,6 +6,7 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+const coreApiRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "core-api-route-service.js"), "utf8");
 const webPushRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "web-push-runtime-service.js"), "utf8");
 const staticFileServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "static-file-service.js"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
@@ -34,13 +35,14 @@ function functionBody(source, name) {
 }
 
 test("server exposes Hermes plugin manifest, registration, origin, launch, session, and notification routes", () => {
-  assert.match(serverJs, /"\/api\/v1\/hermes\/plugin\/manifest"/);
-  assert.match(serverJs, /"\/api\/v1\/hermes\/plugin\/workspaces"/);
-  assert.match(serverJs, /"\/api\/v1\/hermes\/plugin\/callbacks"/);
-  assert.match(serverJs, /"\/api\/v1\/hermes\/plugin\/origins"/);
-  assert.match(serverJs, /"\/api\/v1\/hermes\/plugin\/launch"/);
-  assert.match(serverJs, /"\/api\/v1\/hermes\/plugin\/session"/);
-  assert.match(serverJs, /"\/api\/v1\/hermes\/plugin\/notifications"/);
+  assert.match(serverJs, /createCoreApiRouteService/);
+  assert.match(coreApiRouteServiceJs, /"\/api\/v1\/hermes\/plugin\/manifest"/);
+  assert.match(coreApiRouteServiceJs, /"\/api\/v1\/hermes\/plugin\/workspaces"/);
+  assert.match(coreApiRouteServiceJs, /"\/api\/v1\/hermes\/plugin\/callbacks"/);
+  assert.match(coreApiRouteServiceJs, /"\/api\/v1\/hermes\/plugin\/origins"/);
+  assert.match(coreApiRouteServiceJs, /"\/api\/v1\/hermes\/plugin\/launch"/);
+  assert.match(coreApiRouteServiceJs, /"\/api\/v1\/hermes\/plugin\/session"/);
+  assert.match(coreApiRouteServiceJs, /"\/api\/v1\/hermes\/plugin\/notifications"/);
   assert.match(serverJs, /createHermesNotificationDelegateService/);
   assert.match(serverJs, /createWebPushRuntimeService/);
   assert.match(serverJs, /buildTurnCompletionDetailMessage/);
@@ -48,11 +50,11 @@ test("server exposes Hermes plugin manifest, registration, origin, launch, sessi
   assert.match(webPushRuntimeServiceJs, /delegateTurnCompletedNotification/);
   assert.match(serverJs, /CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_BASE_URL/);
   assert.match(serverJs, /CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_KEY_FILE/);
-  assert.match(serverJs, /notificationDelegateConfigured/);
-  assert.match(serverJs, /isAccessKeyAuthorized\(req\)/);
+  assert.match(coreApiRouteServiceJs, /notificationDelegateConfigured/);
+  assert.match(coreApiRouteServiceJs, /isAccessKeyAuthorized\(req\)/);
   assert.match(serverJs, /const tokens = requestAuthTokens\(req\);[\s\S]*tokens\.some\(\(token\) => hermesPluginService\.isSessionAuthorized\(token\)\)/);
   assert.match(serverJs, /codex_mobile_plugin_session/);
-  assert.match(serverJs, /pluginSessionCookieHeader\(req, session\)/);
+  assert.match(coreApiRouteServiceJs, /pluginSessionCookieHeader\(req, session\)/);
   assert.match(serverJs, /Authorization/);
   assert.match(serverJs, /CODEX_MOBILE_HERMES_PLUGIN_BASE_URL/);
   assert.match(serverJs, /CODEX_MOBILE_PUBLIC_BASE_URL/);

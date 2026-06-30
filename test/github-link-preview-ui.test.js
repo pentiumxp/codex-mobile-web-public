@@ -8,6 +8,7 @@ const { test } = require("node:test");
 const root = path.resolve(__dirname, "..");
 const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
+const coreApiRouteServiceJs = fs.readFileSync(path.join(root, "adapters", "core-api-route-service.js"), "utf8");
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 
 test("client hydrates GitHub preview card shells from a server endpoint", () => {
@@ -53,7 +54,7 @@ test("server exposes a GitHub link preview route", () => {
   assert.match(serverJs, /normalizeGitHubPreview/);
   assert.match(serverJs, /const githubLinkPreviewCache = new Map\(\);/);
   assert.match(serverJs, /function refreshGitHubLinkPreview\(/);
-  assert.match(serverJs, /url\.pathname === "\/api\/link-previews\/github"/);
+  assert.match(coreApiRouteServiceJs, /url\.pathname === "\/api\/link-previews\/github"/);
 });
 
 test("styles define a GitHub link card treatment", () => {

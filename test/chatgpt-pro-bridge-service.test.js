@@ -15,6 +15,7 @@ const {
 
 const root = path.resolve(__dirname, "..");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
+const coreApiRouteServiceJs = fs.readFileSync(path.join(root, "adapters", "core-api-route-service.js"), "utf8");
 const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const packageJson = fs.readFileSync(path.join(root, "package.json"), "utf8");
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
@@ -83,13 +84,14 @@ test("server and client wire @ChatGPT Pro without normal message submission", ()
   assert.match(serverJs, /\/api\/chatgpt-pro\/generate/);
   assert.match(serverJs, /\/api\/chatgpt-pro\/planner\/status/);
   assert.match(serverJs, /\/api\/chatgpt-pro\/planner\/artifacts/);
-  assert.match(serverJs, /\/api\/chatgpt-pro\/mcp/);
+  assert.match(coreApiRouteServiceJs, /\/api\/chatgpt-pro\/mcp/);
   assert.match(serverJs, /CODEX_MOBILE_CHATGPT_PRO_MCP_TOKEN_FILE/);
   assert.match(serverJs, /CODEX_MOBILE_CHATGPT_PRO_MCP_ALLOW_DIRECT_TASK_CARDS/);
   assert.match(serverJs, /delegateTaskCard: async \(input = \{\}\) => createThreadTaskCardsFromSourceThread\(input\.sourceThreadId, input\)/);
   assert.match(serverJs, /allowDirectTaskCards: CHATGPT_PRO_MCP_ALLOW_DIRECT_TASK_CARDS/);
   assert.ok(
-    serverJs.indexOf('url.pathname === "/api/chatgpt-pro/mcp"') < serverJs.indexOf("if (!isAuthorized(req))"),
+    serverJs.indexOf("coreApiRouteService.handlePublicRoute") < serverJs.indexOf("if (!isAuthorized(req))")
+      && coreApiRouteServiceJs.includes('url.pathname === "/api/chatgpt-pro/mcp"'),
     "MCP connector route should use its own token before normal browser auth",
   );
   assert.match(serverJs, /chatGptProSourceSummary/);

@@ -7,6 +7,7 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+const coreApiRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "core-api-route-service.js"), "utf8");
 const threadDetailReadOrchestrationServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "adapters", "thread-detail-read-orchestration-service.js"),
   "utf8",
@@ -1129,7 +1130,7 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(serverJs, /const threadListFallbackPrewarmService = createThreadListFallbackPrewarmService\(\{[\s\S]*readFallback: readThreadListFallback,[\s\S]*readGlobalState,[\s\S]*shouldRun: \(\) => \(activeThreadDetailRequestCount > 0[\s\S]*active-detail-in-flight[\s\S]*logger: console,[\s\S]*\}\);/);
   assert.match(serverJs, /function threadListFallbackPrewarmConfig\(\) \{[\s\S]*enabled: THREAD_LIST_FALLBACK_PREWARM_ENABLED,[\s\S]*delayMs: THREAD_LIST_FALLBACK_PREWARM_DELAY_MS,[\s\S]*retryDelayMs: THREAD_LIST_FALLBACK_PREWARM_RETRY_MS,[\s\S]*maxDeferrals: THREAD_LIST_FALLBACK_PREWARM_MAX_DEFERRALS,[\s\S]*limit: THREAD_LIST_FALLBACK_PREWARM_LIMIT,[\s\S]*sourceSnapshotLimit: THREAD_LIST_FALLBACK_PREWARM_SOURCE_SNAPSHOT_LIMIT,[\s\S]*\}/);
   assert.match(serverJs, /function threadListFallbackPrewarmPublicStatus\(\) \{[\s\S]*summarizePrewarmStatus\([\s\S]*threadListFallbackPrewarmService\.status\(\),[\s\S]*threadListFallbackPrewarmConfig\(\),[\s\S]*\)/);
-  assert.match(serverJs, /threadListFallbackPrewarm:\s*threadListFallbackPrewarmPublicStatus\(\)/);
+  assert.match(coreApiRouteServiceJs, /threadListFallbackPrewarm:\s*threadListFallbackPrewarmPublicStatus\(\)/);
   assert.match(serverJs, /function scheduleThreadListFallbackPrewarm\(\) \{[\s\S]*threadListFallbackPrewarmService\.schedule\(threadListFallbackPrewarmConfig\(\)\);[\s\S]*\}/);
   assert.match(functionBody(serverJs, "startServer"), /scheduleThreadListFallbackPrewarm\(\);/);
   assert.match(serverJs, /function clearThreadListFallbackCache\(\)/);

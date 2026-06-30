@@ -6,6 +6,7 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+const coreApiRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "core-api-route-service.js"), "utf8");
 const continuationThreadServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "continuation-thread-service.js"), "utf8");
 const codexAppServerClientServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "codex-app-server-client-service.js"), "utf8");
 const taskCardRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-task-card-route-service.js"), "utf8");
@@ -172,8 +173,8 @@ test("new-message route can persist an explicit initial thread title", () => {
 test("server default model falls back to GPT-5.5", () => {
   assert.match(serverJs, /const MODEL_OPTIONS = optionListFromEnv\("CODEX_MOBILE_MODEL_OPTIONS", \[\s*"gpt-5\.5"/);
   assert.match(serverJs, /const DEFAULT_MODEL = MODEL_OPTIONS\[0\] \|\| "gpt-5\.5";/);
-  assert.match(serverJs, /defaultModel: CODEX_CONFIG_DEFAULTS\.model \|\| DEFAULT_MODEL/);
-  assert.match(serverJs, /defaultPermissionMode: defaultPermissionModeFromConfigDefaults\(\)/);
+  assert.match(coreApiRouteServiceJs, /defaultModel: codexConfigDefaults\.model \|\| defaultModel/);
+  assert.match(coreApiRouteServiceJs, /defaultPermissionMode: defaultPermissionModeFromConfigDefaults\(\)/);
   assert.match(serverJs, /function defaultPermissionModeFromConfigDefaults\(\)[\s\S]*dangerFullAccess[\s\S]*return "full"/);
   assert.match(serverJs, /disabled:\s*"dangerFullAccess"/);
   assert.match(serverJs, /"no-sandbox":\s*"dangerFullAccess"/);
@@ -228,8 +229,8 @@ test("server hydrates rollout quota snapshots without overwriting live quota", (
   assert.match(codexAppServerClientServiceJs, /mobileOwnedMux:\s*this\.muxChild \? \{[\s\S]*pid:[\s\S]*running:/, "status should expose bounded Mobile-owned mux runtime evidence");
   assert.match(serverJs, /if \(!PERSIST_MOBILE_OWNED_MUX && codex\.muxChild && codex\.muxChild\.exitCode === null\) codex\.muxChild\.kill\(\)/, "server shutdown should preserve persistent owned mux children");
   assert.match(serverJs, /function activeRateLimits\(\)[\s\S]*latestLiveRateLimits \|\| latestSnapshotRateLimits/, "live quota should win over rollout snapshots");
-  assert.match(serverJs, /\/api\/public-config"[\s\S]*await codex\.refreshRateLimitsIfMissing\(\);[\s\S]*rateLimits: activeRateLimits\(\)/, "public config should refresh and include active quota");
-  assert.match(serverJs, /\/api\/status"[\s\S]*await codex\.refreshRateLimitsIfMissing\(\);[\s\S]*sendJson\(res, 200, codex\.status\(\)\)/, "status should refresh and include hydrated quota snapshots");
+  assert.match(coreApiRouteServiceJs, /\/api\/public-config"[\s\S]*await codex\.refreshRateLimitsIfMissing\(\);[\s\S]*rateLimits: activeRateLimits\(\)/, "public config should refresh and include active quota");
+  assert.match(coreApiRouteServiceJs, /\/api\/status"[\s\S]*await codex\.refreshRateLimitsIfMissing\(\);[\s\S]*const status = codex\.status\(\);[\s\S]*sendJson\(200, status\)/, "status should refresh and include hydrated quota snapshots");
 });
 
 test("server runtime inheritance includes model and reasoning effort", () => {

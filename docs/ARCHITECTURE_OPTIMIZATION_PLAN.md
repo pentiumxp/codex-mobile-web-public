@@ -2081,22 +2081,30 @@ public behavior:
   helpers, thread-display public settings normalization, and workspace
   delegation settings snapshots/toggles while `server.js` injects the runtime
   file path and dynamic-tool constants.
+- `adapters/core-api-route-service.js` now owns the public and core authorized
+  API route groups for public config/login, Codex Profile list/switch/progress,
+  Hermes plugin manifest/session/registration/launch/notifications, runtime
+  settings routes, client events, app update/public PR/public release/GitHub
+  preview utility routes, shared-chain restart, app status/reconnect, browser
+  approvals, and the pre-browser-auth ChatGPT Pro MCP connector. `server.js`
+  now keeps only request context/body/response injection, the auth boundary,
+  and the remaining thread/list/detail route-service composition.
 
-Local line-count evidence after the latest extraction: `server.js` is 10,314 lines,
+Local line-count evidence after the latest extraction: `server.js` is 9,935 lines,
 `thread-task-card-route-service.js` is 1,280 lines, and
 `thread-message-route-service.js` is 363 lines, and
 `thread-list-fallback-source-service.js` is 683 lines, and
 `thread-summary-state-service.js` is 383 lines, and
 `thread-detail-response-preparation-service.js` is 254 lines. The newer
-low-coupling static/profile-switch/runtime-settings adapters are 195, 385, and
-236 lines respectively.
+low-coupling static/profile-switch/runtime-settings/core-API adapters are 195,
+385, 236, and 554 lines respectively.
 This is a checkpoint, not the target state; `server.js` remains too large. The
-next high-yield backend splits should target public/profile config routes,
-GitHub/utility routes, remaining thread-detail enrichment helpers,
-notification/runtime side-effect groups, and the large API dispatcher because
-route execution, fallback/source, summary-state, static serving, runtime
-settings, profile preflight, and the main detail response-preparation order are
-now out of the entrypoint.
+next high-yield backend splits should target remaining thread-detail enrichment
+helpers, thread-list fallback/cache compatibility wrappers, notification/runtime
+side-effect groups, and the residual API dispatcher because core route
+execution, fallback/source, summary-state, static serving, runtime settings,
+profile preflight, and the main detail response-preparation order are now out
+of the entrypoint.
 
 Validation boundary:
 
@@ -2111,6 +2119,10 @@ Validation boundary:
   the static/profile-switch extractions;
 - focused thread-task-card route, thread visibility, and new-thread route tests
   after the runtime-settings extraction;
+- focused core-route source-boundary tests covering public config/Profile,
+  Hermes plugin, ChatGPT Pro MCP, workspace delegation, app update/public PR,
+  GitHub preview, media public config, and thread-list prewarm public-config
+  wiring after the core API route extraction;
 - `git diff --check` before commit.
 
 ### Phase 4: Browser And Visual Coverage

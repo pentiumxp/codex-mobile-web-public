@@ -7,6 +7,7 @@ const test = require("node:test");
 
 const root = path.resolve(__dirname, "..");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
+const coreApiRouteServiceJs = fs.readFileSync(path.join(root, "adapters", "core-api-route-service.js"), "utf8");
 const codexAppServerClientServiceJs = fs.readFileSync(path.join(root, "adapters", "codex-app-server-client-service.js"), "utf8");
 const profileSwitchServiceJs = fs.readFileSync(path.join(root, "adapters", "codex-profile-switch-service.js"), "utf8");
 const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
@@ -45,15 +46,16 @@ test("settings panel exposes Codex profile account and switch UI", () => {
 
 test("server exposes profile list and active profile switch endpoints", () => {
   assert.match(serverJs, /createCodexProfileService/);
+  assert.match(serverJs, /createCoreApiRouteService/);
   assert.match(codexAppServerClientServiceJs, /codexProfiles:\s*codexProfileService\.profiles\(\{/);
   assert.match(codexAppServerClientServiceJs, /activeQuota:\s*liveQuotaSnapshotForProfiles\(\)/);
-  assert.match(serverJs, /url\.pathname === "\/api\/codex-profiles"/);
-  assert.match(serverJs, /url\.pathname === "\/api\/codex-profiles\/switch-progress"/);
-  assert.match(serverJs, /url\.pathname === "\/api\/codex-profiles\/active"/);
-  assert.match(serverJs, /setProfileSwitchProgress/);
+  assert.match(coreApiRouteServiceJs, /url\.pathname === "\/api\/codex-profiles"/);
+  assert.match(coreApiRouteServiceJs, /url\.pathname === "\/api\/codex-profiles\/switch-progress"/);
+  assert.match(coreApiRouteServiceJs, /url\.pathname === "\/api\/codex-profiles\/active"/);
+  assert.match(coreApiRouteServiceJs, /setProfileSwitchProgress/);
   assert.match(profileSwitchServiceJs, /target_profile_rate_limits_unavailable/);
-  assert.match(serverJs, /\[codex-profile-switch\] failed/);
-  assert.match(serverJs, /sharedChainRestartService\.restart/);
+  assert.match(coreApiRouteServiceJs, /\[codex-profile-switch\] failed/);
+  assert.match(coreApiRouteServiceJs, /sharedChainRestartService\.restart/);
 });
 
 test("windowless launcher reads active profile store before starting mux", () => {

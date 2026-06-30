@@ -6,6 +6,7 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+const coreApiRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "core-api-route-service.js"), "utf8");
 const continuationThreadServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "continuation-thread-service.js"), "utf8");
 const codexAppServerClientServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "codex-app-server-client-service.js"), "utf8");
 const taskCardRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-task-card-route-service.js"), "utf8");
@@ -122,7 +123,7 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(taskCardRouteServiceJs, /function logWorkspaceDelegationDynamicToolCall\(/);
   assert.match(serverJs, /function dynamicToolServerRequestResponsePayload\(/);
   assert.match(runtimeSettingsServiceJs, /function setWorkspaceDelegationEnabled\(/);
-  assert.match(serverJs, /url\.pathname === "\/api\/settings\/workspace-delegation"/);
+  assert.match(coreApiRouteServiceJs, /url\.pathname === "\/api\/settings\/workspace-delegation"/);
   assert.match(functionBody(runtimeSettingsServiceJs, "workspaceDelegationPublicSettings"), /failureRecovery:\s*enabled \? "source_model_tool_call_with_dynamic_source_write_guard" : "off"/);
   assert.match(functionBody(runtimeSettingsServiceJs, "workspaceDelegationPublicSettings"), /serverAutoTaskCardFromFailures:\s*false/);
   assert.match(serverJs, /function buildThreadTaskCardCreatePayload\(/);
@@ -237,7 +238,7 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(taskCardRouteServiceJs, /service\.approveFromSource\(card\.id, payload\.sourceThreadId\)/);
   assert.match(taskCardRouteServiceJs, /direct: autoApprove/);
   assert.match(taskCardRouteServiceJs, /workspaceDelegationEnabled: workspaceDelegation\.enabled/);
-  assert.match(serverJs, /workspaceDelegation,\s+hermesPlugin:/);
+  assert.match(coreApiRouteServiceJs, /workspaceDelegation,\s+hermesPlugin:/);
   assert.match(createThreadTaskCardScript, /\/api\/threads\/\$\{encodeURIComponent\(sourceThreadId\)\}\/task-cards/);
   assert.match(createThreadTaskCardScript, /CODEX_MOBILE_KEY_FILE/);
   assert.match(createThreadTaskCardScript, /--pending/);

@@ -133,6 +133,7 @@ const { handleThreadListRoute } = require("./adapters/thread-list-route-service"
 const { createCodexAppServerClient } = require("./adapters/codex-app-server-client-service");
 const { createStaticFileService } = require("./adapters/static-file-service");
 const { createRuntimeSettingsService } = require("./adapters/runtime-settings-service");
+const { createCoreApiRouteService } = require("./adapters/core-api-route-service");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -8109,6 +8110,73 @@ const chatGptProMcpService = createChatGptProMcpService({
   tokenFile: CHATGPT_PRO_MCP_TOKEN_FILE,
   version: APP_VERSION,
 });
+const coreApiRouteService = createCoreApiRouteService({
+  activeProfileRestartOptions,
+  activeRateLimits,
+  appRoot: APP_ROOT,
+  appUpdateBranch: APP_UPDATE_BRANCH,
+  appUpdateDisabled: APP_UPDATE_DISABLED,
+  appUpdateRemote: APP_UPDATE_REMOTE,
+  appVersion: APP_VERSION,
+  applyAppUpdate,
+  authKey: AUTH_KEY,
+  chatGptProMcpService,
+  codex,
+  codexConfigDefaults: CODEX_CONFIG_DEFAULTS,
+  codexProfileService,
+  currentPublicBuildConfig,
+  defaultModel: DEFAULT_MODEL,
+  defaultPermissionModeFromConfigDefaults,
+  disableAuth: DISABLE_AUTH,
+  getProfileSwitchProgress,
+  hermesNotificationDelegateService,
+  hermesOriginFromRequest,
+  hermesPluginBaseUrl: HERMES_PLUGIN_BASE_URL,
+  hermesPluginService,
+  httpStatusError,
+  isAccessKeyAuthorized,
+  liveQuotaSnapshotForProfiles,
+  loadRecentRateLimitsFromRollouts,
+  logClientEvent,
+  mediaFileService,
+  modelOptions: MODEL_OPTIONS,
+  permissionModeOptions: PERMISSION_MODE_OPTIONS,
+  pluginSessionCookieHeader,
+  preflightCodexProfileSwitch,
+  profileSwitchLogDetail,
+  profileSwitchProgressRequestId,
+  publicConfigRuntimeCache,
+  publicPrCheckDisabled: PUBLIC_PR_CHECK_DISABLED,
+  publicPrRepository: PUBLIC_PR_REPOSITORY,
+  publicReleaseBranch: PUBLIC_RELEASE_BRANCH,
+  publicReleaseCheckDisabled: PUBLIC_RELEASE_CHECK_DISABLED,
+  publicReleaseRepository: PUBLIC_RELEASE_REPOSITORY,
+  pushSubscriptionPublicStatus,
+  rateLimitsByModelObject,
+  reasoningEffortOptions: REASONING_EFFORT_OPTIONS,
+  refreshAppUpdateStatus,
+  refreshGitHubLinkPreview,
+  refreshPublicPullRequestStatus,
+  refreshPublicReleaseStatus,
+  requestAuthToken,
+  requestBaseUrl,
+  rolloutWarningBytes: ROLLOUT_WARNING_BYTES,
+  safeAppUpdateError,
+  scheduleAppRestart,
+  setProfileSwitchProgress,
+  setThreadDisplaySettings,
+  setWorkspaceDelegationEnabled,
+  sharedChainRestartDelayMs: SHARED_CHAIN_RESTART_DELAY_MS,
+  sharedChainRestartService,
+  syncCodexMobileMcpToolset,
+  syncKnownCodexMobileMcpToolsets,
+  syncRegisteredWorkspaceTrust,
+  threadDisplayPublicSettings,
+  threadListFallbackPrewarmPublicStatus,
+  timingSafeEquals,
+  workspaceDelegationPublicSettings,
+  workspaceRegistryService,
+});
 
 function readGlobalState() {
   const p = path.join(CODEX_HOME, ".codex-global-state.json");
@@ -9353,438 +9421,26 @@ function tokenUsageWorkspaceCwds(globalState = readGlobalState()) {
 
 async function handleApi(req, res) {
   const url = getUrl(req);
-  if (url.pathname === "/api/v1/hermes/plugin/manifest" && req.method === "GET") {
-    sendJson(res, 200, hermesPluginService.manifest({
-      baseUrl: HERMES_PLUGIN_BASE_URL || requestBaseUrl(req),
-      hermesOrigin: hermesOriginFromRequest(req, url),
-      version: APP_VERSION,
-    }));
-    return;
-  }
-  if (url.pathname === "/api/public-config") {
-    await codex.refreshRateLimitsIfMissing();
-    loadRecentRateLimitsFromRollouts();
-    const buildConfig = currentPublicBuildConfig();
-    const workspaceDelegation = workspaceDelegationPublicSettings();
-    const activeQuota = liveQuotaSnapshotForProfiles();
-    const profileState = publicConfigRuntimeCache.getProfileState({
-      activeQuota,
-      loadProfiles: (options) => codexProfileService.profiles(options),
-    }).value;
-    syncKnownCodexMobileMcpToolsets({ activeQuota, profileState });
-    sendJson(res, 200, {
-      authRequired: !DISABLE_AUTH,
-      title: "Codex Mobile Web",
-      version: APP_VERSION,
-      platform: process.platform,
-      workspacePath: APP_ROOT,
-      buildId: buildConfig.buildId,
-      clientBuildId: buildConfig.clientBuildId,
-      shellCacheName: buildConfig.shellCacheName,
-      ...mediaFileService.publicConfig(),
-      rolloutWarningBytes: ROLLOUT_WARNING_BYTES,
-      modelOptions: MODEL_OPTIONS,
-      reasoningEffortOptions: REASONING_EFFORT_OPTIONS,
-      permissionModeOptions: PERMISSION_MODE_OPTIONS,
-      defaultModel: CODEX_CONFIG_DEFAULTS.model || DEFAULT_MODEL,
-      defaultReasoningEffort: CODEX_CONFIG_DEFAULTS.reasoningEffort,
-      defaultPermissionMode: defaultPermissionModeFromConfigDefaults(),
-      rateLimits: activeRateLimits(),
-      rateLimitsByModel: rateLimitsByModelObject(),
-      codexProfiles: profileState,
-      push: pushSubscriptionPublicStatus(),
-      update: {
-        enabled: !APP_UPDATE_DISABLED,
-        remote: APP_UPDATE_REMOTE,
-        branch: APP_UPDATE_BRANCH,
-      },
-      publicPullRequests: {
-        enabled: !PUBLIC_PR_CHECK_DISABLED,
-        repository: PUBLIC_PR_REPOSITORY,
-      },
-      publicRelease: {
-        enabled: !PUBLIC_RELEASE_CHECK_DISABLED,
-        repository: PUBLIC_RELEASE_REPOSITORY,
-        branch: PUBLIC_RELEASE_BRANCH,
-      },
-      threadListFallbackPrewarm: threadListFallbackPrewarmPublicStatus(),
-      workspaceCreate: {
-        enabled: true,
-        defaultRoot: workspaceRegistryService.defaultCreateRoot(),
-        roots: workspaceRegistryService.createRoots(),
-      },
-      workspaceDelegation,
-      hermesPlugin: {
-        id: "codex-mobile",
-        manifestPath: "/api/v1/hermes/plugin/manifest",
-        workspaceRegistrationPath: "/api/v1/hermes/plugin/workspaces",
-        callbackRegistrationPath: "/api/v1/hermes/plugin/callbacks",
-        originRegistrationPath: "/api/v1/hermes/plugin/origins",
-        launchPath: "/api/v1/hermes/plugin/launch",
-        sessionPath: "/api/v1/hermes/plugin/session",
-        notificationDelegatePath: "/api/v1/hermes/plugin/notifications",
-        notificationDelegateConfigured: hermesNotificationDelegateService.isConfiguredForWorkspace("owner"),
-      },
-    });
-    return;
-  }
-  if (url.pathname === "/api/chatgpt-pro/mcp" && (req.method === "POST" || req.method === "GET")) {
-    if (!chatGptProMcpService.isConfigured()) {
-      sendJson(res, 503, { ok: false, error: "ChatGPT Pro MCP connector is not configured" });
-      return;
-    }
-    if (!chatGptProMcpService.isAuthorized(req)) {
-      sendJson(res, 401, { ok: false, error: "Unauthorized ChatGPT Pro MCP connector request" });
-      return;
-    }
-    if (req.method === "GET") {
-      sendJson(res, 200, chatGptProMcpService.status());
-      return;
-    }
-    try {
-      const body = await readBody(req);
-      const reply = await chatGptProMcpService.handleJsonRpc(body);
-      if (reply === null) {
-        res.writeHead(204, { "Cache-Control": "no-store" });
-        res.end();
-        return;
-      }
-      sendJson(res, 200, reply);
-    } catch (err) {
-      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
-    }
-    return;
-  }
-  if (url.pathname === "/api/codex-profiles" && req.method === "GET") {
-    const activeQuota = liveQuotaSnapshotForProfiles();
-    syncKnownCodexMobileMcpToolsets({ activeQuota });
-    sendJson(res, 200, codexProfileService.profiles({
-      activeQuota,
-    }));
-    return;
-  }
-  if (url.pathname === "/api/codex-profiles/switch-progress" && req.method === "GET") {
-    const requestId = String(url.searchParams.get("requestId") || "").trim();
-    const progress = getProfileSwitchProgress(requestId);
-    if (!progress) {
-      sendJson(res, 404, { ok: false, error: "Profile switch progress not found" });
-      return;
-    }
-    sendJson(res, 200, { ok: true, progress });
-    return;
-  }
-  if (url.pathname === "/api/codex-profiles/active" && req.method === "POST") {
-    let requestId = "";
-    try {
-      const body = await readBody(req);
-      requestId = profileSwitchProgressRequestId(body.requestId);
-      const targetProfileId = String(body.profileId || body.id || "").trim().toLowerCase();
-      setProfileSwitchProgress(requestId, {
-        targetProfileId,
-        status: "running",
-        stage: "profile_lookup",
-        message: "正在读取目标 Profile...",
-        stepIndex: 1,
-        stepCount: 10,
-      });
-      const availableProfiles = codexProfileService.profiles({
-        activeQuota: liveQuotaSnapshotForProfiles(),
-      });
-      if (!availableProfiles.switchSupported) {
-        throw httpStatusError(409, "Codex profile switching requires the default per-profile mux endpoint configuration.");
-      }
-      const targetProfile = availableProfiles.profiles.find((item) => item.id === targetProfileId);
-      if (!targetProfile) {
-        throw httpStatusError(404, "Unknown Codex profile");
-      }
-      setProfileSwitchProgress(requestId, {
-        targetProfileId: targetProfile.id,
-        targetProfileLabel: targetProfile.label || targetProfile.id,
-        stage: "workspace_trust",
-        message: "正在同步目标账号的工作区信任...",
-        stepIndex: 2,
-      });
-      syncRegisteredWorkspaceTrust(targetProfile.codexHome);
-      setProfileSwitchProgress(requestId, {
-        targetProfileId: targetProfile.id,
-        targetProfileLabel: targetProfile.label || targetProfile.id,
-        stage: "mcp_toolset",
-        message: "正在注册 Codex Mobile 工具...",
-        stepIndex: 3,
-      });
-      syncCodexMobileMcpToolset(targetProfile.codexHome);
-      const preflight = await preflightCodexProfileSwitch(targetProfile, {
-        onProgress: (patch) => setProfileSwitchProgress(requestId, Object.assign({
-          targetProfileId: targetProfile.id,
-          targetProfileLabel: targetProfile.label || targetProfile.id,
-          status: "running",
-        }, patch || {})),
-      });
-      setProfileSwitchProgress(requestId, {
-        targetProfileId: targetProfile.id,
-        targetProfileLabel: targetProfile.label || targetProfile.id,
-        stage: "write_active_profile",
-        message: "正在写入 active Profile 配置...",
-        stepIndex: 9,
-      });
-      const profile = codexProfileService.setActiveProfile(targetProfile.id);
-      publicConfigRuntimeCache.invalidateProfiles();
-      setProfileSwitchProgress(requestId, {
-        targetProfileId: profile.id,
-        targetProfileLabel: profile.label || profile.id,
-        stage: "schedule_restart",
-        message: "正在安排 Mobile Web 重启...",
-        stepIndex: 10,
-      });
-      const restart = sharedChainRestartService.restart(Object.assign({
-        delayMs: SHARED_CHAIN_RESTART_DELAY_MS,
-      }, activeProfileRestartOptions(profile)));
-      const progress = setProfileSwitchProgress(requestId, {
-        targetProfileId: profile.id,
-        targetProfileLabel: profile.label || profile.id,
-        status: "restarting",
-        stage: "waiting_for_restart",
-        message: "切换已写入，正在等待服务恢复...",
-        stepIndex: 10,
-        restarting: true,
-      });
-      sendJson(res, 202, Object.assign({ ok: true, requestId, activeProfileId: profile.id, profile, preflight, progress }, restart));
-    } catch (err) {
-      if (requestId) {
-        const previousProgress = getProfileSwitchProgress(requestId);
-        const failedProgress = setProfileSwitchProgress(requestId, {
-          status: "failed",
-          stage: "failed",
-          message: `切换失败：${err.message || "Profile 切换失败"}`,
-          error: err.message || String(err),
-          code: err.code || undefined,
-          detail: err.detail || undefined,
-          failedStage: previousProgress && previousProgress.stage !== "failed" ? previousProgress.stage : undefined,
-          stepIndex: previousProgress && previousProgress.stepIndex ? previousProgress.stepIndex : undefined,
-        });
-        console.error(`[codex-profile-switch] failed ${JSON.stringify({
-          requestId,
-          targetProfileId: failedProgress.targetProfileId || undefined,
-          stage: failedProgress.stage,
-          failedStage: previousProgress && previousProgress.stage || undefined,
-          code: failedProgress.code || undefined,
-          detail: profileSwitchLogDetail(failedProgress.detail || failedProgress.error),
-        })}`);
-      }
-      sendJson(res, err.statusCode || 500, {
-        ok: false,
-        error: err.message || String(err),
-        code: err.code || undefined,
-        detail: err.detail || undefined,
-        requestId: requestId || undefined,
-        progress: requestId ? getProfileSwitchProgress(requestId) || undefined : undefined,
-      });
-    }
-    return;
-  }
-  if (url.pathname === "/api/login" && req.method === "POST") {
-    const body = await readBody(req);
-    if (!DISABLE_AUTH && !timingSafeEquals(body.key, AUTH_KEY)) {
-      sendJson(res, 401, { error: "Invalid key" });
-      return;
-    }
-    res.writeHead(204, {
-      "Set-Cookie": `codex_mobile_key=${encodeURIComponent(body.key || "")}; Path=/; Max-Age=31536000; SameSite=Lax`,
-      "Cache-Control": "no-store",
-    });
-    res.end();
-    return;
-  }
+  const publicCoreRouteResult = await coreApiRouteService.handlePublicRoute({
+    url,
+    req,
+    res,
+    readBody: () => readBody(req),
+    sendJson: (status, body, headers) => sendJson(res, status, body, headers),
+  });
+  if (publicCoreRouteResult.handled) return;
   if (!isAuthorized(req)) {
     sendJson(res, 401, { error: "Unauthorized" });
     return;
   }
-  if (url.pathname === "/api/settings/workspace-delegation" && (req.method === "GET" || req.method === "POST")) {
-    try {
-      if (req.method === "GET") {
-        sendJson(res, 200, { ok: true, workspaceDelegation: workspaceDelegationPublicSettings() });
-        return;
-      }
-      const body = await readBody(req);
-      if (typeof body.enabled !== "boolean") throw httpStatusError(400, "enabled_boolean_required");
-      sendJson(res, 200, {
-        ok: true,
-        workspaceDelegation: setWorkspaceDelegationEnabled(body.enabled),
-      });
-    } catch (err) {
-      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
-    }
-    return;
-  }
-  if (url.pathname === "/api/settings/thread-display" && (req.method === "GET" || req.method === "POST")) {
-    try {
-      if (req.method === "GET") {
-        sendJson(res, 200, { ok: true, threadDisplay: threadDisplayPublicSettings() });
-        return;
-      }
-      const body = await readBody(req);
-      sendJson(res, 200, {
-        ok: true,
-        threadDisplay: setThreadDisplaySettings(body),
-      });
-    } catch (err) {
-      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
-    }
-    return;
-  }
-  if (url.pathname === "/api/v1/hermes/plugin/session" && req.method === "POST") {
-    try {
-      const body = await readBody(req);
-      const session = hermesPluginService.createSession(Object.assign({}, body, {
-        token: body.codexPluginLaunch || body.pluginLaunch || body.launchToken || body.token || requestAuthToken(req),
-      }));
-      const cookie = pluginSessionCookieHeader(req, session);
-      sendJson(res, 200, session, cookie ? { "Set-Cookie": cookie } : {});
-    } catch (err) {
-      sendJson(res, err.statusCode || 400, { ok: false, error: err.message || String(err) });
-    }
-    return;
-  }
-  if (url.pathname === "/api/v1/hermes/plugin/workspaces" && req.method === "POST") {
-    if (!isAccessKeyAuthorized(req)) {
-      sendJson(res, 401, { ok: false, error: "Codex Mobile access key is required" });
-      return;
-    }
-    try {
-      const body = await readBody(req);
-      const registration = hermesPluginService.registerWorkspace(body);
-      sendJson(res, 200, { ok: true, registration });
-    } catch (err) {
-      sendJson(res, err.statusCode || 400, { ok: false, error: err.message || String(err) });
-    }
-    return;
-  }
-  if (url.pathname === "/api/v1/hermes/plugin/callbacks" && req.method === "POST") {
-    if (!isAccessKeyAuthorized(req)) {
-      sendJson(res, 401, { ok: false, error: "Codex Mobile access key is required" });
-      return;
-    }
-    try {
-      const body = await readBody(req);
-      const registration = hermesPluginService.registerWorkspace(body);
-      sendJson(res, 200, { ok: true, registration });
-    } catch (err) {
-      sendJson(res, err.statusCode || 400, { ok: false, error: err.message || String(err) });
-    }
-    return;
-  }
-  if (url.pathname === "/api/v1/hermes/plugin/origins" && req.method === "POST") {
-    if (!isAccessKeyAuthorized(req)) {
-      sendJson(res, 401, { ok: false, error: "Codex Mobile access key is required" });
-      return;
-    }
-    try {
-      const body = await readBody(req);
-      const registration = hermesPluginService.registerOrigin(body);
-      sendJson(res, 200, {
-        ok: true,
-        registration,
-        frame_ancestors: hermesPluginService.frameAncestors(),
-      });
-    } catch (err) {
-      sendJson(res, err.statusCode || 400, { ok: false, error: err.message || String(err) });
-    }
-    return;
-  }
-  if (url.pathname === "/api/v1/hermes/plugin/registration" && req.method === "GET") {
-    const registration = hermesPluginService.registration({
-      workspaceId: url.searchParams.get("workspaceId") || url.searchParams.get("workspace_id") || "owner",
-    });
-    sendJson(res, 200, { ok: true, registration });
-    return;
-  }
-  if (url.pathname === "/api/v1/hermes/plugin/launch" && req.method === "POST") {
-    if (!isAccessKeyAuthorized(req)) {
-      sendJson(res, 401, { ok: false, error: "Codex Mobile access key is required" });
-      return;
-    }
-    try {
-      const body = await readBody(req);
-      sendJson(res, 200, hermesPluginService.createLaunch(body));
-    } catch (err) {
-      sendJson(res, err.statusCode || 400, { ok: false, error: err.message || String(err) });
-    }
-    return;
-  }
-  if (url.pathname === "/api/v1/hermes/plugin/notifications" && req.method === "POST") {
-    if (!isAccessKeyAuthorized(req)) {
-      sendJson(res, 401, { ok: false, error: "Codex Mobile access key is required" });
-      return;
-    }
-    try {
-      const body = await readBody(req);
-      sendJson(res, 200, await hermesNotificationDelegateService.send(body));
-    } catch (err) {
-      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
-    }
-    return;
-  }
-  if (url.pathname === "/api/client-events" && req.method === "POST") {
-    const body = await readBody(req);
-    const event = String(body.event || "event").slice(0, 80);
-    const details = body.details && typeof body.details === "object" ? body.details : {};
-    logClientEvent(event, {
-      threadId: body.threadId || "",
-      path: body.path || "",
-      details,
-      userAgent: String(req.headers["user-agent"] || "").slice(0, 160),
-    });
-    res.writeHead(204, { "Cache-Control": "no-store" });
-    res.end();
-    return;
-  }
-  if (url.pathname === "/api/app-update/status" && req.method === "GET") {
-    const shouldFetch = /^(1|true|yes|on)$/i.test(url.searchParams.get("fetch") || "");
-    const force = /^(1|true|yes|on)$/i.test(url.searchParams.get("force") || "");
-    sendJson(res, 200, await refreshAppUpdateStatus({ fetch: shouldFetch, force }));
-    return;
-  }
-  if (url.pathname === "/api/app-update/apply" && req.method === "POST") {
-    try {
-      const result = await applyAppUpdate();
-      sendJson(res, 200, result);
-      if (result && result.updated) scheduleAppRestart("app update applied");
-    } catch (err) {
-      sendJson(res, err.statusCode || 500, { error: safeAppUpdateError(err) });
-    }
-    return;
-  }
-  if (url.pathname === "/api/public-pull-requests/status" && req.method === "GET") {
-    const force = /^(1|true|yes|on)$/i.test(url.searchParams.get("force") || "");
-    sendJson(res, 200, await refreshPublicPullRequestStatus({ force }));
-    return;
-  }
-  if (url.pathname === "/api/link-previews/github" && req.method === "GET") {
-    const force = /^(1|true|yes|on)$/i.test(url.searchParams.get("force") || "");
-    const previewUrl = String(url.searchParams.get("url") || "").trim();
-    if (!previewUrl) {
-      sendJson(res, 400, { supported: false, provider: "github", reason: "url is required", preview: null });
-      return;
-    }
-    sendJson(res, 200, await refreshGitHubLinkPreview(previewUrl, { force }));
-    return;
-  }
-  if (url.pathname === "/api/public-release/status" && req.method === "GET") {
-    const force = /^(1|true|yes|on)$/i.test(url.searchParams.get("force") || "");
-    sendJson(res, 200, await refreshPublicReleaseStatus({ force }));
-    return;
-  }
-  if (url.pathname === "/api/restart/shared-chain" && req.method === "POST") {
-    try {
-      const result = sharedChainRestartService.restart(Object.assign({
-        delayMs: SHARED_CHAIN_RESTART_DELAY_MS,
-      }, activeProfileRestartOptions()));
-      sendJson(res, 202, result);
-    } catch (err) {
-      sendJson(res, err.statusCode || 500, { error: err.message || String(err) });
-    }
-    return;
-  }
+  const authorizedCoreRouteResult = await coreApiRouteService.handleAuthorizedRoute({
+    url,
+    req,
+    res,
+    readBody: () => readBody(req),
+    sendJson: (status, body, headers) => sendJson(res, status, body, headers),
+  });
+  if (authorizedCoreRouteResult.handled) return;
   const webPushRouteResult = await webPushRuntimeService.handleRoute({
     url,
     method: req.method,
@@ -9795,20 +9451,6 @@ async function handleApi(req, res) {
   if (webPushRouteResult.handled) {
     return;
   }
-  if (url.pathname === "/api/status") {
-    await codex.ensure().catch((err) => {
-      codex.lastError = err.message;
-    });
-    await codex.refreshRateLimitsIfMissing();
-    loadRecentRateLimitsFromRollouts();
-    const status = codex.status();
-    const includeMuxMetrics = /^(1|true|yes|on)$/i.test(String(url.searchParams.get("muxMetrics") || ""));
-    if (includeMuxMetrics) {
-      status.muxMetrics = await codex.readMuxMetrics(["thread/list"]);
-    }
-    sendJson(res, 200, status);
-    return;
-  }
   const mediaFileRouteResult = await mediaFileService.handleMediaFileRoute({
     url,
     method: req.method,
@@ -9817,27 +9459,6 @@ async function handleApi(req, res) {
     sendJson: (status, body) => sendJson(res, status, body),
   });
   if (mediaFileRouteResult.handled) {
-    return;
-  }
-  if (url.pathname === "/api/app-server/reconnect" && req.method === "POST") {
-    codex.resetConnection("manual app-server reconnect requested");
-    await new Promise((resolve) => setTimeout(resolve, 350));
-    await codex.ensure().catch((err) => {
-      codex.lastError = err.message;
-    });
-    sendJson(res, 200, codex.status());
-    return;
-  }
-  if (url.pathname === "/api/approvals" && req.method === "GET") {
-    sendJson(res, 200, { data: codex.pendingServerRequests() });
-    return;
-  }
-  const approvalResponse = url.pathname.match(/^\/api\/approvals\/([^/]+)$/);
-  if (approvalResponse && req.method === "POST") {
-    const requestId = decodeURIComponent(approvalResponse[1]);
-    const body = await readBody(req);
-    const request = codex.answerServerRequest(requestId, body);
-    sendJson(res, 200, { ok: true, request });
     return;
   }
   const threadSideChatRouteResult = await handleThreadSideChatRoute({
