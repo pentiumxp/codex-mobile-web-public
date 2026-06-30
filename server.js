@@ -132,6 +132,7 @@ const { createThreadMessageRouteService } = require("./adapters/thread-message-r
 const { handleThreadListRoute } = require("./adapters/thread-list-route-service");
 const { createCodexAppServerClient } = require("./adapters/codex-app-server-client-service");
 const { createStaticFileService } = require("./adapters/static-file-service");
+const { createRuntimeSettingsService } = require("./adapters/runtime-settings-service");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -7071,170 +7072,22 @@ function readBody(req) {
   });
 }
 
-function readJsonFile(file, fallback) {
-  try {
-    return JSON.parse(fs.readFileSync(file, "utf8"));
-  } catch (_) {
-    return fallback;
-  }
-}
-
-function writeRuntimeJson(file, value) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-}
-
-function readRuntimeSettings() {
-  const value = readJsonFile(RUNTIME_SETTINGS_FILE, {});
-  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
-}
-
-function writeRuntimeSettings(patch = {}) {
-  const current = readRuntimeSettings();
-  const next = Object.assign({}, current, patch, {
-    version: 1,
-    updatedAt: new Date().toISOString(),
-  });
-  writeRuntimeJson(RUNTIME_SETTINGS_FILE, next);
-  return next;
-}
-
-const THREAD_DISPLAY_MAX_PANES = 12;
-
-function normalizeThreadDisplayThreadId(value) {
-  const text = String(value || "").trim();
-  if (!text || text.length > 220) return "";
-  return text;
-}
-
-function normalizeThreadDisplayPaneCount(value, fallback = 0) {
-  const parsed = Math.floor(Number(value));
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.max(0, Math.min(THREAD_DISPLAY_MAX_PANES, parsed));
-}
-
-function normalizeThreadDisplaySplitPairs(values = [], paneThreadIds = []) {
-  const idSet = new Set((paneThreadIds || []).map(normalizeThreadDisplayThreadId).filter(Boolean));
-  const used = new Set();
-  const pairs = [];
-  for (const value of Array.isArray(values) ? values : []) {
-    const anchorId = normalizeThreadDisplayThreadId(Array.isArray(value) ? value[0] : value && (value.anchorId || value.topId || value.primaryId));
-    const childId = normalizeThreadDisplayThreadId(Array.isArray(value) ? value[1] : value && (value.childId || value.bottomId || value.secondaryId));
-    if (!anchorId || !childId || anchorId === childId) continue;
-    if (idSet.size && (!idSet.has(anchorId) || !idSet.has(childId))) continue;
-    if (used.has(anchorId) || used.has(childId)) continue;
-    used.add(anchorId);
-    used.add(childId);
-    pairs.push({ anchorId, childId });
-    if (pairs.length >= Math.floor(THREAD_DISPLAY_MAX_PANES / 2)) break;
-  }
-  return pairs;
-}
-
-function normalizeThreadDisplayMode(value, fallback = "single") {
-  const text = String(value || "").trim().toLowerCase();
-  if (text === "tile" || text === "tiles" || text === "tiled") return "tile";
-  if (text === "single" || text === "normal") return "single";
-  return fallback === "tile" ? "tile" : "single";
-}
-
-function normalizeThreadDisplaySettings(raw = {}, options = {}) {
-  const input = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
-  const hasExplicitMode = Object.prototype.hasOwnProperty.call(input, "displayMode")
-    || Object.prototype.hasOwnProperty.call(input, "mode");
-  let displayMode = normalizeThreadDisplayMode(input.displayMode || input.mode, "single");
-  if (!hasExplicitMode && input.threadTileMode === true) displayMode = "tile";
-  if (!hasExplicitMode && input.threadTileMode === false) displayMode = "single";
-  const rawPaneIds = Array.isArray(input.paneThreadIds)
-    ? input.paneThreadIds
-    : Array.isArray(input.threadTilePinnedIds)
-      ? input.threadTilePinnedIds
-      : Array.isArray(input.threadIds)
-        ? input.threadIds
-        : [];
-  const paneThreadIds = uniqueStrings(rawPaneIds)
-    .map(normalizeThreadDisplayThreadId)
-    .filter(Boolean)
-    .slice(0, THREAD_DISPLAY_MAX_PANES);
-  const selectedThreadId = normalizeThreadDisplayThreadId(input.selectedThreadId);
-  const paneCount = normalizeThreadDisplayPaneCount(
-    Object.prototype.hasOwnProperty.call(input, "paneCount")
-      ? input.paneCount
-      : Object.prototype.hasOwnProperty.call(input, "threadTilePaneCount")
-        ? input.threadTilePaneCount
-        : input.tilePaneCount,
-    0,
-  );
-  const paneSplitPairs = normalizeThreadDisplaySplitPairs(
-    input.paneSplitPairs || input.threadTileSplitPairs || input.splitPairs,
-    paneThreadIds,
-  );
-  const updatedAt = String(input.updatedAt || "").trim();
-  const updatedAtMs = timestampToMs(input.updatedAtMs || updatedAt);
-  return {
-    displayMode,
-    threadTileMode: displayMode === "tile",
-    paneThreadIds,
-    paneCount,
-    paneSplitPairs,
-    selectedThreadId,
-    updatedAt,
-    updatedAtMs,
-    source: options.source || "runtime",
-  };
-}
-
-function threadDisplayPublicSettings(settings = readRuntimeSettings()) {
-  const raw = settings && settings.threadDisplay && typeof settings.threadDisplay === "object" && !Array.isArray(settings.threadDisplay)
-    ? settings.threadDisplay
-    : null;
-  return normalizeThreadDisplaySettings(raw || {}, { source: raw ? "runtime" : "default" });
-}
-
-function setThreadDisplaySettings(patch = {}) {
-  const input = patch && patch.threadDisplay && typeof patch.threadDisplay === "object" && !Array.isArray(patch.threadDisplay)
-    ? patch.threadDisplay
-    : patch;
-  const current = threadDisplayPublicSettings();
-  const now = new Date();
-  const next = normalizeThreadDisplaySettings(Object.assign({}, current, input || {}, {
-    updatedAt: now.toISOString(),
-    updatedAtMs: now.getTime(),
-  }), { source: "runtime" });
-  writeRuntimeSettings({
-    threadDisplay: {
-      displayMode: next.displayMode,
-      paneThreadIds: next.paneThreadIds,
-      paneCount: next.paneCount,
-      paneSplitPairs: next.paneSplitPairs,
-      selectedThreadId: next.selectedThreadId,
-      updatedAt: next.updatedAt,
-      updatedAtMs: next.updatedAtMs,
-    },
-  });
-  return threadDisplayPublicSettings(readRuntimeSettings());
-}
-
-function workspaceDelegationPublicSettings(settings = readRuntimeSettings()) {
-  const raw = settings && settings.workspaceDelegation && typeof settings.workspaceDelegation === "object"
-    ? settings.workspaceDelegation
-    : {};
-  const hasRuntimeValue = typeof raw.enabled === "boolean";
-  const enabled = hasRuntimeValue ? raw.enabled : WORKSPACE_DELEGATION_ENV_DEFAULT;
-  return {
-    enabled,
-    mode: enabled ? "model_driven_explicit_task_card_with_source_write_guard" : "off",
-    directTaskCardAutoApproval: enabled,
-    dynamicTool: enabled ? WORKSPACE_DELEGATION_TOOL_FULL_NAME : "",
-    dynamicToolEnabled: enabled,
-    ordinarySendPreflight: false,
-    localHeuristics: false,
-    failureRecovery: enabled ? "source_model_tool_call_with_dynamic_source_write_guard" : "off",
-    serverAutoTaskCardFromFailures: false,
-    source: hasRuntimeValue ? "runtime" : WORKSPACE_DELEGATION_ENV_DEFAULT ? "environment" : "default",
-    updatedAt: String(raw.updatedAt || ""),
-  };
-}
+const runtimeSettingsService = createRuntimeSettingsService({
+  runtimeSettingsFile: RUNTIME_SETTINGS_FILE,
+  timestampToMs,
+  workspaceDelegationEnvDefault: WORKSPACE_DELEGATION_ENV_DEFAULT,
+  workspaceDelegationToolFullName: WORKSPACE_DELEGATION_TOOL_FULL_NAME,
+});
+const {
+  readJsonFile,
+  readRuntimeSettings,
+  setThreadDisplaySettings,
+  setWorkspaceDelegationEnabled,
+  threadDisplayPublicSettings,
+  writeRuntimeJson,
+  writeRuntimeSettings,
+  workspaceDelegationPublicSettings,
+} = runtimeSettingsService;
 
 threadTaskCardRouteService = createThreadTaskCardRouteService({
   appRoot: APP_ROOT,
@@ -7418,17 +7271,6 @@ function logWorkspaceDelegationRpc(method, params = {}) {
   } catch (err) {
     console.error(`[workspace-delegation-rpc] failed to summarize request: ${err.message || String(err)}`);
   }
-}
-
-function setWorkspaceDelegationEnabled(enabled) {
-  const nextEnabled = Boolean(enabled);
-  const current = readRuntimeSettings();
-  const workspaceDelegation = Object.assign({}, current.workspaceDelegation || {}, {
-    enabled: nextEnabled,
-    updatedAt: new Date().toISOString(),
-  });
-  writeRuntimeSettings({ workspaceDelegation });
-  return workspaceDelegationPublicSettings(readRuntimeSettings());
 }
 
 function pushSubscriptionPublicStatus() {

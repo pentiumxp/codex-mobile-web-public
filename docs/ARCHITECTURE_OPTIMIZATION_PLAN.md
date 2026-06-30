@@ -2077,21 +2077,26 @@ public behavior:
   and preflight error/warning classification while `server.js` keeps HTTP
   sequencing, active-profile persistence, trust/toolset sync, and restart
   orchestration.
+- `adapters/runtime-settings-service.js` now owns runtime JSON read/write
+  helpers, thread-display public settings normalization, and workspace
+  delegation settings snapshots/toggles while `server.js` injects the runtime
+  file path and dynamic-tool constants.
 
-Local line-count evidence after the latest extraction: `server.js` is 10,472 lines,
+Local line-count evidence after the latest extraction: `server.js` is 10,314 lines,
 `thread-task-card-route-service.js` is 1,280 lines, and
 `thread-message-route-service.js` is 363 lines, and
 `thread-list-fallback-source-service.js` is 683 lines, and
 `thread-summary-state-service.js` is 383 lines, and
 `thread-detail-response-preparation-service.js` is 254 lines. The newer
-low-coupling static/profile-switch adapters are 195 and 385 lines respectively.
+low-coupling static/profile-switch/runtime-settings adapters are 195, 385, and
+236 lines respectively.
 This is a checkpoint, not the target state; `server.js` remains too large. The
 next high-yield backend splits should target public/profile config routes,
 GitHub/utility routes, remaining thread-detail enrichment helpers,
 notification/runtime side-effect groups, and the large API dispatcher because
-route execution, fallback/source, summary-state, static serving, profile
-preflight, and the main detail response-preparation order are now out of the
-entrypoint.
+route execution, fallback/source, summary-state, static serving, runtime
+settings, profile preflight, and the main detail response-preparation order are
+now out of the entrypoint.
 
 Validation boundary:
 
@@ -2104,6 +2109,8 @@ Validation boundary:
   source diagnostics;
 - focused static compression and Codex profile switch/preflight UI tests after
   the static/profile-switch extractions;
+- focused thread-task-card route, thread visibility, and new-thread route tests
+  after the runtime-settings extraction;
 - `git diff --check` before commit.
 
 ### Phase 4: Browser And Visual Coverage

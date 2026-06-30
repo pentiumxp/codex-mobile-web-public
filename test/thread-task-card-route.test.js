@@ -15,6 +15,7 @@ const routingServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters
 const threadDetailRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-detail-route-service.js"), "utf8");
 const threadDetailResponsePreparationServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-detail-response-preparation-service.js"), "utf8");
 const webPushRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "web-push-runtime-service.js"), "utf8");
+const runtimeSettingsServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "runtime-settings-service.js"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
@@ -106,7 +107,7 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(serverJs, /const TASK_CARD_RETURN_TOOL_NAME = "return_to_source"/);
   assert.match(serverJs, /CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION/);
   assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_ENABLED/);
-  assert.match(serverJs, /function workspaceDelegationPublicSettings\(/);
+  assert.match(runtimeSettingsServiceJs, /function workspaceDelegationPublicSettings\(/);
   assert.match(serverJs, /function workspaceDelegationDynamicToolSpec\(/);
   assert.match(serverJs, /function taskCardReturnDynamicToolSpec\(/);
   assert.match(serverJs, /function attachTaskCardRuntimeDynamicTools\(/);
@@ -120,10 +121,10 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(taskCardRouteServiceJs, /function workspaceDelegationDynamicToolCallDiagnostics\(/);
   assert.match(taskCardRouteServiceJs, /function logWorkspaceDelegationDynamicToolCall\(/);
   assert.match(serverJs, /function dynamicToolServerRequestResponsePayload\(/);
-  assert.match(serverJs, /function setWorkspaceDelegationEnabled\(/);
+  assert.match(runtimeSettingsServiceJs, /function setWorkspaceDelegationEnabled\(/);
   assert.match(serverJs, /url\.pathname === "\/api\/settings\/workspace-delegation"/);
-  assert.match(functionBody(serverJs, "workspaceDelegationPublicSettings"), /failureRecovery:\s*enabled \? "source_model_tool_call_with_dynamic_source_write_guard" : "off"/);
-  assert.match(functionBody(serverJs, "workspaceDelegationPublicSettings"), /serverAutoTaskCardFromFailures:\s*false/);
+  assert.match(functionBody(runtimeSettingsServiceJs, "workspaceDelegationPublicSettings"), /failureRecovery:\s*enabled \? "source_model_tool_call_with_dynamic_source_write_guard" : "off"/);
+  assert.match(functionBody(runtimeSettingsServiceJs, "workspaceDelegationPublicSettings"), /serverAutoTaskCardFromFailures:\s*false/);
   assert.match(serverJs, /function buildThreadTaskCardCreatePayload\(/);
   assert.match(serverJs, /function threadTaskCardThreadCallIdempotencyKey\(/);
   assert.match(serverJs, /function normalizeThreadTaskCardReasoningEffort\(/);
