@@ -44,6 +44,7 @@ function createThreadDetailActiveWindowPrewarmService(options = {}) {
   const scheduleTimer = typeof options.setTimeout === "function" ? options.setTimeout : setTimeout;
   const delayMs = Math.max(0, Number(options.delayMs ?? 25));
   const minIntervalMs = Math.max(0, Number(options.minIntervalMs ?? 1000));
+  const readyResultTtlMs = Math.max(0, Number(options.readyResultTtlMs ?? 15000));
   const resolveSummary = typeof options.resolveSummary === "function"
     ? options.resolveSummary
     : async () => ({ summary: null, source: "" });
@@ -155,6 +156,13 @@ function createThreadDetailActiveWindowPrewarmService(options = {}) {
     }
   }
 
+  function reusableReadyResult(result, current) {
+    if (!readyResultTtlMs || !result || typeof result !== "object") return false;
+    if (result.status !== "hit" && result.status !== "seeded") return false;
+    const updatedAtMs = Number(result.updatedAtMs || 0);
+    return Boolean(updatedAtMs && current - updatedAtMs < readyResultTtlMs);
+  }
+
   function schedule(input = {}) {
     const threadId = text(input.threadId);
     if (!threadId) return { scheduled: false, reason: "missing-thread-id" };
@@ -162,6 +170,9 @@ function createThreadDetailActiveWindowPrewarmService(options = {}) {
     const current = now();
     const lastAttemptAtMs = Number(lastAttemptAtByThread.get(threadId) || 0);
     const bypassMinInterval = input.bypassMinInterval === true;
+    if (!bypassMinInterval && reusableReadyResult(lastResultByThread.get(threadId), current)) {
+      return { scheduled: false, reason: "recently-ready" };
+    }
     if (!bypassMinInterval && minIntervalMs && lastAttemptAtMs && current - lastAttemptAtMs < minIntervalMs) {
       return { scheduled: false, reason: "recently-attempted" };
     }

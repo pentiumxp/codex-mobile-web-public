@@ -6855,10 +6855,11 @@ function scheduleActiveWindowPrewarmFromNotification(payload) {
   const threadId = notificationThreadId(payload);
   if (!threadId) return;
   if (method === "thread/status/changed" && !threadSummaryLooksActive(payload.params)) return;
+  const canBypassThrottle = method === "turn/started" || method === "turn/completed";
   scheduleActiveWindowPrewarm(threadId, null, method, {
-    delayMs: 0,
-    bypassMinInterval: true,
-    preemptPending: true,
+    delayMs: canBypassThrottle ? 0 : undefined,
+    bypassMinInterval: canBypassThrottle,
+    preemptPending: canBypassThrottle,
   });
 }
 

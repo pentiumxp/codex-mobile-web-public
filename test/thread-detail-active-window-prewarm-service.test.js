@@ -295,6 +295,44 @@ test("schedule keeps default delay and recently-attempted throttle for ordinary 
   });
 });
 
+test("schedule reuses fresh ready results for ordinary thread-list prewarm", async () => {
+  const timers = [];
+  let nowMs = 1_000;
+  const service = createThreadDetailActiveWindowPrewarmService({
+    now: () => nowMs,
+    delayMs: 25,
+    minIntervalMs: 0,
+    readyResultTtlMs: 10_000,
+    setTimeout: (fn, delayMs) => {
+      timers.push(delayMs);
+      fn();
+      return { unref() {} };
+    },
+    resolveSummary: async () => ({
+      summary: { id: "thread-1", status: { type: "active" }, activeTurnId: "turn-active" },
+    }),
+    threadRuntimeSettings: () => ({}),
+    projectionInput: () => ({ threadId: "thread-1", rolloutPath: "/tmp/rollout.jsonl" }),
+    activeOverlayProjectionWindowLookup: () => ({ result: { thread: { id: "thread-1", turns: [{ id: "turn-window" }] } } }),
+    turnsListThreadReadResult: async () => {
+      throw new Error("cached active window should skip app-server read");
+    },
+  });
+
+  assert.deepEqual(service.schedule({ threadId: "thread-1", reason: "thread-list-active" }), {
+    scheduled: true,
+    reason: "scheduled",
+  });
+  await Promise.resolve();
+  await Promise.resolve();
+  nowMs += 1_000;
+  assert.deepEqual(service.schedule({ threadId: "thread-1", reason: "thread-list-active" }), {
+    scheduled: false,
+    reason: "recently-ready",
+  });
+  assert.deepEqual(timers, [25]);
+});
+
 test("schedule can fast-start notification prewarm despite recent ordinary attempt", async () => {
   const timers = [];
   let nowMs = 1_000;

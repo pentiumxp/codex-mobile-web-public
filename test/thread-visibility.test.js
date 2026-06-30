@@ -212,9 +212,10 @@ test("active-window prewarm follows turn notifications that can move projection 
 
   assert.match(body, /method !== "turn\/started" && method !== "turn\/completed" && method !== "thread\/status\/changed"/);
   assert.match(body, /method === "thread\/status\/changed" && !threadSummaryLooksActive\(payload\.params\)/);
-  assert.match(body, /delayMs:\s*0/);
-  assert.match(body, /bypassMinInterval:\s*true/);
-  assert.match(body, /preemptPending:\s*true/);
+  assert.match(body, /const canBypassThrottle = method === "turn\/started" \|\| method === "turn\/completed"/);
+  assert.match(body, /delayMs:\s*canBypassThrottle \? 0 : undefined/);
+  assert.match(body, /bypassMinInterval:\s*canBypassThrottle/);
+  assert.match(body, /preemptPending:\s*canBypassThrottle/);
 });
 
 test("replayed turn completion status does not invent a fresh event time", () => {
