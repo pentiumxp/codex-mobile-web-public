@@ -3274,6 +3274,39 @@ Scope:
   advisory, so natural recovery is not marked failed before the current run can
   write a fresh result.
 
+### 2026-07-01 Runtime Job Scheduler Boundary
+
+This module starts the production-stability stage of the large server split by
+moving runtime self-check scheduling policy out of `adapters/` and into
+`services/runtime/`. It is intentionally behavior-preserving for the existing
+self-check loop: periodic checks still default to API/client-event jobs only,
+deploy checks still default to the real-browser job, and the adapter import
+path remains a compatibility wrapper.
+
+Root cause addressed: runtime diagnostics, browser checks, and foreground user
+requests previously shared resident CPU without a single source-controlled job
+declaration that exposed whether a job is periodic-safe, browser-backed,
+preemptible, and bounded. That made CPU incidents harder to reason about and
+kept the first stability boundary too close to the script/adapter layer.
+
+Scope:
+
+- `services/runtime/runtime-job-scheduler-service.js` owns the job declarations
+  for `api-thread`, `browser-runtime`, and `client-events`.
+- Each plan entry declares periodic allowance, max concurrency, time budget,
+  CPU budget class, real-browser allowance, and user-request preemption,
+  while preserving legacy aliases such as `timeoutMs`, `usesBrowser`, and
+  `preemptibleByForeground` for existing scripts.
+- `adapters/runtime-job-scheduler-service.js` is a compatibility export only.
+
+Required validation:
+
+- Focused runtime scheduler tests proving the declaration fields and legacy
+  aliases remain stable.
+- Runtime self-check loop tests because production readback consumes
+  `runtimeJobs` metadata.
+- Full local checks before central private deploy.
+
 Required validation:
 
 - Focused LaunchAgent service/readback tests.

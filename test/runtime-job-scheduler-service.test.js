@@ -3,7 +3,32 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 
-const service = require("../adapters/runtime-job-scheduler-service");
+const service = require("../services/runtime/runtime-job-scheduler-service");
+const adapter = require("../adapters/runtime-job-scheduler-service");
+
+test("runtime job scheduler adapter remains a compatibility wrapper", () => {
+  assert.equal(adapter.resolveRuntimeSelfCheckPlan, service.resolveRuntimeSelfCheckPlan);
+  assert.equal(adapter.RUNTIME_SELF_CHECK_JOBS, service.RUNTIME_SELF_CHECK_JOBS);
+});
+
+test("runtime self-check jobs declare production scheduling budgets", () => {
+  for (const name of service.JOB_ORDER) {
+    const job = service.RUNTIME_SELF_CHECK_JOBS[name];
+    assert.equal(job.name, name);
+    assert.equal(typeof job.periodicAllowed, "boolean");
+    assert.equal(typeof job.maxConcurrency, "number");
+    assert.ok(job.maxConcurrency >= 1);
+    assert.equal(typeof job.timeBudgetMs, "number");
+    assert.ok(job.timeBudgetMs > 0);
+    assert.equal(typeof job.timeoutMs, "number");
+    assert.equal(job.timeoutMs, job.timeBudgetMs);
+    assert.match(job.cpuBudgetClass, /^(low|medium|high)$/);
+    assert.equal(typeof job.realBrowserAllowed, "boolean");
+    assert.equal(job.usesBrowser, job.realBrowserAllowed);
+    assert.equal(typeof job.userRequestPreemptible, "boolean");
+    assert.equal(job.preemptibleByForeground, job.userRequestPreemptible);
+  }
+});
 
 test("runtime job scheduler keeps periodic checks lightweight by default", () => {
   const plan = service.resolveRuntimeSelfCheckPlan({ gateMode: "periodic" });
@@ -13,6 +38,8 @@ test("runtime job scheduler keeps periodic checks lightweight by default", () =>
   assert.deepEqual(plan.enabledJobNames, ["api-thread", "client-events"]);
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-runtime").enabled, false);
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-runtime").reason, "browser_mode_off");
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-runtime").realBrowserAllowed, true);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-runtime").periodicAllowed, true);
 });
 
 test("runtime job scheduler enables browser checks for deploy gates", () => {
@@ -21,8 +48,12 @@ test("runtime job scheduler enables browser checks for deploy gates", () => {
   assert.equal(plan.profile.browserMode, "full");
   assert.deepEqual(plan.enabledJobNames, ["api-thread", "browser-runtime", "client-events"]);
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-runtime").timeoutMs, service.DEFAULT_JOB_TIMEOUT_MS);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-runtime").timeBudgetMs, service.DEFAULT_JOB_TIMEOUT_MS);
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-runtime").maxConcurrency, 1);
   assert.equal(service.runtimeSelfCheckJob(plan, "browser-runtime").usesBrowser, true);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-runtime").realBrowserAllowed, true);
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-runtime").cpuBudgetClass, "high");
+  assert.equal(service.runtimeSelfCheckJob(plan, "browser-runtime").userRequestPreemptible, true);
 });
 
 test("runtime job scheduler allows explicit periodic browser diagnostics", () => {

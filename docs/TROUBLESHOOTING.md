@@ -1053,6 +1053,11 @@ Cause to check:
   child as an execution failure only when no parseable JSON report was emitted.
   Browser-runtime child checks can legitimately take several minutes while
   opening Chrome, switching threads, and sampling delayed DOM states; the
+  `runtimeJobs` entries are emitted from
+  `services/runtime/runtime-job-scheduler-service.js` and should be checked for
+  `periodicAllowed`, `timeBudgetMs`, `cpuBudgetClass`, `realBrowserAllowed`,
+  and `userRequestPreemptible` before changing LaunchAgent cadence or enabling
+  recurring browser checks.
   parent loop allows a bounded 300s child timeout, still below the 10-minute
   periodic interval. Newer browser-runtime checks refresh the API thread plan
   after each sampled thread is opened and refresh it again before settled
