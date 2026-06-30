@@ -10,6 +10,7 @@ const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
+const mediaFileServiceJs = fs.readFileSync(path.join(root, "adapters", "media-file-service.js"), "utf8");
 const { uploadPathForId } = require("../server");
 
 function functionBody(source, name) {
@@ -76,9 +77,9 @@ test("mobile file preview UI is wired from markdown link to preview API", () => 
   assert.match(serverJs, /cacheGeneratedImageForItem/);
   assert.match(serverJs, /cacheGeneratedImageDataUrl/);
   assert.match(serverJs, /readRolloutToolOutputImageItems/);
-  assert.match(serverJs, /\/api\/generated-images\/file/);
-  assert.match(serverJs, /\/api\/uploads\/file/);
-  assert.match(serverJs, /url\.searchParams\.get\("id"\)/);
+  assert.match(mediaFileServiceJs, /\/api\/generated-images\/file/);
+  assert.match(mediaFileServiceJs, /\/api\/uploads\/file/);
+  assert.match(mediaFileServiceJs, /url\.searchParams\.get\("id"\)/);
   assert.match(serverJs, /out\.type === "imageView" \|\| out\.type === "imageGeneration"/);
   assert.match(appJs, /function canRenderImageAttachment\(attachment\)/);
   assert.match(appJs, /imageAttachments[\s\S]*\.filter\(canRenderImageAttachment\)[\s\S]*renderInputImage\(\{ path: attachment\.path \}, attachment, index\)/);
@@ -101,8 +102,8 @@ test("mobile file preview UI is wired from markdown link to preview API", () => 
   assert.match(appJs, /renderCsvPreview/);
   assert.match(appJs, /\/api\/files\/preview\?threadId=/);
   assert.match(appJs, /\/api\/files\/preview\/content\?\$\{params\.toString\(\)\}/);
-  assert.match(serverJs, /\/api\/files\/preview/);
-  assert.match(serverJs, /\/api\/files\/preview\/content/);
+  assert.match(mediaFileServiceJs, /\/api\/files\/preview/);
+  assert.match(mediaFileServiceJs, /\/api\/files\/preview\/content/);
 });
 
 test("file preview requests use owning thread context instead of global current thread", () => {

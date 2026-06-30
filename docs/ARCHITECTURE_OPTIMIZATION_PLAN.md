@@ -96,12 +96,15 @@ Current acceleration targets:
    in this sequence moved current-thread side-chat orchestration and
    `/api/threads/:threadId/side-chat*` route handling into
    `adapters/thread-side-chat-orchestration-service.js` and
-   `adapters/thread-side-chat-route-service.js`. Future high-yield candidates
-   should follow the same domain boundary: task-card route/execution glue,
-   public/profile config routes, uploads/file-preview routes, and continuation
-   job routes. Avoid moving helper functions only to reduce line count; each
-   extraction must reduce a real `server.js` ownership responsibility and gain
-   focused tests.
+   `adapters/thread-side-chat-route-service.js`. The next extraction moved the
+   upload/local-file-preview/generated-image route group, upload message-body
+   parsing, upload submission dedupe, and preview authorization policy into
+   `adapters/media-file-service.js`. Future high-yield candidates should
+   follow the same domain boundary: task-card route/execution glue,
+   public/profile config routes, continuation job routes, and then thread-list
+   fallback/detail assembly seams. Avoid moving helper functions only to reduce
+   line count; each extraction must reduce a real `server.js` ownership
+   responsibility and gain focused tests.
 
 1. Active large-thread detail opens still have the highest full-read risk. The
    active-read policy intentionally disables partial projection and bounded

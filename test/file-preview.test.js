@@ -7,6 +7,7 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const {
+  createMediaFileService,
   filePreviewContentDisposition,
   filePreviewContentType,
   filePreviewAuthoritiesForThread,
@@ -17,7 +18,7 @@ const {
   readFilePreview,
   resolveFilePreviewPath,
   stripMarkdownFileTarget,
-} = require("../server");
+} = require("../adapters/media-file-service");
 
 test("file preview reads allowed markdown files with relative display paths", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-preview-"));
@@ -314,4 +315,49 @@ test("file preview accepts markdown targets with line suffixes", () => {
   assert.equal(preview.path, fs.realpathSync.native ? fs.realpathSync.native(file) : fs.realpathSync(file));
   assert.equal(preview.kind, "markdown");
   assert.equal(preview.content, "# Project\n\n- ready\n");
+});
+
+test("media service route returns file preview metadata through injected authority state", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-preview-route-"));
+  const file = path.join(root, "notes", "route.md");
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, "# Route\n", "utf8");
+  const service = createMediaFileService({
+    readGlobalState: () => ({ "electron-saved-workspace-roots": [root] }),
+  });
+  const sent = [];
+
+  const result = await service.handleMediaFileRoute({
+    url: new URL(`/api/files/preview?threadId=t1&path=${encodeURIComponent(file)}`, "http://127.0.0.1"),
+    method: "GET",
+    sendJson: (status, body) => sent.push({ status, body }),
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].status, 200);
+  assert.equal(sent[0].body.fileName, "route.md");
+  assert.equal(sent[0].body.content, "# Route\n");
+});
+
+test("media service deduplicates matching message submissions and keeps upload history policy local", async () => {
+  const service = createMediaFileService({
+    messageDedupeWindowMs: 60_000,
+  });
+  const uploads = [];
+  const keys = service.messageSubmissionKeys("thread-1", { clientSubmissionId: "client-1" }, "hello", uploads);
+  let calls = 0;
+
+  const first = await service.runMessageSubmissionOnce(keys, uploads, async () => {
+    calls += 1;
+    return { ok: true, call: calls };
+  });
+  const second = await service.runMessageSubmissionOnce(keys, uploads, async () => {
+    calls += 1;
+    return { ok: false, call: calls };
+  });
+
+  assert.deepEqual(first, { ok: true, call: 1 });
+  assert.deepEqual(second, { ok: true, call: 1 });
+  assert.equal(calls, 1);
 });

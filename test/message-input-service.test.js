@@ -15,6 +15,7 @@ const {
 } = require("../adapters/message-input-service");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+const mediaFileServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "media-file-service.js"), "utf8");
 
 test("image uploads disable extended-history persistence by default", () => {
   assert.equal(hasImageUploads([{ isImage: false }, { isImage: true }]), true);
@@ -57,15 +58,16 @@ test("image context defaults to path reference instead of model image content", 
 });
 
 test("message routes use upload-aware extended-history persistence", () => {
-  assert.match(serverJs, /const PERSIST_EXTENDED_HISTORY_POLICY = parsePersistExtendedHistoryEnv\(process\.env\);/);
-  assert.match(serverJs, /function persistExtendedHistoryForUploads\(uploads\)/);
+  assert.match(serverJs, /const mediaFileService = createMediaFileService\(/);
+  assert.match(mediaFileServiceJs, /parsePersistExtendedHistoryEnv\(env\)/);
+  assert.match(mediaFileServiceJs, /function persistExtendedHistoryForUploads\(uploads\)/);
   assert.match(serverJs, /const persistExtendedHistory = persistExtendedHistoryForUploads\(uploads\);/);
   assert.match(serverJs, /persistExtendedHistory,/);
 });
 
 test("message routes gate localImage input parts behind the image context policy", () => {
-  assert.match(serverJs, /const IMAGE_CONTEXT_POLICY = parseImageContextPolicyEnv\(process\.env\);/);
-  assert.match(serverJs, /imageContextMode: IMAGE_CONTEXT_POLICY\.imageContextMode/);
-  assert.match(serverJs, /for \(const file of localImageUploadsForContext\(uploads, IMAGE_CONTEXT_POLICY\)\)/);
+  assert.match(mediaFileServiceJs, /parseImageContextPolicyEnv\(env\)/);
+  assert.match(serverJs, /\.\.\.mediaFileService\.publicConfig\(\)/);
+  assert.match(mediaFileServiceJs, /for \(const file of localImageUploadsForContext\(uploads, imageContextPolicy\)\)/);
   assert.doesNotMatch(serverJs, /for \(const file of uploads\) \{\s*if \(file\.isImage\) input\.push\(\{ type: "localImage"/);
 });
