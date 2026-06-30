@@ -14,6 +14,7 @@ const {
 } = require("../adapters/thread-goal-service");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+const continuationThreadServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "continuation-thread-service.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
@@ -200,11 +201,11 @@ test("server enriches thread list and detail responses with thread goals", () =>
   assert.match(functionBody(serverJs, "setThreadGoal"), /isCompletedThreadGoal\(goal\)/);
   assert.match(functionBody(serverJs, "setThreadGoal"), /clearedCompletedGoal/);
   assert.match(serverJs, /continuationGoalMigrationPlan/);
-  assert.match(serverJs, /async function migrateContinuationThreadGoal\(/);
-  assert.match(functionBody(serverJs, "migrateContinuationThreadGoal"), /currentThreadGoalForAction\(sourceId\)/);
-  assert.match(functionBody(serverJs, "migrateContinuationThreadGoal"), /setThreadGoalRpc\(threadGoalSetParams\(targetId, plan\.objective, plan\.tokenBudget, targetExtra\)\)/);
-  assert.match(functionBody(serverJs, "migrateContinuationThreadGoal"), /plan\.sourceStatus === "active"/);
-  assert.match(functionBody(serverJs, "migrateContinuationThreadGoal"), /status: "blocked"/);
+  assert.match(continuationThreadServiceJs, /async function migrateContinuationThreadGoal\(/);
+  assert.match(functionBody(continuationThreadServiceJs, "migrateContinuationThreadGoal"), /currentThreadGoalForAction\(sourceId\)/);
+  assert.match(functionBody(continuationThreadServiceJs, "migrateContinuationThreadGoal"), /setThreadGoalRpc\(threadGoalSetParams\(targetId, plan\.objective, plan\.tokenBudget, targetExtra\)\)/);
+  assert.match(functionBody(continuationThreadServiceJs, "migrateContinuationThreadGoal"), /plan\.sourceStatus === "active"/);
+  assert.match(functionBody(continuationThreadServiceJs, "migrateContinuationThreadGoal"), /status: "blocked"/);
   assert.ok(serverJs.includes("url.pathname.match(/^\\/api\\/threads\\/([^/]+)\\/goal$/)"));
   assert.ok(serverJs.includes("url.pathname.match(/^\\/api\\/threads\\/([^/]+)\\/goal\\/actions$/)"));
   assert.match(serverJs, /function attachThreadGoalToThread\(/);

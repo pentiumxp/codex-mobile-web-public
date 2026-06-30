@@ -6,33 +6,38 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+const continuationThreadServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "continuation-thread-service.js"), "utf8");
 
-function functionBody(name) {
+function functionBodyFrom(source, name) {
   const patterns = [
     `function ${name}(`,
     `async function ${name}(`,
   ];
   let start = -1;
   for (const pattern of patterns) {
-    start = serverJs.indexOf(pattern);
+    start = source.indexOf(pattern);
     if (start >= 0) break;
   }
   assert.notEqual(start, -1, `missing function ${name}`);
-  const bodyStart = serverJs.indexOf(") {", start) + 2;
+  const bodyStart = source.indexOf(") {", start) + 2;
   assert.notEqual(bodyStart, 1, `missing function body ${name}`);
   let depth = 0;
-  for (let index = bodyStart; index < serverJs.length; index += 1) {
-    const char = serverJs[index];
+  for (let index = bodyStart; index < source.length; index += 1) {
+    const char = source[index];
     if (char === "{") depth += 1;
     if (char === "}") depth -= 1;
-    if (depth === 0) return serverJs.slice(bodyStart + 1, index);
+    if (depth === 0) return source.slice(bodyStart + 1, index);
   }
   throw new Error(`could not parse function ${name}`);
 }
 
+function functionBody(name) {
+  return functionBodyFrom(continuationThreadServiceJs, name);
+}
+
 test("continuation lineage writes a workspace-local ignored index", () => {
-  assert.match(serverJs, /CODEX_MOBILE_CONTINUATION_LINEAGE_MAX_DEPTH/);
-  assert.match(serverJs, /CODEX_MOBILE_CONTINUATION_LINEAGE_MAX_CHARS/);
+  assert.match(continuationThreadServiceJs, /CODEX_MOBILE_CONTINUATION_LINEAGE_MAX_DEPTH/);
+  assert.match(continuationThreadServiceJs, /CODEX_MOBILE_CONTINUATION_LINEAGE_MAX_CHARS/);
   const indexPathBody = functionBody("continuationLineageIndexPath");
   assert.match(indexPathBody, /\.agent-context", "thread-handoffs", "index\.jsonl"/);
 
@@ -65,10 +70,10 @@ test("bootstrap exposes lineage as file references instead of inline excerpts", 
 });
 
 test("continuation bootstrap keeps heavy context behind file references", () => {
-  assert.match(serverJs, /CODEX_MOBILE_CONTINUATION_BOOTSTRAP_CHARS \|\| "12000"/);
-  assert.match(serverJs, /CODEX_MOBILE_CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS \|\| "12000"/);
-  assert.match(serverJs, /CODEX_MOBILE_CONTINUATION_WORKSPACE_HANDOFF_TAIL_CHARS \|\| "18000"/);
-  assert.match(serverJs, /CODEX_MOBILE_CONTINUATION_ITEM_SUMMARY_CHARS \|\| "1200"/);
+  assert.match(continuationThreadServiceJs, /CODEX_MOBILE_CONTINUATION_BOOTSTRAP_CHARS \|\| "12000"/);
+  assert.match(continuationThreadServiceJs, /CODEX_MOBILE_CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS \|\| "12000"/);
+  assert.match(continuationThreadServiceJs, /CODEX_MOBILE_CONTINUATION_WORKSPACE_HANDOFF_TAIL_CHARS \|\| "18000"/);
+  assert.match(continuationThreadServiceJs, /CODEX_MOBILE_CONTINUATION_ITEM_SUMMARY_CHARS \|\| "1200"/);
 
   const workspaceBody = functionBody("workspaceContextReference");
   assert.match(workspaceBody, /PROJECT_CONTEXT\.md/);
@@ -138,7 +143,7 @@ test("continuation result persists lineage after bootstrap and archive attempt",
 });
 
 test("continuation archive fallback writes the Mobile archive index", () => {
-  const fallbackBody = functionBody("mobileArchivedFallbackResult");
+  const fallbackBody = functionBodyFrom(serverJs, "mobileArchivedFallbackResult");
   assert.match(fallbackBody, /rememberMobileArchivedThreadId\(threadId\)/);
   assert.match(fallbackBody, /archived: Boolean\(mobileArchived\)/);
   assert.match(fallbackBody, /archiveError: err \? String\(err\.message \|\| err\) : ""/);

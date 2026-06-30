@@ -6,6 +6,7 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+const continuationThreadServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "continuation-thread-service.js"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 
@@ -339,11 +340,11 @@ test("server runtime inheritance includes model and reasoning effort", () => {
 });
 
 test("continuation paths apply inherited model and effort", () => {
-  const sourceHandoffBody = functionBody(serverJs, "createSourceContinuationHandoff");
+  const sourceHandoffBody = functionBody(continuationThreadServiceJs, "createSourceContinuationHandoff");
   assert.match(sourceHandoffBody, /const params = applyTurnRuntimeSettings\(/, "source handoff generation should use inherited runtime settings");
   assert.match(sourceHandoffBody, /codex\.request\("turn\/start", params/, "source handoff turn should send inherited runtime settings");
 
-  const startContinuationBody = functionBody(serverJs, "startThreadFromRequestBody");
+  const startContinuationBody = functionBody(continuationThreadServiceJs, "startThreadFromRequestBody");
   assert.match(startContinuationBody, /const runtimeSettings = applyPermissionModeOverride\(sourceSnapshot\.runtimeSettings \|\| \{\}, body\.permissionMode, cwd\);/);
   assert.match(startContinuationBody, /const params = applyStartThreadRuntimeSettings\(/, "continuation thread/start should inherit model");
   assert.match(startContinuationBody, /const bootstrapParams = applyTurnRuntimeSettings\(/, "continuation bootstrap turn should inherit model and effort");
@@ -361,28 +362,28 @@ test("embedded plugin continuations carry plugin mode into the bootstrap", () =>
   assert.match(directStartBody, /hermesPluginMode: isHermesEmbedMode\(\)/);
   assert.match(directStartBody, /pluginId: isHermesEmbedMode\(\) \? "codex-mobile" : ""/);
 
-  const pluginModeBody = functionBody(serverJs, "continuationPluginMode");
+  const pluginModeBody = functionBody(continuationThreadServiceJs, "continuationPluginMode");
   assert.match(pluginModeBody, /mode === "hermes" \|\| mode === "homeai" \|\| mode === "plugin"/);
   assert.match(pluginModeBody, /body\.hermesPluginMode === true/);
   assert.match(pluginModeBody, /pluginId \? "hermes" : ""/);
 
-  const sourceKeyBody = functionBody(serverJs, "continuationJobSourceKey");
+  const sourceKeyBody = functionBody(continuationThreadServiceJs, "continuationJobSourceKey");
   assert.match(sourceKeyBody, /continuationPluginMode\(body\)/);
-  const startContinuationBody = functionBody(serverJs, "startThreadFromRequestBody");
+  const startContinuationBody = functionBody(continuationThreadServiceJs, "startThreadFromRequestBody");
   assert.match(startContinuationBody, /const pluginMode = continuationPluginMode\(body\)/);
   assert.match(startContinuationBody, /newThreadBootstrapInput\(\{ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff, pluginMode \}\)/);
-  assert.match(functionBody(serverJs, "createContinuationJob"), /pluginMode: continuationPluginMode\(body\)/);
-  assert.match(functionBody(serverJs, "publicContinuationJob"), /pluginMode: job\.pluginMode \|\| ""/);
+  assert.match(functionBody(continuationThreadServiceJs, "createContinuationJob"), /pluginMode: continuationPluginMode\(body\)/);
+  assert.match(functionBody(continuationThreadServiceJs, "publicContinuationJob"), /pluginMode: job\.pluginMode \|\| ""/);
 });
 
 test("continuation can fall back when source thread cannot write a handoff", () => {
-  const sourceHandoffBody = functionBody(serverJs, "createSourceContinuationHandoff");
+  const sourceHandoffBody = functionBody(continuationThreadServiceJs, "createSourceContinuationHandoff");
   assert.match(sourceHandoffBody, /sourceSnapshot/, "source handoff generation should receive the source snapshot for fallback");
   assert.match(sourceHandoffBody, /writeFallbackSourceContinuationHandoff\(/, "source handoff generation should have a server fallback path");
   assert.match(sourceHandoffBody, /handoff-fallback/, "continuation progress should expose fallback handoff generation");
   assert.match(sourceHandoffBody, /readContinuationTurnStatus\(threadId, turnId\)/, "completed source turns without a file should not wait for the long timeout");
 
-  const fallbackBody = functionBody(serverJs, "writeFallbackSourceContinuationHandoff");
+  const fallbackBody = functionBody(continuationThreadServiceJs, "writeFallbackSourceContinuationHandoff");
   assert.match(fallbackBody, /Fallback Continuation Handoff/, "fallback handoff should identify itself");
   assert.match(fallbackBody, /not a source-thread model summary/, "fallback handoff should not pretend the source thread summarized itself");
   assert.match(fallbackBody, /continuationSourceThreadSection\(snapshot\)/, "fallback handoff should include bounded source metadata");
@@ -390,16 +391,16 @@ test("continuation can fall back when source thread cannot write a handoff", () 
   assert.match(fallbackBody, /workspaceContextReference\(cwd\)/, "fallback handoff should point the new thread to durable context files");
   assert.match(fallbackBody, /fallback:\s*true/, "fallback handoff result should be marked for bootstrap display");
 
-  const startContinuationBody = functionBody(serverJs, "startThreadFromRequestBody");
+  const startContinuationBody = functionBody(continuationThreadServiceJs, "startThreadFromRequestBody");
   assert.match(startContinuationBody, /sourceSnapshot,\s*\n\s*onProgress: progress/, "continuation start should pass the source snapshot into handoff generation");
 
-  const handoffSectionBody = functionBody(serverJs, "sourceHandoffSection");
+  const handoffSectionBody = functionBody(continuationThreadServiceJs, "sourceHandoffSection");
   assert.match(handoffSectionBody, /sourceHandoff\.fallback/, "bootstrap should disclose fallback handoff mode");
   assert.match(handoffSectionBody, /fallbackReason/, "bootstrap should include a bounded fallback reason");
 });
 
 test("continuation titles survive app-server rename gaps", () => {
-  const titleBody = functionBody(serverJs, "sourceTitleForContinuation");
+  const titleBody = functionBody(continuationThreadServiceJs, "sourceTitleForContinuation");
   assert.match(titleBody, /requestedTitle, summary\.name, summary\.title, summary\.preview/, "source title should prefer the current visible title before app-server fallbacks");
 
   const indexBody = functionBody(serverJs, "persistThreadTitleToSessionIndex");
@@ -407,7 +408,7 @@ test("continuation titles survive app-server rename gaps", () => {
   assert.match(indexBody, /thread_name: name/, "session index entry should persist display title");
   assert.match(indexBody, /updated_at: timestamp/, "session index entry should include update timestamp");
 
-  const startContinuationBody = functionBody(serverJs, "startThreadFromRequestBody");
+  const startContinuationBody = functionBody(continuationThreadServiceJs, "startThreadFromRequestBody");
   assert.match(startContinuationBody, /sourceTitleForContinuation\(sourceSnapshot, requestedSourceThreadTitle, cwd\)/, "continuation should reselect source title after reading source snapshot");
   assert.match(startContinuationBody, /persistThreadTitleToSessionIndex\(threadId, desiredTitle\)/, "continuation should persist desired title before bootstrap can fail or restart");
   assert.match(startContinuationBody, /titleIndexed,/, "continuation response should expose title index persistence");
