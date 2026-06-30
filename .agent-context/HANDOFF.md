@@ -34147,3 +34147,73 @@ The previous full handoff was archived and should be opened only when old proven
   - Phase-B should show `activeOverlayWindowMs=0` or otherwise no foreground
     `turns-list-active-overlay-window` rebuild when a matching history-window
     cache exists and overlay evidence is complete.
+
+### 2026-06-30 - Active History-Window Foreground Retry Deployed
+
+- Private Home AI deploy completed for source ref `9bebc92b6ed4` with reason
+  `codex-mobile-active-history-window-foreground-retry`.
+- Deploy backup:
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260630T002005Z-plugin-codex-mobile-web-codex-mobile-active-history-window-foreground-retry`.
+- Production `/api/public-config` returned HTTP `200`, version `0.1.11`,
+  build id `576c30a2eea33b2a`, client build id
+  `0.1.11|codex-mobile-shell-v598`, shell cache `codex-mobile-shell-v598`, and
+  `authRequired=true`.
+- Source/production SHA-256 parity passed for
+  `adapters/thread-detail-read-orchestration-service.js`,
+  `test/thread-detail-read-orchestration-service.test.js`,
+  `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, and
+  `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Production markers confirmed `active_overlay_projection_window_retry`,
+  `history-window-without-active-turn`, the focused test marker
+  `active overlay retries history-window lookup with active turn omitted before rebuilding window`,
+  and docs wording for retrying with `activeOverlayStatusProven=true` plus
+  `omitActiveTurnId`.
+- Phase-B readback against source thread returned `ok=true`,
+  `readMode=projection-active-overlay`, `totalMs=289`,
+  `prepareResponseMs=200`, `turnsListInitialMs=0`,
+  `activeOverlayWindowMs=0`, `activeOverlayBackfillWindowMs=1`, and
+  `activeOverlayMergeMs=11`.
+- Phase-B decision returned `ready`, priority `H3`, owner `phase-b-readback`,
+  reason `warm-or-bounded-paths`, next action
+  `proceed-to-next-phase-b-root-cause-target`. The foreground active-window
+  rebuild residual did not recur in the sampled readback.
+- Deploy-mode runtime gate returned `ok=true`, `deployPass=true`,
+  `periodicHealthy=true`, issue count `17`, blocking issue count `0`, advisory
+  issue count `17`, execution failure count `0`, and child checks `api-thread`,
+  `browser-runtime`, and `client-events` all OK. Advisory code counts were
+  `browser_latest_turn_timestamp_missing=5`,
+  `browser_turn_timestamp_missing=5`, and
+  `browser_latest_turn_assistant_text_duplicate=7`.
+- LaunchAgent full-check readback selected the latest deploy full-check event
+  with `deployPass=true`, `periodicHealthy=true`, issue count `17`, blocking
+  issue count `0`, advisory issue count `17`, execution failure count `0`, and
+  check names `api-thread`, `browser-runtime`, and `client-events`.
+- Return classification: `completed`. No Public deploy was run.
+
+### 2026-06-30 - Post Active History Retry Payload Observation
+
+- After the active history-window retry deploy, a metadata-only authenticated
+  detail fetch for the Codex Mobile source thread returned HTTP `200`,
+  `readMode=projection-active-overlay`, `5` turns, and actual JSON response
+  body size `56387` bytes.
+- Largest response buckets by serialized byte size were:
+  - `thread.turns`: `37651` bytes across `5` turns.
+  - `thread.mobileDetailResponseBudget`: `7568` bytes.
+  - `thread.mobileVisibleItemKeys`: `3755` bytes.
+  - `thread.threadTaskCards`: `3421` bytes across `24` compacted cards.
+  - `thread.mobileDiagnostics`: `1521` bytes.
+- Retained visible item byte totals by item type in that sample:
+  - `agentMessage`: `18139` bytes across `23` items.
+  - `userMessage`: `4533` bytes across `5` items.
+  - `commandExecution`: `3729` bytes across `6` items.
+  - `turnUsageSummary`: `2609` bytes across `4` items.
+  - `contextCompaction`: `1330` bytes across `4` items.
+  - `reasoning`: `412` bytes across `1` item.
+- Interpretation:
+  - The sampled actual HTTP response was already below the active first-paint
+    byte ceiling, even though Phase-B budget diagnostics still reported an
+    internal pre-final over-ceiling counter. Treat future payload work from
+    current HTTP response buckets, not from that internal counter alone.
+  - Current likely next H3 optimization targets are response-budget diagnostic
+    verbosity, visible-key list size, and retained assistant item density; none
+    are H1/H2 blockers in the latest gate.
