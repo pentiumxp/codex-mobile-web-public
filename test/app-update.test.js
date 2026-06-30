@@ -11,6 +11,7 @@ const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const coreApiRouteServiceJs = fs.readFileSync(path.join(root, "adapters", "core-api-route-service.js"), "utf8");
+const appMaintenanceServiceJs = fs.readFileSync(path.join(root, "adapters", "app-maintenance-service.js"), "utf8");
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
 
 function functionBody(source, name) {
@@ -222,7 +223,9 @@ test("public pull request check prompts before public publishing work", () => {
   assert.match(coreApiRouteServiceJs, /workspacePath:\s*appRoot/);
   assert.match(coreApiRouteServiceJs, /publicPullRequests:/);
   assert.match(coreApiRouteServiceJs, /\/api\/public-pull-requests\/status/);
-  assert.match(serverJs, /publicPullRequestApiUrl\(PUBLIC_PR_REPOSITORY\)/);
+  assert.match(serverJs, /createAppMaintenanceService/);
+  assert.match(serverJs, /publicPrRepository:\s*PUBLIC_PR_REPOSITORY/);
+  assert.match(appMaintenanceServiceJs, /publicPullRequestApiUrl\(publicPrRepository\)/);
   assert.match(appJs, /function renderPublicPrStatus\(\)/);
   assert.match(appJs, /function maybePromptPublicPrMerge\(status\)/);
   assert.match(appJs, /function publicPrMergeConfirmationMessage\(status\)/);
@@ -310,8 +313,8 @@ test("version button opens an update panel with Public release status", () => {
   assert.match(stylesCss, /\.update-dialog/);
   assert.match(coreApiRouteServiceJs, /publicRelease:/);
   assert.match(coreApiRouteServiceJs, /\/api\/public-release\/status/);
-  assert.match(serverJs, /function publicRepositoryCommitApiUrl\(/);
-  assert.match(serverJs, /currentCheckoutUsesPublicRelease/);
+  assert.match(appMaintenanceServiceJs, /function publicRepositoryCommitApiUrl\(/);
+  assert.match(appMaintenanceServiceJs, /currentCheckoutUsesPublicRelease/);
   assert.match(appJs, /function renderUpdatePanel\(\)/);
   assert.match(appJs, /function refreshPublicReleaseStatus\(options = \{\}\)/);
   assert.match(appJs, /function currentUpdateUsesPublicRelease\(/);

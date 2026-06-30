@@ -2089,6 +2089,13 @@ public behavior:
   approvals, and the pre-browser-auth ChatGPT Pro MCP connector. `server.js`
   now keeps only request context/body/response injection, the auth boundary,
   and the remaining thread/list/detail route-service composition.
+- `adapters/app-maintenance-service.js` now owns the stateful implementation
+  behind app update/public PR/public release/GitHub preview utility routes:
+  safe git ref validation, credential-masked remote URLs, git status/apply
+  execution, restart scheduling, bounded GitHub fetches, in-memory status
+  caches, GitHub preview normalization, and public-release commit comparison.
+  `core-api-route-service.js` remains the HTTP route owner; `server.js` only
+  injects environment-derived constants and shutdown wiring.
 - `adapters/auto-turn-recovery-service.js` now owns automatic active-turn
   recovery policy: running/cooldown/in-flight checks, recent live-turn
   inspection, `turn/steer`, stale/unsupported steer fallback through
@@ -2097,21 +2104,22 @@ public behavior:
   `server.js` injects Codex RPC, runtime-setting helpers, classifiers, timeout
   values, and `notifyLocalTurnStarted`.
 
-Local line-count evidence after the latest extraction: `server.js` is 9,849 lines,
+Local line-count evidence after the latest extraction: `server.js` is 9,247 lines,
 `thread-task-card-route-service.js` is 1,280 lines, and
 `thread-message-route-service.js` is 363 lines, and
 `thread-list-fallback-source-service.js` is 683 lines, and
 `thread-summary-state-service.js` is 383 lines, and
 `thread-detail-response-preparation-service.js` is 254 lines. The newer
 low-coupling static/profile-switch/runtime-settings/core-API/auto-recovery
-adapters are 195, 385, 236, 554, and 153 lines respectively.
+adapters are 195, 385, 236, 554, and 153 lines respectively; the new app
+maintenance adapter is 709 lines.
 This is a checkpoint, not the target state; `server.js` remains too large. The
 next high-yield backend splits should target remaining thread-detail enrichment
 helpers, thread-list fallback/cache compatibility wrappers, notification/runtime
 side-effect groups, and the residual API dispatcher because core route
-execution, fallback/source, summary-state, static serving, runtime settings,
-profile preflight, and the main detail response-preparation order are now out
-of the entrypoint.
+execution, app maintenance state/IO, fallback/source, summary-state, static
+serving, runtime settings, profile preflight, and the main detail
+response-preparation order are now out of the entrypoint.
 
 Validation boundary:
 
@@ -2130,6 +2138,9 @@ Validation boundary:
   Hermes plugin, ChatGPT Pro MCP, workspace delegation, app update/public PR,
   GitHub preview, media public config, and thread-list prewarm public-config
   wiring after the core API route extraction;
+- focused app-maintenance service tests covering safe git refs, remote
+  credential masking, app-update git status reads, GitHub preview caching, and
+  public-release commit comparison after the maintenance-state extraction;
 - focused auto-turn-recovery service tests covering turn-id extraction, live
   steer recovery, cooldown dedupe, and stale-steer resume/start fallback;
 - `git diff --check` before commit.
