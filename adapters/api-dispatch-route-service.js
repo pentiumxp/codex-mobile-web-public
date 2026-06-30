@@ -74,6 +74,7 @@ function createApiDispatchRouteService(dependencies = {}) {
   const threadTaskCardRouteService = dependencies.threadTaskCardRouteService;
   const tokenUsageStatsService = dependencies.tokenUsageStatsService;
   const tokenUsageWorkspaceCwds = dependencies.tokenUsageWorkspaceCwds;
+  const trackThreadDetailRequestLifecycle = dependencies.trackThreadDetailRequestLifecycle;
   const tryUpdateThreadTitle = dependencies.tryUpdateThreadTitle;
   const upsertThreadListFallbackCacheThreads = dependencies.upsertThreadListFallbackCacheThreads;
   const visibilityFromGlobalState = dependencies.visibilityFromGlobalState;

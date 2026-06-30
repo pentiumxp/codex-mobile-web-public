@@ -1268,6 +1268,8 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeBody, /const stateAttachStartedAtMs = Date\.now\(\)/);
   assert.match(routeBody, /markTiming\("stateAttachMs", stateAttachStartedAtMs\)/);
   assert.match(routeBody, /attachThreadListStateToResult\(\{\s*data: normalizedFallback,\s*\}\)/);
+  assert.match(apiDispatchRouteServiceJs, /const trackThreadDetailRequestLifecycle = dependencies\.trackThreadDetailRequestLifecycle/);
+  assert.match(serverJs, /trackThreadDetailRequestLifecycle,/);
   const threadReadIndex = apiDispatchRouteServiceJs.indexOf('const threadRead = url.pathname.match(/^\\/api\\/threads\\/([^/]+)$/);');
   const threadReadBody = apiDispatchRouteServiceJs.slice(threadReadIndex, apiDispatchRouteServiceJs.indexOf('const threadTurns = url.pathname.match', threadReadIndex));
   assert.match(threadReadBody, /trackThreadDetailRequestLifecycle\(res\);/);

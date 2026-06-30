@@ -1235,12 +1235,13 @@ Do not infer from rollout file size alone. Separate:
   the 500-row window.
 - If `/api/threads` and thread detail both return HTTP 500 immediately after a
   runtime-boundary split deploy, inspect the bounded server error code before
-  assuming app-server or rollout corruption. A `ReferenceError` naming an
-  uppercase `server.js` constant from `adapters/api-dispatch-route-service.js`
+  assuming app-server or rollout corruption. A `ReferenceError` naming a
+  `server.js` local constant or helper from `adapters/api-dispatch-route-service.js`
   means the extracted route module leaked a server-local dependency. The route
-  service must receive that policy through `createApiDispatchRouteService()`
-  dependencies; focused coverage should assert the adapter source does not
-  reference the server-local constant directly.
+  service must receive that policy or lifecycle helper through
+  `createApiDispatchRouteService()` dependencies; focused coverage should
+  assert the adapter source uses the injected dependency, and route execution
+  coverage should exercise the affected `/api/threads` branch.
 - Is app-server/mux CPU active?
 - Is the latest turn `inProgress` but no event has been written for minutes?
 

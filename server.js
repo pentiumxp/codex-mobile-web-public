@@ -4256,6 +4256,7 @@ const apiDispatchRouteService = createApiDispatchRouteService({
   threadTaskCardRouteService,
   tokenUsageStatsService,
   tokenUsageWorkspaceCwds,
+  trackThreadDetailRequestLifecycle,
   tryUpdateThreadTitle,
   upsertThreadListFallbackCacheThreads,
   visibilityFromGlobalState,
