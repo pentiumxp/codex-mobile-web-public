@@ -5,7 +5,7 @@ const { test } = require("node:test");
 
 const {
   createThreadDetailActiveOverlayProviderService,
-} = require("../adapters/thread-detail-active-overlay-provider-service");
+} = require("../services/thread-detail/thread-detail-active-overlay-provider-service");
 const {
   createThreadDetailProjectionInputService,
 } = require("../adapters/thread-detail-projection-input-service");

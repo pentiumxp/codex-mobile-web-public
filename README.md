@@ -4668,7 +4668,7 @@ Phase B 的活跃大线程读取风险已经从 proof gate 推进到真实 provi
   `activeOverlaySnapshot()`。它只读取进程内由 app-server/mux notification 更新的 live
   projection entry，不读磁盘、不返回完整 thread、不把 notification shell 提升为普通 detail
   projection。
-- 新增 `thread-detail-active-overlay-provider-service.js`，把 snapshot 转成
+- 新增 `services/thread-detail/thread-detail-active-overlay-provider-service.js`，把 snapshot 转成
   `thread-detail-active-window-overlay-policy-service.js` 所需的 bounded evidence：active turn、
   operation/upload/assistant/receipt counts、coverage、v4 revision 和 timestamp。
 - `server.js` 在 `thread-detail-read-orchestration-service.js` 中注入该 provider。active/running

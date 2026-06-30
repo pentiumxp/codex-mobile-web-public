@@ -86,7 +86,7 @@ const {
 } = require("./adapters/thread-detail-user-input-anchor-service");
 const { createThreadDetailSummaryService } = require("./adapters/thread-detail-summary-service");
 const { createThreadDetailBoundedReadPolicyService } = require("./adapters/thread-detail-bounded-read-policy-service");
-const { createThreadDetailActiveOverlayProviderService } = require("./adapters/thread-detail-active-overlay-provider-service");
+const { createThreadDetailActiveOverlayProviderService } = require("./services/thread-detail/thread-detail-active-overlay-provider-service");
 const { createThreadDetailActiveWindowPrewarmService } = require("./services/thread-detail/thread-detail-active-window-prewarm-service");
 const { createThreadDetailTurnsListReadCoalescer } = require("./adapters/thread-detail-turns-list-read-coalescer-service");
 const { attachThreadDetailDiagnostics } = require("./adapters/thread-detail-performance-service");

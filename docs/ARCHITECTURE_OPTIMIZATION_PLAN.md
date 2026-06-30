@@ -3410,7 +3410,7 @@ that the active turn body was complete.
 
 Deployable scope:
 
-- `thread-detail-active-overlay-provider-service` now labels live projection
+- `services/thread-detail/thread-detail-active-overlay-provider-service.js` now labels live projection
   snapshots with bounded completeness metadata. Notification-shell snapshots,
   explicit partial snapshots, and snapshots without signature evidence are
   treated as partial.
