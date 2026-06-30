@@ -7,6 +7,7 @@ const test = require("node:test");
 
 const root = path.resolve(__dirname, "..");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
+const codexAppServerClientServiceJs = fs.readFileSync(path.join(root, "adapters", "codex-app-server-client-service.js"), "utf8");
 const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
@@ -43,8 +44,8 @@ test("settings panel exposes Codex profile account and switch UI", () => {
 
 test("server exposes profile list and active profile switch endpoints", () => {
   assert.match(serverJs, /createCodexProfileService/);
-  assert.match(serverJs, /codexProfiles:\s*codexProfileService\.profiles\(\{/);
-  assert.match(serverJs, /activeQuota:\s*liveQuotaSnapshotForProfiles\(\)/);
+  assert.match(codexAppServerClientServiceJs, /codexProfiles:\s*codexProfileService\.profiles\(\{/);
+  assert.match(codexAppServerClientServiceJs, /activeQuota:\s*liveQuotaSnapshotForProfiles\(\)/);
   assert.match(serverJs, /url\.pathname === "\/api\/codex-profiles"/);
   assert.match(serverJs, /url\.pathname === "\/api\/codex-profiles\/switch-progress"/);
   assert.match(serverJs, /url\.pathname === "\/api\/codex-profiles\/active"/);

@@ -7,6 +7,7 @@ const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
 const continuationThreadServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "continuation-thread-service.js"), "utf8");
+const codexAppServerClientServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "codex-app-server-client-service.js"), "utf8");
 const routingServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-task-card-routing-service.js"), "utf8");
 const threadDetailRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-detail-route-service.js"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
@@ -188,9 +189,9 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(serverJs, "workspaceDelegationScriptFallbackInstruction"), /must not be used as a substitute/);
   assert.match(functionBody(serverJs, "applyStartThreadRuntimeSettings"), /attachWorkspaceDelegationRuntimeGuidance\(params\)/);
   assert.match(functionBody(serverJs, "applyTurnRuntimeSettings"), /attachWorkspaceDelegationRuntimeGuidance\(params\)/);
-  assert.match(functionBody(serverJs, "sendRpc"), /const serializedPayload = JSON\.stringify\(payload\)/);
-  assert.match(functionBody(serverJs, "sendRpc"), /logWorkspaceDelegationRpc\(method, params\);[\s\S]*this\.ws\.send\(serializedPayload\)/);
-  assert.match(functionBody(serverJs, "handleServerRequest"), /msg\.method === "item\/tool\/call"[\s\S]*answerDynamicToolServerRequest\(request\)/);
+  assert.match(functionBody(codexAppServerClientServiceJs, "sendRpc"), /const serializedPayload = JSON\.stringify\(payload\)/);
+  assert.match(functionBody(codexAppServerClientServiceJs, "sendRpc"), /logWorkspaceDelegationRpc\(method, params\);[\s\S]*this\.ws\.send\(serializedPayload\)/);
+  assert.match(functionBody(codexAppServerClientServiceJs, "handleServerRequest"), /msg\.method === "item\/tool\/call"[\s\S]*answerDynamicToolServerRequest\(request\)/);
   assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /createThreadTaskCardsFromSourceThread\(body\.sourceThreadId, body\)/);
   assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /threadTaskCardService\.reply\(prepared\.taskCardId, prepared\.actorThreadId, prepared\.body\)/);
   assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /TASK_CARD_RETURN_TOOL_FULL_NAME/);
@@ -257,7 +258,8 @@ test("thread task card routes preserve service status codes", () => {
   assert.match(serverJs, /function maybeAutoReplyThreadTaskCard\(/);
   assert.match(serverJs, /threadTaskCardService\.maybeAutoReplyCompletedTurn/);
   assert.match(serverJs, /threadTaskCardService\.maybeResumeInterruptedTaskCard/);
-  assert.match(serverJs, /maybeAutoReplyThreadTaskCard\(msg\.method, msg\.params \|\| null\)/);
+  assert.match(serverJs, /maybeAutoReplyThreadTaskCard,\s+maybeApplyQueuedThreadSideChat,/);
+  assert.match(codexAppServerClientServiceJs, /maybeAutoReplyThreadTaskCard\(msg\.method, msg\.params \|\| null\)/);
   const statusPreservingErrors = routeBlock.match(/sendJson\(res, err\.statusCode \|\| 500, \{ ok: false, error: err\.message \|\| String\(err\) \}\);/g) || [];
   assert.equal(statusPreservingErrors.length, 8);
 });
@@ -415,7 +417,8 @@ test("server materializes structured task-card drafts from thread detail", () =>
   assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /await prepareThreadTaskCardsToResult\(applyLocalActiveThreadStatusToResult\(detailResult, details\)\)/);
   assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /finalizeThreadDetailProjectionResult/);
   assert.match(functionBody(serverJs, "turnsListThreadReadResult"), /return prepareThreadDetailResponseResult\(result/);
-  assert.match(serverJs, /maybeMaterializeThreadTaskCardDrafts\(msg\.method, msg\.params \|\| null\)/);
+  assert.match(serverJs, /maybeMaterializeThreadTaskCardDrafts,\s+maybeAutoReplyThreadTaskCard,/);
+  assert.match(codexAppServerClientServiceJs, /maybeMaterializeThreadTaskCardDrafts\(msg\.method, msg\.params \|\| null\)/);
   assert.match(serverJs, /prepareResponse: prepareThreadDetailResponseResult/);
   assert.match(serverJs, /threadDetailReadOrchestrationService\.readThreadDetail/);
   assert.match(serverJs, /handleThreadDetailReadRoute\(\{/);

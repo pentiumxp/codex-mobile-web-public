@@ -7,6 +7,7 @@ const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
 const continuationThreadServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "continuation-thread-service.js"), "utf8");
+const codexAppServerClientServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "codex-app-server-client-service.js"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 
@@ -205,23 +206,23 @@ test("server hydrates rollout quota snapshots without overwriting live quota", (
   assert.match(serverJs, /function isTrustedLiveRateLimitSource\([\s\S]*managed-child-live[\s\S]*profile-mux-live/, "owned live quota should be exposable for shared profile homes");
   assert.match(serverJs, /function recordRateLimits\([\s\S]*!isRateLimitRolloutSourceAccountScoped\(CODEX_HOME\)[\s\S]*latestLiveRateLimits = null/, "source-less live quota should be ignored for shared profile homes");
   assert.match(serverJs, /function recordRateLimitReadResult\([\s\S]*rateLimitsByLimitId[\s\S]*latestLiveRateLimitsSource = source/, "rate-limit read RPC should hydrate model quota snapshots");
-  assert.match(serverJs, /await this\.refreshRateLimits\(\);[\s\S]*this\.ready = true/, "initialize should refresh quota before broadcasting ready status");
-  assert.match(serverJs, /async refreshRateLimitsIfMissing\(\)[\s\S]*LIVE_RATE_LIMIT_REFRESH_MIN_INTERVAL_MS/, "server should rehydrate missing live quota after app-server startup");
-  assert.match(serverJs, /this\.sendRpc\("account\/rateLimits\/read"[\s\S]*resetOnTimeout:\s*false/, "quota refresh should call the official app-server read RPC without resetting the transport on timeout");
-  assert.match(serverJs, /rateLimitSource\(\)[\s\S]*this\.isMuxEndpoint\(\)[\s\S]*"profile-mux-live"/, "profile mux quota should be marked as owned by the active profile endpoint");
-  assert.match(serverJs, /recordRateLimits\(msg\.params\.rateLimits,\s*\{[\s\S]*source:\s*this\.rateLimitSource\(\)/, "quota notifications should use the same trusted source classifier as quota reads");
+  assert.match(codexAppServerClientServiceJs, /await this\.refreshRateLimits\(\);[\s\S]*this\.ready = true/, "initialize should refresh quota before broadcasting ready status");
+  assert.match(codexAppServerClientServiceJs, /async refreshRateLimitsIfMissing\(\)[\s\S]*LIVE_RATE_LIMIT_REFRESH_MIN_INTERVAL_MS/, "server should rehydrate missing live quota after app-server startup");
+  assert.match(codexAppServerClientServiceJs, /this\.sendRpc\("account\/rateLimits\/read"[\s\S]*resetOnTimeout:\s*false/, "quota refresh should call the official app-server read RPC without resetting the transport on timeout");
+  assert.match(codexAppServerClientServiceJs, /rateLimitSource\(\)[\s\S]*this\.isMuxEndpoint\(\)[\s\S]*"profile-mux-live"/, "profile mux quota should be marked as owned by the active profile endpoint");
+  assert.match(codexAppServerClientServiceJs, /recordRateLimits\(msg\.params\.rateLimits,\s*\{[\s\S]*source:\s*this\.rateLimitSource\(\)/, "quota notifications should use the same trusted source classifier as quota reads");
   assert.match(serverJs, /function codexAppServerChildEnv\([\s\S]*CODEX_CLI_PATH[\s\S]*CODEX_MUX_/, "managed child app-server env should drop desktop bridge variables");
   assert.match(serverJs, /if \(CODEX_HOME\) env\.CODEX_HOME = CODEX_HOME;[\s\S]*Object\.assign\(env, extra\);/, "explicit child env should be able to override the active CODEX_HOME for profile preflight");
-  assert.match(serverJs, /spawn\(CODEX_EXE,[\s\S]*\{\s*cwd: APP_ROOT,[\s\S]*env: codexAppServerChildEnv\(\{ CODEX_HOME \}\)/, "managed child app-server should inherit the resolved active CODEX_HOME without desktop bridge env");
-  assert.match(serverJs, /async startOwnedMuxAndConnect\(\)/, "Mobile Web should be able to own a shared mux instead of depending on Desktop");
-  assert.match(serverJs, /CODEX_MUX_STANDALONE:\s*"1"[\s\S]*CODEX_MUX_KEEP_ALIVE:\s*"1"[\s\S]*CODEX_MUX_PUBLISH_ENDPOINT:\s*"1"/, "Mobile-owned mux should stay alive after Desktop exits and publish the active profile endpoint");
-  assert.match(serverJs, /shared endpoint missing; starting Mobile-owned mux/, "required shared mode should start a Mobile-owned mux when the profile endpoint is absent");
-  assert.match(serverJs, /profile mux endpoint unavailable; starting Mobile-owned mux/, "stale profile endpoints should be replaced by a Mobile-owned mux");
+  assert.match(codexAppServerClientServiceJs, /spawn\(CODEX_EXE,[\s\S]*\{\s*cwd: APP_ROOT,[\s\S]*env: codexAppServerChildEnv\(\{ CODEX_HOME \}\)/, "managed child app-server should inherit the resolved active CODEX_HOME without desktop bridge env");
+  assert.match(codexAppServerClientServiceJs, /async startOwnedMuxAndConnect\(\)/, "Mobile Web should be able to own a shared mux instead of depending on Desktop");
+  assert.match(codexAppServerClientServiceJs, /CODEX_MUX_STANDALONE:\s*"1"[\s\S]*CODEX_MUX_KEEP_ALIVE:\s*"1"[\s\S]*CODEX_MUX_PUBLISH_ENDPOINT:\s*"1"/, "Mobile-owned mux should stay alive after Desktop exits and publish the active profile endpoint");
+  assert.match(codexAppServerClientServiceJs, /shared endpoint missing; starting Mobile-owned mux/, "required shared mode should start a Mobile-owned mux when the profile endpoint is absent");
+  assert.match(codexAppServerClientServiceJs, /profile mux endpoint unavailable; starting Mobile-owned mux/, "stale profile endpoints should be replaced by a Mobile-owned mux");
   assert.match(serverJs, /const PERSIST_MOBILE_OWNED_MUX =/, "server should expose a persistent owned mux mode for Listener restarts");
-  assert.match(serverJs, /detached:\s*PERSIST_MOBILE_OWNED_MUX/, "persistent owned mux should detach from the Listener process group");
-  assert.match(serverJs, /child\.unref\(\)/, "persistent owned mux should not keep the Listener process alive");
-  assert.match(serverJs, /persistentOwnedMux:\s*PERSIST_MOBILE_OWNED_MUX/, "status should expose persistent owned mux mode");
-  assert.match(serverJs, /mobileOwnedMux:\s*this\.muxChild \? \{[\s\S]*pid:[\s\S]*running:/, "status should expose bounded Mobile-owned mux runtime evidence");
+  assert.match(codexAppServerClientServiceJs, /detached:\s*PERSIST_MOBILE_OWNED_MUX/, "persistent owned mux should detach from the Listener process group");
+  assert.match(codexAppServerClientServiceJs, /child\.unref\(\)/, "persistent owned mux should not keep the Listener process alive");
+  assert.match(codexAppServerClientServiceJs, /persistentOwnedMux:\s*PERSIST_MOBILE_OWNED_MUX/, "status should expose persistent owned mux mode");
+  assert.match(codexAppServerClientServiceJs, /mobileOwnedMux:\s*this\.muxChild \? \{[\s\S]*pid:[\s\S]*running:/, "status should expose bounded Mobile-owned mux runtime evidence");
   assert.match(serverJs, /if \(!PERSIST_MOBILE_OWNED_MUX && codex\.muxChild && codex\.muxChild\.exitCode === null\) codex\.muxChild\.kill\(\)/, "server shutdown should preserve persistent owned mux children");
   assert.match(serverJs, /function activeRateLimits\(\)[\s\S]*latestLiveRateLimits \|\| latestSnapshotRateLimits/, "live quota should win over rollout snapshots");
   assert.match(serverJs, /\/api\/public-config"[\s\S]*await codex\.refreshRateLimitsIfMissing\(\);[\s\S]*rateLimits: activeRateLimits\(\)/, "public config should refresh and include active quota");
@@ -275,7 +276,7 @@ test("server runtime inheritance includes model and reasoning effort", () => {
   assert.match(guardSandboxPolicyBody, /path\.join\(root, "\.git"\)/, "guard sandbox policy should include current .git as an explicit writable root");
   assert.match(guardSandboxPolicyBody, /policy\.writableRoots = writableRoots/, "guard sandbox policy should publish expanded writable roots to app-server");
 
-  assert.match(serverJs, /handleServerRequest\(msg\)[\s\S]*answerWorkspaceSourceWriteGuardRequest\(request\)/, "app-server approval requests should pass through the dynamic source-write guard");
+  assert.match(codexAppServerClientServiceJs, /handleServerRequest\(msg\)[\s\S]*answerWorkspaceSourceWriteGuardRequest\(request\)/, "app-server approval requests should pass through the dynamic source-write guard");
   const approvalGuardBody = functionBody(serverJs, "workspaceSourceWriteGuardDecisionForRequest");
   assert.match(approvalGuardBody, /ACTIONABLE_APPROVAL_METHODS\.has\(request\.method\)/, "dynamic guard should only auto-answer app-server approval requests");
   assert.match(approvalGuardBody, /workspaceSourceWriteGuardThreadCwdForRequest\(request\)/, "approval guard should base exemptions on the source thread cwd, not the command cwd");

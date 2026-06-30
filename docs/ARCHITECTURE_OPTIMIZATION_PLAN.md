@@ -105,11 +105,16 @@ Current acceleration targets:
    extraction moved the `GET /api/threads` route-level fallback/app-server
    merge/decorate orchestration into `adapters/thread-list-route-service.js`,
    leaving `server.js` to inject request, state, cache, and Codex RPC
-   dependencies. Future high-yield candidates should follow the same domain
-   boundary: task-card route/execution glue, public/profile config routes, and
-   thread-detail assembly seams. Avoid moving helper functions only to reduce
-   line count; each extraction must reduce a real `server.js` ownership
-   responsibility and gain focused tests.
+   dependencies. The fifth extraction moved Codex app-server/mux client
+   lifecycle, transport RPC, rate-limit refresh, server-request approval
+   handling, and dynamic tool-call dispatch into
+   `adapters/codex-app-server-client-service.js`, leaving `server.js` to inject
+   runtime state, task-card/profile helpers, and logging callbacks. Future
+   high-yield candidates should follow the same domain boundary: task-card
+   route/execution glue, public/profile config routes, and thread-detail
+   assembly seams. Avoid moving helper functions only to reduce line count; each
+   extraction must reduce a real `server.js` ownership responsibility and gain
+   focused tests.
 
 1. Active large-thread detail opens still have the highest full-read risk. The
    active-read policy intentionally disables partial projection and bounded

@@ -13,6 +13,7 @@ const mobileWindowlessLauncher = fs.readFileSync(path.join(root, "start-codex-mo
 const muxShim = fs.readFileSync(path.join(root, "codex-app-server-mux-shim.cs"), "utf8");
 const muxJs = fs.readFileSync(path.join(root, "codex-app-server-mux.js"), "utf8");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
+const codexAppServerClientServiceJs = fs.readFileSync(path.join(root, "adapters", "codex-app-server-client-service.js"), "utf8");
 
 test("desktop shared launcher can select a Codex profile home", () => {
   assert.match(launcher, /\[string\]\$ProfileId = ""/);
@@ -103,7 +104,7 @@ test("mobile app-server launchers do not leak desktop bridge env into real CLI",
 
   assert.match(serverJs, /function codexAppServerChildEnv/);
   assert.match(serverJs, /key === "CODEX_CLI_PATH" \|\| key\.startsWith\("CODEX_MUX_"\)/);
-  assert.match(serverJs, /env: codexAppServerChildEnv\(\{ CODEX_HOME \}\)/);
+  assert.match(codexAppServerClientServiceJs, /env: codexAppServerChildEnv\(\{ CODEX_HOME \}\)/);
   assert.match(muxJs, /function realCodexChildEnv/);
   assert.match(muxJs, /key === "CODEX_CLI_PATH" \|\| key\.startsWith\("CODEX_MUX_"\)/);
   assert.match(muxJs, /env: realCodexChildEnv\(\)/);
