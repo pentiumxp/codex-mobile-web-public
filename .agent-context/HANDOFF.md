@@ -34685,3 +34685,119 @@ The previous full handoff was archived and should be opened only when old proven
     samples for Movie and Codex Mobile source threads. If first-open latency
     remains multi-second, classify it separately from the stale-detail/echo
     fix instead of treating the release as fully complete.
+
+### 2026-06-30 - v602 Stale Detail Echo Cleanup Production Deploy
+
+- Deployed source ref `7debdabdcdff`
+  (`fix: reject stale thread detail echoes`) through the central private macOS
+  plugin deploy lane with reason
+  `codex-mobile-v602-stale-thread-detail-echo-cleanup`.
+- Deploy result was `ok=true`; backup path:
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260630T015801Z-plugin-codex-mobile-web-codex-mobile-v602-stale-thread-detail-echo-cleanup`.
+- Restart label `com.hermesmobile.plugin.codex-mobile` was running after
+  deploy. No Public deploy was run.
+- `/api/public-config` returned status `200`, version `0.1.11`, build id
+  `42c6377430a46001`, client build id
+  `0.1.11|codex-mobile-shell-v602`, shell cache
+  `codex-mobile-shell-v602`, and `authRequired=true`.
+- Source/production parity passed for `public/app.js`, `public/sw.js`,
+  `public/thread-detail-state.js`,
+  `test/client-render-stability-guard.test.js`,
+  `test/conversation-render.test.js`, `test/thread-detail-state.test.js`,
+  `docs/MODULES.md`, and `docs/TROUBLESHOOTING.md`.
+- Marker readback confirmed v602 shell/cache,
+  `optimisticEchoCanMatchEarlierDurable`,
+  `threadHasDurableUserMessageMatchingOptimisticEcho`,
+  `summary-newer-than-cached-detail`,
+  `completedIncomingTurnHasAuthoritativeReceipt(incomingTurn)`, and focused
+  tests for failed optimistic echo cleanup, cross-turn durable echo cleanup,
+  completed projection merge dropping local-only live receipts, and
+  summary-newer-than-cached-detail cache rejection.
+- Enhanced browser self-check with two selected threads, two rounds, delays
+  `350,1200,2800,6000`, and thread-list stress returned `ok=true`, issue count
+  `1`, blocking issue count `0`, with only H3
+  `browser_dom_sparse_after_nonempty` at `350ms` on a non-settled sample.
+- Loading-speed readback still showed multi-second caller elapsed:
+  Movie detail `2265/5400/7428ms`, Codex source detail `6579/1931/4495ms`.
+  Internal timings were lower, and Codex source still had first-paint
+  over-ceiling bytes `194537`.
+- Standard deploy-mode runtime self-check returned `ok=false`,
+  `deployPass=false`, `periodicHealthy=false`, issue count `35`, blocking issue
+  count `19`, advisory issue count `16`, execution failure count `0`.
+  `api-thread` and `client-events` were OK, but browser-runtime had H2:
+  `browser_dom_sparse_after_nonempty`,
+  `browser_latest_turn_assistant_message_downgraded`,
+  `browser_latest_turn_item_count_downgraded`,
+  `browser_latest_turn_user_message_below_api_expectation`, and
+  `browser_turn_user_message_below_api_expectation`.
+- LaunchAgent full-check readback selected the failed deploy event and returned
+  `deployPass=false`, `periodicHealthy=false`, issue count `35`, blocking issue
+  count `19`, advisory issue count `16`, execution failure count `0`.
+- Return classification: `partially_completed`. Deploy/parity/markers passed,
+  but runtime/browser H2 stale-detail/user-message expectation classes and
+  multi-second loading samples remain open.
+
+### 2026-06-30 - v603 Response-Budget Timestamp Repair Source Slice
+
+- Follow-up from the v602 partial deploy:
+  - Production v602 deploy/parity/markers passed, and enhanced browser
+    self-check passed with only an early H3 sparse sample.
+  - Standard deploy-mode runtime gate still failed in the deploy lane with H2
+    browser stale-detail/user-message expectation classes and multi-second
+    loading samples.
+  - A local rerun of the standard gate after v602 showed browser-runtime clean
+    of H2, but API-thread failed on H2
+    `visible_item_timestamp_order_mismatch` for Codex Mobile source thread
+    `019eee6c-a6f5-7b20-bfb4-f96ccb6431b3`.
+- Root-cause evidence:
+  - Authenticated metadata-only detail shape for the source thread showed one
+    completed turn where a retained `userMessage` after later user messages had
+    no own timestamp fields. API self-check then fell back to the turn start
+    timestamp, creating a visible-item timestamp downgrade.
+  - The issue is server response shape, not browser-only DOM state: it is
+    emitted before the client renders the detail.
+- Source changes:
+  - `adapters/thread-detail-response-budget-service.js` now performs final
+    response-layer display timestamp inference before final visible-item
+    ordering. It only infers display-only `mobileDisplayTimestamp*` fields for
+    retained user/assistant visible items lacking own timestamps after
+    projection, response budgets, task-card compaction, or user-anchor
+    rewriting.
+  - Inference uses original own timestamps from neighboring visible items; it
+    does not let newly inferred assistant completion timestamps force later
+    user inputs behind assistant receipts. When no neighboring own timestamps
+    exist, user/input-like rows use turn start and assistant/plan/diagnostic
+    rows use turn completion.
+  - `test/thread-detail-response-budget-service.test.js` covers a missing
+    user-message timestamp between newer user/assistant items and verifies
+    `analyzeThreadDetail()` no longer reports
+    `visible_item_timestamp_order_mismatch`.
+  - `docs/MODULES.md` and `docs/TROUBLESHOOTING.md` document the final
+    response-budget timestamp repair boundary.
+- Validation passed:
+  - `node --check adapters/thread-detail-response-budget-service.js`
+  - `node --test test/thread-detail-response-budget-service.test.js test/thread-detail-self-check-service.test.js test/thread-item-timestamp-enrichment.test.js`
+    (`105` tests)
+  - `npm test -- --test-reporter=dot`
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+  - `codegraph sync && codegraph status` reported the index up to date.
+- Deployment requirements:
+  - Commit and private-deploy with reason
+    `codex-mobile-v603-response-budget-display-timestamps`.
+  - Production readback must confirm source/production parity for
+    `adapters/thread-detail-response-budget-service.js`,
+    `test/thread-detail-response-budget-service.test.js`, `docs/MODULES.md`,
+    and `docs/TROUBLESHOOTING.md`.
+  - Marker readback should confirm
+    `ensureTurnItemDisplayTimestamps`,
+    `response budget infers missing display timestamps before final visible ordering`,
+    and the troubleshooting wording for the v603 response-budget timestamp
+    repair.
+  - Run API self-check on Codex Mobile source thread and confirm
+    `visible_item_timestamp_order_mismatch` is gone.
+  - Run the standard deploy-mode runtime self-check and LaunchAgent readback.
+    If browser H2 stale-detail/user-message classes recur, return partial with
+    bounded issue samples; if only loading-speed samples remain multi-second,
+    classify loading as a separate residual.

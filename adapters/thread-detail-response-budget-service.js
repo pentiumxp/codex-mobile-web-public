@@ -2,6 +2,7 @@
 
 const { normalizeThreadVisibleProjection } = require("./thread-visible-item-normalizer");
 const {
+  itemDisplayTimestampMs,
   orderItemsByDisplayTimestamp,
 } = require("./thread-detail-active-window-overlay-policy-service");
 
@@ -66,6 +67,16 @@ const OPERATION_STRUCTURED_PAYLOAD_FIELDS = [
 const ASSISTANT_ITEM_TYPES = new Set([
   "agentMessage",
   "plan",
+]);
+
+const DISPLAY_TIMESTAMP_INFERABLE_TYPES = new Set([
+  "agentMessage",
+  "filePreview",
+  "imageGeneration",
+  "imageView",
+  "plan",
+  "turnDiagnostic",
+  "userMessage",
 ]);
 
 function cloneJson(value) {
@@ -205,6 +216,129 @@ function compactResponseBudgetEvidence(stats = {}) {
     if (Object.keys(compacted).length) out[key] = compacted;
   }
   return out;
+}
+
+function timestampMs(value) {
+  if (value === null || value === undefined || value === "") return 0;
+  const numberValue = Number(value);
+  if (Number.isFinite(numberValue) && numberValue > 0) {
+    return numberValue > 1_000_000_000_000 ? Math.trunc(numberValue) : Math.trunc(numberValue * 1000);
+  }
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function itemOwnDisplayTimestampMs(item) {
+  if (!item || typeof item !== "object") return 0;
+  for (const key of [
+    "createdAtMs",
+    "createdAt",
+    "created_at_ms",
+    "created_at",
+    "startedAtMs",
+    "startedAt",
+    "started_at_ms",
+    "started_at",
+    "updatedAtMs",
+    "updatedAt",
+    "updated_at_ms",
+    "updated_at",
+    "timestampMs",
+    "timestamp",
+    "mobileDisplayTimestampMs",
+    "mobileDisplayTimestamp",
+    "completedAtMs",
+    "completedAt",
+    "completed_at_ms",
+    "completed_at",
+    "timeMs",
+  ]) {
+    const timestamp = timestampMs(item[key]);
+    if (timestamp) return timestamp;
+  }
+  return 0;
+}
+
+function itemType(item) {
+  return String(item && item.type || "");
+}
+
+function turnStartedTimestampMs(turn) {
+  return timestampMs(turn && (
+    turn.startedAtMs
+    || turn.startedAt
+    || turn.started_at_ms
+    || turn.started_at
+    || turn.createdAtMs
+    || turn.createdAt
+    || turn.created_at_ms
+    || turn.created_at
+  ));
+}
+
+function turnCompletedTimestampMs(turn) {
+  return timestampMs(turn && (
+    turn.completedAtMs
+    || turn.completedAt
+    || turn.completed_at_ms
+    || turn.completed_at
+    || turn.finishedAtMs
+    || turn.finishedAt
+    || turn.finished_at_ms
+    || turn.finished_at
+    || turn.updatedAtMs
+    || turn.updatedAt
+    || turn.updated_at_ms
+    || turn.updated_at
+  ));
+}
+
+function inferableDisplayTimestampItem(item) {
+  return Boolean(item && DISPLAY_TIMESTAMP_INFERABLE_TYPES.has(itemType(item)));
+}
+
+function nearestOwnDisplayTimestampMs(ownTimestamps, startIndex, direction) {
+  const step = direction < 0 ? -1 : 1;
+  for (let index = startIndex; index >= 0 && index < ownTimestamps.length; index += step) {
+    const timestamp = ownTimestamps[index];
+    if (timestamp) return timestamp;
+  }
+  return 0;
+}
+
+function fallbackDisplayTimestampForItem(item, turn, thread) {
+  const type = itemType(item);
+  if (type === "userMessage" || type === "filePreview" || type === "imageGeneration" || type === "imageView") {
+    return turnStartedTimestampMs(turn) || itemDisplayTimestampMs(item, turn, thread);
+  }
+  if (type === "agentMessage" || type === "plan" || type === "turnDiagnostic") {
+    return turnCompletedTimestampMs(turn) || itemDisplayTimestampMs(item, turn, thread);
+  }
+  return itemDisplayTimestampMs(item, turn, thread);
+}
+
+function inferredDisplayTimestampForItem(items, index, turn, thread, ownTimestamps) {
+  const previous = nearestOwnDisplayTimestampMs(ownTimestamps, index - 1, -1);
+  const next = nearestOwnDisplayTimestampMs(ownTimestamps, index + 1, 1);
+  if (previous && next && next >= previous) return Math.min(next, previous + 1);
+  if (previous) return previous + 1;
+  if (next) return Math.max(1, next - 1);
+  return fallbackDisplayTimestampForItem(items[index], turn, thread);
+}
+
+function ensureTurnItemDisplayTimestamps(turn, thread) {
+  if (!turn || !Array.isArray(turn.items) || turn.items.length < 1) return turn;
+  const ownTimestamps = turn.items.map(itemOwnDisplayTimestampMs);
+  for (let index = 0; index < turn.items.length; index += 1) {
+    const item = turn.items[index];
+    if (!item || ownTimestamps[index] || !inferableDisplayTimestampItem(item)) continue;
+    const timestamp = inferredDisplayTimestampForItem(turn.items, index, turn, thread, ownTimestamps);
+    if (!timestamp) continue;
+    item.mobileDisplayTimestampMs = timestamp;
+    item.mobileDisplayTimestamp = new Date(timestamp).toISOString();
+    item.mobileDisplayTimestampInferred = true;
+  }
+  return turn;
 }
 
 function statusText(value) {
@@ -1698,6 +1832,7 @@ function compactTurnWithBudget(turn, thread, options, stats) {
     }
     compacted.items = compacted.items.map((item) => compactActiveOperationPayloadItem(compactActiveTextItem(item, options, stats), options, stats));
   }
+  ensureTurnItemDisplayTimestamps(compacted, thread);
   compacted.items = orderItemsByDisplayTimestamp(compacted.items, compacted, thread);
   const afterOperationCount = countBy(compacted.items, isOperationItem);
   const afterReasoningCount = countBy(compacted.items, isReasoningItem);
@@ -2060,6 +2195,7 @@ function compactThreadDetailResponseResult(result, options = {}) {
   annotateRetainedVisibleItemByteStats(thread, stats);
   for (const turn of thread.turns) {
     if (!turn || !Array.isArray(turn.items) || turn.items.length < 2) continue;
+    ensureTurnItemDisplayTimestamps(turn, thread);
     turn.items = orderItemsByDisplayTimestamp(turn.items, turn, thread);
   }
   stats.applied = stats.omittedOperationItems > 0

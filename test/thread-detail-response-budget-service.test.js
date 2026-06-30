@@ -6,6 +6,9 @@ const { test } = require("node:test");
 const {
   compactThreadDetailResponseResult,
 } = require("../adapters/thread-detail-response-budget-service");
+const {
+  analyzeThreadDetail,
+} = require("../adapters/thread-detail-self-check-service");
 
 function compactTurn(turn, options = {}) {
   const out = JSON.parse(JSON.stringify(turn));
@@ -83,6 +86,44 @@ test("thread detail response budget trims historical operation and reasoning ite
   assert.equal(compacted.thread.mobileDetailResponseBudget.omittedOperationItems, 2);
   assert.equal(compacted.thread.mobileDetailResponseBudget.omittedReasoningItems, 1);
   assert.equal(compacted.thread.mobileDetailResponseBudget.latestCompletedReplayTurnCount, 1);
+});
+
+test("thread detail response budget infers missing display timestamps before final visible ordering", () => {
+  const t1 = Date.parse("2026-06-30T02:00:00.000Z");
+  const t2 = Date.parse("2026-06-30T02:00:02.000Z");
+  const t3 = Date.parse("2026-06-30T02:00:03.000Z");
+  const t4 = Date.parse("2026-06-30T02:00:04.000Z");
+  const result = {
+    thread: {
+      id: "thread-1",
+      mobileReadMode: "projection-active-overlay",
+      turns: [{
+        id: "turn-1",
+        status: "completed",
+        startedAtMs: t1,
+        completedAtMs: t4,
+        items: [
+          { id: "u1", type: "userMessage", text: "first", startedAtMs: t1 },
+          { id: "u2", type: "userMessage", text: "second", startedAtMs: t2 },
+          { id: "u-missing", type: "userMessage", text: "third without timestamp" },
+          { id: "a1", type: "agentMessage", text: "receipt", startedAtMs: t3 },
+          { id: "usage", type: "turnUsageSummary", startedAtMs: t4 },
+        ],
+      }],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {});
+  const items = compacted.thread.turns[0].items;
+  const inferred = items.find((item) => item.id === "u-missing");
+
+  assert.equal(inferred.mobileDisplayTimestampInferred, true);
+  assert.equal(inferred.mobileDisplayTimestampMs, t2 + 1);
+  assert.deepEqual(items.map((item) => item.id), ["u1", "u2", "u-missing", "a1", "usage"]);
+  assert.equal(
+    analyzeThreadDetail(compacted).issues.some((issue) => issue.code === "visible_item_timestamp_order_mismatch"),
+    false,
+  );
 });
 
 test("thread detail response budget keeps bounded active reasoning and operation tail", () => {
