@@ -261,6 +261,12 @@
         reason: "auto-scroll-hold",
       };
     }
+    if (options.userReadingAwayFromBottom) {
+      return {
+        preserve: true,
+        reason: "user-reading-away-from-bottom",
+      };
+    }
     if (options.recentScrollIntent) {
       return {
         preserve: true,
@@ -307,6 +313,13 @@
         allowRefresh: false,
         cancelScheduled: true,
         reason: "auto-scroll-hold",
+      };
+    }
+    if (options.userReadingAwayFromBottom) {
+      return {
+        allowRefresh: false,
+        cancelScheduled: true,
+        reason: "user-reading-away-from-bottom",
       };
     }
     if (options.recentScrollIntent) {

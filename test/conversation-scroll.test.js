@@ -465,6 +465,14 @@ test("reading viewport preservation follows explicit user reading signals", () =
 
   assert.deepEqual(conversationScroll.planReadingViewportPreservation({
     nearBottom: false,
+    userReadingAwayFromBottom: true,
+  }), {
+    preserve: true,
+    reason: "user-reading-away-from-bottom",
+  });
+
+  assert.deepEqual(conversationScroll.planReadingViewportPreservation({
+    nearBottom: false,
     recentScrollIntent: true,
   }), {
     preserve: true,
@@ -498,6 +506,16 @@ test("automatic conversation refresh stops while the user is reading", () => {
     allowRefresh: false,
     cancelScheduled: true,
     reason: "user-reading-current-turn",
+  });
+
+  assert.deepEqual(conversationScroll.planAutomaticConversationRefresh({
+    hasThread: true,
+    nearBottom: false,
+    userReadingAwayFromBottom: true,
+  }), {
+    allowRefresh: false,
+    cancelScheduled: true,
+    reason: "user-reading-away-from-bottom",
   });
 
   assert.deepEqual(conversationScroll.planAutomaticConversationRefresh({

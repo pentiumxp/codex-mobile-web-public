@@ -248,6 +248,7 @@ const state = {
   scrollToBottomFrame: null,
   recentCompletedReplyAnchor: null,
   conversationScrollIntentAtMs: 0,
+  conversationUserScrollAwayThreadId: "",
   conversationLastScrollTop: 0,
   conversationNearBottomAtMs: 0,
   conversationNearBottomThreadId: "",
@@ -546,7 +547,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v608";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v609";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -21900,6 +21901,7 @@ function planConversationViewportPreservation(options = {}) {
     nearBottom,
     userReadingCurrentTurn: Boolean(options.userReadingCurrentTurn),
     autoScrollHold: shouldHoldAutoScrollForCurrentTurn(),
+    userReadingAwayFromBottom: isUserReadingAwayFromConversationBottom({ nearBottom }),
     recentScrollIntent: hasRecentConversationScrollIntent(),
   });
 }
@@ -22131,13 +22133,24 @@ function clearConversationNearBottomState() {
   state.conversationNearBottomThreadId = "";
 }
 
+function clearConversationUserScrollAwayState() {
+  state.conversationUserScrollAwayThreadId = "";
+}
+
+function rememberConversationUserScrollAwayState() {
+  const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
+  state.conversationUserScrollAwayThreadId = threadId ? String(threadId) : "";
+}
+
 function noteConversationBottomState(options = {}) {
   const nearBottom = isConversationNearBottom();
   if (nearBottom) {
     state.conversationNearBottomAtMs = Date.now();
     state.conversationNearBottomThreadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
+    clearConversationUserScrollAwayState();
   } else if (options.userIntent) {
     clearConversationNearBottomState();
+    rememberConversationUserScrollAwayState();
   }
   return nearBottom;
 }
@@ -22150,6 +22163,15 @@ function syncConversationScrollPosition(options = {}) {
 
 function hasRecentConversationScrollIntent(nowMs = Date.now()) {
   return nowMs - Number(state.conversationScrollIntentAtMs || 0) <= CONVERSATION_SCROLL_INTENT_MS;
+}
+
+function isUserReadingAwayFromConversationBottom(options = {}) {
+  const threadId = String(options.threadId || state.currentThreadId || state.currentThread && state.currentThread.id || "").trim();
+  if (!threadId || state.conversationUserScrollAwayThreadId !== threadId) return false;
+  const nearBottom = Object.prototype.hasOwnProperty.call(options, "nearBottom")
+    ? Boolean(options.nearBottom)
+    : isConversationNearBottom();
+  return !nearBottom;
 }
 
 function rememberConversationScrollIntent() {
@@ -22229,6 +22251,7 @@ function automaticConversationRefreshPlan(options = {}) {
     nearBottom,
     userReadingCurrentTurn: !nearBottom && isUserReadingCurrentTurn({ nearBottom }),
     autoScrollHold: !nearBottom && shouldHoldAutoScrollForCurrentTurn(),
+    userReadingAwayFromBottom: !nearBottom && isUserReadingAwayFromConversationBottom({ threadId, nearBottom }),
     recentScrollIntent: !nearBottom && hasRecentConversationScrollIntent(),
     userInitiated: options.userInitiated === true,
   });

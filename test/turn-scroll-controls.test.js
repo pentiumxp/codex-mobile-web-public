@@ -121,6 +121,7 @@ test("manual conversation scroll pauses live auto-stick until the user returns t
   assert.match(appJs, /autoScrollHold: null/);
   assert.match(appJs, /submittedMessageBottomFollow: null/);
   assert.match(appJs, /viewportBottomFollow: null/);
+  assert.match(appJs, /conversationUserScrollAwayThreadId: ""/);
   assert.match(appJs, /function rememberConversationScrollIntent\(\)/);
   assert.match(appJs, /clearSubmittedMessageBottomFollow\(\);\s*clearViewportBottomFollow\(\);\s*syncConversationScrollPosition\(\);\s*cancelAutomaticConversationRefreshesIfReading\(\);/);
   assert.match(appJs, /const CONVERSATION_SCROLL_INTENT_MS = 4000;/);
@@ -139,6 +140,10 @@ test("manual conversation scroll pauses live auto-stick until the user returns t
   assert.match(functionBody("scheduleUsageBackfillRefresh"), /if \(shouldSuppressAutomaticCurrentThreadRefresh\("usage-backfill"\)\) return;/);
   assert.match(functionBody("scheduleLivePollIfNeeded"), /if \(shouldSuppressAutomaticCurrentThreadRefresh\("live-poll"\)\) return;/);
   assert.match(appJs, /function hasRecentConversationScrollIntent\(nowMs = Date\.now\(\)\)/);
+  assert.match(appJs, /function isUserReadingAwayFromConversationBottom\(options = \{\}\)/);
+  assert.match(functionBody("noteConversationBottomState"), /clearConversationUserScrollAwayState\(\);/);
+  assert.match(functionBody("noteConversationBottomState"), /rememberConversationUserScrollAwayState\(\);/);
+  assert.match(functionBody("automaticConversationRefreshPlan"), /userReadingAwayFromBottom: !nearBottom && isUserReadingAwayFromConversationBottom\(\{ threadId, nearBottom \}\),/);
   assert.match(appJs, /const userReadingCurrentTurn = isUserReadingCurrentTurn\(\{ nearBottom \}\);/);
   assert.match(functionBody("isUserReadingCurrentTurn"), /const planInput = \{ nearBottom \};/);
   assert.match(functionBody("isUserReadingCurrentTurn"), /planInput\.autoScrollHold = shouldHoldAutoScrollForCurrentTurn\(\);/);
@@ -177,6 +182,7 @@ test("manual conversation scroll pauses live auto-stick until the user returns t
   assert.match(appJs, /function captureConversationViewportAnchor\(options = \{\}\)/);
   assert.match(appJs, /function restoreConversationViewportAnchor\(anchor\)/);
   assert.match(functionBody("planConversationViewportPreservation"), /conversationScroll\.planReadingViewportPreservation\(\{/);
+  assert.match(functionBody("planConversationViewportPreservation"), /userReadingAwayFromBottom: isUserReadingAwayFromConversationBottom\(\{ nearBottom \}\),/);
   assert.match(functionBody("captureConversationViewportAnchor"), /conversation\.querySelectorAll\("\[data-render-key\]"\)/);
   assert.match(functionBody("restoreConversationViewportAnchor"), /conversation\.querySelector\(`\[data-render-key="\$\{escapeSelectorAttr\(anchor\.renderKey\)\}"\]`\)/);
   assert.match(functionBody("updateConversationHtml"), /const scrollAnchor = options\.stickToBottom[\s\S]*captureConversationViewportAnchor/);

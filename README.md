@@ -16,6 +16,27 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-30 私有修复说明（v609 持续阅读位置保护）
+
+本次私有修复把 v608 的自动刷新保护从“最近滚动短窗口”收紧为
+“用户已把当前会话滚离底部”的持续阅读状态。只要用户在当前线程中停留在
+中间过程或历史内容位置，自动 post-completion refresh、Usage backfill、
+live-poll 和 resume refresh 都会被取消或在响应返回后忽略；保护直到用户
+回到底部或执行显式操作为止。
+
+涉及文件：
+
+- `public/conversation-scroll.js` 增加 `user-reading-away-from-bottom` 策略。
+- `public/app.js` 记录当前线程的离底部阅读状态，并把它接入自动刷新、
+  in-flight refresh response apply gate 和 viewport anchor preservation。
+- `CLIENT_BUILD_ID` 和 PWA shell cache 升级到 `codex-mobile-shell-v609`。
+
+验证范围：
+
+```sh
+npm test -- test/conversation-scroll.test.js test/turn-scroll-controls.test.js
+```
+
 ## 2026-06-29 Public 发布说明（v581 completed-turn 提交和轻微颤动修复）
 
 本次 Public 同步 `codex-mobile-shell-v581` 以及 v578-v581 这一组已经
