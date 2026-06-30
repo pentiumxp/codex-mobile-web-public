@@ -2619,7 +2619,7 @@ many visible operation/reasoning/assistant progress rows.
 
 Deployable scope:
 
-- `adapters/thread-detail-response-budget-service.js` treats a known
+- `services/thread-detail/thread-detail-response-budget-service.js` treats a known
   `activeTurnId` as the only current active response-budget owner. Older
   `inProgress` rows are counted as `staleActiveTurnCount` and shaped by
   completed-turn budgets.

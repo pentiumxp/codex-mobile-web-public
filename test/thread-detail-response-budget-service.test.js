@@ -3,9 +3,11 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 
+const responseBudgetService = require("../services/thread-detail/thread-detail-response-budget-service");
+const responseBudgetAdapter = require("../adapters/thread-detail-response-budget-service");
 const {
   compactThreadDetailResponseResult,
-} = require("../adapters/thread-detail-response-budget-service");
+} = responseBudgetService;
 const {
   analyzeThreadDetail,
 } = require("../adapters/thread-detail-self-check-service");
@@ -27,6 +29,13 @@ function compactTurn(turn, options = {}) {
   out.items = out.items.filter((item, index) => !operationTypes.has(String(item && item.type || "")) || keep.has(index));
   return out;
 }
+
+test("thread detail response budget adapter exports the canonical service", () => {
+  assert.equal(
+    responseBudgetAdapter.compactThreadDetailResponseResult,
+    responseBudgetService.compactThreadDetailResponseResult,
+  );
+});
 
 test("thread detail response budget trims historical operation and reasoning items and rebuilds visible keys", () => {
   const result = {

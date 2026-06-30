@@ -79,7 +79,7 @@ const { createThreadDetailProjectionInputService } = require("./adapters/thread-
 const { createThreadDetailProjectionResultService } = require("./adapters/thread-detail-projection-result-service");
 const { createThreadDetailProjectionService } = require("./adapters/thread-detail-projection-service");
 const { createThreadDetailProjectionV4Service } = require("./adapters/thread-detail-projection-v4-service");
-const { compactThreadDetailResponseResult } = require("./adapters/thread-detail-response-budget-service");
+const { compactThreadDetailResponseResult } = require("./services/thread-detail/thread-detail-response-budget-service");
 const {
   appendLatestCompletedUserInputAnchors,
   collectRolloutUserInputAnchors,

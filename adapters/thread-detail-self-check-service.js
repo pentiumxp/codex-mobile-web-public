@@ -6,7 +6,7 @@ const {
   isAssistantItem,
   isOperationItem,
   isReasoningItem,
-} = require("./thread-detail-response-budget-service");
+} = require("../services/thread-detail/thread-detail-response-budget-service");
 const {
   sameUserMessageContent,
 } = require("./message-pending-echo-service");
