@@ -33944,3 +33944,118 @@ The previous full handoff was archived and should be opened only when old proven
   - Phase-B/readback should verify `activeOverlayWindowMs=0` in sampled windows
     and inspect bounded `active_window_prewarm_done` groups for reduced
     `thread-list:warm_fallback_*` / `projection-input-unavailable` recurrence.
+
+### 2026-06-30 - Active-Window Prewarm Summary Refresh Deployed With Residual
+
+- Private Home AI deploy completed for source ref `34bdd63c682e` with reason
+  `codex-mobile-active-window-prewarm-summary-refresh`.
+- Deploy backup:
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260629T235721Z-plugin-codex-mobile-web-codex-mobile-active-window-prewarm-summary-refresh`.
+- Production `/api/public-config` returned HTTP `200`, version `0.1.11`,
+  build id `576c30a2eea33b2a`, client build id
+  `0.1.11|codex-mobile-shell-v598`, shell cache `codex-mobile-shell-v598`, and
+  `authRequired=true`.
+- Source/production SHA-256 parity passed for the active-window prewarm service,
+  focused test, and docs.
+- Production markers confirmed the incomplete-summary refresh focused test,
+  the `inputSummary` guard, the `resolvedActiveReason` re-evaluation, and docs
+  coverage for `projection-input-unavailable` with
+  `thread-list:warm_fallback_*`.
+- Phase-B readback against source thread returned `ok=true`,
+  `readMode=projection-active-overlay`, `totalMs=3755`,
+  `prepareResponseMs=43`, `turnsListInitialMs=0`,
+  `activeOverlayWindowMs=3652`, `activeOverlayBackfillWindowMs=0`, and
+  `activeOverlayMergeMs=1`.
+- Phase-B decision remained `needs_repair`, priority `H2`, owner
+  `thread-detail-latency`, reason `thread-detail-latency`, next action
+  `split-thread-detail-latency`. The sampled active-window latency was not
+  closed by this deploy.
+- Bounded production log grouping after the deploy anchor no longer showed
+  `projection-input-unavailable` in the sampled post-deploy window. Groups were
+  `thread-list:warm_fallback_default|hit|active-window-already-cached=35`,
+  `thread-list:warm_fallback_default|skipped|not-active=20`,
+  `thread-list:warm_fallback_initial|hit|active-window-already-cached=4`, and
+  `thread-list:warm_fallback_initial|skipped|not-active=2`.
+- Runtime gate:
+  - First deploy-mode attempt had no execution failures and API/client-events
+    were OK, but browser-runtime returned three H2
+    `browser_turn_user_message_below_api_expectation` samples.
+  - Second deploy-mode attempt passed with `ok=true`, `deployPass=true`,
+    `periodicHealthy=true`, issue count `2`, blocking issue count `0`,
+    advisory issue count `2`, execution failure count `0`, and child checks
+    `api-thread`, `browser-runtime`, and `client-events` all OK. Advisory codes
+    were `browser_latest_turn_timestamp_missing` and
+    `browser_turn_timestamp_missing`.
+  - LaunchAgent full-check readback selected the latest deploy full-check event
+    with `deployPass=true`, `periodicHealthy=true`, issue count `2`, blocking
+    issue count `0`, advisory issue count `2`, and execution failure count `0`.
+- Return classification: `partially_completed`. Deploy/parity/markers and the
+  specific warm_fallback/projection-input-unavailable log grouping improved, but
+  Phase-B still paid a foreground `turns-list-active-overlay-window` rebuild in
+  the sampled readback.
+- Next root-cause target: determine why Phase-B can still pay active-window
+  rebuild cost after post-deploy warm fallback prewarm events report
+  `active-window-already-cached`.
+- No Public deploy was run.
+
+### 2026-06-30 - Browser Runtime Settled Plan Refresh Ready
+
+- Scope:
+  - Source-side repair for deploy/runtime gate residual
+    `browser_turn_user_message_below_api_expectation` observed after the
+    active-window prewarm deploy.
+  - Source ref pending commit/deploy from this workspace.
+- Production evidence:
+  - Deploy-mode runtime gate attempt reported H2
+    `browser_turn_user_message_below_api_expectation` on a completed turn with
+    expected item count `4`, expected user-message count `2`, actual item count
+    `3`, and actual visible user input count `1`.
+  - Immediate bounded API detail readback for the same turn hash showed the
+    current authoritative API shape was item count `3`, userMessage count `1`,
+    assistant count `1`, and Usage count `1`; API self-check passed with zero
+    issues. The DOM sample matched the current API shape rather than the stale
+    browser expectation.
+- Root-cause boundary:
+  - `scripts/codex-mobile-browser-runtime-self-check.js` refreshed the API
+    thread plan once after opening each sampled thread, then reused that plan
+    for all delayed samples in the group.
+  - Active/progressive detail responses can shrink or rebudget older completed
+    turn rows between the early and 6000ms samples, so long-delay DOM checks
+    could compare current DOM against stale API expectations.
+- Source change:
+  - The browser self-check script now refreshes the API thread plan again
+    before samples whose delay is at or above `minSettledDelayMs`, while short
+    delay samples keep the existing lower-cost path.
+  - Updated the focused source-string contract in
+    `test/browser-runtime-self-check-service.test.js`.
+  - Updated `docs/MODULES.md` and `docs/TROUBLESHOOTING.md` to describe the
+    settled-sample refresh boundary.
+- Validation:
+  - `node --check scripts/codex-mobile-browser-runtime-self-check.js` passed.
+  - `node --test test/browser-runtime-self-check-service.test.js` passed:
+    `38` tests.
+  - `node --test test/browser-runtime-self-check-service.test.js test/runtime-self-check-loop.test.js`
+    passed: `46` tests.
+  - `node --test test/thread-self-check-script.test.js test/thread-detail-self-check-service.test.js`
+    passed: `36` tests.
+  - Production deploy-mode runtime self-check using the source script passed
+    with `ok=true`, `deployPass=true`, `periodicHealthy=true`, issue count `0`,
+    blocking issue count `0`, and child checks `api-thread`,
+    `browser-runtime`, and `client-events` all OK.
+  - `npm test -- --test-reporter=dot` passed.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - `codegraph sync && codegraph status` reported the index up to date.
+- Next deployment step:
+  - Commit source with message
+    `fix: refresh browser plan for settled samples`.
+  - Delegate private Home AI deploy from the app workspace with reason
+    `codex-mobile-browser-settled-plan-refresh`.
+  - Production readback should confirm source/prod parity for
+    `scripts/codex-mobile-browser-runtime-self-check.js`,
+    `test/browser-runtime-self-check-service.test.js`, `docs/MODULES.md`, and
+    `docs/TROUBLESHOOTING.md`; marker readback should include the focused test
+    marker `browser runtime self-check refreshes API plan before settled delayed samples`.
+  - Deploy-mode runtime gate should remain clean of H1/H2 browser expectation
+    issues. Phase-B active-window latency remains a separate residual target.

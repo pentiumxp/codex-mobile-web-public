@@ -1160,7 +1160,7 @@ test("browser runtime self-check script exposes bounded browser snapshot fields"
   assert.doesNotMatch(expression, /innerText|location\.href|document\.cookie|Authorization|Bearer/);
 });
 
-test("browser runtime self-check refreshes API plan once per thread sample group", () => {
+test("browser runtime self-check refreshes API plan before settled delayed samples", () => {
   const input = script.snapshotInputForPlanEntry({
     id: "private-thread-id",
     threadHash: "thread-hash",
@@ -1181,8 +1181,10 @@ test("browser runtime self-check refreshes API plan once per thread sample group
   assert.deepEqual(input.expectedTurnShapes, [{ turnHash: "turn-a" }]);
   assert.match(
     script.run.toString(),
-    /const snapshotPlan = await refreshThreadPlanEntry\(options, key, entry\);\s+for \(const delayMs of options\.sampleDelaysMs\)/,
+    /let snapshotPlan = await refreshThreadPlanEntry\(options, key, entry\);\s+for \(const delayMs of options\.sampleDelaysMs\)/,
   );
+  assert.match(script.run.toString(), /if \(delayMs >= options\.minSettledDelayMs\)/);
+  assert.match(script.run.toString(), /snapshotPlan = await refreshThreadPlanEntry\(options, key, snapshotPlan\);/);
   assert.match(script.run.toString(), /snapshotExpression\(snapshotInputForPlanEntry\(snapshotPlan/);
   assert.match(script.run.toString(), /snapshotExpression\(snapshotInputForPlanEntry\(submitPostPlan/);
 });
