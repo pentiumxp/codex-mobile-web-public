@@ -2259,6 +2259,23 @@ html.visual-recovering body::before {
   line-height: 1.5;
 }
 
+.continuation-status {
+  min-height: 36px;
+  padding: 8px 10px;
+  color: var(--muted);
+  background: var(--control-bg);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.continuation-status.error {
+  color: var(--danger-text);
+  border-color: rgba(241, 135, 125, 0.42);
+  background: rgba(241, 135, 125, 0.12);
+}
+
 .continuation-actions {
   display: flex;
   justify-content: flex-end;
@@ -2283,6 +2300,11 @@ html.visual-recovering body::before {
 .continuation-confirm {
   color: var(--text);
   background: var(--control-bg);
+}
+
+.continuation-confirm:disabled,
+.continuation-cancel:disabled {
+  opacity: 0.62;
 }
 
 .file-preview-dialog {

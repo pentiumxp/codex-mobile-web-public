@@ -7,6 +7,7 @@ const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 
 function functionBody(source, name) {
   let start = source.indexOf(`function ${name}(`);
@@ -90,6 +91,35 @@ return {
   harness.confirm();
   assert.deepEqual(harness.calls.start, ["thread-pane"]);
   assert.deepEqual(harness.calls.errors, ["Continuation source thread is no longer available"]);
+});
+
+test("continuation dialog exposes in-modal progress and diagnostics", () => {
+  assert.match(indexHtml, /id="continuationStatus"[\s\S]*aria-live="polite"/);
+  assert.match(appJs, /function setContinuationDialogStatus\(/);
+  assert.match(appJs, /function setContinuationDialogBusy\(/);
+
+  const openBody = functionBody(appJs, "openContinuationDialog");
+  assert.match(openBody, /setContinuationDialogBusy\(false\)/);
+  assert.match(openBody, /postClientEvent\("continuation_dialog_opened"/);
+
+  const closeBody = functionBody(appJs, "closeContinuationDialog");
+  assert.match(closeBody, /state\.continuationBusy && !options\.force/);
+  assert.match(closeBody, /postClientEvent\("continuation_dialog_close_blocked"/);
+
+  const startBody = functionBody(appJs, "startNewThreadFromThread");
+  assert.match(startBody, /if \(state\.continuationBusy\) \{/);
+  assert.match(startBody, /setContinuationDialogStatus\("续接任务已经在运行，请稍等。"\)/);
+  assert.match(startBody, /postClientEvent\("continuation_start_ignored_busy"/);
+  assert.match(startBody, /setContinuationDialogBusy\(true, "正在创建续接任务。"\)/);
+  assert.match(startBody, /postClientEvent\("continuation_start_requested"/);
+  assert.match(startBody, /postClientEvent\("continuation_job_created"/);
+  assert.match(startBody, /closeContinuationDialog\(\{ force: true \}\)/);
+
+  const waitBody = functionBody(appJs, "waitForContinuationJob");
+  assert.match(waitBody, /setContinuationDialogStatus\(continuationJobStatusText\(job\)/);
+  assert.match(waitBody, /postClientEvent\("continuation_job_poll"/);
+  assert.match(waitBody, /postClientEvent\("continuation_job_done"/);
+  assert.match(waitBody, /postClientEvent\("continuation_job_failed"/);
 });
 
 test("new-message route allows Codex App style projectless threads", () => {

@@ -1713,6 +1713,23 @@ old native `window.confirm(...)` path. Current builds should render an in-app
 continuation dialog inside the iframe, because native confirm dialogs are not
 reliable in the plugin host path.
 
+## Compression Continuation Has No Visible Progress
+
+When the user presses `压缩续接` and confirms with `继续`, clients after
+`codex-mobile-shell-v606` keep the in-app dialog visible, disable the action
+buttons, and show the current continuation step until the job finishes or
+fails. The client should also emit bounded events:
+`continuation_start_requested`, `continuation_job_created`,
+`continuation_job_poll`, and either `continuation_job_done` or
+`continuation_job_failed`.
+
+If the user reports that nothing happened, first check client events for
+`continuation_start_requested`. Absence of that event means the frontend did
+not enter the confirmed submit path. If it is present but no
+`continuation_job_created` follows, inspect the `POST /api/thread-continuations`
+request. If a job id is present, inspect `/api/thread-continuations/:id` and the
+server `[continuation]` progress logs.
+
 ## Hermes Plugin Seems To Reload Without Explanation
 
 When Mobile Web sends `codex-mobile.plugin.refresh_required` to Hermes, the

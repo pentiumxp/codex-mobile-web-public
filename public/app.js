@@ -546,7 +546,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v604";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v606";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -12866,6 +12866,27 @@ function continuationDialogOpen() {
   return Boolean(dialog && !dialog.classList.contains("hidden"));
 }
 
+function setContinuationDialogStatus(message, options = {}) {
+  const statusNode = $("continuationStatus");
+  if (!statusNode) return;
+  const text = String(message || "").trim();
+  statusNode.textContent = text;
+  statusNode.classList.toggle("hidden", !text);
+  statusNode.classList.toggle("error", Boolean(options.error));
+}
+
+function setContinuationDialogBusy(busy, message = "", options = {}) {
+  const isBusy = Boolean(busy);
+  const confirm = $("continuationConfirm");
+  const cancel = $("continuationCancel");
+  if (confirm) {
+    confirm.disabled = isBusy;
+    confirm.textContent = isBusy ? "处理中" : "继续";
+  }
+  if (cancel) cancel.disabled = isBusy;
+  setContinuationDialogStatus(message, options);
+}
+
 function openContinuationDialog(sourceThread) {
   const thread = sourceThread || state.currentThread || {};
   const threadId = String(thread.id || state.currentThreadId || "").trim();
@@ -12889,17 +12910,33 @@ function openContinuationDialog(sourceThread) {
       size ? `当前 rollout 大小：${size}` : "",
     ].filter(Boolean).join(" ");
   }
+  setContinuationDialogBusy(false);
+  postClientEvent("continuation_dialog_opened", {
+    sourceThreadId: threadId,
+    hasWorkspace: Boolean(cwd),
+    rolloutBytes: Number(thread.rolloutSizeBytes || 0) || 0,
+  });
   dialog.classList.remove("hidden");
   setTimeout(clearTextSelection, 0);
   publishPluginNavigationState({ force: true });
   return true;
 }
 
-function closeContinuationDialog() {
+function closeContinuationDialog(options = {}) {
+  if (state.continuationBusy && !options.force) {
+    setContinuationDialogStatus("续接任务正在运行，请稍等。");
+    postClientEvent("continuation_dialog_close_blocked", {
+      jobId: state.continuationJobId || "",
+      sourceThreadId: state.continuationSourceThreadId || "",
+    });
+    return false;
+  }
   const dialog = $("continuationDialog");
   if (dialog) dialog.classList.add("hidden");
   state.continuationDialogThreadId = "";
+  setContinuationDialogBusy(false);
   publishPluginNavigationState({ force: true });
+  return true;
 }
 
 function continuationDialogSourceThread() {
@@ -17513,13 +17550,24 @@ async function waitForContinuationJob(jobId) {
     });
     $("connectionState").classList.toggle("error", job.status === "failed");
     $("connectionState").textContent = continuationJobStatusText(job);
+    setContinuationDialogStatus(continuationJobStatusText(job), { error: job.status === "failed" });
+    postClientEvent("continuation_job_poll", {
+      jobId: id,
+      status: String(job.status || ""),
+      step: String(job.step || ""),
+    });
     markActivity(job.step || "续接任务");
     if (job.status === "done") {
       clearRememberedContinuationJob(id);
+      postClientEvent("continuation_job_done", { jobId: id });
       return job.result || job;
     }
     if (job.status === "failed") {
       clearRememberedContinuationJob(id);
+      postClientEvent("continuation_job_failed", {
+        jobId: id,
+        message: String(job.error || job.message || "Continuation job failed"),
+      });
       throw new Error(job.error || job.message || "Continuation job failed");
     }
     await sleep(delayMs);
@@ -17549,7 +17597,15 @@ async function resumeRememberedContinuationJob() {
 async function startNewThreadFromThread(sourceThread, event) {
   if (event) event.preventDefault();
   if (event) event.stopPropagation();
-  if (state.continuationBusy) return;
+  if (state.continuationBusy) {
+    setContinuationDialogStatus("续接任务已经在运行，请稍等。");
+    $("connectionState").textContent = "续接任务已经在运行";
+    postClientEvent("continuation_start_ignored_busy", {
+      jobId: state.continuationJobId || "",
+      sourceThreadId: state.continuationSourceThreadId || "",
+    });
+    return;
+  }
   const thread = sourceThread || state.currentThread || {};
   if (!continuationDialogOpen()) {
     openContinuationDialog(thread);
@@ -17557,7 +17613,6 @@ async function startNewThreadFromThread(sourceThread, event) {
   }
   const button = event && event.currentTarget;
   const cwd = thread.cwd ? String(thread.cwd).trim() : String(state.selectedCwd || "").trim();
-  closeContinuationDialog();
   const sourceThreadId = thread.id || state.currentThreadId || "";
   const body = {
     cwd,
@@ -17579,9 +17634,17 @@ async function startNewThreadFromThread(sourceThread, event) {
   }
   state.continuationBusy = true;
   if (button) button.disabled = true;
+  setContinuationDialogBusy(true, "正在创建续接任务。");
   $("connectionState").classList.remove("error");
   $("connectionState").textContent = "正在创建续接任务";
   markActivity("创建续接任务");
+  let completed = false;
+  let failed = false;
+  postClientEvent("continuation_start_requested", {
+    sourceThreadId,
+    hasWorkspace: Boolean(body.cwd),
+    hermesPluginMode: Boolean(body.hermesPluginMode),
+  });
   try {
     const job = await api("/api/thread-continuations", {
       method: "POST",
@@ -17589,13 +17652,30 @@ async function startNewThreadFromThread(sourceThread, event) {
       timeoutMs: 30000,
     });
     $("connectionState").textContent = continuationJobStatusText(job);
+    setContinuationDialogStatus(continuationJobStatusText(job));
+    postClientEvent("continuation_job_created", {
+      jobId: String(job.jobId || ""),
+      status: String(job.status || ""),
+      pluginMode: String(job.pluginMode || ""),
+    });
     const result = await waitForContinuationJob(job.jobId);
+    closeContinuationDialog({ force: true });
+    completed = true;
     await openContinuationResult(result);
   } catch (err) {
+    failed = true;
+    setContinuationDialogBusy(false, err && err.message ? err.message : String(err), { error: true });
+    postClientEvent("continuation_start_failed", {
+      sourceThreadId,
+      message: err && err.message ? err.message : String(err),
+    });
     showError(err);
   } finally {
     clearRememberedContinuationJob();
     state.continuationBusy = false;
+    if (!failed) {
+      setContinuationDialogBusy(false, completed || !continuationDialogOpen() ? "" : "续接任务未完成，可以重试。");
+    }
     if (button) button.disabled = false;
   }
 }
