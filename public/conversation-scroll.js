@@ -273,6 +273,56 @@
     };
   }
 
+  function planAutomaticConversationRefresh(options = {}) {
+    if (options.userInitiated) {
+      return {
+        allowRefresh: true,
+        cancelScheduled: false,
+        reason: "user-initiated",
+      };
+    }
+    if (!options.hasThread) {
+      return {
+        allowRefresh: true,
+        cancelScheduled: false,
+        reason: "no-current-thread",
+      };
+    }
+    if (options.nearBottom) {
+      return {
+        allowRefresh: true,
+        cancelScheduled: false,
+        reason: "near-bottom",
+      };
+    }
+    if (options.userReadingCurrentTurn) {
+      return {
+        allowRefresh: false,
+        cancelScheduled: true,
+        reason: "user-reading-current-turn",
+      };
+    }
+    if (options.autoScrollHold) {
+      return {
+        allowRefresh: false,
+        cancelScheduled: true,
+        reason: "auto-scroll-hold",
+      };
+    }
+    if (options.recentScrollIntent) {
+      return {
+        allowRefresh: false,
+        cancelScheduled: true,
+        reason: "recent-scroll-intent",
+      };
+    }
+    return {
+      allowRefresh: true,
+      cancelScheduled: false,
+      reason: "no-user-scroll-protection",
+    };
+  }
+
   function planFullRenderScroll(options = {}) {
     const explicitNoStickToBottom = options.stickToBottom === false || Boolean(options.scrollToTurnReceiptStart);
     if (explicitNoStickToBottom) {
@@ -349,6 +399,7 @@
     planBottomFollowLeaseEvaluation,
     planBottomFollowScrollSchedule,
     planConversationAutoScrollHoldFromScroll,
+    planAutomaticConversationRefresh,
     planConversationJumpButtons,
     planFullRenderScroll,
     planLocalPatchScrollCompletion,

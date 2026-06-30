@@ -478,3 +478,46 @@ test("reading viewport preservation follows explicit user reading signals", () =
     reason: "no-user-scroll-protection",
   });
 });
+
+test("automatic conversation refresh stops while the user is reading", () => {
+  assert.deepEqual(conversationScroll.planAutomaticConversationRefresh({
+    hasThread: true,
+    nearBottom: false,
+    recentScrollIntent: true,
+  }), {
+    allowRefresh: false,
+    cancelScheduled: true,
+    reason: "recent-scroll-intent",
+  });
+
+  assert.deepEqual(conversationScroll.planAutomaticConversationRefresh({
+    hasThread: true,
+    nearBottom: false,
+    userReadingCurrentTurn: true,
+  }), {
+    allowRefresh: false,
+    cancelScheduled: true,
+    reason: "user-reading-current-turn",
+  });
+
+  assert.deepEqual(conversationScroll.planAutomaticConversationRefresh({
+    hasThread: true,
+    nearBottom: false,
+    recentScrollIntent: true,
+    userInitiated: true,
+  }), {
+    allowRefresh: true,
+    cancelScheduled: false,
+    reason: "user-initiated",
+  });
+
+  assert.deepEqual(conversationScroll.planAutomaticConversationRefresh({
+    hasThread: true,
+    nearBottom: true,
+    recentScrollIntent: true,
+  }), {
+    allowRefresh: true,
+    cancelScheduled: false,
+    reason: "near-bottom",
+  });
+});

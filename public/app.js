@@ -546,7 +546,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v607";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v608";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -661,6 +661,17 @@ const threadDetailMergePolicy = threadDetailMergeStateApi.createThreadDetailMerg
   maxExpandedVisibleTurns: MAX_EXPANDED_VISIBLE_TURNS,
 });
 const CONVERSATION_SCROLL_INTENT_MS = 4000;
+const AUTOMATIC_CONVERSATION_REFRESH_SOURCES = new Set([
+  "scheduled",
+  "deferred-refresh",
+  "summary-detail-recovery",
+  "post-completion",
+  "usage-backfill",
+  "live-poll",
+  "event-fallback-poll",
+  "event-recovery",
+  "resume",
+]);
 const STORAGE_THREAD_ID = "codexMobileCurrentThreadId";
 const STORAGE_CONTINUATION_JOB = "codexMobileContinuationJobId";
 const STORAGE_RUNNING_THREAD_IDS = "codexMobileRunningThreadIds";
@@ -9981,11 +9992,13 @@ function scheduleUsageBackfillRefresh(delay = 1200) {
     state.usageBackfillAttempts = 0;
   }
   if (state.usageBackfillAttempts >= 6 || state.usageBackfillTimer) return;
+  if (shouldSuppressAutomaticCurrentThreadRefresh("usage-backfill")) return;
   state.usageBackfillAttempts += 1;
   state.usageBackfillTimer = setTimeout(() => {
     state.usageBackfillTimer = null;
     if (document.visibilityState === "hidden") return;
     if (!state.currentThreadId || `${state.currentThreadId}|${turn.id}` !== state.usageBackfillKey) return;
+    if (shouldSuppressAutomaticCurrentThreadRefresh("usage-backfill")) return;
     refreshCurrentThread({ source: "usage-backfill" }).catch(showError);
   }, delay);
 }
@@ -10542,6 +10555,7 @@ async function refreshCurrentThread(options = {}) {
   const seq = requestPlan.seq;
   const source = requestPlan.source;
   const requestedMode = requestPlan.requestedMode;
+  if (shouldSuppressAutomaticCurrentThreadRefresh(source, { threadId })) return;
   if (requestPlan.abortActiveRefresh && state.refreshThreadController) state.refreshThreadController.abort();
   const controller = new AbortController();
   state.refreshThreadController = controller;
@@ -10575,6 +10589,7 @@ async function refreshCurrentThread(options = {}) {
     source,
   });
   if (!responseEffectsPlan.shouldApply) return;
+  if (shouldSuppressAutomaticCurrentThreadRefresh(source, { threadId })) return;
   const renderStartedAt = nowPerfMs();
   const mergeStartedAt = nowPerfMs();
   const previousThread = state.currentThread;
@@ -11003,7 +11018,9 @@ function maybeLoadOlderThreadTurnsFromScroll() {
 
 function scheduleCurrentThreadRefresh(delay = 600, source = "scheduled") {
   clearTimeout(state.refreshTimer);
+  if (shouldSuppressAutomaticCurrentThreadRefresh(source)) return;
   state.refreshTimer = setTimeout(() => {
+    if (shouldSuppressAutomaticCurrentThreadRefresh(source)) return;
     refreshCurrentThread({ source }).catch(showError);
   }, delay);
 }
@@ -11025,15 +11042,18 @@ function schedulePostCompletionThreadRefreshes(threadId, delays = [700, 2400]) {
   const id = String(threadId || "");
   if (!id) return;
   state.postCompletionRefreshTimers.forEach((timer) => clearTimeout(timer));
+  state.postCompletionRefreshTimers = [];
+  if (shouldSuppressAutomaticCurrentThreadRefresh("post-completion", { threadId: id })) return;
   state.postCompletionRefreshTimers = delays.map((delay, index) => {
     const timer = setTimeout(() => {
       state.postCompletionRefreshTimers = state.postCompletionRefreshTimers.filter((entry) => entry !== timer);
-    if (document.visibilityState === "hidden") return;
-    if (state.currentThreadId !== id) return;
-    refreshCurrentThread({
-      source: "post-completion",
-      full: true,
-    }).catch(showError);
+      if (document.visibilityState === "hidden") return;
+      if (state.currentThreadId !== id) return;
+      if (shouldSuppressAutomaticCurrentThreadRefresh("post-completion", { threadId: id })) return;
+      refreshCurrentThread({
+        source: "post-completion",
+        full: true,
+      }).catch(showError);
     }, delay);
     return timer;
   });
@@ -11056,6 +11076,7 @@ function abortCurrentThreadRefresh() {
 function scheduleLivePollIfNeeded(delay = 2600) {
   clearTimeout(state.pollTimer);
   if (!shouldPollCurrentThread()) return;
+  if (shouldSuppressAutomaticCurrentThreadRefresh("live-poll")) return;
   const signature = threadSignature();
   if (signature === state.lastThreadSignature) state.pollStableCount += 1;
   else state.pollStableCount = 0;
@@ -11064,6 +11085,7 @@ function scheduleLivePollIfNeeded(delay = 2600) {
   if (state.pollStableCount > 12) nextDelay = Math.max(delay, 12000);
   else if (state.pollStableCount > 3) nextDelay = Math.max(delay, 5000);
   state.pollTimer = setTimeout(() => {
+    if (shouldSuppressAutomaticCurrentThreadRefresh("live-poll")) return;
     refreshCurrentThread({ source: "live-poll" }).catch(showError);
   }, nextDelay);
 }
@@ -21473,14 +21495,17 @@ function applyNotification(method, params) {
     if (completedPendingSteer) setSteerFeedback("completed", { turnId: String(params.turn.id) });
     $("interruptTurn").disabled = true;
     updateComposerControls();
-    renderCurrentThread({ stickToBottom: true });
+    const suppressAutomaticRefresh = shouldSuppressAutomaticCurrentThreadRefresh("post-completion", { threadId: params.threadId });
+    renderCurrentThread({ stickToBottom: !suppressAutomaticRefresh });
     scheduleRenderThreads();
-    schedulePostCompletionThreadRefreshes(params.threadId, [700, 2400]);
+    if (!suppressAutomaticRefresh) schedulePostCompletionThreadRefreshes(params.threadId, [700, 2400]);
     setTimeout(() => {
       if (state.currentThreadId === params.threadId) loadSideChat(params.threadId, { silent: true }).catch(showError);
     }, 900);
-    scheduleUsageBackfillRefresh(1400);
-    scheduleLivePollIfNeeded(1400);
+    if (!suppressAutomaticRefresh) {
+      scheduleUsageBackfillRefresh(1400);
+      scheduleLivePollIfNeeded(1400);
+    }
     return;
   }
   if (method === "item/started" || method === "item/completed") {
@@ -22132,6 +22157,7 @@ function rememberConversationScrollIntent() {
   clearSubmittedMessageBottomFollow();
   clearViewportBottomFollow();
   syncConversationScrollPosition();
+  cancelAutomaticConversationRefreshesIfReading();
 }
 
 function clearConversationAutoScrollHold() {
@@ -22181,6 +22207,56 @@ function isUserReadingCurrentTurn(options = {}) {
   return Boolean(plan.userReadingCurrentTurn);
 }
 
+function isAutomaticConversationRefreshSource(source) {
+  return AUTOMATIC_CONVERSATION_REFRESH_SOURCES.has(String(source || "").trim());
+}
+
+function automaticConversationRefreshPlan(options = {}) {
+  const threadId = String(options.threadId || state.currentThreadId || "").trim();
+  const currentThreadId = String(state.currentThreadId || state.currentThread && state.currentThread.id || "").trim();
+  const nearBottom = Object.prototype.hasOwnProperty.call(options, "nearBottom")
+    ? Boolean(options.nearBottom)
+    : isConversationNearBottom();
+  const hasThread = Boolean(
+    threadId
+      && currentThreadId
+      && threadId === currentThreadId
+      && state.currentThread
+      && String(state.currentThread.id || currentThreadId) === currentThreadId,
+  );
+  return conversationScroll.planAutomaticConversationRefresh({
+    hasThread,
+    nearBottom,
+    userReadingCurrentTurn: !nearBottom && isUserReadingCurrentTurn({ nearBottom }),
+    autoScrollHold: !nearBottom && shouldHoldAutoScrollForCurrentTurn(),
+    recentScrollIntent: !nearBottom && hasRecentConversationScrollIntent(),
+    userInitiated: options.userInitiated === true,
+  });
+}
+
+function shouldSuppressAutomaticCurrentThreadRefresh(source, options = {}) {
+  if (!isAutomaticConversationRefreshSource(source)) return false;
+  const plan = automaticConversationRefreshPlan(options);
+  return !plan.allowRefresh;
+}
+
+function clearAutomaticConversationRefreshTimersForUserReading() {
+  clearTimeout(state.refreshTimer);
+  state.refreshTimer = null;
+  state.postCompletionRefreshTimers.forEach((timer) => clearTimeout(timer));
+  state.postCompletionRefreshTimers = [];
+  clearUsageBackfillRefresh();
+  clearTimeout(state.pollTimer);
+  state.pollTimer = null;
+}
+
+function cancelAutomaticConversationRefreshesIfReading() {
+  const plan = automaticConversationRefreshPlan();
+  if (!plan.cancelScheduled) return false;
+  clearAutomaticConversationRefreshTimersForUserReading();
+  return true;
+}
+
 function updateConversationAutoScrollHoldFromScroll() {
   const nearBottom = isConversationNearBottom();
   const planInput = { nearBottom };
@@ -22196,6 +22272,7 @@ function updateConversationAutoScrollHoldFromScroll() {
     return;
   }
   if (plan.action === "remember-hold") rememberConversationAutoScrollHold();
+  cancelAutomaticConversationRefreshesIfReading();
 }
 
 function clearRecentCompletedReplyAnchor() {

@@ -2636,7 +2636,8 @@ test("long agent messages keep a stable render path when a turn completes", () =
   assert.match(appJs, /function shouldScrollToLongReceiptStart\(turn\)/);
   assert.match(functionBody("shouldScrollToLongReceiptStart"), /finalReceiptTextForTurn\(turn\)\.length >= LONG_RECEIPT_SCROLL_CHARS/);
   assert.doesNotMatch(functionBody("applyNotification"), /renderCurrentThread\(shouldScrollToLongReceiptStart\(turn\) \? \{ scrollToTurnReceiptStart: params\.turn\.id \} : \{\}\)/);
-  assert.match(functionBody("applyNotification"), /renderCurrentThread\(\{ stickToBottom: true \}\)/);
+  assert.match(functionBody("applyNotification"), /const suppressAutomaticRefresh = shouldSuppressAutomaticCurrentThreadRefresh\("post-completion", \{ threadId: params\.threadId \}\);/);
+  assert.match(functionBody("applyNotification"), /renderCurrentThread\(\{ stickToBottom: !suppressAutomaticRefresh \}\)/);
   assert.match(appJs, /function mergeVisibleTextItemPreservingRenderIdentity\(/);
   assert.match(functionBody("mergeVisibleTextItemPreservingRenderIdentity"), /threadDetailStatePolicy\.mergeVisibleTextItemPreservingRenderIdentity\(existingItem, incomingItem, incomingTurn\)/);
   assert.match(appJs, /function findUnusedExistingItemIndexForIncoming\(/);

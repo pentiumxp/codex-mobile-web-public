@@ -97,7 +97,10 @@ test("current-turn reply jump shares one floating slot with the bottom jump", ()
   assert.match(appJs, /function pendingCompletedReceiptStartTurnId\(\)/);
   assert.doesNotMatch(appJs, /const receiptStartTurnId = pendingCompletedReceiptStartTurnId\(\);/);
   assert.doesNotMatch(appJs, /renderCurrentThread\(receiptStartTurnId \? \{ scrollToTurnReceiptStart: receiptStartTurnId \} : \{\}\);/);
-  assert.match(functionBody("applyNotification"), /renderCurrentThread\(\{ stickToBottom: true \}\);/);
+  assert.match(functionBody("applyNotification"), /const suppressAutomaticRefresh = shouldSuppressAutomaticCurrentThreadRefresh\("post-completion", \{ threadId: params\.threadId \}\);/);
+  assert.match(functionBody("applyNotification"), /renderCurrentThread\(\{ stickToBottom: !suppressAutomaticRefresh \}\);/);
+  assert.match(functionBody("applyNotification"), /if \(!suppressAutomaticRefresh\) schedulePostCompletionThreadRefreshes\(params\.threadId, \[700, 2400\]\);/);
+  assert.match(functionBody("applyNotification"), /if \(!suppressAutomaticRefresh\) \{[\s\S]*scheduleUsageBackfillRefresh\(1400\);[\s\S]*scheduleLivePollIfNeeded\(1400\);[\s\S]*\}/);
   assert.match(appJs, /scrollToTurnReceiptStart/);
   assert.match(appJs, /const explicitNoStickToBottom = options\.stickToBottom === false \|\| Boolean\(options\.scrollToTurnReceiptStart\);/);
   assert.doesNotMatch(appJs, /return replies\[0\];/);
@@ -119,8 +122,22 @@ test("manual conversation scroll pauses live auto-stick until the user returns t
   assert.match(appJs, /submittedMessageBottomFollow: null/);
   assert.match(appJs, /viewportBottomFollow: null/);
   assert.match(appJs, /function rememberConversationScrollIntent\(\)/);
-  assert.match(appJs, /clearSubmittedMessageBottomFollow\(\);\s*clearViewportBottomFollow\(\);\s*syncConversationScrollPosition\(\);/);
+  assert.match(appJs, /clearSubmittedMessageBottomFollow\(\);\s*clearViewportBottomFollow\(\);\s*syncConversationScrollPosition\(\);\s*cancelAutomaticConversationRefreshesIfReading\(\);/);
   assert.match(appJs, /const CONVERSATION_SCROLL_INTENT_MS = 4000;/);
+  assert.match(appJs, /const AUTOMATIC_CONVERSATION_REFRESH_SOURCES = new Set\(\[/);
+  assert.match(appJs, /function automaticConversationRefreshPlan\(options = \{\}\)/);
+  assert.match(functionBody("automaticConversationRefreshPlan"), /conversationScroll\.planAutomaticConversationRefresh\(\{/);
+  assert.match(appJs, /function shouldSuppressAutomaticCurrentThreadRefresh\(source, options = \{\}\)/);
+  assert.match(appJs, /function clearAutomaticConversationRefreshTimersForUserReading\(\)/);
+  assert.match(functionBody("clearAutomaticConversationRefreshTimersForUserReading"), /state\.postCompletionRefreshTimers\.forEach\(\(timer\) => clearTimeout\(timer\)\);/);
+  assert.match(functionBody("clearAutomaticConversationRefreshTimersForUserReading"), /clearUsageBackfillRefresh\(\);/);
+  assert.match(functionBody("clearAutomaticConversationRefreshTimersForUserReading"), /clearTimeout\(state\.pollTimer\);/);
+  assert.match(functionBody("cancelAutomaticConversationRefreshesIfReading"), /if \(!plan\.cancelScheduled\) return false;/);
+  assert.match(functionBody("refreshCurrentThread"), /if \(shouldSuppressAutomaticCurrentThreadRefresh\(source, \{ threadId \}\)\) return;/);
+  assert.match(functionBody("scheduleCurrentThreadRefresh"), /if \(shouldSuppressAutomaticCurrentThreadRefresh\(source\)\) return;/);
+  assert.match(functionBody("schedulePostCompletionThreadRefreshes"), /if \(shouldSuppressAutomaticCurrentThreadRefresh\("post-completion", \{ threadId: id \}\)\) return;/);
+  assert.match(functionBody("scheduleUsageBackfillRefresh"), /if \(shouldSuppressAutomaticCurrentThreadRefresh\("usage-backfill"\)\) return;/);
+  assert.match(functionBody("scheduleLivePollIfNeeded"), /if \(shouldSuppressAutomaticCurrentThreadRefresh\("live-poll"\)\) return;/);
   assert.match(appJs, /function hasRecentConversationScrollIntent\(nowMs = Date\.now\(\)\)/);
   assert.match(appJs, /const userReadingCurrentTurn = isUserReadingCurrentTurn\(\{ nearBottom \}\);/);
   assert.match(functionBody("isUserReadingCurrentTurn"), /const planInput = \{ nearBottom \};/);
@@ -156,6 +173,7 @@ test("manual conversation scroll pauses live auto-stick until the user returns t
   assert.match(functionBody("updateConversationAutoScrollHoldFromScroll"), /const plan = conversationScroll\.planConversationAutoScrollHoldFromScroll\(planInput\);/);
   assert.match(functionBody("updateConversationAutoScrollHoldFromScroll"), /if \(plan\.action === "clear-hold"\) \{\s*clearConversationAutoScrollHold\(\);\s*return;\s*\}/);
   assert.match(functionBody("updateConversationAutoScrollHoldFromScroll"), /if \(plan\.action === "remember-hold"\) rememberConversationAutoScrollHold\(\);/);
+  assert.match(functionBody("updateConversationAutoScrollHoldFromScroll"), /cancelAutomaticConversationRefreshesIfReading\(\);/);
   assert.match(appJs, /function captureConversationViewportAnchor\(options = \{\}\)/);
   assert.match(appJs, /function restoreConversationViewportAnchor\(anchor\)/);
   assert.match(functionBody("planConversationViewportPreservation"), /conversationScroll\.planReadingViewportPreservation\(\{/);
@@ -290,7 +308,7 @@ test("live and final message renders stay anchored when the user is at bottom", 
   const notificationBody = functionBody("applyNotification");
   assert.match(notificationBody, /method === "item\/agentMessage\/delta"[\s\S]*appendToItem\(params\.turnId, params\.itemId, "agentMessage", "text", params\.delta \|\| "", 0\)/);
   assert.doesNotMatch(notificationBody, /defer-final-receipt/);
-  assert.match(notificationBody, /method === "turn\/completed"[\s\S]*renderCurrentThread\(\{ stickToBottom: true \}\);/);
+  assert.match(notificationBody, /method === "turn\/completed"[\s\S]*const suppressAutomaticRefresh = shouldSuppressAutomaticCurrentThreadRefresh\("post-completion", \{ threadId: params\.threadId \}\);[\s\S]*renderCurrentThread\(\{ stickToBottom: !suppressAutomaticRefresh \}\);/);
 });
 
 test("submitted message bottom follow sustain uses target thread for visible progress", () => {

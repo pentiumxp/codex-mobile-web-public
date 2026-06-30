@@ -36,7 +36,7 @@ Interpretation:
 | Turn accepts a message then ends with no visible reply | inspect rollout for `task_complete.last_agent_message: null` and no scoped `user_message` / `agent_message`; current detail projection renders a `turnDiagnostic` item with code `runtime_completed_without_response` rather than fabricating an assistant reply |
 | First open after completion lacks the latest receipt | `/api/threads/:id?mode=recent` read mode, whether the latest rollout EOF line is a complete `task_complete` JSON object without a trailing newline, and whether enrichment index exposes a provisional entry |
 | Same turn shows two final receipts and only one has Usage | Compare `/api/threads/:id?mode=recent` service projection against the open client shell. If the API has one `agentMessage` plus one `turnUsageSummary` but the page shows two receipts, the failure layer is browser V4 local-visible merge; current clients after `codex-mobile-shell-v390` drop local-only live receipts once a completed server turn has an authoritative receipt. |
-| Final receipt appears, disappears, then returns one line shorter | Compare the live active receipt text and completed service projection receipt text for the same turn, then inspect `/api/client-events` for `thread_refresh_ms.locallyPatchedDetail`. Clients after `codex-mobile-shell-v391` preserve same-prefix completed receipt identity; clients after `codex-mobile-shell-v392` also keep post-completion refreshes on the local item patch path when only receipt/Usage items change. |
+| Final receipt appears, disappears, then returns one line shorter | Compare the live active receipt text and completed service projection receipt text for the same turn, then inspect `/api/client-events` for `thread_refresh_ms.locallyPatchedDetail`. Clients after `codex-mobile-shell-v391` preserve same-prefix completed receipt identity; clients after `codex-mobile-shell-v392` also keep post-completion refreshes on the local item patch path when only receipt/Usage items change. Clients after `codex-mobile-shell-v608` cancel or ignore automatic post-completion, Usage-backfill, and live-poll refreshes while the user has scrolled away from the bottom in the current thread; in that protected reading state, use an explicit user action such as returning to bottom or manually refreshing before treating missing later Usage as a projection loss. |
 | Bottom Command/status row disappears during a running turn | Check viewport first. Wide clients after `codex-mobile-shell-v394` keep the one-line dock stable during reasoning-only active turns. Phone-width clients after `codex-mobile-shell-v395` intentionally do not reserve a bottom row: pure reasoning is shown only by the top-right timer, and real command/file/tool/search activity appears as a floating operation bubble above the composer with short summary and elapsed time. Clients after `codex-mobile-shell-v402` keep the last same-thread operation bubble visible for at least 500ms even when the operation finishes before the next full thread render, and the expiry refresh updates only the dock instead of rerendering the conversation. Clients after `codex-mobile-shell-v403` keep a small same-thread recall dot after that temporary bubble disappears; tap it to reopen the last operation detail sheet without restoring a permanent bottom row. Clients after `codex-mobile-shell-v404` align that recall dot with the lower-right scroll controls using the same 36px size and right edge. Clients after `codex-mobile-shell-v405` keep those dwell/pinned/recall decisions in `public/live-operation-dock-state.js`; regressions should be tested there before adding render fallbacks. |
 | Command row has no detail on macOS | First inspect `/api/threads/:id?mode=recent`: if `commandExecution.command` is empty, the failure layer is server raw-operation projection from rollout `function_call.arguments`; current server code reads `command`/`cmd`/`shellCommand`/`shell_command` from object or JSON-string arguments. If the API has a non-empty command but the dock/bubble is blank, inspect the v394+ frontend `operationCommandText()` path. |
 | Continuation fails because source thread cannot reply | continuation job progress `handoff-fallback`, generated `.agent-context/thread-handoffs/*.md` mode, `/api/status` profile/quota |
@@ -1152,10 +1152,15 @@ Cause to check:
   the down-arrow remains the explicit skip-to-bottom control. If the completion
   notification only carries a short payload, the follow-up thread refresh should
   preserve the completion anchor and perform the one-time receipt-start jump
-  after the full deferred receipt is merged. If `/api/threads/<id>` already has
-  `turnUsageSummary` but the just-completed browser view does not, inspect the
-  post-completion refresh queue; completion should schedule both an immediate
-  and a delayed full detail refresh.
+  after the full deferred receipt is merged unless current-thread reading
+  protection is active. Clients after `codex-mobile-shell-v608` intentionally
+  cancel pending post-completion, Usage-backfill, and live-poll refreshes while
+  the user is scrolled away from the bottom, and in-flight automatic refresh
+  responses must not be applied. If `/api/threads/<id>` already has
+  `turnUsageSummary` but the just-completed browser view does not, first check
+  whether the user was in that protected reading state; otherwise inspect the
+  post-completion refresh queue, where completion should schedule both an
+  immediate and a delayed full detail refresh.
 - If a thread finished while the browser was away and Usage appears only after
   leaving and reopening the thread, inspect the initial `loadThread()` path in
   `public/app.js`. The first successful detail render must schedule the same
