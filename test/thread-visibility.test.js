@@ -1213,6 +1213,7 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeBody, /const deferFallback = fallbackMode === "defer" && !cursor && !archived && !searchTerm/);
   assert.match(routeBody, /const initialMode = String\(url\.searchParams\.get\("initial"\) \|\| ""\)/);
   assert.match(routeBody, /const initialFallbackPlan = planThreadListInitialFallbackAttempt\(\{[\s\S]*initialMode,[\s\S]*fallbackMode,[\s\S]*cursor,[\s\S]*archived,[\s\S]*cwd,[\s\S]*searchTerm,[\s\S]*defaultWarmFallback: threadListDefaultWarmFallbackEnabled,[\s\S]*\}\)/);
+  assert.doesNotMatch(apiDispatchRouteServiceJs, /THREAD_LIST_DEFAULT_WARM_FALLBACK_ENABLED/, "extracted API dispatch service must use injected thread-list fallback policy");
   assert.match(routeBody, /const appServerFetchPlan = planThreadListAppServerFetch\(\{[\s\S]*limit,[\s\S]*cursor,[\s\S]*archived,[\s\S]*cwd,[\s\S]*searchTerm,[\s\S]*\}\);/);
   assert.match(routeBody, /Object\.assign\(timings, threadListAppServerFetchTimingFields\(appServerFetchPlan\)\)/);
   assert.match(routeBody, /limit: appServerFetchPlan\.appServerLimit/);

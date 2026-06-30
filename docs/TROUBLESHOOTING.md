@@ -1233,6 +1233,14 @@ Do not infer from rollout file size alone. Separate:
   entry slow by competing with the immediate detail request after a user tap.
   Workspace-filtered and archived list requests intentionally still preserve
   the 500-row window.
+- If `/api/threads` and thread detail both return HTTP 500 immediately after a
+  runtime-boundary split deploy, inspect the bounded server error code before
+  assuming app-server or rollout corruption. A `ReferenceError` naming an
+  uppercase `server.js` constant from `adapters/api-dispatch-route-service.js`
+  means the extracted route module leaked a server-local dependency. The route
+  service must receive that policy through `createApiDispatchRouteService()`
+  dependencies; focused coverage should assert the adapter source does not
+  reference the server-local constant directly.
 - Is app-server/mux CPU active?
 - Is the latest turn `inProgress` but no event has been written for minutes?
 

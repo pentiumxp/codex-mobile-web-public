@@ -315,7 +315,7 @@ function createApiDispatchRouteService(dependencies = {}) {
       upsertThreadListFallbackCacheThreads,
       mergeThreadSummaryListWithDiagnostics,
       normalizeThreadSummaryLiveStatus,
-      threadListDefaultWarmFallbackEnabled: THREAD_LIST_DEFAULT_WARM_FALLBACK_ENABLED,
+      threadListDefaultWarmFallbackEnabled,
       readRpcTimeoutMs: READ_RPC_TIMEOUT_MS,
     });
     if (threadListRouteResult.handled) return;
