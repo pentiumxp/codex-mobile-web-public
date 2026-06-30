@@ -874,8 +874,9 @@ const threadTaskCardService = createThreadTaskCardService({
   executeApprovedCard: async (card, message) => {
     const requestedReasoningEffort = String(card && card.delivery && card.delivery.reasoningEffort || "").trim();
     const inheritedRuntimeSettings = await resolveThreadRuntimeSettings(card.target.threadId);
-    const targetThread = readThreadTaskCardTargetSummary(card.target.threadId);
-    const baseRuntimeSettings = isHomeAiDeployLaneThread(targetThread)
+    const targetThread = readThreadTaskCardExecutionTargetSummary(card);
+    const targetIsDeployLane = isHomeAiDeployLaneThread(targetThread);
+    const baseRuntimeSettings = targetIsDeployLane
       ? applyPermissionModeOverride(inheritedRuntimeSettings, "full", targetThread && targetThread.cwd || null)
       : inheritedRuntimeSettings;
     const runtimeSettings = requestedReasoningEffort
@@ -907,7 +908,7 @@ const threadTaskCardService = createThreadTaskCardService({
         requestedReasoningEffort,
         approvalPolicy: runtimeSettings.approvalPolicy || "",
         sandboxPolicyType: runtimeSettings.sandboxPolicy && runtimeSettings.sandboxPolicy.type || "",
-        deployLaneNoApproval: Boolean(isHomeAiDeployLaneThread(targetThread)),
+        deployLaneNoApproval: targetIsDeployLane,
       },
     };
   },
@@ -13176,6 +13177,35 @@ function threadTaskCardCanonicalVisibleTargets(visibleThreads = []) {
 function readThreadTaskCardTargetSummary(threadId, options = {}) {
   if (typeof options.readThreadSummary === "function") return options.readThreadSummary(threadId);
   return readStateDbThread(threadId) || readStartedThread(threadId) || readRolloutSessionFallbackThread(threadId);
+}
+
+function readThreadTaskCardVisibleTargetSummary(threadId) {
+  const id = String(threadId || "").trim();
+  if (!id) return null;
+  return safeArray(threadTaskCardVisibleTargetThreads())
+    .find((thread) => String(thread && (thread.id || thread.threadId || "") || "").trim() === id) || null;
+}
+
+function readThreadTaskCardExecutionTargetSummary(card) {
+  const target = card && card.target && typeof card.target === "object" ? card.target : {};
+  const threadId = String(target.threadId || "").trim();
+  const stored = readThreadTaskCardTargetSummary(threadId) || null;
+  const visible = readThreadTaskCardVisibleTargetSummary(threadId) || null;
+  const merged = Object.assign({}, target, visible || {}, stored || {});
+  if (!String(merged.id || "").trim()) merged.id = threadId;
+  if (!String(merged.threadId || "").trim()) merged.threadId = threadId;
+  const targetWorkspace = String(target.workspaceId || target.workspace || "").trim();
+  if (!String(merged.cwd || "").trim() && targetWorkspace) merged.cwd = targetWorkspace;
+  const visibleTitle = String(visible && (visible.name || visible.title || visible.threadName || visible.thread_name || visible.preview || "") || "").trim();
+  const storedTitle = String(stored && (stored.name || stored.title || stored.threadName || stored.thread_name || stored.preview || "") || "").trim();
+  const targetTitle = String(target.name || target.title || target.threadName || target.thread_name || target.preview || "").trim();
+  const title = storedTitle || visibleTitle || targetTitle;
+  if (title) {
+    if (!String(merged.title || "").trim()) merged.title = title;
+    if (!String(merged.name || "").trim()) merged.name = title;
+    if (!String(merged.preview || "").trim()) merged.preview = title;
+  }
+  return merged;
 }
 
 function taskCardPayloadTargetThreads(targetThreadIds = [], readThreadSummary = readThreadTaskCardTargetSummary) {

@@ -633,6 +633,9 @@ function summarizePublicCard(card) {
     injectionRuntime: omitEmptyObject({
       reasoningEffort: boundedMetadataString(card && card.injectionRuntime && card.injectionRuntime.reasoningEffort, 40),
       requestedReasoningEffort: boundedMetadataString(card && card.injectionRuntime && card.injectionRuntime.requestedReasoningEffort, 40),
+      approvalPolicy: boundedMetadataString(card && card.injectionRuntime && card.injectionRuntime.approvalPolicy, 40),
+      sandboxPolicyType: boundedMetadataString(card && card.injectionRuntime && card.injectionRuntime.sandboxPolicyType, 80),
+      deployLaneNoApproval: card && card.injectionRuntime && card.injectionRuntime.deployLaneNoApproval === true,
     }),
     injectedTurnId: boundedMetadataString(card && card.injectedTurnId, 120),
     injectedThreadId: boundedMetadataString(card && card.injectedThreadId, 120),
@@ -1219,6 +1222,9 @@ function createThreadTaskCardService(options = {}) {
         card.injectionRuntime = {
           reasoningEffort: boundedMetadataString(execution.runtime.reasoningEffort, 40),
           requestedReasoningEffort: boundedMetadataString(execution.runtime.requestedReasoningEffort, 40),
+          approvalPolicy: boundedMetadataString(execution.runtime.approvalPolicy, 40),
+          sandboxPolicyType: boundedMetadataString(execution.runtime.sandboxPolicyType, 80),
+          deployLaneNoApproval: execution.runtime.deployLaneNoApproval === true,
         };
       }
       if (cardCanOwnExecutionLease(card)) {

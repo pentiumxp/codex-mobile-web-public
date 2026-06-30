@@ -268,8 +268,9 @@ test("approved task cards inherit target thread model and effort", () => {
   );
   assert.match(setupBlock, /const requestedReasoningEffort = String\(card && card\.delivery && card\.delivery\.reasoningEffort/);
   assert.match(setupBlock, /const inheritedRuntimeSettings = await resolveThreadRuntimeSettings\(card\.target\.threadId\);/);
-  assert.match(setupBlock, /const targetThread = readThreadTaskCardTargetSummary\(card\.target\.threadId\);/);
-  assert.match(setupBlock, /const baseRuntimeSettings = isHomeAiDeployLaneThread\(targetThread\)/);
+  assert.match(setupBlock, /const targetThread = readThreadTaskCardExecutionTargetSummary\(card\);/);
+  assert.match(setupBlock, /const targetIsDeployLane = isHomeAiDeployLaneThread\(targetThread\);/);
+  assert.match(setupBlock, /const baseRuntimeSettings = targetIsDeployLane/);
   assert.match(setupBlock, /applyPermissionModeOverride\(inheritedRuntimeSettings, "full", targetThread && targetThread\.cwd \|\| null\)/);
   assert.match(setupBlock, /Object\.assign\(\{\}, baseRuntimeSettings, \{ reasoningEffort: requestedReasoningEffort \}\)/);
   assert.match(setupBlock, /thread\/resume", applyResumeRuntimeSettings\(/);
@@ -279,11 +280,21 @@ test("approved task cards inherit target thread model and effort", () => {
   assert.match(setupBlock, /runtime:\s*\{[\s\S]*reasoningEffort: runtimeSettings\.reasoningEffort \|\| ""/);
   assert.match(setupBlock, /approvalPolicy: runtimeSettings\.approvalPolicy \|\| ""/);
   assert.match(setupBlock, /sandboxPolicyType: runtimeSettings\.sandboxPolicy && runtimeSettings\.sandboxPolicy\.type \|\| ""/);
-  assert.match(setupBlock, /deployLaneNoApproval: Boolean\(isHomeAiDeployLaneThread\(targetThread\)\)/);
+  assert.match(setupBlock, /deployLaneNoApproval: targetIsDeployLane/);
   assert.match(setupBlock, /notifyLocalTurnStarted\(card\.target\.threadId, result, \{/);
   assert.match(setupBlock, /source: "thread-task-card-approval"/);
   assert.match(functionBody(serverJs, "applyTurnRuntimeSettings"), /if \(settings\.reasoningEffort\) params\.effort = settings\.reasoningEffort;/);
   assert.match(functionBody(serverJs, "applyTurnRuntimeSettings"), /if \(settings\.model\) params\.model = settings\.model;/);
+});
+
+test("approved task-card deploy lane runtime uses visible target metadata when stored summary is sparse", () => {
+  const helperBody = functionBody(serverJs, "readThreadTaskCardExecutionTargetSummary");
+  assert.match(helperBody, /const stored = readThreadTaskCardTargetSummary\(threadId\) \|\| null;/);
+  assert.match(helperBody, /const visible = readThreadTaskCardVisibleTargetSummary\(threadId\) \|\| null;/);
+  assert.match(helperBody, /Object\.assign\(\{\}, target, visible \|\| \{\}, stored \|\| \{\}\)/);
+  assert.match(helperBody, /if \(!String\(merged\.cwd \|\| ""\)\.trim\(\) && targetWorkspace\) merged\.cwd = targetWorkspace;/);
+  assert.match(helperBody, /const visibleTitle = String\(visible && \(visible\.name \|\| visible\.title/);
+  assert.match(functionBody(serverJs, "readThreadTaskCardVisibleTargetSummary"), /threadTaskCardVisibleTargetThreads\(\)/);
 });
 
 test("server broadcasts lightweight thread status for background turn notifications", () => {

@@ -131,6 +131,11 @@ with a deploy-lane no-approval runtime override: `approvalPolicy=never` and
 routine deploy/readback/self-check commands do not block behind interactive
 command approvals, while ordinary implementation, repair, and audit cards keep
 the existing workspace-delegation approval/write-guard behavior.
+The execution path must identify deploy lanes from the merged target card,
+visible target-thread metadata, and persisted thread summary, with the card
+target workspace used as a cwd fallback. This prevents sparse historical thread
+summaries from disabling the deploy-lane runtime override after routing has
+already selected the correct live lane.
 
 The supported local CLI wrapper is:
 

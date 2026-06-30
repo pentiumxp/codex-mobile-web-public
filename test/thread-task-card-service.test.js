@@ -579,6 +579,9 @@ test("approve preserves requested reasoning effort in injected task-card metadat
         runtime: {
           reasoningEffort: "xhigh",
           requestedReasoningEffort: card.delivery.reasoningEffort,
+          approvalPolicy: "never",
+          sandboxPolicyType: "dangerFullAccess",
+          deployLaneNoApproval: true,
         },
       };
     },
@@ -604,6 +607,9 @@ test("approve preserves requested reasoning effort in injected task-card metadat
   assert.equal(result.card.delivery.reasoningEffort, "xhigh");
   assert.equal(result.card.injectionRuntime.reasoningEffort, "xhigh");
   assert.equal(result.card.injectionRuntime.requestedReasoningEffort, "xhigh");
+  assert.equal(result.card.injectionRuntime.approvalPolicy, "never");
+  assert.equal(result.card.injectionRuntime.sandboxPolicyType, "dangerFullAccess");
+  assert.equal(result.card.injectionRuntime.deployLaneNoApproval, true);
   assert.equal(executions[0].card.delivery.reasoningEffort, "xhigh");
   assert.match(executions[0].message.text, /Requested reasoning effort: xhigh/);
 });
