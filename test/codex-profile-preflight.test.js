@@ -3,12 +3,12 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 
-process.env.CODEX_MOBILE_DISABLE_AUTH = "1";
+const { createCodexProfileSwitchService } = require("../adapters/codex-profile-switch-service");
 
 const {
   profileSwitchPreflightError,
   profileSwitchRateLimitsWarningForError,
-} = require("../server");
+} = createCodexProfileSwitchService();
 
 test("profile switch preflight classifies expired target auth before switching", () => {
   const result = profileSwitchPreflightError(new Error(

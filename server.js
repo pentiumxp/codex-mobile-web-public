@@ -4,7 +4,6 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
-const zlib = require("node:zlib");
 const { spawn } = require("node:child_process");
 const net = require("node:net");
 const {
@@ -78,6 +77,7 @@ const {
   resolveActiveCodexHomeFromStore,
   resolveEffectiveCodexHome,
 } = require("./adapters/codex-profile-service");
+const { createCodexProfileSwitchService } = require("./adapters/codex-profile-switch-service");
 const { createPublicConfigRuntimeCache } = require("./adapters/public-config-runtime-cache-service");
 const { ensureCodexMobileMcpServer } = require("./adapters/codex-mobile-mcp-config-service");
 const { ensureCodexProjectsTrusted } = require("./adapters/codex-project-trust-service");
@@ -131,6 +131,7 @@ const { handleThreadSideChatRoute } = require("./adapters/thread-side-chat-route
 const { createThreadMessageRouteService } = require("./adapters/thread-message-route-service");
 const { handleThreadListRoute } = require("./adapters/thread-list-route-service");
 const { createCodexAppServerClient } = require("./adapters/codex-app-server-client-service");
+const { createStaticFileService } = require("./adapters/static-file-service");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -545,6 +546,18 @@ const {
   stripMarkdownFileTarget,
   uploadPathForId,
 } = mediaFileService;
+const staticFileService = createStaticFileService({
+  publicRoot: PUBLIC_ROOT,
+  mimeFor,
+  getUrl,
+  frameAncestorsHeader: () => hermesPluginService.frameAncestorsHeader(),
+});
+const {
+  clearStaticCompressionCache,
+  serveStatic,
+  staticCompressionCacheStats,
+  staticCompressionEncoding,
+} = staticFileService;
 
 function serveFilePreviewContent(req, res, requestedPath, allowedRoots) {
   return mediaFileService.serveFilePreviewContent(req, res, requestedPath, allowedRoots, (status, body) => sendJson(res, status, body));
@@ -7612,163 +7625,6 @@ function maybeSendTurnCompletedPush(method, params) {
   return webPushRuntimeService.maybeSendTurnCompletedPush(method, params);
 }
 
-const STATIC_COMPRESSION_MIN_BYTES = 1024;
-const STATIC_COMPRESSION_CACHE_MAX_BYTES = 16 * 1024 * 1024;
-const STATIC_COMPRESSIBLE_EXTENSIONS = new Set([
-  ".css",
-  ".html",
-  ".js",
-  ".json",
-  ".svg",
-  ".txt",
-  ".webmanifest",
-]);
-const staticCompressionCache = new Map();
-let staticCompressionCacheBytes = 0;
-
-function acceptsEncoding(req, encoding) {
-  const header = String(req && req.headers && req.headers["accept-encoding"] || "").toLowerCase();
-  if (!header) return false;
-  const needle = String(encoding || "").toLowerCase();
-  return header.split(",").some((part) => {
-    const [name, ...params] = part.trim().split(";").map((value) => value.trim());
-    if (name !== needle) return false;
-    return !params.some((param) => /^q=0(?:\.0*)?$/.test(param));
-  });
-}
-
-function staticCompressionEncoding(req, target, byteLength) {
-  if (Number(byteLength || 0) < STATIC_COMPRESSION_MIN_BYTES) return "";
-  if (!STATIC_COMPRESSIBLE_EXTENSIONS.has(path.extname(target).toLowerCase())) return "";
-  if (acceptsEncoding(req, "br")) return "br";
-  if (acceptsEncoding(req, "gzip")) return "gzip";
-  return "";
-}
-
-function compressStaticBody(data, encoding, callback) {
-  if (encoding === "br") {
-    zlib.brotliCompress(data, {
-      params: {
-        [zlib.constants.BROTLI_PARAM_QUALITY]: 5,
-      },
-    }, callback);
-    return;
-  }
-  if (encoding === "gzip") {
-    zlib.gzip(data, { level: 6 }, callback);
-    return;
-  }
-  callback(null, data);
-}
-
-function staticCompressionCacheKey(target, stat, encoding) {
-  return [
-    path.resolve(target),
-    encoding,
-    stat.size,
-    Math.round(Number(stat.mtimeMs || 0)),
-  ].join("|");
-}
-
-function getStaticCompressionCache(key) {
-  const entry = staticCompressionCache.get(key);
-  if (!entry) return null;
-  staticCompressionCache.delete(key);
-  staticCompressionCache.set(key, entry);
-  return entry;
-}
-
-function rememberStaticCompressionCache(key, body) {
-  if (!key || !Buffer.isBuffer(body) || !body.length) return;
-  if (body.length > STATIC_COMPRESSION_CACHE_MAX_BYTES) return;
-  const previous = staticCompressionCache.get(key);
-  if (previous) {
-    staticCompressionCacheBytes -= previous.body.length;
-    staticCompressionCache.delete(key);
-  }
-  staticCompressionCache.set(key, { body });
-  staticCompressionCacheBytes += body.length;
-  while (staticCompressionCacheBytes > STATIC_COMPRESSION_CACHE_MAX_BYTES && staticCompressionCache.size) {
-    const oldestKey = staticCompressionCache.keys().next().value;
-    const oldest = staticCompressionCache.get(oldestKey);
-    staticCompressionCache.delete(oldestKey);
-    if (oldest && oldest.body) staticCompressionCacheBytes -= oldest.body.length;
-  }
-}
-
-function clearStaticCompressionCache() {
-  staticCompressionCache.clear();
-  staticCompressionCacheBytes = 0;
-}
-
-function staticCompressionCacheStats() {
-  return {
-    entries: staticCompressionCache.size,
-    bytes: staticCompressionCacheBytes,
-  };
-}
-
-function writeStaticResponse(res, headers, body) {
-  headers["Content-Length"] = body.length;
-  res.writeHead(200, headers);
-  res.end(body);
-}
-
-function serveStatic(req, res) {
-  const url = getUrl(req);
-  const rel = decodeURIComponent(url.pathname === "/" ? "/index.html" : url.pathname);
-  const target = path.normalize(path.join(PUBLIC_ROOT, rel));
-  if (!target.startsWith(PUBLIC_ROOT)) {
-    res.writeHead(403);
-    res.end("Forbidden");
-    return;
-  }
-  fs.stat(target, (statErr, stat) => {
-    if (statErr || !stat.isFile()) {
-      res.writeHead(404);
-      res.end("Not found");
-      return;
-    }
-    const headers = {
-      "Content-Type": mimeFor(target),
-      "Cache-Control": "no-cache",
-    };
-    if (target.endsWith(".html")) {
-      headers["Content-Security-Policy"] = `frame-ancestors ${hermesPluginService.frameAncestorsHeader()}`;
-    }
-    const encoding = staticCompressionEncoding(req, target, stat.size);
-    const cacheKey = encoding ? staticCompressionCacheKey(target, stat, encoding) : "";
-    const cached = cacheKey ? getStaticCompressionCache(cacheKey) : null;
-    if (cached) {
-      headers["Content-Encoding"] = encoding;
-      headers.Vary = "Accept-Encoding";
-      writeStaticResponse(res, headers, cached.body);
-      return;
-    }
-    fs.readFile(target, (err, data) => {
-      if (err) {
-        res.writeHead(404);
-        res.end("Not found");
-        return;
-      }
-      if (!encoding) {
-        writeStaticResponse(res, headers, data);
-        return;
-      }
-      compressStaticBody(data, encoding, (compressErr, compressed) => {
-        if (compressErr) {
-          writeStaticResponse(res, headers, data);
-          return;
-        }
-        headers["Content-Encoding"] = encoding;
-        headers.Vary = "Accept-Encoding";
-        rememberStaticCompressionCache(cacheKey, compressed);
-        writeStaticResponse(res, headers, compressed);
-      });
-    });
-  });
-}
-
 function broadcast(payload) {
   if (payload && payload.type === "notification") {
     updateLocalActiveThreadStatusFromNotification(payload);
@@ -8033,350 +7889,25 @@ function getFreePort() {
   });
 }
 
-const profileSwitchProgress = new Map();
-
-function profileSwitchProgressRequestId(value) {
-  const raw = String(value || "").trim();
-  if (/^[a-zA-Z0-9_-]{8,80}$/.test(raw)) return raw;
-  return crypto.randomUUID();
-}
-
-function cleanupProfileSwitchProgress(now = Date.now()) {
-  for (const [id, item] of profileSwitchProgress.entries()) {
-    const updatedAtMs = Number(item && item.updatedAtMs || 0);
-    if (!updatedAtMs || now - updatedAtMs > PROFILE_SWITCH_PROGRESS_TTL_MS) {
-      profileSwitchProgress.delete(id);
-    }
-  }
-}
-
-function setProfileSwitchProgress(requestId, patch = {}) {
-  const id = profileSwitchProgressRequestId(requestId);
-  const now = Date.now();
-  cleanupProfileSwitchProgress(now);
-  const previous = profileSwitchProgress.get(id) || {
-    requestId: id,
-    ok: true,
-    status: "running",
-    stepIndex: 0,
-    stepCount: 10,
-    stage: "queued",
-    message: "正在准备切换 Profile...",
-    createdAtMs: now,
-    createdAt: new Date(now).toISOString(),
-  };
-  const next = Object.assign({}, previous, patch || {}, {
-    requestId: id,
-    updatedAtMs: now,
-    updatedAt: new Date(now).toISOString(),
-  });
-  if (!next.message) next.message = "正在切换 Profile...";
-  if (!next.stage) next.stage = "running";
-  if (!next.status) next.status = "running";
-  profileSwitchProgress.set(id, next);
-  return profileSwitchProgressSnapshot(next);
-}
-
-function getProfileSwitchProgress(requestId) {
-  cleanupProfileSwitchProgress();
-  const id = String(requestId || "").trim();
-  if (!id) return null;
-  const item = profileSwitchProgress.get(id);
-  return item ? profileSwitchProgressSnapshot(item) : null;
-}
-
-function profileSwitchProgressSnapshot(item = {}) {
-  return {
-    requestId: String(item.requestId || ""),
-    targetProfileId: String(item.targetProfileId || ""),
-    targetProfileLabel: String(item.targetProfileLabel || ""),
-    status: String(item.status || "running"),
-    stage: String(item.stage || "running"),
-    message: String(item.message || ""),
-    stepIndex: Number(item.stepIndex || 0),
-    stepCount: Number(item.stepCount || 10),
-    restarting: Boolean(item.restarting),
-    error: item.error ? String(item.error) : undefined,
-    code: item.code ? String(item.code) : undefined,
-    detail: item.detail ? String(item.detail) : undefined,
-    failedStage: item.failedStage ? String(item.failedStage) : undefined,
-    warnings: Array.isArray(item.warnings) ? item.warnings.slice(0, 5).map((warning) => ({
-      code: warning && warning.code ? String(warning.code) : "",
-      message: warning && warning.message ? String(warning.message) : "",
-      detail: warning && warning.detail ? String(warning.detail) : "",
-    })) : undefined,
-    updatedAt: item.updatedAt || "",
-    createdAt: item.createdAt || "",
-  };
-}
-
-function profileSwitchPreflightError(err) {
-  const raw = String(err && (err.message || err) || "");
-  const lower = raw.toLowerCase();
-  if (/token_expired|refresh_token_reused|refresh token|access token|unauthorized|401/.test(lower)) {
-    return {
-      code: "target_profile_auth_invalid",
-      message: "目标 Codex 账号登录已失效，请先重新登录该账号，再切换。",
-    };
-  }
-  if (/not found|enoent|eacces|permission denied|spawn/.test(lower)) {
-    return {
-      code: "target_profile_app_server_unavailable",
-      message: "目标 Codex 账号的 app-server 无法启动，请检查该账号配置后再切换。",
-    };
-  }
-  if (/timed out|timeout/.test(lower)) {
-    return {
-      code: "target_profile_preflight_timeout",
-      message: "目标 Codex 账号登录检测超时，请稍后重试或重新登录该账号。",
-    };
-  }
-  return {
-    code: "target_profile_preflight_failed",
-    message: "目标 Codex 账号登录检测失败，请先修复该账号后再切换。",
-  };
-}
-
-function boundedProfilePreflightDetail(err) {
-  const raw = String(err && (err.message || err) || "").replace(/\s+/g, " ").trim();
-  if (!raw) return "";
-  return raw.slice(0, 260);
-}
-
-function profileSwitchLogDetail(value) {
-  const raw = String(value || "").replace(/\s+/g, " ").trim();
-  if (!raw) return "";
-  return raw.slice(0, 220);
-}
-
-function profileSwitchRateLimitsWarningForError(err) {
-  const classified = profileSwitchPreflightError(err);
-  if (classified.code === "target_profile_auth_invalid") return null;
-  return {
-    code: "target_profile_rate_limits_unavailable",
-    message: "目标账号额度暂时读取失败，已继续切换预检。",
-    detail: boundedProfilePreflightDetail(err),
-  };
-}
-
-function profileSwitchStage(id, label, status = "completed", detail = "") {
-  const cleanStatus = ["pending", "running", "completed", "warning", "failed"].includes(status)
-    ? status
-    : "completed";
-  return {
-    id: String(id || "").trim(),
-    label: String(label || id || "").trim(),
-    status: cleanStatus,
-    detail: String(detail || "").replace(/\s+/g, " ").trim().slice(0, 220),
-    at: new Date().toISOString(),
-  };
-}
-
-function connectPreflightWebSocket(url, timeoutMs) {
-  return new Promise((resolve, reject) => {
-    const deadline = Date.now() + Math.max(500, Number(timeoutMs || 0));
-    let ws = null;
-    let settled = false;
-    let retryTimer = null;
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      try {
-        if (ws) ws.close();
-      } catch (_) {}
-      reject(new Error("profile switch preflight websocket timeout"));
-    }, timeoutMs);
-
-    const attempt = () => {
-      if (settled) return;
-      try {
-        ws = new WebSocket(url);
-      } catch (err) {
-        if (Date.now() >= deadline) {
-          settled = true;
-          clearTimeout(timer);
-          reject(err);
-          return;
-        }
-        retryTimer = setTimeout(attempt, 200);
-        return;
-      }
-      ws.onopen = () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        if (retryTimer) clearTimeout(retryTimer);
-        resolve(ws);
-      };
-      ws.onerror = () => {
-        if (settled) return;
-        try {
-          ws.close();
-        } catch (_) {}
-        if (Date.now() >= deadline) {
-          settled = true;
-          clearTimeout(timer);
-          reject(new Error("profile switch preflight websocket connection failed"));
-          return;
-        }
-        retryTimer = setTimeout(attempt, 200);
-      };
-    };
-
-    attempt();
-  });
-}
-
-function preflightRpc(ws, id, method, params, timeoutMs) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      ws.onmessage = null;
-      reject(new Error(`profile switch preflight timed out: ${method}`));
-    }, timeoutMs);
-    ws.onmessage = (event) => {
-      let msg = null;
-      try {
-        msg = JSON.parse(String(event.data || ""));
-      } catch (_) {
-        return;
-      }
-      if (!msg || msg.id !== id) return;
-      clearTimeout(timer);
-      ws.onmessage = null;
-      if (msg.error) reject(new Error(msg.error.message || JSON.stringify(msg.error)));
-      else resolve(msg.result);
-    };
-    ws.send(JSON.stringify({ jsonrpc: "2.0", id, method, params }));
-  });
-}
-
-async function preflightCodexProfileSwitch(profile, options = {}) {
-  const codexHome = String(profile && profile.codexHome || "").trim();
-  if (!codexHome) {
-    const err = new Error("Target Codex profile home is missing.");
-    err.statusCode = 409;
-    throw err;
-  }
-  const onProgress = typeof options.onProgress === "function" ? options.onProgress : null;
-  const emitProgress = (patch) => {
-    if (!onProgress) return;
-    try {
-      onProgress(patch || {});
-    } catch (_) {}
-  };
-  const timeoutMs = Math.max(3000, Number(options.timeoutMs || PROFILE_SWITCH_PREFLIGHT_TIMEOUT_MS));
-  const startedAt = Date.now();
-  const warnings = [];
-  let rateLimitsChecked = false;
-  const port = await getFreePort();
-  emitProgress({
-    stage: "preflight_spawn",
-    message: "正在启动目标账号 app-server...",
-    stepIndex: 4,
-  });
-  const childEnv = codexAppServerChildEnv({ CODEX_HOME: codexHome });
-  const child = spawn(CODEX_EXE, ["app-server", "--listen", `ws://127.0.0.1:${port}`], {
-    cwd: APP_ROOT,
-    env: childEnv,
-    windowsHide: true,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  let logTail = "";
-  const appendLog = (chunk) => {
-    logTail = `${logTail}${String(chunk || "")}`.slice(-2000);
-  };
-  child.stdout.on("data", appendLog);
-  child.stderr.on("data", appendLog);
-
-  const closeChild = () => {
-    try {
-      if (child.exitCode === null && child.signalCode === null) child.kill();
-    } catch (_) {}
-  };
-
-  try {
-    await new Promise((resolve, reject) => {
-      child.once("spawn", resolve);
-      child.once("error", reject);
-      child.once("exit", (code, signal) => {
-        reject(new Error(`profile switch preflight app-server exited (${code ?? signal ?? "unknown"})`));
-      });
-    });
-    emitProgress({
-      stage: "preflight_connect",
-      message: "正在连接目标账号 app-server...",
-      stepIndex: 5,
-    });
-    const ws = await connectPreflightWebSocket(`ws://127.0.0.1:${port}`, timeoutMs);
-    try {
-      const remaining = Math.max(2000, timeoutMs - (Date.now() - startedAt));
-      emitProgress({
-        stage: "preflight_initialize",
-        message: "正在初始化目标账号会话...",
-        stepIndex: 6,
-      });
-      await preflightRpc(ws, 1, "initialize", {
-        clientInfo: {
-          name: "codex-mobile-web",
-          title: "Codex Mobile Web Profile Switch Preflight",
-          version: "0.1.0",
-          replayNotificationLimit: 0,
-        },
-        capabilities: { experimentalApi: true },
-      }, remaining);
-      emitProgress({
-        stage: "preflight_rate_limits",
-        message: "正在读取目标账号额度...",
-        stepIndex: 7,
-      });
-      try {
-        await preflightRpc(ws, 2, "account/rateLimits/read", {}, Math.max(2000, timeoutMs - (Date.now() - startedAt)));
-        rateLimitsChecked = true;
-      } catch (rateLimitErr) {
-        const warning = profileSwitchRateLimitsWarningForError(rateLimitErr);
-        if (!warning) throw rateLimitErr;
-        warnings.push(warning);
-        console.error(`[codex-profile-switch] rate_limits_warning ${JSON.stringify({
-          targetProfileId: String(profile.id || ""),
-          code: warning.code,
-          detail: profileSwitchLogDetail(warning.detail),
-        })}`);
-        emitProgress({
-          stage: "preflight_rate_limits",
-          status: "warning",
-          message: "目标账号额度暂时读取失败，继续确认切换...",
-          stepIndex: 7,
-          code: warning.code,
-          detail: warning.detail,
-        });
-      }
-      emitProgress({
-        stage: "preflight_done",
-        message: warnings.length ? "目标账号预检通过，额度读取稍后刷新" : "目标账号预检通过",
-        stepIndex: 8,
-      });
-    } finally {
-      try {
-        ws.close();
-      } catch (_) {}
-    }
-    return {
-      ok: true,
-      profileId: profile.id,
-      checked: rateLimitsChecked ? ["initialize", "account/rateLimits/read"] : ["initialize"],
-      warnings,
-    };
-  } catch (err) {
-    const classified = profileSwitchPreflightError(err);
-    const out = new Error(classified.message);
-    out.statusCode = 409;
-    out.code = classified.code;
-    out.detail = boundedProfilePreflightDetail(err) || boundedProfilePreflightDetail(logTail);
-    throw out;
-  } finally {
-    closeChild();
-  }
-}
+const codexProfileSwitchService = createCodexProfileSwitchService({
+  progressTtlMs: PROFILE_SWITCH_PROGRESS_TTL_MS,
+  preflightTimeoutMs: PROFILE_SWITCH_PREFLIGHT_TIMEOUT_MS,
+  getFreePort,
+  spawn,
+  codeExe: CODEX_EXE,
+  appRoot: APP_ROOT,
+  codexAppServerChildEnv,
+  logger: console,
+});
+const {
+  getProfileSwitchProgress,
+  preflightCodexProfileSwitch,
+  profileSwitchLogDetail,
+  profileSwitchPreflightError,
+  profileSwitchProgressRequestId,
+  profileSwitchRateLimitsWarningForError,
+  setProfileSwitchProgress,
+} = codexProfileSwitchService;
 
 class JsonLineConnection {
   constructor(socket) {

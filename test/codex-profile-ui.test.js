@@ -8,6 +8,7 @@ const test = require("node:test");
 const root = path.resolve(__dirname, "..");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const codexAppServerClientServiceJs = fs.readFileSync(path.join(root, "adapters", "codex-app-server-client-service.js"), "utf8");
+const profileSwitchServiceJs = fs.readFileSync(path.join(root, "adapters", "codex-profile-switch-service.js"), "utf8");
 const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
@@ -50,7 +51,7 @@ test("server exposes profile list and active profile switch endpoints", () => {
   assert.match(serverJs, /url\.pathname === "\/api\/codex-profiles\/switch-progress"/);
   assert.match(serverJs, /url\.pathname === "\/api\/codex-profiles\/active"/);
   assert.match(serverJs, /setProfileSwitchProgress/);
-  assert.match(serverJs, /target_profile_rate_limits_unavailable/);
+  assert.match(profileSwitchServiceJs, /target_profile_rate_limits_unavailable/);
   assert.match(serverJs, /\[codex-profile-switch\] failed/);
   assert.match(serverJs, /sharedChainRestartService\.restart/);
 });

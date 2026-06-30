@@ -7,6 +7,7 @@ const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
 const webPushRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "web-push-runtime-service.js"), "utf8");
+const staticFileServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "static-file-service.js"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
 const pluginEmbedJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "plugin-embed.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
@@ -56,8 +57,8 @@ test("server exposes Hermes plugin manifest, registration, origin, launch, sessi
   assert.match(serverJs, /CODEX_MOBILE_HERMES_PLUGIN_BASE_URL/);
   assert.match(serverJs, /CODEX_MOBILE_PUBLIC_BASE_URL/);
   assert.match(serverJs, /CODEX_MOBILE_HERMES_PLUGIN_FRAME_ORIGINS/);
-  assert.match(serverJs, /Content-Security-Policy/);
-  assert.match(serverJs, /frameAncestorsHeader\(\)/);
+  assert.match(staticFileServiceJs, /Content-Security-Policy/);
+  assert.match(staticFileServiceJs, /frameAncestorsHeader\(\)/);
 });
 
 test("Hermes plugin launch token is a browser-session key, not local storage login state", () => {

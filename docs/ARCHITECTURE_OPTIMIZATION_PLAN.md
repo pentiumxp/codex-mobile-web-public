@@ -2069,19 +2069,29 @@ public behavior:
   rollout completion/user-input/active-assistant/final-receipt preparation
   order, task-card/pending-request detail decoration, response-budget compaction
   invocation, and the read-result helpers consumed by detail orchestration.
+- `adapters/static-file-service.js` now owns public static file serving,
+  Brotli/gzip negotiation, compressed-body cache state, and HTML
+  frame-ancestor header injection.
+- `adapters/codex-profile-switch-service.js` now owns profile-switch progress
+  snapshots, target-account preflight spawn/connect/initialize/rate-limit checks,
+  and preflight error/warning classification while `server.js` keeps HTTP
+  sequencing, active-profile persistence, trust/toolset sync, and restart
+  orchestration.
 
-Local line-count evidence after the extraction: `server.js` is 11,338 lines,
+Local line-count evidence after the latest extraction: `server.js` is 10,472 lines,
 `thread-task-card-route-service.js` is 1,280 lines, and
 `thread-message-route-service.js` is 363 lines, and
 `thread-list-fallback-source-service.js` is 683 lines, and
 `thread-summary-state-service.js` is 383 lines, and
-`thread-detail-response-preparation-service.js` is 254 lines. This is a
-checkpoint, not the target state; `server.js` remains too large. The next
-high-yield backend splits should target public/profile config routes,
-GitHub/utility routes, remaining thread-detail enrichment helpers, and
-notification/runtime side-effect groups, because route execution,
-fallback/source, summary-state, and the main detail response-preparation order
-are now out of the entrypoint.
+`thread-detail-response-preparation-service.js` is 254 lines. The newer
+low-coupling static/profile-switch adapters are 195 and 385 lines respectively.
+This is a checkpoint, not the target state; `server.js` remains too large. The
+next high-yield backend splits should target public/profile config routes,
+GitHub/utility routes, remaining thread-detail enrichment helpers,
+notification/runtime side-effect groups, and the large API dispatcher because
+route execution, fallback/source, summary-state, static serving, profile
+preflight, and the main detail response-preparation order are now out of the
+entrypoint.
 
 Validation boundary:
 
@@ -2092,6 +2102,8 @@ Validation boundary:
 - focused thread-list visibility/fallback tests covering session-index reuse,
   rollout status inference, local active overlay interaction, and fallback cache
   source diagnostics;
+- focused static compression and Codex profile switch/preflight UI tests after
+  the static/profile-switch extractions;
 - `git diff --check` before commit.
 
 ### Phase 4: Browser And Visual Coverage

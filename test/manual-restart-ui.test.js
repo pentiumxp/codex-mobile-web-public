@@ -10,6 +10,7 @@ const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
+const profileSwitchServiceJs = fs.readFileSync(path.join(root, "adapters", "codex-profile-switch-service.js"), "utf8");
 const restartScript = fs.readFileSync(path.join(root, "restart-codex-mobile-shared-chain.ps1"), "utf8");
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
 const pkg = fs.readFileSync(path.join(root, "package.json"), "utf8");
@@ -69,13 +70,13 @@ test("profile switch restart passes the selected profile to the shared-chain scr
   );
   assert.match(serverJs, /activeProfileRestartOptions\(profile\)/);
   assert.match(serverJs, /sendJson\(res,\s*err\.statusCode \|\| 500,[\s\S]*code:\s*err\.code \|\| undefined/);
-  assert.match(serverJs, /target_profile_auth_invalid/);
-  assert.match(serverJs, /profileSwitchProgress/);
+  assert.match(profileSwitchServiceJs, /target_profile_auth_invalid/);
+  assert.match(profileSwitchServiceJs, /profileSwitchProgress/);
   assert.match(serverJs, /\/api\/codex-profiles\/switch-progress/);
-  assert.match(serverJs, /preflight_rate_limits/);
-  const connectBody = serverJs.slice(
-    serverJs.indexOf("function connectPreflightWebSocket"),
-    serverJs.indexOf("function preflightRpc"),
+  assert.match(profileSwitchServiceJs, /preflight_rate_limits/);
+  const connectBody = profileSwitchServiceJs.slice(
+    profileSwitchServiceJs.indexOf("function connectPreflightWebSocket"),
+    profileSwitchServiceJs.indexOf("function preflightRpc"),
   );
   assert.match(connectBody, /setTimeout\(attempt,\s*200\)/);
   assert.match(connectBody, /profile switch preflight websocket timeout/);
