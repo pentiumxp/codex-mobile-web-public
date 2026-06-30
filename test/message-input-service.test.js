@@ -16,6 +16,7 @@ const {
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
 const mediaFileServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "media-file-service.js"), "utf8");
+const threadMessageRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-message-route-service.js"), "utf8");
 
 test("image uploads disable extended-history persistence by default", () => {
   assert.equal(hasImageUploads([{ isImage: false }, { isImage: true }]), true);
@@ -61,8 +62,8 @@ test("message routes use upload-aware extended-history persistence", () => {
   assert.match(serverJs, /const mediaFileService = createMediaFileService\(/);
   assert.match(mediaFileServiceJs, /parsePersistExtendedHistoryEnv\(env\)/);
   assert.match(mediaFileServiceJs, /function persistExtendedHistoryForUploads\(uploads\)/);
-  assert.match(serverJs, /const persistExtendedHistory = persistExtendedHistoryForUploads\(uploads\);/);
-  assert.match(serverJs, /persistExtendedHistory,/);
+  assert.match(threadMessageRouteServiceJs, /const persistExtendedHistory = persistExtendedHistoryForUploads\(uploads\);/);
+  assert.match(threadMessageRouteServiceJs, /persistExtendedHistory,/);
 });
 
 test("message routes gate localImage input parts behind the image context policy", () => {

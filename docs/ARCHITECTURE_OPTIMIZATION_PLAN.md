@@ -2038,6 +2038,36 @@ Remaining target:
   affordances, same-workspace routing, archived-target rejection, and manual
   return-path visibility with executable tests.
 
+### 2026-06-30 Server Route Boundary Extraction Checkpoint
+
+This local checkpoint starts the large `server.js` split by moving two route
+ownership groups out of the entrypoint without changing public behavior:
+
+- `adapters/thread-task-card-route-service.js` now owns task-card HTTP routes,
+  task-card dynamic-tool schemas/response payloads, fallback guidance, visible
+  target hints, deploy-lane route integration, source-draft materialization, and
+  thread-detail task-card attachment.
+- `adapters/thread-message-route-service.js` now owns thread creation,
+  new-message/existing-message, resume, auto-recover, and turn interrupt route
+  behavior while `server.js` injects runtime settings, parsers, Codex transport,
+  and mutation helpers.
+
+Local line-count evidence after the extraction: `server.js` is 12,165 lines,
+`thread-task-card-route-service.js` is 1,280 lines, and
+`thread-message-route-service.js` is 363 lines. This is a checkpoint, not the
+target state; `server.js` remains too large. The next high-yield backend split
+is the thread-list/session-index/rollout fallback provider block, because it
+still leaves fallback discovery, session-index hydration, rollout-tail status
+inference, and visibility filtering in the entrypoint.
+
+Validation boundary:
+
+- syntax checks for `server.js` and the two new adapters;
+- focused route/protocol/task-card tests covering route delegation, dynamic
+  tools, deploy-lane policy wiring, new-thread/message behavior, and app-server
+  protocol integration;
+- `git diff --check` before commit.
+
 ### Phase 4: Browser And Visual Coverage
 
 Target:

@@ -8,6 +8,8 @@ const { test } = require("node:test");
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
 const continuationThreadServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "continuation-thread-service.js"), "utf8");
 const codexAppServerClientServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "codex-app-server-client-service.js"), "utf8");
+const taskCardRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-task-card-route-service.js"), "utf8");
+const threadMessageRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-message-route-service.js"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 
@@ -44,12 +46,12 @@ function functionSource(source, name) {
 }
 
 test("new-message route creates a thread before starting the first turn", () => {
-  const routeIndex = serverJs.indexOf("/api/threads/new-message");
-  const fallbackIndex = serverJs.indexOf('sendJson(res, 404, { error: "Not found" })');
+  const routeIndex = threadMessageRouteServiceJs.indexOf("/api/threads/new-message");
+  const fallbackIndex = threadMessageRouteServiceJs.indexOf('const resume = url.pathname.match', routeIndex);
   assert.ok(routeIndex > 0, "missing /api/threads/new-message route");
-  assert.ok(routeIndex < fallbackIndex, "new-message route must run before 404 fallback");
+  assert.ok(fallbackIndex > routeIndex, "missing new-message route end");
 
-  const routeBody = serverJs.slice(routeIndex, fallbackIndex);
+  const routeBody = threadMessageRouteServiceJs.slice(routeIndex, fallbackIndex);
   const threadStartIndex = routeBody.indexOf('codex.request("thread/start"');
   const turnStartIndex = routeBody.indexOf('codex.request("turn/start"');
   assert.ok(threadStartIndex > 0, "new-message route must call thread/start");
@@ -125,9 +127,9 @@ test("continuation dialog exposes in-modal progress and diagnostics", () => {
 });
 
 test("new-message route allows Codex App style projectless threads", () => {
-  const routeIndex = serverJs.indexOf("/api/threads/new-message");
-  const fallbackIndex = serverJs.indexOf('sendJson(res, 404, { error: "Not found" })');
-  const routeBody = serverJs.slice(routeIndex, fallbackIndex);
+  const routeIndex = threadMessageRouteServiceJs.indexOf("/api/threads/new-message");
+  const fallbackIndex = threadMessageRouteServiceJs.indexOf('const resume = url.pathname.match', routeIndex);
+  const routeBody = threadMessageRouteServiceJs.slice(routeIndex, fallbackIndex);
 
   assert.doesNotMatch(routeBody, /Workspace is required to start a new thread/);
   assert.match(routeBody, /if \(cwd\) startParamsBase\.cwd = cwd;/);
@@ -139,9 +141,9 @@ test("new-message route allows Codex App style projectless threads", () => {
 });
 
 test("new-message route forwards new-thread runtime settings", () => {
-  const routeIndex = serverJs.indexOf("/api/threads/new-message");
-  const fallbackIndex = serverJs.indexOf('sendJson(res, 404, { error: "Not found" })');
-  const routeBody = serverJs.slice(routeIndex, fallbackIndex);
+  const routeIndex = threadMessageRouteServiceJs.indexOf("/api/threads/new-message");
+  const fallbackIndex = threadMessageRouteServiceJs.indexOf('const resume = url.pathname.match', routeIndex);
+  const routeBody = threadMessageRouteServiceJs.slice(routeIndex, fallbackIndex);
 
   assert.match(routeBody, /const requestedModel\s*=/, "new-thread route should read requested model");
   assert.match(routeBody, /const requestedEffort\s*=/, "new-thread route should read requested reasoning effort");
@@ -153,9 +155,9 @@ test("new-message route forwards new-thread runtime settings", () => {
 });
 
 test("new-message route can persist an explicit initial thread title", () => {
-  const routeIndex = serverJs.indexOf("/api/threads/new-message");
-  const fallbackIndex = serverJs.indexOf('sendJson(res, 404, { error: "Not found" })');
-  const routeBody = serverJs.slice(routeIndex, fallbackIndex);
+  const routeIndex = threadMessageRouteServiceJs.indexOf("/api/threads/new-message");
+  const fallbackIndex = threadMessageRouteServiceJs.indexOf('const resume = url.pathname.match', routeIndex);
+  const routeBody = threadMessageRouteServiceJs.slice(routeIndex, fallbackIndex);
 
   assert.match(routeBody, /const requestedTitle = truncateSingleLine\(String\(body\.title \|\| body\.name \|\| ""\)\.trim\(\), 120\);/);
   assert.match(routeBody, /titleIndexed = persistThreadTitleToSessionIndex\(threadId, requestedTitle\);/);
@@ -309,13 +311,13 @@ test("server runtime inheritance includes model and reasoning effort", () => {
   assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_DISABLE_SELF_EXEMPTION/, "self-maintenance exemption should be explicitly disableable");
   assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_DISABLE_PLATFORM_EXEMPTION/, "platform-control exemption should be explicitly disableable");
 
-  const guidanceBody = functionBody(serverJs, "attachWorkspaceDelegationRuntimeGuidance");
+  const guidanceBody = functionBody(taskCardRouteServiceJs, "attachWorkspaceDelegationRuntimeGuidance");
   assert.match(guidanceBody, /attachTaskCardRuntimeDynamicTools\(params, settings\)/, "runtime guidance should preserve dynamic tool injection");
   assert.match(guidanceBody, /appendDeveloperInstructions\(/, "runtime guidance should add model-visible fallback instructions");
   assert.match(guidanceBody, /taskCardReturnScriptFallbackInstruction\(params\)/, "runtime guidance should include the local return-card script fallback");
   assert.match(guidanceBody, /workspaceDelegationScriptFallbackInstruction\(params\)/, "runtime guidance should include the local task-card script fallback");
 
-  const fallbackBody = functionBody(serverJs, "workspaceDelegationScriptFallbackInstruction");
+  const fallbackBody = functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction");
   assert.match(fallbackBody, /create-thread-task-card\.js/, "fallback guidance should point to the local task-card script");
   assert.match(fallbackBody, /multi_agent_v1\.spawn_agent/, "fallback guidance should tell models not to substitute multi-agent tools for task cards");
   assert.match(fallbackBody, /--source-thread/, "fallback script command should include the source-thread argument");
@@ -443,11 +445,11 @@ test("server does not broadcast source-less quota notifications to clients", () 
 });
 
 test("existing-message route forwards runtime settings on next turn", () => {
-  const routeIndex = serverJs.indexOf('const messages = url.pathname.match(/^\\/api\\/threads\\/([^/]+)\\/messages$/);');
-  const fallbackIndex = serverJs.indexOf('const interrupt = url.pathname.match', routeIndex);
+  const routeIndex = threadMessageRouteServiceJs.indexOf('const messages = url.pathname.match(/^\\/api\\/threads\\/([^/]+)\\/messages$/);');
+  const fallbackIndex = threadMessageRouteServiceJs.indexOf('const interrupt = url.pathname.match', routeIndex);
   assert.ok(routeIndex > 0, "missing existing message route");
   assert.ok(fallbackIndex > routeIndex, "missing message route end");
-  const routeBody = serverJs.slice(routeIndex, fallbackIndex);
+  const routeBody = threadMessageRouteServiceJs.slice(routeIndex, fallbackIndex);
 
   assert.match(routeBody, /const requestedModel\s*=/, "message route should read requested model");
   assert.match(routeBody, /const requestedEffort\s*=/, "message route should read requested reasoning effort");
@@ -477,7 +479,7 @@ test("existing-thread message send refreshes the sidebar thread list", () => {
 test("send auth failures return stable codes and render message receipts", () => {
   assert.match(serverJs, /function isCodexAccountAuthError\(/);
   assert.match(serverJs, /code:\s*"codex_account_auth_invalid"/);
-  assert.match(serverJs, /sendJson\(res,\s*409,\s*codexAccountAuthErrorPayload\(err\)\)/);
+  assert.match(threadMessageRouteServiceJs, /sendJson\(409,\s*codexAccountAuthErrorPayload\(err\)\)/);
 
   const sendStart = appJs.indexOf("async function sendMessage(");
   const sendEnd = appJs.indexOf("async function sendNewThreadMessage(", sendStart);
@@ -490,7 +492,7 @@ test("send auth failures return stable codes and render message receipts", () =>
 
 test("workspace creation route stores mobile-visible workspaces outside Codex global state", () => {
   const routeIndex = serverJs.indexOf('url.pathname === "/api/workspaces" && req.method === "POST"');
-  const newMessageIndex = serverJs.indexOf("/api/threads/new-message");
+  const newMessageIndex = serverJs.indexOf("threadMessageRouteService.handleRoute");
   assert.ok(routeIndex > 0, "missing POST /api/workspaces route");
   assert.ok(routeIndex < newMessageIndex, "workspace creation should be available before new-thread submission");
   assert.match(serverJs, /createWorkspaceRegistryService/, "server should use the workspace registry service");
@@ -523,9 +525,9 @@ test("existing-message route falls back when active turn steering is stale", () 
   assert.match(helperBody, /thread\/turns\/list/, "preflight should inspect latest durable turn state");
   assert.match(helperBody, /limit:\s*20/, "preflight should inspect enough recent turns to detect superseded active turns");
 
-  const routeIndex = serverJs.indexOf('const messages = url.pathname.match(/^\\/api\\/threads\\/([^/]+)\\/messages$/);');
-  const fallbackIndex = serverJs.indexOf('const interrupt = url.pathname.match', routeIndex);
-  const routeBody = serverJs.slice(routeIndex, fallbackIndex);
+  const routeIndex = threadMessageRouteServiceJs.indexOf('const messages = url.pathname.match(/^\\/api\\/threads\\/([^/]+)\\/messages$/);');
+  const fallbackIndex = threadMessageRouteServiceJs.indexOf('const interrupt = url.pathname.match', routeIndex);
+  const routeBody = threadMessageRouteServiceJs.slice(routeIndex, fallbackIndex);
   const preflightCallIndex = routeBody.indexOf("staleActiveTurnPreflight(");
   const preflightLogIndex = routeBody.indexOf('logMessageSubmit("active-turn-stale-preflight"');
   const interruptIndex = routeBody.indexOf('codex.request("turn/interrupt"', preflightLogIndex);
@@ -558,10 +560,10 @@ test("auto-recover route steers live turns before starting a replacement turn", 
   assert.match(helperBody, /turn\/start/, "auto recovery should start a replacement turn when steering is unavailable");
   assert.match(helperBody, /AUTO_TURN_RECOVERY_COOLDOWN_MS/, "auto recovery should be cooldown guarded");
 
-  const routeIndex = serverJs.indexOf('const autoRecover = url.pathname.match(/^\\/api\\/threads\\/([^/]+)\\/auto-recover$/);');
-  const messagesIndex = serverJs.indexOf('const messages = url.pathname.match(/^\\/api\\/threads\\/([^/]+)\\/messages$/);');
+  const routeIndex = threadMessageRouteServiceJs.indexOf('const autoRecover = url.pathname.match(/^\\/api\\/threads\\/([^/]+)\\/auto-recover$/);');
+  const messagesIndex = threadMessageRouteServiceJs.indexOf('const messages = url.pathname.match(/^\\/api\\/threads\\/([^/]+)\\/messages$/);');
   assert.ok(routeIndex > 0, "missing /api/threads/:id/auto-recover route");
   assert.ok(routeIndex < messagesIndex, "auto-recover route should be registered before message submit route");
-  const routeBody = serverJs.slice(routeIndex, messagesIndex);
+  const routeBody = threadMessageRouteServiceJs.slice(routeIndex, messagesIndex);
   assert.match(routeBody, /autoRecoverThreadTurn/, "route should delegate recovery policy to helper");
 });
