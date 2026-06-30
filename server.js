@@ -68,6 +68,7 @@ const { createHermesPluginService } = require("./adapters/hermes-plugin-service"
 const { createThreadTaskCardService } = require("./adapters/thread-task-card-service");
 const { createThreadTaskCardRoutingService } = require("./adapters/thread-task-card-routing-service");
 const {
+  isHomeAiDeployLaneThread,
   normalizeHomeAiDeployLaneSummary,
   planHomeAiDeployLaneRouting,
   prioritizeDelegationTargetHints,
@@ -873,9 +874,13 @@ const threadTaskCardService = createThreadTaskCardService({
   executeApprovedCard: async (card, message) => {
     const requestedReasoningEffort = String(card && card.delivery && card.delivery.reasoningEffort || "").trim();
     const inheritedRuntimeSettings = await resolveThreadRuntimeSettings(card.target.threadId);
-    const runtimeSettings = requestedReasoningEffort
-      ? Object.assign({}, inheritedRuntimeSettings, { reasoningEffort: requestedReasoningEffort })
+    const targetThread = readThreadTaskCardTargetSummary(card.target.threadId);
+    const baseRuntimeSettings = isHomeAiDeployLaneThread(targetThread)
+      ? applyPermissionModeOverride(inheritedRuntimeSettings, "full", targetThread && targetThread.cwd || null)
       : inheritedRuntimeSettings;
+    const runtimeSettings = requestedReasoningEffort
+      ? Object.assign({}, baseRuntimeSettings, { reasoningEffort: requestedReasoningEffort })
+      : baseRuntimeSettings;
     try {
       await codex.request("thread/resume", applyResumeRuntimeSettings({
         threadId: card.target.threadId,
@@ -900,6 +905,9 @@ const threadTaskCardService = createThreadTaskCardService({
       runtime: {
         reasoningEffort: runtimeSettings.reasoningEffort || "",
         requestedReasoningEffort,
+        approvalPolicy: runtimeSettings.approvalPolicy || "",
+        sandboxPolicyType: runtimeSettings.sandboxPolicy && runtimeSettings.sandboxPolicy.type || "",
+        deployLaneNoApproval: Boolean(isHomeAiDeployLaneThread(targetThread)),
       },
     };
   },

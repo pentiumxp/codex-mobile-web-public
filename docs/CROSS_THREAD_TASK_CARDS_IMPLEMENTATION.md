@@ -125,6 +125,13 @@ Home AI thread or a same-cwd Codex Mobile implementation/PR thread. Deploy-lane
 repair, target-discovery, and routing-visibility cards remain implementation
 work and are not treated as routine plugin deployments.
 
+Approved cards that execute inside configured Home AI deploy-lane threads run
+with a deploy-lane no-approval runtime override: `approvalPolicy=never` and
+`dangerFullAccess`. This is intentionally scoped to configured deploy lanes so
+routine deploy/readback/self-check commands do not block behind interactive
+command approvals, while ordinary implementation, repair, and audit cards keep
+the existing workspace-delegation approval/write-guard behavior.
+
 The supported local CLI wrapper is:
 
 ```bash
