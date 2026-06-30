@@ -418,7 +418,13 @@ still cold after the fallback baseline has completed, inspect whether
 the detail request arrived. Startup fallback prewarm defaults to zero delay
 after listener start; if a detail request is already in flight, it should
 defer through `active-detail-in-flight` and retry instead of competing with the
-foreground detail request.
+foreground detail request. Current active-window prewarm status and results
+should also expose a `job` object with
+`name=thread-detail-active-window-prewarm`, `periodicAllowed=false`,
+`maxConcurrency=1`, `timeBudgetMs=30000`, `cpuBudgetClass=medium`,
+`realBrowserAllowed=false`, and `userRequestPreemptible=true`; missing job
+metadata means the background task is not yet inside the scheduler-budget
+contract.
 If bounded logs show `active_window_prewarm_done` with
 `reason=projection-input-unavailable` mostly from
 `thread-list:warm_fallback_*`, the active fallback row likely lacks rollout

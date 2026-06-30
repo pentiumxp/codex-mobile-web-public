@@ -3335,10 +3335,33 @@ Required validation:
   `threadListFallbackPrewarm`.
 - Full local checks before central private deploy.
 
+### 2026-07-01 Thread-Detail Active-Window Prewarm Scheduler Boundary
+
+This module applies the same production-stability budget contract to the
+active detail history-window prewarm job. The prewarm still runs through the
+existing active-window adapter and does not change projection lookup,
+partial-seed semantics, active-overlay proof gates, app-server
+`thread/turns/list` behavior, or foreground detail-read authority.
+
+Scope:
+
+- `services/thread-detail/thread-detail-active-window-prewarm-scheduler-service.js`
+  owns the budget declaration for the
+  `thread-detail-active-window-prewarm` job.
+- Active-window `prewarmNow`, `schedule`, and `status` outputs expose the same
+  scheduler fields used by runtime self-checks and thread-list prewarm:
+  periodic allowance, max concurrency, time budget, CPU budget class,
+  real-browser allowance, and user-request preemption.
+- The job is event-triggered and non-periodic, allows no real browser work, and
+  is marked user-request-preemptible because it is background cache seeding
+  that must not compete with foreground detail requests.
+
 Required validation:
 
-- Focused LaunchAgent service/readback tests.
-- Live readback against `com.hermesmobile.codex-mobile-runtime-self-check`.
+- Focused active-window prewarm tests proving prewarm/schedule/status outputs
+  carry only metadata-safe job policy.
+- Thread-detail route/read orchestration tests because production detail reads
+  consume the same active-window cache and proof gate.
 - Full local checks and central private deploy/readback when this module is
   released.
 

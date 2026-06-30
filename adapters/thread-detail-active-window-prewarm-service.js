@@ -4,6 +4,10 @@ const {
   activeFullThreadReadReason,
   summaryActiveTurnId,
 } = require("./thread-detail-active-read-policy-service");
+const {
+  threadDetailActiveWindowPrewarmJobPolicy,
+  withThreadDetailActiveWindowPrewarmJobPolicy,
+} = require("../services/thread-detail/thread-detail-active-window-prewarm-scheduler-service");
 
 function text(value) {
   return String(value || "").trim();
@@ -70,7 +74,7 @@ function createThreadDetailActiveWindowPrewarmService(options = {}) {
 
   async function prewarmNow(input = {}) {
     const threadId = text(input.threadId);
-    if (!threadId) return { status: "skipped", reason: "missing-thread-id" };
+    if (!threadId) return withThreadDetailActiveWindowPrewarmJobPolicy({ status: "skipped", reason: "missing-thread-id" });
     const startedAtMs = now();
     const inputSummary = input.summary && typeof input.summary === "object" ? input.summary : null;
     let summary = inputSummary;
@@ -81,7 +85,7 @@ function createThreadDetailActiveWindowPrewarmService(options = {}) {
       summary = summaryResult && summaryResult.summary || null;
     }
     const activeReason = activeFullThreadReadReason(summary);
-    if (!activeReason) return { status: "skipped", reason: "not-active" };
+    if (!activeReason) return withThreadDetailActiveWindowPrewarmJobPolicy({ status: "skipped", reason: "not-active" });
     let runtimeSettings = threadRuntimeSettings(threadId, summary);
     let projection = projectionInput(threadId, summary);
     if (!projection && inputSummary) {
@@ -90,14 +94,14 @@ function createThreadDetailActiveWindowPrewarmService(options = {}) {
       });
       const resolvedSummary = summaryResult && summaryResult.summary || null;
       const resolvedActiveReason = activeFullThreadReadReason(resolvedSummary);
-      if (!resolvedActiveReason) return { status: "skipped", reason: "not-active" };
+      if (!resolvedActiveReason) return withThreadDetailActiveWindowPrewarmJobPolicy({ status: "skipped", reason: "not-active" });
       summary = resolvedSummary;
       runtimeSettings = threadRuntimeSettings(threadId, summary);
       projection = projectionInput(threadId, summary);
     }
-    if (!projection) return { status: "skipped", reason: "projection-input-unavailable" };
-    if (!activeOverlayProjectionWindowLookup) return { status: "skipped", reason: "window-lookup-unavailable" };
-    if (!turnsListThreadReadResult) return { status: "skipped", reason: "turns-list-unavailable" };
+    if (!projection) return withThreadDetailActiveWindowPrewarmJobPolicy({ status: "skipped", reason: "projection-input-unavailable" });
+    if (!activeOverlayProjectionWindowLookup) return withThreadDetailActiveWindowPrewarmJobPolicy({ status: "skipped", reason: "window-lookup-unavailable" });
+    if (!turnsListThreadReadResult) return withThreadDetailActiveWindowPrewarmJobPolicy({ status: "skipped", reason: "turns-list-unavailable" });
 
     let overlayInput = null;
     if (resolveActiveWindowOverlay) {
@@ -118,7 +122,7 @@ function createThreadDetailActiveWindowPrewarmService(options = {}) {
       omitActiveTurnId: activeTurnId,
     });
     if (hasProjectionThread(lookedUp && lookedUp.result)) {
-      return { status: "hit", reason: "active-window-already-cached" };
+      return withThreadDetailActiveWindowPrewarmJobPolicy({ status: "hit", reason: "active-window-already-cached" });
     }
     const activeWindowResult = await turnsListThreadReadResult({
       threadId,
@@ -129,7 +133,7 @@ function createThreadDetailActiveWindowPrewarmService(options = {}) {
       threadLog: typeof input.threadLog === "function" ? input.threadLog : () => {},
     });
     if (!hasProjectionThread(activeWindowResult)) {
-      return { status: "skipped", reason: "active-window-result-empty" };
+      return withThreadDetailActiveWindowPrewarmJobPolicy({ status: "skipped", reason: "active-window-result-empty" });
     }
     const seeded = seedProjection(projection, activeWindowResult, {
       partial: true,
@@ -137,7 +141,7 @@ function createThreadDetailActiveWindowPrewarmService(options = {}) {
       projectionRevision: overlayInput.overlayRevision || overlayInput.projectionRevision,
       projectionTimestampMs: overlayInput.overlayTimestampMs || overlayInput.projectionTimestampMs,
     });
-    return {
+    return withThreadDetailActiveWindowPrewarmJobPolicy({
       status: seeded && seeded.skipped ? "skipped" : "seeded",
       reason: seeded && seeded.reason
         ? boundedReason(seeded.reason)
@@ -145,7 +149,7 @@ function createThreadDetailActiveWindowPrewarmService(options = {}) {
           ? "turns-list-active-overlay-window"
           : "turns-list-active-overlay-window-preseed",
       durationMs: Math.max(0, now() - startedAtMs),
-    };
+    });
   }
 
   function finish(threadId, result, jobId = 0) {
@@ -165,16 +169,18 @@ function createThreadDetailActiveWindowPrewarmService(options = {}) {
 
   function schedule(input = {}) {
     const threadId = text(input.threadId);
-    if (!threadId) return { scheduled: false, reason: "missing-thread-id" };
-    if (pending.has(threadId) && input.preemptPending !== true) return { scheduled: false, reason: "already-pending" };
+    if (!threadId) return withThreadDetailActiveWindowPrewarmJobPolicy({ scheduled: false, reason: "missing-thread-id" });
+    if (pending.has(threadId) && input.preemptPending !== true) {
+      return withThreadDetailActiveWindowPrewarmJobPolicy({ scheduled: false, reason: "already-pending" });
+    }
     const current = now();
     const lastAttemptAtMs = Number(lastAttemptAtByThread.get(threadId) || 0);
     const bypassMinInterval = input.bypassMinInterval === true;
     if (!bypassMinInterval && reusableReadyResult(lastResultByThread.get(threadId), current)) {
-      return { scheduled: false, reason: "recently-ready" };
+      return withThreadDetailActiveWindowPrewarmJobPolicy({ scheduled: false, reason: "recently-ready" });
     }
     if (!bypassMinInterval && minIntervalMs && lastAttemptAtMs && current - lastAttemptAtMs < minIntervalMs) {
-      return { scheduled: false, reason: "recently-attempted" };
+      return withThreadDetailActiveWindowPrewarmJobPolicy({ scheduled: false, reason: "recently-attempted" });
     }
     lastAttemptAtByThread.set(threadId, current);
     const jobId = ++nextJobId;
@@ -199,12 +205,13 @@ function createThreadDetailActiveWindowPrewarmService(options = {}) {
         });
     }, jobDelayMs);
     if (timer && typeof timer.unref === "function") timer.unref();
-    return { scheduled: true, reason: "scheduled" };
+    return withThreadDetailActiveWindowPrewarmJobPolicy({ scheduled: true, reason: "scheduled" });
   }
 
   function status(threadId) {
     const id = text(threadId);
     return {
+      job: threadDetailActiveWindowPrewarmJobPolicy(),
       pending: id ? pending.has(id) : pending.size > 0,
       pendingCount: pending.size,
       lastResult: id ? lastResultByThread.get(id) || null : null,
@@ -221,4 +228,5 @@ function createThreadDetailActiveWindowPrewarmService(options = {}) {
 module.exports = {
   createThreadDetailActiveWindowPrewarmService,
   overlayActiveTurnId,
+  threadDetailActiveWindowPrewarmJobPolicy,
 };
