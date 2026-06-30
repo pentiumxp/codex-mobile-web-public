@@ -6,6 +6,9 @@ const {
   planHomeAiDeployLaneRouting,
   prioritizeDelegationTargetHints,
 } = require("./thread-task-card-deploy-lane-policy-service");
+const {
+  threadTaskCardThreadCallIdempotencyKey: canonicalThreadTaskCardThreadCallIdempotencyKey,
+} = require("../services/task-cards/task-card-idempotency-service");
 
 function defaultError(statusCode, code, message, details = {}) {
   const err = new Error(message || code || "thread_task_card_error");
@@ -491,22 +494,11 @@ function createThreadTaskCardRouteService(dependencies = {}) {
   }
 
   function threadTaskCardThreadCallIdempotencyKey(sourceThreadId, body = {}, targetThreadIds = []) {
-    const explicit = String(body.idempotencyKey || "").trim();
-    if (explicit) return explicit;
-    const requestId = String(body.requestId || body.request_id || "").trim();
-    const seed = requestId || JSON.stringify({
-      targetThreadIds,
-      title: String(body.title || "").trim(),
-      summary: String(body.summary || "").trim(),
-      body: String(body.body || body.bodyMarkdown || body.message || "").trim(),
-      reasoningEffort: normalizeThreadTaskCardReasoningEffort(body.reasoningEffort || body.reasoning_effort || body.effort),
-      workflowMode: normalizeThreadTaskCardWorkflowMode(body.workflowMode),
-      workflowId: String(body.workflowId || "").trim(),
-      replyToThreadId: String(body.replyToThreadId || body.reply_to_thread_id || body.returnTargetThreadId || body.return_target_thread_id || "").trim(),
-      replyToWorkspaceId: String(body.replyToWorkspaceId || body.reply_to_workspace_id || body.returnTargetWorkspaceId || body.return_target_workspace_id || "").trim(),
-      replyToCardId: String(body.replyToCardId || body.reply_to_card_id || body.originalTaskCardId || body.original_task_card_id || "").trim(),
+    return canonicalThreadTaskCardThreadCallIdempotencyKey(sourceThreadId, body, targetThreadIds, {
+      stableTextHash,
+      normalizeReasoningEffort: normalizeThreadTaskCardReasoningEffort,
+      normalizeWorkflowMode: normalizeThreadTaskCardWorkflowMode,
     });
-    return `thread-call:${stableTextHash(sourceThreadId)}:${stableTextHash(seed)}`;
   }
 
   function taskCardSourceThreadTitle(sourceThreadId, requestedTitle = "", sourceSummary = null) {

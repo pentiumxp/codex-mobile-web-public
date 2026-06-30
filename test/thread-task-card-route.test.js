@@ -1,6 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { test } = require("node:test");
@@ -21,12 +22,17 @@ const threadDetailRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..",
 const threadDetailResponsePreparationServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-detail-response-preparation-service.js"), "utf8");
 const webPushRuntimeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "web-push-runtime-service.js"), "utf8");
 const runtimeSettingsServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "runtime-settings-service.js"), "utf8");
+const taskCardIdempotencyServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "services", "task-cards", "task-card-idempotency-service.js"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
 const createThreadTaskCardScript = fs.readFileSync(path.resolve(__dirname, "..", "scripts", "create-thread-task-card.js"), "utf8");
 const returnThreadTaskCardScript = fs.readFileSync(path.resolve(__dirname, "..", "scripts", "return-thread-task-card.js"), "utf8");
 const { createThreadTaskCardRouteService } = require("../adapters/thread-task-card-route-service");
+
+function stableTextHash(value) {
+  return crypto.createHash("sha256").update(String(value || "")).digest("hex").slice(0, 16);
+}
 
 function functionBody(source, name) {
   let start = source.indexOf(`function ${name}(`);
@@ -159,8 +165,12 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(taskCardRouteServiceJs, "applyHomeAiDeployLaneRoutingPolicy"), /deploy_lane_required/);
   assert.match(functionBody(taskCardRouteServiceJs, "createThreadTaskCardsFromSourceThread"), /workspaceDelegationSettings\(\)/);
   assert.match(functionBody(taskCardRouteServiceJs, "createThreadTaskCardsFromSourceThread"), /workspaceDelegation\.enabled[\s\S]*body\.autoApprove !== false[\s\S]*body\.direct !== false[\s\S]*body\.pending !== true/);
-  assert.match(functionBody(taskCardRouteServiceJs, "threadTaskCardThreadCallIdempotencyKey"), /body\.requestId \|\| body\.request_id/);
-  assert.match(functionBody(taskCardRouteServiceJs, "threadTaskCardThreadCallIdempotencyKey"), /reasoningEffort: normalizeThreadTaskCardReasoningEffort/);
+  assert.match(taskCardRouteServiceJs, /task-card-idempotency-service/);
+  assert.match(taskCardIdempotencyServiceJs, /function threadTaskCardThreadCallIdempotencyKey/);
+  assert.match(functionBody(taskCardRouteServiceJs, "threadTaskCardThreadCallIdempotencyKey"), /canonicalThreadTaskCardThreadCallIdempotencyKey/);
+  assert.match(functionBody(taskCardRouteServiceJs, "threadTaskCardThreadCallIdempotencyKey"), /normalizeReasoningEffort: normalizeThreadTaskCardReasoningEffort/);
+  assert.match(taskCardIdempotencyServiceJs, /isSemanticPluginDeployment/);
+  assert.match(taskCardIdempotencyServiceJs, /!semanticPluginDeployment && requestId/);
   assert.doesNotMatch(functionBody(taskCardRouteServiceJs, "threadTaskCardThreadCallIdempotencyKey"), /body\.sourceTurnId \|\| body\.turnId/);
   assert.match(functionBody(taskCardRouteServiceJs, "dynamicToolTextResponse"), /success/);
   assert.match(functionBody(taskCardRouteServiceJs, "dynamicToolTextResponse"), /contentItems:\s*\[/);
@@ -216,7 +226,7 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(taskCardRouteServiceJs, "dynamicToolServerRequestResponsePayload"), /forcedDirect: true/);
   assert.match(functionBody(taskCardRouteServiceJs, "taskCardReturnDynamicToolBody"), /returnToSource: true/);
   assert.match(functionBody(taskCardRouteServiceJs, "taskCardReturnDynamicToolBody"), /const status = normalizedTaskCardReturnStatus/);
-  assert.match(functionBody(taskCardRouteServiceJs, "threadTaskCardThreadCallIdempotencyKey"), /replyToThreadId/);
+  assert.match(taskCardIdempotencyServiceJs, /replyToThreadId/);
   assert.match(functionBody(taskCardRouteServiceJs, "dynamicToolServerRequestResponsePayload"), /logWorkspaceDelegationDynamicToolCall\(request, params, args, \{[\s\S]*outcome: "ok"/);
   assert.match(functionBody(taskCardRouteServiceJs, "dynamicToolServerRequestResponsePayload"), /outcome: "unsupported_dynamic_tool"/);
   assert.match(functionBody(taskCardRouteServiceJs, "dynamicToolServerRequestResponsePayload"), /outcome: "source_thread_id_required"/);
@@ -370,6 +380,44 @@ test("approved task-card visible target summary helper is runtime executable", (
   });
 
   assert.equal(emptyService.readThreadTaskCardVisibleTargetSummary("thread-movie"), null);
+});
+
+test("source-thread task-card route uses semantic idempotency for routine plugin deployments", () => {
+  const service = createThreadTaskCardRouteService({
+    threadTaskCardService: {},
+    stableTextHash,
+    readThreadListFallback: () => [
+      { id: "source-thread", name: "Codex Mobile Implementation", cwd: "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web" },
+      { id: "deploy-lane", name: "Codex Mobile Deploy Lane", cwd: "/Users/hermes-dev/HermesMobileDev/app" },
+    ],
+    readStateDbThread: (threadId) => {
+      if (threadId === "source-thread") return { id: "source-thread", title: "Codex Mobile Implementation", cwd: "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web" };
+      if (threadId === "deploy-lane") return { id: "deploy-lane", title: "deploy-lane" };
+      return null;
+    },
+    threadDisplayTitle: (thread) => thread && (thread.name || thread.title || thread.preview || thread.id) || "",
+  });
+  const deployBody = {
+    targetThreadId: "deploy-lane",
+    cardKind: "plugin_deployment",
+    pluginId: "codex-mobile-web",
+    title: "Deploy Codex Mobile",
+    body: "Deploy source ref fd39e541 for reason runtime-boundary-fix",
+    workflowMode: "autonomous",
+  };
+  const firstDeploy = service.buildThreadTaskCardCreatePayload(Object.assign({}, deployBody, { requestId: "dynamic-tool-call" }), "source-thread");
+  const retryDeploy = service.buildThreadTaskCardCreatePayload(Object.assign({}, deployBody, { requestId: "fallback-script-retry" }), "source-thread");
+  assert.equal(firstDeploy.idempotencyKey, retryDeploy.idempotencyKey);
+
+  const ordinaryBody = {
+    targetThreadId: "deploy-lane",
+    title: "Repair Codex Mobile",
+    body: "Investigate an implementation issue",
+    workflowMode: "autonomous",
+  };
+  const firstOrdinary = service.buildThreadTaskCardCreatePayload(Object.assign({}, ordinaryBody, { requestId: "dynamic-tool-call" }), "source-thread");
+  const retryOrdinary = service.buildThreadTaskCardCreatePayload(Object.assign({}, ordinaryBody, { requestId: "fallback-script-retry" }), "source-thread");
+  assert.notEqual(firstOrdinary.idempotencyKey, retryOrdinary.idempotencyKey);
 });
 
 test("server broadcasts lightweight thread status for background turn notifications", () => {

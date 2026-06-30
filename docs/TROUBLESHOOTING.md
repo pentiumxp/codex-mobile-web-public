@@ -1652,6 +1652,19 @@ then follow with a forced current-thread refresh instead of the old same-thread
 returned injected `turnId`; once that turn becomes visible, the browser scrolls
 to the injected turn instead of leaving the user to back out and re-enter.
 
+If a routine plugin deploy request appears as multiple deployment cards after a
+dynamic-tool failure followed by a fallback-script retry, compare the stored
+`idempotencyKey` values for the original cards. Current builds derive
+`cardKind=plugin_deployment` plus `pluginId` create keys from the semantic
+deployment request instead of the caller `requestId`, so the dynamic tool and
+`scripts/create-thread-task-card.js` should converge on one original card when
+the plugin id, final deploy lane set, title/body, workflow, and return metadata
+are unchanged. A duplicate after that point means either the semantic deployment
+text changed, the explicit `idempotencyKey` differed, or the duplication is in
+return-card rendering/store recovery rather than original-card creation. Check
+`services/task-cards/task-card-idempotency-service.js` and
+`test/task-card-idempotency-service.test.js` before changing the renderer.
+
 If a target thread already has an incompatible live app-server state, approval
 may fail at the `thread/resume` / `turn/start` stage. In that case the card
 should remain actionable instead of silently disappearing.

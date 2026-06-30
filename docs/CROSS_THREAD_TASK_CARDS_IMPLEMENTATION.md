@@ -104,14 +104,21 @@ layout and test strategy.
 delegation route. It uses `buildThreadTaskCardCreatePayload()` to infer source
 metadata, resolve target ids or exact target titles, truncate overlong bodies to
 the 8k card limit, and derive a stable `thread-call:*` idempotency key when the
-caller does not provide one. Source-thread direct auto-approval is gated by the
-runtime Settings switch `跨工作区委派`, and is off by default. The runtime value is
-stored in `settings.json`; `CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION=1` (or
-compatible alias `CODEX_MOBILE_WORKSPACE_DELEGATION_ENABLED=1`) only supplies
-the default when no runtime value exists. When the switch is off, the route
-stores pending cards only. Passing `pending:true`, `autoApprove:false`, or
-`direct:false` also keeps the card in the manual-pending flow even when the
-switch is enabled.
+caller does not provide one. The pure idempotency policy lives in
+`services/task-cards/task-card-idempotency-service.js`: explicit
+`idempotencyKey` still wins, ordinary non-deployment cards may use `requestId`
+as the retry seed, and routine `cardKind=plugin_deployment` cards with
+`pluginId` use semantic deployment fields instead of `requestId`. This keeps an
+app-server dynamic-tool attempt and a fallback `scripts/create-thread-task-card.js`
+retry from creating separate deployment cards when the plugin id, final deploy
+lane set, title/body, workflow, and return metadata are the same. Source-thread
+direct auto-approval is gated by the runtime Settings switch `跨工作区委派`, and is
+off by default. The runtime value is stored in `settings.json`;
+`CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION=1` (or compatible alias
+`CODEX_MOBILE_WORKSPACE_DELEGATION_ENABLED=1`) only supplies the default when no
+runtime value exists. When the switch is off, the route stores pending cards
+only. Passing `pending:true`, `autoApprove:false`, or `direct:false` also keeps
+the card in the manual-pending flow even when the switch is enabled.
 
 Thread id is the task-card routing identity. Titles and cwd/workspace values are
 hints only. Workspace/cwd targeting is allowed only when exactly one visible,
@@ -264,14 +271,17 @@ server converts the tool call into the same
 `POST /api/threads/:sourceThreadId/task-cards`. The tool returns bounded JSON
 text containing card ids, target thread ids, and whether source-direct approval
 was used, wrapped as app-server dynamic-tool output:
-`result.success` plus `result.contentItems[{ type:"inputText" }]`. This schema is intentionally not
-the MCP `content[{ type:"text" }]` response shape. Direct dynamic-tool task
-cards are idempotent by explicit request id when one is supplied; otherwise the
-server uses the source thread plus target/title/body/workflow semantics so retry
-calls with a new tool call id do not create duplicate cards. If the switch is off, the
-tool is not injected. If the tool is called without a target or source thread id
-cannot be inferred, the server returns a bounded error to the model instead of
-hanging the turn.
+`result.success` plus `result.contentItems[{ type:"inputText" }]`. This schema
+is intentionally not the MCP `content[{ type:"text" }]` response shape. Direct
+dynamic-tool task cards are idempotent by explicit request id when one is
+supplied, except routine `plugin_deployment` cards: those use the semantic
+deployment key described above so fallback-script retries converge with the
+dynamic-tool attempt. When no request id is supplied, the server uses the source
+thread plus target/title/body/workflow semantics so retry calls with a new tool
+call id do not create duplicate cards. If the switch is off, the tool is not
+injected. If the tool is called without a target or source thread id cannot be
+inferred, the server returns a bounded error to the model instead of hanging the
+turn.
 The tool schema includes optional `reasoningEffort` and optional
 `replyToThreadId` / `replyToWorkspaceId` / `replyToThreadTitle` /
 `replyToCardId`. Use `replyToThreadId` only for multi-hop supplements where the
