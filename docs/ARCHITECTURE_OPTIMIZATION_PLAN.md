@@ -2056,16 +2056,21 @@ without changing public behavior:
   hydration/persistence, rollout-session fallback summary recovery, rollout
   active/completed/stale-context status inference, rollout stat metadata reuse,
   and projectless session-index fallback rows.
+- `adapters/thread-summary-state-service.js` now owns state DB single-thread
+  fallback-row reads, local active overlays, stale/live/rest status
+  classification, display-summary merge semantics, state DB runtime metadata
+  merge, and detail-read-to-thread-list fallback-cache synchronization.
 
-Local line-count evidence after the extraction: `server.js` is 11,637 lines,
+Local line-count evidence after the extraction: `server.js` is 11,446 lines,
 `thread-task-card-route-service.js` is 1,280 lines, and
 `thread-message-route-service.js` is 363 lines, and
-`thread-list-fallback-source-service.js` is 683 lines. This is a checkpoint,
-not the target state; `server.js` remains too large. The next high-yield backend
-split should target remaining thread-detail preparation/compaction/enrichment
-glue, because the fallback source provider is now out of the entrypoint while
-detail response assembly still keeps substantial rollout/user-input/Usage
-coordination in `server.js`.
+`thread-list-fallback-source-service.js` is 683 lines, and
+`thread-summary-state-service.js` is 383 lines. This is a checkpoint, not the
+target state; `server.js` remains too large. The next high-yield backend split
+should target remaining thread-detail preparation/compaction/enrichment glue,
+because fallback/source and summary-state ownership are now out of the
+entrypoint while detail response assembly still keeps substantial
+rollout/user-input/Usage coordination in `server.js`.
 
 Validation boundary:
 

@@ -10,6 +10,7 @@ const continuationThreadServiceJs = fs.readFileSync(path.resolve(__dirname, ".."
 const codexAppServerClientServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "codex-app-server-client-service.js"), "utf8");
 const taskCardRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-task-card-route-service.js"), "utf8");
 const threadMessageRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-message-route-service.js"), "utf8");
+const threadSummaryStateServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-summary-state-service.js"), "utf8");
 const routingServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-task-card-routing-service.js"), "utf8");
 const threadDetailRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-detail-route-service.js"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
@@ -143,7 +144,8 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(taskCardRouteServiceJs, "buildThreadTaskCardCreatePayload"), /target_thread_required/);
   assert.match(serverJs, /thread-task-card-deploy-lane-policy-service/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationTargetHints"), /prioritizeDelegationTargetHints/);
-  assert.match(functionBody(serverJs, "normalizeThreadSummaryLiveStatus"), /normalizeHomeAiDeployLaneSummary/);
+  assert.match(functionBody(serverJs, "normalizeThreadSummaryLiveStatus"), /threadSummaryStateService\.normalizeThreadSummaryLiveStatus/);
+  assert.match(functionBody(threadSummaryStateServiceJs, "normalizeThreadSummaryLiveStatus"), /normalizeHomeAiDeployLaneSummary/);
   assert.match(functionBody(taskCardRouteServiceJs, "buildThreadTaskCardCreatePayload"), /applyHomeAiDeployLaneRoutingPolicy/);
   assert.match(functionBody(taskCardRouteServiceJs, "applyHomeAiDeployLaneRoutingPolicy"), /planHomeAiDeployLaneRouting/);
   assert.match(functionBody(taskCardRouteServiceJs, "applyHomeAiDeployLaneRoutingPolicy"), /deploy_lane_required/);
@@ -381,8 +383,9 @@ test("server broadcasts active status immediately for local turn starts", () => 
   assert.match(helperBody, /broadcastThreadStatusChanged\(id, \{ type: "active" \}/);
   assert.match(helperBody, /source: String\(meta\.source \|\| "local-turn-start"\)/);
 
-  assert.match(serverJs, /const localActiveThreadStatuses = new Map\(\);/);
+  assert.match(threadSummaryStateServiceJs, /const localActiveThreadStatuses = dependencies\.localActiveThreadStatuses instanceof Map/);
   assert.match(serverJs, /function applyLocalActiveThreadStatusToSummary\(/);
+  assert.match(functionBody(serverJs, "applyLocalActiveThreadStatusToSummary"), /threadSummaryStateService\.applyLocalActiveThreadStatusToSummary/);
   assert.match(serverJs, /function updateLocalActiveThreadStatusFromNotification\(/);
   assert.match(functionBody(serverJs, "broadcast"), /updateLocalActiveThreadStatusFromNotification\(payload\)/);
   assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /applyLocalActiveThreadStatusToResult/);

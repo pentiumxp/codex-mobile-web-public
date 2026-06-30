@@ -7,6 +7,7 @@ const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
 const summaryServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-detail-summary-service.js"), "utf8");
+const threadSummaryStateServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-summary-state-service.js"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
 
 function functionSource(source, name) {
@@ -37,11 +38,12 @@ test("thread detail refreshes display title from app-server summary", () => {
 });
 
 test("thread display summary keeps local runtime fields while accepting display fields", () => {
-  const helperStart = serverJs.indexOf("function mergeThreadDisplaySummary(base, display, options = {})");
+  assert.match(functionSource(serverJs, "mergeThreadDisplaySummary"), /threadSummaryStateService\.mergeThreadDisplaySummary/);
+  const helperStart = threadSummaryStateServiceJs.indexOf("function mergeThreadDisplaySummary(base, display, options = {})");
   assert.notEqual(helperStart, -1, "missing mergeThreadDisplaySummary helper");
-  const helperEnd = serverJs.indexOf("function mergeThreadRuntimeFromStateDb", helperStart);
+  const helperEnd = threadSummaryStateServiceJs.indexOf("function mergeThreadRuntimeFromStateDb", helperStart);
   assert.ok(helperEnd > helperStart, "helper should be placed before runtime merge");
-  const helperBody = serverJs.slice(helperStart, helperEnd);
+  const helperBody = threadSummaryStateServiceJs.slice(helperStart, helperEnd);
 
   assert.match(helperBody, /Object\.assign\(\{\}, base\)/);
   assert.match(helperBody, /for \(const key of \["name", "preview", "cwd"\]\)/);
