@@ -201,6 +201,14 @@ archived and sub-agent rows. If this regresses, run:
 node --test test\thread-visibility.test.js
 ```
 
+If a workspace-delegation continuation can `stat` a target workspace and create
+then read back a new temporary file under that root, but `readdir`, existing
+source file opens, `git status`, or `apply_patch` fail with `EPERM` /
+`Operation not permitted`, inspect the managed permission profile. It must grant
+both read and write access to the target workspace root and its `.git`
+metadata. Already-running turns keep the sandbox they were started with, so a
+fixed listener still requires a new continuation for the affected workspace.
+
 ## Shared Mux Drift
 
 Evidence of mux drift:

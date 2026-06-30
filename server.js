@@ -2689,6 +2689,10 @@ function workspaceDelegationWriteGuardPermissionProfile(cwd, inheritedPolicy) {
     if (!root) continue;
     entries.push({
       path: { type: "path", path: root },
+      access: "read",
+    });
+    entries.push({
+      path: { type: "path", path: root },
       access: "write",
     });
     entries.push({
@@ -2697,6 +2701,10 @@ function workspaceDelegationWriteGuardPermissionProfile(cwd, inheritedPolicy) {
     });
     entries.push({
       path: { type: "path", path: path.join(root, ".codex") },
+      access: "read",
+    });
+    entries.push({
+      path: { type: "path", path: path.join(root, ".git") },
       access: "read",
     });
     entries.push({

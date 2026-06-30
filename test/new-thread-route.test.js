@@ -298,6 +298,8 @@ test("server runtime inheritance includes model and reasoning effort", () => {
 
   const guardProfileBody = functionBody(serverJs, "workspaceDelegationWriteGuardPermissionProfile");
   assert.match(guardProfileBody, /kind: "root"[\s\S]*access: "read"/, "guard profile should keep root read-only");
+  assert.match(guardProfileBody, /path: \{ type: "path", path: root \}[\s\S]*access: "read"[\s\S]*path: \{ type: "path", path: root \}[\s\S]*access: "write"/, "guard profile should allow reading and writing the current workspace root");
+  assert.match(guardProfileBody, /path\.join\(root, "\.git"\)[\s\S]*access: "read"[\s\S]*path\.join\(root, "\.git"\)[\s\S]*access: "write"/, "guard profile should allow reading and writing git metadata inside the current workspace");
   assert.match(guardProfileBody, /path\.join\(root, "\.git"\)[\s\S]*access: "write"/, "guard profile should allow git metadata writes inside the current workspace");
   assert.match(guardProfileBody, /path\.join\(root, "\.codex"\)[\s\S]*access: "read"/, "guard profile should keep workspace .codex metadata read-only");
   assert.match(guardProfileBody, /path\.join\(root, "\.agents"\)[\s\S]*access: "read"/, "guard profile should keep workspace .agents metadata read-only");
