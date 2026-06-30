@@ -17,6 +17,10 @@ function usage() {
     "  --source-thread <id>       Source thread id; used in /api/threads/:id/task-cards",
     "  --target-thread <id>       Current visible target thread id or exact title. Repeat or comma-separate for multiple targets.",
     "  --target-threads <ids>     Comma-separated current visible target thread ids or exact titles.",
+    "  --reply-to-thread <id>     Optional terminal-return target thread id for multi-hop supplements.",
+    "  --reply-to-workspace <cwd> Optional workspace/cwd for --reply-to-thread.",
+    "  --reply-to-title <title>   Optional display title for --reply-to-thread.",
+    "  --reply-to-card <id>       Optional originating task-card id this supplement is related to.",
     "  --title <text>             Task-card title.",
     "  --summary <text>           Optional summary.",
     "  --body <text>              Body markdown. Prefer --body-file for long text.",
@@ -91,6 +95,14 @@ function parseArgs(argv) {
       pushTargets(options.targets, next());
     } else if (arg === "--target-threads") {
       pushTargets(options.targets, next());
+    } else if (arg === "--reply-to-thread" || arg === "--reply-to-thread-id") {
+      options.request.replyToThreadId = next();
+    } else if (arg === "--reply-to-workspace" || arg === "--reply-to-workspace-id") {
+      options.request.replyToWorkspaceId = next();
+    } else if (arg === "--reply-to-title" || arg === "--reply-to-thread-title") {
+      options.request.replyToThreadTitle = next();
+    } else if (arg === "--reply-to-card" || arg === "--reply-to-card-id") {
+      options.request.replyToCardId = next();
     } else if (arg === "--title") {
       options.request.title = next();
     } else if (arg === "--summary") {

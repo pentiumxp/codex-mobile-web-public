@@ -162,6 +162,8 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /reasoningEffort/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /REASONING_EFFORT_OPTIONS/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /pluginId/);
+  assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /replyToThreadId/);
+  assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /multi-hop supplement/);
   assert.match(functionBody(serverJs, "applyHomeAiDeployLaneRoutingPolicy"), /expectedDeployLaneTitle/);
   assert.doesNotMatch(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /latest visible canonical thread/);
   assert.doesNotMatch(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /pending:\s*\{/);
@@ -197,6 +199,7 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /forcedDirect: true/);
   assert.match(functionBody(serverJs, "taskCardReturnDynamicToolBody"), /returnToSource: true/);
   assert.match(functionBody(serverJs, "taskCardReturnDynamicToolBody"), /const status = normalizedTaskCardReturnStatus/);
+  assert.match(functionBody(serverJs, "threadTaskCardThreadCallIdempotencyKey"), /replyToThreadId/);
   assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /logWorkspaceDelegationDynamicToolCall\(request, params, args, \{[\s\S]*outcome: "ok"/);
   assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /outcome: "unsupported_dynamic_tool"/);
   assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /outcome: "source_thread_id_required"/);
@@ -223,6 +226,8 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(createThreadTaskCardScript, /CODEX_MOBILE_KEY_FILE/);
   assert.match(createThreadTaskCardScript, /--pending/);
   assert.match(createThreadTaskCardScript, /--reasoning-effort <value>/);
+  assert.match(createThreadTaskCardScript, /--reply-to-thread <id>/);
+  assert.match(createThreadTaskCardScript, /replyToThreadId/);
   assert.match(createThreadTaskCardScript, /Settings -> 跨工作区委派/);
   assert.match(returnThreadTaskCardScript, /\/api\/thread-task-cards\/\$\{encodeURIComponent\(taskCardId\)\}\/reply/);
   assert.match(returnThreadTaskCardScript, /CODEX_MOBILE_KEY_FILE/);

@@ -255,6 +255,108 @@ function terminalReturnDeliveryFields(returnStatus = "") {
   };
 }
 
+function optionalBoundedInput(input = {}, keys = [], fieldName = "value", maxLength = 220) {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(input, key)) {
+      return boundedString(input[key], fieldName, maxLength, false);
+    }
+  }
+  return "";
+}
+
+function normalizeReplyToRef(input = {}) {
+  const cardId = optionalBoundedInput(input, [
+    "replyToCardId",
+    "reply_to_card_id",
+    "originalTaskCardId",
+    "original_task_card_id",
+  ], "reply_to_card_id", 180);
+  const threadId = optionalBoundedInput(input, [
+    "replyToThreadId",
+    "reply_to_thread_id",
+    "returnTargetThreadId",
+    "return_target_thread_id",
+    "returnThreadId",
+    "return_thread_id",
+  ], "reply_to_thread_id", 220);
+  if (!threadId && !cardId) return null;
+  return {
+    workspaceId: optionalBoundedInput(input, [
+      "replyToWorkspaceId",
+      "reply_to_workspace_id",
+      "returnTargetWorkspaceId",
+      "return_target_workspace_id",
+      "returnWorkspaceId",
+      "return_workspace_id",
+    ], "reply_to_workspace_id", 260),
+    threadId,
+    title: optionalBoundedInput(input, [
+      "replyToThreadTitle",
+      "reply_to_thread_title",
+      "returnTargetThreadTitle",
+      "return_target_thread_title",
+    ], "reply_to_thread_title", 200),
+    cardId,
+  };
+}
+
+function sourceThreadRefForCard(card) {
+  const source = card && card.source && typeof card.source === "object" ? card.source : {};
+  return {
+    workspaceId: stringValue(source.workspaceId),
+    threadId: stringValue(source.threadId),
+    title: stringValue(source.title) || stringValue(source.threadId),
+  };
+}
+
+function replyToRefForCard(card) {
+  const replyTo = card && card.replyTo && typeof card.replyTo === "object" ? card.replyTo : null;
+  const threadId = stringValue(replyTo && replyTo.threadId);
+  if (!threadId) return null;
+  return {
+    workspaceId: stringValue(replyTo.workspaceId),
+    threadId,
+    title: stringValue(replyTo.title) || threadId,
+    cardId: stringValue(replyTo.cardId),
+  };
+}
+
+function returnTargetRefForCard(card) {
+  const source = sourceThreadRefForCard(card);
+  const replyTo = replyToRefForCard(card);
+  if (!replyTo) return source;
+  return {
+    workspaceId: replyTo.workspaceId || source.workspaceId,
+    threadId: replyTo.threadId,
+    title: replyTo.title || source.title || replyTo.threadId,
+    cardId: replyTo.cardId,
+  };
+}
+
+function returnTargetUsesReplyTo(card) {
+  const replyTo = replyToRefForCard(card);
+  if (!replyTo) return false;
+  return replyTo.threadId !== sourceThreadRefForCard(card).threadId;
+}
+
+function resolveReplyToRefForRequest(request, store) {
+  const replyTo = request && request.replyTo && typeof request.replyTo === "object" ? request.replyTo : null;
+  if (!replyTo) return null;
+  if (stringValue(replyTo.threadId)) return replyTo;
+  const cardId = stringValue(replyTo.cardId);
+  if (!cardId) return null;
+  const original = safeArray(store && store.cards).find((entry) => stringValue(entry && entry.id) === cardId);
+  if (!original) return replyTo;
+  const target = returnTargetRefForCard(original);
+  if (!target.threadId) return replyTo;
+  return {
+    workspaceId: target.workspaceId,
+    threadId: target.threadId,
+    title: target.title,
+    cardId,
+  };
+}
+
 function terminalReturnStatusForCard(card) {
   const delivery = card && card.delivery && typeof card.delivery === "object" ? card.delivery : {};
   const audit = card && card.audit && typeof card.audit === "object" ? card.audit : {};
@@ -274,24 +376,30 @@ function terminalReturnEventForCards(originalCard, returnCard) {
     returnCard.message && returnCard.message.summary || terminalReturnStatusForCard(returnCard),
     MAX_SUMMARY_CHARS,
   );
+  const returnTarget = returnTargetRefForCard(originalCard);
+  const metadata = {
+    sourceThreadId: boundedMetadataString(originalCard.source && originalCard.source.threadId, 180),
+    targetThreadId: boundedMetadataString(originalCard.target && originalCard.target.threadId, 180),
+    workflowId: boundedMetadataString(
+      originalCard.workflow && originalCard.workflow.id
+        || returnCard.workflow && returnCard.workflow.id
+        || "",
+      180,
+    ),
+    terminal: true,
+    ackPolicy: "none",
+  };
+  if (returnTarget.threadId && returnTarget.threadId !== stringValue(originalCard.source && originalCard.source.threadId)) {
+    metadata.returnTargetThreadId = boundedMetadataString(returnCard.target && returnCard.target.threadId, 180);
+    metadata.replyToThreadId = boundedMetadataString(returnTarget.threadId, 180);
+  }
   return {
     taskCardId: boundedMetadataString(originalCard.id, 180),
     returnCardId: boundedMetadataString(returnCard.id, 180),
     status: terminalReturnStatusForCard(returnCard),
     title,
     summary,
-    metadata: {
-      sourceThreadId: boundedMetadataString(originalCard.source && originalCard.source.threadId, 180),
-      targetThreadId: boundedMetadataString(originalCard.target && originalCard.target.threadId, 180),
-      workflowId: boundedMetadataString(
-        originalCard.workflow && originalCard.workflow.id
-          || returnCard.workflow && returnCard.workflow.id
-          || "",
-        180,
-      ),
-      terminal: true,
-      ackPolicy: "none",
-    },
+    metadata,
   };
 }
 
@@ -451,6 +559,16 @@ function summarizePublicCardWorkflow(workflow = {}) {
   });
 }
 
+function summarizePublicCardReplyTo(replyTo = {}) {
+  if (!replyTo || typeof replyTo !== "object") return null;
+  return omitEmptyObject({
+    workspaceId: boundedMetadataString(replyTo.workspaceId, 260),
+    threadId: boundedMetadataString(replyTo.threadId, 220),
+    title: boundedMetadataString(replyTo.title, 200),
+    cardId: boundedMetadataString(replyTo.cardId, 180),
+  });
+}
+
 function summarizePublicCardDelivery(delivery = {}) {
   if (!delivery || typeof delivery !== "object") return null;
   return omitEmptyObject({
@@ -506,6 +624,7 @@ function summarizePublicCard(card) {
     updatedAt: boundedMetadataString(card && card.updatedAt, 80),
     source: summarizePublicCardThreadRef(card && card.source, true),
     target: summarizePublicCardThreadRef(card && card.target, false),
+    replyTo: summarizePublicCardReplyTo(card && card.replyTo),
     message: summarizePublicCardMessage(card && card.message),
     delivery: summarizePublicCardDelivery(card && card.delivery),
     workflow: summarizePublicCardWorkflow(card && card.workflow),
@@ -570,6 +689,7 @@ function normalizeCreateRequest(input = {}) {
     reasoningEffort: normalizedReasoningEffort(input.reasoningEffort || input.reasoning_effort || input.effort),
     workflowMode: normalizedWorkflowMode(input.workflowMode),
     workflowId: boundedString(input.workflowId, "workflow_id", 220, false),
+    replyTo: normalizeReplyToRef(input),
   };
 }
 
@@ -729,6 +849,8 @@ function injectedMessageText(card) {
   const autonomous = isAutonomousWorkflow(card.workflow);
   const terminal = cardIsTerminal(card);
   const requiresReturn = cardRequiresReturn(card);
+  const returnTarget = returnTargetRefForCard(card);
+  const returnTargetDiffers = returnTargetUsesReplyTo(card);
   const autoReturnOnCompletion = autonomous
     && !terminal
     && card.delivery
@@ -741,6 +863,8 @@ function injectedMessageText(card) {
     `Source workspace: ${card.source.workspaceId}`,
     `Source thread: ${card.source.title || card.source.threadId}`,
     `Source thread id: ${card.source.threadId}`,
+    returnTargetDiffers ? `Return target thread: ${returnTarget.title || returnTarget.threadId}` : "",
+    returnTargetDiffers ? `Return target thread id: ${returnTarget.threadId}` : "",
     `Task card id: ${card.id}`,
     card.message && card.message.title ? `Title: ${card.message.title}` : "",
     card.delivery && card.delivery.reasoningEffort ? `Requested reasoning effort: ${card.delivery.reasoningEffort}` : "",
@@ -969,6 +1093,8 @@ function createThreadTaskCardService(options = {}) {
         createdAt: timestamp,
       },
     };
+    const replyTo = resolveReplyToRefForRequest(request, store);
+    if (replyTo) card.replyTo = replyTo;
     store.cards.push(card);
     return publicCard(card, request.sourceThreadId);
   }
@@ -1210,7 +1336,7 @@ function createThreadTaskCardService(options = {}) {
         markReturnToSourceMetadata(existing, replyRequest);
         return {
           card: publicCard(card, actorThreadId),
-          replyCard: publicCard(existing, card.source && card.source.threadId || ""),
+          replyCard: publicCard(existing, existing.target && existing.target.threadId || ""),
         };
       }
       transitionAllowed(card, "reply", actorThreadId);
@@ -1219,7 +1345,10 @@ function createThreadTaskCardService(options = {}) {
         ? replyRequest.workflowMode
         : (isAutonomousWorkflow(card.workflow) ? WORKFLOW_MODE_AUTONOMOUS : WORKFLOW_MODE_MANUAL);
       const replySourceThreadId = replyRequest.sourceThreadId || card.target.threadId;
-      const replyTargetThreadId = card.source.threadId;
+      const replyTarget = replyRequest.returnToSource === true
+        ? returnTargetRefForCard(card)
+        : sourceThreadRefForCard(card);
+      const replyTargetThreadId = replyTarget.threadId;
       const replyWorkflowId = replyRequest.workflowId
         || (replyWorkflowMode === WORKFLOW_MODE_AUTONOMOUS && card.workflow ? card.workflow.id : "")
         || workflowIdForRequest({
@@ -1249,7 +1378,7 @@ function createThreadTaskCardService(options = {}) {
             title: replyRequest.sourceThreadTitle || card.target.threadId,
           },
           target: {
-            workspaceId: card.source.workspaceId,
+            workspaceId: replyTarget.workspaceId,
             threadId: replyTargetThreadId,
           },
           message: {
@@ -1278,6 +1407,10 @@ function createThreadTaskCardService(options = {}) {
           audit: {
             createdAt: timestamp,
             replyToCardId: card.id,
+            originalSourceThreadId: card.source && card.source.threadId || "",
+            returnTargetThreadId: replyTargetThreadId,
+            returnTargetWorkspaceId: replyTarget.workspaceId || "",
+            returnRoutedByReplyTo: replyRequest.returnToSource === true && returnTargetUsesReplyTo(card),
             returnToSource: replyRequest.returnToSource === true,
             returnStatus: replyRequest.status || "",
             requiresReturn: replyRequest.returnToSource !== true,
@@ -1297,7 +1430,7 @@ function createThreadTaskCardService(options = {}) {
       });
       return {
         card: publicCard(card, actorThreadId),
-        replyCard: publicCard(replyCard, card.source.threadId),
+        replyCard: publicCard(replyCard, replyCard.target && replyCard.target.threadId || replyTargetThreadId),
       };
     });
     if (replyRequest.returnToSource === true) {
@@ -1497,6 +1630,7 @@ function createThreadTaskCardService(options = {}) {
       if (!workflow) return null;
       const timestamp = nowIso(options.now);
       const idempotencyKey = boundedString(`auto-return:${card.id}:${turnId}`, "idempotency_key", 220);
+      const returnTarget = returnTargetRefForCard(card);
       let replyCard = findByIdempotency(store, idempotencyKey);
       if (!replyCard) {
         replyCard = {
@@ -1512,8 +1646,8 @@ function createThreadTaskCardService(options = {}) {
             title: card.target && card.target.threadId || "",
           },
           target: {
-            workspaceId: card.source && card.source.workspaceId || "",
-            threadId: card.source && card.source.threadId || "",
+            workspaceId: returnTarget.workspaceId || "",
+            threadId: returnTarget.threadId || "",
           },
           message: {
             format: "markdown",
@@ -1539,6 +1673,10 @@ function createThreadTaskCardService(options = {}) {
             createdAt: timestamp,
             autoReturnToCardId: card.id,
             autoReturnForTurnId: turnId,
+            originalSourceThreadId: card.source && card.source.threadId || "",
+            returnTargetThreadId: returnTarget.threadId || "",
+            returnTargetWorkspaceId: returnTarget.workspaceId || "",
+            returnRoutedByReplyTo: returnTargetUsesReplyTo(card),
             returnToSource: true,
             returnStatus: "completed",
             requiresReturn: false,
@@ -1558,7 +1696,16 @@ function createThreadTaskCardService(options = {}) {
       return publicCard(replyCard, replyCard.target.threadId);
     });
     if (!prepared) return null;
-    const replyCard = await maybeAutoApprovePublicCard(prepared, prepared && prepared.target && prepared.target.threadId);
+    const routedByReplyTo = prepared && prepared.audit && prepared.audit.returnRoutedByReplyTo === true;
+    const approved = routedByReplyTo
+      ? await executeCardApproval(prepared.id, prepared.source && prepared.source.threadId || "", {
+        sourceDirect: true,
+        publicThreadId: prepared && prepared.target && prepared.target.threadId || "",
+      })
+      : null;
+    const replyCard = routedByReplyTo
+      ? approved && approved.card || prepared
+      : await maybeAutoApprovePublicCard(prepared, prepared && prepared.target && prepared.target.threadId);
     await notifyTerminalReturnCard(prepared.audit && prepared.audit.autoReturnToCardId, replyCard && replyCard.id || prepared.id);
     return replyCard ? { card: replyCard } : null;
   }

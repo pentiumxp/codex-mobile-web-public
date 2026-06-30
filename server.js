@@ -7997,6 +7997,22 @@ function workspaceDelegationDynamicToolSpec() {
           type: "string",
           description: "Alias for body.",
         },
+        replyToThreadId: {
+          type: "string",
+          description: "Optional terminal-return target thread id. Use when this card is a multi-hop supplement that must return to an original requester instead of the immediate source thread.",
+        },
+        replyToWorkspaceId: {
+          type: "string",
+          description: "Optional workspace/cwd for replyToThreadId.",
+        },
+        replyToThreadTitle: {
+          type: "string",
+          description: "Optional display title for replyToThreadId.",
+        },
+        replyToCardId: {
+          type: "string",
+          description: "Optional originating task-card id; when replyToThreadId is omitted, the service can resolve the terminal-return target from this card.",
+        },
         workflowMode: {
           type: "string",
           enum: ["manual", "autonomous"],
@@ -13249,6 +13265,9 @@ function threadTaskCardThreadCallIdempotencyKey(sourceThreadId, body = {}, targe
     reasoningEffort: normalizeThreadTaskCardReasoningEffort(body.reasoningEffort || body.reasoning_effort || body.effort),
     workflowMode: normalizeThreadTaskCardWorkflowMode(body.workflowMode),
     workflowId: String(body.workflowId || "").trim(),
+    replyToThreadId: String(body.replyToThreadId || body.reply_to_thread_id || body.returnTargetThreadId || body.return_target_thread_id || "").trim(),
+    replyToWorkspaceId: String(body.replyToWorkspaceId || body.reply_to_workspace_id || body.returnTargetWorkspaceId || body.return_target_workspace_id || "").trim(),
+    replyToCardId: String(body.replyToCardId || body.reply_to_card_id || body.originalTaskCardId || body.original_task_card_id || "").trim(),
   });
   return `thread-call:${stableTextHash(sourceThreadId)}:${stableTextHash(seed)}`;
 }

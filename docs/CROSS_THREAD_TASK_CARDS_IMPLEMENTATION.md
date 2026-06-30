@@ -181,8 +181,12 @@ using that id. A target-thread `final` answer is not a source-thread return card
 and must not be counted as `completed`, `blocked`, or `redirected` by the
 source workflow. Return cards created by `codex_mobile.return_to_source`,
 `scripts/return-thread-task-card.js`, or `/reply` with `returnToSource:true`
-are source-direct approved into the original source thread and do not require a
-second source-thread approval. They are also terminal by default:
+are source-direct approved into the original source thread, or into an explicit
+`replyToThreadId` when the original work card carries one, and do not require a
+second source-thread approval. `source` still means the thread that created the
+work card; `replyTo` means the terminal return target for multi-hop supplements.
+Cards without `replyToThreadId` keep the historical direct-source return
+behavior. They are also terminal by default:
 `delivery.terminal=true`, `delivery.requiresReturn=false`, and
 `delivery.ackPolicy="none"`. Terminal return cards do not inject `Return
 required` guidance, do not expose a reply affordance, and cannot be replied to
@@ -205,6 +209,8 @@ the task-card service builds a Home AI Autonomous Delivery Loop event:
   "metadata": {
     "sourceThreadId": "original source thread id",
     "targetThreadId": "original target thread id",
+    "returnTargetThreadId": "explicit reply-to thread id when different from source",
+    "replyToThreadId": "explicit reply-to thread id when different from source",
     "workflowId": "workflow id when available",
     "terminal": true,
     "ackPolicy": "none"
@@ -259,7 +265,16 @@ calls with a new tool call id do not create duplicate cards. If the switch is of
 tool is not injected. If the tool is called without a target or source thread id
 cannot be inferred, the server returns a bounded error to the model instead of
 hanging the turn.
-The tool schema includes optional `reasoningEffort`. When supplied, the value is
+The tool schema includes optional `reasoningEffort` and optional
+`replyToThreadId` / `replyToWorkspaceId` / `replyToThreadTitle` /
+`replyToCardId`. Use `replyToThreadId` only for multi-hop supplements where the
+terminal return must go to an original requester rather than to the immediate
+source thread that is creating the supplement card. If only `replyToCardId` is
+known, the service resolves the return target from the referenced card's
+existing reply-to target or source thread. When supplied, the reply-to metadata
+is persisted on the work card, shown in injected task-card text as the return
+target, and used by both manual `return_to_source` and autonomous completion
+returns. When `reasoningEffort` is supplied, the value is
 stored on the card delivery metadata, shown in the injected task-card message as
 `Requested reasoning effort: ...`, and used to override the target turn's
 inherited runtime effort during `thread/resume` / `turn/start`. The approved card
