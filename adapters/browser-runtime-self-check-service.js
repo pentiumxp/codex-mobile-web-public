@@ -531,7 +531,13 @@ function analyzeBrowserRuntimeSamples(input = {}) {
           settled,
         }));
       }
-      if (seenNonEmpty && settled && items > 0 && maxConfirmedItems > 0 && items < Math.max(3, Math.floor(maxConfirmedItems * 0.55))) {
+      const loadingPreviewSample = Boolean(sample.loadingNote) && !sample.emptyState;
+      if (!loadingPreviewSample
+        && seenNonEmpty
+        && settled
+        && items > 0
+        && maxConfirmedItems > 0
+        && items < Math.max(3, Math.floor(maxConfirmedItems * 0.55))) {
         issues.push(issue("H2", "browser_dom_visible_items_downgraded_after_nonempty", sample, {
           threadHash,
           previousMaxItems: maxConfirmedItems,
@@ -541,7 +547,7 @@ function analyzeBrowserRuntimeSamples(input = {}) {
           contentConfirmed: sample.contentConfirmed !== false,
         }));
       }
-      if (sampleIsConfirmed(sample) && settled && sample.latestTurnMatchesTarget && latestTurnHash) {
+      if (!loadingPreviewSample && sampleIsConfirmed(sample) && settled && sample.latestTurnMatchesTarget && latestTurnHash) {
         const previous = latestTurnWindows.get(latestTurnHash) || {
           itemCount: 0,
           userMessageCount: 0,
@@ -582,6 +588,7 @@ function analyzeBrowserRuntimeSamples(input = {}) {
       }
       if (sampleIsConfirmed(sample)
         && settled
+        && !loadingPreviewSample
         && maxClientSubmissions > 0
         && toNumber(sample.clientSubmissionCount) === 0
         && toNumber(sample.latestTurnUserMessageCount) < maxLatestTurnUserMessages) {

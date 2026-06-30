@@ -34356,3 +34356,96 @@ The previous full handoff was archived and should be opened only when old proven
   issue count `0`, advisory issue count `1`, execution failure count `0`, and
   check names `api-thread`, `browser-runtime`, and `client-events`.
 - Return classification: `completed`. No Public deploy was run.
+
+### 2026-06-30 - v599 Active-Thread Frontend Consistency Deployed, Runtime Gate Failed
+
+- Private Home AI deploy completed for source ref `e3397e3969ee`
+  (`fix: stabilize active thread frontend state`) with reason
+  `codex-mobile-v599-active-thread-frontend-consistency`.
+- Deploy backup:
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260630T005851Z-plugin-codex-mobile-web-codex-mobile-v599-active-thread-frontend-consistency`.
+- Production `/api/public-config` returned HTTP `200`, version `0.1.11`,
+  build id `16537da4033fff42`, client build id
+  `0.1.11|codex-mobile-shell-v599`, shell cache
+  `codex-mobile-shell-v599`, and `authRequired=true`.
+- Source/production SHA-256 parity passed for the v599 public runtime files,
+  focused tests, and docs.
+- Production markers confirmed `CLIENT_BUILD_ID =
+  "0.1.11|codex-mobile-shell-v599"`, `CACHE_NAME =
+  "codex-mobile-shell-v599"`,
+  `post-apply-visible-item-order-mismatch`,
+  `active-detail-cache-not-reusable`, focused test markers for visible-item
+  DOM patch reordering, failed optimistic retry hiding after durable match, and
+  open-thread cache reuse planning. Docs include the corresponding durable
+  match/retry clearing and API-order DOM repair troubleshooting entries.
+- Deploy-mode runtime gate against Movie and the Codex Mobile source thread
+  failed:
+  - `api-thread` was `ok=true` with zero issues.
+  - `client-events` was `ok=true` with zero H2 stalls.
+  - `browser-runtime` was `ok=false` with issue count `18`, blocking issue
+    count `4`, advisory issue count `14`, and no execution failures.
+  - H2/reportable codes were `browser_dom_sparse_after_nonempty` and
+    `browser_pending_user_message_disappeared`.
+  - The gate did not report a visible-item order mismatch issue code, but it
+    was not healthy.
+- LaunchAgent readback selected the latest full-check event from this failed
+  gate: loaded `true`, state `running`, issue count `18`, blocking issue count
+  `4`, advisory issue count `14`, execution failure count `0`,
+  `deployPass=false`, `periodicHealthy=false`, and H2
+  `runtime_self_check_gate_not_healthy`.
+- Return classification: `partially_completed`. No Public deploy was run.
+
+### 2026-06-30 - v600 Active Loading Preview Source Slice In Progress
+
+- Scope:
+  - Follow-up to the v599 production gate failure and the user report that
+    thread loads feel slow after the update.
+  - The v599 deploy fixed source/prod markers for DOM order, active cache
+    rejection, and failed optimistic retry cleanup, but browser-runtime still
+    observed sparse/empty thread detail DOM and pending-user disappearance
+    during thread switches.
+- Root-cause boundary:
+  - API-thread self-check stayed clean and client-events reported zero H2
+    interaction stalls, so this residual is a browser thread-open first-paint
+    transition problem.
+  - v599 stopped showing stale active cached detail, but the fallback path could
+    first paint an empty loading shell while waiting for the fresh detail API
+    response, causing slow-feeling thread entry and browser sparse/downgrade
+    samples.
+- Source changes in progress:
+  - `public/thread-detail-state.js` adds
+    `activeDetailLoadingPreviewThread()`, which builds a nonempty loading
+    preview from cached active detail: completed history and current user input
+    stay visible, while stale active assistant/plan/Usage/operation progress is
+    stripped.
+  - `public/app.js` uses that active preview when
+    `planThreadOpenCacheReuse()` returns `shouldUseActivePreview`, then still
+    fetches fresh recent detail.
+  - `adapters/browser-runtime-self-check-service.js` treats nonempty loading
+    previews as transitional for latest-turn downgrade and pending-message
+    disappearance checks, without relaxing empty/sparse settled samples.
+  - `CLIENT_BUILD_ID` and service-worker cache are bumped to
+    `codex-mobile-shell-v600`.
+- Validation:
+  - Syntax checks passed for `public/app.js`,
+    `public/thread-detail-state.js`,
+    `adapters/browser-runtime-self-check-service.js`, and `public/sw.js`.
+  - Focused tests passed:
+    `node --test test/thread-detail-state.test.js test/browser-runtime-self-check-service.test.js test/client-render-stability-guard.test.js`
+    (`66` tests).
+  - Related tests passed:
+    `node --test test/thread-detail-state.test.js test/browser-runtime-self-check-service.test.js test/conversation-render.test.js test/thread-detail-dom-patch.test.js test/client-render-stability-guard.test.js test/runtime-self-check-loop.test.js`
+    (`276` tests).
+  - `npm test -- --test-reporter=dot` passed.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - `codegraph sync && codegraph status` reported the index up to date.
+- Next:
+  - Run related/full source checks.
+  - Commit and delegate private deploy with reason
+    `codex-mobile-v600-active-loading-preview`.
+  - Production readback must include loading-speed evidence in addition to the
+    runtime gate: thread list/detail timings, browser self-check duration, and
+    absence of H1/H2 `browser_dom_sparse_after_nonempty`,
+    `browser_pending_user_message_disappeared`, and latest-turn downgrade codes.

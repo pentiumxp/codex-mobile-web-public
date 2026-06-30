@@ -5,6 +5,7 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const {
+  activeDetailLoadingPreviewThread,
   buildThreadDetailRenderEvidence,
   createThreadDetailStatePolicy,
   emptyDetailHistoryEvidenceForThread,
@@ -395,6 +396,7 @@ test("thread detail state plans open-thread cache reuse without accepting empty 
     },
   }), {
     shouldUseCachedCurrent: false,
+    shouldUseActivePreview: true,
     shouldReportEmptyCachedDetail: false,
     reason: "active-detail-cache-not-reusable",
   });
@@ -428,6 +430,44 @@ test("thread detail state plans open-thread cache reuse without accepting empty 
     shouldReportEmptyCachedDetail: false,
     reason: "current-thread-loading",
   });
+});
+
+test("thread detail state builds active loading preview without stale assistant progress", () => {
+  const source = {
+    id: "thread-1",
+    status: "running",
+    activeTurnId: "turn-active",
+    mobileDetailLoaded: true,
+    turns: [
+      {
+        id: "turn-completed",
+        status: "completed",
+        items: [{ id: "completed-assistant", type: "agentMessage", text: "done" }],
+      },
+      {
+        id: "turn-active",
+        status: "running",
+        items: [
+          { id: "active-user", type: "userMessage", content: [{ type: "text", text: "current request" }] },
+          { id: "old-assistant", type: "agentMessage", text: "old receipt" },
+          { id: "old-plan", type: "plan", text: "old plan" },
+          { id: "old-usage", type: "turnUsageSummary" },
+          { id: "old-command", type: "commandExecution", command: "npm test" },
+        ],
+      },
+    ],
+  };
+
+  const preview = activeDetailLoadingPreviewThread(source);
+
+  assert.ok(preview);
+  assert.equal(preview.mobileLoading, true);
+  assert.equal(preview.mobileActiveCachePreview, true);
+  assert.equal(preview.turns[0], source.turns[0]);
+  assert.equal(preview.turns[1].mobileActiveCachePreview, true);
+  assert.equal(preview.turns[1].mobileLoading, true);
+  assert.deepEqual(preview.turns[1].items.map((item) => item.id), ["active-user"]);
+  assert.notEqual(preview.turns[1].items[0], source.turns[1].items[0]);
 });
 
 test("thread detail state plans open-thread loading shell from summary without detail ownership", () => {

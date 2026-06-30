@@ -3295,6 +3295,45 @@ Required validation:
   private deploy/readback before considering the user-visible regressions
   closed.
 
+### 2026-06-30 Active Thread Loading Preview Follow-Up
+
+The v599 production deploy proved the ordering and failed-retry markers were
+present, but the deploy-mode browser gate still failed on
+`browser_dom_sparse_after_nonempty` and `browser_pending_user_message_disappeared`.
+The API child remained clean and client-event stalls were zero, so the residual
+was a browser first-paint state transition rather than server projection order
+or a main-thread stall.
+
+Root cause: v599 correctly stopped treating active cached detail as reusable
+completed-state detail, but the fallback path first painted an empty loading
+shell while waiting for `/api/threads/:id?mode=recent`. On slow active-thread
+detail reads or repeated browser self-check switches, that empty shell looked
+like a real content disappearance and made thread entry feel slow.
+
+Scope:
+
+- `public/thread-detail-state.js` builds an active loading preview from cached
+  active detail. Completed history and current user input remain visible, while
+  stale active assistant/plan/Usage/operation progress is stripped before fresh
+  detail replaces the preview.
+- `public/app.js` uses that preview for thread-open first paint when
+  `planThreadOpenCacheReuse()` returns `shouldUseActivePreview`.
+- `adapters/browser-runtime-self-check-service.js` treats nonempty loading
+  previews as transitional for latest-turn downgrade and pending-message
+  disappearance checks, while still blocking empty/sparse settled samples and
+  real completed/resting downgrades.
+- Static shell/cache identity advances to `codex-mobile-shell-v600`.
+
+Required validation:
+
+- focused active-preview and browser-runtime self-check tests;
+- runtime deploy gate after private deploy must be clean of H1/H2
+  `browser_dom_sparse_after_nonempty`,
+  `browser_pending_user_message_disappeared`, and latest-turn downgrade codes;
+- loading-speed readback should record thread-list/detail timings and browser
+  sample duration, because the user reported all threads feeling slow after the
+  update.
+
 ## Release Rule
 
 Follow the current release order:

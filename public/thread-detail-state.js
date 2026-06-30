@@ -93,6 +93,82 @@
     });
   }
 
+  function activeTurnIdentifier(value) {
+    if (!value) return "";
+    if (typeof value === "string") return value;
+    if (value && typeof value === "object") return String(value.id || value.turnId || value.activeTurnId || "");
+    return "";
+  }
+
+  function activeTurnIdsForThread(thread) {
+    const ids = new Set();
+    const direct = activeTurnIdentifier(thread && thread.activeTurnId);
+    const rollout = activeTurnIdentifier(thread && thread.mobileRolloutActiveTurn);
+    if (direct) ids.add(direct);
+    if (rollout) ids.add(rollout);
+    return ids;
+  }
+
+  function turnIsActivePreviewTarget(thread, turn, index, turns) {
+    if (!turn || typeof turn !== "object") return false;
+    const turnId = String(turn.id || "");
+    const activeIds = activeTurnIdsForThread(thread);
+    if (turnId && activeIds.has(turnId)) return true;
+    const kind = statusKind(turn.status);
+    if (kind && !turnIsSettled(turn)) return true;
+    const threadKind = statusKind(thread && thread.status).toLowerCase();
+    if (["active", "running", "in_progress", "in-progress", "pending", "processing", "status-error"].includes(threadKind)) {
+      return index === turns.length - 1;
+    }
+    return false;
+  }
+
+  function activePreviewSafeItem(item) {
+    if (!item || typeof item !== "object") return false;
+    const type = String(item.type || "").toLowerCase();
+    return type === "usermessage"
+      || type === "taskcard"
+      || type === "turndiagnostic"
+      || type === "contextcompaction";
+  }
+
+  function cloneActivePreviewItem(item) {
+    if (!item || typeof item !== "object") return item;
+    const clone = Object.assign({}, item);
+    if (Array.isArray(item.content)) {
+      clone.content = item.content.map((entry) => (
+        entry && typeof entry === "object" ? Object.assign({}, entry) : entry
+      ));
+    }
+    return clone;
+  }
+
+  function activeDetailLoadingPreviewThread(thread) {
+    if (!threadHasLoadedDetailState(thread) || !threadHasActiveDetailEvidence(thread)) return null;
+    const turns = Array.isArray(thread.turns) ? thread.turns : [];
+    if (!turns.length) return null;
+    let previewedActiveTurn = false;
+    const nextTurns = turns.map((turn, index) => {
+      if (!turn || typeof turn !== "object") return turn;
+      if (!turnIsActivePreviewTarget(thread, turn, index, turns)) return turn;
+      previewedActiveTurn = true;
+      return Object.assign({}, turn, {
+        items: Array.isArray(turn.items)
+          ? turn.items.filter(activePreviewSafeItem).map(cloneActivePreviewItem)
+          : [],
+        mobileActiveCachePreview: true,
+        mobileLoading: true,
+      });
+    });
+    if (!previewedActiveTurn) return null;
+    return Object.assign({}, thread, {
+      turns: nextTurns,
+      mobileLoading: true,
+      mobileLoadError: "",
+      mobileActiveCachePreview: true,
+    });
+  }
+
   function rolloutSizeBytesFromThread(thread) {
     const size = Number(thread && thread.rolloutSizeBytes);
     return Number.isFinite(size) && size > 0 ? size : 0;
@@ -280,6 +356,7 @@
     if (threadHasLoadedDetailState(thread) && threadHasActiveDetailEvidence(thread)) {
       return {
         shouldUseCachedCurrent: false,
+        shouldUseActivePreview: true,
         shouldReportEmptyCachedDetail: false,
         reason: "active-detail-cache-not-reusable",
       };
@@ -557,6 +634,7 @@
 
   return {
     buildThreadDetailRenderEvidence,
+    activeDetailLoadingPreviewThread,
     createThreadDetailStatePolicy,
     emptyDetailHistoryEvidenceForThread,
     hasNonemptyThreadDetailRenderEvidence,

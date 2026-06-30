@@ -720,6 +720,49 @@ test("browser runtime self-check catches latest turn item and message count down
   assert.equal(report.sampleSummary.maxLatestTurnAssistantMessages, 4);
 });
 
+test("browser runtime self-check does not treat loading previews as latest turn downgrades", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [
+      {
+        label: "rich-latest-turn",
+        threadHash: "thread-hash",
+        appVisible: true,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        latestTurnMatchesTarget: true,
+        latestTurnHash: "latest-turn-hash",
+        latestTurnItemCount: 8,
+        latestTurnUserMessageCount: 1,
+        latestTurnAssistantMessageCount: 4,
+        turns: 4,
+        items: 24,
+        delayMs: 1200,
+      },
+      {
+        label: "active-preview",
+        threadHash: "thread-hash",
+        appVisible: true,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        loadingNote: true,
+        latestTurnMatchesTarget: true,
+        latestTurnHash: "latest-turn-hash",
+        latestTurnItemCount: 2,
+        latestTurnUserMessageCount: 1,
+        latestTurnAssistantMessageCount: 0,
+        turns: 4,
+        items: 12,
+        delayMs: 1600,
+      },
+    ],
+  });
+
+  assert.equal(report.ok, true);
+  assert.ok(!report.issues.some((issue) => issue.code === "browser_latest_turn_item_count_downgraded"));
+  assert.ok(!report.issues.some((issue) => issue.code === "browser_latest_turn_assistant_message_downgraded"));
+});
+
 test("browser runtime self-check catches latest turn user messages below API expectation", () => {
   const report = service.analyzeBrowserRuntimeSamples({
     samples: [{
@@ -842,6 +885,43 @@ test("browser runtime self-check catches pending user message disappearing after
 
   assert.equal(report.ok, false);
   assert.ok(report.issues.some((issue) => issue.code === "browser_pending_user_message_disappeared"));
+  assert.equal(report.sampleSummary.maxClientSubmissions, 1);
+});
+
+test("browser runtime self-check does not treat loading previews as pending user disappearance", () => {
+  const report = service.analyzeBrowserRuntimeSamples({
+    minSettledDelayMs: 1000,
+    samples: [
+      {
+        label: "pending-visible",
+        threadHash: "thread-hash",
+        appVisible: true,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        turns: 4,
+        items: 20,
+        latestTurnUserMessageCount: 1,
+        clientSubmissionCount: 1,
+        delayMs: 1200,
+      },
+      {
+        label: "active-preview",
+        threadHash: "thread-hash",
+        appVisible: true,
+        targetConfirmed: true,
+        contentConfirmed: true,
+        loadingNote: true,
+        turns: 4,
+        items: 12,
+        latestTurnUserMessageCount: 0,
+        clientSubmissionCount: 0,
+        delayMs: 1600,
+      },
+    ],
+  });
+
+  assert.equal(report.ok, true);
+  assert.ok(!report.issues.some((issue) => issue.code === "browser_pending_user_message_disappeared"));
   assert.equal(report.sampleSummary.maxClientSubmissions, 1);
 });
 

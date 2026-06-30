@@ -546,7 +546,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v599";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v600";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -9687,8 +9687,13 @@ async function loadThread(threadId, options = {}) {
     currentThreadId: threadId,
     currentThread: cachedThread,
   });
+  const activePreviewThread = cachedDetailOpenPlan.shouldUseActivePreview
+    ? threadDetailStateApi.activeDetailLoadingPreviewThread(cachedThread)
+    : null;
   const loadingShellPlan = cachedDetailOpenPlan.shouldUseCachedCurrent
     ? { currentThreadId: threadId, thread: cachedThread, reason: "cached-detail-first-paint" }
+    : activePreviewThread
+      ? { currentThreadId: threadId, thread: activePreviewThread, reason: "active-detail-cache-preview" }
     : threadDetailStateApi.planThreadOpenLoadingShell({ threadId, summaryThread: summary });
   state.currentThreadId = loadingShellPlan.currentThreadId || threadId;
   state.startupThreadOpenPending = false;
@@ -9700,7 +9705,7 @@ async function loadThread(threadId, options = {}) {
     mobileLoading: true,
     mobileLoadError: "",
   };
-  if (cachedDetailOpenPlan.shouldUseCachedCurrent) {
+  if (cachedDetailOpenPlan.shouldUseCachedCurrent || activePreviewThread) {
     const cachedPreRenderPlan = threadDetailRenderPlanApi.planThreadDetailFirstPaintPreRenderEffects({
       threadId,
       hasEvents: Boolean(state.events),
@@ -9714,7 +9719,7 @@ async function loadThread(threadId, options = {}) {
     const cachedCurrentPostRenderPlan = threadDetailRenderPlanApi.planThreadDetailCachedCurrentPostRenderEffects({
       threadId,
       seq,
-      source: "cached-detail-first-paint",
+      source: activePreviewThread ? "active-detail-cache-preview" : "cached-detail-first-paint",
       replacedTilePane: replacedTilePaneForThreadListOpen,
       hasSideChat: state.threadSideChats.has(threadId),
     });
