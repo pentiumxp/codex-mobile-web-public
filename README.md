@@ -505,7 +505,7 @@ compaction。于是 raw `mcpToolCall.arguments` / `mcpToolCall.result` 和较长
 command payload 可以进入 `/api/threads/:id` 响应。
 
 修复方式是在 `thread-detail-read-orchestration-service` 和
-`thread-detail-active-window-overlay-policy-service` 的交界处注入
+`services/thread-detail/thread-detail-active-window-overlay-policy-service.js` 的交界处注入
 `compactActiveOverlayTurn`：只有 proof gate 已经证明 live overlay 可用时，仍然先按
 既有 `compactTurn()` 和 `MAX_LIVE_OPERATION_ITEMS` 规则压缩 overlay turn，再合并到
 detail 响应。`mcpToolCall` 和 `dynamicToolCall` 现在也被归类为 operation evidence，
@@ -4669,7 +4669,7 @@ Phase B 的活跃大线程读取风险已经从 proof gate 推进到真实 provi
   projection entry，不读磁盘、不返回完整 thread、不把 notification shell 提升为普通 detail
   projection。
 - 新增 `services/thread-detail/thread-detail-active-overlay-provider-service.js`，把 snapshot 转成
-  `thread-detail-active-window-overlay-policy-service.js` 所需的 bounded evidence：active turn、
+  `services/thread-detail/thread-detail-active-window-overlay-policy-service.js` 所需的 bounded evidence：active turn、
   operation/upload/assistant/receipt counts、coverage、v4 revision 和 timestamp。
 - `server.js` 在 `thread-detail-read-orchestration-service.js` 中注入该 provider。active/running
   线程只有在 projection window、live overlay snapshot、active turn id、coverage 和 assistant
@@ -5321,7 +5321,7 @@ diagnostic 规划分别已经在 `public/thread-detail-render-plan.js` 中，但
 - `test/thread-detail-active-read-policy-service.test.js` 覆盖 idle/recent 允许
   partial projection、active turn/status 禁止 partial、以及 active 状态压制 large
   bounded turns-list 的策略边界。
-- `thread-detail-active-window-overlay-policy-service` 新增 active-window overlay
+- `services/thread-detail/thread-detail-active-window-overlay-policy-service.js` 新增 active-window overlay
   资格判定：只有 active turn id、projection window、权威 overlay source、匹配 active
   turn、operation/upload/assistant/receipt 覆盖证据都完整时，才会返回
   `use-projection-overlay`；任何未知、stale 或不匹配都保持 `require-full-read`。

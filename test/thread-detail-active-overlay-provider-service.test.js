@@ -8,7 +8,7 @@ const {
 } = require("../services/thread-detail/thread-detail-active-overlay-provider-service");
 const {
   planActiveWindowOverlay,
-} = require("../adapters/thread-detail-active-window-overlay-policy-service");
+} = require("../services/thread-detail/thread-detail-active-window-overlay-policy-service");
 const {
   createThreadDetailProjectionV4Service,
 } = require("../adapters/thread-detail-projection-v4-service");

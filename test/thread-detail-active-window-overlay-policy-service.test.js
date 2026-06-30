@@ -11,7 +11,7 @@ const {
   orderItemsByDisplayTimestamp,
   planActiveWindowOverlay,
   summarizeActiveOverlayTurnEvidence,
-} = require("../adapters/thread-detail-active-window-overlay-policy-service");
+} = require("../services/thread-detail/thread-detail-active-window-overlay-policy-service");
 
 function projectionThread(overrides = {}) {
   return Object.assign({

@@ -5,7 +5,7 @@ const {
 } = require("../../adapters/thread-detail-active-read-policy-service");
 const {
   summarizeActiveOverlayTurnEvidence,
-} = require("../../adapters/thread-detail-active-window-overlay-policy-service");
+} = require("./thread-detail-active-window-overlay-policy-service");
 
 function text(value) {
   return String(value || "").trim();

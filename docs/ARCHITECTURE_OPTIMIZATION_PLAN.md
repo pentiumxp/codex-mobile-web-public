@@ -748,7 +748,7 @@ call app-server `thread/turns/list`.
   now owns that decision boundary, so any later active-turn overlay optimization
   has to prove itself against a pure policy surface rather than patching the
   orchestration path inline. The follow-up
-  `thread-detail-active-window-overlay-policy-service` defines that proof gate:
+  `services/thread-detail/thread-detail-active-window-overlay-policy-service.js` defines that proof gate:
   active projection overlay remains fail-closed unless the active turn id,
   projection window, authoritative overlay source, matched active turn, operation
   coverage, upload visibility, assistant delta freshness, and usage/diagnostic
@@ -3380,7 +3380,7 @@ unnecessary full-read step when evidence is already sufficient. If the initial
 recent `turns/list` response contains an active turn, read orchestration upgrades
 that window into a `turns-list-active-overlay-window` proof input and asks the
 server-owned active-overlay provider for live overlay evidence. Only a complete
-`thread-detail-active-window-overlay-policy-service` proof may return
+`services/thread-detail/thread-detail-active-window-overlay-policy-service.js` proof may return
 `projection-active-overlay`; missing, stale, mismatched, non-authoritative, or
 incomplete evidence still falls through to full `thread/read`.
 
@@ -3414,7 +3414,7 @@ Deployable scope:
   snapshots with bounded completeness metadata. Notification-shell snapshots,
   explicit partial snapshots, and snapshots without signature evidence are
   treated as partial.
-- `thread-detail-active-window-overlay-policy-service` requires complete active
+- `services/thread-detail/thread-detail-active-window-overlay-policy-service.js` requires complete active
   overlay evidence. A `projection-live` overlay must be `full`, `backfilled`, or
   `preserved`; partial live evidence fails closed with
   `active-overlay-turn-incomplete`.

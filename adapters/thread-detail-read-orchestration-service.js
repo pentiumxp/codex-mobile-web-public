@@ -9,7 +9,7 @@ const {
   mergeProjectionThreadWithActiveOverlay,
   planActiveWindowOverlay,
   summarizeActiveOverlayTurnEvidence,
-} = require("./thread-detail-active-window-overlay-policy-service");
+} = require("../services/thread-detail/thread-detail-active-window-overlay-policy-service");
 
 function defaultNow() {
   return Date.now();

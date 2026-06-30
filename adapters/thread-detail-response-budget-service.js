@@ -4,7 +4,7 @@ const { normalizeThreadVisibleProjection } = require("./thread-visible-item-norm
 const {
   itemDisplayTimestampMs,
   orderItemsByDisplayTimestamp,
-} = require("./thread-detail-active-window-overlay-policy-service");
+} = require("../services/thread-detail/thread-detail-active-window-overlay-policy-service");
 
 const DEFAULT_COMPLETED_OPERATION_ITEMS = 4;
 const DEFAULT_ACTIVE_OPERATION_ITEMS = 12;

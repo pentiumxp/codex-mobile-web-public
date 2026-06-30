@@ -12,7 +12,7 @@ const {
 } = require("./message-pending-echo-service");
 const {
   itemDisplayTimestampMs,
-} = require("./thread-detail-active-window-overlay-policy-service");
+} = require("../services/thread-detail/thread-detail-active-window-overlay-policy-service");
 
 const USER_VISIBLE_TIMESTAMP_TYPES = new Set([
   "agentMessage",
