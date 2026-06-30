@@ -2041,7 +2041,8 @@ Remaining target:
 ### 2026-06-30 Server Route Boundary Extraction Checkpoint
 
 This local checkpoint starts the large `server.js` split by moving two route
-ownership groups out of the entrypoint without changing public behavior:
+ownership groups and one fallback source-provider block out of the entrypoint
+without changing public behavior:
 
 - `adapters/thread-task-card-route-service.js` now owns task-card HTTP routes,
   task-card dynamic-tool schemas/response payloads, fallback guidance, visible
@@ -2051,21 +2052,30 @@ ownership groups out of the entrypoint without changing public behavior:
   new-message/existing-message, resume, auto-recover, and turn interrupt route
   behavior while `server.js` injects runtime settings, parsers, Codex transport,
   and mutation helpers.
+- `adapters/thread-list-fallback-source-service.js` now owns session-index title
+  hydration/persistence, rollout-session fallback summary recovery, rollout
+  active/completed/stale-context status inference, rollout stat metadata reuse,
+  and projectless session-index fallback rows.
 
-Local line-count evidence after the extraction: `server.js` is 12,165 lines,
+Local line-count evidence after the extraction: `server.js` is 11,637 lines,
 `thread-task-card-route-service.js` is 1,280 lines, and
-`thread-message-route-service.js` is 363 lines. This is a checkpoint, not the
-target state; `server.js` remains too large. The next high-yield backend split
-is the thread-list/session-index/rollout fallback provider block, because it
-still leaves fallback discovery, session-index hydration, rollout-tail status
-inference, and visibility filtering in the entrypoint.
+`thread-message-route-service.js` is 363 lines, and
+`thread-list-fallback-source-service.js` is 683 lines. This is a checkpoint,
+not the target state; `server.js` remains too large. The next high-yield backend
+split should target remaining thread-detail preparation/compaction/enrichment
+glue, because the fallback source provider is now out of the entrypoint while
+detail response assembly still keeps substantial rollout/user-input/Usage
+coordination in `server.js`.
 
 Validation boundary:
 
-- syntax checks for `server.js` and the two new adapters;
+- syntax checks for `server.js` and the new adapters;
 - focused route/protocol/task-card tests covering route delegation, dynamic
   tools, deploy-lane policy wiring, new-thread/message behavior, and app-server
   protocol integration;
+- focused thread-list visibility/fallback tests covering session-index reuse,
+  rollout status inference, local active overlay interaction, and fallback cache
+  source diagnostics;
 - `git diff --check` before commit.
 
 ### Phase 4: Browser And Visual Coverage

@@ -10,6 +10,7 @@ const continuationThreadServiceJs = fs.readFileSync(path.resolve(__dirname, ".."
 const codexAppServerClientServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "codex-app-server-client-service.js"), "utf8");
 const taskCardRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-task-card-route-service.js"), "utf8");
 const threadMessageRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-message-route-service.js"), "utf8");
+const threadListFallbackSourceServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-fallback-source-service.js"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 
@@ -406,7 +407,7 @@ test("continuation titles survive app-server rename gaps", () => {
   const titleBody = functionBody(continuationThreadServiceJs, "sourceTitleForContinuation");
   assert.match(titleBody, /requestedTitle, summary\.name, summary\.title, summary\.preview/, "source title should prefer the current visible title before app-server fallbacks");
 
-  const indexBody = functionBody(serverJs, "persistThreadTitleToSessionIndex");
+  const indexBody = functionBody(threadListFallbackSourceServiceJs, "persistThreadTitleToSessionIndex");
   assert.match(indexBody, /session_index\.jsonl/, "fallback title persistence should use Codex session index");
   assert.match(indexBody, /thread_name: name/, "session index entry should persist display title");
   assert.match(indexBody, /updated_at: timestamp/, "session index entry should include update timestamp");

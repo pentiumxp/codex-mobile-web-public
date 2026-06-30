@@ -19,6 +19,10 @@ const threadListSummaryServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "adapters", "thread-list-summary-service.js"),
   "utf8",
 );
+const threadListFallbackSourceServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "adapters", "thread-list-fallback-source-service.js"),
+  "utf8",
+);
 process.env.CODEX_MOBILE_SETTINGS_FILE = path.join(os.tmpdir(), `codex-mobile-thread-visibility-settings-${process.pid}.json`);
 try {
   fs.rmSync(process.env.CODEX_MOBILE_SETTINGS_FILE, { force: true });
@@ -1059,17 +1063,17 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(serverJs, /function readRolloutSessionFallback\(/);
   assert.match(serverJs, /function compareRecentRolloutDirents\(left, right\)/);
   assert.match(serverJs, /entries\.sort\(compareRecentRolloutDirents\)/);
-  assert.match(serverJs, /function readSessionIndexEntriesForFallback\(maxLines = 2000, options = \{\}\)/);
-  assert.match(serverJs, /const sourceContext = options\.sourceContext && typeof options\.sourceContext === "object"/);
-  assert.match(serverJs, /incrementBoundedDiagnosticCounter\(diagnostics, "sessionIndexReuseCount"\)/);
-  assert.match(serverJs, /function readRolloutSessionFallback\(limit = 80, filters = \{\}\) \{[\s\S]*readSessionIndexEntriesForFallback\(Math\.max\(rowLimit \* 2, 2000\), \{[\s\S]*diagnostics,[\s\S]*sourceContext: filters\.sourceContext,[\s\S]*\}\)/);
-  assert.match(serverJs, /function readSessionIndexFallback\(limit = 80, filters = \{\}\) \{[\s\S]*readSessionIndexEntriesForFallback\(1000, \{[\s\S]*diagnostics,[\s\S]*sourceContext: filters\.sourceContext,[\s\S]*\}\)/);
-  assert.match(serverJs, /readRolloutSessionFallbackThreadFromFile\(file, indexEntries\.get\(id\) \|\| \{ id \}, \{[\s\S]*includeStatus: false,[\s\S]*diagnostics,[\s\S]*\}\)/);
-  assert.match(serverJs, /filterFallbackThreads\(threads, Object\.assign\(\{\}, filters, \{ archivedIds \}\)\)[\s\S]*\.slice\(0, limit\)[\s\S]*\.map\(\(thread\) => attachRolloutFallbackStatus\(thread, \{ diagnostics \}\)\)/);
+  assert.match(threadListFallbackSourceServiceJs, /function readSessionIndexEntriesForFallback\(maxLines = 2000, options = \{\}\)/);
+  assert.match(threadListFallbackSourceServiceJs, /const sourceContext = options\.sourceContext && typeof options\.sourceContext === "object"/);
+  assert.match(threadListFallbackSourceServiceJs, /incrementBoundedDiagnosticCounter\(diagnostics, "sessionIndexReuseCount"\)/);
+  assert.match(threadListFallbackSourceServiceJs, /function readRolloutSessionFallback\(limit = 80, filters = \{\}\) \{[\s\S]*readSessionIndexEntriesForFallback\(Math\.max\(rowLimit \* 2, 2000\), \{[\s\S]*diagnostics,[\s\S]*sourceContext: filters\.sourceContext,[\s\S]*\}\)/);
+  assert.match(threadListFallbackSourceServiceJs, /function readSessionIndexFallback\(limit = 80, filters = \{\}\) \{[\s\S]*readSessionIndexEntriesForFallback\(1000, \{[\s\S]*diagnostics,[\s\S]*sourceContext: filters\.sourceContext,[\s\S]*\}\)/);
+  assert.match(threadListFallbackSourceServiceJs, /readRolloutSessionFallbackThreadFromFile\(file, indexEntries\.get\(id\) \|\| \{ id \}, \{[\s\S]*includeStatus: false,[\s\S]*diagnostics,[\s\S]*\}\)/);
+  assert.match(threadListFallbackSourceServiceJs, /filterFallbackThreads\(threads, Object\.assign\(\{\}, filters, \{ archivedIds \}\)\)[\s\S]*\.slice\(0, limit\)[\s\S]*\.map\(\(thread\) => attachRolloutFallbackStatus\(thread, \{ diagnostics \}\)\)/);
   assert.match(serverJs, /function filterFallbackThreads\(threads, filters = \{\}\) \{[\s\S]*const archivedIds = filters\.archivedIds[\s\S]*archivedSessionThreadIds\(\)/);
   assert.match(serverJs, /function filterFallbackThreads\(threads, filters = \{\}\) \{[\s\S]*shouldHideThreadListSummary\(thread, archivedIds\)/);
-  assert.match(serverJs, /function rolloutLatestTurnEvidence\(rolloutPath, stat = null, options = \{\}\) \{[\s\S]*const tail = typeof options\.tail === "string" \? options\.tail : readRolloutTail\(rolloutPath\)/);
-  assert.match(serverJs, /function inferRolloutFallbackStatus\(rolloutPath, stat = null, nowMs = Date\.now\(\), options = \{\}\) \{[\s\S]*counterPrefix: "rolloutStatusTail"[\s\S]*staleContextOnlyActiveEvidenceForRollout\(rolloutPath, \{ stat, nowMs, tail \}\)/);
+  assert.match(threadListFallbackSourceServiceJs, /function rolloutLatestTurnEvidence\(rolloutPath, stat = null, options = \{\}\) \{[\s\S]*const tail = typeof options\.tail === "string" \? options\.tail : readRolloutTail\(rolloutPath\)/);
+  assert.match(threadListFallbackSourceServiceJs, /function inferRolloutFallbackStatus\(rolloutPath, stat = null, nowMs = Date\.now\(\), options = \{\}\) \{[\s\S]*counterPrefix: "rolloutStatusTail"[\s\S]*staleContextOnlyActiveEvidenceForRollout\(rolloutPath, \{ stat, nowMs, tail \}\)/);
   assert.match(serverJs, /function readThreadListFallback\(/);
   assert.match(serverJs, /function logThreadList\(event, details = \{\}\)/);
   assert.match(serverJs, /const THREAD_LIST_FALLBACK_CACHE_TTL_MS[\s\S]*\|\| "0"/);
@@ -1178,9 +1182,9 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(serverJs, /fallbackRolloutStatusStatReadCount: Number\(diagnostics\.rolloutStatusStatReadCount \|\| 0\)/);
   assert.match(serverJs, /fallbackRolloutStatusStatReuseCount: Number\(diagnostics\.rolloutStatusStatReuseCount \|\| 0\)/);
   assert.match(serverJs, /fallbackRolloutStatusTailBytes: Number\(diagnostics\.rolloutStatusTailBytes \|\| 0\)/);
-  assert.match(serverJs, /const ROLLOUT_STAT_METADATA = Symbol\("codexMobileRolloutStat"\)/);
-  assert.match(serverJs, /return attachRolloutStatMetadata\(rowToFallbackThread\(\{/);
-  assert.match(serverJs, /rolloutStatMetadataForThread\(thread\)/);
+  assert.match(threadListFallbackSourceServiceJs, /const ROLLOUT_STAT_METADATA = Symbol\("codexMobileRolloutStat"\)/);
+  assert.match(threadListFallbackSourceServiceJs, /return attachRolloutStatMetadata\(rowToFallbackThread\(\{/);
+  assert.match(threadListFallbackSourceServiceJs, /rolloutStatMetadataForThread\(thread\)/);
   assert.match(serverJs, /fallbackSessionIndexReadCount: Number\(diagnostics\.sessionIndexReadCount \|\| 0\)/);
   assert.match(serverJs, /fallbackSessionIndexReuseCount: Number\(diagnostics\.sessionIndexReuseCount \|\| 0\)/);
   assert.match(routeBody, /const fallbackMode = String\(url\.searchParams\.get\("fallback"\) \|\| ""\)/);

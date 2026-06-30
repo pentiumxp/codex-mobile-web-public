@@ -9,6 +9,7 @@ const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"),
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+const threadListFallbackSourceServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-fallback-source-service.js"), "utf8");
 
 function appFunctionBody(name) {
   const patterns = [
@@ -89,10 +90,10 @@ test("archive route remembers ids in Mobile local archive index", () => {
 });
 
 test("projectless session-index fallback skips archived sessions", () => {
-  assert.match(serverJs, /function readSessionIndexFallback\(/);
-  const start = serverJs.indexOf("function readSessionIndexFallback(");
-  const end = serverJs.indexOf("\nfunction ", start + 1);
-  const body = serverJs.slice(start, end);
+  assert.match(threadListFallbackSourceServiceJs, /function readSessionIndexFallback\(/);
+  const start = threadListFallbackSourceServiceJs.indexOf("function readSessionIndexFallback(");
+  const end = threadListFallbackSourceServiceJs.indexOf("\n  function ", start + 1);
+  const body = threadListFallbackSourceServiceJs.slice(start, end);
   assert.match(body, /const archivedIds = filters\.archivedIds && typeof filters\.archivedIds\.has === "function"/);
   assert.match(body, /: archivedSessionThreadIds\(\);/);
   assert.match(body, /if \(!entry\.id \|\| !projectlessThreadIds\.has\(entry\.id\)\) continue;/);
