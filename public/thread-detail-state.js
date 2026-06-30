@@ -132,6 +132,66 @@
       || type === "contextcompaction";
   }
 
+  function previewUserMessageText(item) {
+    if (!item || item.type !== "userMessage") return "";
+    if (typeof item.text === "string") return item.text.trim();
+    if (typeof item.message === "string") return item.message.trim();
+    const content = Array.isArray(item.content) ? item.content : [];
+    return content.map((part) => {
+      if (typeof part === "string") return part;
+      if (!part || typeof part !== "object") return "";
+      if (typeof part.text === "string") return part.text;
+      if (typeof part.value === "string") return part.value;
+      if (typeof part.content === "string") return part.content;
+      return "";
+    }).join("").trim();
+  }
+
+  function previewUserMessageSubmissionIds(item) {
+    if (!item || item.type !== "userMessage") return [];
+    return [
+      item.clientSubmissionId,
+      item.submissionId,
+      item.mobileSubmissionId,
+      item.id && /^local-user-/.test(String(item.id)) ? String(item.id).replace(/^local-user-/, "") : "",
+    ].map((value) => String(value || "").trim()).filter(Boolean);
+  }
+
+  function previewUserMessageHasSubmissionId(item, submissionId) {
+    if (!submissionId || !item || item.type !== "userMessage") return false;
+    return previewUserMessageSubmissionIds(item).includes(submissionId);
+  }
+
+  function isPreviewOptimisticUserMessage(item) {
+    if (!item || item.type !== "userMessage") return false;
+    return Boolean(item.mobilePendingSubmission
+      || item.mobileSendError
+      || /^local-user-/.test(String(item.id || "")));
+  }
+
+  function previewDurableUserMessageMatchesOptimistic(durableItem, optimisticItem) {
+    if (!durableItem || !optimisticItem) return false;
+    if (durableItem.type !== "userMessage" || optimisticItem.type !== "userMessage") return false;
+    if (isPreviewOptimisticUserMessage(durableItem) || !isPreviewOptimisticUserMessage(optimisticItem)) return false;
+    const submissionIds = previewUserMessageSubmissionIds(optimisticItem);
+    if (submissionIds.some((submissionId) => previewUserMessageHasSubmissionId(durableItem, submissionId))) return true;
+    const durableText = previewUserMessageText(durableItem);
+    const optimisticText = previewUserMessageText(optimisticItem);
+    return Boolean(durableText && optimisticText && durableText === optimisticText);
+  }
+
+  function threadHasDurableUserMessageMatchingPreviewEcho(thread, optimisticItem) {
+    if (!thread || !Array.isArray(thread.turns) || !isPreviewOptimisticUserMessage(optimisticItem)) return false;
+    return thread.turns.some((turn) => (Array.isArray(turn && turn.items) ? turn.items : [])
+      .some((candidate) => previewDurableUserMessageMatchesOptimistic(candidate, optimisticItem)));
+  }
+
+  function activePreviewItemAllowed(thread, item) {
+    if (!activePreviewSafeItem(item)) return false;
+    if (item && item.type === "userMessage" && threadHasDurableUserMessageMatchingPreviewEcho(thread, item)) return false;
+    return true;
+  }
+
   function cloneActivePreviewItem(item) {
     if (!item || typeof item !== "object") return item;
     const clone = Object.assign({}, item);
@@ -154,7 +214,7 @@
       previewedActiveTurn = true;
       return Object.assign({}, turn, {
         items: Array.isArray(turn.items)
-          ? turn.items.filter(activePreviewSafeItem).map(cloneActivePreviewItem)
+          ? turn.items.filter((item) => activePreviewItemAllowed(thread, item)).map(cloneActivePreviewItem)
           : [],
         mobileActiveCachePreview: true,
         mobileLoading: true,

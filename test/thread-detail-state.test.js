@@ -501,6 +501,61 @@ test("thread detail state builds active loading preview without stale assistant 
   assert.notEqual(preview.turns[1].items[0], source.turns[1].items[0]);
 });
 
+test("thread detail state drops active preview optimistic user echoes matched by durable input", () => {
+  const source = {
+    id: "thread-1",
+    status: "running",
+    activeTurnId: "turn-active",
+    mobileDetailLoaded: true,
+    turns: [
+      {
+        id: "turn-completed",
+        status: "completed",
+        items: [
+          {
+            id: "durable-user",
+            type: "userMessage",
+            clientSubmissionId: "sub-1",
+            content: [{ type: "text", text: "already sent" }],
+          },
+          { id: "completed-assistant", type: "agentMessage", text: "done" },
+        ],
+      },
+      {
+        id: "turn-active",
+        status: "running",
+        items: [
+          {
+            id: "local-user-sub-1",
+            type: "userMessage",
+            clientSubmissionId: "sub-1",
+            mobilePendingSubmission: true,
+            content: [{ type: "text", text: "already sent" }],
+          },
+          {
+            id: "local-user-late",
+            type: "userMessage",
+            mobileSendError: { message: "failed" },
+            content: [{ type: "text", text: "already sent" }],
+          },
+          {
+            id: "local-user-new",
+            type: "userMessage",
+            mobilePendingSubmission: true,
+            content: [{ type: "text", text: "new pending" }],
+          },
+          { id: "active-task", type: "taskCard" },
+        ],
+      },
+    ],
+  };
+
+  const preview = activeDetailLoadingPreviewThread(source);
+
+  assert.ok(preview);
+  assert.deepEqual(preview.turns[1].items.map((item) => item.id), ["local-user-new", "active-task"]);
+});
+
 test("thread detail state plans open-thread loading shell from summary without detail ownership", () => {
   const plan = planThreadOpenLoadingShell({
     threadId: "thread-1",
