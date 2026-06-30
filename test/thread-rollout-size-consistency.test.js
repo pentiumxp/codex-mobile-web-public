@@ -5,7 +5,8 @@ const { test } = require("node:test");
 
 const {
   createThreadDetailResponsePreparationService,
-} = require("../adapters/thread-detail-response-preparation-service");
+} = require("../services/thread-detail/thread-detail-response-preparation-service");
+const responsePreparationAdapter = require("../adapters/thread-detail-response-preparation-service");
 const {
   createThreadSummaryStateService,
 } = require("../adapters/thread-summary-state-service");
@@ -60,4 +61,11 @@ test("thread detail rollout size prefers current file stat over stale thread fie
     id: "thread-2",
     rolloutSizeBytes: 9_102_421,
   }), 9_102_421);
+});
+
+test("thread detail response preparation adapter exports the canonical service", () => {
+  assert.equal(
+    responsePreparationAdapter.createThreadDetailResponsePreparationService,
+    createThreadDetailResponsePreparationService,
+  );
 });

@@ -2064,7 +2064,7 @@ public behavior:
   fallback-row reads, local active overlays, stale/live/rest status
   classification, display-summary merge semantics, state DB runtime metadata
   merge, and detail-read-to-thread-list fallback-cache synchronization.
-- `adapters/thread-detail-response-preparation-service.js` now owns
+- `services/thread-detail/thread-detail-response-preparation-service.js` now owns
   turns-list/raw/full/fallback read-result shaping, rollout Usage decoration,
   rollout completion/user-input/active-assistant/final-receipt preparation
   order, task-card/pending-request detail decoration, response-budget compaction

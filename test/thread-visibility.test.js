@@ -30,7 +30,7 @@ const threadDetailRouteServiceJs = fs.readFileSync(
   "utf8",
 );
 const threadDetailResponsePreparationServiceJs = fs.readFileSync(
-  path.resolve(__dirname, "..", "adapters", "thread-detail-response-preparation-service.js"),
+  path.resolve(__dirname, "..", "services", "thread-detail", "thread-detail-response-preparation-service.js"),
   "utf8",
 );
 const threadListSummaryServiceJs = fs.readFileSync(
