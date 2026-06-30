@@ -96,6 +96,32 @@ test("exact targetThreadId wins over same-workspace canonical cwd routing", () =
   );
 });
 
+test("ambiguous exact titles fail closed instead of selecting the first visible thread", () => {
+  const cwd = "/tmp/codex-mobile-routing/shared";
+  const sourceThreadId = "10000000-0000-4000-8000-000000000001";
+  const firstThreadId = "10000000-0000-4000-8000-000000000002";
+  const secondThreadId = "10000000-0000-4000-8000-000000000003";
+  const service = fakeRoutingService({
+    visibleThreads: [
+      { id: firstThreadId, name: "codex mobile 06-30", cwd, updatedAt: 100 },
+      { id: secondThreadId, name: "codex mobile 06-30", cwd, updatedAt: 200 },
+    ],
+  });
+
+  assert.equal(service.resolveTargetReference(firstThreadId, sourceThreadId), firstThreadId);
+  assert.throws(
+    () => service.resolveTargetReference("codex mobile 06-30", sourceThreadId),
+    (err) => err
+      && err.code === "target_thread_title_ambiguous"
+      && err.statusCode === 409
+      && err.details
+      && err.details.matchCount === 2
+      && Array.isArray(err.details.matchedThreadIds)
+      && err.details.matchedThreadIds.includes(firstThreadId)
+      && err.details.matchedThreadIds.includes(secondThreadId),
+  );
+});
+
 test("workspace cwd canonical routing prefers live implementation thread over recently updated completed threads", () => {
   const cwd = "/tmp/codex-mobile-routing/shared";
   const sourceThreadId = "10000000-0000-4000-8000-000000000001";

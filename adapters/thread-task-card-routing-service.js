@@ -261,16 +261,39 @@ function createThreadTaskCardRoutingService(deps = {}) {
     const rawPath = normalizePath(raw);
     const byCwd = canonicalTargetForCwd(rawPath, visibleThreads);
     if (byCwd && String(byCwd.id || "") !== String(sourceThreadId || "")) return String(byCwd.id || "");
+    const idMatches = [];
+    const titleMatches = [];
     for (const thread of visibleThreads) {
       if (!thread || String(thread.id || "") === String(sourceThreadId || "")) continue;
       const id = String(thread.id || "").trim();
       const title = displayTitle(thread);
-      if (id.toLowerCase() === lowered || String(title || "").trim().toLowerCase() === lowered) {
-        return assertTargetDeliverable(thread, {
+      if (id.toLowerCase() === lowered) idMatches.push(thread);
+      if (String(title || "").trim().toLowerCase() === lowered) titleMatches.push(thread);
+    }
+    if (idMatches.length) {
+      return assertTargetDeliverable(idMatches[0], {
+        reference: raw,
+        referenceKind: entry.kind || "thread",
+      }, options);
+    }
+    if (titleMatches.length > 1) {
+      throw targetError(
+        "target_thread_title_ambiguous",
+        "Target thread title matched multiple visible threads. Use targetThreadId for exact routing.",
+        {
           reference: raw,
           referenceKind: entry.kind || "thread",
-        }, options);
-      }
+          matchCount: titleMatches.length,
+          matchedThreadIds: titleMatches.map((thread) => String(thread && thread.id || "")).filter(Boolean).slice(0, 12),
+        },
+        409,
+      );
+    }
+    if (titleMatches.length === 1) {
+      return assertTargetDeliverable(titleMatches[0], {
+        reference: raw,
+        referenceKind: entry.kind || "thread",
+      }, options);
     }
     throw targetError(
       "target_thread_not_visible",

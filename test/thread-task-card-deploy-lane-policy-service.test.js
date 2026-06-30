@@ -8,6 +8,7 @@ const {
   HOME_AI_DEPLOY_LANE_TITLE,
   deployLaneTitleForPlugin,
   findHomeAiDeployLaneThread,
+  hasExplicitThreadTarget,
   isRoutinePluginDeploymentRequest,
   normalizeHomeAiDeployLaneSummary,
   planHomeAiDeployLaneRouting,
@@ -209,6 +210,65 @@ test("Movie deploy-routing repair card is not treated as a routine plugin deploy
 
   assert.equal(plan.action, "allow");
   assert.equal(plan.reason, "not_routine_plugin_deployment");
+});
+
+test("explicit Music permission repair target is not overridden by deploy lane text", () => {
+  const codexImplementation = thread("codex-impl", "codex mobile 06-30", pluginCwd, {
+    status: { type: "active" },
+    updatedAt: 500,
+  });
+  const codexDeployLane = normalizeHomeAiDeployLaneSummary(thread("deploy-codex", "Codex Mobile Deploy Lane", homeAiCwd, {
+    updatedAt: 20,
+  }));
+  const body = {
+    targetThreadId: "codex-impl",
+    title: "Repair workspace read permission for Music continuation",
+    summary: "Fix Codex Mobile Web managed permission profile so Music continuations can read existing source files.",
+    body: [
+      "Correct routing target: codex mobile 06-30 / codex-impl.",
+      "This is not the deploy lane.",
+      "Music saw Operation not permitted while reading source and needs the implementation thread to repair workspace read permission.",
+    ].join("\n"),
+  };
+
+  const plan = planHomeAiDeployLaneRouting({
+    body,
+    sourceThread: thread("music-source", "Music 06-23", "/Users/xuxin/Documents/Music"),
+    targetThreads: [codexImplementation],
+    visibleThreads: [codexImplementation, codexDeployLane],
+  });
+
+  assert.equal(hasExplicitThreadTarget(body), true);
+  assert.equal(isRoutinePluginDeploymentRequest(body, thread("music-source", "Music 06-23", "/Users/xuxin/Documents/Music")), false);
+  assert.equal(plan.action, "allow");
+  assert.equal(plan.reason, "explicit_non_deploy_target");
+});
+
+test("structured plugin_deployment still overrides ordinary explicit targets", () => {
+  const codexImplementation = thread("codex-impl", "codex mobile 06-30", pluginCwd, {
+    status: { type: "active" },
+    updatedAt: 500,
+  });
+  const codexDeployLane = normalizeHomeAiDeployLaneSummary(thread("deploy-codex", "Codex Mobile Deploy Lane", homeAiCwd, {
+    updatedAt: 20,
+  }));
+
+  const plan = planHomeAiDeployLaneRouting({
+    body: {
+      cardKind: "plugin_deployment",
+      pluginId: "codex-mobile-web",
+      targetThreadId: "codex-impl",
+      title: "Deploy Codex Mobile plugin",
+      body: "Routine plugin deployment and bounded readback.",
+    },
+    sourceThread: thread("source-1", "codex mobile", pluginCwd),
+    targetThreads: [codexImplementation],
+    visibleThreads: [codexImplementation, codexDeployLane],
+  });
+
+  assert.equal(plan.action, "retarget");
+  assert.equal(plan.reason, "routine_plugin_deployment_uses_deploy_lane");
+  assert.deepEqual(plan.targetThreadIds, ["deploy-codex"]);
 });
 
 test("routine plugin deploy card fails closed when Home AI Deploy lane is absent", () => {
