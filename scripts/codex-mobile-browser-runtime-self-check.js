@@ -17,6 +17,55 @@ const {
 const DEFAULT_SERVER = "http://127.0.0.1:8787";
 const DEFAULT_CHROME_PATH = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const DEFAULT_VIEWPORT = "390x844";
+const activeChromeCleanups = new Set();
+let chromeCleanupHandlersInstalled = false;
+
+function cleanupChromeChild(child, userDataDir, signal = "SIGTERM") {
+  if (child && child.pid) {
+    try {
+      process.kill(-child.pid, signal);
+    } catch (_) {
+      try {
+        child.kill(signal);
+      } catch (_) {}
+    }
+  }
+  if (userDataDir) {
+    try {
+      fs.rmSync(userDataDir, { recursive: true, force: true });
+    } catch (_) {}
+  }
+}
+
+function installChromeCleanupHandlers() {
+  if (chromeCleanupHandlersInstalled) return;
+  chromeCleanupHandlersInstalled = true;
+  const cleanupAll = (signal = "SIGTERM") => {
+    for (const cleanup of Array.from(activeChromeCleanups)) {
+      try {
+        cleanup(signal);
+      } catch (_) {}
+    }
+  };
+  process.once("exit", () => cleanupAll("SIGKILL"));
+  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+    process.once(signal, () => {
+      cleanupAll("SIGTERM");
+      setTimeout(() => {
+        cleanupAll("SIGKILL");
+        process.exit(128 + (signal === "SIGINT" ? 2 : signal === "SIGTERM" ? 15 : 1));
+      }, 250).unref();
+    });
+  }
+  process.once("uncaughtException", (err) => {
+    cleanupAll("SIGKILL");
+    throw err;
+  });
+  process.once("unhandledRejection", (err) => {
+    cleanupAll("SIGKILL");
+    throw err;
+  });
+}
 
 function usage() {
   return [
@@ -562,6 +611,7 @@ async function waitForJson(url, timeoutMs) {
 
 async function launchChrome(options) {
   if (!fs.existsSync(options.chromePath)) throw new Error("chrome_not_found");
+  installChromeCleanupHandlers();
   const port = await getFreePort();
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-browser-self-check-"));
   const args = [
@@ -578,17 +628,15 @@ async function launchChrome(options) {
   args.push("about:blank");
   const child = childProcess.spawn(options.chromePath, args, {
     stdio: ["ignore", "ignore", "ignore"],
-    detached: false,
+    detached: true,
   });
+  const cleanup = (signal = "SIGTERM") => cleanupChromeChild(child, userDataDir, signal);
+  activeChromeCleanups.add(cleanup);
   const close = async () => {
-    try {
-      if (!child.killed) child.kill("SIGTERM");
-    } catch (_) {}
+    cleanup("SIGTERM");
     await sleep(250);
-    try {
-      if (!child.killed) child.kill("SIGKILL");
-    } catch (_) {}
-    fs.rmSync(userDataDir, { recursive: true, force: true });
+    cleanup("SIGKILL");
+    activeChromeCleanups.delete(cleanup);
   };
   const listUrl = `http://127.0.0.1:${port}/json/list`;
   const pages = await waitForJson(listUrl, options.timeoutMs);

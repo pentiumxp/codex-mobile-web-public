@@ -1,11 +1,13 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 
 const service = require(path.join(__dirname, "..", "adapters", "browser-runtime-self-check-service.js"));
 const script = require(path.join(__dirname, "..", "scripts", "codex-mobile-browser-runtime-self-check.js"));
+const scriptSource = fs.readFileSync(path.join(__dirname, "..", "scripts", "codex-mobile-browser-runtime-self-check.js"), "utf8");
 
 test("browser runtime self-check catches sparse DOM after confirmed nonempty target content", () => {
   const report = service.analyzeBrowserRuntimeSamples({
@@ -1305,4 +1307,16 @@ test("browser runtime self-check route and console classifiers are bounded", () 
   assert.equal(script.routeKind("http://127.0.0.1:8787/private/path?cookie=value"), "other");
   assert.equal(script.safeConsoleText("Failed to load resource: the server responded with a status of 500"), "resource_load_failed");
   assert.equal(script.safeConsoleText("Uncaught TypeError: private value"), "uncaught");
+});
+
+test("browser runtime self-check launches Chrome in a cleanup-owned process group", () => {
+  assert.match(scriptSource, /const activeChromeCleanups = new Set\(\)/);
+  assert.match(scriptSource, /function cleanupChromeChild\(/);
+  assert.match(scriptSource, /process\.kill\(-child\.pid, signal\)/);
+  assert.match(scriptSource, /function installChromeCleanupHandlers\(/);
+  assert.match(scriptSource, /process\.once\("exit"/);
+  assert.match(scriptSource, /process\.once\(signal/);
+  assert.match(scriptSource, /detached:\s*true/);
+  assert.match(scriptSource, /activeChromeCleanups\.add\(cleanup\)/);
+  assert.match(scriptSource, /activeChromeCleanups\.delete\(cleanup\)/);
 });
