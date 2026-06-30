@@ -1294,6 +1294,48 @@ test("visible item dom patch inserts before the first child when no previous nod
   assert.deepEqual(article.nodes.map((node) => node.key), ["a", "b"]);
 });
 
+test("visible item dom patch reorders reused nodes to match the next visible item order", () => {
+  const article = createArticle([createNode("assistant-0839"), createNode("user-0834")]);
+  const result = applyFixture(article, {
+    canPatch: true,
+    operations: [
+      { type: "reuse", key: "user-0834", nextEntry: { key: "user-0834" } },
+      { type: "reuse", key: "assistant-0839", nextEntry: { key: "assistant-0839" } },
+    ],
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.reused, 2);
+  assert.deepEqual(article.nodes.map((node) => node.key), ["user-0834", "assistant-0839"]);
+});
+
+test("visible item dom patch validates reordered DOM item order after reuse", () => {
+  const article = createDomElement("article", {}, [
+    createDomElement("section", { "data-render-key": "assistant-0839", "data-item": "assistant" }),
+    createDomElement("section", { "data-render-key": "user-0834", "data-item": "user" }),
+  ]);
+  const result = domPatch.applyVisibleItemRefreshDomPatch({
+    article,
+    patchPlan: {
+      canPatch: true,
+      operations: [
+        { type: "reuse", key: "user-0834", nextEntry: { key: "user-0834" } },
+        { type: "reuse", key: "assistant-0839", nextEntry: { key: "assistant-0839" } },
+      ],
+    },
+    findElementByKey: (key) => article.childNodes
+      .find((node) => node.getAttribute && node.getAttribute("data-render-key") === key) || null,
+    renderElement: (entry) => createDomElement("section", { "data-render-key": entry.key, "data-item": entry.key }),
+    patchElement: (node) => node,
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(
+    article.childNodes.map((node) => node.getAttribute("data-render-key")),
+    ["user-0834", "assistant-0839"],
+  );
+});
+
 test("visible item dom patch removes stale visible item nodes after filtering", () => {
   const stalePending = createDomElement("section", {
     "data-render-key": "item|thread|turn|local-user-submit",

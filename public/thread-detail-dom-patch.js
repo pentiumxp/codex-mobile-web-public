@@ -73,6 +73,31 @@
     return renderKeyForNode(node);
   }
 
+  function visibleItemRenderKeysForArticle(article) {
+    return Array.from(article && article.childNodes || [])
+      .map(visibleItemRenderKeyForNode)
+      .filter(Boolean);
+  }
+
+  function visibleItemOrderMatches(article, expectedKeys) {
+    const expected = normalizedStringList(expectedKeys);
+    const rendered = visibleItemRenderKeysForArticle(article);
+    if (!expected.length || !rendered.length) return true;
+    if (expected.length !== rendered.length) return false;
+    for (let index = 0; index < expected.length; index += 1) {
+      if (expected[index] !== rendered[index]) return false;
+    }
+    return true;
+  }
+
+  function placeVisibleItemNode(article, node, lastPatchedNode) {
+    if (!article || typeof article.insertBefore !== "function" || !node) return node;
+    const anchor = lastPatchedNode ? lastPatchedNode.nextSibling : article.firstChild || null;
+    if (node === anchor) return node;
+    article.insertBefore(node, anchor || null);
+    return node;
+  }
+
   function canPatchNode(target, source) {
     if (!target || !source || target.nodeType !== source.nodeType) return false;
     if (target.nodeType !== ELEMENT_NODE) return true;
@@ -891,20 +916,20 @@
         const existingNode = findElementByKey(operation.key, nextEntry);
         if (!existingNode) return result(false, "missing-existing-node", counts);
         if (operation.type === "reuse") {
-          lastPatchedNode = existingNode;
+          lastPatchedNode = placeVisibleItemNode(article, existingNode, lastPatchedNode);
           counts.reused += 1;
           continue;
         }
         const patchedNode = patchElement(existingNode, nextEntry);
         if (!patchedNode) return result(false, "patch-existing-node-failed", counts);
-        lastPatchedNode = patchedNode;
+        lastPatchedNode = placeVisibleItemNode(article, patchedNode, lastPatchedNode);
         counts.patched += 1;
         continue;
       }
       if (operation.type !== "insert") return result(false, "unknown-operation", counts);
       const source = renderElement(nextEntry);
       if (!source) return result(false, "render-insert-node-failed", counts);
-      const anchor = lastPatchedNode ? lastPatchedNode.nextSibling : article.firstChild;
+      const anchor = lastPatchedNode ? lastPatchedNode.nextSibling : article.firstChild || null;
       article.insertBefore(source, anchor || null);
       lastPatchedNode = source;
       counts.inserted += 1;
@@ -917,6 +942,9 @@
       const key = visibleItemRenderKeyForNode(child);
       if (!key || nextKeys.has(key)) continue;
       if (typeof child.remove === "function") child.remove();
+    }
+    if (!visibleItemOrderMatches(article, Array.from(nextKeys))) {
+      return result(false, "post-apply-visible-item-order-mismatch", counts);
     }
     return result(true, "applied", counts);
   }

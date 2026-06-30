@@ -63,7 +63,34 @@
 
   function threadHasReusableLoadedDetailState(thread) {
     if (!threadHasLoadedDetailState(thread)) return false;
+    if (threadHasActiveDetailEvidence(thread)) return false;
     return Array.isArray(thread.turns) && thread.turns.length > 0;
+  }
+
+  function statusKind(value) {
+    if (!value) return "";
+    if (typeof value === "string") return value;
+    if (value && typeof value === "object") return String(value.type || value.status || value.kind || "");
+    return "";
+  }
+
+  function turnIsSettled(turn) {
+    const kind = statusKind(turn && turn.status).toLowerCase();
+    return kind === "completed" || kind === "failed" || kind === "cancelled" || kind === "canceled";
+  }
+
+  function threadHasActiveDetailEvidence(thread) {
+    if (!thread || typeof thread !== "object") return false;
+    if (thread.activeTurnId || thread.mobileRolloutActiveTurn) return true;
+    const kind = statusKind(thread.status).toLowerCase();
+    if (["active", "running", "in_progress", "in-progress", "pending", "processing", "status-error"].includes(kind)) {
+      return true;
+    }
+    if (!Array.isArray(thread.turns)) return false;
+    return thread.turns.some((turn) => {
+      const kind = statusKind(turn && turn.status);
+      return Boolean(kind && !turnIsSettled(turn));
+    });
   }
 
   function rolloutSizeBytesFromThread(thread) {
@@ -248,6 +275,13 @@
         shouldUseCachedCurrent: true,
         shouldReportEmptyCachedDetail: false,
         reason: "reusable-loaded-detail",
+      };
+    }
+    if (threadHasLoadedDetailState(thread) && threadHasActiveDetailEvidence(thread)) {
+      return {
+        shouldUseCachedCurrent: false,
+        shouldReportEmptyCachedDetail: false,
+        reason: "active-detail-cache-not-reusable",
       };
     }
     if (threadHasLoadedDetailState(thread) && Array.isArray(thread.turns) && thread.turns.length === 0) {

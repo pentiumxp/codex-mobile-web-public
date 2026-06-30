@@ -3260,6 +3260,41 @@ Required validation:
 - production readback comparing repeated `/api/public-config` wall time before
   and after deploy, plus Phase-B/runtime self-check gate for regression.
 
+### 2026-06-30 Active Thread Frontend Consistency Hotfix
+
+User-reported regressions exposed three browser-owned consistency failures while
+the server/API projection remained authoritative:
+
+- visible items could remain in an older DOM order after a local patch reused
+  existing nodes, even when `/api/threads/:id?mode=recent&budget=full` returned
+  the correct order;
+- entering an active thread could first paint a previously cached in-progress
+  receipt for several seconds before the fresh detail response arrived;
+- a sent user message could be durable and visible while the local failed
+  optimistic Composer echo still showed a retry state.
+
+Scope:
+
+- `public/thread-detail-dom-patch.js` now moves reused/patched visible-item DOM
+  nodes into the next projection order and validates post-apply item order.
+- `public/thread-detail-state.js` rejects active/running loaded detail as
+  reusable `cached-current` first-paint state, returning
+  `active-detail-cache-not-reusable` so active threads use a loading/fresh detail
+  path instead of stale exit-state detail.
+- `public/app.js` hides failed optimistic user-message echoes once a durable
+  matching user message is visible and clears `mobileSendError` when the durable
+  row wins a same-message merge.
+- Static shell/cache identity advances to `codex-mobile-shell-v599`.
+
+Required validation:
+
+- focused DOM patch, thread-detail state, conversation render, and static build
+  guard tests;
+- broader render/self-check tests covering browser runtime expectations;
+- full local checks, `git diff --check`, CodeGraph sync/status, then central
+  private deploy/readback before considering the user-visible regressions
+  closed.
+
 ## Release Rule
 
 Follow the current release order:

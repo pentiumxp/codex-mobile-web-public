@@ -34190,6 +34190,59 @@ The previous full handoff was archived and should be opened only when old proven
   check names `api-thread`, `browser-runtime`, and `client-events`.
 - Return classification: `completed`. No Public deploy was run.
 
+### 2026-06-30 - v599 Active Thread Frontend Consistency Source Slice Ready
+
+- Scope:
+  - Local source hotfix for three user-reported Codex Mobile browser regressions:
+    visible messages out of order while API order is correct, active thread open
+    first showing an old in-progress receipt, and successful sends still showing
+    a failed/retry optimistic echo.
+  - Static shell/cache identity is bumped to `codex-mobile-shell-v599` in
+    `public/app.js` and `public/sw.js`.
+- Root-cause boundary:
+  - DOM order: server/API detail readback for the reported Movie thread kept the
+    correct user-before-assistant item order; the failing layer was local DOM
+    visible-item patch reuse that did not move existing nodes into the next
+    projection order.
+  - Stale first paint: active/running loaded detail was still considered
+    reusable `cached-current` state on thread open, so the browser could paint
+    stale exit-state detail before the fresh detail response.
+  - False retry: failed local optimistic `userMessage` rows remained visible even
+    after a durable matching user message was present, and same-message merge
+    preserved `mobileSendError` when the durable row should win.
+- Source changes:
+  - `public/thread-detail-dom-patch.js` now moves reused/patched visible-item DOM
+    nodes into next-entry order and validates post-apply item render-key order,
+    returning bounded `post-apply-visible-item-order-mismatch` if DOM authority
+    is still wrong.
+  - `public/thread-detail-state.js` rejects active/running loaded detail for
+    thread-open cache reuse with `active-detail-cache-not-reusable`.
+  - `public/app.js` hides failed optimistic echoes once a durable matching user
+    message is visible and clears `mobileSendError` / `mobilePendingSubmission`
+    when a durable row wins `mergeLikelySameUserMessage`.
+  - Updated focused tests and docs in `docs/MODULES.md`,
+    `docs/TROUBLESHOOTING.md`, and `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Validation:
+  - Syntax checks passed for `public/app.js`,
+    `public/thread-detail-dom-patch.js`, `public/thread-detail-state.js`, and
+    `public/sw.js`.
+  - Focused/related tests passed:
+    `node --test test/thread-detail-dom-patch.test.js test/thread-detail-state.test.js test/conversation-render.test.js test/client-render-stability-guard.test.js`
+    (`227` tests).
+  - Browser/runtime related tests passed:
+    `node --test test/browser-runtime-self-check-service.test.js test/thread-detail-self-check-service.test.js test/thread-detail-v4-merge-state.test.js test/thread-detail-patch-plan.test.js`
+    (`82` tests).
+  - `npm test -- --test-reporter=dot` passed.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - `codegraph sync && codegraph status` reported the index up to date.
+- Deployment:
+  - Not deployed yet from this source thread.
+  - Recommended deploy reason:
+    `codex-mobile-v599-active-thread-frontend-consistency`.
+  - Public deploy is not requested.
+
 ### 2026-06-30 - Post Active History Retry Payload Observation
 
 - After the active history-window retry deploy, a metadata-only authenticated
@@ -34269,3 +34322,37 @@ The previous full handoff was archived and should be opened only when old proven
   - Marker readback should include `evidenceLevel: "compact"`,
     `responseBudgetEvidence`, `budget=full`, and focused test marker
     `thread detail response budget can emit compact HTTP evidence while preserving key counters`.
+
+### 2026-06-30 - Compact Response Budget Evidence Deployed
+
+- Private Home AI deploy completed for source ref `f8707583f534` with reason
+  `codex-mobile-compact-response-budget-evidence`.
+- Deploy backup:
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260630T003936Z-plugin-codex-mobile-web-codex-mobile-compact-response-budget-evidence`.
+- Production `/api/public-config` returned HTTP `200`, version `0.1.11`,
+  build id `576c30a2eea33b2a`, client build id
+  `0.1.11|codex-mobile-shell-v598`, shell cache `codex-mobile-shell-v598`, and
+  `authRequired=true`.
+- Source/production SHA-256 parity passed for `server.js`, the response-budget
+  service, route service, read orchestration service, Phase-B/browser/API
+  self-check scripts, focused tests, and docs.
+- Production markers confirmed `evidenceLevel: "compact"`,
+  `responseBudgetEvidence`, docs `budget=full`, structural `budget: "full"`
+  requests in the self-check scripts, and the focused compact-evidence test.
+- Authenticated metadata-only detail readback against source thread:
+  - Default detail read returned HTTP `200`, bytes `41262`,
+    `readMode=projection-active-overlay`, budget present,
+    `evidenceLevel=compact`, and budget key count `59`.
+  - `budget=full` detail read returned HTTP `200`, bytes `46844`,
+    `readMode=projection-active-overlay`, budget present, no compact evidence
+    marker, and budget key count `164`.
+- Deploy-mode runtime gate returned `ok=true`, `deployPass=true`,
+  `periodicHealthy=true`, issue count `1`, blocking issue count `0`, advisory
+  issue count `1`, execution failure count `0`, and child checks `api-thread`,
+  `browser-runtime`, and `client-events` all OK. Advisory code count was
+  `browser_latest_turn_assistant_text_duplicate=1`.
+- LaunchAgent full-check readback selected the latest deploy full-check event
+  with `deployPass=true`, `periodicHealthy=true`, issue count `1`, blocking
+  issue count `0`, advisory issue count `1`, execution failure count `0`, and
+  check names `api-thread`, `browser-runtime`, and `client-events`.
+- Return classification: `completed`. No Public deploy was run.

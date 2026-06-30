@@ -2204,7 +2204,7 @@ test("normalizer collapses durable submitted user echoes after pending state is 
   );
 });
 
-test("live turn keeps failed local pending user message visible", () => {
+test("live turn hides failed local pending user message after durable match appears", () => {
   const harness = evaluatedVisibleItemsForTurn();
   const liveTurn = {
     live: true,
@@ -2226,7 +2226,16 @@ test("live turn keeps failed local pending user message visible", () => {
   };
   assert.deepEqual(
     harness.visibleItemsForTurn(liveTurn).map((entry) => entry.item.id),
-    ["local-user-submit-current", "real-user-current"],
+    ["real-user-current"],
+  );
+
+  const failedOnlyTurn = {
+    live: true,
+    items: [liveTurn.items[0]],
+  };
+  assert.deepEqual(
+    harness.visibleItemsForTurn(failedOnlyTurn).map((entry) => entry.item.id),
+    ["local-user-submit-current"],
   );
 });
 
@@ -4648,6 +4657,25 @@ test("optimistic user messages are shadowed by mux and durable echoes", () => {
   const textItems = mergeItemsPreservingLocalVisible([localText], [muxText], true);
   assert.equal(textItems.length, 1);
   assert.equal(textItems[0].id, muxText.id);
+
+  const failedLocalText = {
+    id: "local-user-submit-failed",
+    type: "userMessage",
+    mobilePendingSubmission: true,
+    mobileSendError: { message: "timeout after durable write" },
+    clientSubmissionId: "submit-failed",
+    content: [{ type: "text", text: "already sent but marked failed" }],
+  };
+  const durableFailedText = {
+    id: "real-user-submit-failed",
+    type: "userMessage",
+    clientSubmissionId: "submit-failed",
+    content: [{ type: "input_text", text: "already sent but marked failed" }],
+  };
+  const failedTextItems = mergeItemsPreservingLocalVisible([failedLocalText], [durableFailedText], true);
+  assert.equal(failedTextItems.length, 1);
+  assert.equal(failedTextItems[0].id, durableFailedText.id);
+  assert.equal(failedTextItems[0].mobileSendError, undefined);
 
   const localImage = {
     id: "local-user-submit-2",

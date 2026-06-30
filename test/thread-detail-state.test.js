@@ -359,6 +359,11 @@ test("thread detail loaded-state policy distinguishes empty detail from summary 
 
   assert.equal(threadHasReusableLoadedDetailState({ id: "thread-1", turns: [], mobileDetailLoaded: true }), false);
   assert.equal(threadHasReusableLoadedDetailState({ id: "thread-1", turns: [{ id: "turn-1", items: [] }] }), true);
+  assert.equal(threadHasReusableLoadedDetailState({
+    id: "thread-1",
+    activeTurnId: "turn-active",
+    turns: [{ id: "turn-active", status: "running", items: [{ id: "assistant-old" }] }],
+  }), false);
   assert.equal(threadHasReusableLoadedDetailState({ id: "thread-1", turns: [{ id: "turn-1" }], mobileLoading: true }), false);
 
   assert.equal(threadIsSummaryOnlyCurrentThread({ id: "thread-1", turns: [] }, "thread-1"), true);
@@ -377,6 +382,21 @@ test("thread detail state plans open-thread cache reuse without accepting empty 
     shouldUseCachedCurrent: true,
     shouldReportEmptyCachedDetail: false,
     reason: "reusable-loaded-detail",
+  });
+
+  assert.deepEqual(planThreadOpenCacheReuse({
+    requestedThreadId: "thread-1",
+    currentThreadId: "thread-1",
+    currentThread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      turns: [{ id: "turn-active", status: "running", items: [{ id: "old-receipt" }] }],
+      mobileDetailLoaded: true,
+    },
+  }), {
+    shouldUseCachedCurrent: false,
+    shouldReportEmptyCachedDetail: false,
+    reason: "active-detail-cache-not-reusable",
   });
 
   assert.deepEqual(planThreadOpenCacheReuse({

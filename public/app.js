@@ -546,7 +546,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v598";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v599";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -5252,7 +5252,6 @@ function threadHasDurableUserMessageWithSubmissionId(thread, optimisticItem) {
 
 function shouldHideOptimisticUserMessageEcho(turn, item, index = 0, thread = null) {
   if (!item || item.type !== "userMessage" || !isOptimisticUserMessage(item)) return false;
-  if (item.mobileSendError) return false;
   const items = Array.isArray(turn && turn.items) ? turn.items : [];
   const sameTurnDurableMatch = items.some((candidate, candidateIndex) => (
     candidateIndex !== index && durableUserMessageMatchesOptimisticEcho(candidate, item)
@@ -5814,6 +5813,7 @@ function mergeLikelySameUserMessage(existingItem, incomingItem) {
   if (preferred && preferred.startedAtMs && !merged.startedAtMs) merged.startedAtMs = preferred.startedAtMs;
   if (preferred && !isOptimisticUserMessage(preferred)) {
     delete merged.mobilePendingSubmission;
+    delete merged.mobileSendError;
   }
   const durableIncomingReplacesOptimistic = incomingItem
     && !isOptimisticUserMessage(incomingItem)
