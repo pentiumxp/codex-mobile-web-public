@@ -34550,3 +34550,138 @@ The previous full handoff was archived and should be opened only when old proven
   - Production readback should confirm small default list requests report
     `appServerRequestLimit=80` for `limit<=40`, runtime gate remains clean of
     H1/H2 blockers, and list-then-detail elapsed samples improve.
+
+### 2026-06-30 - v601 Default List App-Server Window Production Deploy
+
+- Deployed source ref `be8d9b8c0a49`
+  (`fix: bound default thread list app-server window`) through the central
+  private macOS plugin deploy lane with reason
+  `codex-mobile-v601-default-list-app-server-window`.
+- Deploy result was `ok=true`; backup path:
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260630T012900Z-plugin-codex-mobile-web-codex-mobile-v601-default-list-app-server-window`.
+- Restart label `com.hermesmobile.plugin.codex-mobile` was running after
+  deploy. No Public deploy was run.
+- `/api/public-config` returned status `200`, version `0.1.11`, build id
+  `3d14ceb0823f5557`, client build id
+  `0.1.11|codex-mobile-shell-v600`, shell cache
+  `codex-mobile-shell-v600`, and `authRequired=true`.
+- Source/production SHA-256 parity passed:
+  - `adapters/thread-list-app-server-fetch-policy-service.js`
+    `5e28811a3673c06a`
+  - `test/thread-list-app-server-fetch-policy-service.test.js`
+    `d8e61620089728cb`
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` `3b668f402ac22c8c`
+  - `docs/TROUBLESHOOTING.md` `3e521b99e8b461fe`
+- Production marker readback confirmed
+  `boundedOverfetchLimit(requestedLimit, 2, 80, 500)`,
+  `thread-list app-server fetch policy bounds default list overfetch`,
+  `Default List App-Server Window Regression`, and troubleshooting wording for
+  `default limit=8`, `20`, or `40` previously reporting
+  `appServerRequestLimit=500`.
+- Small default list policy readback for `limit=8` returned:
+  `appServerRequestLimit=80`,
+  `appServerRequestReason=default-preserve-visible-entry-window`,
+  `appServerDeferred=true`, `appServerDeferredReason=warm-fallback-initial`,
+  `appServerOverfetchFactor=10`, list elapsed `251ms`, list `totalMs=236`,
+  `fallbackMs=130`, `mergeMs=91`, and result count `7`.
+- List-then-detail bounded sample from that list returned five detail samples:
+  caller elapsed `242-961ms`, internal `totalMs=78-472`,
+  `prepareResponseMs=31-287`, `activeOverlayWindowMs` max `386`, and one
+  active-overlay sample with first-paint over-ceiling bytes. These are separate
+  detail response/active-overlay residuals, not the default list-window
+  regression.
+- Phase-B source-thread readback returned `ok=true`,
+  `readMode=projection-v4-dynamic`, `totalMs=248`, `summaryMs=15`,
+  `projectionMs=84`, `prepareResponseMs=131`, `turnsListInitialMs=0`,
+  `activeOverlayWindowMs=0`, `activeOverlayMergeMs=0`, decision `ready` H3,
+  owner `phase-b-readback`, reason `warm-or-bounded-paths`, next action
+  `proceed-to-next-phase-b-root-cause-target`. Phase-B list evidence confirmed
+  `appServerRequestedLimit=20`, `appServerRequestLimit=80`,
+  `appServerRequestReason=default-preserve-visible-entry-window`, and
+  `appServerOverfetchFactor=4`.
+- Deploy-mode runtime gate returned `ok=true`, `deployPass=true`,
+  `periodicHealthy=true`, issue count `3`, blocking issue count `0`, advisory
+  issue count `3`, execution failure count `0`, and child checks
+  `api-thread`, `browser-runtime`, and `client-events` all OK. The only issue
+  code was H3 `browser_dom_sparse_after_nonempty` in early non-settled samples.
+- Client-events summary: scanned lines `1041`, parsed client events `125`,
+  stall count `0`, H2 stall count `0`, untimed/out-of-window stall counts `0`,
+  max rAF delay `0`, max scroll apply `0`, and max long task `0`.
+- LaunchAgent full-check readback returned `ok=true`, loaded `true`, state
+  `running`, latest event gate mode `deploy`, `deployPass=true`,
+  `periodicHealthy=true`, issue count `3`, blocking issue count `0`, advisory
+  issue count `3`, execution failure count `0`, and check names `api-thread`,
+  `browser-runtime`, and `client-events`.
+- Return classification: `completed`. Residual detail response byte pressure
+  and active-overlay timing samples should remain separate follow-up targets.
+
+### 2026-06-30 - v602 Stale Detail Echo / Old-Content Source Slice
+
+- User-reported regressions:
+  - Entering Movie/Move showed the user message and final receipt, then showed
+    a duplicate user message again after the receipt.
+  - Codex Mobile source thread sometimes showed historical messages interleaved
+    inside recent receipts/feedback.
+  - Opening a thread could first display previous content for several seconds
+    before the newer detail appeared.
+- Bounded production evidence before the source fix:
+  - `/api/public-config` was still serving
+    `clientBuildId=0.1.11|codex-mobile-shell-v600` and
+    `shellCacheName=codex-mobile-shell-v600`.
+  - Movie API detail was structurally clean: completed turns ordered as
+    user message -> assistant receipt -> Usage summary, with no API-side
+    user-after-Usage or duplicate-user shape. This classified the duplicate
+    user row as a client merge/cache/optimistic-state issue.
+  - Browser self-check against Movie plus Codex Mobile source thread reproduced
+    H2 stale-detail symptoms on the source thread:
+    `browser_dom_sparse_after_nonempty`,
+    `browser_latest_turn_item_count_downgraded`, and
+    `browser_latest_turn_assistant_message_downgraded`.
+  - A bounded API timing probe saw a long first Movie detail caller latency
+    sample around `29377ms`, with later samples returning below a second; this
+    remains loading-speed evidence for production readback, without raw message
+    bodies.
+- Source changes:
+  - `public/app.js` bumped shell marker to
+    `0.1.11|codex-mobile-shell-v602`, added cross-turn optimistic user echo
+    matching through `optimisticEchoCanMatchEarlierDurable()`, and passes the
+    current thread-list summary into thread-open cache-reuse planning.
+  - `public/thread-detail-state.js` now drops stale local-only user rows once
+    an incoming completed turn has an authoritative assistant receipt, and
+    rejects cached-current detail with reason
+    `summary-newer-than-cached-detail` when the summary has a newer update
+    timestamp than the cached detail.
+  - `public/sw.js` bumped the cache to `codex-mobile-shell-v602`.
+  - Focused tests cover later failed optimistic user echoes after nearby
+    durable receipts, completed projection merges dropping stale local-only
+    user rows, and summary-newer-than-cached-detail cache rejection.
+  - `docs/MODULES.md` and `docs/TROUBLESHOOTING.md` document the cache and
+    local-only user-row boundaries.
+- Validation passed:
+  - `node --check public/app.js`
+  - `node --check public/thread-detail-state.js`
+  - `node --check public/sw.js`
+  - `node --test test/thread-detail-state.test.js test/conversation-render.test.js test/client-render-stability-guard.test.js test/thread-detail-dom-patch.test.js test/browser-runtime-self-check-service.test.js`
+    (`271` tests)
+  - `npm test -- --test-reporter=dot`
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+  - `codegraph sync && codegraph status` reported the index up to date.
+- Deployment requirements:
+  - Commit and private-deploy with reason
+    `codex-mobile-v602-stale-thread-detail-echo-cleanup`.
+  - Production readback must confirm public-config shell/cache v602, parity for
+    changed files, and markers `optimisticEchoCanMatchEarlierDurable`,
+    `summary-newer-than-cached-detail`, `completedIncomingTurnHasAuthoritativeReceipt(incomingTurn)`,
+    and `codex-mobile-shell-v602`.
+  - Runtime/browser validation should explicitly sample both Movie
+    `019efca1-ea69-7292-87b7-025ba023ca87` and Codex Mobile source
+    `019eee6c-a6f5-7b20-bfb4-f96ccb6431b3` with settled delays including
+    `6000ms`, and verify no H1/H2 recurrence of duplicate user rows,
+    user-after-Usage, sparse-after-nonempty, latest-turn downgrades, pending
+    user disappearance, or visible-item order mismatch.
+  - Loading-speed readback should include bounded list and per-detail timing
+    samples for Movie and Codex Mobile source threads. If first-open latency
+    remains multi-second, classify it separately from the stale-detail/echo
+    fix instead of treating the release as fully complete.

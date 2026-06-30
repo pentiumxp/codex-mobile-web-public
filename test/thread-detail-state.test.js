@@ -388,6 +388,37 @@ test("thread detail state plans open-thread cache reuse without accepting empty 
   assert.deepEqual(planThreadOpenCacheReuse({
     requestedThreadId: "thread-1",
     currentThreadId: "thread-1",
+    summaryThread: { id: "thread-1", updatedAt: "2026-06-30T02:05:00.000Z" },
+    currentThread: {
+      id: "thread-1",
+      updatedAt: "2026-06-30T02:00:00.000Z",
+      turns: [{ id: "turn-1", items: [] }],
+      mobileDetailLoaded: true,
+    },
+  }), {
+    shouldUseCachedCurrent: false,
+    shouldReportEmptyCachedDetail: false,
+    reason: "summary-newer-than-cached-detail",
+  });
+
+  assert.deepEqual(planThreadOpenCacheReuse({
+    requestedThreadId: "thread-1",
+    currentThreadId: "thread-1",
+    summaryThread: { id: "thread-1", updatedAt: "2026-06-30T02:05:00.000Z" },
+    currentThread: {
+      id: "thread-1",
+      turns: [{ id: "turn-1", items: [] }],
+      mobileDetailLoaded: true,
+    },
+  }), {
+    shouldUseCachedCurrent: false,
+    shouldReportEmptyCachedDetail: false,
+    reason: "summary-newer-than-cached-detail",
+  });
+
+  assert.deepEqual(planThreadOpenCacheReuse({
+    requestedThreadId: "thread-1",
+    currentThreadId: "thread-1",
     currentThread: {
       id: "thread-1",
       activeTurnId: "turn-active",

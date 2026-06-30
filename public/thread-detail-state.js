@@ -295,6 +295,37 @@
     return evidence;
   }
 
+  function timestampMs(value) {
+    if (value === null || value === undefined || value === "") return 0;
+    const numberValue = Number(value);
+    if (Number.isFinite(numberValue) && numberValue > 0) {
+      return numberValue > 1_000_000_000_000 ? Math.trunc(numberValue) : Math.trunc(numberValue * 1000);
+    }
+    const parsed = Date.parse(String(value));
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  }
+
+  function threadUpdatedAtMs(thread) {
+    if (!thread || typeof thread !== "object") return 0;
+    return timestampMs(thread.updatedAtMs)
+      || timestampMs(thread.updatedAt)
+      || timestampMs(thread.updated_at_ms)
+      || timestampMs(thread.updated_at)
+      || timestampMs(thread.lastActivityAtMs)
+      || timestampMs(thread.lastActivityAt)
+      || timestampMs(thread.last_activity_at_ms)
+      || timestampMs(thread.last_activity_at)
+      || 0;
+  }
+
+  function summaryIsNewerThanCachedDetail(summaryThread, cachedThread, toleranceMs = 1000) {
+    const summaryMs = threadUpdatedAtMs(summaryThread);
+    const cachedMs = threadUpdatedAtMs(cachedThread);
+    if (!summaryMs) return false;
+    if (!cachedMs) return true;
+    return summaryMs > cachedMs + Math.max(0, Number(toleranceMs || 0));
+  }
+
   function hasNonemptyThreadDetailRenderEvidence(evidence) {
     return Boolean(evidence && (boundedCount(evidence.turnCount) || boundedCount(evidence.visibleItemCount)));
   }
@@ -303,6 +334,7 @@
     const requestedThreadId = String(input.requestedThreadId || input.threadId || "").trim();
     const currentThreadId = String(input.currentThreadId || "").trim();
     const thread = input.currentThread || input.thread || null;
+    const summaryThread = input.summaryThread || input.summary || null;
     const threadId = String(thread && thread.id || "").trim();
     if (!requestedThreadId) {
       return {
@@ -344,6 +376,13 @@
         shouldUseCachedCurrent: false,
         shouldReportEmptyCachedDetail: false,
         reason: "current-thread-load-error",
+      };
+    }
+    if (summaryIsNewerThanCachedDetail(summaryThread, thread)) {
+      return {
+        shouldUseCachedCurrent: false,
+        shouldReportEmptyCachedDetail: false,
+        reason: "summary-newer-than-cached-detail",
       };
     }
     if (threadHasReusableLoadedDetailState(thread)) {
@@ -563,6 +602,7 @@
       if (!item || itemVisibleWeight(item) <= 0) return false;
       if (visualReceiptMatchesSuppressionKeys(item, suppressedVisualReceiptKeys)) return false;
       if (shouldDropLocalOnlyReceiptForIncomingTurn(item, incomingTurn)) return false;
+      if (item.type === "userMessage" && completedIncomingTurnHasAuthoritativeReceipt(incomingTurn)) return false;
       if (item.type === "userMessage" && /^mux-user-/.test(String(item.id || ""))) return true;
       return preserveLocalVisible && !isReasoningItem(item);
     }

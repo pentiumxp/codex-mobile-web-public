@@ -546,7 +546,7 @@ const THREAD_LIST_PAGE_LIMIT = 200;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v600";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v602";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -5250,6 +5250,15 @@ function threadHasDurableUserMessageWithSubmissionId(thread, optimisticItem) {
       && submissionIds.some((submissionId) => userMessageHasSubmissionId(candidate, submissionId))));
 }
 
+function threadHasDurableUserMessageMatchingOptimisticEcho(thread, optimisticItem) {
+  if (!thread || !Array.isArray(thread.turns) || !isOptimisticUserMessage(optimisticItem)) return false;
+  return thread.turns.some((candidateTurn) => (Array.isArray(candidateTurn && candidateTurn.items) ? candidateTurn.items : [])
+    .some((candidate) => candidate
+      && candidate.type === "userMessage"
+      && !isOptimisticUserMessage(candidate)
+      && optimisticEchoCanMatchEarlierDurable(candidate, optimisticItem)));
+}
+
 function shouldHideOptimisticUserMessageEcho(turn, item, index = 0, thread = null) {
   if (!item || item.type !== "userMessage" || !isOptimisticUserMessage(item)) return false;
   const items = Array.isArray(turn && turn.items) ? turn.items : [];
@@ -5257,7 +5266,9 @@ function shouldHideOptimisticUserMessageEcho(turn, item, index = 0, thread = nul
     candidateIndex !== index && durableUserMessageMatchesOptimisticEcho(candidate, item)
   ));
   if (sameTurnDurableMatch) return true;
-  return threadHasDurableUserMessageWithSubmissionId(renderContextThread(thread), item);
+  const contextThread = renderContextThread(thread);
+  return threadHasDurableUserMessageWithSubmissionId(contextThread, item)
+    || threadHasDurableUserMessageMatchingOptimisticEcho(contextThread, item);
 }
 
 function isSupersededLiveTurn(turn) {
@@ -5768,6 +5779,43 @@ function userMessagesCanShadow(left, right) {
     && userMessagesLikelySame(left, right));
 }
 
+function userMessageTimestampMs(item) {
+  const value = item && (
+    item.startedAtMs
+    || item.startedAt
+    || item.createdAtMs
+    || item.createdAt
+    || item.timestampMs
+    || item.timestamp
+    || item.updatedAtMs
+    || item.updatedAt
+    || item.mobileDisplayTimestampMs
+  );
+  if (value === null || value === undefined || value === "") return 0;
+  const numberValue = Number(value);
+  if (Number.isFinite(numberValue) && numberValue > 0) {
+    return numberValue > 1_000_000_000_000 ? Math.trunc(numberValue) : Math.trunc(numberValue * 1000);
+  }
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function userMessagesHaveNearbyTimestamps(left, right, windowMs = 10 * 60 * 1000) {
+  const leftMs = userMessageTimestampMs(left);
+  const rightMs = userMessageTimestampMs(right);
+  return Boolean(leftMs && rightMs && Math.abs(leftMs - rightMs) <= windowMs);
+}
+
+function optimisticEchoCanMatchEarlierDurable(durableItem, optimisticItem) {
+  if (!durableItem || !optimisticItem) return false;
+  if (durableItem.type !== "userMessage" || optimisticItem.type !== "userMessage") return false;
+  if (isOptimisticUserMessage(durableItem) || !isOptimisticUserMessage(optimisticItem)) return false;
+  if (userMessagesShareSubmissionId(durableItem, optimisticItem)) return true;
+  if (!optimisticItem.mobileSendError) return false;
+  return userMessagesLikelySame(durableItem, optimisticItem)
+    && userMessagesHaveNearbyTimestamps(durableItem, optimisticItem);
+}
+
 function hasMatchingIncomingUserMessage(existingItem, incomingItems) {
   if (!existingItem || existingItem.type !== "userMessage") return false;
   return (incomingItems || []).some((incomingItem) => incomingItem
@@ -5881,6 +5929,7 @@ function shouldDropOptimisticUserMessageForDurable(item, turnIndex, durableUserM
     if (!real || !real.item || real.item.id === item.id) return false;
     if (!userMessagesCanShadow(real.item, item)) return false;
     if (real.turnIndex >= turnIndex) return true;
+    if (optimisticEchoCanMatchEarlierDurable(real.item, item)) return true;
     return userMessageHasVisualAttachment(real.item) && userMessageHasVisualAttachment(item);
   });
 }
@@ -9621,6 +9670,7 @@ async function loadThread(threadId, options = {}) {
     requestedThreadId: threadId,
     currentThreadId: state.currentThreadId,
     currentThread: state.currentThread,
+    summaryThread: state.threads.find((thread) => thread && thread.id === threadId),
   });
   if (cacheReusePlan.shouldReportEmptyCachedDetail) {
     recordEmptyCachedDetailReuseBlocked(cacheReusePlan.reason, state.currentThread, { source });
@@ -9686,6 +9736,7 @@ async function loadThread(threadId, options = {}) {
     requestedThreadId: threadId,
     currentThreadId: threadId,
     currentThread: cachedThread,
+    summaryThread: summary,
   });
   const activePreviewThread = cachedDetailOpenPlan.shouldUseActivePreview
     ? threadDetailStateApi.activeDetailLoadingPreviewThread(cachedThread)
