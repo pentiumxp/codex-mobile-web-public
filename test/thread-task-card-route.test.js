@@ -291,12 +291,37 @@ test("approved task-card deploy lane runtime uses visible target metadata when s
   const helperBody = functionBody(serverJs, "readThreadTaskCardExecutionTargetSummary");
   assert.match(helperBody, /const stored = readThreadTaskCardTargetSummary\(threadId\) \|\| null;/);
   assert.match(helperBody, /const visible = readThreadTaskCardVisibleTargetSummary\(threadId\) \|\| null;/);
-  assert.match(helperBody, /Object\.assign\(\{\}, target, visible \|\| \{\}, stored \|\| \{\}\)/);
+  assert.match(helperBody, /Object\.assign\(\{\}, stored \|\| \{\}, target, visible \|\| \{\}\)/);
   assert.match(helperBody, /if \(!String\(merged\.cwd \|\| ""\)\.trim\(\) && targetWorkspace\) merged\.cwd = targetWorkspace;/);
   assert.match(helperBody, /const visibleTitle = String\(visible && \(visible\.name \|\| visible\.title/);
+  assert.match(helperBody, /const title = visibleTitle \|\| storedTitle \|\| targetTitle;/);
   const visibleHelperBody = functionBody(serverJs, "readThreadTaskCardVisibleTargetSummary");
   assert.match(visibleHelperBody, /threadTaskCardVisibleTargetThreads\(\)/);
   assert.match(visibleHelperBody, /Array\.isArray\(visibleThreads\) \? visibleThreads : \[\]/);
+});
+
+test("approved task-card deploy lane runtime prefers live visible lane title over sparse stored summary", () => {
+  const executionTargetSummary = new Function(
+    "readThreadTaskCardTargetSummary",
+    "readThreadTaskCardVisibleTargetSummary",
+    `${functionSource(serverJs, "readThreadTaskCardExecutionTargetSummary")}; return readThreadTaskCardExecutionTargetSummary;`,
+  )(
+    () => ({ id: "thread-movie", title: "019f16e6-9b3d-7ec1-b593-3a6a41a24fb1" }),
+    () => ({ id: "thread-movie", name: "Movie Deploy Lane", cwd: "/Users/hermes-dev/HermesMobileDev/app" }),
+  );
+
+  const summary = executionTargetSummary({
+    target: {
+      threadId: "thread-movie",
+      workspaceId: "/Users/hermes-dev/HermesMobileDev/app",
+      title: "Home AI Deploy",
+    },
+  });
+
+  assert.equal(summary.name, "Movie Deploy Lane");
+  assert.equal(summary.title, "Movie Deploy Lane");
+  assert.equal(summary.preview, "Movie Deploy Lane");
+  assert.equal(summary.cwd, "/Users/hermes-dev/HermesMobileDev/app");
 });
 
 test("approved task-card visible target summary helper is runtime executable", () => {

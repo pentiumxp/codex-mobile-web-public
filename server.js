@@ -13192,7 +13192,7 @@ function readThreadTaskCardExecutionTargetSummary(card) {
   const threadId = String(target.threadId || "").trim();
   const stored = readThreadTaskCardTargetSummary(threadId) || null;
   const visible = readThreadTaskCardVisibleTargetSummary(threadId) || null;
-  const merged = Object.assign({}, target, visible || {}, stored || {});
+  const merged = Object.assign({}, stored || {}, target, visible || {});
   if (!String(merged.id || "").trim()) merged.id = threadId;
   if (!String(merged.threadId || "").trim()) merged.threadId = threadId;
   const targetWorkspace = String(target.workspaceId || target.workspace || "").trim();
@@ -13200,11 +13200,17 @@ function readThreadTaskCardExecutionTargetSummary(card) {
   const visibleTitle = String(visible && (visible.name || visible.title || visible.threadName || visible.thread_name || visible.preview || "") || "").trim();
   const storedTitle = String(stored && (stored.name || stored.title || stored.threadName || stored.thread_name || stored.preview || "") || "").trim();
   const targetTitle = String(target.name || target.title || target.threadName || target.thread_name || target.preview || "").trim();
-  const title = storedTitle || visibleTitle || targetTitle;
+  const title = visibleTitle || storedTitle || targetTitle;
   if (title) {
-    if (!String(merged.title || "").trim()) merged.title = title;
-    if (!String(merged.name || "").trim()) merged.name = title;
-    if (!String(merged.preview || "").trim()) merged.preview = title;
+    if (visibleTitle) {
+      merged.title = title;
+      merged.name = title;
+      merged.preview = title;
+    } else {
+      if (!String(merged.title || "").trim()) merged.title = title;
+      if (!String(merged.name || "").trim()) merged.name = title;
+      if (!String(merged.preview || "").trim()) merged.preview = title;
+    }
   }
   return merged;
 }
