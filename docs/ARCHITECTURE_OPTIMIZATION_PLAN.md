@@ -101,12 +101,15 @@ Current acceleration targets:
    parsing, upload submission dedupe, and preview authorization policy into
    `adapters/media-file-service.js`. The third extraction moved continuation
    source-handoff/bootstrap/lineage/job orchestration and continuation goal
-   migration into `adapters/continuation-thread-service.js`. Future high-yield
-   candidates should follow the same domain boundary: task-card route/execution
-   glue, public/profile config routes, and then thread-list fallback/detail
-   assembly seams. Avoid moving helper functions only to reduce line count;
-   each extraction must reduce a real `server.js` ownership responsibility and
-   gain focused tests.
+   migration into `adapters/continuation-thread-service.js`. The fourth
+   extraction moved the `GET /api/threads` route-level fallback/app-server
+   merge/decorate orchestration into `adapters/thread-list-route-service.js`,
+   leaving `server.js` to inject request, state, cache, and Codex RPC
+   dependencies. Future high-yield candidates should follow the same domain
+   boundary: task-card route/execution glue, public/profile config routes, and
+   thread-detail assembly seams. Avoid moving helper functions only to reduce
+   line count; each extraction must reduce a real `server.js` ownership
+   responsibility and gain focused tests.
 
 1. Active large-thread detail opens still have the highest full-read risk. The
    active-read policy intentionally disables partial projection and bounded

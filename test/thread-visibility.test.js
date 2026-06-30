@@ -1042,6 +1042,7 @@ test("rollout discovery visits newest session directories before the candidate c
 
 test("thread list route uses rollout-aware fallback aggregator", () => {
   const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+  const routeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-route-service.js"), "utf8");
   const baselineServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-fallback-baseline-service.js"), "utf8");
   const cacheServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-fallback-cache-service.js"), "utf8");
   const prewarmServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-fallback-prewarm-service.js"), "utf8");
@@ -1051,9 +1052,9 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   const summaryMergeServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-summary-merge-service.js"), "utf8");
   const requestContextServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-request-context-service.js"), "utf8");
   const responseCoalescerServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-response-coalescer-service.js"), "utf8");
-  const routeIndex = serverJs.indexOf('if (url.pathname === "/api/threads" && req.method === "GET")');
+  const routeIndex = routeServiceJs.indexOf('async function handleThreadListRoute(options = {})');
   assert.ok(routeIndex >= 0, "missing thread list route");
-  const routeBody = serverJs.slice(routeIndex, serverJs.indexOf('const threadRename = url.pathname.match', routeIndex));
+  const routeBody = routeServiceJs.slice(routeIndex);
 
   assert.match(serverJs, /function readRolloutSessionFallback\(/);
   assert.match(serverJs, /function compareRecentRolloutDirents\(left, right\)/);
@@ -1098,11 +1099,11 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeBody, /mergeThreadDisplaySummary: \(base, display\) => mergeThreadDisplaySummary\(base, display, \{/);
   assert.match(routeBody, /preferExistingRolloutStats: true/);
   assert.match(routeBody, /filterVisibleThreads\(appServerRawResult, globalState, \{[\s\S]*rolloutStatsForPath: getThreadListRequestContext\(\)\.rolloutStatsForPath/);
-  assert.match(serverJs, /planThreadListAppServerFetch/);
-  assert.match(serverJs, /threadListAppServerFetchTimingFields/);
-  assert.match(serverJs, /threadListAppServerLatencyTimingFields/);
-  assert.match(serverJs, /mergeThreadListRouteResult/);
-  assert.match(serverJs, /diagnoseThreadListColdPath/);
+  assert.match(routeServiceJs, /planThreadListAppServerFetch/);
+  assert.match(routeServiceJs, /threadListAppServerFetchTimingFields/);
+  assert.match(routeServiceJs, /threadListAppServerLatencyTimingFields/);
+  assert.match(routeServiceJs, /mergeThreadListRouteResult/);
+  assert.match(routeServiceJs, /diagnoseThreadListColdPath/);
   assert.match(serverJs, /stripThreadListDetailFields/);
   assert.match(serverJs, /stripThreadListResultDetailFields/);
   assert.match(threadListSummaryServiceJs, /THREAD_DETAIL_ONLY_SUMMARY_FIELDS/);
@@ -1185,12 +1186,12 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeBody, /const fallbackMode = String\(url\.searchParams\.get\("fallback"\) \|\| ""\)/);
   assert.match(routeBody, /const deferFallback = fallbackMode === "defer" && !cursor && !archived && !searchTerm/);
   assert.match(routeBody, /const initialMode = String\(url\.searchParams\.get\("initial"\) \|\| ""\)/);
-  assert.match(routeBody, /const initialFallbackPlan = planThreadListInitialFallbackAttempt\(\{[\s\S]*initialMode,[\s\S]*fallbackMode,[\s\S]*cursor,[\s\S]*archived,[\s\S]*cwd,[\s\S]*searchTerm,[\s\S]*defaultWarmFallback: THREAD_LIST_DEFAULT_WARM_FALLBACK_ENABLED,[\s\S]*\}\)/);
+  assert.match(routeBody, /const initialFallbackPlan = planThreadListInitialFallbackAttempt\(\{[\s\S]*initialMode,[\s\S]*fallbackMode,[\s\S]*cursor,[\s\S]*archived,[\s\S]*cwd,[\s\S]*searchTerm,[\s\S]*defaultWarmFallback: threadListDefaultWarmFallbackEnabled,[\s\S]*\}\)/);
   assert.match(routeBody, /const appServerFetchPlan = planThreadListAppServerFetch\(\{[\s\S]*limit,[\s\S]*cursor,[\s\S]*archived,[\s\S]*cwd,[\s\S]*searchTerm,[\s\S]*\}\);/);
   assert.match(routeBody, /Object\.assign\(timings, threadListAppServerFetchTimingFields\(appServerFetchPlan\)\)/);
   assert.match(routeBody, /limit: appServerFetchPlan\.appServerLimit/);
   assert.match(routeBody, /const appServerRpcDiagnostics = \{\}/);
-  assert.match(routeBody, /const appServerRawResult = await codex\.request\("thread\/list", params, \{[\s\S]*timeoutMs: READ_RPC_TIMEOUT_MS,[\s\S]*diagnostics: appServerRpcDiagnostics,[\s\S]*\}\)/);
+  assert.match(routeBody, /const appServerRawResult = await codex\.request\("thread\/list", params, \{[\s\S]*timeoutMs: readRpcTimeoutMs,[\s\S]*diagnostics: appServerRpcDiagnostics,[\s\S]*\}\)/);
   assert.match(routeBody, /const appServerVisibleResult = filterVisibleThreads\(appServerRawResult, globalState, \{[\s\S]*archivedIds: getRequestArchivedIds\(\),[\s\S]*rolloutStatsForPath: getThreadListRequestContext\(\)\.rolloutStatsForPath,[\s\S]*\}\)/);
   assert.match(routeBody, /const appServerResult = filterThreadListByCwd\(appServerVisibleResult, cwd\)/);
   assert.match(routeBody, /Object\.assign\(timings, threadListAppServerLatencyTimingFields\(\{[\s\S]*rawResult: appServerRawResult,[\s\S]*visibleResult: appServerVisibleResult,[\s\S]*filteredResult: appServerResult,[\s\S]*totalMs: appServerElapsedMs,[\s\S]*rpcDiagnostics: appServerRpcDiagnostics,[\s\S]*\}\)\)/);
