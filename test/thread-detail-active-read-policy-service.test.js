@@ -10,7 +10,13 @@ const {
   planActiveThreadDetailReadPolicy,
   statusText,
   summaryActiveTurnId,
-} = require("../adapters/thread-detail-active-read-policy-service");
+} = require("../services/thread-detail/thread-detail-active-read-policy-service");
+const adapter = require("../adapters/thread-detail-active-read-policy-service");
+
+test("active detail read policy adapter re-exports canonical service", () => {
+  assert.equal(adapter.planActiveThreadDetailReadPolicy, planActiveThreadDetailReadPolicy);
+  assert.equal(adapter.activeFullThreadReadReason, activeFullThreadReadReason);
+});
 
 test("active detail read policy allows recent partial reads for idle summaries", () => {
   const policy = planActiveThreadDetailReadPolicy({

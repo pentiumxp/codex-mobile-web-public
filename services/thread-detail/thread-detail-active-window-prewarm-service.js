@@ -3,7 +3,7 @@
 const {
   activeFullThreadReadReason,
   summaryActiveTurnId,
-} = require("../../adapters/thread-detail-active-read-policy-service");
+} = require("./thread-detail-active-read-policy-service");
 const {
   threadDetailActiveWindowPrewarmJobPolicy,
   withThreadDetailActiveWindowPrewarmJobPolicy,

@@ -321,7 +321,8 @@ Current acceleration targets:
    and the foreground first detail open could race and both start the same
    `turns-list-active-overlay-window` app-server read for one active thread.
    The coalescing slice adds
-   `thread-detail-turns-list-read-coalescer-service`, injected into both the
+   `services/thread-detail/thread-detail-turns-list-read-coalescer-service.js`,
+   injected into both the
    prewarm coordinator and the detail orchestrator. It shares only in-flight
    reads for the same thread/mode/limit, logs `turns_list_coalesced` for
    joiners, returns cloned JSON results to each caller, and clears failures so
@@ -744,7 +745,8 @@ call app-server `thread/turns/list`.
   fallback without changing the actual read strategy. It also records
   `activeFullReadRequired` / `activeFullReadReason` when an active/running
   summary intentionally skips partial projection or bounded turns-list shortcuts
-  and falls back to full `thread/read`; `thread-detail-active-read-policy-service`
+  and falls back to full `thread/read`;
+  `services/thread-detail/thread-detail-active-read-policy-service.js`
   now owns that decision boundary, so any later active-turn overlay optimization
   has to prove itself against a pure policy surface rather than patching the
   orchestration path inline. The follow-up

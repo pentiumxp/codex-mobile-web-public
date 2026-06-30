@@ -2,7 +2,7 @@
 
 const {
   summaryActiveTurnId,
-} = require("../../adapters/thread-detail-active-read-policy-service");
+} = require("./thread-detail-active-read-policy-service");
 const {
   summarizeActiveOverlayTurnEvidence,
 } = require("./thread-detail-active-window-overlay-policy-service");

@@ -2,7 +2,7 @@
 
 const {
   diagnoseThreadDetailColdPath,
-} = require("./thread-detail-cold-path-diagnosis-service");
+} = require("../services/thread-detail/thread-detail-cold-path-diagnosis-service");
 
 function safeDurationMs(value) {
   const number = Number(value);

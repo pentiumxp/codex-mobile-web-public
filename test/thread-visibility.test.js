@@ -29,6 +29,30 @@ const threadDetailReadOrchestrationAdapterJs = fs.readFileSync(
   path.resolve(__dirname, "..", "adapters", "thread-detail-read-orchestration-service.js"),
   "utf8",
 );
+const threadDetailActiveReadPolicyServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "services", "thread-detail", "thread-detail-active-read-policy-service.js"),
+  "utf8",
+);
+const threadDetailActiveReadPolicyAdapterJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "adapters", "thread-detail-active-read-policy-service.js"),
+  "utf8",
+);
+const threadDetailBoundedReadPolicyAdapterJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "adapters", "thread-detail-bounded-read-policy-service.js"),
+  "utf8",
+);
+const threadDetailTurnsListReadCoalescerAdapterJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "adapters", "thread-detail-turns-list-read-coalescer-service.js"),
+  "utf8",
+);
+const threadDetailColdPathDiagnosisAdapterJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "adapters", "thread-detail-cold-path-diagnosis-service.js"),
+  "utf8",
+);
+const threadDetailPerformanceServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "adapters", "thread-detail-performance-service.js"),
+  "utf8",
+);
 const threadDetailRouteServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "adapters", "thread-detail-route-service.js"),
   "utf8",
@@ -314,6 +338,15 @@ test("thread detail defaults to ten turns and exposes an older cursor when compa
   assert.match(threadDetailReadOrchestrationServiceJs, /"turns-list-initial"/);
   assert.match(serverJs, /require\("\.\/services\/thread-detail\/thread-detail-read-orchestration-service"\)/);
   assert.match(threadDetailReadOrchestrationAdapterJs, /require\("\.\.\/services\/thread-detail\/thread-detail-read-orchestration-service"\)/);
+  assert.match(serverJs, /require\("\.\/services\/thread-detail\/thread-detail-bounded-read-policy-service"\)/);
+  assert.match(serverJs, /require\("\.\/services\/thread-detail\/thread-detail-turns-list-read-coalescer-service"\)/);
+  assert.match(threadDetailReadOrchestrationServiceJs, /require\("\.\/thread-detail-active-read-policy-service"\)/);
+  assert.match(threadDetailActiveReadPolicyServiceJs, /function planActiveThreadDetailReadPolicy/);
+  assert.match(threadDetailActiveReadPolicyAdapterJs, /require\("\.\.\/services\/thread-detail\/thread-detail-active-read-policy-service"\)/);
+  assert.match(threadDetailBoundedReadPolicyAdapterJs, /require\("\.\.\/services\/thread-detail\/thread-detail-bounded-read-policy-service"\)/);
+  assert.match(threadDetailTurnsListReadCoalescerAdapterJs, /require\("\.\.\/services\/thread-detail\/thread-detail-turns-list-read-coalescer-service"\)/);
+  assert.match(threadDetailPerformanceServiceJs, /require\("\.\.\/services\/thread-detail\/thread-detail-cold-path-diagnosis-service"\)/);
+  assert.match(threadDetailColdPathDiagnosisAdapterJs, /require\("\.\.\/services\/thread-detail\/thread-detail-cold-path-diagnosis-service"\)/);
   assert.match(apiDispatchRouteServiceJs, /limit: Math\.max\(1, Math\.min\(100, Number\(url\.searchParams\.get\("limit"\) \|\| String\(MAX_THREAD_TURNS\)\)\)\)/);
 });
 

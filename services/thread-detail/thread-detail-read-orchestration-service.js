@@ -3,7 +3,7 @@
 const {
   applyActiveThreadPolicyToBoundedReadDecision,
   planActiveThreadDetailReadPolicy,
-} = require("../../adapters/thread-detail-active-read-policy-service");
+} = require("./thread-detail-active-read-policy-service");
 const {
   mergeActiveOverlayTurnWithWindowBackfill,
   mergeProjectionThreadWithActiveOverlay,

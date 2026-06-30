@@ -6,7 +6,13 @@ const { test } = require("node:test");
 const {
   coalescedTurnsListKey,
   createThreadDetailTurnsListReadCoalescer,
-} = require("../adapters/thread-detail-turns-list-read-coalescer-service");
+} = require("../services/thread-detail/thread-detail-turns-list-read-coalescer-service");
+const adapter = require("../adapters/thread-detail-turns-list-read-coalescer-service");
+
+test("turns-list read coalescer adapter re-exports canonical service", () => {
+  assert.equal(adapter.coalescedTurnsListKey, coalescedTurnsListKey);
+  assert.equal(adapter.createThreadDetailTurnsListReadCoalescer, createThreadDetailTurnsListReadCoalescer);
+});
 
 function deferred() {
   let resolve;

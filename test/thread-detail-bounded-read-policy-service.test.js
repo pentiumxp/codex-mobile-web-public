@@ -6,7 +6,13 @@ const { test } = require("node:test");
 const {
   createThreadDetailBoundedReadPolicyService,
   decideThreadDetailBoundedReadBeforeFullRead,
-} = require("../adapters/thread-detail-bounded-read-policy-service");
+} = require("../services/thread-detail/thread-detail-bounded-read-policy-service");
+const adapter = require("../adapters/thread-detail-bounded-read-policy-service");
+
+test("bounded read policy adapter re-exports canonical service", () => {
+  assert.equal(adapter.createThreadDetailBoundedReadPolicyService, createThreadDetailBoundedReadPolicyService);
+  assert.equal(adapter.decideThreadDetailBoundedReadBeforeFullRead, decideThreadDetailBoundedReadBeforeFullRead);
+});
 
 test("bounded read policy is disabled when threshold is zero", () => {
   let summaryCalls = 0;

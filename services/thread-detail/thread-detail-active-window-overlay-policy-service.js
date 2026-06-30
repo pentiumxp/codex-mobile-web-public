@@ -2,7 +2,7 @@
 
 const {
   summaryActiveTurnId,
-} = require("../../adapters/thread-detail-active-read-policy-service");
+} = require("./thread-detail-active-read-policy-service");
 const {
   dedupeUserMessageEchoesInItems,
 } = require("../../adapters/thread-user-message-echo-normalizer-service");

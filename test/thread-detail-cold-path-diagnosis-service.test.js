@@ -5,7 +5,12 @@ const { test } = require("node:test");
 
 const {
   diagnoseThreadDetailColdPath,
-} = require("../adapters/thread-detail-cold-path-diagnosis-service");
+} = require("../services/thread-detail/thread-detail-cold-path-diagnosis-service");
+const adapter = require("../adapters/thread-detail-cold-path-diagnosis-service");
+
+test("cold path diagnosis adapter re-exports canonical service", () => {
+  assert.equal(adapter.diagnoseThreadDetailColdPath, diagnoseThreadDetailColdPath);
+});
 
 test("cold path diagnosis classifies warm projection paths", () => {
   assert.deepEqual(diagnoseThreadDetailColdPath({
