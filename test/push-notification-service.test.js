@@ -279,6 +279,7 @@ test("server wires web push filtering to thread spawn edges", () => {
 test("server caches app-server thread display summaries before sqlite push title fallback", () => {
   const serverJs = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
   const threadListRouteServiceJs = fs.readFileSync(path.join(__dirname, "..", "adapters", "thread-list-route-service.js"), "utf8");
+  const threadDetailResponsePreparationServiceJs = fs.readFileSync(path.join(__dirname, "..", "adapters", "thread-detail-response-preparation-service.js"), "utf8");
   const adapterJs = fs.readFileSync(path.join(__dirname, "..", "adapters", "push-notification-service.js"), "utf8");
 
   assert.match(adapterJs, /function createThreadDisplaySummaryCache\(options = \{\}\)/);
@@ -289,7 +290,7 @@ test("server caches app-server thread display summaries before sqlite push title
   assert.match(serverJs, /await readThreadSummaryFromAppServer\(codex, threadId\)/);
   assert.match(serverJs, /return normalizeStaleContextOnlyActiveThread\(threadDisplaySummaryCache\.remember\(thread\)\s*\|\|\s*annotateThreadRolloutStats\(thread\)\)/);
   assert.match(threadListRouteServiceJs, /threadDisplaySummaryCache\.rememberList\(result\)/);
-  assert.match(serverJs, /threadDisplaySummaryCache\.remember\(result\.thread\)/);
+  assert.match(threadDetailResponsePreparationServiceJs, /threadDisplaySummaryCache\.remember\(result\.thread\)/);
   assert.match(serverJs, /sendTurnCompletedPush\(meta, turnId, completedAt, params\)/);
 });
 

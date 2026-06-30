@@ -109,12 +109,15 @@ Current acceleration targets:
    lifecycle, transport RPC, rate-limit refresh, server-request approval
    handling, and dynamic tool-call dispatch into
    `adapters/codex-app-server-client-service.js`, leaving `server.js` to inject
-   runtime state, task-card/profile helpers, and logging callbacks. Future
-   high-yield candidates should follow the same domain boundary: task-card
-   route/execution glue, public/profile config routes, and thread-detail
-   assembly seams. Avoid moving helper functions only to reduce line count; each
-   extraction must reduce a real `server.js` ownership responsibility and gain
-   focused tests.
+   runtime state, task-card/profile helpers, and logging callbacks. The current
+   backend split also moved task-card route execution, message route execution,
+   fallback source recovery, summary-state synchronization, and thread-detail
+   response preparation into dedicated adapters. Future high-yield candidates
+   should follow the same domain boundary: public/profile config routes,
+   GitHub/utility routes, remaining thread-detail enrichment helpers, and
+   notification/runtime side-effect groups. Avoid moving helper functions only
+   to reduce line count; each extraction must reduce a real `server.js`
+   ownership responsibility and gain focused tests.
 
 1. Active large-thread detail opens still have the highest full-read risk. The
    active-read policy intentionally disables partial projection and bounded
@@ -2040,9 +2043,10 @@ Remaining target:
 
 ### 2026-06-30 Server Route Boundary Extraction Checkpoint
 
-This local checkpoint starts the large `server.js` split by moving two route
-ownership groups and one fallback source-provider block out of the entrypoint
-without changing public behavior:
+This local checkpoint starts the large `server.js` split by moving route
+ownership groups, fallback/source recovery, summary-state synchronization, and
+thread-detail response preparation out of the entrypoint without changing
+public behavior:
 
 - `adapters/thread-task-card-route-service.js` now owns task-card HTTP routes,
   task-card dynamic-tool schemas/response payloads, fallback guidance, visible
@@ -2060,17 +2064,24 @@ without changing public behavior:
   fallback-row reads, local active overlays, stale/live/rest status
   classification, display-summary merge semantics, state DB runtime metadata
   merge, and detail-read-to-thread-list fallback-cache synchronization.
+- `adapters/thread-detail-response-preparation-service.js` now owns
+  turns-list/raw/full/fallback read-result shaping, rollout Usage decoration,
+  rollout completion/user-input/active-assistant/final-receipt preparation
+  order, task-card/pending-request detail decoration, response-budget compaction
+  invocation, and the read-result helpers consumed by detail orchestration.
 
-Local line-count evidence after the extraction: `server.js` is 11,446 lines,
+Local line-count evidence after the extraction: `server.js` is 11,338 lines,
 `thread-task-card-route-service.js` is 1,280 lines, and
 `thread-message-route-service.js` is 363 lines, and
 `thread-list-fallback-source-service.js` is 683 lines, and
-`thread-summary-state-service.js` is 383 lines. This is a checkpoint, not the
-target state; `server.js` remains too large. The next high-yield backend split
-should target remaining thread-detail preparation/compaction/enrichment glue,
-because fallback/source and summary-state ownership are now out of the
-entrypoint while detail response assembly still keeps substantial
-rollout/user-input/Usage coordination in `server.js`.
+`thread-summary-state-service.js` is 383 lines, and
+`thread-detail-response-preparation-service.js` is 254 lines. This is a
+checkpoint, not the target state; `server.js` remains too large. The next
+high-yield backend splits should target public/profile config routes,
+GitHub/utility routes, remaining thread-detail enrichment helpers, and
+notification/runtime side-effect groups, because route execution,
+fallback/source, summary-state, and the main detail response-preparation order
+are now out of the entrypoint.
 
 Validation boundary:
 

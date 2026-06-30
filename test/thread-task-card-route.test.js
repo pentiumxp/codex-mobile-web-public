@@ -13,6 +13,7 @@ const threadMessageRouteServiceJs = fs.readFileSync(path.resolve(__dirname, ".."
 const threadSummaryStateServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-summary-state-service.js"), "utf8");
 const routingServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-task-card-routing-service.js"), "utf8");
 const threadDetailRouteServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-detail-route-service.js"), "utf8");
+const threadDetailResponsePreparationServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-detail-response-preparation-service.js"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
@@ -388,7 +389,8 @@ test("server broadcasts active status immediately for local turn starts", () => 
   assert.match(functionBody(serverJs, "applyLocalActiveThreadStatusToSummary"), /threadSummaryStateService\.applyLocalActiveThreadStatusToSummary/);
   assert.match(serverJs, /function updateLocalActiveThreadStatusFromNotification\(/);
   assert.match(functionBody(serverJs, "broadcast"), /updateLocalActiveThreadStatusFromNotification\(payload\)/);
-  assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /applyLocalActiveThreadStatusToResult/);
+  assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /threadDetailResponsePreparationService\.prepareThreadDetailResponseResult/);
+  assert.match(functionBody(threadDetailResponsePreparationServiceJs, "prepareThreadDetailResponseResult"), /applyLocalActiveThreadStatusToResult/);
   assert.match(functionBody(serverJs, "normalizeThreadListResultStatuses"), /normalizeThreadSummaryLiveStatus/);
 
   assert.match(serverJs, /notifyLocalTurnStarted\(card\.target\.threadId, result, \{[\s\S]*source: "thread-task-card-approval"/);
@@ -424,14 +426,19 @@ test("server materializes structured task-card drafts from thread detail", () =>
   assert.match(functionBody(taskCardRouteServiceJs, "prepareThreadTaskCardsToResult"), /attachThreadTaskCardsToResult\(result\)/);
   assert.match(functionBody(taskCardRouteServiceJs, "prepareThreadTaskCardsToResult"), /attachPendingServerRequestsToResult/);
   assert.doesNotMatch(functionBody(taskCardRouteServiceJs, "prepareThreadTaskCardsToResult"), /prepareThreadTaskCardsToResult\(result\)/);
-  assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /const completionBackfilled = backfillMissingRolloutCompletionTurnsForDetailResult\(result, details\);/);
-  assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /const usageDecorated = attachRolloutUsageSummariesToDetailResult\(completionBackfilled\);/);
-  assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /const inputAnchored = appendRolloutUserInputAnchorsToDetailResult\(usageDecorated\);/);
-  assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /const activeAssistantDecorated = appendRolloutActiveAssistantItemsToDetailResult\(inputAnchored\);/);
-  assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /const detailResult = finalizeActiveAssistantProjectionDetailResult\(activeAssistantDecorated\);/);
-  assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /await prepareThreadTaskCardsToResult\(applyLocalActiveThreadStatusToResult\(detailResult, details\)\)/);
-  assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /finalizeThreadDetailProjectionResult/);
-  assert.match(functionBody(serverJs, "turnsListThreadReadResult"), /return prepareThreadDetailResponseResult\(result/);
+  const prepareDetailBody = functionBody(threadDetailResponsePreparationServiceJs, "prepareThreadDetailResponseResult");
+  assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /threadDetailResponsePreparationService\.prepareThreadDetailResponseResult/);
+  assert.match(prepareDetailBody, /const completionBackfilled = backfillMissingRolloutCompletionTurnsForDetailResult\(result, details\);/);
+  assert.match(prepareDetailBody, /const usageDecorated = attachRolloutUsageSummariesToDetailResult\(completionBackfilled\);/);
+  assert.match(prepareDetailBody, /const inputAnchored = appendRolloutUserInputAnchorsToDetailResult\(usageDecorated\);/);
+  assert.match(prepareDetailBody, /const activeAssistantDecorated = appendRolloutActiveAssistantItemsToDetailResult\(inputAnchored\);/);
+  assert.match(prepareDetailBody, /const detailResult = finalizeActiveAssistantProjectionDetailResult\(activeAssistantDecorated\);/);
+  assert.match(prepareDetailBody, /await prepareThreadTaskCardsToResult\(applyLocalActiveThreadStatusToResult\(detailResult, details\)\)/);
+  assert.match(prepareDetailBody, /finalizeThreadDetailProjectionResult/);
+  assert.match(prepareDetailBody, /const budgetOptions = Object\.assign\(\{\}, responseBudgetOptions\(\) \|\| \{\}, \{/);
+  assert.doesNotMatch(prepareDetailBody, /THREAD_DETAIL_|MAX_LIVE_OPERATION_ITEMS/);
+  assert.match(functionBody(serverJs, "turnsListThreadReadResult"), /threadDetailResponsePreparationService\.turnsListThreadReadResult/);
+  assert.match(functionBody(threadDetailResponsePreparationServiceJs, "turnsListThreadReadResult"), /return prepareThreadDetailResponseResult\(result/);
   assert.match(serverJs, /maybeMaterializeThreadTaskCardDrafts,\s+maybeAutoReplyThreadTaskCard,/);
   assert.match(codexAppServerClientServiceJs, /maybeMaterializeThreadTaskCardDrafts\(msg\.method, msg\.params \|\| null\)/);
   assert.match(serverJs, /prepareResponse: prepareThreadDetailResponseResult/);

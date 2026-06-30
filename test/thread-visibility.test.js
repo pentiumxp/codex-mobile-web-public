@@ -15,6 +15,10 @@ const threadDetailRouteServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "adapters", "thread-detail-route-service.js"),
   "utf8",
 );
+const threadDetailResponsePreparationServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "adapters", "thread-detail-response-preparation-service.js"),
+  "utf8",
+);
 const threadListSummaryServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "adapters", "thread-list-summary-service.js"),
   "utf8",
@@ -271,7 +275,8 @@ test("thread detail uses full thread/read before bounded turns/list fallback", (
   const turnsListIndex = threadDetailReadOrchestrationServiceJs.indexOf("await turnsListThreadReadResult(", threadReadIndex);
   assert.ok(threadReadIndex > 0, "thread detail orchestration should call full thread/read");
   assert.ok(turnsListIndex > threadReadIndex, "bounded turns/list should stay a fallback after thread/read");
-  assert.match(serverJs, /result\.thread\.mobileReadMode = "thread-read";/);
+  assert.match(serverJs, /threadDetailResponsePreparationService\.readFullThreadDetailForOrchestrator\(\{ threadId, summary, runtimeSettings \}\)/);
+  assert.match(threadDetailResponsePreparationServiceJs, /result\.thread\.mobileReadMode = "thread-read";/);
   assert.match(serverJs, /compactActiveOverlayTurn: \(turn, details = \{\}\) => compactTurn\(turn, \{/);
   assert.match(serverJs, /maxOperationItems: MAX_LIVE_OPERATION_ITEMS/);
   assert.match(threadDetailReadOrchestrationServiceJs, /compactOverlayTurn: compactActiveOverlayTurn/);
