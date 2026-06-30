@@ -5837,6 +5837,7 @@ const threadDetailActiveWindowPrewarmService = createThreadDetailActiveWindowPre
     warning,
     mode,
     threadLog,
+    responseBudgetEvidence,
   }) => turnsListThreadReadResult(
     threadId,
     summary,
@@ -5844,6 +5845,7 @@ const threadDetailActiveWindowPrewarmService = createThreadDetailActiveWindowPre
     warning,
     mode,
     threadLog,
+    responseBudgetEvidence,
   )),
   seedProjection: (input, result, optionsForSeed = {}) => threadDetailProjectionService.seed(input, result, optionsForSeed),
   log: (event, details) => logThreadDetail(event, details),
@@ -13856,12 +13858,13 @@ async function prepareThreadDetailResponseResult(result, details = {}) {
       progressiveFirstPaintThreadByteCeiling: THREAD_DETAIL_PROGRESSIVE_FIRST_PAINT_THREAD_BYTES,
       progressiveCompletedTextChars: THREAD_DETAIL_PROGRESSIVE_COMPLETED_TEXT_CHARS,
       progressiveCompletedUserTextChars: THREAD_DETAIL_PROGRESSIVE_COMPLETED_USER_TEXT_CHARS,
+      responseBudgetEvidence: details.responseBudgetEvidence || "",
     }),
     details,
   );
 }
 
-async function turnsListThreadReadResult(threadId, summary, runtimeSettings, warning, mode = "turns-list", threadLog = null) {
+async function turnsListThreadReadResult(threadId, summary, runtimeSettings, warning, mode = "turns-list", threadLog = null, responseBudgetEvidence = "") {
   const startedAtMs = Date.now();
   if (threadLog) {
     threadLog("turns_list_start", {
@@ -13891,7 +13894,7 @@ async function turnsListThreadReadResult(threadId, summary, runtimeSettings, war
       mode,
     });
   }
-  return prepareThreadDetailResponseResult(result, { threadId, source: mode });
+  return prepareThreadDetailResponseResult(result, { threadId, source: mode, responseBudgetEvidence });
 }
 
 async function readRawThreadDetailForOrchestrator({ threadId, summary, runtimeSettings }) {

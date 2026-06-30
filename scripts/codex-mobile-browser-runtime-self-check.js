@@ -361,7 +361,10 @@ async function loadThreadPlan(options, key, ids) {
     let expectation = latestTurnExpectation();
     let expectedTurnShapes = [];
     try {
-      const detail = await fetchJson(requestUrl(options, `/api/threads/${encodeURIComponent(id)}`, { mode: "recent" }), options, key);
+      const detail = await fetchJson(requestUrl(options, `/api/threads/${encodeURIComponent(id)}`, {
+        mode: "recent",
+        budget: "full",
+      }), options, key);
       expectedTurnHashes = visibleTurnIds(detail).map(browserStableHash);
       expectation = latestTurnExpectation(detail);
       expectedTurnShapes = turnShapeExpectation(detail);

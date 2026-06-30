@@ -227,6 +227,7 @@ function selectThreadRefs(options, listResult) {
 async function fetchThreadDetail(options, key, threadId, refreshIndex = 0) {
   const params = {
     mode: "recent",
+    budget: "full",
   };
   if (refreshIndex > 0) params.forceRefresh = "1";
   return fetchJson(requestUrl(options, `/api/threads/${encodeURIComponent(threadId)}`, params), options, key);

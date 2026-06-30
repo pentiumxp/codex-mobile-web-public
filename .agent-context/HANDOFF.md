@@ -34217,3 +34217,55 @@ The previous full handoff was archived and should be opened only when old proven
   - Current likely next H3 optimization targets are response-budget diagnostic
     verbosity, visible-key list size, and retained assistant item density; none
     are H1/H2 blockers in the latest gate.
+
+### 2026-06-30 - Compact Response Budget Evidence Ready
+
+- Scope:
+  - H3 payload optimization for ordinary `/api/threads/:id` detail reads after
+    the active history-window retry deploy was clean of H1/H2 blockers.
+  - Post-deploy metadata-only detail sampling showed
+    `thread.mobileDetailResponseBudget` was one of the largest remaining
+    non-conversation response buckets at `7568` serialized bytes.
+- Source change:
+  - `adapters/thread-detail-route-service.js` now maps `budget=full`,
+    `responseBudget=full`, or `responseBudgetEvidence=full` to full
+    response-budget evidence, while normal detail reads default to compact
+    evidence.
+  - `adapters/thread-detail-read-orchestration-service.js` carries the
+    evidence level through response preparation and the turns-list fallback.
+  - `adapters/thread-detail-response-budget-service.js` keeps direct service
+    output full by default, but emits `mobileDetailResponseBudget.evidenceLevel
+    = "compact"` for route-requested compact evidence, preserving key
+    applied/progressive flags, omitted/truncated counters, first-paint byte
+    counters, and retained item maps while dropping zero/empty long-tail
+    fields.
+  - `scripts/codex-mobile-phase-b-readback-smoke.js`,
+    `scripts/codex-mobile-thread-self-check.js`, and
+    `scripts/codex-mobile-browser-runtime-self-check.js` explicitly request
+    `budget=full` so Phase-B and runtime gates continue validating the full
+    budget contract.
+  - Updated `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Validation:
+  - Syntax checks passed for changed services/scripts and `server.js`.
+  - `node --test test/thread-detail-route-service.test.js test/thread-detail-read-orchestration-service.test.js test/thread-detail-response-budget-service.test.js test/thread-detail-active-window-prewarm-service.test.js test/thread-detail-projection-v4-service.test.js`
+    passed: `114` tests.
+  - `node --test test/browser-runtime-self-check-service.test.js test/runtime-self-check-loop.test.js test/thread-self-check-script.test.js test/phase-b-readback-smoke.test.js`
+    passed: `60` tests.
+  - `npm test -- --test-reporter=dot` passed.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - `codegraph sync && codegraph status` reported the index up to date.
+- Next deployment step:
+  - Commit with message `fix: compact response budget evidence`.
+  - Delegate private Home AI deploy with reason
+    `codex-mobile-compact-response-budget-evidence`.
+  - Production readback should confirm source/prod parity for
+    `adapters/thread-detail-response-budget-service.js`,
+    `adapters/thread-detail-route-service.js`,
+    `adapters/thread-detail-read-orchestration-service.js`, `server.js`, the
+    three self-check scripts, focused tests, and docs.
+  - Marker readback should include `evidenceLevel: "compact"`,
+    `responseBudgetEvidence`, `budget=full`, and focused test marker
+    `thread detail response budget can emit compact HTTP evidence while preserving key counters`.

@@ -8,6 +8,15 @@ function detailModeFromUrl(url) {
   return text(url && url.searchParams && url.searchParams.get("mode")).toLowerCase();
 }
 
+function responseBudgetEvidenceFromUrl(url) {
+  const value = text(url && url.searchParams && (
+    url.searchParams.get("budget")
+    || url.searchParams.get("responseBudget")
+    || url.searchParams.get("responseBudgetEvidence")
+  )).toLowerCase();
+  return value === "full" || value === "verbose" ? "full" : "compact";
+}
+
 async function handleThreadDetailReadRoute(input = {}) {
   const threadId = text(input.threadId);
   const url = input.url || null;
@@ -21,6 +30,7 @@ async function handleThreadDetailReadRoute(input = {}) {
   if (!threadId || !readThreadDetail || !sendJson) return { handled: false, reason: "invalid-route-input" };
 
   const preferRecentTurns = detailModeFromUrl(url) === "recent";
+  const responseBudgetEvidence = responseBudgetEvidenceFromUrl(url);
   const threadLog = (event, details = {}) => logThreadDetail(event, Object.assign({
     threadId,
     elapsedMs: Math.max(0, now() - requestStartedAtMs),
@@ -29,6 +39,7 @@ async function handleThreadDetailReadRoute(input = {}) {
     codex,
     threadId,
     preferRecentTurns,
+    responseBudgetEvidence,
     threadLog,
   });
   const status = detailResponse && detailResponse.status || 200;

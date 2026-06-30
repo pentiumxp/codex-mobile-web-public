@@ -527,6 +527,14 @@ client refresh retries. Newer server builds also report
 to decide whether the remaining protected payload is dominated by operation,
 assistant, user-message, Usage, media, diagnostic, or other item shapes before
 adding a new budget rule.
+Normal `/api/threads/:id` UI detail reads default to compact
+`mobileDetailResponseBudget` evidence to avoid spending first-paint bytes on
+zero/empty diagnostic fields. If an operator or self-check needs the full
+budget contract, request the same detail endpoint with `budget=full`; the
+Phase-B, browser-runtime, and API thread self-check scripts do this explicitly.
+Do not classify missing long-tail budget fields from a compact response as a
+budget-policy regression until the same read has been repeated with full
+budget evidence.
 If the retained visible item budget is already bounded but the total detail
 JSON remains over the active first-paint byte ceiling, inspect the task-card
 budget fields next:

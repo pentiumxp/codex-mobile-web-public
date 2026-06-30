@@ -2641,3 +2641,64 @@ test("thread detail response budget compacts settled task cards to first-paint p
     Math.max(0, budget.progressiveActiveFirstPaintBytesAfterTaskCardBudget - budget.progressiveActiveFirstPaintThreadByteCeiling),
   );
 });
+
+test("thread detail response budget can emit compact HTTP evidence while preserving key counters", () => {
+  const result = {
+    thread: {
+      id: "thread-1",
+      mobileReadMode: "projection-v4-dynamic",
+      mobileProjectionRevision: 17,
+      turns: [
+        {
+          id: "turn-1",
+          status: "completed",
+          items: [
+            { id: "u1", type: "userMessage", text: "Question" },
+            { id: "r1", type: "reasoning", text: "hidden reasoning" },
+            { id: "c1", type: "commandExecution", command: "a" },
+            { id: "c2", type: "commandExecution", command: "b" },
+            { id: "c3", type: "commandExecution", command: "c" },
+            { id: "a1", type: "agentMessage", text: "Answer" },
+            { id: "usage", type: "turnUsageSummary" },
+          ],
+        },
+        {
+          id: "turn-2",
+          status: "completed",
+          items: [
+            { id: "u2", type: "userMessage", text: "Latest" },
+            { id: "a2", type: "agentMessage", text: "Receipt" },
+            { id: "usage2", type: "turnUsageSummary" },
+          ],
+        },
+      ],
+    },
+  };
+  const options = {
+    compactTurn,
+    completedOperationItems: 1,
+    completedReasoningItems: 0,
+  };
+
+  const full = compactThreadDetailResponseResult(result, options);
+  const compact = compactThreadDetailResponseResult(result, Object.assign({}, options, {
+    responseBudgetEvidence: "compact",
+  }));
+  const budget = compact.thread.mobileDetailResponseBudget;
+
+  assert.equal(full.thread.mobileDetailResponseBudget.evidenceLevel, undefined);
+  assert.equal(budget.evidenceLevel, "compact");
+  assert.equal(budget.version, "thread-detail-response-budget-v2");
+  assert.equal(budget.applied, true);
+  assert.equal(budget.omittedOperationItems, 2);
+  assert.equal(budget.omittedReasoningItems, 1);
+  assert.equal(budget.latestCompletedReplayTurnCount, undefined);
+  assert.deepEqual(
+    compact.thread.mobileVisibleItemKeys,
+    compact.thread.turns.flatMap((turn) => turn.items.map((item) => item.mobileVisibleKey)),
+  );
+  assert.ok(
+    JSON.stringify(compact.thread.mobileDetailResponseBudget).length
+      < JSON.stringify(full.thread.mobileDetailResponseBudget).length,
+  );
+});

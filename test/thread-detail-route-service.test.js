@@ -28,6 +28,7 @@ test("thread detail route service maps mode=recent to orchestration and sends re
         type: "read",
         threadId: request.threadId,
         preferRecentTurns: request.preferRecentTurns,
+        responseBudgetEvidence: request.responseBudgetEvidence,
         codex: request.codex,
       });
       request.threadLog("projection_hit", { mode: "projection-v4-cache" });
@@ -50,6 +51,7 @@ test("thread detail route service maps mode=recent to orchestration and sends re
   assert.equal(calls[0].type, "read");
   assert.equal(calls[0].threadId, "thread-1");
   assert.equal(calls[0].preferRecentTurns, true);
+  assert.equal(calls[0].responseBudgetEvidence, "compact");
   assert.deepEqual(calls[1], {
     type: "log",
     event: "projection_hit",
@@ -79,7 +81,11 @@ test("thread detail route service preserves complete=false without final complet
     url: routeUrl("/api/threads/thread-1"),
     now: () => 2000,
     readThreadDetail: async (request) => {
-      calls.push({ type: "read", preferRecentTurns: request.preferRecentTurns });
+      calls.push({
+        type: "read",
+        preferRecentTurns: request.preferRecentTurns,
+        responseBudgetEvidence: request.responseBudgetEvidence,
+      });
       return {
         status: 504,
         mode: "thread-read-raw-error",
@@ -98,9 +104,37 @@ test("thread detail route service preserves complete=false without final complet
     complete: false,
   });
   assert.deepEqual(calls, [
-    { type: "read", preferRecentTurns: false },
+    { type: "read", preferRecentTurns: false, responseBudgetEvidence: "compact" },
     { type: "send", status: 504, body: { error: "timeout" } },
   ]);
+});
+
+test("thread detail route service forwards full response-budget evidence for diagnostics", async () => {
+  const calls = [];
+  const result = await handleThreadDetailReadRoute({
+    threadId: "thread-1",
+    url: routeUrl("/api/threads/thread-1?mode=recent&budget=full"),
+    readThreadDetail: async (request) => {
+      calls.push({
+        type: "read",
+        preferRecentTurns: request.preferRecentTurns,
+        responseBudgetEvidence: request.responseBudgetEvidence,
+      });
+      return {
+        status: 200,
+        mode: "projection-v4-cache",
+        body: { thread: { id: "thread-1" } },
+      };
+    },
+    sendJson: (status, body) => calls.push({ type: "send", status, body }),
+  });
+
+  assert.equal(result.handled, true);
+  assert.deepEqual(calls[0], {
+    type: "read",
+    preferRecentTurns: true,
+    responseBudgetEvidence: "full",
+  });
 });
 
 test("thread detail route service lets caller observe read result without blocking response", async () => {

@@ -79,6 +79,134 @@ function boundedCount(value, fallback, max = 1000) {
   return Math.min(max, Math.trunc(number));
 }
 
+function compactNumberMap(value = {}, limit = 12) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const entries = Object.entries(source)
+    .map(([key, raw]) => {
+      const number = Number(raw);
+      if (!Number.isFinite(number) || number <= 0) return null;
+      return [String(key || "unknown").slice(0, 60), Math.trunc(number)];
+    })
+    .filter(Boolean)
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, Math.max(1, Math.trunc(Number(limit) || 12)));
+  return Object.fromEntries(entries);
+}
+
+function attachNonZeroBudgetNumber(target, source, key) {
+  const number = Number(source && source[key]);
+  if (Number.isFinite(number) && number > 0) target[key] = Math.trunc(number);
+}
+
+function attachTruthyBudgetValue(target, source, key) {
+  const value = source && source[key];
+  if (value === true) target[key] = true;
+  else if (typeof value === "string" && value.trim()) target[key] = value;
+}
+
+function compactResponseBudgetEvidence(stats = {}) {
+  const out = {
+    version: stats.version || "thread-detail-response-budget-v2",
+    evidenceLevel: "compact",
+    applied: stats.applied === true,
+    progressiveActiveBudgetApplied: stats.progressiveActiveBudgetApplied === true,
+  };
+  attachTruthyBudgetValue(out, stats, "progressiveActiveBudgetReason");
+  for (const key of [
+    "originalItemCount",
+    "retainedItemCount",
+    "omittedOperationItems",
+    "omittedReasoningItems",
+    "omittedAssistantItems",
+    "omittedVisibleItems",
+    "activeTurnCount",
+    "staleActiveTurnCount",
+    "activeOperationItems",
+    "activeReasoningItems",
+    "activeAssistantItems",
+    "progressiveReplayAssistantItems",
+    "limitedReplayAssistantItems",
+    "progressiveCompletedReplayAssistantItems",
+    "limitedCompletedReplayAssistantItems",
+    "progressiveVisibleItemCeiling",
+    "progressiveVisibleItemOriginalCount",
+    "progressiveVisibleItemRetainedCount",
+    "progressiveActiveFirstPaintThreadByteCeiling",
+    "progressiveActiveFirstPaintBytesAfterTaskCardBudget",
+    "progressiveActiveFirstPaintBytesAfterUsageSummaryOnlyBudget",
+    "progressiveActiveFirstPaintOverCeilingBytes",
+    "retainedVisibleItemCountForByteStats",
+    "retainedVisibleItemBytesForByteStats",
+    "retainedVisibleItemLargestBytes",
+  ]) {
+    attachNonZeroBudgetNumber(out, stats, key);
+  }
+  for (const key of [
+    "prunedEmptyActivePlaceholderTurns",
+    "remappedMissingActiveTurnId",
+    "clearedMissingActiveTurnId",
+    "repairedVisibleActiveTurnStatus",
+    "downgradedStaleActiveTurns",
+    "truncatedActiveUserMessageItems",
+    "truncatedActiveTextItems",
+    "truncatedActiveOperationPayloadItems",
+    "truncatedCompletedTextItems",
+    "truncatedCompletedUserInputItems",
+    "truncatedCompletedUsageItems",
+    "truncatedCompletedUsageSummaryOnlyItems",
+    "omittedActiveUserInputChars",
+    "omittedActiveTextChars",
+    "omittedActiveOperationPayloadChars",
+    "omittedCompletedTextChars",
+    "omittedCompletedUserInputChars",
+    "omittedCompletedUsageBytes",
+    "omittedCompletedUsageSummaryOnlyBytes",
+    "progressiveThreadTaskCardCompactedCount",
+    "progressiveThreadTaskCardSettledCompactedCount",
+    "progressiveThreadTaskCardOmittedBytes",
+  ]) {
+    attachNonZeroBudgetNumber(out, stats, key);
+  }
+  for (const key of [
+    "progressiveCompletedReplayAssistantBudgetApplied",
+    "progressiveCompletedTextBudgetApplied",
+    "progressiveCompletedUserInputBudgetApplied",
+    "progressiveCompletedUsageBudgetApplied",
+    "progressiveCompletedUsageSummaryOnlyBudgetApplied",
+    "progressiveThreadTaskCardBudgetApplied",
+    "progressiveVisibleItemBudgetApplied",
+    "progressiveActiveFirstPaintItemBudgetApplied",
+  ]) {
+    attachTruthyBudgetValue(out, stats, key);
+  }
+  for (const key of [
+    "progressiveCompletedReplayAssistantBudgetReason",
+    "progressiveCompletedTextBudgetReason",
+    "progressiveCompletedUserInputBudgetReason",
+    "progressiveCompletedUserInputBudgetMode",
+    "progressiveCompletedUsageBudgetReason",
+    "progressiveCompletedUsageSummaryOnlyBudgetReason",
+    "progressiveThreadTaskCardBudgetReason",
+    "progressiveVisibleItemBudgetReason",
+    "progressiveActiveFirstPaintItemBudgetReason",
+    "retainedVisibleItemLargestKind",
+  ]) {
+    attachTruthyBudgetValue(out, stats, key);
+  }
+  for (const key of [
+    "retainedVisibleItemCountByKind",
+    "retainedVisibleItemBytesByKind",
+    "retainedAssistantItemCountByTurnState",
+    "retainedAssistantItemBytesByTurnState",
+    "retainedUserInputItemCountByTurnState",
+    "retainedUserInputItemBytesByTurnState",
+  ]) {
+    const compacted = compactNumberMap(stats[key]);
+    if (Object.keys(compacted).length) out[key] = compacted;
+  }
+  return out;
+}
+
 function statusText(value) {
   if (!value) return "";
   if (typeof value === "string") return value;
@@ -1957,7 +2085,11 @@ function compactThreadDetailResponseResult(result, options = {}) {
     source: thread.mobileReadMode || "thread-detail-response-budget",
     revision,
   });
-  if (normalized && normalized.thread) normalized.thread.mobileDetailResponseBudget = stats;
+  if (normalized && normalized.thread) {
+    normalized.thread.mobileDetailResponseBudget = String(options.responseBudgetEvidence || "").toLowerCase() === "compact"
+      ? compactResponseBudgetEvidence(stats)
+      : stats;
+  }
   return normalized;
 }
 

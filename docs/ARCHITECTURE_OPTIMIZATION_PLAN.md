@@ -2598,6 +2598,14 @@ Deployable scope:
   `progressiveActiveFirstPaintBytesAfterUsageSummaryOnlyBudget` so Phase-B can
   attribute the remaining byte pressure without touching user/assistant text or
   `mobileVisibleItemKeys`.
+- A later HTTP evidence slice keeps the budget policy and v4 visible-key
+  contract unchanged but reduces ordinary first-paint detail bytes by emitting
+  compact `mobileDetailResponseBudget` evidence on normal `/api/threads/:id`
+  reads. The compact shape keeps the version, applied/progressive flags, key
+  omitted/truncated counters, first-paint byte counters, and bounded retained
+  item maps, while dropping zero/empty long-tail diagnostics. Phase-B,
+  browser-runtime, and API thread self-checks request `budget=full` so deploy
+  gates still validate the full response-budget contract.
 - A later summary-phase slice targets warm projection hits whose `summaryMs`
   dominates `totalMs` even though `threadReadMs=0`. Detail summary resolution
   now merges the existing display-summary cache for local summaries and skips

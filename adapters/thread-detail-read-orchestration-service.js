@@ -376,7 +376,9 @@ function createThreadDetailReadOrchestrationService(options = {}) {
 
   async function prepareAndAttach(result, context, details = {}) {
     const prepareStartedAtMs = now();
-    const prepared = await prepareResponse(result, details);
+    const prepared = await prepareResponse(result, Object.assign({
+      responseBudgetEvidence: context.responseBudgetEvidence || "",
+    }, details));
     context.timer.mark("prepareResponseMs", prepareStartedAtMs);
     return attachDetailDiagnostics(prepared, context, details);
   }
@@ -386,10 +388,12 @@ function createThreadDetailReadOrchestrationService(options = {}) {
     const codex = input.codex || null;
     const threadLog = typeof input.threadLog === "function" ? input.threadLog : () => {};
     const preferRecentTurns = Boolean(input.preferRecentTurns);
+    const responseBudgetEvidence = nonEmptyText(input.responseBudgetEvidence);
     const timer = createThreadDetailTimer(now);
     const context = {
       timer,
       preferRecentTurns,
+      responseBudgetEvidence,
       summarySource: "",
       projectionState: "",
       projectionInputAvailable: false,
@@ -1478,6 +1482,7 @@ function createThreadDetailReadOrchestrationService(options = {}) {
           runtimeSettings,
           warning: `thread/read failed: ${safeErrorMessage(readErr)}`,
           mode: "turns-list",
+          responseBudgetEvidence,
           threadLog: null,
         });
         if (isHiddenThread(result && result.thread, visibility)) {

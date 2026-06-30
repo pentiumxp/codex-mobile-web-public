@@ -841,6 +841,7 @@ async function run(options = {}, env = process.env) {
   if (!options.skipDetail && threadId) {
     const detailResult = await fetchJson(requestUrl(options, `/api/threads/${encodeURIComponent(threadId)}`, {
       mode: "recent",
+      budget: "full",
     }), options, key);
     report.detail = summarizeThreadDetail(detailResult, threadId);
   }
