@@ -1,5 +1,10 @@
 "use strict";
 
+const {
+  threadListFallbackPrewarmJobPolicy,
+  withThreadListFallbackPrewarmJobPolicy,
+} = require("../services/thread-list/thread-list-prewarm-scheduler-service");
+
 function boundedNumber(value, fallback, min, max) {
   const number = Number(value);
   if (!Number.isFinite(number)) return fallback;
@@ -79,6 +84,7 @@ function summarizePrewarmStatus(status = {}, config = {}) {
     : {};
   return {
     enabled: normalized.enabled,
+    job: threadListFallbackPrewarmJobPolicy(),
     scheduled: safeStatus.scheduled === true,
     running: safeStatus.running === true,
     completed: safeStatus.completed === true,
@@ -227,40 +233,40 @@ function createThreadListFallbackPrewarmService(options = {}) {
   function schedule(config = {}) {
     const normalized = normalizePrewarmConfig(config);
     if (!normalized.enabled) {
-      return {
+      return withThreadListFallbackPrewarmJobPolicy({
         scheduled: false,
         reason: "disabled",
         delayMs: normalized.delayMs,
         limit: normalized.limit,
         sourceSnapshotLimit: normalized.sourceSnapshotLimit,
-      };
+      });
     }
     if (scheduled) {
-      return {
+      return withThreadListFallbackPrewarmJobPolicy({
         scheduled: false,
         reason: "already-scheduled",
         delayMs: normalized.delayMs,
         limit: normalized.limit,
         sourceSnapshotLimit: normalized.sourceSnapshotLimit,
-      };
+      });
     }
     if (running) {
-      return {
+      return withThreadListFallbackPrewarmJobPolicy({
         scheduled: false,
         reason: "already-running",
         delayMs: normalized.delayMs,
         limit: normalized.limit,
         sourceSnapshotLimit: normalized.sourceSnapshotLimit,
-      };
+      });
     }
     if (completed) {
-      return {
+      return withThreadListFallbackPrewarmJobPolicy({
         scheduled: false,
         reason: "already-completed",
         delayMs: normalized.delayMs,
         limit: normalized.limit,
         sourceSnapshotLimit: normalized.sourceSnapshotLimit,
-      };
+      });
     }
     scheduled = true;
     const timer = setTimer(() => {
@@ -283,13 +289,13 @@ function createThreadListFallbackPrewarmService(options = {}) {
       run(normalized);
     }, normalized.delayMs);
     if (timer && typeof timer.unref === "function") timer.unref();
-    return {
-    scheduled: true,
-    reason: "scheduled",
-    delayMs: normalized.delayMs,
-    limit: normalized.limit,
-    sourceSnapshotLimit: normalized.sourceSnapshotLimit,
-  };
+    return withThreadListFallbackPrewarmJobPolicy({
+      scheduled: true,
+      reason: "scheduled",
+      delayMs: normalized.delayMs,
+      limit: normalized.limit,
+      sourceSnapshotLimit: normalized.sourceSnapshotLimit,
+    });
   }
 
   function status() {
@@ -314,4 +320,5 @@ module.exports = {
   normalizePrewarmConfig,
   summarizePrewarmResult,
   summarizePrewarmStatus,
+  threadListFallbackPrewarmJobPolicy,
 };

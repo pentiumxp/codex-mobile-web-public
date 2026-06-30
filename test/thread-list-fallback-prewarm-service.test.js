@@ -8,7 +8,25 @@ const {
   normalizePrewarmConfig,
   summarizePrewarmResult,
   summarizePrewarmStatus,
+  threadListFallbackPrewarmJobPolicy,
 } = require("../adapters/thread-list-fallback-prewarm-service");
+
+const EXPECTED_PREWARM_JOB = {
+  name: "thread-list-fallback-prewarm",
+  periodicAllowed: false,
+  maxConcurrency: 1,
+  timeoutMs: 30000,
+  timeBudgetMs: 30000,
+  cpuBudgetClass: "medium",
+  realBrowserAllowed: false,
+  usesBrowser: false,
+  userRequestPreemptible: true,
+  preemptibleByForeground: true,
+};
+
+test("thread-list fallback prewarm declares scheduler budget policy", () => {
+  assert.deepEqual(threadListFallbackPrewarmJobPolicy(), EXPECTED_PREWARM_JOB);
+});
 
 test("thread-list fallback prewarm normalizes bounded default config", () => {
   assert.deepEqual(normalizePrewarmConfig({}), {
@@ -82,6 +100,7 @@ test("thread-list fallback prewarm schedules once and warms the default cache", 
     delayMs: 25,
     limit: 40,
     sourceSnapshotLimit: 1000,
+    job: EXPECTED_PREWARM_JOB,
   });
   assert.equal(scheduledDelay, 25);
   assert.equal(service.schedule({ delayMs: 25, limit: 40 }).reason, "already-scheduled");
@@ -218,6 +237,7 @@ test("thread-list fallback prewarm disabled config does not schedule or read", (
     delayMs: 0,
     limit: 40,
     sourceSnapshotLimit: 1000,
+    job: EXPECTED_PREWARM_JOB,
   });
   assert.equal(service.run({ enabled: false }).status, "disabled");
   assert.equal(called, false);
@@ -309,6 +329,7 @@ test("thread-list fallback prewarm public status is metadata-only", () => {
 
   assert.deepEqual(status, {
     enabled: true,
+    job: EXPECTED_PREWARM_JOB,
     scheduled: false,
     running: false,
     completed: true,
