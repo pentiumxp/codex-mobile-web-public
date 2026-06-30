@@ -3424,6 +3424,9 @@ Deployable scope:
   allowed to return a detail response. If backfill is unavailable, the route
   continues to the initial active-window/full-read path rather than returning a
   stale or truncated live snapshot.
+- Current ownership: `services/thread-detail/thread-detail-read-orchestration-service.js`
+  owns this read-ordering and active-overlay proof gate; the adapter path is
+  only a compatibility export.
 - `thread-detail-projection-service` allows stale full active-window history to
   be used only when the live overlay already proves active status, preserving
   the server-side proof boundary without promoting notification shells.

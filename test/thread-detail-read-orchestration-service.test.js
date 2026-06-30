@@ -5,7 +5,12 @@ const { test } = require("node:test");
 
 const {
   createThreadDetailReadOrchestrationService,
-} = require("../adapters/thread-detail-read-orchestration-service");
+} = require("../services/thread-detail/thread-detail-read-orchestration-service");
+const adapterExports = require("../adapters/thread-detail-read-orchestration-service");
+
+test("thread-detail read orchestration adapter re-exports canonical service", () => {
+  assert.equal(adapterExports.createThreadDetailReadOrchestrationService, createThreadDetailReadOrchestrationService);
+});
 
 function createHarness(overrides = {}) {
   const calls = [];

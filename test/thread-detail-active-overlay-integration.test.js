@@ -17,7 +17,7 @@ const {
 } = require("../adapters/thread-detail-projection-v4-service");
 const {
   createThreadDetailReadOrchestrationService,
-} = require("../adapters/thread-detail-read-orchestration-service");
+} = require("../services/thread-detail/thread-detail-read-orchestration-service");
 const {
   handleThreadDetailReadRoute,
 } = require("../adapters/thread-detail-route-service");
