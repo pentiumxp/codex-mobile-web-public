@@ -9283,6 +9283,8 @@ Behavior:
 
 - 中文说明：v274 public CI 追补只修正测试 harness，不改变运行时代码。Public CI 使用全量 `npm test`，这次把遗漏的账号切换 UI 断言和 shell cache 断言同步到 v274，覆盖 `预检中...`、`重启中...`、`失败` 等行内状态，以及 `codex-mobile-shell-v274`。本次 public 发布仍只包含公开源码、README 和测试；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
 
+- 中文说明：v607 public 同步 private/production 已验证的部署线程池、跨线程任务卡片回执和运行时稳定性修复。routine plugin deployment task card 现在会按 `cardKind=plugin_deployment`、`pluginId` 和 live deploy lane 元数据稳定路由到专用部署线程；`Movie Deploy Lane`、`Codex Mobile Deploy Lane` 等配置 lane 在执行部署卡时会使用 unattended runtime 设置，避免 routine deploy/readback/self-check 被命令审批卡住。跨线程 return card 支持显式 `replyTo` 目标和 terminal receipt 自动注入，不再把多跳部署回执留在源线程 `Pending` / `Approve workflow`。同时同步 browser runtime self-check、thread detail response budget、client-event stall、public-config cache、thread-list/detail readback、Continuation/Continuous task card rendering 等稳定性修复。本次 public 发布只包含公开源码、README、docs 和测试；没有复制 `.agent-context`、runtime state、本地密钥、上传内容、VAPID/subscription 数据或机器特定诊断。
+
 - 中文说明：v274 修正 Codex 账号切换和认证失败反馈。账号切换会先预检目标 `CODEX_HOME`，临时 app-server WebSocket 连接会在预检窗口内重试，避免服务还没开始监听就误判失败；设置面板的目标账号行会显示 `预检中...`、`重启中...` 或 `失败`，前端等待窗口放宽到 90 秒。发送消息时如果 Codex 账号 token 失效，服务端会返回稳定 `codex_account_auth_invalid`，前端会把失败原因显示在该次用户消息下面的回执里，而不是只写到右上角状态框。PWA shell cache 升级到 `codex-mobile-shell-v274`。本次 public 发布只包含公开源码、README 和测试；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
 
 - 中文说明：v273 修正长时间 Home AI 线程里空 `inProgress` turn 导致的假运行状态。前端现在会跳过没有任何 item 的 active tail，把 Stop/引导/侧聊排队/运行框状态绑定到最新有内容的 turn；线程已 idle 时 Composer 不再误显示 Stop。live turn 的用户消息过滤也改为按时间语义处理：turn 开头的正式输入保留显示，中途引导只在后续已有 Codex 文本回应时保留，未回应的尾部历史 durable userMessage 继续隐藏，避免进入线程时看到旧输入卡在底部。PWA shell cache 升级到 `codex-mobile-shell-v273`。
