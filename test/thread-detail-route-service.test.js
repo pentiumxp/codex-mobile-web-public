@@ -139,6 +139,7 @@ test("thread detail route service forwards full response-budget evidence for dia
 
 test("thread detail route service lets caller observe read result without blocking response", async () => {
   const calls = [];
+  const scheduled = [];
   const result = await handleThreadDetailReadRoute({
     threadId: "thread-1",
     url: routeUrl("/api/threads/thread-1?mode=recent"),
@@ -149,6 +150,7 @@ test("thread detail route service lets caller observe read result without blocki
       body: { thread: { id: "thread-1", status: { type: "completed" } } },
     }),
     sendJson: (status, body) => calls.push({ type: "send", status, body }),
+    schedulePostReadResult: (callback) => scheduled.push(callback),
     onThreadDetailReadResult: async (payload) => {
       calls.push({ type: "observe", payload });
       throw new Error("observer failed");
@@ -162,7 +164,21 @@ test("thread detail route service lets caller observe read result without blocki
     status: 200,
     body: { thread: { id: "thread-1", status: { type: "completed" } } },
   });
+  assert.equal(calls[1].event, "complete");
+  assert.equal(scheduled.length, 1);
+  scheduled[0]();
+  await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(calls[1], {
+    type: "log",
+    event: "complete",
+    details: {
+      threadId: "thread-1",
+      elapsedMs: 0,
+      status: 200,
+      mode: "projection-v4-cache",
+    },
+  });
+  assert.deepEqual(calls[2], {
     type: "observe",
     payload: {
       threadId: "thread-1",
@@ -172,9 +188,8 @@ test("thread detail route service lets caller observe read result without blocki
       complete: true,
     },
   });
-  assert.equal(calls[2].type, "log");
-  assert.equal(calls[2].event, "post_read_result_sync_failed");
-  assert.equal(calls[3].event, "complete");
+  assert.equal(calls[3].type, "log");
+  assert.equal(calls[3].event, "post_read_result_sync_failed");
 });
 
 test("thread detail route service rejects invalid wiring without side effects", async () => {
